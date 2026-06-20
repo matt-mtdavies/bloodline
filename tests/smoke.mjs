@@ -12,7 +12,9 @@
  */
 import { chromium } from 'playwright-core';
 
-const BASE_URL = process.env.BASE_URL || 'http://localhost:5173/';
+const _BASE = process.env.BASE_URL || 'http://localhost:5173/';
+// ?demo seeds the Davies family and bypasses onboarding, which new users see.
+const BASE_URL = _BASE + (_BASE.includes('?') ? '&' : '?') + 'demo';
 const shot = (p) => `tests/screenshots/${p}`;
 
 const errors = [];

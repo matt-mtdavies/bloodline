@@ -1,10 +1,11 @@
-import { useMemo, useState, useCallback, useRef, useSyncExternalStore } from 'react';
+import { useMemo, useState, useCallback, useRef, useEffect, useSyncExternalStore } from 'react';
 import './styles/components.css';
-import { FAMILY_NAME, DEFAULT_FOCUS } from './data/seed.js';
+import { DEFAULT_FOCUS } from './data/seed.js';
 import {
   store,
   addRelative,
   updatePerson,
+  setupTree,
   setPhoto,
   addMemory,
   toggleMemoryVote,
@@ -30,15 +31,29 @@ import PhotoCropper from './components/PhotoCropper.jsx';
 import AccessibleTree from './components/AccessibleTree.jsx';
 import Legend from './components/Legend.jsx';
 import IntroHint from './components/IntroHint.jsx';
-import Splash from './components/Splash.jsx';
+import Intro from './components/Intro.jsx';
+import Onboarding from './components/Onboarding.jsx';
 
 export default function App() {
   const data = useSyncExternalStore(store.subscribe, store.getState);
   const graph = useMemo(() => buildGraph(data.people, data.relationships), [data]);
   const reducedMotion = useReducedMotion();
 
-  const [activeId, setActiveId] = useState(DEFAULT_FOCUS);
-  const [expanded, setExpanded] = useState(() => new Set([DEFAULT_FOCUS]));
+  // Onboarding gate: new users see intro → questionnaire before the tree.
+  const [introSeen, setIntroSeen] = useState(false);
+
+  const focusDefault = data.myPersonId || DEFAULT_FOCUS;
+  const [activeId, setActiveId] = useState(focusDefault);
+  const [expanded, setExpanded] = useState(() => new Set([focusDefault]));
+
+  // Sync active person after onboarding completes (myPersonId appears in store).
+  useEffect(() => {
+    if (data.myPersonId && data.myPersonId !== activeId) {
+      setActiveId(data.myPersonId);
+      setExpanded(new Set([data.myPersonId]));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data.myPersonId]);
   const [openId, setOpenId] = useState(null); // person card
   const [addAnchorId, setAddAnchorId] = useState(null); // add-relative sheet
   const [editId, setEditId] = useState(null); // edit sheet
@@ -155,10 +170,18 @@ export default function App() {
 
   const activePerson = graph.byId.get(activeId);
 
+  // Show onboarding for brand-new users (no completed onboarding in store).
+  if (!data.hasCompletedOnboarding) {
+    if (!introSeen) {
+      return <Intro onBegin={() => setIntroSeen(true)} />;
+    }
+    return <Onboarding onComplete={(fields) => setupTree(fields)} />;
+  }
+
   return (
     <div className="app">
       <TopBar
-        familyName={FAMILY_NAME}
+        familyName={data.familyName || DEFAULT_FOCUS}
         view={view}
         onToggleView={() => setView((v) => (v === 'bubbles' ? 'list' : 'bubbles'))}
         onOpenLegend={() => setLegendOpen(true)}
@@ -209,7 +232,7 @@ export default function App() {
       <PersonSheet
         graph={graph}
         personId={openId}
-        viewerId={DEFAULT_FOCUS}
+        viewerId={data.myPersonId || DEFAULT_FOCUS}
         memories={data.memories}
         photos={data.photos}
         documents={data.documents}
@@ -297,7 +320,6 @@ export default function App() {
         mergeParents={mergeParents}
         onToggleMerge={() => setMergeParents((v) => !v)}
       />
-      <Splash />
     </div>
   );
 }

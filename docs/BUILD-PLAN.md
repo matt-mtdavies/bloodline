@@ -92,10 +92,39 @@ Six features. All Anthropic calls **server-side in Workers**, key never client-s
   Batch API (50% off for non-interactive bulk: whole-tree bios, overnight dedup),
   adaptive thinking `{type:"adaptive"}`. Keep everything in Workers.
 
+## Onboarding + tree ownership ⬜ (Phase 2.5)
+
+Bridges the demo experience and a real product anyone can use for their own family.
+
+- **Cinematic intro** — 5-phase sequence (mark → thesis → tree animation → memory → CTA). Plays once on first visit; tap to skip to CTA.
+- **Questionnaire** — 6 steps: You · Partner · Parents · Children · Someone to remember + memory · Family name. Captures immediate family as a solid base before revealing the tree.
+- **setupTree()** — replaces seed data with the user's own people + relationships. Sets `myPersonId` (the self-referential anchor used for relationship labels and viewerId).
+- **Family name** — user-chosen, shown in TopBar. Not necessarily a surname. Editable any time.
+- **?demo URL param** — loads Davies seed family and skips onboarding (used by smoke tests and live demos).
+
+## Privacy model ⬜ (Phase 4 prep — schema now, enforced in Phase 4)
+
+Privacy and scope are the same problem. The tree IS infinite in structure; access to the *information* within it is gated.
+
+### Person visibility levels
+Each person record carries a `visibility` field set at creation and editable by the owner:
+- **full** — all details visible (deceased people, close family).
+- **summary** — name, relationship, lifespan only (living adults by default).
+- **private** — exists in tree structure but details hidden; renders as a sealed bubble (children default to this).
+
+### Roles (Phase 4)
+Owner → Editor → Contributor → Viewer. Each role sees progressively less.
+
+### Claimed profiles (Phase 4+)
+When a person in someone else's tree creates their own Bloodline account, they can *claim* their record. From that point they control their own visibility settings across all trees — overriding the tree owner's defaults for their data. Respects the natural handover of privacy as children become adults.
+
+### Scope framing
+The perspective model (centring on any person reorients relationship labels) handles "whose tree is it?" without changing the data. The container name (family name) is fixed; the perspective shifts with whoever is centred.
+
 ## Family collaboration system ⬜ (Phase 4)
 
-- Roles: Owner, Editor, Contributor, Viewer.
-- Invite family; contribution tracking; change history; activity feed.
+- Roles: Owner, Editor, Contributor, Viewer (see privacy model above).
+- Invite family; claimed profiles; contribution tracking; change history; activity feed.
 
 ## Engagement loops 🟡
 
@@ -114,6 +143,7 @@ Inspiration: Apple, Notion, Arc, Linear, Medium, family photo albums.
 - **Phase 1 — Immediate** ✅ — improve graph scaling, better centering, rich profile
   architecture, expanded person records. _(Plus: fill-the-screen framing.)_
 - **Phase 2 — Content** 🟡 — Photos ✅, Timeline ✅, Memories ✅, Documents ⬜ (needs R2).
+- **Phase 2.5 — Onboarding** ⬜ — Cinematic intro ✅, questionnaire ✅, setupTree ✅, privacy schema ✅ (just built).
 - **Phase 3 — AI** ⬜ — biography generation, interview system, smart onboarding/search,
   memory collector, family historian, missing-info assistant.
 - **Phase 4 — Collaboration** ⬜ — invitations, roles/permissions, activity feed.

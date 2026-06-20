@@ -2,19 +2,33 @@
  * The family store. Holds the people + relationships, persists every change to
  * localStorage, and notifies React via a tiny pub/sub (useSyncExternalStore).
  *
- * It starts from the seeded demo family; once the user edits anything, their
- * version is what loads next time. This is deliberately the same {people,
- * relationships} shape the API serves, so swapping localStorage for D1 later is
- * a drop-in.
+ * New users start with an empty tree and go through onboarding. Existing users
+ * (loaded from localStorage) are migrated forward. The shape deliberately
+ * mirrors the D1 API schema so swapping backends is a drop-in.
+ *
+ * ?demo in the URL loads the Davies seed family (for smoke tests / demos).
  */
 import {
   people as seedPeople,
   relationships as seedRels,
   memories as seedMemories,
   photos as seedPhotos,
+  FAMILY_NAME as SEED_FAMILY_NAME,
+  DEFAULT_FOCUS,
 } from './seed.js';
 
 const KEY = 'bloodline:v1';
+
+const EMPTY = {
+  people: [],
+  relationships: [],
+  memories: [],
+  photos: [],
+  documents: [],
+  hasCompletedOnboarding: false,
+  familyName: '',
+  myPersonId: null,
+};
 
 function load() {
   try {
@@ -26,34 +40,50 @@ function load() {
   return null;
 }
 
-let state = load() || {
-  people: structuredClone(seedPeople),
-  relationships: structuredClone(seedRels),
-  memories: structuredClone(seedMemories),
-  photos: structuredClone(seedPhotos),
-  documents: [],
-};
+// ?demo in the URL seeds the Davies family, bypassing onboarding.
+// Used by smoke tests and the live demo link.
+const isDemoUrl =
+  typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('demo');
 
-// Migrate older saves that predate a collection: seed the demo data, but only
-// for people who still exist, so we never clobber the user's own edits.
-if (state.memories === undefined || state.photos === undefined || state.documents === undefined) {
-  const ids = new Set(state.people.map((p) => p.id));
-  if (state.memories === undefined)
-    state.memories = structuredClone(seedMemories).filter((x) => ids.has(x.person_id));
-  if (state.photos === undefined)
-    state.photos = structuredClone(seedPhotos).filter((x) => ids.has(x.person_id));
-  if (state.documents === undefined)
-    state.documents = [];
+let state = isDemoUrl
+  ? {
+      people: structuredClone(seedPeople),
+      relationships: structuredClone(seedRels),
+      memories: structuredClone(seedMemories),
+      photos: structuredClone(seedPhotos),
+      documents: [],
+      hasCompletedOnboarding: true,
+      familyName: SEED_FAMILY_NAME,
+      myPersonId: DEFAULT_FOCUS,
+    }
+  : load() || { ...EMPTY };
+
+// ── Migrations (additive, never destructive) ─────────────────────────────────
+
+// Pre-onboarding saves: people exist but no onboarding flag → treat as complete.
+if (state.people?.length > 0 && state.hasCompletedOnboarding === undefined) {
+  state.hasCompletedOnboarding = true;
+  if (!state.familyName) state.familyName = SEED_FAMILY_NAME;
+  if (!state.myPersonId) state.myPersonId = DEFAULT_FOCUS;
 }
 
-// Upgrade the first round of low-res demo gallery photos (served via the
-// /faces proxy) to the current high-res seed set. Real uploads are data: URLs,
-// so they're left untouched. Idempotent — once swapped there's nothing to match.
+// Ensure all collection fields exist.
+if (!state.memories) state.memories = [];
+if (!state.photos) state.photos = [];
+if (!state.documents) state.documents = [];
+
+// Upgrade low-res demo gallery photos to current seed set.
 if (state.photos.some((p) => typeof p.src === 'string' && p.src.startsWith('/faces/'))) {
   const ids = new Set(state.people.map((p) => p.id));
   const kept = state.photos.filter((p) => !(typeof p.src === 'string' && p.src.startsWith('/faces/')));
   const reseed = structuredClone(seedPhotos).filter((p) => ids.has(p.person_id));
   state.photos = [...kept, ...reseed];
+}
+
+// Back-fill memories for seed people that existed before memories were added.
+if (state.people?.length > 0 && state.memories.length === 0 && state.people.some((p) => p.id === DEFAULT_FOCUS)) {
+  const ids = new Set(state.people.map((p) => p.id));
+  state.memories = structuredClone(seedMemories).filter((x) => ids.has(x.person_id));
 }
 
 const listeners = new Set();
@@ -77,7 +107,16 @@ export const store = {
     return state;
   },
   reset() {
-    commit({ people: structuredClone(seedPeople), relationships: structuredClone(seedRels) });
+    commit({
+      ...EMPTY,
+      people: structuredClone(seedPeople),
+      relationships: structuredClone(seedRels),
+      memories: structuredClone(seedMemories),
+      photos: structuredClone(seedPhotos),
+      hasCompletedOnboarding: true,
+      familyName: SEED_FAMILY_NAME,
+      myPersonId: DEFAULT_FOCUS,
+    });
   },
 };
 
@@ -163,10 +202,107 @@ export function addRelative({ anchorId, relKey, name, gender, birth_date, is_dec
     created_by: 'me',
   };
   commit({
+    ...state,
     people: [...state.people, person],
     relationships: [...state.relationships, ...edgesFor(relKey, anchorId, id, state)],
   });
   return id;
+}
+
+export function setupTree({ me, partner, parents, children, memoryPersonIdx, memoryText, familyName }) {
+  const mkId = () => uid();
+  const mkPerson = (name, birthYear, extra = {}) => ({
+    id: mkId(),
+    display_name: name.trim(),
+    given_names: null,
+    family_name: null,
+    gender: null,
+    birth_date: birthYear?.trim() || null,
+    death_date: null,
+    is_living: true,
+    is_deceased: false,
+    is_minor: false,
+    birth_place: null,
+    residence: null,
+    occupation: null,
+    tags: [],
+    events: [],
+    bio: null,
+    photo: null,
+    story: null,
+    confidence: 'confirmed',
+    visibility: 'full',
+    ...extra,
+  });
+
+  const people = [];
+  const relationships = [];
+  const memories = [];
+  const orderedIds = []; // parallel to [me, partner?, ...parents, ...children]
+
+  // Me
+  const meP = mkPerson(me.name, me.birthYear);
+  people.push(meP);
+  orderedIds.push(meP.id);
+
+  // Partner
+  let partnerP = null;
+  if (partner?.name?.trim()) {
+    partnerP = mkPerson(partner.name, null);
+    people.push(partnerP);
+    orderedIds.push(partnerP.id);
+    relationships.push({ id: rid(), from_person: meP.id, to_person: partnerP.id, type: 'partner', qualifier: 'biological', partner_status: 'current' });
+  }
+
+  // Parents
+  const parentPs = [];
+  for (const p of (parents || []).filter((p) => p.name?.trim())) {
+    const pP = mkPerson(p.name, p.birthYear);
+    people.push(pP);
+    orderedIds.push(pP.id);
+    parentPs.push(pP);
+    relationships.push({ id: rid(), from_person: pP.id, to_person: meP.id, type: 'parent', qualifier: 'biological', partner_status: null });
+  }
+  if (parentPs.length === 2) {
+    relationships.push({ id: rid(), from_person: parentPs[0].id, to_person: parentPs[1].id, type: 'partner', qualifier: 'biological', partner_status: 'current' });
+  }
+
+  // Children
+  for (const c of (children || []).filter((c) => c.name?.trim())) {
+    const cP = mkPerson(c.name, c.birthYear, { visibility: 'private' });
+    people.push(cP);
+    orderedIds.push(cP.id);
+    relationships.push({ id: rid(), from_person: meP.id, to_person: cP.id, type: 'parent', qualifier: 'biological', partner_status: null });
+    if (partnerP) {
+      relationships.push({ id: rid(), from_person: partnerP.id, to_person: cP.id, type: 'parent', qualifier: 'biological', partner_status: null });
+    }
+  }
+
+  // Memory
+  if (memoryPersonIdx != null && memoryText?.trim() && orderedIds[memoryPersonIdx]) {
+    memories.push({
+      id: mid(),
+      person_id: orderedIds[memoryPersonIdx],
+      text: memoryText.trim(),
+      author: 'You',
+      created_at: new Date().toISOString().slice(0, 10),
+      votes: 0,
+      youVoted: false,
+    });
+  }
+
+  commit({
+    people,
+    relationships,
+    memories,
+    photos: [],
+    documents: [],
+    hasCompletedOnboarding: true,
+    familyName: familyName?.trim() || 'My Family',
+    myPersonId: meP.id,
+  });
+
+  return meP.id;
 }
 
 export function updatePerson(id, fields) {
