@@ -56,10 +56,14 @@ export default function PersonSheet({
       const card = cardRef.current;
       if (p && card && lineRef.current && dotRef.current) {
         const r = card.getBoundingClientRect();
+        // Attach to the card's near (left) edge, level with the bubble, so the
+        // line reads as the bubble opening sideways into the card.
+        const ax = r.left;
+        const ay = Math.max(r.top + 26, Math.min(r.bottom - 26, p.y));
         lineRef.current.setAttribute('x1', p.x);
         lineRef.current.setAttribute('y1', p.y);
-        lineRef.current.setAttribute('x2', r.left + r.width / 2);
-        lineRef.current.setAttribute('y2', r.top);
+        lineRef.current.setAttribute('x2', ax);
+        lineRef.current.setAttribute('y2', ay);
         dotRef.current.setAttribute('cx', p.x);
         dotRef.current.setAttribute('cy', p.y);
       }

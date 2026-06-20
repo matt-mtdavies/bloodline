@@ -65,23 +65,6 @@ export class Bubble {
       portrait.filters = [cm];
     }
 
-    // Name label, shown only for near bubbles (set via setVisualState).
-    const label = new Text({
-      text: person.display_name,
-      style: {
-        fontFamily: 'Fraunces, Georgia, serif',
-        fontSize: 15,
-        fontWeight: '500',
-        fill: 0x2c2622,
-        align: 'center',
-      },
-    });
-    label.anchor.set(0.5, 0);
-    label.y = baseRadius + 9;
-    label.resolution = 2;
-    root.addChild(label);
-    this.label = label;
-
     this.tryLoadPhoto();
   }
 
@@ -158,10 +141,9 @@ export class Bubble {
   }
 
   // Called every frame with the bubble's ego-distance state.
-  setVisualState({ scale, alpha, labelAlpha, lift, blur }) {
+  setVisualState({ scale, alpha, lift, blur }) {
     this.root.scale.set(scale);
     this.root.alpha = alpha;
-    this.label.alpha = labelAlpha;
     // Focused/near bubbles lift their shadow a touch for depth.
     this.shadow.alpha = 0.16 * lift;
     this.shadow.scale.set(1 + 0.04 * (lift - 1));

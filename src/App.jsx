@@ -5,6 +5,7 @@ import { buildGraph } from './data/graph.js';
 import { useReducedMotion } from './hooks/useReducedMotion.js';
 import BubbleTree from './viz/BubbleTree.jsx';
 import TopBar from './components/TopBar.jsx';
+import FocusNameplate from './components/FocusNameplate.jsx';
 import PersonSheet from './components/PersonSheet.jsx';
 import AccessibleTree from './components/AccessibleTree.jsx';
 import Legend from './components/Legend.jsx';
@@ -45,7 +46,6 @@ export default function App() {
     <div className="app">
       <TopBar
         familyName={FAMILY_NAME}
-        focusName={focusPerson?.display_name}
         view={view}
         onToggleView={() => setView((v) => (v === 'bubbles' ? 'list' : 'bubbles'))}
         onOpenLegend={() => setLegendOpen(true)}
@@ -60,6 +60,11 @@ export default function App() {
             onOpenPerson={openPerson}
             reducedMotion={reducedMotion}
             apiRef={viewApi}
+          />
+          <FocusNameplate
+            person={focusPerson}
+            getPos={() => viewApi.current?.getScreenPos(focusId)}
+            hidden={!!openId}
           />
           <IntroHint />
         </>

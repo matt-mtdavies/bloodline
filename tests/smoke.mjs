@@ -50,30 +50,30 @@ try {
   await page.screenshot({ path: shot('01-tree.png') });
   check(true, 'canvas mounted');
 
-  const focus1 = (await page.textContent('.topbar__focus').catch(() => '')) || '';
-  check(/Centred on/.test(focus1), `opens centred (${focus1.trim()})`);
+  const focus1 = (await page.textContent('.nameplate__name').catch(() => '')) || '';
+  check(focus1.trim().length > 0, `names the focused person (${focus1.trim()})`);
 
-  // Tap the centred bubble (screen centre) → person sheet opens.
+  // Tap the centred bubble (screen centre) → person card opens to the side.
   const vp = page.viewportSize();
   await page.mouse.click(vp.width / 2, vp.height / 2);
   await page.waitForSelector('[role="dialog"]', { timeout: 5000 });
   const sheetName = (await page.textContent('.sheet__id h2').catch(() => '')) || '';
-  check(sheetName.length > 0, `tapping centred bubble opens the sheet (${sheetName.trim()})`);
-  await page.waitForTimeout(800); // let the tree lift + card FLIP settle
+  check(sheetName.length > 0, `tapping centred bubble opens the card (${sheetName.trim()})`);
+  await page.waitForTimeout(800); // let the tree slide + card FLIP settle
   await page.screenshot({ path: shot('02-sheet.png') });
   await page.keyboard.press('Escape');
   await page.waitForTimeout(500);
 
   // Re-centre deterministically through the accessible view.
-  await page.getByText('List view').click();
+  await page.locator('.pill--label').click(); // → List
   await page.waitForSelector('.listview', { timeout: 5000 });
   await page.screenshot({ path: shot('03-list.png') });
   const firstRel = page.locator('.listview__group .person-row').first();
   const relName = (await firstRel.locator('.person-row__name').textContent()) || '';
   await firstRel.click();
-  await page.getByText('Tree view').click();
+  await page.locator('.pill--label').click(); // → Tree
   await page.waitForTimeout(1600); // watch the glide settle
-  const focus2 = (await page.textContent('.topbar__focus').catch(() => '')) || '';
+  const focus2 = (await page.textContent('.nameplate__name').catch(() => '')) || '';
   check(
     focus2.includes(relName.trim()) && focus2 !== focus1,
     `re-centres on a relative (${focus2.trim()})`,

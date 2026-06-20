@@ -129,7 +129,7 @@ export default function BubbleTree({
       const zoom = new Spring(1, { stiffness: 130, damping: 20 });
       const panX = new Spring(0, { stiffness: 120, damping: 18 });
       const panY = new Spring(0, { stiffness: 120, damping: 18 });
-      const biasY = new Spring(0, { stiffness: 110, damping: 19 }); // lift on card open
+      const biasX = new Spring(0, { stiffness: 110, damping: 19 }); // shift on card open
       let userZoom = 1;
 
       let dist = distancesFrom(graph, focusRef.current);
@@ -308,15 +308,15 @@ export default function BubbleTree({
 
         const cx = app.screen.width / 2;
         const cy = app.screen.height / 2;
-        // When a card is open, lift the tree so the anchored bubble rises clear
-        // of the card (which fills the lower screen) and the tether is visible.
-        biasY.setTarget(state.pinnedId ? -app.screen.height * 0.22 : 0);
-        biasY.step(dt);
+        // When a card is open, slide the anchored bubble to the left so the card
+        // can expand out to its side with the tether visible between them.
+        biasX.setTarget(state.pinnedId ? -app.screen.width * 0.24 : 0);
+        biasX.step(dt);
         const z = clamp(zoom.value, 0.4, 2) * userZoom;
         world.scale.set(z);
         world.position.set(
-          cx - camX.value * z + panX.value,
-          cy - camY.value * z + panY.value + biasY.value,
+          cx - camX.value * z + panX.value + biasX.value,
+          cy - camY.value * z + panY.value,
         );
 
         // Ego-distance visual state per bubble.
@@ -360,17 +360,17 @@ export default function BubbleTree({
 function visualForDistance(d) {
   switch (d) {
     case 0:
-      return { scale: 1.34, alpha: 1, labelAlpha: 1, lift: 1.6, blur: 0 };
+      return { scale: 1.34, alpha: 1, lift: 1.6, blur: 0 };
     case 1:
-      return { scale: 1.0, alpha: 1, labelAlpha: 1, lift: 1.2, blur: 0 };
+      return { scale: 1.0, alpha: 1, lift: 1.2, blur: 0 };
     case 2:
-      return { scale: 0.66, alpha: 0.82, labelAlpha: 0.6, lift: 1, blur: 0 };
+      return { scale: 0.66, alpha: 0.82, lift: 1, blur: 0 };
     case 3:
-      return { scale: 0.47, alpha: 0.5, labelAlpha: 0, lift: 1, blur: 1.4 };
+      return { scale: 0.47, alpha: 0.5, lift: 1, blur: 1.4 };
     case 4:
-      return { scale: 0.36, alpha: 0.32, labelAlpha: 0, lift: 1, blur: 2.6 };
+      return { scale: 0.36, alpha: 0.32, lift: 1, blur: 2.6 };
     default:
-      return { scale: 0.3, alpha: 0.22, labelAlpha: 0, lift: 1, blur: 3.4 };
+      return { scale: 0.3, alpha: 0.22, lift: 1, blur: 3.4 };
   }
 }
 
