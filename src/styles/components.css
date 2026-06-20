@@ -2245,22 +2245,27 @@
 .section-vis { border-top: 1px solid var(--hairline); padding-top: 12px; }
 
 /* ── Install banner (Add to Home Screen) ────────────────────────────────── */
+/*
+ * Rendered via createPortal on document.body so iOS Safari's overflow:hidden
+ * on #root can't clip it. Width is capped with left/right insets rather than
+ * max-width to avoid the left:50%+transform centering quirks on mobile.
+ */
 .install-banner {
   position: fixed;
-  bottom: 96px; /* above FocusNameplate */
-  left: 50%;
-  transform: translateX(-50%);
+  bottom: calc(88px + env(safe-area-inset-bottom, 0px));
+  left: 16px;
+  right: 16px;
   display: flex;
   align-items: center;
   gap: 10px;
   background: #fff;
   border: 1px solid var(--hairline);
   border-radius: 20px;
-  padding: 10px 12px 10px 10px;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.12), 0 1px 4px rgba(0,0,0,0.06);
-  z-index: 120;
-  max-width: calc(100vw - 32px);
+  padding: 10px 10px 10px 10px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.14), 0 1px 4px rgba(0,0,0,0.06);
+  z-index: 9999;
   animation: islide-in 0.45s var(--spring) both;
+  overflow: hidden;
 }
 .install-banner__icon {
   border-radius: 12px;
@@ -2271,6 +2276,7 @@
   flex-direction: column;
   min-width: 0;
   flex: 1;
+  overflow: hidden;
 }
 .install-banner__name {
   font-family: var(--display);
@@ -2278,22 +2284,27 @@
   font-weight: 600;
   color: var(--ink);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .install-banner__sub {
   font-size: 12px;
   color: var(--ink-soft);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .install-banner__add {
-  padding: 9px 18px;
+  padding: 9px 20px;
   font-size: 14px;
   flex-shrink: 0;
+  white-space: nowrap;
 }
 .install-banner__dismiss {
   background: none;
   border: none;
   color: var(--ink-faint);
-  padding: 4px;
+  padding: 6px;
   line-height: 0;
   flex-shrink: 0;
   cursor: pointer;
@@ -2306,7 +2317,7 @@
   position: fixed;
   inset: 0;
   background: rgba(0,0,0,0.45);
-  z-index: 200;
+  z-index: 10000;
   display: flex;
   align-items: flex-end;
   animation: fadein 0.25s ease both;

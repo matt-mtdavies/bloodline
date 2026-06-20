@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 const DISMISSED_KEY = 'bloodline:install-dismissed';
 const DISMISS_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
@@ -58,13 +59,14 @@ export default function InstallPrompt() {
 
   if (!mode) return null;
 
-  return (
+  // Portal to document.body so iOS Safari's overflow:hidden on #root doesn't clip us
+  return createPortal(
     <>
       <div className="install-banner" role="complementary" aria-label="Install app">
         <img className="install-banner__icon" src="/apple-touch-icon.png" alt="" width={44} height={44} />
         <div className="install-banner__text">
           <span className="install-banner__name">Bloodline</span>
-          <span className="install-banner__sub">Save to your Home Screen</span>
+          <span className="install-banner__sub">Save to Home Screen</span>
         </div>
         <button
           className="btn btn--primary install-banner__add"
@@ -83,36 +85,37 @@ export default function InstallPrompt() {
         <div className="install-ios-scrim" onClick={dismiss}>
           <div className="install-ios-sheet" onClick={(e) => e.stopPropagation()}>
             <div className="install-ios__handle" />
-            <img className="install-ios__icon" src="/apple-touch-icon.png" alt="Bloodline" width={64} height={64} />
+            <img className="install-ios__icon" src="/apple-touch-icon.png" alt="Bloodline" width={72} height={72} />
             <h2 className="install-ios__title">Add to Home Screen</h2>
-            <p className="install-ios__intro">Get the full app experience — works offline and opens instantly.</p>
+            <p className="install-ios__intro">Full app experience — opens instantly, works offline.</p>
 
             <ol className="install-ios__steps">
               <li className="install-ios__step">
                 <span className="install-ios__num">1</span>
                 <span className="install-ios__step-text">
                   Tap the{' '}
-                  <svg className="install-ios__share-icon" width="18" height="20" viewBox="0 0 18 20" fill="none" aria-label="Share">
+                  <svg className="install-ios__share-icon" width="17" height="19" viewBox="0 0 18 20" fill="none" aria-label="Share">
                     <path d="M9 1v12M5 5l4-4 4 4" stroke="#007AFF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
                     <path d="M1 9v9a1 1 0 001 1h14a1 1 0 001-1V9" stroke="#007AFF" strokeWidth="2" strokeLinecap="round"/>
                   </svg>
-                  {' '}Share button in Safari's toolbar
+                  {' '}Share button in Safari
                 </span>
               </li>
               <li className="install-ios__step">
                 <span className="install-ios__num">2</span>
-                <span className="install-ios__step-text">Scroll down and tap <strong>Add to Home Screen</strong></span>
+                <span className="install-ios__step-text">Tap <strong>Add to Home Screen</strong></span>
               </li>
               <li className="install-ios__step">
                 <span className="install-ios__num">3</span>
-                <span className="install-ios__step-text">Tap <strong>Add</strong> in the top-right corner</span>
+                <span className="install-ios__step-text">Tap <strong>Add</strong> in the top-right</span>
               </li>
             </ol>
 
-            <button className="btn install-ios__done" onClick={dismiss}>Done</button>
+            <button className="btn btn--primary install-ios__done" onClick={dismiss}>Got it</button>
           </div>
         </div>
       )}
-    </>
+    </>,
+    document.body,
   );
 }
