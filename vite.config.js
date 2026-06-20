@@ -8,7 +8,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.svg'],
+      includeAssets: ['favicon.svg', 'apple-touch-icon.png', 'icon-*.png'],
       manifest: {
         name: 'Bloodline',
         short_name: 'Bloodline',
@@ -17,9 +17,14 @@ export default defineConfig({
         background_color: '#f7f3ec',
         display: 'standalone',
         orientation: 'portrait',
+        start_url: '/',
+        scope: '/',
         icons: [
-          { src: 'favicon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' },
-          { src: 'favicon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'maskable' },
+          { src: 'icon-192.png',          sizes: '192x192', type: 'image/png', purpose: 'any' },
+          { src: 'icon-512.png',          sizes: '512x512', type: 'image/png', purpose: 'any' },
+          { src: 'icon-maskable-192.png', sizes: '192x192', type: 'image/png', purpose: 'maskable' },
+          { src: 'icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+          { src: 'favicon.svg',           sizes: 'any',     type: 'image/svg+xml', purpose: 'any' },
         ],
       },
       workbox: {

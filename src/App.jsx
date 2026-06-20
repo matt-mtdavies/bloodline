@@ -37,6 +37,7 @@ import Intro from './components/Intro.jsx';
 import Onboarding from './components/Onboarding.jsx';
 import LoginScreen from './components/LoginScreen.jsx';
 import FamilySettings from './components/FamilySettings.jsx';
+import InstallPrompt from './components/InstallPrompt.jsx';
 
 const isDemo = typeof window !== 'undefined' &&
   new URLSearchParams(window.location.search).has('demo');
@@ -255,6 +256,7 @@ export default function App() {
               : 'Lineage'}
           </button>
           {!lineageMode && <IntroHint />}
+          {!lineageMode && <InstallPrompt />}
         </>
       ) : (
         <AccessibleTree
