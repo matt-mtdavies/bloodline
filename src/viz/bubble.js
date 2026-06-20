@@ -86,27 +86,36 @@ export class Bubble {
     const g = new Graphics();
     // Flat, single solid colour — clean and modern.
     g.circle(0, 0, r).fill(hex(base));
-    // A soft "shadow person" silhouette (head + shoulders) as the placeholder
-    // image — signals "photo missing" warmly.
+
+    // A refined "shadow person": a properly proportioned head and a smooth
+    // shoulder line drawn with bezier curves (not a circle + blob). Clipped by
+    // the bubble mask into a clean placeholder portrait.
     const W = 0xffffff;
-    g.circle(0, -r * 0.22, r * 0.22).fill({ color: W, alpha: 0.92 }); // head
-    g.ellipse(0, r * 0.2, r * 0.42, r * 0.24).fill({ color: W, alpha: 0.92 }); // shoulders
+    const A = 0.95;
+    g.circle(0, -r * 0.3, r * 0.235).fill({ color: W, alpha: A }); // head
+    g.moveTo(-r * 0.62, r * 1.1)
+      .lineTo(-r * 0.62, r * 0.64)
+      .bezierCurveTo(-r * 0.62, r * 0.18, -r * 0.34, r * 0.05, 0, r * 0.05)
+      .bezierCurveTo(r * 0.34, r * 0.05, r * 0.62, r * 0.18, r * 0.62, r * 0.64)
+      .lineTo(r * 0.62, r * 1.1)
+      .closePath()
+      .fill({ color: W, alpha: A }); // shoulders
     this.portrait.addChild(g);
     this._mono = g;
 
-    // Small initials tucked at the bottom, so the person is still identifiable.
+    // Small initials tucked at the bottom edge so the person stays identifiable.
     const text = new Text({
       text: initials(this.person.display_name),
       style: {
         fontFamily: TREE_FONT,
-        fontSize: r * 0.3,
+        fontSize: r * 0.26,
         fontWeight: '700',
         letterSpacing: 0.5,
-        fill: 0xffffff,
+        fill: hex(base),
       },
     });
     text.anchor.set(0.5);
-    text.position.set(0, r * 0.64);
+    text.position.set(0, r * 0.42);
     text.resolution = 2;
     this.portrait.addChild(text);
     this._monoText = text;
