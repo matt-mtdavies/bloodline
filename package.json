@@ -8,6 +8,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "test:e2e": "node tests/smoke.mjs",
     "seed:gen": "node scripts/generate-seed.mjs",
     "db:migrate": "wrangler d1 migrations apply bloodline --local",
     "db:migrate:remote": "wrangler d1 migrations apply bloodline --remote",
@@ -22,6 +23,7 @@
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.4",
+    "playwright-core": "^1.56.1",
     "vite": "^5.4.11",
     "vite-plugin-pwa": "^0.21.1"
   }

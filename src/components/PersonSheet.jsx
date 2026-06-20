@@ -104,7 +104,6 @@ export default function PersonSheet({ graph, personId, onClose, onFocus, onOpenP
                           <span className="rel-chip__name">{rel.display_name}</span>
                           <span className="rel-chip__kind">
                             {relationLabel(graph, person.id, item.id)}
-                            {item.status === 'former' ? ' · former' : ''}
                             {item.qualifier && item.qualifier !== 'biological'
                               ? ` · ${item.qualifier}`
                               : ''}

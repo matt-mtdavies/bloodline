@@ -1,0 +1,92 @@
+/*
+ * Phase 1 smoke test. Headless Chromium boots the app and verifies the magic
+ * actually runs — not just that it compiles.
+ *
+ *   npm run dev            # in one shell
+ *   npm run test:e2e       # in another (or it'll use BASE_URL)
+ *
+ * It fails on ANY console/page error, checks the canvas mounts, taps the centred
+ * bubble to open the person sheet (exercising real canvas hit-testing), and
+ * re-centres via the accessible list view. Screenshots land in tests/screenshots
+ * so the look can be eyeballed.
+ */
+import { chromium } from 'playwright-core';
+
+const BASE_URL = process.env.BASE_URL || 'http://localhost:5173/';
+const shot = (p) => `tests/screenshots/${p}`;
+
+const errors = [];
+let failed = false;
+const check = (cond, msg) => {
+  if (cond) {
+    console.log(`  ✓ ${msg}`);
+  } else {
+    failed = true;
+    console.log(`  ✗ ${msg}`);
+  }
+};
+
+const browser = await chromium.launch({ headless: true });
+const page = await browser.newPage({
+  viewport: { width: 414, height: 896 }, // iPhone-ish portrait
+  deviceScaleFactor: 2,
+});
+// Ignore failures to load EXTERNAL resources (e.g. the demo faces, which a
+// locked-down sandbox blocks). A missing face is a handled state, not a bug.
+// Real JS exceptions and same-origin errors still fail the test.
+const isExternalResourceError = (t) =>
+  /Failed to load resource|net::ERR_|ERR_CERT_/.test(t);
+page.on(
+  'console',
+  (m) => m.type() === 'error' && !isExternalResourceError(m.text()) && errors.push(m.text()),
+);
+page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
+
+try {
+  console.log('Booting app…');
+  await page.goto(BASE_URL, { waitUntil: 'load', timeout: 20000 });
+  await page.waitForSelector('canvas', { timeout: 15000 });
+  await page.waitForTimeout(2800); // let the layout settle and faces fade in
+  await page.screenshot({ path: shot('01-tree.png') });
+  check(true, 'canvas mounted');
+
+  const focus1 = (await page.textContent('.topbar__focus').catch(() => '')) || '';
+  check(/Centred on/.test(focus1), `opens centred (${focus1.trim()})`);
+
+  // Tap the centred bubble (screen centre) → person sheet opens.
+  const vp = page.viewportSize();
+  await page.mouse.click(vp.width / 2, vp.height / 2);
+  await page.waitForSelector('[role="dialog"]', { timeout: 5000 });
+  const sheetName = (await page.textContent('.sheet__id h2').catch(() => '')) || '';
+  check(sheetName.length > 0, `tapping centred bubble opens the sheet (${sheetName.trim()})`);
+  await page.screenshot({ path: shot('02-sheet.png') });
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(500);
+
+  // Re-centre deterministically through the accessible view.
+  await page.getByText('List view').click();
+  await page.waitForSelector('.listview', { timeout: 5000 });
+  await page.screenshot({ path: shot('03-list.png') });
+  const firstRel = page.locator('.listview__group .person-row').first();
+  const relName = (await firstRel.locator('.person-row__name').textContent()) || '';
+  await firstRel.click();
+  await page.getByText('Tree view').click();
+  await page.waitForTimeout(1600); // watch the glide settle
+  const focus2 = (await page.textContent('.topbar__focus').catch(() => '')) || '';
+  check(
+    focus2.includes(relName.trim()) && focus2 !== focus1,
+    `re-centres on a relative (${focus2.trim()})`,
+  );
+  await page.screenshot({ path: shot('04-recentred.png') });
+
+  check(errors.length === 0, `no console/page errors${errors.length ? ': ' + errors.join(' | ') : ''}`);
+} catch (e) {
+  failed = true;
+  console.log(`  ✗ threw: ${e.message}`);
+  await page.screenshot({ path: shot('99-failure.png') }).catch(() => {});
+} finally {
+  await browser.close();
+}
+
+console.log(failed ? '\nSMOKE TEST FAILED' : '\nSMOKE TEST PASSED');
+process.exit(failed ? 1 : 0);

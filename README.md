@@ -48,6 +48,18 @@ view** and the **key** (top-right). Best felt on a phone.
 > Faces in the demo come from randomuser.me, so the first load needs network;
 > everything else, including all monograms, works offline.
 
+### Smoke test
+
+A headless Chromium check boots the app and fails on any real JS error — it
+verifies the canvas mounts, tapping the centred bubble opens the person sheet,
+and the tree re-centres onto a relative, saving screenshots to
+`tests/screenshots/`.
+
+```bash
+npm run dev          # one shell
+npm run test:e2e     # another
+```
+
 ## Stack & scaffold
 
 Everything is Cloudflare, matching the target stack (§2):
