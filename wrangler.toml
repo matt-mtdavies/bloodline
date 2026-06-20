@@ -1,0 +1,21 @@
+#:schema node_modules/wrangler/config-schema.json
+name = "bloodline"
+compatibility_date = "2024-11-01"
+pages_build_output_dir = "dist"
+
+# Cloudflare D1 — the family graph.
+[[d1_databases]]
+binding = "DB"
+database_name = "bloodline"
+database_id = "REPLACE_WITH_D1_ID"   # `wrangler d1 create bloodline` then paste the id
+
+# Cloudflare R2 — photos.
+[[r2_buckets]]
+binding = "PHOTOS"
+bucket_name = "bloodline-photos"
+
+# Non-secret vars. Secrets (RESEND_API_KEY, ANTHROPIC_API_KEY, SESSION_SECRET)
+# go in .dev.vars locally and `wrangler pages secret put` in production.
+[vars]
+APP_URL = "http://localhost:5173"
+FROM_EMAIL = "hello@bloodline.app"

@@ -1,0 +1,11 @@
+# Copy to .dev.vars for local development. NEVER commit the real file.
+# Secrets live server-side only (Workers env) — never shipped to the client.
+
+# Resend — magic-link invites + notifications
+RESEND_API_KEY=re_xxxxxxxxxxxxxxxxxxxx
+
+# Anthropic — conversational entry, dedup, photo-tag assist, auto-bios (Phase 2/3)
+ANTHROPIC_API_KEY=sk-ant-xxxxxxxxxxxxxxxxxxxx
+
+# Signing key for the httpOnly session cookie (generate a long random string)
+SESSION_SECRET=change-me-to-a-long-random-string
