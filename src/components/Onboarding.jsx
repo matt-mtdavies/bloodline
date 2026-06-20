@@ -161,6 +161,7 @@ export default function Onboarding({ onComplete }) {
 function StepYou({ me, onChange }) {
   return (
     <>
+      <IconSelf />
       <p className="ob__q">Let's start with you.</p>
       <input
         className="ob__input"
@@ -168,7 +169,6 @@ function StepYou({ me, onChange }) {
         onChange={(e) => onChange((m) => ({ ...m, name: e.target.value }))}
         onKeyDown={(e) => e.key === 'Enter' && me.name.trim() && e.target.blur()}
         placeholder="Your full name"
-        autoFocus
         autoComplete="name"
       />
       <input
@@ -185,13 +185,13 @@ function StepYou({ me, onChange }) {
 function StepPartner({ partner, onChange }) {
   return (
     <>
+      <IconPartner />
       <p className="ob__q">Do you have a partner or spouse?</p>
       <input
         className="ob__input"
         value={partner.name}
         onChange={(e) => onChange({ name: e.target.value })}
         placeholder="Their name"
-        autoFocus
         autoComplete="off"
       />
       <p className="ob__hint">Optional — you can add this later</p>
@@ -202,6 +202,7 @@ function StepPartner({ partner, onChange }) {
 function StepParents({ parents, onUpdate }) {
   return (
     <>
+      <IconParents />
       <p className="ob__q">Who are your parents?</p>
       <p className="ob__sub">
         Add as many as apply — parents, step-parents, adoptive parents.
@@ -213,7 +214,6 @@ function StepParents({ parents, onUpdate }) {
           value={p.name}
           onChange={(e) => onUpdate(i, e.target.value)}
           placeholder={i === 0 ? "Mum's name" : "Dad's name"}
-          autoFocus={i === 0}
           autoComplete="off"
         />
       ))}
@@ -225,6 +225,7 @@ function StepParents({ parents, onUpdate }) {
 function StepChildren({ children, onAdd, onUpdate, onRemove }) {
   return (
     <>
+      <IconChildren />
       <p className="ob__q">Do you have any children?</p>
       <div className="ob__dyn">
         {children.map((c, i) => (
@@ -234,7 +235,6 @@ function StepChildren({ children, onAdd, onUpdate, onRemove }) {
               value={c.name}
               onChange={(e) => onUpdate(i, e.target.value)}
               placeholder={`Child ${i + 1}'s name`}
-              autoFocus={i === children.length - 1}
               autoComplete="off"
             />
             <button
@@ -258,6 +258,7 @@ function StepChildren({ children, onAdd, onUpdate, onRemove }) {
 function StepMemory({ people, selectedIdx, onSelect, text, onText }) {
   return (
     <>
+      <IconMemory />
       <p className="ob__q">Who would you most want future generations to remember?</p>
       <p className="ob__sub">
         Pick someone you just named, or skip and add memories later.
@@ -280,7 +281,6 @@ function StepMemory({ people, selectedIdx, onSelect, text, onText }) {
           onChange={(e) => onText(e.target.value)}
           placeholder={`What's one thing about ${people[selectedIdx]?.label || 'them'} that only your family knows?`}
           rows={4}
-          autoFocus
         />
       )}
     </>
@@ -290,16 +290,119 @@ function StepMemory({ people, selectedIdx, onSelect, text, onText }) {
 function StepFamilyName({ value, onChange, suggestion }) {
   return (
     <>
+      <IconFamilyName />
       <p className="ob__q">What do you call this family?</p>
       <input
         className="ob__input"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={suggestion}
-        autoFocus
         autoComplete="off"
       />
       <p className="ob__hint">Shown at the top of your tree · You can change this any time</p>
     </>
+  );
+}
+
+/* ── Step icons ─────────────────────────────────────────────────────────── */
+
+function IconSelf() {
+  return (
+    <svg className="ob-icon" viewBox="0 0 80 80" fill="none" aria-hidden="true">
+      <circle cx="40" cy="26" r="16" stroke="#c2603a" strokeWidth="2.5"
+              className="obi-c" style={{ '--t': '0.05s' }} />
+      <path d="M10 74c0-16.569 13.431-30 30-30s30 13.431 30 30"
+            stroke="#c2603a" strokeWidth="2.5" strokeLinecap="round"
+            strokeDasharray="1" strokeDashoffset="1" pathLength="1"
+            className="obi-l" style={{ '--t': '0.4s' }} />
+    </svg>
+  );
+}
+
+function IconPartner() {
+  return (
+    <svg className="ob-icon" viewBox="0 0 80 80" fill="none" aria-hidden="true">
+      <circle cx="28" cy="40" r="21" stroke="#4a7c6f" strokeWidth="2.5"
+              className="obi-c" style={{ '--t': '0.05s' }} />
+      <circle cx="52" cy="40" r="21" stroke="#c2603a" strokeWidth="2.5"
+              className="obi-c" style={{ '--t': '0.28s' }} />
+    </svg>
+  );
+}
+
+function IconParents() {
+  return (
+    <svg className="ob-icon" viewBox="0 0 80 80" fill="none" aria-hidden="true">
+      {/* You (bottom) */}
+      <circle cx="40" cy="63" r="10" fill="#d4c4ba"
+              className="obi-c" style={{ '--t': '0.05s' }} />
+      {/* Lines up */}
+      <path d="M40 53 L22 32" stroke="#d4c4ba" strokeWidth="2" strokeLinecap="round"
+            strokeDasharray="1" strokeDashoffset="1" pathLength="1"
+            className="obi-l" style={{ '--t': '0.22s' }} />
+      <path d="M40 53 L58 32" stroke="#d4c4ba" strokeWidth="2" strokeLinecap="round"
+            strokeDasharray="1" strokeDashoffset="1" pathLength="1"
+            className="obi-l" style={{ '--t': '0.32s' }} />
+      {/* Parents (top) */}
+      <circle cx="20" cy="21" r="13" stroke="#4a7c6f" strokeWidth="2.5"
+              className="obi-c" style={{ '--t': '0.45s' }} />
+      <circle cx="60" cy="21" r="13" stroke="#7c6244" strokeWidth="2.5"
+              className="obi-c" style={{ '--t': '0.58s' }} />
+    </svg>
+  );
+}
+
+function IconChildren() {
+  return (
+    <svg className="ob-icon" viewBox="0 0 80 80" fill="none" aria-hidden="true">
+      {/* You (top) */}
+      <circle cx="40" cy="18" r="14" fill="#c2603a"
+              className="obi-c" style={{ '--t': '0.05s' }} />
+      {/* Lines down */}
+      <path d="M40 32 L22 53" stroke="#d4c4ba" strokeWidth="2" strokeLinecap="round"
+            strokeDasharray="1" strokeDashoffset="1" pathLength="1"
+            className="obi-l" style={{ '--t': '0.26s' }} />
+      <path d="M40 32 L58 53" stroke="#d4c4ba" strokeWidth="2" strokeLinecap="round"
+            strokeDasharray="1" strokeDashoffset="1" pathLength="1"
+            className="obi-l" style={{ '--t': '0.34s' }} />
+      {/* Children (bottom) */}
+      <circle cx="20" cy="63" r="11" fill="#4a5a7c"
+              className="obi-c" style={{ '--t': '0.5s' }} />
+      <circle cx="60" cy="63" r="11" fill="#6f4a7c"
+              className="obi-c" style={{ '--t': '0.62s' }} />
+    </svg>
+  );
+}
+
+function IconMemory() {
+  return (
+    <svg className="ob-icon" viewBox="0 0 80 80" fill="none" aria-hidden="true">
+      {/* 5-pointed star */}
+      <path d="M40,12 L46,31 L67,31 L51,43 L57,63 L40,51 L23,63 L29,43 L13,31 L33,31 Z"
+            fill="rgba(194,96,58,0.1)" stroke="#c2603a" strokeWidth="2.2" strokeLinejoin="round"
+            className="obi-c" style={{ '--t': '0.05s' }} />
+    </svg>
+  );
+}
+
+function IconFamilyName() {
+  return (
+    <svg className="ob-icon" viewBox="0 0 80 80" fill="none" aria-hidden="true">
+      {/* Roof */}
+      <path d="M8 42 L40 12 L72 42"
+            stroke="#241f1c" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+            strokeDasharray="1" strokeDashoffset="1" pathLength="1"
+            className="obi-l" style={{ '--t': '0.05s' }} />
+      {/* Walls */}
+      <path d="M16 42 L16 70 L64 70 L64 42"
+            stroke="#241f1c" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+            strokeDasharray="1" strokeDashoffset="1" pathLength="1"
+            className="obi-l" style={{ '--t': '0.4s' }} />
+      {/* Door */}
+      <path d="M32 70 L32 55 L48 55 L48 70"
+            stroke="#c2603a" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+            strokeDasharray="1" strokeDashoffset="1" pathLength="1"
+            className="obi-l" style={{ '--t': '0.68s' }} />
+    </svg>
   );
 }

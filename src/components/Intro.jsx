@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import Logo from './Logo.jsx';
 
 // Duration each phase is shown before auto-advancing (null = stays until user acts)
-const PHASE_MS = [2000, 3200, 2800, 2400, null];
+const PHASE_MS = [2800, 5200, 3800, 3600, null];
 const LAST = PHASE_MS.length - 1;
 
 export default function Intro({ onBegin }) {
@@ -23,7 +23,7 @@ export default function Intro({ onBegin }) {
 
   const begin = () => {
     setLeaving(true);
-    setTimeout(onBegin, 540);
+    setTimeout(onBegin, 700);
   };
 
   return (
@@ -58,9 +58,9 @@ function SlideThesis() {
   return (
     <div className="intro__thesis-group">
       <p className="intro__thesis" style={{ '--d': '0ms' }}>The tree is navigation.</p>
-      <p className="intro__thesis" style={{ '--d': '680ms' }}>The profile is the destination.</p>
-      <p className="intro__thesis intro__thesis--accent" style={{ '--d': '1360ms' }}>
-        The stories are the product.
+      <p className="intro__thesis" style={{ '--d': '1000ms' }}>The profile is the destination.</p>
+      <p className="intro__thesis intro__thesis--accent" style={{ '--d': '2000ms' }}>
+        The stories are what remain.
       </p>
     </div>
   );
@@ -103,7 +103,7 @@ function SlideCta({ onBegin }) {
   return (
     <>
       <p className="intro__headline">
-        Your family deserves<br />to be remembered.
+        Your family deserves<br />to be remembered<br />and celebrated.
       </p>
       <button className="intro__cta" onClick={(e) => { e.stopPropagation(); onBegin(); }}>
         Begin your story →

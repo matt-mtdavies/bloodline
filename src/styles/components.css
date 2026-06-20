@@ -640,6 +640,28 @@
 .chip:active { transform: scale(0.95); }
 .chip--on { background: var(--accent); color: #fff; box-shadow: 0 6px 16px rgba(194, 96, 58, 0.28); }
 
+/* Qualifier row — appears below chips when a parent/child rel is selected */
+.qualifier-row {
+  display: flex;
+  gap: 6px;
+  animation: islide-in 0.35s var(--spring) both;
+}
+.qualifier-chip {
+  padding: 6px 13px;
+  border-radius: 999px;
+  background: transparent;
+  border: 1.5px solid var(--hairline);
+  color: var(--ink-soft);
+  font-size: 13px;
+  font-weight: 500;
+  transition: border-color 0.2s, color 0.2s, background 0.2s;
+}
+.qualifier-chip--on {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(194, 96, 58, 0.07);
+}
+
 /* Progressive reveal of the rest of the form once a relationship is chosen */
 .form__reveal {
   max-height: 0;
@@ -1447,7 +1469,7 @@
   z-index: 100;
   background: #fff;
   overflow: hidden;
-  transition: opacity 0.55s ease;
+  transition: opacity 0.7s ease;
 }
 .intro--exit { opacity: 0; pointer-events: none; }
 
@@ -1460,17 +1482,17 @@
   justify-content: center;
   padding: 48px 32px;
   gap: 18px;
-  animation: islide-in 0.65s var(--ease) both;
+  animation: islide-in 0.95s var(--ease) both;
 }
 @keyframes islide-in {
-  from { opacity: 0; transform: translateY(22px); }
+  from { opacity: 0; transform: translateY(40px); }
   to   { opacity: 1; transform: translateY(0); }
 }
 
 /* Phase 0 — mark */
 .intro__word {
   font-family: var(--display);
-  font-size: 38px;
+  font-size: clamp(44px, 10vw, 62px);
   font-weight: 600;
   letter-spacing: -0.022em;
   color: #241f1c;
@@ -1481,17 +1503,17 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 14px;
+  gap: 18px;
 }
 .intro__thesis {
   font-family: var(--display);
-  font-size: clamp(17px, 4vw, 22px);
+  font-size: clamp(22px, 5vw, 30px);
   font-weight: 400;
   color: var(--ink-soft);
   letter-spacing: -0.01em;
   text-align: center;
   opacity: 0;
-  animation: thesis-in 0.65s var(--ease) both;
+  animation: thesis-in 0.95s var(--ease) both;
   animation-delay: var(--d, 0ms);
 }
 .intro__thesis--accent {
@@ -1499,37 +1521,37 @@
   font-weight: 500;
 }
 @keyframes thesis-in {
-  from { opacity: 0; transform: translateY(10px); }
+  from { opacity: 0; transform: translateY(22px); }
   to   { opacity: 1; transform: translateY(0); }
 }
 
 /* Phase 2 — mini tree */
-.intro__tree { display: flex; flex-direction: column; align-items: center; gap: 22px; }
-.intro__tree-label { font-size: 14px; color: var(--ink-soft); letter-spacing: 0.04em; }
+.intro__tree { display: flex; flex-direction: column; align-items: center; gap: 28px; }
+.intro__tree-label { font-size: 15px; color: var(--ink-soft); letter-spacing: 0.04em; }
 /* SVG elements animate in */
 .itree__line {
   stroke-dasharray: 120;
   stroke-dashoffset: 120;
-  animation: draw-line 0.45s ease forwards;
+  animation: draw-line 0.65s ease forwards;
 }
-.itree__line--1 { animation-delay: 0.05s; }
-.itree__line--2 { animation-delay: 0.35s; }
-.itree__line--3 { animation-delay: 0.5s; }
-.itree__line--4 { animation-delay: 0.75s; }
-.itree__line--5 { animation-delay: 0.9s; }
+.itree__line--1 { animation-delay: 0.1s; }
+.itree__line--2 { animation-delay: 0.55s; }
+.itree__line--3 { animation-delay: 0.75s; }
+.itree__line--4 { animation-delay: 1.1s; }
+.itree__line--5 { animation-delay: 1.3s; }
 @keyframes draw-line { to { stroke-dashoffset: 0; } }
 
 .itree__node {
   transform-box: fill-box;
   transform-origin: center;
   transform: scale(0);
-  animation: pop-node 0.38s var(--spring) forwards;
+  animation: pop-node 0.52s var(--spring) forwards;
 }
-.itree__node--1 { animation-delay: 0s; }
-.itree__node--2 { animation-delay: 0.28s; }
-.itree__node--3 { animation-delay: 0.44s; }
-.itree__node--4 { animation-delay: 0.7s; }
-.itree__node--5 { animation-delay: 0.86s; }
+.itree__node--1 { animation-delay: 0.05s; }
+.itree__node--2 { animation-delay: 0.5s; }
+.itree__node--3 { animation-delay: 0.7s; }
+.itree__node--4 { animation-delay: 1.05s; }
+.itree__node--5 { animation-delay: 1.25s; }
 @keyframes pop-node { to { transform: scale(1); } }
 
 /* Phase 3 — memory */
@@ -1538,12 +1560,12 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 14px;
+  gap: 18px;
   text-align: center;
 }
 .intro__memory-mark {
   font-family: var(--display);
-  font-size: 72px;
+  font-size: 96px;
   line-height: 0.6;
   color: var(--accent);
   opacity: 0.4;
@@ -1551,14 +1573,14 @@
 }
 .intro__memory-text {
   font-family: var(--display);
-  font-size: clamp(18px, 4vw, 23px);
+  font-size: clamp(21px, 4.5vw, 28px);
   font-weight: 400;
   line-height: 1.55;
   color: var(--ink);
   letter-spacing: -0.01em;
 }
 .intro__memory-attr {
-  font-size: 14px;
+  font-size: 15px;
   color: var(--ink-soft);
   letter-spacing: 0.05em;
 }
@@ -1566,30 +1588,33 @@
 /* Phase 4 — CTA */
 .intro__headline {
   font-family: var(--display);
-  font-size: clamp(26px, 5.5vw, 42px);
+  font-size: clamp(30px, 6.5vw, 48px);
   font-weight: 500;
-  line-height: 1.22;
+  line-height: 1.2;
   color: #241f1c;
-  letter-spacing: -0.022em;
+  letter-spacing: -0.025em;
   text-align: center;
   max-width: 480px;
+  animation: islide-in 1.0s var(--ease) both;
 }
 .intro__cta {
-  padding: 16px 40px;
+  padding: 18px 48px;
   background: var(--accent);
   color: #fff;
   border-radius: 999px;
-  font-size: 17px;
+  font-size: 18px;
   font-weight: 600;
   letter-spacing: 0.01em;
-  box-shadow: 0 4px 22px rgba(194, 96, 58, 0.35);
+  box-shadow: 0 6px 28px rgba(194, 96, 58, 0.38);
   transition: transform 0.3s var(--spring), box-shadow 0.3s ease;
+  animation: islide-in 1.0s var(--ease) 0.35s both;
 }
 .intro__cta:active { transform: scale(0.95); box-shadow: 0 2px 10px rgba(194, 96, 58, 0.25); }
 .intro__cta-note {
   font-size: 13px;
   color: var(--ink-faint);
   letter-spacing: 0.025em;
+  animation: islide-in 0.8s var(--ease) 0.6s both;
 }
 /* Skip button in top-right */
 .intro__skip {
@@ -1657,12 +1682,38 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
-  animation: ob-in 0.42s var(--spring) both;
+  gap: 16px;
+  animation: ob-in 0.55s var(--spring) both;
 }
 @keyframes ob-in {
-  from { opacity: 0; transform: translateY(22px); }
+  from { opacity: 0; transform: translateY(30px); }
   to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Step icons */
+.ob-icon {
+  width: 84px;
+  height: 84px;
+  margin-bottom: 4px;
+  flex-shrink: 0;
+}
+.ob-icon .obi-c {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: obi-pop 0.6s var(--spring) both;
+  animation-delay: var(--t, 0ms);
+}
+.ob-icon .obi-l {
+  animation: obi-draw 0.65s ease both;
+  animation-delay: var(--t, 0ms);
+}
+@keyframes obi-pop {
+  from { transform: scale(0); }
+  to   { transform: scale(1); }
+}
+@keyframes obi-draw {
+  from { stroke-dashoffset: 1; }
+  to   { stroke-dashoffset: 0; }
 }
 
 /* Question text */
@@ -1818,7 +1869,8 @@
 .ob__skip:hover { color: var(--ink); }
 
 @media (prefers-reduced-motion: reduce) {
-  .intro, .intro__slide, .intro__thesis, .ob__step, .itree__line, .itree__node {
+  .intro, .intro__slide, .intro__thesis, .ob__step, .itree__line, .itree__node,
+  .ob-icon .obi-c, .ob-icon .obi-l {
     animation-duration: 0.001ms !important;
   }
 }

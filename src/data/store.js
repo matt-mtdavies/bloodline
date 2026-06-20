@@ -167,11 +167,15 @@ export const RELATIONSHIPS = [
   { key: 'mother', label: 'Mother', gender: 'female' },
   { key: 'father', label: 'Father', gender: 'male' },
   { key: 'partner', label: 'Partner', gender: null },
+  { key: 'ex_partner', label: 'Ex-Partner', gender: null },
   { key: 'daughter', label: 'Daughter', gender: 'female' },
   { key: 'son', label: 'Son', gender: 'male' },
   { key: 'sister', label: 'Sister', gender: 'female' },
   { key: 'brother', label: 'Brother', gender: 'male' },
 ];
+
+// Relationship keys that support a biological/step/adoptive qualifier
+export const QUALIFIER_KEYS = new Set(['mother', 'father', 'son', 'daughter']);
 
 function parentEdge(from, to, qualifier = 'biological') {
   return { id: rid(), from_person: from, to_person: to, type: 'parent', qualifier, partner_status: null };
@@ -181,7 +185,7 @@ function partnerEdge(a, b, status = 'current') {
 }
 
 // Build the edges that connect a new person to the person they were added from.
-function edgesFor(relKey, anchorId, newId, current) {
+function edgesFor(relKey, anchorId, newId, current, qualifier = 'biological') {
   const parentsOf = (id) =>
     current.relationships.filter((r) => r.type === 'parent' && r.to_person === id).map((r) => r.from_person);
   const partnersOf = (id) =>
@@ -192,14 +196,18 @@ function edgesFor(relKey, anchorId, newId, current) {
   switch (relKey) {
     case 'mother':
     case 'father':
-      return [parentEdge(newId, anchorId)]; // new is a parent of the anchor
+      return [parentEdge(newId, anchorId, qualifier)]; // new is a parent of the anchor
     case 'partner':
-      return [partnerEdge(anchorId, newId)];
+      return [partnerEdge(anchorId, newId, 'current')];
+    case 'ex_partner':
+      return [partnerEdge(anchorId, newId, 'former')];
     case 'son':
     case 'daughter': {
-      // The anchor is a parent; co-parent the anchor's current partner too.
-      const edges = [parentEdge(anchorId, newId)];
-      for (const p of partnersOf(anchorId)) edges.push(parentEdge(p, newId));
+      const edges = [parentEdge(anchorId, newId, qualifier)];
+      // Only co-parent with current partner for biological children
+      if (qualifier === 'biological') {
+        for (const p of partnersOf(anchorId)) edges.push(parentEdge(p, newId));
+      }
       return edges;
     }
     case 'brother':
@@ -213,7 +221,7 @@ function edgesFor(relKey, anchorId, newId, current) {
   }
 }
 
-export function addRelative({ anchorId, relKey, name, gender, birth_date, is_deceased, death_date }) {
+export function addRelative({ anchorId, relKey, name, gender, birth_date, is_deceased, death_date, qualifier = 'biological' }) {
   const id = uid();
   const meta = RELATIONSHIPS.find((r) => r.key === relKey);
   const person = {
@@ -240,7 +248,7 @@ export function addRelative({ anchorId, relKey, name, gender, birth_date, is_dec
   commit({
     ...state,
     people: [...state.people, person],
-    relationships: [...state.relationships, ...edgesFor(relKey, anchorId, id, state)],
+    relationships: [...state.relationships, ...edgesFor(relKey, anchorId, id, state, qualifier)],
   });
   return id;
 }

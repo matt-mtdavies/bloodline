@@ -1,5 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { RELATIONSHIPS } from '../data/store.js';
+import { RELATIONSHIPS, QUALIFIER_KEYS } from '../data/store.js';
+
+const QUALIFIERS = [
+  { key: 'biological', label: 'Biological' },
+  { key: 'step', label: 'Step' },
+  { key: 'adoptive', label: 'Adopted' },
+];
 
 /*
  * Relationship-first add (§4): the only required answer is *who* they are to
@@ -8,6 +14,7 @@ import { RELATIONSHIPS } from '../data/store.js';
  */
 export default function AddRelativeSheet({ anchor, onClose, onAdd }) {
   const [relKey, setRelKey] = useState(null);
+  const [qualifier, setQualifier] = useState('biological');
   const [name, setName] = useState('');
   const [more, setMore] = useState(false);
   const [birthYear, setBirthYear] = useState('');
@@ -27,6 +34,7 @@ export default function AddRelativeSheet({ anchor, onClose, onAdd }) {
     if (!canAdd) return;
     onAdd({
       relKey,
+      qualifier: QUALIFIER_KEYS.has(relKey) ? qualifier : 'biological',
       name,
       birth_date: birthYear.trim() || null,
       is_deceased: deceased,
@@ -57,12 +65,28 @@ export default function AddRelativeSheet({ anchor, onClose, onAdd }) {
               role="radio"
               aria-checked={relKey === r.key}
               className={'chip' + (relKey === r.key ? ' chip--on' : '')}
-              onClick={() => setRelKey(r.key)}
+              onClick={() => { setRelKey(r.key); setQualifier('biological'); }}
             >
               {r.label}
             </button>
           ))}
         </div>
+
+        {QUALIFIER_KEYS.has(relKey) && (
+          <div className="qualifier-row" role="radiogroup" aria-label="Qualifier">
+            {QUALIFIERS.map((q) => (
+              <button
+                key={q.key}
+                role="radio"
+                aria-checked={qualifier === q.key}
+                className={'qualifier-chip' + (qualifier === q.key ? ' qualifier-chip--on' : '')}
+                onClick={() => setQualifier(q.key)}
+              >
+                {q.label}
+              </button>
+            ))}
+          </div>
+        )}
 
         <div className={'form__reveal' + (relKey ? ' form__reveal--open' : '')}>
           <label className="field">
