@@ -644,6 +644,7 @@
 .qualifier-row {
   display: flex;
   gap: 6px;
+  margin-top: 10px;
   animation: islide-in 0.35s var(--spring) both;
 }
 .qualifier-chip {
