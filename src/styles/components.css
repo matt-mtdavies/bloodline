@@ -366,7 +366,7 @@
   position: absolute;
   inset: 0;
   overflow-y: auto;
-  padding: calc(var(--safe-top) + 76px) 16px calc(var(--safe-bottom) + 28px);
+  padding: calc(var(--safe-top) + 104px) 16px calc(var(--safe-bottom) + 28px);
   -webkit-overflow-scrolling: touch;
 }
 .listview__focus { max-width: 620px; margin: 0 auto; }
