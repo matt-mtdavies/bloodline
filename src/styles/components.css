@@ -2295,9 +2295,10 @@
   text-overflow: ellipsis;
 }
 .install-banner__add {
-  padding: 9px 20px;
+  flex: none;        /* override .btn { flex: 1 } */
+  height: auto;      /* override .btn { height: 50px } */
+  padding: 9px 18px;
   font-size: 14px;
-  flex-shrink: 0;
   white-space: nowrap;
 }
 .install-banner__dismiss {
