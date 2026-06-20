@@ -77,7 +77,7 @@ export default function PersonSheet({
     e.target.value = '';
     for (const file of files) {
       try {
-        const src = await fileToDataUrl(file, 1400);
+        const src = await fileToDataUrl(file, 1800);
         onAddPhoto?.(person.id, src);
       } catch {
         /* skip an unreadable file */

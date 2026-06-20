@@ -532,20 +532,22 @@ function m(person_id, text, author, created_at, votes) {
 }
 
 /*
- * Photos — a gallery per person. Stored as image sources (same-origin URLs for
- * the demo; uploads become downscaled data URLs). Captions + dates are optional
- * and editable.
+ * Photos — a gallery per person. Stored as image sources (high-res URLs for the
+ * demo; uploads become downscaled data URLs). Captions + dates are optional and
+ * editable.
  *   { id, person_id, src, caption, date }
  */
+const hires = (n) => `https://i.pravatar.cc/1000?img=${n}`;
+
 export const photos = [
-  ph('james', face('men', 11), 'On the steps of the new studio', '2021'),
-  ph('james', face('men', 12), 'Best man at Tom’s wedding', '2018'),
-  ph('james', face('men', 13), 'Sunday lunch, the whole crowd', '2023'),
-  ph('arthur', face('men', 52), 'In his guard’s uniform', '1955'),
-  ph('arthur', face('men', 53), 'At the allotment', '1998'),
-  ph('margaret', face('women', 65), 'Her last day of teaching', '1993'),
-  ph('robert', face('men', 32), 'Graduation', '1982'),
-  ph('robert', face('men', 33), 'On call, somewhere in the Brecon Beacons', '2005'),
+  ph('james', hires(11), 'On the steps of the new studio', '2021'),
+  ph('james', hires(12), 'Best man at Tom’s wedding', '2018'),
+  ph('james', hires(13), 'Sunday lunch, the whole crowd', '2023'),
+  ph('arthur', hires(51), 'In his guard’s uniform', '1955'),
+  ph('arthur', hires(52), 'At the allotment', '1998'),
+  ph('margaret', hires(45), 'Her last day of teaching', '1993'),
+  ph('robert', hires(31), 'Graduation', '1982'),
+  ph('robert', hires(32), 'On call, somewhere in the Brecon Beacons', '2005'),
 ];
 
 function ph(person_id, src, caption, date) {

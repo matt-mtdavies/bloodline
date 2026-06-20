@@ -43,6 +43,16 @@ if (state.memories === undefined || state.photos === undefined) {
     state.photos = structuredClone(seedPhotos).filter((x) => ids.has(x.person_id));
 }
 
+// Upgrade the first round of low-res demo gallery photos (served via the
+// /faces proxy) to the current high-res seed set. Real uploads are data: URLs,
+// so they're left untouched. Idempotent — once swapped there's nothing to match.
+if (state.photos.some((p) => typeof p.src === 'string' && p.src.startsWith('/faces/'))) {
+  const ids = new Set(state.people.map((p) => p.id));
+  const kept = state.photos.filter((p) => !(typeof p.src === 'string' && p.src.startsWith('/faces/')));
+  const reseed = structuredClone(seedPhotos).filter((p) => ids.has(p.person_id));
+  state.photos = [...kept, ...reseed];
+}
+
 const listeners = new Set();
 
 function commit(next) {
