@@ -41,5 +41,14 @@ export default defineConfig({
   server: {
     port: 5173,
     host: true,
+    // Mirror the production /faces proxy so portraits are same-origin in dev too.
+    proxy: {
+      '/faces': {
+        target: 'https://randomuser.me',
+        changeOrigin: true,
+        rewrite: (p) =>
+          p.replace(/^\/faces\/(men|women)\/(\d{1,3}\.jpg)$/, '/api/portraits/$1/$2'),
+      },
+    },
   },
 });

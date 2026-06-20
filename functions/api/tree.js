@@ -31,9 +31,10 @@ export async function onRequestGet({ env }) {
     p.is_living = !!p.is_living;
     p.is_deceased = !!p.is_deceased;
     p.is_minor = !!p.is_minor;
-    // Demo faces are stored as external URLs; uploaded photos as R2 keys.
+    // Absolute URLs and same-origin paths (e.g. /faces/…) pass through;
+    // bare keys resolve to an R2-backed photo route.
     p.photo = p.photo_key
-      ? p.photo_key.startsWith('http')
+      ? /^(https?:|\/)/.test(p.photo_key)
         ? p.photo_key
         : `/api/photo/${p.photo_key}`
       : null;

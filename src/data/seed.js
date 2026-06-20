@@ -13,7 +13,10 @@
  * the same language.
  */
 
-const face = (g, n) => `https://randomuser.me/api/portraits/${g}/${n}.jpg`;
+// Portraits are served same-origin via the /faces proxy (functions/faces) so the
+// WebGL bubble textures aren't tainted by cross-origin images. In `vite dev` the
+// same path is proxied to randomuser.me (see vite.config.js).
+const face = (g, n) => `/faces/${g}/${n}.jpg`;
 
 export const FAMILY_NAME = 'The Davies Family';
 
