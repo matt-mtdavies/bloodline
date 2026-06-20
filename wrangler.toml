@@ -3,19 +3,26 @@ name = "bloodline"
 compatibility_date = "2024-11-01"
 pages_build_output_dir = "dist"
 
-# Cloudflare D1 — the family graph.
-[[d1_databases]]
-binding = "DB"
-database_name = "bloodline"
-database_id = "REPLACE_WITH_D1_ID"   # `wrangler d1 create bloodline` then paste the id
-
-# Cloudflare R2 — photos.
-[[r2_buckets]]
-binding = "PHOTOS"
-bucket_name = "bloodline-photos"
-
 # Non-secret vars. Secrets (RESEND_API_KEY, ANTHROPIC_API_KEY, SESSION_SECRET)
-# go in .dev.vars locally and `wrangler pages secret put` in production.
+# go in .dev.vars locally and `wrangler pages secret put` (or the Pages
+# dashboard → Settings → Variables) in production.
 [vars]
-APP_URL = "http://localhost:5173"
+APP_URL = "http://localhost:5173"   # set to your https://<project>.pages.dev once deployed
 FROM_EMAIL = "hello@bloodline.app"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Backend bindings — NOT required for Phase 1 (the client reads the bundled
+# seed, and /api/tree degrades gracefully when DB is absent). They're commented
+# out so the very first Pages build can't fail on a not-yet-provisioned bucket.
+# Re-enable when wiring the live graph in Phase 2.
+#
+# Cloudflare D1 — already created and migrated (Western Europe):
+# [[d1_databases]]
+# binding = "DB"
+# database_name = "bloodline"
+# database_id = "96e94723-103f-4c4f-a1b0-797810e7dfc9"
+#
+# Cloudflare R2 — create with `wrangler r2 bucket create bloodline-photos`:
+# [[r2_buckets]]
+# binding = "PHOTOS"
+# bucket_name = "bloodline-photos"
