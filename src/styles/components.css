@@ -1323,6 +1323,78 @@
 .lightbox__action:active { transform: scale(0.98); }
 .lightbox__action--danger { color: #ffb4a8; }
 
+/* ── AI Life Story section ──────────────────────────────────────────────── */
+.ai-generate {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  justify-content: center;
+  padding: 15px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #f9f0eb 0%, #f2edf7 100%);
+  border: 1px solid var(--accent-soft);
+  color: var(--accent-deep);
+  font-size: 14.5px;
+  font-weight: 500;
+  transition: transform 0.3s var(--spring), box-shadow 0.2s var(--ease);
+}
+.ai-generate:hover { box-shadow: 0 4px 16px rgba(194, 96, 58, 0.14); }
+.ai-generate:active { transform: scale(0.99); }
+
+.story {
+  font-family: var(--display);
+  font-size: 17px;
+  line-height: 1.65;
+  color: var(--ink);
+  margin: 0;
+  white-space: pre-wrap;
+}
+.story--generating::after {
+  content: '▋';
+  display: inline;
+  animation: blink 0.85s step-end infinite;
+  color: var(--accent);
+  margin-left: 1px;
+}
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0; }
+}
+
+.story-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 16px;
+}
+.story-actions .btn { flex: 1; }
+
+.story-note {
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--ink-faint);
+  text-align: center;
+}
+
+.story-regen {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--accent);
+  padding: 2px 0;
+}
+.story-regen:active { opacity: 0.6; }
+
+.story-error {
+  padding: 13px 15px;
+  border-radius: 14px;
+  background: #fff5f5;
+  border: 1px solid #ffd0d0;
+  color: #b94040;
+  font-size: 14px;
+  line-height: 1.45;
+  margin-bottom: 10px;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .profile, .profile-scrim, .meter__fill { animation-duration: 0.001ms !important; transition-duration: 0.12s !important; }
 }

@@ -1,9 +1,10 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Avatar from './Avatar.jsx';
 import { lifespan, formatDate, ageOrAt } from '../lib/dates.js';
 import { relationLabel } from '../data/graph.js';
 import { profileCompleteness, lifeEvents } from '../lib/profile.js';
 import { fileToDataUrl } from '../lib/image.js';
+import { streamBio } from '../lib/ai.js';
 
 /*
  * The profile. In V2 this is the destination, not a popover — a portrait,
@@ -33,12 +34,15 @@ export default function PersonSheet({
   onOpenLightbox,
   onAddDocument,
   onRemoveDocument,
+  onUpdateStory,
   onPhoto,
 }) {
   const person = personId ? graph.byId.get(personId) : null;
   const fileRef = useRef(null);
   const galleryRef = useRef(null);
   const docRef = useRef(null);
+  const storyAbort = useRef(null);
+  const [storyState, setStoryState] = useState({ phase: 'idle', text: '', error: null });
 
   useEffect(() => {
     if (!person || lockEscape) return; // a stacked overlay owns Escape
@@ -46,6 +50,13 @@ export default function PersonSheet({
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [person, onClose, lockEscape]);
+
+  // Reset generation state whenever the viewed person changes.
+  useEffect(() => {
+    storyAbort.current?.abort();
+    storyAbort.current = null;
+    setStoryState({ phase: 'idle', text: '', error: null });
+  }, [personId]);
 
   if (!person) return null;
 
@@ -75,6 +86,41 @@ export default function PersonSheet({
   const personPhotos = minor ? [] : photos.filter((p) => p.person_id === person.id);
   const personDocs = minor ? [] : documents.filter((d) => d.person_id === person.id);
   const completeness = minor ? null : profileCompleteness(person, graph, personMemories.length);
+
+  const generateStory = async () => {
+    storyAbort.current?.abort();
+    const ac = new AbortController();
+    storyAbort.current = ac;
+    setStoryState({ phase: 'generating', text: '', error: null });
+
+    const relSummary = [];
+    for (const x of partners) {
+      const p = graph.byId.get(x.id);
+      if (p) relSummary.push({ label: 'Partner', name: p.display_name });
+    }
+    for (const x of parents) {
+      const p = graph.byId.get(x.id);
+      if (p) relSummary.push({ label: x.qualifier === 'biological' ? 'Parent' : `${x.qualifier} parent`, name: p.display_name });
+    }
+    for (const x of children) {
+      const p = graph.byId.get(x.id);
+      if (p) relSummary.push({ label: x.qualifier === 'biological' ? 'Child' : `${x.qualifier} child`, name: p.display_name });
+    }
+
+    await streamBio(
+      person,
+      { memories: personMemories, relSummary },
+      {
+        signal: ac.signal,
+        onChunk: (text) => setStoryState((s) => ({ ...s, text: s.text + text })),
+        onDone: () => setStoryState((s) => ({ ...s, phase: 'done' })),
+        onError: (err) => {
+          if (!err) return; // aborted — no-op
+          setStoryState({ phase: 'idle', text: '', error: err.message });
+        },
+      },
+    );
+  };
 
   // Document files: images are downscaled, PDFs stored raw (capped at 8 MB).
   const onDocPick = async (e) => {
@@ -448,20 +494,69 @@ export default function PersonSheet({
               )}
             </section>
 
-            {/* Phase 3 invitations — shown as what they'll become. */}
+            {/* Life Story — AI-generated from the person's timeline + memories. */}
+            <section className="profile-section">
+              <div className="profile-section__head">
+                <h3 className="profile-section__title">Life Story</h3>
+                {storyState.phase === 'idle' && (person.story || storyState.error) && (
+                  <button className="story-regen" onClick={generateStory}>
+                    {storyState.error ? 'Try again' : 'Regenerate'}
+                  </button>
+                )}
+                {storyState.phase === 'generating' && (
+                  <span style={{ fontSize: 12, color: 'var(--ink-faint)' }}>Writing…</span>
+                )}
+              </div>
+
+              {storyState.phase === 'idle' && storyState.error && (
+                <p className="story-error">{storyState.error}</p>
+              )}
+
+              {storyState.phase === 'idle' && !person.story && !storyState.error && (
+                <button className="ai-generate" onClick={generateStory}>
+                  <SparkleIcon />
+                  Generate life story with AI
+                </button>
+              )}
+
+              {storyState.phase === 'idle' && person.story && (
+                <p className="story">{person.story}</p>
+              )}
+
+              {(storyState.phase === 'generating' || storyState.phase === 'done') && (
+                <p className={`story${storyState.phase === 'generating' ? ' story--generating' : ''}`}>
+                  {storyState.text}
+                </p>
+              )}
+
+              {storyState.phase === 'done' && (
+                <>
+                  <div className="story-actions">
+                    <button
+                      className="btn btn--primary"
+                      onClick={() => {
+                        onUpdateStory?.(person.id, storyState.text);
+                        setStoryState({ phase: 'idle', text: '', error: null });
+                      }}
+                    >
+                      Keep it
+                    </button>
+                    <button
+                      className="btn"
+                      onClick={() => setStoryState({ phase: 'idle', text: '', error: null })}
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                  <p className="story-note">Generated by AI · review before keeping</p>
+                </>
+              )}
+            </section>
+
+            {/* Future features */}
             <section className="profile-section">
               <h3 className="profile-section__title">Coming soon</h3>
               <ul className="soon-list">
-                <li className="soon-row">
-                  <span className="soon-row__icon">✶</span>
-                  <span className="soon-row__text">
-                    <span className="soon-row__title">Life story</span>
-                    <span className="soon-row__sub">
-                      A narrative woven from the timeline, photos and memories.
-                    </span>
-                  </span>
-                  <span className="soon-row__tag">Soon</span>
-                </li>
                 <li className="soon-row">
                   <span className="soon-row__icon">❀</span>
                   <span className="soon-row__text">
@@ -567,6 +662,14 @@ function DocImageIcon() {
       <rect x="3" y="3" width="18" height="18" rx="3" stroke="currentColor" strokeWidth="1.6" />
       <circle cx="8.5" cy="8.5" r="1.5" fill="currentColor" />
       <path d="M3 16l5-5 4 4 3-3 6 5" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
+    </svg>
+  );
+}
+function SparkleIcon() {
+  return (
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="1.8" />
     </svg>
   );
 }

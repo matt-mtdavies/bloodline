@@ -49,6 +49,8 @@ export default defineConfig({
         rewrite: (p) =>
           p.replace(/^\/faces\/(men|women)\/(\d{1,3}\.jpg)$/, '/api/portraits/$1/$2'),
       },
+      // Proxy /api to wrangler dev (Pages Functions) running on 8788.
+      '/api': { target: 'http://localhost:8788', changeOrigin: true },
     },
   },
 });

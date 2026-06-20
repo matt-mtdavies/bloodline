@@ -230,6 +230,7 @@ export default function App() {
         onOpenLightbox={(personId, index) => setLightbox({ personId, index })}
         onAddDocument={(personId, fields) => addDocument(personId, fields)}
         onRemoveDocument={removeDocument}
+        onUpdateStory={(id, story) => updatePerson(id, { story })}
         onPhoto={handlePhoto}
       />
 
