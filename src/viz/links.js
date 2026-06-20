@@ -34,30 +34,23 @@ export function drawLinks(g, graph, pos, isVisible, baseRadius) {
 
     const alpha = edgeAlpha(r.from_person, r.to_person);
     const status = r.partner_status;
-    const width = baseRadius * 2.5;
+    const width = baseRadius * 2.2;
 
     if (status === 'former') {
       // A faded, dashed bond — present but clearly past.
       dashedSegment(g, a, b, 16, 0.5, {
-        width: 3,
-        color: hex('#b9ab98'),
+        width: 2.5,
+        color: hex('#c4c7cd'),
         alpha: alpha * 0.8,
         cap: 'round',
       });
     } else {
-      const color = status === 'widowed' ? '#6b5e7a' : '#c2603a';
-      const fill = status === 'widowed' ? '#e6dff0' : '#f0d9cd';
-      // The membrane: a fat round-capped capsule that visually pods the pair.
+      // A single, light pod binding the pair — a soft hint, not a bold blob.
+      const fill = status === 'widowed' ? '#ece7f2' : '#f6e6dc';
       g.moveTo(a.x, a.y).lineTo(b.x, b.y).stroke({
         width,
         color: hex(fill),
-        alpha: alpha * 0.55,
-        cap: 'round',
-      });
-      g.moveTo(a.x, a.y).lineTo(b.x, b.y).stroke({
-        width: width + 3,
-        color: hex(color),
-        alpha: alpha * 0.18,
+        alpha: alpha * 0.5,
         cap: 'round',
       });
     }

@@ -81,13 +81,11 @@ export class Bubble {
   }
 
   drawMonogram() {
-    const { base, light } = monogramColors(this.person.display_name);
+    const { base } = monogramColors(this.person.display_name);
     const r = this.r;
     const g = new Graphics();
-    // Soft vertical two-tone so the monogram has depth, not flatness.
-    g.circle(0, 0, r).fill(hex(light));
-    g.circle(0, r * 0.35, r).fill({ color: hex(base), alpha: 0.55 });
-    g.circle(0, 0, r).fill({ color: hex(base), alpha: 0.32 });
+    // Flat, single solid colour — clean and modern.
+    g.circle(0, 0, r).fill(hex(base));
     this.portrait.addChild(g);
     this._mono = g;
 
