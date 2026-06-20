@@ -103,15 +103,17 @@
 /* A tidy frosted pill so the name reads cleanly whatever sits behind it. */
 .nameplate__pill {
   display: inline-flex;
-  align-items: baseline;
-  gap: 8px;
-  padding: 7px 16px;
-  border-radius: 999px;
-  background: rgba(255, 253, 249, 0.82);
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 8px 18px;
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.86);
   backdrop-filter: blur(10px) saturate(1.1);
+  border: 1px solid var(--hairline);
   box-shadow: var(--shadow-soft);
   white-space: nowrap;
-  animation: nameplate-in 0.5s var(--spring) both;
+  animation: nameplate-in 0.4s var(--spring) both;
 }
 .nameplate__name {
   font-family: var(--body);
@@ -119,15 +121,15 @@
   font-weight: 600;
   letter-spacing: -0.01em;
   color: var(--ink);
+  line-height: 1.2;
 }
-.nameplate__dot { color: var(--ink-faint); }
-.nameplate__dates {
-  font-size: 13px;
+.nameplate__meta {
+  font-size: 12.5px;
   color: var(--ink-soft);
   letter-spacing: 0.01em;
 }
 @keyframes nameplate-in {
-  from { opacity: 0; transform: translateY(7px); }
+  from { opacity: 0; transform: translateY(5px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
