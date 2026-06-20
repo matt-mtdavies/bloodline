@@ -87,6 +87,34 @@ export function distancesFrom(graph, focusId) {
   return dist;
 }
 
+// BFS shortest path between two nodes across all relationship edges. Returns a
+// Set of person IDs on the path (including both endpoints), or null if no path.
+export function pathBetween(graph, fromId, toId) {
+  if (fromId === toId) return new Set([fromId]);
+  const prev = new Map([[fromId, null]]);
+  const queue = [fromId];
+  while (queue.length) {
+    const cur = queue.shift();
+    const neighbours = [
+      ...graph.parents(cur).map((x) => x.id),
+      ...graph.children(cur).map((x) => x.id),
+      ...graph.partners(cur).map((x) => x.id),
+    ];
+    for (const n of neighbours) {
+      if (prev.has(n)) continue;
+      prev.set(n, cur);
+      if (n === toId) {
+        const path = new Set();
+        let c = toId;
+        while (c !== null) { path.add(c); c = prev.get(c); }
+        return path;
+      }
+      queue.push(n);
+    }
+  }
+  return null;
+}
+
 // Human-readable relationship of `otherId` relative to `focusId`, for the
 // accessible view and the person sheet. Best-effort, kept warm and plain.
 export function relationLabel(graph, focusId, otherId) {

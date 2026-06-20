@@ -39,6 +39,7 @@ export default function BubbleTree({
   reducedMotion,
   layout = 'organic',
   mergeParents = false,
+  lineagePath = null,
   apiRef,
 }) {
   const hostRef = useRef(null);
@@ -50,8 +51,17 @@ export default function BubbleTree({
   graphRef.current = graph; // always the live graph for the loop + sync
   const mergeRef = useRef(mergeParents);
   mergeRef.current = mergeParents;
+  const lineageRef = useRef(lineagePath);
+  lineageRef.current = lineagePath;
   const layoutRef = useRef(layout);
   layoutRef.current = layout;
+  // Callbacks are captured once in the mount effect, so we route them through
+  // refs to ensure React prop changes (e.g. lineage mode toggling onOpenPerson)
+  // are always reflected without re-mounting the canvas.
+  const onActivateRef = useRef(onActivate);
+  onActivateRef.current = onActivate;
+  const onOpenPersonRef = useRef(onOpenPerson);
+  onOpenPersonRef.current = onOpenPerson;
 
   // ── Mount Pixi + the simulation once ──────────────────────────────────────
   useEffect(() => {
@@ -398,8 +408,8 @@ export default function BubbleTree({
         if (drag.type === 'bubble') {
           if (!drag.moved) {
             // A clean tap: expand/activate, or open the already-active person.
-            if (activeRef.current === drag.id) onOpenPerson?.(drag.id);
-            else onActivate?.(drag.id);
+            if (activeRef.current === drag.id) onOpenPersonRef.current?.(drag.id);
+            else onActivateRef.current?.(drag.id);
           } else if (drag.node && drag.id !== state.pinnedId) {
             // Let the flung bubble rejoin the simulation (unless it's pinned
             // open as a card anchor).
@@ -507,9 +517,10 @@ export default function BubbleTree({
 
         // Per-bubble visual state. Only revealed (visible) people show; the rest
         // stay collapsed. When a card is open, the active bubble stays sharp and
-        // everyone else blurs and dims back.
+        // everyone else blurs and dims back. In lineage mode non-path bubbles dim.
         const dmap = state.dist;
         const cardOpen = !!state.pinnedId;
+        const lineage = lineageRef.current;
         for (const [id, b] of bubbles) {
           const n = nodeById.get(id);
           b.root.position.set(n.x, n.y);
@@ -517,6 +528,8 @@ export default function BubbleTree({
           let target;
           if (!vis.has(id)) {
             target = { scale: 0.5, alpha: 0, lift: 1, blur: 0 }; // collapsed
+          } else if (lineage && !lineage.has(id)) {
+            target = { ...visualForDistance(d), alpha: 0.13, blur: 1.5 }; // off-path — recede
           } else if (cardOpen && id !== state.pinnedId) {
             target = { ...visualForDistance(d), alpha: 0.28, blur: 5 }; // dimmed
           } else {
@@ -527,7 +540,7 @@ export default function BubbleTree({
         }
 
         linkGfx.alpha = cardOpen ? 0.18 : 1;
-        drawLinks(linkGfx, graphRef.current, pos, (id) => vis.has(id), BASE_RADIUS, mergeRef.current);
+        drawLinks(linkGfx, graphRef.current, pos, (id) => vis.has(id), BASE_RADIUS, mergeRef.current, lineage);
       });
     })();
 

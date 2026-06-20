@@ -14,11 +14,14 @@ import { hex } from '../lib/color.js';
  * Link opacity follows the ego camera: bonds far from the focused person fade
  * back with their bubbles.
  */
-export function drawLinks(g, graph, pos, isVisible, baseRadius, mergeParents = false) {
+export function drawLinks(g, graph, pos, isVisible, baseRadius, mergeParents = false, lineagePath = null) {
   g.clear();
   // Only draw a link when both people are currently revealed.
   const hidden = (a, b) => !(isVisible(a) && isVisible(b));
-  const edgeAlpha = () => 1;
+  // When a lineage path is active, non-path edges dim to 12%; path edges are
+  // drawn normally then re-highlighted in a second pass at the end.
+  const onPath = lineagePath ? (a, b) => lineagePath.has(a) && lineagePath.has(b) : () => false;
+  const edgeAlpha = lineagePath ? (a, b) => (onPath(a, b) ? 1 : 0.12) : () => 1;
 
   // ── Couple membranes (drawn first, furthest back) ─────────────────────────
   const seen = new Set();
@@ -210,6 +213,30 @@ export function drawLinks(g, graph, pos, isVisible, baseRadius, mergeParents = f
       curve(g, a, b, { width: 2, color: hex(color), alpha: alpha * 0.7 });
     } else {
       dashedCurve(g, a, b, 18, 0.5, { width: 2, color: hex(color), alpha: alpha * 0.85 });
+    }
+  }
+
+  // ── Lineage highlight pass ─────────────────────────────────────────────────
+  // Re-draw the edges that connect adjacent path nodes in the accent colour +
+  // thicker, so the selected line leaps forward from the dimmed family.
+  if (lineagePath) {
+    const accentFill = hex('#c2603a');
+    const done = new Set();
+    for (const r of graph.relationships) {
+      if (!onPath(r.from_person, r.to_person)) continue;
+      if (hidden(r.from_person, r.to_person)) continue;
+      const key = [r.from_person, r.to_person].sort().join('|') + r.type;
+      if (done.has(key)) continue;
+      done.add(key);
+      const a = pos.get(r.from_person);
+      const b = pos.get(r.to_person);
+      if (!a || !b) continue;
+      if (r.type === 'partner') {
+        g.moveTo(a.x, a.y).lineTo(b.x, b.y).stroke({ width: baseRadius * 2.4, color: accentFill, alpha: 0.22, cap: 'round' });
+        g.moveTo(a.x, a.y).lineTo(b.x, b.y).stroke({ width: 3, color: accentFill, alpha: 0.75, cap: 'round' });
+      } else {
+        curve(g, a, b, { width: 3, color: accentFill, alpha: 0.8 });
+      }
     }
   }
 }

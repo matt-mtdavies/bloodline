@@ -18,6 +18,7 @@ export default function PersonSheet({
   viewerId,
   memories = [],
   photos = [],
+  documents = [],
   lockEscape = false,
   onClose,
   onFocus,
@@ -30,11 +31,14 @@ export default function PersonSheet({
   onRemoveMemory,
   onAddPhoto,
   onOpenLightbox,
+  onAddDocument,
+  onRemoveDocument,
   onPhoto,
 }) {
   const person = personId ? graph.byId.get(personId) : null;
   const fileRef = useRef(null);
   const galleryRef = useRef(null);
+  const docRef = useRef(null);
 
   useEffect(() => {
     if (!person || lockEscape) return; // a stacked overlay owns Escape
@@ -69,7 +73,34 @@ export default function PersonSheet({
         .filter((m) => m.person_id === person.id)
         .sort((a, b) => b.votes - a.votes || (a.created_at < b.created_at ? 1 : -1));
   const personPhotos = minor ? [] : photos.filter((p) => p.person_id === person.id);
+  const personDocs = minor ? [] : documents.filter((d) => d.person_id === person.id);
   const completeness = minor ? null : profileCompleteness(person, graph, personMemories.length);
+
+  // Document files: images are downscaled, PDFs stored raw (capped at 8 MB).
+  const onDocPick = async (e) => {
+    const files = [...(e.target.files || [])];
+    e.target.value = '';
+    for (const file of files) {
+      try {
+        if (file.size > 8 * 1024 * 1024) continue; // skip files > 8 MB
+        const title = file.name.replace(/\.[^.]+$/, ''); // filename without extension
+        let src;
+        if (file.type.startsWith('image/')) {
+          src = await fileToDataUrl(file, 1200);
+        } else {
+          src = await new Promise((res, rej) => {
+            const reader = new FileReader();
+            reader.onload = () => res(reader.result);
+            reader.onerror = rej;
+            reader.readAsDataURL(file);
+          });
+        }
+        onAddDocument?.(person.id, { title, mime: file.type, src });
+      } catch {
+        /* skip unreadable file */
+      }
+    }
+  };
 
   // Picked gallery files are downscaled, then added one by one.
   const onGalleryPick = async (e) => {
@@ -234,6 +265,71 @@ export default function PersonSheet({
                 <button className="empty-add" onClick={() => galleryRef.current?.click()}>
                   <PlusIcon />
                   Add photos
+                </button>
+              )}
+            </section>
+
+            {/* Documents */}
+            <section className="profile-section">
+              <div className="profile-section__head">
+                <h3 className="profile-section__title">
+                  Documents{personDocs.length > 0 ? ` · ${personDocs.length}` : ''}
+                </h3>
+                <button className="section-edit" onClick={() => docRef.current?.click()}>
+                  Add
+                </button>
+              </div>
+              <input
+                ref={docRef}
+                type="file"
+                accept="image/*,application/pdf"
+                multiple
+                hidden
+                onChange={onDocPick}
+              />
+              {personDocs.length > 0 ? (
+                <ul className="doc-list">
+                  {personDocs.map((doc) => (
+                    <li key={doc.id}>
+                      <div className="doc-row">
+                        <span className="doc-row__icon" aria-hidden="true">
+                          {doc.mime?.startsWith('image/') ? <DocImageIcon /> : <DocFileIcon />}
+                        </span>
+                        {doc.mime?.startsWith('image/') ? (
+                          <img className="doc-thumb" src={doc.src} alt={doc.title} />
+                        ) : null}
+                        <span className="doc-row__text">
+                          <span className="doc-row__title">{doc.title}</span>
+                          <span className="doc-row__meta">
+                            {doc.mime === 'application/pdf' ? 'PDF' : 'Image'} · {doc.created_at}
+                          </span>
+                        </span>
+                        <span className="doc-row__actions">
+                          <a
+                            className="doc-row__open"
+                            href={doc.src}
+                            target="_blank"
+                            rel="noreferrer"
+                            aria-label={`Open ${doc.title}`}
+                          >
+                            Open
+                          </a>
+                          <button
+                            className="doc-row__del"
+                            onClick={() => onRemoveDocument?.(doc.id)}
+                            aria-label={`Remove ${doc.title}`}
+                          >
+                            Remove
+                          </button>
+                        </span>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <button className="empty-add" onClick={() => docRef.current?.click()}>
+                  <PlusIcon />
+                  Add certificates, letters or records
                 </button>
               )}
             </section>
@@ -453,6 +549,24 @@ function ChevronIcon() {
   return (
     <svg className="rel-chip__chev" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <path d="M9 6l6 6-6 6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+function DocFileIcon() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M4 4a2 2 0 0 1 2-2h8l6 6v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4Z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
+      <path d="M14 2v6h6" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
+      <path d="M8 13h8M8 17h5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  );
+}
+function DocImageIcon() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <rect x="3" y="3" width="18" height="18" rx="3" stroke="currentColor" strokeWidth="1.6" />
+      <circle cx="8.5" cy="8.5" r="1.5" fill="currentColor" />
+      <path d="M3 16l5-5 4 4 3-3 6 5" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
     </svg>
   );
 }

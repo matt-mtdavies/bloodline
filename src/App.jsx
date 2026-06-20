@@ -12,8 +12,10 @@ import {
   addPhoto,
   setPhotoCaption,
   removePhoto,
+  addDocument,
+  removeDocument,
 } from './data/store.js';
-import { buildGraph } from './data/graph.js';
+import { buildGraph, pathBetween } from './data/graph.js';
 import { useReducedMotion } from './hooks/useReducedMotion.js';
 import BubbleTree from './viz/BubbleTree.jsx';
 import TopBar from './components/TopBar.jsx';
@@ -47,6 +49,8 @@ export default function App() {
   const [view, setView] = useState('bubbles');
   const [legendOpen, setLegendOpen] = useState(false);
   const [mergeParents, setMergeParents] = useState(true);
+  const [lineageMode, setLineageMode] = useState(false);
+  const [lineagePath, setLineagePath] = useState(null); // Set<id> | null
   const viewApi = useRef(null);
 
   const visibleIds = useMemo(() => {
@@ -61,9 +65,32 @@ export default function App() {
     return vis;
   }, [graph, expanded]);
 
-  const activate = useCallback((id) => {
+  const activateNormal = useCallback((id) => {
     setActiveId(id);
     setExpanded((prev) => (prev.has(id) ? prev : new Set(prev).add(id)));
+    setLineagePath(null);
+  }, []);
+
+  const activate = useCallback(
+    (id) => {
+      if (lineageMode) {
+        if (id === activeId) {
+          setLineagePath(null);
+        } else {
+          setLineagePath(pathBetween(graph, activeId, id));
+        }
+      } else {
+        activateNormal(id);
+      }
+    },
+    [lineageMode, activeId, graph, activateNormal],
+  );
+
+  const toggleLineage = useCallback(() => {
+    setLineageMode((on) => {
+      if (on) setLineagePath(null);
+      return !on;
+    });
   }, []);
 
   const openPerson = useCallback((id) => {
@@ -144,9 +171,10 @@ export default function App() {
             activeId={activeId}
             visibleIds={visibleIds}
             onActivate={activate}
-            onOpenPerson={openPerson}
+            onOpenPerson={lineageMode ? null : openPerson}
             reducedMotion={reducedMotion}
             mergeParents={mergeParents}
+            lineagePath={lineagePath}
             apiRef={viewApi}
           />
           <FocusNameplate
@@ -154,7 +182,20 @@ export default function App() {
             getPos={() => viewApi.current?.getScreenPos(activeId)}
             hidden={!!openId || !!addAnchorId || !!editId}
           />
-          <IntroHint />
+          <button
+            className={`lineage-btn${lineageMode ? ' lineage-btn--on' : ''}`}
+            onClick={toggleLineage}
+            aria-pressed={lineageMode}
+            aria-label={lineageMode ? 'Exit lineage mode' : 'Trace a family line'}
+          >
+            <LineageIcon />
+            {lineageMode
+              ? lineagePath
+                ? `Lineage · ${[...lineagePath].length} people`
+                : 'Tap an ancestor…'
+              : 'Lineage'}
+          </button>
+          {!lineageMode && <IntroHint />}
         </>
       ) : (
         <AccessibleTree
@@ -171,6 +212,7 @@ export default function App() {
         viewerId={DEFAULT_FOCUS}
         memories={data.memories}
         photos={data.photos}
+        documents={data.documents}
         lockEscape={!!(addAnchorId || editId || timelineId || memoryId || lightbox || crop)}
         onClose={closePerson}
         onFocus={(id) => {
@@ -186,6 +228,8 @@ export default function App() {
         onRemoveMemory={removeMemory}
         onAddPhoto={(id, src) => addPhoto(id, { src })}
         onOpenLightbox={(personId, index) => setLightbox({ personId, index })}
+        onAddDocument={(personId, fields) => addDocument(personId, fields)}
+        onRemoveDocument={removeDocument}
         onPhoto={handlePhoto}
       />
 
@@ -254,5 +298,16 @@ export default function App() {
       />
       <Splash />
     </div>
+  );
+}
+
+function LineageIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="4" r="2.5" stroke="currentColor" strokeWidth="1.8" />
+      <circle cx="4" cy="20" r="2.5" stroke="currentColor" strokeWidth="1.8" />
+      <circle cx="20" cy="20" r="2.5" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M12 6.5v4M12 10.5l-5.5 7M12 10.5l5.5 7" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
   );
 }

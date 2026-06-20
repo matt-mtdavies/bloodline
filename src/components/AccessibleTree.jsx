@@ -11,6 +11,7 @@ import { relationLabel } from '../data/graph.js';
  */
 export default function AccessibleTree({ graph, focusId, onFocus, onOpenPerson }) {
   const [q, setQ] = useState('');
+  const [filter, setFilter] = useState('all');
   const focus = graph.byId.get(focusId);
 
   const groups = useMemo(() => {
@@ -27,11 +28,23 @@ export default function AccessibleTree({ graph, focusId, onFocus, onOpenPerson }
   const directory = useMemo(() => {
     const term = q.trim().toLowerCase();
     return graph.people
-      .filter((p) => !term || p.display_name.toLowerCase().includes(term))
+      .filter((p) => {
+        if (filter === 'living' && p.is_deceased) return false;
+        if (filter === 'deceased' && !p.is_deceased) return false;
+        if (!term) return true;
+        return (
+          p.display_name.toLowerCase().includes(term) ||
+          (p.occupation || '').toLowerCase().includes(term) ||
+          (p.birth_place || '').toLowerCase().includes(term) ||
+          (p.tags || []).some((t) => t.toLowerCase().includes(term))
+        );
+      })
       .sort((a, b) => a.display_name.localeCompare(b.display_name));
-  }, [graph, q]);
+  }, [graph, q, filter]);
 
   if (!focus) return null;
+
+  const isFiltered = q.trim() || filter !== 'all';
 
   return (
     <main className="listview" aria-label="Family directory">
@@ -78,30 +91,57 @@ export default function AccessibleTree({ graph, focusId, onFocus, onOpenPerson }
       </section>
 
       <section className="listview__directory">
-        <h3>Everyone</h3>
+        <h3>
+          Everyone{isFiltered && directory.length !== graph.people.length
+            ? ` · ${directory.length} of ${graph.people.length}`
+            : ''}
+        </h3>
         <input
           className="search"
           type="search"
-          placeholder="Search the family…"
+          placeholder="Search by name, occupation, location, tag…"
           value={q}
           onChange={(e) => setQ(e.target.value)}
           aria-label="Search the family"
         />
-        <ul>
-          {directory.map((p) => (
-            <li key={p.id}>
-              <button
-                className={'person-row' + (p.id === focusId ? ' person-row--current' : '')}
-                onClick={() => onFocus(p.id)}
-              >
-                <Avatar person={p} size={42} />
-                <span className="person-row__text">
-                  <span className="person-row__name">{p.display_name}</span>
-                  <span className="person-row__meta">{lifespan(p)}</span>
-                </span>
-              </button>
-            </li>
+        <div className="filter-pills" role="group" aria-label="Filter by status">
+          {[
+            { key: 'all', label: 'All' },
+            { key: 'living', label: 'Living' },
+            { key: 'deceased', label: 'Deceased' },
+          ].map(({ key, label }) => (
+            <button
+              key={key}
+              className={`filter-pill${filter === key ? ' filter-pill--active' : ''}`}
+              onClick={() => setFilter(key)}
+              aria-pressed={filter === key}
+            >
+              {label}
+            </button>
           ))}
+        </div>
+        <ul>
+          {directory.length > 0 ? (
+            directory.map((p) => (
+              <li key={p.id}>
+                <button
+                  className={'person-row' + (p.id === focusId ? ' person-row--current' : '')}
+                  onClick={() => onFocus(p.id)}
+                >
+                  <Avatar person={p} size={42} />
+                  <span className="person-row__text">
+                    <span className="person-row__name">{p.display_name}</span>
+                    <span className="person-row__meta">
+                      {lifespan(p)}
+                      {p.occupation ? ` · ${p.occupation}` : ''}
+                    </span>
+                  </span>
+                </button>
+              </li>
+            ))
+          ) : (
+            <li className="listview__empty">No one matches this search.</li>
+          )}
         </ul>
       </section>
     </main>

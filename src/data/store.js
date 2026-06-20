@@ -31,16 +31,19 @@ let state = load() || {
   relationships: structuredClone(seedRels),
   memories: structuredClone(seedMemories),
   photos: structuredClone(seedPhotos),
+  documents: [],
 };
 
 // Migrate older saves that predate a collection: seed the demo data, but only
 // for people who still exist, so we never clobber the user's own edits.
-if (state.memories === undefined || state.photos === undefined) {
+if (state.memories === undefined || state.photos === undefined || state.documents === undefined) {
   const ids = new Set(state.people.map((p) => p.id));
   if (state.memories === undefined)
     state.memories = structuredClone(seedMemories).filter((x) => ids.has(x.person_id));
   if (state.photos === undefined)
     state.photos = structuredClone(seedPhotos).filter((x) => ids.has(x.person_id));
+  if (state.documents === undefined)
+    state.documents = [];
 }
 
 // Upgrade the first round of low-res demo gallery photos (served via the
@@ -82,6 +85,7 @@ const uid = () => 'p_' + Math.random().toString(36).slice(2, 9);
 const rid = () => 'r_' + Math.random().toString(36).slice(2, 9);
 const mid = () => 'm_' + Math.random().toString(36).slice(2, 9);
 const phid = () => 'ph_' + Math.random().toString(36).slice(2, 9);
+const docid = () => 'doc_' + Math.random().toString(36).slice(2, 9);
 
 // How each warm relationship label maps to stored edges + a gender default.
 export const RELATIONSHIPS = [
@@ -229,4 +233,24 @@ export function setPhotoCaption(id, caption) {
 
 export function removePhoto(id) {
   commit({ ...state, photos: state.photos.filter((p) => p.id !== id) });
+}
+
+// ── Documents ─────────────────────────────────────────────────────────────────
+// Stored as base64 data URLs for the stub phase; will move to R2 URLs later.
+// Shape: { id, person_id, title, mime, src, created_at }
+export function addDocument(personId, { title, mime, src }) {
+  const doc = {
+    id: docid(),
+    person_id: personId,
+    title: title.trim(),
+    mime,
+    src,
+    created_at: new Date().toISOString().slice(0, 10),
+  };
+  commit({ ...state, documents: [...state.documents, doc] });
+  return doc.id;
+}
+
+export function removeDocument(id) {
+  commit({ ...state, documents: state.documents.filter((d) => d.id !== id) });
 }
