@@ -64,6 +64,23 @@ try {
   check(sheetName.length > 0, `tapping centred bubble opens the card (${sheetName.trim()})`);
   await page.waitForTimeout(800); // let the tree slide + card FLIP settle
   await page.screenshot({ path: shot('02-sheet.png') });
+
+  // Memories render and can be upvoted (the heart toggles on).
+  const memory = page.locator('.memory').first();
+  check((await memory.count()) > 0, 'memories render on the profile');
+  const vote = memory.locator('.memory__vote');
+  await vote.click();
+  await page.waitForTimeout(250);
+  const voted = (await page.locator('.memory__vote--on').count()) > 0;
+  check(voted, 'upvoting a memory toggles it on');
+
+  // The add-memory composer opens over the profile and dismisses cleanly.
+  await page.locator('.profile-section__head .section-edit', { hasText: 'Add' }).click();
+  await page.waitForSelector('[aria-label^="Add a memory"]', { timeout: 4000 });
+  await page.screenshot({ path: shot('02b-memory.png') });
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(300);
+
   await page.keyboard.press('Escape');
   await page.waitForTimeout(500);
 

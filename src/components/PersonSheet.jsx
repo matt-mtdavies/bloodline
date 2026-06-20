@@ -15,11 +15,16 @@ export default function PersonSheet({
   graph,
   personId,
   viewerId,
+  memories = [],
   onClose,
   onFocus,
   onOpenPerson,
   onAddRelative,
   onEdit,
+  onEditTimeline,
+  onAddMemory,
+  onVoteMemory,
+  onRemoveMemory,
   onPhoto,
 }) {
   const person = personId ? graph.byId.get(personId) : null;
@@ -52,7 +57,12 @@ export default function PersonSheet({
   const location = person.residence || person.birth_place;
   const age = ageOrAt(person);
   const events = minor ? [] : lifeEvents(person);
-  const completeness = minor ? null : profileCompleteness(person, graph);
+  const personMemories = minor
+    ? []
+    : memories
+        .filter((m) => m.person_id === person.id)
+        .sort((a, b) => b.votes - a.votes || (a.created_at < b.created_at ? 1 : -1));
+  const completeness = minor ? null : profileCompleteness(person, graph, personMemories.length);
 
   const metaBits = [];
   if (person.occupation) metaBits.push(person.occupation);
@@ -168,9 +178,14 @@ export default function PersonSheet({
             )}
 
             {/* Key life events */}
-            {events.length > 0 && (
-              <section className="profile-section">
+            <section className="profile-section">
+              <div className="profile-section__head">
                 <h3 className="profile-section__title">Key life events</h3>
+                <button className="section-edit" onClick={() => onEditTimeline?.(person.id)}>
+                  {events.length > 0 ? 'Edit' : null}
+                </button>
+              </div>
+              {events.length > 0 ? (
                 <ol className="timeline">
                   {events.map((e, i) => (
                     <li className="timeline__item" key={`${e.year}-${i}`}>
@@ -183,8 +198,13 @@ export default function PersonSheet({
                     </li>
                   ))}
                 </ol>
-              </section>
-            )}
+              ) : (
+                <button className="empty-add" onClick={() => onEditTimeline?.(person.id)}>
+                  <PlusIcon />
+                  Add a life event
+                </button>
+              )}
+            </section>
 
             {/* Relationships */}
             {groups.length > 0 && (
@@ -221,21 +241,60 @@ export default function PersonSheet({
               </section>
             )}
 
-            {/* The destination, sketched in — Phase 2/3 sections, shown as the
-                invitations they'll become rather than empty space. */}
+            {/* Memories — the heart of the profile. */}
             <section className="profile-section">
-              <h3 className="profile-section__title">Stories &amp; memories</h3>
+              <div className="profile-section__head">
+                <h3 className="profile-section__title">
+                  Memories{personMemories.length > 0 ? ` · ${personMemories.length}` : ''}
+                </h3>
+                <button className="section-edit" onClick={() => onAddMemory?.(person.id)}>
+                  Add
+                </button>
+              </div>
+
+              {personMemories.length > 0 ? (
+                <ul className="memories">
+                  {personMemories.map((mem) => (
+                    <li className="memory" key={mem.id}>
+                      <p className="memory__text">{mem.text}</p>
+                      <div className="memory__foot">
+                        <span className="memory__by">{mem.author}</span>
+                        <span className="memory__actions">
+                          {mem.author === 'You' && (
+                            <button
+                              className="memory__del"
+                              onClick={() => onRemoveMemory?.(mem.id)}
+                              aria-label="Remove memory"
+                            >
+                              Remove
+                            </button>
+                          )}
+                          <button
+                            className={'memory__vote' + (mem.youVoted ? ' memory__vote--on' : '')}
+                            onClick={() => onVoteMemory?.(mem.id)}
+                            aria-pressed={mem.youVoted}
+                            aria-label={`${mem.votes} ${mem.votes === 1 ? 'person finds' : 'people find'} this meaningful`}
+                          >
+                            <HeartIcon filled={mem.youVoted} />
+                            {mem.votes > 0 ? mem.votes : ''}
+                          </button>
+                        </span>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <button className="empty-add" onClick={() => onAddMemory?.(person.id)}>
+                  <PlusIcon />
+                  Be the first to add a memory
+                </button>
+              )}
+            </section>
+
+            {/* Phase 3 invitations — shown as what they'll become. */}
+            <section className="profile-section">
+              <h3 className="profile-section__title">Coming soon</h3>
               <ul className="soon-list">
-                <li className="soon-row">
-                  <span className="soon-row__icon">❝</span>
-                  <span className="soon-row__text">
-                    <span className="soon-row__title">Memories</span>
-                    <span className="soon-row__sub">
-                      The little things — birthdays remembered, the pancakes every Christmas.
-                    </span>
-                  </span>
-                  <span className="soon-row__tag">Soon</span>
-                </li>
                 <li className="soon-row">
                   <span className="soon-row__icon">✶</span>
                   <span className="soon-row__text">
@@ -294,6 +353,18 @@ function PlusIcon() {
   return (
     <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+function HeartIcon({ filled }) {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill={filled ? 'currentColor' : 'none'} aria-hidden="true">
+      <path
+        d="M12 20s-7-4.6-7-9.7A4.3 4.3 0 0 1 12 7a4.3 4.3 0 0 1 7 3.3c0 5.1-7 9.7-7 9.7Z"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }

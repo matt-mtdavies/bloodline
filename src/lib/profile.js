@@ -7,7 +7,7 @@
  */
 import { yearOf } from './dates.js';
 
-export function profileCompleteness(person, graph) {
+export function profileCompleteness(person, graph, memoryCount = 0) {
   const hasRelation =
     graph.parents(person.id).length +
       graph.children(person.id).length +
@@ -23,6 +23,7 @@ export function profileCompleteness(person, graph) {
     { key: 'Occupation', done: !!person.occupation },
     { key: 'Tags', done: !!(person.tags && person.tags.length) },
     { key: 'Life events', done: !!(person.events && person.events.length) },
+    { key: 'Memories', done: memoryCount > 0 },
     { key: 'Relationships', done: hasRelation },
   ];
 

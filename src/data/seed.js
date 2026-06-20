@@ -511,5 +511,30 @@ function partner(a, b, status) {
   };
 }
 
+/*
+ * Memories — the heart of V2. Short, specific, human. Contributed by relatives,
+ * upvoted so the most meaningful float to the top. Never AI-generated.
+ *   { id, person_id, text, author, created_at, votes, youVoted }
+ */
+export const memories = [
+  m('arthur', 'He could tell you the platform number for any train, anywhere, without once looking it up.', 'Robert', '2024-11-02', 6),
+  m('arthur', 'Sunday walks to the allotment, every week, rain or shine — and always a mint humbug in his coat pocket.', 'Linda', '2024-11-10', 3),
+  m('margaret', 'She marked everything in red pen. Our essays, the shopping list, even the birthday cards.', 'Susan', '2024-10-21', 5),
+  m('margaret', 'Knew every family story by heart and told them the same way every Christmas, word for word.', 'James', '2024-12-26', 4),
+  m('james', 'He turned the loft upside down for a week looking for Nana’s photo box — then scanned every single picture so none of it could be lost again.', 'Sarah', '2025-01-15', 4),
+  m('james', 'Always the one who actually phones on your birthday, not just a text.', 'Tom', '2025-02-03', 2),
+  m('robert', 'I phoned him at 2am about Oliver’s temperature. He talked us through it like it was nothing.', 'Megan', '2024-09-30', 4),
+  m('william', 'Grew the biggest leeks in the valley and gave every one of them away.', 'Arthur', '2008-05-01', 2),
+];
+
+function m(person_id, text, author, created_at, votes) {
+  return { id: `m_${person_id}_${Math.abs(hash(text))}`, person_id, text, author, created_at, votes, youVoted: false };
+}
+function hash(s) {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+  return h;
+}
+
 // The person the demo opens on — our kin-keeper, James.
 export const DEFAULT_FOCUS = 'james';

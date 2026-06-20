@@ -1,7 +1,15 @@
 import { useMemo, useState, useCallback, useRef, useSyncExternalStore } from 'react';
 import './styles/components.css';
 import { FAMILY_NAME, DEFAULT_FOCUS } from './data/seed.js';
-import { store, addRelative, updatePerson, setPhoto } from './data/store.js';
+import {
+  store,
+  addRelative,
+  updatePerson,
+  setPhoto,
+  addMemory,
+  toggleMemoryVote,
+  removeMemory,
+} from './data/store.js';
 import { buildGraph } from './data/graph.js';
 import { useReducedMotion } from './hooks/useReducedMotion.js';
 import BubbleTree from './viz/BubbleTree.jsx';
@@ -10,6 +18,8 @@ import FocusNameplate from './components/FocusNameplate.jsx';
 import PersonSheet from './components/PersonSheet.jsx';
 import AddRelativeSheet from './components/AddRelativeSheet.jsx';
 import EditPersonSheet from './components/EditPersonSheet.jsx';
+import TimelineEditor from './components/TimelineEditor.jsx';
+import MemorySheet from './components/MemorySheet.jsx';
 import PhotoCropper from './components/PhotoCropper.jsx';
 import AccessibleTree from './components/AccessibleTree.jsx';
 import Legend from './components/Legend.jsx';
@@ -26,6 +36,8 @@ export default function App() {
   const [openId, setOpenId] = useState(null); // person card
   const [addAnchorId, setAddAnchorId] = useState(null); // add-relative sheet
   const [editId, setEditId] = useState(null); // edit sheet
+  const [timelineId, setTimelineId] = useState(null); // timeline editor
+  const [memoryId, setMemoryId] = useState(null); // add-memory sheet
   const [crop, setCrop] = useState(null); // { id, url } photo cropper
   const [view, setView] = useState('bubbles');
   const [legendOpen, setLegendOpen] = useState(false);
@@ -78,6 +90,22 @@ export default function App() {
       setEditId(null);
     },
     [editId],
+  );
+
+  const handleSaveTimeline = useCallback(
+    (events) => {
+      updatePerson(timelineId, { events });
+      setTimelineId(null);
+    },
+    [timelineId],
+  );
+
+  const handleAddMemory = useCallback(
+    (fields) => {
+      addMemory(memoryId, fields);
+      setMemoryId(null);
+    },
+    [memoryId],
   );
 
   // Picking a photo opens the cropper; confirming there saves the framed crop.
@@ -134,6 +162,7 @@ export default function App() {
         graph={graph}
         personId={openId}
         viewerId={DEFAULT_FOCUS}
+        memories={data.memories}
         onClose={closePerson}
         onFocus={(id) => {
           closePerson();
@@ -142,6 +171,10 @@ export default function App() {
         onOpenPerson={openPerson}
         onAddRelative={setAddAnchorId}
         onEdit={setEditId}
+        onEditTimeline={setTimelineId}
+        onAddMemory={setMemoryId}
+        onVoteMemory={toggleMemoryVote}
+        onRemoveMemory={removeMemory}
         onPhoto={handlePhoto}
       />
 
@@ -158,6 +191,22 @@ export default function App() {
           person={graph.byId.get(editId)}
           onClose={() => setEditId(null)}
           onSave={handleSave}
+        />
+      )}
+
+      {timelineId && graph.byId.get(timelineId) && (
+        <TimelineEditor
+          person={graph.byId.get(timelineId)}
+          onClose={() => setTimelineId(null)}
+          onSave={handleSaveTimeline}
+        />
+      )}
+
+      {memoryId && graph.byId.get(memoryId) && (
+        <MemorySheet
+          person={graph.byId.get(memoryId)}
+          onClose={() => setMemoryId(null)}
+          onAdd={handleAddMemory}
         />
       )}
 

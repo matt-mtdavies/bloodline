@@ -7,7 +7,7 @@
  * relationships} shape the API serves, so swapping localStorage for D1 later is
  * a drop-in.
  */
-import { people as seedPeople, relationships as seedRels } from './seed.js';
+import { people as seedPeople, relationships as seedRels, memories as seedMemories } from './seed.js';
 
 const KEY = 'bloodline:v1';
 
@@ -24,7 +24,15 @@ function load() {
 let state = load() || {
   people: structuredClone(seedPeople),
   relationships: structuredClone(seedRels),
+  memories: structuredClone(seedMemories),
 };
+
+// Migrate pre-Phase-2 saves that predate memories: seed demo memories, but
+// only for people who still exist, so we never clobber the user's own edits.
+if (state.memories === undefined) {
+  const ids = new Set(state.people.map((p) => p.id));
+  state.memories = structuredClone(seedMemories).filter((mem) => ids.has(mem.person_id));
+}
 
 const listeners = new Set();
 
@@ -53,6 +61,7 @@ export const store = {
 
 const uid = () => 'p_' + Math.random().toString(36).slice(2, 9);
 const rid = () => 'r_' + Math.random().toString(36).slice(2, 9);
+const mid = () => 'm_' + Math.random().toString(36).slice(2, 9);
 
 // How each warm relationship label maps to stored edges + a gender default.
 export const RELATIONSHIPS = [
@@ -145,4 +154,35 @@ export function updatePerson(id, fields) {
 
 export function setPhoto(id, dataUrl) {
   updatePerson(id, { photo: dataUrl });
+}
+
+// ── Memories ────────────────────────────────────────────────────────────────
+export function addMemory(personId, { text, author }) {
+  const memory = {
+    id: mid(),
+    person_id: personId,
+    text: text.trim(),
+    author: (author || '').trim() || 'You',
+    created_at: new Date().toISOString().slice(0, 10),
+    votes: 0,
+    youVoted: false,
+  };
+  commit({ ...state, memories: [...state.memories, memory] });
+  return memory.id;
+}
+
+// Single-device demo: a vote is just the local viewer's toggle.
+export function toggleMemoryVote(id) {
+  commit({
+    ...state,
+    memories: state.memories.map((mem) =>
+      mem.id === id
+        ? { ...mem, youVoted: !mem.youVoted, votes: mem.votes + (mem.youVoted ? -1 : 1) }
+        : mem,
+    ),
+  });
+}
+
+export function removeMemory(id) {
+  commit({ ...state, memories: state.memories.filter((mem) => mem.id !== id) });
 }
