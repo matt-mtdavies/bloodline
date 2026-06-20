@@ -25,6 +25,7 @@ export default function EditPersonSheet({ person, onClose, onSave }) {
   }, [onClose]);
 
   const set = (k) => (e) => setF((s) => ({ ...s, [k]: e.target.value }));
+  const clear = (k) => () => setF((s) => ({ ...s, [k]: '' }));
 
   const save = () => {
     onSave({
@@ -61,69 +62,60 @@ export default function EditPersonSheet({ person, onClose, onSave }) {
         <div className="form__fields">
           <label className="field">
             <span className="field__label">Name</span>
-            <input className="field__input" value={f.display_name} onChange={set('display_name')} />
+            <div className="input-wrap">
+              <input className="field__input" value={f.display_name} onChange={set('display_name')} />
+              {f.display_name && <button type="button" className="input-clear" onClick={clear('display_name')} aria-label="Clear" tabIndex={-1}>×</button>}
+            </div>
           </label>
 
           <div className="field-row">
             <label className="field">
               <span className="field__label">Born</span>
-              <input
-                className="field__input"
-                value={f.birth_date}
-                onChange={set('birth_date')}
-                placeholder="Year or 1985-04-12"
-              />
+              <div className="input-wrap">
+                <input className="field__input" value={f.birth_date} onChange={set('birth_date')} placeholder="Year or 1985-04-12" />
+                {f.birth_date && <button type="button" className="input-clear" onClick={clear('birth_date')} aria-label="Clear" tabIndex={-1}>×</button>}
+              </div>
             </label>
             <label className="field">
               <span className="field__label">Gender</span>
-              <input
-                className="field__input"
-                value={f.gender}
-                onChange={set('gender')}
-                placeholder="Optional"
-              />
+              <div className="input-wrap">
+                <input className="field__input" value={f.gender} onChange={set('gender')} placeholder="Optional" />
+                {f.gender && <button type="button" className="input-clear" onClick={clear('gender')} aria-label="Clear" tabIndex={-1}>×</button>}
+              </div>
             </label>
           </div>
 
           <div className="field-row">
             <label className="field">
               <span className="field__label">Birthplace</span>
-              <input
-                className="field__input"
-                value={f.birth_place}
-                onChange={set('birth_place')}
-                placeholder="e.g. Cardiff, Wales"
-              />
+              <div className="input-wrap">
+                <input className="field__input" value={f.birth_place} onChange={set('birth_place')} placeholder="e.g. Cardiff, Wales" />
+                {f.birth_place && <button type="button" className="input-clear" onClick={clear('birth_place')} aria-label="Clear" tabIndex={-1}>×</button>}
+              </div>
             </label>
             <label className="field">
               <span className="field__label">Lives in</span>
-              <input
-                className="field__input"
-                value={f.residence}
-                onChange={set('residence')}
-                placeholder="Optional"
-              />
+              <div className="input-wrap">
+                <input className="field__input" value={f.residence} onChange={set('residence')} placeholder="Optional" />
+                {f.residence && <button type="button" className="input-clear" onClick={clear('residence')} aria-label="Clear" tabIndex={-1}>×</button>}
+              </div>
             </label>
           </div>
 
           <label className="field">
             <span className="field__label">Occupation</span>
-            <input
-              className="field__input"
-              value={f.occupation}
-              onChange={set('occupation')}
-              placeholder="e.g. Architect"
-            />
+            <div className="input-wrap">
+              <input className="field__input" value={f.occupation} onChange={set('occupation')} placeholder="e.g. Architect" />
+              {f.occupation && <button type="button" className="input-clear" onClick={clear('occupation')} aria-label="Clear" tabIndex={-1}>×</button>}
+            </div>
           </label>
 
           <label className="field">
             <span className="field__label">Tags</span>
-            <input
-              className="field__input"
-              value={f.tags}
-              onChange={set('tags')}
-              placeholder="Veteran, Teacher, Immigrant"
-            />
+            <div className="input-wrap">
+              <input className="field__input" value={f.tags} onChange={set('tags')} placeholder="Veteran, Teacher, Immigrant" />
+              {f.tags && <button type="button" className="input-clear" onClick={clear('tags')} aria-label="Clear" tabIndex={-1}>×</button>}
+            </div>
             <span className="field__hint">Separate with commas</span>
           </label>
 
@@ -138,12 +130,10 @@ export default function EditPersonSheet({ person, onClose, onSave }) {
           {f.is_deceased && (
             <label className="field">
               <span className="field__label">Passed</span>
-              <input
-                className="field__input"
-                value={f.death_date}
-                onChange={set('death_date')}
-                placeholder="Year"
-              />
+              <div className="input-wrap">
+                <input className="field__input" value={f.death_date} onChange={set('death_date')} placeholder="Year" />
+                {f.death_date && <button type="button" className="input-clear" onClick={clear('death_date')} aria-label="Clear" tabIndex={-1}>×</button>}
+              </div>
             </label>
           )}
 

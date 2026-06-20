@@ -57,29 +57,38 @@ export default function TimelineEditor({ person, onClose, onSave }) {
           )}
           {rows.map((r, i) => (
             <div className="tl-row" key={i}>
-              <input
-                className="field__input tl-row__year"
-                value={r.year}
-                onChange={update(i, 'year')}
-                placeholder="Year"
-                inputMode="numeric"
-                aria-label="Year"
-              />
+              <div className="input-wrap tl-row__year">
+                <input
+                  className="field__input"
+                  value={r.year}
+                  onChange={update(i, 'year')}
+                  placeholder="Year"
+                  inputMode="numeric"
+                  aria-label="Year"
+                />
+                {r.year && <button type="button" className="input-clear" onClick={() => update(i, 'year')({ target: { value: '' } })} aria-label="Clear" tabIndex={-1}>×</button>}
+              </div>
               <div className="tl-row__main">
-                <input
-                  className="field__input"
-                  value={r.title}
-                  onChange={update(i, 'title')}
-                  placeholder="What happened — e.g. Married"
-                  aria-label="Event"
-                />
-                <input
-                  className="field__input"
-                  value={r.detail}
-                  onChange={update(i, 'detail')}
-                  placeholder="A detail (optional)"
-                  aria-label="Detail"
-                />
+                <div className="input-wrap">
+                  <input
+                    className="field__input"
+                    value={r.title}
+                    onChange={update(i, 'title')}
+                    placeholder="What happened — e.g. Married"
+                    aria-label="Event"
+                  />
+                  {r.title && <button type="button" className="input-clear" onClick={() => update(i, 'title')({ target: { value: '' } })} aria-label="Clear" tabIndex={-1}>×</button>}
+                </div>
+                <div className="input-wrap">
+                  <input
+                    className="field__input"
+                    value={r.detail}
+                    onChange={update(i, 'detail')}
+                    placeholder="A detail (optional)"
+                    aria-label="Detail"
+                  />
+                  {r.detail && <button type="button" className="input-clear" onClick={() => update(i, 'detail')({ target: { value: '' } })} aria-label="Clear" tabIndex={-1}>×</button>}
+                </div>
               </div>
               <button
                 className="tl-row__del"

@@ -46,12 +46,15 @@ export default function MemorySheet({ person, onClose, onAdd }) {
           </label>
           <label className="field">
             <span className="field__label">From</span>
-            <input
-              className="field__input"
-              value={author}
-              onChange={(e) => setAuthor(e.target.value)}
-              placeholder="Your name (optional)"
-            />
+            <div className="input-wrap">
+              <input
+                className="field__input"
+                value={author}
+                onChange={(e) => setAuthor(e.target.value)}
+                placeholder="Your name (optional)"
+              />
+              {author && <button type="button" className="input-clear" onClick={() => setAuthor('')} aria-label="Clear" tabIndex={-1}>×</button>}
+            </div>
           </label>
         </div>
 

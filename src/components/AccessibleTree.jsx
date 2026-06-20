@@ -96,14 +96,21 @@ export default function AccessibleTree({ graph, focusId, onFocus, onOpenPerson }
             ? ` · ${directory.length} of ${graph.people.length}`
             : ''}
         </h3>
-        <input
-          className="search"
-          type="search"
-          placeholder="Search by name, occupation, location, tag…"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          aria-label="Search the family"
-        />
+        <div className="search-wrap">
+          <input
+            className="search"
+            type="search"
+            placeholder="Search by name, occupation, location, tag…"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            aria-label="Search the family"
+          />
+          {q && (
+            <button className="input-clear" onClick={() => setQ('')} aria-label="Clear search" tabIndex={-1}>
+              ×
+            </button>
+          )}
+        </div>
         <div className="filter-pills" role="group" aria-label="Filter by status">
           {[
             { key: 'all', label: 'All' },

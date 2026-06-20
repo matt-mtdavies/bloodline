@@ -67,15 +67,18 @@ export default function AddRelativeSheet({ anchor, onClose, onAdd }) {
         <div className={'form__reveal' + (relKey ? ' form__reveal--open' : '')}>
           <label className="field">
             <span className="field__label">Their name</span>
-            <input
-              ref={nameRef}
-              className="field__input"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && submit()}
-              placeholder="e.g. Margaret Davies"
-              autoComplete="off"
-            />
+            <div className="input-wrap">
+              <input
+                ref={nameRef}
+                className="field__input"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && submit()}
+                placeholder="e.g. Margaret Davies"
+                autoComplete="off"
+              />
+              {name && <button type="button" className="input-clear" onClick={() => setName('')} aria-label="Clear" tabIndex={-1}>×</button>}
+            </div>
           </label>
 
           {!more ? (
@@ -86,13 +89,16 @@ export default function AddRelativeSheet({ anchor, onClose, onAdd }) {
             <div className="form__more">
               <label className="field field--inline">
                 <span className="field__label">Born</span>
-                <input
-                  className="field__input field__input--year"
-                  value={birthYear}
-                  onChange={(e) => setBirthYear(e.target.value)}
-                  placeholder="Year"
-                  inputMode="numeric"
-                />
+                <div className="input-wrap">
+                  <input
+                    className="field__input field__input--year"
+                    value={birthYear}
+                    onChange={(e) => setBirthYear(e.target.value)}
+                    placeholder="Year"
+                    inputMode="numeric"
+                  />
+                  {birthYear && <button type="button" className="input-clear" onClick={() => setBirthYear('')} aria-label="Clear" tabIndex={-1}>×</button>}
+                </div>
               </label>
               <label className="toggle">
                 <input
@@ -105,13 +111,16 @@ export default function AddRelativeSheet({ anchor, onClose, onAdd }) {
               {deceased && (
                 <label className="field field--inline">
                   <span className="field__label">Passed</span>
-                  <input
-                    className="field__input field__input--year"
-                    value={deathYear}
-                    onChange={(e) => setDeathYear(e.target.value)}
-                    placeholder="Year"
-                    inputMode="numeric"
-                  />
+                  <div className="input-wrap">
+                    <input
+                      className="field__input field__input--year"
+                      value={deathYear}
+                      onChange={(e) => setDeathYear(e.target.value)}
+                      placeholder="Year"
+                      inputMode="numeric"
+                    />
+                    {deathYear && <button type="button" className="input-clear" onClick={() => setDeathYear('')} aria-label="Clear" tabIndex={-1}>×</button>}
+                  </div>
                 </label>
               )}
             </div>
