@@ -2208,6 +2208,115 @@
 }
 .fs__err { font-size: 13px; color: #c0392b; text-align: center; }
 
+/* Danger zone in FamilySettings */
+.fs__danger {
+  margin: 20px 0 4px;
+  padding: 16px;
+  border: 1.5px solid #ffd5d0;
+  border-radius: 12px;
+  background: #fff8f7;
+}
+.fs__danger-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #c0392b;
+  margin-bottom: 10px;
+}
+.fs__danger-btn {
+  width: 100%;
+  padding: 12px;
+  border: 1.5px solid #ffc8c0;
+  border-radius: 8px;
+  background: #fff;
+  color: #c0392b;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: center;
+}
+.fs__danger-btn:active { background: #fff0ee; }
+
+/* Delete button in EditPersonSheet */
+.edit-danger {
+  padding: 16px 0 4px;
+  text-align: center;
+  border-top: 1px solid var(--hairline);
+  margin-top: 4px;
+}
+.edit-danger__btn {
+  background: none;
+  border: none;
+  color: #c0392b;
+  font-size: 14px;
+  padding: 8px 16px;
+  cursor: pointer;
+  opacity: 0.75;
+}
+.edit-danger__btn:active { opacity: 1; }
+
+/* Mode toggle (New person / Already in tree) */
+.mode-toggle {
+  display: flex;
+  gap: 6px;
+  margin-top: 14px;
+}
+.mode-toggle__btn {
+  flex: 1;
+  padding: 9px 12px;
+  border: 1.5px solid var(--hairline);
+  border-radius: 20px;
+  background: #fff;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink-soft);
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+.mode-toggle__btn--on {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-bg, #fdf6f3);
+}
+
+/* Existing person picker */
+.existing-picker {
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.existing-picker__list {
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1.5px solid var(--hairline);
+  border-radius: 12px;
+  background: #fafafa;
+}
+.existing-picker__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 13px 16px;
+  border: none;
+  border-bottom: 1px solid var(--hairline);
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+.existing-picker__item:last-child { border-bottom: none; }
+.existing-picker__item:active { background: var(--accent-bg, #fdf6f3); }
+.existing-picker__name { font-size: 15px; color: var(--ink); }
+.existing-picker__year { font-size: 13px; color: var(--ink-soft); }
+.existing-picker__empty {
+  padding: 20px;
+  text-align: center;
+  font-size: 14px;
+  color: var(--ink-soft);
+}
+
 /* ── Privacy / visibility controls in EditPersonSheet ─────────────────────── */
 .privacy-section { border-top: 1px solid var(--hairline); margin-top: 8px; padding-top: 12px; }
 .privacy-section__toggle {

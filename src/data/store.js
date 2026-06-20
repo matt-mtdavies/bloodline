@@ -434,3 +434,30 @@ export function addDocument(personId, { title, mime, src }) {
 export function removeDocument(id) {
   commit({ ...state, documents: state.documents.filter((d) => d.id !== id) });
 }
+
+export function deletePerson(id) {
+  commit({
+    ...state,
+    people: state.people.filter((p) => p.id !== id),
+    relationships: state.relationships.filter(
+      (r) => r.from_person !== id && r.to_person !== id,
+    ),
+    memories: state.memories.filter((m) => m.person_id !== id),
+    photos: state.photos.filter((p) => p.person_id !== id),
+    myPersonId: state.myPersonId === id ? null : state.myPersonId,
+  });
+}
+
+export function linkRelative({ anchorId, relKey, existingId, qualifier = 'biological' }) {
+  const edges = edgesFor(relKey, anchorId, existingId, state, qualifier);
+  const seen = new Set(
+    state.relationships.map((r) => `${r.from_person}|${r.to_person}|${r.type}`),
+  );
+  const newEdges = edges.filter((e) => !seen.has(`${e.from_person}|${e.to_person}|${e.type}`));
+  if (!newEdges.length) return;
+  commit({ ...state, relationships: [...state.relationships, ...newEdges] });
+}
+
+export function resetTree() {
+  commit({ ...EMPTY });
+}

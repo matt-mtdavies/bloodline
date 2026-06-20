@@ -6,7 +6,7 @@ import { VISIBILITY_LABELS, VISIBILITY_DESCS, SECTIONS } from '../lib/visibility
  * laid out cleanly so updating a date or adding a story is effortless.
  * Includes a Privacy section for visibility and per-section controls.
  */
-export default function EditPersonSheet({ person, onClose, onSave }) {
+export default function EditPersonSheet({ person, onClose, onSave, onDelete }) {
   const [f, setF] = useState({
     display_name: person.display_name || '',
     gender: person.gender || '',
@@ -220,6 +220,22 @@ export default function EditPersonSheet({ person, onClose, onSave }) {
             Cancel
           </button>
         </footer>
+
+        {onDelete && (
+          <div className="edit-danger">
+            <button
+              type="button"
+              className="edit-danger__btn"
+              onClick={() => {
+                if (window.confirm(`Remove ${person.display_name} from the tree? This cannot be undone.`)) {
+                  onDelete(person.id);
+                }
+              }}
+            >
+              Remove {person.display_name.split(' ')[0]} from tree
+            </button>
+          </div>
+        )}
       </section>
     </div>
   );

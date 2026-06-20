@@ -5,7 +5,7 @@ import {
 
 const INVITE_ROLES = ['coadmin', 'editor', 'contributor', 'viewer'];
 
-export default function FamilySettings({ myRole, familyName, onClose }) {
+export default function FamilySettings({ myRole, familyName, onClose, onReset }) {
   const [tab, setTab] = useState('members'); // 'members' | 'invite'
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -181,6 +181,21 @@ export default function FamilySettings({ myRole, familyName, onClose }) {
             )}
           </>
         )}
+
+        <div className="fs__danger">
+          <p className="fs__danger-label">Danger zone</p>
+          <button
+            className="fs__danger-btn"
+            onClick={() => {
+              if (window.confirm('Clear all tree data and start over? This cannot be undone.')) {
+                onReset?.();
+                onClose();
+              }
+            }}
+          >
+            Start over — clear all data
+          </button>
+        </div>
       </div>
     </div>
   );

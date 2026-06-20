@@ -17,6 +17,9 @@ import {
   removeDocument,
   loadFromServer,
   enableServerSync,
+  deletePerson,
+  linkRelative,
+  resetTree,
 } from './data/store.js';
 import { buildGraph, pathBetween } from './data/graph.js';
 import { useReducedMotion } from './hooks/useReducedMotion.js';
@@ -150,10 +153,16 @@ export default function App() {
     setOpenId(null);
   }, []);
 
-  // Add a relative, then fly to the new person so they greet you on the tree.
+  // Add a relative — either new (creates person) or existing (links only).
   const handleAdd = useCallback(
     (fields) => {
-      const newId = addRelative({ anchorId: addAnchorId, ...fields });
+      let newId;
+      if (fields.existingId) {
+        linkRelative({ anchorId: addAnchorId, ...fields });
+        newId = fields.existingId;
+      } else {
+        newId = addRelative({ anchorId: addAnchorId, ...fields });
+      }
       setAddAnchorId(null);
       viewApi.current?.unpin();
       setOpenId(null);
@@ -161,6 +170,21 @@ export default function App() {
       setActiveId(newId);
     },
     [addAnchorId],
+  );
+
+  const handleDelete = useCallback(
+    (id) => {
+      deletePerson(id);
+      setEditId(null);
+      setOpenId(null);
+      if (activeId === id) {
+        const fallback = data.myPersonId && data.myPersonId !== id
+          ? data.myPersonId
+          : data.people.find((p) => p.id !== id)?.id;
+        if (fallback) { setActiveId(fallback); setExpanded(new Set([fallback])); }
+      }
+    },
+    [activeId, data.myPersonId, data.people],
   );
 
   const handleSave = useCallback(
@@ -298,6 +322,7 @@ export default function App() {
       {addAnchorId && graph.byId.get(addAnchorId) && (
         <AddRelativeSheet
           anchor={graph.byId.get(addAnchorId)}
+          people={data.people.filter((p) => p.id !== addAnchorId)}
           onClose={() => setAddAnchorId(null)}
           onAdd={handleAdd}
         />
@@ -308,6 +333,7 @@ export default function App() {
           person={graph.byId.get(editId)}
           onClose={() => setEditId(null)}
           onSave={handleSave}
+          onDelete={handleDelete}
         />
       )}
 
@@ -364,6 +390,7 @@ export default function App() {
           myRole={user ? (data._meta?.role || 'owner') : 'owner'}
           familyName={data.familyName || 'My Family'}
           onClose={() => setSettingsOpen(false)}
+          onReset={() => { resetTree(); setActiveId(null); setExpanded(new Set()); setOpenId(null); }}
         />
       )}
     </div>

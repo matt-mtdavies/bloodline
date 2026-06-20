@@ -7,19 +7,16 @@ const QUALIFIERS = [
   { key: 'adoptive', label: 'Adopted' },
 ];
 
-/*
- * Relationship-first add (§4): the only required answer is *who* they are to
- * the anchor person and their name — three seconds. Dates and "no longer with
- * us" are optional, revealed progressively so the form never feels like work.
- */
-export default function AddRelativeSheet({ anchor, onClose, onAdd }) {
+export default function AddRelativeSheet({ anchor, people = [], onClose, onAdd }) {
   const [relKey, setRelKey] = useState(null);
   const [qualifier, setQualifier] = useState('biological');
+  const [mode, setMode] = useState('new'); // 'new' | 'existing'
   const [name, setName] = useState('');
   const [more, setMore] = useState(false);
   const [birthYear, setBirthYear] = useState('');
   const [deceased, setDeceased] = useState(false);
   const [deathYear, setDeathYear] = useState('');
+  const [search, setSearch] = useState('');
   const nameRef = useRef(null);
 
   useEffect(() => {
@@ -42,6 +39,25 @@ export default function AddRelativeSheet({ anchor, onClose, onAdd }) {
     });
   };
 
+  const submitExisting = (existingId) => {
+    onAdd({
+      relKey,
+      qualifier: QUALIFIER_KEYS.has(relKey) ? qualifier : 'biological',
+      existingId,
+    });
+  };
+
+  const selectRel = (key) => {
+    setRelKey(key);
+    setQualifier('biological');
+    setMode('new');
+    setSearch('');
+  };
+
+  const filteredPeople = people.filter((p) =>
+    p.display_name.toLowerCase().includes(search.toLowerCase()),
+  );
+
   const firstName = anchor.display_name.split(/\s+/)[0];
 
   return (
@@ -54,7 +70,7 @@ export default function AddRelativeSheet({ anchor, onClose, onAdd }) {
         onClick={(e) => e.stopPropagation()}
       >
         <header className="form__head">
-          <h2>Add to {firstName}’s family</h2>
+          <h2>Add to {firstName}'s family</h2>
           <p className="form__sub">Who are they to {firstName}?</p>
         </header>
 
@@ -65,7 +81,7 @@ export default function AddRelativeSheet({ anchor, onClose, onAdd }) {
               role="radio"
               aria-checked={relKey === r.key}
               className={'chip' + (relKey === r.key ? ' chip--on' : '')}
-              onClick={() => { setRelKey(r.key); setQualifier('biological'); }}
+              onClick={() => selectRel(r.key)}
             >
               {r.label}
             </button>
@@ -88,73 +104,126 @@ export default function AddRelativeSheet({ anchor, onClose, onAdd }) {
           </div>
         )}
 
-        <div className={'form__reveal' + (relKey ? ' form__reveal--open' : '')}>
-          <label className="field">
-            <span className="field__label">Their name</span>
+        {relKey && people.length > 0 && (
+          <div className="mode-toggle" role="radiogroup" aria-label="Add mode">
+            <button
+              role="radio"
+              aria-checked={mode === 'new'}
+              className={'mode-toggle__btn' + (mode === 'new' ? ' mode-toggle__btn--on' : '')}
+              onClick={() => setMode('new')}
+            >
+              New person
+            </button>
+            <button
+              role="radio"
+              aria-checked={mode === 'existing'}
+              className={'mode-toggle__btn' + (mode === 'existing' ? ' mode-toggle__btn--on' : '')}
+              onClick={() => { setMode('existing'); setSearch(''); }}
+            >
+              Already in tree
+            </button>
+          </div>
+        )}
+
+        {mode === 'existing' ? (
+          <div className="existing-picker">
             <div className="input-wrap">
               <input
-                ref={nameRef}
                 className="field__input"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && submit()}
-                placeholder="e.g. Margaret Davies"
-                autoComplete="off"
+                placeholder="Search by name…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                autoFocus
               />
-              {name && <button type="button" className="input-clear" onClick={() => setName('')} aria-label="Clear" tabIndex={-1}>×</button>}
+              {search && (
+                <button type="button" className="input-clear" onClick={() => setSearch('')} tabIndex={-1}>×</button>
+              )}
             </div>
-          </label>
-
-          {!more ? (
-            <button className="link-btn" onClick={() => setMore(true)}>
-              + Add a few details
-            </button>
-          ) : (
-            <div className="form__more">
-              <label className="field field--inline">
-                <span className="field__label">Born</span>
-                <div className="input-wrap">
-                  <input
-                    className="field__input field__input--year"
-                    value={birthYear}
-                    onChange={(e) => setBirthYear(e.target.value)}
-                    placeholder="Year"
-                    inputMode="numeric"
-                  />
-                  {birthYear && <button type="button" className="input-clear" onClick={() => setBirthYear('')} aria-label="Clear" tabIndex={-1}>×</button>}
-                </div>
-              </label>
-              <label className="toggle">
+            <div className="existing-picker__list">
+              {filteredPeople.map((p) => (
+                <button key={p.id} className="existing-picker__item" onClick={() => submitExisting(p.id)}>
+                  <span className="existing-picker__name">{p.display_name}</span>
+                  {p.birth_date && (
+                    <span className="existing-picker__year">{p.birth_date.toString().slice(0, 4)}</span>
+                  )}
+                </button>
+              ))}
+              {filteredPeople.length === 0 && (
+                <p className="existing-picker__empty">No matches</p>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className={'form__reveal' + (relKey ? ' form__reveal--open' : '')}>
+            <label className="field">
+              <span className="field__label">Their name</span>
+              <div className="input-wrap">
                 <input
-                  type="checkbox"
-                  checked={deceased}
-                  onChange={(e) => setDeceased(e.target.checked)}
+                  ref={nameRef}
+                  className="field__input"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && submit()}
+                  placeholder="e.g. Margaret Davies"
+                  autoComplete="off"
                 />
-                <span>No longer with us</span>
-              </label>
-              {deceased && (
+                {name && <button type="button" className="input-clear" onClick={() => setName('')} aria-label="Clear" tabIndex={-1}>×</button>}
+              </div>
+            </label>
+
+            {!more ? (
+              <button className="link-btn" onClick={() => setMore(true)}>
+                + Add a few details
+              </button>
+            ) : (
+              <div className="form__more">
                 <label className="field field--inline">
-                  <span className="field__label">Passed</span>
+                  <span className="field__label">Born</span>
                   <div className="input-wrap">
                     <input
                       className="field__input field__input--year"
-                      value={deathYear}
-                      onChange={(e) => setDeathYear(e.target.value)}
+                      value={birthYear}
+                      onChange={(e) => setBirthYear(e.target.value)}
                       placeholder="Year"
                       inputMode="numeric"
                     />
-                    {deathYear && <button type="button" className="input-clear" onClick={() => setDeathYear('')} aria-label="Clear" tabIndex={-1}>×</button>}
+                    {birthYear && <button type="button" className="input-clear" onClick={() => setBirthYear('')} aria-label="Clear" tabIndex={-1}>×</button>}
                   </div>
                 </label>
-              )}
-            </div>
-          )}
-        </div>
+                <label className="toggle">
+                  <input
+                    type="checkbox"
+                    checked={deceased}
+                    onChange={(e) => setDeceased(e.target.checked)}
+                  />
+                  <span>No longer with us</span>
+                </label>
+                {deceased && (
+                  <label className="field field--inline">
+                    <span className="field__label">Passed</span>
+                    <div className="input-wrap">
+                      <input
+                        className="field__input field__input--year"
+                        value={deathYear}
+                        onChange={(e) => setDeathYear(e.target.value)}
+                        placeholder="Year"
+                        inputMode="numeric"
+                      />
+                      {deathYear && <button type="button" className="input-clear" onClick={() => setDeathYear('')} aria-label="Clear" tabIndex={-1}>×</button>}
+                    </div>
+                  </label>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
         <footer className="sheet__foot">
-          <button className="btn btn--primary" disabled={!canAdd} onClick={submit}>
-            {name.trim() ? `Add ${name.trim().split(/\s+/)[0]}` : 'Add'}
-          </button>
+          {mode === 'new' && (
+            <button className="btn btn--primary" disabled={!canAdd} onClick={submit}>
+              {name.trim() ? `Add ${name.trim().split(/\s+/)[0]}` : 'Add'}
+            </button>
+          )}
           <button className="btn" onClick={onClose}>
             Cancel
           </button>
