@@ -10,6 +10,9 @@ export default function EditPersonSheet({ person, onClose, onSave }) {
     gender: person.gender || '',
     birth_date: person.birth_date || '',
     birth_place: person.birth_place || '',
+    residence: person.residence || '',
+    occupation: person.occupation || '',
+    tags: (person.tags || []).join(', '),
     bio: person.bio || '',
     is_deceased: !!person.is_deceased,
     death_date: person.death_date || '',
@@ -29,6 +32,12 @@ export default function EditPersonSheet({ person, onClose, onSave }) {
       gender: f.gender.trim() || null,
       birth_date: f.birth_date.trim() || null,
       birth_place: f.birth_place.trim() || null,
+      residence: f.residence.trim() || null,
+      occupation: f.occupation.trim() || null,
+      tags: f.tags
+        .split(',')
+        .map((t) => t.trim())
+        .filter(Boolean),
       bio: f.bio.trim() || null,
       is_deceased: f.is_deceased,
       is_living: !f.is_deceased,
@@ -76,14 +85,46 @@ export default function EditPersonSheet({ person, onClose, onSave }) {
             </label>
           </div>
 
+          <div className="field-row">
+            <label className="field">
+              <span className="field__label">Birthplace</span>
+              <input
+                className="field__input"
+                value={f.birth_place}
+                onChange={set('birth_place')}
+                placeholder="e.g. Cardiff, Wales"
+              />
+            </label>
+            <label className="field">
+              <span className="field__label">Lives in</span>
+              <input
+                className="field__input"
+                value={f.residence}
+                onChange={set('residence')}
+                placeholder="Optional"
+              />
+            </label>
+          </div>
+
           <label className="field">
-            <span className="field__label">Birthplace</span>
+            <span className="field__label">Occupation</span>
             <input
               className="field__input"
-              value={f.birth_place}
-              onChange={set('birth_place')}
-              placeholder="e.g. Cardiff, Wales"
+              value={f.occupation}
+              onChange={set('occupation')}
+              placeholder="e.g. Architect"
             />
+          </label>
+
+          <label className="field">
+            <span className="field__label">Tags</span>
+            <input
+              className="field__input"
+              value={f.tags}
+              onChange={set('tags')}
+              placeholder="Veteran, Teacher, Immigrant"
+            />
+            <span className="field__hint">Separate with commas</span>
           </label>
 
           <label className="toggle">

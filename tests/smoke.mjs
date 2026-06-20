@@ -60,7 +60,7 @@ try {
   const acy = (vp.height + Math.min(120, vp.height * 0.16)) / 2;
   await page.mouse.click(acx, acy);
   await page.waitForSelector('[role="dialog"]', { timeout: 5000 });
-  const sheetName = (await page.textContent('.sheet__id h2').catch(() => '')) || '';
+  const sheetName = (await page.textContent('.profile__name').catch(() => '')) || '';
   check(sheetName.length > 0, `tapping centred bubble opens the card (${sheetName.trim()})`);
   await page.waitForTimeout(800); // let the tree slide + card FLIP settle
   await page.screenshot({ path: shot('02-sheet.png') });

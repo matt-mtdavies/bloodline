@@ -1,18 +1,20 @@
 import { useEffect, useRef } from 'react';
 import Avatar from './Avatar.jsx';
-import { lifespan, formatDate } from '../lib/dates.js';
+import { lifespan, formatDate, ageOrAt } from '../lib/dates.js';
 import { relationLabel } from '../data/graph.js';
+import { profileCompleteness, lifeEvents } from '../lib/profile.js';
 
 /*
- * The person card. The active bubble stays sharp on the tree while everyone
- * else blurs back; this card slides in alongside as a clean panel. From here you
- * add a relative, edit details, or give them a face.
+ * The profile. In V2 this is the destination, not a popover — a portrait,
+ * a life, and the beginnings of the stories that should outlast a person.
+ * The tree recedes behind it; this rises as a full reading surface.
  *
  * Living minors get a light privacy note rather than full exposure (§7).
  */
 export default function PersonSheet({
   graph,
   personId,
+  viewerId,
   onClose,
   onFocus,
   onOpenPerson,
@@ -32,6 +34,7 @@ export default function PersonSheet({
 
   if (!person) return null;
 
+  const minor = person.is_minor && !person.is_deceased;
   const partners = graph.partners(person.id);
   const parents = graph.parents(person.id);
   const children = graph.children(person.id);
@@ -44,23 +47,40 @@ export default function PersonSheet({
     { title: 'Siblings', items: siblings },
   ].filter((g) => g.items.length);
 
+  const relToViewer =
+    viewerId && viewerId !== person.id ? relationLabel(graph, viewerId, person.id) : null;
+  const location = person.residence || person.birth_place;
+  const age = ageOrAt(person);
+  const events = minor ? [] : lifeEvents(person);
+  const completeness = minor ? null : profileCompleteness(person, graph);
+
+  const metaBits = [];
+  if (person.occupation) metaBits.push(person.occupation);
+  metaBits.push(lifespan(person));
+  if (age && !person.is_deceased) metaBits.push(`age ${age}`);
+
   return (
-    <div className="sheet-scrim sheet-scrim--soft" onClick={onClose}>
-      <section
-        className="sheet sheet--card"
+    <div className="profile-scrim" onClick={onClose}>
+      <article
+        className="profile"
         role="dialog"
         aria-modal="true"
         aria-label={`${person.display_name} profile`}
         onClick={(e) => e.stopPropagation()}
       >
-        <header className="sheet__head">
+        <button className="profile__close" onClick={onClose} aria-label="Close profile">
+          <CloseIcon />
+        </button>
+
+        {/* ── Hero ─────────────────────────────────────────────────────────── */}
+        <header className="profile__hero">
           <button
-            className="avatar-edit"
+            className="avatar-edit avatar-edit--lg"
             onClick={() => fileRef.current?.click()}
             aria-label={person.photo ? 'Change photo' : 'Add a photo'}
             title={person.photo ? 'Change photo' : 'Add a photo'}
           >
-            <Avatar person={person} size={84} />
+            <Avatar person={person} size={108} />
             <span className="avatar-edit__badge">
               <CameraIcon />
             </span>
@@ -76,96 +96,177 @@ export default function PersonSheet({
               e.target.value = '';
             }}
           />
-          <div className="sheet__id">
-            <h2>{person.display_name}</h2>
-            <p className="sheet__life">{lifespan(person)}</p>
-            <div className="sheet__badges">
-              {person.is_deceased && <span className="badge badge--memorial">In loving memory</span>}
-              {!person.is_deceased && person.is_minor && (
-                <span className="badge badge--quiet">Child · limited details</span>
-              )}
-              {person.confidence === 'uncertain' && (
-                <span className="badge badge--quiet">Unconfirmed</span>
-              )}
-            </div>
+
+          {relToViewer && <p className="profile__kin">{relToViewer}</p>}
+          <h2 className="profile__name">{person.display_name}</h2>
+          <p className="profile__meta">{metaBits.join('  ·  ')}</p>
+          {location && (
+            <p className="profile__where">
+              <PinIcon />
+              {location}
+            </p>
+          )}
+
+          <div className="profile__badges">
+            {person.is_deceased && <span className="badge badge--memorial">In loving memory</span>}
+            {minor && <span className="badge badge--quiet">Child · limited details</span>}
+            {person.confidence === 'uncertain' && (
+              <span className="badge badge--quiet">Unconfirmed</span>
+            )}
           </div>
-          <button className="icon-btn sheet__edit" onClick={() => onEdit?.(person.id)} aria-label="Edit details">
-            <PencilIcon />
-          </button>
+
+          {!minor && person.tags?.length > 0 && (
+            <ul className="tags">
+              {person.tags.map((t) => (
+                <li className="tag" key={t}>
+                  {t}
+                </li>
+              ))}
+            </ul>
+          )}
         </header>
 
-        <div className="sheet__actions">
+        {/* ── Actions ──────────────────────────────────────────────────────── */}
+        <div className="profile__actions">
           <button className="action action--primary" onClick={() => onAddRelative?.(person.id)}>
             <PlusIcon />
             Add a relative
           </button>
+          <button className="action" onClick={() => onEdit?.(person.id)}>
+            <PencilIcon />
+            Edit
+          </button>
         </div>
 
-        <div className="sheet__body">
-          {person.is_minor && !person.is_deceased ? (
-            <p className="sheet__bio sheet__bio--muted">
-              Details for children are kept private and shared only within the family.
-            </p>
-          ) : (
-            person.bio && <p className="sheet__bio">{person.bio}</p>
-          )}
-
-          <dl className="sheet__facts">
-            {person.birth_place && (
-              <div>
-                <dt>Born</dt>
-                <dd>
-                  {formatDate(person.birth_date) || '—'}
-                  {person.birth_place ? ` · ${person.birth_place}` : ''}
-                </dd>
+        {minor ? (
+          <p className="profile__private">
+            Details for children are kept private and shared only within the family.
+          </p>
+        ) : (
+          <div className="profile__body">
+            {completeness && completeness.score < 100 && (
+              <div className="meter" aria-label={`Profile ${completeness.score}% complete`}>
+                <div className="meter__top">
+                  <span className="meter__pct">{completeness.score}% complete</span>
+                  <span className="meter__missing">
+                    Add {completeness.missing.slice(0, 2).join(', ').toLowerCase()}
+                    {completeness.missing.length > 2 ? '…' : ''}
+                  </span>
+                </div>
+                <div className="meter__bar">
+                  <span className="meter__fill" style={{ width: `${completeness.score}%` }} />
+                </div>
               </div>
             )}
-            {person.is_deceased && person.death_date && (
-              <div>
-                <dt>Died</dt>
-                <dd>{formatDate(person.death_date)}</dd>
-              </div>
-            )}
-          </dl>
 
-          {groups.map((g) => (
-            <div className="sheet__rel" key={g.title}>
-              <h3>{g.title}</h3>
-              <ul>
-                {g.items.map((item) => {
-                  const rel = graph.byId.get(item.id);
-                  if (!rel) return null;
-                  return (
-                    <li key={item.id}>
-                      <button className="rel-chip" onClick={() => onOpenPerson(item.id)}>
-                        <Avatar person={rel} size={38} />
-                        <span className="rel-chip__text">
-                          <span className="rel-chip__name">{rel.display_name}</span>
-                          <span className="rel-chip__kind">
-                            {relationLabel(graph, person.id, item.id)}
-                            {item.qualifier && item.qualifier !== 'biological'
-                              ? ` · ${item.qualifier}`
-                              : ''}
-                          </span>
-                        </span>
-                      </button>
+            {/* About */}
+            {person.bio && (
+              <section className="profile-section">
+                <h3 className="profile-section__title">About</h3>
+                <p className="profile__about">{person.bio}</p>
+              </section>
+            )}
+
+            {/* Key life events */}
+            {events.length > 0 && (
+              <section className="profile-section">
+                <h3 className="profile-section__title">Key life events</h3>
+                <ol className="timeline">
+                  {events.map((e, i) => (
+                    <li className="timeline__item" key={`${e.year}-${i}`}>
+                      <span className="timeline__year">{e.year}</span>
+                      <span className="timeline__dot" aria-hidden="true" />
+                      <span className="timeline__body">
+                        <span className="timeline__title">{e.title}</span>
+                        {e.detail && <span className="timeline__detail">{e.detail}</span>}
+                      </span>
                     </li>
-                  );
-                })}
-              </ul>
-            </div>
-          ))}
-        </div>
+                  ))}
+                </ol>
+              </section>
+            )}
 
-        <footer className="sheet__foot">
+            {/* Relationships */}
+            {groups.length > 0 && (
+              <section className="profile-section">
+                <h3 className="profile-section__title">Relationships</h3>
+                {groups.map((g) => (
+                  <div className="rel-group" key={g.title}>
+                    <h4 className="rel-group__label">{g.title}</h4>
+                    <ul className="rel-group__list">
+                      {g.items.map((item) => {
+                        const rel = graph.byId.get(item.id);
+                        if (!rel) return null;
+                        return (
+                          <li key={item.id}>
+                            <button className="rel-chip" onClick={() => onOpenPerson(item.id)}>
+                              <Avatar person={rel} size={40} />
+                              <span className="rel-chip__text">
+                                <span className="rel-chip__name">{rel.display_name}</span>
+                                <span className="rel-chip__kind">
+                                  {relationLabel(graph, person.id, item.id)}
+                                  {item.qualifier && item.qualifier !== 'biological'
+                                    ? ` · ${item.qualifier}`
+                                    : ''}
+                                </span>
+                              </span>
+                              <ChevronIcon />
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                ))}
+              </section>
+            )}
+
+            {/* The destination, sketched in — Phase 2/3 sections, shown as the
+                invitations they'll become rather than empty space. */}
+            <section className="profile-section">
+              <h3 className="profile-section__title">Stories &amp; memories</h3>
+              <ul className="soon-list">
+                <li className="soon-row">
+                  <span className="soon-row__icon">❝</span>
+                  <span className="soon-row__text">
+                    <span className="soon-row__title">Memories</span>
+                    <span className="soon-row__sub">
+                      The little things — birthdays remembered, the pancakes every Christmas.
+                    </span>
+                  </span>
+                  <span className="soon-row__tag">Soon</span>
+                </li>
+                <li className="soon-row">
+                  <span className="soon-row__icon">✶</span>
+                  <span className="soon-row__text">
+                    <span className="soon-row__title">Life story</span>
+                    <span className="soon-row__sub">
+                      A narrative woven from the timeline, photos and memories.
+                    </span>
+                  </span>
+                  <span className="soon-row__tag">Soon</span>
+                </li>
+                <li className="soon-row">
+                  <span className="soon-row__icon">❀</span>
+                  <span className="soon-row__text">
+                    <span className="soon-row__title">Legacy</span>
+                    <span className="soon-row__sub">
+                      Advice, values and the things future generations should know.
+                    </span>
+                  </span>
+                  <span className="soon-row__tag">Soon</span>
+                </li>
+              </ul>
+            </section>
+          </div>
+        )}
+
+        <footer className="profile__foot">
           <button className="btn btn--primary" onClick={() => onFocus(person.id)}>
             Centre the tree here
           </button>
-          <button className="btn" onClick={onClose}>
-            Close
-          </button>
         </footer>
-      </section>
+      </article>
     </div>
   );
 }
@@ -183,21 +284,43 @@ function CameraIcon() {
 }
 function PencilIcon() {
   return (
-    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path
-        d="M4 20h4L19 9l-4-4L4 16v4Z"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinejoin="round"
-      />
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M4 20h4L19 9l-4-4L4 16v4Z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
       <path d="M14 6l4 4" stroke="currentColor" strokeWidth="1.7" />
     </svg>
   );
 }
 function PlusIcon() {
   return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+function CloseIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+function PinIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M12 21s7-6.2 7-11a7 7 0 1 0-14 0c0 4.8 7 11 7 11Z"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinejoin="round"
+      />
+      <circle cx="12" cy="10" r="2.4" stroke="currentColor" strokeWidth="1.7" />
+    </svg>
+  );
+}
+function ChevronIcon() {
+  return (
+    <svg className="rel-chip__chev" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M9 6l6 6-6 6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }

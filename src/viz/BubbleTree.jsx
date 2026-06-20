@@ -16,7 +16,8 @@ import { Spring } from '../lib/spring.js';
 const BASE_RADIUS = 46;
 const COLLIDE = 70;
 const GEN_GAP = 215;
-const ORGANIC_CHARGE = -820;
+const ORGANIC_CHARGE = -940; // wider repulsion so a revealed family fills the width
+const SPREAD_X = 0.008; // gentle horizontal centring — loose enough to spread out
 
 /*
  * The visualization. Everything that matters in Phase 1 lives here:
@@ -107,7 +108,7 @@ export default function BubbleTree({
         .force('link', linkForce)
         .force('charge', forceManyBody().strength(ORGANIC_CHARGE).distanceMax(780))
         .force('collide', forceCollide(COLLIDE).strength(0.9))
-        .force('x', forceX(0).strength(0.012))
+        .force('x', forceX(0).strength(SPREAD_X))
         .force('y', forceY((d) => (gen.get(d.id) ?? 0) * GEN_GAP - 260).strength(0.085))
         .alpha(1)
         .alphaDecay(0.018)
@@ -193,7 +194,7 @@ export default function BubbleTree({
           } else {
             state.radialTargets = new Map();
             sim.force('charge', forceManyBody().strength(ORGANIC_CHARGE).distanceMax(780));
-            sim.force('x', forceX(0).strength(0.012));
+            sim.force('x', forceX(0).strength(SPREAD_X));
             sim.force('y', forceY((d) => (gen.get(d.id) ?? 0) * GEN_GAP - 260).strength(0.085));
             linkForce.strength((l) => (l.kind === 'partner' ? 0.9 : 0.26));
           }
@@ -470,11 +471,11 @@ export default function BubbleTree({
             maxY = Math.max(maxY, Math.abs(n.y - f.y) + rr);
           }
           const fit = Math.min(
-            1.1,
-            (W / 2 - 32) / maxX,
-            ((H - topInset) / 2 - 28) / maxY,
+            1.22,
+            (W / 2 - 24) / maxX,
+            ((H - topInset) / 2 - 24) / maxY,
           );
-          zoom.setTarget(clamp(fit, 0.4, 1.1));
+          zoom.setTarget(clamp(fit, 0.4, 1.22));
         }
 
         // When a card is open, slide the anchored bubble to the left so the card

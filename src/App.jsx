@@ -133,6 +133,7 @@ export default function App() {
       <PersonSheet
         graph={graph}
         personId={openId}
+        viewerId={DEFAULT_FOCUS}
         onClose={closePerson}
         onFocus={(id) => {
           closePerson();
