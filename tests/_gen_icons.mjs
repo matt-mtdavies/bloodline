@@ -9,11 +9,11 @@
 import { chromium } from 'playwright-core';
 import { writeFileSync } from 'fs';
 
-// Brand colours — vivid, not washed out
-const TERRA  = '#c2603a';
-const FOREST = '#3a6454';   // slightly richer than #3f5e4e
-const GOLD   = '#b08642';
-const BG     = '#f5ede2';   // slightly richer than #f7f3ec
+// Brand colours — vivid against a deep warm background
+const TERRA  = '#d4724a';   // slightly brighter terracotta so it pops on dark bg
+const FOREST = '#4a7a67';   // slightly brighter forest green on dark bg
+const GOLD   = '#c49a4e';   // brighter gold on dark bg
+const BG     = '#1c1108';   // deep warm near-black — circles pop like Spotify
 const RING   = BG;          // knockout ring matches background
 
 /**
