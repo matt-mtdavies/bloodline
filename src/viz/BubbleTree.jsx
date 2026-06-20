@@ -207,6 +207,13 @@ export default function BubbleTree({
       const TAP_SLOP = 8; // px of movement still considered a tap
       const drag = { type: 'none', node: null, id: null, start: null, moved: false };
       let last = null;
+      // Active touch points, for two-finger pinch zoom.
+      const pointers = new Map();
+      const pinch = { active: false, dist0: 0, zoom0: 1 };
+      const twoFingerDist = () => {
+        const p = [...pointers.values()];
+        return Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y);
+      };
 
       const bubbleIdFromTarget = (t) => {
         let n = t;
@@ -216,6 +223,23 @@ export default function BubbleTree({
 
       app.stage.on('pointerdown', (e) => {
         const g = e.global;
+        pointers.set(e.pointerId, { x: g.x, y: g.y });
+
+        // Second finger down → start pinch; abandon any single-finger gesture.
+        if (pointers.size === 2) {
+          if (drag.type === 'bubble' && drag.node && drag.id !== state.pinnedId) {
+            drag.node.fx = null;
+            drag.node.fy = null;
+          }
+          drag.type = 'none';
+          drag.node = null;
+          pinch.active = true;
+          pinch.dist0 = twoFingerDist();
+          pinch.zoom0 = userZoom;
+          return;
+        }
+        if (pointers.size > 2) return;
+
         last = { x: g.x, y: g.y };
         drag.start = { x: g.x, y: g.y };
         drag.moved = false;
@@ -230,6 +254,15 @@ export default function BubbleTree({
         }
       });
       app.stage.on('pointermove', (e) => {
+        if (pointers.has(e.pointerId)) pointers.set(e.pointerId, { x: e.global.x, y: e.global.y });
+
+        // Pinch: scale from the gap between the two fingers.
+        if (pinch.active && pointers.size >= 2) {
+          const d = twoFingerDist();
+          if (pinch.dist0 > 0) userZoom = clamp(pinch.zoom0 * (d / pinch.dist0), 0.5, 2.4);
+          return;
+        }
+
         if (drag.type === 'none' || !last) return;
         const g = e.global;
         if (!drag.moved && Math.hypot(g.x - drag.start.x, g.y - drag.start.y) > TAP_SLOP) {
@@ -246,7 +279,9 @@ export default function BubbleTree({
         }
         last = { x: g.x, y: g.y };
       });
-      const endGesture = () => {
+      const endGesture = (e) => {
+        if (e) pointers.delete(e.pointerId);
+        if (pointers.size < 2) pinch.active = false;
         if (drag.type === 'bubble') {
           if (!drag.moved) {
             // A clean tap: recentre, or open the already-centred person.
