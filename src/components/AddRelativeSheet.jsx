@@ -21,11 +21,6 @@ export default function AddRelativeSheet({ anchor, onClose, onAdd }) {
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  // Focus the name field as soon as a relationship is chosen.
-  useEffect(() => {
-    if (relKey) nameRef.current?.focus();
-  }, [relKey]);
-
   const canAdd = relKey && name.trim().length > 0;
 
   const submit = () => {

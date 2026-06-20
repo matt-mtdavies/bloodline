@@ -42,7 +42,6 @@ export default function MemorySheet({ person, onClose, onAdd }) {
               value={text}
               onChange={(e) => setText(e.target.value)}
               placeholder="Every Christmas he made pancakes for everyone…"
-              autoFocus
             />
           </label>
           <label className="field">
