@@ -14,8 +14,9 @@ import { distancesFrom } from '../data/graph.js';
 import { Spring } from '../lib/spring.js';
 
 const BASE_RADIUS = 46;
-const COLLIDE = 62;
-const GEN_GAP = 168;
+const COLLIDE = 70;
+const GEN_GAP = 215;
+const ORGANIC_CHARGE = -820;
 
 /*
  * The visualization. Everything that matters in Phase 1 lives here:
@@ -99,12 +100,12 @@ export default function BubbleTree({
 
       const linkForce = forceLink(buildLinks(graph.relationships))
         .id((d) => d.id)
-        .distance((l) => (l.kind === 'partner' ? 84 : 150))
-        .strength((l) => (l.kind === 'partner' ? 0.95 : 0.28));
+        .distance((l) => (l.kind === 'partner' ? 108 : 210))
+        .strength((l) => (l.kind === 'partner' ? 0.9 : 0.26));
 
       const sim = forceSimulation(nodes)
         .force('link', linkForce)
-        .force('charge', forceManyBody().strength(-560).distanceMax(620))
+        .force('charge', forceManyBody().strength(ORGANIC_CHARGE).distanceMax(780))
         .force('collide', forceCollide(COLLIDE).strength(0.9))
         .force('x', forceX(0).strength(0.012))
         .force('y', forceY((d) => (gen.get(d.id) ?? 0) * GEN_GAP - 260).strength(0.085))
@@ -191,10 +192,10 @@ export default function BubbleTree({
             linkForce.strength((l) => (l.kind === 'partner' ? 0.3 : 0.04));
           } else {
             state.radialTargets = new Map();
-            sim.force('charge', forceManyBody().strength(-560).distanceMax(620));
+            sim.force('charge', forceManyBody().strength(ORGANIC_CHARGE).distanceMax(780));
             sim.force('x', forceX(0).strength(0.012));
             sim.force('y', forceY((d) => (gen.get(d.id) ?? 0) * GEN_GAP - 260).strength(0.085));
-            linkForce.strength((l) => (l.kind === 'partner' ? 0.95 : 0.28));
+            linkForce.strength((l) => (l.kind === 'partner' ? 0.9 : 0.26));
           }
           sim.alpha(0.7);
         },

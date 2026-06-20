@@ -1,27 +1,17 @@
-export default function TopBar({
-  familyName,
-  view,
-  onToggleView,
-  onOpenLegend,
-  layout,
-  onToggleLayout,
-}) {
+import Logo from './Logo.jsx';
+
+export default function TopBar({ familyName, view, onToggleView, onOpenLegend }) {
   return (
     <header className="topbar">
-      <span className="brand">
-        <Emblem />
-        <span className="brand__name">{familyName}</span>
-      </span>
+      <div className="masthead">
+        <div className="masthead__brand">
+          <Logo size={30} />
+          <span className="masthead__word">Bloodline</span>
+        </div>
+        <h1 className="masthead__family">{familyName}</h1>
+      </div>
+
       <div className="topbar__actions">
-        {view === 'bubbles' && (
-          <button
-            className="pill pill--label"
-            onClick={onToggleLayout}
-            title="Switch layout (prototype)"
-          >
-            {layout === 'radial' ? 'Radial' : 'Organic'}
-          </button>
-        )}
         <button className="pill" onClick={onOpenLegend} aria-label="What the styles mean">
           <KeyIcon />
         </button>
@@ -30,17 +20,6 @@ export default function TopBar({
         </button>
       </div>
     </header>
-  );
-}
-
-// The two-bubble heirloom mark — a tiny echo of the tree itself.
-function Emblem() {
-  return (
-    <svg className="brand__emblem" width="24" height="24" viewBox="0 0 26 26" aria-hidden="true">
-      <circle cx="10" cy="11" r="6.4" fill="#c2603a" />
-      <circle cx="16.5" cy="11" r="6.4" fill="#3f5e4e" opacity="0.92" />
-      <circle cx="13.25" cy="11" r="3.1" fill="#f7f3ec" opacity="0.55" />
-    </svg>
   );
 }
 
