@@ -14,9 +14,12 @@ import { hex } from '../lib/color.js';
  * Link opacity follows the ego camera: bonds far from the focused person fade
  * back with their bubbles.
  */
-export function drawLinks(g, graph, pos, dist, baseRadius) {
+export function drawLinks(g, graph, pos, dist, baseRadius, maxDist = 99) {
   g.clear();
   const far = (id) => (dist.has(id) ? dist.get(id) : 6);
+  // Only show links between bubbles that are currently visible (within maxDist
+  // of the focus); the rest stay collapsed with their people.
+  const hidden = (a, b) => Math.max(far(a), far(b)) > maxDist;
   const edgeAlpha = (a, b) => {
     const d = Math.min(far(a), far(b));
     return d <= 1 ? 1 : d === 2 ? 0.7 : d === 3 ? 0.4 : 0.18;
@@ -26,6 +29,7 @@ export function drawLinks(g, graph, pos, dist, baseRadius) {
   const seen = new Set();
   for (const r of graph.relationships) {
     if (r.type !== 'partner') continue;
+    if (hidden(r.from_person, r.to_person)) continue;
     const a = pos.get(r.from_person);
     const b = pos.get(r.to_person);
     if (!a || !b) continue;
@@ -67,6 +71,7 @@ export function drawLinks(g, graph, pos, dist, baseRadius) {
   // ── Parent → child links ──────────────────────────────────────────────────
   for (const r of graph.relationships) {
     if (r.type !== 'parent') continue;
+    if (hidden(r.from_person, r.to_person)) continue;
     const a = pos.get(r.from_person);
     const b = pos.get(r.to_person);
     if (!a || !b) continue;

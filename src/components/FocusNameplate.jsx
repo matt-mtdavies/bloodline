@@ -33,10 +33,11 @@ export default function FocusNameplate({ person, getPos, hidden }) {
   if (!person) return null;
   return (
     <div className="nameplate" ref={ref} aria-hidden="true">
-      <span className="nameplate__name" key={person.id}>
-        {person.display_name}
+      <span className="nameplate__pill" key={person.id}>
+        <span className="nameplate__name">{person.display_name}</span>
+        <span className="nameplate__dot">·</span>
+        <span className="nameplate__dates">{lifespan(person)}</span>
       </span>
-      <span className="nameplate__dates">{lifespan(person)}</span>
     </div>
   );
 }

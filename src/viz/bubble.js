@@ -27,6 +27,10 @@ export class Bubble {
     this.person = person;
     this.r = baseRadius;
     this.deceased = !!person.is_deceased;
+    // Eased display state so bubbles fade/grow in and out as focus moves
+    // (the tree starts collapsed to immediate family and expands on tap).
+    this.curScale = 0;
+    this.curAlpha = 0;
 
     const root = new Container();
     root.eventMode = 'static';
@@ -140,12 +144,17 @@ export class Bubble {
     }
   }
 
-  // Called every frame with the bubble's ego-distance state.
+  // Called every frame with the bubble's target ego-distance state; the bubble
+  // eases toward it so appearing/disappearing is a soft grow/fade, not a pop.
   setVisualState({ scale, alpha, lift, blur }) {
-    this.root.scale.set(scale);
-    this.root.alpha = alpha;
+    const k = 0.16;
+    this.curScale += (scale - this.curScale) * k;
+    this.curAlpha += (alpha - this.curAlpha) * k;
+    this.root.visible = this.curAlpha > 0.012;
+    this.root.scale.set(this.curScale);
+    this.root.alpha = this.curAlpha;
     // Focused/near bubbles lift their shadow a touch for depth.
-    this.shadow.alpha = 0.16 * lift;
+    this.shadow.alpha = 0.16 * lift * this.curAlpha;
     this.shadow.scale.set(1 + 0.04 * (lift - 1));
     this.setBlur(blur);
   }

@@ -360,12 +360,15 @@ export default function BubbleTree({
           const n = nodeById.get(id);
           b.root.position.set(n.x, n.y);
           const d = dmap.has(id) ? dmap.get(id) : 6;
-          b.setVisualState(visualForDistance(d));
+          let target = visualForDistance(d);
+          // The opened person's bubble fades out as it "becomes" the card.
+          if (id === state.pinnedId) target = { ...target, alpha: 0, scale: 0.7 };
+          b.setVisualState(target);
           // Keep nearer bubbles drawn above farther ones.
           b.root.zIndex = -d;
         }
 
-        drawLinks(linkGfx, graph, pos, dmap, BASE_RADIUS);
+        drawLinks(linkGfx, graph, pos, dmap, BASE_RADIUS, 1);
       });
     })();
 
@@ -392,20 +395,16 @@ export default function BubbleTree({
   return <div className="stage" ref={hostRef} aria-hidden="true" />;
 }
 
+// Only the focused person and their immediate connections are shown; everyone
+// else stays collapsed (faded out) until you tap to travel toward them.
 function visualForDistance(d) {
   switch (d) {
     case 0:
       return { scale: 1.34, alpha: 1, lift: 1.6, blur: 0 };
     case 1:
       return { scale: 1.0, alpha: 1, lift: 1.2, blur: 0 };
-    case 2:
-      return { scale: 0.66, alpha: 0.82, lift: 1, blur: 0 };
-    case 3:
-      return { scale: 0.47, alpha: 0.5, lift: 1, blur: 1.4 };
-    case 4:
-      return { scale: 0.36, alpha: 0.32, lift: 1, blur: 2.6 };
     default:
-      return { scale: 0.3, alpha: 0.22, lift: 1, blur: 3.4 };
+      return { scale: 0.5, alpha: 0, lift: 1, blur: 0 }; // collapsed / hidden
   }
 }
 

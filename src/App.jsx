@@ -81,7 +81,6 @@ export default function App() {
         graph={graph}
         personId={openId}
         origin={cardOrigin}
-        getPos={() => viewApi.current?.getScreenPos(openId)}
         onClose={closePerson}
         onFocus={(id) => {
           closePerson();
