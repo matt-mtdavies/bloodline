@@ -69,7 +69,7 @@ function SlideThesis() {
 function SlideTree() {
   return (
     <div className="intro__tree">
-      <svg viewBox="0 0 200 226" width="176" height="199" aria-hidden="true">
+      <svg viewBox="0 0 200 226" width="210" height="237" aria-hidden="true">
         <line x1="100" y1="42" x2="100" y2="88" className="itree__line itree__line--1" stroke="#d4c4ba" strokeWidth="1.6" strokeLinecap="round" />
         <line x1="100" y1="88" x2="54"  y2="130" className="itree__line itree__line--2" stroke="#d4c4ba" strokeWidth="1.6" strokeLinecap="round" />
         <line x1="100" y1="88" x2="146" y2="130" className="itree__line itree__line--3" stroke="#d4c4ba" strokeWidth="1.6" strokeLinecap="round" />
