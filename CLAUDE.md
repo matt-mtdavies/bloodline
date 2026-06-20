@@ -81,6 +81,13 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
 - Stack: React + Vite PWA, PixiJS/WebGL + d3-force, Cloudflare Pages/Workers/D1/R2,
   Resend magic links, Anthropic server-side.
 
+## Full build plan
+
+The complete phased plan — all six phases, every profile section, the new views
+(Lineage / Timeline / Story), the six AI features, collaboration/roles, engagement
+loops, design direction — lives in **`docs/BUILD-PLAN.md`** (annotated with
+done/partial/not-started). Read it before planning a new sprint.
+
 ## Open thread / likely next steps
 
 - **Current design conversation:** just shipped merged co-parent lines starting at the bottom
