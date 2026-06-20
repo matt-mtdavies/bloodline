@@ -45,8 +45,8 @@ export default function App() {
   const graph = useMemo(() => buildGraph(data.people, data.relationships), [data]);
   const reducedMotion = useReducedMotion();
 
-  // Auth state: 'loading' while checking session, 'authed' or 'guest' after.
-  const [authState, setAuthState] = useState(isDemo ? 'guest' : 'loading');
+  // 'loading' → 'open' (no auth / bypass) | 'login' (needs sign-in) | 'authed'
+  const [authState, setAuthState] = useState(isDemo ? 'open' : 'loading');
   const [user, setUser] = useState(null);
 
   useEffect(() => {
@@ -54,13 +54,16 @@ export default function App() {
     fetch('/api/auth/me')
       .then((r) => (r.ok ? r.json() : null))
       .then(async (u) => {
-        if (!u) { setAuthState('guest'); return; }
+        // Network error or explicit 401 with auth configured → show login.
+        if (!u) { setAuthState('login'); return; }
+        // BREVO_API_KEY not set → bypass auth, fall through to localStorage mode.
+        if (u.bypass) { setAuthState('open'); return; }
         setUser(u);
         enableServerSync();
-        await loadFromServer(); // load from D1, overwriting any stale localStorage
+        await loadFromServer();
         setAuthState('authed');
       })
-      .catch(() => setAuthState('guest'));
+      .catch(() => setAuthState('open')); // network failure → open (don't block)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -195,9 +198,9 @@ export default function App() {
 
   const activePerson = graph.byId.get(activeId);
 
-  // Auth gate (skipped in ?demo mode).
+  // Auth gate. 'open' = no auth configured or ?demo — go straight to app.
   if (authState === 'loading') return null;
-  if (authState === 'guest' && !isDemo) return <LoginScreen />;
+  if (authState === 'login') return <LoginScreen />;
 
   // Show onboarding for brand-new users (no completed onboarding in store).
   if (!data.hasCompletedOnboarding) {
