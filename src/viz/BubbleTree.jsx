@@ -33,6 +33,7 @@ export default function BubbleTree({
   onActivate,
   onOpenPerson,
   reducedMotion,
+  layout = 'organic',
   apiRef,
 }) {
   const hostRef = useRef(null);
@@ -42,6 +43,8 @@ export default function BubbleTree({
   visibleRef.current = visibleIds;
   const graphRef = useRef(graph);
   graphRef.current = graph; // always the live graph for the loop + sync
+  const layoutRef = useRef(layout);
+  layoutRef.current = layout;
 
   // ── Mount Pixi + the simulation once ──────────────────────────────────────
   useEffect(() => {
@@ -76,8 +79,9 @@ export default function BubbleTree({
 
       const graph = graphRef.current; // initial build snapshot
 
-      // Generation index (roots = 0) gives the layout legible vertical bands.
-      const gen = computeGenerations(graph);
+      // Generation index (roots = 0) gives the layout legible vertical bands
+      // and the radial sectors. Recomputed when people are added.
+      let gen = computeGenerations(graph);
 
       // Simulation nodes, spread by generation so the layout settles cleanly.
       const nodes = graph.people.map((p, i) => ({
@@ -163,10 +167,47 @@ export default function BubbleTree({
         },
         dist,
         pinnedId: null,
+        layoutMode: layoutRef.current,
+        radialTargets: new Map(),
+        // Rebuild the positioning forces for the current layout mode. In radial
+        // mode this recomputes the sectored targets and pulls nodes to them
+        // (reheating, which animates the orbit re-centre); organic restores the
+        // generational bands + repulsion.
+        relayout() {
+          if (state.layoutMode === 'radial') {
+            state.radialTargets = computeRadialTargets(
+              graphRef.current,
+              activeRef.current,
+              visibleRef.current,
+              gen,
+            );
+            // The active hub is pulled hard to centre; the ring sits at its
+            // targets; links go soft so they don't drag the geometry around.
+            const strength = (d) =>
+              d.id === activeRef.current ? 0.7 : state.radialTargets.has(d.id) ? 0.32 : 0.03;
+            sim.force('charge', forceManyBody().strength(-70).distanceMax(500));
+            sim.force('x', forceX((d) => state.radialTargets.get(d.id)?.x ?? 0).strength(strength));
+            sim.force('y', forceY((d) => state.radialTargets.get(d.id)?.y ?? 0).strength(strength));
+            linkForce.strength((l) => (l.kind === 'partner' ? 0.3 : 0.04));
+          } else {
+            state.radialTargets = new Map();
+            sim.force('charge', forceManyBody().strength(-560).distanceMax(620));
+            sim.force('x', forceX(0).strength(0.012));
+            sim.force('y', forceY((d) => (gen.get(d.id) ?? 0) * GEN_GAP - 260).strength(0.085));
+            linkForce.strength((l) => (l.kind === 'partner' ? 0.95 : 0.28));
+          }
+          sim.alpha(0.7);
+        },
+        setLayout(mode) {
+          if (state.layoutMode === mode) return;
+          state.layoutMode = mode;
+          state.relayout();
+        },
         setActive(id, animate = true) {
           activeRef.current = id;
           state.dist = distancesFrom(graphRef.current, id);
           if (!reducedMotion && animate) zoom.velocity -= 1.6; // gentle pull-back
+          if (state.layoutMode === 'radial') state.relayout();
         },
         // Reconcile the canvas with a new graph: spawn bubbles for new people
         // (near whoever they connect to, so they appear to sprout from them),
@@ -222,7 +263,9 @@ export default function BubbleTree({
           sim.nodes(nodes);
           linkForce.links(buildLinks(g.relationships));
           sim.alpha(0.5);
+          gen = computeGenerations(g);
           state.dist = distancesFrom(g, activeRef.current);
+          if (state.layoutMode === 'radial') state.relayout();
         },
         // Screen-space centre of a person's bubble — the card animates out of it.
         getScreenPos(id) {
@@ -250,6 +293,7 @@ export default function BubbleTree({
       };
       api.current = state;
       if (apiRef) apiRef.current = state;
+      if (state.layoutMode === 'radial') state.relayout();
 
       // Centre instantly on the first active person so we don't fly in.
       const f0 = nodeById.get(activeRef.current);
@@ -468,6 +512,16 @@ export default function BubbleTree({
     api.current?.sync(graph);
   }, [graph]);
 
+  // Switch layout mode (organic ↔ radial prototype).
+  useEffect(() => {
+    api.current?.setLayout(layout);
+  }, [layout]);
+
+  // In radial mode, re-place the ring as the revealed set grows.
+  useEffect(() => {
+    if (api.current?.layoutMode === 'radial') api.current.relayout();
+  }, [visibleIds]);
+
   return <div className="stage" ref={hostRef} aria-hidden="true" />;
 }
 
@@ -518,4 +572,55 @@ function computeGenerations(graph) {
 
 function clamp(v, lo, hi) {
   return Math.max(lo, Math.min(hi, v));
+}
+
+/*
+ * Sectored-radial target positions (the prototype layout). The active person is
+ * the hub at (0,0); everyone visible is placed on a ring by hop-distance and in
+ * a sector by generation direction — ancestors up, descendants down, same
+ * generation (siblings, partners, cousins) to the sides — evenly spread within
+ * each sector. These are fed to the force sim as *targets*, so the result is
+ * ordered and even yet still soft, alive, and draggable.
+ */
+const RING = 190;
+function computeRadialTargets(graph, activeId, visible, gen) {
+  const targets = new Map([[activeId, { x: 0, y: 0 }]]);
+  const dist = distancesFrom(graph, activeId);
+  const aGen = gen.get(activeId) ?? 0;
+
+  const buckets = new Map();
+  for (const id of visible) {
+    if (id === activeId) continue;
+    const d = Math.max(1, dist.get(id) ?? 1);
+    const gd = (gen.get(id) ?? 0) - aGen;
+    // Smaller generation index = nearer the roots = ancestors (placed up).
+    const sector = gd < 0 ? 'up' : gd > 0 ? 'down' : 'side';
+    const key = `${sector}:${d}`;
+    (buckets.get(key) || buckets.set(key, []).get(key)).push(id);
+  }
+
+  const ARC = { up: [-Math.PI * 0.8, -Math.PI * 0.2], down: [Math.PI * 0.2, Math.PI * 0.8] };
+  for (const [key, ids] of buckets) {
+    const [sector, dStr] = key.split(':');
+    const radius = RING * Number(dStr);
+    if (sector === 'side') {
+      // Split evenly between the right and left flanks.
+      ids.forEach((id, i) => {
+        const right = i % 2 === 0;
+        const lane = ids.filter((_, j) => (j % 2 === 0) === right);
+        const k = lane.indexOf(id);
+        const spread = lane.length > 1 ? k / (lane.length - 1) - 0.5 : 0;
+        const ang = (right ? 0 : Math.PI) + spread * Math.PI * 0.5;
+        targets.set(id, { x: Math.cos(ang) * radius, y: Math.sin(ang) * radius });
+      });
+    } else {
+      const [a0, a1] = ARC[sector];
+      ids.forEach((id, i) => {
+        const t = ids.length === 1 ? 0.5 : i / (ids.length - 1);
+        const ang = a0 + (a1 - a0) * t;
+        targets.set(id, { x: Math.cos(ang) * radius, y: Math.sin(ang) * radius });
+      });
+    }
+  }
+  return targets;
 }

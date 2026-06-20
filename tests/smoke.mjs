@@ -65,13 +65,13 @@ try {
   await page.waitForTimeout(500);
 
   // Re-centre deterministically through the accessible view.
-  await page.locator('.pill--label').click(); // → List
+  await page.locator('.pill--label', { hasText: 'List' }).click();
   await page.waitForSelector('.listview', { timeout: 5000 });
   await page.screenshot({ path: shot('03-list.png') });
   const firstRel = page.locator('.listview__group .person-row').first();
   const relName = (await firstRel.locator('.person-row__name').textContent()) || '';
   await firstRel.click();
-  await page.locator('.pill--label').click(); // → Tree
+  await page.locator('.pill--label', { hasText: 'Tree' }).click();
   await page.waitForTimeout(1600); // watch the glide settle
   const focus2 = (await page.textContent('.nameplate__name').catch(() => '')) || '';
   check(

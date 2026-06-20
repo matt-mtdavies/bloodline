@@ -27,6 +27,7 @@ export default function App() {
   const [editId, setEditId] = useState(null); // edit sheet
   const [crop, setCrop] = useState(null); // { id, url } photo cropper
   const [view, setView] = useState('bubbles');
+  const [layout, setLayout] = useState('organic'); // 'organic' | 'radial' (prototype)
   const [legendOpen, setLegendOpen] = useState(false);
   const viewApi = useRef(null);
 
@@ -100,6 +101,8 @@ export default function App() {
         view={view}
         onToggleView={() => setView((v) => (v === 'bubbles' ? 'list' : 'bubbles'))}
         onOpenLegend={() => setLegendOpen(true)}
+        layout={layout}
+        onToggleLayout={() => setLayout((l) => (l === 'radial' ? 'organic' : 'radial'))}
       />
 
       {view === 'bubbles' ? (
@@ -111,6 +114,7 @@ export default function App() {
             onActivate={activate}
             onOpenPerson={openPerson}
             reducedMotion={reducedMotion}
+            layout={layout}
             apiRef={viewApi}
           />
           <FocusNameplate

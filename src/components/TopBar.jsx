@@ -1,4 +1,11 @@
-export default function TopBar({ familyName, view, onToggleView, onOpenLegend }) {
+export default function TopBar({
+  familyName,
+  view,
+  onToggleView,
+  onOpenLegend,
+  layout,
+  onToggleLayout,
+}) {
   return (
     <header className="topbar">
       <span className="brand">
@@ -6,6 +13,15 @@ export default function TopBar({ familyName, view, onToggleView, onOpenLegend })
         <span className="brand__name">{familyName}</span>
       </span>
       <div className="topbar__actions">
+        {view === 'bubbles' && (
+          <button
+            className="pill pill--label"
+            onClick={onToggleLayout}
+            title="Switch layout (prototype)"
+          >
+            {layout === 'radial' ? 'Radial' : 'Organic'}
+          </button>
+        )}
         <button className="pill" onClick={onOpenLegend} aria-label="What the styles mean">
           <KeyIcon />
         </button>
