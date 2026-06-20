@@ -596,3 +596,69 @@
 .avatar-edit:active .avatar-edit__badge { transform: scale(0.9); }
 
 .btn:disabled { opacity: 0.45; pointer-events: none; }
+
+/* ── Photo cropper ────────────────────────────────────────────────────────── */
+.cropper {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  background: #0d0e11;
+  touch-action: none;
+  animation: scrim-in 0.25s var(--ease) both;
+}
+.cropper__stage {
+  position: relative;
+  flex: 1;
+  overflow: hidden;
+  touch-action: none;
+  cursor: grab;
+}
+.cropper__stage:active { cursor: grabbing; }
+.cropper__img {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform-origin: center;
+  max-width: none;
+  user-select: none;
+  -webkit-user-drag: none;
+  pointer-events: none;
+  transition: opacity 0.2s var(--ease);
+  will-change: transform;
+}
+.cropper__hole {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: var(--hole, 300px);
+  height: var(--hole, 300px);
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.92);
+  box-shadow: 0 0 0 9999px rgba(13, 14, 17, 0.66);
+  pointer-events: none;
+}
+.cropper__bar {
+  padding: 18px 22px calc(var(--safe-bottom) + 18px);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  background: #15161a;
+}
+.cropper__hint {
+  margin: 0;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.66);
+  font-size: 13.5px;
+  letter-spacing: 0.01em;
+}
+.cropper__slider {
+  width: min(360px, 100%);
+  align-self: center;
+  accent-color: var(--accent);
+}
+.cropper__actions { display: flex; gap: 10px; }
+.cropper__actions .btn { background: #2a2c31; color: #f2f3f5; }
+.cropper__actions .btn--primary { background: var(--accent); color: #fff; }

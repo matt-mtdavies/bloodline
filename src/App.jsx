@@ -3,7 +3,6 @@ import './styles/components.css';
 import { FAMILY_NAME, DEFAULT_FOCUS } from './data/seed.js';
 import { store, addRelative, updatePerson, setPhoto } from './data/store.js';
 import { buildGraph } from './data/graph.js';
-import { fileToDataUrl } from './lib/image.js';
 import { useReducedMotion } from './hooks/useReducedMotion.js';
 import BubbleTree from './viz/BubbleTree.jsx';
 import TopBar from './components/TopBar.jsx';
@@ -11,6 +10,7 @@ import FocusNameplate from './components/FocusNameplate.jsx';
 import PersonSheet from './components/PersonSheet.jsx';
 import AddRelativeSheet from './components/AddRelativeSheet.jsx';
 import EditPersonSheet from './components/EditPersonSheet.jsx';
+import PhotoCropper from './components/PhotoCropper.jsx';
 import AccessibleTree from './components/AccessibleTree.jsx';
 import Legend from './components/Legend.jsx';
 import IntroHint from './components/IntroHint.jsx';
@@ -25,6 +25,7 @@ export default function App() {
   const [openId, setOpenId] = useState(null); // person card
   const [addAnchorId, setAddAnchorId] = useState(null); // add-relative sheet
   const [editId, setEditId] = useState(null); // edit sheet
+  const [crop, setCrop] = useState(null); // { id, url } photo cropper
   const [view, setView] = useState('bubbles');
   const [legendOpen, setLegendOpen] = useState(false);
   const viewApi = useRef(null);
@@ -78,13 +79,16 @@ export default function App() {
     [editId],
   );
 
-  const handlePhoto = useCallback(async (id, file) => {
-    try {
-      const url = await fileToDataUrl(file);
-      setPhoto(id, url);
-    } catch {
-      /* ignore unreadable image */
-    }
+  // Picking a photo opens the cropper; confirming there saves the framed crop.
+  const handlePhoto = useCallback((id, file) => {
+    setCrop({ id, url: URL.createObjectURL(file) });
+  }, []);
+
+  const closeCrop = useCallback(() => {
+    setCrop((c) => {
+      if (c) URL.revokeObjectURL(c.url);
+      return null;
+    });
   }, []);
 
   const activePerson = graph.byId.get(activeId);
@@ -152,6 +156,17 @@ export default function App() {
           person={graph.byId.get(editId)}
           onClose={() => setEditId(null)}
           onSave={handleSave}
+        />
+      )}
+
+      {crop && (
+        <PhotoCropper
+          src={crop.url}
+          onCancel={closeCrop}
+          onConfirm={(dataUrl) => {
+            setPhoto(crop.id, dataUrl);
+            closeCrop();
+          }}
         />
       )}
 
