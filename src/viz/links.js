@@ -64,6 +64,9 @@ export function drawLinks(g, graph, pos, isVisible, baseRadius, mergeParents = f
   // their own lines). Everything else falls through to the per-parent pass.
   const merged = new Set();
   if (mergeParents) {
+    // Group merge-eligible children by their couple + qualifier, so siblings of
+    // one couple can share a trunk.
+    const groups = new Map();
     for (const person of graph.people) {
       const childId = person.id;
       if (!isVisible(childId)) continue;
@@ -74,21 +77,42 @@ export function drawLinks(g, graph, pos, isVisible, baseRadius, mergeParents = f
       const bond = graph.partners(p1.id).find((x) => x.id === p2.id);
       if (!bond || bond.status === 'former') continue;
 
-      const a1 = pos.get(p1.id);
-      const a2 = pos.get(p2.id);
-      const c = pos.get(childId);
-      if (!a1 || !a2 || !c) continue;
-
-      const mid = { x: (a1.x + a2.x) / 2, y: (a1.y + a2.y) / 2 };
-      const biological = p1.qualifier === 'biological';
-      const color = biological ? '#8a7d6b' : '#b6a892';
-      if (biological) {
-        curve(g, mid, c, { width: 2, color: hex(color), alpha: 0.7 });
-      } else {
-        dashedCurve(g, mid, c, 18, 0.5, { width: 2, color: hex(color), alpha: 0.85 });
-      }
+      const key = [p1.id, p2.id].sort().join('|') + '|' + p1.qualifier;
+      if (!groups.has(key))
+        groups.set(key, { p1: p1.id, p2: p2.id, qualifier: p1.qualifier, kids: [] });
+      groups.get(key).kids.push(childId);
       merged.add(`${p1.id}>${childId}`);
       merged.add(`${p2.id}>${childId}`);
+    }
+
+    for (const grp of groups.values()) {
+      const a1 = pos.get(grp.p1);
+      const a2 = pos.get(grp.p2);
+      if (!a1 || !a2) continue;
+      const biological = grp.qualifier === 'biological';
+      const color = hex(biological ? '#8a7d6b' : '#b6a892');
+      const seg = (from, to) =>
+        biological
+          ? curve(g, from, to, { width: 2, color, alpha: 0.7 })
+          : dashedCurve(g, from, to, 14, 0.5, { width: 2, color, alpha: 0.85 });
+
+      // Origin: the bottom edge of the couple's shaded band, so the line hangs
+      // from the pair rather than skewering it.
+      const start = { x: (a1.x + a2.x) / 2, y: (a1.y + a2.y) / 2 + baseRadius * 1.05 };
+      const kids = grp.kids.map((id) => pos.get(id)).filter(Boolean);
+      if (kids.length === 0) continue;
+
+      if (kids.length === 1) {
+        seg(start, kids[0]);
+      } else {
+        // Sibling trunk: a short stem down to a junction, then a branch to each
+        // child — so siblings read as a set.
+        const avgX = kids.reduce((s, k) => s + k.x, 0) / kids.length;
+        const nearestY = Math.min(...kids.map((k) => k.y));
+        const junction = { x: start.x * 0.55 + avgX * 0.45, y: start.y + (nearestY - start.y) * 0.4 };
+        seg(start, junction);
+        for (const k of kids) seg(junction, k);
+      }
     }
   }
 
