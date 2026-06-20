@@ -1,6 +1,6 @@
 import Logo from './Logo.jsx';
 
-export default function TopBar({ familyName, view, onToggleView, onOpenLegend, user }) {
+export default function TopBar({ familyName, view, onToggleView, onOpenLegend, onOpenSettings, user }) {
   async function handleLogout() {
     await fetch('/api/auth/logout', { method: 'POST' });
     window.location.reload();
@@ -31,6 +31,9 @@ export default function TopBar({ familyName, view, onToggleView, onOpenLegend, u
             <UserAvatar email={user.email} />
           </button>
         )}
+        <button className="pill" onClick={onOpenSettings} aria-label="Family settings & sharing">
+          <ShareIcon />
+        </button>
         <button className="pill" onClick={onOpenLegend} aria-label="What the styles mean">
           <KeyIcon />
         </button>
@@ -47,6 +50,17 @@ function UserAvatar({ email }) {
     ? email.split('@')[0].slice(0, 2).toUpperCase()
     : '?';
   return <span className="topbar__avatar">{initials}</span>;
+}
+
+function ShareIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="18" cy="5" r="2.5" stroke="currentColor" strokeWidth="1.6" />
+      <circle cx="6" cy="12" r="2.5" stroke="currentColor" strokeWidth="1.6" />
+      <circle cx="18" cy="19" r="2.5" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M8.5 10.5l7-4M8.5 13.5l7 4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  );
 }
 
 function KeyIcon() {

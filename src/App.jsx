@@ -36,6 +36,7 @@ import IntroHint from './components/IntroHint.jsx';
 import Intro from './components/Intro.jsx';
 import Onboarding from './components/Onboarding.jsx';
 import LoginScreen from './components/LoginScreen.jsx';
+import FamilySettings from './components/FamilySettings.jsx';
 
 const isDemo = typeof window !== 'undefined' &&
   new URLSearchParams(window.location.search).has('demo');
@@ -91,6 +92,7 @@ export default function App() {
   const [crop, setCrop] = useState(null); // { id, url } photo cropper
   const [view, setView] = useState('bubbles');
   const [legendOpen, setLegendOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [mergeParents, setMergeParents] = useState(true);
   const [lineageMode, setLineageMode] = useState(false);
   const [lineagePath, setLineagePath] = useState(null); // Set<id> | null
@@ -217,6 +219,7 @@ export default function App() {
         view={view}
         onToggleView={() => setView((v) => (v === 'bubbles' ? 'list' : 'bubbles'))}
         onOpenLegend={() => setLegendOpen(true)}
+        onOpenSettings={() => setSettingsOpen(true)}
         user={user}
       />
 
@@ -353,6 +356,14 @@ export default function App() {
         mergeParents={mergeParents}
         onToggleMerge={() => setMergeParents((v) => !v)}
       />
+
+      {settingsOpen && (
+        <FamilySettings
+          myRole={user ? (data._meta?.role || 'owner') : 'owner'}
+          familyName={data.familyName || 'My Family'}
+          onClose={() => setSettingsOpen(false)}
+        />
+      )}
     </div>
   );
 }

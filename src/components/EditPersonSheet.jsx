@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
+import { VISIBILITY_LABELS, VISIBILITY_DESCS, SECTIONS } from '../lib/visibility.js';
 
 /*
  * Edit a person. Still progressive in spirit — every field is optional — but
  * laid out cleanly so updating a date or adding a story is effortless.
+ * Includes a Privacy section for visibility and per-section controls.
  */
 export default function EditPersonSheet({ person, onClose, onSave }) {
   const [f, setF] = useState({
@@ -16,7 +18,10 @@ export default function EditPersonSheet({ person, onClose, onSave }) {
     bio: person.bio || '',
     is_deceased: !!person.is_deceased,
     death_date: person.death_date || '',
+    visibility: person.visibility || 'full',
+    sectionVisibility: person.sectionVisibility || {},
   });
+  const [privacyOpen, setPrivacyOpen] = useState(false);
 
   useEffect(() => {
     const onKey = (e) => e.key === 'Escape' && onClose();
@@ -35,16 +40,21 @@ export default function EditPersonSheet({ person, onClose, onSave }) {
       birth_place: f.birth_place.trim() || null,
       residence: f.residence.trim() || null,
       occupation: f.occupation.trim() || null,
-      tags: f.tags
-        .split(',')
-        .map((t) => t.trim())
-        .filter(Boolean),
+      tags: f.tags.split(',').map((t) => t.trim()).filter(Boolean),
       bio: f.bio.trim() || null,
       is_deceased: f.is_deceased,
       is_living: !f.is_deceased,
       death_date: f.is_deceased ? f.death_date.trim() || null : null,
+      visibility: f.visibility,
+      sectionVisibility: f.sectionVisibility,
     });
   };
+
+  const toggleSection = (key) =>
+    setF((s) => ({
+      ...s,
+      sectionVisibility: { ...s.sectionVisibility, [key]: s.sectionVisibility[key] === false },
+    }));
 
   return (
     <div className="sheet-scrim sheet-scrim--modal" onClick={onClose}>
@@ -147,6 +157,59 @@ export default function EditPersonSheet({ person, onClose, onSave }) {
               placeholder="Something only you would know…"
             />
           </label>
+
+          {/* Privacy */}
+          <div className="field privacy-section">
+            <button
+              type="button"
+              className="privacy-section__toggle"
+              onClick={() => setPrivacyOpen((o) => !o)}
+              aria-expanded={privacyOpen}
+            >
+              <span>🔒 Privacy</span>
+              <span className="privacy-section__cur">{VISIBILITY_LABELS[f.visibility]}</span>
+              <span className="privacy-section__caret">{privacyOpen ? '▲' : '▼'}</span>
+            </button>
+
+            {privacyOpen && (
+              <div className="privacy-section__body">
+                <p className="field__hint" style={{ marginBottom: 12 }}>
+                  Controls what family members with Viewer or Contributor roles can see.
+                  Owners and Co-Admins always see everything.
+                </p>
+
+                <div className="vis-opts">
+                  {Object.entries(VISIBILITY_LABELS).map(([val, label]) => (
+                    <button
+                      key={val}
+                      type="button"
+                      className={`vis-opt${f.visibility === val ? ' vis-opt--on' : ''}`}
+                      onClick={() => setF((s) => ({ ...s, visibility: val }))}
+                    >
+                      <span className="vis-opt__label">{label}</span>
+                      <span className="vis-opt__desc">{VISIBILITY_DESCS[val]}</span>
+                    </button>
+                  ))}
+                </div>
+
+                {f.visibility === 'full' && (
+                  <div className="section-vis">
+                    <p className="field__label" style={{ marginBottom: 8 }}>Section visibility</p>
+                    {SECTIONS.map(({ key, label }) => (
+                      <label key={key} className="toggle">
+                        <input
+                          type="checkbox"
+                          checked={f.sectionVisibility[key] !== false}
+                          onChange={() => toggleSection(key)}
+                        />
+                        <span>{label}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
 
         <footer className="sheet__foot">
