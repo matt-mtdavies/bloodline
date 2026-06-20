@@ -455,6 +455,16 @@
   background-repeat: no-repeat;
 }
 .swatch--widow { background: var(--memorial-soft); box-shadow: inset 0 0 0 2px var(--memorial); }
+.swatch--coparent { background: var(--paper-deep); position: relative; }
+.swatch--coparent::after {
+  content: '';
+  position: absolute;
+  left: 50%; top: 50%;
+  width: 10px; height: 10px;
+  border: 2px solid #a0a3aa;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+}
 .swatch--bio { background: var(--paper-deep); }
 .swatch--bio::after {
   content: ''; position: absolute; inset: 0; margin: auto; height: 2px; background: var(--bio);

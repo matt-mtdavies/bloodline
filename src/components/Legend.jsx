@@ -35,6 +35,10 @@ export default function Legend({ open, onClose, mergeParents, onToggleMerge }) {
             <span><b>A violet pod</b> remembers a partner who has passed.</span>
           </li>
           <li>
+            <span className="swatch swatch--coparent" />
+            <span><b>A grey V-junction</b> connects divorced co-parents who share a child — both still very much parents.</span>
+          </li>
+          <li>
             <span className="swatch swatch--bio" />
             <span><b>A solid line</b> is a biological parent.</span>
           </li>

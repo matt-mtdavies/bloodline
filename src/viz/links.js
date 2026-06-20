@@ -57,15 +57,19 @@ export function drawLinks(g, graph, pos, isVisible, baseRadius, mergeParents = f
   }
 
   // ── Parent → child links ──────────────────────────────────────────────────
-  // Optionally merge two co-parents into a single line from the couple. We only
-  // do this where it reads cleanly: exactly two visible parents, the same
-  // qualifier (so bio/step never gets flattened), and they're an actual current
-  // or widowed couple (divorced co-parents have drifted apart, so they keep
-  // their own lines). Everything else falls through to the per-parent pass.
+  // Optionally merge co-parents into a single origin point per couple. Two cases:
+  //
+  // 1. Current / widowed couple: one line from the bottom of the warm pod.
+  // 2. Divorced co-parents: two grey arms converging at a small open-circle
+  //    junction, then a normal-coloured line to each child. The V-shape reads
+  //    "both parents, past union" — distinct from the warm merged pod while
+  //    still clearly marking shared parentage.
+  //
+  // Both cases add their edges to `merged` so the per-parent pass skips them.
+  // Everything else (single parent, mixed bio/step, non-coupled) falls through.
   const merged = new Set();
   if (mergeParents) {
-    // Group merge-eligible children by their couple + qualifier, so siblings of
-    // one couple can share a trunk.
+    // ── Case 1: current / widowed couples → single merged line ──────────────
     const groups = new Map();
     for (const person of graph.people) {
       const childId = person.id;
@@ -112,6 +116,81 @@ export function drawLinks(g, graph, pos, isVisible, baseRadius, mergeParents = f
         const junction = { x: start.x * 0.55 + avgX * 0.45, y: start.y + (nearestY - start.y) * 0.4 };
         seg(start, junction);
         for (const k of kids) seg(junction, k);
+      }
+    }
+
+    // ── Case 2: divorced co-parents → V-junction ────────────────────────────
+    const divorceGroups = new Map();
+    for (const person of graph.people) {
+      const childId = person.id;
+      if (!isVisible(childId)) continue;
+      const parents = graph.parents(childId).filter((p) => isVisible(p.id));
+      if (parents.length !== 2) continue;
+      const [p1, p2] = parents;
+      if (p1.qualifier !== p2.qualifier) continue;
+      const bond = graph.partners(p1.id).find((x) => x.id === p2.id);
+      if (!bond || bond.status !== 'former') continue;
+
+      const key = [p1.id, p2.id].sort().join('|') + '|' + p1.qualifier;
+      if (!divorceGroups.has(key))
+        divorceGroups.set(key, { p1: p1.id, p2: p2.id, qualifier: p1.qualifier, kids: [] });
+      divorceGroups.get(key).kids.push(childId);
+      merged.add(`${p1.id}>${childId}`);
+      merged.add(`${p2.id}>${childId}`);
+    }
+
+    for (const grp of divorceGroups.values()) {
+      const a1 = pos.get(grp.p1);
+      const a2 = pos.get(grp.p2);
+      if (!a1 || !a2) continue;
+
+      const biological = grp.qualifier === 'biological';
+      // Arms from each parent use the "former" grey; the line to the child keeps
+      // the normal warm parent colour so the bond still reads as parentage.
+      const armColor = hex('#a0a3aa');
+      const kidColor = hex(biological ? '#8a7d6b' : '#b6a892');
+
+      const kids = grp.kids.map((id) => pos.get(id)).filter(Boolean);
+      if (kids.length === 0) continue;
+
+      const midX = (a1.x + a2.x) / 2;
+      const midY = (a1.y + a2.y) / 2;
+      const nearestY = Math.min(...kids.map((k) => k.y));
+      // Junction sits roughly halfway between the parents' midpoint and the
+      // nearest child, offset so the V opens naturally.
+      const junction = {
+        x: midX,
+        y: midY + (nearestY - midY) * 0.48,
+      };
+
+      // Converging arms: solid muted grey, thinner than a parent line, so the
+      // former-couple context is clear without looking like a primary bond.
+      g.moveTo(a1.x, a1.y).lineTo(junction.x, junction.y)
+        .stroke({ width: 1.8, color: armColor, alpha: 0.75, cap: 'round' });
+      g.moveTo(a2.x, a2.y).lineTo(junction.x, junction.y)
+        .stroke({ width: 1.8, color: armColor, alpha: 0.75, cap: 'round' });
+
+      // Open circle at the junction — marks a past-union origin point.
+      g.circle(junction.x, junction.y, 5)
+        .stroke({ width: 2, color: armColor, alpha: 0.85 });
+
+      // Line(s) from junction to child/ren, in the normal parent style.
+      const seg = (from, to) =>
+        biological
+          ? curve(g, from, to, { width: 2, color: kidColor, alpha: 0.7 })
+          : dashedCurve(g, from, to, 14, 0.5, { width: 2, color: kidColor, alpha: 0.85 });
+
+      if (kids.length === 1) {
+        seg(junction, kids[0]);
+      } else {
+        // Sibling trunk below the junction, same as the merged-couple path.
+        const avgX = kids.reduce((s, k) => s + k.x, 0) / kids.length;
+        const trunk = {
+          x: junction.x * 0.55 + avgX * 0.45,
+          y: junction.y + (nearestY - junction.y) * 0.4,
+        };
+        seg(junction, trunk);
+        for (const k of kids) seg(trunk, k);
       }
     }
   }
