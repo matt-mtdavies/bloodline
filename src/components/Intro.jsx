@@ -89,7 +89,12 @@ function SlideTree() {
 function SlideMemory() {
   return (
     <div className="intro__memory">
-      <div className="intro__memory-mark">"</div>
+      <svg className="intro__memory-mark" viewBox="0 0 56 52" aria-hidden="true" fill="currentColor">
+        <circle cx="12" cy="10" r="9"/>
+        <path d="M7 17 C5 25 7 36 12 44" stroke="currentColor" strokeWidth="6" fill="none" strokeLinecap="round"/>
+        <circle cx="42" cy="10" r="9"/>
+        <path d="M37 17 C35 25 37 36 42 44" stroke="currentColor" strokeWidth="6" fill="none" strokeLinecap="round"/>
+      </svg>
       <p className="intro__memory-text">
         Every Christmas he made pancakes for everyone in the house,
         even if he'd only met you once.
