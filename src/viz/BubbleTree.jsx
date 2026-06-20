@@ -15,10 +15,9 @@ import { Spring } from '../lib/spring.js';
 
 const BASE_RADIUS = 46;
 const COLLIDE = 70;
-const GEN_GAP = 400; // tall generation bands: the layout fills the height of a phone
-const ORGANIC_CHARGE = -560; // gentle repulsion: lets a wide generation settle near its
-// collision floor so width-fit stays generous while the tall bands fill the height
-const SPREAD_X = 0.008; // gentle horizontal centring — loose enough to spread out
+const GEN_GAP = 280; // shorter bands so wide screens use horizontal space too
+const ORGANIC_CHARGE = -1800; // stronger repulsion spreads generations sideways
+const SPREAD_X = 0.004; // weaker centring lets nodes fan out naturally
 const MAX_ZOOM = 1.5; // small families can scale up this far to fill the screen
 
 /*
@@ -116,12 +115,12 @@ export default function BubbleTree({
 
       const linkForce = forceLink(buildLinks(graph.relationships))
         .id((d) => d.id)
-        .distance((l) => (l.kind === 'partner' ? 112 : 240))
+        .distance((l) => (l.kind === 'partner' ? 112 : 280))
         .strength((l) => (l.kind === 'partner' ? 0.9 : 0.26));
 
       const sim = forceSimulation(nodes)
         .force('link', linkForce)
-        .force('charge', forceManyBody().strength(ORGANIC_CHARGE).distanceMax(780))
+        .force('charge', forceManyBody().strength(ORGANIC_CHARGE).distanceMax(1200))
         .force('collide', forceCollide(COLLIDE).strength(0.9))
         .force('x', forceX(0).strength(SPREAD_X))
         .force('y', forceY((d) => (gen.get(d.id) ?? 0) * GEN_GAP - 260).strength(0.085))
@@ -208,7 +207,7 @@ export default function BubbleTree({
             linkForce.strength((l) => (l.kind === 'partner' ? 0.3 : 0.04));
           } else {
             state.radialTargets = new Map();
-            sim.force('charge', forceManyBody().strength(ORGANIC_CHARGE).distanceMax(780));
+            sim.force('charge', forceManyBody().strength(ORGANIC_CHARGE).distanceMax(1200));
             sim.force('x', forceX(0).strength(SPREAD_X));
             sim.force('y', forceY((d) => (gen.get(d.id) ?? 0) * GEN_GAP - 260).strength(0.085));
             linkForce.strength((l) => (l.kind === 'partner' ? 0.9 : 0.26));
