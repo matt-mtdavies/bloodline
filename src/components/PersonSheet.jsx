@@ -1,15 +1,73 @@
-import { useEffect } from 'react';
+import { useEffect, useLayoutEffect, useRef } from 'react';
 import Avatar from './Avatar.jsx';
 import { lifespan, formatDate } from '../lib/dates.js';
 import { relationLabel } from '../data/graph.js';
 
 /*
- * The person card — an elegant sheet that rises over the tree without losing it.
- * Photo, dates, places, story, and the people they're bound to (tap to fly
- * there). Living minors get a light privacy note rather than full exposure (§7).
+ * The person card. Instead of a slab that covers the tree, it appears to grow
+ * out of the tapped bubble (a FLIP transform from the bubble's screen position),
+ * leaves the tree visible behind, and keeps a slim tether back to the bubble so
+ * you never lose track of who you're looking at. Closing shrinks it back in.
+ *
+ * Living minors get a light privacy note rather than full exposure (§7).
  */
-export default function PersonSheet({ graph, personId, onClose, onFocus, onOpenPerson }) {
+export default function PersonSheet({
+  graph,
+  personId,
+  origin,
+  getPos,
+  onClose,
+  onFocus,
+  onOpenPerson,
+}) {
   const person = personId ? graph.byId.get(personId) : null;
+  const cardRef = useRef(null);
+  const lineRef = useRef(null);
+  const dotRef = useRef(null);
+
+  // FLIP in: place the card at the bubble (small), then spring it to rest.
+  useLayoutEffect(() => {
+    if (!person) return;
+    const card = cardRef.current;
+    if (!card) return;
+    const r = card.getBoundingClientRect();
+    const cx = r.left + r.width / 2;
+    const cy = r.top + r.height / 2;
+    const ox = origin?.x ?? cx;
+    const oy = origin?.y ?? cy;
+
+    card.style.transition = 'none';
+    card.style.transformOrigin = '50% 50%';
+    card.style.transform = `translate(${ox - cx}px, ${oy - cy}px) scale(0.16)`;
+    card.style.opacity = '0';
+    void card.offsetWidth; // commit the "from" state
+    card.style.transition = '';
+    card.style.transform = '';
+    card.style.opacity = '';
+  }, [person, origin]);
+
+  // Keep the tether's ends glued to the live bubble and the card as both move
+  // (the tree lifts on open and the bubble keeps drifting).
+  useEffect(() => {
+    if (!person || !origin || !getPos) return;
+    let raf;
+    const tick = () => {
+      const p = getPos();
+      const card = cardRef.current;
+      if (p && card && lineRef.current && dotRef.current) {
+        const r = card.getBoundingClientRect();
+        lineRef.current.setAttribute('x1', p.x);
+        lineRef.current.setAttribute('y1', p.y);
+        lineRef.current.setAttribute('x2', r.left + r.width / 2);
+        lineRef.current.setAttribute('y2', r.top);
+        dotRef.current.setAttribute('cx', p.x);
+        dotRef.current.setAttribute('cy', p.y);
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [person, origin, getPos]);
 
   useEffect(() => {
     if (!person) return;
@@ -33,15 +91,27 @@ export default function PersonSheet({ graph, personId, onClose, onFocus, onOpenP
   ].filter((g) => g.items.length);
 
   return (
-    <div className="sheet-scrim" onClick={onClose}>
+    <div className="sheet-scrim sheet-scrim--soft" onClick={onClose}>
+      {origin && (
+        <svg className="tether" aria-hidden="true">
+          <line
+            ref={lineRef}
+            stroke="var(--accent)"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeDasharray="2 6"
+          />
+          <circle ref={dotRef} r="5" fill="var(--accent)" />
+        </svg>
+      )}
       <section
-        className="sheet"
+        className="sheet sheet--card"
+        ref={cardRef}
         role="dialog"
         aria-modal="true"
         aria-label={`${person.display_name} profile`}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="sheet__grip" />
         <header className="sheet__head">
           <Avatar person={person} size={84} />
           <div className="sheet__id">
@@ -95,10 +165,7 @@ export default function PersonSheet({ graph, personId, onClose, onFocus, onOpenP
                   if (!rel) return null;
                   return (
                     <li key={item.id}>
-                      <button
-                        className="rel-chip"
-                        onClick={() => onOpenPerson(item.id)}
-                      >
+                      <button className="rel-chip" onClick={() => onOpenPerson(item.id)}>
                         <Avatar person={rel} size={38} />
                         <span className="rel-chip__text">
                           <span className="rel-chip__name">{rel.display_name}</span>

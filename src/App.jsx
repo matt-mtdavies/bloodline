@@ -1,4 +1,4 @@
-import { useMemo, useState, useCallback } from 'react';
+import { useMemo, useState, useCallback, useRef } from 'react';
 import './styles/components.css';
 import { people, relationships, FAMILY_NAME, DEFAULT_FOCUS } from './data/seed.js';
 import { buildGraph } from './data/graph.js';
@@ -15,12 +15,28 @@ export default function App() {
   const reducedMotion = useReducedMotion();
 
   const [focusId, setFocusId] = useState(DEFAULT_FOCUS);
-  const [openId, setOpenId] = useState(null); // person sheet
+  const [openId, setOpenId] = useState(null); // person card
+  const [cardOrigin, setCardOrigin] = useState(null); // bubble screen pos the card grows from
   const [view, setView] = useState('bubbles'); // 'bubbles' | 'list'
   const [legendOpen, setLegendOpen] = useState(false);
+  const viewApi = useRef(null); // imperative handle into the canvas
 
   const focus = useCallback((id) => {
     setFocusId(id);
+  }, []);
+
+  // Open a person's card so it appears to grow out of their bubble, and pin that
+  // bubble so the tether stays anchored while the card is up.
+  const openPerson = useCallback((id) => {
+    viewApi.current?.unpin();
+    setCardOrigin(viewApi.current?.getScreenPos(id) || null);
+    viewApi.current?.pin(id);
+    setOpenId(id);
+  }, []);
+
+  const closePerson = useCallback(() => {
+    viewApi.current?.unpin();
+    setOpenId(null);
   }, []);
 
   const focusPerson = graph.byId.get(focusId);
@@ -41,8 +57,9 @@ export default function App() {
             graph={graph}
             focusId={focusId}
             onFocus={focus}
-            onOpenPerson={setOpenId}
+            onOpenPerson={openPerson}
             reducedMotion={reducedMotion}
+            apiRef={viewApi}
           />
           <IntroHint />
         </>
@@ -51,19 +68,21 @@ export default function App() {
           graph={graph}
           focusId={focusId}
           onFocus={focus}
-          onOpenPerson={setOpenId}
+          onOpenPerson={openPerson}
         />
       )}
 
       <PersonSheet
         graph={graph}
         personId={openId}
-        onClose={() => setOpenId(null)}
+        origin={cardOrigin}
+        getPos={() => viewApi.current?.getScreenPos(openId)}
+        onClose={closePerson}
         onFocus={(id) => {
-          setOpenId(null);
+          closePerson();
           focus(id);
         }}
-        onOpenPerson={setOpenId}
+        onOpenPerson={openPerson}
       />
 
       <Legend open={legendOpen} onClose={() => setLegendOpen(false)} />

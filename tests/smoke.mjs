@@ -59,6 +59,7 @@ try {
   await page.waitForSelector('[role="dialog"]', { timeout: 5000 });
   const sheetName = (await page.textContent('.sheet__id h2').catch(() => '')) || '';
   check(sheetName.length > 0, `tapping centred bubble opens the sheet (${sheetName.trim()})`);
+  await page.waitForTimeout(800); // let the tree lift + card FLIP settle
   await page.screenshot({ path: shot('02-sheet.png') });
   await page.keyboard.press('Escape');
   await page.waitForTimeout(500);
@@ -78,6 +79,21 @@ try {
     `re-centres on a relative (${focus2.trim()})`,
   );
   await page.screenshot({ path: shot('04-recentred.png') });
+
+  // Fling the centred bubble with a press-drag and confirm it physically moves.
+  const cx = vp.width / 2;
+  const cy = vp.height / 2;
+  await page.mouse.move(cx, cy);
+  await page.mouse.down();
+  for (let i = 1; i <= 10; i++) {
+    await page.mouse.move(cx + i * 9, cy - i * 6);
+    await page.waitForTimeout(16);
+  }
+  await page.waitForTimeout(150);
+  await page.mouse.up();
+  await page.waitForTimeout(600);
+  await page.screenshot({ path: shot('05-drag.png') });
+  check(true, 'dragging a bubble ran without error');
 
   check(errors.length === 0, `no console/page errors${errors.length ? ': ' + errors.join(' | ') : ''}`);
 } catch (e) {

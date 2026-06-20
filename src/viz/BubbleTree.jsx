@@ -32,6 +32,7 @@ export default function BubbleTree({
   onFocus,
   onOpenPerson,
   reducedMotion,
+  apiRef,
 }) {
   const hostRef = useRef(null);
   const api = useRef(null);
@@ -110,17 +111,14 @@ export default function BubbleTree({
       for (let i = 0; i < 140; i++) sim.tick();
       sim.alpha(0.35); // a little life left to breathe into
 
-      // Bubbles.
+      // Bubbles. Each root carries its id so the single stage-level pointer
+      // handler can tell which person was grabbed.
       const bubbles = new Map();
       for (const p of graph.people) {
         const b = new Bubble(p, BASE_RADIUS);
+        b.root.__bubbleId = p.id;
         bubbleLayer.addChild(b.root);
         bubbles.set(p.id, b);
-        b.root.on('pointertap', () => {
-          if (api.current?.didPan) return; // a drag, not a tap
-          if (focusRef.current === p.id) onOpenPerson?.(p.id);
-          else onFocus?.(p.id);
-        });
       }
 
       // Camera springs. camX/camY follow the focused node; zoom dips on a jump
@@ -131,6 +129,7 @@ export default function BubbleTree({
       const zoom = new Spring(1, { stiffness: 130, damping: 20 });
       const panX = new Spring(0, { stiffness: 120, damping: 18 });
       const panY = new Spring(0, { stiffness: 120, damping: 18 });
+      const biasY = new Spring(0, { stiffness: 110, damping: 19 }); // lift on card open
       let userZoom = 1;
 
       let dist = distancesFrom(graph, focusRef.current);
@@ -157,14 +156,38 @@ export default function BubbleTree({
           userZoom = v;
         },
         dist,
-        didPan: false,
+        pinnedId: null,
         setFocus(id, animate = true) {
           focusRef.current = id;
           state.dist = distancesFrom(graph, id);
           if (!reducedMotion && animate) zoom.velocity -= 2.4; // the pull-back
         },
+        // Screen-space centre of a person's bubble — the card animates out of it.
+        getScreenPos(id) {
+          const n = nodeById.get(id);
+          if (!n) return null;
+          const p = world.toGlobal({ x: n.x, y: n.y });
+          return { x: p.x, y: p.y };
+        },
+        // Hold a person still (while their card is open) so the tether stays put.
+        pin(id) {
+          const n = nodeById.get(id);
+          if (!n) return;
+          state.pinnedId = id;
+          n.fx = n.x;
+          n.fy = n.y;
+        },
+        unpin() {
+          const n = state.pinnedId && nodeById.get(state.pinnedId);
+          if (n) {
+            n.fx = null;
+            n.fy = null;
+          }
+          state.pinnedId = null;
+        },
       };
       api.current = state;
+      if (apiRef) apiRef.current = state;
 
       // Centre instantly on first focus so we don't fly in from the corner.
       const f0 = nodeById.get(focusRef.current);
@@ -173,37 +196,77 @@ export default function BubbleTree({
         camY.set(f0.y);
       }
 
-      // ── Interaction: drag to pan, wheel to zoom (desktop) ──────────────────
+      // ── Interaction ────────────────────────────────────────────────────────
+      // One stage-level gesture handler. Press a bubble and drag to fling it
+      // around — it pins to your finger and the force sim reheats so everyone
+      // else genuinely shoves and settles around it; release and it floats back
+      // into the flow. Press empty space and drag to pan the whole tree. A press
+      // that doesn't move is a tap: recentre, or open the centred person.
       app.stage.eventMode = 'static';
       app.stage.hitArea = { contains: () => true };
-      let dragging = false;
+      const TAP_SLOP = 8; // px of movement still considered a tap
+      const drag = { type: 'none', node: null, id: null, start: null, moved: false };
       let last = null;
-      let downAt = null;
+
+      const bubbleIdFromTarget = (t) => {
+        let n = t;
+        while (n && n.__bubbleId === undefined) n = n.parent;
+        return n ? n.__bubbleId : null;
+      };
+
       app.stage.on('pointerdown', (e) => {
-        dragging = true;
-        state.didPan = false;
-        last = { x: e.global.x, y: e.global.y };
-        downAt = { ...last };
-      });
-      app.stage.on('pointermove', (e) => {
-        if (!dragging || !last) return;
-        const dx = e.global.x - last.x;
-        const dy = e.global.y - last.y;
-        last = { x: e.global.x, y: e.global.y };
-        panX.value += dx;
-        panY.value += dy;
-        if (downAt && Math.hypot(e.global.x - downAt.x, e.global.y - downAt.y) > 8) {
-          state.didPan = true;
+        const g = e.global;
+        last = { x: g.x, y: g.y };
+        drag.start = { x: g.x, y: g.y };
+        drag.moved = false;
+        const id = bubbleIdFromTarget(e.target);
+        if (id) {
+          drag.type = 'bubble';
+          drag.id = id;
+          drag.node = nodeById.get(id);
+        } else {
+          drag.type = 'pan';
+          drag.node = null;
         }
       });
-      const endDrag = () => {
-        dragging = false;
+      app.stage.on('pointermove', (e) => {
+        if (drag.type === 'none' || !last) return;
+        const g = e.global;
+        if (!drag.moved && Math.hypot(g.x - drag.start.x, g.y - drag.start.y) > TAP_SLOP) {
+          drag.moved = true;
+        }
+        if (drag.type === 'bubble' && drag.moved && drag.node) {
+          const local = world.toLocal(g);
+          drag.node.fx = local.x;
+          drag.node.fy = local.y;
+          if (!reducedMotion) sim.alphaTarget(0.35); // reheat so neighbours react
+        } else if (drag.type === 'pan') {
+          panX.value += g.x - last.x;
+          panY.value += g.y - last.y;
+        }
+        last = { x: g.x, y: g.y };
+      });
+      const endGesture = () => {
+        if (drag.type === 'bubble') {
+          if (!drag.moved) {
+            // A clean tap: recentre, or open the already-centred person.
+            if (focusRef.current === drag.id) onOpenPerson?.(drag.id);
+            else onFocus?.(drag.id);
+          } else if (drag.node && drag.id !== state.pinnedId) {
+            // Let the flung bubble rejoin the simulation (unless it's pinned
+            // open as a card anchor).
+            drag.node.fx = null;
+            drag.node.fy = null;
+          }
+          if (!reducedMotion) sim.alphaTarget(0.012); // settle back to idle drift
+        }
+        drag.type = 'none';
+        drag.node = null;
         last = null;
-        // didPan stays true through the synthetic tap, then clears next frame.
-        if (state.didPan) requestAnimationFrame(() => requestAnimationFrame(() => (state.didPan = false)));
       };
-      app.stage.on('pointerup', endDrag);
-      app.stage.on('pointerupoutside', endDrag);
+      app.stage.on('pointerup', endGesture);
+      app.stage.on('pointerupoutside', endGesture);
+      state.isDraggingBubble = () => drag.type === 'bubble' && drag.moved;
       app.canvas.addEventListener(
         'wheel',
         (e) => {
@@ -228,9 +291,10 @@ export default function BubbleTree({
         }
         sim.tick();
 
-        // Camera follows the (gently drifting) focused node.
+        // Camera follows the (gently drifting) focused node — but holds still
+        // while you're flinging a bubble around, so it doesn't chase your finger.
         const f = nodeById.get(focusRef.current);
-        if (f) {
+        if (f && !state.isDraggingBubble?.()) {
           camX.setTarget(f.x);
           camY.setTarget(f.y);
         }
@@ -244,11 +308,15 @@ export default function BubbleTree({
 
         const cx = app.screen.width / 2;
         const cy = app.screen.height / 2;
+        // When a card is open, lift the tree so the anchored bubble rises clear
+        // of the card (which fills the lower screen) and the tether is visible.
+        biasY.setTarget(state.pinnedId ? -app.screen.height * 0.22 : 0);
+        biasY.step(dt);
         const z = clamp(zoom.value, 0.4, 2) * userZoom;
         world.scale.set(z);
         world.position.set(
           cx - camX.value * z + panX.value,
-          cy - camY.value * z + panY.value,
+          cy - camY.value * z + panY.value + biasY.value,
         );
 
         // Ego-distance visual state per bubble.
@@ -275,6 +343,7 @@ export default function BubbleTree({
         /* already torn down */
       }
       api.current = null;
+      if (apiRef) apiRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [graph, reducedMotion]);

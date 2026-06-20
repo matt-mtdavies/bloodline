@@ -116,15 +116,16 @@ export class Bubble {
     const ring = this.ring;
     ring.clear();
     if (this.deceased) {
-      ring.circle(0, 0, r).stroke({ width: 3, color: hex('#6b5e7a'), alpha: 0.9 });
-      ring.circle(0, 0, r + 3).stroke({ width: 1, color: hex('#6b5e7a'), alpha: 0.35 });
+      // A single quiet violet rim — softened and honoured, never greyed out.
+      ring.circle(0, 0, r).stroke({ width: 2.5, color: hex('#6b5e7a'), alpha: 0.85 });
     } else {
+      // A clean white photo-coin edge. Depth comes from the soft shadow below,
+      // not a hard coloured outline.
       ring.circle(0, 0, r).stroke({ width: 3, color: 0xfffdf9, alpha: 1 });
-      ring.circle(0, 0, r + 1.5).stroke({ width: 1.5, color: hex('#3f5e4e'), alpha: 0.5 });
     }
     if (this.person.confidence === 'uncertain') {
-      // A dashed outer ring hints "not yet confirmed" without shouting.
-      drawDashedCircle(ring, r + 5, 14, { width: 1.4, color: hex('#a89c8e'), alpha: 0.8 });
+      // A faint dotted ring hints "not yet confirmed" without shouting.
+      drawDashedCircle(ring, r + 4, 16, { width: 1.2, color: hex('#a89c8e'), alpha: 0.55 });
     }
   }
 
