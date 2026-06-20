@@ -9,6 +9,9 @@ import {
   addMemory,
   toggleMemoryVote,
   removeMemory,
+  addPhoto,
+  setPhotoCaption,
+  removePhoto,
 } from './data/store.js';
 import { buildGraph } from './data/graph.js';
 import { useReducedMotion } from './hooks/useReducedMotion.js';
@@ -20,6 +23,7 @@ import AddRelativeSheet from './components/AddRelativeSheet.jsx';
 import EditPersonSheet from './components/EditPersonSheet.jsx';
 import TimelineEditor from './components/TimelineEditor.jsx';
 import MemorySheet from './components/MemorySheet.jsx';
+import Lightbox from './components/Lightbox.jsx';
 import PhotoCropper from './components/PhotoCropper.jsx';
 import AccessibleTree from './components/AccessibleTree.jsx';
 import Legend from './components/Legend.jsx';
@@ -38,6 +42,7 @@ export default function App() {
   const [editId, setEditId] = useState(null); // edit sheet
   const [timelineId, setTimelineId] = useState(null); // timeline editor
   const [memoryId, setMemoryId] = useState(null); // add-memory sheet
+  const [lightbox, setLightbox] = useState(null); // { personId, index }
   const [crop, setCrop] = useState(null); // { id, url } photo cropper
   const [view, setView] = useState('bubbles');
   const [legendOpen, setLegendOpen] = useState(false);
@@ -163,6 +168,8 @@ export default function App() {
         personId={openId}
         viewerId={DEFAULT_FOCUS}
         memories={data.memories}
+        photos={data.photos}
+        lockEscape={!!(addAnchorId || editId || timelineId || memoryId || lightbox || crop)}
         onClose={closePerson}
         onFocus={(id) => {
           closePerson();
@@ -175,6 +182,8 @@ export default function App() {
         onAddMemory={setMemoryId}
         onVoteMemory={toggleMemoryVote}
         onRemoveMemory={removeMemory}
+        onAddPhoto={(id, src) => addPhoto(id, { src })}
+        onOpenLightbox={(personId, index) => setLightbox({ personId, index })}
         onPhoto={handlePhoto}
       />
 
@@ -207,6 +216,20 @@ export default function App() {
           person={graph.byId.get(memoryId)}
           onClose={() => setMemoryId(null)}
           onAdd={handleAddMemory}
+        />
+      )}
+
+      {lightbox && (
+        <Lightbox
+          photos={data.photos.filter((p) => p.person_id === lightbox.personId)}
+          startIndex={lightbox.index}
+          onClose={() => setLightbox(null)}
+          onSetCaption={setPhotoCaption}
+          onDelete={removePhoto}
+          onSetPortrait={(src) => {
+            setPhoto(lightbox.personId, src);
+            setLightbox(null);
+          }}
         />
       )}
 

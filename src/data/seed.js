@@ -530,6 +530,27 @@ export const memories = [
 function m(person_id, text, author, created_at, votes) {
   return { id: `m_${person_id}_${Math.abs(hash(text))}`, person_id, text, author, created_at, votes, youVoted: false };
 }
+
+/*
+ * Photos — a gallery per person. Stored as image sources (same-origin URLs for
+ * the demo; uploads become downscaled data URLs). Captions + dates are optional
+ * and editable.
+ *   { id, person_id, src, caption, date }
+ */
+export const photos = [
+  ph('james', face('men', 11), 'On the steps of the new studio', '2021'),
+  ph('james', face('men', 12), 'Best man at Tom’s wedding', '2018'),
+  ph('james', face('men', 13), 'Sunday lunch, the whole crowd', '2023'),
+  ph('arthur', face('men', 52), 'In his guard’s uniform', '1955'),
+  ph('arthur', face('men', 53), 'At the allotment', '1998'),
+  ph('margaret', face('women', 65), 'Her last day of teaching', '1993'),
+  ph('robert', face('men', 32), 'Graduation', '1982'),
+  ph('robert', face('men', 33), 'On call, somewhere in the Brecon Beacons', '2005'),
+];
+
+function ph(person_id, src, caption, date) {
+  return { id: `ph_${person_id}_${Math.abs(hash(src + caption))}`, person_id, src, caption, date };
+}
 function hash(s) {
   let h = 0;
   for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;

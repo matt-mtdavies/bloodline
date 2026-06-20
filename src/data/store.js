@@ -7,7 +7,12 @@
  * relationships} shape the API serves, so swapping localStorage for D1 later is
  * a drop-in.
  */
-import { people as seedPeople, relationships as seedRels, memories as seedMemories } from './seed.js';
+import {
+  people as seedPeople,
+  relationships as seedRels,
+  memories as seedMemories,
+  photos as seedPhotos,
+} from './seed.js';
 
 const KEY = 'bloodline:v1';
 
@@ -25,13 +30,17 @@ let state = load() || {
   people: structuredClone(seedPeople),
   relationships: structuredClone(seedRels),
   memories: structuredClone(seedMemories),
+  photos: structuredClone(seedPhotos),
 };
 
-// Migrate pre-Phase-2 saves that predate memories: seed demo memories, but
-// only for people who still exist, so we never clobber the user's own edits.
-if (state.memories === undefined) {
+// Migrate older saves that predate a collection: seed the demo data, but only
+// for people who still exist, so we never clobber the user's own edits.
+if (state.memories === undefined || state.photos === undefined) {
   const ids = new Set(state.people.map((p) => p.id));
-  state.memories = structuredClone(seedMemories).filter((mem) => ids.has(mem.person_id));
+  if (state.memories === undefined)
+    state.memories = structuredClone(seedMemories).filter((x) => ids.has(x.person_id));
+  if (state.photos === undefined)
+    state.photos = structuredClone(seedPhotos).filter((x) => ids.has(x.person_id));
 }
 
 const listeners = new Set();
@@ -62,6 +71,7 @@ export const store = {
 const uid = () => 'p_' + Math.random().toString(36).slice(2, 9);
 const rid = () => 'r_' + Math.random().toString(36).slice(2, 9);
 const mid = () => 'm_' + Math.random().toString(36).slice(2, 9);
+const phid = () => 'ph_' + Math.random().toString(36).slice(2, 9);
 
 // How each warm relationship label maps to stored edges + a gender default.
 export const RELATIONSHIPS = [
@@ -185,4 +195,28 @@ export function toggleMemoryVote(id) {
 
 export function removeMemory(id) {
   commit({ ...state, memories: state.memories.filter((mem) => mem.id !== id) });
+}
+
+// ── Photos (gallery) ──────────────────────────────────────────────────────────
+export function addPhoto(personId, { src, caption, date }) {
+  const photo = {
+    id: phid(),
+    person_id: personId,
+    src,
+    caption: caption || '',
+    date: date || '',
+  };
+  commit({ ...state, photos: [...state.photos, photo] });
+  return photo.id;
+}
+
+export function setPhotoCaption(id, caption) {
+  commit({
+    ...state,
+    photos: state.photos.map((p) => (p.id === id ? { ...p, caption } : p)),
+  });
+}
+
+export function removePhoto(id) {
+  commit({ ...state, photos: state.photos.filter((p) => p.id !== id) });
 }

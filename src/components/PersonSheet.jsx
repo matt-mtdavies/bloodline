@@ -3,6 +3,7 @@ import Avatar from './Avatar.jsx';
 import { lifespan, formatDate, ageOrAt } from '../lib/dates.js';
 import { relationLabel } from '../data/graph.js';
 import { profileCompleteness, lifeEvents } from '../lib/profile.js';
+import { fileToDataUrl } from '../lib/image.js';
 
 /*
  * The profile. In V2 this is the destination, not a popover — a portrait,
@@ -16,6 +17,8 @@ export default function PersonSheet({
   personId,
   viewerId,
   memories = [],
+  photos = [],
+  lockEscape = false,
   onClose,
   onFocus,
   onOpenPerson,
@@ -25,17 +28,20 @@ export default function PersonSheet({
   onAddMemory,
   onVoteMemory,
   onRemoveMemory,
+  onAddPhoto,
+  onOpenLightbox,
   onPhoto,
 }) {
   const person = personId ? graph.byId.get(personId) : null;
   const fileRef = useRef(null);
+  const galleryRef = useRef(null);
 
   useEffect(() => {
-    if (!person) return;
+    if (!person || lockEscape) return; // a stacked overlay owns Escape
     const onKey = (e) => e.key === 'Escape' && onClose();
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [person, onClose]);
+  }, [person, onClose, lockEscape]);
 
   if (!person) return null;
 
@@ -62,7 +68,22 @@ export default function PersonSheet({
     : memories
         .filter((m) => m.person_id === person.id)
         .sort((a, b) => b.votes - a.votes || (a.created_at < b.created_at ? 1 : -1));
+  const personPhotos = minor ? [] : photos.filter((p) => p.person_id === person.id);
   const completeness = minor ? null : profileCompleteness(person, graph, personMemories.length);
+
+  // Picked gallery files are downscaled, then added one by one.
+  const onGalleryPick = async (e) => {
+    const files = [...(e.target.files || [])];
+    e.target.value = '';
+    for (const file of files) {
+      try {
+        const src = await fileToDataUrl(file, 1400);
+        onAddPhoto?.(person.id, src);
+      } catch {
+        /* skip an unreadable file */
+      }
+    }
+  };
 
   const metaBits = [];
   if (person.occupation) metaBits.push(person.occupation);
@@ -176,6 +197,46 @@ export default function PersonSheet({
                 <p className="profile__about">{person.bio}</p>
               </section>
             )}
+
+            {/* Photos */}
+            <section className="profile-section">
+              <div className="profile-section__head">
+                <h3 className="profile-section__title">
+                  Photos{personPhotos.length > 0 ? ` · ${personPhotos.length}` : ''}
+                </h3>
+                <button className="section-edit" onClick={() => galleryRef.current?.click()}>
+                  Add
+                </button>
+              </div>
+              <input
+                ref={galleryRef}
+                type="file"
+                accept="image/*"
+                multiple
+                hidden
+                onChange={onGalleryPick}
+              />
+              {personPhotos.length > 0 ? (
+                <ul className="gallery">
+                  {personPhotos.map((ph, idx) => (
+                    <li key={ph.id}>
+                      <button
+                        className="gallery__cell"
+                        onClick={() => onOpenLightbox?.(person.id, idx)}
+                        aria-label={ph.caption || 'View photo'}
+                      >
+                        <img src={ph.src} alt={ph.caption || ''} loading="lazy" />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <button className="empty-add" onClick={() => galleryRef.current?.click()}>
+                  <PlusIcon />
+                  Add photos
+                </button>
+              )}
+            </section>
 
             {/* Key life events */}
             <section className="profile-section">

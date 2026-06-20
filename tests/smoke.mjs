@@ -74,8 +74,18 @@ try {
   const voted = (await page.locator('.memory__vote--on').count()) > 0;
   check(voted, 'upvoting a memory toggles it on');
 
+  // Photos render in the gallery and open in the lightbox.
+  const cell = page.locator('.gallery__cell').first();
+  check((await cell.count()) > 0, 'photo gallery renders on the profile');
+  await cell.click();
+  await page.waitForSelector('.lightbox', { timeout: 4000 });
+  await page.screenshot({ path: shot('02d-lightbox.png') });
+  check(true, 'lightbox opens');
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(300);
+
   // The add-memory composer opens over the profile and dismisses cleanly.
-  await page.locator('.profile-section__head .section-edit', { hasText: 'Add' }).click();
+  await page.locator('.profile-section__head .section-edit', { hasText: 'Add' }).last().click();
   await page.waitForSelector('[aria-label^="Add a memory"]', { timeout: 4000 });
   await page.screenshot({ path: shot('02b-memory.png') });
   await page.keyboard.press('Escape');
