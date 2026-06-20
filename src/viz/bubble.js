@@ -86,20 +86,27 @@ export class Bubble {
     const g = new Graphics();
     // Flat, single solid colour — clean and modern.
     g.circle(0, 0, r).fill(hex(base));
+    // A soft "shadow person" silhouette (head + shoulders) as the placeholder
+    // image — signals "photo missing" warmly.
+    const W = 0xffffff;
+    g.circle(0, -r * 0.22, r * 0.22).fill({ color: W, alpha: 0.92 }); // head
+    g.ellipse(0, r * 0.2, r * 0.42, r * 0.24).fill({ color: W, alpha: 0.92 }); // shoulders
     this.portrait.addChild(g);
     this._mono = g;
 
+    // Small initials tucked at the bottom, so the person is still identifiable.
     const text = new Text({
       text: initials(this.person.display_name),
       style: {
         fontFamily: TREE_FONT,
-        fontSize: r * 0.62,
-        fontWeight: '600',
+        fontSize: r * 0.3,
+        fontWeight: '700',
         letterSpacing: 0.5,
         fill: 0xffffff,
       },
     });
     text.anchor.set(0.5);
+    text.position.set(0, r * 0.64);
     text.resolution = 2;
     this.portrait.addChild(text);
     this._monoText = text;
