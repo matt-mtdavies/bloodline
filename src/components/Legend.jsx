@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 
 // A quiet key to what the bubbles and bonds mean. Opened from the top bar.
-export default function Legend({ open, onClose }) {
+export default function Legend({ open, onClose, mergeParents, onToggleMerge }) {
   useEffect(() => {
     if (!open) return;
     const onKey = (e) => e.key === 'Escape' && onClose();
@@ -51,6 +51,17 @@ export default function Legend({ open, onClose }) {
             <span><b>A dotted ring</b> marks a detail the family hasn't confirmed yet.</span>
           </li>
         </ul>
+
+        <div className="legend__setting">
+          <label className="toggle toggle--row">
+            <span className="legend__setting-text">
+              <b>Combine parent lines</b>
+              <span>One line from a couple to each child, instead of one per parent.</span>
+            </span>
+            <input type="checkbox" checked={!!mergeParents} onChange={onToggleMerge} />
+          </label>
+        </div>
+
         <p className="legend__privacy">
           We never sell your family's data and there is no ad tracking. Details about
           living people — especially children — stay within your family.

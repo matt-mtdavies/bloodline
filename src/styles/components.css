@@ -482,6 +482,17 @@
 }
 .legend__close { margin-top: 18px; width: 100%; }
 
+.legend__setting {
+  margin-top: 18px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: var(--paper-deep);
+}
+.toggle--row { display: flex; align-items: center; justify-content: space-between; gap: 14px; width: 100%; }
+.legend__setting-text { display: flex; flex-direction: column; gap: 3px; }
+.legend__setting-text b { font-size: 14.5px; font-weight: 600; color: var(--ink); }
+.legend__setting-text span { font-size: 12.5px; color: var(--ink-soft); line-height: 1.4; }
+
 @media (prefers-reduced-motion: reduce) {
   .sheet, .sheet-scrim, .intro-hint, .pill, .btn, .rel-chip, .person-row {
     animation-duration: 0.001ms !important;

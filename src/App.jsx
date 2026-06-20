@@ -46,6 +46,7 @@ export default function App() {
   const [crop, setCrop] = useState(null); // { id, url } photo cropper
   const [view, setView] = useState('bubbles');
   const [legendOpen, setLegendOpen] = useState(false);
+  const [mergeParents, setMergeParents] = useState(true);
   const viewApi = useRef(null);
 
   const visibleIds = useMemo(() => {
@@ -145,6 +146,7 @@ export default function App() {
             onActivate={activate}
             onOpenPerson={openPerson}
             reducedMotion={reducedMotion}
+            mergeParents={mergeParents}
             apiRef={viewApi}
           />
           <FocusNameplate
@@ -244,7 +246,12 @@ export default function App() {
         />
       )}
 
-      <Legend open={legendOpen} onClose={() => setLegendOpen(false)} />
+      <Legend
+        open={legendOpen}
+        onClose={() => setLegendOpen(false)}
+        mergeParents={mergeParents}
+        onToggleMerge={() => setMergeParents((v) => !v)}
+      />
       <Splash />
     </div>
   );

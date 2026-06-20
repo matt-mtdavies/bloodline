@@ -38,6 +38,7 @@ export default function BubbleTree({
   onOpenPerson,
   reducedMotion,
   layout = 'organic',
+  mergeParents = false,
   apiRef,
 }) {
   const hostRef = useRef(null);
@@ -47,6 +48,8 @@ export default function BubbleTree({
   visibleRef.current = visibleIds;
   const graphRef = useRef(graph);
   graphRef.current = graph; // always the live graph for the loop + sync
+  const mergeRef = useRef(mergeParents);
+  mergeRef.current = mergeParents;
   const layoutRef = useRef(layout);
   layoutRef.current = layout;
 
@@ -524,7 +527,7 @@ export default function BubbleTree({
         }
 
         linkGfx.alpha = cardOpen ? 0.18 : 1;
-        drawLinks(linkGfx, graphRef.current, pos, (id) => vis.has(id), BASE_RADIUS);
+        drawLinks(linkGfx, graphRef.current, pos, (id) => vis.has(id), BASE_RADIUS, mergeRef.current);
       });
     })();
 
