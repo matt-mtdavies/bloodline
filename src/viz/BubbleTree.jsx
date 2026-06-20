@@ -15,9 +15,11 @@ import { Spring } from '../lib/spring.js';
 
 const BASE_RADIUS = 46;
 const COLLIDE = 70;
-const GEN_GAP = 215;
-const ORGANIC_CHARGE = -940; // wider repulsion so a revealed family fills the width
+const GEN_GAP = 400; // tall generation bands: the layout fills the height of a phone
+const ORGANIC_CHARGE = -560; // gentle repulsion: lets a wide generation settle near its
+// collision floor so width-fit stays generous while the tall bands fill the height
 const SPREAD_X = 0.008; // gentle horizontal centring — loose enough to spread out
+const MAX_ZOOM = 1.5; // small families can scale up this far to fill the screen
 
 /*
  * The visualization. Everything that matters in Phase 1 lives here:
@@ -101,7 +103,7 @@ export default function BubbleTree({
 
       const linkForce = forceLink(buildLinks(graph.relationships))
         .id((d) => d.id)
-        .distance((l) => (l.kind === 'partner' ? 108 : 210))
+        .distance((l) => (l.kind === 'partner' ? 112 : 240))
         .strength((l) => (l.kind === 'partner' ? 0.9 : 0.26));
 
       const sim = forceSimulation(nodes)
@@ -116,7 +118,7 @@ export default function BubbleTree({
         .stop();
 
       // Warm the layout so the tree opens already settled, not reorganising.
-      for (let i = 0; i < 140; i++) sim.tick();
+      for (let i = 0; i < 220; i++) sim.tick();
       sim.alpha(0.35); // a little life left to breathe into
 
       // Bubbles. Each root carries its id so the single stage-level pointer
@@ -435,12 +437,51 @@ export default function BubbleTree({
         sim.tick();
         const vis = visibleRef.current;
 
-        // Camera follows the active node — but holds still while you're
-        // flinging a bubble around, so it doesn't chase your finger.
+        const W = app.screen.width;
+        const H = app.screen.height;
+        // Reserve a band at the top for the masthead so bubbles never sit under
+        // it; the visible family is framed in the centre of the safe area.
+        const topInset = Math.min(120, H * 0.16);
+        const cx = W / 2;
+        const cy = (H + topInset) / 2;
+
+        // Frame the whole revealed family: centre on the bounding box of the
+        // visible bubbles (gently biased toward the active person so they stay
+        // central) and zoom so it fills the safe area. This way even a handful
+        // of people spread out and use the screen instead of huddling in the
+        // middle. We hold still while a bubble is being flung.
         const f = nodeById.get(activeRef.current);
         if (f && !state.isDraggingBubble?.()) {
-          camX.setTarget(f.x);
-          camY.setTarget(f.y);
+          const rr = BASE_RADIUS * 1.5;
+          let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+          for (const id of vis) {
+            const n = nodeById.get(id);
+            if (!n) continue;
+            if (n.x - rr < minX) minX = n.x - rr;
+            if (n.x + rr > maxX) maxX = n.x + rr;
+            if (n.y - rr < minY) minY = n.y - rr;
+            if (n.y + rr > maxY) maxY = n.y + rr;
+          }
+          if (!isFinite(minX)) {
+            minX = f.x - rr; maxX = f.x + rr; minY = f.y - rr; maxY = f.y + rr;
+          }
+          // Bias the framed centre a third of the way toward the active person.
+          const BIAS = 0.34;
+          const camTX = ((minX + maxX) / 2) * (1 - BIAS) + f.x * BIAS;
+          const camTY = ((minY + maxY) / 2) * (1 - BIAS) + f.y * BIAS;
+          camX.setTarget(camTX);
+          camY.setTarget(camTY);
+          // Fit from the half-extents around the (biased) centre so nothing
+          // clips on the far side.
+          const halfX = Math.max(camTX - minX, maxX - camTX, rr);
+          const halfY = Math.max(camTY - minY, maxY - camTY, rr);
+          const PAD = 18;
+          const fit = Math.min(
+            MAX_ZOOM,
+            (W / 2 - PAD) / halfX,
+            ((H - topInset) / 2 - PAD) / halfY,
+          );
+          zoom.setTarget(clamp(fit, 0.4, MAX_ZOOM));
         }
         camX.step(dt);
         camY.step(dt);
@@ -449,34 +490,6 @@ export default function BubbleTree({
         panY.setTarget(0);
         panX.step(dt);
         panY.step(dt);
-
-        const W = app.screen.width;
-        const H = app.screen.height;
-        // Reserve a band at the top for the masthead so bubbles never sit under
-        // it; the active person sits in the centre of the remaining safe area.
-        const topInset = Math.min(120, H * 0.16);
-        const cx = W / 2;
-        const cy = (H + topInset) / 2;
-
-        // Zoom-to-fit: keep the active person centred but shrink the view just
-        // enough that the whole revealed family stays framed as it grows.
-        if (f && !state.isDraggingBubble?.()) {
-          let maxX = 120;
-          let maxY = 120;
-          const rr = BASE_RADIUS * 1.5;
-          for (const id of vis) {
-            const n = nodeById.get(id);
-            if (!n) continue;
-            maxX = Math.max(maxX, Math.abs(n.x - f.x) + rr);
-            maxY = Math.max(maxY, Math.abs(n.y - f.y) + rr);
-          }
-          const fit = Math.min(
-            1.22,
-            (W / 2 - 24) / maxX,
-            ((H - topInset) / 2 - 24) / maxY,
-          );
-          zoom.setTarget(clamp(fit, 0.4, 1.22));
-        }
 
         // When a card is open, slide the anchored bubble to the left so the card
         // can expand out to its side.
