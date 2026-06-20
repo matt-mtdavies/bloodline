@@ -8,6 +8,10 @@ import {
   BlurFilter,
 } from 'pixi.js';
 import { monogramColors, initials, hex } from '../lib/color.js';
+import { softShadowTexture } from './textures.js';
+import { Spring } from '../lib/spring.js';
+
+const TREE_FONT = 'Hanken Grotesk, system-ui, sans-serif';
 
 /*
  * One person, rendered as a circular bubble.
@@ -27,9 +31,9 @@ export class Bubble {
     this.person = person;
     this.r = baseRadius;
     this.deceased = !!person.is_deceased;
-    // Eased display state so bubbles fade/grow in and out as focus moves
-    // (the tree starts collapsed to immediate family and expands on tap).
-    this.curScale = 0;
+    // Eased display state. Scale springs (with a little overshoot) so bubbles
+    // pop in when revealed; alpha eases so they fade cleanly.
+    this.scaleSpring = new Spring(0, { stiffness: 150, damping: 14 });
     this.curAlpha = 0;
 
     const root = new Container();
@@ -37,9 +41,13 @@ export class Bubble {
     root.cursor = 'pointer';
     this.root = root;
 
-    // Soft drop shadow — a blurred dark disc behind the bubble.
-    const shadow = new Graphics().circle(0, 3, baseRadius + 2).fill({ color: 0x2c2622, alpha: 0.16 });
-    shadow.__shadow = true;
+    // Soft, blurred, modern drop shadow (a reused gradient sprite) so the
+    // bubble floats on the white ground.
+    const shadow = new Sprite(softShadowTexture());
+    shadow.anchor.set(0.5);
+    shadow.width = shadow.height = baseRadius * 2.7;
+    shadow.y = 5;
+    shadow.alpha = 0.5;
     root.addChild(shadow);
     this.shadow = shadow;
 
@@ -86,10 +94,11 @@ export class Bubble {
     const text = new Text({
       text: initials(this.person.display_name),
       style: {
-        fontFamily: 'Fraunces, Georgia, serif',
-        fontSize: r * 0.78,
-        fontWeight: '500',
-        fill: 0xfffdf9,
+        fontFamily: TREE_FONT,
+        fontSize: r * 0.62,
+        fontWeight: '600',
+        letterSpacing: 0.5,
+        fill: 0xffffff,
       },
     });
     text.anchor.set(0.5);
@@ -102,17 +111,13 @@ export class Bubble {
     const r = this.r;
     const ring = this.ring;
     ring.clear();
+    // No ring for the living — clean circles floating on white; depth comes
+    // from the soft shadow. Only meaningful states get a rim.
     if (this.deceased) {
-      // A single quiet violet rim — softened and honoured, never greyed out.
       ring.circle(0, 0, r).stroke({ width: 2.5, color: hex('#6b5e7a'), alpha: 0.85 });
-    } else {
-      // A clean white photo-coin edge. Depth comes from the soft shadow below,
-      // not a hard coloured outline.
-      ring.circle(0, 0, r).stroke({ width: 3, color: 0xfffdf9, alpha: 1 });
     }
     if (this.person.confidence === 'uncertain') {
-      // A faint dotted ring hints "not yet confirmed" without shouting.
-      drawDashedCircle(ring, r + 4, 16, { width: 1.2, color: hex('#a89c8e'), alpha: 0.55 });
+      drawDashedCircle(ring, r + 4, 16, { width: 1.2, color: hex('#a6abb3'), alpha: 0.6 });
     }
   }
 
@@ -144,18 +149,16 @@ export class Bubble {
     }
   }
 
-  // Called every frame with the bubble's target ego-distance state; the bubble
-  // eases toward it so appearing/disappearing is a soft grow/fade, not a pop.
-  setVisualState({ scale, alpha, lift, blur }) {
-    const k = 0.16;
-    this.curScale += (scale - this.curScale) * k;
-    this.curAlpha += (alpha - this.curAlpha) * k;
+  // Called every frame with the bubble's target state and the frame dt. Scale
+  // springs (cool pop-in on reveal); alpha eases.
+  setVisualState({ scale, alpha, lift, blur }, dt = 1 / 60) {
+    this.scaleSpring.setTarget(scale);
+    const s = this.scaleSpring.step(dt);
+    this.curAlpha += (alpha - this.curAlpha) * Math.min(1, dt * 7);
     this.root.visible = this.curAlpha > 0.012;
-    this.root.scale.set(this.curScale);
+    this.root.scale.set(Math.max(0, s));
     this.root.alpha = this.curAlpha;
-    // Focused/near bubbles lift their shadow a touch for depth.
-    this.shadow.alpha = 0.16 * lift * this.curAlpha;
-    this.shadow.scale.set(1 + 0.04 * (lift - 1));
+    this.shadow.alpha = 0.5 * this.curAlpha * (0.7 + 0.3 * lift);
     this.setBlur(blur);
   }
 

@@ -14,16 +14,11 @@ import { hex } from '../lib/color.js';
  * Link opacity follows the ego camera: bonds far from the focused person fade
  * back with their bubbles.
  */
-export function drawLinks(g, graph, pos, dist, baseRadius, maxDist = 99) {
+export function drawLinks(g, graph, pos, isVisible, baseRadius) {
   g.clear();
-  const far = (id) => (dist.has(id) ? dist.get(id) : 6);
-  // Only show links between bubbles that are currently visible (within maxDist
-  // of the focus); the rest stay collapsed with their people.
-  const hidden = (a, b) => Math.max(far(a), far(b)) > maxDist;
-  const edgeAlpha = (a, b) => {
-    const d = Math.min(far(a), far(b));
-    return d <= 1 ? 1 : d === 2 ? 0.7 : d === 3 ? 0.4 : 0.18;
-  };
+  // Only draw a link when both people are currently revealed.
+  const hidden = (a, b) => !(isVisible(a) && isVisible(b));
+  const edgeAlpha = () => 1;
 
   // ── Couple membranes (drawn first, furthest back) ─────────────────────────
   const seen = new Set();

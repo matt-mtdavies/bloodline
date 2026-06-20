@@ -1,8 +1,9 @@
-export default function TopBar({ view, onToggleView, onOpenLegend }) {
+export default function TopBar({ familyName, view, onToggleView, onOpenLegend }) {
   return (
     <header className="topbar">
-      <span className="brand" aria-label="Bloodline">
+      <span className="brand">
         <Emblem />
+        <span className="brand__name">{familyName}</span>
       </span>
       <div className="topbar__actions">
         <button className="pill" onClick={onOpenLegend} aria-label="What the styles mean">

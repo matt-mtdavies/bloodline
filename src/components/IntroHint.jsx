@@ -22,7 +22,7 @@ export default function IntroHint() {
   if (!visible) return null;
   return (
     <div className="intro-hint" role="status">
-      Tap any face to fly to them
+      Tap a face to grow your family
     </div>
   );
 }

@@ -28,15 +28,18 @@ const GEN_GAP = 168;
  */
 export default function BubbleTree({
   graph,
-  focusId,
-  onFocus,
+  activeId,
+  visibleIds,
+  onActivate,
   onOpenPerson,
   reducedMotion,
   apiRef,
 }) {
   const hostRef = useRef(null);
   const api = useRef(null);
-  const focusRef = useRef(focusId);
+  const activeRef = useRef(activeId);
+  const visibleRef = useRef(visibleIds);
+  visibleRef.current = visibleIds;
 
   // ── Mount Pixi + the simulation once ──────────────────────────────────────
   useEffect(() => {
@@ -124,15 +127,16 @@ export default function BubbleTree({
       // Camera springs. camX/camY follow the focused node; zoom dips on a jump
       // to give the flight a sense of pulling back before swooping in. panX/panY
       // let you drag the tree and have it spring affectionately back to centre.
-      const camX = new Spring(0, { stiffness: 90, damping: 16 });
-      const camY = new Spring(0, { stiffness: 90, damping: 16 });
+      // Slower, gentler glide (the expansion should feel calm).
+      const camX = new Spring(0, { stiffness: 55, damping: 15 });
+      const camY = new Spring(0, { stiffness: 55, damping: 15 });
       const zoom = new Spring(1, { stiffness: 130, damping: 20 });
       const panX = new Spring(0, { stiffness: 120, damping: 18 });
       const panY = new Spring(0, { stiffness: 120, damping: 18 });
-      const biasX = new Spring(0, { stiffness: 110, damping: 19 }); // shift on card open
+      const biasX = new Spring(0, { stiffness: 90, damping: 18 }); // shift on card open
       let userZoom = 1;
 
-      let dist = distancesFrom(graph, focusRef.current);
+      let dist = distancesFrom(graph, activeRef.current);
 
       const state = {
         app,
@@ -157,10 +161,10 @@ export default function BubbleTree({
         },
         dist,
         pinnedId: null,
-        setFocus(id, animate = true) {
-          focusRef.current = id;
+        setActive(id, animate = true) {
+          activeRef.current = id;
           state.dist = distancesFrom(graph, id);
-          if (!reducedMotion && animate) zoom.velocity -= 2.4; // the pull-back
+          if (!reducedMotion && animate) zoom.velocity -= 1.6; // gentle pull-back
         },
         // Screen-space centre of a person's bubble — the card animates out of it.
         getScreenPos(id) {
@@ -189,8 +193,8 @@ export default function BubbleTree({
       api.current = state;
       if (apiRef) apiRef.current = state;
 
-      // Centre instantly on first focus so we don't fly in from the corner.
-      const f0 = nodeById.get(focusRef.current);
+      // Centre instantly on the first active person so we don't fly in.
+      const f0 = nodeById.get(activeRef.current);
       if (f0) {
         camX.set(f0.x);
         camY.set(f0.y);
@@ -284,9 +288,9 @@ export default function BubbleTree({
         if (pointers.size < 2) pinch.active = false;
         if (drag.type === 'bubble') {
           if (!drag.moved) {
-            // A clean tap: recentre, or open the already-centred person.
-            if (focusRef.current === drag.id) onOpenPerson?.(drag.id);
-            else onFocus?.(drag.id);
+            // A clean tap: expand/activate, or open the already-active person.
+            if (activeRef.current === drag.id) onOpenPerson?.(drag.id);
+            else onActivate?.(drag.id);
           } else if (drag.node && drag.id !== state.pinnedId) {
             // Let the flung bubble rejoin the simulation (unless it's pinned
             // open as a card anchor).
@@ -326,9 +330,9 @@ export default function BubbleTree({
         }
         sim.tick();
 
-        // Camera follows the (gently drifting) focused node — but holds still
-        // while you're flinging a bubble around, so it doesn't chase your finger.
-        const f = nodeById.get(focusRef.current);
+        // Camera follows the active node — but holds still while you're
+        // flinging a bubble around, so it doesn't chase your finger.
+        const f = nodeById.get(activeRef.current);
         if (f && !state.isDraggingBubble?.()) {
           camX.setTarget(f.x);
           camY.setTarget(f.y);
@@ -354,21 +358,30 @@ export default function BubbleTree({
           cy - camY.value * z + panY.value,
         );
 
-        // Ego-distance visual state per bubble.
+        // Per-bubble visual state. Only revealed (visible) people show; the rest
+        // stay collapsed. When a card is open, the active bubble stays sharp and
+        // everyone else blurs and dims back.
         const dmap = state.dist;
+        const vis = visibleRef.current;
+        const cardOpen = !!state.pinnedId;
         for (const [id, b] of bubbles) {
           const n = nodeById.get(id);
           b.root.position.set(n.x, n.y);
           const d = dmap.has(id) ? dmap.get(id) : 6;
-          let target = visualForDistance(d);
-          // The opened person's bubble fades out as it "becomes" the card.
-          if (id === state.pinnedId) target = { ...target, alpha: 0, scale: 0.7 };
-          b.setVisualState(target);
-          // Keep nearer bubbles drawn above farther ones.
-          b.root.zIndex = -d;
+          let target;
+          if (!vis.has(id)) {
+            target = { scale: 0.5, alpha: 0, lift: 1, blur: 0 }; // collapsed
+          } else if (cardOpen && id !== state.pinnedId) {
+            target = { ...visualForDistance(d), alpha: 0.28, blur: 5 }; // dimmed
+          } else {
+            target = visualForDistance(d);
+          }
+          b.setVisualState(target, dt);
+          b.root.zIndex = id === activeRef.current ? 100 : -d;
         }
 
-        drawLinks(linkGfx, graph, pos, dmap, BASE_RADIUS, 1);
+        linkGfx.alpha = cardOpen ? 0.18 : 1;
+        drawLinks(linkGfx, graph, pos, (id) => vis.has(id), BASE_RADIUS);
       });
     })();
 
@@ -386,25 +399,27 @@ export default function BubbleTree({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [graph, reducedMotion]);
 
-  // React drives focus changes into the imperative camera.
+  // React drives the active person into the imperative camera.
   useEffect(() => {
-    if (api.current) api.current.setFocus(focusId);
-    else focusRef.current = focusId;
-  }, [focusId]);
+    if (api.current) api.current.setActive(activeId);
+    else activeRef.current = activeId;
+  }, [activeId]);
 
   return <div className="stage" ref={hostRef} aria-hidden="true" />;
 }
 
-// Only the focused person and their immediate connections are shown; everyone
-// else stays collapsed (faded out) until you tap to travel toward them.
+// Sizing for revealed bubbles by hop-distance from the active person. (Whether
+// a bubble shows at all is decided separately by the visible set.)
 function visualForDistance(d) {
   switch (d) {
     case 0:
       return { scale: 1.34, alpha: 1, lift: 1.6, blur: 0 };
     case 1:
       return { scale: 1.0, alpha: 1, lift: 1.2, blur: 0 };
+    case 2:
+      return { scale: 0.82, alpha: 1, lift: 1, blur: 0 };
     default:
-      return { scale: 0.5, alpha: 0, lift: 1, blur: 0 }; // collapsed / hidden
+      return { scale: 0.7, alpha: 1, lift: 1, blur: 0 };
   }
 }
 

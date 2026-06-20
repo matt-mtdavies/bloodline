@@ -1,43 +1,17 @@
-import { useEffect, useLayoutEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import Avatar from './Avatar.jsx';
 import { lifespan, formatDate } from '../lib/dates.js';
 import { relationLabel } from '../data/graph.js';
 
 /*
- * The person card. The tapped bubble itself appears to become the card: the
- * card grows out of its own portrait, anchored exactly where the bubble was, so
- * there's no need for a connecting line — the bubble simply opened up. The tree
- * stays visible to the side. Closing shrinks it back into the bubble.
+ * The person card. The active bubble stays sharp on the tree while everyone
+ * else blurs back; this card slides in alongside as a clean panel. No connector
+ * line, no morph — the spotlight on the tree carries the link.
  *
  * Living minors get a light privacy note rather than full exposure (§7).
  */
-export default function PersonSheet({ graph, personId, origin, onClose, onFocus, onOpenPerson }) {
+export default function PersonSheet({ graph, personId, onClose, onFocus, onOpenPerson }) {
   const person = personId ? graph.byId.get(personId) : null;
-  const cardRef = useRef(null);
-
-  // FLIP in from the bubble: anchor the card's *portrait* on the bubble's screen
-  // position and let the card unfold around it.
-  useLayoutEffect(() => {
-    if (!person) return;
-    const card = cardRef.current;
-    if (!card) return;
-    const rect = card.getBoundingClientRect();
-    const avatar = card.querySelector('.avatar');
-    const a = avatar ? avatar.getBoundingClientRect() : rect;
-    const acx = a.left + a.width / 2;
-    const acy = a.top + a.height / 2;
-    const ox = origin?.x ?? acx;
-    const oy = origin?.y ?? acy;
-
-    card.style.transition = 'none';
-    card.style.transformOrigin = `${acx - rect.left}px ${acy - rect.top}px`;
-    card.style.transform = `translate(${ox - acx}px, ${oy - acy}px) scale(0.2)`;
-    card.style.opacity = '0';
-    void card.offsetWidth; // commit the "from" state
-    card.style.transition = '';
-    card.style.transform = '';
-    card.style.opacity = '';
-  }, [person, origin]);
 
   useEffect(() => {
     if (!person) return;
@@ -64,7 +38,6 @@ export default function PersonSheet({ graph, personId, origin, onClose, onFocus,
     <div className="sheet-scrim sheet-scrim--soft" onClick={onClose}>
       <section
         className="sheet sheet--card"
-        ref={cardRef}
         role="dialog"
         aria-modal="true"
         aria-label={`${person.display_name} profile`}

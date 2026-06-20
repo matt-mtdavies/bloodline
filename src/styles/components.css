@@ -1,8 +1,8 @@
 .app {
   position: fixed;
   inset: 0;
-  background:
-    radial-gradient(120% 90% at 50% -10%, #fdfaf4 0%, var(--paper) 55%, var(--paper-deep) 130%);
+  /* A clean white ground with the faintest cool lift, so bubbles float. */
+  background: radial-gradient(130% 100% at 50% 0%, #ffffff 0%, #fbfbfc 60%, #f4f5f7 130%);
 }
 
 /* ── Top bar ─────────────────────────────────────────────────────────────── */
@@ -21,19 +21,27 @@
 }
 .topbar > * { pointer-events: auto; }
 
-/* Just the heirloom mark — a soft frosted coin in the corner. */
+/* Clean wordmark — emblem + family name on a crisp white pill. */
 .brand {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  width: 40px;
+  gap: 9px;
   height: 40px;
+  padding: 0 16px 0 9px;
   border-radius: 999px;
-  background: rgba(255, 253, 249, 0.72);
-  backdrop-filter: blur(12px) saturate(1.1);
+  background: #ffffff;
+  border: 1px solid var(--hairline);
   box-shadow: var(--shadow-soft);
 }
 .brand__emblem { display: block; flex: none; }
+.brand__name {
+  font-family: var(--body);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  color: var(--ink);
+  white-space: nowrap;
+}
 .topbar__actions { display: flex; gap: 8px; align-items: center; }
 
 .pill {
@@ -45,7 +53,8 @@
   justify-content: center;
   gap: 6px;
   border-radius: 999px;
-  background: var(--card);
+  background: #ffffff;
+  border: 1px solid var(--hairline);
   color: var(--ink);
   font-size: 13.5px;
   font-weight: 500;
@@ -105,10 +114,10 @@
   animation: nameplate-in 0.5s var(--spring) both;
 }
 .nameplate__name {
-  font-family: var(--display);
-  font-size: 19px;
+  font-family: var(--body);
+  font-size: 17px;
   font-weight: 600;
-  letter-spacing: -0.012em;
+  letter-spacing: -0.01em;
   color: var(--ink);
 }
 .nameplate__dot { color: var(--ink-faint); }
@@ -164,15 +173,19 @@
 
 .sheet--card {
   position: relative;
-  z-index: 2; /* above the tether */
+  z-index: 2;
   width: min(420px, calc(100% - 150px));
   max-height: 86vh;
   border-radius: var(--radius-lg);
   margin: 0 18px 0 0;
   padding: 22px;
-  animation: none;
-  transition: transform 0.55s var(--spring), opacity 0.3s var(--ease);
+  border: 1px solid var(--hairline);
+  animation: card-in 0.5s var(--spring) both;
   will-change: transform, opacity;
+}
+@keyframes card-in {
+  from { transform: translateX(36px) scale(0.98); opacity: 0; }
+  to { transform: translateX(0) scale(1); opacity: 1; }
 }
 
 

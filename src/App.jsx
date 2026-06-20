@@ -15,19 +15,35 @@ export default function App() {
   const graph = useMemo(() => buildGraph(people, relationships), []);
   const reducedMotion = useReducedMotion();
 
-  const [focusId, setFocusId] = useState(DEFAULT_FOCUS);
+  const [activeId, setActiveId] = useState(DEFAULT_FOCUS);
+  // People whose connections have been revealed. The tree shows these plus
+  // their immediate neighbours; tapping a face expands it without hiding the
+  // rest, so the tree grows as you explore.
+  const [expanded, setExpanded] = useState(() => new Set([DEFAULT_FOCUS]));
   const [openId, setOpenId] = useState(null); // person card
-  const [cardOrigin, setCardOrigin] = useState(null); // bubble screen pos the card grows from
+  const [cardOrigin, setCardOrigin] = useState(null);
   const [view, setView] = useState('bubbles'); // 'bubbles' | 'list'
   const [legendOpen, setLegendOpen] = useState(false);
   const viewApi = useRef(null); // imperative handle into the canvas
 
-  const focus = useCallback((id) => {
-    setFocusId(id);
+  const visibleIds = useMemo(() => {
+    const vis = new Set();
+    for (const id of expanded) {
+      vis.add(id);
+      for (const x of graph.parents(id)) vis.add(x.id);
+      for (const x of graph.children(id)) vis.add(x.id);
+      for (const x of graph.partners(id)) vis.add(x.id);
+      for (const x of graph.siblings(id)) vis.add(x.id);
+    }
+    return vis;
+  }, [graph, expanded]);
+
+  // Make a person active and reveal their connections (additive — never hides).
+  const activate = useCallback((id) => {
+    setActiveId(id);
+    setExpanded((prev) => (prev.has(id) ? prev : new Set(prev).add(id)));
   }, []);
 
-  // Open a person's card so it appears to grow out of their bubble, and pin that
-  // bubble so the tether stays anchored while the card is up.
   const openPerson = useCallback((id) => {
     viewApi.current?.unpin();
     setCardOrigin(viewApi.current?.getScreenPos(id) || null);
@@ -40,7 +56,7 @@ export default function App() {
     setOpenId(null);
   }, []);
 
-  const focusPerson = graph.byId.get(focusId);
+  const activePerson = graph.byId.get(activeId);
 
   return (
     <div className="app">
@@ -55,15 +71,16 @@ export default function App() {
         <>
           <BubbleTree
             graph={graph}
-            focusId={focusId}
-            onFocus={focus}
+            activeId={activeId}
+            visibleIds={visibleIds}
+            onActivate={activate}
             onOpenPerson={openPerson}
             reducedMotion={reducedMotion}
             apiRef={viewApi}
           />
           <FocusNameplate
-            person={focusPerson}
-            getPos={() => viewApi.current?.getScreenPos(focusId)}
+            person={activePerson}
+            getPos={() => viewApi.current?.getScreenPos(activeId)}
             hidden={!!openId}
           />
           <IntroHint />
@@ -71,8 +88,8 @@ export default function App() {
       ) : (
         <AccessibleTree
           graph={graph}
-          focusId={focusId}
-          onFocus={focus}
+          focusId={activeId}
+          onFocus={activate}
           onOpenPerson={openPerson}
         />
       )}
@@ -84,7 +101,7 @@ export default function App() {
         onClose={closePerson}
         onFocus={(id) => {
           closePerson();
-          focus(id);
+          activate(id);
         }}
         onOpenPerson={openPerson}
       />
