@@ -1,47 +1,41 @@
 import { json } from '../_lib/util.js';
 
 /*
- * GET /api/tree — the shared family graph as { people, relationships }.
+ * GET /api/tree  — load the authenticated user's full tree state.
+ * PUT /api/tree  — save the authenticated user's full tree state.
  *
- * This is the same shape the client's seed module produces, so the
- * visualization can read from either source. Phase 1's seeded demo runs off the
- * bundled seed; once D1 is provisioned and seeded this endpoint serves the live
- * graph with no client changes.
+ * The tree is stored as a JSON blob in user_tree so the client store shape
+ * can evolve freely. Normalised D1 tables (person, relationship) exist for
+ * Phase 4 collaboration; for solo use this is the source of truth.
  */
-export async function onRequestGet({ env }) {
-  if (!env.DB) {
-    return json({ error: 'Database not configured. Run the D1 migrations + seed.' }, { status: 503 });
-  }
 
-  const [{ results: people }, { results: relationships }] = await Promise.all([
-    env.DB.prepare(
-      `SELECT id, display_name, given_names, family_name, maiden_name,
-              birth_date, death_date, is_living, is_deceased, is_minor,
-              gender, birth_place, bio, photo_key, confidence
-         FROM person`,
-    ).all(),
-    env.DB.prepare(
-      `SELECT id, from_person, to_person, type, qualifier, partner_status
-         FROM relationship`,
-    ).all(),
-  ]);
+export async function onRequestGet({ env, data }) {
+  if (!data.user) return json({ error: 'Unauthorized' }, { status: 401 });
+  if (!env.DB) return json({ error: 'Database not configured' }, { status: 503 });
 
-  // Normalise SQLite integers to booleans for the client.
-  for (const p of people) {
-    p.is_living = !!p.is_living;
-    p.is_deceased = !!p.is_deceased;
-    p.is_minor = !!p.is_minor;
-    // Absolute URLs and same-origin paths (e.g. /faces/…) pass through;
-    // bare keys resolve to an R2-backed photo route.
-    p.photo = p.photo_key
-      ? /^(https?:|\/)/.test(p.photo_key)
-        ? p.photo_key
-        : `/api/photo/${p.photo_key}`
-      : null;
-  }
+  const row = await env.DB.prepare(
+    'SELECT tree_json FROM user_tree WHERE user_id = ?',
+  ).bind(data.user.uid).first();
 
-  return json(
-    { people, relationships },
-    { headers: { 'cache-control': 'private, max-age=15' } },
-  );
+  // null means new user — client shows onboarding.
+  return json(row ? JSON.parse(row.tree_json) : null, {
+    headers: { 'cache-control': 'private, no-store' },
+  });
+}
+
+export async function onRequestPut({ request, env, data }) {
+  if (!data.user) return json({ error: 'Unauthorized' }, { status: 401 });
+  if (!env.DB) return json({ error: 'Database not configured' }, { status: 503 });
+
+  const tree = await request.json();
+  const now = Math.floor(Date.now() / 1000);
+  await env.DB.prepare(
+    `INSERT INTO user_tree (user_id, tree_json, updated_at)
+     VALUES (?, ?, ?)
+     ON CONFLICT (user_id) DO UPDATE
+       SET tree_json = excluded.tree_json,
+           updated_at = excluded.updated_at`,
+  ).bind(data.user.uid, JSON.stringify(tree), now).run();
+
+  return json({ ok: true });
 }

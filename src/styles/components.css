@@ -77,6 +77,21 @@
   align-items: center;
   pointer-events: auto;
 }
+.topbar__user { padding: 6px; }
+.topbar__avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent) 14%, white);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  pointer-events: none;
+}
 
 /* Logo mark + staggered bubble pop-in */
 .logo { overflow: visible; }
@@ -1807,3 +1822,136 @@
     animation-duration: 0.001ms !important;
   }
 }
+
+/* ── Login screen ─────────────────────────────────────────────────────────── */
+.login-screen {
+  position: fixed;
+  inset: 0;
+  background: var(--ground);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  z-index: 200;
+}
+.login-card {
+  background: #fff;
+  border-radius: 24px;
+  padding: 40px 36px 36px;
+  width: min(440px, 100%);
+  box-shadow: 0 8px 48px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+.login-card__brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-family: var(--display);
+  font-size: 28px;
+  font-weight: 600;
+  color: var(--accent);
+  letter-spacing: -0.02em;
+  margin-bottom: 28px;
+}
+.login-card__tagline {
+  font-size: 17px;
+  line-height: 1.5;
+  color: var(--ink-soft);
+  margin-bottom: 28px;
+}
+.login-card__label {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink-soft);
+  margin-bottom: 8px;
+  letter-spacing: 0.01em;
+}
+.login-card__input {
+  display: block;
+  width: 100%;
+  border: 1.5px solid var(--hairline);
+  border-radius: 12px;
+  padding: 14px 16px;
+  font-size: 16px;
+  font-family: var(--body);
+  color: var(--ink);
+  background: #fff;
+  outline: none;
+  box-sizing: border-box;
+  transition: border-color 0.15s;
+  -webkit-appearance: none;
+}
+.login-card__input:focus { border-color: var(--accent); }
+.login-card__cta {
+  display: block;
+  width: 100%;
+  margin-top: 16px;
+  padding: 16px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 12px;
+  font-size: 17px;
+  font-family: var(--body);
+  font-weight: 600;
+  cursor: pointer;
+  letter-spacing: 0.01em;
+  box-shadow: 0 4px 20px rgba(194, 96, 58, 0.28);
+  transition: opacity 0.15s, transform 0.15s, box-shadow 0.15s;
+}
+.login-card__cta:disabled {
+  opacity: 0.4;
+  box-shadow: none;
+  cursor: default;
+}
+.login-card__cta:not(:disabled):active {
+  transform: scale(0.98);
+  box-shadow: 0 2px 10px rgba(194, 96, 58, 0.2);
+}
+.login-card__hint {
+  margin-top: 16px;
+  font-size: 13px;
+  color: var(--ink-faint, #bbb);
+  text-align: center;
+  line-height: 1.5;
+}
+.login-card__err {
+  font-size: 14px;
+  color: #c0392b;
+  background: #fef5f5;
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin-bottom: 16px;
+  line-height: 1.4;
+}
+/* Sent / confirmation state */
+.login-card__sent {
+  text-align: center;
+  padding: 12px 0 4px;
+}
+.login-card__sent-icon {
+  font-size: 40px;
+  margin-bottom: 16px;
+  line-height: 1;
+}
+.login-card__sent-title {
+  font-family: var(--display);
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--ink);
+  margin-bottom: 12px;
+}
+.login-card__sent-body {
+  font-size: 15px;
+  color: var(--ink-soft);
+  line-height: 1.6;
+  margin-bottom: 28px;
+}
+.login-card__resend {
+  font-size: 14px;
+  color: var(--accent);
+  font-weight: 500;
+  padding: 4px 8px;
+  transition: opacity 0.15s;
+}
+.login-card__resend:hover { opacity: 0.7; }

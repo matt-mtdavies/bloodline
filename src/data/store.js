@@ -88,6 +88,26 @@ if (state.people?.length > 0 && state.memories.length === 0 && state.people.some
 
 const listeners = new Set();
 
+// Server sync — enabled after a successful /api/auth/me check.
+let _serverSyncEnabled = false;
+let _saveTimer = null;
+
+export function enableServerSync() {
+  _serverSyncEnabled = true;
+}
+
+function scheduleServerSave(s) {
+  if (!_serverSyncEnabled) return;
+  clearTimeout(_saveTimer);
+  _saveTimer = setTimeout(() => {
+    fetch('/api/tree', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(s),
+    }).catch((e) => console.warn('[store] server sync failed:', e.message));
+  }, 1500);
+}
+
 function commit(next) {
   state = next;
   try {
@@ -95,7 +115,23 @@ function commit(next) {
   } catch {
     /* quota — keep working in-memory */
   }
+  scheduleServerSave(state);
   listeners.forEach((l) => l());
+}
+
+// Load the user's tree from the server and overwrite local state.
+// Returns true if data was found, false if the user is new (no tree yet).
+export async function loadFromServer() {
+  try {
+    const res = await fetch('/api/tree');
+    if (!res.ok) return false;
+    const data = await res.json();
+    if (!data) return false;
+    commit({ ...EMPTY, ...data });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export const store = {

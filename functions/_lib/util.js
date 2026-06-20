@@ -31,25 +31,60 @@ export async function signSession(payload, secret) {
   return `${body}.${sigB64}`;
 }
 
+// Verify a signed session cookie value. Returns the payload or null.
+export async function verifySession(cookieHeader, secret) {
+  if (!cookieHeader) return null;
+  const match = cookieHeader.match(/bl_session=([^;]+)/);
+  if (!match) return null;
+  const [body, sig] = match[1].split('.');
+  if (!body || !sig) return null;
+  try {
+    const key = await crypto.subtle.importKey(
+      'raw',
+      new TextEncoder().encode(secret),
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['verify'],
+    );
+    const sigBytes = Uint8Array.from(atob(sig), (c) => c.charCodeAt(0));
+    const valid = await crypto.subtle.verify(
+      'HMAC', key, sigBytes, new TextEncoder().encode(body),
+    );
+    if (!valid) return null;
+    return JSON.parse(atob(body));
+  } catch {
+    return null;
+  }
+}
+
 export function sessionCookie(value) {
   // 30-day signed, httpOnly session cookie.
   return `bl_session=${value}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${60 * 60 * 24 * 30}`;
 }
 
-// Send an email through Resend.
+export function clearSessionCookie() {
+  return 'bl_session=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0';
+}
+
+// Send a transactional email via Brevo.
 export async function sendEmail(env, { to, subject, html }) {
-  if (!env.RESEND_API_KEY) {
-    console.log('[dev] email suppressed (no RESEND_API_KEY):', subject, '->', to);
+  if (!env.BREVO_API_KEY) {
+    console.log('[dev] email suppressed (no BREVO_API_KEY):', subject, '->', to);
     return { dev: true };
   }
-  const res = await fetch('https://api.resend.com/emails', {
+  const res = await fetch('https://api.brevo.com/v3/smtp/email', {
     method: 'POST',
     headers: {
-      authorization: `Bearer ${env.RESEND_API_KEY}`,
+      'api-key': env.BREVO_API_KEY,
       'content-type': 'application/json',
     },
-    body: JSON.stringify({ from: env.FROM_EMAIL, to, subject, html }),
+    body: JSON.stringify({
+      sender: { name: 'Bloodline', email: env.FROM_EMAIL },
+      to: [{ email: to }],
+      subject,
+      htmlContent: html,
+    }),
   });
-  if (!res.ok) throw new Error(`Resend failed: ${res.status}`);
+  if (!res.ok) throw new Error(`Brevo failed: ${res.status} ${await res.text()}`);
   return res.json();
 }

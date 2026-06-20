@@ -15,6 +15,8 @@ import {
   removePhoto,
   addDocument,
   removeDocument,
+  loadFromServer,
+  enableServerSync,
 } from './data/store.js';
 import { buildGraph, pathBetween } from './data/graph.js';
 import { useReducedMotion } from './hooks/useReducedMotion.js';
@@ -33,11 +35,34 @@ import Legend from './components/Legend.jsx';
 import IntroHint from './components/IntroHint.jsx';
 import Intro from './components/Intro.jsx';
 import Onboarding from './components/Onboarding.jsx';
+import LoginScreen from './components/LoginScreen.jsx';
+
+const isDemo = typeof window !== 'undefined' &&
+  new URLSearchParams(window.location.search).has('demo');
 
 export default function App() {
   const data = useSyncExternalStore(store.subscribe, store.getState);
   const graph = useMemo(() => buildGraph(data.people, data.relationships), [data]);
   const reducedMotion = useReducedMotion();
+
+  // Auth state: 'loading' while checking session, 'authed' or 'guest' after.
+  const [authState, setAuthState] = useState(isDemo ? 'guest' : 'loading');
+  const [user, setUser] = useState(null);
+
+  useEffect(() => {
+    if (isDemo) return;
+    fetch('/api/auth/me')
+      .then((r) => (r.ok ? r.json() : null))
+      .then(async (u) => {
+        if (!u) { setAuthState('guest'); return; }
+        setUser(u);
+        enableServerSync();
+        await loadFromServer(); // load from D1, overwriting any stale localStorage
+        setAuthState('authed');
+      })
+      .catch(() => setAuthState('guest'));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Onboarding gate: new users see intro → questionnaire before the tree.
   const [introSeen, setIntroSeen] = useState(false);
@@ -170,6 +195,10 @@ export default function App() {
 
   const activePerson = graph.byId.get(activeId);
 
+  // Auth gate (skipped in ?demo mode).
+  if (authState === 'loading') return null;
+  if (authState === 'guest' && !isDemo) return <LoginScreen />;
+
   // Show onboarding for brand-new users (no completed onboarding in store).
   if (!data.hasCompletedOnboarding) {
     if (!introSeen) {
@@ -185,6 +214,7 @@ export default function App() {
         view={view}
         onToggleView={() => setView((v) => (v === 'bubbles' ? 'list' : 'bubbles'))}
         onOpenLegend={() => setLegendOpen(true)}
+        user={user}
       />
 
       {view === 'bubbles' ? (

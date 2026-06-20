@@ -1,6 +1,11 @@
 import Logo from './Logo.jsx';
 
-export default function TopBar({ familyName, view, onToggleView, onOpenLegend }) {
+export default function TopBar({ familyName, view, onToggleView, onOpenLegend, user }) {
+  async function handleLogout() {
+    await fetch('/api/auth/logout', { method: 'POST' });
+    window.location.reload();
+  }
+
   return (
     <header className="topbar">
       <div className="masthead">
@@ -16,6 +21,16 @@ export default function TopBar({ familyName, view, onToggleView, onOpenLegend })
       </div>
 
       <div className="topbar__actions">
+        {user && (
+          <button
+            className="pill topbar__user"
+            onClick={handleLogout}
+            title={`Signed in as ${user.email} — tap to sign out`}
+            aria-label="Sign out"
+          >
+            <UserAvatar email={user.email} />
+          </button>
+        )}
         <button className="pill" onClick={onOpenLegend} aria-label="What the styles mean">
           <KeyIcon />
         </button>
@@ -25,6 +40,13 @@ export default function TopBar({ familyName, view, onToggleView, onOpenLegend })
       </div>
     </header>
   );
+}
+
+function UserAvatar({ email }) {
+  const initials = email
+    ? email.split('@')[0].slice(0, 2).toUpperCase()
+    : '?';
+  return <span className="topbar__avatar">{initials}</span>;
 }
 
 function KeyIcon() {
