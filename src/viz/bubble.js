@@ -3,6 +3,7 @@ import {
   Graphics,
   Sprite,
   Text,
+  Texture,
   Assets,
   ColorMatrixFilter,
   BlurFilter,
@@ -138,7 +139,16 @@ export class Bubble {
   async tryLoadPhoto() {
     if (!this.person.photo) return;
     try {
-      const tex = await Assets.load(this.person.photo);
+      let tex;
+      if (this.person.photo.startsWith('data:')) {
+        const img = new Image();
+        img.src = this.person.photo;
+        await img.decode();
+        if (this._destroyed) return;
+        tex = Texture.from(img);
+      } else {
+        tex = await Assets.load(this.person.photo);
+      }
       if (this._destroyed) return;
       const sprite = new Sprite(tex);
       sprite.anchor.set(0.5);

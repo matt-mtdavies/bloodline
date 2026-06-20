@@ -1,30 +1,33 @@
-import { useMemo, useState, useCallback, useRef } from 'react';
+import { useMemo, useState, useCallback, useRef, useSyncExternalStore } from 'react';
 import './styles/components.css';
-import { people, relationships, FAMILY_NAME, DEFAULT_FOCUS } from './data/seed.js';
+import { FAMILY_NAME, DEFAULT_FOCUS } from './data/seed.js';
+import { store, addRelative, updatePerson, setPhoto } from './data/store.js';
 import { buildGraph } from './data/graph.js';
+import { fileToDataUrl } from './lib/image.js';
 import { useReducedMotion } from './hooks/useReducedMotion.js';
 import BubbleTree from './viz/BubbleTree.jsx';
 import TopBar from './components/TopBar.jsx';
 import FocusNameplate from './components/FocusNameplate.jsx';
 import PersonSheet from './components/PersonSheet.jsx';
+import AddRelativeSheet from './components/AddRelativeSheet.jsx';
+import EditPersonSheet from './components/EditPersonSheet.jsx';
 import AccessibleTree from './components/AccessibleTree.jsx';
 import Legend from './components/Legend.jsx';
 import IntroHint from './components/IntroHint.jsx';
 
 export default function App() {
-  const graph = useMemo(() => buildGraph(people, relationships), []);
+  const data = useSyncExternalStore(store.subscribe, store.getState);
+  const graph = useMemo(() => buildGraph(data.people, data.relationships), [data]);
   const reducedMotion = useReducedMotion();
 
   const [activeId, setActiveId] = useState(DEFAULT_FOCUS);
-  // People whose connections have been revealed. The tree shows these plus
-  // their immediate neighbours; tapping a face expands it without hiding the
-  // rest, so the tree grows as you explore.
   const [expanded, setExpanded] = useState(() => new Set([DEFAULT_FOCUS]));
   const [openId, setOpenId] = useState(null); // person card
-  const [cardOrigin, setCardOrigin] = useState(null);
-  const [view, setView] = useState('bubbles'); // 'bubbles' | 'list'
+  const [addAnchorId, setAddAnchorId] = useState(null); // add-relative sheet
+  const [editId, setEditId] = useState(null); // edit sheet
+  const [view, setView] = useState('bubbles');
   const [legendOpen, setLegendOpen] = useState(false);
-  const viewApi = useRef(null); // imperative handle into the canvas
+  const viewApi = useRef(null);
 
   const visibleIds = useMemo(() => {
     const vis = new Set();
@@ -38,7 +41,6 @@ export default function App() {
     return vis;
   }, [graph, expanded]);
 
-  // Make a person active and reveal their connections (additive — never hides).
   const activate = useCallback((id) => {
     setActiveId(id);
     setExpanded((prev) => (prev.has(id) ? prev : new Set(prev).add(id)));
@@ -46,7 +48,6 @@ export default function App() {
 
   const openPerson = useCallback((id) => {
     viewApi.current?.unpin();
-    setCardOrigin(viewApi.current?.getScreenPos(id) || null);
     viewApi.current?.pin(id);
     setOpenId(id);
   }, []);
@@ -54,6 +55,36 @@ export default function App() {
   const closePerson = useCallback(() => {
     viewApi.current?.unpin();
     setOpenId(null);
+  }, []);
+
+  // Add a relative, then fly to the new person so they greet you on the tree.
+  const handleAdd = useCallback(
+    (fields) => {
+      const newId = addRelative({ anchorId: addAnchorId, ...fields });
+      setAddAnchorId(null);
+      viewApi.current?.unpin();
+      setOpenId(null);
+      setExpanded((prev) => new Set(prev).add(addAnchorId).add(newId));
+      setActiveId(newId);
+    },
+    [addAnchorId],
+  );
+
+  const handleSave = useCallback(
+    (fields) => {
+      updatePerson(editId, fields);
+      setEditId(null);
+    },
+    [editId],
+  );
+
+  const handlePhoto = useCallback(async (id, file) => {
+    try {
+      const url = await fileToDataUrl(file);
+      setPhoto(id, url);
+    } catch {
+      /* ignore unreadable image */
+    }
   }, []);
 
   const activePerson = graph.byId.get(activeId);
@@ -81,7 +112,7 @@ export default function App() {
           <FocusNameplate
             person={activePerson}
             getPos={() => viewApi.current?.getScreenPos(activeId)}
-            hidden={!!openId}
+            hidden={!!openId || !!addAnchorId || !!editId}
           />
           <IntroHint />
         </>
@@ -97,14 +128,32 @@ export default function App() {
       <PersonSheet
         graph={graph}
         personId={openId}
-        origin={cardOrigin}
         onClose={closePerson}
         onFocus={(id) => {
           closePerson();
           activate(id);
         }}
         onOpenPerson={openPerson}
+        onAddRelative={setAddAnchorId}
+        onEdit={setEditId}
+        onPhoto={handlePhoto}
       />
+
+      {addAnchorId && graph.byId.get(addAnchorId) && (
+        <AddRelativeSheet
+          anchor={graph.byId.get(addAnchorId)}
+          onClose={() => setAddAnchorId(null)}
+          onAdd={handleAdd}
+        />
+      )}
+
+      {editId && graph.byId.get(editId) && (
+        <EditPersonSheet
+          person={graph.byId.get(editId)}
+          onClose={() => setEditId(null)}
+          onSave={handleSave}
+        />
+      )}
 
       <Legend open={legendOpen} onClose={() => setLegendOpen(false)} />
     </div>

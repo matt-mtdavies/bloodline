@@ -40,6 +40,8 @@ export default function BubbleTree({
   const activeRef = useRef(activeId);
   const visibleRef = useRef(visibleIds);
   visibleRef.current = visibleIds;
+  const graphRef = useRef(graph);
+  graphRef.current = graph; // always the live graph for the loop + sync
 
   // ── Mount Pixi + the simulation once ──────────────────────────────────────
   useEffect(() => {
@@ -72,6 +74,8 @@ export default function BubbleTree({
       bubbleLayer.sortableChildren = true; // nearer bubbles draw above farther
       world.addChild(bubbleLayer);
 
+      const graph = graphRef.current; // initial build snapshot
+
       // Generation index (roots = 0) gives the layout legible vertical bands.
       const gen = computeGenerations(graph);
 
@@ -84,23 +88,18 @@ export default function BubbleTree({
       const nodeById = new Map(nodes.map((n) => [n.id, n]));
       const pos = new Map(nodes.map((n) => [n.id, n]));
 
-      const links = [];
-      for (const r of graph.relationships) {
-        if (r.type === 'partner') {
-          links.push({ source: r.from_person, target: r.to_person, kind: 'partner' });
-        } else if (r.type === 'parent') {
-          links.push({ source: r.from_person, target: r.to_person, kind: 'parent' });
-        }
-      }
+      const buildLinks = (rels) =>
+        rels
+          .filter((r) => r.type === 'partner' || r.type === 'parent')
+          .map((r) => ({ source: r.from_person, target: r.to_person, kind: r.type }));
+
+      const linkForce = forceLink(buildLinks(graph.relationships))
+        .id((d) => d.id)
+        .distance((l) => (l.kind === 'partner' ? 84 : 150))
+        .strength((l) => (l.kind === 'partner' ? 0.95 : 0.28));
 
       const sim = forceSimulation(nodes)
-        .force(
-          'link',
-          forceLink(links)
-            .id((d) => d.id)
-            .distance((l) => (l.kind === 'partner' ? 84 : 150))
-            .strength((l) => (l.kind === 'partner' ? 0.95 : 0.28)),
-        )
+        .force('link', linkForce)
         .force('charge', forceManyBody().strength(-560).distanceMax(620))
         .force('collide', forceCollide(COLLIDE).strength(0.9))
         .force('x', forceX(0).strength(0.012))
@@ -115,13 +114,16 @@ export default function BubbleTree({
       sim.alpha(0.35); // a little life left to breathe into
 
       // Bubbles. Each root carries its id so the single stage-level pointer
-      // handler can tell which person was grabbed.
+      // handler can tell which person was grabbed. bubblePerson tracks the
+      // person object a bubble was built from, so edits can refresh in place.
       const bubbles = new Map();
+      const bubblePerson = new Map();
       for (const p of graph.people) {
         const b = new Bubble(p, BASE_RADIUS);
         b.root.__bubbleId = p.id;
         bubbleLayer.addChild(b.root);
         bubbles.set(p.id, b);
+        bubblePerson.set(p.id, p);
       }
 
       // Camera springs. camX/camY follow the focused node; zoom dips on a jump
@@ -163,8 +165,64 @@ export default function BubbleTree({
         pinnedId: null,
         setActive(id, animate = true) {
           activeRef.current = id;
-          state.dist = distancesFrom(graph, id);
+          state.dist = distancesFrom(graphRef.current, id);
           if (!reducedMotion && animate) zoom.velocity -= 1.6; // gentle pull-back
+        },
+        // Reconcile the canvas with a new graph: spawn bubbles for new people
+        // (near whoever they connect to, so they appear to sprout from them),
+        // refresh edited bubbles, drop removed ones, and rewire the links.
+        sync(g) {
+          for (const p of g.people) {
+            if (!nodeById.has(p.id)) {
+              const rel = g.relationships.find(
+                (r) =>
+                  (r.from_person === p.id && nodeById.has(r.to_person)) ||
+                  (r.to_person === p.id && nodeById.has(r.from_person)),
+              );
+              const anchor = rel
+                ? nodeById.get(rel.from_person === p.id ? rel.to_person : rel.from_person)
+                : null;
+              const node = {
+                id: p.id,
+                x: (anchor?.x ?? 0) + (Math.random() - 0.5) * 24,
+                y: (anchor?.y ?? 0) + (Math.random() - 0.5) * 24,
+              };
+              nodes.push(node);
+              nodeById.set(p.id, node);
+              pos.set(p.id, node);
+              const b = new Bubble(p, BASE_RADIUS);
+              b.root.__bubbleId = p.id;
+              b.root.position.set(node.x, node.y);
+              bubbleLayer.addChild(b.root);
+              bubbles.set(p.id, b);
+              bubblePerson.set(p.id, p);
+            } else if (bubblePerson.get(p.id) !== p) {
+              // The person object changed (an edit / new photo): rebuild in place.
+              const node = nodeById.get(p.id);
+              bubbles.get(p.id)?.destroy();
+              const b = new Bubble(p, BASE_RADIUS);
+              b.root.__bubbleId = p.id;
+              b.root.position.set(node.x, node.y);
+              bubbleLayer.addChild(b.root);
+              bubbles.set(p.id, b);
+              bubblePerson.set(p.id, p);
+            }
+          }
+          for (const id of [...nodeById.keys()]) {
+            if (!g.byId.has(id)) {
+              bubbles.get(id)?.destroy();
+              bubbles.delete(id);
+              bubblePerson.delete(id);
+              nodeById.delete(id);
+              pos.delete(id);
+              const i = nodes.findIndex((n) => n.id === id);
+              if (i >= 0) nodes.splice(i, 1);
+            }
+          }
+          sim.nodes(nodes);
+          linkForce.links(buildLinks(g.relationships));
+          sim.alpha(0.5);
+          state.dist = distancesFrom(g, activeRef.current);
         },
         // Screen-space centre of a person's bubble — the card animates out of it.
         getScreenPos(id) {
@@ -381,7 +439,7 @@ export default function BubbleTree({
         }
 
         linkGfx.alpha = cardOpen ? 0.18 : 1;
-        drawLinks(linkGfx, graph, pos, (id) => vis.has(id), BASE_RADIUS);
+        drawLinks(linkGfx, graphRef.current, pos, (id) => vis.has(id), BASE_RADIUS);
       });
     })();
 
@@ -397,13 +455,18 @@ export default function BubbleTree({
       if (apiRef) apiRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [graph, reducedMotion]);
+  }, [reducedMotion]);
 
   // React drives the active person into the imperative camera.
   useEffect(() => {
     if (api.current) api.current.setActive(activeId);
     else activeRef.current = activeId;
   }, [activeId]);
+
+  // Reconcile the canvas whenever people/relationships change (add / edit).
+  useEffect(() => {
+    api.current?.sync(graph);
+  }, [graph]);
 
   return <div className="stage" ref={hostRef} aria-hidden="true" />;
 }

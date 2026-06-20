@@ -1,17 +1,27 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import Avatar from './Avatar.jsx';
 import { lifespan, formatDate } from '../lib/dates.js';
 import { relationLabel } from '../data/graph.js';
 
 /*
  * The person card. The active bubble stays sharp on the tree while everyone
- * else blurs back; this card slides in alongside as a clean panel. No connector
- * line, no morph — the spotlight on the tree carries the link.
+ * else blurs back; this card slides in alongside as a clean panel. From here you
+ * add a relative, edit details, or give them a face.
  *
  * Living minors get a light privacy note rather than full exposure (§7).
  */
-export default function PersonSheet({ graph, personId, onClose, onFocus, onOpenPerson }) {
+export default function PersonSheet({
+  graph,
+  personId,
+  onClose,
+  onFocus,
+  onOpenPerson,
+  onAddRelative,
+  onEdit,
+  onPhoto,
+}) {
   const person = personId ? graph.byId.get(personId) : null;
+  const fileRef = useRef(null);
 
   useEffect(() => {
     if (!person) return;
@@ -44,7 +54,28 @@ export default function PersonSheet({ graph, personId, onClose, onFocus, onOpenP
         onClick={(e) => e.stopPropagation()}
       >
         <header className="sheet__head">
-          <Avatar person={person} size={84} />
+          <button
+            className="avatar-edit"
+            onClick={() => fileRef.current?.click()}
+            aria-label={person.photo ? 'Change photo' : 'Add a photo'}
+            title={person.photo ? 'Change photo' : 'Add a photo'}
+          >
+            <Avatar person={person} size={84} />
+            <span className="avatar-edit__badge">
+              <CameraIcon />
+            </span>
+          </button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*"
+            hidden
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) onPhoto?.(person.id, file);
+              e.target.value = '';
+            }}
+          />
           <div className="sheet__id">
             <h2>{person.display_name}</h2>
             <p className="sheet__life">{lifespan(person)}</p>
@@ -58,7 +89,17 @@ export default function PersonSheet({ graph, personId, onClose, onFocus, onOpenP
               )}
             </div>
           </div>
+          <button className="icon-btn sheet__edit" onClick={() => onEdit?.(person.id)} aria-label="Edit details">
+            <PencilIcon />
+          </button>
         </header>
+
+        <div className="sheet__actions">
+          <button className="action action--primary" onClick={() => onAddRelative?.(person.id)}>
+            <PlusIcon />
+            Add a relative
+          </button>
+        </div>
 
         <div className="sheet__body">
           {person.is_minor && !person.is_deceased ? (
@@ -126,5 +167,37 @@ export default function PersonSheet({ graph, personId, onClose, onFocus, onOpenP
         </footer>
       </section>
     </div>
+  );
+}
+
+function CameraIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M4 8h3l1.5-2h7L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1Z"
+        fill="currentColor"
+      />
+      <circle cx="12" cy="13" r="3.2" fill="#fff" />
+    </svg>
+  );
+}
+function PencilIcon() {
+  return (
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M4 20h4L19 9l-4-4L4 16v4Z"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinejoin="round"
+      />
+      <path d="M14 6l4 4" stroke="currentColor" strokeWidth="1.7" />
+    </svg>
+  );
+}
+function PlusIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
   );
 }
