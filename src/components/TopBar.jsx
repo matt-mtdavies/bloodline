@@ -5,10 +5,14 @@ export default function TopBar({ familyName, view, onToggleView, onOpenLegend })
     <header className="topbar">
       <div className="masthead">
         <div className="masthead__brand">
-          <Logo size={30} />
+          <Logo size={40} />
           <span className="masthead__word">Bloodline</span>
         </div>
-        <h1 className="masthead__family">{familyName}</h1>
+        <div className="masthead__family">
+          <span className="masthead__rule" />
+          <span className="masthead__familyname">{familyName}</span>
+          <span className="masthead__rule" />
+        </div>
       </div>
 
       <div className="topbar__actions">

@@ -53,9 +53,12 @@ try {
   const focus1 = (await page.textContent('.nameplate__name').catch(() => '')) || '';
   check(focus1.trim().length > 0, `names the focused person (${focus1.trim()})`);
 
-  // Tap the centred bubble (screen centre) → person card opens to the side.
+  // Tap the active bubble → person card opens to the side. The active person
+  // sits in the centre of the safe area below the masthead.
   const vp = page.viewportSize();
-  await page.mouse.click(vp.width / 2, vp.height / 2);
+  const acx = vp.width / 2;
+  const acy = (vp.height + Math.min(120, vp.height * 0.16)) / 2;
+  await page.mouse.click(acx, acy);
   await page.waitForSelector('[role="dialog"]', { timeout: 5000 });
   const sheetName = (await page.textContent('.sheet__id h2').catch(() => '')) || '';
   check(sheetName.length > 0, `tapping centred bubble opens the card (${sheetName.trim()})`);
@@ -80,9 +83,9 @@ try {
   );
   await page.screenshot({ path: shot('04-recentred.png') });
 
-  // Fling the centred bubble with a press-drag and confirm it physically moves.
-  const cx = vp.width / 2;
-  const cy = vp.height / 2;
+  // Fling the active bubble with a press-drag and confirm it physically moves.
+  const cx = acx;
+  const cy = acy;
   await page.mouse.move(cx, cy);
   await page.mouse.down();
   for (let i = 1; i <= 10; i++) {

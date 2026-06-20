@@ -33,23 +33,39 @@
   from { opacity: 0; transform: translateY(-8px); }
   to { opacity: 1; transform: translateY(0); }
 }
-.masthead__brand { display: inline-flex; align-items: center; gap: 9px; }
+.masthead__brand { display: inline-flex; align-items: center; gap: 11px; }
 .masthead__word {
   font-family: var(--display);
-  font-size: 22px;
+  font-size: 30px;
   font-weight: 600;
-  letter-spacing: -0.015em;
-  color: var(--ink);
+  letter-spacing: -0.018em;
+  color: #241f1c; /* deep warm charcoal — the mark carries the colour */
   line-height: 1;
 }
+/* Editorial family label: small-caps flanked by hairline rules. */
 .masthead__family {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 8px;
+}
+.masthead__rule {
+  width: 26px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--hairline));
+}
+.masthead__family > .masthead__rule:last-child {
+  background: linear-gradient(90deg, var(--hairline), transparent);
+}
+.masthead__familyname {
   font-family: var(--body);
-  font-size: 11px;
+  font-size: 11.5px;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.2em;
+  letter-spacing: 0.22em;
   color: var(--ink-soft);
-  margin: 2px 0 0;
+  white-space: nowrap;
 }
 
 .topbar__actions {
@@ -694,3 +710,45 @@
 .cropper__actions { display: flex; gap: 10px; }
 .cropper__actions .btn { background: #2a2c31; color: #f2f3f5; }
 .cropper__actions .btn--primary { background: var(--accent); color: #fff; }
+
+/* ── Splash (one-time animated open) ──────────────────────────────────────── */
+.splash {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  background: radial-gradient(120% 100% at 50% 40%, #ffffff 0%, #fbfbfc 70%, #f4f5f7 130%);
+  animation: splash-out 2.3s var(--ease) forwards;
+}
+.splash__inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  animation: splash-rise 2.3s var(--ease) forwards;
+}
+.splash__word {
+  font-family: var(--display);
+  font-size: 40px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: #241f1c;
+  opacity: 0;
+  animation: splash-word 0.7s var(--ease) 0.45s both;
+}
+@keyframes splash-out {
+  0%, 64% { opacity: 1; }
+  100% { opacity: 0; visibility: hidden; }
+}
+@keyframes splash-rise {
+  0%, 64% { transform: scale(1); }
+  100% { transform: scale(1.12); }
+}
+@keyframes splash-word {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .splash, .splash__inner, .splash__word { animation-duration: 0.001ms !important; }
+}

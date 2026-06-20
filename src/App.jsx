@@ -14,6 +14,7 @@ import PhotoCropper from './components/PhotoCropper.jsx';
 import AccessibleTree from './components/AccessibleTree.jsx';
 import Legend from './components/Legend.jsx';
 import IntroHint from './components/IntroHint.jsx';
+import Splash from './components/Splash.jsx';
 
 export default function App() {
   const data = useSyncExternalStore(store.subscribe, store.getState);
@@ -171,6 +172,7 @@ export default function App() {
       )}
 
       <Legend open={legendOpen} onClose={() => setLegendOpen(false)} />
+      <Splash />
     </div>
   );
 }

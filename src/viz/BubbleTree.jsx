@@ -432,6 +432,7 @@ export default function BubbleTree({
           }
         }
         sim.tick();
+        const vis = visibleRef.current;
 
         // Camera follows the active node — but holds still while you're
         // flinging a bubble around, so it doesn't chase your finger.
@@ -448,13 +449,39 @@ export default function BubbleTree({
         panX.step(dt);
         panY.step(dt);
 
-        const cx = app.screen.width / 2;
-        const cy = app.screen.height / 2;
+        const W = app.screen.width;
+        const H = app.screen.height;
+        // Reserve a band at the top for the masthead so bubbles never sit under
+        // it; the active person sits in the centre of the remaining safe area.
+        const topInset = Math.min(120, H * 0.16);
+        const cx = W / 2;
+        const cy = (H + topInset) / 2;
+
+        // Zoom-to-fit: keep the active person centred but shrink the view just
+        // enough that the whole revealed family stays framed as it grows.
+        if (f && !state.isDraggingBubble?.()) {
+          let maxX = 120;
+          let maxY = 120;
+          const rr = BASE_RADIUS * 1.5;
+          for (const id of vis) {
+            const n = nodeById.get(id);
+            if (!n) continue;
+            maxX = Math.max(maxX, Math.abs(n.x - f.x) + rr);
+            maxY = Math.max(maxY, Math.abs(n.y - f.y) + rr);
+          }
+          const fit = Math.min(
+            1.1,
+            (W / 2 - 32) / maxX,
+            ((H - topInset) / 2 - 28) / maxY,
+          );
+          zoom.setTarget(clamp(fit, 0.4, 1.1));
+        }
+
         // When a card is open, slide the anchored bubble to the left so the card
-        // can expand out to its side with the tether visible between them.
-        biasX.setTarget(state.pinnedId ? -app.screen.width * 0.24 : 0);
+        // can expand out to its side.
+        biasX.setTarget(state.pinnedId ? -W * 0.24 : 0);
         biasX.step(dt);
-        const z = clamp(zoom.value, 0.4, 2) * userZoom;
+        const z = clamp(zoom.value, 0.35, 2) * userZoom;
         world.scale.set(z);
         world.position.set(
           cx - camX.value * z + panX.value + biasX.value,
@@ -465,7 +492,6 @@ export default function BubbleTree({
         // stay collapsed. When a card is open, the active bubble stays sharp and
         // everyone else blurs and dims back.
         const dmap = state.dist;
-        const vis = visibleRef.current;
         const cardOpen = !!state.pinnedId;
         for (const [id, b] of bubbles) {
           const n = nodeById.get(id);
