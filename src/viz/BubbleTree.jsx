@@ -481,7 +481,7 @@ export default function BubbleTree({
         const H = app.screen.height;
         // Reserve a band at the top for the masthead so bubbles never sit under
         // it; the visible family is framed in the centre of the safe area.
-        const topInset = Math.min(120, H * 0.16);
+        const topInset = Math.min(144, H * 0.18);
         const cx = W / 2;
         const cy = (H + topInset) / 2;
 

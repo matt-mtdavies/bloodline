@@ -3,39 +3,40 @@ import Logo from './Logo.jsx';
 export default function TopBar({ familyName, view, onToggleView, onOpenLegend, onOpenSettings, user }) {
   return (
     <header className="topbar">
-      <div className="masthead">
-        <div className="masthead__brand">
-          <Logo size={40} />
-          <span className="masthead__word">Bloodline</span>
+      {/* Row 1: logo mark left, action buttons right — no overlap possible */}
+      <div className="topbar__bar">
+        <Logo size={32} />
+        <div className="topbar__actions">
+          {user ? (
+            <button
+              className="topbar__avatar-btn"
+              onClick={onOpenSettings}
+              title={`Signed in as ${user.email}`}
+              aria-label="Account & settings"
+            >
+              {user.email.slice(0, 2).toUpperCase()}
+            </button>
+          ) : (
+            <button className="pill" onClick={onOpenSettings} aria-label="Family settings & sharing">
+              <ShareIcon />
+            </button>
+          )}
+          <button className="pill" onClick={onOpenLegend} aria-label="What the styles mean">
+            <KeyIcon />
+          </button>
+          <button className="pill pill--label" onClick={onToggleView}>
+            {view === 'bubbles' ? 'List' : 'Tree'}
+          </button>
         </div>
+      </div>
+      {/* Row 2: brand name + family label, centred across full width */}
+      <div className="topbar__heading">
+        <span className="masthead__word">Bloodline</span>
         <div className="masthead__family">
           <span className="masthead__rule" />
           <span className="masthead__familyname">{familyName}</span>
           <span className="masthead__rule" />
         </div>
-      </div>
-
-      <div className="topbar__actions">
-        {user ? (
-          <button
-            className="topbar__avatar-btn"
-            onClick={onOpenSettings}
-            title={`Signed in as ${user.email}`}
-            aria-label="Account & settings"
-          >
-            {user.email.slice(0, 2).toUpperCase()}
-          </button>
-        ) : (
-          <button className="pill" onClick={onOpenSettings} aria-label="Family settings & sharing">
-            <ShareIcon />
-          </button>
-        )}
-        <button className="pill" onClick={onOpenLegend} aria-label="What the styles mean">
-          <KeyIcon />
-        </button>
-        <button className="pill pill--label" onClick={onToggleView}>
-          {view === 'bubbles' ? 'List' : 'Tree'}
-        </button>
       </div>
     </header>
   );

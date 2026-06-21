@@ -6,6 +6,12 @@
 }
 
 /* ── Masthead ────────────────────────────────────────────────────────────── */
+/*
+ * Two-row topbar so the logo/buttons and the brand title never compete for
+ * horizontal space:
+ *   Row 1 — logo mark flush-left, action pills flush-right.
+ *   Row 2 — "Bloodline" wordmark + family name, centred across the full width.
+ */
 .topbar {
   position: fixed;
   top: 0;
@@ -13,33 +19,35 @@
   right: 0;
   z-index: 20;
   display: flex;
-  justify-content: center;
-  padding: calc(var(--safe-top) + 16px) 16px 18px;
+  flex-direction: column;
+  padding: calc(var(--safe-top) + 10px) 16px 14px;
   pointer-events: none;
-  background: linear-gradient(180deg, #ffffff 0%, rgba(255, 255, 255, 0.85) 45%, rgba(255, 255, 255, 0));
+  background: linear-gradient(180deg, #ffffff 0%, rgba(255, 255, 255, 0.88) 55%, rgba(255, 255, 255, 0));
 }
-
-/* Centred editorial masthead: the Bloodline mark + wordmark, family beneath. */
-.masthead {
+.topbar__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 36px;
   pointer-events: auto;
+}
+.topbar__heading {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 3px;
-  text-align: center;
+  margin-top: 8px;
   animation: masthead-in 0.7s var(--ease) both;
 }
 @keyframes masthead-in {
   from { opacity: 0; transform: translateY(-8px); }
   to { opacity: 1; transform: translateY(0); }
 }
-.masthead__brand { display: inline-flex; align-items: center; gap: 11px; }
 .masthead__word {
   font-family: var(--display);
-  font-size: 30px;
+  font-size: 26px;
   font-weight: 600;
   letter-spacing: -0.018em;
-  color: #241f1c; /* deep warm charcoal — the mark carries the colour */
+  color: #241f1c;
   line-height: 1;
 }
 /* Editorial family label: small-caps flanked by hairline rules. */
@@ -48,10 +56,10 @@
   align-items: center;
   justify-content: center;
   gap: 12px;
-  margin-top: 8px;
+  margin-top: 6px;
 }
 .masthead__rule {
-  width: 26px;
+  width: 22px;
   height: 1px;
   background: linear-gradient(90deg, transparent, var(--hairline));
 }
@@ -60,18 +68,15 @@
 }
 .masthead__familyname {
   font-family: var(--body);
-  font-size: 11.5px;
+  font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.22em;
+  letter-spacing: 0.20em;
   color: var(--ink-soft);
   white-space: nowrap;
 }
 
 .topbar__actions {
-  position: absolute;
-  right: 16px;
-  top: calc(var(--safe-top) + 14px);
   display: flex;
   gap: 8px;
   align-items: center;
@@ -107,7 +112,7 @@
   to { transform: scale(1); opacity: 1; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .masthead, .logo__a, .logo__b, .logo__c { animation-duration: 0.001ms !important; }
+  .topbar__heading, .logo__a, .logo__b, .logo__c { animation-duration: 0.001ms !important; }
 }
 
 .pill {
@@ -384,7 +389,7 @@
   position: absolute;
   inset: 0;
   overflow-y: auto;
-  padding: calc(var(--safe-top) + 104px) 16px calc(var(--safe-bottom) + 28px);
+  padding: calc(var(--safe-top) + 128px) 16px calc(var(--safe-bottom) + 28px);
   -webkit-overflow-scrolling: touch;
 }
 .listview__focus { max-width: 620px; margin: 0 auto; }
