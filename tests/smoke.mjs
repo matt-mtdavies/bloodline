@@ -55,11 +55,16 @@ try {
   const focus1 = (await page.textContent('.nameplate__name').catch(() => '')) || '';
   check(focus1.trim().length > 0, `names the focused person (${focus1.trim()})`);
 
-  // Tap the active bubble → person card opens to the side. The active person
-  // sits in the centre of the safe area below the masthead.
-  const vp = page.viewportSize();
-  const acx = vp.width / 2;
-  const acy = (vp.height + Math.min(120, vp.height * 0.16)) / 2;
+  // Tap the active bubble → person card opens. Find the nameplate to locate
+  // the active person on canvas, then click just below it where the bubble is.
+  const npRect = await page.evaluate(() => {
+    const np = document.querySelector('.nameplate');
+    if (!np) return null;
+    const r = np.getBoundingClientRect();
+    return { cx: r.left + r.width / 2, bottom: r.bottom };
+  });
+  const acx = npRect ? npRect.cx : page.viewportSize().width / 2;
+  const acy = npRect ? npRect.bottom + 60 : (page.viewportSize().height + 120) / 2;
   await page.mouse.click(acx, acy);
   await page.waitForSelector('[role="dialog"]', { timeout: 5000 });
   const sheetName = (await page.textContent('.profile__name').catch(() => '')) || '';

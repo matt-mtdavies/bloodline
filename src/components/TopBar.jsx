@@ -4,10 +4,11 @@ export default function TopBar({ familyName, view, onToggleView, onOpenLegend, o
   return (
     <header className="topbar">
       <div className="topbar__brand">
-        <Logo size={28} />
-      </div>
-      <div className="topbar__title">
-        <span className="topbar__familyname">{familyName}</span>
+        <Logo size={30} />
+        <div className="topbar__brand-text">
+          <span className="topbar__word">Bloodline</span>
+          <span className="topbar__familyname">{familyName}</span>
+        </div>
       </div>
       <div className="topbar__actions">
         <button className="pill" onClick={onOpenSettings} aria-label="Family settings">
