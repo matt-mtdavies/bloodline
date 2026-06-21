@@ -403,7 +403,19 @@ export default function BubbleTree({
       });
       const endGesture = (e) => {
         if (e) pointers.delete(e.pointerId);
-        if (pointers.size < 2) pinch.active = false;
+        if (pointers.size < 2) {
+          pinch.active = false;
+          // Transitioning from two-finger pinch to single finger: restart pan
+          // from the remaining touch so the finger continues smoothly without
+          // a dead zone or jump.
+          if (pointers.size === 1) {
+            const [rem] = pointers.values();
+            last = { x: rem.x, y: rem.y };
+            drag.type = 'pan';
+            drag.node = null;
+            return;
+          }
+        }
         if (drag.type === 'bubble') {
           if (!drag.moved) {
             // A clean tap: expand/activate, or open the already-active person.
@@ -423,6 +435,21 @@ export default function BubbleTree({
       };
       app.stage.on('pointerup', endGesture);
       app.stage.on('pointerupoutside', endGesture);
+      // pointercancel fires when the OS steals the touch (notification shade,
+      // gesture navigations, etc.) — without this handler the pointer stays in
+      // the map forever and the next touch always looks like a pinch.
+      app.stage.on('pointercancel', (e) => {
+        pointers.delete(e.pointerId);
+        if (pointers.size < 2) pinch.active = false;
+        if (drag.type === 'bubble' && drag.node && drag.id !== state.pinnedId) {
+          drag.node.fx = null;
+          drag.node.fy = null;
+        }
+        if (!reducedMotion) sim.alphaTarget(0.012);
+        drag.type = 'none';
+        drag.node = null;
+        last = null;
+      });
       state.isDraggingBubble = () => drag.type === 'bubble' && drag.moved;
       app.canvas.addEventListener(
         'wheel',
@@ -437,8 +464,9 @@ export default function BubbleTree({
       app.ticker.add((ticker) => {
         const dt = Math.min(ticker.deltaMS / 1000, 1 / 30);
 
-        // Keep it breathing: a hair of perpetual drift unless reduced-motion.
-        if (!reducedMotion) {
+        // Keep it breathing: a hair of perpetual drift unless reduced-motion or
+        // in the middle of a pinch (drift impulses during pinch fight the gesture).
+        if (!reducedMotion && !pinch.active) {
           const t = performance.now() / 1000;
           for (let i = 0; i < nodes.length; i++) {
             const n = nodes[i];
@@ -493,7 +521,9 @@ export default function BubbleTree({
             (W / 2 - PAD) / halfX,
             ((H - topInset) / 2 - PAD) / halfY,
           );
-          zoom.setTarget(clamp(fit, 0.4, MAX_ZOOM));
+          // Don't fight the pinch gesture: only let the spring retarget when
+          // the user isn't actively scaling with two fingers.
+          if (!pinch.active) zoom.setTarget(clamp(fit, 0.4, MAX_ZOOM));
         }
         camX.step(dt);
         camY.step(dt);

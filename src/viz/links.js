@@ -47,6 +47,14 @@ export function drawLinks(g, graph, pos, isVisible, baseRadius, mergeParents = f
     const ny = dy / len;
 
     if (status === 'former') {
+      // Faint shadow band so the former-couple connector has comparable visual
+      // weight to a current couple (even though it reads as past).
+      g.moveTo(a.x, a.y).lineTo(b.x, b.y).stroke({
+        width: 14,
+        color: hex('#b0b3bb'),
+        alpha: alpha * 0.08,
+        cap: 'round',
+      });
       // Dashed bond — present but clearly past.
       dashedSegment(g, a, b, 16, 0.5, {
         width: 2,
@@ -54,30 +62,34 @@ export function drawLinks(g, graph, pos, isVisible, baseRadius, mergeParents = f
         alpha: alpha * 0.9,
         cap: 'round',
       });
-      // Open circle at midpoint — "severed but acknowledged".
-      g.circle(mx, my, 5.5).fill({ color: hex('#f5f0ea'), alpha: 1 });
-      g.circle(mx, my, 5.5).stroke({ width: 1.8, color: hex('#9fa2aa'), alpha: alpha * 0.9 });
+      // Two separated rings — "previously joined, now apart".
+      drawRings(g, mx, my, nx, ny, true, '#f5f0ea', '#9fa2aa', alpha);
     } else {
-      // Warm pod behind the pair.
       const fill = status === 'widowed' ? '#ece7f2' : '#f6e6dc';
+      const lineColor = status === 'widowed' ? '#b8a8cc' : '#c2603a';
+      // Glow halo — soft outer bloom gives the bond visual depth.
+      g.moveTo(a.x, a.y).lineTo(b.x, b.y).stroke({
+        width: baseRadius * 4,
+        color: hex(fill),
+        alpha: alpha * 0.09,
+        cap: 'round',
+      });
+      // Warm pod behind the pair.
       g.moveTo(a.x, a.y).lineTo(b.x, b.y).stroke({
         width,
         color: hex(fill),
         alpha: alpha * 0.55,
         cap: 'round',
       });
-      // Explicit center line so the connection reads clearly.
-      const lineColor = status === 'widowed' ? '#b8a8cc' : '#c2603a';
+      // Center line so the connection reads clearly.
       g.moveTo(a.x, a.y).lineTo(b.x, b.y).stroke({
         width: 1.8,
         color: hex(lineColor),
         alpha: alpha * 0.38,
         cap: 'round',
       });
-      // Double-dot marker at midpoint, oriented along the line.
-      const off = Math.min(5, len * 0.08);
-      g.circle(mx - nx * off, my - ny * off, 3.5).fill({ color: hex(lineColor), alpha: alpha * 0.5 });
-      g.circle(mx + nx * off, my + ny * off, 3.5).fill({ color: hex(lineColor), alpha: alpha * 0.5 });
+      // Two touching rings at midpoint — wedding-ring motif for current couples.
+      drawRings(g, mx, my, nx, ny, false, fill, lineColor, alpha);
     }
   }
 
@@ -299,4 +311,24 @@ function quad(a, c, b, t) {
     x: u * u * a.x + 2 * u * t * c.x + t * t * b.x,
     y: u * u * a.y + 2 * u * t * c.y + t * t * b.y,
   };
+}
+
+// Two ring outlines along the connector line — reads as a couple bond.
+// separated=false: rings nearly touching (current/widowed) → wedding rings joined.
+// separated=true:  rings with a clear gap (former) → rings parted.
+function drawRings(g, mx, my, nx, ny, separated, bgColor, ringColor, alpha) {
+  const r = 5.5;
+  const strokeW = 1.8;
+  const sep = separated ? r + 3.5 : r * 0.82;
+  const c1x = mx - nx * sep;
+  const c1y = my - ny * sep;
+  const c2x = mx + nx * sep;
+  const c2y = my + ny * sep;
+  // Solid fill behind each ring punches the connector line out of view so the
+  // rings don't look like solid dots bisected by the line.
+  g.circle(c1x, c1y, r + strokeW + 1).fill({ color: hex(bgColor), alpha: 1 });
+  g.circle(c2x, c2y, r + strokeW + 1).fill({ color: hex(bgColor), alpha: 1 });
+  // The ring outlines themselves.
+  g.circle(c1x, c1y, r).stroke({ width: strokeW, color: hex(ringColor), alpha: alpha * 0.9 });
+  g.circle(c2x, c2y, r).stroke({ width: strokeW, color: hex(ringColor), alpha: alpha * 0.9 });
 }
