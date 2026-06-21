@@ -1,25 +1,14 @@
 import Logo from './Logo.jsx';
 
-export default function TopBar({ familyName, view, onToggleView, onOpenLegend, onOpenSettings, user }) {
+export default function TopBar({ familyName, view, onToggleView, onOpenLegend, onOpenSettings }) {
   return (
     <header className="topbar">
       {/* Row 1: action buttons only, flush-right */}
       <div className="topbar__bar">
         <div className="topbar__actions">
-          {user ? (
-            <button
-              className="topbar__avatar-btn"
-              onClick={onOpenSettings}
-              title="Account & settings"
-              aria-label="Account & settings"
-            >
-              <UserAvatar email={user.email} />
-            </button>
-          ) : (
-            <button className="pill" onClick={onOpenSettings} aria-label="Family settings">
-              <SettingsIcon />
-            </button>
-          )}
+          <button className="pill" onClick={onOpenSettings} aria-label="Family settings">
+            <SettingsIcon />
+          </button>
           <button className="pill" onClick={onOpenLegend} aria-label="Legend — what the styles mean">
             <LegendIcon />
           </button>
@@ -42,13 +31,6 @@ export default function TopBar({ familyName, view, onToggleView, onOpenLegend, o
       </div>
     </header>
   );
-}
-
-function UserAvatar({ email }) {
-  const initials = email
-    ? email.split('@')[0].slice(0, 2).toUpperCase()
-    : '?';
-  return <span className="topbar__avatar">{initials}</span>;
 }
 
 /* Sliders / adjust — settings */
