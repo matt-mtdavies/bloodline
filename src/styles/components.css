@@ -2030,6 +2030,13 @@
 }
 .login-card__resend:hover { opacity: 0.7; }
 
+.login-card__input--code {
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-align: center;
+}
+
 /* ── Family Settings panel ───────────────────────────────────────────────── */
 .fs__head {
   display: flex;

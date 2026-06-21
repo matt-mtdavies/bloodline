@@ -1,11 +1,5 @@
 import { json, token, sendEmail } from '../../_lib/util.js';
 
-/*
- * POST /api/auth/request  { email, invite? }
- * Mints a single-use magic-link token and emails it.
- * If an invite token is supplied (from the landing page) it is embedded in
- * the verify URL so the accept step happens automatically on sign-in.
- */
 export async function onRequestPost({ request, env }) {
   let email, invite;
   try {
@@ -18,12 +12,13 @@ export async function onRequestPost({ request, env }) {
   }
 
   const t = token();
+  const code = String(Math.floor(100000 + Math.random() * 900000)); // 6-digit OTP
   const expires = Math.floor(Date.now() / 1000) + 60 * 30; // 30 min
 
   if (env.DB) {
     await env.DB.prepare(
-      `INSERT INTO auth_token (token, email, purpose, expires_at) VALUES (?, ?, 'login', ?)`,
-    ).bind(t, email.toLowerCase(), expires).run();
+      `INSERT INTO auth_token (token, email, purpose, expires_at, code) VALUES (?, ?, 'login', ?, ?)`,
+    ).bind(t, email.toLowerCase(), expires, code).run();
   }
 
   const base = `${env.APP_URL || ''}/api/auth/verify?token=${t}`;
@@ -31,14 +26,15 @@ export async function onRequestPost({ request, env }) {
 
   await sendEmail(env, {
     to: email,
-    subject: 'Your link to Bloodline',
-    html: loginEmail(link),
+    subject: `${code} is your Bloodline code`,
+    html: loginEmail(link, code),
   });
 
   return json({ ok: true });
 }
 
-function loginEmail(link) {
+function loginEmail(link, code) {
+  const display = `${code.slice(0, 3)} ${code.slice(3)}`;
   return `<!DOCTYPE html>
 <html lang="en">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
@@ -49,12 +45,16 @@ function loginEmail(link) {
     <div style="margin-top:10px;font-size:20px;font-weight:700;color:#241f1c;">Bloodline</div>
   </div>
   <div style="background:#fff;border-radius:24px;padding:40px 36px;box-shadow:0 4px 32px rgba(0,0,0,0.07);">
-    <h1 style="margin:0 0 12px;font-size:24px;font-weight:700;color:#241f1c;">Your sign-in link</h1>
-    <p style="margin:0 0 28px;font-size:15px;color:#6b6260;line-height:1.5;">
-      Tap the button below to open your family tree. This link expires in 30 minutes.
+    <h1 style="margin:0 0 8px;font-size:24px;font-weight:700;color:#241f1c;">Your sign-in code</h1>
+    <p style="margin:0 0 24px;font-size:15px;color:#6b6260;line-height:1.5;">
+      Enter this code on the Bloodline website, or tap the button below.
     </p>
-    <a href="${link}" style="display:block;text-align:center;background:#c2603a;color:#fff;font-size:17px;font-weight:600;padding:18px;border-radius:12px;text-decoration:none;box-shadow:0 4px 20px rgba(194,96,58,0.28);">
-      Open Bloodline →
+    <div style="text-align:center;margin-bottom:28px;">
+      <span style="display:inline-block;font-size:42px;font-weight:800;letter-spacing:0.12em;color:#241f1c;background:#f5f0ea;border-radius:16px;padding:16px 28px;line-height:1;">${display}</span>
+      <p style="margin:10px 0 0;font-size:13px;color:#9b9290;">Expires in 30 minutes</p>
+    </div>
+    <a href="${link}" style="display:block;text-align:center;background:#c2603a;color:#fff;font-size:16px;font-weight:600;padding:16px;border-radius:12px;text-decoration:none;">
+      Or tap to open Bloodline →
     </a>
     <p style="margin:20px 0 0;text-align:center;font-size:12px;color:#c0b8b4;">
       If you didn't request this, you can safely ignore it.
