@@ -53,23 +53,21 @@ export default function App() {
   const [authState, setAuthState] = useState(isDemo ? 'open' : 'loading');
   const [user, setUser] = useState(null);
 
+  async function applySession() {
+    const r = await fetch('/api/auth/me');
+    const u = r.ok ? await r.json() : null;
+    if (!u) { setAuthState('login'); return; }
+    if (u.bypass) { setAuthState('open'); return; }
+    setUser(u);
+    enableServerSync();
+    const hadTree = await loadFromServer();
+    if (!hadTree) await saveToServer();
+    setAuthState('authed');
+  }
+
   useEffect(() => {
     if (isDemo) return;
-    fetch('/api/auth/me')
-      .then((r) => (r.ok ? r.json() : null))
-      .then(async (u) => {
-        // Network error or explicit 401 with auth configured → show login.
-        if (!u) { setAuthState('login'); return; }
-        // BREVO_API_KEY not set → bypass auth, fall through to localStorage mode.
-        if (u.bypass) { setAuthState('open'); return; }
-        setUser(u);
-        enableServerSync();
-        const hadTree = await loadFromServer();
-        // No D1 record yet — push current localStorage state so the family row is created.
-        if (!hadTree) await saveToServer();
-        setAuthState('authed');
-      })
-      .catch(() => setAuthState('open')); // network failure → open (don't block)
+    applySession().catch(() => setAuthState('open'));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -207,7 +205,7 @@ export default function App() {
 
   // Auth gate. 'open' = no auth configured or ?demo — go straight to app.
   if (authState === 'loading') return null;
-  if (authState === 'login') return <LoginScreen />;
+  if (authState === 'login') return <LoginScreen onAuthSuccess={() => applySession().catch(() => setAuthState('open'))} />;
 
   // Show onboarding for brand-new users (no completed onboarding in store).
   if (!data.hasCompletedOnboarding) {

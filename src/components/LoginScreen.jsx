@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import Logo from './Logo.jsx';
 
-export default function LoginScreen() {
+export default function LoginScreen({ onAuthSuccess }) {
   const [email, setEmail] = useState('');
   const [step, setStep] = useState('email'); // 'email' | 'code'
   const [code, setCode] = useState('');
@@ -58,7 +58,8 @@ export default function LoginScreen() {
         body: JSON.stringify({ email: email.trim().toLowerCase(), code: codeToVerify }),
       });
       if (res.ok) {
-        window.location.reload();
+        if (onAuthSuccess) onAuthSuccess();
+        else window.location.reload();
         return;
       }
       const body = await res.json().catch(() => ({}));
