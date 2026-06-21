@@ -18,7 +18,12 @@ const COLLIDE = 70;
 const GEN_GAP = 280; // shorter bands so wide screens use horizontal space too
 const ORGANIC_CHARGE = -1800; // stronger repulsion spreads generations sideways
 const SPREAD_X = 0.004; // weaker centring lets nodes fan out naturally
-const MAX_ZOOM = 1.5; // small families can scale up this far to fill the screen
+const MAX_ZOOM = 1.5; // auto-fit (follow mode) never over-zooms a small family
+const MIN_ZOOM = 0.32; // free zoom-out: take in a huge tree at a glance
+const MAX_ZOOM_FREE = 2.8; // free zoom-in: lean right into a single face
+const PAN_FRICTION = 0.92; // inertial glide decay (per 1/60 s)
+const FLICK_STOP = 1.5; // world units/s below which the glide rests
+const DOUBLE_TAP_MS = 280; // window for a double-tap-to-recentre
 
 /*
  * The visualization. Everything that matters in Phase 1 lives here:
@@ -39,6 +44,7 @@ export default function BubbleTree({
   layout = 'organic',
   mergeParents = false,
   lineagePath = null,
+  onCameraMode,
   apiRef,
 }) {
   const hostRef = useRef(null);
@@ -61,6 +67,8 @@ export default function BubbleTree({
   onActivateRef.current = onActivate;
   const onOpenPersonRef = useRef(onOpenPerson);
   onOpenPersonRef.current = onOpenPerson;
+  const onCameraModeRef = useRef(onCameraMode);
+  onCameraModeRef.current = onCameraMode;
 
   // ── Mount Pixi + the simulation once ──────────────────────────────────────
   useEffect(() => {
@@ -146,17 +154,24 @@ export default function BubbleTree({
         bubblePerson.set(p.id, p);
       }
 
-      // Camera springs. camX/camY follow the focused node; zoom dips on a jump
-      // to give the flight a sense of pulling back before swooping in. panX/panY
-      // let you drag the tree and have it spring affectionately back to centre.
-      // Slower, gentler glide (the expansion should feel calm).
+      // ── Camera ───────────────────────────────────────────────────────────
+      // ONE authoritative camera: (camX, camY) is the world point shown at the
+      // screen anchor; zoom is the scale. Two modes share it seamlessly:
+      //   • follow — the camera springs to frame the revealed family (the reveal
+      //     "wow": tap a person and the whole tree glides + fits around them).
+      //   • free   — you’ve grabbed the canvas: pan sticks 1:1 to your finger and
+      //     coasts on release; pinch/wheel zoom around the focal point. The view
+      //     stays exactly where you leave it until you tap someone or recentre.
+      // The springs ARE the live camera in follow mode; in free mode we drive
+      // their .value directly (with inertia) and keep target == value so flipping
+      // back to follow is jump-free.
       const camX = new Spring(0, { stiffness: 55, damping: 15 });
       const camY = new Spring(0, { stiffness: 55, damping: 15 });
       const zoom = new Spring(1, { stiffness: 130, damping: 20 });
-      const panX = new Spring(0, { stiffness: 120, damping: 18 });
-      const panY = new Spring(0, { stiffness: 120, damping: 18 });
       const biasX = new Spring(0, { stiffness: 90, damping: 18 }); // shift on card open
-      let userZoom = 1;
+      let camMode = 'follow'; // 'follow' | 'free'
+      let vx = 0, vy = 0; // free-pan inertia, world units / second
+      let onModeChange = null;
 
       let dist = distancesFrom(graph, activeRef.current);
 
@@ -172,15 +187,7 @@ export default function BubbleTree({
         camX,
         camY,
         zoom,
-        panX,
-        panY,
         gen,
-        get userZoom() {
-          return userZoom;
-        },
-        set userZoom(v) {
-          userZoom = v;
-        },
         dist,
         pinnedId: null,
         layoutMode: layoutRef.current,
@@ -222,8 +229,38 @@ export default function BubbleTree({
         setActive(id, animate = true) {
           activeRef.current = id;
           state.dist = distancesFrom(graphRef.current, id);
+          // Navigating to a person always re-engages the framed "follow" camera
+          // and flies there — the tree is navigation; the person is the place.
+          state.enterFollow();
           if (!reducedMotion && animate) zoom.velocity -= 1.6; // gentle pull-back
           if (state.layoutMode === 'radial') state.relayout();
+        },
+        // Hand the camera to the user: pan/zoom now stick where they leave them.
+        enterFree() {
+          if (camMode === 'free') return;
+          camMode = 'free';
+          vx = vy = 0;
+          onModeChange?.(true);
+        },
+        // Take the camera back: it will spring to frame the active family.
+        enterFollow() {
+          vx = vy = 0;
+          camX.velocity = camY.velocity = 0;
+          if (camMode === 'follow') return;
+          camMode = 'follow';
+          onModeChange?.(false);
+        },
+        get cameraFree() {
+          return camMode === 'free';
+        },
+        // Smoothly return to the framed view (the floating "recentre" control).
+        recenter() {
+          if (!reducedMotion) zoom.velocity -= 1.2;
+          state.enterFollow();
+        },
+        // Let React mirror the camera mode (to show/hide the recentre control).
+        onCameraMode(fn) {
+          onModeChange = fn;
         },
         // Reconcile the canvas with a new graph: spawn bubbles for new people
         // (near whoever they connect to, so they appear to sprout from them),
@@ -309,6 +346,7 @@ export default function BubbleTree({
       };
       api.current = state;
       if (apiRef) apiRef.current = state;
+      state.onCameraMode((free) => onCameraModeRef.current?.(free));
       if (state.layoutMode === 'radial') state.relayout();
 
       // Centre instantly on the first active person so we don't fly in.
@@ -319,22 +357,55 @@ export default function BubbleTree({
       }
 
       // ── Interaction ────────────────────────────────────────────────────────
-      // One stage-level gesture handler. Press a bubble and drag to fling it
-      // around — it pins to your finger and the force sim reheats so everyone
-      // else genuinely shoves and settles around it; release and it floats back
-      // into the flow. Press empty space and drag to pan the whole tree. A press
-      // that doesn't move is a tap: recentre, or open the centred person.
+      // One stage-level gesture handler that reads like the gestures feel:
+      //   • Press a bubble + drag → fling it; it pins to your finger and the sim
+      //     reheats so neighbours shove and settle. Release → it rejoins the flow.
+      //   • Press empty space + drag → pan the whole tree 1:1; release with speed
+      //     and it coasts to a graceful stop. The view STAYS where you leave it.
+      //   • Two fingers → pinch-zoom locked to the point between them.
+      //   • Wheel / trackpad → zoom toward the cursor.
+      //   • Tap a bubble → fly to that person (re-frames). Tap the active one →
+      //     open their profile. Double-tap empty space → recentre.
       app.stage.eventMode = 'static';
       app.stage.hitArea = { contains: () => true };
       const TAP_SLOP = 8; // px of movement still considered a tap
       const drag = { type: 'none', node: null, id: null, start: null, moved: false };
       let last = null;
-      // Active touch points, for two-finger pinch zoom.
+      let lastT = 0;
+      let lastTap = { t: 0, x: 0, y: 0 };
       const pointers = new Map();
       const pinch = { active: false, dist0: 0, zoom0: 1 };
+
       const twoFingerDist = () => {
         const p = [...pointers.values()];
         return Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y);
+      };
+      const twoFingerMid = () => {
+        const p = [...pointers.values()];
+        return { x: (p[0].x + p[1].x) / 2, y: (p[0].y + p[1].y) / 2 };
+      };
+      // The on-screen anchor (≈ centre of the safe area) and current render scale.
+      const screenAnchor = () => {
+        const W = app.screen.width, H = app.screen.height;
+        const topInset = Math.min(120, H * 0.16);
+        return {
+          ax: W / 2 + biasX.value,
+          ay: (H + topInset) / 2,
+          z: clamp(zoom.value, MIN_ZOOM, MAX_ZOOM_FREE),
+        };
+      };
+      // Zoom toward a screen-space focal point, keeping the world point under it
+      // pinned — the essential trick that makes pinch / wheel feel "right".
+      const zoomTo = (newZ, sx, sy) => {
+        const { ax, ay, z } = screenAnchor();
+        const wx = (sx - ax) / z + camX.value;
+        const wy = (sy - ay) / z + camY.value;
+        const nz = clamp(newZ, MIN_ZOOM, MAX_ZOOM_FREE);
+        zoom.value = zoom.target = nz;
+        zoom.velocity = 0;
+        camX.value = camX.target = wx - (sx - ax) / nz;
+        camY.value = camY.target = wy - (sy - ay) / nz;
+        camX.velocity = camY.velocity = 0;
       };
 
       const bubbleIdFromTarget = (t) => {
@@ -347,7 +418,7 @@ export default function BubbleTree({
         const g = e.global;
         pointers.set(e.pointerId, { x: g.x, y: g.y });
 
-        // Second finger down → start pinch; abandon any single-finger gesture.
+        // Second finger down → begin pinch; abandon any single-finger gesture.
         if (pointers.size === 2) {
           if (drag.type === 'bubble' && drag.node && drag.id !== state.pinnedId) {
             drag.node.fx = null;
@@ -357,12 +428,14 @@ export default function BubbleTree({
           drag.node = null;
           pinch.active = true;
           pinch.dist0 = twoFingerDist();
-          pinch.zoom0 = userZoom;
+          pinch.zoom0 = screenAnchor().z;
+          state.enterFree();
           return;
         }
         if (pointers.size > 2) return;
 
         last = { x: g.x, y: g.y };
+        lastT = performance.now();
         drag.start = { x: g.x, y: g.y };
         drag.moved = false;
         const id = bubbleIdFromTarget(e.target);
@@ -373,15 +446,31 @@ export default function BubbleTree({
         } else {
           drag.type = 'pan';
           drag.node = null;
+          vx = vy = 0; // catch the moving tree the instant you touch it
+          // Double-tap empty space → recentre on the active family.
+          const now = performance.now();
+          if (now - lastTap.t < DOUBLE_TAP_MS &&
+              Math.hypot(g.x - lastTap.x, g.y - lastTap.y) < 28) {
+            state.recenter();
+            lastTap = { t: 0, x: 0, y: 0 };
+            drag.type = 'none';
+          } else {
+            lastTap = { t: now, x: g.x, y: g.y };
+          }
         }
       });
+
       app.stage.on('pointermove', (e) => {
         if (pointers.has(e.pointerId)) pointers.set(e.pointerId, { x: e.global.x, y: e.global.y });
 
-        // Pinch: scale from the gap between the two fingers.
+        // Pinch: zoom from the finger gap, locked to the moving midpoint (so you
+        // can pan and zoom in the same gesture, which feels wonderfully fluid).
         if (pinch.active && pointers.size >= 2) {
           const d = twoFingerDist();
-          if (pinch.dist0 > 0) userZoom = clamp(pinch.zoom0 * (d / pinch.dist0), 0.5, 2.4);
+          if (pinch.dist0 > 0) {
+            const mid = twoFingerMid();
+            zoomTo(pinch.zoom0 * (d / pinch.dist0), mid.x, mid.y);
+          }
           return;
         }
 
@@ -395,28 +484,54 @@ export default function BubbleTree({
           drag.node.fx = local.x;
           drag.node.fy = local.y;
           if (!reducedMotion) sim.alphaTarget(0.35); // reheat so neighbours react
-        } else if (drag.type === 'pan') {
-          panX.value += g.x - last.x;
-          panY.value += g.y - last.y;
+        } else if (drag.type === 'pan' && drag.moved) {
+          state.enterFree();
+          const z = screenAnchor().z;
+          const dwx = -(g.x - last.x) / z;
+          const dwy = -(g.y - last.y) / z;
+          camX.value = camX.target = camX.value + dwx;
+          camY.value = camY.target = camY.value + dwy;
+          camX.velocity = camY.velocity = 0;
+          // Track world-space velocity (EMA) so release flicks into inertia.
+          const now = performance.now();
+          const dt = Math.max(now - lastT, 8) / 1000;
+          vx = vx * 0.35 + (dwx / dt) * 0.65;
+          vy = vy * 0.35 + (dwy / dt) * 0.65;
+          lastT = now;
         }
         last = { x: g.x, y: g.y };
       });
+
       const endGesture = (e) => {
         if (e) pointers.delete(e.pointerId);
-        if (pointers.size < 2) pinch.active = false;
+        if (pointers.size < 2 && pinch.active) {
+          pinch.active = false;
+          // One finger remains after a pinch → hand straight back to panning so
+          // the gesture never stutters.
+          if (pointers.size === 1) {
+            const p = [...pointers.values()][0];
+            last = { x: p.x, y: p.y };
+            lastT = performance.now();
+            drag.type = 'pan';
+            drag.moved = true;
+            drag.node = null;
+            vx = vy = 0;
+            return;
+          }
+        }
         if (drag.type === 'bubble') {
           if (!drag.moved) {
-            // A clean tap: expand/activate, or open the already-active person.
+            // A clean tap: fly to / activate, or open the already-active person.
             if (activeRef.current === drag.id) onOpenPersonRef.current?.(drag.id);
             else onActivateRef.current?.(drag.id);
           } else if (drag.node && drag.id !== state.pinnedId) {
-            // Let the flung bubble rejoin the simulation (unless it's pinned
-            // open as a card anchor).
             drag.node.fx = null;
             drag.node.fy = null;
           }
           if (!reducedMotion) sim.alphaTarget(0.012); // settle back to idle drift
         }
+        // A flick that's barely moving shouldn't drift; reduced-motion never coasts.
+        if (reducedMotion || Math.hypot(vx, vy) < FLICK_STOP) vx = vy = 0;
         drag.type = 'none';
         drag.node = null;
         last = null;
@@ -424,11 +539,14 @@ export default function BubbleTree({
       app.stage.on('pointerup', endGesture);
       app.stage.on('pointerupoutside', endGesture);
       state.isDraggingBubble = () => drag.type === 'bubble' && drag.moved;
+
       app.canvas.addEventListener(
         'wheel',
         (e) => {
           e.preventDefault();
-          userZoom = clamp(userZoom * (e.deltaY > 0 ? 0.92 : 1.08), 0.55, 1.9);
+          state.enterFree();
+          const factor = e.deltaY > 0 ? 0.9 : 1.0 / 0.9;
+          zoomTo(screenAnchor().z * factor, e.offsetX, e.offsetY);
         },
         { passive: false },
       );
@@ -457,13 +575,12 @@ export default function BubbleTree({
         const cx = W / 2;
         const cy = (H + topInset) / 2;
 
-        // Frame the whole revealed family: centre on the bounding box of the
-        // visible bubbles (gently biased toward the active person so they stay
-        // central) and zoom so it fills the safe area. This way even a handful
-        // of people spread out and use the screen instead of huddling in the
-        // middle. We hold still while a bubble is being flung.
         const f = nodeById.get(activeRef.current);
-        if (f && !state.isDraggingBubble?.()) {
+        if (camMode === 'follow' && f && !state.isDraggingBubble?.()) {
+          // FOLLOW — frame the whole revealed family: centre on the bounding box
+          // of the visible bubbles (gently biased toward the active person so
+          // they stay central) and zoom so it fills the safe area. Even a handful
+          // of people then spread out and use the screen instead of huddling.
           const rr = BASE_RADIUS * 1.5;
           let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
           for (const id of vis) {
@@ -494,24 +611,63 @@ export default function BubbleTree({
             ((H - topInset) / 2 - PAD) / halfY,
           );
           zoom.setTarget(clamp(fit, 0.4, MAX_ZOOM));
+          camX.step(dt);
+          camY.step(dt);
+          zoom.step(dt);
+        } else if (camMode === 'free') {
+          // FREE — glide on released momentum, then rest. Soft-clamp so the
+          // family can never be flung entirely off-screen and lost: if the
+          // camera drifts past the world's edges it eases elastically back.
+          const panning = drag.type === 'pan' && !!last; // finger down, moving it
+          if (!state.isDraggingBubble?.()) {
+            if (panning) {
+              // The pointer handler is moving the camera directly; just let any
+              // stale momentum bleed off so a pause before lifting kills the flick.
+              const decay = Math.pow(0.86, dt * 60);
+              vx *= decay;
+              vy *= decay;
+            } else if (vx || vy) {
+              camX.value += vx * dt;
+              camY.value += vy * dt;
+              const decay = Math.pow(PAN_FRICTION, dt * 60);
+              vx *= decay;
+              vy *= decay;
+              if (Math.hypot(vx, vy) < FLICK_STOP) vx = vy = 0;
+            }
+          }
+          const z = clamp(zoom.value, MIN_ZOOM, MAX_ZOOM_FREE);
+          const marginX = (W * 0.5) / z * 0.85;
+          const marginY = (H * 0.5) / z * 0.85;
+          let bMinX = Infinity, bMaxX = -Infinity, bMinY = Infinity, bMaxY = -Infinity;
+          for (let i = 0; i < nodes.length; i++) {
+            const n = nodes[i];
+            if (n.x < bMinX) bMinX = n.x;
+            if (n.x > bMaxX) bMaxX = n.x;
+            if (n.y < bMinY) bMinY = n.y;
+            if (n.y > bMaxY) bMaxY = n.y;
+          }
+          if (isFinite(bMinX)) {
+            const loX = bMinX - marginX, hiX = bMaxX + marginX;
+            const loY = bMinY - marginY, hiY = bMaxY + marginY;
+            const clampedX = clamp(camX.value, loX, hiX);
+            const clampedY = clamp(camY.value, loY, hiY);
+            if (clampedX !== camX.value) { camX.value += (clampedX - camX.value) * Math.min(1, dt * 10); vx = 0; }
+            if (clampedY !== camY.value) { camY.value += (clampedY - camY.value) * Math.min(1, dt * 10); vy = 0; }
+          }
+          camX.target = camX.value;
+          camY.target = camY.value;
+          zoom.target = zoom.value;
         }
-        camX.step(dt);
-        camY.step(dt);
-        zoom.step(dt);
-        panX.setTarget(0);
-        panY.setTarget(0);
-        panX.step(dt);
-        panY.step(dt);
 
         // When a card is open, slide the anchored bubble to the left so the card
         // can expand out to its side.
         biasX.setTarget(state.pinnedId ? -W * 0.24 : 0);
         biasX.step(dt);
-        const z = clamp(zoom.value, 0.35, 2) * userZoom;
+        const z = clamp(zoom.value, MIN_ZOOM, MAX_ZOOM_FREE);
         world.scale.set(z);
         world.position.set(
-          cx - camX.value * z + panX.value + biasX.value,
-          cy - camY.value * z + panY.value,
+          cx + biasX.value - camX.value * z,
+          cy - camY.value * z,
         );
 
         // Per-bubble visual state. Only revealed (visible) people show; the rest

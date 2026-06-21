@@ -99,6 +99,7 @@ export default function App() {
   const [mergeParents, setMergeParents] = useState(true);
   const [lineageMode, setLineageMode] = useState(false);
   const [lineagePath, setLineagePath] = useState(null); // Set<id> | null
+  const [cameraFree, setCameraFree] = useState(false); // user has panned/zoomed away
   const viewApi = useRef(null);
 
   const visibleIds = useMemo(() => {
@@ -144,6 +145,7 @@ export default function App() {
   const openPerson = useCallback((id) => {
     viewApi.current?.unpin();
     viewApi.current?.pin(id);
+    viewApi.current?.enterFollow(); // if they'd roamed, re-frame so the card has room
     setOpenId(id);
   }, []);
 
@@ -237,6 +239,7 @@ export default function App() {
             reducedMotion={reducedMotion}
             mergeParents={mergeParents}
             lineagePath={lineagePath}
+            onCameraMode={setCameraFree}
             apiRef={viewApi}
           />
           <FocusNameplate
@@ -256,6 +259,14 @@ export default function App() {
                 ? `Lineage · ${[...lineagePath].length} people`
                 : 'Tap an ancestor…'
               : 'Lineage'}
+          </button>
+          <button
+            className={`recenter-btn${cameraFree && !openId ? ' recenter-btn--on' : ''}`}
+            onClick={() => viewApi.current?.recenter()}
+            aria-label="Recentre on the family"
+            tabIndex={cameraFree && !openId ? 0 : -1}
+          >
+            <RecenterIcon />
           </button>
           {!lineageMode && <IntroHint />}
         </>
@@ -384,6 +395,17 @@ function LineageIcon() {
       <circle cx="4" cy="20" r="2.5" stroke="currentColor" strokeWidth="1.8" />
       <circle cx="20" cy="20" r="2.5" stroke="currentColor" strokeWidth="1.8" />
       <path d="M12 6.5v4M12 10.5l-5.5 7M12 10.5l5.5 7" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+// Crosshair / locate — return the camera to the framed family.
+function RecenterIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="12" r="4" stroke="currentColor" strokeWidth="1.7" />
+      <circle cx="12" cy="12" r="1.4" fill="currentColor" />
+      <path d="M12 2.5v3.5M12 18v3.5M2.5 12h3.5M18 12h3.5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
     </svg>
   );
 }
