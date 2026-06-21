@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import Avatar from './Avatar.jsx';
+import SmartImg from './SmartImg.jsx';
 import { lifespan, formatDate, ageOrAt } from '../lib/dates.js';
 import { relationLabel } from '../data/graph.js';
 import { profileCompleteness, lifeEvents } from '../lib/profile.js';
@@ -302,7 +303,7 @@ export default function PersonSheet({
                         onClick={() => onOpenLightbox?.(person.id, idx)}
                         aria-label={ph.caption || 'View photo'}
                       >
-                        <img src={ph.src} alt={ph.caption || ''} loading="lazy" />
+                        <SmartImg src={ph.src} alt={ph.caption || ''} />
                       </button>
                     </li>
                   ))}
@@ -342,7 +343,7 @@ export default function PersonSheet({
                           {doc.mime?.startsWith('image/') ? <DocImageIcon /> : <DocFileIcon />}
                         </span>
                         {doc.mime?.startsWith('image/') ? (
-                          <img className="doc-thumb" src={doc.src} alt={doc.title} />
+                          <SmartImg className="doc-thumb" src={doc.src} alt={doc.title} />
                         ) : null}
                         <span className="doc-row__text">
                           <span className="doc-row__title">{doc.title}</span>

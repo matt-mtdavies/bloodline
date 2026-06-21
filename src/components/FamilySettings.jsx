@@ -26,6 +26,12 @@ export default function FamilySettings({ myRole, familyName, onUpdateFamilyName,
 
   useEffect(() => { load(); }, [load]);
 
+  useEffect(() => {
+    const onKey = (e) => e.key === 'Escape' && onClose();
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
   async function sendInvite(e) {
     e.preventDefault();
     if (!inviteEmail.trim()) return;
@@ -78,8 +84,8 @@ export default function FamilySettings({ myRole, familyName, onUpdateFamilyName,
   }
 
   return (
-    <div className="sheet-scrim" role="dialog" aria-modal="true" aria-label="Family settings">
-      <div className="sheet">
+    <div className="sheet-scrim" role="dialog" aria-modal="true" aria-label="Family settings" onClick={onClose}>
+      <div className="sheet" onClick={(e) => e.stopPropagation()}>
         <div className="sheet__grip" />
         <div className="fs__head">
           <div>

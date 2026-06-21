@@ -90,6 +90,7 @@ export default function BubbleTree({
         return;
       }
       host.appendChild(app.canvas);
+      app.stage.cursor = 'grab'; // empty canvas reads as draggable (bubbles stay 'pointer')
 
       // World container: links underneath, bubbles on top. The camera transforms
       // this whole container; bubbles never move in screen space themselves.
@@ -486,6 +487,7 @@ export default function BubbleTree({
           if (!reducedMotion) sim.alphaTarget(0.35); // reheat so neighbours react
         } else if (drag.type === 'pan' && drag.moved) {
           state.enterFree();
+          app.stage.cursor = 'grabbing';
           const z = screenAnchor().z;
           const dwx = -(g.x - last.x) / z;
           const dwy = -(g.y - last.y) / z;
@@ -532,6 +534,7 @@ export default function BubbleTree({
         }
         // A flick that's barely moving shouldn't drift; reduced-motion never coasts.
         if (reducedMotion || Math.hypot(vx, vy) < FLICK_STOP) vx = vy = 0;
+        app.stage.cursor = 'grab';
         drag.type = 'none';
         drag.node = null;
         last = null;
