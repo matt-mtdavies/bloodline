@@ -30,6 +30,9 @@ export default defineConfig({
       workbox: {
         // Keep the app shell offline-tolerant; faces are remote and best-effort.
         globPatterns: ['**/*.{js,css,html,svg,woff2}'],
+        // Don't intercept server-rendered routes — let them reach Cloudflare Pages Functions.
+        navigateFallback: 'index.html',
+        navigateFallbackDenylist: [/^\/invite\//, /^\/api\//],
         runtimeCaching: [
           {
             urlPattern: ({ url }) => url.origin.includes('randomuser.me'),
