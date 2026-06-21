@@ -113,7 +113,10 @@ function commit(next) {
   try {
     localStorage.setItem(KEY, JSON.stringify(state));
   } catch {
-    /* quota — keep working in-memory */
+    // Storage full — changes live in-memory but won't survive a reload.
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('bloodline:storage-full'));
+    }
   }
   scheduleServerSave(state);
   listeners.forEach((l) => l());
@@ -230,9 +233,30 @@ function edgesFor(relKey, anchorId, newId, current, qualifier = 'biological') {
   }
 }
 
+// Return which bio-parent genders are already filled for a given person id.
+export function bioParentGendersFilled(personId) {
+  const bioPids = state.relationships
+    .filter((r) => r.type === 'parent' && r.qualifier === 'biological' && r.to_person === personId)
+    .map((r) => r.from_person);
+  const genders = new Set(
+    bioPids.map((pid) => state.people.find((p) => p.id === pid)?.gender).filter(Boolean),
+  );
+  return genders; // Set of 'male'|'female' already occupied
+}
+
 export function addRelative({ anchorId, relKey, name, gender, birth_date, is_deceased, death_date, qualifier = 'biological' }) {
   const id = uid();
   const meta = RELATIONSHIPS.find((r) => r.key === relKey);
+
+  // Hard biological-parent constraint: at most one bio parent per gender role.
+  if (qualifier === 'biological' && (relKey === 'mother' || relKey === 'father')) {
+    const targetGender = relKey === 'mother' ? 'female' : 'male';
+    if (bioParentGendersFilled(anchorId).has(targetGender)) return null;
+  }
+  // Smart privacy defaults: children stay private by default; living adults are
+  // summary (name + dates visible); deceased people are fully open.
+  const childKeys = new Set(['son', 'daughter']);
+  const defaultVisibility = is_deceased ? 'full' : childKeys.has(relKey) ? 'private' : 'summary';
   const person = {
     id,
     display_name: name.trim(),
@@ -253,6 +277,7 @@ export function addRelative({ anchorId, relKey, name, gender, birth_date, is_dec
     photo: null,
     confidence: 'confirmed',
     created_by: 'me',
+    visibility: defaultVisibility,
   };
   commit({
     ...state,
@@ -260,6 +285,34 @@ export function addRelative({ anchorId, relKey, name, gender, birth_date, is_dec
     relationships: [...state.relationships, ...edgesFor(relKey, anchorId, id, state, qualifier)],
   });
   return id;
+}
+
+// Link two existing people with a partner or parent relationship.
+// fromId is the parent when type is 'parent'; for partner types, order is arbitrary.
+// Guards: partner links are symmetric; duplicate edges are silently skipped;
+// bio-parent gender constraint is enforced for type 'parent' (biological qualifier).
+export function addRelationship(fromId, toId, type, qualifier = 'biological') {
+  const edgeType = type === 'ex_partner' ? 'partner' : type;
+  const already = state.relationships.some(
+    (r) =>
+      r.type === edgeType &&
+      ((r.from_person === fromId && r.to_person === toId) ||
+        (r.from_person === toId && r.to_person === fromId)),
+  );
+  if (already) return;
+
+  if (type === 'parent' && qualifier === 'biological') {
+    const parentPerson = state.people.find((p) => p.id === fromId);
+    const parentGender = parentPerson?.gender;
+    if (parentGender && bioParentGendersFilled(toId).has(parentGender)) return;
+  }
+
+  let edge;
+  if (type === 'partner') edge = partnerEdge(fromId, toId, 'current');
+  else if (type === 'ex_partner') edge = partnerEdge(fromId, toId, 'former');
+  else if (type === 'parent') edge = parentEdge(fromId, toId, qualifier);
+  else return;
+  commit({ ...state, relationships: [...state.relationships, edge] });
 }
 
 export function setupTree({ me, partner, parents, children, memoryPersonIdx, memoryText, familyName }) {

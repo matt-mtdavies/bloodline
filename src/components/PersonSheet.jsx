@@ -6,6 +6,7 @@ import { relationLabel } from '../data/graph.js';
 import { profileCompleteness, lifeEvents } from '../lib/profile.js';
 import { fileToDataUrl } from '../lib/image.js';
 import { streamBio } from '../lib/ai.js';
+import { VISIBILITY_LABELS, VISIBILITY_DESCS } from '../lib/visibility.js';
 
 /*
  * The profile. In V2 this is the destination, not a popover — a portrait,
@@ -62,6 +63,14 @@ export default function PersonSheet({
   if (!person) return null;
 
   const minor = person.is_minor && !person.is_deceased;
+  // Visibility: 'private' seals the profile; 'summary' shows name + dates only.
+  // The local user is always the owner so they can see and edit everything —
+  // this gate will matter for shared trees with viewer/contributor roles (Phase 4).
+  const vis = person.visibility || 'full';
+  const sealed = vis === 'private';
+  const summaryOnly = vis === 'summary';
+  const restricted = minor || sealed || summaryOnly; // hides sections
+
   const partners = graph.partners(person.id);
   const parents = graph.parents(person.id);
   const children = graph.children(person.id);
@@ -78,15 +87,15 @@ export default function PersonSheet({
     viewerId && viewerId !== person.id ? relationLabel(graph, viewerId, person.id) : null;
   const location = person.residence || person.birth_place;
   const age = ageOrAt(person);
-  const events = minor ? [] : lifeEvents(person);
-  const personMemories = minor
+  const events = restricted ? [] : lifeEvents(person);
+  const personMemories = restricted
     ? []
     : memories
         .filter((m) => m.person_id === person.id)
         .sort((a, b) => b.votes - a.votes || (a.created_at < b.created_at ? 1 : -1));
-  const personPhotos = minor ? [] : photos.filter((p) => p.person_id === person.id);
-  const personDocs = minor ? [] : documents.filter((d) => d.person_id === person.id);
-  const completeness = minor ? null : profileCompleteness(person, graph, personMemories.length);
+  const personPhotos = restricted ? [] : photos.filter((p) => p.person_id === person.id);
+  const personDocs = restricted ? [] : documents.filter((d) => d.person_id === person.id);
+  const completeness = restricted ? null : profileCompleteness(person, graph, personMemories.length);
 
   const generateStory = async () => {
     storyAbort.current?.abort();
@@ -219,12 +228,14 @@ export default function PersonSheet({
           <div className="profile__badges">
             {person.is_deceased && <span className="badge badge--memorial">In loving memory</span>}
             {minor && <span className="badge badge--quiet">Child · limited details</span>}
+            {!minor && sealed && <span className="badge badge--private">Private</span>}
+            {!minor && summaryOnly && <span className="badge badge--summary">Protected</span>}
             {person.confidence === 'uncertain' && (
               <span className="badge badge--quiet">Unconfirmed</span>
             )}
           </div>
 
-          {!minor && person.tags?.length > 0 && (
+          {!restricted && person.tags?.length > 0 && (
             <ul className="tags">
               {person.tags.map((t) => (
                 <li className="tag" key={t}>
@@ -247,10 +258,19 @@ export default function PersonSheet({
           </button>
         </div>
 
-        {minor ? (
-          <p className="profile__private">
-            Details for children are kept private and shared only within the family.
-          </p>
+        {(minor || sealed || summaryOnly) ? (
+          <div className="profile__restricted">
+            <p className="profile__private">
+              {sealed
+                ? 'Details are private and only visible to family admins.'
+                : summaryOnly
+                  ? 'Bio, memories and photos are protected and only visible to family admins.'
+                  : 'Details for children are kept private and shared only within the family.'}
+            </p>
+            <button className="profile__privacy-edit" onClick={() => onEdit?.(person.id)}>
+              <LockIcon /> Change privacy
+            </button>
+          </div>
         ) : (
           <div className="profile__body">
             {completeness && completeness.score < 100 && (
@@ -641,6 +661,15 @@ function PinIcon() {
     </svg>
   );
 }
+function LockIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <rect x="3" y="11" width="18" height="11" rx="2" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M7 11V7a5 5 0 0 1 10 0v4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 function ChevronIcon() {
   return (
     <svg className="rel-chip__chev" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">

@@ -32,6 +32,7 @@ export class Bubble {
     this.person = person;
     this.r = baseRadius;
     this.deceased = !!person.is_deceased;
+    this.visibility = person.visibility || 'full'; // 'full' | 'summary' | 'private'
     // Eased display state. Scale springs (with a little overshoot) so bubbles
     // pop in when revealed; alpha eases so they fade cleanly.
     this.scaleSpring = new Spring(0, { stiffness: 150, damping: 14 });
@@ -79,12 +80,71 @@ export class Bubble {
       portrait.filters = [cm];
     }
 
+    // Privacy treatments applied on top of the base portrait.
+    if (this.visibility === 'private') {
+      this._applyPrivateOverlay(baseRadius);
+    } else if (this.visibility === 'summary') {
+      this._applySummaryBadge(baseRadius);
+    }
+
     this._buildNameLabel(person, baseRadius);
-    this.tryLoadPhoto();
+    // Private people never load a photo — the sealed look must hold.
+    if (this.visibility !== 'private') this.tryLoadPhoto();
+  }
+
+  // Sealed overlay for private people: semi-opaque white film + lock icon.
+  _applyPrivateOverlay(r) {
+    // Desaturate and dim the portrait.
+    const cm = new ColorMatrixFilter();
+    cm.saturate(-1, false);
+    cm.brightness(1.18, true);
+    this.portrait.filters = [cm];
+
+    // Frosted cap over the bubble.
+    const cap = new Graphics();
+    cap.circle(0, 0, r).fill({ color: 0xfaf8f5, alpha: 0.58 });
+    this.root.addChild(cap);
+
+    // Lock icon drawn with Graphics so no asset load is needed.
+    const lk = new Graphics();
+    const lw = r * 0.28, lh = r * 0.22, lx = -lw / 2, ly = r * 0.05;
+    const arc = r * 0.13;
+    lk.roundRect(lx, ly, lw, lh, arc).fill({ color: 0x241f1c, alpha: 0.55 });
+    // Shackle (top arc of lock)
+    lk.moveTo(lx + lw * 0.28, ly)
+      .arcTo(lx + lw * 0.28, ly - r * 0.19, lx + lw / 2, ly - r * 0.19, r * 0.1)
+      .arcTo(lx + lw * 0.72, ly - r * 0.19, lx + lw * 0.72, ly, r * 0.1)
+      .lineTo(lx + lw * 0.72, ly)
+      .stroke({ width: r * 0.05, color: 0x241f1c, alpha: 0.55, cap: 'round' });
+    lk.y = -r * 0.1;
+    this.root.addChild(lk);
+    this._lockIcon = lk;
+  }
+
+  // Small shield badge in the lower-right for summary (protected) people.
+  _applySummaryBadge(r) {
+    const badge = new Graphics();
+    const bx = r * 0.58, by = r * 0.58;
+    badge.circle(bx, by, r * 0.26).fill({ color: 0xfaf8f5, alpha: 0.95 });
+    badge.circle(bx, by, r * 0.26).stroke({ width: 1.2, color: 0xddd8d2, alpha: 0.9 });
+    // Mini shield path
+    const sw = r * 0.22, sh = r * 0.25;
+    badge.moveTo(bx, by - sh / 2)
+      .lineTo(bx - sw / 2, by - sh * 0.25)
+      .lineTo(bx - sw / 2, by + sh * 0.1)
+      .quadraticCurveTo(bx - sw / 2, by + sh / 2, bx, by + sh / 2)
+      .quadraticCurveTo(bx + sw / 2, by + sh / 2, bx + sw / 2, by + sh * 0.1)
+      .lineTo(bx + sw / 2, by - sh * 0.25)
+      .closePath()
+      .fill({ color: 0x8a8480, alpha: 0.7 });
+    this.root.addChild(badge);
+    this._summaryBadge = badge;
   }
 
   _buildNameLabel(person, baseRadius) {
-    const firstName = person.display_name.trim().split(/\s+/)[0];
+    const firstName = this.visibility === 'private'
+      ? 'Private'
+      : person.display_name.trim().split(/\s+/)[0];
     // Estimate pill width: ~6.6 px per char at 11px/700 + horizontal padding
     const pillW = Math.max(36, firstName.length * 6.6 + 20);
     const pillH = 20;

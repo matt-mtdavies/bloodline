@@ -4,6 +4,7 @@ import { DEFAULT_FOCUS } from './data/seed.js';
 import {
   store,
   addRelative,
+  addRelationship,
   updatePerson,
   setupTree,
   setPhoto,
@@ -117,7 +118,18 @@ export default function App() {
   const [lineageMode, setLineageMode] = useState(false);
   const [lineagePath, setLineagePath] = useState(null); // Set<id> | null
   const [cameraFree, setCameraFree] = useState(false); // user has panned/zoomed away
+  const [storageWarning, setStorageWarning] = useState(false);
   const viewApi = useRef(null);
+
+  // Notify the user if a commit couldn't persist (localStorage full).
+  useEffect(() => {
+    const handler = () => {
+      setStorageWarning(true);
+      setTimeout(() => setStorageWarning(false), 6000);
+    };
+    window.addEventListener('bloodline:storage-full', handler);
+    return () => window.removeEventListener('bloodline:storage-full', handler);
+  }, []);
 
   const visibleIds = useMemo(() => {
     const vis = new Set();
@@ -175,6 +187,7 @@ export default function App() {
   const handleAdd = useCallback(
     (fields) => {
       const newId = addRelative({ anchorId: addAnchorId, ...fields });
+      if (!newId) return; // blocked by constraint (e.g. duplicate bio parent)
       setAddAnchorId(null);
       viewApi.current?.unpin();
       setOpenId(null);
@@ -182,6 +195,35 @@ export default function App() {
       setActiveId(newId);
     },
     [addAnchorId],
+  );
+
+  // Link two existing people without creating a new person.
+  // relKey is from AddRelativeSheet (e.g. 'partner', 'mother', 'son').
+  const handleLinkExisting = useCallback(
+    (existingId, relKey) => {
+      if (relKey === 'partner' || relKey === 'ex_partner') {
+        addRelationship(addAnchorId, existingId, relKey);
+      } else if (relKey === 'mother' || relKey === 'father') {
+        // existing person IS the parent of the anchor
+        addRelationship(existingId, addAnchorId, 'parent');
+      } else if (relKey === 'son' || relKey === 'daughter') {
+        // anchor IS the parent of the existing person
+        addRelationship(addAnchorId, existingId, 'parent');
+      } else if (relKey === 'brother' || relKey === 'sister') {
+        // Give the existing person the same parents as the anchor (like addRelative does).
+        const anchorParents = data.relationships
+          .filter((r) => r.type === 'parent' && r.to_person === addAnchorId)
+          .map((r) => r.from_person);
+        for (const parentId of anchorParents) {
+          addRelationship(parentId, existingId, 'parent');
+        }
+      }
+      setAddAnchorId(null);
+      viewApi.current?.unpin();
+      setExpanded((prev) => new Set(prev).add(addAnchorId).add(existingId));
+      setActiveId(existingId);
+    },
+    [addAnchorId, data.relationships],
   );
 
   const handleSave = useCallback(
@@ -348,9 +390,18 @@ export default function App() {
       {addAnchorId && graph.byId.get(addAnchorId) && (
         <AddRelativeSheet
           anchor={graph.byId.get(addAnchorId)}
+          people={data.people.filter((p) => p.id !== addAnchorId)}
+          relationships={data.relationships}
           onClose={() => setAddAnchorId(null)}
           onAdd={handleAdd}
+          onLinkExisting={handleLinkExisting}
         />
+      )}
+
+      {storageWarning && (
+        <div className="storage-toast" role="alert">
+          Storage full — this change won&apos;t survive a reload. Try removing some photos.
+        </div>
       )}
 
       {editId && graph.byId.get(editId) && (
