@@ -3,31 +3,22 @@ import Logo from './Logo.jsx';
 export default function TopBar({ familyName, view, onToggleView, onOpenLegend, onOpenSettings }) {
   return (
     <header className="topbar">
-      {/* Row 1: action buttons only, flush-right */}
-      <div className="topbar__bar">
-        <div className="topbar__actions">
-          <button className="pill" onClick={onOpenSettings} aria-label="Family settings">
-            <SettingsIcon />
-          </button>
-          <button className="pill" onClick={onOpenLegend} aria-label="Legend — what the styles mean">
-            <LegendIcon />
-          </button>
-          <button className="pill pill--label" onClick={onToggleView} aria-label={view === 'bubbles' ? 'Switch to list view' : 'Switch to tree view'}>
-            {view === 'bubbles' ? <><ListIcon /> List</> : <><TreeIcon /> Tree</>}
-          </button>
-        </div>
+      <div className="topbar__brand">
+        <Logo size={28} />
       </div>
-      {/* Row 2: logo + wordmark centred across full width */}
-      <div className="topbar__heading">
-        <div className="masthead__brand">
-          <Logo size={34} />
-          <span className="masthead__word">Bloodline</span>
-        </div>
-        <div className="masthead__family">
-          <span className="masthead__rule" />
-          <span className="masthead__familyname">{familyName}</span>
-          <span className="masthead__rule" />
-        </div>
+      <div className="topbar__title">
+        <span className="topbar__familyname">{familyName}</span>
+      </div>
+      <div className="topbar__actions">
+        <button className="pill" onClick={onOpenSettings} aria-label="Family settings">
+          <SettingsIcon />
+        </button>
+        <button className="pill" onClick={onOpenLegend} aria-label="Legend — what the styles mean">
+          <LegendIcon />
+        </button>
+        <button className="pill" onClick={onToggleView} aria-label={view === 'bubbles' ? 'Switch to list view' : 'Switch to tree view'}>
+          {view === 'bubbles' ? <ListIcon /> : <TreeIcon />}
+        </button>
       </div>
     </header>
   );
