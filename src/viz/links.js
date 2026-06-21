@@ -116,7 +116,7 @@ export function drawLinks(g, graph, pos, isVisible, baseRadius, mergeParents = f
         // child — so siblings read as a set.
         const avgX = kids.reduce((s, k) => s + k.x, 0) / kids.length;
         const nearestY = Math.min(...kids.map((k) => k.y));
-        const junction = { x: start.x * 0.55 + avgX * 0.45, y: start.y + (nearestY - start.y) * 0.4 };
+        const junction = { x: start.x * 0.55 + avgX * 0.45, y: start.y + (nearestY - start.y) * 0.72 };
         seg(start, junction);
         for (const k of kids) seg(junction, k);
       }
@@ -190,7 +190,7 @@ export function drawLinks(g, graph, pos, isVisible, baseRadius, mergeParents = f
         const avgX = kids.reduce((s, k) => s + k.x, 0) / kids.length;
         const trunk = {
           x: junction.x * 0.55 + avgX * 0.45,
-          y: junction.y + (nearestY - junction.y) * 0.4,
+          y: junction.y + (nearestY - junction.y) * 0.72,
         };
         seg(junction, trunk);
         for (const k of kids) seg(trunk, k);
