@@ -693,8 +693,8 @@ export default function BubbleTree({
           } else {
             target = visualForDistance(d);
           }
-          // Name labels: immediate ring only, hidden when card open or lineage active
-          const labelAlpha = (!cardOpen && !lineage && vis.has(id) && d === 1) ? 1 : 0;
+          // Name labels: all visible bubbles, hidden when card open or lineage active
+          const labelAlpha = (!cardOpen && !lineage && vis.has(id)) ? 1 : 0;
           b.setVisualState({ ...target, labelAlpha }, dt);
           b.root.zIndex = id === activeRef.current ? 100 : -d;
         }
