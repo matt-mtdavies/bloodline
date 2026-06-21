@@ -1,21 +1,8 @@
-import { useState, useRef, useEffect } from 'react';
 import Logo from './Logo.jsx';
 
 export default function TopBar({ familyName, view, onToggleView, onOpenLegend, onOpenSettings, user }) {
-  const [menuOpen, setMenuOpen] = useState(false);
-  const menuRef = useRef(null);
-
-  useEffect(() => {
-    if (!menuOpen) return;
-    function onOutside(e) {
-      if (menuRef.current && !menuRef.current.contains(e.target)) setMenuOpen(false);
-    }
-    document.addEventListener('pointerdown', onOutside);
-    return () => document.removeEventListener('pointerdown', onOutside);
-  }, [menuOpen]);
-
   async function handleLogout() {
-    setMenuOpen(false);
+    if (!confirm(`Sign out of Bloodline?\n\nSigned in as ${user.email}`)) return;
     await fetch('/api/auth/logout', { method: 'POST' });
     window.location.reload();
   }
@@ -27,24 +14,14 @@ export default function TopBar({ familyName, view, onToggleView, onOpenLegend, o
         <div className="topbar__actions">
           {user ? (
             <>
-              <div className="topbar__avatar-wrap" ref={menuRef}>
-                <button
-                  className="topbar__avatar-btn"
-                  onClick={() => setMenuOpen((o) => !o)}
-                  aria-label="Account menu"
-                  aria-expanded={menuOpen}
-                >
-                  <UserAvatar email={user.email} />
-                </button>
-                {menuOpen && (
-                  <div className="topbar__menu">
-                    <p className="topbar__menu-email">{user.email}</p>
-                    <button className="topbar__menu-signout" onClick={handleLogout}>
-                      Sign out
-                    </button>
-                  </div>
-                )}
-              </div>
+              <button
+                className="topbar__avatar-btn"
+                onClick={handleLogout}
+                title={`Signed in as ${user.email} — tap to sign out`}
+                aria-label="Sign out"
+              >
+                <UserAvatar email={user.email} />
+              </button>
               <button className="pill" onClick={onOpenSettings} aria-label="Family settings & sharing">
                 <ShareIcon />
               </button>
