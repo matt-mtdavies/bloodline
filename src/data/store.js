@@ -104,7 +104,9 @@ function scheduleServerSave(s) {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(s),
-    }).catch((e) => console.warn('[store] server sync failed:', e.message));
+    })
+      .then((r) => { if (!r.ok) console.warn('[store] server sync HTTP error:', r.status); })
+      .catch((e) => console.warn('[store] server sync failed:', e.message));
   }, 1500);
 }
 
@@ -139,7 +141,22 @@ export async function loadFromServer() {
     if (!res.ok) return false;
     const data = await res.json();
     if (!data) return false;
-    commit({ ...EMPTY, ...data });
+    // Portrait photos (person.photo) are large blobs; if the last server PUT
+    // failed silently (HTTP error) the server state won't have them. Preserve
+    // any local portraits that aren't in the server response so they survive
+    // across reloads even if the sync is behind.
+    const localPortraits = new Map(
+      (state.people || []).filter((p) => p.photo).map((p) => [p.id, p.photo]),
+    );
+    const mergedPeople =
+      localPortraits.size > 0 && Array.isArray(data.people)
+        ? data.people.map((p) =>
+            !p.photo && localPortraits.has(p.id)
+              ? { ...p, photo: localPortraits.get(p.id) }
+              : p,
+          )
+        : data.people;
+    commit({ ...EMPTY, ...data, ...(mergedPeople ? { people: mergedPeople } : {}) });
     return true;
   } catch {
     return false;
