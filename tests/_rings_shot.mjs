@@ -1,0 +1,11 @@
+import { chromium } from 'playwright-core';
+import path from 'path';
+const shot = (p) => `tests/screenshots/${p}`;
+const browser = await chromium.launch({ headless: true });
+const page = await browser.newPage({ viewport: { width: 414, height: 896 }, deviceScaleFactor: 2 });
+page.on('console', m => m.type() === 'error' && console.error('CONSOLE ERR:', m.text()));
+await page.goto('http://localhost:5173/?demo');
+await page.waitForTimeout(3000);
+await page.screenshot({ path: shot('rings_tree.png'), fullPage: false });
+console.log('screenshot saved');
+await browser.close();
