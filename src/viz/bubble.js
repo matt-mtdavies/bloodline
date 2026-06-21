@@ -36,6 +36,7 @@ export class Bubble {
     // pop in when revealed; alpha eases so they fade cleanly.
     this.scaleSpring = new Spring(0, { stiffness: 150, damping: 14 });
     this.curAlpha = 0;
+    this._labelAlpha = 0;
 
     const root = new Container();
     root.eventMode = 'static';
@@ -78,7 +79,51 @@ export class Bubble {
       portrait.filters = [cm];
     }
 
+    this._buildNameLabel(person, baseRadius);
     this.tryLoadPhoto();
+  }
+
+  _buildNameLabel(person, baseRadius) {
+    const firstName = person.display_name.trim().split(/\s+/)[0];
+    // Estimate pill width: ~6.6 px per char at 11px/700 + horizontal padding
+    const pillW = Math.max(36, firstName.length * 6.6 + 20);
+    const pillH = 20;
+    const r = pillH / 2;
+
+    const bg = new Graphics();
+    // Micro-shadow layer (offset 1.5 px down, very faint)
+    bg.roundRect(-pillW / 2 + 0.5, -pillH / 2 + 2, pillW, pillH, r)
+      .fill({ color: 0x000000, alpha: 0.07 });
+    // White pill
+    bg.roundRect(-pillW / 2, -pillH / 2, pillW, pillH, r)
+      .fill({ color: 0xffffff, alpha: 0.97 });
+    // Hairline border
+    bg.roundRect(-pillW / 2, -pillH / 2, pillW, pillH, r)
+      .stroke({ width: 0.8, color: 0xddd8d2, alpha: 0.8 });
+
+    const label = new Text({
+      text: firstName,
+      style: {
+        fontFamily: TREE_FONT,
+        fontSize: 11,
+        fontWeight: '700',
+        fill: '#241f1c',
+        letterSpacing: 0.3,
+      },
+    });
+    label.anchor.set(0.5, 0.5);
+    label.resolution = 2.5;
+
+    const group = new Container();
+    group.addChild(bg);
+    group.addChild(label);
+    // Position below the ring, with a small gap
+    group.position.set(0, baseRadius + 16);
+    group.alpha = 0;
+    // Labels are not interactive — clicks should pass through to the bubble
+    group.eventMode = 'none';
+    this.root.addChild(group);
+    this.nameLabel = group;
   }
 
   drawMonogram() {
@@ -175,7 +220,7 @@ export class Bubble {
 
   // Called every frame with the bubble's target state and the frame dt. Scale
   // springs (cool pop-in on reveal); alpha eases.
-  setVisualState({ scale, alpha, lift, blur }, dt = 1 / 60) {
+  setVisualState({ scale, alpha, lift, blur, labelAlpha = 0 }, dt = 1 / 60) {
     this.scaleSpring.setTarget(scale);
     const s = this.scaleSpring.step(dt);
     this.curAlpha += (alpha - this.curAlpha) * Math.min(1, dt * 7);
@@ -184,6 +229,9 @@ export class Bubble {
     this.root.alpha = this.curAlpha;
     this.shadow.alpha = 0.5 * this.curAlpha * (0.7 + 0.3 * lift);
     this.setBlur(blur);
+    // Name label — eases independently so it can linger a beat after the bubble fades
+    this._labelAlpha += (labelAlpha - this._labelAlpha) * Math.min(1, dt * 4.5);
+    if (this.nameLabel) this.nameLabel.alpha = this._labelAlpha;
   }
 
   // Distant bubbles recede out of focus. Filter is attached lazily and removed
