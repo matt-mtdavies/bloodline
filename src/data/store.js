@@ -119,6 +119,15 @@ function commit(next) {
   listeners.forEach((l) => l());
 }
 
+// Force an immediate server save (used after login when no D1 record exists yet).
+export function saveToServer() {
+  return fetch('/api/tree', {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(state),
+  }).catch((e) => console.warn('[store] initial server save failed:', e.message));
+}
+
 // Load the user's tree from the server and overwrite local state.
 // Returns true if data was found, false if the user is new (no tree yet).
 export async function loadFromServer() {

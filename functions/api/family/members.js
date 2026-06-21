@@ -35,6 +35,7 @@ export async function onRequestGet({ env, data }) {
   return json({
     familyId: membership.family_id,
     familyName: membership.family_name,
+    myId: data.user.uid,
     myRole: membership.role,
     members: members.sort((a, b) => (ROLE_ORDER[a.role] ?? 9) - (ROLE_ORDER[b.role] ?? 9)),
     invites,

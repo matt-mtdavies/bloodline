@@ -16,6 +16,7 @@ import {
   addDocument,
   removeDocument,
   loadFromServer,
+  saveToServer,
   enableServerSync,
   updateFamilyName,
   resetTree,
@@ -63,7 +64,9 @@ export default function App() {
         if (u.bypass) { setAuthState('open'); return; }
         setUser(u);
         enableServerSync();
-        await loadFromServer();
+        const hadTree = await loadFromServer();
+        // No D1 record yet — push current localStorage state so the family row is created.
+        if (!hadTree) await saveToServer();
         setAuthState('authed');
       })
       .catch(() => setAuthState('open')); // network failure → open (don't block)

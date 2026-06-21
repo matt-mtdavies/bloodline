@@ -73,5 +73,11 @@ export async function onRequestPut({ request, env, data }) {
            updated_at = excluded.updated_at`,
   ).bind(membership.family_id, JSON.stringify(tree), now).run();
 
+  // Keep family.name in sync so invite emails always show the current name.
+  if (tree.familyName) {
+    await env.DB.prepare(`UPDATE family SET name = ? WHERE id = ?`)
+      .bind(tree.familyName, membership.family_id).run();
+  }
+
   return json({ ok: true, familyId: membership.family_id, role: membership.role });
 }
