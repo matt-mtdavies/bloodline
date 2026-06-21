@@ -1,0 +1,24 @@
+import { chromium } from 'playwright-core';
+const PORT = process.env.PORT || 5194;
+const br = await chromium.launch({ headless: true });
+const pg = await br.newPage({ viewport: { width: 414, height: 896 }, deviceScaleFactor: 2 });
+const errors = [];
+pg.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
+await pg.goto(`http://localhost:${PORT}/?demo`, { waitUntil: 'load' });
+await pg.waitForSelector('canvas');
+await pg.waitForTimeout(2800);
+const np = await pg.evaluate(() => {
+  const el = document.querySelector('.nameplate');
+  const m = /translate\(([-\d.]+)px, ([-\d.]+)px\)/.exec(el.style.transform || '');
+  return m ? { x: +m[1], y: +m[2] } : null;
+});
+await pg.mouse.click(np.x, np.y + 60);
+await pg.waitForTimeout(1100);
+await pg.screenshot({ path: 'tests/screenshots/final-profile-hero.png', clip: { x: 0, y: 0, width: 414, height: 360 } });
+await pg.keyboard.press('Escape');
+await pg.waitForTimeout(500);
+await pg.locator('[aria-label="Switch to list view"]').click();
+await pg.waitForTimeout(800);
+await pg.screenshot({ path: 'tests/screenshots/final-list.png' });
+console.log(JSON.stringify({ errors }));
+await br.close();
