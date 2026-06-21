@@ -1,12 +1,17 @@
 import { useState, useEffect, useCallback } from 'react';
-import { apiFetch } from '../lib/api.js';
+import { apiFetch, clearSession } from '../lib/api.js';
 import {
   ROLES, ROLE_LABELS, ROLE_COLORS, canInvite, roleRank,
 } from '../lib/visibility.js';
 
 const INVITE_ROLES = ['coadmin', 'editor', 'contributor', 'viewer'];
 
-export default function FamilySettings({ myRole, familyName, onClose, onReset }) {
+export default function FamilySettings({ myRole, familyName, onClose, onReset, user }) {
+  async function handleSignOut() {
+    clearSession();
+    await apiFetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
+    window.location.reload();
+  }
   const [tab, setTab] = useState('members'); // 'members' | 'invite'
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -181,6 +186,15 @@ export default function FamilySettings({ myRole, familyName, onClose, onReset })
               </form>
             )}
           </>
+        )}
+
+        {user && (
+          <div className="fs__signout">
+            <p className="fs__signout-email">{user.email}</p>
+            <button className="fs__signout-btn" onClick={handleSignOut}>
+              Sign out
+            </button>
+          </div>
         )}
 
         <div className="fs__danger">

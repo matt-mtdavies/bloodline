@@ -2215,6 +2215,28 @@
 }
 .fs__err { font-size: 13px; color: #c0392b; text-align: center; }
 
+/* Sign-out row in FamilySettings */
+.fs__signout {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 0;
+  border-top: 1px solid var(--hairline);
+  margin-top: 8px;
+}
+.fs__signout-email { font-size: 13px; color: var(--ink-soft); }
+.fs__signout-btn {
+  background: none;
+  border: 1.5px solid var(--hairline);
+  border-radius: 20px;
+  padding: 7px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink);
+  cursor: pointer;
+}
+.fs__signout-btn:active { background: var(--hairline); }
+
 /* Danger zone in FamilySettings */
 .fs__danger {
   margin: 20px 0 4px;

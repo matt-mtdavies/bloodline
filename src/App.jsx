@@ -390,6 +390,7 @@ export default function App() {
         <FamilySettings
           myRole={user ? (data._meta?.role || 'owner') : 'owner'}
           familyName={data.familyName || 'My Family'}
+          user={user}
           onClose={() => setSettingsOpen(false)}
           onReset={() => { resetTree(); setActiveId(null); setExpanded(new Set()); setOpenId(null); }}
         />

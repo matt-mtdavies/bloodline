@@ -1,11 +1,6 @@
 import Logo from './Logo.jsx';
 
 export default function TopBar({ familyName, view, onToggleView, onOpenLegend, onOpenSettings, user }) {
-  async function handleLogout() {
-    await fetch('/api/auth/logout', { method: 'POST' });
-    window.location.reload();
-  }
-
   return (
     <header className="topbar">
       <div className="masthead">
@@ -24,9 +19,9 @@ export default function TopBar({ familyName, view, onToggleView, onOpenLegend, o
         {user && (
           <button
             className="pill topbar__user"
-            onClick={handleLogout}
-            title={`Signed in as ${user.email} — tap to sign out`}
-            aria-label="Sign out"
+            onClick={onOpenSettings}
+            title={`Signed in as ${user.email}`}
+            aria-label="Account & settings"
           >
             <UserAvatar email={user.email} />
           </button>
