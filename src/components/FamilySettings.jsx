@@ -109,8 +109,8 @@ export default function FamilySettings({ myRole, familyName, onUpdateFamilyName,
         {/* Auth not enabled */}
         {!loading && !data?.familyId && (
           <div className="fs__empty">
-            <p>Sharing requires auth to be configured.</p>
-            <p className="fs__empty-sub">Set up Brevo and the Cloudflare secrets to enable invitations.</p>
+            <p>Family sharing isn't set up yet.</p>
+            <p className="fs__empty-sub">Your tree is saving correctly — sharing and invites will appear here once your account is fully initialised. Try signing out and back in.</p>
           </div>
         )}
 
