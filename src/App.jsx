@@ -45,6 +45,15 @@ import MergeWizard from './components/MergeWizard.jsx';
 const isDemo = typeof window !== 'undefined' &&
   new URLSearchParams(window.location.search).has('demo');
 
+// Read ?pending_invite once at module scope — StrictMode double-invokes lazy
+// useState initialisers which would see an empty URL on the second call.
+const _initialPendingInvite = (() => {
+  if (typeof window === 'undefined') return null;
+  const token = new URLSearchParams(window.location.search).get('pending_invite');
+  if (token) window.history.replaceState({}, '', window.location.pathname);
+  return token;
+})();
+
 export default function App() {
   const data = useSyncExternalStore(store.subscribe, store.getState);
   const graph = useMemo(() => buildGraph(data.people, data.relationships), [data]);
@@ -55,12 +64,7 @@ export default function App() {
   const [user, setUser] = useState(null);
   // Set when a user with existing tree data accepts an invite — gates the app
   // on the merge wizard until they complete or skip the merge.
-  const [pendingInvite, setPendingInvite] = useState(() => {
-    const p = new URLSearchParams(window.location.search);
-    const token = p.get('pending_invite');
-    if (token) window.history.replaceState({}, '', window.location.pathname);
-    return token;
-  });
+  const [pendingInvite, setPendingInvite] = useState(_initialPendingInvite);
 
   async function applySession(loginExtras) {
     // OTP login can return pendingInvite when the user already has a tree.

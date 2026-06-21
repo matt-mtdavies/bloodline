@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 /*
  * Full-screen wizard shown when a user with their own tree accepts an invitation
