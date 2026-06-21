@@ -21,8 +21,13 @@ export async function onRequestGet({ request, env }) {
     `SELECT email, expires_at, used_at FROM auth_token WHERE token = ?`,
   ).bind(t).first();
 
-  if (!row || row.used_at || row.expires_at < now) {
+  if (!row || row.expires_at < now) {
     return Response.redirect(`${home}/?auth=expired`, 302);
+  }
+  // Token already used — the session was already created on the first tap.
+  // Redirect silently so tapping the link twice doesn't confuse the user.
+  if (row.used_at) {
+    return Response.redirect(`${home}/`, 302);
   }
 
   await env.DB.prepare(`UPDATE auth_token SET used_at = ? WHERE token = ?`).bind(now, t).run();
@@ -47,10 +52,27 @@ export async function onRequestGet({ request, env }) {
     env.SESSION_SECRET || 'dev',
   );
 
-  return new Response(null, {
-    status: 302,
-    headers: { location: `${home}/`, 'set-cookie': sessionCookie(session) },
-  });
+  // Return an HTML page that sets the cookie then redirects via JS.
+  // A bare 302 with Set-Cookie is silently dropped by Safari on iOS when the
+  // link is opened from Mail (cross-app navigation context / ITP).
+  const dest = `${home}/`;
+  return new Response(
+    `<!doctype html><html><head><meta charset="utf-8">
+<title>Signing in…</title>
+<meta http-equiv="refresh" content="0;url=${dest}">
+<script>window.location.replace(${JSON.stringify(dest)})</script>
+</head><body style="font-family:sans-serif;padding:40px;text-align:center;color:#666">
+Signing you in…
+</body></html>`,
+    {
+      status: 200,
+      headers: {
+        'content-type': 'text/html;charset=utf-8',
+        'set-cookie': sessionCookie(session),
+        'cache-control': 'no-store',
+      },
+    },
+  );
 }
 
 async function processInvite(db, inviteToken, userId, now) {
