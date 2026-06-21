@@ -1,4 +1,4 @@
-import { uid, signSession, sessionCookie } from '../../_lib/util.js';
+import { uid, json, signSession, sessionCookie } from '../../_lib/util.js';
 
 /*
  * GET /api/auth/verify?token=…&invite=…
@@ -51,6 +51,58 @@ export async function onRequestGet({ request, env }) {
     status: 302,
     headers: { location: `${home}/`, 'set-cookie': sessionCookie(session) },
   });
+}
+
+/*
+ * POST /api/auth/verify  { email, code, invite? }
+ * Validates a 6-digit code entered in the login screen. On success, sets the
+ * session cookie and returns { ok: true } so the client can reload in place.
+ */
+export async function onRequestPost({ request, env }) {
+  let email, code, invite;
+  try {
+    ({ email, code, invite } = await request.json());
+  } catch {
+    return json({ error: 'Bad request' }, { status: 400 });
+  }
+
+  if (!email || !code || !/^\d{6}$/.test(String(code))) {
+    return json({ error: 'Email and 6-digit code required' }, { status: 400 });
+  }
+  if (!env.DB) return json({ error: 'Database not configured' }, { status: 503 });
+
+  const now = Math.floor(Date.now() / 1000);
+  // Token stored as <48 random chars><6-digit code>; look up by email + suffix.
+  const row = await env.DB.prepare(
+    `SELECT token, expires_at, used_at FROM auth_token
+      WHERE email = ? AND token LIKE '%' || ? AND purpose = 'login'
+        AND used_at IS NULL AND expires_at > ?`,
+  ).bind(email.toLowerCase(), String(code), now).first();
+
+  if (!row) return json({ error: 'Invalid or expired code' }, { status: 401 });
+
+  await env.DB.prepare(`UPDATE auth_token SET used_at = ? WHERE token = ?`)
+    .bind(now, row.token).run();
+
+  let user = await env.DB.prepare(`SELECT id FROM user WHERE email = ?`)
+    .bind(email.toLowerCase()).first();
+  if (!user) {
+    const id = uid('u_');
+    await env.DB.prepare(`INSERT INTO user (id, email, last_seen) VALUES (?, ?, ?)`)
+      .bind(id, email.toLowerCase(), now).run();
+    user = { id };
+  } else {
+    await env.DB.prepare(`UPDATE user SET last_seen = ? WHERE id = ?`).bind(now, user.id).run();
+  }
+
+  if (invite) await processInvite(env.DB, invite, user.id, now);
+
+  const session = await signSession(
+    { uid: user.id, email: email.toLowerCase(), iat: now },
+    env.SESSION_SECRET || 'dev',
+  );
+
+  return json({ ok: true }, { headers: { 'set-cookie': sessionCookie(session) } });
 }
 
 async function processInvite(db, inviteToken, userId, now) {

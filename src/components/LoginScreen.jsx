@@ -1,27 +1,32 @@
-import { useState, useEffect } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import Logo from './Logo.jsx';
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
-  const [status, setStatus] = useState('idle'); // idle | sending | sent | error
+  const [step, setStep] = useState('email'); // 'email' | 'code'
+  const [code, setCode] = useState('');
+  const [status, setStatus] = useState('idle'); // idle | sending | verifying | error
   const [errorMsg, setErrorMsg] = useState('');
+  const codeRef = useRef(null);
 
-  // Handle redirects back from /api/auth/verify with an error flag.
   useEffect(() => {
     const p = new URLSearchParams(window.location.search);
     if (p.has('auth')) {
-      const reason = p.get('auth');
       setErrorMsg(
-        reason === 'expired'
-          ? 'That link has expired. Enter your email to get a new one.'
+        p.get('auth') === 'expired'
+          ? 'That link has expired — enter your email for a new code.'
           : 'Something went wrong. Please try again.',
       );
-      // Clean the URL without a page reload.
       window.history.replaceState({}, '', window.location.pathname);
     }
   }, []);
 
-  async function handleSubmit(e) {
+  // Focus the code input as soon as we switch to that step.
+  useEffect(() => {
+    if (step === 'code') codeRef.current?.focus();
+  }, [step]);
+
+  async function requestCode(e) {
     e.preventDefault();
     if (!email.trim()) return;
     setStatus('sending');
@@ -32,12 +37,46 @@ export default function LoginScreen() {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ email: email.trim().toLowerCase() }),
       });
-      if (!res.ok) throw new Error('Request failed');
-      setStatus('sent');
+      if (!res.ok) throw new Error();
+      setStep('code');
+      setCode('');
+      setStatus('idle');
     } catch {
       setStatus('error');
-      setErrorMsg('Could not send the link. Please check your connection and try again.');
+      setErrorMsg('Could not send the code. Check your connection and try again.');
     }
+  }
+
+  async function verifyCode(codeToVerify = code) {
+    if (codeToVerify.length !== 6) return;
+    setStatus('verifying');
+    setErrorMsg('');
+    try {
+      const res = await fetch('/api/auth/verify', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email: email.trim().toLowerCase(), code: codeToVerify }),
+      });
+      if (res.ok) {
+        window.location.reload();
+        return;
+      }
+      const body = await res.json().catch(() => ({}));
+      setErrorMsg(body.error === 'Invalid or expired code'
+        ? 'Wrong code or it has expired. Try again or request a new one.'
+        : 'Something went wrong. Please try again.');
+      setStatus('error');
+      setCode('');
+    } catch {
+      setStatus('error');
+      setErrorMsg('Could not verify. Check your connection and try again.');
+    }
+  }
+
+  function handleCodeChange(e) {
+    const val = e.target.value.replace(/\D/g, '').slice(0, 6);
+    setCode(val);
+    if (val.length === 6) verifyCode(val);
   }
 
   return (
@@ -48,31 +87,12 @@ export default function LoginScreen() {
           <span>Bloodline</span>
         </div>
 
-        {status === 'sent' ? (
-          <div className="login-card__sent">
-            <div className="login-card__sent-icon">✉</div>
-            <p className="login-card__sent-title">Check your inbox</p>
-            <p className="login-card__sent-body">
-              We sent a link to <strong>{email}</strong>.<br />
-              Tap it to open your family tree.
-            </p>
-            <button
-              className="login-card__resend"
-              onClick={() => setStatus('idle')}
-            >
-              Use a different email
-            </button>
-          </div>
-        ) : (
-          <form onSubmit={handleSubmit} noValidate>
+        {step === 'email' ? (
+          <form onSubmit={requestCode} noValidate>
             <p className="login-card__tagline">
               Your family's story,<br />preserved forever.
             </p>
-
-            {errorMsg && (
-              <p className="login-card__err">{errorMsg}</p>
-            )}
-
+            {errorMsg && <p className="login-card__err">{errorMsg}</p>}
             <label className="login-card__label" htmlFor="login-email">
               Email address
             </label>
@@ -86,19 +106,67 @@ export default function LoginScreen() {
               onChange={(e) => setEmail(e.target.value)}
               autoFocus
             />
-
             <button
               className="login-card__cta"
               type="submit"
               disabled={status === 'sending' || !email.trim()}
             >
-              {status === 'sending' ? 'Sending…' : 'Send me a link →'}
+              {status === 'sending' ? 'Sending…' : 'Send me a code →'}
             </button>
-
             <p className="login-card__hint">
-              No password needed. We'll email you a secure sign-in link.
+              No password needed. We'll email you a 6-digit code.
             </p>
           </form>
+        ) : (
+          <div>
+            <p className="login-card__tagline" style={{ marginBottom: 4 }}>
+              Check your email
+            </p>
+            <p className="login-card__hint" style={{ marginBottom: 24 }}>
+              We sent a 6-digit code to <strong>{email}</strong>
+            </p>
+
+            {errorMsg && <p className="login-card__err">{errorMsg}</p>}
+
+            <label className="login-card__label" htmlFor="login-code">
+              Sign-in code
+            </label>
+            <input
+              id="login-code"
+              ref={codeRef}
+              className="login-card__code"
+              type="text"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              placeholder="000000"
+              maxLength={6}
+              value={code}
+              onChange={handleCodeChange}
+              disabled={status === 'verifying'}
+            />
+
+            {status === 'verifying' && (
+              <p className="login-card__hint" style={{ textAlign: 'center', marginTop: 12 }}>
+                Verifying…
+              </p>
+            )}
+
+            <div className="login-card__resend-row">
+              <button
+                className="login-card__resend"
+                onClick={() => { setStep('email'); setStatus('idle'); setErrorMsg(''); }}
+              >
+                ← Change email
+              </button>
+              <button
+                className="login-card__resend"
+                disabled={status === 'sending'}
+                onClick={requestCode.bind(null, { preventDefault: () => {} })}
+              >
+                {status === 'sending' ? 'Sending…' : 'Resend code'}
+              </button>
+            </div>
+          </div>
         )}
       </div>
     </div>

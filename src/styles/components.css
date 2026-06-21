@@ -2035,6 +2035,35 @@
   transition: opacity 0.15s;
 }
 .login-card__resend:hover { opacity: 0.7; }
+.login-card__resend:disabled { opacity: 0.4; pointer-events: none; }
+
+.login-card__code {
+  display: block;
+  width: 100%;
+  font-size: 36px;
+  font-weight: 700;
+  letter-spacing: 0.35em;
+  text-align: center;
+  padding: 18px 8px 18px 40px; /* offset right for letter-spacing overhang */
+  border: 2px solid var(--hairline);
+  border-radius: 14px;
+  background: #fff;
+  color: var(--ink);
+  outline: none;
+  transition: border-color 0.15s;
+  box-sizing: border-box;
+  margin-bottom: 16px;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Mono', monospace;
+}
+.login-card__code:focus { border-color: var(--accent); }
+.login-card__code:disabled { opacity: 0.5; }
+
+.login-card__resend-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 4px;
+}
 
 /* ── Family Settings panel ───────────────────────────────────────────────── */
 .fs__head {
