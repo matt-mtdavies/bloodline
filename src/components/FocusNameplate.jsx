@@ -16,8 +16,8 @@ export default function FocusNameplate({ person, getPos, hidden }) {
       if (el) {
         const p = !hidden && getPos ? getPos() : null;
         if (p) {
-          // Anchor the pill's bottom just above the bubble's top.
-          el.style.transform = `translate(${p.x}px, ${p.y - 78}px) translate(-50%, -100%)`;
+          // Anchor the pill's bottom snug above the bubble's top edge (BASE_RADIUS=46 + 6px gap).
+          el.style.transform = `translate(${p.x}px, ${p.y - 52}px) translate(-50%, -100%)`;
           el.style.opacity = '1';
         } else {
           el.style.opacity = '0';
