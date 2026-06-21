@@ -37,7 +37,10 @@ export async function onRequestGet({ request, env, data }) {
     `SELECT tree_json FROM family_tree WHERE family_id = ?`,
   ).bind(invite.family_id).first();
 
-  const tree = treeRow ? JSON.parse(treeRow.tree_json) : { people: [], relationships: [] };
+  let tree = { people: [], relationships: [] };
+  if (treeRow) {
+    try { tree = JSON.parse(treeRow.tree_json); } catch { /* corrupt — return empty */ }
+  }
 
   return json({
     familyId: invite.family_id,
@@ -57,6 +60,9 @@ export async function onRequestPost({ request, env, data }) {
     ({ invite: inviteToken, tree: mergedTree } = await request.json());
   } catch {
     return json({ error: 'Bad request' }, { status: 400 });
+  }
+  if (!inviteToken || !mergedTree || !Array.isArray(mergedTree.people)) {
+    return json({ error: 'invite and tree.people required' }, { status: 400 });
   }
 
   const now = Math.floor(Date.now() / 1000);
@@ -83,6 +89,11 @@ export async function onRequestPost({ request, env, data }) {
       `UPDATE family_member SET role = ? WHERE family_id = ? AND user_id = ?`,
     ).bind(invite.role, invite.family_id, data.user.uid).run();
   }
+
+  // Leave any previous families so GET /api/tree returns the correct family.
+  await env.DB.prepare(
+    `DELETE FROM family_member WHERE user_id = ? AND family_id != ?`,
+  ).bind(data.user.uid, invite.family_id).run();
 
   await env.DB.prepare(`UPDATE user SET family_id = ? WHERE id = ?`)
     .bind(invite.family_id, data.user.uid).run();

@@ -13,11 +13,22 @@ export async function onRequestGet({ env, data }) {
   if (!data.user) return json({ error: 'Unauthorized' }, { status: 401 });
   if (!env.DB) return json({ error: 'Database not configured' }, { status: 503 });
 
-  const membership = await env.DB.prepare(
-    `SELECT fm.family_id, fm.role, f.name as family_name
-       FROM family_member fm JOIN family f ON f.id = fm.family_id
-      WHERE fm.user_id = ?`,
-  ).bind(data.user.uid).first();
+  // Use user.family_id as the canonical pointer — handles users who belong to
+  // multiple families (e.g. after a tree merge) without returning a random row.
+  const userRow = await env.DB.prepare(`SELECT family_id FROM user WHERE id = ?`)
+    .bind(data.user.uid).first();
+
+  const membership = userRow?.family_id
+    ? await env.DB.prepare(
+        `SELECT fm.family_id, fm.role, f.name as family_name
+           FROM family_member fm JOIN family f ON f.id = fm.family_id
+          WHERE fm.user_id = ? AND fm.family_id = ?`,
+      ).bind(data.user.uid, userRow.family_id).first()
+    : await env.DB.prepare(
+        `SELECT fm.family_id, fm.role, f.name as family_name
+           FROM family_member fm JOIN family f ON f.id = fm.family_id
+          WHERE fm.user_id = ?`,
+      ).bind(data.user.uid).first();
 
   if (!membership) return json(null); // new user — client shows onboarding
 
@@ -40,9 +51,17 @@ export async function onRequestPut({ request, env, data }) {
   const tree = await request.json();
   const now = Math.floor(Date.now() / 1000);
 
-  let membership = await env.DB.prepare(
-    'SELECT family_id, role FROM family_member WHERE user_id = ?',
-  ).bind(data.user.uid).first();
+  // Same canonical lookup as GET — use user.family_id to pick the right family.
+  const putUserRow = await env.DB.prepare(`SELECT family_id FROM user WHERE id = ?`)
+    .bind(data.user.uid).first();
+
+  let membership = putUserRow?.family_id
+    ? await env.DB.prepare(
+        'SELECT family_id, role FROM family_member WHERE user_id = ? AND family_id = ?',
+      ).bind(data.user.uid, putUserRow.family_id).first()
+    : await env.DB.prepare(
+        'SELECT family_id, role FROM family_member WHERE user_id = ?',
+      ).bind(data.user.uid).first();
 
   if (!membership) {
     // First save — create the family and make this user the owner.

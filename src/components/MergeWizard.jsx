@@ -13,13 +13,16 @@ export default function MergeWizard({ inviteToken, myTree, onComplete }) {
   const [theirData, setTheirData] = useState(null);
   const [pairings, setPairings] = useState([]);
   const [error, setError] = useState(null);
+  // Snapshot myTree on first render so store updates don't re-trigger the fetch.
+  const myTreeRef = useRef(myTree);
 
   useEffect(() => {
+    const snapshot = myTreeRef.current;
     fetch(`/api/merge?invite=${encodeURIComponent(inviteToken)}`)
       .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
       .then((data) => {
         setTheirData(data);
-        setPairings(suggestPairs(myTree.people || [], data.tree?.people || []));
+        setPairings(suggestPairs(snapshot.people || [], data.tree?.people || []));
         setStep('intro');
       })
       .catch((status) => {
@@ -29,16 +32,18 @@ export default function MergeWizard({ inviteToken, myTree, onComplete }) {
             : 'Could not load the invitation. Check your connection and try again.',
         );
       });
-  }, [inviteToken, myTree]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inviteToken]); // myTree intentionally omitted — captured in ref above
 
   async function completeMerge(choice) {
     setStep('merging');
     setError(null);
     try {
+      const theirTree = theirData.tree || {};
       const mergedTree =
         choice === 'join'
-          ? { ...theirData.tree }
-          : buildMergedTree(myTree, theirData.tree, pairings);
+          ? { people: [], relationships: [], memories: [], photos: [], documents: [], ...theirTree }
+          : buildMergedTree(myTreeRef.current, theirTree, pairings);
 
       const res = await fetch('/api/merge', {
         method: 'POST',
@@ -79,7 +84,7 @@ export default function MergeWizard({ inviteToken, myTree, onComplete }) {
   if (step === 'intro') {
     return (
       <IntroStep
-        myTree={myTree}
+        myTree={myTreeRef.current}
         theirData={theirData}
         onJoin={() => completeMerge('join')}
         onMerge={() => setStep('match')}
@@ -101,12 +106,12 @@ export default function MergeWizard({ inviteToken, myTree, onComplete }) {
   if (step === 'confirm') {
     return (
       <ConfirmStep
-        myTree={myTree}
+        myTree={myTreeRef.current}
         theirData={theirData}
         pairings={pairings}
         error={error}
         onConfirm={() => completeMerge('merge')}
-        onBack={() => setStep('match')}
+        onBack={() => { setError(null); setStep('match'); }}
       />
     );
   }
@@ -381,6 +386,8 @@ const rnd = (pfx) => pfx + Math.random().toString(36).slice(2, 9);
 
 function buildMergedTree(myTree, theirTree, pairings) {
   const merged = structuredClone(theirTree);
+  merged.people = merged.people || [];
+  merged.relationships = merged.relationships || [];
   merged.memories = merged.memories || [];
   merged.photos = merged.photos || [];
   merged.documents = merged.documents || [];
@@ -452,6 +459,13 @@ function buildMergedTree(myTree, theirTree, pairings) {
   for (const doc of myTree.documents || []) {
     const personId = idMap.get(doc.person_id);
     if (personId) merged.documents.push({ ...doc, id: rnd('doc_'), person_id: personId });
+  }
+
+  // Remap the joining user's self-reference so their identity is preserved in
+  // the merged tree (used for relationship labels and the active focus default).
+  if (myTree.myPersonId) {
+    const remapped = idMap.get(myTree.myPersonId);
+    if (remapped) merged.myPersonId = remapped;
   }
 
   return merged;
