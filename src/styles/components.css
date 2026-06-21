@@ -27,20 +27,25 @@
 .topbar__bar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  height: 36px;
+  justify-content: flex-end;
+  min-height: 36px;
   pointer-events: auto;
 }
 .topbar__heading {
   display: flex;
   flex-direction: column;
   align-items: center;
-  margin-top: 8px;
+  margin-top: 6px;
   animation: masthead-in 0.7s var(--ease) both;
 }
 @keyframes masthead-in {
   from { opacity: 0; transform: translateY(-8px); }
   to { opacity: 1; transform: translateY(0); }
+}
+.masthead__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
 }
 .masthead__word {
   font-family: var(--display);

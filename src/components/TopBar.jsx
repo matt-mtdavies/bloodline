@@ -3,9 +3,8 @@ import Logo from './Logo.jsx';
 export default function TopBar({ familyName, view, onToggleView, onOpenLegend, onOpenSettings, user }) {
   return (
     <header className="topbar">
-      {/* Row 1: logo mark left, action buttons right — no overlap possible */}
+      {/* Row 1: action buttons only, flush-right — nothing to overlap the brand */}
       <div className="topbar__bar">
-        <Logo size={32} />
         <div className="topbar__actions">
           {user ? (
             <button
@@ -29,9 +28,12 @@ export default function TopBar({ familyName, view, onToggleView, onOpenLegend, o
           </button>
         </div>
       </div>
-      {/* Row 2: brand name + family label, centred across full width */}
+      {/* Row 2: logo + wordmark together, centred across full width */}
       <div className="topbar__heading">
-        <span className="masthead__word">Bloodline</span>
+        <div className="masthead__brand">
+          <Logo size={34} />
+          <span className="masthead__word">Bloodline</span>
+        </div>
         <div className="masthead__family">
           <span className="masthead__rule" />
           <span className="masthead__familyname">{familyName}</span>
