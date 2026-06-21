@@ -97,6 +97,12 @@ export function enableServerSync() {
   _serverSyncEnabled = true;
 }
 
+// Push current local state to the server immediately (used after first login
+// when the user has a local tree but no D1 record yet).
+export function syncNow() {
+  scheduleServerSave(state);
+}
+
 function scheduleServerSave(s) {
   if (!_serverSyncEnabled) return;
   clearTimeout(_saveTimer);

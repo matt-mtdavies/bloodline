@@ -18,6 +18,7 @@ import {
   removeDocument,
   loadFromServer,
   enableServerSync,
+  syncNow,
   deletePerson,
   linkRelative,
   resetTree,
@@ -66,7 +67,9 @@ export default function App() {
         if (u.bypass) { setAuthState('open'); return; }
         setUser(u);
         enableServerSync();
-        await loadFromServer();
+        const hadServerData = await loadFromServer();
+        // First login: push existing local tree to D1 so sharing activates.
+        if (!hadServerData) syncNow();
         setAuthState('authed');
       })
       .catch(() => setAuthState('open')); // network failure → open (don't block)
