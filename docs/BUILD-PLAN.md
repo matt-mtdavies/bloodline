@@ -1,17 +1,16 @@
-# Bloodline — V2 Build Plan (full)
+# Bloodline — V2 Build Plan
 
-The complete product plan. `CLAUDE.md` holds the lean working summary and points
-here for detail. Status tags: ✅ done · 🟡 partial · ⬜ not started.
+Status tags: ✅ done · 🟡 partial · ⬜ not started
 
 > **Final principle:** if a great-grandchild discovers Bloodline 100 years from
 > now, they should not simply learn _who_ their ancestors were — they should feel
 > like they _know_ them.
 
+---
+
 ## Vision & philosophy
 
-Bloodline is not a genealogy tool; it is a living portrait of a family. Most
-products preserve relationships — Bloodline should preserve _people_: who they
-were, what mattered to them, what stories should survive them.
+Bloodline is not a genealogy tool; it is a living portrait of a family.
 
 - The family tree is **navigation**.
 - The profile is the **destination**.
@@ -19,148 +18,219 @@ were, what mattered to them, what stories should survive them.
 - Relationships provide structure; memories provide value; AI provides assistance.
 - AI never invents family history — it only helps preserve it.
 
+---
+
 ## Primary views
 
-### 1. Tree view ✅ (core) / 🟡 (modes)
-Visual exploration of relationships. Done: zoomable/pannable canvas, dynamic
-force layout, focus-person framing (bounding-box of visible family), additive
-reveal, merged co-parent lines + sibling trunk (toggle in Legend).
-Future: maternal-line / paternal-line / descendants / ancestors modes; highlight
-lineage paths; fade unrelated branches. Success: understand structure in seconds.
+### 1. Tree View ✅ (core) / 🟡 (modes)
 
-### 2. List view ✅ (basic) / ⬜ (filters)
-Family management + navigation. Done: grouped list (parents/siblings/partners/
-children/everyone), quick profile access, focus. Future: search, sort, filters
-(birth year, location, living/deceased, military, occupation, tags), bulk
-management. Success: efficient management of large families.
+Purpose: visual exploration of family relationships.
 
-### 3. Profile view ✅ (Phase 1–2) — _the destination_
-Should feel like memorial + biography + scrapbook + archive combined.
+**Done:**
+- Zoomable / pannable canvas, infinite pan
+- Dynamic force layout with generation bands
+- Focus-person centring (bounding-box of visible family, bias toward active person)
+- Additive reveal — expanding outward from focus
+- Merged co-parent lines + sibling trunk (toggle in Legend)
+- Lineage path tracing (`pathBetween`)
+- Name label on every visible bubble
+- All-labels-always visible (no distance gate)
 
-- **Hero** ✅ — portrait, full name, birth/death, relationship-to-viewer, location, tags
-  (e.g. Veteran, Teacher, Immigrant, Entrepreneur, Artist, Builder).
-- **About** ✅ — short editable biography.
-- **Life Story** ⬜ — AI narrative from timeline/memories/docs/photos. Formats: short,
-  detailed, children's, historical. (Placeholder "Coming soon" card present.)
-- **Key Life Events** ✅ — timeline card layout, editable (add/edit/remove, sorted).
-- **Relationships** ✅ — grouped cards, quick navigation, qualifier-aware labels.
-- **Photos** ✅ — gallery + lightbox (caption, set-as-portrait, delete). Future: albums,
-  face recognition, AI captions, AI date estimation.
-- **Documents** ⬜ — letters, certificates, resumes, military/newspaper records. AI: OCR,
-  summaries, timeline extraction. (Needs R2 storage.)
-- **Memories** ✅ — most important section. Short, specific, contributed by relatives,
-  upvoted so the most meaningful float to top.
-- **Voice & Video** ⬜ — interviews, messages, stories. AI: transcribe, summarize, themes.
-- **Legacy** ⬜ — life lessons, advice, quotes, values for future generations.
-  (Placeholder "Coming soon" card present.)
-- **Completeness meter** ✅ — engagement loop; surfaces what's missing.
+**Not started:**
+- Highlight lineage paths with full visual treatment (accent colour, fade unrelated to 20%)
+- Maternal / paternal / descendants / ancestors layout modes
+- Dynamic clustering at large scale
 
-## New views (later phases)
+Success metric: understand family structure within seconds.
 
-- **Lineage Mode** ⬜ — highlight one family line (e.g. Arthur→Robert→James→Tom): selected
-  line full opacity + accent + thicker paths; everything else fades to ~20%.
-- **Timeline Mode** ⬜ — the family story chronologically; searchable/filterable family history.
-- **Story Mode** ⬜ — read family history; photos + memories + documents + timeline + bios,
-  reads like a magazine not software.
+---
 
-## AI strategy (Phase 3)
+### 2. List View ✅ (basic) / ⬜ (search + filters)
 
-Six features. All Anthropic calls **server-side in Workers**, key never client-side.
+Purpose: family management and navigation.
 
-1. **Memory Collector** — asks what made a person unique, their advice, favourite memories,
-   traditions; responses populate the Memories section.
-2. **Biography Generator** — from timeline/memories/photos/documents → short / full /
-   children's biography. Editable.
-3. **Family Historian** — surfaces patterns ("three generations in construction", "120 years
-   in Wales", "military service in four generations").
-4. **Missing Information Assistant** — nudges naturally (no spouse, no birthplace, no photos,
-   no memories). (Completeness meter is the seed of this.)
-5. **Family Interview Generator** — custom interview questions (how you met, childhood home,
-   traditions, advice to pass on).
-6. **Smart Search** — replace the search box with "Ask about your family…": conversational
-   exploration ("show all veterans", "everyone born before 1950", "descendants of Arthur",
-   "who lived in Cardiff").
+**Done:**
+- Grouped sections (Partners, Parents, Siblings, Children, Everyone)
+- Quick profile access and focus
 
-### Model-per-task plan (cost-optimized)
-- **Haiku 4.5** (`claude-haiku-4-5`, effort low) — micro-asks, relationship/label parsing,
-  dedup candidate scoring, photo-tag/caption suggestions, short prompt generation.
-- **Sonnet 4.6** (`claude-sonnet-4-6`) — conversational entry → structured extraction,
-  auto-bios, the interview/prompting system.
-- **Opus 4.8** (`claude-opus-4-8`) — hard reasoning (merge/conflict resolution); the narrative
-  showpiece (use **Fable 5** `claude-fable-5` only if explicitly asked for the flagship).
-- **Levers:** prompt caching (repeated family context, ~0.1× reads), `output_config.effort`,
-  Batch API (50% off for non-interactive bulk: whole-tree bios, overnight dedup),
-  adaptive thinking `{type:"adaptive"}`. Keep everything in Workers.
+**Not started:**
+- Search by name
+- Filters: living/deceased, birth year, location, military, occupation, tags
+- Sort
+- Bulk management
 
-## Onboarding + tree ownership ⬜ (Phase 2.5)
+Success metric: efficient management of large families.
 
-Bridges the demo experience and a real product anyone can use for their own family.
+---
 
-- **Cinematic intro** — 5-phase sequence (mark → thesis → tree animation → memory → CTA). Plays once on first visit; tap to skip to CTA.
-- **Questionnaire** — 6 steps: You · Partner · Parents · Children · Someone to remember + memory · Family name. Captures immediate family as a solid base before revealing the tree.
-- **setupTree()** — replaces seed data with the user's own people + relationships. Sets `myPersonId` (the self-referential anchor used for relationship labels and viewerId).
-- **Family name** — user-chosen, shown in TopBar. Not necessarily a surname. Editable any time.
-- **?demo URL param** — loads Davies seed family and skips onboarding (used by smoke tests and live demos).
+### 3. Profile View ✅ (Phase 1–2) — _the destination_
 
-## Privacy model ⬜ (Phase 4 prep — schema now, enforced in Phase 4)
+Should feel like a digital memorial, biography, scrapbook, and archive combined.
 
-Privacy and scope are the same problem. The tree IS infinite in structure; access to the *information* within it is gated.
+#### Hero ✅
+Portrait, full name, birth/death dates, relationship to viewer, location, tags
+(Veteran · Teacher · Immigrant · Entrepreneur · Artist · Builder).
 
-### Person visibility levels
-Each person record carries a `visibility` field set at creation and editable by the owner:
-- **full** — all details visible (deceased people, close family).
-- **summary** — name, relationship, lifespan only (living adults by default).
-- **private** — exists in tree structure but details hidden; renders as a sealed bubble (children default to this).
+#### About ✅
+Short editable biography. Relationship-aware placeholder copy.
 
-### Roles (Phase 4)
-Owner → Editor → Contributor → Viewer. Each role sees progressively less.
+#### Life Story ⬜
+AI narrative from timeline / memories / documents / photos. Formats: short summary,
+detailed biography, children's version, historical version. Editable. Placeholder card present.
 
-### Claimed profiles (Phase 4+)
-When a person in someone else's tree creates their own Bloodline account, they can *claim* their record. From that point they control their own visibility settings across all trees — overriding the tree owner's defaults for their data. Respects the natural handover of privacy as children become adults.
+#### Key Life Events ✅
+Timeline card layout. Editable: add / edit / remove, auto-sorted by date.
 
-### Scope framing
-The perspective model (centring on any person reorients relationship labels) handles "whose tree is it?" without changing the data. The container name (family name) is fixed; the perspective shifts with whoever is centred.
+#### Relationships ✅
+Grouped cards (Partner, Parents, Children, Siblings). Qualifier-aware labels
+(step / adopted / biological). Quick navigation to any person.
 
-## Family collaboration system ⬜ (Phase 4)
+#### Photos ✅ / 🟡 (albums, AI features)
+Gallery + lightbox (caption, set-as-portrait, delete). Upload downscales to 1 800 px.
+Portrait upload via PhotoCropper (512 × 512 crop).
+Not started: albums, face recognition, AI captions, AI date estimation.
 
-- Roles: Owner, Editor, Contributor, Viewer (see privacy model above).
-- Invite family; claimed profiles; contribution tracking; change history; activity feed.
+#### Documents ⬜
+Letters, certificates, resumes, military records, newspaper clippings.
+AI: OCR, summaries, timeline extraction. Needs R2 storage.
 
-## Engagement loops 🟡
+#### Memories ✅ / ⬜ (collection AI)
+Most important section. Short, specific contributions from relatives. Upvoting so the
+most meaningful float up. Not started: AI Memory Collector prompts.
 
-- Profile completeness score ✅ (built).
-- Family anniversaries ⬜ (100 years since immigration, 50th wedding anniversary, birthdays).
+#### Voice & Video ⬜
+Store interviews, voice messages, and family stories. AI: transcribe, summarize,
+extract themes. Needs R2 / media storage.
 
-## Design direction
+#### Legacy ⬜
+Life lessons, advice, quotes, values — things future generations should know.
+This becomes one of the most valuable sections. Placeholder card present.
 
-Keep: serif display type (Fraunces) + Hanken Grotesk body, minimalist, spacious, calm palette
-(white ground, terracotta accent, hardcoded hex for iOS). Increase: information richness,
-emotional depth, storytelling. Avoid: genealogy-software / spreadsheet / admin feel.
-Inspiration: Apple, Notion, Arc, Linear, Medium, family photo albums.
+#### Completeness meter ✅
+Engagement loop; surfaces what's missing; drives contribution.
 
-## Execution roadmap (6 phases)
+---
 
-- **Phase 1 — Immediate** ✅ — improve graph scaling, better centering, rich profile
-  architecture, expanded person records. _(Plus: fill-the-screen framing.)_
-- **Phase 2 — Content** 🟡 — Photos ✅, Timeline ✅, Memories ✅, Documents ⬜ (needs R2).
-- **Phase 2.5 — Onboarding** ⬜ — Cinematic intro ✅, questionnaire ✅, setupTree ✅, privacy schema ✅ (just built).
-- **Phase 3 — AI** ⬜ — biography generation, interview system, smart onboarding/search,
-  memory collector, family historian, missing-info assistant.
-- **Phase 4 — Collaboration** ⬜ — invitations, roles/permissions, activity feed.
-- **Phase 5 — Views** ⬜ — Lineage mode, Timeline mode, Story mode.
-- **Phase 6 — Output** ⬜ — Family Historian AI, legacy books, PDF exports, printed histories.
+## Engagement loops
 
-## Backend / infra status
+- **Completeness score** ✅ — per-person percentage with checklist of missing sections.
+- **Family anniversaries** ⬜ — surface 100-year ancestor birthdays, 50th wedding
+  anniversaries, upcoming birthdays in a home banner or notification.
 
-- Cloudflare Pages (GitHub-connected) live at myfamilybloodline.com.
-- D1 created + migrated (id `96e94723-103f-4c4f-a1b0-797810e7dfc9`); bindings commented out in
-  `wrangler.toml` for a clean deploy. R2 not created. Auth = magic links (Resend), endpoints in
-  `functions/api/auth/*` (server-side only).
-- Phases 1–2 run on bundled seed + localStorage; no live backend needed until Documents (R2),
-  AI (Workers + Anthropic key), and Collaboration (D1) phases.
+---
+
+## Phase 3 — AI strategy
+
+All Anthropic calls **server-side in Workers only**. Key never in the client.
+AI assists with preservation; it never invents family history.
+
+### Features (Phase 3 sprint — biography + interview + smart onboarding)
+
+1. **Biography Generator** — from timeline / memories / photos / documents →
+   short / full / children's biography. Editable. ⬜
+2. **Family Interview Generator** — custom questions per person: how you met,
+   childhood home, traditions, advice to pass on. Responses feed Memories. ⬜
+3. **Smart Onboarding** — AI-guided first session: prompts for key people,
+   early memories, portrait upload nudge. Makes the first 10 minutes feel
+   alive rather than administrative. ⬜
+
+### Features (Phase 6 sprint — historian + search)
+
+4. **Memory Collector** — ongoing prompts: what made this person unique, their
+   advice, favourite memories, traditions they created. ⬜
+5. **Missing Information Assistant** — natural nudges when no spouse, no
+   birthplace, no photos, no memories recorded. ⬜
+6. **Smart Search** — replace the search box with "Ask about your family…":
+   conversational exploration ("show all veterans", "who lived in Cardiff",
+   "descendants of Arthur"). ⬜
+
+### Model-per-task plan (cost-optimised)
+
+| Task | Model | Rationale |
+|---|---|---|
+| Micro-asks, label parsing, dedup scoring, caption suggestions | Haiku 4.5 (`claude-haiku-4-5`) | Low cost, fast |
+| Conversational entry → structured data, auto-bios, interview prompts | Sonnet 4.6 (`claude-sonnet-4-6`) | Balanced |
+| Hard merge / conflict reasoning; narrative showpiece | Opus 4.8 (`claude-opus-4-8`) | Best reasoning |
+| Flagship narrative only if explicitly requested | Fable 5 (`claude-fable-5`) | Premium |
+
+Levers: prompt caching (family context, ~0.1× read cost), `output_config.effort`,
+Batch API (50 % off for bulk non-interactive: whole-tree bios, overnight dedup),
+adaptive thinking `{type:"adaptive"}`.
+
+---
+
+## Phase 4 — Collaboration ⬜
+
+- **Roles** — Owner → Editor → Contributor → Viewer. Each role sees progressively
+  less and can do progressively less. Schema in `visibility.js`; enforcement ⬜.
+- **Privacy model** — `visibility` field per person: `full` / `summary` / `private`.
+  Schema ✅, visual treatments ✅ (sealed bubble, shield badge), profile enforcement ✅.
+  Role-gated visibility (owner/coadmin always sees full) ✅ in `effectiveVisibility()`.
+- **Invite family** — in-app invite flow from Family Settings. Auth (magic-link) ✅,
+  merge wizard ✅, in-app invite UI ⬜.
+- **Claimed profiles** — when someone you've added signs up, they can claim their
+  record and control their own visibility settings across all trees. ⬜
+- **Contribution tracking** — attribution on memories, edits, photo uploads. ⬜
+- **Activity feed** — recent changes surfaced in the app. ⬜
+- **Change history** — audit trail of edits per person. ⬜
+
+---
+
+## Phase 5 — New views ⬜
+
+### Lineage Mode
+Highlight a specific family line (e.g. Arthur → Robert → James → Tom).
+- Selected line: accent colour, full opacity, thicker paths.
+- Everything else fades to ~20 % opacity.
+- Button exists in UI; `pathBetween()` implemented; full visual treatment ⬜.
+
+### Timeline Mode
+Tell the family story chronologically. Aggregates events across all people.
+Searchable and filterable. This is the family history view. ⬜
+
+### Story Mode
+Read family history — photos + memories + documents + timeline + bios combined.
+Feels like a magazine, not software. ⬜
+
+---
+
+## Phase 6 — Output ⬜
+
+- **Family Historian AI** — identifies cross-generation patterns: "three generations
+  in construction", "120 years in Wales", "military service in four generations". ⬜
+- **Legacy books** — compiled family history as a designed artifact. ⬜
+- **PDF exports** — individual profiles, family branches, full tree. ⬜
+- **Printed family histories** — print-on-demand integration. ⬜
+
+---
+
+## Backend / infra
+
+- **Cloudflare Pages** (GitHub-connected) live at myfamilybloodline.com.
+- **D1** created + migrated (`96e94723-103f-4c4f-a1b0-797810e7dfc9`). Bindings
+  commented out in `wrangler.toml` for clean initial deploy. Needed for Phase 4+.
+- **R2** not created. Needed for Documents (Phase 2) and Voice & Video (Phase 3+).
+- **Auth** — magic-link only (Resend). Endpoints in `functions/api/auth/*`, server-side only.
+- **Anthropic** — key server-side only in Workers, never in the client. Needed for Phase 3+.
+- Phases 1–2 run on bundled seed + localStorage. No live backend until Documents (R2),
+  AI (Workers + Anthropic key), and Collaboration (D1).
 
 ## Constraints (non-negotiable)
 
-- Anthropic key server-side only, never client. Magic-link auth only, no passwords.
-- No data sale, no ad tracking; living people / children stay private.
+- Anthropic key server-side only, never in the client.
+- Magic-link auth only, no passwords.
+- No data sale, no ad tracking. Living people / children stay private by default.
 - iOS dark mode: hardcoded hex, `color-scheme: light only`.
+
+---
+
+## Execution roadmap
+
+| Phase | Focus | Status |
+|---|---|---|
+| 1 | Graph scaling, centring, rich profile, expanded person records | ✅ |
+| 2 | Photos, Documents, Timeline, Memories, Onboarding, Privacy schema | 🟡 (Documents + Voice & Video need R2) |
+| 3 | AI: Biography Generator, Interview Generator, Smart Onboarding | ⬜ |
+| 4 | Collaboration: roles, invites, claimed profiles, activity feed | ⬜ |
+| 5 | Lineage mode, Timeline mode, Story mode | ⬜ |
+| 6 | Family Historian AI, Smart Search, Legacy books, PDF exports | ⬜ |

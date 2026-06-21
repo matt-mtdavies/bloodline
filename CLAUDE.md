@@ -28,22 +28,22 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
 
 ## Status — what's built
 
-- **Phase 1:** rich profile "destination" (hero, kin-to-viewer, tags, About, key-life-events
+- **Phase 1 ✅:** rich profile destination (hero, kin-to-viewer, tags, About, key-life-events
   timeline, grouped relationships, completeness meter), expanded person records
   (`occupation`, `residence`, `tags[]`, `events[]`), graph scaling.
 - **Layout / fill-the-screen:** camera frames the **bounding box of the visible family**
   (biased ~⅓ toward the active person), zoom fills the safe area. Tall generation bands
   (`GEN_GAP=400`) + gentle charge (`-560`) so the shape matches a tall phone; `MAX_ZOOM=1.5`.
-- **Phase 2 — Memories + Timeline:** contributable, upvotable memories (most-voted float up);
-  editable life-events timeline.
-- **Phase 2 — Photos gallery:** thumbnail grid + full-screen Lightbox (navigate, caption,
-  set-as-portrait, delete). Uploads downscaled (1800px) for the localStorage quota.
-- **Tree lines — merged co-parent lines + sibling trunk (latest):** a child of a couple draws
-  ONE line from the **bottom of the couple's shaded band**; 2+ siblings of one couple share a
-  short stem→junction→branches trunk. On by default; **toggle in the Legend** ("Combine parent
-  lines"). Guarded: only merges exactly two visible same-qualifier parents who are a
-  current/widowed couple — divorced co-parents, mixed bio/step, and single parents keep
-  individual lines.
+- **Phase 2 🟡:** Memories (upvotable, contributable), Timeline (editable), Photos gallery
+  (lightbox, caption, set-as-portrait, delete, 1800px downscale), Onboarding (cinematic intro,
+  questionnaire, setupTree), Privacy schema (visibility field, bubble treatments, profile
+  enforcement). **Remaining:** Documents + Voice & Video (need R2 storage).
+- **Tree lines:** merged co-parent lines from the couple band; 2+ siblings share a
+  stem→junction→branches trunk (junction at 72 % toward children). Toggle in Legend.
+  Divorced co-parents get a V-junction. Name label visible on every bubble.
+- **Store fixes:** portrait photos preserved across server-sync reloads; localStorage quota
+  errors surfaced as a toast; `addRelationship()` links existing people; bio-parent
+  constraints (at most 1 bio mother + 1 bio father per person).
 
 ## Architecture / key files
 
@@ -90,18 +90,16 @@ done/partial/not-started). Read it before planning a new sprint.
 
 ## Open thread / likely next steps
 
-- **Current design conversation:** just shipped merged co-parent lines starting at the bottom
-  of the couple band + sibling trunk. User is evaluating live. Possible follow-ups: tune the
-  trunk junction depth, optional separate toggle for trunk vs merge, make divorced co-parents
-  read better.
-- **Roadmap remaining:** Phase 2 Documents (needs R2 storage). **Phase 3 = AI features**
-  (Biography Generator, Memory Collector prompts, Smart Search) — first server-side Worker +
-  Anthropic key wiring. Model-per-task plan agreed:
-  - Haiku 4.5 (`claude-haiku-4-5`, effort low) — micro-asks, parsing, dedup scoring, labels.
-  - Sonnet 4.6 (`claude-sonnet-4-6`) — conversational entry→structured, auto-bios, interview prompts.
-  - Opus 4.8 (`claude-opus-4-8`) — hard merge/conflict reasoning; narrative showpiece (Fable 5 only if explicitly wanted).
-  - Levers: prompt caching (family context), `output_config.effort`, Batch API (bulk), adaptive thinking.
-- Optional: proxy demo gallery photos same-origin (like faces) for CSP/privacy robustness.
+- **Phase 2 remaining:** Documents (letters, certificates, military records) + Voice & Video —
+  both need R2 storage. Create R2 bucket, update wrangler.toml, build upload Worker endpoint,
+  then build the Documents UI (list + lightbox) and Voice & Video player.
+- **Phase 3 AI sprint:** Biography Generator → Interview Generator → Smart Onboarding.
+  Requires wiring first server-side Worker + Anthropic key. Model plan in `docs/BUILD-PLAN.md`.
+- **Phase 4 Collaboration:** in-app invite flow, role enforcement in UI, claimed profiles,
+  activity feed. D1 schema ready; bindings need to be uncommented in `wrangler.toml`.
+- **Phase 5 Views:** Lineage mode visual treatment (button + pathBetween exist; full fade +
+  accent pass ⬜), Timeline mode, Story mode.
+- **Phase 6 Output:** Family Historian AI, Smart Search, legacy books, PDF exports.
 
 ## Cloudflare notes
 
