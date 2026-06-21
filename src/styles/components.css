@@ -2262,7 +2262,20 @@
 }
 
 /* Danger zone */
-.fs__danger { padding: 20px 20px 8px; margin-top: auto; }
+.fs__danger { padding: 20px 20px 8px; margin-top: auto; display: flex; flex-direction: column; gap: 10px; }
+.fs__signout-btn {
+  width: 100%;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1.5px solid var(--hairline);
+  background: transparent;
+  color: var(--ink-soft);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.fs__signout-btn:hover { background: var(--ground); color: var(--ink); }
 .fs__danger-btn {
   width: 100%;
   padding: 12px;

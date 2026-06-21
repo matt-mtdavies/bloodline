@@ -5,7 +5,7 @@ import {
 
 const INVITE_ROLES = ['coadmin', 'editor', 'contributor', 'viewer'];
 
-export default function FamilySettings({ myRole, familyName, onUpdateFamilyName, onReset, onClose }) {
+export default function FamilySettings({ myRole, familyName, onUpdateFamilyName, onReset, onLogout, onClose }) {
   const [tab, setTab] = useState('members'); // 'members' | 'invite'
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -213,6 +213,11 @@ export default function FamilySettings({ myRole, familyName, onUpdateFamilyName,
 
         {/* Danger zone */}
         <div className="fs__danger">
+          {onLogout && (
+            <button className="fs__signout-btn" onClick={onLogout}>
+              Sign out
+            </button>
+          )}
           <button className="fs__danger-btn" onClick={handleReset}>
             Start over — erase tree
           </button>

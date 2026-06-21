@@ -1,12 +1,6 @@
 import Logo from './Logo.jsx';
 
 export default function TopBar({ familyName, view, onToggleView, onOpenLegend, onOpenSettings, user }) {
-  async function handleLogout() {
-    if (!confirm(`Sign out of Bloodline?\n\nSigned in as ${user.email}`)) return;
-    await fetch('/api/auth/logout', { method: 'POST' });
-    window.location.reload();
-  }
-
   return (
     <header className="topbar">
       {/* Row 1: action buttons only, flush-right */}
@@ -16,14 +10,11 @@ export default function TopBar({ familyName, view, onToggleView, onOpenLegend, o
             <>
               <button
                 className="topbar__avatar-btn"
-                onClick={handleLogout}
-                title={`Signed in as ${user.email} — tap to sign out`}
-                aria-label="Sign out"
+                onClick={onOpenSettings}
+                title="Account & settings"
+                aria-label="Account & settings"
               >
                 <UserAvatar email={user.email} />
-              </button>
-              <button className="pill" onClick={onOpenSettings} aria-label="Family settings & sharing">
-                <ShareIcon />
               </button>
             </>
           ) : (

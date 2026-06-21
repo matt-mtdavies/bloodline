@@ -366,6 +366,10 @@ export default function App() {
           familyName={data.familyName || 'My Family'}
           onUpdateFamilyName={updateFamilyName}
           onReset={resetTree}
+          onLogout={user ? async () => {
+            await fetch('/api/auth/logout', { method: 'POST' });
+            window.location.reload();
+          } : null}
           onClose={() => setSettingsOpen(false)}
         />
       )}
