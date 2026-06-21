@@ -18,7 +18,8 @@ binding = "DB"
 database_name = "bloodline"
 database_id = "96e94723-103f-4c4f-a1b0-797810e7dfc9"
 
-# Cloudflare R2 — create with `wrangler r2 bucket create bloodline-photos`:
+# Cloudflare R2 — bucket: bloodline-docs (create with `wrangler r2 bucket create bloodline-docs`)
+# Uncomment once the bucket exists:
 # [[r2_buckets]]
-# binding = "PHOTOS"
-# bucket_name = "bloodline-photos"
+# binding = "DOCS"
+# bucket_name = "bloodline-docs"

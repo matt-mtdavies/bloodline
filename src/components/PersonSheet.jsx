@@ -132,25 +132,37 @@ export default function PersonSheet({
     );
   };
 
-  // Document files: images are downscaled, PDFs stored raw (capped at 8 MB).
+  // Upload a file: try R2 via Worker first, fall back to base64 for offline/unauthed users.
+  const uploadDoc = async (file) => {
+    try {
+      const form = new FormData();
+      form.append('file', file, file.name);
+      const res = await fetch('/api/documents', { method: 'POST', body: form });
+      if (res.ok) {
+        const { url } = await res.json();
+        return url;
+      }
+    } catch {
+      /* network error — fall through to base64 */
+    }
+    // Base64 fallback (localStorage; cap 8 MB).
+    if (file.type.startsWith('image/')) return fileToDataUrl(file, 1200);
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  };
+
   const onDocPick = async (e) => {
     const files = [...(e.target.files || [])];
     e.target.value = '';
     for (const file of files) {
       try {
-        if (file.size > 8 * 1024 * 1024) continue; // skip files > 8 MB
-        const title = file.name.replace(/\.[^.]+$/, ''); // filename without extension
-        let src;
-        if (file.type.startsWith('image/')) {
-          src = await fileToDataUrl(file, 1200);
-        } else {
-          src = await new Promise((res, rej) => {
-            const reader = new FileReader();
-            reader.onload = () => res(reader.result);
-            reader.onerror = rej;
-            reader.readAsDataURL(file);
-          });
-        }
+        if (file.size > 20 * 1024 * 1024) continue; // skip files > 20 MB
+        const title = file.name.replace(/\.[^.]+$/, '');
+        const src = await uploadDoc(file);
         onAddDocument?.(person.id, { title, mime: file.type, src });
       } catch {
         /* skip unreadable file */

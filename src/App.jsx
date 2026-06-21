@@ -382,7 +382,13 @@ export default function App() {
         onAddPhoto={(id, src) => addPhoto(id, { src })}
         onOpenLightbox={(personId, index) => setLightbox({ personId, index })}
         onAddDocument={(personId, fields) => addDocument(personId, fields)}
-        onRemoveDocument={removeDocument}
+        onRemoveDocument={(id) => {
+          const doc = data.documents?.find((d) => d.id === id);
+          if (doc?.src?.startsWith('/api/documents/')) {
+            fetch(doc.src, { method: 'DELETE' }).catch(() => {});
+          }
+          removeDocument(id);
+        }}
         onUpdateStory={(id, story) => updatePerson(id, { story })}
         onPhoto={handlePhoto}
       />
