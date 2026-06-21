@@ -5,7 +5,7 @@
   background: radial-gradient(130% 100% at 50% 0%, #ffffff 0%, #fbfbfc 60%, #f4f5f7 130%);
 }
 
-/* ── Masthead — brand block left · action pills right ────────────────────── */
+/* ── Masthead ─────────────────────────────────────────────────────────────── */
 .topbar {
   position: fixed;
   top: 0;
@@ -13,10 +13,9 @@
   right: 0;
   z-index: 20;
   display: flex;
-  align-items: center;
-  padding: calc(var(--safe-top) + 11px) 16px 11px;
+  flex-direction: column;
   pointer-events: none;
-  background: linear-gradient(180deg, #ffffff 0%, rgba(255, 255, 255, 0.9) 60%, rgba(255, 255, 255, 0));
+  background: linear-gradient(180deg, #ffffff 0%, rgba(255, 255, 255, 0.92) 62%, rgba(255, 255, 255, 0));
   animation: topbar-in 0.5s var(--ease) both;
 }
 @keyframes topbar-in {
@@ -24,48 +23,58 @@
   to   { opacity: 1; transform: translateY(0); }
 }
 
-/* Logo mark + stacked wordmark / family subtitle */
+/* Row 1 — app brand (left) + utility pills (right) */
+.topbar__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: calc(var(--safe-top) + 10px) 16px 8px;
+  pointer-events: auto;
+}
 .topbar__brand {
   display: flex;
   align-items: center;
-  gap: 10px;
-  flex: 1;
-  min-width: 0;
-  pointer-events: auto;
-}
-.topbar__brand-text {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
+  gap: 9px;
 }
 .topbar__word {
   font-family: var(--display);
-  font-size: 18px;
+  font-size: 20px;
   font-weight: 600;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.022em;
   color: var(--accent);
   line-height: 1;
 }
-.topbar__familyname {
-  font-family: var(--body);
-  font-size: 10.5px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.16em;
-  color: var(--ink-soft);
-  line-height: 1;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
 .topbar__actions {
   display: flex;
   gap: 8px;
   align-items: center;
+}
+
+/* Row 2 — family tree name, editorial, full-width with hairline rules */
+.topbar__treerow {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  padding: 0 16px 14px;
+}
+.topbar__treerow::before,
+.topbar__treerow::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--hairline);
+}
+.topbar__treerow::before { margin-right: 12px; }
+.topbar__treerow::after  { margin-left:  12px; }
+.topbar__familyname {
+  font-family: var(--body);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  color: var(--ink-soft);
+  white-space: nowrap;
   flex-shrink: 0;
-  pointer-events: auto;
 }
 
 /* Logo mark + staggered bubble pop-in */

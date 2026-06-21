@@ -3,23 +3,27 @@ import Logo from './Logo.jsx';
 export default function TopBar({ familyName, view, onToggleView, onOpenLegend, onOpenSettings }) {
   return (
     <header className="topbar">
-      <div className="topbar__brand">
-        <Logo size={30} />
-        <div className="topbar__brand-text">
+      {/* Row 1: app brand left, actions right */}
+      <div className="topbar__bar">
+        <div className="topbar__brand">
+          <Logo size={26} />
           <span className="topbar__word">Bloodline</span>
-          <span className="topbar__familyname">{familyName}</span>
+        </div>
+        <div className="topbar__actions">
+          <button className="pill" onClick={onOpenSettings} aria-label="Family settings">
+            <SettingsIcon />
+          </button>
+          <button className="pill" onClick={onOpenLegend} aria-label="Legend — what the styles mean">
+            <LegendIcon />
+          </button>
+          <button className="pill" onClick={onToggleView} aria-label={view === 'bubbles' ? 'Switch to list view' : 'Switch to tree view'}>
+            {view === 'bubbles' ? <ListIcon /> : <TreeIcon />}
+          </button>
         </div>
       </div>
-      <div className="topbar__actions">
-        <button className="pill" onClick={onOpenSettings} aria-label="Family settings">
-          <SettingsIcon />
-        </button>
-        <button className="pill" onClick={onOpenLegend} aria-label="Legend — what the styles mean">
-          <LegendIcon />
-        </button>
-        <button className="pill" onClick={onToggleView} aria-label={view === 'bubbles' ? 'Switch to list view' : 'Switch to tree view'}>
-          {view === 'bubbles' ? <ListIcon /> : <TreeIcon />}
-        </button>
+      {/* Row 2: family tree name, full-width editorial treatment */}
+      <div className="topbar__treerow">
+        <span className="topbar__familyname">{familyName}</span>
       </div>
     </header>
   );
