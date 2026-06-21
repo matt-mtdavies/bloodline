@@ -37,15 +37,24 @@ export async function onRequestGet({ request, env }) {
     await env.DB.prepare(`UPDATE user SET last_seen = ? WHERE id = ?`).bind(now, user.id).run();
   }
 
-  // Process the family invite if one was carried through the magic link.
-  if (inviteToken) {
-    await processInvite(env.DB, inviteToken, user.id, now);
-  }
-
   const session = await signSession(
     { uid: user.id, email: row.email, iat: now },
     env.SESSION_SECRET || 'dev',
   );
+
+  // Process the invite; if the user already has a tree, signal merge wizard.
+  if (inviteToken) {
+    const merge = await processInvite(env.DB, inviteToken, user.id, now);
+    if (merge?.needsMerge) {
+      return new Response(null, {
+        status: 302,
+        headers: {
+          location: `${home}/?pending_invite=${encodeURIComponent(merge.token)}`,
+          'set-cookie': sessionCookie(session),
+        },
+      });
+    }
+  }
 
   return new Response(null, {
     status: 302,
@@ -95,12 +104,20 @@ export async function onRequestPost({ request, env }) {
     await env.DB.prepare(`UPDATE user SET last_seen = ? WHERE id = ?`).bind(now, user.id).run();
   }
 
-  if (invite) await processInvite(env.DB, invite, user.id, now);
-
   const session = await signSession(
     { uid: user.id, email: email.toLowerCase(), iat: now },
     env.SESSION_SECRET || 'dev',
   );
+
+  if (invite) {
+    const merge = await processInvite(env.DB, invite, user.id, now);
+    if (merge?.needsMerge) {
+      return json(
+        { ok: true, pendingInvite: merge.token },
+        { headers: { 'set-cookie': sessionCookie(session) } },
+      );
+    }
+  }
 
   return json({ ok: true }, { headers: { 'set-cookie': sessionCookie(session) } });
 }
@@ -110,9 +127,28 @@ async function processInvite(db, inviteToken, userId, now) {
     `SELECT id, family_id, from_user, role, status, expires_at FROM invite WHERE token = ?`,
   ).bind(inviteToken).first();
 
-  if (!invite || invite.status !== 'pending' || invite.expires_at < now) return;
+  if (!invite || invite.status !== 'pending' || invite.expires_at < now) return null;
 
-  // Already a member? Just update their role.
+  // If the user already has a DIFFERENT family with tree data, hold off and
+  // let the client run the merge wizard rather than silently overwriting.
+  const otherFamily = await db.prepare(
+    `SELECT fm.family_id FROM family_member fm
+      WHERE fm.user_id = ? AND fm.family_id != ?`,
+  ).bind(userId, invite.family_id).first();
+
+  if (otherFamily) {
+    const treeRow = await db.prepare(
+      `SELECT tree_json FROM family_tree WHERE family_id = ?`,
+    ).bind(otherFamily.family_id).first();
+    if (treeRow) {
+      try {
+        const tree = JSON.parse(treeRow.tree_json);
+        if ((tree.people?.length ?? 0) > 0) return { needsMerge: true, token: inviteToken };
+      } catch { /* corrupt JSON — fall through to normal join */ }
+    }
+  }
+
+  // Already a member of the target family? Just update their role.
   const existing = await db.prepare(
     `SELECT user_id FROM family_member WHERE family_id = ? AND user_id = ?`,
   ).bind(invite.family_id, userId).first();
@@ -130,4 +166,5 @@ async function processInvite(db, inviteToken, userId, now) {
 
   await db.prepare(`UPDATE user SET family_id = ? WHERE id = ?`).bind(invite.family_id, userId).run();
   await db.prepare(`UPDATE invite SET status = 'accepted' WHERE id = ?`).bind(invite.id).run();
+  return null;
 }

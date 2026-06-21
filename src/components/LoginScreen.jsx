@@ -7,6 +7,7 @@ export default function LoginScreen({ onAuthSuccess }) {
   const [code, setCode] = useState('');
   const [status, setStatus] = useState('idle'); // idle | sending | verifying | error
   const [errorMsg, setErrorMsg] = useState('');
+  const [inviteToken, setInviteToken] = useState(null);
   const codeRef = useRef(null);
 
   useEffect(() => {
@@ -17,6 +18,16 @@ export default function LoginScreen({ onAuthSuccess }) {
           ? 'That link has expired — enter your email for a new code.'
           : 'Something went wrong. Please try again.',
       );
+    }
+    // Coming from the invite landing page — OTP was already requested.
+    if (p.has('auth_email') && p.has('invite')) {
+      setEmail(p.get('auth_email'));
+      setInviteToken(p.get('invite'));
+      setStep('code');
+    } else if (p.has('invite')) {
+      setInviteToken(p.get('invite'));
+    }
+    if (p.has('auth') || p.has('invite') || p.has('auth_email')) {
       window.history.replaceState({}, '', window.location.pathname);
     }
   }, []);
@@ -35,7 +46,7 @@ export default function LoginScreen({ onAuthSuccess }) {
       const res = await fetch('/api/auth/request', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ email: email.trim().toLowerCase() }),
+        body: JSON.stringify({ email: email.trim().toLowerCase(), ...(inviteToken && { invite: inviteToken }) }),
       });
       if (!res.ok) throw new Error();
       setStep('code');
@@ -55,10 +66,11 @@ export default function LoginScreen({ onAuthSuccess }) {
       const res = await fetch('/api/auth/verify', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ email: email.trim().toLowerCase(), code: codeToVerify }),
+        body: JSON.stringify({ email: email.trim().toLowerCase(), code: codeToVerify, ...(inviteToken && { invite: inviteToken }) }),
       });
       if (res.ok) {
-        if (onAuthSuccess) onAuthSuccess();
+        const body = await res.json().catch(() => ({}));
+        if (onAuthSuccess) onAuthSuccess(body);
         else window.location.reload();
         return;
       }

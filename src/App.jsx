@@ -40,6 +40,7 @@ import Intro from './components/Intro.jsx';
 import Onboarding from './components/Onboarding.jsx';
 import LoginScreen from './components/LoginScreen.jsx';
 import FamilySettings from './components/FamilySettings.jsx';
+import MergeWizard from './components/MergeWizard.jsx';
 
 const isDemo = typeof window !== 'undefined' &&
   new URLSearchParams(window.location.search).has('demo');
@@ -52,8 +53,20 @@ export default function App() {
   // 'loading' → 'open' (no auth / bypass) | 'login' (needs sign-in) | 'authed'
   const [authState, setAuthState] = useState(isDemo ? 'open' : 'loading');
   const [user, setUser] = useState(null);
+  // Set when a user with existing tree data accepts an invite — gates the app
+  // on the merge wizard until they complete or skip the merge.
+  const [pendingInvite, setPendingInvite] = useState(() => {
+    const p = new URLSearchParams(window.location.search);
+    const token = p.get('pending_invite');
+    if (token) window.history.replaceState({}, '', window.location.pathname);
+    return token;
+  });
 
-  async function applySession() {
+  async function applySession(loginExtras) {
+    // OTP login can return pendingInvite when the user already has a tree.
+    if (loginExtras?.pendingInvite) {
+      setPendingInvite(loginExtras.pendingInvite);
+    }
     const r = await fetch('/api/auth/me');
     const u = r.ok ? await r.json() : null;
     if (!u) { setAuthState('login'); return; }
@@ -207,7 +220,28 @@ export default function App() {
 
   // Auth gate. 'open' = no auth configured or ?demo — go straight to app.
   if (authState === 'loading') return null;
-  if (authState === 'login') return <LoginScreen onAuthSuccess={() => applySession().catch(() => setAuthState('open'))} />;
+  if (authState === 'login') {
+    return (
+      <LoginScreen
+        onAuthSuccess={(extras) => applySession(extras).catch(() => setAuthState('open'))}
+      />
+    );
+  }
+
+  // Merge gate: user is authenticated but needs to reconcile their tree before
+  // the app loads. Once complete, reload from the server and clear the gate.
+  if (pendingInvite && authState === 'authed') {
+    return (
+      <MergeWizard
+        inviteToken={pendingInvite}
+        myTree={data}
+        onComplete={async () => {
+          setPendingInvite(null);
+          await loadFromServer();
+        }}
+      />
+    );
+  }
 
   // Show onboarding for brand-new users (no completed onboarding in store).
   if (!data.hasCompletedOnboarding) {

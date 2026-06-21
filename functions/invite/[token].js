@@ -134,9 +134,11 @@ function landingHtml({ token, invite, roleLabel, home }) {
           body: JSON.stringify({ email, invite: INVITE_TOKEN }),
         });
         if (!res.ok) throw new Error();
-        document.getElementById('sent-email').textContent = email;
-        document.getElementById('form-wrap').style.display = 'none';
-        document.getElementById('sent-wrap').style.display = 'block';
+        // Hand off to the main app's LoginScreen which will collect the OTP.
+        // We carry both the invite token and the email so it can skip the
+        // email entry step and go straight to the code input.
+        window.location.href = '/?invite=' + encodeURIComponent(INVITE_TOKEN)
+          + '&auth_email=' + encodeURIComponent(email);
       } catch {
         hint.textContent = 'Something went wrong. Please try again.';
         btn.disabled = false;
