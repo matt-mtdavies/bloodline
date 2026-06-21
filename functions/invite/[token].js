@@ -44,7 +44,7 @@ function errorHtml(title, body, home) {
   return shell(`
     <div class="card">
       <div class="brand"><svg-logo></svg-logo><span>Bloodline</span></div>
-      <div class="error-icon">⚠</div>
+      <div class="error-icon"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 9v4M12 17h.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg></div>
       <h1>${title}</h1>
       <p class="sub">${body}</p>
       <a href="${home}" class="btn-secondary">Go to Bloodline</a>
@@ -79,21 +79,21 @@ function landingHtml({ token, invite, roleLabel, home }) {
 
       <div class="features">
         <div class="feature">
-          <div class="feature__icon">🌳</div>
+          <div class="feature__icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="4" r="2.2" stroke="currentColor" stroke-width="1.7"/><circle cx="5" cy="19" r="2.2" stroke="currentColor" stroke-width="1.7"/><circle cx="19" cy="19" r="2.2" stroke="currentColor" stroke-width="1.7"/><path d="M12 6.2v5M12 11.2l-5.5 5.3M12 11.2l5.5 5.3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></div>
           <div>
             <div class="feature__title">Family tree</div>
             <div class="feature__desc">An interactive portrait of everyone and how they connect.</div>
           </div>
         </div>
         <div class="feature">
-          <div class="feature__icon">💬</div>
+          <div class="feature__icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg></div>
           <div>
             <div class="feature__title">Memories</div>
             <div class="feature__desc">Stories, moments, and things that should never be forgotten.</div>
           </div>
         </div>
         <div class="feature">
-          <div class="feature__icon">📷</div>
+          <div class="feature__icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><circle cx="12" cy="13" r="4" stroke="currentColor" stroke-width="1.7"/></svg></div>
           <div>
             <div class="feature__title">Photos</div>
             <div class="feature__desc">A gallery of faces and places across the generations.</div>
@@ -111,7 +111,7 @@ function landingHtml({ token, invite, roleLabel, home }) {
       </div>
 
       <div id="sent-wrap" style="display:none;text-align:center;padding:12px 0;">
-        <div class="sent-icon">✉</div>
+        <div class="sent-icon"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M22 6l-10 7L2 6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></div>
         <p class="sent-title">Check your inbox</p>
         <p class="sent-body">We sent a sign-in link to <strong id="sent-email"></strong>.<br>Tap it to open the family tree.</p>
       </div>
@@ -236,7 +236,7 @@ function shell(content) {
     gap: 14px;
     align-items: flex-start;
   }
-  .feature__icon { font-size: 22px; line-height: 1; flex-shrink: 0; margin-top: 1px; }
+  .feature__icon { width: 22px; height: 22px; flex-shrink: 0; margin-top: 2px; color: var(--accent); }
   .feature__title { font-size: 14px; font-weight: 600; color: var(--ink); margin-bottom: 2px; }
   .feature__desc { font-size: 13px; color: var(--ink-soft); line-height: 1.4; }
   .divider { height: 1px; background: var(--hairline); margin-bottom: 28px; }
@@ -292,9 +292,9 @@ function shell(content) {
     text-decoration: none;
   }
   .hint { margin-top: 12px; font-size: 13px; color: #c0392b; }
-  .error-icon { font-size: 40px; margin: 16px 0 20px; }
+  .error-icon { margin: 16px 0 20px; color: #c2603a; }
   .sub { font-size: 15px; color: var(--ink-soft); line-height: 1.5; margin-top: 12px; }
-  .sent-icon { font-size: 40px; margin-bottom: 16px; }
+  .sent-icon { margin-bottom: 16px; color: #3a8a4a; }
   .sent-title { font-family: 'Fraunces', serif; font-size: 22px; font-weight: 700; margin-bottom: 10px; }
   .sent-body { font-size: 15px; color: var(--ink-soft); line-height: 1.6; }
 </style>

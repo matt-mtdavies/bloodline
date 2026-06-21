@@ -2205,14 +2205,18 @@
   margin-bottom: 6px;
 }
 .fs__input {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
   border: 1.5px solid var(--hairline);
-  border-radius: 10px;
-  padding: 12px 14px;
-  font-size: 15px;
+  border-radius: 12px;
+  padding: 14px 16px;
+  font-size: 16px;
   font-family: var(--body);
   color: var(--ink);
   background: #fff;
   outline: none;
+  -webkit-appearance: none;
   transition: border-color 0.15s;
 }
 .fs__input:focus { border-color: var(--accent); }

@@ -105,7 +105,6 @@ export default function LoginScreen({ onAuthSuccess }) {
               placeholder="you@example.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              autoFocus
             />
             <button
               className="login-card__cta"

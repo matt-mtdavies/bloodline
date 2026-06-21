@@ -85,7 +85,7 @@ export default function FamilySettings({ myRole, familyName, onUpdateFamilyName,
           <div>
             <h2 className="fs__title">Family settings</h2>
           </div>
-          <button className="icon-btn" onClick={onClose} aria-label="Close">✕</button>
+          <button className="icon-btn" onClick={onClose} aria-label="Close"><CloseIcon /></button>
         </div>
 
         {/* Family name */}
@@ -174,7 +174,6 @@ export default function FamilySettings({ myRole, familyName, onUpdateFamilyName,
                   placeholder="family@example.com"
                   value={inviteEmail}
                   onChange={(e) => setInviteEmail(e.target.value)}
-                  autoFocus
                 />
 
                 <label className="fs__label">Role</label>
@@ -193,7 +192,7 @@ export default function FamilySettings({ myRole, familyName, onUpdateFamilyName,
                 </div>
 
                 {inviteStatus === 'sent' ? (
-                  <p className="fs__sent">Invitation sent ✓</p>
+                  <p className="fs__sent"><CheckIcon /> Invitation sent</p>
                 ) : (
                   <button
                     className="ob__continue"
@@ -254,7 +253,7 @@ function MemberRow({ member, myRole, isSelf, onUpdateRole, onRemove }) {
         <RoleBadge role={member.role} />
       )}
       {canChange && (
-        <button className="fs__remove" onClick={() => onRemove(member.id)} aria-label="Remove member">✕</button>
+        <button className="fs__remove" onClick={() => onRemove(member.id)} aria-label="Remove member"><CloseIcon /></button>
       )}
     </div>
   );
@@ -268,6 +267,22 @@ function RoleBadge({ role }) {
     >
       {ROLE_LABELS[role] || role}
     </span>
+  );
+}
+
+function CloseIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+    </svg>
+  );
+}
+
+function CheckIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{display:'inline',verticalAlign:'middle',marginRight:4}}>
+      <path d="M5 13l4 4L19 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
   );
 }
 
