@@ -23,8 +23,8 @@ export function buildGraph(people, relationships) {
       ensure(childrenOf, r.from_person).push({ id: r.to_person, qualifier: r.qualifier });
       ensure(parentsOf, r.to_person).push({ id: r.from_person, qualifier: r.qualifier });
     } else if (r.type === 'partner') {
-      ensure(partnersOf, r.from_person).push({ id: r.to_person, status: r.partner_status });
-      ensure(partnersOf, r.to_person).push({ id: r.from_person, status: r.partner_status });
+      ensure(partnersOf, r.from_person).push({ id: r.to_person, status: r.partner_status, relId: r.id });
+      ensure(partnersOf, r.to_person).push({ id: r.from_person, status: r.partner_status, relId: r.id });
     }
   }
 

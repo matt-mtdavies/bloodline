@@ -455,6 +455,20 @@ export function deletePerson(id) {
   });
 }
 
+export function updateRelationship(id, fields) {
+  commit({
+    ...state,
+    relationships: state.relationships.map((r) => r.id === id ? { ...r, ...fields } : r),
+  });
+}
+
+export function removeRelationship(id) {
+  commit({
+    ...state,
+    relationships: state.relationships.filter((r) => r.id !== id),
+  });
+}
+
 export function linkRelative({ anchorId, relKey, existingId, qualifier = 'biological' }) {
   const edges = edgesFor(relKey, anchorId, existingId, state, qualifier);
   const seen = new Set(

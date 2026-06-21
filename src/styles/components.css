@@ -1120,6 +1120,49 @@
 .rel-group__list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
 .rel-chip__chev { margin-left: auto; color: var(--ink-faint); flex: none; }
 
+/* Partner relationship editing */
+.rel-chip-wrap {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.rel-chip-wrap .rel-chip { flex: 1; min-width: 0; }
+.rel-chip__menu-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-soft);
+  flex-shrink: 0;
+  transition: background 0.15s, color 0.15s;
+}
+.rel-chip__menu-btn:hover,
+.rel-chip__menu-btn--open { background: var(--hairline); color: var(--ink); }
+.rel-menu {
+  margin: 2px 0 6px 52px;
+  border-radius: 10px;
+  border: 1px solid var(--hairline);
+  background: #fff;
+  overflow: hidden;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.07);
+}
+.rel-menu__btn {
+  display: block;
+  width: 100%;
+  padding: 12px 16px;
+  text-align: left;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink);
+  border-bottom: 1px solid var(--hairline);
+  transition: background 0.12s;
+}
+.rel-menu__btn:last-child { border-bottom: none; }
+.rel-menu__btn:active { background: var(--hairline); }
+.rel-menu__btn--danger { color: #c0392b; }
+
 /* Coming-soon invitations (Phase 2/3 sections, sketched in) */
 .soon-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
 .soon-row {

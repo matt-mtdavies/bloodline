@@ -35,6 +35,8 @@ export default function PersonSheet({
   onAddDocument,
   onRemoveDocument,
   onUpdateStory,
+  onUpdateRelationship,
+  onRemoveRelationship,
   onPhoto,
 }) {
   const person = personId ? graph.byId.get(personId) : null;
@@ -43,6 +45,7 @@ export default function PersonSheet({
   const docRef = useRef(null);
   const storyAbort = useRef(null);
   const [storyState, setStoryState] = useState({ phase: 'idle', text: '', error: null });
+  const [relMenu, setRelMenu] = useState(null); // relId of open action menu
 
   useEffect(() => {
     if (!person || lockEscape) return; // a stacked overlay owns Escape
@@ -420,21 +423,63 @@ export default function PersonSheet({
                       {g.items.map((item) => {
                         const rel = graph.byId.get(item.id);
                         if (!rel) return null;
+                        const isPartner = !!item.relId;
+                        const menuOpen = relMenu === item.relId;
                         return (
                           <li key={item.id}>
-                            <button className="rel-chip" onClick={() => onOpenPerson(item.id)}>
-                              <Avatar person={rel} size={40} />
-                              <span className="rel-chip__text">
-                                <span className="rel-chip__name">{rel.display_name}</span>
-                                <span className="rel-chip__kind">
-                                  {relationLabel(graph, person.id, item.id)}
-                                  {item.qualifier && item.qualifier !== 'biological'
-                                    ? ` · ${item.qualifier}`
-                                    : ''}
+                            <div className="rel-chip-wrap">
+                              <button className="rel-chip" onClick={() => { setRelMenu(null); onOpenPerson(item.id); }}>
+                                <Avatar person={rel} size={40} />
+                                <span className="rel-chip__text">
+                                  <span className="rel-chip__name">{rel.display_name}</span>
+                                  <span className="rel-chip__kind">
+                                    {relationLabel(graph, person.id, item.id)}
+                                    {item.qualifier && item.qualifier !== 'biological'
+                                      ? ` · ${item.qualifier}`
+                                      : ''}
+                                  </span>
                                 </span>
-                              </span>
-                              <ChevronIcon />
-                            </button>
+                                {!isPartner && <ChevronIcon />}
+                              </button>
+                              {isPartner && (
+                                <button
+                                  className={`rel-chip__menu-btn${menuOpen ? ' rel-chip__menu-btn--open' : ''}`}
+                                  onClick={() => setRelMenu(menuOpen ? null : item.relId)}
+                                  aria-label="Edit relationship"
+                                  aria-expanded={menuOpen}
+                                >
+                                  <DotsIcon />
+                                </button>
+                              )}
+                            </div>
+                            {menuOpen && (
+                              <div className="rel-menu" role="menu">
+                                {item.status !== 'current' && (
+                                  <button className="rel-menu__btn" role="menuitem" onClick={() => {
+                                    onUpdateRelationship?.(item.relId, { partner_status: 'current' });
+                                    setRelMenu(null);
+                                  }}>
+                                    Mark as current partner
+                                  </button>
+                                )}
+                                {item.status !== 'former' && (
+                                  <button className="rel-menu__btn" role="menuitem" onClick={() => {
+                                    onUpdateRelationship?.(item.relId, { partner_status: 'former' });
+                                    setRelMenu(null);
+                                  }}>
+                                    Mark as ex-partner
+                                  </button>
+                                )}
+                                <button className="rel-menu__btn rel-menu__btn--danger" role="menuitem" onClick={() => {
+                                  if (window.confirm('Remove this partner link? Both people remain in the tree.')) {
+                                    onRemoveRelationship?.(item.relId);
+                                    setRelMenu(null);
+                                  }
+                                }}>
+                                  Remove link
+                                </button>
+                              </div>
+                            )}
                           </li>
                         );
                       })}
@@ -662,6 +707,15 @@ function DocImageIcon() {
       <rect x="3" y="3" width="18" height="18" rx="3" stroke="currentColor" strokeWidth="1.6" />
       <circle cx="8.5" cy="8.5" r="1.5" fill="currentColor" />
       <path d="M3 16l5-5 4 4 3-3 6 5" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
+    </svg>
+  );
+}
+function DotsIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <circle cx="5" cy="12" r="2" />
+      <circle cx="12" cy="12" r="2" />
+      <circle cx="19" cy="12" r="2" />
     </svg>
   );
 }

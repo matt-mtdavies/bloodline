@@ -6,6 +6,8 @@ import {
   store,
   addRelative,
   updatePerson,
+  updateRelationship,
+  removeRelationship,
   setupTree,
   setPhoto,
   addMemory,
@@ -320,6 +322,8 @@ export default function App() {
         onAddDocument={(personId, fields) => addDocument(personId, fields)}
         onRemoveDocument={removeDocument}
         onUpdateStory={(id, story) => updatePerson(id, { story })}
+        onUpdateRelationship={updateRelationship}
+        onRemoveRelationship={removeRelationship}
         onPhoto={handlePhoto}
       />
 

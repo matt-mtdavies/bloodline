@@ -38,24 +38,46 @@ export function drawLinks(g, graph, pos, isVisible, baseRadius, mergeParents = f
     const alpha = edgeAlpha(r.from_person, r.to_person);
     const status = r.partner_status;
     const width = baseRadius * 2.2;
+    const mx = (a.x + b.x) / 2;
+    const my = (a.y + b.y) / 2;
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const len = Math.sqrt(dx * dx + dy * dy) || 1;
+    const nx = dx / len;
+    const ny = dy / len;
 
     if (status === 'former') {
-      // A faded, dashed bond — present but clearly past.
+      // Dashed bond — present but clearly past.
       dashedSegment(g, a, b, 16, 0.5, {
-        width: 2.5,
-        color: hex('#c4c7cd'),
-        alpha: alpha * 0.8,
+        width: 2,
+        color: hex('#b0b3bb'),
+        alpha: alpha * 0.9,
         cap: 'round',
       });
+      // Open circle at midpoint — "severed but acknowledged".
+      g.circle(mx, my, 5.5).fill({ color: hex('#f5f0ea'), alpha: 1 });
+      g.circle(mx, my, 5.5).stroke({ width: 1.8, color: hex('#9fa2aa'), alpha: alpha * 0.9 });
     } else {
-      // A single, light pod binding the pair — a soft hint, not a bold blob.
+      // Warm pod behind the pair.
       const fill = status === 'widowed' ? '#ece7f2' : '#f6e6dc';
       g.moveTo(a.x, a.y).lineTo(b.x, b.y).stroke({
         width,
         color: hex(fill),
-        alpha: alpha * 0.5,
+        alpha: alpha * 0.55,
         cap: 'round',
       });
+      // Explicit center line so the connection reads clearly.
+      const lineColor = status === 'widowed' ? '#b8a8cc' : '#c2603a';
+      g.moveTo(a.x, a.y).lineTo(b.x, b.y).stroke({
+        width: 1.8,
+        color: hex(lineColor),
+        alpha: alpha * 0.38,
+        cap: 'round',
+      });
+      // Double-dot marker at midpoint, oriented along the line.
+      const off = Math.min(5, len * 0.08);
+      g.circle(mx - nx * off, my - ny * off, 3.5).fill({ color: hex(lineColor), alpha: alpha * 0.5 });
+      g.circle(mx + nx * off, my + ny * off, 3.5).fill({ color: hex(lineColor), alpha: alpha * 0.5 });
     }
   }
 
