@@ -1162,6 +1162,16 @@
 .rel-menu__btn:last-child { border-bottom: none; }
 .rel-menu__btn:active { background: var(--hairline); }
 .rel-menu__btn--danger { color: #c0392b; }
+.rel-menu__btn--active { color: var(--accent); font-weight: 600; background: color-mix(in srgb, var(--accent) 6%, white); }
+.rel-menu__label {
+  padding: 8px 16px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-soft);
+  border-bottom: 1px solid var(--hairline);
+}
 
 /* Coming-soon invitations (Phase 2/3 sections, sketched in) */
 .soon-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }

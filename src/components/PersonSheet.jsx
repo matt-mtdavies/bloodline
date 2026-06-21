@@ -6,6 +6,13 @@ import { profileCompleteness, lifeEvents } from '../lib/profile.js';
 import { fileToDataUrl } from '../lib/image.js';
 import { streamBio } from '../lib/ai.js';
 
+const QUALIFIERS = [
+  { key: 'biological', label: 'Biological' },
+  { key: 'step', label: 'Step' },
+  { key: 'adoptive', label: 'Adoptive' },
+  { key: 'foster', label: 'Foster' },
+];
+
 /*
  * The profile. In V2 this is the destination, not a popover — a portrait,
  * a life, and the beginnings of the stories that should outlast a person.
@@ -47,6 +54,17 @@ export default function PersonSheet({
   const [storyState, setStoryState] = useState({ phase: 'idle', text: '', error: null });
   const [relMenu, setRelMenu] = useState(null); // relId of open action menu
 
+  // Close the relationship menu when clicking anywhere outside it.
+  useEffect(() => {
+    if (relMenu === null) return;
+    const close = (e) => {
+      if (e.target.closest?.('.rel-menu, .rel-chip__menu-btn')) return;
+      setRelMenu(null);
+    };
+    document.addEventListener('pointerdown', close);
+    return () => document.removeEventListener('pointerdown', close);
+  }, [relMenu]);
+
   useEffect(() => {
     if (!person || lockEscape) return; // a stacked overlay owns Escape
     const onKey = (e) => e.key === 'Escape' && onClose();
@@ -70,10 +88,10 @@ export default function PersonSheet({
   const siblings = graph.siblings(person.id);
 
   const groups = [
-    { title: partners.length > 1 ? 'Partners' : 'Partner', items: partners },
-    { title: 'Parents', items: parents },
-    { title: 'Children', items: children },
-    { title: 'Siblings', items: siblings },
+    { title: partners.length > 1 ? 'Partners' : 'Partner', type: 'partner', items: partners },
+    { title: 'Parents', type: 'parent', items: parents },
+    { title: 'Children', type: 'child', items: children },
+    { title: 'Siblings', type: 'sibling', items: siblings },
   ].filter((g) => g.items.length);
 
   const relToViewer =
@@ -423,7 +441,7 @@ export default function PersonSheet({
                       {g.items.map((item) => {
                         const rel = graph.byId.get(item.id);
                         if (!rel) return null;
-                        const isPartner = !!item.relId;
+                        const editable = g.type !== 'sibling' && !!item.relId;
                         const menuOpen = relMenu === item.relId;
                         return (
                           <li key={item.id}>
@@ -439,9 +457,9 @@ export default function PersonSheet({
                                       : ''}
                                   </span>
                                 </span>
-                                {!isPartner && <ChevronIcon />}
+                                {!editable && <ChevronIcon />}
                               </button>
-                              {isPartner && (
+                              {editable && (
                                 <button
                                   className={`rel-chip__menu-btn${menuOpen ? ' rel-chip__menu-btn--open' : ''}`}
                                   onClick={() => setRelMenu(menuOpen ? null : item.relId)}
@@ -454,30 +472,40 @@ export default function PersonSheet({
                             </div>
                             {menuOpen && (
                               <div className="rel-menu" role="menu">
-                                {item.status !== 'current' && (
-                                  <button className="rel-menu__btn" role="menuitem" onClick={() => {
-                                    onUpdateRelationship?.(item.relId, { partner_status: 'current' });
-                                    setRelMenu(null);
-                                  }}>
-                                    Mark as current partner
-                                  </button>
-                                )}
-                                {item.status !== 'former' && (
-                                  <button className="rel-menu__btn" role="menuitem" onClick={() => {
-                                    onUpdateRelationship?.(item.relId, { partner_status: 'former' });
-                                    setRelMenu(null);
-                                  }}>
-                                    Mark as ex-partner
-                                  </button>
-                                )}
+                                {g.type === 'partner' && <>
+                                  {item.status !== 'current' && (
+                                    <button className="rel-menu__btn" role="menuitem" onClick={() => {
+                                      onUpdateRelationship?.(item.relId, { partner_status: 'current' });
+                                      setRelMenu(null);
+                                    }}>Mark as current partner</button>
+                                  )}
+                                  {item.status !== 'former' && (
+                                    <button className="rel-menu__btn" role="menuitem" onClick={() => {
+                                      onUpdateRelationship?.(item.relId, { partner_status: 'former' });
+                                      setRelMenu(null);
+                                    }}>Mark as ex-partner</button>
+                                  )}
+                                </>}
+                                {(g.type === 'parent' || g.type === 'child') && <>
+                                  <p className="rel-menu__label">Relationship type</p>
+                                  {QUALIFIERS.map(({ key, label }) => (
+                                    <button
+                                      key={key}
+                                      className={`rel-menu__btn rel-menu__btn--qual${item.qualifier === key ? ' rel-menu__btn--active' : ''}`}
+                                      role="menuitem"
+                                      onClick={() => {
+                                        onUpdateRelationship?.(item.relId, { qualifier: key });
+                                        setRelMenu(null);
+                                      }}
+                                    >{label}</button>
+                                  ))}
+                                </>}
                                 <button className="rel-menu__btn rel-menu__btn--danger" role="menuitem" onClick={() => {
-                                  if (window.confirm('Remove this partner link? Both people remain in the tree.')) {
+                                  if (window.confirm('Remove this relationship? Both people remain in the tree.')) {
                                     onRemoveRelationship?.(item.relId);
                                     setRelMenu(null);
                                   }
-                                }}>
-                                  Remove link
-                                </button>
+                                }}>Remove link</button>
                               </div>
                             )}
                           </li>
