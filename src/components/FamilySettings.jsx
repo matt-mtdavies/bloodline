@@ -12,12 +12,12 @@ export default function FamilySettings({ myRole, familyName, onClose, onReset, u
     await apiFetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
     window.location.reload();
   }
-  const [tab, setTab] = useState('members'); // 'members' | 'invite'
+  const [tab, setTab] = useState('members');
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState('editor');
-  const [inviteStatus, setInviteStatus] = useState('idle'); // idle | sending | sent | error
+  const [inviteStatus, setInviteStatus] = useState('idle');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -70,30 +70,38 @@ export default function FamilySettings({ myRole, familyName, onClose, onReset, u
   }
 
   const isOwnerOrCoadmin = canInvite(myRole);
+  const hasFamilyId = !!data?.familyId;
 
   return (
-    <div className="sheet-scrim" role="dialog" aria-modal="true" aria-label="Family settings">
+    <div className="sheet-scrim" role="dialog" aria-modal="true" aria-label="Account">
       <div className="sheet">
         <div className="sheet__grip" />
         <div className="fs__head">
-          <div>
-            <h2 className="fs__title">Family settings</h2>
-            <p className="fs__sub">{familyName}</p>
-          </div>
+          <h2 className="fs__title">Account</h2>
           <button className="icon-btn" onClick={onClose} aria-label="Close">✕</button>
         </div>
 
-        {/* Auth not enabled */}
-        {!loading && !data?.familyId && (
-          <div className="fs__empty">
-            <p>Sharing requires auth to be configured.</p>
-            <p className="fs__empty-sub">Set up Brevo and the Cloudflare secrets to enable invitations.</p>
+        {/* ── User identity ─────────────────────────────────── */}
+        {user ? (
+          <div className="fs__account">
+            <div className="fs__account-avatar">
+              {user.email.slice(0, 2).toUpperCase()}
+            </div>
+            <div className="fs__account-info">
+              <span className="fs__account-email">{user.email}</span>
+              <RoleBadge role={myRole} />
+            </div>
+            <button className="fs__signout-btn" onClick={handleSignOut}>Sign out</button>
           </div>
-        )}
+        ) : null}
 
-        {data?.familyId && (
+        {/* ── Family sharing ────────────────────────────────── */}
+        {!loading && hasFamilyId && (
           <>
-            {/* Tabs */}
+            <p className="fs__section-label" style={{ marginTop: user ? 28 : 0 }}>
+              Family · {familyName}
+            </p>
+
             <div className="fs__tabs">
               <button
                 className={`fs__tab${tab === 'members' ? ' fs__tab--on' : ''}`}
@@ -141,7 +149,7 @@ export default function FamilySettings({ myRole, familyName, onClose, onReset, u
             {tab === 'invite' && isOwnerOrCoadmin && (
               <form className="fs__invite-form" onSubmit={sendInvite} noValidate>
                 <p className="fs__invite-intro">
-                  They'll receive a branded email with an invitation link to join your family tree.
+                  They'll receive an email with an invitation link to join your family tree.
                 </p>
 
                 <label className="fs__label">Email address</label>
@@ -188,15 +196,33 @@ export default function FamilySettings({ myRole, familyName, onClose, onReset, u
           </>
         )}
 
-        {user && (
-          <div className="fs__signout">
-            <p className="fs__signout-email">{user.email}</p>
-            <button className="fs__signout-btn" onClick={handleSignOut}>
-              Sign out
-            </button>
+        {/* ── Sharing not yet active ────────────────────────── */}
+        {!loading && !hasFamilyId && user && (
+          <div className="fs__sharing-hint">
+            <svg className="fs__sharing-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <circle cx="18" cy="5" r="2.5" stroke="currentColor" strokeWidth="1.6" />
+              <circle cx="6" cy="12" r="2.5" stroke="currentColor" strokeWidth="1.6" />
+              <circle cx="18" cy="19" r="2.5" stroke="currentColor" strokeWidth="1.6" />
+              <path d="M8.5 10.5l7-4M8.5 13.5l7 4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+            </svg>
+            <p className="fs__sharing-hint-title">Invite family members</p>
+            <p className="fs__sharing-hint-body">
+              Sharing activates once your tree has synced. Edit any person or add a relative to trigger a sync, then come back here to invite people.
+            </p>
           </div>
         )}
 
+        {/* ── No auth configured (open mode) ───────────────── */}
+        {!loading && !hasFamilyId && !user && (
+          <div className="fs__sharing-hint">
+            <p className="fs__sharing-hint-title">Sharing not available</p>
+            <p className="fs__sharing-hint-body">
+              Configure Brevo and Cloudflare secrets to enable family sharing and invitations.
+            </p>
+          </div>
+        )}
+
+        {/* ── Danger zone ───────────────────────────────────── */}
         <div className="fs__danger">
           <p className="fs__danger-label">Danger zone</p>
           <button

@@ -77,21 +77,24 @@
   align-items: center;
   pointer-events: auto;
 }
-.topbar__user { padding: 6px; }
-.topbar__avatar {
+.topbar__avatar-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent) 16%, white);
+  border: 2px solid color-mix(in srgb, var(--accent) 30%, white);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background: color-mix(in srgb, var(--accent) 14%, white);
-  color: var(--accent);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  pointer-events: none;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.10);
+  transition: transform 0.25s var(--spring), box-shadow 0.2s var(--ease);
+  cursor: pointer;
 }
+.topbar__avatar-btn:active { transform: scale(0.92); }
 
 /* Logo mark + staggered bubble pop-in */
 .logo { overflow: visible; }
@@ -2215,27 +2218,88 @@
 }
 .fs__err { font-size: 13px; color: #c0392b; text-align: center; }
 
-/* Sign-out row in FamilySettings */
-.fs__signout {
+/* Account identity block — top of Account sheet */
+.fs__account {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 14px 0;
-  border-top: 1px solid var(--hairline);
-  margin-top: 8px;
+  gap: 14px;
+  padding: 16px;
+  background: color-mix(in srgb, var(--accent) 5%, white);
+  border: 1px solid color-mix(in srgb, var(--accent) 18%, white);
+  border-radius: 14px;
+  margin-bottom: 4px;
 }
-.fs__signout-email { font-size: 13px; color: var(--ink-soft); }
+.fs__account-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent) 18%, white);
+  border: 2px solid color-mix(in srgb, var(--accent) 28%, white);
+  color: var(--accent);
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.fs__account-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.fs__account-email {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .fs__signout-btn {
   background: none;
   border: 1.5px solid var(--hairline);
   border-radius: 20px;
-  padding: 7px 16px;
+  padding: 7px 14px;
   font-size: 13px;
   font-weight: 500;
-  color: var(--ink);
+  color: var(--ink-soft);
   cursor: pointer;
+  flex-shrink: 0;
 }
 .fs__signout-btn:active { background: var(--hairline); }
+
+/* Sharing hint — shown when sharing not yet active */
+.fs__sharing-hint {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 28px 16px 20px;
+  gap: 8px;
+  margin: 8px 0;
+}
+.fs__sharing-icon {
+  width: 36px;
+  height: 36px;
+  color: var(--ink-soft);
+  opacity: 0.45;
+  margin-bottom: 4px;
+}
+.fs__sharing-hint-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.fs__sharing-hint-body {
+  font-size: 13px;
+  color: var(--ink-soft);
+  line-height: 1.55;
+  max-width: 300px;
+}
 
 /* Danger zone in FamilySettings */
 .fs__danger {

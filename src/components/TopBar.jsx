@@ -16,19 +16,20 @@ export default function TopBar({ familyName, view, onToggleView, onOpenLegend, o
       </div>
 
       <div className="topbar__actions">
-        {user && (
+        {user ? (
           <button
-            className="pill topbar__user"
+            className="topbar__avatar-btn"
             onClick={onOpenSettings}
             title={`Signed in as ${user.email}`}
             aria-label="Account & settings"
           >
-            <UserAvatar email={user.email} />
+            {user.email.slice(0, 2).toUpperCase()}
+          </button>
+        ) : (
+          <button className="pill" onClick={onOpenSettings} aria-label="Family settings & sharing">
+            <ShareIcon />
           </button>
         )}
-        <button className="pill" onClick={onOpenSettings} aria-label="Family settings & sharing">
-          <ShareIcon />
-        </button>
         <button className="pill" onClick={onOpenLegend} aria-label="What the styles mean">
           <KeyIcon />
         </button>
@@ -38,13 +39,6 @@ export default function TopBar({ familyName, view, onToggleView, onOpenLegend, o
       </div>
     </header>
   );
-}
-
-function UserAvatar({ email }) {
-  const initials = email
-    ? email.split('@')[0].slice(0, 2).toUpperCase()
-    : '?';
-  return <span className="topbar__avatar">{initials}</span>;
 }
 
 function ShareIcon() {
