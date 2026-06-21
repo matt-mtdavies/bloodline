@@ -13,22 +13,30 @@
   right: 0;
   z-index: 20;
   display: flex;
-  justify-content: center;
-  padding: calc(var(--safe-top) + 16px) 16px 18px;
+  flex-direction: column;
+  padding: calc(var(--safe-top) + 10px) 16px 14px;
   pointer-events: none;
   background: linear-gradient(180deg, #ffffff 0%, rgba(255, 255, 255, 0.85) 45%, rgba(255, 255, 255, 0));
 }
 
-/* Centred editorial masthead: the Bloodline mark + wordmark, family beneath. */
-.masthead {
+/* Row 1: buttons only, flush-right */
+.topbar__bar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-height: 36px;
   pointer-events: auto;
+}
+
+/* Row 2: logo + wordmark centred */
+.topbar__heading {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 3px;
-  text-align: center;
+  margin-top: 6px;
   animation: masthead-in 0.7s var(--ease) both;
 }
+
 @keyframes masthead-in {
   from { opacity: 0; transform: translateY(-8px); }
   to { opacity: 1; transform: translateY(0); }
@@ -36,10 +44,10 @@
 .masthead__brand { display: inline-flex; align-items: center; gap: 11px; }
 .masthead__word {
   font-family: var(--display);
-  font-size: 30px;
+  font-size: 26px;
   font-weight: 600;
   letter-spacing: -0.018em;
-  color: #241f1c; /* deep warm charcoal — the mark carries the colour */
+  color: #241f1c;
   line-height: 1;
 }
 /* Editorial family label: small-caps flanked by hairline rules. */
@@ -69,15 +77,26 @@
 }
 
 .topbar__actions {
-  position: absolute;
-  right: 16px;
-  top: calc(var(--safe-top) + 14px);
   display: flex;
   gap: 8px;
   align-items: center;
   pointer-events: auto;
 }
-.topbar__user { padding: 6px; }
+.topbar__avatar-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: none;
+  background: color-mix(in srgb, var(--accent) 12%, white);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
 .topbar__avatar {
   display: flex;
   align-items: center;
@@ -104,7 +123,7 @@
   to { transform: scale(1); opacity: 1; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .masthead, .logo__a, .logo__b, .logo__c { animation-duration: 0.001ms !important; }
+  .topbar__heading, .logo__a, .logo__b, .logo__c { animation-duration: 0.001ms !important; }
 }
 
 .pill {
@@ -381,7 +400,7 @@
   position: absolute;
   inset: 0;
   overflow-y: auto;
-  padding: calc(var(--safe-top) + 104px) 16px calc(var(--safe-bottom) + 28px);
+  padding: calc(var(--safe-top) + 128px) 16px calc(var(--safe-bottom) + 28px);
   -webkit-overflow-scrolling: touch;
 }
 .listview__focus { max-width: 620px; margin: 0 auto; }
@@ -2194,6 +2213,39 @@
   padding: 16px;
 }
 .fs__err { font-size: 13px; color: #c0392b; text-align: center; }
+
+/* Family name rename row */
+.fs__section { padding: 16px 20px 12px; border-bottom: 1px solid var(--hairline); }
+.fs__name-row { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+.fs__name-row .fs__input { flex: 1; margin-top: 0; }
+.fs__name-save {
+  flex-shrink: 0;
+  padding: 0 14px;
+  height: 44px;
+  border-radius: 10px;
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* Danger zone */
+.fs__danger { padding: 20px 20px 8px; margin-top: auto; }
+.fs__danger-btn {
+  width: 100%;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1.5px solid #e57373;
+  background: transparent;
+  color: #c0392b;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.fs__danger-btn:hover { background: #fef2f2; }
 
 /* ── Privacy / visibility controls in EditPersonSheet ─────────────────────── */
 .privacy-section { border-top: 1px solid var(--hairline); margin-top: 8px; padding-top: 12px; }

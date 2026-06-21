@@ -5,13 +5,14 @@ import {
 
 const INVITE_ROLES = ['coadmin', 'editor', 'contributor', 'viewer'];
 
-export default function FamilySettings({ myRole, familyName, onClose }) {
+export default function FamilySettings({ myRole, familyName, onUpdateFamilyName, onReset, onClose }) {
   const [tab, setTab] = useState('members'); // 'members' | 'invite'
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState('editor');
   const [inviteStatus, setInviteStatus] = useState('idle'); // idle | sending | sent | error
+  const [nameEdit, setNameEdit] = useState(familyName);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -65,6 +66,17 @@ export default function FamilySettings({ myRole, familyName, onClose }) {
 
   const isOwnerOrCoadmin = canInvite(myRole);
 
+  function handleNameSave() {
+    const trimmed = nameEdit.trim();
+    if (trimmed && trimmed !== familyName) onUpdateFamilyName(trimmed);
+  }
+
+  function handleReset() {
+    if (!confirm('This will erase your entire family tree and start fresh. Are you sure?')) return;
+    onReset();
+    onClose();
+  }
+
   return (
     <div className="sheet-scrim" role="dialog" aria-modal="true" aria-label="Family settings">
       <div className="sheet">
@@ -72,9 +84,26 @@ export default function FamilySettings({ myRole, familyName, onClose }) {
         <div className="fs__head">
           <div>
             <h2 className="fs__title">Family settings</h2>
-            <p className="fs__sub">{familyName}</p>
           </div>
           <button className="icon-btn" onClick={onClose} aria-label="Close">✕</button>
+        </div>
+
+        {/* Family name */}
+        <div className="fs__section">
+          <label className="fs__label">Family name</label>
+          <div className="fs__name-row">
+            <input
+              className="fs__input"
+              value={nameEdit}
+              onChange={(e) => setNameEdit(e.target.value)}
+              onBlur={handleNameSave}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.target.blur(); } }}
+              placeholder="My Family"
+            />
+            {nameEdit.trim() !== familyName && nameEdit.trim() && (
+              <button className="fs__name-save" onClick={handleNameSave}>Save</button>
+            )}
+          </div>
         </div>
 
         {/* Auth not enabled */}
@@ -181,6 +210,13 @@ export default function FamilySettings({ myRole, familyName, onClose }) {
             )}
           </>
         )}
+
+        {/* Danger zone */}
+        <div className="fs__danger">
+          <button className="fs__danger-btn" onClick={handleReset}>
+            Start over — erase tree
+          </button>
+        </div>
       </div>
     </div>
   );

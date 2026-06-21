@@ -17,6 +17,8 @@ import {
   removeDocument,
   loadFromServer,
   enableServerSync,
+  updateFamilyName,
+  resetTree,
 } from './data/store.js';
 import { buildGraph, pathBetween } from './data/graph.js';
 import { useReducedMotion } from './hooks/useReducedMotion.js';
@@ -361,6 +363,8 @@ export default function App() {
         <FamilySettings
           myRole={user ? (data._meta?.role || 'owner') : 'owner'}
           familyName={data.familyName || 'My Family'}
+          onUpdateFamilyName={updateFamilyName}
+          onReset={resetTree}
           onClose={() => setSettingsOpen(false)}
         />
       )}

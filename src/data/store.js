@@ -434,3 +434,11 @@ export function addDocument(personId, { title, mime, src }) {
 export function removeDocument(id) {
   commit({ ...state, documents: state.documents.filter((d) => d.id !== id) });
 }
+
+export function updateFamilyName(name) {
+  commit({ ...state, familyName: name.trim() || state.familyName });
+}
+
+export function resetTree() {
+  commit({ ...EMPTY });
+}

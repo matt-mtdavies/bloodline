@@ -8,9 +8,40 @@ export default function TopBar({ familyName, view, onToggleView, onOpenLegend, o
 
   return (
     <header className="topbar">
-      <div className="masthead">
+      {/* Row 1: action buttons only, flush-right */}
+      <div className="topbar__bar">
+        <div className="topbar__actions">
+          {user ? (
+            <>
+              <button
+                className="topbar__avatar-btn"
+                onClick={handleLogout}
+                title={`Signed in as ${user.email} — tap to sign out`}
+                aria-label="Sign out"
+              >
+                <UserAvatar email={user.email} />
+              </button>
+              <button className="pill" onClick={onOpenSettings} aria-label="Family settings & sharing">
+                <ShareIcon />
+              </button>
+            </>
+          ) : (
+            <button className="pill" onClick={onOpenSettings} aria-label="Family settings & sharing">
+              <ShareIcon />
+            </button>
+          )}
+          <button className="pill" onClick={onOpenLegend} aria-label="What the styles mean">
+            <KeyIcon />
+          </button>
+          <button className="pill pill--label" onClick={onToggleView}>
+            {view === 'bubbles' ? 'List' : 'Tree'}
+          </button>
+        </div>
+      </div>
+      {/* Row 2: logo + wordmark centred across full width */}
+      <div className="topbar__heading">
         <div className="masthead__brand">
-          <Logo size={40} />
+          <Logo size={34} />
           <span className="masthead__word">Bloodline</span>
         </div>
         <div className="masthead__family">
@@ -18,28 +49,6 @@ export default function TopBar({ familyName, view, onToggleView, onOpenLegend, o
           <span className="masthead__familyname">{familyName}</span>
           <span className="masthead__rule" />
         </div>
-      </div>
-
-      <div className="topbar__actions">
-        {user && (
-          <button
-            className="pill topbar__user"
-            onClick={handleLogout}
-            title={`Signed in as ${user.email} — tap to sign out`}
-            aria-label="Sign out"
-          >
-            <UserAvatar email={user.email} />
-          </button>
-        )}
-        <button className="pill" onClick={onOpenSettings} aria-label="Family settings & sharing">
-          <ShareIcon />
-        </button>
-        <button className="pill" onClick={onOpenLegend} aria-label="What the styles mean">
-          <KeyIcon />
-        </button>
-        <button className="pill pill--label" onClick={onToggleView}>
-          {view === 'bubbles' ? 'List' : 'Tree'}
-        </button>
       </div>
     </header>
   );
