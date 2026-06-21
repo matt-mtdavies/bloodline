@@ -31,6 +31,30 @@ export async function signSession(payload, secret) {
   return `${body}.${sigB64}`;
 }
 
+// Verify a raw signed session value (body.sig). Returns the payload or null.
+export async function verifySessionValue(value, secret) {
+  if (!value) return null;
+  const [body, sig] = value.split('.');
+  if (!body || !sig) return null;
+  try {
+    const key = await crypto.subtle.importKey(
+      'raw',
+      new TextEncoder().encode(secret),
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['verify'],
+    );
+    const sigBytes = Uint8Array.from(atob(sig), (c) => c.charCodeAt(0));
+    const valid = await crypto.subtle.verify(
+      'HMAC', key, sigBytes, new TextEncoder().encode(body),
+    );
+    if (!valid) return null;
+    return JSON.parse(atob(body));
+  } catch {
+    return null;
+  }
+}
+
 // Verify a signed session cookie value. Returns the payload or null.
 export async function verifySession(cookieHeader, secret) {
   if (!cookieHeader) return null;

@@ -8,6 +8,7 @@
  *
  * ?demo in the URL loads the Davies seed family (for smoke tests / demos).
  */
+import { apiFetch } from '../lib/api.js';
 import {
   people as seedPeople,
   relationships as seedRels,
@@ -100,7 +101,7 @@ function scheduleServerSave(s) {
   if (!_serverSyncEnabled) return;
   clearTimeout(_saveTimer);
   _saveTimer = setTimeout(() => {
-    fetch('/api/tree', {
+    apiFetch('/api/tree', {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(s),
@@ -123,7 +124,7 @@ function commit(next) {
 // Returns true if data was found, false if the user is new (no tree yet).
 export async function loadFromServer() {
   try {
-    const res = await fetch('/api/tree');
+    const res = await apiFetch('/api/tree');
     if (!res.ok) return false;
     const data = await res.json();
     if (!data) return false;

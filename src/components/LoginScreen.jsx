@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import Logo from './Logo.jsx';
+import { setSession } from '../lib/api.js';
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
@@ -59,6 +60,8 @@ export default function LoginScreen() {
         body: JSON.stringify({ email: email.trim().toLowerCase(), code: clean }),
       });
       if (res.ok) {
+        const data = await res.json().catch(() => ({}));
+        if (data.session) setSession(data.session);
         window.location.reload();
       } else {
         const data = await res.json().catch(() => ({}));

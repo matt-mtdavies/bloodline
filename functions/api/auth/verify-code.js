@@ -49,11 +49,14 @@ export async function onRequestPost({ request, env }) {
     env.SESSION_SECRET || 'dev',
   );
 
-  return new Response(JSON.stringify({ ok: true }), {
+  // Return the session value in the body so the client can store it in
+  // localStorage and pass it via X-Bl-Session header — bypasses iOS Safari's
+  // cookie restrictions on fetch() responses entirely.
+  return new Response(JSON.stringify({ ok: true, session }), {
     status: 200,
     headers: {
       'content-type': 'application/json',
-      'set-cookie': sessionCookie(session),
+      'set-cookie': sessionCookie(session), // kept for desktop/cookie-capable browsers
     },
   });
 }

@@ -1,6 +1,7 @@
 import { useMemo, useState, useCallback, useRef, useEffect, useSyncExternalStore } from 'react';
 import './styles/components.css';
 import { DEFAULT_FOCUS } from './data/seed.js';
+import { apiFetch } from './lib/api.js';
 import {
   store,
   addRelative,
@@ -56,7 +57,7 @@ export default function App() {
 
   useEffect(() => {
     if (isDemo) return;
-    fetch('/api/auth/me')
+    apiFetch('/api/auth/me')
       .then((r) => (r.ok ? r.json() : null))
       .then(async (u) => {
         // Network error or explicit 401 with auth configured → show login.

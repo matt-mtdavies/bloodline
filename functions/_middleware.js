@@ -1,12 +1,17 @@
-import { verifySession } from './_lib/util.js';
+import { verifySession, verifySessionValue } from './_lib/util.js';
 
-// Runs before every Pages Function. Verifies the session cookie and attaches
-// the decoded payload to context.data.user (null if not authenticated).
+// Verifies session from either the httpOnly cookie (desktop) or the
+// X-Bl-Session header (mobile — localStorage avoids iOS Safari cookie issues).
 export async function onRequest(context) {
+  const secret = context.env.SESSION_SECRET || 'dev';
   const cookie = context.request.headers.get('cookie') || '';
-  context.data.user = await verifySession(
-    cookie,
-    context.env.SESSION_SECRET || 'dev',
+  const headerToken = context.request.headers.get('x-bl-session') || '';
+
+  context.data.user = await (
+    headerToken
+      ? verifySessionValue(headerToken, secret)
+      : verifySession(cookie, secret)
   ).catch(() => null);
+
   return context.next();
 }

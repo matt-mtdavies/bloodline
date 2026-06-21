@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { apiFetch } from '../lib/api.js';
 import {
   ROLES, ROLE_LABELS, ROLE_COLORS, canInvite, roleRank,
 } from '../lib/visibility.js';
@@ -16,7 +17,7 @@ export default function FamilySettings({ myRole, familyName, onClose, onReset })
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/family/members');
+      const res = await apiFetch('/api/family/members');
       if (res.ok) setData(await res.json());
     } finally {
       setLoading(false);
@@ -30,7 +31,7 @@ export default function FamilySettings({ myRole, familyName, onClose, onReset })
     if (!inviteEmail.trim()) return;
     setInviteStatus('sending');
     try {
-      const res = await fetch('/api/invite', {
+      const res = await apiFetch('/api/invite', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ email: inviteEmail.trim(), role: inviteRole }),
@@ -45,7 +46,7 @@ export default function FamilySettings({ myRole, familyName, onClose, onReset })
   }
 
   async function updateRole(userId, role) {
-    await fetch('/api/family/members', {
+    await apiFetch('/api/family/members', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ action: 'update-role', userId, role }),
@@ -55,7 +56,7 @@ export default function FamilySettings({ myRole, familyName, onClose, onReset })
 
   async function removeMember(userId) {
     if (!confirm('Remove this person from the family tree?')) return;
-    await fetch('/api/family/members', {
+    await apiFetch('/api/family/members', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ action: 'remove', userId }),
