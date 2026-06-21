@@ -1,0 +1,24 @@
+#:schema node_modules/wrangler/config-schema.json
+name = "bloodline"
+compatibility_date = "2024-11-01"
+pages_build_output_dir = "dist"
+
+# Non-secret vars. Secrets (BREVO_API_KEY, ANTHROPIC_API_KEY, SESSION_SECRET)
+# go in .dev.vars locally and `wrangler pages secret put` (or the Pages
+# dashboard → Settings → Variables) in production.
+[vars]
+APP_URL = "https://myfamilybloodline.com"  # override locally in .dev.vars
+FROM_EMAIL = "hello@myfamilybloodline.com"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Cloudflare D1 — already created and migrated (Western Europe).
+# Run `wrangler d1 migrations apply bloodline --remote` after any new migration.
+[[d1_databases]]
+binding = "DB"
+database_name = "bloodline"
+database_id = "96e94723-103f-4c4f-a1b0-797810e7dfc9"
+
+# Cloudflare R2 — create with `wrangler r2 bucket create bloodline-photos`:
+# [[r2_buckets]]
+# binding = "PHOTOS"
+# bucket_name = "bloodline-photos"

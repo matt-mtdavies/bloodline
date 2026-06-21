@@ -1,0 +1,30 @@
+{
+  "name": "bloodline",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "A living portrait of your family. Phase 1 — the visualization.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test:e2e": "node tests/smoke.mjs",
+    "seed:gen": "node scripts/generate-seed.mjs",
+    "db:migrate": "wrangler d1 migrations apply bloodline --local",
+    "db:migrate:remote": "wrangler d1 migrations apply bloodline --remote",
+    "db:seed": "wrangler d1 execute bloodline --local --file=./seed/seed.sql",
+    "db:seed:remote": "wrangler d1 execute bloodline --remote --file=./seed/seed.sql"
+  },
+  "dependencies": {
+    "d3-force": "^3.0.0",
+    "pixi.js": "^8.6.6",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "playwright-core": "^1.56.1",
+    "vite": "^5.4.11",
+    "vite-plugin-pwa": "^0.21.1"
+  }
+}
