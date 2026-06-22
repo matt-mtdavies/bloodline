@@ -255,8 +255,18 @@ export default function BubbleTree({
           return camMode === 'free';
         },
         // Smoothly return to the framed view (the floating "recentre" control).
+        // Also clears any stuck pointer/gesture state from iOS not firing pointerup
+        // for all fingers — that leaves phantom entries in the pointers Map which
+        // make subsequent single-finger taps look like a multi-touch, silently
+        // blocking bubble selection until the state is reset.
         recenter() {
           if (!reducedMotion) zoom.velocity -= 1.2;
+          pointers.clear();
+          pinch.active = false;
+          drag.type = 'none';
+          drag.moved = false;
+          drag.node = null;
+          vx = vy = 0;
           state.enterFollow();
         },
         // Let React mirror the camera mode (to show/hide the recentre control).
