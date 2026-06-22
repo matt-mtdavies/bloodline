@@ -211,14 +211,20 @@ export function relationLabel(graph, focusId, otherId) {
 
   // Aunt / Uncle: a sibling of focus's parent
   for (const p of graph.parents(focusId)) {
-    if (graph.siblings(p.id).some((x) => x.id === otherId)) {
+    const matchedSib = graph.siblings(p.id).find((x) => x.id === otherId);
+    if (matchedSib) {
+      // Step/half sibling of parent → step/half aunt/uncle, regardless of side.
+      if (matchedSib.kind === 'step') return `Step ${g('Uncle', 'Aunt', 'Aunt/Uncle')}`;
+      if (matchedSib.kind === 'half') return `Half-${g('Uncle', 'Aunt', 'Aunt/Uncle')}`;
       const s = parentSide(p);
       const prefix = s ? `${s} ` : '';
       return `${prefix}${g('Uncle', 'Aunt', 'Aunt/Uncle')}`;
     }
     // Partner of parent's sibling (uncle/aunt by marriage)
-    for (const s of graph.siblings(p.id)) {
-      if (graph.partners(s.id).some((x) => x.id === otherId)) {
+    for (const sib of graph.siblings(p.id)) {
+      if (graph.partners(sib.id).some((x) => x.id === otherId)) {
+        if (sib.kind === 'step') return `Step ${g('Uncle', 'Aunt', 'Aunt/Uncle')} (by marriage)`;
+        if (sib.kind === 'half') return `Half-${g('Uncle', 'Aunt', 'Aunt/Uncle')} (by marriage)`;
         const sp = parentSide(p);
         const prefix = sp ? `${sp} ` : '';
         return `${prefix}${g('Uncle', 'Aunt', 'Aunt/Uncle')} (by marriage)`;

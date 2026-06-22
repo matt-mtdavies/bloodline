@@ -450,6 +450,60 @@ test('uncle by marriage (bio dad\'s brother\'s partner) → Paternal Uncle (by m
   assert.equal(relationLabel(g, 'alice', 'uncle'), 'Paternal Uncle (by marriage)');
 });
 
+test('step-sibling of parent → Step Aunt', () => {
+  // stepdad is dad's step-parent; stepsis is stepdad's bio daughter → step-sibling of dad.
+  // From alice's view, stepsis is a step aunt.
+  const g = buildGraph(
+    [person('stepdad', 'male'), person('dad', 'male'), person('stepsis', 'female'), person('alice')],
+    [
+      parentEdge('stepdad', 'dad', 'step'),
+      parentEdge('stepdad', 'stepsis', 'biological'),
+      parentEdge('dad', 'alice'),
+    ],
+  );
+  assert.equal(relationLabel(g, 'alice', 'stepsis'), 'Step Aunt');
+});
+
+test('step-sibling of parent → Step Uncle', () => {
+  const g = buildGraph(
+    [person('stepmum', 'female'), person('mum', 'female'), person('stepbro', 'male'), person('alice')],
+    [
+      parentEdge('stepmum', 'mum', 'step'),
+      parentEdge('stepmum', 'stepbro', 'biological'),
+      parentEdge('mum', 'alice'),
+    ],
+  );
+  assert.equal(relationLabel(g, 'alice', 'stepbro'), 'Step Uncle');
+});
+
+test('half-sibling of parent → Half-Uncle', () => {
+  // dad and halfbro share only one bio parent (gdad).
+  const g = buildGraph(
+    [person('gdad', 'male'), person('mum1', 'female'), person('mum2', 'female'),
+     person('dad', 'male'), person('halfbro', 'male'), person('alice')],
+    [
+      parentEdge('gdad', 'dad'), parentEdge('mum1', 'dad'),
+      parentEdge('gdad', 'halfbro'), parentEdge('mum2', 'halfbro'),
+      parentEdge('dad', 'alice'),
+    ],
+  );
+  assert.equal(relationLabel(g, 'alice', 'halfbro'), 'Half-Uncle');
+});
+
+test('partner of step-sibling of parent → Step Uncle (by marriage)', () => {
+  const g = buildGraph(
+    [person('stepdad', 'male'), person('dad', 'male'), person('stepsis', 'female'),
+     person('partner', 'male'), person('alice')],
+    [
+      parentEdge('stepdad', 'dad', 'step'),
+      parentEdge('stepdad', 'stepsis', 'biological'),
+      parentEdge('dad', 'alice'),
+      partnerEdge('stepsis', 'partner'),
+    ],
+  );
+  assert.equal(relationLabel(g, 'alice', 'partner'), 'Step Uncle (by marriage)');
+});
+
 // ── 7. relationLabel — nieces, nephews, cousins ───────────────────────────────
 
 test('nephew (brother\'s son) → Nephew', () => {
