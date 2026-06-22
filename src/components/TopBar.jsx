@@ -17,7 +17,10 @@ export default function TopBar({ familyName, view, syncStatus, onToggleView, onO
             <span className="sync-status sync-status--saved" aria-live="polite"><SavedCheckIcon /> Saved</span>
           )}
           {syncStatus === 'error' && (
-            <span className="sync-status sync-status--error" aria-live="assertive">Not saved — check connection</span>
+            <span className="sync-status sync-status--error" aria-live="assertive">Not saved — retrying…</span>
+          )}
+          {syncStatus === 'error-auth' && (
+            <span className="sync-status sync-status--error" aria-live="assertive">Session expired — please reload</span>
           )}
           <button className="pill" onClick={onOpenSettings} aria-label="Family settings">
             <SettingsIcon />

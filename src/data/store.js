@@ -92,8 +92,9 @@ const listeners = new Set();
 let _serverSyncEnabled = false;
 let _saveTimer = null;
 
-// Sync status observable — consumed by TopBar to show "Saving…" / "Saved".
-let _syncStatus = 'idle'; // 'idle' | 'saving' | 'saved' | 'error'
+// Sync status observable — consumed by TopBar.
+// Values: 'idle' | 'saving' | 'saved' | 'error' | 'error-auth'
+let _syncStatus = 'idle';
 const _syncListeners = new Set();
 function setSyncStatus(s) { _syncStatus = s; _syncListeners.forEach((l) => l()); }
 export const syncStore = {
@@ -111,9 +112,38 @@ function afterSave(ok, statusCode) {
     setSyncStatus('saved');
     clearTimeout(_savedTimer);
     _savedTimer = setTimeout(() => setSyncStatus('idle'), 2500);
+  } else if (statusCode === 401 || statusCode === 403) {
+    setSyncStatus('error-auth');
+    console.warn('[store] server sync: auth error', statusCode);
   } else {
     setSyncStatus('error');
     console.warn('[store] server sync failed:', statusCode || 'network error');
+  }
+}
+
+const RETRY_DELAYS = [2000, 4000, 8000];
+
+async function putTree(s, attempt = 0) {
+  try {
+    const r = await fetch('/api/tree', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(s),
+    });
+    if (r.ok) { afterSave(true); return; }
+    // Auth errors are permanent — no retry.
+    if (r.status === 401 || r.status === 403) { afterSave(false, r.status); return; }
+    if (attempt < RETRY_DELAYS.length) {
+      setTimeout(() => putTree(s, attempt + 1), RETRY_DELAYS[attempt]);
+    } else {
+      afterSave(false, r.status);
+    }
+  } catch {
+    if (attempt < RETRY_DELAYS.length) {
+      setTimeout(() => putTree(s, attempt + 1), RETRY_DELAYS[attempt]);
+    } else {
+      afterSave(false);
+    }
   }
 }
 
@@ -121,15 +151,7 @@ function scheduleServerSave(s) {
   if (!_serverSyncEnabled) return;
   clearTimeout(_saveTimer);
   setSyncStatus('saving');
-  _saveTimer = setTimeout(() => {
-    fetch('/api/tree', {
-      method: 'PUT',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(s),
-    })
-      .then((r) => afterSave(r.ok, r.status))
-      .catch(() => afterSave(false));
-  }, 1500);
+  _saveTimer = setTimeout(() => putTree(s), 1500);
 }
 
 // fromServer=true: loading from D1 — don't increment _seq or schedule a save.
@@ -150,13 +172,7 @@ function commit(next, { fromServer = false } = {}) {
 // Force an immediate server save (used after login or when local is ahead of server).
 export function saveToServer() {
   setSyncStatus('saving');
-  return fetch('/api/tree', {
-    method: 'PUT',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(state),
-  })
-    .then((r) => afterSave(r.ok, r.status))
-    .catch(() => afterSave(false));
+  return putTree(state);
 }
 
 // Load the user's tree from the server.
