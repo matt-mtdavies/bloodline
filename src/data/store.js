@@ -358,6 +358,18 @@ export function addRelationship(fromId, toId, type, qualifier = 'biological') {
   commit({ ...state, relationships: [...state.relationships, edge] });
 }
 
+// Change the qualifier on a parent→child edge (biological / step / adoptive).
+export function updateRelationshipQualifier(fromId, toId, qualifier) {
+  commit({
+    ...state,
+    relationships: state.relationships.map((r) =>
+      r.type === 'parent' && r.from_person === fromId && r.to_person === toId
+        ? { ...r, qualifier }
+        : r,
+    ),
+  });
+}
+
 // Remove a specific relationship edge between two people.
 // For 'parent': fromId is the parent, toId is the child.
 // For 'partner': direction doesn't matter — both orderings are checked.

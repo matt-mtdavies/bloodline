@@ -312,9 +312,10 @@
 }
 .sheet__rel ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 
-/* Relationship card — nav button + optional unlink button side by side */
+/* Relationship card — nav button + optional edit/unlink buttons */
 .rel-chip {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   border-radius: 14px;
   transition: background 0.25s var(--ease);
@@ -336,6 +337,7 @@
 .rel-chip__text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .rel-chip__name { font-size: 15.5px; font-weight: 500; color: var(--ink); }
 .rel-chip__kind { font-size: 12.5px; color: var(--ink-soft); }
+.rel-chip__edit-btn,
 .rel-chip__unlink {
   flex-shrink: 0;
   display: flex;
@@ -344,14 +346,43 @@
   width: 34px;
   height: 34px;
   border-radius: 10px;
-  margin-right: 4px;
   color: var(--ink-faint);
   opacity: 0;
   transition: opacity 0.15s, color 0.15s, background 0.15s;
 }
+.rel-chip__edit-btn { margin-right: 0; }
+.rel-chip__unlink   { margin-right: 4px; }
+.rel-chip:hover .rel-chip__edit-btn,
 .rel-chip:hover .rel-chip__unlink,
+.rel-chip:focus-within .rel-chip__edit-btn,
 .rel-chip:focus-within .rel-chip__unlink { opacity: 1; }
-.rel-chip__unlink:hover { color: #c2603a; background: #f5e8e4; }
+.rel-chip__edit-btn--on { opacity: 1 !important; color: var(--accent); }
+.rel-chip__edit-btn:hover { color: var(--accent); background: rgba(194,96,58,0.07); }
+.rel-chip__unlink:hover   { color: #c2603a; background: #f5e8e4; }
+
+/* Inline qualifier picker — slides in below the card row */
+.qual-picker {
+  width: 100%;
+  display: flex;
+  gap: 6px;
+  padding: 6px 10px 12px;
+  animation: islide-in 0.2s var(--spring) both;
+}
+.qual-opt {
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 500;
+  border: 1.5px solid var(--hairline);
+  color: var(--ink-soft);
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+.qual-opt--on {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(194,96,58,0.07);
+}
+.qual-opt:hover:not(.qual-opt--on) { border-color: var(--ink-soft); color: var(--ink); }
 
 .sheet__foot {
   position: sticky;

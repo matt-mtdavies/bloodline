@@ -7,6 +7,7 @@ import {
   addRelative,
   addRelationship,
   removeRelationship,
+  updateRelationshipQualifier,
   updatePerson,
   setupTree,
   setPhoto,
@@ -394,6 +395,7 @@ export default function App() {
           removeDocument(id);
         }}
         onRemoveRelationship={removeRelationship}
+        onUpdateRelationshipQualifier={updateRelationshipQualifier}
         onUpdateStory={(id, story) => updatePerson(id, { story })}
         onPhoto={handlePhoto}
       />

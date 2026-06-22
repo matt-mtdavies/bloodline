@@ -37,6 +37,7 @@ export default function PersonSheet({
   onAddDocument,
   onRemoveDocument,
   onRemoveRelationship,
+  onUpdateRelationshipQualifier,
   onUpdateStory,
   onPhoto,
 }) {
@@ -46,6 +47,7 @@ export default function PersonSheet({
   const docRef = useRef(null);
   const storyAbort = useRef(null);
   const [storyState, setStoryState] = useState({ phase: 'idle', text: '', error: null });
+  const [editingQualId, setEditingQualId] = useState(null);
 
   useEffect(() => {
     if (!person || lockEscape) return; // a stacked overlay owns Escape
@@ -461,29 +463,62 @@ export default function PersonSheet({
                             : g.relType === 'parent_from_self'
                               ? [person.id, item.id, 'parent']
                               : null;
+                        const qualArgs = g.relType === 'parent_from_item'
+                          ? [item.id, person.id]
+                          : g.relType === 'parent_from_self'
+                            ? [person.id, item.id]
+                            : null;
+                        const isEditingQual = editingQualId === item.id;
                         return (
-                          <li key={item.id} className="rel-chip">
-                            <button className="rel-chip__nav" onClick={() => onOpenPerson(item.id)}>
+                          <li key={item.id} className={'rel-chip' + (isEditingQual ? ' rel-chip--editing' : '')}>
+                            <button className="rel-chip__nav" onClick={() => { setEditingQualId(null); onOpenPerson(item.id); }}>
                               <Avatar person={rel} size={40} />
                               <span className="rel-chip__text">
                                 <span className="rel-chip__name">{rel.display_name}</span>
                                 <span className="rel-chip__kind">
                                   {relationLabel(graph, person.id, item.id)}
-                                  {item.qualifier && item.qualifier !== 'biological'
-                                    ? ` · ${item.qualifier}`
-                                    : ''}
                                 </span>
                               </span>
                               <RelChevronIcon />
                             </button>
+                            {qualArgs && (
+                              <button
+                                className={'rel-chip__edit-btn' + (isEditingQual ? ' rel-chip__edit-btn--on' : '')}
+                                onClick={() => setEditingQualId(isEditingQual ? null : item.id)}
+                                aria-label={`Change qualifier for ${rel.display_name}`}
+                                aria-expanded={isEditingQual}
+                              >
+                                <PencilIcon />
+                              </button>
+                            )}
                             {unlinkArgs && (
                               <button
                                 className="rel-chip__unlink"
-                                onClick={() => onRemoveRelationship?.(...unlinkArgs)}
+                                onClick={() => { setEditingQualId(null); onRemoveRelationship?.(...unlinkArgs); }}
                                 aria-label={`Unlink ${rel.display_name}`}
                               >
                                 <UnlinkIcon />
                               </button>
+                            )}
+                            {isEditingQual && qualArgs && (
+                              <div className="qual-picker">
+                                {[
+                                  { key: 'biological', label: 'Biological' },
+                                  { key: 'step', label: 'Step' },
+                                  { key: 'adoptive', label: 'Adopted' },
+                                ].map((q) => (
+                                  <button
+                                    key={q.key}
+                                    className={'qual-opt' + ((item.qualifier || 'biological') === q.key ? ' qual-opt--on' : '')}
+                                    onClick={() => {
+                                      onUpdateRelationshipQualifier?.(...qualArgs, q.key);
+                                      setEditingQualId(null);
+                                    }}
+                                  >
+                                    {q.label}
+                                  </button>
+                                ))}
+                              </div>
                             )}
                           </li>
                         );
