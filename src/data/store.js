@@ -105,6 +105,18 @@ export function enableServerSync() {
   _serverSyncEnabled = true;
 }
 
+let _savedTimer = null;
+function afterSave(ok, statusCode) {
+  if (ok) {
+    setSyncStatus('saved');
+    clearTimeout(_savedTimer);
+    _savedTimer = setTimeout(() => setSyncStatus('idle'), 2500);
+  } else {
+    setSyncStatus('error');
+    console.warn('[store] server sync failed:', statusCode || 'network error');
+  }
+}
+
 function scheduleServerSave(s) {
   if (!_serverSyncEnabled) return;
   clearTimeout(_saveTimer);
@@ -115,14 +127,8 @@ function scheduleServerSave(s) {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(s),
     })
-      .then((r) => {
-        setSyncStatus(r.ok ? 'saved' : 'error');
-        if (!r.ok) console.warn('[store] server sync HTTP error:', r.status);
-      })
-      .catch((e) => {
-        setSyncStatus('error');
-        console.warn('[store] server sync failed:', e.message);
-      });
+      .then((r) => afterSave(r.ok, r.status))
+      .catch(() => afterSave(false));
   }, 1500);
 }
 
@@ -141,13 +147,16 @@ function commit(next, { fromServer = false } = {}) {
   listeners.forEach((l) => l());
 }
 
-// Force an immediate server save (used after login when no D1 record exists yet).
+// Force an immediate server save (used after login or when local is ahead of server).
 export function saveToServer() {
+  setSyncStatus('saving');
   return fetch('/api/tree', {
     method: 'PUT',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(state),
-  }).catch((e) => console.warn('[store] initial server save failed:', e.message));
+  })
+    .then((r) => afterSave(r.ok, r.status))
+    .catch(() => afterSave(false));
 }
 
 // Load the user's tree from the server.
