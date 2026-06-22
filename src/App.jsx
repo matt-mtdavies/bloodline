@@ -27,7 +27,7 @@ import {
   resetTree,
   migratePhotosToR2,
 } from './data/store.js';
-import { uploadPhoto } from './lib/image.js';
+import { uploadPhoto, generateThumb } from './lib/image.js';
 import { buildGraph, pathBetween } from './data/graph.js';
 import { useReducedMotion } from './hooks/useReducedMotion.js';
 import BubbleTree from './viz/BubbleTree.jsx';
@@ -475,6 +475,11 @@ export default function App() {
           onSetPortrait={(src) => {
             setPhoto(lightbox.personId, src);
             setLightbox(null);
+            if (src.startsWith('data:')) {
+              generateThumb(src).then((thumb) => {
+                if (thumb) updatePerson(lightbox.personId, { photo_thumb: thumb });
+              });
+            }
           }}
         />
       )}
@@ -486,8 +491,14 @@ export default function App() {
           onConfirm={(dataUrl) => {
             setPhoto(crop.id, dataUrl); // instant visual feedback
             closeCrop();
+            generateThumb(dataUrl).then((thumb) => {
+              if (thumb) updatePerson(crop.id, { photo_thumb: thumb });
+            });
             uploadPhoto(dataUrl).then((url) => {
-              if (url !== dataUrl) setPhoto(crop.id, url); // upgrade to R2 URL
+              if (url !== dataUrl) {
+                setPhoto(crop.id, url); // upgrade to R2 URL
+                updatePerson(crop.id, { photo_thumb: null }); // R2 URL handles cross-device sync
+              }
             });
           }}
         />

@@ -216,17 +216,20 @@ export async function loadFromServer() {
 
     // Server is same or ahead — apply it. Data: URLs are stripped from the D1
     // payload to stay under the row size limit; restore them from localStorage.
+    // photo_thumb is a small (~5 KB) thumbnail stored in D1 as a cross-device
+    // sync fallback when R2 is unavailable.
     const localPortraits = new Map(
       (state.people || []).filter((p) => p.photo?.startsWith('data:')).map((p) => [p.id, p.photo]),
     );
-    const mergedPeople =
-      localPortraits.size > 0 && Array.isArray(data.people)
-        ? data.people.map((p) =>
-            !p.photo && localPortraits.has(p.id)
-              ? { ...p, photo: localPortraits.get(p.id) }
-              : p,
-          )
-        : data.people;
+    const mergedPeople = Array.isArray(data.people)
+      ? data.people.map((p) => {
+          if (!p.photo) {
+            if (localPortraits.has(p.id)) return { ...p, photo: localPortraits.get(p.id) };
+            if (p.photo_thumb) return { ...p, photo: p.photo_thumb };
+          }
+          return p;
+        })
+      : data.people;
 
     // Restore local gallery photos that have data: URLs (not in D1 payload).
     const serverPhotoIds = new Set((data.photos || []).map((ph) => ph.id));
@@ -675,7 +678,7 @@ export async function migratePhotosToR2(uploadFn) {
   await Promise.allSettled([
     ...portraits.map(async (p) => {
       const url = await uploadFn(p.photo);
-      if (url !== p.photo) updatePerson(p.id, { photo: url });
+      if (url !== p.photo) updatePerson(p.id, { photo: url, photo_thumb: null });
     }),
     ...gallery.map(async (ph) => {
       const url = await uploadFn(ph.src);

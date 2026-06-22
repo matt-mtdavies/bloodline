@@ -30,6 +30,26 @@ export function dataUrlToBlob(dataUrl) {
   return new Blob([arr], { type: mime });
 }
 
+// Generate a small square JPEG thumbnail suitable for storing directly in D1
+// (~5 KB). Used as a cross-device sync fallback when R2 is unavailable.
+export function generateThumb(dataUrl, size = 128) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = canvas.height = size;
+      const ctx = canvas.getContext('2d');
+      const s = Math.min(img.width, img.height);
+      const sx = (img.width - s) / 2;
+      const sy = (img.height - s) / 2;
+      ctx.drawImage(img, sx, sy, s, s, 0, 0, size, size);
+      resolve(canvas.toDataURL('image/jpeg', 0.75));
+    };
+    img.onerror = () => resolve(null);
+    img.src = dataUrl;
+  });
+}
+
 // Upload a photo data URL to R2. Returns the /api/photos/<key> URL on success,
 // or the original data URL as a fallback if the upload fails (e.g. offline).
 export async function uploadPhoto(dataUrl) {
