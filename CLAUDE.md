@@ -104,8 +104,7 @@ done/partial/not-started). Read it before planning a new sprint.
 ## Cloudflare notes
 
 - D1 created + migrated (id `96e94723-103f-4c4f-a1b0-797810e7dfc9`); DB binding active in `wrangler.toml`.
-- R2 bucket `bloodline-docs` **needs to be created** in the Cloudflare dashboard (R2 → Create bucket),
-  then bound in Pages → Settings → Functions → R2 bucket bindings → `DOCS = bloodline-docs`.
-  `wrangler.toml` has the local-dev binding uncommented. Without this, photo uploads return 503 and
-  photos stay as device-local data: URLs. `migratePhotosToR2()` runs on login and will auto-upload
-  any existing data: URL photos once R2 is live.
+- R2 bucket `bloodline-docs` ✅ live (EU jurisdiction). Bound via `wrangler.toml` `[[r2_buckets]]`
+  with `jurisdiction = "eu"` — Pages uses wrangler.toml for bindings when the file is present, so
+  the dashboard binding UI is read-only. `migratePhotosToR2()` runs on login and upgrades any
+  remaining data: URL photos to R2 URLs. `/api/photos/health` (no auth) confirms R2 is reachable.

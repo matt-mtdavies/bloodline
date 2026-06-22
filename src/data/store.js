@@ -670,24 +670,12 @@ export function removePhoto(id) {
 
 // Upload any data: URL portraits/gallery photos to R2 and replace them with
 // permanent URLs. Called once after login; uploadFn is image.js#uploadPhoto.
-// Returns { total, uploaded, failed, error? } so the caller can surface feedback.
+// Returns { total, uploaded, failed } so the caller can surface feedback.
 export async function migratePhotosToR2(uploadFn) {
   const portraits = (state.people || []).filter((p) => p.photo?.startsWith('data:'));
   const gallery = (state.photos || []).filter((ph) => ph.src?.startsWith('data:'));
   const total = portraits.length + gallery.length;
   if (!total) return { total: 0, uploaded: 0, failed: 0 };
-
-  // Health check first — surfaces config problems directly in the UI toast.
-  try {
-    const h = await fetch('/api/photos/health');
-    const hj = await h.json().catch(() => ({}));
-    if (!h.ok || !hj.r2) {
-      const reason = hj.reason || `HTTP ${h.status}`;
-      return { total, uploaded: 0, failed: total, error: reason };
-    }
-  } catch (e) {
-    return { total, uploaded: 0, failed: total, error: `Network: ${e.message}` };
-  }
 
   let uploaded = 0;
   let failed = 0;

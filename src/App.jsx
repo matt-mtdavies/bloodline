@@ -87,15 +87,11 @@ export default function App() {
     enableServerSync();
     const hadTree = await loadFromServer();
     if (!hadTree) await saveToServer();
-    migratePhotosToR2(uploadPhoto).then(({ total, uploaded, failed, error } = {}) => {
-      if (!total) return;
-      const msg = error
-        ? `Photo sync blocked: ${error}`
-        : failed === total
-          ? `Photo sync failed — ${failed} photo${failed !== 1 ? 's' : ''} couldn't upload`
-          : `${uploaded} photo${uploaded !== 1 ? 's' : ''} synced to cloud${failed ? ` (${failed} failed)` : ''}`;
+    migratePhotosToR2(uploadPhoto).then(({ total, uploaded, failed } = {}) => {
+      if (!total || !uploaded) return;
+      const msg = `${uploaded} photo${uploaded !== 1 ? 's' : ''} synced to cloud${failed ? ` (${failed} failed)` : ''}`;
       setSyncToast(msg);
-      setTimeout(() => setSyncToast(null), 12000);
+      setTimeout(() => setSyncToast(null), 5000);
     }).catch(() => {});
     setAuthState('authed');
   }
