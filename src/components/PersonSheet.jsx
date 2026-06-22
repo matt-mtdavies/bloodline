@@ -243,6 +243,15 @@ export default function PersonSheet({
   metaBits.push(lifespan(person));
   if (age && !person.is_deceased) metaBits.push(`age ${age}`);
 
+  // "2026-06-22" → "Jun 2026"
+  function fmtDocDate(iso) {
+    try {
+      return new Date(iso + 'T00:00:00').toLocaleDateString('en', { month: 'short', year: 'numeric' });
+    } catch {
+      return iso;
+    }
+  }
+
   return (
     <div className="profile-scrim" onClick={onClose}>
       <article
@@ -425,16 +434,17 @@ export default function PersonSheet({
                   {personDocs.map((doc) => (
                     <li key={doc.id}>
                       <div className="doc-row">
-                        <span className="doc-row__icon" aria-hidden="true">
-                          {doc.mime?.startsWith('image/') ? <DocImageIcon /> : <DocFileIcon />}
-                        </span>
                         {doc.mime?.startsWith('image/') ? (
                           <SmartImg className="doc-thumb" src={doc.src} alt={doc.title} />
-                        ) : null}
+                        ) : (
+                          <span className="doc-row__icon" aria-hidden="true">
+                            <DocFileIcon />
+                          </span>
+                        )}
                         <span className="doc-row__text">
                           <span className="doc-row__title">{doc.title}</span>
                           <span className="doc-row__meta">
-                            {doc.mime === 'application/pdf' ? 'PDF' : 'Image'} · {doc.created_at}
+                            {doc.mime === 'application/pdf' ? 'PDF' : 'Image'}{doc.created_at ? ` · ${fmtDocDate(doc.created_at)}` : ''}
                           </span>
                         </span>
                         <span className="doc-row__actions">
@@ -452,7 +462,7 @@ export default function PersonSheet({
                             onClick={() => onRemoveDocument?.(doc.id)}
                             aria-label={`Remove ${doc.title}`}
                           >
-                            Remove
+                            <CloseIcon />
                           </button>
                         </span>
                       </div>
