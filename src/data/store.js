@@ -121,9 +121,9 @@ function afterSave(ok, statusCode) {
   }
 }
 
-// Strip base64 data: URLs before writing to D1 — portraits and gallery photos
-// can be several MB total, exceeding D1's per-row limit. They remain intact in
-// localStorage; loadFromServer() restores them from there after a server load.
+// Strip base64 data: URLs before writing to D1 — portraits, gallery photos, and
+// documents can be several MB total, exceeding D1's per-row limit. They remain
+// intact in localStorage; loadFromServer() restores them after a server load.
 function stripForServer(s) {
   return {
     ...s,
@@ -133,6 +133,7 @@ function stripForServer(s) {
     photos: s.photos?.map((ph) =>
       ph.src?.startsWith('data:') ? { ...ph, src: null } : ph,
     ).filter((ph) => ph.src),
+    documents: (s.documents || []).filter((d) => !d.src?.startsWith('data:')),
   };
 }
 
@@ -238,12 +239,20 @@ export async function loadFromServer() {
     );
     const mergedPhotos = [...(data.photos || []), ...localDataPhotos];
 
+    // Restore local documents that have data: URLs (stripped from D1 payload).
+    const serverDocIds = new Set((data.documents || []).map((d) => d.id));
+    const localDataDocs = (state.documents || []).filter(
+      (d) => d.src?.startsWith('data:') && !serverDocIds.has(d.id),
+    );
+    const mergedDocs = [...(data.documents || []), ...localDataDocs];
+
     commit(
       {
         ...EMPTY,
         ...data,
         ...(mergedPeople ? { people: mergedPeople } : {}),
         photos: mergedPhotos,
+        documents: mergedDocs,
       },
       { fromServer: true },
     );
@@ -714,6 +723,29 @@ export function addDocument(personId, { title, mime, src }) {
 
 export function removeDocument(id) {
   commit({ ...state, documents: state.documents.filter((d) => d.id !== id) });
+}
+
+export function updateDocSrc(id, src) {
+  commit({
+    ...state,
+    documents: state.documents.map((d) => (d.id === id ? { ...d, src } : d)),
+  });
+}
+
+// Upload any data: URL documents to R2 and replace them with permanent URLs.
+// Called once after login; uploadFn is image.js#uploadDocument.
+export async function migrateDocsToR2(uploadFn) {
+  const docs = (state.documents || []).filter((d) => d.src?.startsWith('data:'));
+  if (!docs.length) return { total: 0, uploaded: 0, failed: 0 };
+  let uploaded = 0, failed = 0;
+  await Promise.allSettled(
+    docs.map(async (doc) => {
+      const url = await uploadFn(doc.src, { title: doc.title, mime: doc.mime });
+      if (url !== doc.src) { updateDocSrc(doc.id, url); uploaded++; }
+      else failed++;
+    }),
+  );
+  return { total: docs.length, uploaded, failed };
 }
 
 export function updateFamilyName(name) {

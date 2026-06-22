@@ -26,8 +26,9 @@ import {
   updateFamilyName,
   resetTree,
   migratePhotosToR2,
+  migrateDocsToR2,
 } from './data/store.js';
-import { uploadPhoto, generateThumb } from './lib/image.js';
+import { uploadPhoto, generateThumb, uploadDocument } from './lib/image.js';
 import { buildGraph, pathBetween } from './data/graph.js';
 import { useReducedMotion } from './hooks/useReducedMotion.js';
 import BubbleTree from './viz/BubbleTree.jsx';
@@ -87,12 +88,18 @@ export default function App() {
     enableServerSync();
     const hadTree = await loadFromServer();
     if (!hadTree) await saveToServer();
-    migratePhotosToR2(uploadPhoto).then(({ total, uploaded, failed } = {}) => {
-      if (!total || !uploaded) return;
-      const msg = `${uploaded} photo${uploaded !== 1 ? 's' : ''} synced to cloud${failed ? ` (${failed} failed)` : ''}`;
-      setSyncToast(msg);
+    Promise.all([
+      migratePhotosToR2(uploadPhoto).catch(() => ({ total: 0, uploaded: 0, failed: 0 })),
+      migrateDocsToR2(uploadDocument).catch(() => ({ total: 0, uploaded: 0, failed: 0 })),
+    ]).then(([photos, docs]) => {
+      const total = (photos.uploaded || 0) + (docs.uploaded || 0);
+      if (!total) return;
+      const parts = [];
+      if (photos.uploaded) parts.push(`${photos.uploaded} photo${photos.uploaded !== 1 ? 's' : ''}`);
+      if (docs.uploaded) parts.push(`${docs.uploaded} document${docs.uploaded !== 1 ? 's' : ''}`);
+      setSyncToast(`${parts.join(' and ')} synced to cloud`);
       setTimeout(() => setSyncToast(null), 5000);
-    }).catch(() => {});
+    });
     setAuthState('authed');
   }
 

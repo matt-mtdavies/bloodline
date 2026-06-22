@@ -50,6 +50,26 @@ export function generateThumb(dataUrl, size = 128) {
   });
 }
 
+// Upload a document data URL to R2. Returns the /api/documents/<key> URL on
+// success, or the original data URL as a fallback if the upload fails.
+export async function uploadDocument(dataUrl, { title = 'document', mime = 'application/octet-stream' } = {}) {
+  if (!dataUrl?.startsWith('data:')) return dataUrl;
+  try {
+    const blob = dataUrlToBlob(dataUrl);
+    const ext = mime === 'application/pdf' ? 'pdf'
+      : mime.startsWith('image/') ? mime.split('/')[1]
+      : 'bin';
+    const form = new FormData();
+    form.append('file', blob, `${title}.${ext}`);
+    const res = await fetch('/api/documents', { method: 'POST', body: form });
+    if (res.ok) return (await res.json()).url;
+    console.warn('[docs] upload failed:', res.status);
+  } catch (e) {
+    console.warn('[docs] upload error:', e.message);
+  }
+  return dataUrl;
+}
+
 // Upload a photo data URL to R2. Returns the /api/photos/<key> URL on success,
 // or the original data URL as a fallback if the upload fails (e.g. offline).
 export async function uploadPhoto(dataUrl) {
