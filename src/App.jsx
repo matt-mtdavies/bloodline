@@ -140,6 +140,7 @@ export default function App() {
   const [cameraFree, setCameraFree] = useState(false); // user has panned/zoomed away
   const [storageWarning, setStorageWarning] = useState(false);
   const [syncToast, setSyncToast] = useState(null);
+  const [docViewer, setDocViewer] = useState(null); // { title, src, mime }
   const viewApi = useRef(null);
 
   // Notify the user if a commit couldn't persist (localStorage full).
@@ -417,6 +418,7 @@ export default function App() {
         onAddPhoto={(id, src) => addPhoto(id, { src })}
         onOpenLightbox={(personId, index) => setLightbox({ personId, index })}
         onAddDocument={(personId, fields) => addDocument(personId, fields)}
+        onOpenDocument={(doc) => setDocViewer({ title: doc.title, src: doc.src, mime: doc.mime })}
         onRemoveDocument={(id) => {
           const doc = data.documents?.find((d) => d.id === id);
           if (doc?.src?.startsWith('/api/documents/')) {
@@ -503,6 +505,10 @@ export default function App() {
         />
       )}
 
+      {docViewer && (
+        <DocViewer doc={docViewer} onClose={() => setDocViewer(null)} />
+      )}
+
       {crop && (
         <PhotoCropper
           src={crop.url}
@@ -543,6 +549,46 @@ export default function App() {
           onClose={() => setSettingsOpen(false)}
         />
       )}
+    </div>
+  );
+}
+
+// ── Document viewer ───────────────────────────────────────────────────────────
+// Renders in-app so the session cookie is sent with the fetch — iOS PWA has a
+// separate cookie store from Safari, so window.open() loses auth entirely.
+function DocViewer({ doc, onClose }) {
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  const isImage = doc.mime?.startsWith('image/');
+
+  return (
+    <div className="doc-viewer-scrim" onClick={onClose}>
+      <div className="doc-viewer" onClick={(e) => e.stopPropagation()}>
+        <div className="doc-viewer__bar">
+          <span className="doc-viewer__title">{doc.title}</span>
+          <button className="doc-viewer__close" onClick={onClose} aria-label="Close">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+            </svg>
+          </button>
+        </div>
+        {isImage ? (
+          <div className="doc-viewer__img-wrap">
+            <img className="doc-viewer__img" src={doc.src} alt={doc.title} />
+          </div>
+        ) : (
+          <iframe
+            className="doc-viewer__frame"
+            src={doc.src}
+            title={doc.title}
+            sandbox="allow-same-origin allow-scripts allow-popups"
+          />
+        )}
+      </div>
     </div>
   );
 }

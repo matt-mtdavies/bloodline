@@ -4,7 +4,7 @@ import SmartImg from './SmartImg.jsx';
 import { lifespan, formatDate, ageOrAt } from '../lib/dates.js';
 import { relationLabel } from '../data/graph.js';
 import { profileCompleteness, lifeEvents } from '../lib/profile.js';
-import { fileToDataUrl, uploadPhoto, dataUrlToBlob } from '../lib/image.js';
+import { fileToDataUrl, uploadPhoto } from '../lib/image.js';
 import { streamBio } from '../lib/ai.js';
 import { VISIBILITY_LABELS, VISIBILITY_DESCS } from '../lib/visibility.js';
 
@@ -35,6 +35,7 @@ export default function PersonSheet({
   onAddPhoto,
   onOpenLightbox,
   onAddDocument,
+  onOpenDocument,
   onRemoveDocument,
   onRemoveRelationship,
   onUpdateRelationshipQualifier,
@@ -208,25 +209,7 @@ export default function PersonSheet({
     });
   };
 
-  // Open a document in a new tab. iOS Safari blocks <a href="data:..."> navigation
-  // and can misfire target="_blank" inside modals with stopPropagation. Using
-  // window.open() in a direct click handler is always treated as a user gesture.
-  const openDoc = (doc) => {
-    if (doc.src?.startsWith('data:')) {
-      try {
-        const blob = dataUrlToBlob(doc.src);
-        const url = URL.createObjectURL(blob);
-        const w = window.open(url, '_blank', 'noopener,noreferrer');
-        // Revoke after the new tab has had time to load the blob
-        setTimeout(() => URL.revokeObjectURL(url), 30000);
-        if (!w) window.location.href = url; // popup blocked — navigate in place
-      } catch {
-        window.open(doc.src, '_blank', 'noopener,noreferrer');
-      }
-    } else {
-      window.open(doc.src, '_blank', 'noopener,noreferrer');
-    }
-  };
+  const openDoc = (doc) => onOpenDocument?.(doc);
 
   const onDocPick = async (e) => {
     const files = [...(e.target.files || [])];

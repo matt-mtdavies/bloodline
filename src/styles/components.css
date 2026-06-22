@@ -671,6 +671,97 @@
 .doc-row__del { display: flex; align-items: center; justify-content: center; width: 26px; height: 26px; color: var(--ink-faint); background: none; cursor: pointer; border-radius: 50%; flex: none; }
 .doc-row__del:hover { color: #b94040; background: #b9404014; }
 
+/* ── Document viewer overlay ─────────────────────────────────────────────── */
+.doc-viewer-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+@media (min-width: 600px) {
+  .doc-viewer-scrim { align-items: center; }
+}
+.doc-viewer {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 860px;
+  height: 92dvh;
+  max-height: 92dvh;
+  background: var(--paper);
+  border-radius: 20px 20px 0 0;
+  overflow: hidden;
+  animation: doc-viewer-in 0.3s var(--spring) both;
+}
+@media (min-width: 600px) {
+  .doc-viewer {
+    border-radius: 20px;
+    height: 88dvh;
+  }
+}
+@keyframes doc-viewer-in {
+  from { transform: translateY(40px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+.doc-viewer__bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px 14px 20px;
+  border-bottom: 1px solid var(--hairline);
+  flex: none;
+}
+.doc-viewer__title {
+  flex: 1;
+  min-width: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.doc-viewer__close {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--paper-deep);
+  color: var(--ink-soft);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.doc-viewer__close:hover { background: var(--hairline); color: var(--ink); }
+.doc-viewer__img-wrap {
+  flex: 1;
+  overflow: auto;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 20px;
+  background: var(--paper-deep);
+}
+.doc-viewer__img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.18);
+}
+.doc-viewer__frame {
+  flex: 1;
+  width: 100%;
+  border: none;
+  background: var(--paper-deep);
+}
+
 .legend__privacy {
   margin-top: 20px;
   font-size: 13px;
