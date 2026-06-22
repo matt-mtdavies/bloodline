@@ -1,6 +1,6 @@
 import Logo from './Logo.jsx';
 
-export default function TopBar({ familyName, view, onToggleView, onOpenLegend, onOpenSettings }) {
+export default function TopBar({ familyName, view, syncStatus, onToggleView, onOpenLegend, onOpenSettings }) {
   return (
     <header className="topbar">
       {/* Row 1: app brand left, actions right */}
@@ -10,6 +10,15 @@ export default function TopBar({ familyName, view, onToggleView, onOpenLegend, o
           <span className="topbar__word">Bloodline</span>
         </div>
         <div className="topbar__actions">
+          {syncStatus === 'saving' && (
+            <span className="sync-status sync-status--saving" aria-live="polite">Saving…</span>
+          )}
+          {syncStatus === 'saved' && (
+            <span className="sync-status sync-status--saved" aria-live="polite">Saved</span>
+          )}
+          {syncStatus === 'error' && (
+            <span className="sync-status sync-status--error" aria-live="polite">Not saved</span>
+          )}
           <button className="pill" onClick={onOpenSettings} aria-label="Family settings">
             <SettingsIcon />
           </button>

@@ -3,6 +3,7 @@ import './styles/components.css';
 import { DEFAULT_FOCUS } from './data/seed.js';
 import {
   store,
+  syncStore,
   addRelative,
   addRelationship,
   updatePerson,
@@ -57,6 +58,7 @@ const _initialPendingInvite = (() => {
 
 export default function App() {
   const data = useSyncExternalStore(store.subscribe, store.getState);
+  const syncStatus = useSyncExternalStore(syncStore.subscribe, syncStore.getState);
   const graph = useMemo(() => buildGraph(data.people, data.relationships), [data]);
   const reducedMotion = useReducedMotion();
 
@@ -302,6 +304,7 @@ export default function App() {
       <TopBar
         familyName={data.familyName || DEFAULT_FOCUS}
         view={view}
+        syncStatus={syncStatus}
         onToggleView={() => setView((v) => (v === 'bubbles' ? 'list' : 'bubbles'))}
         onOpenLegend={() => setLegendOpen(true)}
         onOpenSettings={() => setSettingsOpen(true)}

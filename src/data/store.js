@@ -92,6 +92,15 @@ const listeners = new Set();
 let _serverSyncEnabled = false;
 let _saveTimer = null;
 
+// Sync status observable — consumed by TopBar to show "Saving…" / "Saved".
+let _syncStatus = 'idle'; // 'idle' | 'saving' | 'saved' | 'error'
+const _syncListeners = new Set();
+function setSyncStatus(s) { _syncStatus = s; _syncListeners.forEach((l) => l()); }
+export const syncStore = {
+  subscribe(l) { _syncListeners.add(l); return () => _syncListeners.delete(l); },
+  getState() { return _syncStatus; },
+};
+
 export function enableServerSync() {
   _serverSyncEnabled = true;
 }
@@ -99,19 +108,27 @@ export function enableServerSync() {
 function scheduleServerSave(s) {
   if (!_serverSyncEnabled) return;
   clearTimeout(_saveTimer);
+  setSyncStatus('saving');
   _saveTimer = setTimeout(() => {
     fetch('/api/tree', {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(s),
     })
-      .then((r) => { if (!r.ok) console.warn('[store] server sync HTTP error:', r.status); })
-      .catch((e) => console.warn('[store] server sync failed:', e.message));
+      .then((r) => {
+        setSyncStatus(r.ok ? 'saved' : 'error');
+        if (!r.ok) console.warn('[store] server sync HTTP error:', r.status);
+      })
+      .catch((e) => {
+        setSyncStatus('error');
+        console.warn('[store] server sync failed:', e.message);
+      });
   }, 1500);
 }
 
-function commit(next) {
-  state = next;
+// fromServer=true: loading from D1 — don't increment _seq or schedule a save.
+function commit(next, { fromServer = false } = {}) {
+  state = fromServer ? next : { ...next, _seq: (next._seq || 0) + 1 };
   try {
     localStorage.setItem(KEY, JSON.stringify(state));
   } catch {
@@ -120,7 +137,7 @@ function commit(next) {
       window.dispatchEvent(new CustomEvent('bloodline:storage-full'));
     }
   }
-  scheduleServerSave(state);
+  if (!fromServer) scheduleServerSave(state);
   listeners.forEach((l) => l());
 }
 
@@ -133,18 +150,27 @@ export function saveToServer() {
   }).catch((e) => console.warn('[store] initial server save failed:', e.message));
 }
 
-// Load the user's tree from the server and overwrite local state.
-// Returns true if data was found, false if the user is new (no tree yet).
+// Load the user's tree from the server.
+// If local state (_seq) is ahead of the server, local wins and we push it up.
+// Otherwise server wins and we apply it. Returns true if a tree was found.
 export async function loadFromServer() {
   try {
     const res = await fetch('/api/tree');
     if (!res.ok) return false;
     const data = await res.json();
     if (!data) return false;
-    // Portrait photos (person.photo) are large blobs; if the last server PUT
-    // failed silently (HTTP error) the server state won't have them. Preserve
-    // any local portraits that aren't in the server response so they survive
-    // across reloads even if the sync is behind.
+
+    const localSeq = state._seq || 0;
+    const serverSeq = data._seq || 0;
+
+    // Local is ahead — unsaved changes exist. Push them up; don't overwrite.
+    if (localSeq > serverSeq && state.people?.length > 0) {
+      saveToServer();
+      return true;
+    }
+
+    // Server is same or ahead — apply it. Preserve local portrait blobs in
+    // case the last PUT failed silently (photos are too large for a diff).
     const localPortraits = new Map(
       (state.people || []).filter((p) => p.photo).map((p) => [p.id, p.photo]),
     );
@@ -156,7 +182,10 @@ export async function loadFromServer() {
               : p,
           )
         : data.people;
-    commit({ ...EMPTY, ...data, ...(mergedPeople ? { people: mergedPeople } : {}) });
+    commit(
+      { ...EMPTY, ...data, ...(mergedPeople ? { people: mergedPeople } : {}) },
+      { fromServer: true },
+    );
     return true;
   } catch {
     return false;
@@ -270,10 +299,7 @@ export function addRelative({ anchorId, relKey, name, gender, birth_date, is_dec
     const targetGender = relKey === 'mother' ? 'female' : 'male';
     if (bioParentGendersFilled(anchorId).has(targetGender)) return null;
   }
-  // Smart privacy defaults: children stay private by default; living adults are
-  // summary (name + dates visible); deceased people are fully open.
-  const childKeys = new Set(['son', 'daughter']);
-  const defaultVisibility = is_deceased ? 'full' : childKeys.has(relKey) ? 'private' : 'summary';
+  const defaultVisibility = 'full';
   const person = {
     id,
     display_name: name.trim(),
@@ -392,7 +418,7 @@ export function setupTree({ me, partner, parents, children, memoryPersonIdx, mem
 
   // Children
   for (const c of (children || []).filter((c) => c.name?.trim())) {
-    const cP = mkPerson(c.name, c.birthYear, { visibility: 'private' });
+    const cP = mkPerson(c.name, c.birthYear, { visibility: 'full' });
     people.push(cP);
     orderedIds.push(cP.id);
     relationships.push({ id: rid(), from_person: meP.id, to_person: cP.id, type: 'parent', qualifier: 'biological', partner_status: null });
