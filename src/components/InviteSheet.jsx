@@ -41,7 +41,7 @@ const ROLES = [
 ];
 
 export default function InviteSheet({ person, onSend, onClose }) {
-  const [email, setEmail] = useState(person.invited_email || '');
+  const [email, setEmail] = useState(person.email || person.invited_email || '');
   const [role, setRole] = useState('contributor');
   const [phase, setPhase] = useState('idle'); // idle | sending | sent | error
   const inputRef = useRef(null);

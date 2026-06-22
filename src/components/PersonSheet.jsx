@@ -385,6 +385,39 @@ export default function PersonSheet({
               </div>
             )}
 
+            {/* Contact — living people only */}
+            {!person.is_deceased && (
+              <section className="profile-section">
+                <div className="profile-section__head">
+                  <h3 className="profile-section__title">Contact</h3>
+                  <button className="section-edit" onClick={() => onEdit?.(person.id)}>Edit</button>
+                </div>
+                {(person.email || person.phone) ? (
+                  <div className="contact-card">
+                    {person.email && (
+                      <a href={`mailto:${person.email}`} className="contact-row">
+                        <span className="contact-row__icon"><EmailIcon /></span>
+                        <span className="contact-row__value">{person.email}</span>
+                        <span className="contact-row__action">Email</span>
+                      </a>
+                    )}
+                    {person.phone && (
+                      <a href={`tel:${person.phone}`} className="contact-row">
+                        <span className="contact-row__icon"><PhoneIcon /></span>
+                        <span className="contact-row__value">{person.phone}</span>
+                        <span className="contact-row__action">Call</span>
+                      </a>
+                    )}
+                  </div>
+                ) : (
+                  <button className="empty-add" onClick={() => onEdit?.(person.id)}>
+                    <PlusIcon />
+                    Add email or phone number
+                  </button>
+                )}
+              </section>
+            )}
+
             {/* About */}
             {person.bio && (
               <section className="profile-section">
@@ -904,6 +937,23 @@ function SparkleIcon() {
     <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
       <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="1.8" />
+    </svg>
+  );
+}
+function EmailIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"
+        stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+      <path d="M22 6l-10 7L2 6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  );
+}
+function PhoneIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.09 8.81 19.79 19.79 0 01.06 2.18 2 2 0 012 0h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.09 7.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"
+        stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }

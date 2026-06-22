@@ -14,6 +14,8 @@ export default function EditPersonSheet({ person, onClose, onSave, onRemove }) {
     birth_place: person.birth_place || '',
     residence: person.residence || '',
     occupation: person.occupation || '',
+    email: person.email || '',
+    phone: person.phone || '',
     tags: (person.tags || []).join(', '),
     bio: person.bio || '',
     is_deceased: !!person.is_deceased,
@@ -41,6 +43,8 @@ export default function EditPersonSheet({ person, onClose, onSave, onRemove }) {
       birth_place: f.birth_place.trim() || null,
       residence: f.residence.trim() || null,
       occupation: f.occupation.trim() || null,
+      email: f.email.trim() || null,
+      phone: f.phone.trim() || null,
       tags: f.tags.split(',').map((t) => t.trim()).filter(Boolean),
       bio: f.bio.trim() || null,
       is_deceased: f.is_deceased,
@@ -120,6 +124,25 @@ export default function EditPersonSheet({ person, onClose, onSave, onRemove }) {
               {f.occupation && <button type="button" className="input-clear" onClick={clear('occupation')} aria-label="Clear" tabIndex={-1}>×</button>}
             </div>
           </label>
+
+          {!f.is_deceased && (
+            <div className="field-row">
+              <label className="field">
+                <span className="field__label">Email</span>
+                <div className="input-wrap">
+                  <input className="field__input" type="email" inputMode="email" value={f.email} onChange={set('email')} placeholder="their@email.com" autoComplete="off" />
+                  {f.email && <button type="button" className="input-clear" onClick={clear('email')} aria-label="Clear" tabIndex={-1}>×</button>}
+                </div>
+              </label>
+              <label className="field">
+                <span className="field__label">Phone</span>
+                <div className="input-wrap">
+                  <input className="field__input" type="tel" inputMode="tel" value={f.phone} onChange={set('phone')} placeholder="+44 7700…" autoComplete="off" />
+                  {f.phone && <button type="button" className="input-clear" onClick={clear('phone')} aria-label="Clear" tabIndex={-1}>×</button>}
+                </div>
+              </label>
+            </div>
+          )}
 
           <label className="field">
             <span className="field__label">Tags</span>
