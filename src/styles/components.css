@@ -1299,6 +1299,8 @@
 }
 .rel-group__list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
 .rel-chip__chev { margin-left: auto; color: var(--ink-faint); flex: none; }
+/* Extended family groups sit below a subtle rule */
+.rel-group--extended:first-of-type { margin-top: 4px; padding-top: 16px; border-top: 1px solid var(--border); }
 
 /* Coming-soon invitations (Phase 2/3 sections, sketched in) */
 .soon-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }

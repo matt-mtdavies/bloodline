@@ -86,6 +86,38 @@ export default function PersonSheet({
     { title: 'Siblings', items: siblings, relType: null }, // derived — can't be directly removed
   ].filter((g) => g.items.length);
 
+  // ── Extended family (derived, read-only) ──────────────────────────────────
+  // Deduplicate extended kin and exclude anyone already in the immediate groups.
+  const immediateIds = new Set([
+    person.id,
+    ...partners.map((x) => x.id),
+    ...parents.map((x) => x.id),
+    ...children.map((x) => x.id),
+    ...siblings.map((x) => x.id),
+  ]);
+  const dedup = (items) => {
+    const seen = new Set();
+    return items.filter(({ id }) => !immediateIds.has(id) && !seen.has(id) && seen.add(id));
+  };
+  const grandparents = dedup(
+    parents.flatMap((p) => graph.parents(p.id).map((gp) => ({ id: gp.id }))),
+  );
+  const auntsUncles = dedup(
+    parents.flatMap((p) => graph.siblings(p.id).map((s) => ({ id: s.id }))),
+  );
+  const grandchildren = dedup(
+    children.flatMap((c) => graph.children(c.id).map((gc) => ({ id: gc.id }))),
+  );
+  const niecesNephews = dedup(
+    siblings.flatMap((s) => graph.children(s.id).map((c) => ({ id: c.id }))),
+  );
+  const extendedGroups = [
+    { title: 'Grandparents', items: grandparents },
+    { title: 'Aunts & Uncles', items: auntsUncles },
+    { title: 'Grandchildren', items: grandchildren },
+    { title: 'Nieces & Nephews', items: niecesNephews },
+  ].filter((g) => g.items.length);
+
   const relToViewer =
     viewerId && viewerId !== person.id ? relationLabel(graph, viewerId, person.id) : null;
   const location = person.residence || person.birth_place;
@@ -447,7 +479,7 @@ export default function PersonSheet({
             </section>
 
             {/* Relationships */}
-            {groups.length > 0 && (
+            {(groups.length > 0 || extendedGroups.length > 0) && (
               <section className="profile-section">
                 <h3 className="profile-section__title">Relationships</h3>
                 {groups.map((g) => (
@@ -521,6 +553,33 @@ export default function PersonSheet({
                                 ))}
                               </div>
                             )}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                ))}
+
+                {/* Extended family — derived, read-only, tap to navigate */}
+                {extendedGroups.map((g) => (
+                  <div className="rel-group rel-group--extended" key={g.title}>
+                    <h4 className="rel-group__label">{g.title}</h4>
+                    <ul className="rel-group__list">
+                      {g.items.map((item) => {
+                        const rel = graph.byId.get(item.id);
+                        if (!rel) return null;
+                        return (
+                          <li key={item.id} className="rel-chip">
+                            <button className="rel-chip__nav" onClick={() => onOpenPerson(item.id)}>
+                              <Avatar person={rel} size={40} />
+                              <span className="rel-chip__text">
+                                <span className="rel-chip__name">{rel.display_name}</span>
+                                <span className="rel-chip__kind">
+                                  {relationLabel(graph, person.id, item.id)}
+                                </span>
+                              </span>
+                              <RelChevronIcon />
+                            </button>
                           </li>
                         );
                       })}

@@ -310,6 +310,40 @@ export class Bubble {
     }
   }
 
+  // Show/hide tiny chevron indicators above/below a bubble to signal that it
+  // has parents or children not yet revealed in the tree. Only redraws when the
+  // state changes — safe to call every frame.
+  setDepthHint(hasParents, hasChildren) {
+    if (hasParents === this._hintParents && hasChildren === this._hintChildren) return;
+    this._hintParents = hasParents;
+    this._hintChildren = hasChildren;
+
+    if (!this._depthHint) {
+      this._depthHint = new Graphics();
+      this._depthHint.eventMode = 'none';
+      this.root.addChild(this._depthHint);
+    }
+    this._depthHint.clear();
+    const r = this.r;
+    const color = hex('#a6abb3');
+    const alpha = 0.75;
+    const dotR = 2.8;
+    const gap = 6;
+
+    if (hasParents) {
+      // Three dots above the bubble — "more ancestors above"
+      for (let i = -1; i <= 1; i++) {
+        this._depthHint.circle(i * gap, -(r + 14), dotR).fill({ color, alpha });
+      }
+    }
+    if (hasChildren) {
+      // Three dots below the name label — "more descendants below"
+      for (let i = -1; i <= 1; i++) {
+        this._depthHint.circle(i * gap, r + 42, dotR).fill({ color, alpha });
+      }
+    }
+  }
+
   destroy() {
     this._destroyed = true;
     this.root.destroy({ children: true });

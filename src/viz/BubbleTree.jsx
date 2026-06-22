@@ -696,6 +696,16 @@ export default function BubbleTree({
           // Name labels: all visible bubbles, hidden when card open or lineage active
           const labelAlpha = (!cardOpen && !lineage && vis.has(id)) ? 1 : 0;
           b.setVisualState({ ...target, labelAlpha }, dt);
+          // Depth hints: show on visible bubbles that have family beyond the current reveal.
+          if (vis.has(id)) {
+            const gg = graphRef.current;
+            b.setDepthHint(
+              gg.parents(id).some((x) => !vis.has(x.id)),
+              gg.children(id).some((x) => !vis.has(x.id)),
+            );
+          } else {
+            b.setDepthHint(false, false);
+          }
           b.root.zIndex = id === activeRef.current ? 100 : -d;
         }
 

@@ -132,9 +132,9 @@ export function relationLabel(graph, focusId, otherId) {
 
   for (const x of graph.partners(focusId)) {
     if (x.id === otherId) {
-      if (x.status === 'former') return g('Former partner', 'Former partner', 'Former partner');
-      if (x.status === 'widowed') return g('Late husband', 'Late wife', 'Late partner');
-      return g('Husband', 'Wife', 'Partner');
+      if (x.status === 'former') return 'Former partner';
+      if (x.status === 'widowed') return 'Late partner';
+      return 'Partner';
     }
   }
   for (const x of graph.parents(focusId)) {
@@ -155,5 +155,78 @@ export function relationLabel(graph, focusId, otherId) {
       return `${half}${g('Brother', 'Sister', 'Sibling')}`;
     }
   }
+
+  // ── 2-hop relationships ──────────────────────────────────────────────────
+  const masc2 = ['male', 'm', 'man'];
+  const fem2 = ['female', 'f', 'woman'];
+  const side = (parentId) => {
+    const pg = (graph.byId.get(parentId)?.gender || '').toLowerCase();
+    return masc2.includes(pg) ? 'Paternal' : fem2.includes(pg) ? 'Maternal' : null;
+  };
+
+  // Grandparent: one of focus's parents is a child of otherId
+  for (const p of graph.parents(focusId)) {
+    if (graph.parents(p.id).some((x) => x.id === otherId)) {
+      const prefix = side(p.id) ? `${side(p.id)} ` : '';
+      return `${prefix}${g('Grandfather', 'Grandmother', 'Grandparent')}`;
+    }
+  }
+
+  // Grandchild: one of focus's children has otherId as their child
+  for (const c of graph.children(focusId)) {
+    if (graph.children(c.id).some((x) => x.id === otherId)) {
+      return g('Grandson', 'Granddaughter', 'Grandchild');
+    }
+  }
+
+  // Great-grandparent: grandparent's parent
+  for (const p of graph.parents(focusId)) {
+    for (const gp of graph.parents(p.id)) {
+      if (graph.parents(gp.id).some((x) => x.id === otherId)) {
+        return g('Great-grandfather', 'Great-grandmother', 'Great-grandparent');
+      }
+    }
+  }
+
+  // Great-grandchild: grandchild's child
+  for (const c of graph.children(focusId)) {
+    for (const gc of graph.children(c.id)) {
+      if (graph.children(gc.id).some((x) => x.id === otherId)) {
+        return g('Great-grandson', 'Great-granddaughter', 'Great-grandchild');
+      }
+    }
+  }
+
+  // Aunt / Uncle: a sibling of focus's parent
+  for (const p of graph.parents(focusId)) {
+    if (graph.siblings(p.id).some((x) => x.id === otherId)) {
+      const prefix = side(p.id) ? `${side(p.id)} ` : '';
+      return `${prefix}${g('Uncle', 'Aunt', 'Aunt/Uncle')}`;
+    }
+    // Also check partner of parent's sibling (uncle/aunt by marriage)
+    for (const s of graph.siblings(p.id)) {
+      if (graph.partners(s.id).some((x) => x.id === otherId)) {
+        const prefix = side(p.id) ? `${side(p.id)} ` : '';
+        return `${prefix}${g('Uncle', 'Aunt', 'Aunt/Uncle')} (by marriage)`;
+      }
+    }
+  }
+
+  // Niece / Nephew: a child of one of focus's siblings
+  for (const s of graph.siblings(focusId)) {
+    if (graph.children(s.id).some((x) => x.id === otherId)) {
+      return g('Nephew', 'Niece', 'Niece/Nephew');
+    }
+  }
+
+  // Cousin: child of focus's aunt/uncle
+  for (const p of graph.parents(focusId)) {
+    for (const s of graph.siblings(p.id)) {
+      if (graph.children(s.id).some((x) => x.id === otherId)) {
+        return 'Cousin';
+      }
+    }
+  }
+
   return 'Relative';
 }
