@@ -159,15 +159,26 @@ export function relationLabel(graph, focusId, otherId) {
   // ── 2-hop relationships ──────────────────────────────────────────────────
   const masc2 = ['male', 'm', 'man'];
   const fem2 = ['female', 'f', 'woman'];
-  const side = (parentId) => {
-    const pg = (graph.byId.get(parentId)?.gender || '').toLowerCase();
+
+  // Determine the relational side prefix from a parent entry {id, qualifier}.
+  // Biological father → 'Paternal'; biological mother → 'Maternal';
+  // step- or adoptive parent → 'Step' / 'Adoptive' (gender is irrelevant for
+  // naming — a step-father's sister is a step-aunt, not a paternal aunt).
+  const parentSide = (parentEntry) => {
+    const q = parentEntry.qualifier || 'biological';
+    if (q === 'step') return 'Step';
+    if (q === 'adoptive') return 'Adoptive';
+    const pg = (graph.byId.get(parentEntry.id)?.gender || '').toLowerCase();
     return masc2.includes(pg) ? 'Paternal' : fem2.includes(pg) ? 'Maternal' : null;
   };
 
   // Grandparent: one of focus's parents is a child of otherId
   for (const p of graph.parents(focusId)) {
     if (graph.parents(p.id).some((x) => x.id === otherId)) {
-      const prefix = side(p.id) ? `${side(p.id)} ` : '';
+      const s = parentSide(p);
+      const prefix = s ? `${s} ` : '';
+      // Step/adoptive grandparents keep the qualifier prefix; bio ones get gender title
+      if (s === 'Step' || s === 'Adoptive') return `${prefix}Grandparent`;
       return `${prefix}${g('Grandfather', 'Grandmother', 'Grandparent')}`;
     }
   }
@@ -200,13 +211,15 @@ export function relationLabel(graph, focusId, otherId) {
   // Aunt / Uncle: a sibling of focus's parent
   for (const p of graph.parents(focusId)) {
     if (graph.siblings(p.id).some((x) => x.id === otherId)) {
-      const prefix = side(p.id) ? `${side(p.id)} ` : '';
+      const s = parentSide(p);
+      const prefix = s ? `${s} ` : '';
       return `${prefix}${g('Uncle', 'Aunt', 'Aunt/Uncle')}`;
     }
-    // Also check partner of parent's sibling (uncle/aunt by marriage)
+    // Partner of parent's sibling (uncle/aunt by marriage)
     for (const s of graph.siblings(p.id)) {
       if (graph.partners(s.id).some((x) => x.id === otherId)) {
-        const prefix = side(p.id) ? `${side(p.id)} ` : '';
+        const sp = parentSide(p);
+        const prefix = sp ? `${sp} ` : '';
         return `${prefix}${g('Uncle', 'Aunt', 'Aunt/Uncle')} (by marriage)`;
       }
     }
