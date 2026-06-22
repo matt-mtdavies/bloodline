@@ -6,3 +6,4 @@ dist
 .DS_Store
 .vite
 tests/screenshots
+tests/_*.mjs
