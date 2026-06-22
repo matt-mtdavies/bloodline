@@ -603,8 +603,34 @@ export function setPhotoCaption(id, caption) {
   });
 }
 
+export function updatePhotoSrc(id, src) {
+  commit({
+    ...state,
+    photos: state.photos.map((p) => (p.id === id ? { ...p, src } : p)),
+  });
+}
+
 export function removePhoto(id) {
   commit({ ...state, photos: state.photos.filter((p) => p.id !== id) });
+}
+
+// Upload any data: URL portraits/gallery photos to R2 and replace them with
+// permanent URLs. Called once after login; uploadFn is image.js#uploadPhoto.
+export async function migratePhotosToR2(uploadFn) {
+  const portraits = (state.people || []).filter((p) => p.photo?.startsWith('data:'));
+  const gallery = (state.photos || []).filter((ph) => ph.src?.startsWith('data:'));
+  if (!portraits.length && !gallery.length) return;
+
+  await Promise.allSettled([
+    ...portraits.map(async (p) => {
+      const url = await uploadFn(p.photo);
+      if (url !== p.photo) updatePerson(p.id, { photo: url });
+    }),
+    ...gallery.map(async (ph) => {
+      const url = await uploadFn(ph.src);
+      if (url !== ph.src) updatePhotoSrc(ph.id, url);
+    }),
+  ]);
 }
 
 // ── Documents ─────────────────────────────────────────────────────────────────

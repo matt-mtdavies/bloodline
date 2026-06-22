@@ -4,7 +4,7 @@ import SmartImg from './SmartImg.jsx';
 import { lifespan, formatDate, ageOrAt } from '../lib/dates.js';
 import { relationLabel } from '../data/graph.js';
 import { profileCompleteness, lifeEvents } from '../lib/profile.js';
-import { fileToDataUrl } from '../lib/image.js';
+import { fileToDataUrl, uploadPhoto } from '../lib/image.js';
 import { streamBio } from '../lib/ai.js';
 import { VISIBILITY_LABELS, VISIBILITY_DESCS } from '../lib/visibility.js';
 
@@ -173,13 +173,14 @@ export default function PersonSheet({
     }
   };
 
-  // Picked gallery files are downscaled, then added one by one.
+  // Picked gallery files are downscaled then uploaded to R2.
   const onGalleryPick = async (e) => {
     const files = [...(e.target.files || [])];
     e.target.value = '';
     for (const file of files) {
       try {
-        const src = await fileToDataUrl(file, 1800);
+        const dataUrl = await fileToDataUrl(file, 1800);
+        const src = await uploadPhoto(dataUrl); // R2 URL or data URL fallback
         onAddPhoto?.(person.id, src);
       } catch {
         /* skip an unreadable file */

@@ -24,7 +24,9 @@ import {
   enableServerSync,
   updateFamilyName,
   resetTree,
+  migratePhotosToR2,
 } from './data/store.js';
+import { uploadPhoto } from './lib/image.js';
 import { buildGraph, pathBetween } from './data/graph.js';
 import { useReducedMotion } from './hooks/useReducedMotion.js';
 import BubbleTree from './viz/BubbleTree.jsx';
@@ -84,6 +86,7 @@ export default function App() {
     enableServerSync();
     const hadTree = await loadFromServer();
     if (!hadTree) await saveToServer();
+    migratePhotosToR2(uploadPhoto).catch(() => {}); // background: data: URLs → R2
     setAuthState('authed');
   }
 
@@ -447,7 +450,13 @@ export default function App() {
           startIndex={lightbox.index}
           onClose={() => setLightbox(null)}
           onSetCaption={setPhotoCaption}
-          onDelete={removePhoto}
+          onDelete={(id) => {
+            const ph = data.photos.find((p) => p.id === id);
+            if (ph?.src?.startsWith('/api/photos/')) {
+              fetch(ph.src, { method: 'DELETE' }).catch(() => {});
+            }
+            removePhoto(id);
+          }}
           onSetPortrait={(src) => {
             setPhoto(lightbox.personId, src);
             setLightbox(null);
@@ -460,8 +469,11 @@ export default function App() {
           src={crop.url}
           onCancel={closeCrop}
           onConfirm={(dataUrl) => {
-            setPhoto(crop.id, dataUrl);
+            setPhoto(crop.id, dataUrl); // instant visual feedback
             closeCrop();
+            uploadPhoto(dataUrl).then((url) => {
+              if (url !== dataUrl) setPhoto(crop.id, url); // upgrade to R2 URL
+            });
           }}
         />
       )}
