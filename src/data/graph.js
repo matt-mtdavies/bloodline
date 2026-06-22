@@ -38,7 +38,6 @@ export function buildGraph(people, relationships) {
     const myParents = parentsOf.get(person.id) || []; // [{id, qualifier}]
     if (!myParents.length) continue;
     const myBioIds = new Set(myParents.filter((p) => isBioAdopt(p.qualifier)).map((p) => p.id));
-    const myAllIds = new Set(myParents.map((p) => p.id));
     const seen = new Set();
     for (const { id: parentId } of myParents) {
       for (const child of childrenOf.get(parentId) || []) {
@@ -124,7 +123,6 @@ export function pathBetween(graph, fromId, toId) {
 // accessible view and the person sheet. Best-effort, kept warm and plain.
 export function relationLabel(graph, focusId, otherId) {
   if (focusId === otherId) return 'You';
-  const focus = graph.byId.get(focusId);
   const masc = ['male', 'm', 'man'];
   const fem = ['female', 'f', 'woman'];
   const other = graph.byId.get(otherId);
@@ -162,8 +160,6 @@ export function relationLabel(graph, focusId, otherId) {
   }
 
   // ── 2-hop relationships ──────────────────────────────────────────────────
-  const masc2 = ['male', 'm', 'man'];
-  const fem2 = ['female', 'f', 'woman'];
 
   // Determine the relational side prefix from a parent entry {id, qualifier}.
   // Biological father → 'Paternal'; biological mother → 'Maternal';
@@ -174,7 +170,7 @@ export function relationLabel(graph, focusId, otherId) {
     if (q === 'step') return 'Step';
     if (q === 'adoptive') return 'Adoptive';
     const pg = (graph.byId.get(parentEntry.id)?.gender || '').toLowerCase();
-    return masc2.includes(pg) ? 'Paternal' : fem2.includes(pg) ? 'Maternal' : null;
+    return masc.includes(pg) ? 'Paternal' : fem.includes(pg) ? 'Maternal' : null;
   };
 
   // Grandparent: one of focus's parents is a child of otherId
