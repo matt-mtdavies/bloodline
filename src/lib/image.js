@@ -60,7 +60,11 @@ export async function uploadPhoto(dataUrl) {
     form.append('file', blob, 'photo.jpg');
     const res = await fetch('/api/photos', { method: 'POST', body: form });
     if (res.ok) return (await res.json()).url;
-  } catch { /* network error */ }
+    const body = await res.text().catch(() => '');
+    console.warn('[photos] upload failed:', res.status, body);
+  } catch (e) {
+    console.warn('[photos] upload error:', e.message);
+  }
   return dataUrl;
 }
 
