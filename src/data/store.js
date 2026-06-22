@@ -670,21 +670,30 @@ export function removePhoto(id) {
 
 // Upload any data: URL portraits/gallery photos to R2 and replace them with
 // permanent URLs. Called once after login; uploadFn is image.js#uploadPhoto.
+// Returns { total, uploaded, failed } so the caller can surface feedback.
 export async function migratePhotosToR2(uploadFn) {
   const portraits = (state.people || []).filter((p) => p.photo?.startsWith('data:'));
   const gallery = (state.photos || []).filter((ph) => ph.src?.startsWith('data:'));
-  if (!portraits.length && !gallery.length) return;
+  const total = portraits.length + gallery.length;
+  if (!total) return { total: 0, uploaded: 0, failed: 0 };
+
+  let uploaded = 0;
+  let failed = 0;
 
   await Promise.allSettled([
     ...portraits.map(async (p) => {
       const url = await uploadFn(p.photo);
-      if (url !== p.photo) updatePerson(p.id, { photo: url, photo_thumb: null });
+      if (url !== p.photo) { updatePerson(p.id, { photo: url, photo_thumb: null }); uploaded++; }
+      else failed++;
     }),
     ...gallery.map(async (ph) => {
       const url = await uploadFn(ph.src);
-      if (url !== ph.src) updatePhotoSrc(ph.id, url);
+      if (url !== ph.src) { updatePhotoSrc(ph.id, url); uploaded++; }
+      else failed++;
     }),
   ]);
+
+  return { total, uploaded, failed };
 }
 
 // ── Documents ─────────────────────────────────────────────────────────────────

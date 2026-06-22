@@ -87,7 +87,14 @@ export default function App() {
     enableServerSync();
     const hadTree = await loadFromServer();
     if (!hadTree) await saveToServer();
-    migratePhotosToR2(uploadPhoto).catch(() => {}); // background: data: URLs → R2
+    migratePhotosToR2(uploadPhoto).then(({ total, uploaded, failed } = {}) => {
+      if (!total) return;
+      const msg = failed === total
+        ? `Photo sync failed (${failed} photo${failed !== 1 ? 's' : ''} couldn't upload — check connection)`
+        : `${uploaded} photo${uploaded !== 1 ? 's' : ''} synced to cloud${failed ? ` (${failed} failed)` : ''}`;
+      setSyncToast(msg);
+      setTimeout(() => setSyncToast(null), 6000);
+    }).catch(() => {});
     setAuthState('authed');
   }
 
@@ -127,6 +134,7 @@ export default function App() {
   const [lineagePath, setLineagePath] = useState(null); // Set<id> | null
   const [cameraFree, setCameraFree] = useState(false); // user has panned/zoomed away
   const [storageWarning, setStorageWarning] = useState(false);
+  const [syncToast, setSyncToast] = useState(null);
   const viewApi = useRef(null);
 
   // Notify the user if a commit couldn't persist (localStorage full).
@@ -431,6 +439,12 @@ export default function App() {
       {storageWarning && (
         <div className="storage-toast" role="alert">
           Storage full — this change won&apos;t survive a reload. Try removing some photos.
+        </div>
+      )}
+
+      {syncToast && (
+        <div className="storage-toast" role="status" onClick={() => setSyncToast(null)}>
+          {syncToast}
         </div>
       )}
 
