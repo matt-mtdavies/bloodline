@@ -358,6 +358,23 @@ export function addRelationship(fromId, toId, type, qualifier = 'biological') {
   commit({ ...state, relationships: [...state.relationships, edge] });
 }
 
+// Remove a specific relationship edge between two people.
+// For 'parent': fromId is the parent, toId is the child.
+// For 'partner': direction doesn't matter — both orderings are checked.
+export function removeRelationship(fromId, toId, type) {
+  commit({
+    ...state,
+    relationships: state.relationships.filter((r) => {
+      if (r.type !== type) return true;
+      if (type === 'parent') return !(r.from_person === fromId && r.to_person === toId);
+      return !(
+        (r.from_person === fromId && r.to_person === toId) ||
+        (r.from_person === toId && r.to_person === fromId)
+      );
+    }),
+  });
+}
+
 export function setupTree({ me, partner, parents, children, memoryPersonIdx, memoryText, familyName }) {
   const mkId = () => uid();
   const mkPerson = (name, birthYear, extra = {}) => ({

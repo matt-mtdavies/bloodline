@@ -312,21 +312,46 @@
 }
 .sheet__rel ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 
+/* Relationship card — nav button + optional unlink button side by side */
 .rel-chip {
   display: flex;
   align-items: center;
-  gap: 12px;
-  width: 100%;
-  padding: 8px 10px;
   border-radius: 14px;
-  text-align: left;
-  transition: background 0.25s var(--ease), transform 0.4s var(--spring);
+  transition: background 0.25s var(--ease);
 }
-.rel-chip:hover { background: var(--paper-deep); }
-.rel-chip:active { transform: scale(0.98); }
-.rel-chip__text { display: flex; flex-direction: column; gap: 1px; }
+.rel-chip:has(.rel-chip__nav:hover),
+.rel-chip:has(.rel-chip__nav:focus-visible) { background: var(--paper-deep); }
+.rel-chip__nav {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+  text-align: left;
+  border-radius: 14px;
+  transition: transform 0.4s var(--spring);
+}
+.rel-chip__nav:active { transform: scale(0.98); }
+.rel-chip__text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .rel-chip__name { font-size: 15.5px; font-weight: 500; color: var(--ink); }
 .rel-chip__kind { font-size: 12.5px; color: var(--ink-soft); }
+.rel-chip__unlink {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  margin-right: 4px;
+  color: var(--ink-faint);
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s, background 0.15s;
+}
+.rel-chip:hover .rel-chip__unlink,
+.rel-chip:focus-within .rel-chip__unlink { opacity: 1; }
+.rel-chip__unlink:hover { color: #c2603a; background: #f5e8e4; }
 
 .sheet__foot {
   position: sticky;
@@ -2456,7 +2481,8 @@
   color: var(--ink-soft);
   font-weight: 400;
 }
-.privacy-section__caret { font-size: 11px; color: var(--ink-soft); }
+.privacy-section__label { display: flex; align-items: center; gap: 6px; }
+.privacy-section__caret { color: var(--ink-soft); margin-left: auto; }
 .privacy-section__body { margin-top: 12px; }
 .vis-opts { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
 .vis-opt {

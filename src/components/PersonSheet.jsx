@@ -36,6 +36,7 @@ export default function PersonSheet({
   onOpenLightbox,
   onAddDocument,
   onRemoveDocument,
+  onRemoveRelationship,
   onUpdateStory,
   onPhoto,
 }) {
@@ -77,10 +78,10 @@ export default function PersonSheet({
   const siblings = graph.siblings(person.id);
 
   const groups = [
-    { title: partners.length > 1 ? 'Partners' : 'Partner', items: partners },
-    { title: 'Parents', items: parents },
-    { title: 'Children', items: children },
-    { title: 'Siblings', items: siblings },
+    { title: partners.length > 1 ? 'Partners' : 'Partner', items: partners, relType: 'partner' },
+    { title: 'Parents', items: parents, relType: 'parent_from_item' },
+    { title: 'Children', items: children, relType: 'parent_from_self' },
+    { title: 'Siblings', items: siblings, relType: null }, // derived — can't be directly removed
   ].filter((g) => g.items.length);
 
   const relToViewer =
@@ -453,9 +454,16 @@ export default function PersonSheet({
                       {g.items.map((item) => {
                         const rel = graph.byId.get(item.id);
                         if (!rel) return null;
+                        const unlinkArgs = g.relType === 'partner'
+                          ? [person.id, item.id, 'partner']
+                          : g.relType === 'parent_from_item'
+                            ? [item.id, person.id, 'parent']
+                            : g.relType === 'parent_from_self'
+                              ? [person.id, item.id, 'parent']
+                              : null;
                         return (
-                          <li key={item.id}>
-                            <button className="rel-chip" onClick={() => onOpenPerson(item.id)}>
+                          <li key={item.id} className="rel-chip">
+                            <button className="rel-chip__nav" onClick={() => onOpenPerson(item.id)}>
                               <Avatar person={rel} size={40} />
                               <span className="rel-chip__text">
                                 <span className="rel-chip__name">{rel.display_name}</span>
@@ -466,8 +474,17 @@ export default function PersonSheet({
                                     : ''}
                                 </span>
                               </span>
-                              <ChevronIcon />
+                              <RelChevronIcon />
                             </button>
+                            {unlinkArgs && (
+                              <button
+                                className="rel-chip__unlink"
+                                onClick={() => onRemoveRelationship?.(...unlinkArgs)}
+                                aria-label={`Unlink ${rel.display_name}`}
+                              >
+                                <UnlinkIcon />
+                              </button>
+                            )}
                           </li>
                         );
                       })}
@@ -682,10 +699,18 @@ function LockIcon() {
   );
 }
 
-function ChevronIcon() {
+function RelChevronIcon() {
   return (
     <svg className="rel-chip__chev" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <path d="M9 6l6 6-6 6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+function UnlinkIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M9 7H7a4 4 0 0 0 0 8h2M15 7h2a4 4 0 0 1 0 8h-2" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+      <line x1="3" y1="3" x2="21" y2="21" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
     </svg>
   );
 }

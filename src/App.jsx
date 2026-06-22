@@ -6,6 +6,7 @@ import {
   syncStore,
   addRelative,
   addRelationship,
+  removeRelationship,
   updatePerson,
   setupTree,
   setPhoto,
@@ -392,6 +393,7 @@ export default function App() {
           }
           removeDocument(id);
         }}
+        onRemoveRelationship={removeRelationship}
         onUpdateStory={(id, story) => updatePerson(id, { story })}
         onPhoto={handlePhoto}
       />
