@@ -168,7 +168,7 @@ export default function EditPersonSheet({ person, onClose, onSave }) {
             >
               <span className="privacy-section__label"><LockIcon /> Privacy</span>
               <span className="privacy-section__cur">{VISIBILITY_LABELS[f.visibility]}</span>
-              <ChevronIcon open={privacyOpen} />
+              <span className="privacy-section__caret"><ChevronIcon open={privacyOpen} /></span>
             </button>
 
             {privacyOpen && (
