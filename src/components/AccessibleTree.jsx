@@ -48,8 +48,11 @@ export default function AccessibleTree({ graph, focusId, onFocus, onOpenPerson }
       return out;
     };
 
-    const grandparents = ext(parents.flatMap((p) => graph.parents(p.id).map((gp) => ({ id: gp.id }))));
-    const auntsUncles = ext(parents.flatMap((p) => graph.siblings(p.id).map((s) => ({ id: s.id }))));
+    const upwardParents = parents.filter(
+      (p) => !p.qualifier || p.qualifier === 'biological' || p.qualifier === 'adoptive',
+    );
+    const grandparents = ext(upwardParents.flatMap((p) => graph.parents(p.id).map((gp) => ({ id: gp.id }))));
+    const auntsUncles = ext(upwardParents.flatMap((p) => graph.siblings(p.id).map((s) => ({ id: s.id }))));
     const rawGrandchildIds = children.flatMap((c) => graph.children(c.id).map((gc) => gc.id));
     const grandchildren = ext(rawGrandchildIds.map((id) => ({ id })));
     const niecesNephews = ext(siblings.flatMap((s) => graph.children(s.id).map((c) => ({ id: c.id }))));

@@ -106,11 +106,17 @@ export default function PersonSheet({
     }
     return out;
   };
+  // Only bio/adoptive lines propagate upward — step-parent lines stop at the
+  // immediate tier. Step grandparents/aunts are reachable by tapping the
+  // step-parent's bubble, which keeps the extended section from exploding.
+  const upwardParents = parents.filter(
+    (p) => !p.qualifier || p.qualifier === 'biological' || p.qualifier === 'adoptive',
+  );
   const grandparents = extDedup(
-    parents.flatMap((p) => graph.parents(p.id).map((gp) => ({ id: gp.id }))),
+    upwardParents.flatMap((p) => graph.parents(p.id).map((gp) => ({ id: gp.id }))),
   );
   const auntsUncles = extDedup(
-    parents.flatMap((p) => graph.siblings(p.id).map((s) => ({ id: s.id }))),
+    upwardParents.flatMap((p) => graph.siblings(p.id).map((s) => ({ id: s.id }))),
   );
   // Keep raw grandchild IDs (before dedup) so great-grandchildren can be derived
   // from the full set even if some grandchildren were deduped into another group.
