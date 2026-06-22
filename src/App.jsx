@@ -7,6 +7,7 @@ import {
   addRelative,
   addRelationship,
   removeRelationship,
+  removePerson,
   updateRelationshipQualifier,
   updatePerson,
   setupTree,
@@ -241,6 +242,19 @@ export default function App() {
     [editId],
   );
 
+  const handleRemovePerson = useCallback(() => {
+    const id = editId;
+    setEditId(null);
+    setOpenId(null);
+    removePerson(id);
+    if (activeId === id) {
+      const next = data.myPersonId || data.people.find((p) => p.id !== id)?.id || DEFAULT_FOCUS;
+      setActiveId(next);
+      setExpanded(new Set([next]));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editId, activeId, data.myPersonId, data.people]);
+
   const handleSaveTimeline = useCallback(
     (events) => {
       updatePerson(timelineId, { events });
@@ -425,6 +439,7 @@ export default function App() {
           person={graph.byId.get(editId)}
           onClose={() => setEditId(null)}
           onSave={handleSave}
+          onRemove={handleRemovePerson}
         />
       )}
 

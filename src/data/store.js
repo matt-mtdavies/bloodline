@@ -482,6 +482,20 @@ export function removeRelationship(fromId, toId, type) {
   });
 }
 
+// Remove a person and all traces of them from the tree.
+export function removePerson(id) {
+  commit({
+    ...state,
+    people: state.people.filter((p) => p.id !== id),
+    relationships: state.relationships.filter(
+      (r) => r.from_person !== id && r.to_person !== id,
+    ),
+    memories: (state.memories || []).filter((m) => m.person_id !== id),
+    photos: (state.photos || []).filter((ph) => ph.person_id !== id),
+    documents: (state.documents || []).filter((d) => d.person_id !== id),
+  });
+}
+
 export function setupTree({ me, partner, parents, children, memoryPersonIdx, memoryText, familyName }) {
   const mkId = () => uid();
   const mkPerson = (name, birthYear, extra = {}) => ({

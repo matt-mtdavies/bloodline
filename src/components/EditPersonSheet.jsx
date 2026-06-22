@@ -6,7 +6,7 @@ import { VISIBILITY_LABELS, VISIBILITY_DESCS, SECTIONS } from '../lib/visibility
  * laid out cleanly so updating a date or adding a story is effortless.
  * Includes a Privacy section for visibility and per-section controls.
  */
-export default function EditPersonSheet({ person, onClose, onSave }) {
+export default function EditPersonSheet({ person, onClose, onSave, onRemove }) {
   const [f, setF] = useState({
     display_name: person.display_name || '',
     gender: person.gender || '',
@@ -22,6 +22,7 @@ export default function EditPersonSheet({ person, onClose, onSave }) {
     sectionVisibility: person.sectionVisibility || {},
   });
   const [privacyOpen, setPrivacyOpen] = useState(false);
+  const [confirmRemove, setConfirmRemove] = useState(false);
 
   useEffect(() => {
     const onKey = (e) => e.key === 'Escape' && onClose();
@@ -213,12 +214,23 @@ export default function EditPersonSheet({ person, onClose, onSave }) {
         </div>
 
         <footer className="sheet__foot">
-          <button className="btn btn--primary" onClick={save}>
-            Save
-          </button>
-          <button className="btn" onClick={onClose}>
-            Cancel
-          </button>
+          {confirmRemove ? (
+            <>
+              <span className="remove-confirm-text">Remove {person.display_name} from the tree?</span>
+              <button className="btn btn--danger" onClick={onRemove}>Yes, remove</button>
+              <button className="btn" onClick={() => setConfirmRemove(false)}>Keep</button>
+            </>
+          ) : (
+            <>
+              <button className="btn btn--primary" onClick={save}>Save</button>
+              <button className="btn" onClick={onClose}>Cancel</button>
+              {onRemove && (
+                <button className="btn btn--remove" onClick={() => setConfirmRemove(true)}>
+                  Remove from tree
+                </button>
+              )}
+            </>
+          )}
         </footer>
       </section>
     </div>

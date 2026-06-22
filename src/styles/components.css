@@ -388,6 +388,7 @@
   position: sticky;
   bottom: 0;
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
   margin-top: 24px;
   padding-top: 14px;
@@ -407,6 +408,26 @@
 .btn:active { transform: scale(0.97); }
 .btn--primary { background: var(--accent); color: #fffdf9; }
 .btn--primary:hover { filter: brightness(1.05); }
+.btn--danger { background: #fdf1ef; color: #b03a2e; }
+.btn--danger:hover { background: #fbe4e1; }
+.btn--remove {
+  flex: none;
+  width: 100%;
+  height: 38px;
+  margin-top: 2px;
+  font-size: 13.5px;
+  font-weight: 500;
+  background: none;
+  color: #b03a2e;
+  border-radius: 10px;
+}
+.btn--remove:hover { background: #fdf1ef; }
+.remove-confirm-text {
+  flex: 1;
+  font-size: 13.5px;
+  color: var(--ink-soft);
+  align-self: center;
+}
 
 /* ── Avatars ─────────────────────────────────────────────────────────────── */
 .avatar {
