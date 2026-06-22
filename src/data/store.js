@@ -380,10 +380,47 @@ export function addRelative({ anchorId, relKey, name, gender, birth_date, is_dec
     created_by: 'me',
     visibility: defaultVisibility,
   };
+  const edges = edgesFor(relKey, anchorId, id, state, qualifier);
+
+  // When adding a sibling to someone with no parents in the tree, the new person
+  // would have zero link-force connections and float free in d3. Fix: auto-create
+  // an "uncertain" placeholder parent that connects both people.
+  const extraPeople = [];
+  const extraEdges = [];
+  if ((relKey === 'brother' || relKey === 'sister') && edges.length === 0) {
+    const anchor = state.people.find((p) => p.id === anchorId);
+    const familyName = anchor?.family_name || anchor?.display_name?.split(/\s+/).slice(-1)[0] || '';
+    const placeholderName = familyName ? `${familyName} Parent` : 'Unknown Parent';
+    const pid = uid();
+    extraPeople.push({
+      id: pid,
+      display_name: placeholderName,
+      given_names: null,
+      family_name: familyName || null,
+      gender: null,
+      birth_date: null,
+      death_date: null,
+      is_living: true,
+      is_deceased: false,
+      is_minor: false,
+      birth_place: null,
+      residence: null,
+      occupation: null,
+      tags: [],
+      events: [],
+      bio: null,
+      photo: null,
+      confidence: 'uncertain',
+      created_by: 'me',
+      visibility: 'full',
+    });
+    extraEdges.push(parentEdge(pid, anchorId), parentEdge(pid, id));
+  }
+
   commit({
     ...state,
-    people: [...state.people, person],
-    relationships: [...state.relationships, ...edgesFor(relKey, anchorId, id, state, qualifier)],
+    people: [...state.people, ...extraPeople, person],
+    relationships: [...state.relationships, ...edges, ...extraEdges],
   });
   return id;
 }
