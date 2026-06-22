@@ -87,7 +87,7 @@ export default function PersonSheet({
   ].filter((g) => g.items.length);
 
   // ── Extended family (derived, read-only) ──────────────────────────────────
-  // Deduplicate extended kin and exclude anyone already in the immediate groups.
+  // Single shared seen set across all extended groups: each person appears once.
   const immediateIds = new Set([
     person.id,
     ...partners.map((x) => x.id),
@@ -95,27 +95,39 @@ export default function PersonSheet({
     ...children.map((x) => x.id),
     ...siblings.map((x) => x.id),
   ]);
-  const dedup = (items) => {
-    const seen = new Set();
-    return items.filter(({ id }) => !immediateIds.has(id) && !seen.has(id) && seen.add(id));
+  const extSeen = new Set();
+  const extDedup = (items) => {
+    const out = [];
+    for (const item of items) {
+      if (!immediateIds.has(item.id) && !extSeen.has(item.id)) {
+        extSeen.add(item.id);
+        out.push(item);
+      }
+    }
+    return out;
   };
-  const grandparents = dedup(
+  const grandparents = extDedup(
     parents.flatMap((p) => graph.parents(p.id).map((gp) => ({ id: gp.id }))),
   );
-  const auntsUncles = dedup(
+  const auntsUncles = extDedup(
     parents.flatMap((p) => graph.siblings(p.id).map((s) => ({ id: s.id }))),
   );
-  const grandchildren = dedup(
-    children.flatMap((c) => graph.children(c.id).map((gc) => ({ id: gc.id }))),
-  );
-  const niecesNephews = dedup(
+  // Keep raw grandchild IDs (before dedup) so great-grandchildren can be derived
+  // from the full set even if some grandchildren were deduped into another group.
+  const rawGrandchildIds = children.flatMap((c) => graph.children(c.id).map((gc) => gc.id));
+  const grandchildren = extDedup(rawGrandchildIds.map((id) => ({ id })));
+  const niecesNephews = extDedup(
     siblings.flatMap((s) => graph.children(s.id).map((c) => ({ id: c.id }))),
+  );
+  const greatGrandchildren = extDedup(
+    rawGrandchildIds.flatMap((gcId) => graph.children(gcId).map((ggc) => ({ id: ggc.id }))),
   );
   const extendedGroups = [
     { title: 'Grandparents', items: grandparents },
     { title: 'Aunts & Uncles', items: auntsUncles },
     { title: 'Grandchildren', items: grandchildren },
     { title: 'Nieces & Nephews', items: niecesNephews },
+    { title: 'Great Grandchildren', items: greatGrandchildren },
   ].filter((g) => g.items.length);
 
   const relToViewer =
