@@ -131,6 +131,10 @@ async function putTree(s, attempt = 0) {
       body: JSON.stringify(s),
     });
     if (r.ok) { afterSave(true); return; }
+    // Log actual error body to aid debugging.
+    r.clone().json().then((body) => {
+      console.error('[store] PUT /api/tree', r.status, body?.detail || body?.error || '');
+    }).catch(() => {});
     // Auth errors are permanent — no retry.
     if (r.status === 401 || r.status === 403) { afterSave(false, r.status); return; }
     if (attempt < RETRY_DELAYS.length) {
@@ -138,7 +142,8 @@ async function putTree(s, attempt = 0) {
     } else {
       afterSave(false, r.status);
     }
-  } catch {
+  } catch (e) {
+    console.error('[store] PUT /api/tree network error:', e.message);
     if (attempt < RETRY_DELAYS.length) {
       setTimeout(() => putTree(s, attempt + 1), RETRY_DELAYS[attempt]);
     } else {
