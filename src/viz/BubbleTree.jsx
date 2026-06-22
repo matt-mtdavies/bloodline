@@ -44,6 +44,7 @@ export default function BubbleTree({
   layout = 'organic',
   mergeParents = false,
   lineagePath = null,
+  invitedIds = null,
   onCameraMode,
   apiRef,
 }) {
@@ -58,6 +59,8 @@ export default function BubbleTree({
   mergeRef.current = mergeParents;
   const lineageRef = useRef(lineagePath);
   lineageRef.current = lineagePath;
+  const invitedRef = useRef(invitedIds);
+  invitedRef.current = invitedIds;
   const layoutRef = useRef(layout);
   layoutRef.current = layout;
   // Callbacks are captured once in the mount effect, so we route them through
@@ -706,6 +709,7 @@ export default function BubbleTree({
           // Name labels: all visible bubbles, hidden when card open or lineage active
           const labelAlpha = (!cardOpen && !lineage && vis.has(id)) ? 1 : 0;
           b.setVisualState({ ...target, labelAlpha }, dt);
+          b.setInvited(!!(invitedRef.current?.has(id)));
           // Depth hints: show on visible bubbles that have family beyond the current reveal.
           if (vis.has(id)) {
             const gg = graphRef.current;

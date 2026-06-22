@@ -344,6 +344,25 @@ export class Bubble {
     }
   }
 
+  // Warm dashed accent ring for people who've been sent an invite.
+  setInvited(invited) {
+    if (invited === this._invited) return;
+    this._invited = invited;
+    if (!this._inviteRing) {
+      this._inviteRing = new Graphics();
+      this._inviteRing.eventMode = 'none';
+      this.root.addChild(this._inviteRing);
+    }
+    this._inviteRing.clear();
+    if (invited) {
+      drawDashedCircle(this._inviteRing, this.r + 7, 14, {
+        width: 1.8,
+        color: hex('#c2603a'),
+        alpha: 0.55,
+      });
+    }
+  }
+
   destroy() {
     this._destroyed = true;
     this.root.destroy({ children: true });

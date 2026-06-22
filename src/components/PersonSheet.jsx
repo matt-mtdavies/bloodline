@@ -38,6 +38,7 @@ export default function PersonSheet({
   onOpenDocument,
   onRemoveDocument,
   onUpdateDocument,
+  onInvite,
   onRemoveRelationship,
   onUpdateRelationshipQualifier,
   onUpdateStory,
@@ -337,7 +338,22 @@ export default function PersonSheet({
             <PencilIcon />
             Edit
           </button>
+          <button className="action action--invite" onClick={() => onInvite?.(person.id)} aria-label={`Invite ${person.display_name.split(' ')[0]}`}>
+            <EnvelopeIcon />
+            Invite
+          </button>
         </div>
+
+        {/* Invited state banner */}
+        {person.invited_at && person.invited_email && (
+          <div className="profile__invited">
+            <CheckCircleIcon />
+            <span>
+              Invited · <span className="profile__invited-email">{person.invited_email}</span>
+            </span>
+            <button className="profile__invited-resend" onClick={() => onInvite?.(person.id)}>Resend</button>
+          </div>
+        )}
 
         {(minor || sealed || summaryOnly) ? (
           <div className="profile__restricted">
@@ -888,6 +904,25 @@ function SparkleIcon() {
     <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
       <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="1.8" />
+    </svg>
+  );
+}
+function EnvelopeIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"
+        stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+      <path d="M22 6l-10 7L2 6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  );
+}
+function CheckCircleIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M22 11.08V12a10 10 0 11-5.93-9.14" stroke="currentColor" strokeWidth="1.8"
+        strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M22 4L12 14.01l-3-3" stroke="currentColor" strokeWidth="1.8"
+        strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }

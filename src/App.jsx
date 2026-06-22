@@ -50,6 +50,7 @@ import Onboarding from './components/Onboarding.jsx';
 import LoginScreen from './components/LoginScreen.jsx';
 import FamilySettings from './components/FamilySettings.jsx';
 import MergeWizard from './components/MergeWizard.jsx';
+import InviteSheet from './components/InviteSheet.jsx';
 
 const isDemo = typeof window !== 'undefined' &&
   new URLSearchParams(window.location.search).has('demo');
@@ -142,6 +143,7 @@ export default function App() {
   const [storageWarning, setStorageWarning] = useState(false);
   const [syncToast, setSyncToast] = useState(null);
   const [docViewer, setDocViewer] = useState(null); // { title, src, mime }
+  const [invitePersonId, setInvitePersonId] = useState(null);
   const viewApi = useRef(null);
 
   // Notify the user if a commit couldn't persist (localStorage full).
@@ -153,6 +155,11 @@ export default function App() {
     window.addEventListener('bloodline:storage-full', handler);
     return () => window.removeEventListener('bloodline:storage-full', handler);
   }, []);
+
+  const invitedIds = useMemo(
+    () => new Set(data.people.filter((p) => p.invited_at).map((p) => p.id)),
+    [data.people],
+  );
 
   const visibleIds = useMemo(() => {
     const vis = new Set();
@@ -298,6 +305,21 @@ export default function App() {
     });
   }, []);
 
+  const handleSendInvite = useCallback(async (personId, email, role) => {
+    updatePerson(personId, { invited_email: email, invited_at: new Date().toISOString() });
+    try {
+      const res = await fetch('/api/invite', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email, role }),
+      });
+      if (!res.ok) throw new Error('invite failed');
+    } catch {
+      // Graceful: local invited state persists; API unavailable in demo mode
+    }
+    setInvitePersonId(null);
+  }, []);
+
   const activePerson = graph.byId.get(activeId);
 
   // Auth gate. 'open' = no auth configured or ?demo — go straight to app.
@@ -356,6 +378,7 @@ export default function App() {
             reducedMotion={reducedMotion}
             mergeParents={mergeParents}
             lineagePath={lineagePath}
+            invitedIds={invitedIds}
             onCameraMode={setCameraFree}
             apiRef={viewApi}
           />
@@ -432,7 +455,16 @@ export default function App() {
         onUpdateRelationshipQualifier={updateRelationshipQualifier}
         onUpdateStory={(id, story) => updatePerson(id, { story })}
         onPhoto={handlePhoto}
+        onInvite={(id) => setInvitePersonId(id)}
       />
+
+      {invitePersonId && graph.byId.get(invitePersonId) && (
+        <InviteSheet
+          person={graph.byId.get(invitePersonId)}
+          onSend={handleSendInvite}
+          onClose={() => setInvitePersonId(null)}
+        />
+      )}
 
       {addAnchorId && graph.byId.get(addAnchorId) && (
         <AddRelativeSheet
