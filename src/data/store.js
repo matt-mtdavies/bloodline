@@ -121,6 +121,21 @@ function afterSave(ok, statusCode) {
   }
 }
 
+// Strip base64 data: URLs before writing to D1 — portraits and gallery photos
+// can be several MB total, exceeding D1's per-row limit. They remain intact in
+// localStorage; loadFromServer() restores them from there after a server load.
+function stripForServer(s) {
+  return {
+    ...s,
+    people: s.people?.map((p) =>
+      p.photo?.startsWith('data:') ? { ...p, photo: null } : p,
+    ),
+    photos: s.photos?.map((ph) =>
+      ph.src?.startsWith('data:') ? { ...ph, src: null } : ph,
+    ).filter((ph) => ph.src),
+  };
+}
+
 const RETRY_DELAYS = [2000, 4000, 8000];
 
 async function putTree(s, attempt = 0) {
@@ -128,7 +143,7 @@ async function putTree(s, attempt = 0) {
     const r = await fetch('/api/tree', {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(s),
+      body: JSON.stringify(stripForServer(s)),
     });
     if (r.ok) { afterSave(true); return; }
     // Log actual error body to aid debugging.
@@ -199,10 +214,10 @@ export async function loadFromServer() {
       return true;
     }
 
-    // Server is same or ahead — apply it. Preserve local portrait blobs in
-    // case the last PUT failed silently (photos are too large for a diff).
+    // Server is same or ahead — apply it. Data: URLs are stripped from the D1
+    // payload to stay under the row size limit; restore them from localStorage.
     const localPortraits = new Map(
-      (state.people || []).filter((p) => p.photo).map((p) => [p.id, p.photo]),
+      (state.people || []).filter((p) => p.photo?.startsWith('data:')).map((p) => [p.id, p.photo]),
     );
     const mergedPeople =
       localPortraits.size > 0 && Array.isArray(data.people)
@@ -212,8 +227,21 @@ export async function loadFromServer() {
               : p,
           )
         : data.people;
+
+    // Restore local gallery photos that have data: URLs (not in D1 payload).
+    const serverPhotoIds = new Set((data.photos || []).map((ph) => ph.id));
+    const localDataPhotos = (state.photos || []).filter(
+      (ph) => ph.src?.startsWith('data:') && !serverPhotoIds.has(ph.id),
+    );
+    const mergedPhotos = [...(data.photos || []), ...localDataPhotos];
+
     commit(
-      { ...EMPTY, ...data, ...(mergedPeople ? { people: mergedPeople } : {}) },
+      {
+        ...EMPTY,
+        ...data,
+        ...(mergedPeople ? { people: mergedPeople } : {}),
+        photos: mergedPhotos,
+      },
       { fromServer: true },
     );
     return true;
