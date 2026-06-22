@@ -28,22 +28,27 @@ export function buildGraph(people, relationships) {
     }
   }
 
-  // Derive siblings: share at least one parent. Tag full vs half/step where we can.
+  // Derive siblings: share at least one parent. Three-way kind:
+  //   full  — share 2+ biological/adoptive parents
+  //   half  — share exactly 1 biological/adoptive parent
+  //   step  — connected only through a step-parent (no shared bio/adoptive parent)
+  const isBioAdopt = (q) => !q || q === 'biological' || q === 'adoptive';
   const siblingsOf = new Map();
   for (const person of people) {
-    const myParents = (parentsOf.get(person.id) || []).map((x) => x.id);
+    const myParents = parentsOf.get(person.id) || []; // [{id, qualifier}]
     if (!myParents.length) continue;
+    const myBioIds = new Set(myParents.filter((p) => isBioAdopt(p.qualifier)).map((p) => p.id));
+    const myAllIds = new Set(myParents.map((p) => p.id));
     const seen = new Set();
-    for (const parentId of myParents) {
+    for (const { id: parentId } of myParents) {
       for (const child of childrenOf.get(parentId) || []) {
         if (child.id === person.id || seen.has(child.id)) continue;
         seen.add(child.id);
-        const theirParents = (parentsOf.get(child.id) || []).map((x) => x.id);
-        const shared = myParents.filter((pid) => theirParents.includes(pid)).length;
-        ensure(siblingsOf, person.id).push({
-          id: child.id,
-          kind: shared >= 2 ? 'full' : 'half',
-        });
+        const theirParents = parentsOf.get(child.id) || [];
+        const theirBioIds = theirParents.filter((p) => isBioAdopt(p.qualifier)).map((p) => p.id);
+        const sharedBio = theirBioIds.filter((pid) => myBioIds.has(pid)).length;
+        const kind = sharedBio >= 2 ? 'full' : sharedBio === 1 ? 'half' : 'step';
+        ensure(siblingsOf, person.id).push({ id: child.id, kind });
       }
     }
   }
@@ -151,8 +156,8 @@ export function relationLabel(graph, focusId, otherId) {
   }
   for (const x of graph.siblings(focusId)) {
     if (x.id === otherId) {
-      const half = x.kind === 'half' ? 'Half-' : '';
-      return `${half}${g('Brother', 'Sister', 'Sibling')}`;
+      const prefix = x.kind === 'half' ? 'Half-' : x.kind === 'step' ? 'Step-' : '';
+      return `${prefix}${g('Brother', 'Sister', 'Sibling')}`;
     }
   }
 
