@@ -17,12 +17,55 @@ export default function AccessibleTree({ graph, focusId, onFocus, onOpenPerson }
   const groups = useMemo(() => {
     if (!focus) return [];
     const partners = graph.partners(focusId);
-    return [
+    const parents = graph.parents(focusId);
+    const children = graph.children(focusId);
+    const siblings = graph.siblings(focusId);
+
+    const immediate = [
       { title: partners.length > 1 ? 'Partners' : 'Partner', items: partners },
-      { title: 'Parents', items: graph.parents(focusId) },
-      { title: 'Children', items: graph.children(focusId) },
-      { title: 'Siblings', items: graph.siblings(focusId) },
+      { title: 'Parents', items: parents },
+      { title: 'Children', items: children },
+      { title: 'Siblings', items: siblings },
     ].filter((g) => g.items.length);
+
+    // Extended family — same derivation as PersonSheet, single dedup set.
+    const immediateIds = new Set([
+      focusId,
+      ...partners.map((x) => x.id),
+      ...parents.map((x) => x.id),
+      ...children.map((x) => x.id),
+      ...siblings.map((x) => x.id),
+    ]);
+    const extSeen = new Set();
+    const ext = (items) => {
+      const out = [];
+      for (const item of items) {
+        if (!immediateIds.has(item.id) && !extSeen.has(item.id)) {
+          extSeen.add(item.id);
+          out.push(item);
+        }
+      }
+      return out;
+    };
+
+    const grandparents = ext(parents.flatMap((p) => graph.parents(p.id).map((gp) => ({ id: gp.id }))));
+    const auntsUncles = ext(parents.flatMap((p) => graph.siblings(p.id).map((s) => ({ id: s.id }))));
+    const rawGrandchildIds = children.flatMap((c) => graph.children(c.id).map((gc) => gc.id));
+    const grandchildren = ext(rawGrandchildIds.map((id) => ({ id })));
+    const niecesNephews = ext(siblings.flatMap((s) => graph.children(s.id).map((c) => ({ id: c.id }))));
+    const greatGrandchildren = ext(
+      rawGrandchildIds.flatMap((gcId) => graph.children(gcId).map((ggc) => ({ id: ggc.id }))),
+    );
+
+    const extended = [
+      { title: 'Grandparents', items: grandparents },
+      { title: 'Aunts & Uncles', items: auntsUncles },
+      { title: 'Grandchildren', items: grandchildren },
+      { title: 'Nieces & Nephews', items: niecesNephews },
+      { title: 'Great Grandchildren', items: greatGrandchildren },
+    ].filter((g) => g.items.length);
+
+    return [...immediate, ...extended];
   }, [graph, focusId, focus]);
 
   const directory = useMemo(() => {
