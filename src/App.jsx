@@ -20,6 +20,7 @@ import {
   removePhoto,
   addDocument,
   removeDocument,
+  updateDocument,
   loadFromServer,
   saveToServer,
   enableServerSync,
@@ -426,6 +427,7 @@ export default function App() {
           }
           removeDocument(id);
         }}
+        onUpdateDocument={(id, patch) => updateDocument(id, patch)}
         onRemoveRelationship={removeRelationship}
         onUpdateRelationshipQualifier={updateRelationshipQualifier}
         onUpdateStory={(id, story) => updatePerson(id, { story })}

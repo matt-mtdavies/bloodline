@@ -732,6 +732,13 @@ export function updateDocSrc(id, src) {
   });
 }
 
+export function updateDocument(id, patch) {
+  commit({
+    ...state,
+    documents: state.documents.map((d) => (d.id === id ? { ...d, ...patch } : d)),
+  });
+}
+
 // Upload any data: URL documents to R2 and replace them with permanent URLs.
 // Called once after login; uploadFn is image.js#uploadDocument.
 export async function migrateDocsToR2(uploadFn) {

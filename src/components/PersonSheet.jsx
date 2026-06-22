@@ -37,6 +37,7 @@ export default function PersonSheet({
   onAddDocument,
   onOpenDocument,
   onRemoveDocument,
+  onUpdateDocument,
   onRemoveRelationship,
   onUpdateRelationshipQualifier,
   onUpdateStory,
@@ -49,6 +50,8 @@ export default function PersonSheet({
   const storyAbort = useRef(null);
   const [storyState, setStoryState] = useState({ phase: 'idle', text: '', error: null });
   const [editingQualId, setEditingQualId] = useState(null);
+  const [editingDocId, setEditingDocId] = useState(null);
+  const [editingDocTitle, setEditingDocTitle] = useState('');
 
   useEffect(() => {
     if (!person || lockEscape) return; // a stacked overlay owns Escape
@@ -445,7 +448,31 @@ export default function PersonSheet({
                           </span>
                         )}
                         <span className="doc-row__text">
-                          <span className="doc-row__title">{doc.title}</span>
+                          {editingDocId === doc.id ? (
+                            <input
+                              className="doc-row__title-input"
+                              value={editingDocTitle}
+                              autoFocus
+                              onChange={(e) => setEditingDocTitle(e.target.value)}
+                              onBlur={() => {
+                                const t = editingDocTitle.trim();
+                                if (t && t !== doc.title) onUpdateDocument?.(doc.id, { title: t });
+                                setEditingDocId(null);
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') e.currentTarget.blur();
+                                if (e.key === 'Escape') { setEditingDocId(null); }
+                              }}
+                            />
+                          ) : (
+                            <button
+                              className="doc-row__title"
+                              onClick={() => { setEditingDocId(doc.id); setEditingDocTitle(doc.title); }}
+                              title="Tap to rename"
+                            >
+                              {doc.title}
+                            </button>
+                          )}
                           <span className="doc-row__meta">
                             {doc.mime === 'application/pdf' ? 'PDF' : 'Image'}{doc.created_at ? ` · ${fmtDocDate(doc.created_at)}` : ''}
                           </span>
