@@ -85,25 +85,33 @@ export async function onRequestPost({ request, env }) {
 
   const now = Math.floor(Date.now() / 1000);
 
-  // Find the most-recent active token for this email (one at a time due to DELETE-on-request).
+  // Find the most-recent active token for this email.
   const tokenRow = await env.DB.prepare(
-    `SELECT token, fail_count FROM auth_token
+    `SELECT token FROM auth_token
       WHERE email = ? AND purpose = 'login' AND used_at IS NULL AND expires_at > ?
       ORDER BY expires_at DESC LIMIT 1`,
   ).bind(email.toLowerCase(), now).first();
 
   if (!tokenRow) return json({ error: 'Invalid or expired code' }, { status: 401 });
 
-  // Lock the code after 5 wrong guesses so brute-force is impractical.
-  if (tokenRow.fail_count >= 5) {
-    return json({ error: 'Too many attempts. Request a new code.' }, { status: 429 });
-  }
+  // Brute-force protection: lock after 5 wrong guesses.
+  // Requires migration 0004_auth_hardening.sql — skipped gracefully if not yet applied.
+  try {
+    const fc = await env.DB.prepare(
+      `SELECT fail_count FROM auth_token WHERE token = ?`,
+    ).bind(tokenRow.token).first();
+    if (fc && fc.fail_count >= 5) {
+      return json({ error: 'Too many attempts. Request a new code.' }, { status: 429 });
+    }
+  } catch { /* fail_count column not yet in schema — brute-force check skipped */ }
 
   // Tokens are stored as <48 random hex chars><6-digit code> — verify the suffix.
   if (!tokenRow.token.endsWith(String(code))) {
-    await env.DB.prepare(
-      `UPDATE auth_token SET fail_count = fail_count + 1 WHERE token = ?`,
-    ).bind(tokenRow.token).run();
+    try {
+      await env.DB.prepare(
+        `UPDATE auth_token SET fail_count = fail_count + 1 WHERE token = ?`,
+      ).bind(tokenRow.token).run();
+    } catch { /* migration not yet applied */ }
     return json({ error: 'Invalid or expired code' }, { status: 401 });
   }
 
