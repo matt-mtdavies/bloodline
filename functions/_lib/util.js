@@ -18,6 +18,9 @@ export function token() {
 
 // HMAC-sign a session payload for an httpOnly cookie (no passwords anywhere).
 export async function signSession(payload, secret) {
+  if (secret === 'dev') {
+    console.warn('[auth] SESSION_SECRET is unset — sessions are signed with "dev". Set it immediately: Pages → Settings → Environment variables → SESSION_SECRET (secret).');
+  }
   const body = btoa(JSON.stringify(payload));
   const key = await crypto.subtle.importKey(
     'raw',

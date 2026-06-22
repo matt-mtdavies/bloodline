@@ -45,7 +45,7 @@ export async function onRequestGet({ env, data }) {
     );
   } catch (e) {
     console.error('[tree] GET error:', e.message);
-    return json({ error: 'Server error', detail: e.message }, { status: 500 });
+    return json({ error: 'Server error' }, { status: 500 });
   }
 }
 
@@ -107,6 +107,6 @@ export async function onRequestPut({ request, env, data }) {
     return json({ ok: true, familyId: membership.family_id, role: membership.role });
   } catch (e) {
     console.error('[tree] PUT error:', e.message);
-    return json({ error: 'Server error', detail: e.message }, { status: 500 });
+    return json({ error: 'Server error' }, { status: 500 });
   }
 }

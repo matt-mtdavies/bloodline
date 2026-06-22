@@ -66,6 +66,9 @@ export async function onRequestGet({ request, env }) {
  * POST /api/auth/verify  { email, code, invite? }
  * Validates a 6-digit code entered in the login screen. On success, sets the
  * session cookie and returns { ok: true } so the client can reload in place.
+ *
+ * Brute-force protection: each wrong attempt increments fail_count on the
+ * active token. At 5 failures the code is locked and a new one must be requested.
  */
 export async function onRequestPost({ request, env }) {
   let email, code, invite;
@@ -81,14 +84,30 @@ export async function onRequestPost({ request, env }) {
   if (!env.DB) return json({ error: 'Database not configured' }, { status: 503 });
 
   const now = Math.floor(Date.now() / 1000);
-  // Token stored as <48 random chars><6-digit code>; look up by email + suffix.
-  const row = await env.DB.prepare(
-    `SELECT token, expires_at, used_at FROM auth_token
-      WHERE email = ? AND token LIKE '%' || ? AND purpose = 'login'
-        AND used_at IS NULL AND expires_at > ?`,
-  ).bind(email.toLowerCase(), String(code), now).first();
 
-  if (!row) return json({ error: 'Invalid or expired code' }, { status: 401 });
+  // Find the most-recent active token for this email (one at a time due to DELETE-on-request).
+  const tokenRow = await env.DB.prepare(
+    `SELECT token, fail_count FROM auth_token
+      WHERE email = ? AND purpose = 'login' AND used_at IS NULL AND expires_at > ?
+      ORDER BY expires_at DESC LIMIT 1`,
+  ).bind(email.toLowerCase(), now).first();
+
+  if (!tokenRow) return json({ error: 'Invalid or expired code' }, { status: 401 });
+
+  // Lock the code after 5 wrong guesses so brute-force is impractical.
+  if (tokenRow.fail_count >= 5) {
+    return json({ error: 'Too many attempts. Request a new code.' }, { status: 429 });
+  }
+
+  // Tokens are stored as <48 random hex chars><6-digit code> — verify the suffix.
+  if (!tokenRow.token.endsWith(String(code))) {
+    await env.DB.prepare(
+      `UPDATE auth_token SET fail_count = fail_count + 1 WHERE token = ?`,
+    ).bind(tokenRow.token).run();
+    return json({ error: 'Invalid or expired code' }, { status: 401 });
+  }
+
+  const row = tokenRow; // code matched — alias for clarity below
 
   await env.DB.prepare(`UPDATE auth_token SET used_at = ? WHERE token = ?`)
     .bind(now, row.token).run();

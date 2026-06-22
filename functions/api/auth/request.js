@@ -6,6 +6,8 @@ import { json, token, sendEmail } from '../../_lib/util.js';
  * random token suffixed with the display code so it can be found by
  * (email, code) without a schema change. Any prior unused codes for this
  * email are invalidated first so only the latest code is valid.
+ *
+ * Rate limit: max 3 code requests per email per hour to prevent email spam.
  */
 export async function onRequestPost({ request, env }) {
   let email, invite;
@@ -19,11 +21,23 @@ export async function onRequestPost({ request, env }) {
   }
 
   const displayCode = String(Math.floor(100000 + Math.random() * 900000));
-  // Unique DB token: 48 random hex chars + 6-digit code suffix for lookup.
   const t = token() + displayCode;
-  const expires = Math.floor(Date.now() / 1000) + 60 * 15; // 15 min
+  const now = Math.floor(Date.now() / 1000);
+  const expires = now + 60 * 15; // 15 min
 
   if (env.DB) {
+    // Rate limit: max 3 code requests per email per hour.
+    const oneHourAgo = now - 3600;
+    const recent = await env.DB.prepare(
+      `SELECT COUNT(*) as cnt FROM auth_token WHERE email = ? AND purpose = 'login' AND created_at > ?`,
+    ).bind(email.toLowerCase(), oneHourAgo).first();
+    if ((recent?.cnt ?? 0) >= 3) {
+      return json(
+        { error: 'Too many requests. Please wait an hour before requesting another code.' },
+        { status: 429 },
+      );
+    }
+
     // Invalidate any prior unused codes for this email.
     await env.DB.prepare(
       `DELETE FROM auth_token WHERE email = ? AND purpose = 'login' AND used_at IS NULL`,
