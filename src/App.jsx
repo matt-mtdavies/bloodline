@@ -55,13 +55,20 @@ import InviteSheet from './components/InviteSheet.jsx';
 const isDemo = typeof window !== 'undefined' &&
   new URLSearchParams(window.location.search).has('demo');
 
-// Read ?pending_invite once at module scope — StrictMode double-invokes lazy
-// useState initialisers which would see an empty URL on the second call.
+// Read ?pending_invite and ?invite once at module scope — StrictMode
+// double-invokes lazy useState initialisers which would see an empty URL.
 const _initialPendingInvite = (() => {
   if (typeof window === 'undefined') return null;
   const token = new URLSearchParams(window.location.search).get('pending_invite');
   if (token) window.history.replaceState({}, '', window.location.pathname);
   return token;
+})();
+
+// Capture the invite token from the URL without clearing it — LoginScreen
+// also needs it to pre-populate the OTP step for non-logged-in users.
+const _initialInviteToken = (() => {
+  if (typeof window === 'undefined') return null;
+  return new URLSearchParams(window.location.search).get('invite');
 })();
 
 export default function App() {
@@ -88,9 +95,28 @@ export default function App() {
     if (u.bypass) { setAuthState('open'); return; }
     setUser(u);
     enableServerSync();
-    // When joining via invite, always let the server tree win — never push the
-    // guest's local/stale data to the family they just joined.
-    const joiningFamily = !!loginExtras?.joinedViaInvite;
+
+    // Two invite paths:
+    // A) Not logged in → OTP flow → LoginScreen passes joinedViaInvite: true
+    // B) Already logged in → ?invite param in URL, OTP never shown → accept here
+    const inviteToken = _initialInviteToken;
+    const joiningFamily = !!loginExtras?.joinedViaInvite || !!inviteToken;
+
+    if (inviteToken && !loginExtras?.joinedViaInvite) {
+      // Logged-in path: process the invite server-side before loading the tree.
+      try {
+        const ar = await fetch('/api/invite/accept', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ token: inviteToken }),
+        });
+        if (ar.ok) {
+          const ab = await ar.json().catch(() => ({}));
+          if (ab.needsMerge) setPendingInvite(ab.pendingInvite);
+        }
+      } catch { /* non-fatal — load whatever tree the server has */ }
+    }
+
     const hadTree = await loadFromServer({ forceServerWins: joiningFamily });
     if (!hadTree && !joiningFamily) await saveToServer();
     Promise.all([
