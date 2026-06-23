@@ -70,7 +70,7 @@ export default function LoginScreen({ onAuthSuccess }) {
       });
       if (res.ok) {
         const body = await res.json().catch(() => ({}));
-        if (onAuthSuccess) onAuthSuccess(body);
+        if (onAuthSuccess) onAuthSuccess({ ...body, joinedViaInvite: !!inviteToken });
         else window.location.reload();
         return;
       }

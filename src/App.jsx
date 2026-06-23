@@ -88,8 +88,11 @@ export default function App() {
     if (u.bypass) { setAuthState('open'); return; }
     setUser(u);
     enableServerSync();
-    const hadTree = await loadFromServer();
-    if (!hadTree) await saveToServer();
+    // When joining via invite, always let the server tree win — never push the
+    // guest's local/stale data to the family they just joined.
+    const joiningFamily = !!loginExtras?.joinedViaInvite;
+    const hadTree = await loadFromServer({ forceServerWins: joiningFamily });
+    if (!hadTree && !joiningFamily) await saveToServer();
     Promise.all([
       migratePhotosToR2(uploadPhoto).catch(() => ({ total: 0, uploaded: 0, failed: 0 })),
       migrateDocsToR2(uploadDocument).catch(() => ({ total: 0, uploaded: 0, failed: 0 })),

@@ -199,7 +199,9 @@ export function saveToServer() {
 // Load the user's tree from the server.
 // If local state (_seq) is ahead of the server, local wins and we push it up.
 // Otherwise server wins and we apply it. Returns true if a tree was found.
-export async function loadFromServer() {
+// forceServerWins: always apply the server data regardless of _seq — used when
+// joining a new family via invite so local data never overwrites the family tree.
+export async function loadFromServer({ forceServerWins = false } = {}) {
   try {
     const res = await fetch('/api/tree');
     if (!res.ok) return false;
@@ -210,7 +212,9 @@ export async function loadFromServer() {
     const serverSeq = data._seq || 0;
 
     // Local is ahead — unsaved changes exist. Push them up; don't overwrite.
-    if (localSeq > serverSeq && state.people?.length > 0) {
+    // Skip this when forceServerWins (e.g. joining via invite): we must never
+    // let a guest's stale local tree overwrite the family they just joined.
+    if (!forceServerWins && localSeq > serverSeq && state.people?.length > 0) {
       saveToServer();
       return true;
     }
