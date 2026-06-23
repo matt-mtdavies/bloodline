@@ -39,24 +39,40 @@ export function drawLinks(g, graph, pos, isVisible, baseRadius, mergeParents = f
     const status = r.partner_status;
     const width = baseRadius * 2.2;
 
+    // All unions share the same warm filled band — the fill never changes.
+    // Status is communicated solely by the border style around that band.
+    const fill = status === 'widowed' ? '#ece7f2' : '#f6e6dc';
+    const borderColor = status === 'widowed' ? '#b8aeca' : '#c9a08a';
+
+    g.moveTo(a.x, a.y).lineTo(b.x, b.y).stroke({
+      width,
+      color: hex(fill),
+      alpha: alpha * 0.52,
+      cap: 'round',
+    });
+
+    // Thin border lines traced along both edges of the band.
+    // Perpendicular offset so the lines sit right at the pill boundary.
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const len = Math.sqrt(dx * dx + dy * dy) || 1;
+    const offX = (-dy / len) * (width / 2 - 0.5);
+    const offY = ( dx / len) * (width / 2 - 0.5);
+    const e1 = [{ x: a.x + offX, y: a.y + offY }, { x: b.x + offX, y: b.y + offY }];
+    const e2 = [{ x: a.x - offX, y: a.y - offY }, { x: b.x - offX, y: b.y - offY }];
+    const bAlpha = alpha * 0.6;
+
     if (status === 'former') {
-      // Dashed grey band — clearly past, but still a real co-parent bond.
-      // Slightly wider than the bubble stroke so it reads as a structural line.
-      dashedSegment(g, a, b, 14, 0.52, {
-        width: 3,
-        color: hex('#a8acb4'),
-        alpha: alpha * 0.72,
-        cap: 'round',
-      });
+      // Dashed border — same warm band, but the broken edge signals a past union.
+      // No separate connecting line needed; the band itself carries the relationship.
+      for (const [p, q] of [e1, e2]) {
+        dashedSegment(g, p, q, 12, 0.5, { width: 1.5, color: hex(borderColor), alpha: bAlpha, cap: 'round' });
+      }
     } else {
-      // A single, light pod binding the pair — a soft hint, not a bold blob.
-      const fill = status === 'widowed' ? '#ece7f2' : '#f6e6dc';
-      g.moveTo(a.x, a.y).lineTo(b.x, b.y).stroke({
-        width,
-        color: hex(fill),
-        alpha: alpha * 0.5,
-        cap: 'round',
-      });
+      // Solid border for current and widowed.
+      for (const [p, q] of [e1, e2]) {
+        g.moveTo(p.x, p.y).lineTo(q.x, q.y).stroke({ width: 1.5, color: hex(borderColor), alpha: bAlpha, cap: 'round' });
+      }
     }
   }
 
