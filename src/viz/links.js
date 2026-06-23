@@ -40,11 +40,12 @@ export function drawLinks(g, graph, pos, isVisible, baseRadius, mergeParents = f
     const width = baseRadius * 2.2;
 
     if (status === 'former') {
-      // A faded, dashed bond — present but clearly past.
-      dashedSegment(g, a, b, 16, 0.5, {
-        width: 2.5,
-        color: hex('#c4c7cd'),
-        alpha: alpha * 0.8,
+      // Dashed grey band — clearly past, but still a real co-parent bond.
+      // Slightly wider than the bubble stroke so it reads as a structural line.
+      dashedSegment(g, a, b, 14, 0.52, {
+        width: 3,
+        color: hex('#a8acb4'),
+        alpha: alpha * 0.72,
         cap: 'round',
       });
     } else {
@@ -148,52 +149,27 @@ export function drawLinks(g, graph, pos, isVisible, baseRadius, mergeParents = f
       if (!a1 || !a2) continue;
 
       const biological = grp.qualifier === 'biological';
-      // Arms from each parent use the "former" grey; the line to the child keeps
-      // the normal warm parent colour so the bond still reads as parentage.
-      const armColor = hex('#a0a3aa');
-      const kidColor = hex(biological ? '#8a7d6b' : '#b6a892');
+      const color = hex(biological ? '#8a7d6b' : '#b6a892');
+      const seg = (from, to) =>
+        biological
+          ? curve(g, from, to, { width: 2, color, alpha: 0.7 })
+          : dashedCurve(g, from, to, 14, 0.5, { width: 2, color, alpha: 0.85 });
 
+      // Origin: same midpoint as a current-couple pair — children "emerge from
+      // the bond" regardless of its status. The dashed grey band in the couple
+      // membranes pass already signals the former status; no V-arms needed here.
+      const start = { x: (a1.x + a2.x) / 2, y: (a1.y + a2.y) / 2 + baseRadius * 1.05 };
       const kids = grp.kids.map((id) => pos.get(id)).filter(Boolean);
       if (kids.length === 0) continue;
 
-      const midX = (a1.x + a2.x) / 2;
-      const midY = (a1.y + a2.y) / 2;
-      const nearestY = Math.min(...kids.map((k) => k.y));
-      // Junction sits roughly halfway between the parents' midpoint and the
-      // nearest child, offset so the V opens naturally.
-      const junction = {
-        x: midX,
-        y: midY + (nearestY - midY) * 0.48,
-      };
-
-      // Converging arms: solid muted grey, thinner than a parent line, so the
-      // former-couple context is clear without looking like a primary bond.
-      g.moveTo(a1.x, a1.y).lineTo(junction.x, junction.y)
-        .stroke({ width: 1.8, color: armColor, alpha: 0.75, cap: 'round' });
-      g.moveTo(a2.x, a2.y).lineTo(junction.x, junction.y)
-        .stroke({ width: 1.8, color: armColor, alpha: 0.75, cap: 'round' });
-
-      // Open circle at the junction — marks a past-union origin point.
-      g.circle(junction.x, junction.y, 5)
-        .stroke({ width: 2, color: armColor, alpha: 0.85 });
-
-      // Line(s) from junction to child/ren, in the normal parent style.
-      const seg = (from, to) =>
-        biological
-          ? curve(g, from, to, { width: 2, color: kidColor, alpha: 0.7 })
-          : dashedCurve(g, from, to, 14, 0.5, { width: 2, color: kidColor, alpha: 0.85 });
-
       if (kids.length === 1) {
-        seg(junction, kids[0]);
+        seg(start, kids[0]);
       } else {
-        // Sibling trunk below the junction, same as the merged-couple path.
         const avgX = kids.reduce((s, k) => s + k.x, 0) / kids.length;
-        const trunk = {
-          x: junction.x * 0.55 + avgX * 0.45,
-          y: junction.y + (nearestY - junction.y) * 0.72,
-        };
-        seg(junction, trunk);
-        for (const k of kids) seg(trunk, k);
+        const nearestY = Math.min(...kids.map((k) => k.y));
+        const junction = { x: start.x * 0.55 + avgX * 0.45, y: start.y + (nearestY - start.y) * 0.72 };
+        seg(start, junction);
+        for (const k of kids) seg(junction, k);
       }
     }
   }
