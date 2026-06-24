@@ -72,6 +72,11 @@ if (!state.memories) state.memories = [];
 if (!state.photos) state.photos = [];
 if (!state.documents) state.documents = [];
 
+// Ensure every person has a conditions array.
+if (state.people) {
+  state.people = state.people.map((p) => (p.conditions ? p : { ...p, conditions: [] }));
+}
+
 // Upgrade low-res demo gallery photos to current seed set.
 if (state.photos.some((p) => typeof p.src === 'string' && p.src.startsWith('/faces/'))) {
   const ids = new Set(state.people.map((p) => p.id));
@@ -293,6 +298,7 @@ const rid = () => 'r_' + Math.random().toString(36).slice(2, 9);
 const mid = () => 'm_' + Math.random().toString(36).slice(2, 9);
 const phid = () => 'ph_' + Math.random().toString(36).slice(2, 9);
 const docid = () => 'doc_' + Math.random().toString(36).slice(2, 9);
+const cid = () => 'c_' + Math.random().toString(36).slice(2, 9);
 
 // How each warm relationship label maps to stored edges + a gender default.
 export const RELATIONSHIPS = [
@@ -765,4 +771,38 @@ export function updateFamilyName(name) {
 
 export function resetTree() {
   commit({ ...EMPTY });
+}
+
+// ── Health conditions ──────────────────────────────────────────────────────────
+export function addCondition(personId, { name, category, status = 'active', onset_year = null }) {
+  commit({
+    ...state,
+    people: state.people.map((p) =>
+      p.id === personId
+        ? { ...p, conditions: [...(p.conditions || []), { id: cid(), name, category, status, onset_year }] }
+        : p,
+    ),
+  });
+}
+
+export function removeCondition(personId, conditionId) {
+  commit({
+    ...state,
+    people: state.people.map((p) =>
+      p.id === personId
+        ? { ...p, conditions: (p.conditions || []).filter((c) => c.id !== conditionId) }
+        : p,
+    ),
+  });
+}
+
+export function updateCondition(personId, conditionId, fields) {
+  commit({
+    ...state,
+    people: state.people.map((p) =>
+      p.id === personId
+        ? { ...p, conditions: (p.conditions || []).map((c) => (c.id === conditionId ? { ...c, ...fields } : c)) }
+        : p,
+    ),
+  });
 }

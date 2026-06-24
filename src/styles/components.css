@@ -1908,6 +1908,142 @@
 .empty-add:active { transform: scale(0.99); }
 .empty-add svg { color: var(--accent); }
 
+/* ── Health history ───────────────────────────────────────────────────────── */
+.health-chips { list-style: none; margin: 0 0 6px; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.health-chip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 8px 6px 10px;
+  border-radius: 24px;
+  background: var(--paper-deep);
+  border: 1px solid var(--hairline);
+}
+.health-chip__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+}
+.health-chip__body {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.health-chip__name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink);
+  line-height: 1.2;
+}
+.health-chip__status {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--ink-soft);
+  background: rgba(0,0,0,0.06);
+  padding: 2px 7px;
+  border-radius: 10px;
+  white-space: nowrap;
+}
+.health-chip__remove {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: rgba(0,0,0,0.07);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-soft);
+  flex: none;
+  transition: background 0.15s;
+}
+.health-chip__remove svg { width: 12px; height: 12px; }
+.health-chip__remove:hover { background: rgba(0,0,0,0.14); color: var(--ink); }
+
+.health-chip__status-picker {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 30;
+  background: #fff;
+  border: 1px solid var(--hairline);
+  border-radius: 14px;
+  box-shadow: 0 6px 24px rgba(0,0,0,0.13);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  animation: islide-in 0.15s var(--spring) both;
+}
+.health-status-opt {
+  padding: 11px 18px;
+  font-size: 13.5px;
+  text-align: left;
+  color: var(--ink);
+  white-space: nowrap;
+}
+.health-status-opt:hover { background: var(--paper-deep); }
+.health-status-opt--on { font-weight: 600; color: var(--accent); }
+
+.condition-picker {
+  margin-top: 14px;
+  background: var(--paper-deep);
+  border: 1px solid var(--hairline);
+  border-radius: 18px;
+  overflow: hidden;
+  animation: islide-in 0.2s var(--spring) both;
+}
+.condition-picker__cats {
+  display: flex;
+  gap: 5px;
+  padding: 12px 12px 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.condition-picker__cats::-webkit-scrollbar { display: none; }
+.condition-cat {
+  flex: none;
+  padding: 5px 13px;
+  border-radius: 20px;
+  border: 1.5px solid var(--hairline);
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--ink-soft);
+  white-space: nowrap;
+  transition: color 0.15s, border-color 0.15s;
+  background: transparent;
+}
+.condition-cat--on { font-weight: 600; }
+.condition-picker__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  padding: 10px 12px 14px;
+}
+.condition-option {
+  padding: 6px 13px;
+  border-radius: 20px;
+  background: #fff;
+  border: 1px solid var(--hairline);
+  font-size: 13px;
+  color: var(--ink);
+  display: inline-flex;
+  align-items: center;
+  transition: border-color 0.15s, color 0.15s;
+}
+.condition-option:not(:disabled):hover { border-color: var(--accent); color: var(--accent); }
+.condition-option--added { opacity: 0.5; cursor: default; }
+
+.health-privacy-note {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 14px;
+  font-size: 11.5px;
+  color: var(--ink-faint);
+}
+.health-privacy-note svg { width: 11px; height: 11px; flex: none; }
+
 /* Memories */
 .memories { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
 .memory {

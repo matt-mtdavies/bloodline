@@ -7,6 +7,7 @@ import { profileCompleteness, lifeEvents } from '../lib/profile.js';
 import { fileToDataUrl, uploadPhoto } from '../lib/image.js';
 import { streamBio } from '../lib/ai.js';
 import { VISIBILITY_LABELS, VISIBILITY_DESCS } from '../lib/visibility.js';
+import { HEALTH_CATEGORIES, HEALTH_CONDITIONS, HEALTH_STATUSES, colorFor } from '../lib/health.js';
 
 /*
  * The profile. In V2 this is the destination, not a popover — a portrait,
@@ -42,6 +43,9 @@ export default function PersonSheet({
   onRemoveRelationship,
   onUpdateRelationshipQualifier,
   onUpdateStory,
+  onAddCondition,
+  onRemoveCondition,
+  onUpdateCondition,
   onPhoto,
   onLifeJourney,
 }) {
@@ -57,6 +61,9 @@ export default function PersonSheet({
   const [editingDocTitle, setEditingDocTitle] = useState('');
   const [editingMediaId, setEditingMediaId] = useState(null);
   const [editingMediaTitle, setEditingMediaTitle] = useState('');
+  const [healthPickerOpen, setHealthPickerOpen] = useState(false);
+  const [healthCat, setHealthCat] = useState(HEALTH_CATEGORIES[0].id);
+  const [statusPickId, setStatusPickId] = useState(null);
 
   useEffect(() => {
     if (!person || lockEscape) return; // a stacked overlay owns Escape
@@ -65,11 +72,13 @@ export default function PersonSheet({
     return () => window.removeEventListener('keydown', onKey);
   }, [person, onClose, lockEscape]);
 
-  // Reset generation state whenever the viewed person changes.
+  // Reset generation + health state whenever the viewed person changes.
   useEffect(() => {
     storyAbort.current?.abort();
     storyAbort.current = null;
     setStoryState({ phase: 'idle', text: '', error: null });
+    setHealthPickerOpen(false);
+    setStatusPickId(null);
   }, [personId]);
 
   if (!person) return null;
@@ -456,6 +465,112 @@ export default function PersonSheet({
                 <p className="profile__about">{person.bio}</p>
               </section>
             )}
+
+            {/* Health history */}
+            <section className="profile-section">
+              <div className="profile-section__head">
+                <h3 className="profile-section__title">
+                  Health history{(person.conditions?.length || 0) > 0 ? ` · ${person.conditions.length}` : ''}
+                </h3>
+                <button
+                  className="section-edit"
+                  onClick={() => { setHealthPickerOpen((v) => !v); setStatusPickId(null); }}
+                >
+                  {healthPickerOpen ? 'Done' : 'Add'}
+                </button>
+              </div>
+              {(person.conditions?.length || 0) > 0 && (
+                <ul className="health-chips">
+                  {person.conditions.map((c) => {
+                    const catColor = colorFor(c.category);
+                    const isPickingStatus = statusPickId === c.id;
+                    const statusLabel = HEALTH_STATUSES.find((s) => s.key === c.status)?.label;
+                    return (
+                      <li key={c.id} className="health-chip">
+                        <span className="health-chip__dot" style={{ background: catColor }} />
+                        <button
+                          className="health-chip__body"
+                          onClick={() => setStatusPickId(isPickingStatus ? null : c.id)}
+                          title="Tap to change status"
+                        >
+                          <span className="health-chip__name">{c.name}</span>
+                          {c.status !== 'active' && (
+                            <span className="health-chip__status">{statusLabel}</span>
+                          )}
+                        </button>
+                        {isPickingStatus && (
+                          <div className="health-chip__status-picker">
+                            {HEALTH_STATUSES.map((s) => (
+                              <button
+                                key={s.key}
+                                className={'health-status-opt' + (c.status === s.key ? ' health-status-opt--on' : '')}
+                                onClick={() => {
+                                  onUpdateCondition?.(person.id, c.id, { status: s.key });
+                                  setStatusPickId(null);
+                                }}
+                              >
+                                {s.label}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                        <button
+                          className="health-chip__remove"
+                          onClick={() => { setStatusPickId(null); onRemoveCondition?.(person.id, c.id); }}
+                          aria-label={`Remove ${c.name}`}
+                        >
+                          <CloseIcon />
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+              {healthPickerOpen && (
+                <div className="condition-picker">
+                  <div className="condition-picker__cats">
+                    {HEALTH_CATEGORIES.map((cat) => (
+                      <button
+                        key={cat.id}
+                        className={'condition-cat' + (healthCat === cat.id ? ' condition-cat--on' : '')}
+                        style={healthCat === cat.id ? { borderColor: cat.color, color: cat.color } : {}}
+                        onClick={() => setHealthCat(cat.id)}
+                      >
+                        {cat.label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="condition-picker__list">
+                    {HEALTH_CONDITIONS.filter((c) => c.category === healthCat).map((cond) => {
+                      const added = (person.conditions || []).some((c) => c.name === cond.name);
+                      return (
+                        <button
+                          key={cond.name}
+                          className={'condition-option' + (added ? ' condition-option--added' : '')}
+                          disabled={added}
+                          onClick={() => {
+                            if (!added) onAddCondition?.(person.id, { name: cond.name, category: cond.category });
+                          }}
+                        >
+                          {cond.name}
+                          {added && <CheckedIcon />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+              {(person.conditions?.length || 0) === 0 && !healthPickerOpen && (
+                <button className="empty-add" onClick={() => setHealthPickerOpen(true)}>
+                  <PlusIcon />
+                  Add health conditions
+                </button>
+              )}
+              <p className="health-privacy-note">
+                <LockIcon />
+                Health details are shared within your family only
+              </p>
+            </section>
 
             {/* Photos */}
             <section className="profile-section">
@@ -1098,6 +1213,13 @@ function CheckCircleIcon() {
         strokeLinecap="round" strokeLinejoin="round" />
       <path d="M22 4L12 14.01l-3-3" stroke="currentColor" strokeWidth="1.8"
         strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+function CheckedIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{ marginLeft: 4 }}>
+      <path d="M20 6L9 17l-5-5" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }

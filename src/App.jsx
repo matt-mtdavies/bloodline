@@ -21,6 +21,9 @@ import {
   addDocument,
   removeDocument,
   updateDocument,
+  addCondition,
+  removeCondition,
+  updateCondition,
   loadFromServer,
   saveToServer,
   enableServerSync,
@@ -677,6 +680,9 @@ export default function App() {
         onRemoveRelationship={removeRelationship}
         onUpdateRelationshipQualifier={updateRelationshipQualifier}
         onUpdateStory={(id, story) => updatePerson(id, { story })}
+        onAddCondition={addCondition}
+        onRemoveCondition={removeCondition}
+        onUpdateCondition={updateCondition}
         onPhoto={handlePhoto}
         onInvite={(id) => setInvitePersonId(id)}
         onLifeJourney={startLifeJourney}

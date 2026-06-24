@@ -82,6 +82,10 @@ export const people = [
     bio: 'Left the valleys for the railways. Could name every station between Cardiff and Paddington from memory.',
     photo: face('men', 52),
     confidence: 'confirmed',
+    conditions: [
+      { id: 'c_arthur_1', name: 'Heart Disease', category: 'heart', status: 'active', onset_year: null },
+      { id: 'c_arthur_2', name: 'High Blood Pressure', category: 'heart', status: 'active', onset_year: null },
+    ],
   },
   {
     id: 'margaret',
@@ -143,6 +147,10 @@ export const people = [
     bio: 'Ninety this spring and still does the crossword in pen. Holds court at every Sunday lunch.',
     photo: face('women', 33),
     confidence: 'confirmed',
+    conditions: [
+      { id: 'c_eleanor_1', name: 'Thyroid Disease', category: 'metabolic', status: 'resolved', onset_year: null },
+      { id: 'c_eleanor_2', name: 'Rheumatoid Arthritis', category: 'chronic', status: 'active', onset_year: null },
+    ],
   },
 
   // ── Generation 2 — parents / aunts / uncles ─────────────────────────────────
@@ -169,6 +177,10 @@ export const people = [
     bio: 'Recently retired GP. The one everyone phones first when something hurts.',
     photo: face('men', 32),
     confidence: 'confirmed',
+    conditions: [
+      { id: 'c_robert_1', name: 'High Blood Pressure', category: 'heart', status: 'active', onset_year: null },
+      { id: 'c_robert_2', name: 'Type 2 Diabetes', category: 'metabolic', status: 'family_history', onset_year: null },
+    ],
   },
   {
     id: 'linda',
