@@ -305,21 +305,22 @@ export function drawLinksChart(g, graph, pos, isVisible, baseRadius, lineagePath
 
     const biological = qualifier === 'biological';
     const lineColor = hex(biological ? '#8a7d6b' : '#b6a892');
-    const lineAlpha = biological ? 0.72 : 0.88;
-    const strokeBase = { width: 2, color: lineColor, cap: 'round', join: 'round' };
+    const lineAlpha = biological ? 0.65 : 0.80;
+    // Drops and horizontal bar: finer weight to recede behind the bubbles.
+    // The stem is the dominant element — thicker, draws the eye down the lineage.
+    const strokeBase = { width: 1.5, color: lineColor, cap: 'round', join: 'round' };
     const seg = (ax, ay, bx, by, alpha = lineAlpha) => {
       if (biological) {
         g.moveTo(ax, ay).lineTo(bx, by).stroke({ ...strokeBase, alpha });
       } else {
-        dashedSegment(g, { x: ax, y: ay }, { x: bx, y: by }, 10, 0.5, { ...strokeBase, alpha, width: 2 });
+        dashedSegment(g, { x: ax, y: ay }, { x: bx, y: by }, 8, 0.45, { ...strokeBase, alpha });
       }
     };
-    // stemSeg — 50% thicker for the vertical trunk before it fans out to siblings
     const stemSeg = (ax, ay, bx, by, alpha = lineAlpha) => {
       if (biological) {
-        g.moveTo(ax, ay).lineTo(bx, by).stroke({ ...strokeBase, width: 3, alpha });
+        g.moveTo(ax, ay).lineTo(bx, by).stroke({ ...strokeBase, width: 2.5, alpha });
       } else {
-        dashedSegment(g, { x: ax, y: ay }, { x: bx, y: by }, 10, 0.5, { ...strokeBase, width: 3, alpha });
+        dashedSegment(g, { x: ax, y: ay }, { x: bx, y: by }, 8, 0.45, { ...strokeBase, width: 2.5, alpha });
       }
     };
 
@@ -327,8 +328,10 @@ export function drawLinksChart(g, graph, pos, isVisible, baseRadius, lineagePath
     const originX = parentPositions.reduce((s, p) => s + p.x, 0) / parentPositions.length;
     const originY = parentPositions.reduce((s, p) => s + p.y, 0) / parentPositions.length;
     const childY = Math.min(...kidPositions.map((p) => p.y));
-    // Junction: 45% of the way from parent row to child row.
-    const hubY = originY + (childY - originY) * 0.45;
+    // Junction: 70% of the way down — long stem, short drops.
+    // Classic pedigree charts have the horizontal bar sit close to the children,
+    // not midway, so the family group is visually tight below the bar.
+    const hubY = originY + (childY - originY) * 0.70;
 
     // Lineage alpha for this family group.
     const alpha = edgeAlpha(parents[0] ?? '', kids.values().next().value ?? '');

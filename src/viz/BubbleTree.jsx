@@ -844,6 +844,12 @@ export default function BubbleTree({
           let target;
           if (!effectiveVis.has(id)) {
             target = { scale: 0.5, alpha: 0, lift: 1, blur: 0 }; // collapsed
+          } else if (layoutRef.current === 'chart') {
+            // Chart mode: uniform scale so every drop-line lands exactly on the
+            // bubble edge (variable scale would create gaps/overlaps with the
+            // fixed baseRadius used in the line endpoint calculation).
+            const isActive = id === activeRef.current;
+            target = { scale: isActive ? 1.1 : 1.0, alpha: 1, lift: isActive ? 1.2 : 1, blur: 0 };
           } else if (lineage && !lineage.has(id)) {
             target = { ...visualForDistance(d), alpha: 0.12, blur: 1.5 }; // off-path — recede
           } else if (lineage && lineage.has(id)) {
