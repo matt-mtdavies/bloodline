@@ -310,7 +310,7 @@ export default function App() {
     setTimePlaying(true);
     setOpenId(null);
     // Re-enter follow mode and warm the sim so the focus family spreads to fill screen.
-    setTimeout(() => viewApi.current?.refocus(0.5), 60);
+    setTimeout(() => viewApi.current?.refocus(0.5), 100);
   }, [graph, yearRange.min]);
 
   const activate = useCallback(
@@ -550,7 +550,7 @@ export default function App() {
             onClick={() => {
               const next = !focusMode;
               setFocusMode(next);
-              if (next) setTimeout(() => viewApi.current?.refocus(0.5), 60);
+              if (next) setTimeout(() => viewApi.current?.refocus(0.5), 100);
             }}
             aria-pressed={focusMode}
             aria-label={focusMode ? 'Exit focus family view' : 'Focus on this family'}

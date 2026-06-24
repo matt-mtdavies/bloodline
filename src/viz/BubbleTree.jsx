@@ -389,10 +389,37 @@ export default function BubbleTree({
           }
           state.pinnedId = null;
         },
-        // Warm the sim and enter follow mode so a new visible set re-frames cleanly.
+        // Re-cluster visible nodes around the active person and snap the camera instantly.
+        // Called when Focus Family, Life Journey, or Time mode activates so nodes don't
+        // stay at their full-tree world positions while the slow spring catches up.
         refocus(alpha = 0.5) {
+          const vis = visibleRef.current;
+          const f = nodeById.get(activeRef.current);
+          if (f && vis.size > 0) {
+            const others = [...vis].filter((id) => id !== activeRef.current && nodeById.has(id));
+            const count = others.length;
+            if (count > 0) {
+              const r = GEN_GAP * 0.6;
+              others.forEach((id, idx) => {
+                const n = nodeById.get(id);
+                const angle = (idx / count) * Math.PI * 2 - Math.PI / 2;
+                n.x = f.x + Math.cos(angle) * r + (Math.random() - 0.5) * 24;
+                n.y = f.y + Math.sin(angle) * r + (Math.random() - 0.5) * 24;
+                n.vx = 0;
+                n.vy = 0;
+              });
+            }
+            // Snap camera values AND targets directly — no slow spring pan.
+            camX.value = camX.target = f.x;
+            camY.value = camY.target = f.y;
+            camX.velocity = camY.velocity = 0;
+            zoom.value = zoom.target = Math.min(MAX_ZOOM, 1.5);
+            zoom.velocity = 0;
+          }
+          vx = vy = 0;
           sim.alpha(alpha);
-          state.enterFollow();
+          camMode = 'follow';
+          onModeChange?.(false);
         },
       };
       api.current = state;
