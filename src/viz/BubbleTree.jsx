@@ -198,6 +198,8 @@ export default function BubbleTree({
 
       let dist = distancesFrom(graph, activeRef.current);
 
+      let reorgTimer = null; // tracks the forceY strength-restore after a tap
+
       const state = {
         app,
         world,
@@ -314,7 +316,25 @@ export default function BubbleTree({
           activeRef.current = id;
           state.dist = distancesFrom(graphRef.current, id);
           state.enterFollow();
-          if (!reducedMotion && animate) zoom.velocity -= 1.6;
+          if (!reducedMotion && animate) {
+            zoom.velocity -= 1.6;
+            // Briefly spike the Y-generational force so parents visibly float
+            // upward and children sink down, making the clicked person's family
+            // obvious before settling back to the gentle resting drift.
+            const mode = state.layoutMode;
+            if (mode !== 'chart' && mode !== 'radial') {
+              if (reorgTimer) clearTimeout(reorgTimer);
+              const genY = (d) => (gen.get(d.id) ?? 0) * GEN_GAP - 260;
+              sim.force('y', forceY(genY).strength(0.45));
+              sim.alpha(0.88);
+              reorgTimer = setTimeout(() => {
+                reorgTimer = null;
+                if (state.layoutMode !== 'chart' && state.layoutMode !== 'radial') {
+                  sim.force('y', forceY(genY).strength(0.085));
+                }
+              }, 1800);
+            }
+          }
           if (state.layoutMode === 'radial' || state.layoutMode === 'weighted') state.relayout();
           if (state.layoutMode === 'chart') state.applyChartLayout();
         },

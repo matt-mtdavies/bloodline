@@ -320,6 +320,15 @@ export default function App() {
     return () => clearInterval(playRef.current);
   }, [timePlaying, yearRange.max, lifeJourneyId]);
 
+  const allExpanded = expanded.size >= graph.people.length && graph.people.length > 0;
+  const toggleExpandAll = useCallback(() => {
+    if (allExpanded) {
+      setExpanded(new Set([activeId]));
+    } else {
+      setExpanded(new Set(graph.people.map((p) => p.id)));
+    }
+  }, [allExpanded, activeId, graph]);
+
   const activateNormal = useCallback((id) => {
     setActiveId(id);
     setExpanded((prev) => (prev.has(id) ? prev : new Set(prev).add(id)));
@@ -650,19 +659,30 @@ export default function App() {
                 ) : 'Time'}
               </button>
             </div>
-            <button
-              className={`lineage-btn${lineageMode ? ' lineage-btn--on' : ''}`}
-              onClick={toggleLineage}
-              aria-pressed={lineageMode}
-              aria-label={lineageMode ? 'Exit lineage mode' : 'Trace a family line'}
-            >
-              <LineageIcon />
-              {lineageMode
-                ? lineagePath
-                  ? `Lineage · ${[...lineagePath].length} people`
-                  : 'Tap an ancestor…'
-                : 'Lineage'}
-            </button>
+            <div className="bottom-bar__right">
+              <button
+                className={`expand-btn${allExpanded ? ' expand-btn--on' : ''}`}
+                onClick={toggleExpandAll}
+                aria-pressed={allExpanded}
+                aria-label={allExpanded ? 'Collapse to immediate family' : 'Show all people in the tree'}
+              >
+                {allExpanded ? <CollapseIcon /> : <ExpandAllIcon />}
+                {allExpanded ? 'Collapse' : 'Show All'}
+              </button>
+              <button
+                className={`lineage-btn${lineageMode ? ' lineage-btn--on' : ''}`}
+                onClick={toggleLineage}
+                aria-pressed={lineageMode}
+                aria-label={lineageMode ? 'Exit lineage mode' : 'Trace a family line'}
+              >
+                <LineageIcon />
+                {lineageMode
+                  ? lineagePath
+                    ? `Lineage · ${[...lineagePath].length} people`
+                    : 'Tap an ancestor…'
+                  : 'Lineage'}
+              </button>
+            </div>
           </div>
           {!lineageMode && <IntroHint />}
         </>
@@ -900,6 +920,27 @@ function LineageIcon() {
       <circle cx="4" cy="20" r="2.5" stroke="currentColor" strokeWidth="1.8" />
       <circle cx="20" cy="20" r="2.5" stroke="currentColor" strokeWidth="1.8" />
       <path d="M12 6.5v4M12 10.5l-5.5 7M12 10.5l5.5 7" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function ExpandAllIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="5"  cy="5"  r="2" stroke="currentColor" strokeWidth="1.7" />
+      <circle cx="19" cy="5"  r="2" stroke="currentColor" strokeWidth="1.7" />
+      <circle cx="5"  cy="19" r="2" stroke="currentColor" strokeWidth="1.7" />
+      <circle cx="19" cy="19" r="2" stroke="currentColor" strokeWidth="1.7" />
+      <circle cx="12" cy="12" r="2" stroke="currentColor" strokeWidth="1.7" />
+      <path d="M7 5h5M12 5h5M5 7v5M5 12v5M19 7v5M19 12v5M7 19h5M12 19h5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" opacity="0.45" />
+    </svg>
+  );
+}
+
+function CollapseIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M5 9V5h4M15 5h4v4M19 15v4h-4M9 19H5v-4" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }

@@ -614,9 +614,43 @@
   background: linear-gradient(to top, rgba(250,247,244,0.72) 0%, transparent 100%);
 }
 
+/* Right group: Expand All + Lineage stacked vertically, right-aligned */
+.bottom-bar__right {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-end;
+  justify-self: end;
+}
+
+/* ── Expand All / Collapse button ────────────────────────────────────────────── */
+.expand-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 14px;
+  min-height: 38px;
+  white-space: nowrap;
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(12px) saturate(1.2);
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink-soft);
+  box-shadow: var(--shadow-soft);
+  cursor: pointer;
+  transition: background 0.18s, color 0.18s, box-shadow 0.18s, transform 0.18s var(--spring);
+  pointer-events: auto;
+}
+.expand-btn:hover { background: rgba(255,255,255,0.96); box-shadow: var(--shadow-lift); }
+.expand-btn:active { transform: scale(0.95); }
+.expand-btn--on {
+  background: var(--surface);
+  color: var(--ink-soft);
+}
+
 /* ── Lineage mode button ────────────────────────────────────────────────────── */
 .lineage-btn {
-  justify-self: end;
   display: flex;
   align-items: center;
   gap: 6px;

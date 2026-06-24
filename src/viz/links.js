@@ -113,15 +113,22 @@ export function drawLinks(g, graph, pos, isVisible, baseRadius, mergeParents = f
       const kids = grp.kids.map((id) => pos.get(id)).filter(Boolean);
       if (kids.length === 0) continue;
 
+      // stemSeg — 50% thicker for the main trunk before it branches to siblings
+      const stemSeg = (from, to) =>
+        biological
+          ? curve(g, from, to, { width: 3, color, alpha: 0.7 })
+          : dashedCurve(g, from, to, 14, 0.5, { width: 3, color, alpha: 0.85 });
+
       if (kids.length === 1) {
         seg(start, kids[0]);
       } else {
         // Sibling trunk: a short stem down to a junction, then a branch to each
-        // child — so siblings read as a set.
+        // child — so siblings read as a set. The stem is thicker to visually
+        // anchor the family group.
         const avgX = kids.reduce((s, k) => s + k.x, 0) / kids.length;
         const nearestY = Math.min(...kids.map((k) => k.y));
         const junction = { x: start.x * 0.55 + avgX * 0.45, y: start.y + (nearestY - start.y) * 0.72 };
-        seg(start, junction);
+        stemSeg(start, junction);
         for (const k of kids) seg(junction, k);
       }
     }
@@ -157,6 +164,10 @@ export function drawLinks(g, graph, pos, isVisible, baseRadius, mergeParents = f
         biological
           ? curve(g, from, to, { width: 2, color, alpha: 0.7 })
           : dashedCurve(g, from, to, 14, 0.5, { width: 2, color, alpha: 0.85 });
+      const stemSeg = (from, to) =>
+        biological
+          ? curve(g, from, to, { width: 3, color, alpha: 0.7 })
+          : dashedCurve(g, from, to, 14, 0.5, { width: 3, color, alpha: 0.85 });
 
       // Origin: same midpoint as a current-couple pair — children "emerge from
       // the bond" regardless of its status. The dashed grey band in the couple
@@ -171,7 +182,7 @@ export function drawLinks(g, graph, pos, isVisible, baseRadius, mergeParents = f
         const avgX = kids.reduce((s, k) => s + k.x, 0) / kids.length;
         const nearestY = Math.min(...kids.map((k) => k.y));
         const junction = { x: start.x * 0.55 + avgX * 0.45, y: start.y + (nearestY - start.y) * 0.72 };
-        seg(start, junction);
+        stemSeg(start, junction);
         for (const k of kids) seg(junction, k);
       }
     }
@@ -303,6 +314,14 @@ export function drawLinksChart(g, graph, pos, isVisible, baseRadius, lineagePath
         dashedSegment(g, { x: ax, y: ay }, { x: bx, y: by }, 10, 0.5, { ...strokeBase, alpha, width: 2 });
       }
     };
+    // stemSeg — 50% thicker for the vertical trunk before it fans out to siblings
+    const stemSeg = (ax, ay, bx, by, alpha = lineAlpha) => {
+      if (biological) {
+        g.moveTo(ax, ay).lineTo(bx, by).stroke({ ...strokeBase, width: 3, alpha });
+      } else {
+        dashedSegment(g, { x: ax, y: ay }, { x: bx, y: by }, 10, 0.5, { ...strokeBase, width: 3, alpha });
+      }
+    };
 
     // Origin: midpoint of all parents (couples are same Y in chart mode).
     const originX = parentPositions.reduce((s, p) => s + p.x, 0) / parentPositions.length;
@@ -314,8 +333,8 @@ export function drawLinksChart(g, graph, pos, isVisible, baseRadius, lineagePath
     // Lineage alpha for this family group.
     const alpha = edgeAlpha(parents[0] ?? '', kids.values().next().value ?? '');
 
-    // Vertical stem from couple midpoint down to the junction.
-    seg(originX, originY + baseRadius * 1.05, originX, hubY, lineAlpha * alpha);
+    // Vertical stem from couple midpoint down to the junction — thicker to anchor the family.
+    stemSeg(originX, originY + baseRadius * 1.05, originX, hubY, lineAlpha * alpha);
 
     if (kidPositions.length === 1) {
       // Single child: L-shaped elbow — horizontal to child x, then drop.
