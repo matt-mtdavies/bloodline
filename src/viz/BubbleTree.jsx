@@ -99,6 +99,8 @@ export default function BubbleTree({
       // this whole container; bubbles never move in screen space themselves.
       const world = new Container();
       app.stage.addChild(world);
+      const genBandsGfx = new Graphics(); // drawn behind links in chart mode
+      world.addChild(genBandsGfx);
       const linkGfx = new Graphics();
       world.addChild(linkGfx);
       const bubbleLayer = new Container();
@@ -813,6 +815,7 @@ export default function BubbleTree({
           const labelAlpha = (!cardOpen && !lineage && vis.has(id)) ? 1 : 0;
           b.setVisualState({ ...target, labelAlpha }, dt);
           b.setInvited(!!(invitedRef.current?.has(id)));
+          b.setChartBadge(layoutRef.current === 'chart');
           // Depth hints: show on visible bubbles that have family beyond the current reveal.
           if (vis.has(id)) {
             const gg = graphRef.current;
@@ -826,7 +829,33 @@ export default function BubbleTree({
           b.root.zIndex = id === activeRef.current ? 100 : -d;
         }
 
+        // Generation row backgrounds in chart mode — alternating warm bands behind the links.
+        genBandsGfx.clear();
+        if (layoutRef.current === 'chart') {
+          const byGen = new Map();
+          for (const id of vis) {
+            const n = nodeById.get(id);
+            if (!n) continue;
+            const g = gen.get(id) ?? 0;
+            if (!byGen.has(g)) byGen.set(g, { minX: Infinity, maxX: -Infinity, y: n.y });
+            const row = byGen.get(g);
+            if (n.x - BASE_RADIUS < row.minX) row.minX = n.x - BASE_RADIUS;
+            if (n.x + BASE_RADIUS > row.maxX) row.maxX = n.x + BASE_RADIUS;
+          }
+          const PAD_X = 56, BAND_H = GEN_GAP * 0.72;
+          const bandColors = [0xfaf7f4, 0xf5f0eb];
+          for (const [gi, row] of byGen) {
+            if (!isFinite(row.minX)) continue;
+            const bx = row.minX - PAD_X;
+            const bw = row.maxX - row.minX + PAD_X * 2;
+            const by = row.y - BAND_H / 2;
+            genBandsGfx.roundRect(bx, by, bw, BAND_H, 12)
+              .fill({ color: bandColors[gi % 2], alpha: 0.72 });
+          }
+        }
+
         linkGfx.alpha = cardOpen ? 0.18 : 1;
+        genBandsGfx.alpha = cardOpen ? 0.1 : 1;
         if (layoutRef.current === 'chart') {
           drawLinksChart(linkGfx, graphRef.current, pos, (id) => vis.has(id), BASE_RADIUS, lineage);
         } else {

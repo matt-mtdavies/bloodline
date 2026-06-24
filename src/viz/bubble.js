@@ -344,6 +344,31 @@ export class Bubble {
     }
   }
 
+  // Small status dot in the top-right corner — chart mode only.
+  // Violet filled = deceased; gray outlined = uncertain confidence.
+  setChartBadge(show) {
+    if (show === this._chartBadgeOn) return;
+    this._chartBadgeOn = show;
+    if (!this._chartBadge) {
+      this._chartBadge = new Graphics();
+      this._chartBadge.eventMode = 'none';
+      this.root.addChild(this._chartBadge);
+    }
+    this._chartBadge.clear();
+    if (show && (this.deceased || this.person.confidence === 'uncertain')) {
+      const r = this.r;
+      const bx = r * 0.65, by = -r * 0.65;
+      const br = r * 0.16;
+      if (this.deceased) {
+        this._chartBadge.circle(bx, by, br + 1.5).fill({ color: 0xfaf8f5, alpha: 0.9 });
+        this._chartBadge.circle(bx, by, br).fill({ color: 0x6b5e7a, alpha: 0.9 });
+      } else {
+        this._chartBadge.circle(bx, by, br + 1.5).fill({ color: 0xfaf8f5, alpha: 0.9 });
+        this._chartBadge.circle(bx, by, br).stroke({ width: 1.5, color: 0xa6abb3, alpha: 0.75 });
+      }
+    }
+  }
+
   // Warm dashed accent ring for people who've been sent an invite.
   setInvited(invited) {
     if (invited === this._invited) return;

@@ -524,19 +524,6 @@ export default function App() {
             hidden={!!openId || !!addAnchorId || !!editId}
           />
           <button
-            className={`lineage-btn${lineageMode ? ' lineage-btn--on' : ''}`}
-            onClick={toggleLineage}
-            aria-pressed={lineageMode}
-            aria-label={lineageMode ? 'Exit lineage mode' : 'Trace a family line'}
-          >
-            <LineageIcon />
-            {lineageMode
-              ? lineagePath
-                ? `Lineage · ${[...lineagePath].length} people`
-                : 'Tap an ancestor…'
-              : 'Lineage'}
-          </button>
-          <button
             className={`recenter-btn${cameraFree && !openId ? ' recenter-btn--on' : ''}`}
             onClick={() => viewApi.current?.recenter()}
             aria-label="Recentre on the family"
@@ -544,92 +531,104 @@ export default function App() {
           >
             <RecenterIcon />
           </button>
-          {/* Focus Family mode */}
-          <button
-            className={`focus-btn${focusMode ? ' focus-btn--on' : ''}`}
-            onClick={() => {
-              const next = !focusMode;
-              setFocusMode(next);
-              if (next) setTimeout(() => viewApi.current?.refocus(0.5), 100);
-            }}
-            aria-pressed={focusMode}
-            aria-label={focusMode ? 'Exit focus family view' : 'Focus on this family'}
-          >
-            <FocusIcon />
-            {focusMode ? 'Exit Focus' : 'Focus Family'}
-          </button>
-          {/* Time slider */}
-          <div className={`time-bar${timeMode ? ' time-bar--on' : ''}`}>
-            {/* Life event card — floats above the slider during life journey */}
-            {timeMode && lifeJourneyPerson && (() => {
-              const ev = lifeJourneyPerson.events?.find(
-                (e) => Math.abs(parseInt(e.year) - timeYear) <= 1,
-              );
-              return (
-                <div className={`life-event-card${ev ? ' life-event-card--visible' : ''}`}>
-                  <div className="life-event-card__meta">
-                    <span className="life-event-card__who">{lifeJourneyPerson.display_name.split(' ')[0]}</span>
-                    <span className="life-event-card__year">{timeYear}</span>
-                  </div>
-                  <p className="life-event-card__title">{ev?.title ?? '\u00a0'}</p>
-                </div>
-              );
-            })()}
-            {/* Slider above the toggle so the toggle stays pinned at bottom: 28px */}
-            {timeMode && (
-              <div className="time-slider-wrap">
-                <button
-                  className={`time-play${timePlaying ? ' time-play--on' : ''}`}
-                  onClick={() => {
-                    if (!timePlaying && timeYear >= yearRange.max) {
-                      setTimeYear(lifeJourneyPerson?.birth_date ? parseInt(lifeJourneyPerson.birth_date) : yearRange.min);
-                    }
-                    setTimePlaying((p) => !p);
-                  }}
-                  aria-label={timePlaying ? 'Pause' : 'Play family history'}
-                >
-                  {timePlaying ? <PauseIcon /> : <PlayIcon />}
-                </button>
-                <span className="time-slider__label">{yearRange.min}</span>
-                {lifeJourneyPerson?.events?.length > 0 && (
-                  <datalist id="life-events-ticks">
-                    {lifeJourneyPerson.events.map((ev) => (
-                      <option key={ev.year} value={parseInt(ev.year)} />
-                    ))}
-                  </datalist>
-                )}
-                <input
-                  type="range"
-                  className="time-slider"
-                  list={lifeJourneyPerson?.events?.length ? 'life-events-ticks' : undefined}
-                  min={yearRange.min}
-                  max={yearRange.max}
-                  value={timeYear}
-                  onChange={(e) => { setTimePlaying(false); setTimeYear(Number(e.target.value)); }}
-                  aria-label="Select year"
-                />
-                <span className="time-slider__label">{yearRange.max}</span>
-              </div>
-            )}
-            {/* Toggle last — always the bottom item, stays at bottom: 28px */}
+          {/* Bottom bar: Focus Family | Time | Lineage */}
+          <div className="bottom-bar">
             <button
-              className={`time-toggle${timeMode ? ' time-toggle--on' : ''}`}
+              className={`focus-btn${focusMode ? ' focus-btn--on' : ''}`}
               onClick={() => {
-                if (!timeMode) { setTimeYear(new Date().getFullYear()); setTimePlaying(false); }
-                else { setTimePlaying(false); setLifeJourneyId(null); }
-                setTimeMode((m) => !m);
+                const next = !focusMode;
+                setFocusMode(next);
+                if (next) setTimeout(() => viewApi.current?.refocus(0.5), 100);
               }}
-              aria-pressed={timeMode}
-              aria-label={timeMode ? `Time view: ${timeYear}` : 'View family over time'}
+              aria-pressed={focusMode}
+              aria-label={focusMode ? 'Exit focus family view' : 'Focus on this family'}
             >
-              <ClockIcon />
-              {timeMode ? (
-                lifeJourneyPerson ? (
-                  <>{lifeJourneyPerson.display_name.split(' ')[0]} · {timeYear}</>
-                ) : (
-                  <>{aliveAtYear ? aliveAtYear.size : graph.people.length} · {timeYear}</>
-                )
-              ) : 'Time'}
+              <FocusIcon />
+              {focusMode ? 'Exit Focus' : 'Focus Family'}
+            </button>
+            {/* Time slider — column expands upward from the toggle */}
+            <div className={`time-bar${timeMode ? ' time-bar--on' : ''}`}>
+              {timeMode && lifeJourneyPerson && (() => {
+                const ev = lifeJourneyPerson.events?.find(
+                  (e) => Math.abs(parseInt(e.year) - timeYear) <= 1,
+                );
+                return (
+                  <div className={`life-event-card${ev ? ' life-event-card--visible' : ''}`}>
+                    <div className="life-event-card__meta">
+                      <span className="life-event-card__who">{lifeJourneyPerson.display_name.split(' ')[0]}</span>
+                      <span className="life-event-card__year">{timeYear}</span>
+                    </div>
+                    <p className="life-event-card__title">{ev?.title ?? '\u00a0'}</p>
+                  </div>
+                );
+              })()}
+              {timeMode && (
+                <div className="time-slider-wrap">
+                  <button
+                    className={`time-play${timePlaying ? ' time-play--on' : ''}`}
+                    onClick={() => {
+                      if (!timePlaying && timeYear >= yearRange.max) {
+                        setTimeYear(lifeJourneyPerson?.birth_date ? parseInt(lifeJourneyPerson.birth_date) : yearRange.min);
+                      }
+                      setTimePlaying((p) => !p);
+                    }}
+                    aria-label={timePlaying ? 'Pause' : 'Play family history'}
+                  >
+                    {timePlaying ? <PauseIcon /> : <PlayIcon />}
+                  </button>
+                  <span className="time-slider__label">{yearRange.min}</span>
+                  {lifeJourneyPerson?.events?.length > 0 && (
+                    <datalist id="life-events-ticks">
+                      {lifeJourneyPerson.events.map((ev) => (
+                        <option key={ev.year} value={parseInt(ev.year)} />
+                      ))}
+                    </datalist>
+                  )}
+                  <input
+                    type="range"
+                    className="time-slider"
+                    list={lifeJourneyPerson?.events?.length ? 'life-events-ticks' : undefined}
+                    min={yearRange.min}
+                    max={yearRange.max}
+                    value={timeYear}
+                    onChange={(e) => { setTimePlaying(false); setTimeYear(Number(e.target.value)); }}
+                    aria-label="Select year"
+                  />
+                  <span className="time-slider__label">{yearRange.max}</span>
+                </div>
+              )}
+              <button
+                className={`time-toggle${timeMode ? ' time-toggle--on' : ''}`}
+                onClick={() => {
+                  if (!timeMode) { setTimeYear(new Date().getFullYear()); setTimePlaying(false); }
+                  else { setTimePlaying(false); setLifeJourneyId(null); }
+                  setTimeMode((m) => !m);
+                }}
+                aria-pressed={timeMode}
+                aria-label={timeMode ? `Time view: ${timeYear}` : 'View family over time'}
+              >
+                <ClockIcon />
+                {timeMode ? (
+                  lifeJourneyPerson ? (
+                    <>{lifeJourneyPerson.display_name.split(' ')[0]} · {timeYear}</>
+                  ) : (
+                    timeYear
+                  )
+                ) : 'Time'}
+              </button>
+            </div>
+            <button
+              className={`lineage-btn${lineageMode ? ' lineage-btn--on' : ''}`}
+              onClick={toggleLineage}
+              aria-pressed={lineageMode}
+              aria-label={lineageMode ? 'Exit lineage mode' : 'Trace a family line'}
+            >
+              <LineageIcon />
+              {lineageMode
+                ? lineagePath
+                  ? `Lineage · ${[...lineagePath].length} people`
+                  : 'Tap an ancestor…'
+                : 'Lineage'}
             </button>
           </div>
           {!lineageMode && <IntroHint />}
@@ -794,7 +793,11 @@ export default function App() {
         mergeParents={mergeParents}
         onToggleMerge={() => setMergeParents((v) => !v)}
         layout={layout}
-        onSetLayout={setLayout}
+        onSetLayout={(mode) => {
+          setLayout(mode);
+          // Chart mode works best with Focus Family limiting the visible set.
+          if (mode === 'chart' && !focusMode) setFocusMode(true);
+        }}
       />
 
       {settingsOpen && (

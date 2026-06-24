@@ -597,11 +597,24 @@
   outline: 2px dotted var(--ink-faint); outline-offset: -2px;
 }
 
-/* ── Lineage mode button ────────────────────────────────────────────────────── */
-.lineage-btn {
+/* ── Bottom bar — 3-column grid: Focus Family | Time | Lineage ──────────────── */
+.bottom-bar {
   position: fixed;
   bottom: calc(var(--safe-bottom) + 28px);
-  right: 16px;
+  left: 0;
+  right: 0;
+  padding: 0 16px;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: end;
+  gap: 8px;
+  pointer-events: none;
+  z-index: 40;
+}
+
+/* ── Lineage mode button ────────────────────────────────────────────────────── */
+.lineage-btn {
+  justify-self: end;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -615,7 +628,7 @@
   box-shadow: var(--shadow-soft);
   cursor: pointer;
   transition: background 0.18s, color 0.18s, box-shadow 0.18s, transform 0.18s var(--spring);
-  z-index: 40;
+  pointer-events: auto;
 }
 .lineage-btn:hover { background: rgba(255,255,255,0.96); box-shadow: var(--shadow-lift); }
 .lineage-btn:active { transform: scale(0.95); }
@@ -671,9 +684,7 @@
 
 /* ── Focus Family button — sits in the bottom row alongside Time + Lineage ── */
 .focus-btn {
-  position: fixed;
-  bottom: calc(var(--safe-bottom) + 28px);
-  left: 16px;
+  justify-self: start;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -686,10 +697,10 @@
   color: var(--ink-soft);
   box-shadow: var(--shadow-soft);
   cursor: pointer;
-  z-index: 40;
   border: none;
   font-family: inherit;
   letter-spacing: 0.01em;
+  pointer-events: auto;
   transition: background 0.18s, color 0.18s, box-shadow 0.18s, transform 0.18s var(--spring);
 }
 .focus-btn--on {
@@ -702,16 +713,12 @@
 
 /* ── Time slider ─────────────────────────────────────────────────────────── */
 .time-bar {
-  position: fixed;
-  bottom: calc(var(--safe-bottom) + 28px);
-  left: 50%;
-  transform: translateX(-50%);
+  justify-self: center;
+  position: relative; /* slider + life-event-card float above via absolute */
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10px;
   pointer-events: none;
-  z-index: 20;
 }
 .time-toggle {
   display: flex;
@@ -739,6 +746,10 @@
 .time-toggle:hover { box-shadow: var(--shadow-lift); }
 .time-toggle:active { transform: scale(0.95); }
 .time-slider-wrap {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 50%;
+  transform: translateX(-50%);
   display: flex;
   align-items: center;
   gap: 10px;
@@ -747,7 +758,8 @@
   border-radius: 20px;
   padding: 10px 18px;
   pointer-events: auto;
-  min-width: 280px;
+  min-width: 260px;
+  white-space: nowrap;
 }
 .time-slider__label {
   font-size: 11px;
@@ -805,6 +817,10 @@
 /* ── Life Journey event card ─────────────────────────────────────────────── */
 /* A card that rises above the time toggle when a life event matches the year */
 .life-event-card {
+  position: absolute;
+  bottom: calc(100% + 70px); /* sits above the slider */
+  left: 50%;
+  transform: translateX(-50%) translateY(10px) scale(0.94);
   background: rgba(255,255,255,0.97);
   backdrop-filter: blur(16px) saturate(1.3);
   box-shadow: 0 6px 28px rgba(0,0,0,0.13), 0 0 0 1px rgba(0,0,0,0.055);
@@ -815,12 +831,11 @@
   text-align: center;
   pointer-events: none;
   opacity: 0;
-  transform: translateY(10px) scale(0.94);
   transition: opacity 0.32s var(--ease), transform 0.36s var(--spring);
 }
 .life-event-card--visible {
   opacity: 1;
-  transform: translateY(0) scale(1);
+  transform: translateX(-50%) translateY(0) scale(1);
 }
 .life-event-card__meta {
   display: flex;
