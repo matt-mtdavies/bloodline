@@ -669,10 +669,40 @@
   text-overflow: ellipsis;
 }
 
+/* ── Focus Family button ─────────────────────────────────────────────────── */
+.focus-btn {
+  position: fixed;
+  bottom: calc(var(--safe-bottom) + 84px);
+  left: 16px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 14px;
+  background: rgba(255,255,255,0.88);
+  backdrop-filter: blur(12px) saturate(1.2);
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink-soft);
+  box-shadow: var(--shadow-soft);
+  cursor: pointer;
+  z-index: 40;
+  border: none;
+  font-family: inherit;
+  transition: background 0.18s, color 0.18s, box-shadow 0.18s, transform 0.18s var(--spring);
+}
+.focus-btn--on {
+  background: #2d2620;
+  color: #fff;
+  box-shadow: 0 4px 18px rgba(0,0,0,0.22);
+}
+.focus-btn:hover { box-shadow: var(--shadow-lift); }
+.focus-btn:active { transform: scale(0.95); }
+
 /* ── Time slider ─────────────────────────────────────────────────────────── */
 .time-bar {
-  position: absolute;
-  bottom: 28px;
+  position: fixed;
+  bottom: calc(var(--safe-bottom) + 28px);
   left: 50%;
   transform: translateX(-50%);
   display: flex;
@@ -752,6 +782,24 @@
   cursor: grab;
   border: none;
 }
+.time-play {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--ink);
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: transform 0.15s, box-shadow 0.15s;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.18);
+}
+.time-play--on { background: var(--accent); }
+.time-play:hover { box-shadow: 0 4px 14px rgba(0,0,0,0.22); transform: scale(1.06); }
+.time-play:active { transform: scale(0.93); }
 
 /* ── Layout algorithm segmented control ────────────────────────────────── */
 .legend__setting--layout { flex-direction: column; align-items: flex-start; gap: 10px; }

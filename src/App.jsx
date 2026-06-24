@@ -174,6 +174,9 @@ export default function App() {
   const [layout, setLayout] = useState('organic'); // 'organic' | 'weighted' | 'hybrid'
   const [timeMode, setTimeMode] = useState(false);
   const [timeYear, setTimeYear] = useState(new Date().getFullYear());
+  const [timePlaying, setTimePlaying] = useState(false);
+  const [focusMode, setFocusMode] = useState(false);
+  const playRef = useRef(null);
   const [docViewer, setDocViewer] = useState(null); // { title, src, mime }
   const [invitePersonId, setInvitePersonId] = useState(null);
   const viewApi = useRef(null);
@@ -237,6 +240,19 @@ export default function App() {
     return alive;
   }, [data.people, timeMode, timeYear]);
 
+  // Focus Family: active person's nuclear family + grandchildren.
+  const focusFamilyIds = useMemo(() => {
+    if (!focusMode) return null;
+    const ids = new Set([activeId]);
+    for (const p of graph.parents(activeId)) ids.add(p.id);
+    for (const p of graph.partners(activeId)) ids.add(p.id);
+    for (const c of graph.children(activeId)) {
+      ids.add(c.id);
+      for (const gc of graph.children(c.id)) ids.add(gc.id);
+    }
+    return ids;
+  }, [focusMode, activeId, graph]);
+
   const visibleIds = useMemo(() => {
     const vis = new Set();
     for (const id of expanded) {
@@ -247,13 +263,33 @@ export default function App() {
       for (const x of graph.partners(id)) { if (!aliveAtYear || aliveAtYear.has(x.id)) vis.add(x.id); }
       for (const x of graph.siblings(id)) { if (!aliveAtYear || aliveAtYear.has(x.id)) vis.add(x.id); }
     }
+    // Focus mode: collapse everyone outside the nuclear family
+    if (focusFamilyIds) {
+      for (const id of [...vis]) {
+        if (!focusFamilyIds.has(id)) vis.delete(id);
+      }
+    }
     return vis;
-  }, [graph, expanded, aliveAtYear]);
+  }, [graph, expanded, aliveAtYear, focusFamilyIds]);
+
+  // Play animation: increment year every 80 ms until max, then stop.
+  useEffect(() => {
+    clearInterval(playRef.current);
+    if (!timePlaying) return;
+    playRef.current = setInterval(() => {
+      setTimeYear((y) => {
+        if (y >= yearRange.max) { setTimePlaying(false); return y; }
+        return y + 1;
+      });
+    }, 80);
+    return () => clearInterval(playRef.current);
+  }, [timePlaying, yearRange.max]);
 
   const activateNormal = useCallback((id) => {
     setActiveId(id);
     setExpanded((prev) => (prev.has(id) ? prev : new Set(prev).add(id)));
     setLineagePath(null);
+    setFocusMode(false); // navigating exits focus mode
   }, []);
 
   const activate = useCallback(
@@ -487,22 +523,45 @@ export default function App() {
           >
             <RecenterIcon />
           </button>
+          {/* Focus Family mode */}
+          <button
+            className={`focus-btn${focusMode ? ' focus-btn--on' : ''}`}
+            onClick={() => setFocusMode((m) => !m)}
+            aria-pressed={focusMode}
+            aria-label={focusMode ? 'Exit focus family view' : 'Focus on this family'}
+          >
+            <FocusIcon />
+            {focusMode ? 'Exit Focus' : 'Focus Family'}
+          </button>
           {/* Time slider */}
           <div className={`time-bar${timeMode ? ' time-bar--on' : ''}`}>
             <button
               className={`time-toggle${timeMode ? ' time-toggle--on' : ''}`}
               onClick={() => {
-                if (!timeMode) setTimeYear(new Date().getFullYear());
+                if (!timeMode) { setTimeYear(new Date().getFullYear()); setTimePlaying(false); }
+                else setTimePlaying(false);
                 setTimeMode((m) => !m);
               }}
               aria-pressed={timeMode}
               aria-label={timeMode ? `Time view: ${timeYear}` : 'View family over time'}
             >
               <ClockIcon />
-              {timeMode ? timeYear : 'Time'}
+              {timeMode ? (
+                <>{aliveAtYear ? aliveAtYear.size : graph.people.length} · {timeYear}</>
+              ) : 'Time'}
             </button>
             {timeMode && (
               <div className="time-slider-wrap">
+                <button
+                  className={`time-play${timePlaying ? ' time-play--on' : ''}`}
+                  onClick={() => {
+                    if (!timePlaying && timeYear >= yearRange.max) setTimeYear(yearRange.min);
+                    setTimePlaying((p) => !p);
+                  }}
+                  aria-label={timePlaying ? 'Pause' : 'Play family history'}
+                >
+                  {timePlaying ? <PauseIcon /> : <PlayIcon />}
+                </button>
                 <span className="time-slider__label">{yearRange.min}</span>
                 <input
                   type="range"
@@ -510,7 +569,7 @@ export default function App() {
                   min={yearRange.min}
                   max={yearRange.max}
                   value={timeYear}
-                  onChange={(e) => setTimeYear(Number(e.target.value))}
+                  onChange={(e) => { setTimePlaying(false); setTimeYear(Number(e.target.value)); }}
                   aria-label="Select year"
                 />
                 <span className="time-slider__label">{yearRange.max}</span>
@@ -764,6 +823,32 @@ function ClockIcon() {
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.7" />
       <path d="M12 7v5l3 3" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+function PlayIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M8 5.14v14l11-7-11-7z" />
+    </svg>
+  );
+}
+function PauseIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
+    </svg>
+  );
+}
+function FocusIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="12" r="3.5" stroke="currentColor" strokeWidth="1.8" />
+      <circle cx="12" cy="5" r="2" stroke="currentColor" strokeWidth="1.6" />
+      <circle cx="12" cy="19" r="2" stroke="currentColor" strokeWidth="1.6" />
+      <circle cx="5" cy="12" r="2" stroke="currentColor" strokeWidth="1.6" />
+      <circle cx="19" cy="12" r="2" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M12 7v2M12 15v2M7 12h2M15 12h2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
     </svg>
   );
 }
