@@ -1,6 +1,30 @@
+import { useState, useRef, useEffect } from 'react';
 import Logo from './Logo.jsx';
 
 export default function TopBar({ familyName, stats, view, syncStatus, onToggleView, onOpenLegend, onOpenSettings }) {
+  const [statsOpen, setStatsOpen] = useState(false);
+  const popoverRef = useRef(null);
+  const statsRef = useRef(null);
+
+  useEffect(() => {
+    if (!statsOpen) return;
+    const onDown = (e) => {
+      if (
+        popoverRef.current && !popoverRef.current.contains(e.target) &&
+        statsRef.current && !statsRef.current.contains(e.target)
+      ) {
+        setStatsOpen(false);
+      }
+    };
+    const onKey = (e) => { if (e.key === 'Escape') setStatsOpen(false); };
+    document.addEventListener('pointerdown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('pointerdown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [statsOpen]);
+
   return (
     <header className="topbar">
       {/* Row 1: app brand left, actions right */}
@@ -33,26 +57,142 @@ export default function TopBar({ familyName, stats, view, syncStatus, onToggleVi
           </button>
         </div>
       </div>
+
       {/* Row 2: family name + live archive stats */}
       <div className="topbar__treerow">
         <div className="topbar__treerow__center">
           <span className="topbar__familyname">{familyName}</span>
           {stats && stats.people > 0 && (
-            <span className="topbar__stats">
+            <button
+              ref={statsRef}
+              className={`topbar__stats topbar__stats--btn${statsOpen ? ' topbar__stats--active' : ''}`}
+              onClick={() => setStatsOpen((s) => !s)}
+              aria-label="View family archive details"
+              aria-expanded={statsOpen}
+            >
               {stats.people} {stats.people === 1 ? 'person' : 'people'}
               {stats.surnames && <> · {stats.surnames}</>}
               {stats.yearSpan && <> · {stats.yearSpan}</>}
               {stats.photos > 0 && <> · {stats.photos} {stats.photos === 1 ? 'photo' : 'photos'}</>}
               {stats.memories > 0 && <> · {stats.memories} {stats.memories === 1 ? 'memory' : 'memories'}</>}
-            </span>
+            </button>
           )}
         </div>
       </div>
+
+      {/* Stats detail popover */}
+      {statsOpen && stats && (
+        <StatsPopover ref={popoverRef} stats={stats} onClose={() => setStatsOpen(false)} />
+      )}
     </header>
   );
 }
 
-/* Checkmark — saved confirmation */
+import { forwardRef } from 'react';
+
+const StatsPopover = forwardRef(function StatsPopover({ stats, onClose }, ref) {
+  const total = stats.people;
+  const maxCount = stats.surnameList?.[0]?.count ?? 1;
+  const spanYears = stats.yearMin && stats.yearMax ? stats.yearMax - stats.yearMin : null;
+
+  return (
+    <div ref={ref} className="stats-popover" role="dialog" aria-label="Family archive details">
+      <button className="stats-popover__close" onClick={onClose} aria-label="Close">
+        <CloseIcon />
+      </button>
+
+      {/* Surnames */}
+      {stats.surnameList?.length > 0 && (
+        <section className="stats-popover__section">
+          <h3 className="stats-popover__heading">Surnames</h3>
+          <ul className="stats-popover__surname-list">
+            {stats.surnameList.map(({ name, count }) => (
+              <li key={name} className="stats-popover__surname-row">
+                <span className="stats-popover__surname-name">{name}</span>
+                <div className="stats-bar">
+                  <div
+                    className="stats-bar__fill"
+                    style={{ width: `${Math.round((count / maxCount) * 100)}%` }}
+                  />
+                </div>
+                <span className="stats-popover__surname-count">{count}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {/* Time span */}
+      {stats.yearMin && (
+        <section className="stats-popover__section">
+          <h3 className="stats-popover__heading">Time span</h3>
+          <p className="stats-popover__span-label">
+            {stats.yearMin}
+            {stats.yearMax !== stats.yearMin && <> – {stats.yearMax}</>}
+            {spanYears > 0 && <span className="stats-popover__muted"> · {spanYears} years</span>}
+          </p>
+          {stats.oldestName && (
+            <p className="stats-popover__timerow">
+              <span className="stats-popover__muted">Earliest</span>
+              {stats.oldestName}
+              <span className="stats-popover__muted">({stats.yearMin})</span>
+            </p>
+          )}
+          {stats.youngestName && stats.youngestName !== stats.oldestName && (
+            <p className="stats-popover__timerow">
+              <span className="stats-popover__muted">Latest</span>
+              {stats.youngestName}
+              <span className="stats-popover__muted">({stats.yearMax})</span>
+            </p>
+          )}
+        </section>
+      )}
+
+      {/* Completeness */}
+      <section className="stats-popover__section">
+        <h3 className="stats-popover__heading">Archive completeness</h3>
+        <ul className="stats-popover__completeness-list">
+          <CompRow label="Portraits" value={stats.withPhoto} total={total} />
+          <CompRow label="Biographies" value={stats.withBio} total={total} />
+          <CompRow label="Birth dates" value={stats.withBirthDate} total={total} />
+        </ul>
+      </section>
+
+      {/* Totals footer */}
+      {(stats.photos > 0 || stats.memories > 0) && (
+        <p className="stats-popover__footer">
+          {stats.photos > 0 && <>{stats.photos} {stats.photos === 1 ? 'photo' : 'photos'}</>}
+          {stats.photos > 0 && stats.memories > 0 && <> · </>}
+          {stats.memories > 0 && <>{stats.memories} {stats.memories === 1 ? 'memory' : 'memories'}</>}
+        </p>
+      )}
+    </div>
+  );
+});
+
+function CompRow({ label, value, total }) {
+  const pct = total > 0 ? Math.round((value / total) * 100) : 0;
+  return (
+    <li className="stats-popover__comp-row">
+      <span className="stats-popover__comp-label">{label}</span>
+      <div className="stats-bar stats-bar--comp">
+        <div className="stats-bar__fill stats-bar__fill--comp" style={{ width: `${pct}%` }} />
+      </div>
+      <span className="stats-popover__comp-count">{value} / {total}</span>
+    </li>
+  );
+}
+
+/* ── Icons ──────────────────────────────────────────────────────────────── */
+
+function CloseIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+    </svg>
+  );
+}
+
 function SavedCheckIcon() {
   return (
     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
@@ -61,7 +201,6 @@ function SavedCheckIcon() {
   );
 }
 
-/* Sliders / adjust — settings */
 function SettingsIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -75,7 +214,6 @@ function SettingsIcon() {
   );
 }
 
-/* Key — legend / guide to styles */
 function LegendIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -87,7 +225,6 @@ function LegendIcon() {
   );
 }
 
-/* Stacked lines — list view */
 function ListIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{flexShrink:0}}>
@@ -101,7 +238,6 @@ function ListIcon() {
   );
 }
 
-/* Branch nodes — tree view */
 function TreeIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{flexShrink:0}}>

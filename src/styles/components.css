@@ -673,6 +673,7 @@
 .recenter-btn:active { transform: scale(0.9); }
 
 /* ── TopBar stats row ────────────────────────────────────────────────────── */
+.topbar__treerow { pointer-events: auto; }
 .topbar__stats {
   display: block;
   font-size: 10.5px;
@@ -684,6 +685,169 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.topbar__stats--btn {
+  background: none;
+  border: none;
+  font-family: inherit;
+  cursor: pointer;
+  padding: 2px 8px;
+  border-radius: 6px;
+  transition: background 0.15s, color 0.15s;
+}
+.topbar__stats--btn:hover { background: rgba(0,0,0,0.05); color: var(--ink-soft); }
+.topbar__stats--active { color: var(--accent) !important; }
+
+/* ── Stats detail popover ─────────────────────────────────────────────────── */
+.stats-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(340px, calc(100vw - 32px));
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 8px 40px rgba(0,0,0,0.13), 0 1px 4px rgba(0,0,0,0.06);
+  padding: 20px 20px 16px;
+  z-index: 30;
+  pointer-events: auto;
+  animation: popover-in 0.18s var(--spring) both;
+}
+@keyframes popover-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(-6px) scale(0.97); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0)    scale(1);    }
+}
+.stats-popover__close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  background: var(--surface);
+  border: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--ink-soft);
+  transition: background 0.15s;
+}
+.stats-popover__close:hover { background: var(--hairline); }
+.stats-popover__section {
+  margin-bottom: 18px;
+}
+.stats-popover__section:last-of-type { margin-bottom: 0; }
+.stats-popover__heading {
+  font-size: 9.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--ink-faint);
+  margin: 0 0 10px;
+}
+/* Surname list */
+.stats-popover__surname-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+.stats-popover__surname-row {
+  display: grid;
+  grid-template-columns: 80px 1fr 28px;
+  align-items: center;
+  gap: 8px;
+}
+.stats-popover__surname-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.stats-popover__surname-count {
+  font-size: 11px;
+  color: var(--ink-soft);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+/* Generic stat bar */
+.stats-bar {
+  height: 6px;
+  background: var(--surface);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.stats-bar__fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 3px;
+  transition: width 0.4s var(--ease);
+  opacity: 0.7;
+}
+.stats-bar--comp { height: 5px; }
+.stats-bar__fill--comp { background: #3a8a5a; opacity: 0.75; }
+/* Time span */
+.stats-popover__span-label {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink);
+  margin: 0 0 6px;
+  letter-spacing: -0.01em;
+}
+.stats-popover__muted {
+  font-size: 11.5px;
+  color: var(--ink-faint);
+  font-weight: 400;
+  margin: 0 4px;
+}
+.stats-popover__timerow {
+  font-size: 12px;
+  color: var(--ink-soft);
+  margin: 3px 0 0;
+  display: flex;
+  gap: 5px;
+  align-items: baseline;
+}
+/* Completeness */
+.stats-popover__completeness-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.stats-popover__comp-row {
+  display: grid;
+  grid-template-columns: 90px 1fr 44px;
+  align-items: center;
+  gap: 8px;
+}
+.stats-popover__comp-label {
+  font-size: 12.5px;
+  color: var(--ink-soft);
+}
+.stats-popover__comp-count {
+  font-size: 11px;
+  color: var(--ink-faint);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+/* Footer totals */
+.stats-popover__footer {
+  margin: 14px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--hairline);
+  font-size: 11.5px;
+  color: var(--ink-faint);
+  text-align: center;
 }
 
 /* ── Focus Family button — sits in the bottom row alongside Time + Lineage ── */

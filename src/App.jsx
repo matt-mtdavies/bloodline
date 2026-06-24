@@ -208,21 +208,24 @@ export default function App() {
 
   // Family stats for the header: people count, top surnames, year span, photos, memories.
   const familyStats = useMemo(() => {
-    // Surname frequency — last token of each display_name.
     const freq = new Map();
     let yearMin = Infinity, yearMax = -Infinity;
+    let oldestPerson = null, youngestPerson = null;
+    let withPhoto = 0, withBio = 0, withBirthDate = 0;
     for (const p of graph.people) {
       const surname = p.display_name?.trim().split(/\s+/).slice(-1)[0];
       if (surname) freq.set(surname, (freq.get(surname) ?? 0) + 1);
       const by = p.birth_date ? parseInt(p.birth_date) : null;
       if (by && by > 1000) {
-        if (by < yearMin) yearMin = by;
-        if (by > yearMax) yearMax = by;
+        withBirthDate++;
+        if (by < yearMin) { yearMin = by; oldestPerson = p; }
+        if (by > yearMax) { yearMax = by; youngestPerson = p; }
       }
+      if (p.photo) withPhoto++;
+      if (p.bio && p.bio.trim()) withBio++;
     }
-    // Sort surnames by frequency; show top 2 explicitly + remainder count.
-    const sorted = [...freq.entries()].sort((a, b) => b[1] - a[1]).map(([s]) => s);
-    const topTwo = sorted.slice(0, 2);
+    const sorted = [...freq.entries()].sort((a, b) => b[1] - a[1]);
+    const topTwo = sorted.slice(0, 2).map(([s]) => s);
     const extraCount = Math.max(0, sorted.length - 2);
     const surnames = topTwo.join(', ') + (extraCount > 0 ? ` +${extraCount}` : '');
     const yearSpan = isFinite(yearMin)
@@ -234,6 +237,15 @@ export default function App() {
       yearSpan,
       photos: data.photos.length,
       memories: data.memories.length,
+      // Detail fields for the stats popover
+      surnameList: sorted.map(([name, count]) => ({ name, count })),
+      yearMin: isFinite(yearMin) ? yearMin : null,
+      yearMax: isFinite(yearMax) ? yearMax : null,
+      oldestName: oldestPerson?.display_name ?? null,
+      youngestName: youngestPerson?.display_name ?? null,
+      withPhoto,
+      withBio,
+      withBirthDate,
     };
   }, [graph, data.photos.length, data.memories.length]);
 
