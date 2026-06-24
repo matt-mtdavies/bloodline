@@ -66,6 +66,13 @@
 }
 .topbar__treerow::before { margin-right: 12px; }
 .topbar__treerow::after  { margin-left:  12px; }
+.topbar__treerow__center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+  flex-shrink: 0;
+}
 /* Sync status pill — appears between brand and action buttons */
 .sync-status {
   font-size: 11px;
@@ -647,6 +654,132 @@
 }
 .recenter-btn:hover { box-shadow: var(--shadow-lift); }
 .recenter-btn:active { transform: scale(0.9); }
+
+/* ── TopBar stats row ────────────────────────────────────────────────────── */
+.topbar__stats {
+  display: block;
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--ink-faint);
+  text-align: center;
+  margin-top: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Time slider ─────────────────────────────────────────────────────────── */
+.time-bar {
+  position: absolute;
+  bottom: 28px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  pointer-events: none;
+  z-index: 20;
+}
+.time-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 16px;
+  border-radius: 20px;
+  background: rgba(255,255,255,0.92);
+  box-shadow: var(--shadow-soft);
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink-soft);
+  cursor: pointer;
+  pointer-events: auto;
+  transition: background 0.2s, color 0.2s, box-shadow 0.2s;
+  border: none;
+  font-family: inherit;
+  letter-spacing: 0.01em;
+}
+.time-toggle--on {
+  background: var(--ink);
+  color: #fff;
+  box-shadow: 0 4px 18px rgba(0,0,0,0.18);
+}
+.time-toggle:hover { box-shadow: var(--shadow-lift); }
+.time-toggle:active { transform: scale(0.95); }
+.time-slider-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(255,255,255,0.94);
+  box-shadow: var(--shadow-soft);
+  border-radius: 20px;
+  padding: 10px 18px;
+  pointer-events: auto;
+  min-width: 280px;
+}
+.time-slider__label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+.time-slider {
+  flex: 1;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--hairline);
+  outline: none;
+  cursor: pointer;
+}
+.time-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--ink);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.22);
+  cursor: grab;
+}
+.time-slider::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--ink);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.22);
+  cursor: grab;
+  border: none;
+}
+
+/* ── Layout algorithm segmented control ────────────────────────────────── */
+.legend__setting--layout { flex-direction: column; align-items: flex-start; gap: 10px; }
+.layout-seg {
+  display: flex;
+  gap: 6px;
+  width: 100%;
+}
+.layout-seg__btn {
+  flex: 1;
+  padding: 8px 4px;
+  border-radius: 10px;
+  border: 1.5px solid var(--hairline);
+  background: transparent;
+  color: var(--ink-soft);
+  font-size: 12.5px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  text-align: center;
+}
+.layout-seg__btn--on {
+  background: var(--ink);
+  color: #fff;
+  border-color: var(--ink);
+}
+.layout-seg__btn:hover:not(.layout-seg__btn--on) { background: var(--paper-deep); }
 
 /* ── Documents ──────────────────────────────────────────────────────────────── */
 .doc-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }

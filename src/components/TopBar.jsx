@@ -1,6 +1,6 @@
 import Logo from './Logo.jsx';
 
-export default function TopBar({ familyName, view, syncStatus, onToggleView, onOpenLegend, onOpenSettings }) {
+export default function TopBar({ familyName, stats, view, syncStatus, onToggleView, onOpenLegend, onOpenSettings }) {
   return (
     <header className="topbar">
       {/* Row 1: app brand left, actions right */}
@@ -33,9 +33,19 @@ export default function TopBar({ familyName, view, syncStatus, onToggleView, onO
           </button>
         </div>
       </div>
-      {/* Row 2: family tree name, full-width editorial treatment */}
+      {/* Row 2: family name + live archive stats */}
       <div className="topbar__treerow">
-        <span className="topbar__familyname">{familyName}</span>
+        <div className="topbar__treerow__center">
+          <span className="topbar__familyname">{familyName}</span>
+          {stats && stats.people > 0 && (
+            <span className="topbar__stats">
+              {stats.people} {stats.people === 1 ? 'person' : 'people'}
+              {stats.generations > 1 && <> · {stats.generations} generations</>}
+              {stats.photos > 0 && <> · {stats.photos} {stats.photos === 1 ? 'photo' : 'photos'}</>}
+              {stats.memories > 0 && <> · {stats.memories} {stats.memories === 1 ? 'memory' : 'memories'}</>}
+            </span>
+          )}
+        </div>
       </div>
     </header>
   );

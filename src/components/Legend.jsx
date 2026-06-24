@@ -1,7 +1,13 @@
 import { useEffect } from 'react';
 
 // A quiet key to what the bubbles and bonds mean. Opened from the top bar.
-export default function Legend({ open, onClose, mergeParents, onToggleMerge }) {
+const LAYOUTS = [
+  { id: 'organic', label: 'Organic', desc: 'Free-flowing network' },
+  { id: 'weighted', label: 'Weighted', desc: 'Closest family pulled in' },
+  { id: 'hybrid', label: 'Generational', desc: 'Clear vertical bands' },
+];
+
+export default function Legend({ open, onClose, mergeParents, onToggleMerge, layout = 'organic', onSetLayout }) {
   useEffect(() => {
     if (!open) return;
     const onKey = (e) => e.key === 'Escape' && onClose();
@@ -36,7 +42,7 @@ export default function Legend({ open, onClose, mergeParents, onToggleMerge }) {
           </li>
           <li>
             <span className="swatch swatch--coparent" />
-            <span><b>A grey V-junction</b> connects divorced co-parents who share a child — both still very much parents.</span>
+            <span><b>A dashed pod</b> marks former partners who share children — both still very much parents.</span>
           </li>
           <li>
             <span className="swatch swatch--bio" />
@@ -64,6 +70,25 @@ export default function Legend({ open, onClose, mergeParents, onToggleMerge }) {
             </span>
             <input type="checkbox" checked={!!mergeParents} onChange={onToggleMerge} />
           </label>
+        </div>
+
+        <div className="legend__setting legend__setting--layout">
+          <span className="legend__setting-text">
+            <b>Layout algorithm</b>
+            <span>How the network arranges itself.</span>
+          </span>
+          <div className="layout-seg" role="group" aria-label="Layout algorithm">
+            {LAYOUTS.map((m) => (
+              <button
+                key={m.id}
+                className={`layout-seg__btn${layout === m.id ? ' layout-seg__btn--on' : ''}`}
+                onClick={() => onSetLayout?.(m.id)}
+                title={m.desc}
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
         </div>
 
         <p className="legend__privacy">

@@ -171,6 +171,9 @@ export default function App() {
   const [cameraFree, setCameraFree] = useState(false); // user has panned/zoomed away
   const [storageWarning, setStorageWarning] = useState(false);
   const [syncToast, setSyncToast] = useState(null);
+  const [layout, setLayout] = useState('organic'); // 'organic' | 'weighted' | 'hybrid'
+  const [timeMode, setTimeMode] = useState(false);
+  const [timeYear, setTimeYear] = useState(new Date().getFullYear());
   const [docViewer, setDocViewer] = useState(null); // { title, src, mime }
   const [invitePersonId, setInvitePersonId] = useState(null);
   const viewApi = useRef(null);
@@ -190,17 +193,62 @@ export default function App() {
     [data.people],
   );
 
+  // Family stats for the header: people, generation depth, photos, memories.
+  const familyStats = useMemo(() => {
+    const visited = new Map();
+    const compute = (id, guard) => {
+      if (visited.has(id)) return visited.get(id);
+      if (guard.has(id)) return 0;
+      guard.add(id);
+      const parents = graph.parents(id);
+      let g = 0;
+      for (const p of parents) g = Math.max(g, compute(p.id, guard) + 1);
+      guard.delete(id);
+      visited.set(id, g);
+      return g;
+    };
+    for (const p of graph.people) compute(p.id, new Set());
+    const generations = visited.size > 0 ? Math.max(...visited.values()) + 1 : 1;
+    return { people: graph.people.length, generations, photos: data.photos.length, memories: data.memories.length };
+  }, [graph, data.photos.length, data.memories.length]);
+
+  // Time slider: the range of known birth years across all people.
+  const yearRange = useMemo(() => {
+    let min = new Date().getFullYear(), max = min;
+    for (const p of data.people) {
+      const by = p.birth_date ? parseInt(p.birth_date) : null;
+      if (by && by < min) min = by;
+      if (by && by > max) max = by;
+    }
+    return { min: min - 5, max: new Date().getFullYear() };
+  }, [data.people]);
+
+  // Set of people alive at the selected year (null = show all).
+  const aliveAtYear = useMemo(() => {
+    if (!timeMode) return null;
+    const alive = new Set();
+    for (const p of data.people) {
+      const born = p.birth_date ? parseInt(p.birth_date) : null;
+      const died = p.death_date ? parseInt(p.death_date) : null;
+      if ((born == null || born <= timeYear) && (died == null || died >= timeYear)) {
+        alive.add(p.id);
+      }
+    }
+    return alive;
+  }, [data.people, timeMode, timeYear]);
+
   const visibleIds = useMemo(() => {
     const vis = new Set();
     for (const id of expanded) {
+      if (aliveAtYear && !aliveAtYear.has(id)) continue;
       vis.add(id);
-      for (const x of graph.parents(id)) vis.add(x.id);
-      for (const x of graph.children(id)) vis.add(x.id);
-      for (const x of graph.partners(id)) vis.add(x.id);
-      for (const x of graph.siblings(id)) vis.add(x.id);
+      for (const x of graph.parents(id)) { if (!aliveAtYear || aliveAtYear.has(x.id)) vis.add(x.id); }
+      for (const x of graph.children(id)) { if (!aliveAtYear || aliveAtYear.has(x.id)) vis.add(x.id); }
+      for (const x of graph.partners(id)) { if (!aliveAtYear || aliveAtYear.has(x.id)) vis.add(x.id); }
+      for (const x of graph.siblings(id)) { if (!aliveAtYear || aliveAtYear.has(x.id)) vis.add(x.id); }
     }
     return vis;
-  }, [graph, expanded]);
+  }, [graph, expanded, aliveAtYear]);
 
   const activateNormal = useCallback((id) => {
     setActiveId(id);
@@ -388,6 +436,7 @@ export default function App() {
     <div className="app">
       <TopBar
         familyName={data.familyName || DEFAULT_FOCUS}
+        stats={familyStats}
         view={view}
         syncStatus={syncStatus}
         onToggleView={() => setView((v) => (v === 'bubbles' ? 'list' : 'bubbles'))}
@@ -405,6 +454,7 @@ export default function App() {
             onActivate={activate}
             onOpenPerson={lineageMode ? null : openPerson}
             reducedMotion={reducedMotion}
+            layout={layout}
             mergeParents={mergeParents}
             lineagePath={lineagePath}
             invitedIds={invitedIds}
@@ -437,6 +487,36 @@ export default function App() {
           >
             <RecenterIcon />
           </button>
+          {/* Time slider */}
+          <div className={`time-bar${timeMode ? ' time-bar--on' : ''}`}>
+            <button
+              className={`time-toggle${timeMode ? ' time-toggle--on' : ''}`}
+              onClick={() => {
+                if (!timeMode) setTimeYear(new Date().getFullYear());
+                setTimeMode((m) => !m);
+              }}
+              aria-pressed={timeMode}
+              aria-label={timeMode ? `Time view: ${timeYear}` : 'View family over time'}
+            >
+              <ClockIcon />
+              {timeMode ? timeYear : 'Time'}
+            </button>
+            {timeMode && (
+              <div className="time-slider-wrap">
+                <span className="time-slider__label">{yearRange.min}</span>
+                <input
+                  type="range"
+                  className="time-slider"
+                  min={yearRange.min}
+                  max={yearRange.max}
+                  value={timeYear}
+                  onChange={(e) => setTimeYear(Number(e.target.value))}
+                  aria-label="Select year"
+                />
+                <span className="time-slider__label">{yearRange.max}</span>
+              </div>
+            )}
+          </div>
           {!lineageMode && <IntroHint />}
         </>
       ) : (
@@ -597,6 +677,8 @@ export default function App() {
         onClose={() => setLegendOpen(false)}
         mergeParents={mergeParents}
         onToggleMerge={() => setMergeParents((v) => !v)}
+        layout={layout}
+        onSetLayout={setLayout}
       />
 
       {settingsOpen && (
@@ -674,6 +756,14 @@ function RecenterIcon() {
       <circle cx="12" cy="12" r="4" stroke="currentColor" strokeWidth="1.7" />
       <circle cx="12" cy="12" r="1.4" fill="currentColor" />
       <path d="M12 2.5v3.5M12 18v3.5M2.5 12h3.5M18 12h3.5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+    </svg>
+  );
+}
+function ClockIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.7" />
+      <path d="M12 7v5l3 3" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }

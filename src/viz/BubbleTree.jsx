@@ -201,27 +201,59 @@ export default function BubbleTree({
         // (reheating, which animates the orbit re-centre); organic restores the
         // generational bands + repulsion.
         relayout() {
-          if (state.layoutMode === 'radial') {
+          state.radialTargets = new Map();
+          const mode = state.layoutMode;
+          const genY = (d) => (gen.get(d.id) ?? 0) * GEN_GAP - 260;
+          if (mode === 'radial') {
             state.radialTargets = computeRadialTargets(
               graphRef.current,
               activeRef.current,
               visibleRef.current,
               gen,
             );
-            // The active hub is pulled hard to centre; the ring sits at its
-            // targets; links go soft so they don't drag the geometry around.
             const strength = (d) =>
               d.id === activeRef.current ? 0.7 : state.radialTargets.has(d.id) ? 0.32 : 0.03;
             sim.force('charge', forceManyBody().strength(-70).distanceMax(500));
             sim.force('x', forceX((d) => state.radialTargets.get(d.id)?.x ?? 0).strength(strength));
             sim.force('y', forceY((d) => state.radialTargets.get(d.id)?.y ?? 0).strength(strength));
-            linkForce.strength((l) => (l.kind === 'partner' ? 0.3 : 0.04));
+            linkForce
+              .distance((l) => (l.kind === 'partner' ? 112 : 280))
+              .strength((l) => (l.kind === 'partner' ? 0.3 : 0.04));
+          } else if (mode === 'weighted') {
+            // Relationship-weighted: immediate family pulled close, extended drifts
+            // outward naturally. Stronger gen-band so generations read as rows.
+            const nid = state.nodeId;
+            const dist = state.dist;
+            sim.force('charge', forceManyBody().strength(-1100).distanceMax(900));
+            sim.force('x', forceX(0).strength(0.008));
+            sim.force('y', forceY(genY).strength(0.22));
+            linkForce
+              .distance((l) => {
+                if (l.kind === 'partner') return 95;
+                const r = Math.min(dist.get(nid(l.source)) ?? 4, dist.get(nid(l.target)) ?? 4);
+                return r <= 1 ? 210 : r <= 2 ? 265 : 320;
+              })
+              .strength((l) => {
+                if (l.kind === 'partner') return 0.95;
+                const r = Math.min(dist.get(nid(l.source)) ?? 4, dist.get(nid(l.target)) ?? 4);
+                return r <= 1 ? 0.48 : r <= 2 ? 0.28 : 0.12;
+              });
+          } else if (mode === 'hybrid') {
+            // Organic feel but with clear generational banding (70% organic / 30% gen)
+            sim.force('charge', forceManyBody().strength(-1400).distanceMax(1100));
+            sim.force('x', forceX(0).strength(SPREAD_X));
+            sim.force('y', forceY(genY).strength(0.22));
+            linkForce
+              .distance((l) => (l.kind === 'partner' ? 112 : 280))
+              .strength((l) => (l.kind === 'partner' ? 0.9 : 0.26));
           } else {
-            state.radialTargets = new Map();
+            // organic — the default; free-flowing with gentle gen bands
             sim.force('charge', forceManyBody().strength(ORGANIC_CHARGE).distanceMax(1200));
             sim.force('x', forceX(0).strength(SPREAD_X));
-            sim.force('y', forceY((d) => (gen.get(d.id) ?? 0) * GEN_GAP - 260).strength(0.085));
-            linkForce.strength((l) => (l.kind === 'partner' ? 0.9 : 0.26));
+            sim.force('y', forceY(genY).strength(0.085));
+            linkForce
+              .distance((l) => (l.kind === 'partner' ? 112 : 280))
+              .strength((l) => (l.kind === 'partner' ? 0.9 : 0.26));
           }
           sim.alpha(0.7);
         },
@@ -233,11 +265,9 @@ export default function BubbleTree({
         setActive(id, animate = true) {
           activeRef.current = id;
           state.dist = distancesFrom(graphRef.current, id);
-          // Navigating to a person always re-engages the framed "follow" camera
-          // and flies there — the tree is navigation; the person is the place.
           state.enterFollow();
-          if (!reducedMotion && animate) zoom.velocity -= 1.6; // gentle pull-back
-          if (state.layoutMode === 'radial') state.relayout();
+          if (!reducedMotion && animate) zoom.velocity -= 1.6;
+          if (state.layoutMode === 'radial' || state.layoutMode === 'weighted') state.relayout();
         },
         // Hand the camera to the user: pan/zoom now stick where they leave them.
         enterFree() {
@@ -276,6 +306,8 @@ export default function BubbleTree({
         onCameraMode(fn) {
           onModeChange = fn;
         },
+        // Shorthand: resolve node id from d3's source/target (may be object or string).
+        nodeId: (n) => (typeof n === 'string' ? n : n?.id),
         // Reconcile the canvas with a new graph: spawn bubbles for new people
         // (near whoever they connect to, so they appear to sprout from them),
         // refresh edited bubbles, drop removed ones, and rewire the links.
@@ -332,7 +364,7 @@ export default function BubbleTree({
           sim.alpha(0.5);
           gen = computeGenerations(g);
           state.dist = distancesFrom(g, activeRef.current);
-          if (state.layoutMode === 'radial') state.relayout();
+          if (state.layoutMode === 'radial' || state.layoutMode === 'weighted') state.relayout();
         },
         // Screen-space centre of a person's bubble — the card animates out of it.
         getScreenPos(id) {
@@ -700,11 +732,18 @@ export default function BubbleTree({
           if (!vis.has(id)) {
             target = { scale: 0.5, alpha: 0, lift: 1, blur: 0 }; // collapsed
           } else if (lineage && !lineage.has(id)) {
-            target = { ...visualForDistance(d), alpha: 0.13, blur: 1.5 }; // off-path — recede
+            target = { ...visualForDistance(d), alpha: 0.12, blur: 1.5 }; // off-path — recede
+          } else if (lineage && lineage.has(id)) {
+            // On lineage path: uniform, prominent, un-dimmed regardless of hop distance.
+            target = { scale: 1.02, alpha: 1, lift: 1.3, blur: 0 };
           } else if (cardOpen && id !== state.pinnedId) {
-            target = { ...visualForDistance(d), alpha: 0.28, blur: 5 }; // dimmed
+            target = { ...visualForDistance(d), alpha: 0.28, blur: 5 }; // dimmed behind card
           } else {
-            target = visualForDistance(d);
+            // Focus fading: immediate family pops; extended family recedes softly.
+            // This gives the graph visible hierarchy without a card being open.
+            const base = visualForDistance(d);
+            const focusAlpha = d <= 1 ? 1 : d === 2 ? 0.62 : d === 3 ? 0.38 : 0.2;
+            target = { ...base, alpha: focusAlpha };
           }
           // Name labels: all visible bubbles, hidden when card open or lineage active
           const labelAlpha = (!cardOpen && !lineage && vis.has(id)) ? 1 : 0;
@@ -758,26 +797,24 @@ export default function BubbleTree({
     api.current?.setLayout(layout);
   }, [layout]);
 
-  // In radial mode, re-place the ring as the revealed set grows.
+  // In radial/weighted mode, re-place the ring as the revealed set grows.
   useEffect(() => {
-    if (api.current?.layoutMode === 'radial') api.current.relayout();
+    const m = api.current?.layoutMode;
+    if (m === 'radial' || m === 'weighted') api.current.relayout();
   }, [visibleIds]);
 
   return <div className="stage" ref={hostRef} aria-hidden="true" />;
 }
 
-// Sizing for revealed bubbles by hop-distance from the active person. (Whether
-// a bubble shows at all is decided separately by the visible set.)
+// Sizing for revealed bubbles by hop-distance from the active person.
+// Four tiers give the graph a clear hierarchy: you always know where to look.
 function visualForDistance(d) {
   switch (d) {
-    case 0:
-      return { scale: 1.34, alpha: 1, lift: 1.6, blur: 0 };
-    case 1:
-      return { scale: 1.0, alpha: 1, lift: 1.2, blur: 0 };
-    case 2:
-      return { scale: 0.82, alpha: 1, lift: 1, blur: 0 };
-    default:
-      return { scale: 0.7, alpha: 1, lift: 1, blur: 0 };
+    case 0: return { scale: 1.38, alpha: 1, lift: 1.6, blur: 0 }; // active
+    case 1: return { scale: 1.0,  alpha: 1, lift: 1.2, blur: 0 }; // immediate
+    case 2: return { scale: 0.78, alpha: 1, lift: 1,   blur: 0 }; // extended
+    case 3: return { scale: 0.67, alpha: 1, lift: 1,   blur: 0 }; // distant
+    default: return { scale: 0.58, alpha: 1, lift: 1,  blur: 0 }; // far
   }
 }
 
