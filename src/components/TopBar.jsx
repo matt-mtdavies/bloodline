@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, forwardRef } from 'react';
 import Logo from './Logo.jsx';
 
 export default function TopBar({ familyName, stats, view, syncStatus, onToggleView, onOpenLegend, onOpenSettings }) {
@@ -87,8 +87,6 @@ export default function TopBar({ familyName, stats, view, syncStatus, onToggleVi
     </header>
   );
 }
-
-import { forwardRef } from 'react';
 
 const StatsPopover = forwardRef(function StatsPopover({ stats, onClose }, ref) {
   const total = stats.people;

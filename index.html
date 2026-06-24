@@ -16,6 +16,17 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="Bloodline" />
     <title>Bloodline — a living portrait of your family</title>
+    <!-- Pre-boot splash: visible immediately, replaced when React mounts.
+         Hardcoded colours so it works before any CSS bundle loads. -->
+    <style>
+      #pre-boot {
+        position: fixed; inset: 0;
+        display: flex; align-items: center; justify-content: center;
+        background: #faf7f4;
+      }
+      #pre-boot > svg { animation: pb-pulse 1.8s ease-in-out infinite; }
+      @keyframes pb-pulse { 0%,100%{opacity:.9} 50%{opacity:.55} }
+    </style>
     <link
       rel="preconnect"
       href="https://fonts.googleapis.com"
@@ -27,7 +38,7 @@
     />
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root"><div id="pre-boot"><svg width="42" height="40" viewBox="0 0 42 40" fill="none" aria-hidden="true"><circle cx="15" cy="17" r="10" fill="#c2603a"/><circle cx="27" cy="17" r="10" fill="#3f5e4e"/><circle cx="21" cy="29" r="6.6" fill="#b08642"/></svg></div></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
