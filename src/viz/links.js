@@ -233,6 +233,140 @@ export function drawLinks(g, graph, pos, isVisible, baseRadius, mergeParents = f
   }
 }
 
+/*
+ * Traditional genealogy chart links — same warm couple membranes as the organic
+ * view, but parent→child bonds become clean orthogonal bracket connectors:
+ *   couple midpoint → vertical stem → horizontal bar → vertical drops to children
+ * This gives the familiar pedigree-chart feel while keeping Bloodline's palette.
+ */
+export function drawLinksChart(g, graph, pos, isVisible, baseRadius, lineagePath = null) {
+  g.clear();
+  const hidden = (a, b) => !(isVisible(a) && isVisible(b));
+  const onPath = lineagePath ? (a, b) => lineagePath.has(a) && lineagePath.has(b) : () => false;
+  const edgeAlpha = lineagePath ? (a, b) => (onPath(a, b) ? 1 : 0.12) : () => 1;
+
+  // ── Couple membranes (identical to organic mode) ──────────────────────────
+  const seen = new Set();
+  for (const r of graph.relationships) {
+    if (r.type !== 'partner') continue;
+    if (hidden(r.from_person, r.to_person)) continue;
+    const a = pos.get(r.from_person);
+    const b = pos.get(r.to_person);
+    if (!a || !b) continue;
+    const key = [r.from_person, r.to_person].sort().join('|');
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    const alpha = edgeAlpha(r.from_person, r.to_person);
+    const status = r.partner_status;
+    const width = baseRadius * 2.2;
+    const fill = status === 'widowed' ? '#ece7f2' : '#f6e6dc';
+    const borderColor = status === 'widowed' ? '#7a6a9e' : '#8a5e3c';
+
+    g.moveTo(a.x, a.y).lineTo(b.x, b.y).stroke({ width, color: hex(fill), alpha: alpha * 0.52, cap: 'round' });
+
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const len = Math.sqrt(dx * dx + dy * dy) || 1;
+    const offX = (-dy / len) * (width / 2 - 0.5);
+    const offY = ( dx / len) * (width / 2 - 0.5);
+    const e1 = [{ x: a.x + offX, y: a.y + offY }, { x: b.x + offX, y: b.y + offY }];
+    const e2 = [{ x: a.x - offX, y: a.y - offY }, { x: b.x - offX, y: b.y - offY }];
+    const bAlpha = alpha * 0.82;
+    if (status === 'former') {
+      for (const [p, q] of [e1, e2])
+        dashedSegment(g, p, q, 12, 0.5, { width: 2.5, color: hex(borderColor), alpha: bAlpha, cap: 'round' });
+    } else {
+      for (const [p, q] of [e1, e2])
+        g.moveTo(p.x, p.y).lineTo(q.x, q.y).stroke({ width: 2.5, color: hex(borderColor), alpha: bAlpha, cap: 'round' });
+    }
+  }
+
+  // ── Orthogonal bracket connectors (parent → children) ─────────────────────
+  // Group each child with ALL of its visible parents so siblings share one bracket.
+  const families = new Map(); // 'parentId1|parentId2:qualifier' → { parents, qualifier, kids }
+  for (const r of graph.relationships) {
+    if (r.type !== 'parent') continue;
+    const parentId = r.from_person;
+    const childId = r.to_person;
+    if (!isVisible(parentId) || !isVisible(childId)) continue;
+
+    const childParents = graph.parents(childId).filter((p) => isVisible(p.id));
+    const qual = r.qualifier ?? 'biological';
+    const key = childParents.map((p) => p.id).sort().join('|') + ':' + qual;
+    if (!families.has(key))
+      families.set(key, { parents: childParents.map((p) => p.id), qualifier: qual, kids: new Set() });
+    families.get(key).kids.add(childId);
+  }
+
+  for (const { parents, qualifier, kids } of families.values()) {
+    const parentPositions = parents.map((id) => pos.get(id)).filter(Boolean);
+    if (!parentPositions.length) continue;
+    const kidPositions = [...kids].map((id) => pos.get(id)).filter(Boolean);
+    if (!kidPositions.length) continue;
+
+    const biological = qualifier === 'biological';
+    const lineColor = hex(biological ? '#8a7d6b' : '#b6a892');
+    const lineAlpha = biological ? 0.72 : 0.88;
+    const strokeBase = { width: 2, color: lineColor, cap: 'round', join: 'round' };
+    const seg = (ax, ay, bx, by, alpha = lineAlpha) => {
+      if (biological) {
+        g.moveTo(ax, ay).lineTo(bx, by).stroke({ ...strokeBase, alpha });
+      } else {
+        dashedSegment(g, { x: ax, y: ay }, { x: bx, y: by }, 10, 0.5, { ...strokeBase, alpha, width: 2 });
+      }
+    };
+
+    // Origin: midpoint of all parents (couples are same Y in chart mode).
+    const originX = parentPositions.reduce((s, p) => s + p.x, 0) / parentPositions.length;
+    const originY = parentPositions.reduce((s, p) => s + p.y, 0) / parentPositions.length;
+    const childY = Math.min(...kidPositions.map((p) => p.y));
+    // Junction: 45% of the way from parent row to child row.
+    const hubY = originY + (childY - originY) * 0.45;
+
+    // Lineage alpha for this family group.
+    const alpha = edgeAlpha(parents[0] ?? '', kids.values().next().value ?? '');
+
+    // Vertical stem from couple midpoint down to the junction.
+    seg(originX, originY + baseRadius * 1.05, originX, hubY, lineAlpha * alpha);
+
+    if (kidPositions.length === 1) {
+      // Single child: L-shaped elbow — horizontal to child x, then drop.
+      const c = kidPositions[0];
+      seg(originX, hubY, c.x, hubY, lineAlpha * alpha);
+      seg(c.x, hubY, c.x, c.y - baseRadius, lineAlpha * alpha);
+    } else {
+      // Multiple siblings: horizontal bar spanning leftmost→rightmost, then drops.
+      const xs = kidPositions.map((p) => p.x);
+      const barMinX = Math.min(...xs);
+      const barMaxX = Math.max(...xs);
+      seg(barMinX, hubY, barMaxX, hubY, lineAlpha * alpha);
+      for (const c of kidPositions) {
+        seg(c.x, hubY, c.x, c.y - baseRadius, lineAlpha * alpha);
+      }
+    }
+  }
+
+  // ── Lineage highlight pass ─────────────────────────────────────────────────
+  if (lineagePath) {
+    const accentFill = hex('#c2603a');
+    const done = new Set();
+    for (const r of graph.relationships) {
+      if (!onPath(r.from_person, r.to_person)) continue;
+      if (hidden(r.from_person, r.to_person)) continue;
+      const key = [r.from_person, r.to_person].sort().join('|') + r.type;
+      if (done.has(key)) continue;
+      done.add(key);
+      const a = pos.get(r.from_person);
+      const b = pos.get(r.to_person);
+      if (!a || !b) continue;
+      if (r.type === 'partner') {
+        g.moveTo(a.x, a.y).lineTo(b.x, b.y).stroke({ width: baseRadius * 2.4, color: accentFill, alpha: 0.22, cap: 'round' });
+        g.moveTo(a.x, a.y).lineTo(b.x, b.y).stroke({ width: 3, color: accentFill, alpha: 0.75, cap: 'round' });
+      }
+    }
+  }
+}
+
 // A gentle quadratic curve between two points (a slight sag, like a hanging cord).
 function curve(g, a, b, style) {
   const mx = (a.x + b.x) / 2;

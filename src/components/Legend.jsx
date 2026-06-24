@@ -5,6 +5,7 @@ const LAYOUTS = [
   { id: 'organic', label: 'Organic', desc: 'Free-flowing network' },
   { id: 'weighted', label: 'Weighted', desc: 'Closest family pulled in' },
   { id: 'hybrid', label: 'Generational', desc: 'Clear vertical bands' },
+  { id: 'chart', label: 'Chart', desc: 'Traditional family tree chart' },
 ];
 
 export default function Legend({ open, onClose, mergeParents, onToggleMerge, layout = 'organic', onSetLayout }) {

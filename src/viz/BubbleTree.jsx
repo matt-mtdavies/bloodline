@@ -9,7 +9,7 @@ import {
   forceY,
 } from 'd3-force';
 import { Bubble } from './bubble.js';
-import { drawLinks } from './links.js';
+import { drawLinks, drawLinksChart } from './links.js';
 import { distancesFrom } from '../data/graph.js';
 import { Spring } from '../lib/spring.js';
 
@@ -246,6 +246,14 @@ export default function BubbleTree({
             linkForce
               .distance((l) => (l.kind === 'partner' ? 112 : 280))
               .strength((l) => (l.kind === 'partner' ? 0.9 : 0.26));
+          } else if (mode === 'chart') {
+            // Traditional hierarchical chart — physics silenced; positions held by fx/fy.
+            sim.force('charge', forceManyBody().strength(-30).distanceMax(80));
+            sim.force('x', forceX(0).strength(0));
+            sim.force('y', forceY(0).strength(0));
+            linkForce.distance(() => 0).strength(() => 0);
+            sim.alphaTarget(0);
+            state.applyChartLayout();
           } else {
             // organic — the default; free-flowing with gentle gen bands
             sim.force('charge', forceManyBody().strength(ORGANIC_CHARGE).distanceMax(1200));
@@ -257,8 +265,29 @@ export default function BubbleTree({
           }
           sim.alpha(0.7);
         },
+        applyChartLayout() {
+          const chartPos = computeChartLayout(graphRef.current, gen, visibleRef.current);
+          for (const n of nodes) {
+            const p = chartPos.get(n.id);
+            if (p) {
+              // Snap position immediately so the first rendered frame is correct.
+              n.x = p.x; n.y = p.y;
+              n.vx = 0; n.vy = 0;
+              n.fx = p.x; n.fy = p.y;
+            } else {
+              n.fx = null; n.fy = null;
+            }
+          }
+          sim.alpha(0.08);
+        },
         setLayout(mode) {
           if (state.layoutMode === mode) return;
+          if (state.layoutMode === 'chart') {
+            // Restore dynamics when leaving chart mode.
+            for (const n of nodes) { n.fx = null; n.fy = null; }
+            sim.alphaTarget(reducedMotion ? 0 : 0.012);
+            sim.alpha(0.5);
+          }
           state.layoutMode = mode;
           state.relayout();
         },
@@ -268,6 +297,7 @@ export default function BubbleTree({
           state.enterFollow();
           if (!reducedMotion && animate) zoom.velocity -= 1.6;
           if (state.layoutMode === 'radial' || state.layoutMode === 'weighted') state.relayout();
+          if (state.layoutMode === 'chart') state.applyChartLayout();
         },
         // Hand the camera to the user: pan/zoom now stick where they leave them.
         enterFree() {
@@ -365,6 +395,7 @@ export default function BubbleTree({
           gen = computeGenerations(g);
           state.dist = distancesFrom(g, activeRef.current);
           if (state.layoutMode === 'radial' || state.layoutMode === 'weighted') state.relayout();
+          if (state.layoutMode === 'chart') state.applyChartLayout();
         },
         // Screen-space centre of a person's bubble — the card animates out of it.
         getScreenPos(id) {
@@ -635,8 +666,9 @@ export default function BubbleTree({
       app.ticker.add((ticker) => {
         const dt = Math.min(ticker.deltaMS / 1000, 1 / 30);
 
-        // Keep it breathing: a hair of perpetual drift unless reduced-motion.
-        if (!reducedMotion) {
+        // Gentle perpetual drift gives the organic modes life. Skip in chart mode
+        // where clean static positions are the whole point.
+        if (!reducedMotion && layoutRef.current !== 'chart') {
           const t = performance.now() / 1000;
           for (let i = 0; i < nodes.length; i++) {
             const n = nodes[i];
@@ -795,7 +827,11 @@ export default function BubbleTree({
         }
 
         linkGfx.alpha = cardOpen ? 0.18 : 1;
-        drawLinks(linkGfx, graphRef.current, pos, (id) => vis.has(id), BASE_RADIUS, mergeRef.current, lineage);
+        if (layoutRef.current === 'chart') {
+          drawLinksChart(linkGfx, graphRef.current, pos, (id) => vis.has(id), BASE_RADIUS, lineage);
+        } else {
+          drawLinks(linkGfx, graphRef.current, pos, (id) => vis.has(id), BASE_RADIUS, mergeRef.current, lineage);
+        }
       });
     })();
 
@@ -829,10 +865,12 @@ export default function BubbleTree({
     api.current?.setLayout(layout);
   }, [layout]);
 
-  // In radial/weighted mode, re-place the ring as the revealed set grows.
+  // Re-place nodes when the visible set changes: radial/weighted re-run forces,
+  // chart re-computes fixed grid positions.
   useEffect(() => {
     const m = api.current?.layoutMode;
     if (m === 'radial' || m === 'weighted') api.current.relayout();
+    if (m === 'chart') api.current?.applyChartLayout();
   }, [visibleIds]);
 
   return <div className="stage" ref={hostRef} aria-hidden="true" />;
@@ -882,6 +920,81 @@ function computeGenerations(graph) {
 
 function clamp(v, lo, hi) {
   return Math.max(lo, Math.min(hi, v));
+}
+
+/*
+ * Traditional hierarchical family chart layout. Returns a Map of id → {x, y}
+ * with all visible people placed in generation rows, couples kept adjacent,
+ * and children sorted under their parents by barycenter heuristic. Positions
+ * are set as d3 fx/fy constraints so physics doesn't move them.
+ */
+function computeChartLayout(graph, gen, visible) {
+  const COL_GAP = 148; // world units between adjacent bubbles
+
+  // Group visible people by generation row.
+  const byGen = new Map();
+  for (const id of visible) {
+    const g = gen.get(id) ?? 0;
+    if (!byGen.has(g)) byGen.set(g, []);
+    byGen.get(g).push(id);
+  }
+
+  const posMap = new Map();
+  const gens = [...byGen.keys()].sort((a, b) => a - b);
+
+  for (const g of gens) {
+    const row = byGen.get(g);
+
+    // Sort people in this row by the average x of their visible parents (barycenter).
+    // This naturally groups siblings together under their parents.
+    row.sort((a, b) => {
+      const bary = (id) => {
+        const ps = graph.parents(id).filter((p) => visible.has(p.id));
+        if (!ps.length) return 0;
+        return ps.reduce((s, p) => s + (posMap.get(p.id)?.x ?? 0), 0) / ps.length;
+      };
+      return bary(a) - bary(b);
+    });
+
+    // Ensure each couple sits immediately adjacent. Walk the sorted row; whenever
+    // we encounter a person with a partner still unplaced, insert the partner next.
+    const rowSet = new Set(row);
+    const paired = new Map();
+    for (const id of row) {
+      if (paired.has(id)) continue;
+      for (const p of graph.partners(id)) {
+        if (rowSet.has(p.id) && !paired.has(p.id)) {
+          paired.set(id, p.id);
+          paired.set(p.id, id);
+          break;
+        }
+      }
+    }
+
+    const ordered = [];
+    const placed = new Set();
+    for (const id of row) {
+      if (placed.has(id)) continue;
+      placed.add(id);
+      ordered.push(id);
+      const partner = paired.get(id);
+      if (partner && !placed.has(partner)) {
+        placed.add(partner);
+        ordered.push(partner);
+      }
+    }
+
+    // Assign x positions centred around 0.
+    const n = ordered.length;
+    for (let i = 0; i < n; i++) {
+      posMap.set(ordered[i], {
+        x: (i - (n - 1) / 2) * COL_GAP,
+        y: g * GEN_GAP - 260,
+      });
+    }
+  }
+
+  return posMap;
 }
 
 /*
