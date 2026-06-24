@@ -445,10 +445,24 @@ export default function App() {
 
   const handleSave = useCallback(
     (fields) => {
-      updatePerson(editId, fields);
+      const person = graph.byId.get(editId);
+      const parts = [];
+      if ('birth_date' in fields && fields.birth_date !== person?.birth_date) parts.push('birthdate');
+      if ('birth_place' in fields && fields.birth_place !== person?.birth_place) parts.push('birthplace');
+      if ('death_date' in fields && fields.death_date !== person?.death_date) parts.push('death date');
+      if ('bio' in fields && fields.bio !== person?.bio) parts.push('biography');
+      if ('occupation' in fields && fields.occupation !== person?.occupation) parts.push('occupation');
+      if ('residence' in fields && fields.residence !== person?.residence) parts.push('location');
+      if ('display_name' in fields && fields.display_name !== person?.display_name) parts.push('name');
+      if ('tags' in fields) parts.push('tags');
+      const detail = parts.length ? parts.join(' and ') : null;
+      const actEvent = detail
+        ? { type: 'person_updated', personId: editId, personName: person?.display_name ?? '', detail }
+        : null;
+      updatePerson(editId, fields, actEvent);
       setEditId(null);
     },
-    [editId],
+    [editId, graph],
   );
 
   const handleRemovePerson = useCallback(() => {
@@ -466,10 +480,16 @@ export default function App() {
 
   const handleSaveTimeline = useCallback(
     (events) => {
-      updatePerson(timelineId, { events });
+      const person = graph.byId.get(timelineId);
+      updatePerson(timelineId, { events }, {
+        type: 'person_updated',
+        personId: timelineId,
+        personName: person?.display_name ?? '',
+        detail: 'life events',
+      });
       setTimelineId(null);
     },
-    [timelineId],
+    [timelineId, graph],
   );
 
   const handleAddMemory = useCallback(
@@ -742,7 +762,10 @@ export default function App() {
         onUpdateDocument={(id, patch) => updateDocument(id, patch)}
         onRemoveRelationship={removeRelationship}
         onUpdateRelationshipQualifier={updateRelationshipQualifier}
-        onUpdateStory={(id, story) => updatePerson(id, { story })}
+        onUpdateStory={(id, story) => {
+          const person = graph.byId.get(id);
+          updatePerson(id, { story }, { type: 'person_updated', personId: id, personName: person?.display_name ?? '', detail: 'life story' });
+        }}
         onAddCondition={addCondition}
         onRemoveCondition={removeCondition}
         onUpdateCondition={updateCondition}

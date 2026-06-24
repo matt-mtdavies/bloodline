@@ -639,11 +639,9 @@ export function setupTree({ me, partner, parents, children, memoryPersonIdx, mem
   return meP.id;
 }
 
-export function updatePerson(id, fields) {
-  commit({
-    ...state,
-    people: state.people.map((p) => (p.id === id ? { ...p, ...fields } : p)),
-  });
+export function updatePerson(id, fields, activityEvent = null) {
+  const next = { ...state, people: state.people.map((p) => (p.id === id ? { ...p, ...fields } : p)) };
+  commit(activityEvent ? withActivity(next, activityEvent) : next);
 }
 
 export function setPhoto(id, dataUrl, { recordActivity = false } = {}) {
