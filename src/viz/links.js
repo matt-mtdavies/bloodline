@@ -245,7 +245,10 @@ export function drawLinksChart(g, graph, pos, isVisible, baseRadius, lineagePath
   const onPath = lineagePath ? (a, b) => lineagePath.has(a) && lineagePath.has(b) : () => false;
   const edgeAlpha = lineagePath ? (a, b) => (onPath(a, b) ? 1 : 0.12) : () => 1;
 
-  // ── Couple membranes (identical to organic mode) ──────────────────────────
+  // ── Couple connectors (chart style: clean bar + midpoint node) ───────────
+  // Organic mode's warm blob-pod is beautiful but invisible at chart zoom levels.
+  // Chart mode uses a thin horizontal bar with a small filled node at the midpoint
+  // so the couple relationship reads clearly at any scale.
   const seen = new Set();
   for (const r of graph.relationships) {
     if (r.type !== 'partner') continue;
@@ -259,26 +262,24 @@ export function drawLinksChart(g, graph, pos, isVisible, baseRadius, lineagePath
 
     const alpha = edgeAlpha(r.from_person, r.to_person);
     const status = r.partner_status;
-    const width = baseRadius * 2.2;
-    const fill = status === 'widowed' ? '#ece7f2' : '#f6e6dc';
-    const borderColor = status === 'widowed' ? '#7a6a9e' : '#8a5e3c';
+    const isWidowed = status === 'widowed';
+    const isFormer  = status === 'former';
+    const lineColor = hex(isWidowed ? '#7a6a9e' : '#b08060');
+    const nodeColor = hex(isWidowed ? '#ece7f2' : '#f6e6dc');
+    const nodeBorder = hex(isWidowed ? '#7a6a9e' : '#8a5e3c');
+    const mx = (a.x + b.x) / 2;
+    const my = (a.y + b.y) / 2;
+    const lineA = alpha * (isFormer ? 0.45 : 0.55);
+    const nodeR = baseRadius * 0.28;
 
-    g.moveTo(a.x, a.y).lineTo(b.x, b.y).stroke({ width, color: hex(fill), alpha: alpha * 0.52, cap: 'round' });
-
-    const dx = b.x - a.x, dy = b.y - a.y;
-    const len = Math.sqrt(dx * dx + dy * dy) || 1;
-    const offX = (-dy / len) * (width / 2 - 0.5);
-    const offY = ( dx / len) * (width / 2 - 0.5);
-    const e1 = [{ x: a.x + offX, y: a.y + offY }, { x: b.x + offX, y: b.y + offY }];
-    const e2 = [{ x: a.x - offX, y: a.y - offY }, { x: b.x - offX, y: b.y - offY }];
-    const bAlpha = alpha * 0.82;
-    if (status === 'former') {
-      for (const [p, q] of [e1, e2])
-        dashedSegment(g, p, q, 12, 0.5, { width: 2.5, color: hex(borderColor), alpha: bAlpha, cap: 'round' });
+    if (isFormer) {
+      dashedSegment(g, a, b, 14, 0.55, { width: 1.8, color: lineColor, alpha: lineA, cap: 'round' });
     } else {
-      for (const [p, q] of [e1, e2])
-        g.moveTo(p.x, p.y).lineTo(q.x, q.y).stroke({ width: 2.5, color: hex(borderColor), alpha: bAlpha, cap: 'round' });
+      g.moveTo(a.x, a.y).lineTo(b.x, b.y).stroke({ width: 1.8, color: lineColor, alpha: lineA, cap: 'round' });
     }
+    // Midpoint node — signals "this is a couple unit, not just a line".
+    g.circle(mx, my, nodeR).fill({ color: nodeColor, alpha: alpha * 0.92 });
+    g.circle(mx, my, nodeR).stroke({ width: 1.5, color: nodeBorder, alpha: alpha * 0.85 });
   }
 
   // ── Orthogonal bracket connectors (parent → children) ─────────────────────
