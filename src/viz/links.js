@@ -42,7 +42,7 @@ export function drawLinks(g, graph, pos, isVisible, baseRadius, mergeParents = f
     // All unions share the same warm filled band — the fill never changes.
     // Status is communicated solely by the border style around that band.
     const fill = status === 'widowed' ? '#ece7f2' : '#f6e6dc';
-    const borderColor = status === 'widowed' ? '#b8aeca' : '#c9a08a';
+    const borderColor = status === 'widowed' ? '#7a6a9e' : '#8a5e3c';
 
     g.moveTo(a.x, a.y).lineTo(b.x, b.y).stroke({
       width,
@@ -60,18 +60,18 @@ export function drawLinks(g, graph, pos, isVisible, baseRadius, mergeParents = f
     const offY = ( dx / len) * (width / 2 - 0.5);
     const e1 = [{ x: a.x + offX, y: a.y + offY }, { x: b.x + offX, y: b.y + offY }];
     const e2 = [{ x: a.x - offX, y: a.y - offY }, { x: b.x - offX, y: b.y - offY }];
-    const bAlpha = alpha * 0.6;
+    const bAlpha = alpha * 0.82;
 
     if (status === 'former') {
       // Dashed border — same warm band, but the broken edge signals a past union.
       // No separate connecting line needed; the band itself carries the relationship.
       for (const [p, q] of [e1, e2]) {
-        dashedSegment(g, p, q, 12, 0.5, { width: 1.5, color: hex(borderColor), alpha: bAlpha, cap: 'round' });
+        dashedSegment(g, p, q, 12, 0.5, { width: 2.5, color: hex(borderColor), alpha: bAlpha, cap: 'round' });
       }
     } else {
       // Solid border for current and widowed.
       for (const [p, q] of [e1, e2]) {
-        g.moveTo(p.x, p.y).lineTo(q.x, q.y).stroke({ width: 1.5, color: hex(borderColor), alpha: bAlpha, cap: 'round' });
+        g.moveTo(p.x, p.y).lineTo(q.x, q.y).stroke({ width: 2.5, color: hex(borderColor), alpha: bAlpha, cap: 'round' });
       }
     }
   }
