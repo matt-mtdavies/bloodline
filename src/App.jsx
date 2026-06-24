@@ -176,6 +176,7 @@ export default function App() {
   const [timeYear, setTimeYear] = useState(new Date().getFullYear());
   const [timePlaying, setTimePlaying] = useState(false);
   const [focusMode, setFocusMode] = useState(false);
+  const [lifeJourneyId, setLifeJourneyId] = useState(null);
   const playRef = useRef(null);
   const [docViewer, setDocViewer] = useState(null); // { title, src, mime }
   const [invitePersonId, setInvitePersonId] = useState(null);
@@ -290,7 +291,24 @@ export default function App() {
     setExpanded((prev) => (prev.has(id) ? prev : new Set(prev).add(id)));
     setLineagePath(null);
     setFocusMode(false); // navigating exits focus mode
+    setLifeJourneyId(null);
   }, []);
+
+  const lifeJourneyPerson = lifeJourneyId ? graph.byId.get(lifeJourneyId) : null;
+
+  const startLifeJourney = useCallback((id) => {
+    const p = graph.byId.get(id);
+    const birthYear = p?.birth_date ? parseInt(p.birth_date) : yearRange.min;
+    const startYear = Math.max(birthYear, yearRange.min);
+    setLifeJourneyId(id);
+    setActiveId(id);
+    setExpanded((prev) => new Set(prev).add(id));
+    setTimeMode(true);
+    setFocusMode(true);
+    setTimeYear(startYear);
+    setTimePlaying(true);
+    setOpenId(null);
+  }, [graph, yearRange.min]);
 
   const activate = useCallback(
     (id) => {
@@ -539,7 +557,7 @@ export default function App() {
               className={`time-toggle${timeMode ? ' time-toggle--on' : ''}`}
               onClick={() => {
                 if (!timeMode) { setTimeYear(new Date().getFullYear()); setTimePlaying(false); }
-                else setTimePlaying(false);
+                else { setTimePlaying(false); setLifeJourneyId(null); }
                 setTimeMode((m) => !m);
               }}
               aria-pressed={timeMode}
@@ -547,7 +565,11 @@ export default function App() {
             >
               <ClockIcon />
               {timeMode ? (
-                <>{aliveAtYear ? aliveAtYear.size : graph.people.length} · {timeYear}</>
+                lifeJourneyPerson ? (
+                  <>{lifeJourneyPerson.display_name.split(' ')[0]} · {timeYear}</>
+                ) : (
+                  <>{aliveAtYear ? aliveAtYear.size : graph.people.length} · {timeYear}</>
+                )
               ) : 'Time'}
             </button>
             {timeMode && (
@@ -555,7 +577,9 @@ export default function App() {
                 <button
                   className={`time-play${timePlaying ? ' time-play--on' : ''}`}
                   onClick={() => {
-                    if (!timePlaying && timeYear >= yearRange.max) setTimeYear(yearRange.min);
+                    if (!timePlaying && timeYear >= yearRange.max) {
+                      setTimeYear(lifeJourneyPerson?.birth_date ? parseInt(lifeJourneyPerson.birth_date) : yearRange.min);
+                    }
                     setTimePlaying((p) => !p);
                   }}
                   aria-label={timePlaying ? 'Pause' : 'Play family history'}
@@ -563,9 +587,17 @@ export default function App() {
                   {timePlaying ? <PauseIcon /> : <PlayIcon />}
                 </button>
                 <span className="time-slider__label">{yearRange.min}</span>
+                {lifeJourneyPerson?.events?.length > 0 && (
+                  <datalist id="life-events-ticks">
+                    {lifeJourneyPerson.events.map((ev) => (
+                      <option key={ev.year} value={parseInt(ev.year)} />
+                    ))}
+                  </datalist>
+                )}
                 <input
                   type="range"
                   className="time-slider"
+                  list={lifeJourneyPerson?.events?.length ? 'life-events-ticks' : undefined}
                   min={yearRange.min}
                   max={yearRange.max}
                   value={timeYear}
@@ -575,6 +607,16 @@ export default function App() {
                 <span className="time-slider__label">{yearRange.max}</span>
               </div>
             )}
+            {timeMode && lifeJourneyPerson && (() => {
+              const ev = lifeJourneyPerson.events?.find(
+                (e) => Math.abs(parseInt(e.year) - timeYear) <= 1,
+              );
+              return (
+                <div className={`life-event-caption${ev ? ' life-event-caption--visible' : ''}`}>
+                  {ev?.title || ' '}
+                </div>
+              );
+            })()}
           </div>
           {!lineageMode && <IntroHint />}
         </>
@@ -624,6 +666,7 @@ export default function App() {
         onUpdateStory={(id, story) => updatePerson(id, { story })}
         onPhoto={handlePhoto}
         onInvite={(id) => setInvitePersonId(id)}
+        onLifeJourney={startLifeJourney}
       />
 
       {invitePersonId && graph.byId.get(invitePersonId) && (

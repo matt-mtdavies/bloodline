@@ -800,6 +800,22 @@
 .time-play--on { background: var(--accent); }
 .time-play:hover { box-shadow: 0 4px 14px rgba(0,0,0,0.22); transform: scale(1.06); }
 .time-play:active { transform: scale(0.93); }
+.life-event-caption {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--ink-soft);
+  text-align: center;
+  min-height: 18px;
+  letter-spacing: 0.01em;
+  padding: 2px 12px;
+  opacity: 0;
+  transition: opacity 0.25s;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 320px;
+}
+.life-event-caption--visible { opacity: 1; }
 
 /* ── Layout algorithm segmented control ────────────────────────────────── */
 .legend__setting--layout { flex-direction: column; align-items: flex-start; gap: 10px; }
@@ -1590,11 +1606,21 @@
 
 .profile__actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
   padding: 18px 24px 6px;
 }
 .profile__actions .action { width: auto; flex: 1; }
 .profile__actions .action:not(.action--primary) { flex: 0 0 auto; padding: 0 18px; }
+.action--journey {
+  flex: 0 0 100% !important;
+  justify-content: center;
+  background: linear-gradient(135deg, #f5f0ea 0%, #ede8e0 100%);
+  color: var(--ink);
+  border-color: transparent;
+  gap: 8px;
+}
+.action--journey:hover { background: linear-gradient(135deg, #ede8e0 0%, #e4ddd4 100%); }
 .action--invite { color: var(--accent) !important; border-color: color-mix(in srgb, var(--accent) 30%, transparent) !important; }
 .action--invite:hover { background: color-mix(in srgb, var(--accent) 8%, transparent) !important; }
 
