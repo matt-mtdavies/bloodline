@@ -814,6 +814,7 @@ export default function BubbleTree({
           // Name labels: all visible bubbles, hidden when card open or lineage active
           const labelAlpha = (!cardOpen && !lineage && vis.has(id)) ? 1 : 0;
           b.setVisualState({ ...target, labelAlpha }, dt);
+          b.setActive(id === activeRef.current);
           b.setInvited(!!(invitedRef.current?.has(id)));
           b.setChartBadge(layoutRef.current === 'chart');
           // Depth hints: show on visible bubbles that have family beyond the current reveal.

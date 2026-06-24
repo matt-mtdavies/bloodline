@@ -72,6 +72,13 @@ export class Bubble {
     this.ring = ring;
     this.drawRing();
 
+    // Active-selection accent ring — terracotta stroke, shown only when this bubble is the focused person.
+    const activeRing = new Graphics();
+    activeRing.eventMode = 'none';
+    root.addChild(activeRing);
+    this.activeRing = activeRing;
+    this._isActive = false;
+
     // Memorial: soften the departed rather than grey them out.
     if (this.deceased) {
       const cm = new ColorMatrixFilter();
@@ -145,8 +152,8 @@ export class Bubble {
     const firstName = this.visibility === 'private'
       ? 'Private'
       : person.display_name.trim().split(/\s+/)[0];
-    // Estimate pill width: ~6.6 px per char at 11px/700 + horizontal padding
-    const pillW = Math.max(36, firstName.length * 6.6 + 20);
+    // Estimate pill width: ~7.5 px per char at 13px/700 + horizontal padding
+    const pillW = Math.max(40, firstName.length * 7.5 + 20);
     const pillH = 20;
     const r = pillH / 2;
 
@@ -165,7 +172,7 @@ export class Bubble {
       text: firstName,
       style: {
         fontFamily: TREE_FONT,
-        fontSize: 11,
+        fontSize: 13,
         fontWeight: '700',
         fill: '#241f1c',
         letterSpacing: 0.3,
@@ -238,6 +245,18 @@ export class Bubble {
     }
     if (this.person.confidence === 'uncertain') {
       drawDashedCircle(ring, r + 4, 16, { width: 1.2, color: hex('#a6abb3'), alpha: 0.6 });
+    }
+  }
+
+  setActive(isActive) {
+    if (isActive === this._isActive) return;
+    this._isActive = isActive;
+    this.activeRing.clear();
+    if (isActive) {
+      const r = this.r;
+      this.activeRing
+        .circle(0, 0, r + 3.5)
+        .stroke({ width: 2.5, color: hex('#c2603a'), alpha: 0.9 });
     }
   }
 
