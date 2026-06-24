@@ -1,6 +1,7 @@
 import { useMemo, useState, useCallback, useRef, useEffect, useSyncExternalStore } from 'react';
 import './styles/components.css';
 import { DEFAULT_FOCUS } from './data/seed.js';
+import Logo from './components/Logo.jsx';
 import {
   store,
   syncStore,
@@ -139,7 +140,12 @@ export default function App() {
 
   useEffect(() => {
     if (isDemo) return;
-    applySession().catch(() => setAuthState('open'));
+    // 12-second timeout: if the auth Worker cold-starts slowly on mobile the
+    // fetch can hang indefinitely.  Fall back to 'open' so the user sees the app.
+    const timer = setTimeout(() => setAuthState('open'), 12000);
+    applySession()
+      .catch(() => setAuthState('open'))
+      .finally(() => clearTimeout(timer));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -472,7 +478,7 @@ export default function App() {
   const activePerson = graph.byId.get(activeId);
 
   // Auth gate. 'open' = no auth configured or ?demo — go straight to app.
-  if (authState === 'loading') return null;
+  if (authState === 'loading') return <AppLoadingScreen />;
   if (authState === 'login') {
     return (
       <LoginScreen
@@ -928,5 +934,13 @@ function FocusIcon() {
       <circle cx="19" cy="12" r="2" stroke="currentColor" strokeWidth="1.6" />
       <path d="M12 7v2M12 15v2M7 12h2M15 12h2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
     </svg>
+  );
+}
+
+function AppLoadingScreen() {
+  return (
+    <div className="app-loading">
+      <Logo size={42} />
+    </div>
   );
 }

@@ -3725,3 +3725,16 @@
   cursor: pointer;
   box-shadow: 0 4px 16px color-mix(in srgb, var(--accent) 28%, transparent);
 }
+
+/* App loading screen — shown while auth check is in flight */
+.app-loading {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--paper);
+}
+.app-loading > * {
+  animation: hint-pulse 1.8s ease-in-out infinite;
+}
