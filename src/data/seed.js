@@ -573,3 +573,33 @@ function hash(s) {
 
 // The person the demo opens on — our kin-keeper, James.
 export const DEFAULT_FOCUS = 'james';
+
+// Demo activity feed — represents the history of building this tree.
+// Timestamps are computed at import time so the demo always feels recent.
+const hAgo = (h) => new Date(Date.now() - h * 3600000).toISOString();
+const dAgo = (d) => new Date(Date.now() - d * 86400000).toISOString();
+
+export const seedActivity = [
+  { id: 'sa_001', type: 'memory_added', personId: 'arthur', personName: 'Arthur Davies', authorName: 'Auntie Joan',
+    detail: 'He had the loudest laugh in any room. You always knew when Dad had arrived.', created_at: hAgo(2) },
+  { id: 'sa_002', type: 'photo_added', personId: 'margaret', personName: 'Margaret Davies', authorName: 'You',
+    detail: null, created_at: hAgo(7) },
+  { id: 'sa_003', type: 'person_updated', personId: 'robert', personName: 'Robert Davies', authorName: 'You',
+    detail: 'biography', created_at: dAgo(1) },
+  { id: 'sa_004', type: 'memory_added', personId: 'margaret', personName: 'Margaret Davies', authorName: 'Rachel Davies',
+    detail: 'Gran always had a tin of shortbread on the kitchen windowsill. It was never empty, no matter when you turned up.', created_at: dAgo(2) },
+  { id: 'sa_005', type: 'portrait_updated', personId: 'florence', personName: 'Florence Davies', authorName: 'You',
+    detail: null, created_at: dAgo(4) },
+  { id: 'sa_006', type: 'person_added', personId: 'megan', personName: 'Megan Davies', authorName: 'You',
+    detail: null, created_at: dAgo(6) },
+  { id: 'sa_007', type: 'document_added', personId: 'arthur', personName: 'Arthur Davies', authorName: 'You',
+    detail: 'Military Service Record', created_at: dAgo(9) },
+  { id: 'sa_008', type: 'relationship_added', personId: 'robert', personName: 'Robert Davies', authorName: 'You',
+    detail: 'Linda Davies', created_at: dAgo(12) },
+  { id: 'sa_009', type: 'person_added', personId: 'linda', personName: 'Linda Davies', authorName: 'You',
+    detail: null, created_at: dAgo(13) },
+  { id: 'sa_010', type: 'memory_added', personId: 'william', personName: 'William Davies', authorName: 'You',
+    detail: 'Grandad kept a garden of prize leeks and never missed a chapel service. Three times county show winner.', created_at: dAgo(18) },
+  { id: 'sa_011', type: 'person_added', personId: 'william', personName: 'William Davies', authorName: 'You',
+    detail: null, created_at: dAgo(21) },
+];

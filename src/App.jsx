@@ -55,6 +55,7 @@ import LoginScreen from './components/LoginScreen.jsx';
 import FamilySettings from './components/FamilySettings.jsx';
 import MergeWizard from './components/MergeWizard.jsx';
 import InviteSheet from './components/InviteSheet.jsx';
+import ActivityFeed from './components/ActivityFeed.jsx';
 
 const isDemo = typeof window !== 'undefined' &&
   new URLSearchParams(window.location.search).has('demo');
@@ -189,6 +190,8 @@ export default function App() {
   const playRef = useRef(null);
   const [docViewer, setDocViewer] = useState(null); // { title, src, mime }
   const [invitePersonId, setInvitePersonId] = useState(null);
+  const [activityOpen, setActivityOpen] = useState(false);
+  const [lastReadAt, setLastReadAt] = useState(null); // null = never opened = all unread
   const viewApi = useRef(null);
 
   // Notify the user if a commit couldn't persist (localStorage full).
@@ -248,6 +251,14 @@ export default function App() {
       withBirthDate,
     };
   }, [graph, data.photos.length, data.memories.length]);
+
+  // Unread activity count — null lastReadAt means never opened, so all events are "new".
+  const unreadCount = useMemo(() => {
+    const acts = data.activity ?? [];
+    if (!acts.length) return 0;
+    if (lastReadAt === null) return acts.length;
+    return acts.filter((a) => new Date(a.created_at).getTime() > lastReadAt).length;
+  }, [data.activity, lastReadAt]);
 
   // Time slider: the range of known birth years across all people.
   const yearRange = useMemo(() => {
@@ -541,6 +552,8 @@ export default function App() {
         onToggleView={() => setView((v) => (v === 'bubbles' ? 'list' : 'bubbles'))}
         onOpenLegend={() => setLegendOpen(true)}
         onOpenSettings={() => setSettingsOpen(true)}
+        onOpenActivity={() => { setActivityOpen(true); setLastReadAt(Date.now()); }}
+        activityCount={unreadCount}
         user={user}
       />
 
@@ -828,7 +841,7 @@ export default function App() {
           src={crop.url}
           onCancel={closeCrop}
           onConfirm={(dataUrl) => {
-            setPhoto(crop.id, dataUrl); // instant visual feedback
+            setPhoto(crop.id, dataUrl, { recordActivity: true }); // instant visual feedback + activity
             closeCrop();
             generateThumb(dataUrl).then((thumb) => {
               if (thumb) updatePerson(crop.id, { photo_thumb: thumb });
@@ -855,6 +868,19 @@ export default function App() {
           if (mode === 'chart' && !focusMode) setFocusMode(true);
         }}
       />
+
+      {activityOpen && (
+        <ActivityFeed
+          activity={data.activity ?? []}
+          people={data.people}
+          onClose={() => setActivityOpen(false)}
+          onSelectPerson={(id) => {
+            setActivityOpen(false);
+            const person = graph.byId.get(id);
+            if (person) openPerson(id);
+          }}
+        />
+      )}
 
       {settingsOpen && (
         <FamilySettings

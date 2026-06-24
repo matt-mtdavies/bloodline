@@ -13,6 +13,7 @@ import {
   relationships as seedRels,
   memories as seedMemories,
   photos as seedPhotos,
+  seedActivity,
   FAMILY_NAME as SEED_FAMILY_NAME,
   DEFAULT_FOCUS,
 } from './seed.js';
@@ -25,6 +26,7 @@ const EMPTY = {
   memories: [],
   photos: [],
   documents: [],
+  activity: [],
   hasCompletedOnboarding: false,
   familyName: '',
   myPersonId: null,
@@ -52,6 +54,7 @@ let state = isDemoUrl
       memories: structuredClone(seedMemories),
       photos: structuredClone(seedPhotos),
       documents: [],
+      activity: structuredClone(seedActivity),
       hasCompletedOnboarding: true,
       familyName: SEED_FAMILY_NAME,
       myPersonId: DEFAULT_FOCUS,
@@ -74,6 +77,11 @@ if (state.familyName === 'The Davies Family') state.familyName = SEED_FAMILY_NAM
 if (!state.memories) state.memories = [];
 if (!state.photos) state.photos = [];
 if (!state.documents) state.documents = [];
+if (!state.activity) state.activity = [];
+// Back-fill demo activity for existing demo sessions that pre-date activity tracking.
+if (isDemoUrl && state.activity.length === 0) {
+  state.activity = structuredClone(seedActivity);
+}
 
 // Ensure every person has a conditions array.
 if (state.people) {
@@ -302,6 +310,13 @@ const mid = () => 'm_' + Math.random().toString(36).slice(2, 9);
 const phid = () => 'ph_' + Math.random().toString(36).slice(2, 9);
 const docid = () => 'doc_' + Math.random().toString(36).slice(2, 9);
 const cid = () => 'c_' + Math.random().toString(36).slice(2, 9);
+const acid = () => 'act_' + Math.random().toString(36).slice(2, 9);
+
+// Prepend an activity event to the next state object, capped at 100 entries.
+function withActivity(next, partial) {
+  const event = { id: acid(), authorName: 'You', detail: null, ...partial, created_at: new Date().toISOString() };
+  return { ...next, activity: [event, ...(next.activity ?? [])].slice(0, 100) };
+}
 
 // How each warm relationship label maps to stored edges + a gender default.
 export const RELATIONSHIPS = [
@@ -442,11 +457,11 @@ export function addRelative({ anchorId, relKey, name, gender, birth_date, is_dec
     extraEdges.push(parentEdge(pid, anchorId), parentEdge(pid, id));
   }
 
-  commit({
+  commit(withActivity({
     ...state,
     people: [...state.people, ...extraPeople, person],
     relationships: [...state.relationships, ...edges, ...extraEdges],
-  });
+  }, { type: 'person_added', personId: id, personName: name.trim() }));
   return id;
 }
 
@@ -475,7 +490,14 @@ export function addRelationship(fromId, toId, type, qualifier = 'biological') {
   else if (type === 'ex_partner') edge = partnerEdge(fromId, toId, 'former');
   else if (type === 'parent') edge = parentEdge(fromId, toId, qualifier);
   else return;
-  commit({ ...state, relationships: [...state.relationships, edge] });
+  const fromPerson = state.people.find((p) => p.id === fromId);
+  const toPerson = state.people.find((p) => p.id === toId);
+  commit(withActivity({ ...state, relationships: [...state.relationships, edge] }, {
+    type: 'relationship_added',
+    personId: fromId,
+    personName: fromPerson?.display_name ?? '',
+    detail: toPerson?.display_name ?? '',
+  }));
 }
 
 // Change the qualifier on a parent→child edge (biological / step / adoptive).
@@ -624,8 +646,14 @@ export function updatePerson(id, fields) {
   });
 }
 
-export function setPhoto(id, dataUrl) {
-  updatePerson(id, { photo: dataUrl });
+export function setPhoto(id, dataUrl, { recordActivity = false } = {}) {
+  const next = { ...state, people: state.people.map((p) => (p.id === id ? { ...p, photo: dataUrl } : p)) };
+  if (recordActivity) {
+    const person = state.people.find((p) => p.id === id);
+    commit(withActivity(next, { type: 'portrait_updated', personId: id, personName: person?.display_name ?? '' }));
+  } else {
+    commit(next);
+  }
 }
 
 // ── Memories ────────────────────────────────────────────────────────────────
@@ -639,7 +667,14 @@ export function addMemory(personId, { text, author }) {
     votes: 0,
     youVoted: false,
   };
-  commit({ ...state, memories: [...state.memories, memory] });
+  const person = state.people.find((p) => p.id === personId);
+  commit(withActivity({ ...state, memories: [...state.memories, memory] }, {
+    type: 'memory_added',
+    personId,
+    personName: person?.display_name ?? '',
+    authorName: memory.author,
+    detail: text.trim().slice(0, 140),
+  }));
   return memory.id;
 }
 
@@ -668,7 +703,12 @@ export function addPhoto(personId, { src, caption, date }) {
     caption: caption || '',
     date: date || '',
   };
-  commit({ ...state, photos: [...state.photos, photo] });
+  const person = state.people.find((p) => p.id === personId);
+  commit(withActivity({ ...state, photos: [...state.photos, photo] }, {
+    type: 'photo_added',
+    personId,
+    personName: person?.display_name ?? '',
+  }));
   return photo.id;
 }
 
@@ -730,7 +770,13 @@ export function addDocument(personId, { title, mime, src }) {
     src,
     created_at: new Date().toISOString().slice(0, 10),
   };
-  commit({ ...state, documents: [...state.documents, doc] });
+  const person = state.people.find((p) => p.id === personId);
+  commit(withActivity({ ...state, documents: [...state.documents, doc] }, {
+    type: 'document_added',
+    personId,
+    personName: person?.display_name ?? '',
+    detail: title.trim(),
+  }));
   return doc.id;
 }
 

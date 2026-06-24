@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, forwardRef } from 'react';
 import Logo from './Logo.jsx';
 
-export default function TopBar({ familyName, stats, view, syncStatus, onToggleView, onOpenLegend, onOpenSettings }) {
+export default function TopBar({ familyName, stats, view, syncStatus, onToggleView, onOpenLegend, onOpenSettings, onOpenActivity, activityCount = 0 }) {
   const [statsOpen, setStatsOpen] = useState(false);
   const popoverRef = useRef(null);
   const statsRef = useRef(null);
@@ -46,6 +46,18 @@ export default function TopBar({ familyName, stats, view, syncStatus, onToggleVi
           {syncStatus === 'error-auth' && (
             <span className="sync-status sync-status--error" aria-live="assertive">Session expired — please reload</span>
           )}
+          <button
+            className="pill pill--bell"
+            onClick={onOpenActivity}
+            aria-label={activityCount ? `Family activity — ${activityCount} new` : 'Family activity'}
+          >
+            <BellIcon />
+            {activityCount > 0 && (
+              <span className="activity-badge" aria-hidden="true">
+                {activityCount > 9 ? '9+' : activityCount}
+              </span>
+            )}
+          </button>
           <button className="pill" onClick={onOpenSettings} aria-label="Family settings">
             <SettingsIcon />
           </button>
@@ -195,6 +207,15 @@ function SavedCheckIcon() {
   return (
     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
       <path d="M5 13l4 4L19 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  );
+}
+
+function BellIcon() {
+  return (
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M13.73 21a2 2 0 0 1-3.46 0" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
