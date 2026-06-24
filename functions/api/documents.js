@@ -23,8 +23,10 @@ export async function onRequestPost({ request, env, data }) {
     return json({ error: 'No file in request' }, { status: 400 });
   }
 
-  if (file.size > 20 * 1024 * 1024) {
-    return json({ error: 'File too large (max 20 MB)' }, { status: 413 });
+  const isMedia = file.type.startsWith('audio/') || file.type.startsWith('video/');
+  const maxBytes = isMedia ? 200 * 1024 * 1024 : 20 * 1024 * 1024;
+  if (file.size > maxBytes) {
+    return json({ error: `File too large (max ${isMedia ? '200' : '20'} MB)` }, { status: 413 });
   }
 
   const rawName = file.name || 'file';

@@ -48,11 +48,14 @@ export default function PersonSheet({
   const fileRef = useRef(null);
   const galleryRef = useRef(null);
   const docRef = useRef(null);
+  const mediaRef = useRef(null);
   const storyAbort = useRef(null);
   const [storyState, setStoryState] = useState({ phase: 'idle', text: '', error: null });
   const [editingQualId, setEditingQualId] = useState(null);
   const [editingDocId, setEditingDocId] = useState(null);
   const [editingDocTitle, setEditingDocTitle] = useState('');
+  const [editingMediaId, setEditingMediaId] = useState(null);
+  const [editingMediaTitle, setEditingMediaTitle] = useState('');
 
   useEffect(() => {
     if (!person || lockEscape) return; // a stacked overlay owns Escape
@@ -152,7 +155,13 @@ export default function PersonSheet({
         .filter((m) => m.person_id === person.id)
         .sort((a, b) => b.votes - a.votes || (a.created_at < b.created_at ? 1 : -1));
   const personPhotos = restricted ? [] : photos.filter((p) => p.person_id === person.id);
-  const personDocs = restricted ? [] : documents.filter((d) => d.person_id === person.id);
+  const allPersonDocs = restricted ? [] : documents.filter((d) => d.person_id === person.id);
+  const personDocs = allPersonDocs.filter(
+    (d) => !d.mime?.startsWith('audio/') && !d.mime?.startsWith('video/'),
+  );
+  const personMedia = allPersonDocs.filter(
+    (d) => d.mime?.startsWith('audio/') || d.mime?.startsWith('video/'),
+  );
   const completeness = restricted ? null : profileCompleteness(person, graph, personMemories.length);
 
   const generateStory = async () => {
@@ -220,7 +229,22 @@ export default function PersonSheet({
     e.target.value = '';
     for (const file of files) {
       try {
-        if (file.size > 20 * 1024 * 1024) continue; // skip files > 20 MB
+        if (file.size > 20 * 1024 * 1024) continue;
+        const title = file.name.replace(/\.[^.]+$/, '');
+        const src = await uploadDoc(file);
+        onAddDocument?.(person.id, { title, mime: file.type, src });
+      } catch {
+        /* skip unreadable file */
+      }
+    }
+  };
+
+  const onMediaPick = async (e) => {
+    const files = [...(e.target.files || [])];
+    e.target.value = '';
+    for (const file of files) {
+      try {
+        if (file.size > 200 * 1024 * 1024) continue;
         const title = file.name.replace(/\.[^.]+$/, '');
         const src = await uploadDoc(file);
         onAddDocument?.(person.id, { title, mime: file.type, src });
@@ -550,6 +574,92 @@ export default function PersonSheet({
                 <button className="empty-add" onClick={() => docRef.current?.click()}>
                   <PlusIcon />
                   Add certificates, letters or records
+                </button>
+              )}
+            </section>
+
+            {/* Voice & Video */}
+            <section className="profile-section">
+              <div className="profile-section__head">
+                <h3 className="profile-section__title">
+                  Voice &amp; Video{personMedia.length > 0 ? ` · ${personMedia.length}` : ''}
+                </h3>
+                <button className="section-edit" onClick={() => mediaRef.current?.click()}>
+                  Add
+                </button>
+              </div>
+              <input
+                ref={mediaRef}
+                type="file"
+                accept="audio/*,video/*"
+                multiple
+                hidden
+                onChange={onMediaPick}
+              />
+              {personMedia.length > 0 ? (
+                <ul className="media-list">
+                  {personMedia.map((item) => (
+                    <li key={item.id} className="media-item">
+                      <div className="media-item__header">
+                        {editingMediaId === item.id ? (
+                          <input
+                            className="doc-row__title-input"
+                            value={editingMediaTitle}
+                            autoFocus
+                            onChange={(e) => setEditingMediaTitle(e.target.value)}
+                            onBlur={() => {
+                              const t = editingMediaTitle.trim();
+                              if (t && t !== item.title) onUpdateDocument?.(item.id, { title: t });
+                              setEditingMediaId(null);
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') e.currentTarget.blur();
+                              if (e.key === 'Escape') setEditingMediaId(null);
+                            }}
+                          />
+                        ) : (
+                          <button
+                            className="media-item__title"
+                            onClick={() => { setEditingMediaId(item.id); setEditingMediaTitle(item.title); }}
+                            title="Tap to rename"
+                          >
+                            {item.title}
+                          </button>
+                        )}
+                        <span className="media-item__meta">
+                          {item.mime?.startsWith('video/') ? 'Video' : 'Audio'}
+                          {item.created_at ? ` · ${fmtDocDate(item.created_at)}` : ''}
+                        </span>
+                      </div>
+                      {item.mime?.startsWith('video/') ? (
+                        <video
+                          className="media-item__player media-item__player--video"
+                          src={item.src}
+                          controls
+                          preload="metadata"
+                        />
+                      ) : (
+                        <audio
+                          className="media-item__player media-item__player--audio"
+                          src={item.src}
+                          controls
+                          preload="metadata"
+                        />
+                      )}
+                      <button
+                        className="media-item__del"
+                        onClick={() => onRemoveDocument?.(item.id)}
+                        aria-label={`Remove ${item.title}`}
+                      >
+                        <CloseIcon />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <button className="empty-add" onClick={() => mediaRef.current?.click()}>
+                  <PlusIcon />
+                  Add a voice message or video clip
                 </button>
               )}
             </section>
