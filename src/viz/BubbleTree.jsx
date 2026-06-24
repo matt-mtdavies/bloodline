@@ -18,7 +18,7 @@ const COLLIDE = 70;
 const GEN_GAP = 280; // shorter bands so wide screens use horizontal space too
 const ORGANIC_CHARGE = -1800; // stronger repulsion spreads generations sideways
 const SPREAD_X = 0.004; // weaker centring lets nodes fan out naturally
-const MAX_ZOOM = 1.5; // auto-fit (follow mode) never over-zooms a small family
+const MAX_ZOOM = 2.0; // auto-fit (follow mode) — higher cap so small focus families fill the screen
 const MIN_ZOOM = 0.32; // free zoom-out: take in a huge tree at a glance
 const MAX_ZOOM_FREE = 2.8; // free zoom-in: lean right into a single face
 const PAN_FRICTION = 0.92; // inertial glide decay (per 1/60 s)
@@ -388,6 +388,11 @@ export default function BubbleTree({
             n.fy = null;
           }
           state.pinnedId = null;
+        },
+        // Warm the sim and enter follow mode so a new visible set re-frames cleanly.
+        refocus(alpha = 0.5) {
+          sim.alpha(alpha);
+          state.enterFollow();
         },
       };
       api.current = state;

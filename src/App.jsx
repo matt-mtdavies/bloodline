@@ -273,18 +273,19 @@ export default function App() {
     return vis;
   }, [graph, expanded, aliveAtYear, focusFamilyIds]);
 
-  // Play animation: increment year every 80 ms until max, then stop.
+  // Play animation: life journey = 350 ms/step (cinematic), time mode = 200 ms/step.
   useEffect(() => {
     clearInterval(playRef.current);
     if (!timePlaying) return;
+    const interval = lifeJourneyId ? 350 : 200;
     playRef.current = setInterval(() => {
       setTimeYear((y) => {
         if (y >= yearRange.max) { setTimePlaying(false); return y; }
         return y + 1;
       });
-    }, 80);
+    }, interval);
     return () => clearInterval(playRef.current);
-  }, [timePlaying, yearRange.max]);
+  }, [timePlaying, yearRange.max, lifeJourneyId]);
 
   const activateNormal = useCallback((id) => {
     setActiveId(id);
@@ -308,6 +309,8 @@ export default function App() {
     setTimeYear(startYear);
     setTimePlaying(true);
     setOpenId(null);
+    // Re-enter follow mode and warm the sim so the focus family spreads to fill screen.
+    setTimeout(() => viewApi.current?.refocus(0.5), 60);
   }, [graph, yearRange.min]);
 
   const activate = useCallback(
@@ -544,7 +547,11 @@ export default function App() {
           {/* Focus Family mode */}
           <button
             className={`focus-btn${focusMode ? ' focus-btn--on' : ''}`}
-            onClick={() => setFocusMode((m) => !m)}
+            onClick={() => {
+              const next = !focusMode;
+              setFocusMode(next);
+              if (next) setTimeout(() => viewApi.current?.refocus(0.5), 60);
+            }}
             aria-pressed={focusMode}
             aria-label={focusMode ? 'Exit focus family view' : 'Focus on this family'}
           >
@@ -553,6 +560,21 @@ export default function App() {
           </button>
           {/* Time slider */}
           <div className={`time-bar${timeMode ? ' time-bar--on' : ''}`}>
+            {/* Life event card — rises above the toggle during life journey */}
+            {timeMode && lifeJourneyPerson && (() => {
+              const ev = lifeJourneyPerson.events?.find(
+                (e) => Math.abs(parseInt(e.year) - timeYear) <= 1,
+              );
+              return (
+                <div className={`life-event-card${ev ? ' life-event-card--visible' : ''}`}>
+                  <div className="life-event-card__meta">
+                    <span className="life-event-card__who">{lifeJourneyPerson.display_name.split(' ')[0]}</span>
+                    <span className="life-event-card__year">{timeYear}</span>
+                  </div>
+                  <p className="life-event-card__title">{ev?.title ?? '\u00a0'}</p>
+                </div>
+              );
+            })()}
             <button
               className={`time-toggle${timeMode ? ' time-toggle--on' : ''}`}
               onClick={() => {
@@ -607,16 +629,6 @@ export default function App() {
                 <span className="time-slider__label">{yearRange.max}</span>
               </div>
             )}
-            {timeMode && lifeJourneyPerson && (() => {
-              const ev = lifeJourneyPerson.events?.find(
-                (e) => Math.abs(parseInt(e.year) - timeYear) <= 1,
-              );
-              return (
-                <div className={`life-event-caption${ev ? ' life-event-caption--visible' : ''}`}>
-                  {ev?.title || ' '}
-                </div>
-              );
-            })()}
           </div>
           {!lineageMode && <IntroHint />}
         </>
