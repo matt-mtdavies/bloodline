@@ -5,7 +5,7 @@ import {
 
 const INVITE_ROLES = ['coadmin', 'editor', 'contributor', 'viewer'];
 
-export default function FamilySettings({ myRole, familyName, onUpdateFamilyName, onReset, onLogout, onClose }) {
+export default function FamilySettings({ myRole, familyName, onUpdateFamilyName, onReset, onLogout, onClose, onImportGedcom }) {
   const [tab, setTab] = useState('members'); // 'members' | 'invite'
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -216,6 +216,18 @@ export default function FamilySettings({ myRole, familyName, onUpdateFamilyName,
           </>
         )}
 
+        {/* Import */}
+        <div className="fs__section">
+          <label className="fs__label">Import data</label>
+          <button className="fs__import-btn" onClick={() => { onClose(); onImportGedcom?.(); }}>
+            <GedcomIcon />
+            Import GEDCOM file
+          </button>
+          <p className="fs__import-hint">
+            From Ancestry, FamilySearch, MyHeritage, 23andMe, and more.
+          </p>
+        </div>
+
         {/* Danger zone */}
         <div className="fs__danger">
           {onLogout && (
@@ -288,6 +300,16 @@ function CheckIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{display:'inline',verticalAlign:'middle',marginRight:4}}>
       <path d="M5 13l4 4L19 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  );
+}
+
+function GedcomIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/>
+      <polyline points="17 8 12 3 7 8" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/>
+      <line x1="12" y1="3" x2="12" y2="15" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/>
     </svg>
   );
 }

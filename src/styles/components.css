@@ -4163,3 +4163,351 @@
   max-width: 260px;
   margin: 0;
 }
+
+/* ── GEDCOM Import Wizard ──────────────────────────────────────────────────── */
+.gedcom-sheet {
+  max-height: 90dvh;
+  overflow-y: auto;
+}
+
+.gedcom__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 20px 16px;
+}
+
+.gedcom__title {
+  font-family: var(--display);
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--ink);
+  letter-spacing: -0.02em;
+  margin: 0;
+}
+
+/* Upload step */
+.gedcom__upload {
+  padding: 0 20px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.gedcom__intro {
+  font-size: 14px;
+  color: var(--ink-soft);
+  line-height: 1.55;
+  margin: 0;
+}
+
+.gedcom__dropzone {
+  border: 2px dashed var(--hairline);
+  border-radius: 14px;
+  padding: 40px 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  transition: border-color 0.18s ease, background 0.18s ease;
+  color: var(--ink-soft);
+  text-align: center;
+  -webkit-tap-highlight-color: transparent;
+}
+.gedcom__dropzone:hover,
+.gedcom__dropzone--over {
+  border-color: var(--accent);
+  background: rgba(194, 96, 58, 0.04);
+  color: var(--accent);
+}
+
+.gedcom__dropzone-label {
+  font-size: 15px;
+  font-weight: 500;
+  margin-top: 4px;
+}
+.gedcom__dropzone-sub {
+  font-size: 13px;
+  opacity: 0.7;
+}
+
+.gedcom__file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.gedcom__error {
+  font-size: 13px;
+  color: #c2603a;
+  background: #fdf1ed;
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin: 0;
+}
+
+.gedcom__sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.gedcom__source-chip {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--ink-soft);
+  background: var(--paper-deep);
+  border-radius: 20px;
+  padding: 3px 10px;
+}
+
+/* Preview step */
+.gedcom__preview {
+  padding: 0 20px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.gedcom__stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+
+.gedcom__stat {
+  background: var(--paper-deep);
+  border-radius: 12px;
+  padding: 12px 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.gedcom__stat-num {
+  font-size: 22px;
+  font-weight: 700;
+  font-family: var(--display);
+  color: var(--accent);
+  letter-spacing: -0.03em;
+  line-height: 1;
+}
+
+.gedcom__stat-label {
+  font-size: 10.5px;
+  color: var(--ink-soft);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  text-align: center;
+}
+
+.gedcom__names {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.gedcom__name-chip {
+  font-size: 12.5px;
+  color: var(--ink);
+  background: var(--paper-deep);
+  border-radius: 20px;
+  padding: 4px 12px;
+}
+
+.gedcom__name-chip--more {
+  color: var(--ink-soft);
+}
+
+.gedcom__bio-note {
+  font-size: 13px;
+  color: var(--ink-soft);
+  margin: 0;
+  background: var(--paper-deep);
+  border-radius: 10px;
+  padding: 10px 14px;
+}
+
+/* Merge options */
+.gedcom__merge-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.gedcom__merge-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  margin: 0;
+}
+
+.gedcom__merge-opts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.gedcom__merge-opt {
+  background: var(--paper-deep);
+  border: 2px solid transparent;
+  border-radius: 12px;
+  padding: 12px 14px;
+  cursor: pointer;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  transition: border-color 0.15s ease, background 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.gedcom__merge-opt--on {
+  border-color: var(--accent);
+  background: rgba(194, 96, 58, 0.05);
+}
+
+.gedcom__merge-opt-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.gedcom__merge-opt-desc {
+  font-size: 12px;
+  color: var(--ink-soft);
+  line-height: 1.45;
+}
+
+.gedcom__preview-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.gedcom__back-btn {
+  font-size: 14px;
+  color: var(--ink-soft);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 12px 0;
+  flex-shrink: 0;
+}
+
+.gedcom__import-btn {
+  flex: 1;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 50px;
+  padding: 14px 24px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+  text-align: center;
+}
+.gedcom__import-btn:hover { opacity: 0.88; }
+.gedcom__import-btn:active { opacity: 0.78; }
+
+/* Importing spinner */
+.gedcom__importing {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 24px;
+  gap: 18px;
+}
+
+.gedcom__spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid var(--hairline);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: gedcom-spin 0.75s linear infinite;
+}
+
+@keyframes gedcom-spin {
+  to { transform: rotate(360deg); }
+}
+
+.gedcom__importing-label {
+  font-size: 14px;
+  color: var(--ink-soft);
+  margin: 0;
+}
+
+/* Done step */
+.gedcom__done {
+  padding: 32px 24px 40px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  text-align: center;
+}
+
+.gedcom__done-icon {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: #edf7f1;
+  color: #3a8a5a;
+  display: grid;
+  place-items: center;
+  margin-bottom: 4px;
+}
+
+.gedcom__done-title {
+  font-family: var(--display);
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--ink);
+  letter-spacing: -0.02em;
+  margin: 0;
+}
+
+.gedcom__done-sub {
+  font-size: 14px;
+  color: var(--ink-soft);
+  line-height: 1.6;
+  max-width: 320px;
+  margin: 0 0 8px;
+}
+
+/* FamilySettings — import button */
+.fs__import-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 12px 16px;
+  background: var(--paper-deep);
+  border: 1.5px solid var(--hairline);
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink);
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+  text-align: left;
+  -webkit-tap-highlight-color: transparent;
+}
+.fs__import-btn:hover {
+  background: rgba(194, 96, 58, 0.06);
+  border-color: rgba(194, 96, 58, 0.3);
+}
+
+.fs__import-hint {
+  font-size: 12px;
+  color: var(--ink-faint);
+  margin: 4px 0 0;
+}

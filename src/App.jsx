@@ -30,6 +30,7 @@ import {
   enableServerSync,
   updateFamilyName,
   resetTree,
+  importFromGedcom,
   migratePhotosToR2,
   migrateDocsToR2,
 } from './data/store.js';
@@ -56,6 +57,7 @@ import FamilySettings from './components/FamilySettings.jsx';
 import MergeWizard from './components/MergeWizard.jsx';
 import InviteSheet from './components/InviteSheet.jsx';
 import ActivityFeed from './components/ActivityFeed.jsx';
+import GedcomImport from './components/GedcomImport.jsx';
 
 const isDemo = typeof window !== 'undefined' &&
   new URLSearchParams(window.location.search).has('demo');
@@ -192,6 +194,7 @@ export default function App() {
   const [invitePersonId, setInvitePersonId] = useState(null);
   const [activityOpen, setActivityOpen] = useState(false);
   const [lastReadAt, setLastReadAt] = useState(null); // null = never opened = all unread
+  const [gedcomOpen, setGedcomOpen] = useState(false);
   const viewApi = useRef(null);
 
   // Notify the user if a commit couldn't persist (localStorage full).
@@ -916,6 +919,23 @@ export default function App() {
             window.location.reload();
           } : null}
           onClose={() => setSettingsOpen(false)}
+          onImportGedcom={() => setGedcomOpen(true)}
+        />
+      )}
+
+      {gedcomOpen && (
+        <GedcomImport
+          onImport={(people, relationships, opts) => {
+            importFromGedcom(people, relationships, opts);
+          }}
+          onClose={(firstPersonId) => {
+            // After the wizard's "done" screen, navigate to the first imported person.
+            if (firstPersonId) {
+              setActiveId(firstPersonId);
+              setExpanded(new Set([firstPersonId]));
+            }
+            setGedcomOpen(false);
+          }}
         />
       )}
     </div>

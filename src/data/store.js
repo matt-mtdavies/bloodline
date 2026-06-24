@@ -820,6 +820,28 @@ export function resetTree() {
   commit({ ...EMPTY });
 }
 
+// Replace or merge the tree with people + relationships from a GEDCOM import.
+// merge=false: wipes everything and starts fresh with the imported data.
+// merge=true: appends to the existing tree (duplicates possible).
+export function importFromGedcom(newPeople, newRelationships, { merge = false } = {}) {
+  const next = merge
+    ? {
+        ...state,
+        people: [...state.people, ...newPeople],
+        relationships: [...state.relationships, ...newRelationships],
+      }
+    : {
+        ...EMPTY,
+        people: newPeople,
+        relationships: newRelationships,
+        hasCompletedOnboarding: true,
+        familyName: state.familyName || 'My Family',
+        myPersonId: newPeople[0]?.id ?? null,
+        activity: state.activity ?? [],
+      };
+  commit(next);
+}
+
 // ── Health conditions ──────────────────────────────────────────────────────────
 export function addCondition(personId, { name, category, status = 'active', onset_year = null }) {
   commit({
