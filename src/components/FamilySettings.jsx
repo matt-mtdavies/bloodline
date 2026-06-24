@@ -5,7 +5,7 @@ import {
 
 const INVITE_ROLES = ['coadmin', 'editor', 'contributor', 'viewer'];
 
-export default function FamilySettings({ myRole, familyName, onUpdateFamilyName, onReset, onLogout, onClose, onImportGedcom }) {
+export default function FamilySettings({ myRole, familyName, onUpdateFamilyName, onReset, onLogout, onClose, onImportGedcom, onImportFamilySearch }) {
   const [tab, setTab] = useState('members'); // 'members' | 'invite'
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -219,12 +219,16 @@ export default function FamilySettings({ myRole, familyName, onUpdateFamilyName,
         {/* Import */}
         <div className="fs__section">
           <label className="fs__label">Import data</label>
-          <button className="fs__import-btn" onClick={() => { onClose(); onImportGedcom?.(); }}>
+          <button className="fs__fs-btn" onClick={() => { onClose(); onImportFamilySearch?.(); }}>
+            <LeafIcon />
+            Import from FamilySearch
+          </button>
+          <button className="fs__import-btn" style={{ marginTop: 8 }} onClick={() => { onClose(); onImportGedcom?.(); }}>
             <GedcomIcon />
             Import GEDCOM file
           </button>
           <p className="fs__import-hint">
-            From Ancestry, FamilySearch, MyHeritage, 23andMe, and more.
+            From Ancestry, MyHeritage, 23andMe, MacFamilyTree, and more.
           </p>
         </div>
 
@@ -310,6 +314,17 @@ function GedcomIcon() {
       <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/>
       <polyline points="17 8 12 3 7 8" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/>
       <line x1="12" y1="3" x2="12" y2="15" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/>
+    </svg>
+  );
+}
+
+function LeafIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M12 22C12 22 3 16.5 3 9a9 9 0 0 1 18 0c0 7.5-9 13-9 13z" fill="#3e7d2d" stroke="none"/>
+      <path d="M12 22V9" stroke="white" strokeWidth="1.5" strokeLinecap="round"/>
+      <path d="M12 14c0 0-2.5-1.5-3.5-4.5" stroke="white" strokeWidth="1.3" strokeLinecap="round"/>
+      <path d="M12 11c0 0 2-1 3-3.5" stroke="white" strokeWidth="1.3" strokeLinecap="round"/>
     </svg>
   );
 }

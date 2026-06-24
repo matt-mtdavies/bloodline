@@ -3,12 +3,16 @@ name = "bloodline"
 compatibility_date = "2024-11-01"
 pages_build_output_dir = "dist"
 
-# Non-secret vars. Secrets (BREVO_API_KEY, ANTHROPIC_API_KEY, SESSION_SECRET)
-# go in .dev.vars locally and `wrangler pages secret put` (or the Pages
-# dashboard → Settings → Variables) in production.
+# Non-secret vars. Secrets (BREVO_API_KEY, ANTHROPIC_API_KEY, SESSION_SECRET,
+# FAMILYSEARCH_CLIENT_ID) go in .dev.vars locally and
+# `wrangler pages secret put` (or Pages dashboard → Settings → Variables) in prod.
 [vars]
 APP_URL = "https://myfamilybloodline.com"  # override locally in .dev.vars
 FROM_EMAIL = "hello@myfamilybloodline.com"
+# FAMILYSEARCH_CLIENT_ID is a secret — set via wrangler pages secret put FAMILYSEARCH_CLIENT_ID
+# Register your app at https://developer.familysearch.org and add this redirect URI:
+#   https://myfamilybloodline.com/fs-callback.html
+# Also set VITE_FAMILYSEARCH_CLIENT_ID in Pages → Settings → Environment variables (build-time).
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Cloudflare D1 — already created and migrated (Western Europe).

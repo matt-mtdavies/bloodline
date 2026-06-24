@@ -58,6 +58,7 @@ import MergeWizard from './components/MergeWizard.jsx';
 import InviteSheet from './components/InviteSheet.jsx';
 import ActivityFeed from './components/ActivityFeed.jsx';
 import GedcomImport from './components/GedcomImport.jsx';
+import FamilySearchImport from './components/FamilySearchImport.jsx';
 
 const isDemo = typeof window !== 'undefined' &&
   new URLSearchParams(window.location.search).has('demo');
@@ -195,6 +196,7 @@ export default function App() {
   const [activityOpen, setActivityOpen] = useState(false);
   const [lastReadAt, setLastReadAt] = useState(null); // null = never opened = all unread
   const [gedcomOpen, setGedcomOpen] = useState(false);
+  const [fsImportOpen, setFsImportOpen] = useState(false);
   const viewApi = useRef(null);
 
   // Notify the user if a commit couldn't persist (localStorage full).
@@ -920,6 +922,22 @@ export default function App() {
           } : null}
           onClose={() => setSettingsOpen(false)}
           onImportGedcom={() => setGedcomOpen(true)}
+          onImportFamilySearch={() => setFsImportOpen(true)}
+        />
+      )}
+
+      {fsImportOpen && (
+        <FamilySearchImport
+          onImport={(people, relationships, opts) => {
+            importFromGedcom(people, relationships, opts);
+          }}
+          onClose={(firstPersonId) => {
+            if (firstPersonId) {
+              setActiveId(firstPersonId);
+              setExpanded(new Set([firstPersonId]));
+            }
+            setFsImportOpen(false);
+          }}
         />
       )}
 
