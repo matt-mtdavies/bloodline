@@ -200,23 +200,35 @@ export default function App() {
     [data.people],
   );
 
-  // Family stats for the header: people, generation depth, photos, memories.
+  // Family stats for the header: people count, top surnames, year span, photos, memories.
   const familyStats = useMemo(() => {
-    const visited = new Map();
-    const compute = (id, guard) => {
-      if (visited.has(id)) return visited.get(id);
-      if (guard.has(id)) return 0;
-      guard.add(id);
-      const parents = graph.parents(id);
-      let g = 0;
-      for (const p of parents) g = Math.max(g, compute(p.id, guard) + 1);
-      guard.delete(id);
-      visited.set(id, g);
-      return g;
+    // Surname frequency — last token of each display_name.
+    const freq = new Map();
+    let yearMin = Infinity, yearMax = -Infinity;
+    for (const p of graph.people) {
+      const surname = p.display_name?.trim().split(/\s+/).slice(-1)[0];
+      if (surname) freq.set(surname, (freq.get(surname) ?? 0) + 1);
+      const by = p.birth_date ? parseInt(p.birth_date) : null;
+      if (by && by > 1000) {
+        if (by < yearMin) yearMin = by;
+        if (by > yearMax) yearMax = by;
+      }
+    }
+    // Sort surnames by frequency; show top 2 explicitly + remainder count.
+    const sorted = [...freq.entries()].sort((a, b) => b[1] - a[1]).map(([s]) => s);
+    const topTwo = sorted.slice(0, 2);
+    const extraCount = Math.max(0, sorted.length - 2);
+    const surnames = topTwo.join(', ') + (extraCount > 0 ? ` +${extraCount}` : '');
+    const yearSpan = isFinite(yearMin)
+      ? yearMin === yearMax ? `${yearMin}` : `${yearMin}–${yearMax}`
+      : null;
+    return {
+      people: graph.people.length,
+      surnames,
+      yearSpan,
+      photos: data.photos.length,
+      memories: data.memories.length,
     };
-    for (const p of graph.people) compute(p.id, new Set());
-    const generations = visited.size > 0 ? Math.max(...visited.values()) + 1 : 1;
-    return { people: graph.people.length, generations, photos: data.photos.length, memories: data.memories.length };
   }, [graph, data.photos.length, data.memories.length]);
 
   // Time slider: the range of known birth years across all people.

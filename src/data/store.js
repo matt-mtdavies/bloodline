@@ -67,6 +67,9 @@ if (state.people?.length > 0 && state.hasCompletedOnboarding === undefined) {
   if (!state.myPersonId) state.myPersonId = DEFAULT_FOCUS;
 }
 
+// Retire the old single-family seed name — the tree spans many families.
+if (state.familyName === 'The Davies Family') state.familyName = SEED_FAMILY_NAME;
+
 // Ensure all collection fields exist.
 if (!state.memories) state.memories = [];
 if (!state.photos) state.photos = [];

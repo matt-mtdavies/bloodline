@@ -18,7 +18,7 @@
 // same path is proxied to randomuser.me (see vite.config.js).
 const face = (g, n) => `/faces/${g}/${n}.jpg`;
 
-export const FAMILY_NAME = 'The Davies Family';
+export const FAMILY_NAME = 'My Family';
 
 export const people = [
   // ── Generation 0 — great-grandparents (memorial) ───────────────────────────

@@ -40,7 +40,8 @@ export default function TopBar({ familyName, stats, view, syncStatus, onToggleVi
           {stats && stats.people > 0 && (
             <span className="topbar__stats">
               {stats.people} {stats.people === 1 ? 'person' : 'people'}
-              {stats.generations > 1 && <> · {stats.generations} generations</>}
+              {stats.surnames && <> · {stats.surnames}</>}
+              {stats.yearSpan && <> · {stats.yearSpan}</>}
               {stats.photos > 0 && <> · {stats.photos} {stats.photos === 1 ? 'photo' : 'photos'}</>}
               {stats.memories > 0 && <> · {stats.memories} {stats.memories === 1 ? 'memory' : 'memories'}</>}
             </span>
