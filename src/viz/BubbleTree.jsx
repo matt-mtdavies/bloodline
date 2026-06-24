@@ -143,6 +143,23 @@ export default function BubbleTree({
         .alphaTarget(reducedMotion ? 0 : 0.012)
         .stop();
 
+      // Partner Y-alignment: pull each partner pair toward the same Y so they
+      // read as a horizontal couple in organic/weighted/hybrid modes. Chart mode
+      // uses fixed positions; radial has its own orbit targets — skip both.
+      sim.force('partnerY', (alpha) => {
+        const mode = layoutRef.current;
+        if (mode === 'chart' || mode === 'radial') return;
+        for (const r of graphRef.current.relationships) {
+          if (r.type !== 'partner') continue;
+          const na = nodeById.get(r.from_person);
+          const nb = nodeById.get(r.to_person);
+          if (!na || !nb) continue;
+          const dy = nb.y - na.y;
+          na.vy += dy * 0.20 * alpha;
+          nb.vy -= dy * 0.20 * alpha;
+        }
+      });
+
       // Warm the layout so the tree opens already settled, not reorganising.
       for (let i = 0; i < 220; i++) sim.tick();
       sim.alpha(0.35); // a little life left to breathe into

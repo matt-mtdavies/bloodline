@@ -24,6 +24,11 @@ export function drawLinks(g, graph, pos, isVisible, baseRadius, mergeParents = f
   const edgeAlpha = lineagePath ? (a, b) => (onPath(a, b) ? 1 : 0.12) : () => 1;
 
   // ── Couple membranes (drawn first, furthest back) ─────────────────────────
+  // Each union is a closed capsule — fill + a complete border that wraps all
+  // the way around each bubble at the ends, not just along the two long edges.
+  // Fill colour distinguishes current (warm peach), former (muted greige), and
+  // widowed (lavender). Border style distinguishes further: solid accent ring
+  // for current/widowed, dashed muted ring for former (dissolved bond).
   const seen = new Set();
   for (const r of graph.relationships) {
     if (r.type !== 'partner') continue;
@@ -37,42 +42,24 @@ export function drawLinks(g, graph, pos, isVisible, baseRadius, mergeParents = f
 
     const alpha = edgeAlpha(r.from_person, r.to_person);
     const status = r.partner_status;
-    const width = baseRadius * 2.2;
+    const hw = baseRadius * 1.1; // half-width = radius of the end caps
 
-    // All unions share the same warm filled band — the fill never changes.
-    // Status is communicated solely by the border style around that band.
-    const fill = status === 'widowed' ? '#ece7f2' : '#f6e6dc';
-    const borderColor = status === 'widowed' ? '#7a6a9e' : '#8a5e3c';
+    const fillColor   = status === 'widowed' ? '#ece7f2'
+                      : status === 'former'  ? '#e8e3de'
+                      :                        '#f6e6dc';
+    const borderColor = status === 'widowed' ? '#7a6a9e'
+                      : status === 'former'  ? '#a89280'
+                      :                        '#c2603a';
 
-    g.moveTo(a.x, a.y).lineTo(b.x, b.y).stroke({
-      width,
-      color: hex(fill),
-      alpha: alpha * 0.52,
-      cap: 'round',
-    });
+    // Fill — semi-transparent capsule behind the pair.
+    capsulePath(g, a, b, hw).fill({ color: hex(fillColor), alpha: alpha * 0.52 });
 
-    // Thin border lines traced along both edges of the band.
-    // Perpendicular offset so the lines sit right at the pill boundary.
-    const dx = b.x - a.x;
-    const dy = b.y - a.y;
-    const len = Math.sqrt(dx * dx + dy * dy) || 1;
-    const offX = (-dy / len) * (width / 2 - 0.5);
-    const offY = ( dx / len) * (width / 2 - 0.5);
-    const e1 = [{ x: a.x + offX, y: a.y + offY }, { x: b.x + offX, y: b.y + offY }];
-    const e2 = [{ x: a.x - offX, y: a.y - offY }, { x: b.x - offX, y: b.y - offY }];
+    // Border — wraps fully around each bubble (complete capsule outline).
     const bAlpha = alpha * 0.82;
-
     if (status === 'former') {
-      // Dashed border — same warm band, but the broken edge signals a past union.
-      // No separate connecting line needed; the band itself carries the relationship.
-      for (const [p, q] of [e1, e2]) {
-        dashedSegment(g, p, q, 12, 0.5, { width: 2.5, color: hex(borderColor), alpha: bAlpha, cap: 'round' });
-      }
+      dashedCapsuleBorder(g, a, b, hw, { width: 2.5, color: hex(borderColor), alpha: bAlpha, cap: 'round' });
     } else {
-      // Solid border for current and widowed.
-      for (const [p, q] of [e1, e2]) {
-        g.moveTo(p.x, p.y).lineTo(q.x, q.y).stroke({ width: 2.5, color: hex(borderColor), alpha: bAlpha, cap: 'round' });
-      }
+      capsulePath(g, a, b, hw).stroke({ width: 2.5, color: hex(borderColor), alpha: bAlpha, cap: 'round' });
     }
   }
 
@@ -366,6 +353,72 @@ export function drawLinksChart(g, graph, pos, isVisible, baseRadius, lineagePath
       }
     }
   }
+}
+
+// Closed capsule (stadium) path from a to b with half-width hw.
+// Traces: one long edge → front arc around b → other long edge → back arc around a.
+// Returns g for chaining .fill() or .stroke().
+function capsulePath(g, a, b, hw) {
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const len = Math.sqrt(dx * dx + dy * dy) || 1;
+  const ox = (-dy / len) * hw, oy = (dx / len) * hw;
+  const theta = Math.atan2(dy, dx);
+  const PI = Math.PI;
+  return g
+    .moveTo(a.x + ox, a.y + oy)
+    .lineTo(b.x + ox, b.y + oy)
+    .arc(b.x, b.y, hw, theta + PI / 2, theta - PI / 2, true)
+    .lineTo(a.x - ox, a.y - oy)
+    .arc(a.x, a.y, hw, theta - PI / 2, theta + PI / 2, true)
+    .closePath();
+}
+
+// Dashed outline around a capsule, tracing the full perimeter continuously.
+// Used for former-partner bonds — the broken border signals a dissolved union
+// while the filled shape preserves the visual co-parent relationship.
+function dashedCapsuleBorder(g, a, b, hw, style) {
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const len = Math.sqrt(dx * dx + dy * dy) || 1;
+  const ux = dx / len, uy = dy / len;
+  const ox = -uy * hw, oy = ux * hw;
+  const theta = Math.atan2(dy, dx);
+  const PI = Math.PI;
+  const semiPerim = PI * hw;
+  const total = 2 * len + 2 * semiPerim;
+  const nDashes = Math.max(8, Math.round(total / 24));
+  const dashLen = (total / nDashes) * 0.42;
+
+  // Point on the capsule perimeter at arc-length s (starts at a's "top" side).
+  const pt = (s) => {
+    s = ((s % total) + total) % total;
+    if (s < len) {
+      return { x: a.x + ox + ux * s, y: a.y + oy + uy * s };
+    }
+    s -= len;
+    if (s < semiPerim) {
+      const angle = theta + PI / 2 - s / hw;
+      return { x: b.x + hw * Math.cos(angle), y: b.y + hw * Math.sin(angle) };
+    }
+    s -= semiPerim;
+    if (s < len) {
+      return { x: b.x - ox - ux * s, y: b.y - oy - uy * s };
+    }
+    s -= len;
+    const angle = theta - PI / 2 - s / hw;
+    return { x: a.x + hw * Math.cos(angle), y: a.y + hw * Math.sin(angle) };
+  };
+
+  // Polyline approximation per dash — 4 sub-steps keeps arcs smooth.
+  for (let i = 0; i < nDashes; i++) {
+    const s0 = (i / nDashes) * total;
+    const p0 = pt(s0);
+    g.moveTo(p0.x, p0.y);
+    for (let j = 1; j <= 4; j++) {
+      const p = pt(s0 + (j / 4) * dashLen);
+      g.lineTo(p.x, p.y);
+    }
+  }
+  g.stroke(style);
 }
 
 // A gentle quadratic curve between two points (a slight sag, like a hanging cord).
