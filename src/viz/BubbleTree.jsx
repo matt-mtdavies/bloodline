@@ -16,6 +16,8 @@ import { Spring } from '../lib/spring.js';
 const BASE_RADIUS = 46;
 const COLLIDE = 70;
 const GEN_GAP = 280; // shorter bands so wide screens use horizontal space too
+const CHART_COL_GAP = 170; // wider column spacing for the scoped chart layout
+const CHART_GEN_GAP = 320; // taller row spacing so generation bands breathe
 const ORGANIC_CHARGE = -1800; // stronger repulsion spreads generations sideways
 const SPREAD_X = 0.004; // weaker centring lets nodes fan out naturally
 const MAX_ZOOM = 2.0; // auto-fit (follow mode) — higher cap so small focus families fill the screen
@@ -287,7 +289,9 @@ export default function BubbleTree({
           sim.alpha(0.7);
         },
         applyChartLayout() {
-          const chartPos = computeChartLayout(graphRef.current, gen, visibleRef.current);
+          const chartVis = computeChartVisible(graphRef.current, activeRef.current, gen);
+          state._chartVisible = chartVis;
+          const chartPos = computeChartLayout(graphRef.current, gen, chartVis);
           for (const n of nodes) {
             const p = chartPos.get(n.id);
             if (p) {
@@ -717,6 +721,12 @@ export default function BubbleTree({
         }
         sim.tick();
         const vis = visibleRef.current;
+        // In chart mode we render a scoped subset (±2 generations around the focal
+        // person) rather than the full visible set, so 76 people don't collapse to
+        // unreadably small bubbles. effectiveVis drives all rendering and camera framing.
+        const effectiveVis = layoutRef.current === 'chart' && state._chartVisible
+          ? state._chartVisible
+          : vis;
 
         const W = app.screen.width;
         const H = app.screen.height;
@@ -734,7 +744,7 @@ export default function BubbleTree({
           // of people then spread out and use the screen instead of huddling.
           const rr = BASE_RADIUS * 1.5;
           let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-          for (const id of vis) {
+          for (const id of effectiveVis) {
             const n = nodeById.get(id);
             if (!n) continue;
             if (n.x - rr < minX) minX = n.x - rr;
@@ -832,7 +842,7 @@ export default function BubbleTree({
           b.root.position.set(n.x, n.y);
           const d = dmap.has(id) ? dmap.get(id) : 6;
           let target;
-          if (!vis.has(id)) {
+          if (!effectiveVis.has(id)) {
             target = { scale: 0.5, alpha: 0, lift: 1, blur: 0 }; // collapsed
           } else if (lineage && !lineage.has(id)) {
             target = { ...visualForDistance(d), alpha: 0.12, blur: 1.5 }; // off-path — recede
@@ -849,17 +859,17 @@ export default function BubbleTree({
             target = { ...base, alpha: focusAlpha };
           }
           // Name labels: all visible bubbles, hidden when card open or lineage active
-          const labelAlpha = (!cardOpen && !lineage && vis.has(id)) ? 1 : 0;
+          const labelAlpha = (!cardOpen && !lineage && effectiveVis.has(id)) ? 1 : 0;
           b.setVisualState({ ...target, labelAlpha }, dt);
           b.setActive(id === activeRef.current);
           b.setInvited(!!(invitedRef.current?.has(id)));
           b.setChartBadge(layoutRef.current === 'chart');
           // Depth hints: show on visible bubbles that have family beyond the current reveal.
-          if (vis.has(id)) {
+          if (effectiveVis.has(id)) {
             const gg = graphRef.current;
             b.setDepthHint(
-              gg.parents(id).some((x) => !vis.has(x.id)),
-              gg.children(id).some((x) => !vis.has(x.id)),
+              gg.parents(id).some((x) => !effectiveVis.has(x.id)),
+              gg.children(id).some((x) => !effectiveVis.has(x.id)),
             );
           } else {
             b.setDepthHint(false, false);
@@ -871,7 +881,7 @@ export default function BubbleTree({
         genBandsGfx.clear();
         if (layoutRef.current === 'chart') {
           const byGen = new Map();
-          for (const id of vis) {
+          for (const id of effectiveVis) {
             const n = nodeById.get(id);
             if (!n) continue;
             const g = gen.get(id) ?? 0;
@@ -880,7 +890,7 @@ export default function BubbleTree({
             if (n.x - BASE_RADIUS < row.minX) row.minX = n.x - BASE_RADIUS;
             if (n.x + BASE_RADIUS > row.maxX) row.maxX = n.x + BASE_RADIUS;
           }
-          const PAD_X = 56, BAND_H = GEN_GAP * 0.72;
+          const PAD_X = 56, BAND_H = CHART_GEN_GAP * 0.72;
           const bandColors = [0xfaf7f4, 0xf5f0eb];
           for (const [gi, row] of byGen) {
             if (!isFinite(row.minX)) continue;
@@ -895,7 +905,7 @@ export default function BubbleTree({
         linkGfx.alpha = cardOpen ? 0.18 : 1;
         genBandsGfx.alpha = cardOpen ? 0.1 : 1;
         if (layoutRef.current === 'chart') {
-          drawLinksChart(linkGfx, graphRef.current, pos, (id) => vis.has(id), BASE_RADIUS, lineage);
+          drawLinksChart(linkGfx, graphRef.current, pos, (id) => effectiveVis.has(id), BASE_RADIUS, lineage);
         } else {
           drawLinks(linkGfx, graphRef.current, pos, (id) => vis.has(id), BASE_RADIUS, mergeRef.current, lineage);
         }
@@ -990,14 +1000,30 @@ function clamp(v, lo, hi) {
 }
 
 /*
+ * Chart scope: which people to show in the traditional chart layout.
+ * Limits to ±2 generations from the focal person AND within 3 hops so
+ * a 76-person tree stays readable (grandparents → grandchildren, immediate
+ * aunts/uncles, nieces/nephews) without cousins or distant kin cluttering it.
+ */
+function computeChartVisible(graph, activeId, gen) {
+  const dist = distancesFrom(graph, activeId);
+  const focalGen = gen.get(activeId) ?? 0;
+  const visible = new Set([activeId]);
+  for (const p of graph.people) {
+    const g = gen.get(p.id) ?? 0;
+    const d = dist.get(p.id) ?? 999;
+    if (Math.abs(g - focalGen) <= 2 && d <= 3) visible.add(p.id);
+  }
+  return visible;
+}
+
+/*
  * Traditional hierarchical family chart layout. Returns a Map of id → {x, y}
  * with all visible people placed in generation rows, couples kept adjacent,
  * and children sorted under their parents by barycenter heuristic. Positions
  * are set as d3 fx/fy constraints so physics doesn't move them.
  */
 function computeChartLayout(graph, gen, visible) {
-  const COL_GAP = 148; // world units between adjacent bubbles
-
   // Group visible people by generation row.
   const byGen = new Map();
   for (const id of visible) {
@@ -1055,8 +1081,8 @@ function computeChartLayout(graph, gen, visible) {
     const n = ordered.length;
     for (let i = 0; i < n; i++) {
       posMap.set(ordered[i], {
-        x: (i - (n - 1) / 2) * COL_GAP,
-        y: g * GEN_GAP - 260,
+        x: (i - (n - 1) / 2) * CHART_COL_GAP,
+        y: g * CHART_GEN_GAP - 260,
       });
     }
   }
