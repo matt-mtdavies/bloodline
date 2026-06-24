@@ -560,7 +560,7 @@ export default function App() {
           </button>
           {/* Time slider */}
           <div className={`time-bar${timeMode ? ' time-bar--on' : ''}`}>
-            {/* Life event card — rises above the toggle during life journey */}
+            {/* Life event card — floats above the slider during life journey */}
             {timeMode && lifeJourneyPerson && (() => {
               const ev = lifeJourneyPerson.events?.find(
                 (e) => Math.abs(parseInt(e.year) - timeYear) <= 1,
@@ -575,25 +575,7 @@ export default function App() {
                 </div>
               );
             })()}
-            <button
-              className={`time-toggle${timeMode ? ' time-toggle--on' : ''}`}
-              onClick={() => {
-                if (!timeMode) { setTimeYear(new Date().getFullYear()); setTimePlaying(false); }
-                else { setTimePlaying(false); setLifeJourneyId(null); }
-                setTimeMode((m) => !m);
-              }}
-              aria-pressed={timeMode}
-              aria-label={timeMode ? `Time view: ${timeYear}` : 'View family over time'}
-            >
-              <ClockIcon />
-              {timeMode ? (
-                lifeJourneyPerson ? (
-                  <>{lifeJourneyPerson.display_name.split(' ')[0]} · {timeYear}</>
-                ) : (
-                  <>{aliveAtYear ? aliveAtYear.size : graph.people.length} · {timeYear}</>
-                )
-              ) : 'Time'}
-            </button>
+            {/* Slider above the toggle so the toggle stays pinned at bottom: 28px */}
             {timeMode && (
               <div className="time-slider-wrap">
                 <button
@@ -629,6 +611,26 @@ export default function App() {
                 <span className="time-slider__label">{yearRange.max}</span>
               </div>
             )}
+            {/* Toggle last — always the bottom item, stays at bottom: 28px */}
+            <button
+              className={`time-toggle${timeMode ? ' time-toggle--on' : ''}`}
+              onClick={() => {
+                if (!timeMode) { setTimeYear(new Date().getFullYear()); setTimePlaying(false); }
+                else { setTimePlaying(false); setLifeJourneyId(null); }
+                setTimeMode((m) => !m);
+              }}
+              aria-pressed={timeMode}
+              aria-label={timeMode ? `Time view: ${timeYear}` : 'View family over time'}
+            >
+              <ClockIcon />
+              {timeMode ? (
+                lifeJourneyPerson ? (
+                  <>{lifeJourneyPerson.display_name.split(' ')[0]} · {timeYear}</>
+                ) : (
+                  <>{aliveAtYear ? aliveAtYear.size : graph.people.length} · {timeYear}</>
+                )
+              ) : 'Time'}
+            </button>
           </div>
           {!lineageMode && <IntroHint />}
         </>
