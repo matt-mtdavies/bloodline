@@ -33,6 +33,7 @@ import {
   importFromGedcom,
   migratePhotosToR2,
   migrateDocsToR2,
+  setCurrentUser,
 } from './data/store.js';
 import { uploadPhoto, generateThumb, uploadDocument } from './lib/image.js';
 import { buildGraph, pathBetween } from './data/graph.js';
@@ -102,6 +103,7 @@ export default function App() {
     if (!u) { setAuthState('login'); return; }
     if (u.bypass) { setAuthState('open'); return; }
     setUser(u);
+    setCurrentUser(u);
     enableServerSync();
 
     // Two invite paths:
@@ -946,6 +948,7 @@ export default function App() {
         <ActivityFeed
           activity={data.activity ?? []}
           people={data.people}
+          userEmail={user?.email}
           onClose={() => setActivityOpen(false)}
           onSelectPerson={(id) => {
             setActivityOpen(false);

@@ -312,9 +312,20 @@ const docid = () => 'doc_' + Math.random().toString(36).slice(2, 9);
 const cid = () => 'c_' + Math.random().toString(36).slice(2, 9);
 const acid = () => 'act_' + Math.random().toString(36).slice(2, 9);
 
+let _currentUser = null;
+export function setCurrentUser(user) { _currentUser = user; }
+
+function nameFromEmail(email) {
+  if (!email) return 'Someone';
+  const first = email.split('@')[0].split(/[._\-0-9]/)[0];
+  return first.charAt(0).toUpperCase() + first.slice(1).toLowerCase();
+}
+
 // Prepend an activity event to the next state object, capped at 100 entries.
 function withActivity(next, partial) {
-  const event = { id: acid(), authorName: 'You', detail: null, ...partial, created_at: new Date().toISOString() };
+  const authorEmail = _currentUser?.email ?? null;
+  const authorName = nameFromEmail(authorEmail);
+  const event = { id: acid(), authorName, authorEmail, detail: null, ...partial, created_at: new Date().toISOString() };
   return { ...next, activity: [event, ...(next.activity ?? [])].slice(0, 100) };
 }
 

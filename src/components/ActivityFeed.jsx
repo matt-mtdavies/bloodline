@@ -1,7 +1,7 @@
 import { useMemo, useEffect } from 'react';
 import Avatar from './Avatar.jsx';
 
-export default function ActivityFeed({ activity = [], people = [], onClose, onSelectPerson }) {
+export default function ActivityFeed({ activity = [], people = [], userEmail, onClose, onSelectPerson }) {
   const byId = useMemo(() => new Map(people.map((p) => [p.id, p])), [people]);
 
   // Close on Escape
@@ -53,6 +53,7 @@ export default function ActivityFeed({ activity = [], people = [], onClose, onSe
                     key={event.id}
                     event={event}
                     person={byId.get(event.personId) ?? { display_name: event.personName }}
+                    userEmail={userEmail}
                     onSelect={() => { onClose(); onSelectPerson?.(event.personId); }}
                   />
                 ))}
@@ -65,7 +66,7 @@ export default function ActivityFeed({ activity = [], people = [], onClose, onSe
   );
 }
 
-function ActivityRow({ event, person, onSelect }) {
+function ActivityRow({ event, person, userEmail, onSelect }) {
   const { color, Icon } = typeConfig(event.type);
   const showDetail = (event.type === 'memory_added' || event.type === 'document_added') && event.detail;
 
@@ -79,7 +80,7 @@ function ActivityRow({ event, person, onSelect }) {
       </div>
       <div className="activity-row__body">
         <p className="activity-row__desc">
-          <EventDescription event={event} />
+          <EventDescription event={event} userEmail={userEmail} />
         </p>
         {showDetail && (
           <p className="activity-row__detail">
@@ -94,8 +95,9 @@ function ActivityRow({ event, person, onSelect }) {
   );
 }
 
-function EventDescription({ event }) {
-  const author = <strong key="a">{event.authorName ?? 'You'}</strong>;
+function EventDescription({ event, userEmail }) {
+  const isMe = userEmail && event.authorEmail ? event.authorEmail === userEmail : !event.authorEmail;
+  const author = <strong key="a">{isMe ? 'You' : (event.authorName ?? 'Someone')}</strong>;
   const subject = <strong key="s" className="activity-row__subject">{event.personName}</strong>;
 
   switch (event.type) {
