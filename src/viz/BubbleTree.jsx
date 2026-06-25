@@ -680,13 +680,15 @@ export default function BubbleTree({
         }
         if (drag.type === 'bubble') {
           if (!drag.moved) {
-            // A clean tap: open the active person, collapse an expanded branch, or activate.
+            // A clean tap: open the active person, collapse a branch with visible
+            // family, or activate a new person.
             if (activeRef.current === drag.id) {
               onOpenPersonRef.current?.(drag.id);
             } else if (expandedRef.current?.has(drag.id)) {
-              // Tapping an already-expanded non-active bubble collapses that branch.
+              // Already expanded → collapse this branch.
               onCollapseRef.current?.(drag.id);
             } else {
+              // Not yet expanded → navigate to / activate.
               onActivateRef.current?.(drag.id);
             }
           } else if (drag.node && drag.id !== state.pinnedId) {

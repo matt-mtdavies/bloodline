@@ -337,13 +337,15 @@ export default function App() {
   }, [timePlaying, yearRange.max, lifeJourneyId]);
 
   const allExpanded = expanded.size >= graph.people.length && graph.people.length > 0;
+  // Show the collapse button whenever MORE than one person is expanded (not just all-or-nothing).
+  const canCollapse = expanded.size > 1;
   const toggleExpandAll = useCallback(() => {
-    if (allExpanded) {
+    if (canCollapse) {
       setExpanded(new Set([activeId]));
     } else {
       setExpanded(new Set(graph.people.map((p) => p.id)));
     }
-  }, [allExpanded, activeId, graph]);
+  }, [canCollapse, activeId, graph]);
 
   const activateNormal = useCallback((id) => {
     setActiveId(id);
@@ -352,6 +354,14 @@ export default function App() {
     setFocusMode(false); // navigating exits focus mode
     setLifeJourneyId(null);
   }, []);
+
+  // All direct neighbours of a person id (using the graph's relation methods).
+  const graphNeighbourIds = useCallback((id) => [
+    ...graph.parents(id).map((x) => x.id),
+    ...graph.children(id).map((x) => x.id),
+    ...graph.partners(id).map((x) => x.id),
+    ...graph.siblings(id).map((x) => x.id),
+  ], [graph]);
 
   // Collapse a branch: remove collapseId from expanded, then cascade-remove any
   // expanded node that is no longer reachable from activeId without passing through
@@ -362,9 +372,7 @@ export default function App() {
       // Build the full visible neighbourhood of the current expanded set.
       const currentVisible = new Set(prev);
       for (const id of prev) {
-        const node = graph.byId.get(id);
-        if (!node) continue;
-        for (const n of node.neighbours) currentVisible.add(n.id);
+        for (const nid of graphNeighbourIds(id)) currentVisible.add(nid);
       }
       // BFS from activeId through currentVisible, treating collapseId as a wall.
       const reachable = new Set([activeId]);
@@ -372,12 +380,10 @@ export default function App() {
       while (queue.length > 0) {
         const cur = queue.shift();
         if (cur === collapseId) continue;
-        const node = graph.byId.get(cur);
-        if (!node) continue;
-        for (const n of node.neighbours) {
-          if (!reachable.has(n.id) && currentVisible.has(n.id) && n.id !== collapseId) {
-            reachable.add(n.id);
-            queue.push(n.id);
+        for (const nid of graphNeighbourIds(cur)) {
+          if (!reachable.has(nid) && currentVisible.has(nid) && nid !== collapseId) {
+            reachable.add(nid);
+            queue.push(nid);
           }
         }
       }
@@ -388,7 +394,7 @@ export default function App() {
       }
       return next;
     });
-  }, [activeId, graph]);
+  }, [activeId, graphNeighbourIds]);
 
   const lifeJourneyPerson = lifeJourneyId ? graph.byId.get(lifeJourneyId) : null;
 
@@ -738,13 +744,13 @@ export default function App() {
             </div>
             <div className="bottom-bar__right">
               <button
-                className={`expand-btn${allExpanded ? ' expand-btn--on' : ''}`}
+                className={`expand-btn${canCollapse ? ' expand-btn--on' : ''}`}
                 onClick={toggleExpandAll}
-                aria-pressed={allExpanded}
-                aria-label={allExpanded ? 'Collapse to immediate family' : 'Show all people in the tree'}
+                aria-pressed={canCollapse}
+                aria-label={canCollapse ? 'Collapse to active person' : 'Show all people in the tree'}
               >
-                {allExpanded ? <CollapseIcon /> : <ExpandAllIcon />}
-                {allExpanded ? 'Collapse' : 'Show All'}
+                {canCollapse ? <CollapseIcon /> : <ExpandAllIcon />}
+                {canCollapse ? 'Collapse' : 'Show All'}
               </button>
               <button
                 className={`lineage-btn${lineageMode ? ' lineage-btn--on' : ''}`}
