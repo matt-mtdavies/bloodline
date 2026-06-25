@@ -353,6 +353,43 @@ export default function App() {
     setLifeJourneyId(null);
   }, []);
 
+  // Collapse a branch: remove collapseId from expanded, then cascade-remove any
+  // expanded node that is no longer reachable from activeId without passing through
+  // collapseId (so orphaned sub-branches vanish automatically).
+  const collapseNode = useCallback((collapseId) => {
+    if (collapseId === activeId) return;
+    setExpanded((prev) => {
+      // Build the full visible neighbourhood of the current expanded set.
+      const currentVisible = new Set(prev);
+      for (const id of prev) {
+        const node = graph.byId.get(id);
+        if (!node) continue;
+        for (const n of node.neighbours) currentVisible.add(n.id);
+      }
+      // BFS from activeId through currentVisible, treating collapseId as a wall.
+      const reachable = new Set([activeId]);
+      const queue = [activeId];
+      while (queue.length > 0) {
+        const cur = queue.shift();
+        if (cur === collapseId) continue;
+        const node = graph.byId.get(cur);
+        if (!node) continue;
+        for (const n of node.neighbours) {
+          if (!reachable.has(n.id) && currentVisible.has(n.id) && n.id !== collapseId) {
+            reachable.add(n.id);
+            queue.push(n.id);
+          }
+        }
+      }
+      // Keep only expanded nodes still reachable (and always keep activeId).
+      const next = new Set([activeId]);
+      for (const id of prev) {
+        if (id !== collapseId && reachable.has(id)) next.add(id);
+      }
+      return next;
+    });
+  }, [activeId, graph]);
+
   const lifeJourneyPerson = lifeJourneyId ? graph.byId.get(lifeJourneyId) : null;
 
   const startLifeJourney = useCallback((id) => {
@@ -588,7 +625,9 @@ export default function App() {
             graph={graph}
             activeId={activeId}
             visibleIds={visibleIds}
+            expandedIds={expanded}
             onActivate={activate}
+            onCollapse={collapseNode}
             onOpenPerson={lineageMode ? null : openPerson}
             reducedMotion={reducedMotion}
             layout={layout}

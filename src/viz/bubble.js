@@ -388,6 +388,33 @@ export class Bubble {
     }
   }
 
+  // Small "−" pip at the bottom-right of the ring: signals that tapping this
+  // expanded non-active bubble will collapse its branch.
+  setCollapsePip(show) {
+    if (show === this._collapsePipOn) return;
+    this._collapsePipOn = show;
+    if (!this._collapsePip) {
+      this._collapsePip = new Graphics();
+      this._collapsePip.eventMode = 'none';
+      this.root.addChild(this._collapsePip);
+    }
+    this._collapsePip.clear();
+    if (show) {
+      const r = this.r;
+      const bx = r * 0.65, by = r * 0.65;
+      const br = r * 0.22;
+      // White background disc with soft border
+      this._collapsePip
+        .circle(bx, by, br + 1.5).fill({ color: 0xfaf8f5, alpha: 0.96 })
+        .circle(bx, by, br + 1.5).stroke({ width: 1, color: 0xddd8d2, alpha: 0.9 });
+      // Minus bar
+      const hw = br * 0.55;
+      this._collapsePip
+        .roundRect(bx - hw, by - 1.2, hw * 2, 2.4, 1.2)
+        .fill({ color: 0x8a8480, alpha: 0.85 });
+    }
+  }
+
   // Warm dashed accent ring for people who've been sent an invite.
   setInvited(invited) {
     if (invited === this._invited) return;

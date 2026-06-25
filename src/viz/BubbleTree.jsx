@@ -40,7 +40,9 @@ export default function BubbleTree({
   graph,
   activeId,
   visibleIds,
+  expandedIds = null,
   onActivate,
+  onCollapse,
   onOpenPerson,
   reducedMotion,
   layout = 'organic',
@@ -70,6 +72,10 @@ export default function BubbleTree({
   // are always reflected without re-mounting the canvas.
   const onActivateRef = useRef(onActivate);
   onActivateRef.current = onActivate;
+  const onCollapseRef = useRef(onCollapse);
+  onCollapseRef.current = onCollapse;
+  const expandedRef = useRef(expandedIds);
+  expandedRef.current = expandedIds;
   const onOpenPersonRef = useRef(onOpenPerson);
   onOpenPersonRef.current = onOpenPerson;
   const onCameraModeRef = useRef(onCameraMode);
@@ -674,9 +680,15 @@ export default function BubbleTree({
         }
         if (drag.type === 'bubble') {
           if (!drag.moved) {
-            // A clean tap: fly to / activate, or open the already-active person.
-            if (activeRef.current === drag.id) onOpenPersonRef.current?.(drag.id);
-            else onActivateRef.current?.(drag.id);
+            // A clean tap: open the active person, collapse an expanded branch, or activate.
+            if (activeRef.current === drag.id) {
+              onOpenPersonRef.current?.(drag.id);
+            } else if (expandedRef.current?.has(drag.id)) {
+              // Tapping an already-expanded non-active bubble collapses that branch.
+              onCollapseRef.current?.(drag.id);
+            } else {
+              onActivateRef.current?.(drag.id);
+            }
           } else if (drag.node && drag.id !== state.pinnedId) {
             drag.node.fx = null;
             drag.node.fy = null;
@@ -868,6 +880,11 @@ export default function BubbleTree({
           const labelAlpha = (!cardOpen && !lineage && effectiveVis.has(id)) ? 1 : 0;
           b.setVisualState({ ...target, labelAlpha }, dt);
           b.setActive(id === activeRef.current);
+          b.setCollapsePip(
+            effectiveVis.has(id) &&
+            id !== activeRef.current &&
+            !!(expandedRef.current?.has(id)),
+          );
           b.setInvited(!!(invitedRef.current?.has(id)));
           b.setChartBadge(layoutRef.current === 'chart');
           // Depth hints: show on visible bubbles that have family beyond the current reveal.
