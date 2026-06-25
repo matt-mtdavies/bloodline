@@ -292,12 +292,13 @@ export default function App() {
     return alive;
   }, [data.people, timeMode, timeYear]);
 
-  // Focus Family: active person's nuclear family + grandchildren.
+  // Focus Family: active person's nuclear family + siblings + grandchildren.
   const focusFamilyIds = useMemo(() => {
     if (!focusMode) return null;
     const ids = new Set([activeId]);
     for (const p of graph.parents(activeId)) ids.add(p.id);
     for (const p of graph.partners(activeId)) ids.add(p.id);
+    for (const s of graph.siblings(activeId)) ids.add(s.id);
     for (const c of graph.children(activeId)) {
       ids.add(c.id);
       for (const gc of graph.children(c.id)) ids.add(gc.id);
