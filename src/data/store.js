@@ -168,10 +168,15 @@ function afterSave(ok, statusCode) {
     clearTimeout(_retryTimer);
     _retryTimer = setTimeout(async () => {
       if (_syncStatus !== 'error') return;
+      // Refresh ETag via a GET before retrying. If the ETag header is missing
+      // or the GET fails, use '*' so the conflict check is skipped entirely —
+      // the local state is the ground truth for a single-editor tree.
       try {
         const res = await fetch('/api/tree');
-        if (res.ok) _serverEtag = res.headers.get('ETag') || _serverEtag;
-      } catch { /* network down — saveToServer will surface a fresh error */ }
+        _serverEtag = (res.ok && res.headers.get('ETag')) || '*';
+      } catch {
+        _serverEtag = '*';
+      }
       if (_syncStatus === 'error') saveToServer();
     }, 30_000);
   }
@@ -219,7 +224,9 @@ async function putTree(s, attempt = 0) {
     }
 
     r.clone().json().then((body) => {
-      console.error('[store] PUT /api/tree', r.status, body?.detail || body?.error || '');
+      const msg = body?.detail || body?.error || '';
+      console.error('[store] PUT /api/tree', r.status, msg);
+      if (body?.detail) _lastSyncError = { code: r.status, message: `HTTP ${r.status}: ${body.detail}` };
     }).catch(() => {});
 
     if (r.status === 401 || r.status === 403) { afterSave(false, r.status); return; }

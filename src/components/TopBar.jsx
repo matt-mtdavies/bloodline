@@ -45,9 +45,9 @@ export default function TopBar({ familyName, stats, view, syncStatus, syncError,
               className="sync-status sync-status--error sync-status--retry"
               aria-live="assertive"
               onClick={onRetrySync}
-              title={syncError ? `Error: ${syncError.message} — click to retry now` : 'Click to retry'}
+              title="Tap to retry now"
             >
-              Not saved — retrying…
+              Not saved{syncError?.code ? ` (${syncError.message})` : ''} — tap to retry
             </button>
           )}
           {syncStatus === 'error-auth' && (

@@ -54,7 +54,13 @@ export async function onRequestPut({ request, env, data }) {
   if (!data.user) return json({ error: 'Unauthorized' }, { status: 401 });
   if (!env.DB) return json({ error: 'Database not configured' }, { status: 503 });
 
-  const tree = await request.json();
+  let tree;
+  try {
+    tree = await request.json();
+  } catch {
+    return json({ error: 'Invalid request body' }, { status: 400 });
+  }
+
   const now = Math.floor(Date.now() / 1000);
 
   try {
@@ -123,7 +129,7 @@ export async function onRequestPut({ request, env, data }) {
       { headers: { 'ETag': `"${now}"` } },
     );
   } catch (e) {
-    console.error('[tree] PUT error:', e.message);
-    return json({ error: 'Server error' }, { status: 500 });
+    console.error('[tree] PUT error:', e.message, e.stack);
+    return json({ error: 'Server error', detail: e.message }, { status: 500 });
   }
 }
