@@ -68,15 +68,13 @@ export async function onRequestPatch({ request, env, data }) {
     // family_tree rather than individual person rows, so we insert a stub row
     // first to satisfy the constraint before updating the user record.
     if (personId) {
-      const fm = await env.DB.prepare(
-        'SELECT family_id FROM family_member WHERE user_id = ?',
-      ).bind(data.user.uid).first();
-      if (fm?.family_id) {
-        const now = Math.floor(Date.now() / 1000);
-        await env.DB.prepare(
-          `INSERT OR IGNORE INTO person (id, family_id, created_at, updated_at) VALUES (?, ?, ?, ?)`,
-        ).bind(personId, fm.family_id, now, now).run();
-      }
+      // Ensure a stub person row exists so user.person_id FK is satisfied.
+      // Use NULL for family_id to skip that nested FK check — person.family_id
+      // is nullable and a NULL FK value is never validated by SQLite/D1.
+      const stubNow = Math.floor(Date.now() / 1000);
+      await env.DB.prepare(
+        `INSERT OR IGNORE INTO person (id, family_id, created_at, updated_at) VALUES (?, NULL, ?, ?)`,
+      ).bind(personId, stubNow, stubNow).run();
     }
     sets.push('person_id = ?');
     binds.push(personId);
