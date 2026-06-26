@@ -90,9 +90,17 @@ export async function onRequestDelete({ request, env, data }) {
     return json({ error: 'Forbidden' }, { status: 403 });
   }
 
+  // Look up the email for this invite so we can cancel all pending duplicates too.
+  const invite = await env.DB.prepare(
+    `SELECT email FROM invite WHERE id = ? AND family_id = ?`,
+  ).bind(inviteId, membership.family_id).first();
+
+  if (!invite) return json({ error: 'Invite not found' }, { status: 404 });
+
+  // Cancel every pending invite for this email in the family (clears duplicates).
   await env.DB.prepare(
-    `UPDATE invite SET status = 'cancelled' WHERE id = ? AND family_id = ? AND status = 'pending'`,
-  ).bind(inviteId, membership.family_id).run();
+    `UPDATE invite SET status = 'cancelled' WHERE family_id = ? AND email = ? AND status = 'pending'`,
+  ).bind(membership.family_id, invite.email).run();
 
   return json({ ok: true });
 }

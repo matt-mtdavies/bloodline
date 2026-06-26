@@ -75,7 +75,11 @@ export default function FamilySettings({ myRole, familyName, onUpdateFamilyName,
   }
 
   async function cancelInvite(id) {
-    await fetch(`/api/invite?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+    const res = await fetch(`/api/invite?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      alert(err.error || 'Could not cancel invite — please try again.');
+    }
     load();
   }
 
