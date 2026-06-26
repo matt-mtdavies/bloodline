@@ -291,40 +291,36 @@ async function _fetchAndMerge(local) {
     const server = await res.json();
     _serverEtag = res.headers.get('ETag') || _serverEtag;
 
-    // Build a map of server people for deep-merge.
+    // Build lookup maps.
     const serverPersonMap = new Map((server.people || []).map((p) => [p.id, p]));
     const localPersonMap  = new Map((local.people  || []).map((p) => [p.id, p]));
 
-    // For existing people: local scalar fields win (user just edited them);
-    // array sub-fields (conditions, tags, events, photos) are unioned so
-    // additions from either side are preserved.
+    // Merge strategy: LOCAL wins for anything that exists locally (preserves
+    // deletions — e.g. a removed health condition). Server-only items (added
+    // by another editor on a different device) are appended so they aren't lost.
+    // We never re-introduce server items that local has already removed.
     const mergedPeople = [
-      ...(server.people || []).map((sp) => {
-        const lp = localPersonMap.get(sp.id);
-        if (!lp) return sp;
-        return {
-          ...sp,
-          ...lp, // local scalar fields win
-          conditions: _mergeById(sp.conditions, lp.conditions),
-          events:     _mergeById(sp.events,     lp.events),
-          tags:       _unionStrings(sp.tags,    lp.tags),
-          photos:     _unionStrings(sp.photos,  lp.photos),
-        };
-      }),
-      // People added locally but not yet on the server.
+      // For each server person: use local version if one exists (local wins entirely,
+      // preserving any deletions the user made to conditions/events/tags/photos).
+      // If the person only exists on the server, keep the server version.
+      ...(server.people || []).map((sp) => localPersonMap.get(sp.id) ?? sp),
+      // People added locally that the server doesn't have yet.
       ...(local.people || []).filter((p) => !serverPersonMap.has(p.id)),
     ];
 
-    const sRelIds   = new Set((server.relationships || []).map((r) => r.id));
-    const sMemIds   = new Set((server.memories      || []).map((m) => m.id));
-    const sPhotoIds = new Set((server.photos        || []).map((ph) => ph.id));
+    // Same pattern for top-level arrays: start from local (user's edits/deletions
+    // are authoritative), then append server items that local hasn't seen yet.
+    const lRelIds   = new Set((local.relationships || []).map((r) => r.id));
+    const lMemIds   = new Set((local.memories      || []).map((m) => m.id));
+    const lPhotoIds = new Set((local.photos        || []).map((ph) => ph.id));
 
     const merged = {
       ...server,
+      ...local, // local top-level scalars win (familyName, myPersonId, etc.)
       people:        mergedPeople,
-      relationships: [...(server.relationships || []), ...(local.relationships || []).filter((r)  => !sRelIds.has(r.id))],
-      memories:      [...(server.memories      || []), ...(local.memories      || []).filter((m)  => !sMemIds.has(m.id))],
-      photos:        [...(server.photos        || []), ...(local.photos        || []).filter((ph) => !sPhotoIds.has(ph.id))],
+      relationships: [...(local.relationships || []), ...(server.relationships || []).filter((r)  => !lRelIds.has(r.id))],
+      memories:      [...(local.memories      || []), ...(server.memories      || []).filter((m)  => !lMemIds.has(m.id))],
+      photos:        [...(local.photos        || []), ...(server.photos        || []).filter((ph) => !lPhotoIds.has(ph.id))],
     };
 
     commit(merged, { fromServer: true });
