@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, forwardRef } from 'react';
 import Logo from './Logo.jsx';
 
-export default function TopBar({ familyName, stats, view, syncStatus, onToggleView, onOpenLegend, onOpenSettings, onOpenActivity, activityCount = 0, user, userPhoto, onOpenProfile }) {
+export default function TopBar({ familyName, stats, view, syncStatus, syncError, onRetrySync, onToggleView, onOpenLegend, onOpenSettings, onOpenActivity, activityCount = 0, user, userPhoto, onOpenProfile }) {
   const [statsOpen, setStatsOpen] = useState(false);
   const popoverRef = useRef(null);
   const statsRef = useRef(null);
@@ -41,7 +41,14 @@ export default function TopBar({ familyName, stats, view, syncStatus, onToggleVi
             <span className="sync-status sync-status--saved" aria-live="polite"><SavedCheckIcon /> Saved</span>
           )}
           {syncStatus === 'error' && (
-            <span className="sync-status sync-status--error" aria-live="assertive">Not saved — retrying…</span>
+            <button
+              className="sync-status sync-status--error sync-status--retry"
+              aria-live="assertive"
+              onClick={onRetrySync}
+              title={syncError ? `Error: ${syncError.message} — click to retry now` : 'Click to retry'}
+            >
+              Not saved — retrying…
+            </button>
           )}
           {syncStatus === 'error-auth' && (
             <span className="sync-status sync-status--error" aria-live="assertive">Session expired — please reload</span>

@@ -86,6 +86,7 @@ const _initialInviteToken = (() => {
 export default function App() {
   const data = useSyncExternalStore(store.subscribe, store.getState);
   const syncStatus = useSyncExternalStore(syncStore.subscribe, syncStore.getState);
+  const syncError  = useSyncExternalStore(syncStore.subscribe, syncStore.getLastError);
   const graph = useMemo(() => buildGraph(data.people, data.relationships), [data]);
   const reducedMotion = useReducedMotion();
 
@@ -649,6 +650,8 @@ export default function App() {
         stats={familyStats}
         view={view}
         syncStatus={syncStatus}
+        syncError={syncError}
+        onRetrySync={() => saveToServer()}
         onToggleView={() => setView((v) => (v === 'bubbles' ? 'list' : 'bubbles'))}
         onOpenLegend={() => setLegendOpen(true)}
         onOpenSettings={() => setSettingsOpen(true)}

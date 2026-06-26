@@ -128,10 +128,6 @@ let _serverEtag = null; // ETag from last successful GET or PUT
 let _syncStatus = 'idle';
 const _syncListeners = new Set();
 function setSyncStatus(s) { _syncStatus = s; _syncListeners.forEach((l) => l()); }
-export const syncStore = {
-  subscribe(l) { _syncListeners.add(l); return () => _syncListeners.delete(l); },
-  getState() { return _syncStatus; },
-};
 
 export function enableServerSync() {
   _serverSyncEnabled = true;
@@ -144,17 +140,40 @@ export function enableServerSync() {
 }
 
 let _savedTimer = null;
+let _retryTimer = null;
+let _lastSyncError = null; // { code, message } — readable by TopBar via syncStore
+
+export const syncStore = {
+  subscribe(l) { _syncListeners.add(l); return () => _syncListeners.delete(l); },
+  getState() { return _syncStatus; },
+  getLastError() { return _lastSyncError; },
+};
+
 function afterSave(ok, statusCode) {
   if (ok) {
     setSyncStatus('saved');
     clearTimeout(_savedTimer);
+    clearTimeout(_retryTimer);
+    _lastSyncError = null;
     _savedTimer = setTimeout(() => setSyncStatus('idle'), 2500);
   } else if (statusCode === 401 || statusCode === 403) {
     setSyncStatus('error-auth');
     console.warn('[store] server sync: auth error', statusCode);
   } else {
+    _lastSyncError = { code: statusCode || 0, message: statusCode === 409 ? 'Conflict' : statusCode ? `HTTP ${statusCode}` : 'Network error' };
     setSyncStatus('error');
-    console.warn('[store] server sync failed:', statusCode || 'network error');
+    console.warn('[store] server sync failed:', _lastSyncError.message);
+    // Retry every 30 s: first refresh the ETag via GET so a stale If-Match
+    // header isn't the reason we keep failing, then attempt the save again.
+    clearTimeout(_retryTimer);
+    _retryTimer = setTimeout(async () => {
+      if (_syncStatus !== 'error') return;
+      try {
+        const res = await fetch('/api/tree');
+        if (res.ok) _serverEtag = res.headers.get('ETag') || _serverEtag;
+      } catch { /* network down — saveToServer will surface a fresh error */ }
+      if (_syncStatus === 'error') saveToServer();
+    }, 30_000);
   }
 }
 

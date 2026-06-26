@@ -78,6 +78,8 @@
 .sync-status--saving { color: var(--ink-soft); }
 .sync-status--saved  { color: #3a8a5a; background: #edf7f1; }
 .sync-status--error  { color: #c2603a; background: #f5e8e4; }
+.sync-status--retry  { cursor: pointer; border: none; font: inherit; letter-spacing: inherit; border-radius: 20px; padding: inherit; }
+.sync-status--retry:hover { background: #edd8d2; }
 
 .topbar__familyname {
   font-family: var(--body);
