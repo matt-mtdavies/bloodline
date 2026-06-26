@@ -582,6 +582,13 @@ export default function App() {
 
   const activePerson = graph.byId.get(activeId);
 
+  // Photo of the person the logged-in user has claimed as their own bubble.
+  const userPhoto = useMemo(() => {
+    if (!user?.person_id) return null;
+    const p = data.people.find((x) => x.id === user.person_id);
+    return p?.photo || null;
+  }, [data.people, user?.person_id]);
+
   // Auth gate. 'open' = no auth configured or ?demo — go straight to app.
   if (authState === 'loading') return <AppLoadingScreen />;
   if (authState === 'login') {
@@ -628,6 +635,7 @@ export default function App() {
         onOpenActivity={() => { setActivityOpen(true); setLastReadAt(Date.now()); }}
         activityCount={unreadCount}
         user={user}
+        userPhoto={userPhoto}
         onOpenProfile={user ? () => setProfileOpen(true) : null}
       />
 
@@ -661,6 +669,13 @@ export default function App() {
             tabIndex={cameraFree && !openId ? 0 : -1}
           >
             <RecenterIcon />
+          </button>
+          <button
+            className="legend-fab"
+            onClick={() => setLegendOpen(true)}
+            aria-label="Legend — visual guide and display options"
+          >
+            <LegendFabIcon />
           </button>
           {/* Bottom bar: Focus Family | Time | Lineage */}
           <div className="bottom-bar">
@@ -1141,6 +1156,15 @@ function FocusIcon() {
       <circle cx="5" cy="12" r="2" stroke="currentColor" strokeWidth="1.6" />
       <circle cx="19" cy="12" r="2" stroke="currentColor" strokeWidth="1.6" />
       <path d="M12 7v2M12 15v2M7 12h2M15 12h2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function LegendFabIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.8"/>
+      <path d="M12 17v-5.5M12 8.5V7" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
     </svg>
   );
 }

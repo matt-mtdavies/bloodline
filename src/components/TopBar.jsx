@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, forwardRef } from 'react';
 import Logo from './Logo.jsx';
 
-export default function TopBar({ familyName, stats, view, syncStatus, onToggleView, onOpenLegend, onOpenSettings, onOpenActivity, activityCount = 0, user, onOpenProfile }) {
+export default function TopBar({ familyName, stats, view, syncStatus, onToggleView, onOpenLegend, onOpenSettings, onOpenActivity, activityCount = 0, user, userPhoto, onOpenProfile }) {
   const [statsOpen, setStatsOpen] = useState(false);
   const popoverRef = useRef(null);
   const statsRef = useRef(null);
@@ -61,12 +61,6 @@ export default function TopBar({ familyName, stats, view, syncStatus, onToggleVi
           <button className="pill" onClick={onOpenSettings} aria-label="Family settings">
             <SettingsIcon />
           </button>
-          <button className="pill" onClick={onOpenLegend} aria-label="Legend — what the styles mean">
-            <LegendIcon />
-          </button>
-          <button className="pill" onClick={onToggleView} aria-label={view === 'bubbles' ? 'Switch to list view' : 'Switch to tree view'}>
-            {view === 'bubbles' ? <ListIcon /> : <TreeIcon />}
-          </button>
           {user && onOpenProfile && (
             <button
               className="topbar-avatar"
@@ -74,13 +68,16 @@ export default function TopBar({ familyName, stats, view, syncStatus, onToggleVi
               aria-label="Your profile"
               title={user.display_name || user.email}
             >
-              {userInitials(user)}
+              {userPhoto
+                ? <img src={userPhoto} alt="" className="topbar-avatar__img" />
+                : userInitials(user)
+              }
             </button>
           )}
         </div>
       </div>
 
-      {/* Row 2: family name + live archive stats */}
+      {/* Row 2: family name + stats + view toggle */}
       <div className="topbar__treerow">
         <div className="topbar__treerow__center">
           <span className="topbar__familyname">{familyName}</span>
@@ -100,6 +97,13 @@ export default function TopBar({ familyName, stats, view, syncStatus, onToggleVi
             </button>
           )}
         </div>
+        <button
+          className="topbar__view-toggle"
+          onClick={onToggleView}
+          aria-label={view === 'bubbles' ? 'Switch to list view' : 'Switch to tree view'}
+        >
+          {view === 'bubbles' ? <ListIcon /> : <TreeIcon />}
+        </button>
       </div>
 
       {/* Stats detail popover */}
