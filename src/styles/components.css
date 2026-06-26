@@ -4658,11 +4658,7 @@
   width: 30px;
   height: 30px;
   border-radius: 50%;
-  background: var(--accent);
-  color: #fff;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
+  background: transparent;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -4670,10 +4666,24 @@
   overflow: hidden;
   cursor: pointer;
   flex-shrink: 0;
+  padding: 0;
   -webkit-tap-highlight-color: transparent;
   transition: opacity 0.15s ease;
 }
 .topbar-avatar:hover { opacity: 0.85; }
+.topbar-avatar__initials {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  border-radius: 50%;
+}
 
 /* ── UserProfile sheet ─────────────────────────────────────────────────── */
 .up__hero {
