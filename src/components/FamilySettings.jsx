@@ -12,6 +12,7 @@ export default function FamilySettings({ myRole, familyName, onUpdateFamilyName,
   const [fbType, setFbType]     = useState('idea');
   const [fbMsg, setFbMsg]       = useState('');
   const [fbStatus, setFbStatus] = useState('idle'); // idle | sending | sent | error
+  const [pendingConfirm, setPendingConfirm] = useState(null); // { type:'member'|'invite', id }
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState('editor');
   const [inviteStatus, setInviteStatus] = useState('idle'); // idle | sending | sent | error
@@ -68,12 +69,12 @@ export default function FamilySettings({ myRole, familyName, onUpdateFamilyName,
   }
 
   async function removeMember(userId) {
-    if (!confirm('Remove this person from the family tree?')) return;
     await fetch('/api/family/members', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ action: 'remove', userId }),
     });
+    setPendingConfirm(null);
     load();
   }
 
@@ -83,6 +84,7 @@ export default function FamilySettings({ myRole, familyName, onUpdateFamilyName,
       const err = await res.json().catch(() => ({}));
       alert(err.error || 'Could not cancel invite — please try again.');
     }
+    setPendingConfirm(null);
     load();
   }
 
@@ -208,42 +210,58 @@ export default function FamilySettings({ myRole, familyName, onUpdateFamilyName,
                     isSelf={m.id === data.myId}
                     onUpdateRole={updateRole}
                     onRemove={removeMember}
+                    confirming={pendingConfirm?.type === 'member' && pendingConfirm?.id === m.id}
+                    onRequestConfirm={() => setPendingConfirm({ type: 'member', id: m.id })}
+                    onCancelConfirm={() => setPendingConfirm(null)}
                   />
                 ))}
                 {dedupedInvites.length > 0 && (
                   <>
                     <p className="fs__section-label">Pending invites</p>
-                    {dedupedInvites.map((inv) => (
-                      <div key={inv.id} className="fs__member">
-                        <div className="fs__member-avatar">{inv.email.slice(0, 2).toUpperCase()}</div>
-                        <div className="fs__member-info">
-                          <span className="fs__member-email">{inv.email}</span>
-                          <span className="fs__member-joined fs__invite-pending">Pending</span>
+                    {dedupedInvites.map((inv) => {
+                      const confirming = pendingConfirm?.type === 'invite' && pendingConfirm?.id === inv.id;
+                      return (
+                        <div key={inv.id} className="fs__member">
+                          <div className="fs__member-avatar">{inv.email.slice(0, 2).toUpperCase()}</div>
+                          <div className="fs__member-info">
+                            <span className="fs__member-email">{inv.email}</span>
+                            <span className="fs__member-joined fs__invite-pending">Pending</span>
+                          </div>
+                          {confirming ? (
+                            <div className="fs__confirm-inline">
+                              <span className="fs__confirm-label">Cancel invite?</span>
+                              <button className="fs__confirm-yes" onClick={() => cancelInvite(inv.id)}>Yes</button>
+                              <button className="fs__confirm-no" onClick={() => setPendingConfirm(null)}>No</button>
+                            </div>
+                          ) : (
+                            <>
+                              {isOwnerOrCoadmin ? (
+                                <select
+                                  className="fs__role-select"
+                                  value={inv.role}
+                                  onChange={(e) => updateInviteRole(inv.id, e.target.value)}
+                                >
+                                  {INVITE_ROLES.map((r) => (
+                                    <option key={r} value={r}>{ROLE_LABELS[r]}</option>
+                                  ))}
+                                </select>
+                              ) : (
+                                <RoleBadge role={inv.role} />
+                              )}
+                              {isOwnerOrCoadmin && (
+                                <button
+                                  className="fs__remove"
+                                  onClick={() => setPendingConfirm({ type: 'invite', id: inv.id })}
+                                  aria-label="Cancel invite"
+                                >
+                                  <CloseIcon />
+                                </button>
+                              )}
+                            </>
+                          )}
                         </div>
-                        {isOwnerOrCoadmin ? (
-                          <select
-                            className="fs__role-select"
-                            value={inv.role}
-                            onChange={(e) => updateInviteRole(inv.id, e.target.value)}
-                          >
-                            {INVITE_ROLES.map((r) => (
-                              <option key={r} value={r}>{ROLE_LABELS[r]}</option>
-                            ))}
-                          </select>
-                        ) : (
-                          <RoleBadge role={inv.role} />
-                        )}
-                        {isOwnerOrCoadmin && (
-                          <button
-                            className="fs__remove"
-                            onClick={() => cancelInvite(inv.id)}
-                            aria-label="Cancel invite"
-                          >
-                            <CloseIcon />
-                          </button>
-                        )}
-                      </div>
-                    ))}
+                      );
+                    })}
                   </>
                 )}
               </div>
@@ -374,10 +392,8 @@ export default function FamilySettings({ myRole, familyName, onUpdateFamilyName,
   );
 }
 
-function MemberRow({ member, myRole, isSelf, onUpdateRole, onRemove }) {
+function MemberRow({ member, myRole, isSelf, onUpdateRole, onRemove, confirming, onRequestConfirm, onCancelConfirm }) {
   const canChange = canInvite(myRole) && !isSelf && member.role !== 'owner';
-  // Only show roles strictly below the caller's own level so a co-admin can't
-  // accidentally grant co-admin (server would reject it, but it's confusing).
   const assignableRoles = INVITE_ROLES.filter((r) => roleRank(r) < roleRank(myRole));
   const initials = (member.display_name || member.email).slice(0, 2).toUpperCase();
 
@@ -393,21 +409,31 @@ function MemberRow({ member, myRole, isSelf, onUpdateRole, onRemove }) {
           Joined {new Date(member.joined_at * 1000).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })}
         </span>
       </div>
-      {canChange ? (
-        <select
-          className="fs__role-select"
-          value={member.role}
-          onChange={(e) => onUpdateRole(member.id, e.target.value)}
-        >
-          {assignableRoles.map((r) => (
-            <option key={r} value={r}>{ROLE_LABELS[r]}</option>
-          ))}
-        </select>
+      {confirming ? (
+        <div className="fs__confirm-inline">
+          <span className="fs__confirm-label">Remove?</span>
+          <button className="fs__confirm-yes" onClick={() => onRemove(member.id)}>Yes</button>
+          <button className="fs__confirm-no" onClick={onCancelConfirm}>No</button>
+        </div>
       ) : (
-        <RoleBadge role={member.role} />
-      )}
-      {canChange && (
-        <button className="fs__remove" onClick={() => onRemove(member.id)} aria-label="Remove member"><CloseIcon /></button>
+        <>
+          {canChange ? (
+            <select
+              className="fs__role-select"
+              value={member.role}
+              onChange={(e) => onUpdateRole(member.id, e.target.value)}
+            >
+              {assignableRoles.map((r) => (
+                <option key={r} value={r}>{ROLE_LABELS[r]}</option>
+              ))}
+            </select>
+          ) : (
+            <RoleBadge role={member.role} />
+          )}
+          {canChange && (
+            <button className="fs__remove" onClick={onRequestConfirm} aria-label="Remove member"><CloseIcon /></button>
+          )}
+        </>
       )}
     </div>
   );
