@@ -9,6 +9,9 @@ export default function FamilySettings({ myRole, familyName, onUpdateFamilyName,
   const [tab, setTab] = useState('members'); // 'members' | 'invite'
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [fbType, setFbType]     = useState('idea');
+  const [fbMsg, setFbMsg]       = useState('');
+  const [fbStatus, setFbStatus] = useState('idle'); // idle | sending | sent | error
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState('editor');
   const [inviteStatus, setInviteStatus] = useState('idle'); // idle | sending | sent | error
@@ -111,6 +114,25 @@ export default function FamilySettings({ myRole, familyName, onUpdateFamilyName,
   function handleNameSave() {
     const trimmed = nameEdit.trim();
     if (trimmed && trimmed !== familyName) onUpdateFamilyName(trimmed);
+  }
+
+  async function sendFeedback(e) {
+    e.preventDefault();
+    if (!fbMsg.trim()) return;
+    setFbStatus('sending');
+    try {
+      const res = await fetch('/api/feedback', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ type: fbType, message: fbMsg.trim(), page: window.location.pathname }),
+      });
+      if (!res.ok) throw new Error();
+      setFbStatus('sent');
+      setFbMsg('');
+      setTimeout(() => setFbStatus('idle'), 3000);
+    } catch {
+      setFbStatus('error');
+    }
   }
 
   function handleReset() {
@@ -290,6 +312,45 @@ export default function FamilySettings({ myRole, familyName, onUpdateFamilyName,
           <p className="fs__import-hint">
             From Ancestry, MyHeritage, 23andMe, MacFamilyTree, and more.
           </p>
+        </div>
+
+        {/* Feedback */}
+        <div className="fs__section">
+          <label className="fs__label">Send feedback</label>
+          {fbStatus === 'sent' ? (
+            <p className="fs__sent"><CheckIcon /> Thanks — your feedback has been sent.</p>
+          ) : (
+            <form onSubmit={sendFeedback} noValidate>
+              <div className="fs__fb-types">
+                {[['idea','💡 Idea'],['bug','🐛 Bug'],['praise','🙌 Praise'],['other','📬 Other']].map(([v,l]) => (
+                  <button
+                    key={v}
+                    type="button"
+                    className={`fs__fb-type${fbType === v ? ' fs__fb-type--on' : ''}`}
+                    onClick={() => setFbType(v)}
+                  >{l}</button>
+                ))}
+              </div>
+              <textarea
+                className="fs__fb-textarea"
+                placeholder="What's on your mind?"
+                value={fbMsg}
+                onChange={(e) => setFbMsg(e.target.value)}
+                rows={3}
+                maxLength={2000}
+              />
+              <button
+                className="fs__fb-submit"
+                type="submit"
+                disabled={fbStatus === 'sending' || !fbMsg.trim()}
+              >
+                {fbStatus === 'sending' ? 'Sending…' : 'Send →'}
+              </button>
+              {fbStatus === 'error' && (
+                <p className="fs__err">Could not send — please try again.</p>
+              )}
+            </form>
+          )}
         </div>
 
         {/* Danger zone */}

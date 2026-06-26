@@ -330,6 +330,19 @@
         </table>
       </div>
     </div>
+
+    <div class="table-card" style="margin-top:24px">
+      <h3>Recent feedback</h3>
+      <table id="table-feedback">
+        <thead><tr>
+          <th>Type</th>
+          <th>From</th>
+          <th>Message</th>
+          <th>When</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
   </div>
 </div>
 
@@ -526,6 +539,21 @@
     }).join('');
   }
 
+  function renderFeedbackTable(rows) {
+    const tbody = document.querySelector('#table-feedback tbody');
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="4" style="padding:14px 0;color:#5c5f66">No feedback yet</td></tr>';
+      return;
+    }
+    const icons = { idea: '💡', bug: '🐛', praise: '🙌', other: '📬' };
+    tbody.innerHTML = rows.map((f) => `<tr>
+      <td style="white-space:nowrap">${icons[f.type] || '📬'} ${escHtml(f.type)}</td>
+      <td class="muted">${escHtml(f.email)}</td>
+      <td class="primary" style="max-width:340px;white-space:pre-wrap;word-break:break-word">${escHtml(f.message)}</td>
+      <td class="muted" style="white-space:nowrap">${fmt(f.created_at)}</td>
+    </tr>`).join('');
+  }
+
   function escHtml(s) {
     return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
@@ -565,6 +593,12 @@
       renderInviteChart(data);
       renderUsersTable(data);
       renderTreesTable(data);
+
+      // Feedback is fetched separately — a missing table won't break the dashboard.
+      fetch('/api/admin/feedback')
+        .then((r) => r.ok ? r.json() : { rows: [] })
+        .then((fb) => renderFeedbackTable(fb.rows || []))
+        .catch(() => renderFeedbackTable([]));
 
     } catch (e) {
       showError('Network error — could not reach the server.');

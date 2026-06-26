@@ -4514,6 +4514,58 @@
   margin: 4px 0 0;
 }
 
+/* ── Feedback form ───────────────────────────────────────────────────────────── */
+.fs__fb-types {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.fs__fb-type {
+  padding: 5px 12px;
+  border-radius: 20px;
+  border: 1.5px solid var(--hairline);
+  background: transparent;
+  font-size: 13px;
+  color: var(--ink-mid);
+  cursor: pointer;
+  transition: border-color .15s, background .15s, color .15s;
+}
+.fs__fb-type--on {
+  border-color: var(--accent);
+  background: var(--accent-faint, #fdf0eb);
+  color: var(--accent);
+}
+.fs__fb-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1.5px solid var(--hairline);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 14px;
+  font-family: inherit;
+  color: var(--ink);
+  background: var(--surface);
+  resize: vertical;
+  min-height: 72px;
+  transition: border-color .15s;
+}
+.fs__fb-textarea:focus { outline: none; border-color: var(--accent); }
+.fs__fb-submit {
+  margin-top: 10px;
+  padding: 9px 20px;
+  border-radius: 20px;
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity .15s;
+}
+.fs__fb-submit:disabled { opacity: .45; cursor: default; }
+.fs__fb-submit:not(:disabled):hover { opacity: .88; }
+
 /* ── FamilySearch Import Wizard ─────────────────────────────────────────────── */
 .fs-import__head-title {
   display: flex;
