@@ -15,7 +15,7 @@ export async function onRequestGet({ env, data }) {
 
   const adminEmail = env.ADMIN_EMAIL;
   if (!adminEmail) return json({ error: 'ADMIN_EMAIL not configured' }, { status: 503 });
-  if (data.user.email !== adminEmail) return json({ error: 'Forbidden' }, { status: 403 });
+  if (data.user.email.toLowerCase() !== adminEmail.trim().toLowerCase()) return json({ error: 'Forbidden' }, { status: 403 });
 
   try {
     const now = Math.floor(Date.now() / 1000);
