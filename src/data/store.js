@@ -217,16 +217,26 @@ async function putTree(s, attempt = 0) {
       return;
     }
 
-    // Another editor saved first — fetch their version, merge, and retry once.
-    if (r.status === 409 && attempt === 0) {
-      const merged = await _fetchAndMerge(s);
-      if (merged) { putTree(merged, 1); return; }
+    // Another editor saved first — fetch their version, merge, and retry.
+    if (r.status === 409) {
+      if (attempt === 0) {
+        // First conflict: fetch latest, merge local additions, retry with fresh ETag.
+        const merged = await _fetchAndMerge(s);
+        if (merged) { putTree(merged, 1); return; }
+      } else if (attempt === 1) {
+        // Second conflict: another writer saved again between our merge-GET and PUT
+        // (e.g. two tabs open). Merge one more time then force-save with If-Match: *
+        // so we break the deadlock without losing any local changes.
+        const remerged = await _fetchAndMerge(s);
+        if (remerged) { _serverEtag = '*'; putTree(remerged, 2); return; }
+      }
+      // attempt >= 2 with If-Match: * still failing → fall through to error path
     }
 
     r.clone().json().then((body) => {
       const msg = body?.detail || body?.error || '';
       console.error('[store] PUT /api/tree', r.status, msg);
-      if (body?.detail) _lastSyncError = { code: r.status, message: `HTTP ${r.status}: ${body.detail}` };
+      _lastSyncError = { code: r.status, message: r.status === 409 ? 'Conflict (retried)' : body?.detail ? `HTTP ${r.status}: ${body.detail}` : `HTTP ${r.status}` };
     }).catch(() => {});
 
     if (r.status === 401 || r.status === 403) { afterSave(false, r.status); return; }
