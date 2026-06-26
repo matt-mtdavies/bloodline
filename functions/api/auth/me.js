@@ -13,14 +13,16 @@ export async function onRequestGet({ env, data }) {
   if (!data.user) return json({ error: 'Unauthorized' }, { status: 401 });
 
   let display_name = null;
+  let person_id = null;
   if (env.DB) {
     try {
       const row = await env.DB.prepare(
-        'SELECT display_name FROM user WHERE id = ?',
+        'SELECT display_name, person_id FROM user WHERE id = ?',
       ).bind(data.user.uid).first();
       display_name = row?.display_name ?? null;
+      person_id = row?.person_id ?? null;
     } catch { /* migration may not be applied yet — skip gracefully */ }
   }
 
-  return json({ uid: data.user.uid, email: data.user.email, display_name });
+  return json({ uid: data.user.uid, email: data.user.email, display_name, person_id });
 }
