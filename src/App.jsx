@@ -670,13 +670,6 @@ export default function App() {
           >
             <RecenterIcon />
           </button>
-          <button
-            className="legend-fab"
-            onClick={() => setLegendOpen(true)}
-            aria-label="Legend — visual guide and display options"
-          >
-            <LegendFabIcon />
-          </button>
           {/* Bottom bar: Focus Family | Time | Lineage */}
           <div className="bottom-bar">
             <button
@@ -1156,15 +1149,6 @@ function FocusIcon() {
       <circle cx="5" cy="12" r="2" stroke="currentColor" strokeWidth="1.6" />
       <circle cx="19" cy="12" r="2" stroke="currentColor" strokeWidth="1.6" />
       <path d="M12 7v2M12 15v2M7 12h2M15 12h2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function LegendFabIcon() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.8"/>
-      <path d="M12 17v-5.5M12 8.5V7" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
     </svg>
   );
 }

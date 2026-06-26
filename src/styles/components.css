@@ -54,26 +54,17 @@
 .topbar__treerow {
   display: flex;
   align-items: center;
-  gap: 0;
-  padding: 0 16px 14px;
+  justify-content: space-between;
+  padding: 0 8px 14px;
+  gap: 4px;
 }
-.topbar__treerow::before,
-.topbar__treerow::after {
-  content: '';
-  flex: 1;
-  height: 1px;
-  background: var(--hairline);
-}
-.topbar__treerow::before { margin-right: 12px; }
-.topbar__treerow::after  { margin-left:  12px; }
 .topbar__treerow__center {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 0;
-  flex: 0 1 auto;
+  flex: 1;
   min-width: 0;
-  max-width: calc(100% - 48px);
   overflow: hidden;
 }
 /* Sync status pill — appears between brand and action buttons */
@@ -4834,20 +4825,11 @@
   display: block;
 }
 
-/* ── TopBar Row 2: view toggle ─────────────────────────────────────────── */
-.topbar__treerow {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  position: relative;
-}
-.topbar__view-toggle {
-  position: absolute;
-  right: 12px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 28px;
-  height: 28px;
+/* ── TopBar Row 2: legend + centre + view toggle ───────────────────────── */
+.topbar__row2-btn {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
   border-radius: 8px;
   background: transparent;
   border: none;
@@ -4859,28 +4841,4 @@
   -webkit-tap-highlight-color: transparent;
   transition: color 0.15s ease, background 0.15s ease;
 }
-.topbar__view-toggle:hover { color: var(--ink); background: var(--ground); }
-
-/* ── Legend floating action button ────────────────────────────────────── */
-.legend-fab {
-  position: fixed;
-  right: 16px;
-  bottom: 88px; /* sits just above the bottom bar */
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  background: rgba(255,255,255,0.92);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  border: 1px solid var(--hairline);
-  color: var(--ink-soft);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  box-shadow: 0 2px 10px rgba(0,0,0,0.10);
-  -webkit-tap-highlight-color: transparent;
-  transition: color 0.15s ease, box-shadow 0.15s ease;
-  z-index: 10;
-}
-.legend-fab:hover { color: var(--ink); box-shadow: 0 4px 16px rgba(0,0,0,0.14); }
+.topbar__row2-btn:hover { color: var(--ink); background: var(--ground); }

@@ -77,8 +77,15 @@ export default function TopBar({ familyName, stats, view, syncStatus, onToggleVi
         </div>
       </div>
 
-      {/* Row 2: family name + stats + view toggle */}
+      {/* Row 2: legend (left) + family name + stats (centre) + view toggle (right) */}
       <div className="topbar__treerow">
+        <button
+          className="topbar__row2-btn"
+          onClick={onOpenLegend}
+          aria-label="Legend — visual guide and display options"
+        >
+          <LegendIcon />
+        </button>
         <div className="topbar__treerow__center">
           <span className="topbar__familyname">{familyName}</span>
           {stats && stats.people > 0 && (
@@ -98,7 +105,7 @@ export default function TopBar({ familyName, stats, view, syncStatus, onToggleVi
           )}
         </div>
         <button
-          className="topbar__view-toggle"
+          className="topbar__row2-btn"
           onClick={onToggleView}
           aria-label={view === 'bubbles' ? 'Switch to list view' : 'Switch to tree view'}
         >
