@@ -27,8 +27,10 @@ export async function onRequestGet({ env, data }) {
       newUsers7d,
       newUsers30d,
       activeUsers7d,
+      activeUsers30d,
       totalFamilies,
       inviteCounts,
+      totalInvites,
       weeklySignups,
       recentUsers,
       treeSizes,
@@ -37,10 +39,12 @@ export async function onRequestGet({ env, data }) {
       env.DB.prepare('SELECT COUNT(*) AS n FROM user WHERE created_at > ?').bind(now - week).first(),
       env.DB.prepare('SELECT COUNT(*) AS n FROM user WHERE created_at > ?').bind(now - day * 30).first(),
       env.DB.prepare('SELECT COUNT(*) AS n FROM user WHERE last_seen > ?').bind(now - week).first(),
+      env.DB.prepare('SELECT COUNT(*) AS n FROM user WHERE last_seen > ?').bind(now - day * 30).first(),
       env.DB.prepare('SELECT COUNT(*) AS n FROM family').first(),
       env.DB.prepare(`
         SELECT status, COUNT(*) AS n FROM invite GROUP BY status
       `).all(),
+      env.DB.prepare('SELECT COUNT(*) AS n FROM invite').first(),
       env.DB.prepare(`
         SELECT
           CAST((created_at - (created_at % ${week})) / ${week} AS INTEGER) AS week_num,
@@ -51,14 +55,19 @@ export async function onRequestGet({ env, data }) {
         ORDER BY week_num ASC
       `).bind(now - day * 84).all(), // 12 weeks
       env.DB.prepare(`
-        SELECT email, created_at, last_seen
-        FROM user
-        ORDER BY created_at DESC
+        SELECT u.email, u.created_at, u.last_seen,
+               f.name AS family_name
+        FROM user u
+        LEFT JOIN family_member fm ON fm.user_id = u.id
+        LEFT JOIN family f ON f.id = fm.family_id AND fm.role = 'owner'
+        ORDER BY u.created_at DESC
         LIMIT 20
       `).all(),
       env.DB.prepare(`
-        SELECT family_id, LENGTH(tree_json) AS bytes
-        FROM family_tree
+        SELECT ft.family_id, f.name AS family_name,
+               LENGTH(ft.tree_json) AS bytes
+        FROM family_tree ft
+        LEFT JOIN family f ON f.id = ft.family_id
         ORDER BY bytes DESC
         LIMIT 10
       `).all(),
@@ -76,6 +85,11 @@ export async function onRequestGet({ env, data }) {
       signups: r.signups,
     }));
 
+    const totalInviteCount = totalInvites?.n ?? 0;
+    const acceptanceRate = totalInviteCount > 0
+      ? Math.round((invites.accepted / totalInviteCount) * 100)
+      : 0;
+
     return json({
       generated_at: new Date().toISOString(),
       users: {
@@ -83,19 +97,26 @@ export async function onRequestGet({ env, data }) {
         new_7d: newUsers7d?.n ?? 0,
         new_30d: newUsers30d?.n ?? 0,
         active_7d: activeUsers7d?.n ?? 0,
+        active_30d: activeUsers30d?.n ?? 0,
       },
       families: {
         total: totalFamilies?.n ?? 0,
       },
-      invites,
+      invites: {
+        ...invites,
+        total: totalInviteCount,
+        acceptance_rate: acceptanceRate,
+      },
       signups_by_week: signupsByWeek,
       recent_users: (recentUsers.results || []).map((u) => ({
         email: u.email,
+        family_name: u.family_name || null,
         joined: new Date(u.created_at * 1000).toISOString(),
         last_seen: u.last_seen ? new Date(u.last_seen * 1000).toISOString() : null,
       })),
       largest_trees: (treeSizes.results || []).map((t) => ({
         family_id: t.family_id,
+        family_name: t.family_name || t.family_id,
         size_kb: Math.round(t.bytes / 1024),
       })),
     });

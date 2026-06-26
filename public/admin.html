@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Admin · Bloodline</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --ink: #1c1d21;
+      --ink-soft: #5c5f66;
+      --paper: #f7f3ec;
+      --paper-alt: #efe9e0;
+      --accent: #c2603a;
+      --accent-2: #3f5e4e;
+      --gold: #b08642;
+      --hairline: #e6e1d9;
+      --white: #ffffff;
+      --danger: #b53636;
+      --shadow: 0 2px 12px rgba(28,29,33,0.08);
+    }
+    html, body {
+      height: 100%;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--paper);
+      color: var(--ink);
+      font-size: 15px;
+      line-height: 1.5;
+    }
+
+    /* ── Auth gate ── */
+    #auth-gate {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      gap: 12px;
+      color: var(--ink-soft);
+    }
+    #auth-gate .icon { font-size: 32px; }
+    #auth-gate h2 { font-size: 20px; color: var(--ink); }
+    #auth-gate a { color: var(--accent); font-size: 14px; }
+
+    /* ── Layout ── */
+    .app { display: none; }
+    .app.ready { display: block; }
+
+    .topbar {
+      background: var(--white);
+      border-bottom: 1px solid var(--hairline);
+      padding: 0 24px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      height: 56px;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+    .topbar-brand {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      text-decoration: none;
+      color: var(--accent);
+      font-weight: 700;
+      font-size: 17px;
+      letter-spacing: -0.02em;
+    }
+    .topbar-divider { width: 1px; height: 20px; background: var(--hairline); }
+    .topbar-title { font-size: 14px; color: var(--ink-soft); font-weight: 500; }
+    .topbar-spacer { flex: 1; }
+    .topbar-ts { font-size: 12px; color: var(--ink-soft); }
+    .topbar-refresh {
+      background: none;
+      border: 1px solid var(--hairline);
+      border-radius: 8px;
+      padding: 6px 12px;
+      font-size: 13px;
+      cursor: pointer;
+      color: var(--ink);
+      transition: background 0.15s;
+    }
+    .topbar-refresh:hover { background: var(--paper-alt); }
+
+    .page {
+      max-width: 1120px;
+      margin: 0 auto;
+      padding: 28px 20px 64px;
+    }
+
+    /* ── Stat cards ── */
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 14px;
+      margin-bottom: 28px;
+    }
+    .card {
+      background: var(--white);
+      border-radius: 14px;
+      padding: 18px 20px;
+      box-shadow: var(--shadow);
+      border: 1px solid var(--hairline);
+    }
+    .card__label {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--ink-soft);
+      margin-bottom: 8px;
+    }
+    .card__value {
+      font-size: 32px;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      color: var(--ink);
+      line-height: 1;
+      margin-bottom: 4px;
+    }
+    .card__value.accent { color: var(--accent); }
+    .card__value.green  { color: var(--accent-2); }
+    .card__sub { font-size: 12px; color: var(--ink-soft); }
+
+    /* ── Chart row ── */
+    .charts {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      margin-bottom: 28px;
+    }
+    @media (max-width: 700px) { .charts { grid-template-columns: 1fr; } }
+
+    .chart-card {
+      background: var(--white);
+      border-radius: 14px;
+      padding: 20px 22px;
+      box-shadow: var(--shadow);
+      border: 1px solid var(--hairline);
+    }
+    .chart-card h3 {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--ink);
+      margin-bottom: 16px;
+    }
+    .chart-wrap { position: relative; height: 220px; }
+
+    /* ── Tables ── */
+    .tables {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+    @media (max-width: 700px) { .tables { grid-template-columns: 1fr; } }
+
+    .table-card {
+      background: var(--white);
+      border-radius: 14px;
+      padding: 20px 22px;
+      box-shadow: var(--shadow);
+      border: 1px solid var(--hairline);
+      overflow: hidden;
+    }
+    .table-card h3 {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--ink);
+      margin-bottom: 14px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    thead th {
+      text-align: left;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: var(--ink-soft);
+      padding: 0 0 8px;
+      border-bottom: 1px solid var(--hairline);
+    }
+    tbody tr { border-bottom: 1px solid var(--hairline); }
+    tbody tr:last-child { border-bottom: none; }
+    tbody td {
+      padding: 9px 0;
+      color: var(--ink-soft);
+      vertical-align: middle;
+    }
+    tbody td.primary { color: var(--ink); font-weight: 500; }
+    tbody td.muted { font-size: 12px; }
+
+    .badge {
+      display: inline-block;
+      border-radius: 6px;
+      padding: 2px 7px;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+    }
+    .badge-green { background: #e8f3ed; color: var(--accent-2); }
+    .badge-amber { background: #fdf3e3; color: var(--gold); }
+    .badge-red   { background: #fce8e8; color: var(--danger); }
+
+    /* ── Invite funnel summary row ── */
+    .funnel-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+    .funnel-item {
+      text-align: center;
+      padding: 12px 8px;
+      border-radius: 10px;
+      background: var(--paper);
+    }
+    .funnel-item__n { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; }
+    .funnel-item__l { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; color: var(--ink-soft); }
+
+    /* ── Spinner ── */
+    .spinner {
+      display: flex; align-items: center; justify-content: center;
+      height: 80px; color: var(--ink-soft); font-size: 14px; gap: 8px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spin-icon {
+      width: 18px; height: 18px; border: 2px solid var(--hairline);
+      border-top-color: var(--accent); border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+
+    /* ── Error ── */
+    .error-msg {
+      background: #fce8e8; color: var(--danger); border-radius: 10px;
+      padding: 14px 18px; font-size: 14px; margin-bottom: 20px; display: none;
+    }
+
+    /* ── Section heading ── */
+    .section-heading {
+      font-size: 12px; font-weight: 600; letter-spacing: 0.07em;
+      text-transform: uppercase; color: var(--ink-soft); margin-bottom: 14px;
+    }
+  </style>
+</head>
+<body>
+
+<div id="auth-gate">
+  <div class="spinner">
+    <div class="spin-icon"></div>
+    Loading…
+  </div>
+</div>
+
+<div class="app" id="app">
+  <nav class="topbar">
+    <a class="topbar-brand" href="/">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 56 56" width="28" height="28">
+        <rect width="56" height="56" rx="13" fill="#f7f3ec"/>
+        <circle cx="22" cy="24" r="10" fill="#c2603a" stroke="#fff" stroke-width="2.4"/>
+        <circle cx="34" cy="24" r="10" fill="#3f5e4e" stroke="#fff" stroke-width="2.4"/>
+        <circle cx="28" cy="36" r="6.6" fill="#b08642" stroke="#fff" stroke-width="2.4"/>
+      </svg>
+      Bloodline
+    </a>
+    <div class="topbar-divider"></div>
+    <span class="topbar-title">Admin Dashboard</span>
+    <div class="topbar-spacer"></div>
+    <span class="topbar-ts" id="ts"></span>
+    <button class="topbar-refresh" id="btn-refresh">Refresh</button>
+  </nav>
+
+  <div class="page">
+    <div class="error-msg" id="error-msg"></div>
+
+    <!-- Metric cards -->
+    <p class="section-heading">Users</p>
+    <div class="cards" id="user-cards">
+      <div class="spinner"><div class="spin-icon"></div></div>
+    </div>
+
+    <p class="section-heading">Families &amp; Invites</p>
+    <div class="cards" id="family-cards">
+      <div class="spinner"><div class="spin-icon"></div></div>
+    </div>
+
+    <!-- Charts -->
+    <p class="section-heading" style="margin-top: 8px;">Trends</p>
+    <div class="charts">
+      <div class="chart-card">
+        <h3>Weekly signups — last 12 weeks</h3>
+        <div class="chart-wrap"><canvas id="chart-signups"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <h3>Invite funnel</h3>
+        <div class="funnel-row" id="funnel-summary"></div>
+        <div class="chart-wrap" style="height:160px;"><canvas id="chart-invites"></canvas></div>
+      </div>
+    </div>
+
+    <!-- Tables -->
+    <p class="section-heading">Recent &amp; Activity</p>
+    <div class="tables">
+      <div class="table-card">
+        <h3>Most recent sign-ups</h3>
+        <table id="table-users">
+          <thead><tr>
+            <th>Email</th>
+            <th>Family</th>
+            <th>Joined</th>
+            <th>Last seen</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="table-card">
+        <h3>Largest trees (by data size)</h3>
+        <table id="table-trees">
+          <thead><tr>
+            <th>Family</th>
+            <th>Size</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const authGate = document.getElementById('auth-gate');
+  const app      = document.getElementById('app');
+  const errorMsg = document.getElementById('error-msg');
+
+  let signupChart = null;
+  let inviteChart = null;
+
+  function showError(msg) {
+    errorMsg.textContent = msg;
+    errorMsg.style.display = 'block';
+  }
+
+  function fmt(isoStr) {
+    if (!isoStr) return '—';
+    const d = new Date(isoStr);
+    const now = new Date();
+    const diffMs = now - d;
+    const diffDays = Math.floor(diffMs / 86400000);
+    if (diffDays === 0) return 'Today';
+    if (diffDays === 1) return 'Yesterday';
+    if (diffDays < 7)  return `${diffDays}d ago`;
+    if (diffDays < 60) return `${Math.floor(diffDays / 7)}w ago`;
+    return d.toLocaleDateString('en-CA', { year: 'numeric', month: 'short', day: 'numeric' });
+  }
+
+  function card(label, value, sub, cls) {
+    return `<div class="card">
+      <div class="card__label">${label}</div>
+      <div class="card__value ${cls || ''}">${value}</div>
+      ${sub ? `<div class="card__sub">${sub}</div>` : ''}
+    </div>`;
+  }
+
+  function renderCards(data) {
+    const u = data.users;
+    const f = data.families;
+    const inv = data.invites;
+
+    document.getElementById('user-cards').innerHTML = [
+      card('Total users', u.total, '', 'accent'),
+      card('New this week', u.new_7d, `${u.new_30d} in last 30 days`),
+      card('Active (7 days)', u.active_7d, `${u.active_30d} in last 30 days`, 'green'),
+      card('Retention (30d)', u.total > 0 ? Math.round((u.active_30d / u.total) * 100) + '%' : '—', 'of all users active last 30d'),
+    ].join('');
+
+    document.getElementById('family-cards').innerHTML = [
+      card('Family trees', f.total, 'total trees created'),
+      card('Invites sent', inv.total, ''),
+      card('Accepted', inv.accepted, `${inv.acceptance_rate}% acceptance rate`, 'green'),
+      card('Pending', inv.pending, 'awaiting response'),
+      card('Expired', inv.expired, '', inv.expired > 0 ? '' : ''),
+    ].join('');
+  }
+
+  function renderSignupChart(data) {
+    // Fill in any missing weeks with 0s for a clean line chart.
+    const now = Date.now();
+    const weekMs = 7 * 24 * 60 * 60 * 1000;
+    const weekMap = new Map((data.signups_by_week || []).map((r) => [r.week, r.signups]));
+
+    const labels = [];
+    const values = [];
+    for (let i = 11; i >= 0; i--) {
+      const d = new Date(Math.floor((now - i * weekMs) / weekMs) * weekMs);
+      const key = d.toISOString().slice(0, 10);
+      labels.push(d.toLocaleDateString('en-CA', { month: 'short', day: 'numeric' }));
+      values.push(weekMap.get(key) ?? 0);
+    }
+
+    const ctx = document.getElementById('chart-signups').getContext('2d');
+    if (signupChart) signupChart.destroy();
+    signupChart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [{
+          data: values,
+          borderColor: '#c2603a',
+          backgroundColor: 'rgba(194,96,58,0.10)',
+          borderWidth: 2.5,
+          pointBackgroundColor: '#c2603a',
+          pointRadius: 4,
+          pointHoverRadius: 6,
+          fill: true,
+          tension: 0.35,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: {
+            grid: { color: '#e6e1d9' },
+            ticks: { color: '#5c5f66', font: { size: 11 }, maxTicksLimit: 6 },
+          },
+          y: {
+            beginAtZero: true,
+            grid: { color: '#e6e1d9' },
+            ticks: { color: '#5c5f66', font: { size: 11 }, stepSize: 1 },
+          },
+        },
+      },
+    });
+  }
+
+  function renderInviteChart(data) {
+    const inv = data.invites;
+
+    // Funnel summary row
+    document.getElementById('funnel-summary').innerHTML = `
+      <div class="funnel-item">
+        <div class="funnel-item__n" style="color:#3f5e4e">${inv.accepted}</div>
+        <div class="funnel-item__l">Accepted</div>
+      </div>
+      <div class="funnel-item">
+        <div class="funnel-item__n" style="color:#b08642">${inv.pending}</div>
+        <div class="funnel-item__l">Pending</div>
+      </div>
+      <div class="funnel-item">
+        <div class="funnel-item__n" style="color:#5c5f66">${inv.expired}</div>
+        <div class="funnel-item__l">Expired</div>
+      </div>`;
+
+    const ctx = document.getElementById('chart-invites').getContext('2d');
+    if (inviteChart) inviteChart.destroy();
+    inviteChart = new Chart(ctx, {
+      type: 'doughnut',
+      data: {
+        labels: ['Accepted', 'Pending', 'Expired'],
+        datasets: [{
+          data: [inv.accepted || 0, inv.pending || 0, inv.expired || 0],
+          backgroundColor: ['#3f5e4e', '#b08642', '#d4cfc8'],
+          borderWidth: 0,
+          hoverOffset: 6,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        cutout: '65%',
+        plugins: {
+          legend: {
+            position: 'bottom',
+            labels: { color: '#5c5f66', font: { size: 12 }, padding: 16, boxWidth: 12 },
+          },
+        },
+      },
+    });
+  }
+
+  function renderUsersTable(data) {
+    const tbody = document.querySelector('#table-users tbody');
+    const rows = (data.recent_users || []);
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="4" style="padding:14px 0;color:#5c5f66">No users yet</td></tr>';
+      return;
+    }
+    tbody.innerHTML = rows.map((u) => {
+      const statusBadge = !u.last_seen
+        ? '<span class="badge badge-amber">Joined</span>'
+        : (new Date() - new Date(u.last_seen)) < 7 * 86400000
+          ? '<span class="badge badge-green">Active</span>'
+          : '';
+      return `<tr>
+        <td class="primary">${escHtml(u.email)} ${statusBadge}</td>
+        <td class="muted">${escHtml(u.family_name || '—')}</td>
+        <td class="muted">${fmt(u.joined)}</td>
+        <td class="muted">${fmt(u.last_seen)}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  function renderTreesTable(data) {
+    const tbody = document.querySelector('#table-trees tbody');
+    const rows = (data.largest_trees || []);
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="2" style="padding:14px 0;color:#5c5f66">No trees yet</td></tr>';
+      return;
+    }
+    tbody.innerHTML = rows.map((t) => {
+      const sizeLabel = t.size_kb >= 1024
+        ? (t.size_kb / 1024).toFixed(1) + ' MB'
+        : t.size_kb + ' KB';
+      const sizeColor = t.size_kb > 500 ? 'color:#b08642' : 'color:#3f5e4e';
+      return `<tr>
+        <td class="primary">${escHtml(t.family_name)}</td>
+        <td class="muted" style="${sizeColor};font-weight:600">${sizeLabel}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  function escHtml(s) {
+    return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  async function loadData() {
+    errorMsg.style.display = 'none';
+    try {
+      const res = await fetch('/api/admin/stats');
+      if (res.status === 401 || res.status === 403) {
+        authGate.innerHTML = `
+          <div class="icon">🔒</div>
+          <h2>${res.status === 401 ? 'Sign in required' : 'Access denied'}</h2>
+          <p>${res.status === 401 ? 'This page requires an admin account.' : 'Your account does not have admin access.'}</p>
+          <a href="/">← Back to Bloodline</a>`;
+        authGate.style.display = 'flex';
+        app.classList.remove('ready');
+        return;
+      }
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        showError('Could not load stats: ' + (body.error || res.statusText));
+        return;
+      }
+
+      const data = await res.json();
+
+      // Show the app, hide auth gate
+      authGate.style.display = 'none';
+      app.classList.add('ready');
+
+      // Timestamp
+      document.getElementById('ts').textContent =
+        'Updated ' + new Date(data.generated_at).toLocaleTimeString('en-CA', { hour: '2-digit', minute: '2-digit' });
+
+      renderCards(data);
+      renderSignupChart(data);
+      renderInviteChart(data);
+      renderUsersTable(data);
+      renderTreesTable(data);
+
+    } catch (e) {
+      showError('Network error — could not reach the server.');
+      console.error(e);
+    }
+  }
+
+  document.getElementById('btn-refresh').addEventListener('click', loadData);
+  loadData();
+</script>
+</body>
+</html>

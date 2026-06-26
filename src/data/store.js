@@ -221,6 +221,25 @@ async function putTree(s, attempt = 0) {
 
 // Fetch the latest server state, merge our local additions on top, update
 // local state, and return the merged snapshot ready for re-save.
+// Merge two arrays of objects with .id fields — union, local entry wins on conflict.
+function _mergeById(serverArr, localArr) {
+  const out = [...(serverArr || [])];
+  const idx = new Map(out.map((x, i) => [x.id, i]));
+  for (const item of (localArr || [])) {
+    if (idx.has(item.id)) {
+      out[idx.get(item.id)] = { ...out[idx.get(item.id)], ...item };
+    } else {
+      out.push(item);
+    }
+  }
+  return out;
+}
+
+// Union two string arrays (e.g. tag lists, photo ID lists), deduplicated.
+function _unionStrings(a, b) {
+  return [...new Set([...(a || []), ...(b || [])])];
+}
+
 async function _fetchAndMerge(local) {
   try {
     const res = await fetch('/api/tree');
@@ -228,19 +247,40 @@ async function _fetchAndMerge(local) {
     const server = await res.json();
     _serverEtag = res.headers.get('ETag') || _serverEtag;
 
-    // Add people/relationships/memories that exist locally but not on server
-    // (both editors added different things). For existing records, server wins.
-    const sPersonIds = new Set((server.people || []).map((p) => p.id));
-    const sRelIds    = new Set((server.relationships || []).map((r) => r.id));
-    const sMemIds    = new Set((server.memories || []).map((m) => m.id));
-    const sPhotoIds  = new Set((server.photos || []).map((ph) => ph.id));
+    // Build a map of server people for deep-merge.
+    const serverPersonMap = new Map((server.people || []).map((p) => [p.id, p]));
+    const localPersonMap  = new Map((local.people  || []).map((p) => [p.id, p]));
+
+    // For existing people: local scalar fields win (user just edited them);
+    // array sub-fields (conditions, tags, events, photos) are unioned so
+    // additions from either side are preserved.
+    const mergedPeople = [
+      ...(server.people || []).map((sp) => {
+        const lp = localPersonMap.get(sp.id);
+        if (!lp) return sp;
+        return {
+          ...sp,
+          ...lp, // local scalar fields win
+          conditions: _mergeById(sp.conditions, lp.conditions),
+          events:     _mergeById(sp.events,     lp.events),
+          tags:       _unionStrings(sp.tags,    lp.tags),
+          photos:     _unionStrings(sp.photos,  lp.photos),
+        };
+      }),
+      // People added locally but not yet on the server.
+      ...(local.people || []).filter((p) => !serverPersonMap.has(p.id)),
+    ];
+
+    const sRelIds   = new Set((server.relationships || []).map((r) => r.id));
+    const sMemIds   = new Set((server.memories      || []).map((m) => m.id));
+    const sPhotoIds = new Set((server.photos        || []).map((ph) => ph.id));
 
     const merged = {
       ...server,
-      people:        [...(server.people || []),        ...(local.people || []).filter((p)  => !sPersonIds.has(p.id))],
-      relationships: [...(server.relationships || []), ...(local.relationships || []).filter((r) => !sRelIds.has(r.id))],
-      memories:      [...(server.memories || []),      ...(local.memories || []).filter((m)  => !sMemIds.has(m.id))],
-      photos:        [...(server.photos || []),        ...(local.photos || []).filter((ph) => !sPhotoIds.has(ph.id))],
+      people:        mergedPeople,
+      relationships: [...(server.relationships || []), ...(local.relationships || []).filter((r)  => !sRelIds.has(r.id))],
+      memories:      [...(server.memories      || []), ...(local.memories      || []).filter((m)  => !sMemIds.has(m.id))],
+      photos:        [...(server.photos        || []), ...(local.photos        || []).filter((ph) => !sPhotoIds.has(ph.id))],
     };
 
     commit(merged, { fromServer: true });
