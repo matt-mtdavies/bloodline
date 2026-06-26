@@ -20,7 +20,7 @@ export async function onRequestGet({ env, data }) {
 
   const [{ results: members }, { results: invites }] = await Promise.all([
     env.DB.prepare(
-      `SELECT u.id, u.email, fm.role, fm.joined_at
+      `SELECT u.id, u.email, u.display_name, fm.role, fm.joined_at
          FROM family_member fm JOIN user u ON u.id = fm.user_id
         WHERE fm.family_id = ?
         ORDER BY fm.joined_at ASC`,

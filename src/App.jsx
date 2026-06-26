@@ -55,6 +55,7 @@ import Intro from './components/Intro.jsx';
 import Onboarding from './components/Onboarding.jsx';
 import LoginScreen from './components/LoginScreen.jsx';
 import FamilySettings from './components/FamilySettings.jsx';
+import UserProfile from './components/UserProfile.jsx';
 import MergeWizard from './components/MergeWizard.jsx';
 import InviteSheet from './components/InviteSheet.jsx';
 import ActivityFeed from './components/ActivityFeed.jsx';
@@ -199,6 +200,7 @@ export default function App() {
   const [lastReadAt, setLastReadAt] = useState(null); // null = never opened = all unread
   const [gedcomOpen, setGedcomOpen] = useState(false);
   const [fsImportOpen, setFsImportOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
   const viewApi = useRef(null);
 
   // Notify the user if a commit couldn't persist (localStorage full).
@@ -626,6 +628,7 @@ export default function App() {
         onOpenActivity={() => { setActivityOpen(true); setLastReadAt(Date.now()); }}
         activityCount={unreadCount}
         user={user}
+        onOpenProfile={user ? () => setProfileOpen(true) : null}
       />
 
       {view === 'bubbles' ? (
@@ -972,6 +975,22 @@ export default function App() {
           onClose={() => setSettingsOpen(false)}
           onImportGedcom={() => setGedcomOpen(true)}
           onImportFamilySearch={() => setFsImportOpen(true)}
+        />
+      )}
+
+      {profileOpen && user && (
+        <UserProfile
+          user={user}
+          people={data.people}
+          onClose={() => setProfileOpen(false)}
+          onLogout={async () => {
+            await fetch('/api/auth/logout', { method: 'POST' });
+            window.location.reload();
+          }}
+          onSaved={(updated) => {
+            setUser((u) => ({ ...u, ...updated }));
+            setCurrentUser({ ...user, ...updated });
+          }}
         />
       )}
 

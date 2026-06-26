@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, forwardRef } from 'react';
 import Logo from './Logo.jsx';
 
-export default function TopBar({ familyName, stats, view, syncStatus, onToggleView, onOpenLegend, onOpenSettings, onOpenActivity, activityCount = 0 }) {
+export default function TopBar({ familyName, stats, view, syncStatus, onToggleView, onOpenLegend, onOpenSettings, onOpenActivity, activityCount = 0, user, onOpenProfile }) {
   const [statsOpen, setStatsOpen] = useState(false);
   const popoverRef = useRef(null);
   const statsRef = useRef(null);
@@ -67,6 +67,16 @@ export default function TopBar({ familyName, stats, view, syncStatus, onToggleVi
           <button className="pill" onClick={onToggleView} aria-label={view === 'bubbles' ? 'Switch to list view' : 'Switch to tree view'}>
             {view === 'bubbles' ? <ListIcon /> : <TreeIcon />}
           </button>
+          {user && onOpenProfile && (
+            <button
+              className="topbar-avatar"
+              onClick={onOpenProfile}
+              aria-label="Your profile"
+              title={user.display_name || user.email}
+            >
+              {userInitials(user)}
+            </button>
+          )}
         </div>
       </div>
 
@@ -191,6 +201,13 @@ function CompRow({ label, value, total }) {
       <span className="stats-popover__comp-count">{value} / {total}</span>
     </li>
   );
+}
+
+function userInitials(user) {
+  const src = user.display_name || user.email || '';
+  const parts = src.trim().split(/[\s@._]+/).filter(Boolean);
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+  return (parts[0]?.slice(0, 2) ?? '?').toUpperCase();
 }
 
 /* ── Icons ──────────────────────────────────────────────────────────────── */

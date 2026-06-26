@@ -11,5 +11,14 @@ export async function onRequestGet({ env, data }) {
     return json({ bypass: true });
   }
   if (!data.user) return json({ error: 'Unauthorized' }, { status: 401 });
-  return json({ uid: data.user.uid, email: data.user.email });
+
+  let display_name = null;
+  if (env.DB) {
+    const row = await env.DB.prepare(
+      'SELECT display_name FROM user WHERE id = ?',
+    ).bind(data.user.uid).first();
+    display_name = row?.display_name ?? null;
+  }
+
+  return json({ uid: data.user.uid, email: data.user.email, display_name });
 }
