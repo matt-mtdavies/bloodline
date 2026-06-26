@@ -9,9 +9,17 @@ export async function onRequestGet({ env, data }) {
   if (!data.user) return json({ error: 'Unauthorized' }, { status: 401 });
   if (!env.DB) return json({ error: 'Database not configured' }, { status: 503 });
 
-  const row = await env.DB.prepare(
-    'SELECT id, email, display_name, person_id, notification_prefs FROM user WHERE id = ?',
-  ).bind(data.user.uid).first();
+  // Fall back to a basic query if migration 0005 hasn't been applied yet.
+  let row;
+  try {
+    row = await env.DB.prepare(
+      'SELECT id, email, display_name, person_id, notification_prefs FROM user WHERE id = ?',
+    ).bind(data.user.uid).first();
+  } catch {
+    row = await env.DB.prepare(
+      'SELECT id, email FROM user WHERE id = ?',
+    ).bind(data.user.uid).first();
+  }
 
   if (!row) return json({ error: 'User not found' }, { status: 404 });
 
@@ -65,9 +73,17 @@ export async function onRequestPatch({ request, env, data }) {
   binds.push(Math.floor(Date.now() / 1000));
   binds.push(data.user.uid);
 
-  await env.DB.prepare(
-    `UPDATE user SET ${sets.join(', ')} WHERE id = ?`,
-  ).bind(...binds).run();
+  try {
+    await env.DB.prepare(
+      `UPDATE user SET ${sets.join(', ')} WHERE id = ?`,
+    ).bind(...binds).run();
+  } catch (e) {
+    const msg = e?.message ?? '';
+    if (msg.includes('no such column')) {
+      return json({ error: 'Migration pending — run 0005_user_profile.sql' }, { status: 503 });
+    }
+    throw e;
+  }
 
   return json({ ok: true });
 }

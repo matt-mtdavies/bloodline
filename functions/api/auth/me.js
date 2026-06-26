@@ -14,10 +14,12 @@ export async function onRequestGet({ env, data }) {
 
   let display_name = null;
   if (env.DB) {
-    const row = await env.DB.prepare(
-      'SELECT display_name FROM user WHERE id = ?',
-    ).bind(data.user.uid).first();
-    display_name = row?.display_name ?? null;
+    try {
+      const row = await env.DB.prepare(
+        'SELECT display_name FROM user WHERE id = ?',
+      ).bind(data.user.uid).first();
+      display_name = row?.display_name ?? null;
+    } catch { /* migration may not be applied yet — skip gracefully */ }
   }
 
   return json({ uid: data.user.uid, email: data.user.email, display_name });

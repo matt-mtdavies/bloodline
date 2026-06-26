@@ -18,13 +18,27 @@ export async function onRequestGet({ env, data }) {
 
   if (!membership) return json({ members: [], invites: [] });
 
-  const [{ results: members }, { results: invites }] = await Promise.all([
-    env.DB.prepare(
-      `SELECT u.id, u.email, u.display_name, fm.role, fm.joined_at
-         FROM family_member fm JOIN user u ON u.id = fm.user_id
-        WHERE fm.family_id = ?
-        ORDER BY fm.joined_at ASC`,
-    ).bind(membership.family_id).all(),
+  // Try with display_name; fall back to without if migration 0005 not yet applied.
+  async function fetchMembers(familyId) {
+    try {
+      return (await env.DB.prepare(
+        `SELECT u.id, u.email, u.display_name, fm.role, fm.joined_at
+           FROM family_member fm JOIN user u ON u.id = fm.user_id
+          WHERE fm.family_id = ?
+          ORDER BY fm.joined_at ASC`,
+      ).bind(familyId).all()).results;
+    } catch {
+      return (await env.DB.prepare(
+        `SELECT u.id, u.email, fm.role, fm.joined_at
+           FROM family_member fm JOIN user u ON u.id = fm.user_id
+          WHERE fm.family_id = ?
+          ORDER BY fm.joined_at ASC`,
+      ).bind(familyId).all()).results;
+    }
+  }
+
+  const [members, { results: invites }] = await Promise.all([
+    fetchMembers(membership.family_id),
     env.DB.prepare(
       `SELECT id, email, role, status, created_at, expires_at
          FROM invite WHERE family_id = ? AND status = 'pending'
