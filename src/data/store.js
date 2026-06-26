@@ -107,6 +107,8 @@ const listeners = new Set();
 // Server sync — enabled after a successful /api/auth/me check.
 let _serverSyncEnabled = false;
 let _saveTimer = null;
+let _pollTimer = null;
+let _serverEtag = null; // ETag from last successful GET or PUT
 
 // Sync status observable — consumed by TopBar.
 // Values: 'idle' | 'saving' | 'saved' | 'error' | 'error-auth'
@@ -120,6 +122,12 @@ export const syncStore = {
 
 export function enableServerSync() {
   _serverSyncEnabled = true;
+  // Poll every 60 s for changes made by other editors.
+  if (!_pollTimer) {
+    _pollTimer = setInterval(() => {
+      if (_syncStatus !== 'saving') _pollServer();
+    }, 60_000);
+  }
 }
 
 let _savedTimer = null;
@@ -157,17 +165,31 @@ const RETRY_DELAYS = [2000, 4000, 8000];
 
 async function putTree(s, attempt = 0) {
   try {
+    const headers = { 'content-type': 'application/json' };
+    if (_serverEtag) headers['If-Match'] = _serverEtag;
+
     const r = await fetch('/api/tree', {
       method: 'PUT',
-      headers: { 'content-type': 'application/json' },
+      headers,
       body: JSON.stringify(stripForServer(s)),
     });
-    if (r.ok) { afterSave(true); return; }
-    // Log actual error body to aid debugging.
+
+    if (r.ok) {
+      _serverEtag = r.headers.get('ETag') || _serverEtag;
+      afterSave(true);
+      return;
+    }
+
+    // Another editor saved first — fetch their version, merge, and retry once.
+    if (r.status === 409 && attempt === 0) {
+      const merged = await _fetchAndMerge(s);
+      if (merged) { putTree(merged, 1); return; }
+    }
+
     r.clone().json().then((body) => {
       console.error('[store] PUT /api/tree', r.status, body?.detail || body?.error || '');
     }).catch(() => {});
-    // Auth errors are permanent — no retry.
+
     if (r.status === 401 || r.status === 403) { afterSave(false, r.status); return; }
     if (attempt < RETRY_DELAYS.length) {
       setTimeout(() => putTree(s, attempt + 1), RETRY_DELAYS[attempt]);
@@ -182,6 +204,61 @@ async function putTree(s, attempt = 0) {
       afterSave(false);
     }
   }
+}
+
+// Fetch the latest server state, merge our local additions on top, update
+// local state, and return the merged snapshot ready for re-save.
+async function _fetchAndMerge(local) {
+  try {
+    const res = await fetch('/api/tree');
+    if (!res.ok) return null;
+    const server = await res.json();
+    _serverEtag = res.headers.get('ETag') || _serverEtag;
+
+    // Add people/relationships/memories that exist locally but not on server
+    // (both editors added different things). For existing records, server wins.
+    const sPersonIds = new Set((server.people || []).map((p) => p.id));
+    const sRelIds    = new Set((server.relationships || []).map((r) => r.id));
+    const sMemIds    = new Set((server.memories || []).map((m) => m.id));
+    const sPhotoIds  = new Set((server.photos || []).map((ph) => ph.id));
+
+    const merged = {
+      ...server,
+      people:        [...(server.people || []),        ...(local.people || []).filter((p)  => !sPersonIds.has(p.id))],
+      relationships: [...(server.relationships || []), ...(local.relationships || []).filter((r) => !sRelIds.has(r.id))],
+      memories:      [...(server.memories || []),      ...(local.memories || []).filter((m)  => !sMemIds.has(m.id))],
+      photos:        [...(server.photos || []),        ...(local.photos || []).filter((ph) => !sPhotoIds.has(ph.id))],
+    };
+
+    commit(merged, { fromServer: true });
+    window.dispatchEvent(new CustomEvent('bloodline:tree-conflict-merged'));
+    return merged;
+  } catch {
+    return null;
+  }
+}
+
+// Background poll — apply server changes if another editor saved since our last load.
+async function _pollServer() {
+  try {
+    const res = await fetch('/api/tree');
+    if (!res.ok) return;
+    const freshEtag = res.headers.get('ETag');
+    // Nothing changed since our last known version.
+    if (freshEtag && freshEtag === _serverEtag) return;
+
+    const server = await res.json();
+    if (!server) return;
+    _serverEtag = freshEtag || _serverEtag;
+
+    const serverSeq = server._seq || 0;
+    const localSeq  = state._seq  || 0;
+    // Only apply if server is genuinely ahead (another editor saved).
+    if (serverSeq <= localSeq) return;
+
+    commit(server, { fromServer: true });
+    window.dispatchEvent(new CustomEvent('bloodline:tree-polled'));
+  } catch { /* silent — try next interval */ }
 }
 
 function scheduleServerSave(s) {
@@ -223,6 +300,8 @@ export async function loadFromServer({ forceServerWins = false } = {}) {
     if (!res.ok) return false;
     const data = await res.json();
     if (!data) return false;
+
+    _serverEtag = res.headers.get('ETag') || _serverEtag;
 
     const localSeq = state._seq || 0;
     const serverSeq = data._seq || 0;

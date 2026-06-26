@@ -34,14 +34,15 @@ export async function onRequestGet({ env, data }) {
     if (!membership) return json(null); // new user — client shows onboarding
 
     const row = await env.DB.prepare(
-      'SELECT tree_json FROM family_tree WHERE family_id = ?',
+      'SELECT tree_json, updated_at FROM family_tree WHERE family_id = ?',
     ).bind(membership.family_id).first();
 
     if (!row) return json(null);
 
+    const etag = `"${row.updated_at}"`;
     return json(
       { ...JSON.parse(row.tree_json), _meta: { familyId: membership.family_id, role: membership.role } },
-      { headers: { 'cache-control': 'private, no-store' } },
+      { headers: { 'cache-control': 'private, no-store', 'ETag': etag } },
     );
   } catch (e) {
     console.error('[tree] GET error:', e.message);
@@ -90,6 +91,19 @@ export async function onRequestPut({ request, env, data }) {
       return json({ error: 'Forbidden' }, { status: 403 });
     }
 
+    // Optimistic concurrency: if the client sent If-Match, check it against the
+    // current updated_at. Reject with 409 if someone else saved since the client
+    // last loaded, so they can merge before overwriting.
+    const ifMatch = request.headers.get('If-Match');
+    if (ifMatch && ifMatch !== '*') {
+      const current = await env.DB.prepare(
+        'SELECT updated_at FROM family_tree WHERE family_id = ?',
+      ).bind(membership.family_id).first();
+      if (current && `"${current.updated_at}"` !== ifMatch) {
+        return json({ error: 'Conflict — tree was updated by another editor' }, { status: 409 });
+      }
+    }
+
     await env.DB.prepare(
       `INSERT INTO family_tree (family_id, tree_json, updated_at)
        VALUES (?, ?, ?)
@@ -104,7 +118,10 @@ export async function onRequestPut({ request, env, data }) {
         .bind(tree.familyName, membership.family_id).run();
     }
 
-    return json({ ok: true, familyId: membership.family_id, role: membership.role });
+    return json(
+      { ok: true, familyId: membership.family_id, role: membership.role },
+      { headers: { 'ETag': `"${now}"` } },
+    );
   } catch (e) {
     console.error('[tree] PUT error:', e.message);
     return json({ error: 'Server error' }, { status: 500 });
