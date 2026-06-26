@@ -322,13 +322,18 @@ export default function FamilySettings({ myRole, familyName, onUpdateFamilyName,
           ) : (
             <form onSubmit={sendFeedback} noValidate>
               <div className="fs__fb-types">
-                {[['idea','💡 Idea'],['bug','🐛 Bug'],['praise','🙌 Praise'],['other','📬 Other']].map(([v,l]) => (
+                {[
+                  ['idea',   <FbIdeaIcon />,   'Idea'],
+                  ['bug',    <FbBugIcon />,    'Bug'],
+                  ['praise', <FbPraiseIcon />, 'Praise'],
+                  ['other',  <FbOtherIcon />,  'Other'],
+                ].map(([v, icon, label]) => (
                   <button
                     key={v}
                     type="button"
                     className={`fs__fb-type${fbType === v ? ' fs__fb-type--on' : ''}`}
                     onClick={() => setFbType(v)}
-                  >{l}</button>
+                  >{icon}{label}</button>
                 ))}
               </div>
               <textarea
@@ -452,6 +457,42 @@ function LeafIcon() {
       <path d="M12 22V9" stroke="white" strokeWidth="1.5" strokeLinecap="round"/>
       <path d="M12 14c0 0-2.5-1.5-3.5-4.5" stroke="white" strokeWidth="1.3" strokeLinecap="round"/>
       <path d="M12 11c0 0 2-1 3-3.5" stroke="white" strokeWidth="1.3" strokeLinecap="round"/>
+    </svg>
+  );
+}
+
+function FbIdeaIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M9 21h6" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/>
+      <path d="M12 3a6 6 0 0 1 4.24 10.24c-.6.6-.99 1.4-1.24 2.26V18H9v-2.5c-.25-.86-.64-1.66-1.24-2.26A6 6 0 0 1 12 3z" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  );
+}
+
+function FbBugIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M8 2l1.88 1.88M16 2l-1.88 1.88" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/>
+      <path d="M9 9a3 3 0 0 1 6 0v5a3 3 0 0 1-6 0V9z" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/>
+      <path d="M6 10H3M21 10h-3M6 15H3M21 15h-3" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/>
+      <path d="M9 20c0 1.1.9 2 3 2s3-.9 3-2" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/>
+    </svg>
+  );
+}
+
+function FbPraiseIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6L12 2z" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  );
+}
+
+function FbOtherIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/>
     </svg>
   );
 }

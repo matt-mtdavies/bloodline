@@ -4522,6 +4522,9 @@
   margin-bottom: 10px;
 }
 .fs__fb-type {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   padding: 5px 12px;
   border-radius: 20px;
   border: 1.5px solid var(--hairline);
