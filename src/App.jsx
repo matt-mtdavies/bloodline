@@ -999,6 +999,7 @@ export default function App() {
             setUser((u) => ({ ...u, ...updated }));
             setCurrentUser({ ...user, ...updated });
           }}
+          onPhoto={handlePhoto}
         />
       )}
 

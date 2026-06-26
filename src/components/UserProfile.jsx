@@ -1,12 +1,13 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 
-export default function UserProfile({ user, people = [], onClose, onLogout, onSaved }) {
+export default function UserProfile({ user, people = [], onClose, onLogout, onSaved, onPhoto }) {
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [nameEdit, setNameEdit] = useState('');
   const [saving, setSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState(null); // null | 'saved' | string (error)
   const saveTimer = useRef(null);
+  const fileRef = useRef(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -80,6 +81,13 @@ export default function UserProfile({ user, people = [], onClose, onLogout, onSa
   const claimedPerson = profile?.person_id
     ? people.find((p) => p.id === profile.person_id)
     : null;
+  const claimedPhoto = claimedPerson?.photo || null;
+
+  function handleFileChange(e) {
+    const file = e.target.files?.[0];
+    if (file && claimedPerson) onPhoto?.(claimedPerson.id, file);
+    e.target.value = '';
+  }
 
   return (
     <div className="sheet-scrim" role="dialog" aria-modal="true" aria-label="Your profile" onClick={onClose}>
@@ -93,7 +101,21 @@ export default function UserProfile({ user, people = [], onClose, onLogout, onSa
 
         {/* Avatar + identity */}
         <div className="up__hero">
-          <div className="up__avatar">{initials}</div>
+          <button
+            className={`up__avatar-btn${claimedPerson ? '' : ' up__avatar-btn--noclaim'}`}
+            onClick={() => claimedPerson && fileRef.current?.click()}
+            aria-label={claimedPerson ? (claimedPhoto ? 'Change photo' : 'Add a photo') : 'Claim your bubble to add a photo'}
+            title={claimedPerson ? undefined : 'Claim your bubble below to add a photo'}
+          >
+            {claimedPhoto
+              ? <img src={claimedPhoto} alt="" className="up__avatar-img" />
+              : <span className="up__avatar-initials">{initials}</span>
+            }
+            {claimedPerson && (
+              <span className="up__avatar-badge" aria-hidden="true"><CameraIcon /></span>
+            )}
+          </button>
+          <input ref={fileRef} type="file" accept="image/*" hidden onChange={handleFileChange} />
           <div className="up__identity">
             <p className="up__email">{user?.email}</p>
             {saveStatus === 'saved' && <p className="up__save-status up__save-status--ok">Saved</p>}
@@ -205,6 +227,15 @@ function CloseIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+    </svg>
+  );
+}
+
+function CameraIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/>
+      <circle cx="12" cy="13" r="4" stroke="currentColor" strokeWidth="1.8"/>
     </svg>
   );
 }
