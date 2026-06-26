@@ -63,14 +63,30 @@ export async function onRequestPatch({ request, env, data }) {
   }
 
   if ('person_id' in body) {
+    const personId = body.person_id ?? null;
+    // user.person_id has a FK to person(id). The tree is stored as JSON in
+    // family_tree rather than individual person rows, so we insert a stub row
+    // first to satisfy the constraint before updating the user record.
+    if (personId) {
+      const fm = await env.DB.prepare(
+        'SELECT family_id FROM family_member WHERE user_id = ?',
+      ).bind(data.user.uid).first();
+      if (fm?.family_id) {
+        const now = Math.floor(Date.now() / 1000);
+        await env.DB.prepare(
+          `INSERT OR IGNORE INTO person (id, family_id, created_at, updated_at) VALUES (?, ?, ?, ?)`,
+        ).bind(personId, fm.family_id, now, now).run();
+      }
+    }
     sets.push('person_id = ?');
-    binds.push(body.person_id ?? null);
+    binds.push(personId);
   }
 
   if (!sets.length) return json({ ok: true });
 
+  const now = Math.floor(Date.now() / 1000);
   sets.push('last_seen = ?');
-  binds.push(Math.floor(Date.now() / 1000));
+  binds.push(now);
   binds.push(data.user.uid);
 
   try {
@@ -78,11 +94,11 @@ export async function onRequestPatch({ request, env, data }) {
       `UPDATE user SET ${sets.join(', ')} WHERE id = ?`,
     ).bind(...binds).run();
   } catch (e) {
-    const msg = e?.message ?? '';
+    const msg = String(e?.message ?? '');
     if (msg.includes('no such column')) {
       return json({ error: 'Migration pending — run 0005_user_profile.sql' }, { status: 503 });
     }
-    throw e;
+    return json({ error: msg || 'Database error' }, { status: 500 });
   }
 
   return json({ ok: true });

@@ -5,7 +5,7 @@ export default function UserProfile({ user, people = [], onClose, onLogout, onSa
   const [loading, setLoading] = useState(true);
   const [nameEdit, setNameEdit] = useState('');
   const [saving, setSaving] = useState(false);
-  const [saveStatus, setSaveStatus] = useState(null); // null | 'saved' | 'error'
+  const [saveStatus, setSaveStatus] = useState(null); // null | 'saved' | string (error)
   const saveTimer = useRef(null);
 
   const load = useCallback(async () => {
@@ -39,12 +39,15 @@ export default function UserProfile({ user, people = [], onClose, onLogout, onSa
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(fields),
       });
-      if (!res.ok) throw new Error();
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `HTTP ${res.status}`);
+      }
       setSaveStatus('saved');
       setProfile((p) => ({ ...p, ...fields }));
       onSaved?.({ ...profile, ...fields });
-    } catch {
-      setSaveStatus('error');
+    } catch (e) {
+      setSaveStatus(e.message || 'Could not save');
     } finally {
       setSaving(false);
       saveTimer.current = setTimeout(() => setSaveStatus(null), 2500);
@@ -92,7 +95,7 @@ export default function UserProfile({ user, people = [], onClose, onLogout, onSa
           <div className="up__identity">
             <p className="up__email">{user?.email}</p>
             {saveStatus === 'saved' && <p className="up__save-status up__save-status--ok">Saved</p>}
-            {saveStatus === 'error' && <p className="up__save-status up__save-status--err">Could not save</p>}
+            {saveStatus && saveStatus !== 'saved' && <p className="up__save-status up__save-status--err">{saveStatus}</p>}
           </div>
         </div>
 
