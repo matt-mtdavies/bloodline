@@ -42,10 +42,15 @@ function load() {
   return null;
 }
 
-// ?demo in the URL seeds the Davies family, bypassing onboarding.
+// ?demo in the URL seeds the Mercer demo family, bypassing onboarding.
 // Used by smoke tests and the live demo link.
 const isDemoUrl =
   typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('demo');
+
+// ?new starts a fresh anonymous trial: onboarding runs, no login required.
+// If the visitor already has a completed tree in localStorage we leave it alone.
+export const isNewUrl =
+  typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('new');
 
 let state = isDemoUrl
   ? {
@@ -59,6 +64,14 @@ let state = isDemoUrl
       familyName: SEED_FAMILY_NAME,
       myPersonId: DEFAULT_FOCUS,
     }
+  : isNewUrl
+  ? (() => {
+      const ex = load();
+      // Protect returning visitors: if they already have a tree, keep it.
+      return (ex?.hasCompletedOnboarding && ex?.people?.length > 0)
+        ? ex
+        : { ...EMPTY };
+    })()
   : load() || { ...EMPTY };
 
 // ── Migrations (additive, never destructive) ─────────────────────────────────

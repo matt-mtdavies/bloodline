@@ -128,6 +128,12 @@ export default function LoginScreen({ onAuthSuccess }) {
             <p className="login-card__hint">
               No password needed. We'll email you a 6-digit code.
             </p>
+            <p className="login-card__legal">
+              By continuing you agree to our{' '}
+              <a href="/terms.html" target="_blank" rel="noopener noreferrer">Terms</a>
+              {' '}and{' '}
+              <a href="/privacy.html" target="_blank" rel="noopener noreferrer">Privacy Policy</a>.
+            </p>
           </form>
         ) : (
           <div>

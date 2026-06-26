@@ -3063,6 +3063,15 @@
   text-align: center;
   line-height: 1.5;
 }
+.login-card__legal {
+  margin-top: 12px;
+  font-size: 11.5px;
+  color: var(--ink-faint, #bbb);
+  text-align: center;
+  line-height: 1.6;
+}
+.login-card__legal a { color: var(--ink-faint, #bbb); text-decoration: underline; }
+.login-card__legal a:hover { color: var(--ink-soft); }
 .login-card__err {
   font-size: 14px;
   color: #c0392b;
@@ -4888,3 +4897,119 @@
   transition: color 0.15s ease, background 0.15s ease;
 }
 .topbar__row2-btn:hover { color: var(--ink); background: var(--ground); }
+
+/* ── Save Nudge (anonymous ?new trial) ──────────────────────────────────────── */
+.save-nudge {
+  position: fixed;
+  bottom: 140px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(500px, calc(100vw - 32px));
+  background: rgba(36, 31, 28, 0.93);
+  backdrop-filter: blur(14px) saturate(1.3);
+  -webkit-backdrop-filter: blur(14px) saturate(1.3);
+  color: #fff;
+  border-radius: 14px;
+  padding: 11px 12px 11px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  z-index: 45;
+  box-shadow: 0 4px 28px rgba(0, 0, 0, 0.28);
+  animation: fade-up 0.45s var(--spring) both;
+}
+
+.save-nudge__text {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13.5px;
+  color: rgba(255, 255, 255, 0.85);
+  min-width: 0;
+  flex: 1;
+  line-height: 1.4;
+}
+
+.save-nudge__actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.save-nudge__cta {
+  background: var(--accent, #c2603a);
+  color: #fff;
+  border: none;
+  border-radius: 999px;
+  padding: 8px 16px;
+  font-size: 13px;
+  font-family: var(--body);
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: opacity 0.15s;
+  letter-spacing: 0.01em;
+}
+.save-nudge__cta:hover { opacity: 0.88; }
+
+.save-nudge__dismiss {
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.45);
+  cursor: pointer;
+  padding: 5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  transition: color 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+.save-nudge__dismiss:hover { color: rgba(255, 255, 255, 0.85); }
+
+/* Sheet opened from the nudge */
+.save-nudge__sheet {
+  /* Inherits .sheet styles — additional overrides only */
+}
+
+.save-nudge__sheet-head {
+  margin-bottom: 22px;
+}
+
+.save-nudge__sheet-title {
+  font-size: 21px;
+  font-weight: 700;
+  color: var(--ink);
+  margin: 0 0 7px;
+  font-family: var(--display);
+  letter-spacing: -0.02em;
+}
+
+.save-nudge__sheet-sub {
+  font-size: 14.5px;
+  color: var(--ink-soft);
+  margin: 0;
+  line-height: 1.5;
+}
+
+.save-nudge__err {
+  font-size: 14px;
+  color: #c0392b;
+  background: #fef5f5;
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin-bottom: 16px;
+  line-height: 1.4;
+}
+
+@media (max-width: 480px) {
+  .save-nudge {
+    bottom: 125px;
+    border-radius: 12px;
+    padding: 10px 10px 10px 14px;
+  }
+  .save-nudge__text { font-size: 12.5px; }
+  .save-nudge__cta { padding: 7px 13px; font-size: 12.5px; }
+}

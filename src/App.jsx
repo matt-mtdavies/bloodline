@@ -34,6 +34,7 @@ import {
   migratePhotosToR2,
   migrateDocsToR2,
   setCurrentUser,
+  isNewUrl,
 } from './data/store.js';
 import { uploadPhoto, generateThumb, uploadDocument } from './lib/image.js';
 import { buildGraph, pathBetween } from './data/graph.js';
@@ -61,6 +62,7 @@ import InviteSheet from './components/InviteSheet.jsx';
 import ActivityFeed from './components/ActivityFeed.jsx';
 import GedcomImport from './components/GedcomImport.jsx';
 import FamilySearchImport from './components/FamilySearchImport.jsx';
+import SaveNudge from './components/SaveNudge.jsx';
 
 const isDemo = typeof window !== 'undefined' &&
   new URLSearchParams(window.location.search).has('demo');
@@ -88,7 +90,10 @@ export default function App() {
   const reducedMotion = useReducedMotion();
 
   // 'loading' → 'open' (no auth / bypass) | 'login' (needs sign-in) | 'authed'
-  const [authState, setAuthState] = useState(isDemo ? 'open' : 'loading');
+  const [authState, setAuthState] = useState((isDemo || isNewUrl) ? 'open' : 'loading');
+  // Track whether this session started as an anonymous ?new trial (stays true even
+  // after URL is stripped, so the SaveNudge remains visible until they log in).
+  const [isAnonymousTrial] = useState(() => isNewUrl);
   const [user, setUser] = useState(null);
   // Set when a user with existing tree data accepts an invite — gates the app
   // on the merge wizard until they complete or skip the merge.
@@ -146,7 +151,7 @@ export default function App() {
   }
 
   useEffect(() => {
-    if (isDemo) return;
+    if (isDemo || isNewUrl) return;
     // 12-second timeout: if the auth Worker cold-starts slowly on mobile the
     // fetch can hang indefinitely.  Fall back to 'open' so the user sees the app.
     const timer = setTimeout(() => setAuthState('open'), 12000);
@@ -626,7 +631,15 @@ export default function App() {
     if (!introSeen) {
       return <Intro onBegin={() => setIntroSeen(true)} />;
     }
-    return <Onboarding onComplete={(fields) => setupTree(fields)} />;
+    return (
+      <Onboarding
+        onComplete={(fields) => {
+          setupTree(fields);
+          // Strip ?new from URL so refreshing loads their tree normally from localStorage.
+          if (isNewUrl) window.history.replaceState(null, '', '/');
+        }}
+      />
+    );
   }
 
   return (
@@ -1037,6 +1050,13 @@ export default function App() {
             }
             setGedcomOpen(false);
           }}
+        />
+      )}
+
+      {/* Anonymous ?new trial: nudge to create an account once onboarding is done. */}
+      {isAnonymousTrial && data.hasCompletedOnboarding && user === null && (
+        <SaveNudge
+          onSaveComplete={() => applySession().catch(() => setAuthState('open'))}
         />
       )}
     </div>
