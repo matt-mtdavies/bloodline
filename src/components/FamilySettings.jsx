@@ -52,11 +52,15 @@ export default function FamilySettings({ myRole, familyName, onUpdateFamilyName,
   }
 
   async function updateRole(userId, role) {
-    await fetch('/api/family/members', {
+    const res = await fetch('/api/family/members', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ action: 'update-role', userId, role }),
     });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      alert(err.error || 'Could not update role — please try again.');
+    }
     load();
   }
 
@@ -95,7 +99,10 @@ export default function FamilySettings({ myRole, familyName, onUpdateFamilyName,
     });
   }, [data?.invites]);
 
-  const isOwnerOrCoadmin = canInvite(myRole);
+  // Use the role returned by the API (source of truth) rather than the prop,
+  // which can be stale when data._meta isn't populated yet.
+  const effectiveRole = data?.myRole || myRole;
+  const isOwnerOrCoadmin = canInvite(effectiveRole);
 
   function handleNameSave() {
     const trimmed = nameEdit.trim();
@@ -171,7 +178,7 @@ export default function FamilySettings({ myRole, familyName, onUpdateFamilyName,
                   <MemberRow
                     key={m.id}
                     member={m}
-                    myRole={myRole}
+                    myRole={effectiveRole}
                     isSelf={m.id === data.myId}
                     onUpdateRole={updateRole}
                     onRemove={removeMember}
@@ -299,14 +306,20 @@ export default function FamilySettings({ myRole, familyName, onUpdateFamilyName,
 
 function MemberRow({ member, myRole, isSelf, onUpdateRole, onRemove }) {
   const canChange = canInvite(myRole) && !isSelf && member.role !== 'owner';
-  const initials = member.email.slice(0, 2).toUpperCase();
+  // Only show roles strictly below the caller's own level so a co-admin can't
+  // accidentally grant co-admin (server would reject it, but it's confusing).
+  const assignableRoles = INVITE_ROLES.filter((r) => roleRank(r) < roleRank(myRole));
+  const initials = (member.display_name || member.email).slice(0, 2).toUpperCase();
 
   return (
     <div className="fs__member">
       <div className="fs__member-avatar">{initials}</div>
       <div className="fs__member-info">
-        <span className="fs__member-email">{member.email}{isSelf ? ' (you)' : ''}</span>
+        <span className="fs__member-email">
+          {member.display_name || member.email}{isSelf ? ' (you)' : ''}
+        </span>
         <span className="fs__member-joined">
+          {member.display_name ? member.email + ' · ' : ''}
           Joined {new Date(member.joined_at * 1000).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })}
         </span>
       </div>
@@ -316,7 +329,7 @@ function MemberRow({ member, myRole, isSelf, onUpdateRole, onRemove }) {
           value={member.role}
           onChange={(e) => onUpdateRole(member.id, e.target.value)}
         >
-          {INVITE_ROLES.map((r) => (
+          {assignableRoles.map((r) => (
             <option key={r} value={r}>{ROLE_LABELS[r]}</option>
           ))}
         </select>
