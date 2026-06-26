@@ -63,6 +63,7 @@ import ActivityFeed from './components/ActivityFeed.jsx';
 import GedcomImport from './components/GedcomImport.jsx';
 import FamilySearchImport from './components/FamilySearchImport.jsx';
 import SaveNudge from './components/SaveNudge.jsx';
+import SearchOverlay from './components/SearchOverlay.jsx';
 
 const isDemo = typeof window !== 'undefined' &&
   new URLSearchParams(window.location.search).has('demo');
@@ -220,6 +221,7 @@ export default function App() {
   const [gedcomOpen, setGedcomOpen] = useState(false);
   const [fsImportOpen, setFsImportOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
   const viewApi = useRef(null);
 
   // Notify the user if a commit couldn't persist (localStorage full).
@@ -693,21 +695,31 @@ export default function App() {
           >
             <RecenterIcon />
           </button>
-          {/* Bottom bar: Focus Family | Time | Lineage */}
+          {/* Bottom bar: [Search + Focus Family] | Time | [Show All + Lineage] */}
           <div className="bottom-bar">
-            <button
-              className={`focus-btn${focusMode ? ' focus-btn--on' : ''}`}
-              onClick={() => {
-                const next = !focusMode;
-                setFocusMode(next);
-                if (next) setTimeout(() => viewApi.current?.refocus(0.5), 100);
-              }}
-              aria-pressed={focusMode}
-              aria-label={focusMode ? 'Exit focus family view' : 'Focus on this family'}
-            >
-              <FocusIcon />
-              {focusMode ? 'Exit Focus' : 'Focus Family'}
-            </button>
+            <div className="bottom-bar__left">
+              <button
+                className="search-btn"
+                onClick={() => setSearchOpen(true)}
+                aria-label="Search people"
+              >
+                <BottomSearchIcon />
+                Search
+              </button>
+              <button
+                className={`focus-btn${focusMode ? ' focus-btn--on' : ''}`}
+                onClick={() => {
+                  const next = !focusMode;
+                  setFocusMode(next);
+                  if (next) setTimeout(() => viewApi.current?.refocus(0.5), 100);
+                }}
+                aria-pressed={focusMode}
+                aria-label={focusMode ? 'Exit focus family view' : 'Focus on this family'}
+              >
+                <FocusIcon />
+                {focusMode ? 'Exit Focus' : 'Focus Family'}
+              </button>
+            </div>
             {/* Time slider — column expands upward from the toggle */}
             <div className={`time-bar${timeMode ? ' time-bar--on' : ''}`}>
               {timeMode && lifeJourneyPerson && (() => {
@@ -860,6 +872,18 @@ export default function App() {
         onInvite={(id) => setInvitePersonId(id)}
         onLifeJourney={startLifeJourney}
       />
+
+      {searchOpen && (
+        <SearchOverlay
+          people={data.people}
+          onSelect={(id) => {
+            setSearchOpen(false);
+            activateNormal(id);
+            setTimeout(() => openPerson(id), 80);
+          }}
+          onClose={() => setSearchOpen(false)}
+        />
+      )}
 
       {invitePersonId && graph.byId.get(invitePersonId) && (
         <InviteSheet
@@ -1104,6 +1128,15 @@ function DocViewer({ doc, onClose }) {
         )}
       </div>
     </div>
+  );
+}
+
+function BottomSearchIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="1.8"/>
+      <path d="M16.5 16.5L21 21" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+    </svg>
   );
 }
 

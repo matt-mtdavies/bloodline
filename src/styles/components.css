@@ -619,6 +619,170 @@
   justify-self: end;
 }
 
+/* ── Bottom bar left column (Search + Focus Family) ─────────────────────────── */
+.bottom-bar__left {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+  justify-self: start;
+}
+
+/* ── Search button (bottom bar) ─────────────────────────────────────────────── */
+.search-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 14px;
+  min-height: 38px;
+  white-space: nowrap;
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(12px) saturate(1.2);
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink-soft);
+  box-shadow: var(--shadow-soft);
+  cursor: pointer;
+  pointer-events: auto;
+  transition: background 0.18s, box-shadow 0.18s, transform 0.18s var(--spring);
+  border: none;
+}
+.search-btn:hover { background: rgba(255,255,255,0.96); box-shadow: var(--shadow-lift); }
+.search-btn:active { transform: scale(0.95); }
+
+/* ── Search overlay ──────────────────────────────────────────────────────────── */
+.search-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(36, 31, 28, 0.35);
+  backdrop-filter: blur(2px);
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  animation: scrim-in 0.18s ease both;
+}
+@keyframes scrim-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.search-sheet {
+  background: var(--surface, #faf7f4);
+  border-radius: 24px 24px 0 0;
+  padding: 0 0 calc(var(--safe-bottom, 0px) + 16px);
+  max-height: 78vh;
+  display: flex;
+  flex-direction: column;
+  animation: sheet-up 0.28s var(--spring, cubic-bezier(.34,1.56,.64,1)) both;
+}
+@keyframes sheet-up {
+  from { transform: translateY(60px); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+
+/* ── Search input row ────────────────────────────────────────────────────────── */
+.search-input-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 20px 12px;
+  border-bottom: 1px solid var(--hairline, #ece8e4);
+  flex-shrink: 0;
+}
+.search-input-icon {
+  color: var(--ink-faint, #b0a9a5);
+  flex-shrink: 0;
+}
+.search-input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  font-size: 17px;
+  font-family: inherit;
+  color: var(--ink, #241f1c);
+  outline: none;
+  min-width: 0;
+}
+.search-input::placeholder { color: var(--ink-faint, #b0a9a5); }
+.search-input::-webkit-search-cancel-button { display: none; }
+.search-clear {
+  border: none;
+  background: transparent;
+  padding: 4px;
+  cursor: pointer;
+  color: var(--ink-faint, #b0a9a5);
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+.search-clear:hover { color: var(--ink-soft, #6b6260); }
+
+/* ── Results list ────────────────────────────────────────────────────────────── */
+.search-results {
+  list-style: none;
+  margin: 0;
+  padding: 6px 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.search-result {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 20px;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.search-result:hover,
+.search-result--focus {
+  background: color-mix(in srgb, var(--accent, #c2603a) 6%, transparent);
+}
+.search-result__info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.search-result__name {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--ink, #241f1c);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.search-result__meta {
+  font-size: 12px;
+  color: var(--ink-faint, #b0a9a5);
+}
+.search-result__chevron {
+  color: var(--ink-faint, #b0a9a5);
+  flex-shrink: 0;
+}
+.search-mark {
+  background: color-mix(in srgb, var(--accent, #c2603a) 18%, transparent);
+  color: var(--accent, #c2603a);
+  font-style: normal;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+.search-empty {
+  padding: 24px 20px;
+  font-size: 14px;
+  color: var(--ink-faint, #b0a9a5);
+  text-align: center;
+}
+.search-hint {
+  padding: 28px 20px;
+  font-size: 14px;
+  color: var(--ink-faint, #b0a9a5);
+  text-align: center;
+  margin: 0;
+}
+
 /* ── Expand All / Collapse button ────────────────────────────────────────────── */
 .expand-btn {
   display: flex;
