@@ -16,6 +16,7 @@ export default function FamilySettings({ myRole, familyName, onUpdateFamilyName,
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState('editor');
   const [inviteStatus, setInviteStatus] = useState('idle'); // idle | sending | sent | error
+  const [resendStates, setResendStates] = useState({}); // { [inviteId]: 'idle'|'sending'|'sent'|'error' }
   const [nameEdit, setNameEdit] = useState(familyName);
 
   const load = useCallback(async () => {
@@ -95,6 +96,23 @@ export default function FamilySettings({ myRole, familyName, onUpdateFamilyName,
       body: JSON.stringify({ id, role }),
     });
     load();
+  }
+
+  async function resendInvite(id) {
+    setResendStates((s) => ({ ...s, [id]: 'sending' }));
+    try {
+      const res = await fetch('/api/invite/resend', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ id }),
+      });
+      if (!res.ok) throw new Error();
+      setResendStates((s) => ({ ...s, [id]: 'sent' }));
+      setTimeout(() => setResendStates((s) => ({ ...s, [id]: 'idle' })), 3000);
+    } catch {
+      setResendStates((s) => ({ ...s, [id]: 'error' }));
+      setTimeout(() => setResendStates((s) => ({ ...s, [id]: 'idle' })), 3000);
+    }
   }
 
   // Deduplicate pending invites by email (keep most recent per address).
@@ -247,6 +265,19 @@ export default function FamilySettings({ myRole, familyName, onUpdateFamilyName,
                                 </select>
                               ) : (
                                 <RoleBadge role={inv.role} />
+                              )}
+                              {isOwnerOrCoadmin && (
+                                <button
+                                  className={`fs__resend-btn${resendStates[inv.id] === 'sent' ? ' fs__resend-btn--sent' : ''}${resendStates[inv.id] === 'error' ? ' fs__resend-btn--err' : ''}`}
+                                  onClick={() => resendInvite(inv.id)}
+                                  disabled={resendStates[inv.id] === 'sending'}
+                                  aria-label="Resend invite email"
+                                >
+                                  {resendStates[inv.id] === 'sending' ? '…'
+                                    : resendStates[inv.id] === 'sent' ? 'Sent!'
+                                    : resendStates[inv.id] === 'error' ? 'Failed'
+                                    : 'Resend'}
+                                </button>
                               )}
                               {isOwnerOrCoadmin && (
                                 <button

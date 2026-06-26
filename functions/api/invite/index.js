@@ -69,6 +69,7 @@ export async function onRequestPost({ request, env, data }) {
       to: email,
       subject: `You're invited to join ${familyName} on Bloodline`,
       html: inviteEmail({ inviteUrl, fromEmail, familyName, roleLabel }),
+      text: inviteEmailText({ inviteUrl, fromEmail, familyName, roleLabel }),
     });
     emailSent = true;
   } catch (e) {
@@ -175,6 +176,23 @@ export async function onRequestGet({ env, data }) {
   return json({ invites, members });
 }
 
+function inviteEmailText({ inviteUrl, fromEmail, familyName, roleLabel }) {
+  return [
+    `You're invited to join ${familyName} on Bloodline`,
+    '',
+    `${fromEmail} has invited you to join the family tree as ${roleLabel}.`,
+    '',
+    'Bloodline is a living portrait of your family — an interactive tree, stories, memories and photos across generations.',
+    '',
+    'Accept your invitation here:',
+    inviteUrl,
+    '',
+    'This link expires in 7 days.',
+    '',
+    'If you weren\'t expecting this invitation you can safely ignore this email.',
+  ].join('\n');
+}
+
 function inviteEmail({ inviteUrl, fromEmail, familyName, roleLabel }) {
   return `<!DOCTYPE html>
 <html lang="en">
@@ -183,19 +201,12 @@ function inviteEmail({ inviteUrl, fromEmail, familyName, roleLabel }) {
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>You're invited to ${familyName}</title>
 </head>
-<body style="margin:0;padding:0;background:#f5f0ea;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;-webkit-font-smoothing:antialiased;">
+<body style="margin:0;padding:0;background:#f5f0ea;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
 <div style="max-width:520px;margin:0 auto;padding:48px 24px 64px;">
 
-  <!-- Brand -->
+  <!-- Brand (text-only — SVG blocks some spam filters) -->
   <div style="text-align:center;margin-bottom:36px;">
-    <svg width="40" height="40" viewBox="0 0 56 56" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <circle cx="28" cy="14" r="10" fill="#c2603a"/>
-      <circle cx="14" cy="40" r="8" fill="#c2603a" opacity="0.7"/>
-      <circle cx="42" cy="40" r="8" fill="#c2603a" opacity="0.5"/>
-      <line x1="28" y1="24" x2="14" y2="32" stroke="#c2603a" stroke-width="2" opacity="0.5"/>
-      <line x1="28" y1="24" x2="42" y2="32" stroke="#c2603a" stroke-width="2" opacity="0.5"/>
-    </svg>
-    <div style="margin-top:10px;font-size:20px;font-weight:700;color:#241f1c;letter-spacing:-0.02em;">Bloodline</div>
+    <div style="font-size:24px;font-weight:700;color:#c2603a;letter-spacing:-0.02em;">Bloodline</div>
     <div style="margin-top:4px;font-size:13px;color:#a09590;letter-spacing:0.08em;text-transform:uppercase;">Your family, preserved forever</div>
   </div>
 
@@ -208,16 +219,9 @@ function inviteEmail({ inviteUrl, fromEmail, familyName, roleLabel }) {
       as <span style="color:#c2603a;font-weight:600;">${roleLabel}</span>.
     </p>
 
-    <!-- Features -->
-    <div style="border-top:1px solid #ebedf0;border-bottom:1px solid #ebedf0;padding:24px 0;margin-bottom:32px;">
-      ${featureRow('🌳', 'Family tree', 'An interactive map of everyone and how they connect.')}
-      ${featureRow('💬', 'Memories', 'Stories, moments, and things worth remembering.')}
-      ${featureRow('📷', 'Photos', 'A gallery of faces and places across the generations.')}
-    </div>
-
     <a href="${inviteUrl}"
        style="display:block;text-align:center;background:#c2603a;color:#ffffff;font-size:17px;font-weight:600;padding:18px 24px;border-radius:14px;text-decoration:none;letter-spacing:0.01em;box-shadow:0 4px 20px rgba(194,96,58,0.3);">
-      Accept invitation →
+      Accept invitation &rarr;
     </a>
 
     <p style="margin:16px 0 0;text-align:center;font-size:13px;color:#b0a9a5;">

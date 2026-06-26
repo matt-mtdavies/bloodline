@@ -3425,6 +3425,24 @@
   flex-shrink: 0;
 }
 .fs__remove:hover { background: #fef2f2; color: #c0392b; }
+.fs__resend-btn {
+  flex-shrink: 0;
+  padding: 4px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--hairline);
+  background: transparent;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink-soft);
+  cursor: pointer;
+  transition: background 0.14s, color 0.14s, border-color 0.14s;
+  white-space: nowrap;
+  font-family: inherit;
+}
+.fs__resend-btn:hover:not(:disabled) { background: var(--surface); color: var(--ink); border-color: var(--ink-soft); }
+.fs__resend-btn:disabled { opacity: 0.5; cursor: default; }
+.fs__resend-btn--sent { background: #f0faf0; color: #2d7d3a; border-color: #a8d5ab; }
+.fs__resend-btn--err  { background: #fef2f2; color: #c0392b; border-color: #f5b7b1; }
 .fs__section-label {
   font-size: 11px;
   font-weight: 600;

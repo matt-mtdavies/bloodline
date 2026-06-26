@@ -70,24 +70,31 @@ export function clearSessionCookie() {
 }
 
 // Send a transactional email via Brevo.
-export async function sendEmail(env, { to, subject, html }) {
+// Pass `text` alongside `html` — emails with a plain-text alternative score
+// significantly better in spam filters (Hotmail, Exchange, APG corporate, etc.)
+export async function sendEmail(env, { to, subject, html, text }) {
   if (!env.BREVO_API_KEY) {
     console.log('[dev] email suppressed (no BREVO_API_KEY):', subject, '->', to);
     return { dev: true };
   }
+  const body = {
+    sender: { name: 'Bloodline', email: env.FROM_EMAIL },
+    to: [{ email: to }],
+    subject,
+    htmlContent: html,
+  };
+  if (text) body.textContent = text;
   const res = await fetch('https://api.brevo.com/v3/smtp/email', {
     method: 'POST',
     headers: {
       'api-key': env.BREVO_API_KEY,
       'content-type': 'application/json',
     },
-    body: JSON.stringify({
-      sender: { name: 'Bloodline', email: env.FROM_EMAIL },
-      to: [{ email: to }],
-      subject,
-      htmlContent: html,
-    }),
+    body: JSON.stringify(body),
   });
-  if (!res.ok) throw new Error(`Brevo failed: ${res.status} ${await res.text()}`);
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '');
+    throw new Error(`Brevo ${res.status}: ${detail}`);
+  }
   return res.json();
 }
