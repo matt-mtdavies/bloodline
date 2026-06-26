@@ -233,11 +233,19 @@ async function putTree(s, attempt = 0) {
       // attempt >= 2 with If-Match: * still failing → fall through to error path
     }
 
-    r.clone().json().then((body) => {
-      const msg = body?.detail || body?.error || '';
-      console.error('[store] PUT /api/tree', r.status, msg);
-      _lastSyncError = { code: r.status, message: r.status === 409 ? 'Conflict (retried)' : body?.detail ? `HTTP ${r.status}: ${body.detail}` : `HTTP ${r.status}` };
-    }).catch(() => {});
+    // Read the error body synchronously before updating status so TopBar
+    // receives the full message in the same render cycle.
+    const errorBody = await r.json().catch(() => ({}));
+    const bodyMsg = errorBody?.detail || errorBody?.error || '';
+    console.error('[store] PUT /api/tree', r.status, bodyMsg);
+    _lastSyncError = {
+      code: r.status,
+      message: r.status === 409
+        ? 'Conflict (retried)'
+        : errorBody?.detail
+        ? `HTTP ${r.status}: ${errorBody.detail}`
+        : `HTTP ${r.status}`,
+    };
 
     if (r.status === 401 || r.status === 403) { afterSave(false, r.status); return; }
     if (attempt < RETRY_DELAYS.length) {
