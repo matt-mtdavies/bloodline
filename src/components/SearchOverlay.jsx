@@ -7,9 +7,13 @@ export default function SearchOverlay({ people, onSelect, onClose }) {
   const inputRef = useRef(null);
   const listRef = useRef(null);
 
+  // Auto-focus only on non-touch devices — on mobile the keyboard should only
+  // open when the user explicitly taps the input, not on sheet open.
   useEffect(() => {
-    const t = setTimeout(() => inputRef.current?.focus(), 60);
-    return () => clearTimeout(t);
+    if (window.matchMedia('(hover: hover)').matches) {
+      const t = setTimeout(() => inputRef.current?.focus(), 60);
+      return () => clearTimeout(t);
+    }
   }, []);
 
   useEffect(() => {

@@ -23,6 +23,9 @@ export default defineConfig({
         ],
       },
       workbox: {
+        // Take over immediately on update — no need to close all tabs first.
+        skipWaiting: true,
+        clientsClaim: true,
         // Keep the app shell offline-tolerant; faces are remote and best-effort.
         globPatterns: ['**/*.{js,css,html,svg,woff2}'],
         runtimeCaching: [
