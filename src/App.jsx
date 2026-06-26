@@ -213,11 +213,6 @@ export default function App() {
     return () => window.removeEventListener('bloodline:storage-full', handler);
   }, []);
 
-  const invitedIds = useMemo(
-    () => new Set(data.people.filter((p) => p.invited_at).map((p) => p.id)),
-    [data.people],
-  );
-
   // Family stats for the header: people count, top surnames, year span, photos, memories.
   const familyStats = useMemo(() => {
     const freq = new Map();
@@ -566,7 +561,6 @@ export default function App() {
   }, []);
 
   const handleSendInvite = useCallback(async (personId, email, role) => {
-    updatePerson(personId, { invited_email: email, invited_at: new Date().toISOString() });
     try {
       const res = await fetch('/api/invite', {
         method: 'POST',
@@ -575,7 +569,7 @@ export default function App() {
       });
       if (!res.ok) throw new Error('invite failed');
     } catch {
-      // Graceful: local invited state persists; API unavailable in demo mode
+      // Graceful: API unavailable in demo mode
     }
     setInvitePersonId(null);
   }, []);
@@ -653,7 +647,6 @@ export default function App() {
             layout={layout}
             mergeParents={mergeParents}
             lineagePath={lineagePath}
-            invitedIds={invitedIds}
             onCameraMode={setCameraFree}
             apiRef={viewApi}
           />
