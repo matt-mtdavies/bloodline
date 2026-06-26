@@ -580,17 +580,18 @@ export default function App() {
   }, []);
 
   const handleSendInvite = useCallback(async (personId, email, role) => {
-    try {
-      const res = await fetch('/api/invite', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ email, role }),
-      });
-      if (!res.ok) throw new Error('invite failed');
-    } catch {
-      // Graceful: API unavailable in demo mode
+    const res = await fetch('/api/invite', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email, role }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || 'Invite failed');
     }
-    setInvitePersonId(null);
+    const body = await res.json().catch(() => ({}));
+    return body; // pass { emailSent } back to InviteSheet
+    // InviteSheet owns closing — it shows success state then user taps Done
   }, []);
 
   const activePerson = graph.byId.get(activeId);

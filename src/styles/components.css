@@ -3908,6 +3908,10 @@
   justify-content: center;
   animation: invite-pop 0.4s var(--spring) both;
 }
+.invite-sheet__success-ring--warn {
+  background: color-mix(in srgb, #b08642 12%, transparent);
+  color: #b08642;
+}
 @keyframes invite-pop {
   from { transform: scale(0.5); opacity: 0; }
   to { transform: scale(1); opacity: 1; }

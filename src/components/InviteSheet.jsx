@@ -43,7 +43,7 @@ const ROLES = [
 export default function InviteSheet({ person, onSend, onClose }) {
   const [email, setEmail] = useState(person.email || person.invited_email || '');
   const [role, setRole] = useState('contributor');
-  const [phase, setPhase] = useState('idle'); // idle | sending | sent | error
+  const [phase, setPhase] = useState('idle'); // idle | sending | sent | sent-no-email | error
   const inputRef = useRef(null);
 
   const firstName = person.display_name.trim().split(/\s+/)[0];
@@ -65,8 +65,8 @@ export default function InviteSheet({ person, onSend, onClose }) {
     if (!trimmed || phase === 'sending') return;
     setPhase('sending');
     try {
-      await onSend(person.id, trimmed, role);
-      setPhase('sent');
+      const result = await onSend(person.id, trimmed, role);
+      setPhase(result?.emailSent === false ? 'sent-no-email' : 'sent');
     } catch {
       setPhase('error');
     }
@@ -79,17 +79,29 @@ export default function InviteSheet({ person, onSend, onClose }) {
       <div className="sheet invite-sheet" onClick={(e) => e.stopPropagation()}>
         <div className="sheet__grip" />
 
-        {phase === 'sent' ? (
+        {(phase === 'sent' || phase === 'sent-no-email') ? (
           <div className="invite-sheet__success">
-            <div className="invite-sheet__success-ring">
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path d="M5 13l4 4L19 7" stroke="currentColor" strokeWidth="2.2"
-                  strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
+            <div className={`invite-sheet__success-ring${phase === 'sent-no-email' ? ' invite-sheet__success-ring--warn' : ''}`}>
+              {phase === 'sent-no-email' ? (
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M12 9v4M12 17h.01" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"/>
+                  <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/>
+                </svg>
+              ) : (
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M5 13l4 4L19 7" stroke="currentColor" strokeWidth="2.2"
+                    strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              )}
             </div>
-            <h2 className="invite-sheet__sent-title">Invitation sent</h2>
+            <h2 className="invite-sheet__sent-title">
+              {phase === 'sent-no-email' ? 'Invite saved — email failed' : 'Invitation sent'}
+            </h2>
             <p className="invite-sheet__sent-body">
-              We've emailed {email.trim()} a link to join the family tree.
+              {phase === 'sent-no-email'
+                ? `The invite is saved and ${email.trim()} can still accept it, but the email didn't go out. Share the link manually or try resending from Settings.`
+                : `We've emailed ${email.trim()} a link to join the family tree.`
+              }
             </p>
             <button className="invite-sheet__done" onClick={onClose}>Done</button>
           </div>

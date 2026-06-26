@@ -63,13 +63,20 @@ export async function onRequestPost({ request, env, data }) {
   const fromEmail = data.user.email;
   const familyName = membership.family_name;
 
-  await sendEmail(env, {
-    to: email,
-    subject: `You're invited to join ${familyName} on Bloodline`,
-    html: inviteEmail({ inviteUrl, fromEmail, familyName, roleLabel }),
-  });
+  let emailSent = false;
+  try {
+    await sendEmail(env, {
+      to: email,
+      subject: `You're invited to join ${familyName} on Bloodline`,
+      html: inviteEmail({ inviteUrl, fromEmail, familyName, roleLabel }),
+    });
+    emailSent = true;
+  } catch (e) {
+    // Invite row is already in D1 — don't 500. Client will warn the user.
+    console.error('[invite] email delivery failed:', e.message);
+  }
 
-  return json({ ok: true, inviteId });
+  return json({ ok: true, inviteId, emailSent });
 }
 
 /*
