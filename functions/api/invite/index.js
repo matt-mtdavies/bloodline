@@ -42,6 +42,12 @@ export async function onRequestPost({ request, env, data }) {
     return json({ error: 'Only owners and co-admins can invite' }, { status: 403 });
   }
 
+  // Supersede any existing pending invites for this email so there's always
+  // at most one live invite per address.
+  await env.DB.prepare(
+    `UPDATE invite SET status = 'superseded' WHERE family_id = ? AND email = ? AND status = 'pending'`,
+  ).bind(membership.family_id, email.toLowerCase()).run();
+
   const t = token();
   const inviteId = uid('inv_');
   const now = Math.floor(Date.now() / 1000);
@@ -64,6 +70,62 @@ export async function onRequestPost({ request, env, data }) {
   });
 
   return json({ ok: true, inviteId });
+}
+
+/*
+ * DELETE /api/invite?id=inv_xxx  — cancel a pending invite.
+ */
+export async function onRequestDelete({ request, env, data }) {
+  if (!data.user) return json({ error: 'Unauthorized' }, { status: 401 });
+  if (!env.DB) return json({ error: 'Database not configured' }, { status: 503 });
+
+  const inviteId = new URL(request.url).searchParams.get('id');
+  if (!inviteId) return json({ error: 'id required' }, { status: 400 });
+
+  const membership = await env.DB.prepare(
+    'SELECT family_id, role FROM family_member WHERE user_id = ?',
+  ).bind(data.user.uid).first();
+
+  if (!membership || !['owner', 'coadmin'].includes(membership.role)) {
+    return json({ error: 'Forbidden' }, { status: 403 });
+  }
+
+  await env.DB.prepare(
+    `UPDATE invite SET status = 'cancelled' WHERE id = ? AND family_id = ? AND status = 'pending'`,
+  ).bind(inviteId, membership.family_id).run();
+
+  return json({ ok: true });
+}
+
+/*
+ * PATCH /api/invite  { id, role } — update the role on a pending invite.
+ */
+export async function onRequestPatch({ request, env, data }) {
+  if (!data.user) return json({ error: 'Unauthorized' }, { status: 401 });
+  if (!env.DB) return json({ error: 'Database not configured' }, { status: 503 });
+
+  let id, role;
+  try {
+    ({ id, role } = await request.json());
+  } catch {
+    return json({ error: 'Bad request' }, { status: 400 });
+  }
+
+  if (!VALID_ROLES.includes(role)) return json({ error: 'Invalid role' }, { status: 400 });
+
+  const membership = await env.DB.prepare(
+    'SELECT family_id, role FROM family_member WHERE user_id = ?',
+  ).bind(data.user.uid).first();
+
+  if (!membership || !['owner', 'coadmin'].includes(membership.role)) {
+    return json({ error: 'Forbidden' }, { status: 403 });
+  }
+
+  await env.DB.prepare(
+    `UPDATE invite SET role = ? WHERE id = ? AND family_id = ? AND status = 'pending'`,
+  ).bind(role, id, membership.family_id).run();
+
+  return json({ ok: true });
 }
 
 /*

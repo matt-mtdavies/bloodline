@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   ROLES, ROLE_LABELS, ROLE_COLORS, canInvite, roleRank,
 } from '../lib/visibility.js';
@@ -69,6 +69,31 @@ export default function FamilySettings({ myRole, familyName, onUpdateFamilyName,
     });
     load();
   }
+
+  async function cancelInvite(id) {
+    await fetch(`/api/invite?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+    load();
+  }
+
+  async function updateInviteRole(id, role) {
+    await fetch('/api/invite', {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ id, role }),
+    });
+    load();
+  }
+
+  // Deduplicate pending invites by email (keep most recent per address).
+  const dedupedInvites = useMemo(() => {
+    if (!data?.invites) return [];
+    const seen = new Set();
+    return data.invites.filter((inv) => {
+      if (seen.has(inv.email)) return false;
+      seen.add(inv.email);
+      return true;
+    });
+  }, [data?.invites]);
 
   const isOwnerOrCoadmin = canInvite(myRole);
 
@@ -152,14 +177,38 @@ export default function FamilySettings({ myRole, familyName, onUpdateFamilyName,
                     onRemove={removeMember}
                   />
                 ))}
-                {data.invites?.length > 0 && (
+                {dedupedInvites.length > 0 && (
                   <>
                     <p className="fs__section-label">Pending invites</p>
-                    {data.invites.map((inv) => (
-                      <div key={inv.id} className="fs__invite-row">
-                        <span className="fs__invite-email">{inv.email}</span>
-                        <RoleBadge role={inv.role} />
-                        <span className="fs__invite-pending">Pending</span>
+                    {dedupedInvites.map((inv) => (
+                      <div key={inv.id} className="fs__member">
+                        <div className="fs__member-avatar">{inv.email.slice(0, 2).toUpperCase()}</div>
+                        <div className="fs__member-info">
+                          <span className="fs__member-email">{inv.email}</span>
+                          <span className="fs__member-joined fs__invite-pending">Pending</span>
+                        </div>
+                        {isOwnerOrCoadmin ? (
+                          <select
+                            className="fs__role-select"
+                            value={inv.role}
+                            onChange={(e) => updateInviteRole(inv.id, e.target.value)}
+                          >
+                            {INVITE_ROLES.map((r) => (
+                              <option key={r} value={r}>{ROLE_LABELS[r]}</option>
+                            ))}
+                          </select>
+                        ) : (
+                          <RoleBadge role={inv.role} />
+                        )}
+                        {isOwnerOrCoadmin && (
+                          <button
+                            className="fs__remove"
+                            onClick={() => cancelInvite(inv.id)}
+                            aria-label="Cancel invite"
+                          >
+                            <CloseIcon />
+                          </button>
+                        )}
                       </div>
                     ))}
                   </>
