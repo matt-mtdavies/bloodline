@@ -663,6 +663,7 @@ export default function App() {
         user={user}
         userPhoto={userPhoto}
         onOpenProfile={user ? () => setProfileOpen(true) : null}
+        onSearch={() => setSearchOpen(true)}
       />
 
       {view === 'bubbles' ? (
@@ -695,19 +696,12 @@ export default function App() {
           >
             <RecenterIcon />
           </button>
-          {/* Bottom bar: [Search + Focus Family] | Time | [Show All + Lineage] */}
+          {/* Bottom bar: single floating dock */}
           <div className="bottom-bar">
-            <div className="bottom-bar__left">
+            <div className="bottom-dock">
+              {/* Focus Family */}
               <button
-                className="search-btn"
-                onClick={() => setSearchOpen(true)}
-                aria-label="Search people"
-              >
-                <BottomSearchIcon />
-                Search
-              </button>
-              <button
-                className={`focus-btn${focusMode ? ' focus-btn--on' : ''}`}
+                className={`dock-btn focus-btn${focusMode ? ' focus-btn--on' : ''}`}
                 onClick={() => {
                   const next = !focusMode;
                   setFocusMode(next);
@@ -717,92 +711,84 @@ export default function App() {
                 aria-label={focusMode ? 'Exit focus family view' : 'Focus on this family'}
               >
                 <FocusIcon />
-                {focusMode ? 'Exit Focus' : 'Focus Family'}
+                {focusMode ? 'Exit Focus' : 'Focus'}
               </button>
-            </div>
-            {/* Time slider — column expands upward from the toggle */}
-            <div className={`time-bar${timeMode ? ' time-bar--on' : ''}`}>
-              {timeMode && lifeJourneyPerson && (() => {
-                const ev = lifeJourneyPerson.events?.find(
-                  (e) => Math.abs(parseInt(e.year) - timeYear) <= 1,
-                );
-                return (
-                  <div className={`life-event-card${ev ? ' life-event-card--visible' : ''}`}>
-                    <div className="life-event-card__meta">
-                      <span className="life-event-card__who">{lifeJourneyPerson.display_name.split(' ')[0]}</span>
-                      <span className="life-event-card__year">{timeYear}</span>
+              <span className="dock-divider" aria-hidden="true" />
+              {/* Time — wrapper is position:relative so slider/card float above */}
+              <div className={`time-bar${timeMode ? ' time-bar--on' : ''}`}>
+                {timeMode && lifeJourneyPerson && (() => {
+                  const ev = lifeJourneyPerson.events?.find(
+                    (e) => Math.abs(parseInt(e.year) - timeYear) <= 1,
+                  );
+                  return (
+                    <div className={`life-event-card${ev ? ' life-event-card--visible' : ''}`}>
+                      <div className="life-event-card__meta">
+                        <span className="life-event-card__who">{lifeJourneyPerson.display_name.split(' ')[0]}</span>
+                        <span className="life-event-card__year">{timeYear}</span>
+                      </div>
+                      <p className="life-event-card__title">{ev?.title ?? '\u00a0'}</p>
                     </div>
-                    <p className="life-event-card__title">{ev?.title ?? '\u00a0'}</p>
+                  );
+                })()}
+                {timeMode && (
+                  <div className="time-slider-wrap">
+                    <button
+                      className={`time-play${timePlaying ? ' time-play--on' : ''}`}
+                      onClick={() => {
+                        if (!timePlaying && timeYear >= yearRange.max) {
+                          setTimeYear(lifeJourneyPerson?.birth_date ? parseInt(lifeJourneyPerson.birth_date) : yearRange.min);
+                        }
+                        setTimePlaying((p) => !p);
+                      }}
+                      aria-label={timePlaying ? 'Pause' : 'Play family history'}
+                    >
+                      {timePlaying ? <PauseIcon /> : <PlayIcon />}
+                    </button>
+                    <span className="time-slider__label">{yearRange.min}</span>
+                    {lifeJourneyPerson?.events?.length > 0 && (
+                      <datalist id="life-events-ticks">
+                        {lifeJourneyPerson.events.map((ev) => (
+                          <option key={ev.year} value={parseInt(ev.year)} />
+                        ))}
+                      </datalist>
+                    )}
+                    <input
+                      type="range"
+                      className="time-slider"
+                      list={lifeJourneyPerson?.events?.length ? 'life-events-ticks' : undefined}
+                      min={yearRange.min}
+                      max={yearRange.max}
+                      value={timeYear}
+                      onChange={(e) => { setTimePlaying(false); setTimeYear(Number(e.target.value)); }}
+                      aria-label="Select year"
+                    />
+                    <span className="time-slider__label">{yearRange.max}</span>
                   </div>
-                );
-              })()}
-              {timeMode && (
-                <div className="time-slider-wrap">
-                  <button
-                    className={`time-play${timePlaying ? ' time-play--on' : ''}`}
-                    onClick={() => {
-                      if (!timePlaying && timeYear >= yearRange.max) {
-                        setTimeYear(lifeJourneyPerson?.birth_date ? parseInt(lifeJourneyPerson.birth_date) : yearRange.min);
-                      }
-                      setTimePlaying((p) => !p);
-                    }}
-                    aria-label={timePlaying ? 'Pause' : 'Play family history'}
-                  >
-                    {timePlaying ? <PauseIcon /> : <PlayIcon />}
-                  </button>
-                  <span className="time-slider__label">{yearRange.min}</span>
-                  {lifeJourneyPerson?.events?.length > 0 && (
-                    <datalist id="life-events-ticks">
-                      {lifeJourneyPerson.events.map((ev) => (
-                        <option key={ev.year} value={parseInt(ev.year)} />
-                      ))}
-                    </datalist>
-                  )}
-                  <input
-                    type="range"
-                    className="time-slider"
-                    list={lifeJourneyPerson?.events?.length ? 'life-events-ticks' : undefined}
-                    min={yearRange.min}
-                    max={yearRange.max}
-                    value={timeYear}
-                    onChange={(e) => { setTimePlaying(false); setTimeYear(Number(e.target.value)); }}
-                    aria-label="Select year"
-                  />
-                  <span className="time-slider__label">{yearRange.max}</span>
-                </div>
-              )}
+                )}
+                <button
+                  className={`dock-btn time-toggle${timeMode ? ' time-toggle--on' : ''}`}
+                  onClick={() => {
+                    if (!timeMode) { setTimeYear(new Date().getFullYear()); setTimePlaying(false); }
+                    else { setTimePlaying(false); setLifeJourneyId(null); }
+                    setTimeMode((m) => !m);
+                  }}
+                  aria-pressed={timeMode}
+                  aria-label={timeMode ? `Time view: ${timeYear}` : 'View family over time'}
+                >
+                  <ClockIcon />
+                  {timeMode ? (
+                    lifeJourneyPerson ? (
+                      <>{lifeJourneyPerson.display_name.split(' ')[0]} · {timeYear}</>
+                    ) : (
+                      timeYear
+                    )
+                  ) : 'Time'}
+                </button>
+              </div>
+              <span className="dock-divider" aria-hidden="true" />
+              {/* Lineage */}
               <button
-                className={`time-toggle${timeMode ? ' time-toggle--on' : ''}`}
-                onClick={() => {
-                  if (!timeMode) { setTimeYear(new Date().getFullYear()); setTimePlaying(false); }
-                  else { setTimePlaying(false); setLifeJourneyId(null); }
-                  setTimeMode((m) => !m);
-                }}
-                aria-pressed={timeMode}
-                aria-label={timeMode ? `Time view: ${timeYear}` : 'View family over time'}
-              >
-                <ClockIcon />
-                {timeMode ? (
-                  lifeJourneyPerson ? (
-                    <>{lifeJourneyPerson.display_name.split(' ')[0]} · {timeYear}</>
-                  ) : (
-                    timeYear
-                  )
-                ) : 'Time'}
-              </button>
-            </div>
-            <div className="bottom-bar__right">
-              <button
-                className={`expand-btn${canCollapse ? ' expand-btn--on' : ''}`}
-                onClick={toggleExpandAll}
-                aria-pressed={canCollapse}
-                aria-label={canCollapse ? 'Collapse to active person' : 'Show all people in the tree'}
-              >
-                {canCollapse ? <CollapseIcon /> : <ExpandAllIcon />}
-                {canCollapse ? 'Collapse' : 'Show All'}
-              </button>
-              <button
-                className={`lineage-btn${lineageMode ? ' lineage-btn--on' : ''}`}
+                className={`dock-btn lineage-btn${lineageMode ? ' lineage-btn--on' : ''}`}
                 onClick={toggleLineage}
                 aria-pressed={lineageMode}
                 aria-label={lineageMode ? 'Exit lineage mode' : 'Trace a family line'}
@@ -810,9 +796,20 @@ export default function App() {
                 <LineageIcon />
                 {lineageMode
                   ? lineagePath
-                    ? `Lineage · ${[...lineagePath].length} people`
-                    : 'Tap an ancestor…'
+                    ? `${[...lineagePath].length} links`
+                    : 'Tap…'
                   : 'Lineage'}
+              </button>
+              <span className="dock-divider" aria-hidden="true" />
+              {/* Show All / Collapse */}
+              <button
+                className={`dock-btn expand-btn${canCollapse ? ' expand-btn--on' : ''}`}
+                onClick={toggleExpandAll}
+                aria-pressed={canCollapse}
+                aria-label={canCollapse ? 'Collapse to active person' : 'Show all people in the tree'}
+              >
+                {canCollapse ? <CollapseIcon /> : <ExpandAllIcon />}
+                {canCollapse ? 'Collapse' : 'All'}
               </button>
             </div>
           </div>
@@ -1128,15 +1125,6 @@ function DocViewer({ doc, onClose }) {
         )}
       </div>
     </div>
-  );
-}
-
-function BottomSearchIcon() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="1.8"/>
-      <path d="M16.5 16.5L21 21" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
-    </svg>
   );
 }
 

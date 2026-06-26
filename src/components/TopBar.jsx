@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, forwardRef } from 'react';
 import Logo from './Logo.jsx';
 
-export default function TopBar({ familyName, stats, view, syncStatus, syncError, onRetrySync, onToggleView, onOpenLegend, onOpenSettings, onOpenActivity, activityCount = 0, user, userPhoto, onOpenProfile }) {
+export default function TopBar({ familyName, stats, view, syncStatus, syncError, onRetrySync, onToggleView, onOpenLegend, onOpenSettings, onOpenActivity, activityCount = 0, user, userPhoto, onOpenProfile, onSearch }) {
   const [statsOpen, setStatsOpen] = useState(false);
   const popoverRef = useRef(null);
   const statsRef = useRef(null);
@@ -34,6 +34,11 @@ export default function TopBar({ familyName, stats, view, syncStatus, syncError,
           <span className="topbar__word">Bloodline</span>
         </div>
         <div className="topbar__actions">
+          {onSearch && (
+            <button className="pill" onClick={onSearch} aria-label="Search family members">
+              <TopBarSearchIcon />
+            </button>
+          )}
           {syncStatus === 'saving' && (
             <span className="sync-status sync-status--saving" aria-live="polite">Saving…</span>
           )}
@@ -229,6 +234,15 @@ function userInitials(user) {
 }
 
 /* ── Icons ──────────────────────────────────────────────────────────────── */
+
+function TopBarSearchIcon() {
+  return (
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="1.7"/>
+      <path d="M16.5 16.5L21 21" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/>
+    </svg>
+  );
+}
 
 function CloseIcon() {
   return (
