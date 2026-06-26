@@ -207,6 +207,7 @@ export default function BubbleTree({
       let dist = distancesFrom(graph, activeRef.current);
 
       let reorgTimer = null; // tracks the forceY strength-restore after a tap
+      const manualPins = new Set(); // nodes the user has manually repositioned
 
       const state = {
         app,
@@ -314,8 +315,10 @@ export default function BubbleTree({
         setLayout(mode) {
           if (state.layoutMode === mode) return;
           if (state.layoutMode === 'chart') {
-            // Restore dynamics when leaving chart mode.
-            for (const n of nodes) { n.fx = null; n.fy = null; }
+            // Restore dynamics when leaving chart mode, but keep manual drag pins.
+            for (const n of nodes) {
+              if (!manualPins.has(n.id)) { n.fx = null; n.fy = null; }
+            }
             sim.alphaTarget(reducedMotion ? 0 : 0.012);
             sim.alpha(0.5);
           }
@@ -473,6 +476,12 @@ export default function BubbleTree({
         // Called when Focus Family, Life Journey, or Time mode activates so nodes don't
         // stay at their full-tree world positions while the slow spring catches up.
         refocus(alpha = 0.5) {
+          // Release manual drag pins so refocus can rearrange freely.
+          for (const id of manualPins) {
+            const n = nodeById.get(id);
+            if (n) { n.fx = null; n.fy = null; }
+          }
+          manualPins.clear();
           const vis = visibleRef.current;
           const f = nodeById.get(activeRef.current);
           if (f && vis.size > 0) {
@@ -692,8 +701,8 @@ export default function BubbleTree({
               onActivateRef.current?.(drag.id);
             }
           } else if (drag.node && drag.id !== state.pinnedId) {
-            drag.node.fx = null;
-            drag.node.fy = null;
+            // Leave fx/fy set — node stays where dropped; neighbours settle around it.
+            manualPins.add(drag.id);
           }
           if (!reducedMotion) sim.alphaTarget(0.012); // settle back to idle drift
         }
