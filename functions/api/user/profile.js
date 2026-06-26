@@ -64,17 +64,20 @@ export async function onRequestPatch({ request, env, data }) {
 
   if ('person_id' in body) {
     const personId = body.person_id ?? null;
-    // user.person_id has a FK to person(id). The tree is stored as JSON in
-    // family_tree rather than individual person rows, so we insert a stub row
-    // first to satisfy the constraint before updating the user record.
+    // person.family_id and person.display_name are both NOT NULL, so the stub
+    // row that satisfies the user.person_id FK needs real values for both.
     if (personId) {
-      // Ensure a stub person row exists so user.person_id FK is satisfied.
-      // Use NULL for family_id to skip that nested FK check — person.family_id
-      // is nullable and a NULL FK value is never validated by SQLite/D1.
+      const fm = await env.DB.prepare(
+        'SELECT family_id FROM family_member WHERE user_id = ?',
+      ).bind(data.user.uid).first();
+      if (!fm?.family_id) {
+        return json({ error: 'No family found — cannot claim bubble' }, { status: 400 });
+      }
+      const displayName = body.person_name ? String(body.person_name).trim().slice(0, 200) : personId;
       const stubNow = Math.floor(Date.now() / 1000);
       await env.DB.prepare(
-        `INSERT OR IGNORE INTO person (id, family_id, created_at, updated_at) VALUES (?, NULL, ?, ?)`,
-      ).bind(personId, stubNow, stubNow).run();
+        `INSERT OR IGNORE INTO person (id, family_id, display_name, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`,
+      ).bind(personId, fm.family_id, displayName, stubNow, stubNow).run();
     }
     sets.push('person_id = ?');
     binds.push(personId);

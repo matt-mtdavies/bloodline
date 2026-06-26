@@ -70,8 +70,10 @@ export default function UserProfile({ user, people = [], onClose, onLogout, onSa
     patch({ notification_prefs: prefs });
   }
 
-  async function claimBubble(person_id) {
-    patch({ person_id: person_id || null });
+  function claimBubble(person_id) {
+    if (!person_id) { patch({ person_id: null }); return; }
+    const person = people.find((p) => p.id === person_id);
+    patch({ person_id, person_name: person?.display_name ?? person_id });
   }
 
   const initials = getInitials(profile?.display_name || user?.email || '');
