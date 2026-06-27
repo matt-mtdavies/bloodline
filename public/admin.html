@@ -305,6 +305,18 @@
       <p id="test-email-result" style="font-size:13px;margin-top:12px"></p>
     </div>
 
+    <div class="table-card" id="email-failures" style="margin-bottom:28px;display:none">
+      <h3>Recent invite email failures</h3>
+      <table id="table-email-failures">
+        <thead><tr>
+          <th>Recipient</th>
+          <th>Error</th>
+          <th>When</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
     <!-- Charts -->
     <p class="section-heading" style="margin-top: 8px;">Trends</p>
     <div class="charts">
@@ -421,13 +433,39 @@
     const ok = (v) => v
       ? '<span class="badge badge-green">Configured</span>'
       : '<span class="badge badge-red">Missing</span>';
-    document.getElementById('email-cards').innerHTML = [
+    const cards = [
       card('Email provider', e.brevo_configured ? '✓' : '✗',
         e.brevo_configured ? 'Brevo API key set' : 'BREVO_API_KEY not set',
         e.brevo_configured ? 'green' : 'accent'),
       card('Sender address', '', `${e.from_email || '<em style="color:var(--danger)">not set</em>'} ${ok(e.from_email)}`),
       card('App URL', '', `${e.app_url || '<em style="color:var(--danger)">not set</em>'} ${ok(e.app_url)}`),
-    ].join('');
+    ];
+
+    // Delivery metric (migration 0007). Null = not tracked yet.
+    const d = e.delivery;
+    if (d && d.tracked > 0) {
+      const rate = Math.round((d.sent / d.tracked) * 100);
+      cards.push(card('Delivered', `${rate}%`,
+        `${d.sent} sent · ${d.failed} failed of ${d.tracked} tracked`,
+        d.failed === 0 ? 'green' : (rate >= 90 ? '' : 'accent')));
+    } else {
+      cards.push(card('Delivered', '—', 'No invite emails tracked yet'));
+    }
+    document.getElementById('email-cards').innerHTML = cards.join('');
+
+    // Recent failures table — actionable triage.
+    const wrap = document.getElementById('email-failures');
+    const rows = e.recent_failures || [];
+    if (!rows.length) {
+      wrap.style.display = 'none';
+    } else {
+      wrap.style.display = 'block';
+      document.querySelector('#table-email-failures tbody').innerHTML = rows.map((r) => `<tr>
+        <td class="primary">${escHtml(r.email)}</td>
+        <td class="muted" style="max-width:420px;white-space:pre-wrap;word-break:break-word">${escHtml(r.error || 'Unknown error')}</td>
+        <td class="muted" style="white-space:nowrap">${fmt(r.when)}</td>
+      </tr>`).join('');
+    }
   }
 
   async function sendTestEmail() {

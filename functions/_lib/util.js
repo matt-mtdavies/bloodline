@@ -69,6 +69,21 @@ export function clearSessionCookie() {
   return 'bl_session=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0';
 }
 
+// Record an invite's email-delivery outcome for the admin deliverability
+// metric. Best-effort and self-contained: if migration 0007 hasn't added the
+// columns yet (or DB is absent), it silently no-ops so invite creation is
+// never affected.
+export async function recordEmailStatus(env, inviteId, status, error, sentAt) {
+  if (!env.DB || !inviteId) return;
+  try {
+    await env.DB.prepare(
+      `UPDATE invite SET email_status = ?, email_error = ?, email_sent_at = ? WHERE id = ?`,
+    ).bind(status, error ? String(error).slice(0, 300) : null, sentAt ?? null, inviteId).run();
+  } catch {
+    /* columns not migrated yet — the metric simply won't populate */
+  }
+}
+
 // Send a transactional email via Brevo.
 // Pass `text` alongside `html` — emails with a plain-text alternative score
 // significantly better in spam filters (Hotmail, Exchange, APG corporate, etc.)

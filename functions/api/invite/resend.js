@@ -1,4 +1,4 @@
-import { json, sendEmail } from '../../_lib/util.js';
+import { json, sendEmail, recordEmailStatus } from '../../_lib/util.js';
 
 const ROLE_LABELS = {
   coadmin: 'Co-Admin',
@@ -42,18 +42,22 @@ export async function onRequestPost({ request, env, data }) {
 
   let emailSent = false;
   let emailError = null;
+  let emailStatus = 'failed';
   try {
-    await sendEmail(env, {
+    const result = await sendEmail(env, {
       to: invite.email,
       subject: `You're invited to join ${familyName} on Bloodline`,
       html: inviteHtml({ inviteUrl, fromEmail, familyName, roleLabel }),
       text: inviteText({ inviteUrl, fromEmail, familyName, roleLabel }),
     });
     emailSent = true;
+    emailStatus = result?.dev ? 'dev' : 'sent';
   } catch (e) {
     console.error('[invite/resend] email failed:', e.message);
     emailError = String(e.message || 'Email delivery failed').slice(0, 200);
   }
+
+  await recordEmailStatus(env, invite.id, emailStatus, emailError, emailSent ? Math.floor(Date.now() / 1000) : null);
 
   return json({ ok: true, emailSent, emailError });
 }

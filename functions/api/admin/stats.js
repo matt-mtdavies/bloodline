@@ -79,6 +79,35 @@ export async function onRequestGet({ env, data }) {
       invites[row.status] = row.n;
     }
 
+    // Email deliverability breakdown (migration 0007). Defensive: older DBs
+    // without the email_status column just report nulls instead of erroring.
+    let emailDelivery = null;
+    try {
+      const { results } = await env.DB.prepare(
+        `SELECT email_status AS s, COUNT(*) AS n FROM invite
+          WHERE email_status IS NOT NULL GROUP BY email_status`,
+      ).all();
+      emailDelivery = { sent: 0, failed: 0, dev: 0, tracked: 0 };
+      for (const r of (results || [])) {
+        if (r.s in emailDelivery) emailDelivery[r.s] = r.n;
+        emailDelivery.tracked += r.n;
+      }
+    } catch { /* column not migrated yet */ }
+
+    // Most recent failed invite emails — actionable triage for the admin.
+    let recentFailures = [];
+    try {
+      const { results } = await env.DB.prepare(
+        `SELECT email, email_error, created_at FROM invite
+          WHERE email_status = 'failed' ORDER BY created_at DESC LIMIT 10`,
+      ).all();
+      recentFailures = (results || []).map((r) => ({
+        email: r.email,
+        error: r.email_error || null,
+        when: new Date(r.created_at * 1000).toISOString(),
+      }));
+    } catch { /* column not migrated yet */ }
+
     // Label weekly signup rows with a readable date
     const signupsByWeek = (weeklySignups.results || []).map((r) => ({
       week: new Date(r.week_num * week * 1000).toISOString().slice(0, 10),
@@ -96,6 +125,8 @@ export async function onRequestGet({ env, data }) {
         brevo_configured: !!env.BREVO_API_KEY,
         from_email: env.FROM_EMAIL || null,
         app_url: env.APP_URL || null,
+        delivery: emailDelivery,
+        recent_failures: recentFailures,
       },
       users: {
         total: totalUsers?.n ?? 0,

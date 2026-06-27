@@ -1,4 +1,4 @@
-import { json, uid, token, sendEmail } from '../../_lib/util.js';
+import { json, uid, token, sendEmail, recordEmailStatus } from '../../_lib/util.js';
 
 const VALID_ROLES = ['coadmin', 'editor', 'contributor', 'viewer'];
 const ROLE_LABELS = {
@@ -65,20 +65,24 @@ export async function onRequestPost({ request, env, data }) {
 
   let emailSent = false;
   let emailError = null;
+  let emailStatus = 'failed';
   try {
-    await sendEmail(env, {
+    const result = await sendEmail(env, {
       to: email,
       subject: `You're invited to join ${familyName} on Bloodline`,
       html: inviteEmail({ inviteUrl, fromEmail, familyName, roleLabel }),
       text: inviteEmailText({ inviteUrl, fromEmail, familyName, roleLabel }),
     });
     emailSent = true;
+    emailStatus = result?.dev ? 'dev' : 'sent';
   } catch (e) {
     // Invite row is already in D1 — don't 500. The client surfaces the warning
     // and offers Resend; return the reason so it can be shown/logged.
     console.error('[invite] email delivery failed:', e.message);
     emailError = String(e.message || 'Email delivery failed').slice(0, 200);
   }
+
+  await recordEmailStatus(env, inviteId, emailStatus, emailError, emailSent ? now : null);
 
   return json({ ok: true, inviteId, emailSent, emailError });
 }
