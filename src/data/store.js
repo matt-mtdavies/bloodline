@@ -314,6 +314,13 @@ async function _fetchAndMerge(local) {
     const lMemIds   = new Set((local.memories      || []).map((m) => m.id));
     const lPhotoIds = new Set((local.photos        || []).map((ph) => ph.id));
 
+    // Resolve viewer's own person by email, same logic as loadFromServer.
+    const mergeViewerEmail = _currentUser?.email?.toLowerCase();
+    const mergeClaimedPerson = mergeViewerEmail && mergedPeople.find(
+      (p) => p.email?.toLowerCase() === mergeViewerEmail
+        || p.invited_email?.toLowerCase() === mergeViewerEmail,
+    );
+
     const merged = {
       ...server,
       ...local, // local top-level scalars win (familyName, myPersonId, etc.)
@@ -321,6 +328,7 @@ async function _fetchAndMerge(local) {
       relationships: [...(local.relationships || []), ...(server.relationships || []).filter((r)  => !lRelIds.has(r.id))],
       memories:      [...(local.memories      || []), ...(server.memories      || []).filter((m)  => !lMemIds.has(m.id))],
       photos:        [...(local.photos        || []), ...(server.photos        || []).filter((ph) => !lPhotoIds.has(ph.id))],
+      ...(mergeClaimedPerson ? { myPersonId: mergeClaimedPerson.id } : {}),
     };
 
     commit(merged, { fromServer: true });
@@ -438,6 +446,16 @@ export async function loadFromServer({ forceServerWins = false } = {}) {
     );
     const mergedDocs = [...(data.documents || []), ...localDataDocs];
 
+    // Resolve the viewer's own person by matching their login email against
+    // person.email or person.invited_email. This ensures each family member
+    // sees relationship labels from their own perspective, not the owner's.
+    const viewerEmail = _currentUser?.email?.toLowerCase();
+    const claimedPerson = viewerEmail && (mergedPeople || []).find(
+      (p) => p.email?.toLowerCase() === viewerEmail
+        || p.invited_email?.toLowerCase() === viewerEmail,
+    );
+    const resolvedMyPersonId = claimedPerson?.id || data.myPersonId;
+
     commit(
       {
         ...EMPTY,
@@ -445,6 +463,7 @@ export async function loadFromServer({ forceServerWins = false } = {}) {
         ...(mergedPeople ? { people: mergedPeople } : {}),
         photos: mergedPhotos,
         documents: mergedDocs,
+        ...(resolvedMyPersonId ? { myPersonId: resolvedMyPersonId } : {}),
       },
       { fromServer: true },
     );

@@ -592,8 +592,10 @@ export default function App() {
       throw new Error(body.error || 'Invite failed');
     }
     const body = await res.json().catch(() => ({}));
+    // Record invited_email on the person so we can match them to their user
+    // account when they log in (perspective-based relationship labels).
+    updatePerson(personId, { invited_email: email.toLowerCase(), invited_at: Date.now() });
     return body; // pass { emailSent } back to InviteSheet
-    // InviteSheet owns closing — it shows success state then user taps Done
   }, []);
 
   const activePerson = graph.byId.get(activeId);
