@@ -235,6 +235,8 @@ export function relationLabel(graph, focusId, otherId) {
   // Niece / Nephew: a child of one of focus's siblings
   for (const s of graph.siblings(focusId)) {
     if (graph.children(s.id).some((x) => x.id === otherId)) {
+      if (s.kind === 'step') return `Step-${g('Nephew', 'Niece', 'Niece/Nephew')}`;
+      if (s.kind === 'half') return `Half-${g('Nephew', 'Niece', 'Niece/Nephew')}`;
       return g('Nephew', 'Niece', 'Niece/Nephew');
     }
   }
