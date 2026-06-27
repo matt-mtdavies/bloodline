@@ -313,6 +313,27 @@ export class Bubble {
     if (this.nameLabel) this.nameLabel.alpha = this._labelAlpha;
   }
 
+  // Birth entrance — driven by BirthEffect during the time-view celebration.
+  // `entranceScale` is the 0 → overshoot → 1 multiplier; the final on-screen
+  // scale is the bubble's normal target × this. We also keep the scaleSpring
+  // and curAlpha in sync with what we set so that, when normal control resumes
+  // after the pop settles, there is no visible jump. Label stays hidden — it
+  // rises in on its own a beat later via the usual labelAlpha easing.
+  applyBirthEntrance(targetScale, entranceScale, entranceAlpha) {
+    const s = Math.max(0, targetScale * entranceScale);
+    this.scaleSpring.value = s;
+    this.scaleSpring.target = targetScale;
+    this.scaleSpring.velocity = 0;
+    this.curAlpha = entranceAlpha;
+    this.root.visible = this.curAlpha > 0.012;
+    this.root.scale.set(s);
+    this.root.alpha = this.curAlpha;
+    this.shadow.alpha = 0.5 * this.curAlpha;
+    this.setBlur(0);
+    this._labelAlpha += (0 - this._labelAlpha) * 0.2;
+    if (this.nameLabel) this.nameLabel.alpha = this._labelAlpha;
+  }
+
   // Distant bubbles recede out of focus. Filter is attached lazily and removed
   // when sharp, so most bubbles carry no filter cost.
   setBlur(amount) {

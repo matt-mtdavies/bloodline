@@ -343,11 +343,12 @@ export default function App() {
     return vis;
   }, [graph, expanded, aliveAtYear, focusFamilyIds]);
 
-  // Play animation: life journey = 350 ms/step (cinematic), time mode = 200 ms/step.
+  // Play animation: life journey = 350 ms/step (cinematic), time mode = 600 ms/step
+  // — slowed so each birth's light-arrival animation gets room to land and be felt.
   useEffect(() => {
     clearInterval(playRef.current);
     if (!timePlaying) return;
-    const interval = lifeJourneyId ? 350 : 200;
+    const interval = lifeJourneyId ? 350 : 600;
     playRef.current = setInterval(() => {
       setTimeYear((y) => {
         if (y >= yearRange.max) { setTimePlaying(false); return y; }
@@ -682,6 +683,8 @@ export default function App() {
             layout={layout}
             mergeParents={mergeParents}
             lineagePath={lineagePath}
+            timeMode={timeMode}
+            timeYear={timeYear}
             onCameraMode={setCameraFree}
             apiRef={viewApi}
           />

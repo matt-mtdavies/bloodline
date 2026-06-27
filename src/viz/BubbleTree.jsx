@@ -9,6 +9,7 @@ import {
   forceY,
 } from 'd3-force';
 import { Bubble } from './bubble.js';
+import { BirthEffect } from './birth.js';
 import { drawLinks, drawLinksChart } from './links.js';
 import { distancesFrom } from '../data/graph.js';
 import { Spring } from '../lib/spring.js';
@@ -51,6 +52,8 @@ export default function BubbleTree({
   mergeParents = false,
   lineagePath = null,
   invitedIds = null,
+  timeMode = false,
+  timeYear = null,
   onCameraMode,
   apiRef,
 }) {
@@ -69,6 +72,10 @@ export default function BubbleTree({
   invitedRef.current = invitedIds;
   const layoutRef = useRef(layout);
   layoutRef.current = layout;
+  const timeModeRef = useRef(timeMode);
+  timeModeRef.current = timeMode;
+  const timeYearRef = useRef(timeYear);
+  timeYearRef.current = timeYear;
   // Callbacks are captured once in the mount effect, so we route them through
   // refs to ensure React prop changes (e.g. lineage mode toggling onOpenPerson)
   // are always reflected without re-mounting the canvas.
@@ -116,6 +123,14 @@ export default function BubbleTree({
       const bubbleLayer = new Container();
       bubbleLayer.sortableChildren = true; // nearer bubbles draw above farther
       world.addChild(bubbleLayer);
+      // Birth-celebration effects (time view) render above the bubbles so the
+      // bloom + motes read over neighbours. Transient; self-cleaning.
+      const fxLayer = new Container();
+      fxLayer.eventMode = 'none';
+      world.addChild(fxLayer);
+      const births = new Map();      // personId → BirthEffect (currently animating)
+      const wasVisible = new Set();  // bubbles visible last frame, to spot new arrivals
+      let fxSeeded = false;          // first frame seeds wasVisible without celebrating
 
       const graph = graphRef.current; // initial build snapshot
 
@@ -862,6 +877,46 @@ export default function BubbleTree({
         const dmap = state.dist;
         const cardOpen = !!state.pinnedId;
         const lineage = lineageRef.current;
+
+        // ── Birth celebrations (time view) ──────────────────────────────────
+        // Spot bubbles that *just* appeared because the timeline crossed their
+        // birth year, and greet each with a light-arrival animation. The first
+        // frame only seeds the baseline so the initial population never all
+        // fireworks at once.
+        if (!fxSeeded) {
+          for (const id of effectiveVis) wasVisible.add(id);
+          fxSeeded = true;
+        } else if (!reducedMotion && timeModeRef.current && births.size < 14) {
+          const yr = timeYearRef.current;
+          for (const id of effectiveVis) {
+            if (wasVisible.has(id) || births.has(id)) continue;
+            const person = bubblePerson.get(id);
+            const born = person?.birth_date ? parseInt(person.birth_date, 10) : null;
+            if (born == null || yr == null || born !== yr) continue; // only true births
+            const dest = nodeById.get(id);
+            if (!dest) continue;
+            // Light descends from the midpoint of any visible parents, else from
+            // just above — a root is "born into the world" from above.
+            const vps = graphRef.current.parents(id).filter((p) => effectiveVis.has(p.id));
+            let origin;
+            if (vps.length) {
+              const pn = vps.map((p) => nodeById.get(p.id)).filter(Boolean);
+              origin = {
+                x: pn.reduce((s, p) => s + p.x, 0) / pn.length,
+                y: pn.reduce((s, p) => s + p.y, 0) / pn.length,
+              };
+            } else {
+              origin = { x: dest.x, y: dest.y - BASE_RADIUS * 5 };
+            }
+            const fx = new BirthEffect({ x: dest.x, y: dest.y }, origin, BASE_RADIUS);
+            fxLayer.addChild(fx.root);
+            births.set(id, fx);
+          }
+        }
+        // Sync the baseline for next frame.
+        for (const id of [...wasVisible]) if (!effectiveVis.has(id)) wasVisible.delete(id);
+        for (const id of effectiveVis) wasVisible.add(id);
+
         for (const [id, b] of bubbles) {
           const n = nodeById.get(id);
           b.root.position.set(n.x, n.y);
@@ -891,7 +946,15 @@ export default function BubbleTree({
           }
           // Name labels: all visible bubbles, hidden when card open or lineage active
           const labelAlpha = (!cardOpen && !lineage && effectiveVis.has(id)) ? 1 : 0;
-          b.setVisualState({ ...target, labelAlpha }, dt);
+          const birth = births.get(id);
+          if (birth && !birth.bubbleSettled && effectiveVis.has(id)) {
+            // The birth effect owns the pop: it scales the bubble up with an
+            // elastic overshoot synced to the bloom, then hands back seamlessly.
+            const ent = birth.bubbleEntrance();
+            b.applyBirthEntrance(target.scale, ent.scale, ent.alpha);
+          } else {
+            b.setVisualState({ ...target, labelAlpha }, dt);
+          }
           b.setActive(id === activeRef.current);
           b.setCollapsePip(
             effectiveVis.has(id) &&
@@ -911,6 +974,18 @@ export default function BubbleTree({
             b.setDepthHint(false, false);
           }
           b.root.zIndex = id === activeRef.current ? 100 : -d;
+        }
+
+        // Advance + retire birth celebrations. An effect ends when its clock
+        // runs out, or early if its person was collapsed/scrubbed away.
+        if (births.size) {
+          for (const [id, fx] of births) {
+            fx.update(dt);
+            if (fx.done || !effectiveVis.has(id)) {
+              fx.destroy();
+              births.delete(id);
+            }
+          }
         }
 
         // Generation row backgrounds in chart mode — alternating warm bands behind the links.
