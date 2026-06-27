@@ -61,6 +61,7 @@ import MergeWizard from './components/MergeWizard.jsx';
 import InviteSheet from './components/InviteSheet.jsx';
 import TreeInsights from './components/TreeInsights.jsx';
 import LineageBanner from './components/LineageBanner.jsx';
+import TimelineView from './components/TimelineView.jsx';
 import ActivityFeed from './components/ActivityFeed.jsx';
 import GedcomImport from './components/GedcomImport.jsx';
 import FamilySearchImport from './components/FamilySearchImport.jsx';
@@ -217,6 +218,7 @@ export default function App() {
   const [focusMode, setFocusMode] = useState(false);
   const [browse, setBrowse] = useState(false); // deselected free-look mode
   const [insightsOpen, setInsightsOpen] = useState(false);
+  const [timelineOpen, setTimelineOpen] = useState(false);
   const [lifeJourneyId, setLifeJourneyId] = useState(null);
   const playRef = useRef(null);
   const [docViewer, setDocViewer] = useState(null); // { title, src, mime }
@@ -687,6 +689,7 @@ export default function App() {
         onOpenProfile={user ? () => setProfileOpen(true) : null}
         onSearch={() => setSearchOpen(true)}
         onOpenInsights={() => setInsightsOpen(true)}
+        onOpenTimeline={() => setTimelineOpen(true)}
       />
 
       {view === 'bubbles' ? (
@@ -934,6 +937,15 @@ export default function App() {
           viewerId={data.myPersonId || activeId}
           onNavigate={(id) => { setInsightsOpen(false); activate(id); openPerson(id); }}
           onClose={() => setInsightsOpen(false)}
+        />
+      )}
+
+      {timelineOpen && (
+        <TimelineView
+          graph={graph}
+          photos={data.photos}
+          onNavigate={(id) => { setTimelineOpen(false); activate(id); openPerson(id); }}
+          onClose={() => setTimelineOpen(false)}
         />
       )}
 

@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, forwardRef } from 'react';
 import Logo from './Logo.jsx';
 
-export default function TopBar({ familyName, stats, view, syncStatus, syncError, onRetrySync, onToggleView, onOpenLegend, onOpenSettings, onOpenActivity, activityCount = 0, user, userPhoto, onOpenProfile, onSearch, onOpenInsights }) {
+export default function TopBar({ familyName, stats, view, syncStatus, syncError, onRetrySync, onToggleView, onOpenLegend, onOpenSettings, onOpenActivity, activityCount = 0, user, userPhoto, onOpenProfile, onSearch, onOpenInsights, onOpenTimeline }) {
   const [statsOpen, setStatsOpen] = useState(false);
   const popoverRef = useRef(null);
   const statsRef = useRef(null);
@@ -132,13 +132,14 @@ export default function TopBar({ familyName, stats, view, syncStatus, syncError,
           stats={stats}
           onClose={() => setStatsOpen(false)}
           onOpenInsights={onOpenInsights ? () => { setStatsOpen(false); onOpenInsights(); } : null}
+          onOpenTimeline={onOpenTimeline ? () => { setStatsOpen(false); onOpenTimeline(); } : null}
         />
       )}
     </header>
   );
 }
 
-const StatsPopover = forwardRef(function StatsPopover({ stats, onClose, onOpenInsights }, ref) {
+const StatsPopover = forwardRef(function StatsPopover({ stats, onClose, onOpenInsights, onOpenTimeline }, ref) {
   const total = stats.people;
   const maxCount = stats.surnameList?.[0]?.count ?? 1;
   const spanYears = stats.yearMin && stats.yearMax ? stats.yearMax - stats.yearMin : null;
@@ -153,6 +154,14 @@ const StatsPopover = forwardRef(function StatsPopover({ stats, onClose, onOpenIn
         <button className="stats-popover__insights-btn" onClick={onOpenInsights}>
           <SparkIcon />
           <span>Tree insights</span>
+          <span className="stats-popover__insights-arrow"><ChevronRightIcon /></span>
+        </button>
+      )}
+
+      {onOpenTimeline && (
+        <button className="stats-popover__timeline-btn" onClick={onOpenTimeline}>
+          <PopClockIcon />
+          <span>Family timeline</span>
           <span className="stats-popover__insights-arrow"><ChevronRightIcon /></span>
         </button>
       )}
@@ -278,6 +287,15 @@ function ChevronRightIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <path d="M9 18l6-6-6-6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  );
+}
+
+function PopClockIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="12" r="8.5" stroke="currentColor" strokeWidth="1.8"/>
+      <path d="M12 7.5v5l3 1.8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
     </svg>
   );
 }
