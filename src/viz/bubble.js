@@ -324,24 +324,24 @@ export class Bubble {
     if (this._relLabel) { this._relLabel.destroy(); this._relLabel = null; }
     if (!text) return;
     const r = this.r;
-    const pillH = 17;
-    const pillW = Math.max(30, text.length * 6 + 16);
+    // Quiet, secondary treatment: terracotta text on a soft white pill (like the
+    // "née" line in the profile) so it reads as a caption, not a loud badge.
+    const pillH = 16;
+    const pillW = Math.max(28, text.length * 5.8 + 14);
     const rad = pillH / 2;
 
     const bg = new Graphics();
-    bg.roundRect(-pillW / 2 + 0.5, -pillH / 2 + 1.5, pillW, pillH, rad)
-      .fill({ color: 0x000000, alpha: 0.06 });
     bg.roundRect(-pillW / 2, -pillH / 2, pillW, pillH, rad)
-      .fill({ color: hex('#c2603a'), alpha: 0.92 });
+      .fill({ color: 0xffffff, alpha: 0.82 });
 
     const label = new Text({
       text,
       style: {
         fontFamily: TREE_FONT,
         fontSize: 10.5,
-        fontWeight: '700',
-        fill: '#ffffff',
-        letterSpacing: 0.3,
+        fontWeight: '600',
+        fill: '#c2603a',
+        letterSpacing: 0.2,
       },
     });
     label.anchor.set(0.5);
@@ -350,7 +350,7 @@ export class Bubble {
     const group = new Container();
     group.addChild(bg);
     group.addChild(label);
-    group.position.set(0, r + 38);
+    group.position.set(0, r + 37);
     group.eventMode = 'none';
     group.alpha = this._labelAlpha;
     this.root.addChild(group);
