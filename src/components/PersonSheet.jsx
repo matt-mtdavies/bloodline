@@ -8,6 +8,7 @@ import { fileToDataUrl, uploadPhoto } from '../lib/image.js';
 import { streamBio } from '../lib/ai.js';
 import { VISIBILITY_LABELS, VISIBILITY_DESCS } from '../lib/visibility.js';
 import { HEALTH_CATEGORIES, HEALTH_CONDITIONS, HEALTH_STATUSES, colorFor } from '../lib/health.js';
+import { formatPhone } from '../lib/phone.js';
 
 const HAIR_DOTS = { Black: '#1a1a1a', Brown: '#6b4226', Blonde: '#d4b483', Auburn: '#9b3a1e', Red: '#c0392b', Grey: '#9e9e9e', White: '#ddd' };
 const EYE_DOTS  = { Brown: '#6b4226', Blue: '#4a7fbf', Green: '#3d8c55', Hazel: '#8b6914', Grey: '#8a9099', Amber: '#c8860a' };
@@ -460,7 +461,7 @@ export default function PersonSheet({
                     {person.phone && (
                       <a href={`tel:${person.phone}`} className="contact-row">
                         <span className="contact-row__icon"><PhoneIcon /></span>
-                        <span className="contact-row__value">{person.phone}</span>
+                        <span className="contact-row__value">{formatPhone(person.phone)}</span>
                         <span className="contact-row__action">Call</span>
                       </a>
                     )}

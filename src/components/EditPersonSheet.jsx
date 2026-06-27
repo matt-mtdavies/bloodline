@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { VISIBILITY_LABELS, VISIBILITY_DESCS, SECTIONS } from '../lib/visibility.js';
+import { formatPhone, toE164 } from '../lib/phone.js';
 
 const GENDER_OPTIONS = ['Male', 'Female', 'Non-binary', 'Other'];
 
@@ -27,7 +28,7 @@ const HAIR_OPTIONS = [
 const TODAY = new Date().toISOString().slice(0, 10);
 
 /*
- * Normalise a phone string: keep digits, +, spaces, dashes, parens.
+ * Allow digits, +, spaces, dashes, parens while typing.
  */
 function normalisePhone(raw) {
   return raw.replace(/[^\d+\s\-().]/g, '');
@@ -52,7 +53,7 @@ export default function EditPersonSheet({ person, onClose, onSave, onRemove }) {
     eye_color:     person.eye_color     || '',
     hair_color:    person.hair_color    || '',
     email:         person.email         || '',
-    phone:         person.phone         || '',
+    phone:         formatPhone(person.phone || ''),
     tags:          (person.tags || []).join(', '),
     bio:           person.bio           || '',
     is_deceased:   !!person.is_deceased,
@@ -75,7 +76,8 @@ export default function EditPersonSheet({ person, onClose, onSave, onRemove }) {
   const clear = (k) => () => setF((s) => ({ ...s, [k]: '' }));
   const pick  = (k) => (v) => setF((s) => ({ ...s, [k]: s[k] === v ? '' : v }));
 
-  const setPhone = (e) => setF((s) => ({ ...s, phone: normalisePhone(e.target.value) }));
+  const setPhone   = (e) => setF((s) => ({ ...s, phone: normalisePhone(e.target.value) }));
+  const blurPhone  = ()  => setF((s) => ({ ...s, phone: formatPhone(s.phone) }));
 
   const dobIsFullDate = f.birth_date.includes('-');
   const dobYearOnly   = f.birth_date && !dobIsFullDate;
@@ -96,7 +98,7 @@ export default function EditPersonSheet({ person, onClose, onSave, onRemove }) {
       eye_color:     f.eye_color            || null,
       hair_color:    f.hair_color           || null,
       email:         f.email.trim()         || null,
-      phone:         f.phone.trim()         || null,
+      phone:         toE164(f.phone)          || null,
       tags:          f.tags.split(',').map((t) => t.trim()).filter(Boolean),
       bio:           f.bio.trim()           || null,
       is_deceased:   f.is_deceased,
@@ -281,6 +283,7 @@ export default function EditPersonSheet({ person, onClose, onSave, onRemove }) {
                     inputMode="tel"
                     value={f.phone}
                     onChange={setPhone}
+                    onBlur={blurPhone}
                     placeholder="+61 4xx xxx xxx"
                     autoComplete="off"
                   />
