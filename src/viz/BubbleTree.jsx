@@ -601,7 +601,7 @@ export default function BubbleTree({
       app.stage.eventMode = 'static';
       app.stage.hitArea = { contains: () => true };
       const TAP_SLOP = 8; // px of movement still considered a tap
-      const drag = { type: 'none', node: null, id: null, start: null, moved: false };
+      const drag = { type: 'none', node: null, id: null, start: null, moved: false, onPip: false };
       let last = null;
       let lastT = 0;
       let lastTap = { t: 0, x: 0, y: 0 };
@@ -646,6 +646,18 @@ export default function BubbleTree({
         return n ? n.__bubbleId : null;
       };
 
+      // True when the tapped element is a bubble's collapse pip (the little "−"),
+      // so we can collapse only on the pip and select on the rest of the bubble.
+      const isCollapsePipTarget = (t) => {
+        let n = t;
+        while (n) {
+          if (n.__isCollapsePip) return true;
+          if (n.__bubbleId !== undefined) return false;
+          n = n.parent;
+        }
+        return false;
+      };
+
       app.stage.on('pointerdown', (e) => {
         const g = e.global;
         pointers.set(e.pointerId, { x: g.x, y: g.y });
@@ -675,6 +687,7 @@ export default function BubbleTree({
           drag.type = 'bubble';
           drag.id = id;
           drag.node = nodeById.get(id);
+          drag.onPip = isCollapsePipTarget(e.target);
         } else {
           drag.type = 'pan';
           drag.node = null;
@@ -754,15 +767,15 @@ export default function BubbleTree({
         }
         if (drag.type === 'bubble') {
           if (!drag.moved) {
-            // A clean tap: open the active person, collapse a branch with visible
-            // family, or activate a new person.
-            if (activeRef.current === drag.id) {
-              onOpenPersonRef.current?.(drag.id);
-            } else if (expandedRef.current?.has(drag.id)) {
-              // Already expanded → collapse this branch.
+            // Tap routing:
+            //   • the little "−" pip   → collapse this branch (only the pip does this)
+            //   • the active person    → open their profile
+            //   • anyone else          → select them (even if already expanded)
+            if (drag.onPip) {
               onCollapseRef.current?.(drag.id);
+            } else if (!browseRef.current && activeRef.current === drag.id) {
+              onOpenPersonRef.current?.(drag.id);
             } else {
-              // Not yet expanded → navigate to / activate.
               onActivateRef.current?.(drag.id);
             }
           } else if (drag.node && drag.id !== state.pinnedId) {

@@ -7,6 +7,7 @@ import {
   Assets,
   ColorMatrixFilter,
   BlurFilter,
+  Circle,
 } from 'pixi.js';
 import { monogramColors, initials, hex } from '../lib/color.js';
 import { softShadowTexture } from './textures.js';
@@ -461,14 +462,19 @@ export class Bubble {
     this._collapsePipOn = show;
     if (!this._collapsePip) {
       this._collapsePip = new Graphics();
-      this._collapsePip.eventMode = 'none';
+      // The pip is its own tap target — only it collapses the branch, so a tap
+      // on the bubble body just selects. Flag + generous hit area for easy tapping.
+      this._collapsePip.__isCollapsePip = true;
       this.root.addChild(this._collapsePip);
     }
     this._collapsePip.clear();
+    const r = this.r;
+    const bx = r * 0.65, by = r * 0.65;
+    const br = r * 0.22;
     if (show) {
-      const r = this.r;
-      const bx = r * 0.65, by = r * 0.65;
-      const br = r * 0.22;
+      this._collapsePip.eventMode = 'static';
+      this._collapsePip.cursor = 'pointer';
+      this._collapsePip.hitArea = new Circle(bx, by, br + 7);
       // White background disc with soft border
       this._collapsePip
         .circle(bx, by, br + 1.5).fill({ color: 0xfaf8f5, alpha: 0.96 })
@@ -478,6 +484,9 @@ export class Bubble {
       this._collapsePip
         .roundRect(bx - hw, by - 1.2, hw * 2, 2.4, 1.2)
         .fill({ color: 0x8a8480, alpha: 0.85 });
+    } else {
+      this._collapsePip.eventMode = 'none';
+      this._collapsePip.hitArea = null;
     }
   }
 
