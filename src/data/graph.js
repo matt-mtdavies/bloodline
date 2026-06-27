@@ -175,18 +175,24 @@ export function relationLabel(graph, focusId, otherId) {
 
   // Grandparent: one of focus's parents is a child of otherId
   for (const p of graph.parents(focusId)) {
-    if (graph.parents(p.id).some((x) => x.id === otherId)) {
+    const gpEntry = graph.parents(p.id).find((x) => x.id === otherId);
+    if (gpEntry) {
       const s = parentSide(p);
-      const prefix = s ? `${s} ` : '';
-      // Step/adoptive grandparents keep the qualifier prefix; bio ones get gender title
-      if (s === 'Step' || s === 'Adoptive') return `${prefix}Grandparent`;
-      return `${prefix}${g('Grandfather', 'Grandmother', 'Grandparent')}`;
+      // Step/adoptive on either link in the chain makes it a step/adoptive grandparent
+      if (s === 'Step' || gpEntry.qualifier === 'step') return 'Step Grandparent';
+      if (s === 'Adoptive' || gpEntry.qualifier === 'adoptive') return 'Adoptive Grandparent';
+      return `${s ? s + ' ' : ''}${g('Grandfather', 'Grandmother', 'Grandparent')}`;
     }
   }
 
   // Grandchild: one of focus's children has otherId as their child
   for (const c of graph.children(focusId)) {
-    if (graph.children(c.id).some((x) => x.id === otherId)) {
+    const gcEntry = graph.children(c.id).find((x) => x.id === otherId);
+    if (gcEntry) {
+      const isStep = c.qualifier === 'step' || gcEntry.qualifier === 'step';
+      const isAdopt = !isStep && (c.qualifier === 'adoptive' || gcEntry.qualifier === 'adoptive');
+      if (isStep) return `Step-${g('Grandson', 'Granddaughter', 'Grandchild')}`;
+      if (isAdopt) return `Adoptive ${g('Grandson', 'Granddaughter', 'Grandchild')}`;
       return g('Grandson', 'Granddaughter', 'Grandchild');
     }
   }
@@ -194,7 +200,12 @@ export function relationLabel(graph, focusId, otherId) {
   // Great-grandparent: grandparent's parent
   for (const p of graph.parents(focusId)) {
     for (const gp of graph.parents(p.id)) {
-      if (graph.parents(gp.id).some((x) => x.id === otherId)) {
+      const ggpEntry = graph.parents(gp.id).find((x) => x.id === otherId);
+      if (ggpEntry) {
+        const isStep = p.qualifier === 'step' || gp.qualifier === 'step' || ggpEntry.qualifier === 'step';
+        const isAdopt = !isStep && (p.qualifier === 'adoptive' || gp.qualifier === 'adoptive' || ggpEntry.qualifier === 'adoptive');
+        if (isStep) return 'Step Great-grandparent';
+        if (isAdopt) return 'Adoptive Great-grandparent';
         return g('Great-grandfather', 'Great-grandmother', 'Great-grandparent');
       }
     }
@@ -203,7 +214,12 @@ export function relationLabel(graph, focusId, otherId) {
   // Great-grandchild: grandchild's child
   for (const c of graph.children(focusId)) {
     for (const gc of graph.children(c.id)) {
-      if (graph.children(gc.id).some((x) => x.id === otherId)) {
+      const ggcEntry = graph.children(gc.id).find((x) => x.id === otherId);
+      if (ggcEntry) {
+        const isStep = c.qualifier === 'step' || gc.qualifier === 'step' || ggcEntry.qualifier === 'step';
+        const isAdopt = !isStep && (c.qualifier === 'adoptive' || gc.qualifier === 'adoptive' || ggcEntry.qualifier === 'adoptive');
+        if (isStep) return `Step Great-${g('grandson', 'granddaughter', 'grandchild')}`;
+        if (isAdopt) return `Adoptive Great-${g('grandson', 'granddaughter', 'grandchild')}`;
         return g('Great-grandson', 'Great-granddaughter', 'Great-grandchild');
       }
     }
@@ -245,6 +261,9 @@ export function relationLabel(graph, focusId, otherId) {
   for (const p of graph.parents(focusId)) {
     for (const s of graph.siblings(p.id)) {
       if (graph.children(s.id).some((x) => x.id === otherId)) {
+        const isStep = p.qualifier === 'step' || s.kind === 'step';
+        if (isStep) return 'Step-Cousin';
+        if (s.kind === 'half') return 'Half-Cousin';
         return 'Cousin';
       }
     }
