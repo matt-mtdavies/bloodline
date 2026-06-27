@@ -797,8 +797,24 @@ export default function BubbleTree({
           }
           // Bias the framed centre a third of the way toward the active person.
           const BIAS = 0.34;
-          const camTX = ((minX + maxX) / 2) * (1 - BIAS) + f.x * BIAS;
-          const camTY = ((minY + maxY) / 2) * (1 - BIAS) + f.y * BIAS;
+          let camTX = ((minX + maxX) / 2) * (1 - BIAS) + f.x * BIAS;
+          let camTY = ((minY + maxY) / 2) * (1 - BIAS) + f.y * BIAS;
+
+          // During a birth celebration (time view), pull the frame toward the
+          // newest arrival so the bloom + motes land in the clear centre of the
+          // safe area, never under the dock/slider. Eases back when it ends.
+          if (births.size && timeModeRef.current) {
+            let bx = 0, by = 0, bn = 0;
+            for (const id of births.keys()) {
+              const node = nodeById.get(id);
+              if (node) { bx += node.x; by += node.y; bn++; }
+            }
+            if (bn) {
+              const BB = 0.6;
+              camTX = camTX * (1 - BB) + (bx / bn) * BB;
+              camTY = camTY * (1 - BB) + (by / bn) * BB;
+            }
+          }
           camX.setTarget(camTX);
           camY.setTarget(camTY);
           // Fit from the half-extents around the (biased) centre so nothing
