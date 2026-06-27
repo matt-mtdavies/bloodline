@@ -259,6 +259,15 @@ export function drawLinksChart(g, graph, pos, isVisible, baseRadius, lineagePath
     if (seen.has(key)) continue;
     seen.add(key);
 
+    const mx = (a.x + b.x) / 2;
+    coupleMidX.set(r.from_person, mx);
+    coupleMidX.set(r.to_person, mx);
+
+    // Skip cross-row couple connectors — they'd appear as diagonal "random
+    // lines". With correct generation computation partners share the same Y;
+    // the midpoint above is still stored so bracket drops can reference it.
+    if (Math.abs(a.y - b.y) > baseRadius) continue;
+
     const alpha = edgeAlpha(r.from_person, r.to_person);
     const status = r.partner_status;
     const isWidowed = status === 'widowed';
@@ -271,10 +280,6 @@ export function drawLinksChart(g, graph, pos, isVisible, baseRadius, lineagePath
     } else {
       g.moveTo(a.x, a.y).lineTo(b.x, b.y).stroke({ width: 2, color: lineColor, alpha: lineA, cap: 'round' });
     }
-
-    const mx = (a.x + b.x) / 2;
-    coupleMidX.set(r.from_person, mx);
-    coupleMidX.set(r.to_person, mx);
   }
 
   // ── Orthogonal bracket connectors (parent → children) ─────────────────────

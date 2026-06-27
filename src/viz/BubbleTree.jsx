@@ -1016,18 +1016,36 @@ function computeGenerations(graph) {
     return g;
   };
   for (const p of graph.people) visit(p.id, new Set());
-  // Level partners so couples sit on the same band.
-  for (const p of graph.people) {
-    for (const partner of graph.partners(p.id)) {
-      const a = gen.get(p.id);
-      const b = gen.get(partner.id);
-      if (a != null && b != null && a !== b) {
+
+  // Level active partners onto the same generation band using MAX — the deeper
+  // partner's row wins, pulling the shallower one down to meet them.
+  //
+  // Former/ex partners are deliberately EXCLUDED: an ex from a different family
+  // branch may have deeper ancestry, and dragging the current family member
+  // down to match would cascade incorrectly (e.g. Jason getting pulled to
+  // Kate's row instead of staying with Matthew).
+  //
+  // Multi-pass until stable so any chains converge (A=B, B=C → A=B=C).
+  let changed = true;
+  while (changed) {
+    changed = false;
+    const seen = new Set();
+    for (const p of graph.people) {
+      for (const partner of graph.partners(p.id)) {
+        if (partner.status === 'former') continue;
+        const key = [p.id, partner.id].sort().join('|');
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const a = gen.get(p.id) ?? 0;
+        const b = gen.get(partner.id) ?? 0;
+        if (a === b) continue;
         const lvl = Math.max(a, b);
-        gen.set(p.id, lvl);
-        gen.set(partner.id, lvl);
+        if (a !== lvl) { gen.set(p.id, lvl);           changed = true; }
+        if (b !== lvl) { gen.set(partner.id, lvl);     changed = true; }
       }
     }
   }
+
   return gen;
 }
 
