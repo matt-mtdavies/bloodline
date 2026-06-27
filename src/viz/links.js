@@ -76,88 +76,43 @@ export function drawLinks(g, graph, pos, isVisible, baseRadius, mergeParents = f
   // Everything else (single parent, mixed bio/step, non-coupled) falls through.
   const merged = new Set();
   if (mergeParents) {
-    // ── Case 1: current / widowed couples → single merged line ──────────────
-    const groups = new Map();
+    // Gather co-parent groups by checking every pair of a child's parents.
+    // Requires exactly that the two parents are partners (any status).
+    // Using pairs instead of requiring parents.length===2 means a child with
+    // 3 parents (e.g. bio-mum + bio-dad + step-parent) still gets the bio
+    // co-parent line merged; the step line falls through to the per-edge pass.
+    const groups = new Map();        // current / widowed co-parents
+    const divorceGroups = new Map(); // former co-parents
+
     for (const person of graph.people) {
       const childId = person.id;
       if (!isVisible(childId)) continue;
       const parents = graph.parents(childId).filter((p) => isVisible(p.id));
-      if (parents.length !== 2) continue;
-      const [p1, p2] = parents;
-      if (p1.qualifier !== p2.qualifier) continue;
-      const bond = graph.partners(p1.id).find((x) => x.id === p2.id);
-      if (!bond || bond.status === 'former') continue;
+      if (parents.length < 2) continue;
 
-      const key = [p1.id, p2.id].sort().join('|') + '|' + p1.qualifier;
-      if (!groups.has(key))
-        groups.set(key, { p1: p1.id, p2: p2.id, qualifier: p1.qualifier, kids: [] });
-      groups.get(key).kids.push(childId);
-      merged.add(`${p1.id}>${childId}`);
-      merged.add(`${p2.id}>${childId}`);
-    }
+      for (let i = 0; i < parents.length; i++) {
+        for (let j = i + 1; j < parents.length; j++) {
+          const p1 = parents[i];
+          const p2 = parents[j];
+          if (p1.qualifier !== p2.qualifier) continue;
+          const bond = graph.partners(p1.id).find((x) => x.id === p2.id);
+          if (!bond) continue;
 
-    for (const grp of groups.values()) {
-      const a1 = pos.get(grp.p1);
-      const a2 = pos.get(grp.p2);
-      if (!a1 || !a2) continue;
-      const biological = grp.qualifier === 'biological';
-      const color = hex(biological ? '#8a7d6b' : '#b6a892');
-      const seg = (from, to) =>
-        biological
-          ? curve(g, from, to, { width: 2, color, alpha: 0.7 })
-          : dashedCurve(g, from, to, 14, 0.5, { width: 2, color, alpha: 0.85 });
-
-      // Origin: the bottom edge of the couple's shaded band, so the line hangs
-      // from the pair rather than skewering it.
-      const start = { x: (a1.x + a2.x) / 2, y: (a1.y + a2.y) / 2 + baseRadius * 1.05 };
-      const kids = grp.kids.map((id) => pos.get(id)).filter(Boolean);
-      if (kids.length === 0) continue;
-
-      // stemSeg — 50% thicker for the main trunk before it branches to siblings
-      const stemSeg = (from, to) =>
-        biological
-          ? curve(g, from, to, { width: 3, color, alpha: 0.7 })
-          : dashedCurve(g, from, to, 14, 0.5, { width: 3, color, alpha: 0.85 });
-
-      if (kids.length === 1) {
-        seg(start, kids[0]);
-      } else {
-        // Sibling trunk: a short stem down to a junction, then a branch to each
-        // child — so siblings read as a set. The stem is thicker to visually
-        // anchor the family group.
-        const avgX = kids.reduce((s, k) => s + k.x, 0) / kids.length;
-        const nearestY = Math.min(...kids.map((k) => k.y));
-        const junction = { x: start.x * 0.55 + avgX * 0.45, y: start.y + (nearestY - start.y) * 0.72 };
-        stemSeg(start, junction);
-        for (const k of kids) seg(junction, k);
+          const key = [p1.id, p2.id].sort().join('|') + '|' + p1.qualifier;
+          const target = bond.status === 'former' ? divorceGroups : groups;
+          if (!target.has(key))
+            target.set(key, { p1: p1.id, p2: p2.id, qualifier: p1.qualifier, kids: [] });
+          target.get(key).kids.push(childId);
+          merged.add(`${p1.id}>${childId}`);
+          merged.add(`${p2.id}>${childId}`);
+        }
       }
     }
 
-    // ── Case 2: divorced co-parents → V-junction ────────────────────────────
-    const divorceGroups = new Map();
-    for (const person of graph.people) {
-      const childId = person.id;
-      if (!isVisible(childId)) continue;
-      const parents = graph.parents(childId).filter((p) => isVisible(p.id));
-      if (parents.length !== 2) continue;
-      const [p1, p2] = parents;
-      if (p1.qualifier !== p2.qualifier) continue;
-      const bond = graph.partners(p1.id).find((x) => x.id === p2.id);
-      if (!bond || bond.status !== 'former') continue;
-
-      const key = [p1.id, p2.id].sort().join('|') + '|' + p1.qualifier;
-      if (!divorceGroups.has(key))
-        divorceGroups.set(key, { p1: p1.id, p2: p2.id, qualifier: p1.qualifier, kids: [] });
-      divorceGroups.get(key).kids.push(childId);
-      merged.add(`${p1.id}>${childId}`);
-      merged.add(`${p2.id}>${childId}`);
-    }
-
-    for (const grp of divorceGroups.values()) {
+    const drawGroup = (grp) => {
       const a1 = pos.get(grp.p1);
       const a2 = pos.get(grp.p2);
-      if (!a1 || !a2) continue;
-
+      if (!a1 || !a2) return;
       const biological = grp.qualifier === 'biological';
       const color = hex(biological ? '#8a7d6b' : '#b6a892');
       const seg = (from, to) =>
@@ -169,12 +124,10 @@ export function drawLinks(g, graph, pos, isVisible, baseRadius, mergeParents = f
           ? curve(g, from, to, { width: 3, color, alpha: 0.7 })
           : dashedCurve(g, from, to, 14, 0.5, { width: 3, color, alpha: 0.85 });
 
-      // Origin: same midpoint as a current-couple pair — children "emerge from
-      // the bond" regardless of its status. The dashed grey band in the couple
-      // membranes pass already signals the former status; no V-arms needed here.
+      // Origin: bottom edge of the couple's shaded band.
       const start = { x: (a1.x + a2.x) / 2, y: (a1.y + a2.y) / 2 + baseRadius * 1.05 };
       const kids = grp.kids.map((id) => pos.get(id)).filter(Boolean);
-      if (kids.length === 0) continue;
+      if (kids.length === 0) return;
 
       if (kids.length === 1) {
         seg(start, kids[0]);
@@ -185,7 +138,10 @@ export function drawLinks(g, graph, pos, isVisible, baseRadius, mergeParents = f
         stemSeg(start, junction);
         for (const k of kids) seg(junction, k);
       }
-    }
+    };
+
+    for (const grp of groups.values()) drawGroup(grp);
+    for (const grp of divorceGroups.values()) drawGroup(grp);
   }
 
   for (const r of graph.relationships) {
