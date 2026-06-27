@@ -59,6 +59,7 @@ import FamilySettings from './components/FamilySettings.jsx';
 import UserProfile from './components/UserProfile.jsx';
 import MergeWizard from './components/MergeWizard.jsx';
 import InviteSheet from './components/InviteSheet.jsx';
+import TreeInsights from './components/TreeInsights.jsx';
 import ActivityFeed from './components/ActivityFeed.jsx';
 import GedcomImport from './components/GedcomImport.jsx';
 import FamilySearchImport from './components/FamilySearchImport.jsx';
@@ -213,6 +214,7 @@ export default function App() {
   const [timePlaying, setTimePlaying] = useState(false);
   const [focusMode, setFocusMode] = useState(false);
   const [browse, setBrowse] = useState(false); // deselected free-look mode
+  const [insightsOpen, setInsightsOpen] = useState(false);
   const [lifeJourneyId, setLifeJourneyId] = useState(null);
   const playRef = useRef(null);
   const [docViewer, setDocViewer] = useState(null); // { title, src, mime }
@@ -678,6 +680,7 @@ export default function App() {
         userPhoto={userPhoto}
         onOpenProfile={user ? () => setProfileOpen(true) : null}
         onSearch={() => setSearchOpen(true)}
+        onOpenInsights={() => setInsightsOpen(true)}
       />
 
       {view === 'bubbles' ? (
@@ -906,6 +909,15 @@ export default function App() {
           person={graph.byId.get(invitePersonId)}
           onSend={handleSendInvite}
           onClose={() => setInvitePersonId(null)}
+        />
+      )}
+
+      {insightsOpen && (
+        <TreeInsights
+          graph={graph}
+          viewerId={data.myPersonId || activeId}
+          onNavigate={(id) => { setInsightsOpen(false); activate(id); openPerson(id); }}
+          onClose={() => setInsightsOpen(false)}
         />
       )}
 

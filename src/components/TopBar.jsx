@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, forwardRef } from 'react';
 import Logo from './Logo.jsx';
 
-export default function TopBar({ familyName, stats, view, syncStatus, syncError, onRetrySync, onToggleView, onOpenLegend, onOpenSettings, onOpenActivity, activityCount = 0, user, userPhoto, onOpenProfile, onSearch }) {
+export default function TopBar({ familyName, stats, view, syncStatus, syncError, onRetrySync, onToggleView, onOpenLegend, onOpenSettings, onOpenActivity, activityCount = 0, user, userPhoto, onOpenProfile, onSearch, onOpenInsights }) {
   const [statsOpen, setStatsOpen] = useState(false);
   const popoverRef = useRef(null);
   const statsRef = useRef(null);
@@ -127,13 +127,18 @@ export default function TopBar({ familyName, stats, view, syncStatus, syncError,
 
       {/* Stats detail popover */}
       {statsOpen && stats && (
-        <StatsPopover ref={popoverRef} stats={stats} onClose={() => setStatsOpen(false)} />
+        <StatsPopover
+          ref={popoverRef}
+          stats={stats}
+          onClose={() => setStatsOpen(false)}
+          onOpenInsights={onOpenInsights ? () => { setStatsOpen(false); onOpenInsights(); } : null}
+        />
       )}
     </header>
   );
 }
 
-const StatsPopover = forwardRef(function StatsPopover({ stats, onClose }, ref) {
+const StatsPopover = forwardRef(function StatsPopover({ stats, onClose, onOpenInsights }, ref) {
   const total = stats.people;
   const maxCount = stats.surnameList?.[0]?.count ?? 1;
   const spanYears = stats.yearMin && stats.yearMax ? stats.yearMax - stats.yearMin : null;
@@ -143,6 +148,14 @@ const StatsPopover = forwardRef(function StatsPopover({ stats, onClose }, ref) {
       <button className="stats-popover__close" onClick={onClose} aria-label="Close">
         <CloseIcon />
       </button>
+
+      {onOpenInsights && (
+        <button className="stats-popover__insights-btn" onClick={onOpenInsights}>
+          <SparkIcon />
+          <span>Tree insights</span>
+          <span className="stats-popover__insights-arrow"><ChevronRightIcon /></span>
+        </button>
+      )}
 
       {/* Surnames */}
       {stats.surnameList?.length > 0 && (
@@ -248,6 +261,23 @@ function CloseIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+    </svg>
+  );
+}
+
+function SparkIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M12 3l1.8 4.9L18.7 9.7l-4.9 1.8L12 16.4l-1.8-4.9L5.3 9.7l4.9-1.8L12 3z" fill="currentColor"/>
+      <path d="M19 14l.7 1.9 1.9.7-1.9.7-.7 1.9-.7-1.9-1.9-.7 1.9-.7L19 14z" fill="currentColor" opacity="0.7"/>
+    </svg>
+  );
+}
+
+function ChevronRightIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M9 18l6-6-6-6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
     </svg>
   );
 }
