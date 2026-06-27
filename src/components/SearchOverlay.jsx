@@ -25,18 +25,30 @@ export default function SearchOverlay({ people, onSelect, onClose }) {
   const results = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return [];
+    // Score a single field; higher = better match.
+    const scoreText = (text) => {
+      const name = (text || '').toLowerCase();
+      if (!name) return 0;
+      const parts = name.split(/\s+/);
+      if (name === q)                        return 10;
+      if (name.startsWith(q))                return 6;
+      if (parts.some((w) => w.startsWith(q))) return 4;
+      if (name.includes(q))                  return 2;
+      if (parts[0]?.includes(q))             return 1; // "mat" → "Matthew"
+      return 0;
+    };
     return people
       .map((p) => {
-        const name = (p.display_name || '').toLowerCase();
-        const parts = name.split(/\s+/);
-        let score = 0;
-        if (name === q)               score = 10;
-        else if (name.startsWith(q))  score = 6;
-        else if (parts.some((w) => w.startsWith(q))) score = 4;
-        else if (name.includes(q))    score = 2;
-        // Partial first-word match (typing "mat" matches "Matthew")
-        else if (parts[0]?.includes(q)) score = 1;
-        return score > 0 ? { ...p, _score: score } : null;
+        // birth_name is the canonical field; maiden_name is legacy seed data.
+        const birthName = p.birth_name || p.maiden_name || '';
+        const nameScore = scoreText(p.display_name);
+        const birthScore = scoreText(birthName);
+        const score = Math.max(nameScore, birthScore);
+        // Flag when the birth name is why this person matched, so we can surface it.
+        const matchedBirth = birthScore > 0 && birthScore >= nameScore;
+        return score > 0
+          ? { ...p, _score: score, _birthName: birthName, _matchedBirth: matchedBirth }
+          : null;
       })
       .filter(Boolean)
       .sort((a, b) => b._score - a._score || a.display_name.localeCompare(b.display_name))
@@ -110,7 +122,12 @@ export default function SearchOverlay({ people, onSelect, onClose }) {
               >
                 <Avatar person={p} size={40} />
                 <div className="search-result__info">
-                  <span className="search-result__name">{highlight(p.display_name, query)}</span>
+                  <span className="search-result__name">
+                    {highlight(p.display_name, query)}
+                    {p._birthName && !p.display_name.toLowerCase().includes(p._birthName.toLowerCase()) && (
+                      <span className="search-result__nee"> née {highlight(p._birthName, query)}</span>
+                    )}
+                  </span>
                   <span className="search-result__meta">
                     {birthYear(p) && <>b. {birthYear(p)}{p.is_deceased ? ' – ' + (p.death_date?.slice(0, 4) || '†') : ''}</>}
                     {p.occupation && <>{birthYear(p) ? ' · ' : ''}{p.occupation}</>}
