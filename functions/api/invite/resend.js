@@ -41,6 +41,7 @@ export async function onRequestPost({ request, env, data }) {
   const fromEmail = data.user.email;
 
   let emailSent = false;
+  let emailError = null;
   try {
     await sendEmail(env, {
       to: invite.email,
@@ -51,9 +52,10 @@ export async function onRequestPost({ request, env, data }) {
     emailSent = true;
   } catch (e) {
     console.error('[invite/resend] email failed:', e.message);
+    emailError = String(e.message || 'Email delivery failed').slice(0, 200);
   }
 
-  return json({ ok: true, emailSent });
+  return json({ ok: true, emailSent, emailError });
 }
 
 function inviteText({ inviteUrl, fromEmail, familyName, roleLabel }) {

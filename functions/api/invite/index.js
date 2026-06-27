@@ -58,12 +58,13 @@ export async function onRequestPost({ request, env, data }) {
      VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)`,
   ).bind(inviteId, membership.family_id, data.user.uid, email.toLowerCase(), t, role, expires, now).run();
 
-  const inviteUrl = `${env.APP_URL || ''}/invite/${t}`;
+  const inviteUrl = `${env.APP_URL || 'https://myfamilybloodline.com'}/invite/${t}`;
   const roleLabel = ROLE_LABELS[role];
   const fromEmail = data.user.email;
   const familyName = membership.family_name;
 
   let emailSent = false;
+  let emailError = null;
   try {
     await sendEmail(env, {
       to: email,
@@ -73,11 +74,13 @@ export async function onRequestPost({ request, env, data }) {
     });
     emailSent = true;
   } catch (e) {
-    // Invite row is already in D1 — don't 500. Client will warn the user.
+    // Invite row is already in D1 — don't 500. The client surfaces the warning
+    // and offers Resend; return the reason so it can be shown/logged.
     console.error('[invite] email delivery failed:', e.message);
+    emailError = String(e.message || 'Email delivery failed').slice(0, 200);
   }
 
-  return json({ ok: true, inviteId, emailSent });
+  return json({ ok: true, inviteId, emailSent, emailError });
 }
 
 /*

@@ -16,6 +16,7 @@ export default function FamilySettings({ myRole, familyName, onUpdateFamilyName,
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState('editor');
   const [inviteStatus, setInviteStatus] = useState('idle'); // idle | sending | sent | error
+  const [inviteError, setInviteError] = useState(''); // human-readable failure reason
   const [resendStates, setResendStates] = useState({}); // { [inviteId]: 'idle'|'sending'|'sent'|'error' }
   const [nameEdit, setNameEdit] = useState(familyName);
 
@@ -41,17 +42,35 @@ export default function FamilySettings({ myRole, familyName, onUpdateFamilyName,
     e.preventDefault();
     if (!inviteEmail.trim()) return;
     setInviteStatus('sending');
+    setInviteError('');
     try {
       const res = await fetch('/api/invite', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ email: inviteEmail.trim(), role: inviteRole }),
       });
-      if (!res.ok) throw new Error();
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setInviteError(body.error || 'Could not send. Check your connection.');
+        setInviteStatus('error');
+        return;
+      }
+      // The server records the invite even if the email can't be delivered, so
+      // a 200 with emailSent:false means "saved but NOT emailed" — surface that
+      // rather than falsely telling the owner it was sent.
+      if (body.emailSent === false) {
+        setInviteError(
+          "Invite saved, but the email couldn't be delivered. Check the address is correct, then use Resend from Members.",
+        );
+        setInviteStatus('error');
+        load(); // show it in pending so Resend is available
+        return;
+      }
       setInviteStatus('sent');
       setInviteEmail('');
       setTimeout(() => { setInviteStatus('idle'); setTab('members'); load(); }, 2000);
     } catch {
+      setInviteError('Could not send. Check your connection.');
       setInviteStatus('error');
     }
   }
@@ -106,7 +125,8 @@ export default function FamilySettings({ myRole, familyName, onUpdateFamilyName,
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ id }),
       });
-      if (!res.ok) throw new Error();
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || body.emailSent === false) throw new Error();
       setResendStates((s) => ({ ...s, [id]: 'sent' }));
       setTimeout(() => setResendStates((s) => ({ ...s, [id]: 'idle' })), 3000);
     } catch {
@@ -340,7 +360,7 @@ export default function FamilySettings({ myRole, familyName, onUpdateFamilyName,
                   </button>
                 )}
                 {inviteStatus === 'error' && (
-                  <p className="fs__err">Could not send. Check your connection.</p>
+                  <p className="fs__err">{inviteError || 'Could not send. Check your connection.'}</p>
                 )}
               </form>
             )}

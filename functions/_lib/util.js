@@ -77,6 +77,11 @@ export async function sendEmail(env, { to, subject, html, text }) {
     console.log('[dev] email suppressed (no BREVO_API_KEY):', subject, '->', to);
     return { dev: true };
   }
+  // A missing/blank sender makes Brevo reject every send with an opaque 400.
+  // Fail loudly with an actionable message instead so the cause is obvious.
+  if (!env.FROM_EMAIL) {
+    throw new Error('FROM_EMAIL is not configured — set it in wrangler.toml / Pages env vars.');
+  }
   const body = {
     sender: { name: 'Bloodline', email: env.FROM_EMAIL },
     to: [{ email: to }],
