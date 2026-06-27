@@ -112,9 +112,9 @@ export default function AddRelativeSheet({ anchor, people = [], relationships = 
     }
   };
 
-  // Simpler: pass relKey directly and let App decide direction.
   const linkToExisting = (personId) => {
-    onLinkExisting?.(personId, relKey);
+    const q = QUALIFIER_KEYS.has(relKey) ? qualifier : 'biological';
+    onLinkExisting?.(personId, relKey, q);
   };
 
   const firstName = anchor.display_name.split(/\s+/)[0];
@@ -171,7 +171,7 @@ export default function AddRelativeSheet({ anchor, people = [], relationships = 
           </div>
         )}
 
-        {QUALIFIER_KEYS.has(relKey) && mode === 'new' && (
+        {QUALIFIER_KEYS.has(relKey) && (
           <div className="qualifier-row" role="radiogroup" aria-label="Qualifier">
             {QUALIFIERS.map((q) => (
               <button

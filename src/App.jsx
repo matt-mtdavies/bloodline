@@ -484,17 +484,17 @@ export default function App() {
   );
 
   // Link two existing people without creating a new person.
-  // relKey is from AddRelativeSheet (e.g. 'partner', 'mother', 'son').
+  // relKey is from AddRelativeSheet; qualifier is 'biological'|'step'|'adoptive'.
   const handleLinkExisting = useCallback(
-    (existingId, relKey) => {
+    (existingId, relKey, qualifier = 'biological') => {
       if (relKey === 'partner' || relKey === 'ex_partner') {
         addRelationship(addAnchorId, existingId, relKey);
       } else if (relKey === 'mother' || relKey === 'father') {
         // existing person IS the parent of the anchor
-        addRelationship(existingId, addAnchorId, 'parent');
+        addRelationship(existingId, addAnchorId, 'parent', qualifier);
       } else if (relKey === 'son' || relKey === 'daughter') {
         // anchor IS the parent of the existing person
-        addRelationship(addAnchorId, existingId, 'parent');
+        addRelationship(addAnchorId, existingId, 'parent', qualifier);
       } else if (relKey === 'brother' || relKey === 'sister') {
         // Give the existing person the same parents as the anchor (like addRelative does).
         const anchorParents = data.relationships
