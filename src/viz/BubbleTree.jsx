@@ -55,6 +55,8 @@ export default function BubbleTree({
   timeMode = false,
   timeYear = null,
   focusMode = false,
+  browse = false,
+  onDeselect,
   onCameraMode,
   apiRef,
 }) {
@@ -79,6 +81,10 @@ export default function BubbleTree({
   timeYearRef.current = timeYear;
   const focusRef = useRef(focusMode);
   focusRef.current = focusMode;
+  const browseRef = useRef(browse);
+  browseRef.current = browse;
+  const onDeselectRef = useRef(onDeselect);
+  onDeselectRef.current = onDeselect;
   // Callbacks are captured once in the mount effect, so we route them through
   // refs to ensure React prop changes (e.g. lineage mode toggling onOpenPerson)
   // are always reflected without re-mounting the canvas.
@@ -764,6 +770,14 @@ export default function BubbleTree({
             manualPins.add(drag.id);
           }
           if (!reducedMotion) sim.alphaTarget(0.012); // settle back to idle drift
+        } else if (drag.type === 'pan' && !drag.moved) {
+          // A clean tap on empty canvas → deselect into browse mode (every bubble
+          // back to full brightness). Only in the free-flowing views: chart,
+          // lineage and focus-family all rely on a selection, so skip them.
+          const mode = layoutRef.current;
+          if (mode !== 'chart' && !lineageRef.current && !focusRef.current) {
+            onDeselectRef.current?.();
+          }
         }
         // A flick that's barely moving shouldn't drift; reduced-motion never coasts.
         if (reducedMotion || Math.hypot(vx, vy) < FLICK_STOP) vx = vy = 0;
@@ -982,6 +996,10 @@ export default function BubbleTree({
           let target;
           if (!effectiveVis.has(id)) {
             target = { scale: 0.5, alpha: 0, lift: 1, blur: 0 }; // collapsed
+          } else if (browseRef.current && layoutRef.current !== 'chart' && !lineage) {
+            // Browse mode: nobody selected — every bubble equal and fully lit so
+            // you can pan through and study the whole tree.
+            target = { scale: 0.95, alpha: 1, lift: 1, blur: 0 };
           } else if (layoutRef.current === 'chart') {
             // Chart mode: uniform scale so every drop-line lands exactly on the
             // bubble edge (variable scale would create gaps/overlaps with the
@@ -1013,7 +1031,7 @@ export default function BubbleTree({
           } else {
             b.setVisualState({ ...target, labelAlpha }, dt);
           }
-          b.setActive(id === activeRef.current);
+          b.setActive(!browseRef.current && id === activeRef.current);
           b.setCollapsePip(
             effectiveVis.has(id) &&
             id !== activeRef.current &&

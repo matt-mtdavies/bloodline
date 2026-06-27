@@ -212,6 +212,7 @@ export default function App() {
   const [timeYear, setTimeYear] = useState(new Date().getFullYear());
   const [timePlaying, setTimePlaying] = useState(false);
   const [focusMode, setFocusMode] = useState(false);
+  const [browse, setBrowse] = useState(false); // deselected free-look mode
   const [lifeJourneyId, setLifeJourneyId] = useState(null);
   const playRef = useRef(null);
   const [docViewer, setDocViewer] = useState(null); // { title, src, mime }
@@ -438,6 +439,7 @@ export default function App() {
 
   const activate = useCallback(
     (id) => {
+      setBrowse(false); // selecting anyone always leaves browse mode
       if (lineageMode) {
         if (id === activeId) {
           setLineagePath(null);
@@ -450,6 +452,15 @@ export default function App() {
     },
     [lineageMode, activeId, graph, activateNormal],
   );
+
+  // Browse mode: tap empty canvas to deselect — every bubble returns to full
+  // brightness so you can pan through and study the whole tree. Any selection,
+  // recentre, or mode switch exits it.
+  const deselect = useCallback(() => {
+    setBrowse(true);
+    viewApi.current?.enterFree();
+  }, []);
+  useEffect(() => { setBrowse(false); }, [layout, focusMode, lineageMode, timeMode]);
 
   const toggleLineage = useCallback(() => {
     setLineageMode((on) => {
@@ -686,17 +697,19 @@ export default function App() {
             timeMode={timeMode}
             timeYear={timeYear}
             focusMode={focusMode}
+            browse={browse}
+            onDeselect={deselect}
             onCameraMode={setCameraFree}
             apiRef={viewApi}
           />
           <FocusNameplate
             person={activePerson}
             getPos={() => viewApi.current?.getScreenPos(activeId)}
-            hidden={!!openId || !!addAnchorId || !!editId}
+            hidden={!!openId || !!addAnchorId || !!editId || browse}
           />
           <button
             className={`recenter-btn${cameraFree && !openId ? ' recenter-btn--on' : ''}`}
-            onClick={() => viewApi.current?.recenter()}
+            onClick={() => { setBrowse(false); viewApi.current?.recenter(); }}
             aria-label="Recentre on the family"
             tabIndex={cameraFree && !openId ? 0 : -1}
           >
