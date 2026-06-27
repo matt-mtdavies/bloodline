@@ -5171,6 +5171,69 @@
 .up__admin-title { display: block; font-size: 15px; font-weight: 600; }
 .up__admin-desc { display: block; font-size: 12px; color: var(--ink-soft, #8a8480); margin-top: 1px; }
 
+/* ── Shareable invite link (Copy / native Share) ── */
+.sharelink {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  margin-top: 8px;
+}
+.sharelink__url {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--hairline, #ebedf0);
+  border-radius: 10px;
+  background: var(--ground, #f7f3ec);
+  padding: 10px 12px;
+  font-size: 13px;
+  color: var(--ink-soft, #6b6260);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  text-overflow: ellipsis;
+}
+.sharelink__url:focus { outline: none; border-color: var(--accent, #c2603a); }
+.sharelink__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 10px;
+  padding: 0 14px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  background: var(--accent, #c2603a);
+  color: #fff;
+  transition: opacity 0.15s;
+}
+.sharelink__btn:active { opacity: 0.8; }
+.sharelink__btn--share {
+  background: var(--ground, #f7f3ec);
+  color: var(--ink, #241f1c);
+  border: 1px solid var(--hairline, #ebedf0);
+}
+.sharelink--compact .sharelink__url { padding: 8px 10px; font-size: 12px; }
+
+.fs__share-label,
+.invite-sheet__share-label {
+  font-size: 12.5px;
+  color: var(--ink-soft, #8a8480);
+  margin: 16px 0 0;
+  text-align: center;
+}
+.fs__invite-done { display: flex; flex-direction: column; gap: 4px; }
+.fs__invite-again {
+  align-self: center;
+  margin-top: 14px;
+  background: none;
+  border: none;
+  color: var(--accent, #c2603a);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.invite-sheet__share { margin-top: 8px; width: 100%; }
+
 .up__claim-select {
   width: 100%;
   margin-top: 8px;

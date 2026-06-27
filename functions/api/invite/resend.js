@@ -59,7 +59,7 @@ export async function onRequestPost({ request, env, data }) {
 
   await recordEmailStatus(env, invite.id, emailStatus, emailError, emailSent ? Math.floor(Date.now() / 1000) : null);
 
-  return json({ ok: true, emailSent, emailError });
+  return json({ ok: true, emailSent, emailError, inviteUrl });
 }
 
 function inviteText({ inviteUrl, fromEmail, familyName, roleLabel }) {

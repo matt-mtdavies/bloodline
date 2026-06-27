@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import Avatar from './Avatar.jsx';
+import ShareLink from './ShareLink.jsx';
 
 const ROLES = [
   {
@@ -44,6 +45,7 @@ export default function InviteSheet({ person, onSend, onClose }) {
   const [email, setEmail] = useState(person.email || person.invited_email || '');
   const [role, setRole] = useState('contributor');
   const [phase, setPhase] = useState('idle'); // idle | sending | sent | sent-no-email | error
+  const [inviteUrl, setInviteUrl] = useState('');
   const inputRef = useRef(null);
 
   const firstName = person.display_name.trim().split(/\s+/)[0];
@@ -66,6 +68,7 @@ export default function InviteSheet({ person, onSend, onClose }) {
     setPhase('sending');
     try {
       const result = await onSend(person.id, trimmed, role);
+      setInviteUrl(result?.inviteUrl || '');
       setPhase(result?.emailSent === false ? 'sent-no-email' : 'sent');
     } catch {
       setPhase('error');
@@ -99,10 +102,16 @@ export default function InviteSheet({ person, onSend, onClose }) {
             </h2>
             <p className="invite-sheet__sent-body">
               {phase === 'sent-no-email'
-                ? `The invite is saved and ${email.trim()} can still accept it, but the email didn't go out. Share the link manually or try resending from Settings.`
+                ? `The invite is saved and ${email.trim()} can still accept it, but the email didn't go out. Send them the link below instead.`
                 : `We've emailed ${email.trim()} a link to join the family tree.`
               }
             </p>
+            {inviteUrl && (
+              <div className="invite-sheet__share">
+                <p className="invite-sheet__share-label">Or send them this link directly</p>
+                <ShareLink url={inviteUrl} shareText={`Join our family tree on Bloodline`} />
+              </div>
+            )}
             <button className="invite-sheet__done" onClick={onClose}>Done</button>
           </div>
         ) : (

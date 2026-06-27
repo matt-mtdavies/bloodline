@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   ROLES, ROLE_LABELS, ROLE_COLORS, canInvite, roleRank,
 } from '../lib/visibility.js';
+import ShareLink from './ShareLink.jsx';
 
 const INVITE_ROLES = ['coadmin', 'editor', 'contributor', 'viewer'];
 
@@ -17,7 +18,9 @@ export default function FamilySettings({ myRole, familyName, onUpdateFamilyName,
   const [inviteRole, setInviteRole] = useState('editor');
   const [inviteStatus, setInviteStatus] = useState('idle'); // idle | sending | sent | error
   const [inviteError, setInviteError] = useState(''); // human-readable failure reason
+  const [inviteUrl, setInviteUrl] = useState(''); // shareable link for the last invite
   const [resendStates, setResendStates] = useState({}); // { [inviteId]: 'idle'|'sending'|'sent'|'error' }
+  const [copiedId, setCopiedId] = useState(null); // pending invite whose link was just copied
   const [nameEdit, setNameEdit] = useState(familyName);
 
   const load = useCallback(async () => {
@@ -43,6 +46,7 @@ export default function FamilySettings({ myRole, familyName, onUpdateFamilyName,
     if (!inviteEmail.trim()) return;
     setInviteStatus('sending');
     setInviteError('');
+    setInviteUrl('');
     try {
       const res = await fetch('/api/invite', {
         method: 'POST',
@@ -55,12 +59,13 @@ export default function FamilySettings({ myRole, familyName, onUpdateFamilyName,
         setInviteStatus('error');
         return;
       }
+      if (body.inviteUrl) setInviteUrl(body.inviteUrl);
       // The server records the invite even if the email can't be delivered, so
       // a 200 with emailSent:false means "saved but NOT emailed" — surface that
-      // rather than falsely telling the owner it was sent.
+      // (the shareable link below lets them send it manually instead).
       if (body.emailSent === false) {
         setInviteError(
-          "Invite saved, but the email couldn't be delivered. Check the address is correct, then use Resend from Members.",
+          "Invite saved, but the email couldn't be delivered. Send them the link below, or check the address and use Resend.",
         );
         setInviteStatus('error');
         load(); // show it in pending so Resend is available
@@ -68,7 +73,7 @@ export default function FamilySettings({ myRole, familyName, onUpdateFamilyName,
       }
       setInviteStatus('sent');
       setInviteEmail('');
-      setTimeout(() => { setInviteStatus('idle'); setTab('members'); load(); }, 2000);
+      load(); // refresh pending list; stay so the link can be copied/shared
     } catch {
       setInviteError('Could not send. Check your connection.');
       setInviteStatus('error');
@@ -133,6 +138,13 @@ export default function FamilySettings({ myRole, familyName, onUpdateFamilyName,
       setResendStates((s) => ({ ...s, [id]: 'error' }));
       setTimeout(() => setResendStates((s) => ({ ...s, [id]: 'idle' })), 3000);
     }
+  }
+
+  async function copyInviteLink(inv) {
+    if (!inv.invite_url) return;
+    try { await navigator.clipboard.writeText(inv.invite_url); } catch { /* ignore */ }
+    setCopiedId(inv.id);
+    setTimeout(() => setCopiedId((c) => (c === inv.id ? null : c)), 1800);
   }
 
   // Deduplicate pending invites by email (keep most recent per address).
@@ -286,6 +298,15 @@ export default function FamilySettings({ myRole, familyName, onUpdateFamilyName,
                               ) : (
                                 <RoleBadge role={inv.role} />
                               )}
+                              {isOwnerOrCoadmin && inv.invite_url && (
+                                <button
+                                  className={`fs__resend-btn${copiedId === inv.id ? ' fs__resend-btn--sent' : ''}`}
+                                  onClick={() => copyInviteLink(inv)}
+                                  aria-label="Copy invite link"
+                                >
+                                  {copiedId === inv.id ? 'Copied' : 'Copy link'}
+                                </button>
+                              )}
                               {isOwnerOrCoadmin && (
                                 <button
                                   className={`fs__resend-btn${resendStates[inv.id] === 'sent' ? ' fs__resend-btn--sent' : ''}${resendStates[inv.id] === 'error' ? ' fs__resend-btn--err' : ''}`}
@@ -349,7 +370,22 @@ export default function FamilySettings({ myRole, familyName, onUpdateFamilyName,
                 </div>
 
                 {inviteStatus === 'sent' ? (
-                  <p className="fs__sent"><CheckIcon /> Invitation sent</p>
+                  <div className="fs__invite-done">
+                    <p className="fs__sent"><CheckIcon /> Invitation sent</p>
+                    {inviteUrl && (
+                      <>
+                        <p className="fs__share-label">Or send this link directly — text, WhatsApp, anywhere</p>
+                        <ShareLink url={inviteUrl} shareText="Join our family tree on Bloodline" />
+                      </>
+                    )}
+                    <button
+                      type="button"
+                      className="fs__invite-again"
+                      onClick={() => { setInviteStatus('idle'); setInviteUrl(''); }}
+                    >
+                      Invite someone else
+                    </button>
+                  </div>
                 ) : (
                   <button
                     className="ob__continue"
@@ -360,7 +396,15 @@ export default function FamilySettings({ myRole, familyName, onUpdateFamilyName,
                   </button>
                 )}
                 {inviteStatus === 'error' && (
-                  <p className="fs__err">{inviteError || 'Could not send. Check your connection.'}</p>
+                  <>
+                    <p className="fs__err">{inviteError || 'Could not send. Check your connection.'}</p>
+                    {inviteUrl && (
+                      <>
+                        <p className="fs__share-label">Share this link directly instead</p>
+                        <ShareLink url={inviteUrl} shareText="Join our family tree on Bloodline" />
+                      </>
+                    )}
+                  </>
                 )}
               </form>
             )}

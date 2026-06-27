@@ -84,7 +84,9 @@ export async function onRequestPost({ request, env, data }) {
 
   await recordEmailStatus(env, inviteId, emailStatus, emailError, emailSent ? now : null);
 
-  return json({ ok: true, inviteId, emailSent, emailError });
+  // Return the link too so the client can offer copy / share — handy when the
+  // inviter would rather text it than rely on email.
+  return json({ ok: true, inviteId, emailSent, emailError, inviteUrl });
 }
 
 /*
@@ -168,7 +170,7 @@ export async function onRequestGet({ env, data }) {
 
   const [{ results: invites }, { results: members }] = await Promise.all([
     env.DB.prepare(
-      `SELECT id, email, role, status, created_at, expires_at
+      `SELECT id, email, role, status, created_at, expires_at, token
          FROM invite WHERE family_id = ? AND status = 'pending'
         ORDER BY created_at DESC`,
     ).bind(membership.family_id).all(),
@@ -180,7 +182,15 @@ export async function onRequestGet({ env, data }) {
     ).bind(membership.family_id).all(),
   ]);
 
-  return json({ invites, members });
+  // Attach a shareable link to each pending invite (owners/coadmins only, which
+  // this branch already enforces). Drop the raw token from the payload.
+  const base = env.APP_URL || 'https://myfamilybloodline.com';
+  const invitesWithLinks = (invites || []).map(({ token, ...inv }) => ({
+    ...inv,
+    invite_url: `${base}/invite/${token}`,
+  }));
+
+  return json({ invites: invitesWithLinks, members });
 }
 
 function inviteEmailText({ inviteUrl, fromEmail, familyName, roleLabel }) {
