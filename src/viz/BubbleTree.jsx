@@ -16,8 +16,10 @@ import { Spring } from '../lib/spring.js';
 const BASE_RADIUS = 46;
 const COLLIDE = 70;
 const GEN_GAP = 280; // shorter bands so wide screens use horizontal space too
-const CHART_COL_GAP = 170; // wider column spacing for the scoped chart layout
-const CHART_GEN_GAP = 320; // taller row spacing so generation bands breathe
+const CHART_COUPLE_GAP   = 110;  // centre-to-centre between two spouses
+const CHART_SIB_EDGE_GAP = 100;  // edge-to-edge between sibling-family slots
+const CHART_FAM_EDGE_GAP = 210;  // edge-to-edge between unrelated family groups
+const CHART_GEN_GAP = 310; // vertical distance between generation rows
 const ORGANIC_CHARGE = -1800; // stronger repulsion spreads generations sideways
 const SPREAD_X = 0.004; // weaker centring lets nodes fan out naturally
 const MAX_ZOOM = 2.0; // auto-fit (follow mode) — higher cap so small focus families fill the screen
@@ -1052,13 +1054,16 @@ function computeChartVisible(graph, activeId, gen) {
 }
 
 /*
- * Traditional hierarchical family chart layout. Returns a Map of id → {x, y}
- * with all visible people placed in generation rows, couples kept adjacent,
- * and children sorted under their parents by barycenter heuristic. Positions
- * are set as d3 fx/fy constraints so physics doesn't move them.
+ * Traditional hierarchical family chart layout. Returns a Map of id → {x, y}.
+ *
+ * Key improvements over the old uniform-slot approach:
+ *  - Couples are placed in a named "slot" with a narrow internal gap (CHART_COUPLE_GAP).
+ *  - Siblings (same parent key) use CHART_SIB_EDGE_GAP between slots.
+ *  - Unrelated families in the same generation use CHART_FAM_EDGE_GAP, so groups
+ *    don't bleed into each other and cross-lines are avoided.
+ *  - A post-pass nudges each generation toward its parents' horizontal centre.
  */
 function computeChartLayout(graph, gen, visible) {
-  // Group visible people by generation row.
   const byGen = new Map();
   for (const id of visible) {
     const g = gen.get(id) ?? 0;
@@ -1069,55 +1074,123 @@ function computeChartLayout(graph, gen, visible) {
   const posMap = new Map();
   const gens = [...byGen.keys()].sort((a, b) => a - b);
 
+  // Returns the sorted parent-id string for a person (for family-key comparisons).
+  const parentKey = (id) => {
+    const ps = graph.parents(id).filter((p) => visible.has(p.id)).map((p) => p.id).sort();
+    return ps.length ? ps.join('|') : null;
+  };
+
   for (const g of gens) {
     const row = byGen.get(g);
-
-    // Sort people in this row by the average x of their visible parents (barycenter).
-    // This naturally groups siblings together under their parents.
-    row.sort((a, b) => {
-      const bary = (id) => {
-        const ps = graph.parents(id).filter((p) => visible.has(p.id));
-        if (!ps.length) return 0;
-        return ps.reduce((s, p) => s + (posMap.get(p.id)?.x ?? 0), 0) / ps.length;
-      };
-      return bary(a) - bary(b);
-    });
-
-    // Ensure each couple sits immediately adjacent. Walk the sorted row; whenever
-    // we encounter a person with a partner still unplaced, insert the partner next.
     const rowSet = new Set(row);
-    const paired = new Map();
+
+    // ── Pair visible partners ──────────────────────────────────────────────
+    const partnerOf = new Map();
     for (const id of row) {
-      if (paired.has(id)) continue;
+      if (partnerOf.has(id)) continue;
       for (const p of graph.partners(id)) {
-        if (rowSet.has(p.id) && !paired.has(p.id)) {
-          paired.set(id, p.id);
-          paired.set(p.id, id);
+        if (rowSet.has(p.id) && !partnerOf.has(p.id)) {
+          partnerOf.set(id, p.id);
+          partnerOf.set(p.id, id);
           break;
         }
       }
     }
 
-    const ordered = [];
+    // ── Sort by barycenter of already-placed parents ───────────────────────
+    const bary = (id) => {
+      const ps = graph.parents(id).filter((p) => visible.has(p.id));
+      if (!ps.length) {
+        const pt = partnerOf.get(id);
+        if (pt) {
+          const pps = graph.parents(pt).filter((p) => visible.has(p.id));
+          if (pps.length) return pps.reduce((s, p) => s + (posMap.get(p.id)?.x ?? 0), 0) / pps.length;
+        }
+        return 0;
+      }
+      return ps.reduce((s, p) => s + (posMap.get(p.id)?.x ?? 0), 0) / ps.length;
+    };
+    row.sort((a, b) => bary(a) - bary(b));
+
+    // ── Build ordered slots ────────────────────────────────────────────────
+    // Each slot is { ids: [id] | [id, partnerId], pk: string|null }
     const placed = new Set();
+    const slots = [];
     for (const id of row) {
       if (placed.has(id)) continue;
       placed.add(id);
-      ordered.push(id);
-      const partner = paired.get(id);
+      const partner = partnerOf.get(id);
       if (partner && !placed.has(partner)) {
         placed.add(partner);
-        ordered.push(partner);
+        const pk = parentKey(id) ?? parentKey(partner) ?? null;
+        slots.push({ ids: [id, partner], pk });
+      } else {
+        slots.push({ ids: [id], pk: parentKey(id) });
       }
     }
 
-    // Assign x positions centred around 0.
-    const n = ordered.length;
-    for (let i = 0; i < n; i++) {
-      posMap.set(ordered[i], {
-        x: (i - (n - 1) / 2) * CHART_COL_GAP,
-        y: g * CHART_GEN_GAP - 260,
-      });
+    // ── Assign x positions with variable gaps ─────────────────────────────
+    const halfW = (slot) => (slot.ids.length === 2 ? CHART_COUPLE_GAP / 2 : 0);
+    const y = g * CHART_GEN_GAP - 260;
+
+    // Accumulate raw centres starting at x=0 for the first slot, then track
+    // the right edge of the previous slot to compute inter-slot gaps.
+    const centers = [];
+    let cursor = 0; // right edge of the last slot
+
+    for (let i = 0; i < slots.length; i++) {
+      const slot = slots[i];
+      const hw = halfW(slot);
+      if (i === 0) {
+        centers.push(0);
+        cursor = hw;
+      } else {
+        const prev = slots[i - 1];
+        const sameFamily = slot.pk !== null && prev.pk !== null && slot.pk === prev.pk;
+        const gap = sameFamily ? CHART_SIB_EDGE_GAP : CHART_FAM_EDGE_GAP;
+        const cx = cursor + gap + hw;
+        centers.push(cx);
+        cursor = cx + hw;
+      }
+    }
+
+    // Centre the whole row symmetrically around x=0.
+    const leftEdge  = centers[0] - halfW(slots[0]);
+    const rightEdge = centers[centers.length - 1] + halfW(slots[slots.length - 1]);
+    const shift = -((leftEdge + rightEdge) / 2);
+
+    for (let i = 0; i < slots.length; i++) {
+      const cx = centers[i] + shift;
+      const { ids } = slots[i];
+      if (ids.length === 2) {
+        posMap.set(ids[0], { x: cx - CHART_COUPLE_GAP / 2, y });
+        posMap.set(ids[1], { x: cx + CHART_COUPLE_GAP / 2, y });
+      } else {
+        posMap.set(ids[0], { x: cx, y });
+      }
+    }
+  }
+
+  // ── Post-pass: nudge each generation toward its parents' horizontal centre ──
+  // Compute per-family-group offset, then blend so the whole row shifts
+  // proportionally — this centres siblings under their parents without
+  // disturbing the inter-slot spacing already established above.
+  for (const g of gens.slice(1)) {
+    const row = byGen.get(g);
+    // For each person with visible parents, compute (ideal_x - current_x).
+    let sumDelta = 0, cnt = 0;
+    for (const id of row) {
+      const ps = graph.parents(id).filter((p) => visible.has(p.id));
+      if (!ps.length) continue;
+      const idealX = ps.reduce((s, p) => s + (posMap.get(p.id)?.x ?? 0), 0) / ps.length;
+      const cur = posMap.get(id);
+      if (cur) { sumDelta += idealX - cur.x; cnt++; }
+    }
+    if (!cnt) continue;
+    const nudge = (sumDelta / cnt) * 0.5; // 50 % pull — avoids over-correction
+    for (const id of row) {
+      const cur = posMap.get(id);
+      if (cur) posMap.set(id, { x: cur.x + nudge, y: cur.y });
     }
   }
 

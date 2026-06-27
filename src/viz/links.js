@@ -243,11 +243,12 @@ export function drawLinksChart(g, graph, pos, isVisible, baseRadius, lineagePath
   const onPath = lineagePath ? (a, b) => lineagePath.has(a) && lineagePath.has(b) : () => false;
   const edgeAlpha = lineagePath ? (a, b) => (onPath(a, b) ? 1 : 0.12) : () => 1;
 
-  // ── Couple connectors (chart style: clean bar + midpoint node) ───────────
-  // Organic mode's warm blob-pod is beautiful but invisible at chart zoom levels.
-  // Chart mode uses a thin horizontal bar with a small filled node at the midpoint
-  // so the couple relationship reads clearly at any scale.
+  // ── Couple connectors (chart style: clean horizontal bar, no midpoint clutter) ──
+  // Chart mode uses a plain horizontal bar between spouses at the couple Y level.
+  // The old midpoint node has been removed — the couple bar itself is the connector.
   const seen = new Set();
+  // Build a couple-midpoint lookup so parent bracket drops land at the bar centre.
+  const coupleMidX = new Map(); // personId → x midpoint of their couple bar
   for (const r of graph.relationships) {
     if (r.type !== 'partner') continue;
     if (hidden(r.from_person, r.to_person)) continue;
@@ -263,26 +264,27 @@ export function drawLinksChart(g, graph, pos, isVisible, baseRadius, lineagePath
     const isWidowed = status === 'widowed';
     const isFormer  = status === 'former';
     const lineColor = hex(isWidowed ? '#7a6a9e' : '#b08060');
-    const nodeColor = hex(isWidowed ? '#ece7f2' : '#f6e6dc');
-    const nodeBorder = hex(isWidowed ? '#7a6a9e' : '#8a5e3c');
-    const mx = (a.x + b.x) / 2;
-    const my = (a.y + b.y) / 2;
-    const lineA = alpha * (isFormer ? 0.45 : 0.55);
-    const nodeR = baseRadius * 0.28;
+    const lineA = alpha * (isFormer ? 0.50 : 0.65);
 
     if (isFormer) {
-      dashedSegment(g, a, b, 14, 0.55, { width: 1.8, color: lineColor, alpha: lineA, cap: 'round' });
+      dashedSegment(g, a, b, 12, 0.55, { width: 2, color: lineColor, alpha: lineA, cap: 'round' });
     } else {
-      g.moveTo(a.x, a.y).lineTo(b.x, b.y).stroke({ width: 1.8, color: lineColor, alpha: lineA, cap: 'round' });
+      g.moveTo(a.x, a.y).lineTo(b.x, b.y).stroke({ width: 2, color: lineColor, alpha: lineA, cap: 'round' });
     }
-    // Midpoint node — signals "this is a couple unit, not just a line".
-    g.circle(mx, my, nodeR).fill({ color: nodeColor, alpha: alpha * 0.92 });
-    g.circle(mx, my, nodeR).stroke({ width: 1.5, color: nodeBorder, alpha: alpha * 0.85 });
+
+    const mx = (a.x + b.x) / 2;
+    coupleMidX.set(r.from_person, mx);
+    coupleMidX.set(r.to_person, mx);
   }
 
   // ── Orthogonal bracket connectors (parent → children) ─────────────────────
+  // For each child that is part of a couple, the bracket drop terminates at the
+  // couple bar's midpoint rather than the individual node centre. This ensures the
+  // stem from the grandparent level aligns symmetrically with the couple bar below.
+  const effectiveX = (id) => coupleMidX.get(id) ?? pos.get(id)?.x ?? 0;
+
   // Group each child with ALL of its visible parents so siblings share one bracket.
-  const families = new Map(); // 'parentId1|parentId2:qualifier' → { parents, qualifier, kids }
+  const families = new Map(); // key → { parents, qualifier, kids }
   for (const r of graph.relationships) {
     if (r.type !== 'parent') continue;
     const parentId = r.from_person;
@@ -300,14 +302,13 @@ export function drawLinksChart(g, graph, pos, isVisible, baseRadius, lineagePath
   for (const { parents, qualifier, kids } of families.values()) {
     const parentPositions = parents.map((id) => pos.get(id)).filter(Boolean);
     if (!parentPositions.length) continue;
-    const kidPositions = [...kids].map((id) => pos.get(id)).filter(Boolean);
-    if (!kidPositions.length) continue;
+    const kidIds = [...kids];
+    const kidPos = kidIds.map((id) => pos.get(id)).filter(Boolean);
+    if (!kidPos.length) continue;
 
     const biological = qualifier === 'biological';
     const lineColor = hex(biological ? '#8a7d6b' : '#b6a892');
     const lineAlpha = biological ? 0.65 : 0.80;
-    // Drops and horizontal bar: finer weight to recede behind the bubbles.
-    // The stem is the dominant element — thicker, draws the eye down the lineage.
     const strokeBase = { width: 1.5, color: lineColor, cap: 'round', join: 'round' };
     const seg = (ax, ay, bx, by, alpha = lineAlpha) => {
       if (biological) {
@@ -324,34 +325,32 @@ export function drawLinksChart(g, graph, pos, isVisible, baseRadius, lineagePath
       }
     };
 
-    // Origin: midpoint of all parents (couples are same Y in chart mode).
+    // Origin: midpoint of all parents (couples share the same Y in chart mode).
     const originX = parentPositions.reduce((s, p) => s + p.x, 0) / parentPositions.length;
     const originY = parentPositions.reduce((s, p) => s + p.y, 0) / parentPositions.length;
-    const childY = Math.min(...kidPositions.map((p) => p.y));
-    // Junction: 70% of the way down — long stem, short drops.
-    // Classic pedigree charts have the horizontal bar sit close to the children,
-    // not midway, so the family group is visually tight below the bar.
-    const hubY = originY + (childY - originY) * 0.70;
+    const childY = Math.min(...kidPos.map((p) => p.y));
+    // Junction at 68 % of the way down — long stem, compact drops.
+    const hubY = originY + (childY - originY) * 0.68;
 
-    // Lineage alpha for this family group.
-    const alpha = edgeAlpha(parents[0] ?? '', kids.values().next().value ?? '');
+    const alpha = edgeAlpha(parents[0] ?? '', kidIds[0] ?? '');
 
-    // Vertical stem from couple midpoint down to the junction — thicker to anchor the family.
+    // Vertical stem from couple midpoint down to the junction.
     stemSeg(originX, originY + baseRadius * 1.05, originX, hubY, lineAlpha * alpha);
 
-    if (kidPositions.length === 1) {
-      // Single child: L-shaped elbow — horizontal to child x, then drop.
-      const c = kidPositions[0];
-      seg(originX, hubY, c.x, hubY, lineAlpha * alpha);
-      seg(c.x, hubY, c.x, c.y - baseRadius, lineAlpha * alpha);
+    // Use effective X (couple midpoint when child is in a couple) for the bar and drops.
+    const exs = kidIds.map(effectiveX);
+    const childYval = kidPos[0].y; // all same generation → same Y
+
+    if (kidIds.length === 1) {
+      const ex = exs[0];
+      seg(originX, hubY, ex, hubY, lineAlpha * alpha);
+      seg(ex, hubY, ex, childYval - baseRadius, lineAlpha * alpha);
     } else {
-      // Multiple siblings: horizontal bar spanning leftmost→rightmost, then drops.
-      const xs = kidPositions.map((p) => p.x);
-      const barMinX = Math.min(...xs);
-      const barMaxX = Math.max(...xs);
+      const barMinX = Math.min(...exs);
+      const barMaxX = Math.max(...exs);
       seg(barMinX, hubY, barMaxX, hubY, lineAlpha * alpha);
-      for (const c of kidPositions) {
-        seg(c.x, hubY, c.x, c.y - baseRadius, lineAlpha * alpha);
+      for (const ex of exs) {
+        seg(ex, hubY, ex, childYval - baseRadius, lineAlpha * alpha);
       }
     }
   }
