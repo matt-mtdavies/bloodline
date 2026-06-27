@@ -9,6 +9,9 @@ import { streamBio } from '../lib/ai.js';
 import { VISIBILITY_LABELS, VISIBILITY_DESCS } from '../lib/visibility.js';
 import { HEALTH_CATEGORIES, HEALTH_CONDITIONS, HEALTH_STATUSES, colorFor } from '../lib/health.js';
 
+const HAIR_DOTS = { Black: '#1a1a1a', Brown: '#6b4226', Blonde: '#d4b483', Auburn: '#9b3a1e', Red: '#c0392b', Grey: '#9e9e9e', White: '#ddd' };
+const EYE_DOTS  = { Brown: '#6b4226', Blue: '#4a7fbf', Green: '#3d8c55', Hazel: '#8b6914', Grey: '#8a9099', Amber: '#c8860a' };
+
 /*
  * The profile. In V2 this is the destination, not a popover — a portrait,
  * a life, and the beginnings of the stories that should outlast a person.
@@ -333,6 +336,9 @@ export default function PersonSheet({
 
           {relToViewer && <p className="profile__kin">{relToViewer}</p>}
           <h2 className="profile__name">{person.display_name}</h2>
+          {person.birth_name && (
+            <p className="profile__birth-name">née {person.birth_name}</p>
+          )}
           <p className="profile__meta">{metaBits.join('  ·  ')}</p>
           {location && (
             <p className="profile__where">
@@ -351,12 +357,22 @@ export default function PersonSheet({
             )}
           </div>
 
-          {!restricted && person.tags?.length > 0 && (
+          {!restricted && (person.tags?.length > 0 || person.hair_color || person.eye_color) && (
             <ul className="tags">
-              {person.tags.map((t) => (
-                <li className="tag" key={t}>
-                  {t}
+              {person.hair_color && (
+                <li className="tag tag--trait" key="hair">
+                  <span className="tag__dot" style={{ background: HAIR_DOTS[person.hair_color] || '#bbb', boxShadow: person.hair_color === 'White' ? 'inset 0 0 0 1px #ccc' : undefined }} />
+                  {person.hair_color} hair
                 </li>
+              )}
+              {person.eye_color && (
+                <li className="tag tag--trait" key="eye">
+                  <span className="tag__dot" style={{ background: EYE_DOTS[person.eye_color] || '#bbb' }} />
+                  {person.eye_color} eyes
+                </li>
+              )}
+              {person.tags?.map((t) => (
+                <li className="tag" key={t}>{t}</li>
               ))}
             </ul>
           )}

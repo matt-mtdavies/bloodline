@@ -1,29 +1,68 @@
 import { useEffect, useState } from 'react';
 import { VISIBILITY_LABELS, VISIBILITY_DESCS, SECTIONS } from '../lib/visibility.js';
 
+const GENDER_OPTIONS = ['Male', 'Female', 'Non-binary', 'Other'];
+
+const EYE_OPTIONS = [
+  { value: 'Brown',  dot: '#6b4226' },
+  { value: 'Blue',   dot: '#4a7fbf' },
+  { value: 'Green',  dot: '#3d8c55' },
+  { value: 'Hazel',  dot: '#8b6914' },
+  { value: 'Grey',   dot: '#8a9099' },
+  { value: 'Amber',  dot: '#c8860a' },
+  { value: 'Other',  dot: null },
+];
+
+const HAIR_OPTIONS = [
+  { value: 'Black',  dot: '#1a1a1a' },
+  { value: 'Brown',  dot: '#6b4226' },
+  { value: 'Blonde', dot: '#d4b483' },
+  { value: 'Auburn', dot: '#9b3a1e' },
+  { value: 'Red',    dot: '#c0392b' },
+  { value: 'Grey',   dot: '#9e9e9e' },
+  { value: 'White',  dot: '#ddd', dotBorder: true },
+  { value: 'Other',  dot: null },
+];
+
+const TODAY = new Date().toISOString().slice(0, 10);
+
 /*
- * Edit a person. Still progressive in spirit — every field is optional — but
- * laid out cleanly so updating a date or adding a story is effortless.
- * Includes a Privacy section for visibility and per-section controls.
+ * Normalise a phone string: keep digits, +, spaces, dashes, parens.
  */
+function normalisePhone(raw) {
+  return raw.replace(/[^\d+\s\-().]/g, '');
+}
+
+/*
+ * Validate email loosely — only flag on blur if it looks wrong.
+ */
+function isValidEmail(v) {
+  return !v || /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v);
+}
+
 export default function EditPersonSheet({ person, onClose, onSave, onRemove }) {
   const [f, setF] = useState({
-    display_name: person.display_name || '',
-    gender: person.gender || '',
-    birth_date: person.birth_date || '',
-    birth_place: person.birth_place || '',
-    residence: person.residence || '',
-    occupation: person.occupation || '',
-    email: person.email || '',
-    phone: person.phone || '',
-    tags: (person.tags || []).join(', '),
-    bio: person.bio || '',
-    is_deceased: !!person.is_deceased,
-    death_date: person.death_date || '',
-    visibility: person.visibility || 'full',
+    display_name:  person.display_name  || '',
+    birth_name:    person.birth_name    || '',
+    gender:        person.gender        || '',
+    birth_date:    person.birth_date    || '',
+    birth_place:   person.birth_place   || '',
+    residence:     person.residence     || '',
+    occupation:    person.occupation    || '',
+    eye_color:     person.eye_color     || '',
+    hair_color:    person.hair_color    || '',
+    email:         person.email         || '',
+    phone:         person.phone         || '',
+    tags:          (person.tags || []).join(', '),
+    bio:           person.bio           || '',
+    is_deceased:   !!person.is_deceased,
+    death_date:    person.death_date    || '',
+    visibility:        person.visibility        || 'full',
     sectionVisibility: person.sectionVisibility || {},
   });
-  const [privacyOpen, setPrivacyOpen] = useState(false);
+
+  const [emailError,   setEmailError]   = useState(false);
+  const [privacyOpen,  setPrivacyOpen]  = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
 
   useEffect(() => {
@@ -32,25 +71,38 @@ export default function EditPersonSheet({ person, onClose, onSave, onRemove }) {
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  const set = (k) => (e) => setF((s) => ({ ...s, [k]: e.target.value }));
+  const set  = (k) => (e) => setF((s) => ({ ...s, [k]: e.target.value }));
   const clear = (k) => () => setF((s) => ({ ...s, [k]: '' }));
+  const pick  = (k) => (v) => setF((s) => ({ ...s, [k]: s[k] === v ? '' : v }));
+
+  const setPhone = (e) => setF((s) => ({ ...s, phone: normalisePhone(e.target.value) }));
+
+  const dobIsFullDate = f.birth_date.includes('-');
+  const dobYearOnly   = f.birth_date && !dobIsFullDate;
+
+  const onDobChange = (e) => {
+    if (e.target.value) setF((s) => ({ ...s, birth_date: e.target.value }));
+  };
 
   const save = () => {
     onSave({
-      display_name: f.display_name.trim() || person.display_name,
-      gender: f.gender.trim() || null,
-      birth_date: f.birth_date.trim() || null,
-      birth_place: f.birth_place.trim() || null,
-      residence: f.residence.trim() || null,
-      occupation: f.occupation.trim() || null,
-      email: f.email.trim() || null,
-      phone: f.phone.trim() || null,
-      tags: f.tags.split(',').map((t) => t.trim()).filter(Boolean),
-      bio: f.bio.trim() || null,
-      is_deceased: f.is_deceased,
-      is_living: !f.is_deceased,
-      death_date: f.is_deceased ? f.death_date.trim() || null : null,
-      visibility: f.visibility,
+      display_name:  f.display_name.trim()  || person.display_name,
+      birth_name:    f.birth_name.trim()    || null,
+      gender:        f.gender               || null,
+      birth_date:    f.birth_date.trim()    || null,
+      birth_place:   f.birth_place.trim()   || null,
+      residence:     f.residence.trim()     || null,
+      occupation:    f.occupation.trim()    || null,
+      eye_color:     f.eye_color            || null,
+      hair_color:    f.hair_color           || null,
+      email:         f.email.trim()         || null,
+      phone:         f.phone.trim()         || null,
+      tags:          f.tags.split(',').map((t) => t.trim()).filter(Boolean),
+      bio:           f.bio.trim()           || null,
+      is_deceased:   f.is_deceased,
+      is_living:     !f.is_deceased,
+      death_date:    f.is_deceased ? f.death_date.trim() || null : null,
+      visibility:        f.visibility,
       sectionVisibility: f.sectionVisibility,
     });
   };
@@ -58,7 +110,7 @@ export default function EditPersonSheet({ person, onClose, onSave, onRemove }) {
   const toggleSection = (key) =>
     setF((s) => ({
       ...s,
-      sectionVisibility: { ...s.sectionVisibility, [key]: s.sectionVisibility[key] === false },
+      sectionVisibility: { ...s.sectionVisibility, [key]: s.sectionVisibility[key] !== false ? false : undefined },
     }));
 
   return (
@@ -75,6 +127,8 @@ export default function EditPersonSheet({ person, onClose, onSave, onRemove }) {
         </header>
 
         <div className="form__fields">
+
+          {/* ── Name ── */}
           <label className="field">
             <span className="field__label">Name</span>
             <div className="input-wrap">
@@ -83,23 +137,51 @@ export default function EditPersonSheet({ person, onClose, onSave, onRemove }) {
             </div>
           </label>
 
+          <label className="field">
+            <span className="field__label">Birth name <span className="field__label-sub">/ maiden name</span></span>
+            <div className="input-wrap">
+              <input className="field__input" value={f.birth_name} onChange={set('birth_name')} placeholder="If different from current name" />
+              {f.birth_name && <button type="button" className="input-clear" onClick={clear('birth_name')} aria-label="Clear" tabIndex={-1}>×</button>}
+            </div>
+          </label>
+
+          {/* ── DOB + Gender ── */}
           <div className="field-row">
             <label className="field">
-              <span className="field__label">Born</span>
-              <div className="input-wrap">
-                <input className="field__input" value={f.birth_date} onChange={set('birth_date')} placeholder="Year or 1985-04-12" />
-                {f.birth_date && <button type="button" className="input-clear" onClick={clear('birth_date')} aria-label="Clear" tabIndex={-1}>×</button>}
+              <span className="field__label">Date of Birth</span>
+              <div className="input-wrap dob-wrap">
+                <input
+                  className="field__input field__input--date"
+                  type="date"
+                  value={dobIsFullDate ? f.birth_date : ''}
+                  max={TODAY}
+                  onChange={onDobChange}
+                />
+                {f.birth_date && (
+                  <button type="button" className="input-clear" onClick={clear('birth_date')} aria-label="Clear" tabIndex={-1}>×</button>
+                )}
               </div>
+              {dobYearOnly && (
+                <span className="field__hint">Year {f.birth_date} — pick full date for exact age</span>
+              )}
             </label>
+
             <label className="field">
               <span className="field__label">Gender</span>
-              <div className="input-wrap">
-                <input className="field__input" value={f.gender} onChange={set('gender')} placeholder="Optional" />
-                {f.gender && <button type="button" className="input-clear" onClick={clear('gender')} aria-label="Clear" tabIndex={-1}>×</button>}
+              <div className="pill-pick pill-pick--gender">
+                {GENDER_OPTIONS.map((g) => (
+                  <button
+                    key={g}
+                    type="button"
+                    className={`pill-pick__opt${f.gender === g ? ' pill-pick__opt--on' : ''}`}
+                    onClick={() => pick('gender')(g)}
+                  >{g}</button>
+                ))}
               </div>
             </label>
           </div>
 
+          {/* ── Birthplace + Lives in ── */}
           <div className="field-row">
             <label className="field">
               <span className="field__label">Birthplace</span>
@@ -111,12 +193,57 @@ export default function EditPersonSheet({ person, onClose, onSave, onRemove }) {
             <label className="field">
               <span className="field__label">Lives in</span>
               <div className="input-wrap">
-                <input className="field__input" value={f.residence} onChange={set('residence')} placeholder="Optional" />
+                <input className="field__input" value={f.residence} onChange={set('residence')} placeholder="City, Country" />
                 {f.residence && <button type="button" className="input-clear" onClick={clear('residence')} aria-label="Clear" tabIndex={-1}>×</button>}
               </div>
             </label>
           </div>
 
+          {/* ── Hair + Eye colour ── */}
+          <div className="field-row">
+            <label className="field">
+              <span className="field__label">Hair colour</span>
+              <div className="pill-pick pill-pick--colors">
+                {HAIR_OPTIONS.map((o) => (
+                  <button
+                    key={o.value}
+                    type="button"
+                    className={`pill-pick__opt${f.hair_color === o.value ? ' pill-pick__opt--on' : ''}`}
+                    onClick={() => pick('hair_color')(o.value)}
+                  >
+                    {o.dot && (
+                      <span
+                        className="pill-pick__dot"
+                        style={{ background: o.dot, boxShadow: o.dotBorder ? 'inset 0 0 0 1px #ccc' : undefined }}
+                      />
+                    )}
+                    {o.value}
+                  </button>
+                ))}
+              </div>
+            </label>
+
+            <label className="field">
+              <span className="field__label">Eye colour</span>
+              <div className="pill-pick pill-pick--colors">
+                {EYE_OPTIONS.map((o) => (
+                  <button
+                    key={o.value}
+                    type="button"
+                    className={`pill-pick__opt${f.eye_color === o.value ? ' pill-pick__opt--on' : ''}`}
+                    onClick={() => pick('eye_color')(o.value)}
+                  >
+                    {o.dot && (
+                      <span className="pill-pick__dot" style={{ background: o.dot }} />
+                    )}
+                    {o.value}
+                  </button>
+                ))}
+              </div>
+            </label>
+          </div>
+
+          {/* ── Occupation ── */}
           <label className="field">
             <span className="field__label">Occupation</span>
             <div className="input-wrap">
@@ -125,25 +252,46 @@ export default function EditPersonSheet({ person, onClose, onSave, onRemove }) {
             </div>
           </label>
 
+          {/* ── Email + Phone ── */}
           {!f.is_deceased && (
             <div className="field-row">
               <label className="field">
                 <span className="field__label">Email</span>
-                <div className="input-wrap">
-                  <input className="field__input" type="email" inputMode="email" value={f.email} onChange={set('email')} placeholder="their@email.com" autoComplete="off" />
-                  {f.email && <button type="button" className="input-clear" onClick={clear('email')} aria-label="Clear" tabIndex={-1}>×</button>}
+                <div className={`input-wrap${emailError ? ' input-wrap--err' : ''}`}>
+                  <input
+                    className="field__input"
+                    type="email"
+                    inputMode="email"
+                    value={f.email}
+                    onChange={(e) => { setEmailError(false); set('email')(e); }}
+                    onBlur={() => setEmailError(!isValidEmail(f.email))}
+                    placeholder="their@email.com"
+                    autoComplete="off"
+                  />
+                  {f.email && <button type="button" className="input-clear" onClick={() => { clear('email')(); setEmailError(false); }} aria-label="Clear" tabIndex={-1}>×</button>}
                 </div>
+                {emailError && <span className="field__err">Enter a valid email address</span>}
               </label>
               <label className="field">
                 <span className="field__label">Phone</span>
                 <div className="input-wrap">
-                  <input className="field__input" type="tel" inputMode="tel" value={f.phone} onChange={set('phone')} placeholder="+44 7700…" autoComplete="off" />
+                  <input
+                    className="field__input"
+                    type="tel"
+                    inputMode="tel"
+                    value={f.phone}
+                    onChange={setPhone}
+                    placeholder="+61 4xx xxx xxx"
+                    autoComplete="off"
+                  />
                   {f.phone && <button type="button" className="input-clear" onClick={clear('phone')} aria-label="Clear" tabIndex={-1}>×</button>}
                 </div>
+                <span className="field__hint">Include country code e.g. +61, +1, +44</span>
               </label>
             </div>
           )}
 
+          {/* ── Tags ── */}
           <label className="field">
             <span className="field__label">Tags</span>
             <div className="input-wrap">
@@ -153,6 +301,7 @@ export default function EditPersonSheet({ person, onClose, onSave, onRemove }) {
             <span className="field__hint">Separate with commas</span>
           </label>
 
+          {/* ── Deceased ── */}
           <label className="toggle">
             <input
               type="checkbox"
@@ -163,14 +312,24 @@ export default function EditPersonSheet({ person, onClose, onSave, onRemove }) {
           </label>
           {f.is_deceased && (
             <label className="field">
-              <span className="field__label">Passed</span>
-              <div className="input-wrap">
-                <input className="field__input" value={f.death_date} onChange={set('death_date')} placeholder="Year" />
+              <span className="field__label">Date Passed</span>
+              <div className="input-wrap dob-wrap">
+                <input
+                  className="field__input field__input--date"
+                  type="date"
+                  value={f.death_date.includes('-') ? f.death_date : ''}
+                  max={TODAY}
+                  onChange={(e) => { if (e.target.value) setF((s) => ({ ...s, death_date: e.target.value })); }}
+                />
                 {f.death_date && <button type="button" className="input-clear" onClick={clear('death_date')} aria-label="Clear" tabIndex={-1}>×</button>}
               </div>
+              {f.death_date && !f.death_date.includes('-') && (
+                <span className="field__hint">Year {f.death_date} — pick date for precision</span>
+              )}
             </label>
           )}
 
+          {/* ── Bio ── */}
           <label className="field">
             <span className="field__label">A memory or story</span>
             <textarea
@@ -182,7 +341,7 @@ export default function EditPersonSheet({ person, onClose, onSave, onRemove }) {
             />
           </label>
 
-          {/* Privacy */}
+          {/* ── Privacy ── */}
           <div className="field privacy-section">
             <button
               type="button"
@@ -201,7 +360,6 @@ export default function EditPersonSheet({ person, onClose, onSave, onRemove }) {
                   Controls what family members with Viewer or Contributor roles can see.
                   Owners and Co-Admins always see everything.
                 </p>
-
                 <div className="vis-opts">
                   {Object.entries(VISIBILITY_LABELS).map(([val, label]) => (
                     <button
@@ -215,7 +373,6 @@ export default function EditPersonSheet({ person, onClose, onSave, onRemove }) {
                     </button>
                   ))}
                 </div>
-
                 {f.visibility === 'full' && (
                   <div className="section-vis">
                     <p className="field__label" style={{ marginBottom: 8 }}>Section visibility</p>

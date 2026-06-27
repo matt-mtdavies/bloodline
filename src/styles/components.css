@@ -1763,6 +1763,59 @@
 }
 .field__input--year { width: 110px; height: 44px; }
 .field__input--area { height: auto; padding: 12px 15px; line-height: 1.5; resize: vertical; }
+.field__input--date {
+  /* Ensure enough room for the native date picker chrome */
+  min-width: 0;
+  cursor: pointer;
+  color-scheme: light;
+}
+.field__label-sub { font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--ink-faint); font-size: 11px; }
+.field__err { font-size: 12px; color: #c0392b; }
+.input-wrap--err .field__input { border-color: #f5b7b1; background: #fff5f5; }
+
+/* ── Pill picker (gender, hair, eye) ── */
+.pill-pick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 2px 0;
+}
+.pill-pick__opt {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px;
+  border-radius: 20px;
+  border: 1.5px solid var(--hairline);
+  background: transparent;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink-soft);
+  cursor: pointer;
+  transition: border-color 0.14s, background 0.14s, color 0.14s;
+  white-space: nowrap;
+  font-family: inherit;
+  line-height: 1;
+}
+.pill-pick__opt:hover { border-color: var(--ink-soft); color: var(--ink); }
+.pill-pick__opt--on {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: var(--accent-deep, var(--accent));
+}
+.pill-pick__dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: inline-block;
+}
+.pill-pick--gender .pill-pick__opt { padding: 7px 14px; font-size: 13.5px; }
+.pill-pick--colors .pill-pick__opt { padding: 5px 10px; font-size: 12.5px; }
+
+/* DOB input wrapper: reserve space for the clear button */
+.dob-wrap { position: relative; }
+.dob-wrap .input-clear { pointer-events: auto; }
 
 .toggle { display: inline-flex; align-items: center; gap: 10px; font-size: 15px; color: var(--ink); cursor: pointer; }
 .toggle input { width: 20px; height: 20px; accent-color: var(--accent); }
@@ -2022,6 +2075,7 @@
   color: var(--ink);
 }
 .profile__meta { margin: 8px 0 0; font-size: 15px; color: var(--ink-soft); }
+.profile__birth-name { margin: 2px 0 0; font-size: 13px; color: var(--ink-faint); font-style: italic; letter-spacing: 0.01em; }
 .profile__where {
   display: inline-flex;
   align-items: center;
@@ -2041,6 +2095,20 @@
   border-radius: 999px;
   background: var(--accent-soft);
   color: var(--accent-deep);
+}
+.tag--trait {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--surface, #f5f0ea);
+  color: var(--ink-soft);
+}
+.tag__dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: inline-block;
 }
 
 .profile__actions {

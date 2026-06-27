@@ -26,11 +26,20 @@ export function lifespan(person) {
 }
 
 export function ageOrAt(person) {
-  const b = Number(yearOf(person.birth_date));
-  if (!b) return null;
+  if (!person.birth_date) return null;
+  const parts = person.birth_date.split('-').map(Number);
+  const y = parts[0];
+  if (!y) return null;
+  const m = parts[1];
+  const d = parts[2];
   if (person.is_deceased) {
-    const d = Number(yearOf(person.death_date));
-    return d ? `aged ${d - b}` : null;
+    const dy = person.death_date ? Number(person.death_date.split('-')[0]) : null;
+    return dy ? `aged ${dy - y}` : null;
   }
-  return `${new Date().getFullYear() - b}`;
+  const now = new Date();
+  if (m && d) {
+    const hadBirthday = now.getMonth() + 1 > m || (now.getMonth() + 1 === m && now.getDate() >= d);
+    return String(now.getFullYear() - y - (hadBirthday ? 0 : 1));
+  }
+  return String(now.getFullYear() - y);
 }
