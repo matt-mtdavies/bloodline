@@ -37,7 +37,7 @@ import {
   isNewUrl,
 } from './data/store.js';
 import { uploadPhoto, generateThumb, uploadDocument } from './lib/image.js';
-import { buildGraph, pathBetween } from './data/graph.js';
+import { buildGraph, pathBetween, pathBetweenOrdered } from './data/graph.js';
 import { useReducedMotion } from './hooks/useReducedMotion.js';
 import BubbleTree from './viz/BubbleTree.jsx';
 import TopBar from './components/TopBar.jsx';
@@ -60,6 +60,7 @@ import UserProfile from './components/UserProfile.jsx';
 import MergeWizard from './components/MergeWizard.jsx';
 import InviteSheet from './components/InviteSheet.jsx';
 import TreeInsights from './components/TreeInsights.jsx';
+import LineageBanner from './components/LineageBanner.jsx';
 import ActivityFeed from './components/ActivityFeed.jsx';
 import GedcomImport from './components/GedcomImport.jsx';
 import FamilySearchImport from './components/FamilySearchImport.jsx';
@@ -205,6 +206,7 @@ export default function App() {
   const [mergeParents, setMergeParents] = useState(true);
   const [lineageMode, setLineageMode] = useState(false);
   const [lineagePath, setLineagePath] = useState(null); // Set<id> | null
+  const [lineageOrder, setLineageOrder] = useState(null); // ordered [fromId,…,toId] | null
   const [cameraFree, setCameraFree] = useState(false); // user has panned/zoomed away
   const [storageWarning, setStorageWarning] = useState(false);
   const [syncToast, setSyncToast] = useState(null);
@@ -376,6 +378,7 @@ export default function App() {
     setActiveId(id);
     setExpanded((prev) => (prev.has(id) ? prev : new Set(prev).add(id)));
     setLineagePath(null);
+    setLineageOrder(null);
     setFocusMode(false); // navigating exits focus mode
     setLifeJourneyId(null);
   }, []);
@@ -445,8 +448,11 @@ export default function App() {
       if (lineageMode) {
         if (id === activeId) {
           setLineagePath(null);
+          setLineageOrder(null);
         } else {
-          setLineagePath(pathBetween(graph, activeId, id));
+          const ordered = pathBetweenOrdered(graph, activeId, id);
+          setLineagePath(ordered ? new Set(ordered) : null);
+          setLineageOrder(ordered);
         }
       } else {
         activateNormal(id);
@@ -466,7 +472,7 @@ export default function App() {
 
   const toggleLineage = useCallback(() => {
     setLineageMode((on) => {
-      if (on) setLineagePath(null);
+      if (on) { setLineagePath(null); setLineageOrder(null); }
       return !on;
     });
   }, []);
@@ -697,6 +703,7 @@ export default function App() {
             layout={layout}
             mergeParents={mergeParents}
             lineagePath={lineagePath}
+            lineageEndId={lineageOrder ? lineageOrder[lineageOrder.length - 1] : null}
             timeMode={timeMode}
             timeYear={timeYear}
             focusMode={focusMode}
@@ -836,6 +843,15 @@ export default function App() {
             </div>
           </div>
           {!lineageMode && <IntroHint />}
+          {lineageMode && (
+            <LineageBanner
+              graph={graph}
+              anchorId={activeId}
+              order={lineageOrder}
+              onClear={() => { setLineagePath(null); setLineageOrder(null); }}
+              onExit={toggleLineage}
+            />
+          )}
         </>
       ) : (
         <AccessibleTree

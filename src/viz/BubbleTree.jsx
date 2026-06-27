@@ -51,6 +51,7 @@ export default function BubbleTree({
   layout = 'organic',
   mergeParents = false,
   lineagePath = null,
+  lineageEndId = null,
   invitedIds = null,
   timeMode = false,
   timeYear = null,
@@ -71,6 +72,8 @@ export default function BubbleTree({
   mergeRef.current = mergeParents;
   const lineageRef = useRef(lineagePath);
   lineageRef.current = lineagePath;
+  const lineageEndRef = useRef(lineageEndId);
+  lineageEndRef.current = lineageEndId;
   const invitedRef = useRef(invitedIds);
   invitedRef.current = invitedIds;
   const layoutRef = useRef(layout);
@@ -1044,7 +1047,10 @@ export default function BubbleTree({
           } else {
             b.setVisualState({ ...target, labelAlpha }, dt);
           }
-          b.setActive(!browseRef.current && id === activeRef.current);
+          // Ring both ends of a traced lineage so the line's poles stand out.
+          const ringed = id === activeRef.current
+            || (lineageRef.current && id === lineageEndRef.current);
+          b.setActive(!browseRef.current && ringed);
           b.setCollapsePip(
             effectiveVis.has(id) &&
             id !== activeRef.current &&

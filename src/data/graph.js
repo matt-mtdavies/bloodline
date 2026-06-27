@@ -91,6 +91,34 @@ export function distancesFrom(graph, focusId) {
   return dist;
 }
 
+// Like pathBetween, but returns the ordered array [fromId, …, toId] (or null),
+// so callers can render the chain start → end. pathBetween wraps this in a Set.
+export function pathBetweenOrdered(graph, fromId, toId) {
+  if (fromId === toId) return [fromId];
+  const prev = new Map([[fromId, null]]);
+  const queue = [fromId];
+  while (queue.length) {
+    const cur = queue.shift();
+    const neighbours = [
+      ...graph.parents(cur).map((x) => x.id),
+      ...graph.children(cur).map((x) => x.id),
+      ...graph.partners(cur).map((x) => x.id),
+    ];
+    for (const n of neighbours) {
+      if (prev.has(n)) continue;
+      prev.set(n, cur);
+      if (n === toId) {
+        const path = [];
+        let c = toId;
+        while (c !== null) { path.push(c); c = prev.get(c); }
+        return path.reverse();
+      }
+      queue.push(n);
+    }
+  }
+  return null;
+}
+
 // BFS shortest path between two nodes across all relationship edges. Returns a
 // Set of person IDs on the path (including both endpoints), or null if no path.
 export function pathBetween(graph, fromId, toId) {
