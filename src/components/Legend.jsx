@@ -51,7 +51,7 @@ export default function Legend({ open, onClose, mergeParents, onToggleMerge, lay
           </li>
           <li>
             <span className="swatch swatch--nonbio" />
-            <span><b>A dashed line</b> is an adopted, step or foster bond — equal, just distinct.</span>
+            <span><b>A dashed line</b> is an adopted or foster bond — equal, just distinct. Step-bonds are read through the couple, so the tree stays clean; tap a person to reveal any standalone step links.</span>
           </li>
           <li>
             <span className="swatch swatch--memorial" />

@@ -1,20 +1,43 @@
 import { hex } from '../lib/color.js';
 
 /*
+ * A step parent-edge is "mediated" — already implied by a marriage — when the
+ * step-parent is currently partnered (not former) with a biological/adoptive
+ * parent of the child. e.g. Heather is step-mother to Jess *because* she is
+ * partnered with Ken, who is Jess's biological father. The couple pod plus
+ * Ken's solid line to Jess already encode the step bond, so the redundant
+ * dashed Heather→Jess line is suppressed on the canvas to keep the tree clean.
+ *
+ * Orphan step bonds (a step-parent with no current partnership to a bio/adoptive
+ * parent of the child) are NOT mediated — those keep a visible line. Step
+ * relationships always appear in profiles regardless of this rendering choice.
+ */
+function stepEdgeMediated(graph, parentId, childId) {
+  const bioAdopt = new Set(
+    graph.parents(childId)
+      .filter((p) => !p.qualifier || p.qualifier === 'biological' || p.qualifier === 'adoptive')
+      .map((p) => p.id),
+  );
+  return graph.partners(parentId).some(
+    (pt) => pt.status !== 'former' && bioAdopt.has(pt.id),
+  );
+}
+
+/*
  * Draws everything *between* the bubbles, every frame, into one Graphics that
  * sits behind them:
  *   - Couples as one visual unit: a soft membrane binding partners. Current
  *     unions read warm and solid; former partners are a faded dashed bond
  *     (still shown — divorce doesn't erase a co-parent); widowed unions carry
  *     the memorial violet.
- *   - Parent links: biological are solid and quiet; adopted / step / foster are
- *     dashed in a distinct tone so non-biological bonds are legible at a glance
- *     without being lesser.
+ *   - Parent links: biological are solid and quiet; adopted / foster are dashed
+ *     in a distinct tone. Step bonds implied by a marriage are not drawn (see
+ *     stepEdgeMediated); orphan step bonds ghost-faint until the person is active.
  *
  * Link opacity follows the ego camera: bonds far from the focused person fade
  * back with their bubbles.
  */
-export function drawLinks(g, graph, pos, isVisible, baseRadius, mergeParents = false, lineagePath = null) {
+export function drawLinks(g, graph, pos, isVisible, baseRadius, mergeParents = false, lineagePath = null, activeId = null) {
   g.clear();
   // Only draw a link when both people are currently revealed.
   const hidden = (a, b) => !(isVisible(a) && isVisible(b));
@@ -152,6 +175,17 @@ export function drawLinks(g, graph, pos, isVisible, baseRadius, mergeParents = f
     const b = pos.get(r.to_person);
     if (!a || !b) continue;
     const alpha = edgeAlpha(r.from_person, r.to_person);
+
+    // Step bonds: suppress entirely when implied by a current partnership to a
+    // bio/adoptive parent (the pod conveys it). Orphan step bonds stay but ghost
+    // back to a whisper unless this person is the active node.
+    if (r.qualifier === 'step') {
+      if (stepEdgeMediated(graph, r.from_person, r.to_person)) continue;
+      const touched = activeId != null && (r.from_person === activeId || r.to_person === activeId);
+      dashedCurve(g, a, b, 18, 0.5, { width: 2, color: hex('#b6a892'), alpha: alpha * (touched ? 0.85 : 0.16) });
+      continue;
+    }
+
     const biological = r.qualifier === 'biological';
     const color = biological ? '#8a7d6b' : '#b6a892';
 
@@ -244,15 +278,24 @@ export function drawLinksChart(g, graph, pos, isVisible, baseRadius, lineagePath
   // stem from the grandparent level aligns symmetrically with the couple bar below.
   const effectiveX = (id) => coupleMidX.get(id) ?? pos.get(id)?.x ?? 0;
 
-  // Group each child with ALL of its visible parents so siblings share one bracket.
+  // Group each child with its visible parents so siblings share one bracket.
+  // Step bonds implied by a marriage are suppressed (same rule as the organic
+  // view) — both as their own bracket and as contributors to the bio bracket's
+  // origin, so a mediated step-parent doesn't skew where the bio line hangs.
+  const mediatedStep = (pid, cid) => {
+    const e = graph.parents(cid).find((p) => p.id === pid);
+    return e?.qualifier === 'step' && stepEdgeMediated(graph, pid, cid);
+  };
   const families = new Map(); // key → { parents, qualifier, kids }
   for (const r of graph.relationships) {
     if (r.type !== 'parent') continue;
     const parentId = r.from_person;
     const childId = r.to_person;
     if (!isVisible(parentId) || !isVisible(childId)) continue;
+    if (mediatedStep(parentId, childId)) continue;
 
-    const childParents = graph.parents(childId).filter((p) => isVisible(p.id));
+    const childParents = graph.parents(childId)
+      .filter((p) => isVisible(p.id) && !mediatedStep(p.id, childId));
     const qual = r.qualifier ?? 'biological';
     const key = childParents.map((p) => p.id).sort().join('|') + ':' + qual;
     if (!families.has(key))

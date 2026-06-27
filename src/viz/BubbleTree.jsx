@@ -943,7 +943,7 @@ export default function BubbleTree({
         if (layoutRef.current === 'chart') {
           drawLinksChart(linkGfx, graphRef.current, pos, (id) => effectiveVis.has(id), BASE_RADIUS, lineage);
         } else {
-          drawLinks(linkGfx, graphRef.current, pos, (id) => vis.has(id), BASE_RADIUS, mergeRef.current, lineage);
+          drawLinks(linkGfx, graphRef.current, pos, (id) => vis.has(id), BASE_RADIUS, mergeRef.current, lineage, activeRef.current);
         }
       });
     })();
