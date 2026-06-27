@@ -5152,6 +5152,25 @@
   line-height: 1.4;
 }
 
+.up__admin-link {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px solid var(--hairline, #ebedf0);
+  background: var(--ground, #f7f3ec);
+  color: var(--ink, #241f1c);
+  text-decoration: none;
+  transition: background 0.15s, border-color 0.15s;
+}
+.up__admin-link:hover { background: #fff; border-color: #d8d2c8; }
+.up__admin-link > svg:first-child { color: var(--accent, #c2603a); flex-shrink: 0; }
+.up__admin-link > svg:last-child { margin-left: auto; color: var(--ink-soft, #8a8480); flex-shrink: 0; }
+.up__admin-title { display: block; font-size: 15px; font-weight: 600; }
+.up__admin-desc { display: block; font-size: 12px; color: var(--ink-soft, #8a8480); margin-top: 1px; }
+
 .up__claim-select {
   width: 100%;
   margin-top: 8px;

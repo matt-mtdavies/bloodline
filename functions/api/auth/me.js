@@ -24,5 +24,10 @@ export async function onRequestGet({ env, data }) {
     } catch { /* migration may not be applied yet — skip gracefully */ }
   }
 
-  return json({ uid: data.user.uid, email: data.user.email, display_name, person_id });
+  // Surface admin status (compared server-side so ADMIN_EMAIL never leaves the
+  // server) — the client uses this to reveal the Admin Dashboard link.
+  const isAdmin = !!env.ADMIN_EMAIL
+    && data.user.email?.toLowerCase() === env.ADMIN_EMAIL.trim().toLowerCase();
+
+  return json({ uid: data.user.uid, email: data.user.email, display_name, person_id, isAdmin });
 }

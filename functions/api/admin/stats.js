@@ -92,6 +92,11 @@ export async function onRequestGet({ env, data }) {
 
     return json({
       generated_at: new Date().toISOString(),
+      email: {
+        brevo_configured: !!env.BREVO_API_KEY,
+        from_email: env.FROM_EMAIL || null,
+        app_url: env.APP_URL || null,
+      },
       users: {
         total: totalUsers?.n ?? 0,
         new_7d: newUsers7d?.n ?? 0,

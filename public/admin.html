@@ -290,6 +290,21 @@
       <div class="spinner"><div class="spin-icon"></div></div>
     </div>
 
+    <!-- Email & deliverability -->
+    <p class="section-heading">Email &amp; Deliverability</p>
+    <div class="cards" id="email-cards">
+      <div class="spinner"><div class="spin-icon"></div></div>
+    </div>
+    <div class="table-card" style="margin-bottom:28px">
+      <h3>Test invite email delivery</h3>
+      <p style="font-size:13px;color:var(--ink-soft);margin-bottom:14px">
+        Sends a real email — via the same provider invites use — to your own admin
+        address. If it lands in your inbox, invite delivery is healthy.
+      </p>
+      <button class="topbar-refresh" id="btn-test-email" style="font-weight:600">Send test email to myself</button>
+      <p id="test-email-result" style="font-size:13px;margin-top:12px"></p>
+    </div>
+
     <!-- Charts -->
     <p class="section-heading" style="margin-top: 8px;">Trends</p>
     <div class="charts">
@@ -399,6 +414,49 @@
       card('Pending', inv.pending, 'awaiting response'),
       card('Expired', inv.expired, '', inv.expired > 0 ? '' : ''),
     ].join('');
+  }
+
+  function renderEmailCards(data) {
+    const e = data.email || {};
+    const ok = (v) => v
+      ? '<span class="badge badge-green">Configured</span>'
+      : '<span class="badge badge-red">Missing</span>';
+    document.getElementById('email-cards').innerHTML = [
+      card('Email provider', e.brevo_configured ? '✓' : '✗',
+        e.brevo_configured ? 'Brevo API key set' : 'BREVO_API_KEY not set',
+        e.brevo_configured ? 'green' : 'accent'),
+      card('Sender address', '', `${e.from_email || '<em style="color:var(--danger)">not set</em>'} ${ok(e.from_email)}`),
+      card('App URL', '', `${e.app_url || '<em style="color:var(--danger)">not set</em>'} ${ok(e.app_url)}`),
+    ].join('');
+  }
+
+  async function sendTestEmail() {
+    const btn = document.getElementById('btn-test-email');
+    const out = document.getElementById('test-email-result');
+    btn.disabled = true;
+    btn.textContent = 'Sending…';
+    out.textContent = '';
+    out.style.color = 'var(--ink-soft)';
+    try {
+      const res = await fetch('/api/debug/email', { method: 'POST' });
+      const body = await res.json().catch(() => ({}));
+      if (res.ok && body.sent) {
+        out.style.color = 'var(--accent-2)';
+        out.innerHTML = `✓ Sent to <strong>${escHtml(body.to || '')}</strong> — check your inbox (and spam).`;
+      } else if (body.dev) {
+        out.style.color = 'var(--gold)';
+        out.textContent = 'Email is suppressed in this environment (no provider key).';
+      } else {
+        out.style.color = 'var(--danger)';
+        out.textContent = '✗ Failed: ' + (body.error || 'unknown error');
+      }
+    } catch {
+      out.style.color = 'var(--danger)';
+      out.textContent = '✗ Network error — could not reach the server.';
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Send test email to myself';
+    }
   }
 
   function renderSignupChart(data) {
@@ -589,6 +647,7 @@
         'Updated ' + new Date(data.generated_at).toLocaleTimeString('en-CA', { hour: '2-digit', minute: '2-digit' });
 
       renderCards(data);
+      renderEmailCards(data);
       renderSignupChart(data);
       renderInviteChart(data);
       renderUsersTable(data);
@@ -607,6 +666,7 @@
   }
 
   document.getElementById('btn-refresh').addEventListener('click', loadData);
+  document.getElementById('btn-test-email').addEventListener('click', sendTestEmail);
   loadData();
 </script>
 </body>

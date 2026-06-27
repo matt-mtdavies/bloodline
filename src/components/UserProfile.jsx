@@ -203,6 +203,20 @@ export default function UserProfile({ user, people = [], onClose, onLogout, onSa
           </div>
         )}
 
+        {/* Admin dashboard — only visible to the site admin */}
+        {user?.isAdmin && (
+          <div className="fs__section">
+            <a className="up__admin-link" href="/admin.html">
+              <ChartIcon />
+              <span>
+                <span className="up__admin-title">Admin dashboard</span>
+                <span className="up__admin-desc">Users, families, invites &amp; email deliverability</span>
+              </span>
+              <ArrowIcon />
+            </a>
+          </div>
+        )}
+
         {/* Sign out */}
         <div className="fs__danger">
           {onLogout && (
@@ -236,6 +250,23 @@ function CameraIcon() {
     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/>
       <circle cx="12" cy="13" r="4" stroke="currentColor" strokeWidth="1.8"/>
+    </svg>
+  );
+}
+
+function ChartIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M3 3v18h18" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+      <path d="M7 14l3.5-4 3 3L18 7" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  );
+}
+
+function ArrowIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M9 18l6-6-6-6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
     </svg>
   );
 }
