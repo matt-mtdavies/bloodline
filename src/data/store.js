@@ -357,7 +357,9 @@ async function _pollServer() {
     // Only apply if server is genuinely ahead (another editor saved).
     if (serverSeq <= localSeq) return;
 
-    commit(server, { fromServer: true });
+    // Merge rather than overwrite — local edits that haven't finished saving
+    // yet would be silently wiped by a raw commit(server).
+    await _fetchAndMerge(state);
     window.dispatchEvent(new CustomEvent('bloodline:tree-polled'));
   } catch { /* silent — try next interval */ }
 }
