@@ -11,7 +11,7 @@ import {
 import { Bubble } from './bubble.js';
 import { BirthEffect } from './birth.js';
 import { drawLinks, drawLinksChart } from './links.js';
-import { distancesFrom } from '../data/graph.js';
+import { distancesFrom, relationLabel } from '../data/graph.js';
 import { Spring } from '../lib/spring.js';
 
 const BASE_RADIUS = 46;
@@ -54,6 +54,7 @@ export default function BubbleTree({
   invitedIds = null,
   timeMode = false,
   timeYear = null,
+  focusMode = false,
   onCameraMode,
   apiRef,
 }) {
@@ -76,6 +77,8 @@ export default function BubbleTree({
   timeModeRef.current = timeMode;
   const timeYearRef = useRef(timeYear);
   timeYearRef.current = timeYear;
+  const focusRef = useRef(focusMode);
+  focusRef.current = focusMode;
   // Callbacks are captured once in the mount effect, so we route them through
   // refs to ensure React prop changes (e.g. lineage mode toggling onOpenPerson)
   // are always reflected without re-mounting the canvas.
@@ -131,6 +134,10 @@ export default function BubbleTree({
       const births = new Map();      // personId → BirthEffect (currently animating)
       const wasVisible = new Set();  // bubbles visible last frame, to spot new arrivals
       let fxSeeded = false;          // first frame seeds wasVisible without celebrating
+      // Focus-mode relationship captions (e.g. "Father", "Niece"), cached by id
+      // and rebuilt when the active person or graph changes (relationships are
+      // relative to the active person).
+      const relCache = new Map();
 
       const graph = graphRef.current; // initial build snapshot
 
@@ -157,12 +164,35 @@ export default function BubbleTree({
         .distance((l) => (l.kind === 'partner' ? 112 : 280))
         .strength((l) => (l.kind === 'partner' ? 0.9 : 0.26));
 
+      // Resting generational pull. Focus Family wants crisp rows — parents
+      // clearly above, children clearly below — so the band force is much
+      // stronger while focused; otherwise it's a gentle organic drift.
+      const restingYStrength = () => (focusRef.current ? 0.4 : 0.085);
+
+      // Y-band target generation. A partner with no ancestry of their own (a
+      // childless in-law, including a former partner we deliberately keep out
+      // of generation *leveling*) would otherwise default to gen 0 and float
+      // up to the eldest row. Lift them to sit on their partner's row instead —
+      // layout only; the stored `gen` (chart rows, labels) is untouched. Safe
+      // because a childless person has no descendants to cascade.
+      const layoutGen = (id) => {
+        let g = gen.get(id) ?? 0;
+        if (graphRef.current.parents(id).length === 0) {
+          for (const p of graphRef.current.partners(id)) {
+            const pg = gen.get(p.id) ?? 0;
+            if (pg > g) g = pg;
+          }
+        }
+        return g;
+      };
+      const genYTarget = (d) => layoutGen(d.id) * GEN_GAP - 260;
+
       const sim = forceSimulation(nodes)
         .force('link', linkForce)
         .force('charge', forceManyBody().strength(ORGANIC_CHARGE).distanceMax(1200))
         .force('collide', forceCollide(COLLIDE).strength(0.9))
         .force('x', forceX(0).strength(SPREAD_X))
-        .force('y', forceY((d) => (gen.get(d.id) ?? 0) * GEN_GAP - 260).strength(0.085))
+        .force('y', forceY(genYTarget).strength(restingYStrength()))
         .alpha(1)
         .alphaDecay(0.018)
         .alphaTarget(reducedMotion ? 0 : 0.012)
@@ -250,7 +280,7 @@ export default function BubbleTree({
         relayout() {
           state.radialTargets = new Map();
           const mode = state.layoutMode;
-          const genY = (d) => (gen.get(d.id) ?? 0) * GEN_GAP - 260;
+          const genY = genYTarget;
           if (mode === 'radial') {
             state.radialTargets = computeRadialTargets(
               graphRef.current,
@@ -303,9 +333,10 @@ export default function BubbleTree({
             state.applyChartLayout();
           } else {
             // organic — the default; free-flowing with gentle gen bands
+            // (stronger generational rows while Focus Family is active).
             sim.force('charge', forceManyBody().strength(ORGANIC_CHARGE).distanceMax(1200));
             sim.force('x', forceX(0).strength(SPREAD_X));
-            sim.force('y', forceY(genY).strength(0.085));
+            sim.force('y', forceY(genY).strength(restingYStrength()));
             linkForce
               .distance((l) => (l.kind === 'partner' ? 112 : 280))
               .strength((l) => (l.kind === 'partner' ? 0.9 : 0.26));
@@ -345,6 +376,7 @@ export default function BubbleTree({
         setActive(id, animate = true) {
           activeRef.current = id;
           state.dist = distancesFrom(graphRef.current, id);
+          relCache.clear(); // relationships are relative to the active person
           state.enterFollow();
           if (!reducedMotion && animate) {
             zoom.velocity -= 1.6;
@@ -354,13 +386,13 @@ export default function BubbleTree({
             const mode = state.layoutMode;
             if (mode !== 'chart' && mode !== 'radial') {
               if (reorgTimer) clearTimeout(reorgTimer);
-              const genY = (d) => (gen.get(d.id) ?? 0) * GEN_GAP - 260;
+              const genY = genYTarget;
               sim.force('y', forceY(genY).strength(0.45));
               sim.alpha(0.88);
               reorgTimer = setTimeout(() => {
                 reorgTimer = null;
                 if (state.layoutMode !== 'chart' && state.layoutMode !== 'radial') {
-                  sim.force('y', forceY(genY).strength(0.085));
+                  sim.force('y', forceY(genY).strength(restingYStrength()));
                 }
               }, 1800);
             }
@@ -463,8 +495,18 @@ export default function BubbleTree({
           sim.alpha(0.5);
           gen = computeGenerations(g);
           state.dist = distancesFrom(g, activeRef.current);
+          relCache.clear(); // graph changed — relationship labels may differ
           if (state.layoutMode === 'radial' || state.layoutMode === 'weighted') state.relayout();
           if (state.layoutMode === 'chart') state.applyChartLayout();
+        },
+        // Focus Family toggled — re-apply the (now stronger/weaker) generational
+        // banding, refresh relationship captions, and reheat so rows re-form.
+        refreshFocus() {
+          relCache.clear();
+          if (state.layoutMode !== 'chart' && state.layoutMode !== 'radial') {
+            sim.force('y', forceY(genYTarget).strength(restingYStrength()));
+            sim.alpha(0.6);
+          }
         },
         // Screen-space centre of a person's bubble — the card animates out of it.
         getScreenPos(id) {
@@ -979,8 +1021,26 @@ export default function BubbleTree({
           );
           b.setInvited(!!(invitedRef.current?.has(id)));
           b.setChartBadge(layoutRef.current === 'chart');
-          // Depth hints: show on visible bubbles that have family beyond the current reveal.
-          if (effectiveVis.has(id)) {
+
+          // Focus Family: caption each bubble with its relationship to the active
+          // person ("Father", "Niece", …). Cached per id (cleared on active/graph
+          // change). In focus mode this caption replaces the depth-hint dots so
+          // the space below the name reads cleanly.
+          let relText = null;
+          if (focusRef.current && effectiveVis.has(id) && id !== activeRef.current
+              && !cardOpen && !lineage) {
+            relText = relCache.get(id);
+            if (relText === undefined) {
+              relText = relationLabel(graphRef.current, activeRef.current, id);
+              relCache.set(id, relText);
+            }
+          }
+          b.setRelationLabel(relText);
+
+          // Depth hints: show on visible bubbles that have family beyond the
+          // current reveal — suppressed in focus mode (the relationship caption
+          // takes that slot, and the family there is deliberately scoped).
+          if (effectiveVis.has(id) && !focusRef.current) {
             const gg = graphRef.current;
             b.setDepthHint(
               gg.parents(id).some((x) => !effectiveVis.has(x.id)),
@@ -1068,6 +1128,13 @@ export default function BubbleTree({
   useEffect(() => {
     api.current?.setLayout(layout);
   }, [layout]);
+
+  // Focus Family toggled: tighten/loosen the generational rows + refresh the
+  // relationship captions shown on bubbles.
+  useEffect(() => {
+    focusRef.current = focusMode;
+    api.current?.refreshFocus();
+  }, [focusMode]);
 
   // Re-place nodes when the visible set changes: radial/weighted re-run forces,
   // chart re-computes fixed grid positions.

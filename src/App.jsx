@@ -685,6 +685,7 @@ export default function App() {
             lineagePath={lineagePath}
             timeMode={timeMode}
             timeYear={timeYear}
+            focusMode={focusMode}
             onCameraMode={setCameraFree}
             apiRef={viewApi}
           />

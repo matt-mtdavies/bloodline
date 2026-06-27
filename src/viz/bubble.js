@@ -311,6 +311,50 @@ export class Bubble {
     // Name label — eases independently so it can linger a beat after the bubble fades
     this._labelAlpha += (labelAlpha - this._labelAlpha) * Math.min(1, dt * 4.5);
     if (this.nameLabel) this.nameLabel.alpha = this._labelAlpha;
+    if (this._relLabel) this._relLabel.alpha = this._labelAlpha;
+  }
+
+  // Focus-mode relationship caption — a small terracotta pill below the name
+  // ("Father", "Niece", …). Cheap: only rebuilt when the text changes. Its
+  // alpha tracks the name label (driven in setVisualState) so it fades with
+  // the bubble. Pass null/'' to hide.
+  setRelationLabel(text) {
+    if (text === this._relText) return;
+    this._relText = text;
+    if (this._relLabel) { this._relLabel.destroy(); this._relLabel = null; }
+    if (!text) return;
+    const r = this.r;
+    const pillH = 17;
+    const pillW = Math.max(30, text.length * 6 + 16);
+    const rad = pillH / 2;
+
+    const bg = new Graphics();
+    bg.roundRect(-pillW / 2 + 0.5, -pillH / 2 + 1.5, pillW, pillH, rad)
+      .fill({ color: 0x000000, alpha: 0.06 });
+    bg.roundRect(-pillW / 2, -pillH / 2, pillW, pillH, rad)
+      .fill({ color: hex('#c2603a'), alpha: 0.92 });
+
+    const label = new Text({
+      text,
+      style: {
+        fontFamily: TREE_FONT,
+        fontSize: 10.5,
+        fontWeight: '700',
+        fill: '#ffffff',
+        letterSpacing: 0.3,
+      },
+    });
+    label.anchor.set(0.5);
+    label.resolution = 2.5;
+
+    const group = new Container();
+    group.addChild(bg);
+    group.addChild(label);
+    group.position.set(0, r + 38);
+    group.eventMode = 'none';
+    group.alpha = this._labelAlpha;
+    this.root.addChild(group);
+    this._relLabel = group;
   }
 
   // Birth entrance — driven by BirthEffect during the time-view celebration.
@@ -332,6 +376,7 @@ export class Bubble {
     this.setBlur(0);
     this._labelAlpha += (0 - this._labelAlpha) * 0.2;
     if (this.nameLabel) this.nameLabel.alpha = this._labelAlpha;
+    if (this._relLabel) this._relLabel.alpha = this._labelAlpha;
   }
 
   // Distant bubbles recede out of focus. Filter is attached lazily and removed
