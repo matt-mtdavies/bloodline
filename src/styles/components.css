@@ -5798,3 +5798,85 @@
 @media (prefers-reduced-motion: reduce) {
   .tl-entry { opacity: 1; transform: none; transition: none; }
 }
+
+/* ════════════════════════════════════════════════════════════════════════
+   Claim Your Spot (welcome) + Install nudge
+   ════════════════════════════════════════════════════════════════════════ */
+.claim { max-width: 440px; padding-bottom: 18px; }
+.claim__hero {
+  position: relative; overflow: hidden; text-align: center;
+  margin: -4px -4px 20px; padding: 30px 24px 24px;
+  border-radius: 22px;
+  background: linear-gradient(160deg, #fbf4ee 0%, #f6ece3 100%);
+}
+.claim__hero-aurora {
+  position: absolute; inset: -50% -10% auto -10%; height: 180%;
+  background:
+    radial-gradient(40% 40% at 25% 30%, rgba(194,96,58,0.20), transparent 70%),
+    radial-gradient(40% 40% at 78% 24%, rgba(176,134,66,0.18), transparent 70%),
+    radial-gradient(46% 46% at 60% 82%, rgba(63,94,78,0.12), transparent 70%);
+  background-size: 200% 200%; animation: ti-aurora 14s ease infinite; pointer-events: none;
+}
+.claim__spark { position: relative; color: var(--accent, #c2603a); display: inline-block; animation: ti-twinkle 2.6s ease-in-out infinite; }
+.claim__welcome { position: relative; margin: 6px 0 0; font-size: 13px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-soft, #8a8480); }
+.claim__family { position: relative; margin: 2px 0 0; font-family: 'Fraunces', Georgia, serif; font-size: 26px; font-weight: 700; color: var(--ink, #241f1c); line-height: 1.15; }
+
+.claim__lead { text-align: center; font-size: 15px; color: var(--ink-soft, #6b6260); margin: 0 0 16px; }
+.claim__suggest { display: flex; flex-direction: column; align-items: center; }
+.claim__candidate { display: flex; flex-direction: column; align-items: center; gap: 6px; margin-bottom: 18px; }
+.claim__candidate-name { font-size: 18px; font-weight: 700; color: var(--ink, #241f1c); }
+.claim__candidate-sub { font-size: 13px; color: var(--ink-faint, #b0a9a5); }
+.claim__primary {
+  width: 100%; padding: 15px; border: none; border-radius: 14px; cursor: pointer;
+  background: var(--accent, #c2603a); color: #fff; font-size: 16px; font-weight: 600;
+  box-shadow: 0 4px 18px rgba(194,96,58,0.28);
+}
+.claim__primary:active { transform: scale(0.99); }
+.claim__link { margin-top: 12px; background: none; border: none; color: var(--ink-soft, #6b6260); font-size: 14px; font-weight: 600; cursor: pointer; }
+
+.claim__search {
+  width: 100%; border: 1.5px solid var(--hairline, #ebedf0); border-radius: 12px;
+  padding: 13px 15px; font-size: 16px; color: var(--ink, #241f1c); outline: none; margin-bottom: 8px;
+}
+.claim__search:focus { border-color: var(--accent, #c2603a); }
+.claim__list { list-style: none; margin: 0; padding: 0; max-height: 320px; overflow-y: auto; }
+.claim__row {
+  display: flex; align-items: center; gap: 12px; width: 100%; text-align: left;
+  padding: 9px 8px; border: none; background: none; cursor: pointer; border-radius: 12px;
+}
+.claim__row:hover { background: var(--ground, #f7f3ec); }
+.claim__row-name { font-size: 15px; font-weight: 500; color: var(--ink, #241f1c); }
+.claim__row-year { font-size: 12px; color: var(--ink-faint, #b0a9a5); }
+.claim__row-go { margin-left: auto; color: var(--ink-faint, #c0b8b4); }
+.claim__empty { color: var(--ink-soft, #8a8480); font-size: 14px; padding: 16px 8px; }
+.claim__skip { display: block; margin: 16px auto 0; background: none; border: none; color: var(--ink-faint, #b0a9a5); font-size: 13px; font-weight: 600; cursor: pointer; }
+
+/* Install nudge — a floating card above the dock */
+.install-card {
+  position: fixed; left: 50%; transform: translateX(-50%);
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 96px);
+  z-index: 60; width: min(92vw, 420px);
+  display: flex; align-items: flex-start; gap: 13px;
+  background: rgba(255,255,255,0.96); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+  border: 1px solid var(--hairline, #ebedf0); border-radius: 18px;
+  box-shadow: 0 10px 36px rgba(36,31,28,0.16); padding: 16px 16px 16px 18px;
+  animation: lb-drop 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.install-card__icon { flex-shrink: 0; margin-top: 2px; }
+.install-card__body { flex: 1; min-width: 0; }
+.install-card__title { margin: 0 0 4px; font-size: 15px; font-weight: 700; color: var(--ink, #241f1c); }
+.install-card__text { margin: 0; font-size: 13px; line-height: 1.45; color: var(--ink-soft, #6b6260); }
+.install-card__text strong { color: var(--ink, #241f1c); }
+.install-card__cta {
+  margin-top: 11px; border: none; border-radius: 11px; cursor: pointer;
+  background: var(--accent, #c2603a); color: #fff; font-size: 14px; font-weight: 600; padding: 9px 16px;
+}
+.install-card__close {
+  flex-shrink: 0; width: 26px; height: 26px; border: none; background: none; cursor: pointer;
+  color: var(--ink-faint, #b0a9a5); border-radius: 8px; display: grid; place-items: center; margin: -4px -4px 0 0;
+}
+.install-card__close:hover { background: var(--ground, #f7f3ec); }
+
+@media (prefers-reduced-motion: reduce) {
+  .claim__spark, .claim__hero-aurora, .install-card { animation: none; }
+}

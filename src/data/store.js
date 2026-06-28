@@ -848,6 +848,12 @@ export function updatePerson(id, fields, activityEvent = null) {
   commit(activityEvent ? withActivity(next, activityEvent) : next);
 }
 
+// Claim which person in the tree represents the logged-in viewer. Drives the
+// focus + perspective (relationship labels, insights) from their seat.
+export function setMyPerson(personId) {
+  commit({ ...state, myPersonId: personId });
+}
+
 export function setPhoto(id, dataUrl, { recordActivity = false } = {}) {
   const next = { ...state, people: state.people.map((p) => (p.id === id ? { ...p, photo: dataUrl } : p)) };
   if (recordActivity) {

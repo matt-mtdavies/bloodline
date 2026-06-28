@@ -34,6 +34,7 @@ import {
   migratePhotosToR2,
   migrateDocsToR2,
   setCurrentUser,
+  setMyPerson,
   isNewUrl,
 } from './data/store.js';
 import { uploadPhoto, generateThumb, uploadDocument } from './lib/image.js';
@@ -62,6 +63,8 @@ import InviteSheet from './components/InviteSheet.jsx';
 import TreeInsights from './components/TreeInsights.jsx';
 import LineageBanner from './components/LineageBanner.jsx';
 import TimelineView from './components/TimelineView.jsx';
+import ClaimSpot from './components/ClaimSpot.jsx';
+import InstallPrompt from './components/InstallPrompt.jsx';
 import ActivityFeed from './components/ActivityFeed.jsx';
 import GedcomImport from './components/GedcomImport.jsx';
 import FamilySearchImport from './components/FamilySearchImport.jsx';
@@ -100,6 +103,9 @@ export default function App() {
   // after URL is stripped, so the SaveNudge remains visible until they log in).
   const [isAnonymousTrial] = useState(() => isNewUrl);
   const [user, setUser] = useState(null);
+  const [promptClaim, setPromptClaim] = useState(false); // welcome a member to claim their spot
+  const [installEvent, setInstallEvent] = useState(null); // captured beforeinstallprompt
+  const [showInstall, setShowInstall] = useState(false);
   // Set when a user with existing tree data accepts an invite — gates the app
   // on the merge wizard until they complete or skip the merge.
   const [pendingInvite, setPendingInvite] = useState(_initialPendingInvite);
@@ -153,7 +159,68 @@ export default function App() {
       setTimeout(() => setSyncToast(null), 5000);
     });
     setAuthState('authed');
+
+    // Welcome a member who just joined a family but hasn't yet linked themselves
+    // to a person in the tree — prompt them to claim their spot. Gated to the
+    // join flow (not onboarding owners) and to a one-time dismissal per user.
+    try {
+      const seen = localStorage.getItem(`bl_claim_seen_${u.uid}`);
+      if (joiningFamily && !u.person_id && !seen) setPromptClaim(true);
+    } catch { if (joiningFamily && !u.person_id) setPromptClaim(true); }
   }
+
+  const markClaimSeen = useCallback(() => {
+    setPromptClaim(false);
+    try { if (user?.uid) localStorage.setItem(`bl_claim_seen_${user.uid}`, '1'); } catch { /* ignore */ }
+  }, [user]);
+
+  const handleClaimSpot = useCallback(async (personId, personName) => {
+    try {
+      await fetch('/api/user/profile', {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ person_id: personId, person_name: personName }),
+      });
+    } catch { /* non-fatal — claim still applies locally */ }
+    setUser((u) => ({ ...u, person_id: personId }));
+    setCurrentUser({ ...user, person_id: personId });
+    setMyPerson(personId); // store → focuses the tree + perspective on them
+    markClaimSeen();
+    setTimeout(() => viewApi.current?.refocus(0.6), 120);
+  }, [user, markClaimSeen]);
+
+  // ── Install as a web app ───────────────────────────────────────────────────
+  // Capture the install event (Chrome/Android/desktop) so we can fire the real
+  // prompt from our own UI; clear it once installed.
+  useEffect(() => {
+    const onBIP = (e) => { e.preventDefault(); setInstallEvent(e); };
+    const onInstalled = () => { setInstallEvent(null); setShowInstall(false); };
+    window.addEventListener('beforeinstallprompt', onBIP);
+    window.addEventListener('appinstalled', onInstalled);
+    return () => {
+      window.removeEventListener('beforeinstallprompt', onBIP);
+      window.removeEventListener('appinstalled', onInstalled);
+    };
+  }, []);
+
+  const dismissInstall = useCallback(() => {
+    setShowInstall(false);
+    try { localStorage.setItem('bl_install_dismissed', '1'); } catch { /* ignore */ }
+  }, []);
+
+  // Offer the install nudge shortly after sign-in — once the claim prompt (if
+  // any) has been dealt with, when not already installed and not dismissed.
+  useEffect(() => {
+    if (authState !== 'authed' || promptClaim) return;
+    const standalone = window.matchMedia?.('(display-mode: standalone)').matches
+      || window.navigator.standalone;
+    const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent || '');
+    let dismissed = false;
+    try { dismissed = !!localStorage.getItem('bl_install_dismissed'); } catch { /* ignore */ }
+    if (standalone || dismissed || (!installEvent && !isIOS)) return;
+    const t = setTimeout(() => setShowInstall(true), 1600);
+    return () => clearTimeout(t);
+  }, [authState, promptClaim, installEvent]);
 
   useEffect(() => {
     if (isDemo || isNewUrl) return;
@@ -947,6 +1014,20 @@ export default function App() {
           onNavigate={(id) => { setTimelineOpen(false); activate(id); openPerson(id); }}
           onClose={() => setTimelineOpen(false)}
         />
+      )}
+
+      {promptClaim && graph.people.length > 1 && (
+        <ClaimSpot
+          graph={graph}
+          familyName={data.familyName}
+          viewerEmail={user?.email}
+          onClaim={handleClaimSpot}
+          onSkip={markClaimSeen}
+        />
+      )}
+
+      {showInstall && (
+        <InstallPrompt installEvent={installEvent} onClose={dismissInstall} />
       )}
 
       {addAnchorId && graph.byId.get(addAnchorId) && (
