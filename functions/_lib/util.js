@@ -87,7 +87,7 @@ export async function recordEmailStatus(env, inviteId, status, error, sentAt) {
 // Send a transactional email via Brevo.
 // Pass `text` alongside `html` — emails with a plain-text alternative score
 // significantly better in spam filters (Hotmail, Exchange, APG corporate, etc.)
-export async function sendEmail(env, { to, subject, html, text }) {
+export async function sendEmail(env, { to, subject, html, text, replyTo, tag }) {
   if (!env.BREVO_API_KEY) {
     console.log('[dev] email suppressed (no BREVO_API_KEY):', subject, '->', to);
     return { dev: true };
@@ -104,6 +104,10 @@ export async function sendEmail(env, { to, subject, html, text }) {
     htmlContent: html,
   };
   if (text) body.textContent = text;
+  // A real reply-to (the inviter) reads as a genuine personal message and lifts
+  // inbox placement; tags let us see per-type delivery in Brevo's dashboard.
+  if (replyTo) body.replyTo = { email: replyTo };
+  if (tag) body.tags = [tag];
   const res = await fetch('https://api.brevo.com/v3/smtp/email', {
     method: 'POST',
     headers: {

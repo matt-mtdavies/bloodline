@@ -305,6 +305,16 @@
       <p id="test-email-result" style="font-size:13px;margin-top:12px"></p>
     </div>
 
+    <div class="table-card" style="margin-bottom:28px">
+      <h3>Brevo delivery check</h3>
+      <p style="font-size:13px;color:var(--ink-soft);margin-bottom:14px">
+        Asks Brevo directly: is the sender verified, is the domain authenticated (DKIM/SPF),
+        and what actually happened to recent emails (delivered / bounced / blocked / spam).
+      </p>
+      <button class="topbar-refresh" id="btn-diag" style="font-weight:600">Run delivery check</button>
+      <div id="diag-result" style="margin-top:14px"></div>
+    </div>
+
     <div class="table-card" id="email-failures" style="margin-bottom:28px;display:none">
       <h3>Recent invite email failures</h3>
       <table id="table-email-failures">
@@ -494,6 +504,55 @@
     } finally {
       btn.disabled = false;
       btn.textContent = 'Send test email to myself';
+    }
+  }
+
+  async function runDiagnostic() {
+    const btn = document.getElementById('btn-diag');
+    const out = document.getElementById('diag-result');
+    btn.disabled = true; btn.textContent = 'Checking…';
+    out.innerHTML = '';
+    try {
+      const res = await fetch('/api/admin/email-diagnostic');
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) { out.innerHTML = `<p style="color:var(--danger)">${escHtml(d.error || res.statusText)}</p>`; return; }
+      const yn = (v) => v === true
+        ? '<span class="badge badge-green">Yes</span>'
+        : v === false ? '<span class="badge badge-red">No</span>'
+        : '<span class="badge badge-amber">Unknown</span>';
+      const rows = [
+        ['Sender verified in Brevo', yn(d.sender_verified)],
+        [`Domain authenticated (DKIM/SPF) — ${escHtml(d.from_domain || '?')}`, yn(d.domain_authenticated)],
+      ];
+      let html = '<table><tbody>' + rows.map((r) =>
+        `<tr><td class="primary">${r[0]}</td><td style="text-align:right">${r[1]}</td></tr>`).join('') + '</tbody></table>';
+
+      if (d.account?.credits != null) {
+        html += `<p style="font-size:13px;color:var(--ink-soft);margin-top:10px">Email credits remaining: <strong>${d.account.credits}</strong></p>`;
+      }
+      const ec = d.event_counts || {};
+      if (Object.keys(ec).length) {
+        html += '<p style="font-size:12px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-soft);margin:16px 0 8px">Last 30 days — delivery events</p>';
+        html += '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px">' +
+          Object.entries(ec).map(([k, v]) => {
+            const bad = /bounce|block|spam|invalid|error/i.test(k);
+            return `<span class="badge ${bad ? 'badge-red' : 'badge-green'}">${escHtml(k)}: ${v}</span>`;
+          }).join('') + '</div>';
+      }
+      if (d.recent_events?.length) {
+        html += '<table style="margin-top:10px"><thead><tr><th>Recipient</th><th>Event</th><th>When</th></tr></thead><tbody>' +
+          d.recent_events.map((e) => {
+            const bad = /bounce|block|spam|invalid|error/i.test(e.event);
+            return `<tr><td class="primary">${escHtml(e.email)}</td><td style="color:${bad ? 'var(--danger)' : 'var(--accent-2)'}">${escHtml(e.event)}${e.reason ? ' — ' + escHtml(e.reason) : ''}</td><td class="muted">${escHtml((e.date || '').slice(0, 16).replace('T', ' '))}</td></tr>`;
+          }).join('') + '</tbody></table>';
+      } else {
+        html += '<p style="font-size:13px;color:var(--ink-soft);margin-top:10px">No recent delivery events returned by Brevo.</p>';
+      }
+      out.innerHTML = html;
+    } catch {
+      out.innerHTML = '<p style="color:var(--danger)">Network error.</p>';
+    } finally {
+      btn.disabled = false; btn.textContent = 'Run delivery check';
     }
   }
 
@@ -705,6 +764,7 @@
 
   document.getElementById('btn-refresh').addEventListener('click', loadData);
   document.getElementById('btn-test-email').addEventListener('click', sendTestEmail);
+  document.getElementById('btn-diag').addEventListener('click', runDiagnostic);
   loadData();
 </script>
 </body>

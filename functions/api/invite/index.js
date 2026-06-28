@@ -69,9 +69,11 @@ export async function onRequestPost({ request, env, data }) {
   try {
     const result = await sendEmail(env, {
       to: email,
-      subject: `You're invited to join ${familyName} on Bloodline`,
+      subject: `${fromEmail.split('@')[0]} invited you to ${familyName} on Bloodline`,
       html: inviteEmail({ inviteUrl, fromEmail, familyName, roleLabel }),
       text: inviteEmailText({ inviteUrl, fromEmail, familyName, roleLabel }),
+      replyTo: fromEmail,
+      tag: 'invite',
     });
     emailSent = true;
     emailStatus = result?.dev ? 'dev' : 'sent';
