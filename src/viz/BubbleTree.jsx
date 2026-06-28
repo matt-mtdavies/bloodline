@@ -11,16 +11,14 @@ import {
 import { Bubble } from './bubble.js';
 import { BirthEffect } from './birth.js';
 import { drawLinks, drawLinksChart } from './links.js';
+import { computeChartLayout } from './chartLayout.js';
 import { distancesFrom, relationLabel } from '../data/graph.js';
 import { Spring } from '../lib/spring.js';
 
 const BASE_RADIUS = 46;
 const COLLIDE = 70;
 const GEN_GAP = 280; // shorter bands so wide screens use horizontal space too
-const CHART_COUPLE_GAP   = 110;  // centre-to-centre between two spouses
-const CHART_SIB_EDGE_GAP = 100;  // edge-to-edge between sibling-family slots
-const CHART_FAM_EDGE_GAP = 210;  // edge-to-edge between unrelated family groups
-const CHART_GEN_GAP = 310; // vertical distance between generation rows
+// Chart-view layout lives in ./chartLayout.js (tidy descendant tree).
 const ORGANIC_CHARGE = -1800; // stronger repulsion spreads generations sideways
 const SPREAD_X = 0.004; // weaker centring lets nodes fan out naturally
 const MAX_ZOOM = 2.0; // auto-fit (follow mode) — higher cap so small focus families fill the screen
@@ -353,9 +351,8 @@ export default function BubbleTree({
           sim.alpha(0.7);
         },
         applyChartLayout() {
-          const chartVis = computeChartVisible(graphRef.current, activeRef.current, gen);
-          state._chartVisible = chartVis;
-          const chartPos = computeChartLayout(graphRef.current, gen, chartVis);
+          const chartPos = computeChartLayout(graphRef.current, activeRef.current);
+          state._chartVisible = new Set(chartPos.keys());
           for (const n of nodes) {
             const p = chartPos.get(n.id);
             if (p) {
@@ -1063,9 +1060,13 @@ export default function BubbleTree({
           // person ("Father", "Niece", …). Cached per id (cleared on active/graph
           // change). In focus mode this caption replaces the depth-hint dots so
           // the space below the name reads cleanly.
+          // Relationship caption ("Father", "Niece", …) — shown in Focus Family
+          // and in the Chart view (both want the perspective spelled out), but
+          // not when a card or lineage path is open.
+          const showRel = (focusRef.current || layoutRef.current === 'chart')
+            && !cardOpen && !lineage;
           let relText = null;
-          if (focusRef.current && effectiveVis.has(id) && id !== activeRef.current
-              && !cardOpen && !lineage) {
+          if (showRel && effectiveVis.has(id) && id !== activeRef.current) {
             relText = relCache.get(id);
             if (relText === undefined) {
               relText = relationLabel(graphRef.current, activeRef.current, id);
@@ -1075,9 +1076,9 @@ export default function BubbleTree({
           b.setRelationLabel(relText);
 
           // Depth hints: show on visible bubbles that have family beyond the
-          // current reveal — suppressed in focus mode (the relationship caption
-          // takes that slot, and the family there is deliberately scoped).
-          if (effectiveVis.has(id) && !focusRef.current) {
+          // current reveal — suppressed in focus mode and the chart (the
+          // relationship caption takes that slot; the chart is a complete tree).
+          if (effectiveVis.has(id) && !focusRef.current && layoutRef.current !== 'chart') {
             const gg = graphRef.current;
             b.setDepthHint(
               gg.parents(id).some((x) => !effectiveVis.has(x.id)),
@@ -1101,29 +1102,32 @@ export default function BubbleTree({
           }
         }
 
-        // Generation row backgrounds in chart mode — alternating warm bands behind the links.
+        // Generation row backgrounds in chart mode — alternating warm bands.
+        // Keyed by the layout's row Y (each generation shares one Y) so bands
+        // line up exactly with the tidy-tree rows.
         genBandsGfx.clear();
         if (layoutRef.current === 'chart') {
-          const byGen = new Map();
+          const byRow = new Map();
           for (const id of effectiveVis) {
             const n = nodeById.get(id);
             if (!n) continue;
-            const g = gen.get(id) ?? 0;
-            if (!byGen.has(g)) byGen.set(g, { minX: Infinity, maxX: -Infinity, y: n.y });
-            const row = byGen.get(g);
+            const key = Math.round(n.y);
+            if (!byRow.has(key)) byRow.set(key, { minX: Infinity, maxX: -Infinity, y: n.y });
+            const row = byRow.get(key);
             if (n.x - BASE_RADIUS < row.minX) row.minX = n.x - BASE_RADIUS;
             if (n.x + BASE_RADIUS > row.maxX) row.maxX = n.x + BASE_RADIUS;
           }
-          const PAD_X = 56, BAND_H = CHART_GEN_GAP * 0.72;
+          const PAD_X = 56, BAND_H = 150;
           const bandColors = [0xfaf7f4, 0xf5f0eb];
-          for (const [gi, row] of byGen) {
-            if (!isFinite(row.minX)) continue;
+          [...byRow.keys()].sort((a, b) => a - b).forEach((key, gi) => {
+            const row = byRow.get(key);
+            if (!isFinite(row.minX)) return;
             const bx = row.minX - PAD_X;
             const bw = row.maxX - row.minX + PAD_X * 2;
             const by = row.y - BAND_H / 2;
             genBandsGfx.roundRect(bx, by, bw, BAND_H, 12)
               .fill({ color: bandColors[gi % 2], alpha: 0.72 });
-          }
+          });
         }
 
         linkGfx.alpha = cardOpen ? 0.18 : 1;
@@ -1248,167 +1252,6 @@ function clamp(v, lo, hi) {
   return Math.max(lo, Math.min(hi, v));
 }
 
-/*
- * Chart scope: which people to show in the traditional chart layout.
- * Limits to ±2 generations from the focal person AND within 3 hops so
- * a 76-person tree stays readable (grandparents → grandchildren, immediate
- * aunts/uncles, nieces/nephews) without cousins or distant kin cluttering it.
- */
-function computeChartVisible(graph, activeId, gen) {
-  const dist = distancesFrom(graph, activeId);
-  const focalGen = gen.get(activeId) ?? 0;
-  const visible = new Set([activeId]);
-  for (const p of graph.people) {
-    const g = gen.get(p.id) ?? 0;
-    const d = dist.get(p.id) ?? 999;
-    if (Math.abs(g - focalGen) <= 2 && d <= 3) visible.add(p.id);
-  }
-  return visible;
-}
-
-/*
- * Traditional hierarchical family chart layout. Returns a Map of id → {x, y}.
- *
- * Key improvements over the old uniform-slot approach:
- *  - Couples are placed in a named "slot" with a narrow internal gap (CHART_COUPLE_GAP).
- *  - Siblings (same parent key) use CHART_SIB_EDGE_GAP between slots.
- *  - Unrelated families in the same generation use CHART_FAM_EDGE_GAP, so groups
- *    don't bleed into each other and cross-lines are avoided.
- *  - A post-pass nudges each generation toward its parents' horizontal centre.
- */
-function computeChartLayout(graph, gen, visible) {
-  const byGen = new Map();
-  for (const id of visible) {
-    const g = gen.get(id) ?? 0;
-    if (!byGen.has(g)) byGen.set(g, []);
-    byGen.get(g).push(id);
-  }
-
-  const posMap = new Map();
-  const gens = [...byGen.keys()].sort((a, b) => a - b);
-
-  // Returns the sorted parent-id string for a person (for family-key comparisons).
-  const parentKey = (id) => {
-    const ps = graph.parents(id).filter((p) => visible.has(p.id)).map((p) => p.id).sort();
-    return ps.length ? ps.join('|') : null;
-  };
-
-  for (const g of gens) {
-    const row = byGen.get(g);
-    const rowSet = new Set(row);
-
-    // ── Pair visible partners ──────────────────────────────────────────────
-    const partnerOf = new Map();
-    for (const id of row) {
-      if (partnerOf.has(id)) continue;
-      for (const p of graph.partners(id)) {
-        if (rowSet.has(p.id) && !partnerOf.has(p.id)) {
-          partnerOf.set(id, p.id);
-          partnerOf.set(p.id, id);
-          break;
-        }
-      }
-    }
-
-    // ── Sort by barycenter of already-placed parents ───────────────────────
-    const bary = (id) => {
-      const ps = graph.parents(id).filter((p) => visible.has(p.id));
-      if (!ps.length) {
-        const pt = partnerOf.get(id);
-        if (pt) {
-          const pps = graph.parents(pt).filter((p) => visible.has(p.id));
-          if (pps.length) return pps.reduce((s, p) => s + (posMap.get(p.id)?.x ?? 0), 0) / pps.length;
-        }
-        return 0;
-      }
-      return ps.reduce((s, p) => s + (posMap.get(p.id)?.x ?? 0), 0) / ps.length;
-    };
-    row.sort((a, b) => bary(a) - bary(b));
-
-    // ── Build ordered slots ────────────────────────────────────────────────
-    // Each slot is { ids: [id] | [id, partnerId], pk: string|null }
-    const placed = new Set();
-    const slots = [];
-    for (const id of row) {
-      if (placed.has(id)) continue;
-      placed.add(id);
-      const partner = partnerOf.get(id);
-      if (partner && !placed.has(partner)) {
-        placed.add(partner);
-        const pk = parentKey(id) ?? parentKey(partner) ?? null;
-        slots.push({ ids: [id, partner], pk });
-      } else {
-        slots.push({ ids: [id], pk: parentKey(id) });
-      }
-    }
-
-    // ── Assign x positions with variable gaps ─────────────────────────────
-    const halfW = (slot) => (slot.ids.length === 2 ? CHART_COUPLE_GAP / 2 : 0);
-    const y = g * CHART_GEN_GAP - 260;
-
-    // Accumulate raw centres starting at x=0 for the first slot, then track
-    // the right edge of the previous slot to compute inter-slot gaps.
-    const centers = [];
-    let cursor = 0; // right edge of the last slot
-
-    for (let i = 0; i < slots.length; i++) {
-      const slot = slots[i];
-      const hw = halfW(slot);
-      if (i === 0) {
-        centers.push(0);
-        cursor = hw;
-      } else {
-        const prev = slots[i - 1];
-        const sameFamily = slot.pk !== null && prev.pk !== null && slot.pk === prev.pk;
-        const gap = sameFamily ? CHART_SIB_EDGE_GAP : CHART_FAM_EDGE_GAP;
-        const cx = cursor + gap + hw;
-        centers.push(cx);
-        cursor = cx + hw;
-      }
-    }
-
-    // Centre the whole row symmetrically around x=0.
-    const leftEdge  = centers[0] - halfW(slots[0]);
-    const rightEdge = centers[centers.length - 1] + halfW(slots[slots.length - 1]);
-    const shift = -((leftEdge + rightEdge) / 2);
-
-    for (let i = 0; i < slots.length; i++) {
-      const cx = centers[i] + shift;
-      const { ids } = slots[i];
-      if (ids.length === 2) {
-        posMap.set(ids[0], { x: cx - CHART_COUPLE_GAP / 2, y });
-        posMap.set(ids[1], { x: cx + CHART_COUPLE_GAP / 2, y });
-      } else {
-        posMap.set(ids[0], { x: cx, y });
-      }
-    }
-  }
-
-  // ── Post-pass: nudge each generation toward its parents' horizontal centre ──
-  // Compute per-family-group offset, then blend so the whole row shifts
-  // proportionally — this centres siblings under their parents without
-  // disturbing the inter-slot spacing already established above.
-  for (const g of gens.slice(1)) {
-    const row = byGen.get(g);
-    // For each person with visible parents, compute (ideal_x - current_x).
-    let sumDelta = 0, cnt = 0;
-    for (const id of row) {
-      const ps = graph.parents(id).filter((p) => visible.has(p.id));
-      if (!ps.length) continue;
-      const idealX = ps.reduce((s, p) => s + (posMap.get(p.id)?.x ?? 0), 0) / ps.length;
-      const cur = posMap.get(id);
-      if (cur) { sumDelta += idealX - cur.x; cnt++; }
-    }
-    if (!cnt) continue;
-    const nudge = (sumDelta / cnt) * 0.5; // 50 % pull — avoids over-correction
-    for (const id of row) {
-      const cur = posMap.get(id);
-      if (cur) posMap.set(id, { x: cur.x + nudge, y: cur.y });
-    }
-  }
-
-  return posMap;
-}
 
 /*
  * Sectored-radial target positions (the prototype layout). The active person is

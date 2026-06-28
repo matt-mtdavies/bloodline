@@ -785,7 +785,7 @@ export default function App() {
           <FocusNameplate
             person={activePerson}
             getPos={() => viewApi.current?.getScreenPos(activeId)}
-            hidden={!!openId || !!addAnchorId || !!editId || browse}
+            hidden={!!openId || !!addAnchorId || !!editId || browse || layout === 'chart'}
           />
           <button
             className={`recenter-btn${cameraFree && !openId ? ' recenter-btn--on' : ''}`}
