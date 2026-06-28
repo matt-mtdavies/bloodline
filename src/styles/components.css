@@ -5503,8 +5503,9 @@
 .stats-popover__insights-btn:active { transform: scale(0.98); }
 .stats-popover__insights-arrow { margin-left: auto; opacity: 0.9; display: inline-flex; }
 
-/* Sheet */
-.ti { max-height: 88vh; overflow-y: auto; }
+/* Sheet — extra bottom padding so the last rows clear the floating dock,
+   which shares the sheet's stacking level and overlays the bottom edge. */
+.ti { max-height: 88vh; overflow-y: auto; padding-bottom: calc(var(--safe-bottom) + 112px); }
 .ti__head {
   display: flex; align-items: center; justify-content: space-between;
   padding: 4px 4px 12px;
