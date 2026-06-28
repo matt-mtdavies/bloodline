@@ -19,6 +19,10 @@ import {
 } from './seed.js';
 
 const KEY = 'bloodline:v1';
+// The account (user uid) this device's cached tree belongs to. Used to keep
+// multiple people who share one browser/device from inheriting or overwriting
+// each other's tree — see bindIdentity() / clearLocalData().
+const OWNER_KEY = 'bloodline:owner';
 
 const EMPTY = {
   people: [],
@@ -507,6 +511,46 @@ const acid = () => 'act_' + Math.random().toString(36).slice(2, 9);
 
 let _currentUser = null;
 export function setCurrentUser(user) { _currentUser = user; }
+
+// Bind the in-memory + cached tree to a logged-in account. If this device's
+// cache belongs to a DIFFERENT user (the previous person never logged out, or
+// a family is shared on one device), drop the previous tree entirely before we
+// load this user's from the server — so people on a shared device never see or
+// accidentally overwrite each other's data.
+//
+// Returns true if the cache already belonged to this user (so a local tree
+// that's ahead of the server can be trusted as their unsaved work). When there
+// is no stored owner yet (a returning solo user from before this change, or a
+// fresh onboarding/anonymous tree) we keep the local tree and adopt it for this
+// user — the common, safe case.
+export function bindIdentity(uid) {
+  if (!uid) return true;
+  let owner = null;
+  try { owner = localStorage.getItem(OWNER_KEY); } catch { /* ignore */ }
+  const sameUser = owner === uid;
+  if (owner && !sameUser) {
+    // A different person is signing in on this device — forget their tree.
+    try { localStorage.removeItem(KEY); } catch { /* ignore */ }
+    state = { ...EMPTY };
+    _serverEtag = null;
+  }
+  try { localStorage.setItem(OWNER_KEY, uid); } catch { /* ignore */ }
+  return sameUser;
+}
+
+// Wipe everything this device cached about the family tree (the tree itself and
+// the owner stamp). Called on logout so the next person to use this browser
+// starts from a clean slate and loads only their own tree from the server.
+export function clearLocalData() {
+  try {
+    localStorage.removeItem(KEY);
+    localStorage.removeItem(OWNER_KEY);
+  } catch { /* ignore */ }
+  state = { ...EMPTY };
+  _serverEtag = null;
+  _currentUser = null;
+  listeners.forEach((l) => l());
+}
 
 function nameFromEmail(email) {
   if (!email) return 'Someone';

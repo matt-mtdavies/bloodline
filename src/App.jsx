@@ -35,6 +35,8 @@ import {
   migrateDocsToR2,
   setCurrentUser,
   setMyPerson,
+  bindIdentity,
+  clearLocalData,
   isNewUrl,
 } from './data/store.js';
 import { uploadPhoto, generateThumb, uploadDocument } from './lib/image.js';
@@ -121,6 +123,10 @@ export default function App() {
     if (u.bypass) { setAuthState('open'); return; }
     setUser(u);
     setCurrentUser(u);
+    // Make sure this device's cached tree belongs to THIS account. If someone
+    // else was signed in here before, their tree is dropped now so it can't be
+    // shown to — or overwritten by — the person signing in.
+    bindIdentity(u.uid);
     enableServerSync();
 
     // Two invite paths:
@@ -145,7 +151,10 @@ export default function App() {
     }
 
     const hadTree = await loadFromServer({ forceServerWins: joiningFamily });
-    if (!hadTree && !joiningFamily) await saveToServer();
+    // Only seed the server from local when this user genuinely has a local tree
+    // to push (e.g. just finished onboarding). Never push an empty tree — that
+    // would wipe their cloud data after an identity reset or a failed load.
+    if (!hadTree && !joiningFamily && store.getState().people?.length > 0) await saveToServer();
     Promise.all([
       migratePhotosToR2(uploadPhoto).catch(() => ({ total: 0, uploaded: 0, failed: 0 })),
       migrateDocsToR2(uploadDocument).catch(() => ({ total: 0, uploaded: 0, failed: 0 })),
@@ -1162,6 +1171,7 @@ export default function App() {
           onReset={resetTree}
           onLogout={user ? async () => {
             await fetch('/api/auth/logout', { method: 'POST' });
+            clearLocalData(); // don't leave this user's tree for the next person
             window.location.reload();
           } : null}
           onClose={() => setSettingsOpen(false)}
@@ -1177,6 +1187,7 @@ export default function App() {
           onClose={() => setProfileOpen(false)}
           onLogout={async () => {
             await fetch('/api/auth/logout', { method: 'POST' });
+            clearLocalData(); // don't leave this user's tree for the next person
             window.location.reload();
           }}
           onSaved={(updated) => {
