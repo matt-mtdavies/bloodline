@@ -938,6 +938,13 @@
   z-index: 30;
   pointer-events: auto;
   animation: popover-in 0.18s var(--spring) both;
+  /* Cap the height so a long archive list scrolls inside the popover instead of
+     running down behind the floating dock (which sits above it at z-index 40).
+     The reserve covers the top bar above and the dock + safe area below. */
+  max-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 260px);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
 }
 @keyframes popover-in {
   from { opacity: 0; transform: translateX(-50%) translateY(-6px) scale(0.97); }
