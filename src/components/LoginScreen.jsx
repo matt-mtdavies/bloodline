@@ -140,8 +140,11 @@ export default function LoginScreen({ onAuthSuccess }) {
             <p className="login-card__tagline" style={{ marginBottom: 4 }}>
               Check your email
             </p>
-            <p className="login-card__hint" style={{ marginBottom: 24 }}>
+            <p className="login-card__hint" style={{ marginBottom: 14 }}>
               We sent a 6-digit code to <strong>{email}</strong>
+            </p>
+            <p className="login-card__spam">
+              Can&apos;t find it? Check your <strong>spam</strong> or <strong>junk</strong> folder.
             </p>
 
             {errorMsg && <p className="login-card__err">{errorMsg}</p>}

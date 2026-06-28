@@ -103,7 +103,7 @@ export default function InviteSheet({ person, onSend, onClose }) {
             <p className="invite-sheet__sent-body">
               {phase === 'sent-no-email'
                 ? `The invite is saved and ${email.trim()} can still accept it, but the email didn't go out. Send them the link below instead.`
-                : `We've emailed ${email.trim()} a link to join the family tree.`
+                : `We've emailed ${email.trim()} a link to join the family tree. If it's not in their inbox, ask them to check spam — or just send the link below.`
               }
             </p>
             {inviteUrl && (

@@ -113,7 +113,8 @@ function landingHtml({ token, invite, roleLabel, home }) {
       <div id="sent-wrap" style="display:none;text-align:center;padding:12px 0;">
         <div class="sent-icon"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M22 6l-10 7L2 6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></div>
         <p class="sent-title">Check your inbox</p>
-        <p class="sent-body">We sent a sign-in link to <strong id="sent-email"></strong>.<br>Tap it to open the family tree.</p>
+        <p class="sent-body">We sent a sign-in code to <strong id="sent-email"></strong>.<br>Enter it to open the family tree.</p>
+        <p class="sent-spam">Can't find it? Check your <strong>spam</strong> or <strong>junk</strong> folder — and mark it &ldquo;not spam&rdquo; so the rest come through.</p>
       </div>
     </div>
 
@@ -299,6 +300,8 @@ function shell(content) {
   .sent-icon { margin-bottom: 16px; color: #3a8a4a; }
   .sent-title { font-family: 'Fraunces', serif; font-size: 22px; font-weight: 700; margin-bottom: 10px; }
   .sent-body { font-size: 15px; color: var(--ink-soft); line-height: 1.6; }
+  .sent-spam { margin-top: 16px; font-size: 13px; color: var(--ink-soft); line-height: 1.5; background: #f7f3ec; border-radius: 12px; padding: 12px 14px; }
+  .sent-spam strong { color: var(--ink); }
 </style>
 </head>
 <body>${content}</body>
