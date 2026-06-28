@@ -610,6 +610,7 @@
 
 /* ── Floating dock pill ───────────────────────────────────────────────────────── */
 .bottom-dock {
+  position: relative; /* positioning context for the time slider / life-event card */
   display: flex;
   align-items: center;
   background: rgba(255, 255, 255, 0.93);
@@ -1108,7 +1109,8 @@
 
 /* ── Time slider ─────────────────────────────────────────────────────────── */
 .time-bar {
-  position: relative; /* slider + life-event-card float above via absolute */
+  /* slider + life-event-card float above, centred over the whole dock
+     (positioning context is .bottom-dock, not this button slot) */
   display: flex;
   flex-direction: column;
   align-items: center;
