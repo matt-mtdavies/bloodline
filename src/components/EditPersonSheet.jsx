@@ -44,6 +44,7 @@ function isValidEmail(v) {
 export default function EditPersonSheet({ person, onClose, onSave, onRemove }) {
   const [f, setF] = useState({
     display_name:  person.display_name  || '',
+    middle_name:   person.middle_name   || '',
     birth_name:    person.birth_name    || '',
     gender:        person.gender        || '',
     birth_date:    person.birth_date    || '',
@@ -89,6 +90,7 @@ export default function EditPersonSheet({ person, onClose, onSave, onRemove }) {
   const save = () => {
     onSave({
       display_name:  f.display_name.trim()  || person.display_name,
+      middle_name:   f.middle_name.trim()   || null,
       birth_name:    f.birth_name.trim()    || null,
       gender:        f.gender               || null,
       birth_date:    f.birth_date.trim()    || null,
@@ -136,6 +138,14 @@ export default function EditPersonSheet({ person, onClose, onSave, onRemove }) {
             <div className="input-wrap">
               <input className="field__input" value={f.display_name} onChange={set('display_name')} />
               {f.display_name && <button type="button" className="input-clear" onClick={clear('display_name')} aria-label="Clear" tabIndex={-1}>×</button>}
+            </div>
+          </label>
+
+          <label className="field">
+            <span className="field__label">Middle name <span className="field__label-sub">optional</span></span>
+            <div className="input-wrap">
+              <input className="field__input" value={f.middle_name} onChange={set('middle_name')} placeholder="e.g. James" />
+              {f.middle_name && <button type="button" className="input-clear" onClick={clear('middle_name')} aria-label="Clear" tabIndex={-1}>×</button>}
             </div>
           </label>
 

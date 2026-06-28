@@ -3,7 +3,7 @@ import Avatar from './Avatar.jsx';
 import SmartImg from './SmartImg.jsx';
 import { lifespan, formatDate, ageOrAt } from '../lib/dates.js';
 import { relationLabel } from '../data/graph.js';
-import { profileCompleteness, lifeEvents } from '../lib/profile.js';
+import { profileCompleteness, lifeEvents, fullName } from '../lib/profile.js';
 import { fileToDataUrl, uploadPhoto } from '../lib/image.js';
 import { streamBio } from '../lib/ai.js';
 import { VISIBILITY_LABELS, VISIBILITY_DESCS } from '../lib/visibility.js';
@@ -336,7 +336,7 @@ export default function PersonSheet({
           />
 
           {relToViewer && <p className="profile__kin">{relToViewer}</p>}
-          <h2 className="profile__name">{person.display_name}</h2>
+          <h2 className="profile__name">{fullName(person)}</h2>
           {person.birth_name && (
             <p className="profile__birth-name">née {person.birth_name}</p>
           )}

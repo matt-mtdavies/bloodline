@@ -7,6 +7,22 @@
  */
 import { yearOf } from './dates.js';
 
+// Compose a person's full formal name, weaving a stored middle name in before
+// the surname. The everyday display_name is what the tree and lists use; this
+// is the fuller name shown on the profile heading when a middle name is set.
+export function fullName(person) {
+  if (!person) return '';
+  const display = (person.display_name || '').trim();
+  const middle = (person.middle_name || '').trim();
+  if (!middle) return display;
+  // Don't duplicate a middle name that's already part of the display name.
+  if (display.toLowerCase().includes(middle.toLowerCase())) return display;
+  const parts = display.split(/\s+/);
+  if (parts.length < 2) return `${display} ${middle}`.trim();
+  // Insert before the final (family-name) token: "Colin Ransom" → "Colin James Ransom".
+  return [...parts.slice(0, -1), middle, parts[parts.length - 1]].join(' ');
+}
+
 export function profileCompleteness(person, graph, memoryCount = 0) {
   const hasRelation =
     graph.parents(person.id).length +
