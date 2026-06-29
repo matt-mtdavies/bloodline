@@ -1088,7 +1088,7 @@
 }
 .stats-popover__comp-row {
   display: grid;
-  grid-template-columns: 90px 1fr 44px;
+  grid-template-columns: 90px 1fr 52px;
   align-items: center;
   gap: 8px;
 }
@@ -1101,6 +1101,7 @@
   color: var(--ink-faint);
   text-align: right;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 /* Footer totals */
 .stats-popover__footer {
