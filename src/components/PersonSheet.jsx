@@ -147,12 +147,19 @@ export default function PersonSheet({
   const niecesNephews = extDedup(
     siblings.flatMap((s) => graph.children(s.id).map((c) => ({ id: c.id }))),
   );
+  // Cousins — children of the person's aunts & uncles (parents' siblings).
+  const cousins = extDedup(
+    upwardParents.flatMap((p) =>
+      graph.siblings(p.id).flatMap((s) => graph.children(s.id).map((c) => ({ id: c.id }))),
+    ),
+  );
   const greatGrandchildren = extDedup(
     rawGrandchildIds.flatMap((gcId) => graph.children(gcId).map((ggc) => ({ id: ggc.id }))),
   );
   const extendedGroups = [
     { title: 'Grandparents', items: grandparents },
     { title: 'Aunts & Uncles', items: auntsUncles },
+    { title: 'Cousins', items: cousins },
     { title: 'Grandchildren', items: grandchildren },
     { title: 'Nieces & Nephews', items: niecesNephews },
     { title: 'Great Grandchildren', items: greatGrandchildren },
