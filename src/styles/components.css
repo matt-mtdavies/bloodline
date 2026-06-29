@@ -5745,6 +5745,76 @@
 .stats-popover__timeline-btn:hover { background: #fff; border-color: #d8d2c8; }
 .stats-popover__timeline-btn > svg:first-child { color: var(--accent, #c2603a); }
 
+/* Duplicate-cleanup entry — only appears when matches exist, so give it a gentle
+   nudge tone (amber) to read as a to-do without alarming. */
+.stats-popover__dups-btn {
+  display: flex; align-items: center; gap: 9px; width: 100%;
+  margin: -6px 0 16px;
+  padding: 11px 14px; border-radius: 14px; cursor: pointer;
+  color: #8a5a1c; font-size: 14px; font-weight: 600;
+  background: #fbf1e2; border: 1px solid #f0dcc0;
+  transition: background 0.15s, border-color 0.15s;
+}
+.stats-popover__dups-btn:hover { background: #fff7ec; border-color: #e6caa0; }
+.stats-popover__dups-btn > svg:first-child { color: #c2843a; flex-shrink: 0; }
+.stats-popover__dups-btn > span:first-of-type { text-align: left; }
+
+/* ════════════════════════════════════════════════════════════════════════
+   Duplicate review sheet
+   ════════════════════════════════════════════════════════════════════════ */
+.dups { max-height: 88vh; overflow-y: auto; padding-bottom: calc(var(--safe-bottom) + 24px); }
+.dups__head {
+  display: flex; align-items: center; justify-content: space-between; padding: 4px 4px 8px;
+}
+.dups__title {
+  display: flex; align-items: center; gap: 9px; margin: 0;
+  font-family: 'Fraunces', Georgia, serif; font-size: 22px; font-weight: 700; color: var(--ink, #241f1c);
+}
+.dups__title > svg { color: var(--accent, #c2603a); }
+.dups__intro { margin: 2px 2px 16px; font-size: 13.5px; line-height: 1.5; color: var(--ink-soft, #6b6260); }
+.dups__list { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; }
+.dups__pair {
+  border: 1px solid var(--hairline, #ebedf0); border-radius: 16px; padding: 14px;
+  background: var(--card, #fff);
+}
+.dups__pair--high { border-color: #f0dcc0; background: #fffaf3; }
+.dups__cards { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.dups__card {
+  display: flex; flex-direction: column; align-items: center; gap: 5px; text-align: center;
+  padding: 12px 8px; border-radius: 12px; cursor: pointer;
+  background: var(--ground, #f7f3ec); border: 2px solid transparent;
+  transition: border-color 0.15s, background 0.15s;
+}
+.dups__card--keep { border-color: var(--accent, #c2603a); background: #fff; }
+.dups__card-name { font-size: 14px; font-weight: 600; color: var(--ink, #241f1c); line-height: 1.2; }
+.dups__card-meta { font-size: 12px; color: var(--ink-soft, #6b6260); }
+.dups__card-tag {
+  margin-top: 2px; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--ink-faint, #a09590);
+}
+.dups__card--keep .dups__card-tag { color: var(--accent, #c2603a); }
+.dups__reasons { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0; }
+.dups__reason {
+  font-size: 11px; font-weight: 600; color: var(--ink-soft, #6b6260);
+  background: var(--ground, #f1ece4); padding: 3px 9px; border-radius: 999px;
+}
+.dups__actions { display: flex; gap: 10px; }
+.dups__merge {
+  flex: 1; padding: 11px 14px; border-radius: 12px; border: none; cursor: pointer;
+  background: var(--accent, #c2603a); color: #fff; font-size: 14px; font-weight: 600;
+}
+.dups__merge:active { transform: scale(0.98); }
+.dups__dismiss {
+  padding: 11px 14px; border-radius: 12px; cursor: pointer;
+  background: transparent; border: 1px solid var(--hairline, #ebedf0);
+  color: var(--ink-soft, #6b6260); font-size: 14px; font-weight: 500;
+}
+.dups__empty {
+  display: flex; flex-direction: column; align-items: center; gap: 12px;
+  padding: 36px 20px; text-align: center; color: var(--ink-soft, #6b6260);
+}
+.dups__empty > svg { color: #3d8c55; }
+
 /* Sheet */
 .tl { display: flex; flex-direction: column; max-height: 90vh; }
 .tl__head {

@@ -119,6 +119,12 @@ if (state.people?.length > 0 && state.memories.length === 0 && state.people.some
   state.memories = structuredClone(seedMemories).filter((x) => ids.has(x.person_id));
 }
 
+// Clean any duplicate / contradictory relationships left in cached data before
+// the first render (the initial state bypasses commit's normalisation).
+if (Array.isArray(state.relationships)) {
+  state.relationships = normalizeRelationships(state.relationships);
+}
+
 const listeners = new Set();
 
 // Server sync — enabled after a successful /api/auth/me check.
@@ -372,8 +378,45 @@ function scheduleServerSave(s) {
   _saveTimer = setTimeout(() => putTree(s), 1500);
 }
 
+// Canonicalise the relationship list so duplicates and contradictions can never
+// accumulate (they otherwise pile up when concurrent edits get sync-merged):
+//   • drop self-edges,
+//   • collapse duplicate edges of the same kind for the same pair, and
+//   • enforce that a pair is partner OR parent, never both (partner wins).
+// Idempotent, so running it on every commit converges all devices to a clean
+// state on load, save, and after any merge.
+function normalizeRelationships(rels) {
+  if (!Array.isArray(rels)) return rels || [];
+  const pk = (a, b) => [a, b].sort().join('~');
+  const partnerPairs = new Set();
+  for (const r of rels) {
+    if (r?.type === 'partner' && r.from_person !== r.to_person) partnerPairs.add(pk(r.from_person, r.to_person));
+  }
+  const seen = new Set();
+  const out = [];
+  for (const r of rels) {
+    if (!r || r.from_person === r.to_person) continue;
+    if (r.type === 'partner') {
+      const k = 'P|' + pk(r.from_person, r.to_person);
+      if (seen.has(k)) continue;
+      seen.add(k); out.push(r);
+    } else if (r.type === 'parent') {
+      if (partnerPairs.has(pk(r.from_person, r.to_person))) continue; // contradiction → partner wins
+      const k = 'C|' + r.from_person + '>' + r.to_person;
+      if (seen.has(k)) continue;
+      seen.add(k); out.push(r);
+    } else {
+      out.push(r);
+    }
+  }
+  return out;
+}
+
 // fromServer=true: loading from D1 — don't increment _seq or schedule a save.
 function commit(next, { fromServer = false } = {}) {
+  const cleanRels = normalizeRelationships(next.relationships);
+  const cleaned = cleanRels.length !== (next.relationships?.length ?? 0);
+  next = cleaned ? { ...next, relationships: cleanRels } : next;
   state = fromServer ? next : { ...next, _seq: (next._seq || 0) + 1 };
   try {
     localStorage.setItem(KEY, JSON.stringify(state));
@@ -383,7 +426,10 @@ function commit(next, { fromServer = false } = {}) {
       window.dispatchEvent(new CustomEvent('bloodline:storage-full'));
     }
   }
-  if (!fromServer) scheduleServerSave(state);
+  // Persist whenever we made a local change, OR when normalisation cleaned up a
+  // mess that arrived from the server — so the fix propagates instead of being
+  // re-merged back next time.
+  if (!fromServer || cleaned) scheduleServerSave(state);
   listeners.forEach((l) => l());
 }
 
@@ -822,6 +868,86 @@ export function removeRelationship(fromId, toId, type) {
       );
     }),
   });
+}
+
+// Merge a duplicate person (dropId) into the one to keep (keepId): repoint every
+// relationship and piece of content, fill the kept person's blank fields from the
+// duplicate, then delete the duplicate. Edges are de-duplicated and the
+// partner/parent exclusivity is enforced on the result.
+export function mergePeople(keepId, dropId) {
+  if (!keepId || !dropId || keepId === dropId) return;
+  const keep = state.people.find((p) => p.id === keepId);
+  const drop = state.people.find((p) => p.id === dropId);
+  if (!keep || !drop) return;
+
+  // Field merge: keep wins; fall back to the duplicate for anything blank.
+  const merged = { ...keep };
+  const fillable = [
+    'photo', 'photo_thumb', 'birth_date', 'death_date', 'birth_place', 'residence',
+    'occupation', 'bio', 'gender', 'given_names', 'middle_name', 'family_name',
+    'birth_name', 'email', 'phone', 'story',
+  ];
+  for (const f of fillable) {
+    if (merged[f] == null || merged[f] === '') merged[f] = drop[f] ?? merged[f] ?? null;
+  }
+  merged.tags = [...new Set([...(keep.tags || []), ...(drop.tags || [])])];
+  merged.events = [...(keep.events || []), ...(drop.events || [])];
+  merged.conditions = [...(keep.conditions || []), ...(drop.conditions || [])];
+  if (drop.is_deceased && !keep.is_deceased) {
+    merged.is_deceased = true;
+    merged.is_living = false;
+    if (!merged.death_date) merged.death_date = drop.death_date || null;
+  }
+
+  // Repoint edges from the duplicate to the kept person, drop self-edges, then
+  // de-duplicate and enforce that a pair is partner OR parent, never both.
+  const pk = (a, b) => [a, b].sort().join('~');
+  const repointed = state.relationships
+    .map((r) => ({
+      ...r,
+      from_person: r.from_person === dropId ? keepId : r.from_person,
+      to_person: r.to_person === dropId ? keepId : r.to_person,
+    }))
+    .filter((r) => r.from_person !== r.to_person);
+
+  const partnerPairs = new Set(
+    repointed.filter((r) => r.type === 'partner').map((r) => pk(r.from_person, r.to_person)),
+  );
+  const seen = new Set();
+  const relationships = [];
+  for (const r of repointed) {
+    if (r.type === 'parent') {
+      // Partner wins over a contradictory parent edge for the same pair.
+      if (partnerPairs.has(pk(r.from_person, r.to_person))) continue;
+      const k = 'parent|' + r.from_person + '>' + r.to_person;
+      if (seen.has(k)) continue;
+      seen.add(k); relationships.push(r);
+    } else if (r.type === 'partner') {
+      const k = 'partner|' + pk(r.from_person, r.to_person);
+      if (seen.has(k)) continue;
+      seen.add(k); relationships.push(r);
+    } else {
+      relationships.push(r);
+    }
+  }
+
+  const reassign = (arr) => (arr || []).map((x) => (x.person_id === dropId ? { ...x, person_id: keepId } : x));
+  const people = state.people.filter((p) => p.id !== dropId).map((p) => (p.id === keepId ? merged : p));
+
+  commit(withActivity({
+    ...state,
+    people,
+    relationships,
+    memories: reassign(state.memories),
+    photos: reassign(state.photos),
+    documents: reassign(state.documents),
+    myPersonId: state.myPersonId === dropId ? keepId : state.myPersonId,
+  }, {
+    type: 'people_merged',
+    personId: keepId,
+    personName: merged.display_name,
+    detail: drop.display_name,
+  }));
 }
 
 // Remove a person and all traces of them from the tree.

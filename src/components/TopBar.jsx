@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, forwardRef } from 'react';
 import Logo from './Logo.jsx';
 
-export default function TopBar({ familyName, stats, view, syncStatus, syncError, onRetrySync, onToggleView, onOpenLegend, onOpenSettings, onOpenActivity, activityCount = 0, user, userPhoto, onOpenProfile, onSearch, onOpenInsights, onOpenTimeline }) {
+export default function TopBar({ familyName, stats, view, syncStatus, syncError, onRetrySync, onToggleView, onOpenLegend, onOpenSettings, onOpenActivity, activityCount = 0, user, userPhoto, onOpenProfile, onSearch, onOpenInsights, onOpenTimeline, onOpenDuplicates, duplicateCount = 0 }) {
   const [statsOpen, setStatsOpen] = useState(false);
   const popoverRef = useRef(null);
   const statsRef = useRef(null);
@@ -133,13 +133,15 @@ export default function TopBar({ familyName, stats, view, syncStatus, syncError,
           onClose={() => setStatsOpen(false)}
           onOpenInsights={onOpenInsights ? () => { setStatsOpen(false); onOpenInsights(); } : null}
           onOpenTimeline={onOpenTimeline ? () => { setStatsOpen(false); onOpenTimeline(); } : null}
+          onOpenDuplicates={onOpenDuplicates ? () => { setStatsOpen(false); onOpenDuplicates(); } : null}
+          duplicateCount={duplicateCount}
         />
       )}
     </header>
   );
 }
 
-const StatsPopover = forwardRef(function StatsPopover({ stats, onClose, onOpenInsights, onOpenTimeline }, ref) {
+const StatsPopover = forwardRef(function StatsPopover({ stats, onClose, onOpenInsights, onOpenTimeline, onOpenDuplicates, duplicateCount = 0 }, ref) {
   const total = stats.people;
   const maxCount = stats.surnameList?.[0]?.count ?? 1;
   const spanYears = stats.yearMin && stats.yearMax ? stats.yearMax - stats.yearMin : null;
@@ -162,6 +164,14 @@ const StatsPopover = forwardRef(function StatsPopover({ stats, onClose, onOpenIn
         <button className="stats-popover__timeline-btn" onClick={onOpenTimeline}>
           <PopClockIcon />
           <span>Family timeline</span>
+          <span className="stats-popover__insights-arrow"><ChevronRightIcon /></span>
+        </button>
+      )}
+
+      {onOpenDuplicates && duplicateCount > 0 && (
+        <button className="stats-popover__dups-btn" onClick={onOpenDuplicates}>
+          <DupIcon />
+          <span>Review {duplicateCount} possible duplicate{duplicateCount > 1 ? 's' : ''}</span>
           <span className="stats-popover__insights-arrow"><ChevronRightIcon /></span>
         </button>
       )}
@@ -296,6 +306,15 @@ function PopClockIcon() {
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <circle cx="12" cy="12" r="8.5" stroke="currentColor" strokeWidth="1.8"/>
       <path d="M12 7.5v5l3 1.8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  );
+}
+
+function DupIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="9" cy="9" r="5" stroke="currentColor" strokeWidth="1.7"/>
+      <circle cx="15" cy="15" r="5" stroke="currentColor" strokeWidth="1.7"/>
     </svg>
   );
 }

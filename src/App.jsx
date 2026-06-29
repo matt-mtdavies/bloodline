@@ -8,6 +8,7 @@ import {
   addRelative,
   addRelationship,
   removeRelationship,
+  mergePeople,
   removePerson,
   updateRelationshipQualifier,
   updatePerson,
@@ -41,6 +42,7 @@ import {
 } from './data/store.js';
 import { uploadPhoto, generateThumb, uploadDocument } from './lib/image.js';
 import { buildGraph, pathBetween, pathBetweenOrdered } from './data/graph.js';
+import { findDuplicatePairs } from './lib/duplicates.js';
 import { useReducedMotion } from './hooks/useReducedMotion.js';
 import BubbleTree from './viz/BubbleTree.jsx';
 import TopBar from './components/TopBar.jsx';
@@ -63,6 +65,7 @@ import UserProfile from './components/UserProfile.jsx';
 import MergeWizard from './components/MergeWizard.jsx';
 import InviteSheet from './components/InviteSheet.jsx';
 import TreeInsights from './components/TreeInsights.jsx';
+import DuplicatesSheet from './components/DuplicatesSheet.jsx';
 import LineageBanner from './components/LineageBanner.jsx';
 import TimelineView from './components/TimelineView.jsx';
 import ClaimSpot from './components/ClaimSpot.jsx';
@@ -99,12 +102,22 @@ export default function App() {
   const graph = useMemo(() => buildGraph(data.people, data.relationships), [data]);
   const reducedMotion = useReducedMotion();
 
+  // Possible duplicate people (same name + corroborating evidence) to offer for
+  // merging. The cleanup entry point is gated to editors (see canEditTree below).
+  const duplicatePairs = useMemo(
+    () => findDuplicatePairs(data.people, data.relationships),
+    [data.people, data.relationships],
+  );
+
   // 'loading' → 'open' (no auth / bypass) | 'login' (needs sign-in) | 'authed'
   const [authState, setAuthState] = useState((isDemo || isNewUrl) ? 'open' : 'loading');
   // Track whether this session started as an anonymous ?new trial (stays true even
   // after URL is stripped, so the SaveNudge remains visible until they log in).
   const [isAnonymousTrial] = useState(() => isNewUrl);
   const [user, setUser] = useState(null);
+  const [duplicatesOpen, setDuplicatesOpen] = useState(false);
+  // Whether the signed-in member can edit the tree (drives merge/cleanup tools).
+  const canEditTree = !user || ['owner', 'coadmin', 'editor'].includes(data._meta?.role || 'owner');
   const [promptClaim, setPromptClaim] = useState(false); // welcome a member to claim their spot
   const [installEvent, setInstallEvent] = useState(null); // captured beforeinstallprompt
   const [showInstall, setShowInstall] = useState(false);
@@ -781,6 +794,8 @@ export default function App() {
         onSearch={() => setSearchOpen(true)}
         onOpenInsights={() => setInsightsOpen(true)}
         onOpenTimeline={() => setTimelineOpen(true)}
+        duplicateCount={canEditTree ? duplicatePairs.length : 0}
+        onOpenDuplicates={canEditTree && duplicatePairs.length ? () => setDuplicatesOpen(true) : null}
       />
 
       {view === 'bubbles' ? (
@@ -1029,6 +1044,15 @@ export default function App() {
           viewerId={data.myPersonId || activeId}
           onNavigate={(id) => { setInsightsOpen(false); activate(id); openPerson(id); }}
           onClose={() => setInsightsOpen(false)}
+        />
+      )}
+
+      {duplicatesOpen && (
+        <DuplicatesSheet
+          pairs={duplicatePairs}
+          graph={graph}
+          onMerge={(keepId, dropId) => { mergePeople(keepId, dropId); if (activeId === dropId) activate(keepId); }}
+          onClose={() => setDuplicatesOpen(false)}
         />
       )}
 
