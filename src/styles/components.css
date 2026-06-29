@@ -1711,12 +1711,14 @@
 
 /* Progressive reveal of the rest of the form once a relationship is chosen */
 .form__reveal {
+  display: grid;
+  gap: 16px;
   max-height: 0;
   opacity: 0;
   overflow: hidden;
   transition: max-height 0.45s var(--ease), opacity 0.35s var(--ease), margin 0.3s var(--ease);
 }
-.form__reveal--open { max-height: 520px; opacity: 1; margin-top: 20px; }
+.form__reveal--open { max-height: 640px; opacity: 1; margin-top: 20px; }
 .form__more { margin-top: 6px; display: grid; gap: 14px; }
 .form__fields { display: grid; gap: 16px; }
 
