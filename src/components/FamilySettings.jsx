@@ -16,7 +16,7 @@ export default function FamilySettings({ myRole, familyName, onUpdateFamilyName,
   const [pendingConfirm, setPendingConfirm] = useState(null); // { type:'member'|'invite', id }
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState('editor');
-  const [inviteStatus, setInviteStatus] = useState('idle'); // idle | sending | sent | error
+  const [inviteStatus, setInviteStatus] = useState('idle'); // idle | linking | link | sending | sent | sent-no-email | error
   const [inviteError, setInviteError] = useState(''); // human-readable failure reason
   const [inviteUrl, setInviteUrl] = useState(''); // shareable link for the last invite
   const [resendStates, setResendStates] = useState({}); // { [inviteId]: 'idle'|'sending'|'sent'|'error' }
@@ -41,9 +41,45 @@ export default function FamilySettings({ myRole, familyName, onUpdateFamilyName,
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
+  const busy = inviteStatus === 'linking' || inviteStatus === 'sending';
+  const isReady = inviteStatus === 'sent' || inviteStatus === 'sent-no-email' || inviteStatus === 'link';
+
+  function resetInvite() {
+    setInviteStatus('idle');
+    setInviteUrl('');
+    setInviteEmail('');
+    setInviteError('');
+  }
+
+  async function createLink() {
+    if (busy) return;
+    setInviteStatus('linking');
+    setInviteError('');
+    setInviteUrl('');
+    try {
+      const res = await fetch('/api/invite', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email: inviteEmail.trim() || '', role: inviteRole, notify: false }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setInviteError(body.error || 'Could not create link. Check your connection.');
+        setInviteStatus('error');
+        return;
+      }
+      setInviteUrl(body.inviteUrl || '');
+      setInviteStatus('link');
+      load();
+    } catch {
+      setInviteError('Could not create link. Check your connection.');
+      setInviteStatus('error');
+    }
+  }
+
   async function sendInvite(e) {
     e.preventDefault();
-    if (!inviteEmail.trim()) return;
+    if (!inviteEmail.trim() || busy) return;
     setInviteStatus('sending');
     setInviteError('');
     setInviteUrl('');
@@ -51,7 +87,7 @@ export default function FamilySettings({ myRole, familyName, onUpdateFamilyName,
       const res = await fetch('/api/invite', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ email: inviteEmail.trim(), role: inviteRole }),
+        body: JSON.stringify({ email: inviteEmail.trim(), role: inviteRole, notify: true }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -60,20 +96,13 @@ export default function FamilySettings({ myRole, familyName, onUpdateFamilyName,
         return;
       }
       if (body.inviteUrl) setInviteUrl(body.inviteUrl);
-      // The server records the invite even if the email can't be delivered, so
-      // a 200 with emailSent:false means "saved but NOT emailed" — surface that
-      // (the shareable link below lets them send it manually instead).
       if (body.emailSent === false) {
-        setInviteError(
-          "Invite saved, but the email couldn't be delivered. Send them the link below, or check the address and use Resend.",
-        );
-        setInviteStatus('error');
-        load(); // show it in pending so Resend is available
+        setInviteStatus('sent-no-email');
+        load();
         return;
       }
       setInviteStatus('sent');
-      setInviteEmail('');
-      load(); // refresh pending list; stay so the link can be copied/shared
+      load();
     } catch {
       setInviteError('Could not send. Check your connection.');
       setInviteStatus('error');
@@ -340,73 +369,88 @@ export default function FamilySettings({ myRole, familyName, onUpdateFamilyName,
             )}
 
             {tab === 'invite' && isOwnerOrCoadmin && (
-              <form className="fs__invite-form" onSubmit={sendInvite} noValidate>
-                <p className="fs__invite-intro">
-                  They'll receive a branded email with an invitation link to join your family tree.
-                </p>
-
-                <label className="fs__label">Email address</label>
-                <input
-                  className="fs__input"
-                  type="email"
-                  placeholder="family@example.com"
-                  value={inviteEmail}
-                  onChange={(e) => setInviteEmail(e.target.value)}
-                />
-
-                <label className="fs__label">Role</label>
-                <div className="fs__role-grid">
-                  {INVITE_ROLES.map((r) => (
-                    <button
-                      key={r}
-                      type="button"
-                      className={`fs__role-opt${inviteRole === r ? ' fs__role-opt--on' : ''}`}
-                      onClick={() => setInviteRole(r)}
-                    >
-                      <span className="fs__role-name">{ROLE_LABELS[r]}</span>
-                      <span className="fs__role-desc">{ROLE_DESCS[r]}</span>
-                    </button>
-                  ))}
-                </div>
-
-                {inviteStatus === 'sent' ? (
+              <div className="fs__invite-form">
+                {isReady ? (
                   <div className="fs__invite-done">
-                    <p className="fs__sent"><CheckIcon /> Invitation sent</p>
-                    {inviteUrl && (
-                      <>
-                        <p className="fs__share-label">Or send this link directly — text, WhatsApp, anywhere</p>
-                        <ShareLink url={inviteUrl} shareText="Join our family tree on Bloodline" />
-                      </>
-                    )}
-                    <button
-                      type="button"
-                      className="fs__invite-again"
-                      onClick={() => { setInviteStatus('idle'); setInviteUrl(''); }}
-                    >
+                    <div className={`fs__invite-ring${inviteStatus === 'sent-no-email' ? ' fs__invite-ring--warn' : ''}`}>
+                      {inviteStatus === 'sent-no-email' ? (
+                        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                          <path d="M12 9v4M12 17h.01" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"/>
+                          <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/>
+                        </svg>
+                      ) : inviteStatus === 'link' ? (
+                        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                          <path d="M9 15l6-6M10 6l1-1a4 4 0 0 1 6 6l-1 1M14 18l-1 1a4 4 0 0 1-6-6l1-1" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"/>
+                        </svg>
+                      ) : (
+                        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                          <path d="M5 13l4 4L19 7" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+                        </svg>
+                      )}
+                    </div>
+                    <p className="fs__invite-title">
+                      {inviteStatus === 'link' ? 'Link is ready'
+                        : inviteStatus === 'sent-no-email' ? 'Invite saved — email failed'
+                        : 'Invitation sent'}
+                    </p>
+                    <p className="fs__invite-body">
+                      {inviteStatus === 'link'
+                        ? 'Send this to anyone however you like — text, WhatsApp, anything. They join the moment they open it.'
+                        : inviteStatus === 'sent-no-email'
+                        ? `The invite is saved but the email didn't go out. Send the link below instead.`
+                        : `Invitation emailed. You can also send this link directly.`}
+                    </p>
+                    {inviteUrl && <ShareLink url={inviteUrl} shareText="Join our family tree on Bloodline" />}
+                    <button type="button" className="fs__invite-again" onClick={resetInvite}>
                       Invite someone else
                     </button>
                   </div>
                 ) : (
-                  <button
-                    className="ob__continue"
-                    type="submit"
-                    disabled={inviteStatus === 'sending' || !inviteEmail.trim()}
-                  >
-                    {inviteStatus === 'sending' ? 'Sending…' : 'Send invitation →'}
-                  </button>
-                )}
-                {inviteStatus === 'error' && (
                   <>
-                    <p className="fs__err">{inviteError || 'Could not send. Check your connection.'}</p>
-                    {inviteUrl && (
-                      <>
-                        <p className="fs__share-label">Share this link directly instead</p>
-                        <ShareLink url={inviteUrl} shareText="Join our family tree on Bloodline" />
-                      </>
-                    )}
+                    <label className="fs__label">What can they do?</label>
+                    <div className="fs__role-grid">
+                      {INVITE_ROLES.map((r) => (
+                        <button
+                          key={r}
+                          type="button"
+                          className={`fs__role-opt${inviteRole === r ? ' fs__role-opt--on' : ''}`}
+                          onClick={() => setInviteRole(r)}
+                        >
+                          <span className="fs__role-name">{ROLE_LABELS[r]}</span>
+                          <span className="fs__role-desc">{ROLE_DESCS[r]}</span>
+                        </button>
+                      ))}
+                    </div>
+
+                    <button type="button" className="fs__link-btn" onClick={createLink} disabled={busy}>
+                      <FsLinkIcon />
+                      {inviteStatus === 'linking' ? 'Creating link…' : 'Create a share link'}
+                    </button>
+
+                    <div className="fs__or"><span>or send by email</span></div>
+
+                    <form onSubmit={sendInvite} noValidate>
+                      <input
+                        className="fs__input"
+                        type="email"
+                        placeholder="family@example.com"
+                        value={inviteEmail}
+                        onChange={(e) => { setInviteEmail(e.target.value); if (inviteStatus === 'error') setInviteStatus('idle'); }}
+                      />
+                      {inviteStatus === 'error' && (
+                        <p className="fs__err">{inviteError || 'Could not send. Check your connection.'}</p>
+                      )}
+                      <button
+                        className="fs__email-btn"
+                        type="submit"
+                        disabled={!inviteEmail.trim() || busy}
+                      >
+                        {inviteStatus === 'sending' ? 'Sending…' : 'Email invitation →'}
+                      </button>
+                    </form>
                   </>
                 )}
-              </form>
+              </div>
             )}
           </>
         )}
@@ -614,6 +658,15 @@ function FbOtherIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  );
+}
+
+function FsLinkIcon() {
+  return (
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M9 15l6-6M10 6l1-1a4 4 0 0 1 6 6l-1 1M14 18l-1 1a4 4 0 0 1-6-6l1-1"
+        stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"/>
     </svg>
   );
 }

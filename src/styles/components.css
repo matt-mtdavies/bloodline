@@ -5340,7 +5340,18 @@
   margin: 16px 0 0;
   text-align: center;
 }
-.fs__invite-done { display: flex; flex-direction: column; gap: 4px; }
+.fs__invite-done { display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; padding: 8px 0 4px; }
+.fs__invite-ring {
+  width: 56px; height: 56px; border-radius: 50%;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+  display: flex; align-items: center; justify-content: center;
+  margin-bottom: 4px;
+  animation: invite-pop 0.4s var(--spring, cubic-bezier(.34,1.56,.64,1)) both;
+}
+.fs__invite-ring--warn { background: color-mix(in srgb, #b08642 12%, transparent); color: #b08642; }
+.fs__invite-title { font-size: 17px; font-weight: 700; color: var(--ink); margin: 0; }
+.fs__invite-body { font-size: 13.5px; color: var(--ink-soft); line-height: 1.5; margin: 0; max-width: 280px; }
 .fs__invite-again {
   align-self: center;
   margin-top: 14px;
@@ -5351,6 +5362,40 @@
   font-weight: 600;
   cursor: pointer;
 }
+/* Link-first primary action button */
+.fs__link-btn {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  width: 100%; margin-top: 16px;
+  padding: 15px 20px;
+  background: var(--accent); color: #fff;
+  border: none; border-radius: 14px;
+  font-size: 16px; font-weight: 600; cursor: pointer;
+  box-shadow: 0 4px 18px color-mix(in srgb, var(--accent) 35%, transparent);
+  transition: opacity 0.15s, transform 0.12s;
+}
+.fs__link-btn:disabled { opacity: 0.55; cursor: default; }
+.fs__link-btn:not(:disabled):active { transform: scale(0.98); }
+/* "or send by email" divider */
+.fs__or {
+  display: flex; align-items: center; gap: 12px;
+  margin: 18px 0 14px;
+  color: var(--ink-faint, #a09590);
+  font-size: 12.5px;
+}
+.fs__or::before, .fs__or::after { content: ''; flex: 1; height: 1px; background: var(--hairline, #ebedf0); }
+/* Outlined secondary email button */
+.fs__email-btn {
+  width: 100%; margin-top: 10px;
+  padding: 14px 20px;
+  background: transparent;
+  color: var(--accent);
+  border: 1.5px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  border-radius: 14px;
+  font-size: 15px; font-weight: 600; cursor: pointer;
+  transition: background 0.15s, transform 0.12s;
+}
+.fs__email-btn:disabled { opacity: 0.35; cursor: default; }
+.fs__email-btn:not(:disabled):active { transform: scale(0.98); background: color-mix(in srgb, var(--accent) 5%, transparent); }
 .invite-sheet__share { margin-top: 8px; width: 100%; }
 
 .up__claim-select {
