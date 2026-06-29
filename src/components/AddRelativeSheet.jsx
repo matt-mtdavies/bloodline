@@ -22,7 +22,9 @@ export default function AddRelativeSheet({ anchor, people = [], relationships = 
   const [relKey, setRelKey] = useState(null);
   const [qualifier, setQualifier] = useState('biological');
   const [mode, setMode] = useState('new'); // 'new' | 'existing'
-  const [name, setName] = useState('');
+  const [given, setGiven] = useState('');
+  const [middle, setMiddle] = useState('');
+  const [family, setFamily] = useState('');
   const [search, setSearch] = useState('');
   const [more, setMore] = useState(false);
   const [birthYear, setBirthYear] = useState('');
@@ -77,7 +79,7 @@ export default function AddRelativeSheet({ anchor, people = [], relationships = 
     });
   }, [people, search, alreadyLinked]);
 
-  const canAdd = relKey && name.trim().length > 0;
+  const canAdd = relKey && given.trim().length > 0;
   const canLink = relKey && mode === 'existing';
 
   const submit = () => {
@@ -85,7 +87,9 @@ export default function AddRelativeSheet({ anchor, people = [], relationships = 
     onAdd({
       relKey,
       qualifier: QUALIFIER_KEYS.has(relKey) ? qualifier : 'biological',
-      name,
+      given: given.trim(),
+      middle: middle.trim(),
+      family: family.trim(),
       birth_date: birthYear.trim() || null,
       is_deceased: deceased,
       death_date: deceased ? deathYear.trim() || null : null,
@@ -190,19 +194,49 @@ export default function AddRelativeSheet({ anchor, people = [], relationships = 
         {/* New person form */}
         {mode === 'new' && (
           <div className={'form__reveal' + (relKey ? ' form__reveal--open' : '')}>
+            <div className="field-row">
+              <label className="field">
+                <span className="field__label">First name</span>
+                <div className="input-wrap">
+                  <input
+                    ref={nameRef}
+                    className="field__input"
+                    value={given}
+                    onChange={(e) => setGiven(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && submit()}
+                    placeholder="e.g. Margaret"
+                    autoComplete="off"
+                  />
+                  {given && <button type="button" className="input-clear" onClick={() => setGiven('')} aria-label="Clear" tabIndex={-1}>×</button>}
+                </div>
+              </label>
+              <label className="field">
+                <span className="field__label">Middle name <span className="field__label-sub">optional</span></span>
+                <div className="input-wrap">
+                  <input
+                    className="field__input"
+                    value={middle}
+                    onChange={(e) => setMiddle(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && submit()}
+                    placeholder="e.g. Anne"
+                    autoComplete="off"
+                  />
+                  {middle && <button type="button" className="input-clear" onClick={() => setMiddle('')} aria-label="Clear" tabIndex={-1}>×</button>}
+                </div>
+              </label>
+            </div>
             <label className="field">
-              <span className="field__label">Their name</span>
+              <span className="field__label">Family name</span>
               <div className="input-wrap">
                 <input
-                  ref={nameRef}
                   className="field__input"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
+                  value={family}
+                  onChange={(e) => setFamily(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && submit()}
-                  placeholder="e.g. Margaret Davies"
+                  placeholder="e.g. Davies"
                   autoComplete="off"
                 />
-                {name && <button type="button" className="input-clear" onClick={() => setName('')} aria-label="Clear" tabIndex={-1}>×</button>}
+                {family && <button type="button" className="input-clear" onClick={() => setFamily('')} aria-label="Clear" tabIndex={-1}>×</button>}
               </div>
             </label>
 
@@ -290,7 +324,7 @@ export default function AddRelativeSheet({ anchor, people = [], relationships = 
           {mode === 'new' ? (
             <>
               <button className="btn btn--primary" disabled={!canAdd} onClick={submit}>
-                {name.trim() ? `Add ${name.trim().split(/\s+/)[0]}` : 'Add'}
+                {given.trim() ? `Add ${given.trim()}` : 'Add'}
               </button>
               <button className="btn" onClick={onClose}>
                 Cancel

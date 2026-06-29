@@ -658,7 +658,7 @@ export function bioParentGendersFilled(personId) {
   return genders; // Set of 'male'|'female' already occupied
 }
 
-export function addRelative({ anchorId, relKey, name, gender, birth_date, is_deceased, death_date, qualifier = 'biological' }) {
+export function addRelative({ anchorId, relKey, name, given, middle, family, gender, birth_date, is_deceased, death_date, qualifier = 'biological' }) {
   const id = uid();
   const meta = RELATIONSHIPS.find((r) => r.key === relKey);
 
@@ -667,12 +667,25 @@ export function addRelative({ anchorId, relKey, name, gender, birth_date, is_dec
     const targetGender = relKey === 'mother' ? 'female' : 'male';
     if (bioParentGendersFilled(anchorId).has(targetGender)) return null;
   }
+  // Names: prefer structured given/middle/family; fall back to splitting a single
+  // `name` string (older callers). display_name is the everyday name (given +
+  // family); the middle name is stored separately and woven in by fullName().
+  const g = (given || '').trim();
+  const m = (middle || '').trim();
+  const fam = (family || '').trim();
+  const structured = g || fam || m;
+  const displayName = structured
+    ? [g, fam].filter(Boolean).join(' ') || (name || '').trim()
+    : (name || '').trim();
+  const givenNames = structured ? (g || null) : ((name || '').trim().split(/\s+/).slice(0, -1).join(' ') || null);
+  const familyName = structured ? (fam || null) : ((name || '').trim().split(/\s+/).slice(-1)[0] || null);
   const defaultVisibility = 'full';
   const person = {
     id,
-    display_name: name.trim(),
-    given_names: name.trim().split(/\s+/).slice(0, -1).join(' ') || null,
-    family_name: name.trim().split(/\s+/).slice(-1)[0] || null,
+    display_name: displayName,
+    given_names: givenNames,
+    middle_name: m || null,
+    family_name: familyName,
     gender: gender || meta?.gender || null,
     birth_date: birth_date || null,
     death_date: is_deceased ? death_date || null : null,
@@ -731,7 +744,7 @@ export function addRelative({ anchorId, relKey, name, gender, birth_date, is_dec
     ...state,
     people: [...state.people, ...extraPeople, person],
     relationships: [...state.relationships, ...edges, ...extraEdges],
-  }, { type: 'person_added', personId: id, personName: name.trim() }));
+  }, { type: 'person_added', personId: id, personName: displayName }));
   return id;
 }
 
