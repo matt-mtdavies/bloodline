@@ -297,6 +297,7 @@ export default function App() {
   const [legendOpen, setLegendOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [mergeParents, setMergeParents] = useState(true);
+  const [bloodlineOnly, setBloodlineOnly] = useState(false);
   const [lineageMode, setLineageMode] = useState(false);
   const [lineagePath, setLineagePath] = useState(null); // Set<id> | null
   const [lineageOrder, setLineageOrder] = useState(null); // ordered [fromId,…,toId] | null
@@ -424,14 +425,26 @@ export default function App() {
   }, [focusMode, activeId, graph]);
 
   const visibleIds = useMemo(() => {
+    const alive = (id) => !aliveAtYear || aliveAtYear.has(id);
     const vis = new Set();
     for (const id of expanded) {
-      if (aliveAtYear && !aliveAtYear.has(id)) continue;
+      if (!alive(id)) continue;
       vis.add(id);
-      for (const x of graph.parents(id)) { if (!aliveAtYear || aliveAtYear.has(x.id)) vis.add(x.id); }
-      for (const x of graph.children(id)) { if (!aliveAtYear || aliveAtYear.has(x.id)) vis.add(x.id); }
-      for (const x of graph.partners(id)) { if (!aliveAtYear || aliveAtYear.has(x.id)) vis.add(x.id); }
-      for (const x of graph.siblings(id)) { if (!aliveAtYear || aliveAtYear.has(x.id)) vis.add(x.id); }
+      for (const x of graph.parents(id)) {
+        if (bloodlineOnly && x.qualifier === 'step') continue;
+        if (alive(x.id)) vis.add(x.id);
+      }
+      for (const x of graph.children(id)) {
+        if (bloodlineOnly && x.qualifier === 'step') continue;
+        if (alive(x.id)) vis.add(x.id);
+      }
+      if (!bloodlineOnly) {
+        for (const x of graph.partners(id)) { if (alive(x.id)) vis.add(x.id); }
+      }
+      for (const x of graph.siblings(id)) {
+        if (bloodlineOnly && x.kind === 'step') continue;
+        if (alive(x.id)) vis.add(x.id);
+      }
     }
     // Focus mode: collapse everyone outside the nuclear family
     if (focusFamilyIds) {
@@ -440,7 +453,7 @@ export default function App() {
       }
     }
     return vis;
-  }, [graph, expanded, aliveAtYear, focusFamilyIds]);
+  }, [graph, expanded, aliveAtYear, focusFamilyIds, bloodlineOnly]);
 
   // Play animation: life journey = 350 ms/step (cinematic), time mode = 600 ms/step
   // — slowed so each birth's light-arrival animation gets room to land and be felt.
@@ -807,6 +820,7 @@ export default function App() {
         onRetrySync={() => saveToServer()}
         onToggleView={() => setView((v) => (v === 'bubbles' ? 'list' : 'bubbles'))}
         onOpenLegend={() => setLegendOpen(true)}
+        legendActive={bloodlineOnly}
         onOpenSettings={() => setSettingsOpen(true)}
         onOpenActivity={() => { setActivityOpen(true); setLastReadAt(Date.now()); }}
         activityCount={unreadCount}
@@ -1206,6 +1220,8 @@ export default function App() {
         onClose={() => setLegendOpen(false)}
         mergeParents={mergeParents}
         onToggleMerge={() => setMergeParents((v) => !v)}
+        bloodlineOnly={bloodlineOnly}
+        onToggleBloodlineOnly={() => setBloodlineOnly((v) => !v)}
         layout={layout}
         onSetLayout={(mode) => {
           setLayout(mode);

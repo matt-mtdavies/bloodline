@@ -8,7 +8,7 @@ const LAYOUTS = [
   { id: 'chart', label: 'Chart', desc: 'Traditional family tree chart' },
 ];
 
-export default function Legend({ open, onClose, mergeParents, onToggleMerge, layout = 'organic', onSetLayout }) {
+export default function Legend({ open, onClose, mergeParents, onToggleMerge, bloodlineOnly, onToggleBloodlineOnly, layout = 'organic', onSetLayout }) {
   useEffect(() => {
     if (!open) return;
     const onKey = (e) => e.key === 'Escape' && onClose();
@@ -70,6 +70,16 @@ export default function Legend({ open, onClose, mergeParents, onToggleMerge, lay
               <span>One line from a couple to each child, instead of one per parent.</span>
             </span>
             <input type="checkbox" checked={!!mergeParents} onChange={onToggleMerge} />
+          </label>
+        </div>
+
+        <div className="legend__setting">
+          <label className="toggle toggle--row">
+            <span className="legend__setting-text">
+              <b>Bloodline only</b>
+              <span>Hide partners, in-laws, and step-relatives — show only biological and adoptive connections.</span>
+            </span>
+            <input type="checkbox" checked={!!bloodlineOnly} onChange={onToggleBloodlineOnly} />
           </label>
         </div>
 

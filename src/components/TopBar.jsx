@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, forwardRef } from 'react';
 import Logo from './Logo.jsx';
 
-export default function TopBar({ familyName, stats, view, syncStatus, syncError, onRetrySync, onToggleView, onOpenLegend, onOpenSettings, onOpenActivity, activityCount = 0, user, userPhoto, onOpenProfile, onSearch, onOpenInsights, onOpenTimeline, onOpenDuplicates, duplicateCount = 0 }) {
+export default function TopBar({ familyName, stats, view, syncStatus, syncError, onRetrySync, onToggleView, onOpenLegend, legendActive = false, onOpenSettings, onOpenActivity, activityCount = 0, user, userPhoto, onOpenProfile, onSearch, onOpenInsights, onOpenTimeline, onOpenDuplicates, duplicateCount = 0 }) {
   const [statsOpen, setStatsOpen] = useState(false);
   const popoverRef = useRef(null);
   const statsRef = useRef(null);
@@ -92,11 +92,12 @@ export default function TopBar({ familyName, stats, view, syncStatus, syncError,
       {/* Row 2: legend (left) + family name + stats (centre) + view toggle (right) */}
       <div className="topbar__treerow">
         <button
-          className="topbar__row2-btn"
+          className={`topbar__row2-btn${legendActive ? ' topbar__row2-btn--active' : ''}`}
           onClick={onOpenLegend}
           aria-label="Legend — visual guide and display options"
         >
           <LegendIcon />
+          {legendActive && <span className="topbar__filter-dot" aria-hidden="true" />}
         </button>
         <div className="topbar__treerow__center">
           <span className="topbar__familyname">{familyName}</span>

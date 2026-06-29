@@ -5511,6 +5511,17 @@
   transition: color 0.15s ease, background 0.15s ease;
 }
 .topbar__row2-btn:hover { color: var(--ink); background: var(--ground); }
+.topbar__row2-btn--active { color: var(--accent); }
+.topbar__row2-btn { position: relative; }
+.topbar__filter-dot {
+  position: absolute;
+  top: 3px; right: 3px;
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 1.5px solid var(--surface, #fff);
+  pointer-events: none;
+}
 
 /* ── Save Nudge (anonymous ?new trial) ──────────────────────────────────────── */
 .save-nudge {
