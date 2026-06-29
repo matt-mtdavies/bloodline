@@ -585,6 +585,16 @@ export default function App() {
   // relKey is from AddRelativeSheet; qualifier is 'biological'|'step'|'adoptive'.
   const handleLinkExisting = useCallback(
     (existingId, relKey, qualifier = 'biological') => {
+      // If the two are already directly related (e.g. someone was added as a
+      // child but is really a partner), clear that wrong edge first so picking
+      // a new relationship reassigns it rather than stacking a contradiction.
+      const directEdges = data.relationships.filter((r) =>
+        (r.type === 'partner' || r.type === 'parent') &&
+        ((r.from_person === addAnchorId && r.to_person === existingId) ||
+         (r.from_person === existingId && r.to_person === addAnchorId)),
+      );
+      for (const e of directEdges) removeRelationship(e.from_person, e.to_person, e.type);
+
       if (relKey === 'partner' || relKey === 'ex_partner') {
         addRelationship(addAnchorId, existingId, relKey);
       } else if (relKey === 'mother' || relKey === 'father') {

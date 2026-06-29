@@ -1661,6 +1661,17 @@
 .link-existing__list li:last-child .link-existing__item { border-bottom: none; }
 .link-existing__item:hover, .link-existing__item:focus-visible { background: var(--paper-deep); }
 .link-existing__name { font-size: 14px; font-weight: 500; color: var(--ink); }
+.link-existing__current {
+  margin-right: auto;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent, #c2603a);
+  background: var(--accent-soft, #f4e6df);
+  padding: 2px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
 .link-existing__date { font-size: 12px; color: var(--ink-soft); flex-shrink: 0; }
 .link-existing__empty { padding: 20px 14px; font-size: 13.5px; color: var(--ink-soft); text-align: center; }
 

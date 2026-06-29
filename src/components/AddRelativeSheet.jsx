@@ -59,25 +59,33 @@ export default function AddRelativeSheet({ anchor, people = [], relationships = 
     return false;
   };
 
-  // Already-linked person ids for duplicate-edge guard.
-  const alreadyLinked = useMemo(() => {
-    const ids = new Set();
-    for (const rel of relationships) {
-      if (rel.from_person === anchor.id) ids.add(rel.to_person);
-      if (rel.to_person === anchor.id) ids.add(rel.from_person);
+  // The existing DIRECT relationship between the anchor and a candidate, if any,
+  // so the picker can show it and the user understands selecting will reassign.
+  const directRelation = (candId) => {
+    for (const r of relationships) {
+      if (r.type === 'partner' &&
+        ((r.from_person === anchor.id && r.to_person === candId) ||
+         (r.from_person === candId && r.to_person === anchor.id))) {
+        return r.partner_status === 'former' ? 'ex-partner' : 'partner';
+      }
+      if (r.type === 'parent' && r.from_person === anchor.id && r.to_person === candId) return 'child';
+      if (r.type === 'parent' && r.from_person === candId && r.to_person === anchor.id) return 'parent';
     }
-    return ids;
-  }, [relationships, anchor.id]);
+    return null;
+  };
 
-  // Candidates for link-existing mode: filter by search, exclude anchor + already linked.
+  // Candidates for link-existing mode: everyone but the anchor, filtered by
+  // search across their names. Already-linked people ARE shown (with their
+  // current relationship) so a wrong link can be corrected here.
   const candidates = useMemo(() => {
     const q = search.trim().toLowerCase();
     return people.filter((p) => {
-      if (alreadyLinked.has(p.id)) return false;
+      if (p.id === anchor.id) return false;
       if (!q) return true;
-      return p.display_name.toLowerCase().includes(q);
+      const hay = `${p.display_name} ${p.birth_name || ''} ${p.given_names || ''} ${p.family_name || ''}`.toLowerCase();
+      return hay.includes(q);
     });
-  }, [people, search, alreadyLinked]);
+  }, [people, search, anchor.id]);
 
   const canAdd = relKey && given.trim().length > 0;
   const canLink = relKey && mode === 'existing';
@@ -305,17 +313,21 @@ export default function AddRelativeSheet({ anchor, people = [], relationships = 
               {candidates.length === 0 && (
                 <li className="link-existing__empty">No matching people found</li>
               )}
-              {candidates.map((p) => (
-                <li key={p.id} role="option">
-                  <button
-                    className="link-existing__item"
-                    onClick={() => linkToExisting(p.id)}
-                  >
-                    <span className="link-existing__name">{p.display_name}</span>
-                    {p.birth_date && <span className="link-existing__date">b. {p.birth_date}</span>}
-                  </button>
-                </li>
-              ))}
+              {candidates.map((p) => {
+                const current = directRelation(p.id);
+                return (
+                  <li key={p.id} role="option">
+                    <button
+                      className="link-existing__item"
+                      onClick={() => linkToExisting(p.id)}
+                    >
+                      <span className="link-existing__name">{p.display_name}</span>
+                      {current && <span className="link-existing__current">currently {current}</span>}
+                      {p.birth_date && <span className="link-existing__date">b. {p.birth_date}</span>}
+                    </button>
+                  </li>
+                );
+              })}
             </ul>
           </div>
         )}
