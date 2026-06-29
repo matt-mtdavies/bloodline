@@ -48,7 +48,14 @@ export default function LoginScreen({ onAuthSuccess }) {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ email: email.trim().toLowerCase(), ...(inviteToken && { invite: inviteToken }) }),
       });
-      if (!res.ok) throw new Error();
+      if (!res.ok) {
+        // Surface the server's real reason (rate limit, email failure, …) rather
+        // than blaming the connection for every non-OK response.
+        const body = await res.json().catch(() => ({}));
+        setStatus('error');
+        setErrorMsg(body.error || 'Could not send the code. Please try again in a moment.');
+        return;
+      }
       setStep('code');
       setCode('');
       setStatus('idle');

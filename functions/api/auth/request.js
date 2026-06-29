@@ -26,14 +26,14 @@ export async function onRequestPost({ request, env }) {
   const expires = now + 60 * 15; // 15 min
 
   if (env.DB) {
-    // Rate limit: max 3 code requests per email per hour.
+    // Rate limit: max 5 code requests per email per hour.
     const oneHourAgo = now - 3600;
     const recent = await env.DB.prepare(
       `SELECT COUNT(*) as cnt FROM auth_token WHERE email = ? AND purpose = 'login' AND created_at > ?`,
     ).bind(email.toLowerCase(), oneHourAgo).first();
-    if ((recent?.cnt ?? 0) >= 3) {
+    if ((recent?.cnt ?? 0) >= 5) {
       return json(
-        { error: 'Too many requests. Please wait an hour before requesting another code.' },
+        { error: 'Too many code requests. Please wait a little while, then try again.' },
         { status: 429 },
       );
     }
@@ -47,11 +47,25 @@ export async function onRequestPost({ request, env }) {
     ).bind(t, email.toLowerCase(), expires).run();
   }
 
-  await sendEmail(env, {
-    to: email,
-    subject: `${displayCode} — your Bloodline sign-in code`,
-    html: codeEmail(displayCode),
-  });
+  // Send the code. If the email service fails, roll back the token we just
+  // created so this failed attempt doesn't count against the rate limit, and
+  // return the real reason instead of an opaque 500.
+  try {
+    await sendEmail(env, {
+      to: email,
+      subject: `${displayCode} — your Bloodline sign-in code`,
+      html: codeEmail(displayCode),
+    });
+  } catch (e) {
+    console.error('[auth/request] sendEmail failed:', e.message);
+    if (env.DB) {
+      await env.DB.prepare(`DELETE FROM auth_token WHERE token = ?`).bind(t).run().catch(() => {});
+    }
+    return json(
+      { error: "We couldn't send your sign-in code right now. Please try again in a moment." },
+      { status: 502 },
+    );
+  }
 
   return json({ ok: true });
 }
