@@ -3,6 +3,17 @@ import Avatar from './Avatar.jsx';
 
 export default function ActivityFeed({ activity = [], people = [], userEmail, onClose, onSelectPerson }) {
   const byId = useMemo(() => new Map(people.map((p) => [p.id, p])), [people]);
+  // Resolve an author's real name from their email by matching a tree person —
+  // so the feed shows "Jess Ransom", not the "jscottd" guessed from the address.
+  const nameByEmail = useMemo(() => {
+    const m = new Map();
+    for (const p of people) {
+      for (const e of [p.email, p.invited_email]) {
+        if (e) m.set(e.toLowerCase(), p.display_name);
+      }
+    }
+    return m;
+  }, [people]);
 
   // Close on Escape
   useEffect(() => {
@@ -54,6 +65,7 @@ export default function ActivityFeed({ activity = [], people = [], userEmail, on
                     event={event}
                     person={byId.get(event.personId) ?? { display_name: event.personName }}
                     userEmail={userEmail}
+                    nameByEmail={nameByEmail}
                     onSelect={() => { onClose(); onSelectPerson?.(event.personId); }}
                   />
                 ))}
@@ -66,7 +78,7 @@ export default function ActivityFeed({ activity = [], people = [], userEmail, on
   );
 }
 
-function ActivityRow({ event, person, userEmail, onSelect }) {
+function ActivityRow({ event, person, userEmail, nameByEmail, onSelect }) {
   const { color, Icon } = typeConfig(event.type);
   const showDetail = (event.type === 'memory_added' || event.type === 'document_added') && event.detail;
 
@@ -80,7 +92,7 @@ function ActivityRow({ event, person, userEmail, onSelect }) {
       </div>
       <div className="activity-row__body">
         <p className="activity-row__desc">
-          <EventDescription event={event} userEmail={userEmail} />
+          <EventDescription event={event} userEmail={userEmail} nameByEmail={nameByEmail} />
         </p>
         {showDetail && (
           <p className="activity-row__detail">
@@ -95,9 +107,11 @@ function ActivityRow({ event, person, userEmail, onSelect }) {
   );
 }
 
-function EventDescription({ event, userEmail }) {
+function EventDescription({ event, userEmail, nameByEmail }) {
   const isMe = userEmail && event.authorEmail ? event.authorEmail === userEmail : !event.authorEmail;
-  const author = <strong key="a">{isMe ? 'You' : (event.authorName ?? 'Someone')}</strong>;
+  const resolvedName = (event.authorEmail && nameByEmail?.get(event.authorEmail.toLowerCase()))
+    || event.authorName || 'Someone';
+  const author = <strong key="a">{isMe ? 'You' : resolvedName}</strong>;
   const subject = <strong key="s" className="activity-row__subject">{event.personName}</strong>;
 
   switch (event.type) {

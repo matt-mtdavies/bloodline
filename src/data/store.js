@@ -703,7 +703,11 @@ function nameFromEmail(email) {
 // Prepend an activity event to the next state object, capped at 100 entries.
 function withActivity(next, partial) {
   const authorEmail = _currentUser?.email ?? null;
-  const authorName = nameFromEmail(authorEmail);
+  // Prefer the author's real name: their claimed person, then their account
+  // display name, falling back to a guess from the email only as a last resort.
+  const claimed = _currentUser?.person_id
+    && (next.people || state.people || []).find((p) => p.id === _currentUser.person_id);
+  const authorName = claimed?.display_name || _currentUser?.display_name || nameFromEmail(authorEmail);
   const event = { id: acid(), authorName, authorEmail, detail: null, ...partial, created_at: new Date().toISOString() };
   return { ...next, activity: [event, ...(next.activity ?? [])].slice(0, 100) };
 }
