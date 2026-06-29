@@ -1,3 +1,5 @@
+import { uid } from './util.js';
+
 /*
  * Shared invite-processing logic used by both the OTP verify flow and the
  * direct accept endpoint (for users who are already logged in).
@@ -45,6 +47,35 @@ export async function processInvite(db, inviteToken, userId, now) {
       `INSERT INTO family_member (family_id, user_id, role, invited_by, joined_at)
        VALUES (?, ?, ?, ?, ?)`,
     ).bind(invite.family_id, userId, invite.role, invite.from_user, now).run();
+
+    // Append a member_joined event to the shared activity feed (tree_json).
+    try {
+      const joiner = await db.prepare(
+        `SELECT email, display_name FROM user WHERE id = ?`,
+      ).bind(userId).first();
+      const treeRow = await db.prepare(
+        `SELECT tree_json FROM family_tree WHERE family_id = ?`,
+      ).bind(invite.family_id).first();
+      if (treeRow && joiner) {
+        const tree = JSON.parse(treeRow.tree_json);
+        const authorName = joiner.display_name
+          || (joiner.email ? joiner.email.split('@')[0] : 'Someone');
+        const event = {
+          id: uid('act_'),
+          type: 'member_joined',
+          authorEmail: joiner.email,
+          authorName,
+          personId: null,
+          personName: authorName,
+          detail: invite.role,
+          created_at: new Date(now * 1000).toISOString(),
+        };
+        tree.activity = [event, ...(tree.activity ?? [])].slice(0, 100);
+        await db.prepare(
+          `UPDATE family_tree SET tree_json = ?, updated_at = ? WHERE family_id = ?`,
+        ).bind(JSON.stringify(tree), now, invite.family_id).run();
+      }
+    } catch { /* non-fatal — join still succeeds without the activity event */ }
   }
 
   await db.prepare(`UPDATE user SET family_id = ? WHERE id = ?`).bind(invite.family_id, userId).run();

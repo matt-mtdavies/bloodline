@@ -81,11 +81,16 @@ export default function ActivityFeed({ activity = [], people = [], userEmail, on
 function ActivityRow({ event, person, userEmail, nameByEmail, onSelect }) {
   const { color, Icon } = typeConfig(event.type);
   const showDetail = (event.type === 'memory_added' || event.type === 'document_added') && event.detail;
+  // For join events, there's no tree person — show the member's own avatar.
+  const avatarPerson = event.type === 'member_joined'
+    ? { display_name: event.personName || event.authorName }
+    : person;
 
   return (
-    <button className="activity-row" onClick={onSelect}>
+    <button className="activity-row" onClick={event.type === 'member_joined' ? undefined : onSelect}
+      style={event.type === 'member_joined' ? { cursor: 'default' } : undefined}>
       <div className="activity-row__avatar-wrap">
-        <Avatar person={person} size={40} />
+        <Avatar person={avatarPerson} size={40} />
         <span className="activity-row__badge" style={{ background: color }} aria-hidden="true">
           <Icon />
         </span>
@@ -134,6 +139,8 @@ function EventDescription({ event, userEmail, nameByEmail }) {
           {event.detail ? <> and <strong key="d">{event.detail}</strong></> : null}
         </>
       );
+    case 'member_joined':
+      return <>{author} joined the family tree</>;
     default:
       return <>{author} updated {subject}</>;
   }
@@ -162,6 +169,7 @@ function typeConfig(type) {
     case 'portrait_updated':  return { color: '#c2603a', Icon: PortraitIcon };
     case 'person_updated':    return { color: '#6b6f76', Icon: EditIcon };
     case 'relationship_added':return { color: '#4b6ea8', Icon: LinkIcon };
+    case 'member_joined':     return { color: '#2a7a6a', Icon: JoinIcon };
     default:                  return { color: '#6b6f76', Icon: EditIcon };
   }
 }
@@ -271,6 +279,16 @@ function LinkIcon() {
         stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
       <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"
         stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function JoinIcon() {
+  return (
+    <svg width="9" height="9" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="9" cy="7" r="4" stroke="currentColor" strokeWidth="2.2" />
+      <path d="M2 21c0-4 3.1-7 7-7" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
+      <path d="M19 12l-5 5 5 5M14 17h7" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
