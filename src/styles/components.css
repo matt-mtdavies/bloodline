@@ -349,18 +349,19 @@
   width: 34px;
   height: 34px;
   border-radius: 10px;
-  color: var(--ink-faint);
-  opacity: 0;
-  transition: opacity 0.15s, color 0.15s, background 0.15s;
+  color: var(--ink-soft);
+  /* Always visible — hover-only controls are invisible on touch devices, which
+     are the primary platform. A soft resting pill reads as tappable. */
+  opacity: 1;
+  background: var(--paper-deep, #f1ece4);
+  transition: color 0.15s, background 0.15s, transform 0.1s;
 }
+.rel-chip__edit-btn:active,
+.rel-chip__unlink:active { transform: scale(0.92); }
 .rel-chip__edit-btn { margin-right: 0; }
 .rel-chip__unlink   { margin-right: 4px; }
-.rel-chip:hover .rel-chip__edit-btn,
-.rel-chip:hover .rel-chip__unlink,
-.rel-chip:focus-within .rel-chip__edit-btn,
-.rel-chip:focus-within .rel-chip__unlink { opacity: 1; }
-.rel-chip__edit-btn--on { opacity: 1 !important; color: var(--accent); }
-.rel-chip__edit-btn:hover { color: var(--accent); background: rgba(194,96,58,0.07); }
+.rel-chip__edit-btn--on { color: #fff; background: var(--accent); }
+.rel-chip__edit-btn:hover { color: var(--accent); background: rgba(194,96,58,0.12); }
 .rel-chip__unlink:hover   { color: #c2603a; background: #f5e8e4; }
 
 /* Inline qualifier picker — slides in below the card row */

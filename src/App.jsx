@@ -586,14 +586,22 @@ export default function App() {
   const handleAdd = useCallback(
     (fields) => {
       const newId = addRelative({ anchorId: addAnchorId, ...fields });
-      if (!newId) return; // blocked by constraint (e.g. duplicate bio parent)
+      if (!newId) {
+        // Blocked by a constraint — tell the user why instead of silently failing.
+        const anchor = graph.byId.get(addAnchorId);
+        const first = anchor?.display_name?.split(/\s+/)[0] || 'They';
+        const role = fields.relKey === 'mother' ? 'mother' : fields.relKey === 'father' ? 'father' : 'parent';
+        setSyncToast(`${first} already has a biological ${role}. Add them as a step or adoptive ${role} instead, or remove the existing one first.`);
+        setTimeout(() => setSyncToast(null), 6000);
+        return;
+      }
       setAddAnchorId(null);
       viewApi.current?.unpin();
       setOpenId(null);
       setExpanded((prev) => new Set(prev).add(addAnchorId).add(newId));
       setActiveId(newId);
     },
-    [addAnchorId],
+    [addAnchorId, graph],
   );
 
   // Link two existing people without creating a new person.

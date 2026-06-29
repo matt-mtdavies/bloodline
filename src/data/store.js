@@ -831,20 +831,22 @@ export function addRelative({ anchorId, relKey, name, given, middle, family, gen
 
   // When adding a sibling to someone with no parents in the tree, the new person
   // would have zero link-force connections and float free in d3. Fix: auto-create
-  // an "uncertain" placeholder parent that connects both people.
+  // placeholder parents that connect both people. We create BOTH a mother and a
+  // father (partnered) so the two siblings share *two* parents and read as full
+  // siblings — a single placeholder made them only half-siblings, which confused
+  // people who didn't know how it worked. The placeholders are 'uncertain' so
+  // they clearly read as stand-ins to be filled in or merged later.
   const extraPeople = [];
   const extraEdges = [];
   if ((relKey === 'brother' || relKey === 'sister') && edges.length === 0) {
     const anchor = state.people.find((p) => p.id === anchorId);
-    const familyName = anchor?.family_name || anchor?.display_name?.split(/\s+/).slice(-1)[0] || '';
-    const placeholderName = familyName ? `${familyName} Parent` : 'Unknown Parent';
-    const pid = uid();
-    extraPeople.push({
-      id: pid,
-      display_name: placeholderName,
+    const fam = anchor?.family_name || anchor?.display_name?.split(/\s+/).slice(-1)[0] || '';
+    const mkParent = (genderRole, roleWord) => ({
+      id: uid(),
+      display_name: fam ? `${fam} ${roleWord}` : `Unknown ${roleWord}`,
       given_names: null,
-      family_name: familyName || null,
-      gender: null,
+      family_name: fam || null,
+      gender: genderRole,
       birth_date: null,
       death_date: null,
       is_living: true,
@@ -861,7 +863,14 @@ export function addRelative({ anchorId, relKey, name, given, middle, family, gen
       created_by: 'me',
       visibility: 'full',
     });
-    extraEdges.push(parentEdge(pid, anchorId), parentEdge(pid, id));
+    const mother = mkParent('female', 'Mother');
+    const father = mkParent('male', 'Father');
+    extraPeople.push(mother, father);
+    extraEdges.push(
+      partnerEdge(father.id, mother.id, 'current'),
+      parentEdge(mother.id, anchorId), parentEdge(father.id, anchorId),
+      parentEdge(mother.id, id), parentEdge(father.id, id),
+    );
   }
 
   commit(withActivity({
