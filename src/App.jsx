@@ -118,6 +118,8 @@ export default function App() {
   const [duplicatesOpen, setDuplicatesOpen] = useState(false);
   // Whether the signed-in member can edit the tree (drives merge/cleanup tools).
   const canEditTree = !user || ['owner', 'coadmin', 'editor'].includes(data._meta?.role || 'owner');
+  // Contributors may add memories & photos but not change structure.
+  const canContributeTree = !user || ['owner', 'coadmin', 'editor', 'contributor'].includes(data._meta?.role || 'owner');
   const [promptClaim, setPromptClaim] = useState(false); // welcome a member to claim their spot
   const [installEvent, setInstallEvent] = useState(null); // captured beforeinstallprompt
   const [showInstall, setShowInstall] = useState(false);
@@ -978,6 +980,8 @@ export default function App() {
         memories={data.memories}
         photos={data.photos}
         documents={data.documents}
+        canEdit={canEditTree}
+        canContribute={canContributeTree}
         lockEscape={!!(addAnchorId || editId || timelineId || memoryId || lightbox || crop)}
         onClose={closePerson}
         onFocus={(id) => {

@@ -52,6 +52,8 @@ export default function PersonSheet({
   onUpdateCondition,
   onPhoto,
   onLifeJourney,
+  canEdit = true,        // editor+ : structural changes (people, relationships, edits)
+  canContribute = true,  // contributor+ : add memories & photos
 }) {
   const person = personId ? graph.byId.get(personId) : null;
   const fileRef = useRef(null);
@@ -319,28 +321,34 @@ export default function PersonSheet({
 
         {/* ── Hero ─────────────────────────────────────────────────────────── */}
         <header className="profile__hero">
-          <button
-            className="avatar-edit avatar-edit--lg"
-            onClick={() => fileRef.current?.click()}
-            aria-label={person.photo ? 'Change photo' : 'Add a photo'}
-            title={person.photo ? 'Change photo' : 'Add a photo'}
-          >
+          {canEdit ? (
+            <>
+              <button
+                className="avatar-edit avatar-edit--lg"
+                onClick={() => fileRef.current?.click()}
+                aria-label={person.photo ? 'Change photo' : 'Add a photo'}
+                title={person.photo ? 'Change photo' : 'Add a photo'}
+              >
+                <Avatar person={person} size={108} />
+                <span className="avatar-edit__badge">
+                  <CameraIcon />
+                </span>
+              </button>
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/*"
+                hidden
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) onPhoto?.(person.id, file);
+                  e.target.value = '';
+                }}
+              />
+            </>
+          ) : (
             <Avatar person={person} size={108} />
-            <span className="avatar-edit__badge">
-              <CameraIcon />
-            </span>
-          </button>
-          <input
-            ref={fileRef}
-            type="file"
-            accept="image/*"
-            hidden
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) onPhoto?.(person.id, file);
-              e.target.value = '';
-            }}
-          />
+          )}
 
           {relToViewer && <p className="profile__kin">{relToViewer}</p>}
           <h2 className="profile__name">{fullName(person)}</h2>
@@ -388,14 +396,18 @@ export default function PersonSheet({
 
         {/* ── Actions ──────────────────────────────────────────────────────── */}
         <div className="profile__actions">
-          <button className="action action--primary" onClick={() => onAddRelative?.(person.id)}>
-            <PlusIcon />
-            Add a relative
-          </button>
-          <button className="action" onClick={() => onEdit?.(person.id)}>
-            <PencilIcon />
-            Edit
-          </button>
+          {canEdit && (
+            <button className="action action--primary" onClick={() => onAddRelative?.(person.id)}>
+              <PlusIcon />
+              Add a relative
+            </button>
+          )}
+          {canEdit && (
+            <button className="action" onClick={() => onEdit?.(person.id)}>
+              <PencilIcon />
+              Edit
+            </button>
+          )}
           <button className="action action--invite" onClick={() => onInvite?.(person.id)} aria-label={`Invite ${person.display_name.split(' ')[0]}`}>
             <EnvelopeIcon />
             Invite
@@ -496,12 +508,14 @@ export default function PersonSheet({
                 <h3 className="profile-section__title">
                   Health history{(person.conditions?.length || 0) > 0 ? ` · ${person.conditions.length}` : ''}
                 </h3>
-                <button
-                  className="section-edit"
-                  onClick={() => { setHealthPickerOpen((v) => !v); setStatusPickId(null); }}
-                >
-                  {healthPickerOpen ? 'Done' : 'Add'}
-                </button>
+                {canEdit && (
+                  <button
+                    className="section-edit"
+                    onClick={() => { setHealthPickerOpen((v) => !v); setStatusPickId(null); }}
+                  >
+                    {healthPickerOpen ? 'Done' : 'Add'}
+                  </button>
+                )}
               </div>
               {(person.conditions?.length || 0) > 0 && (
                 <ul className="health-chips">
@@ -514,8 +528,8 @@ export default function PersonSheet({
                         <span className="health-chip__dot" style={{ background: catColor }} />
                         <button
                           className="health-chip__body"
-                          onClick={() => setStatusPickId(isPickingStatus ? null : c.id)}
-                          title="Tap to change status"
+                          onClick={() => canEdit && setStatusPickId(isPickingStatus ? null : c.id)}
+                          title={canEdit ? 'Tap to change status' : undefined}
                         >
                           <span className="health-chip__name">{c.name}</span>
                           {c.status !== 'active' && (
@@ -538,13 +552,15 @@ export default function PersonSheet({
                             ))}
                           </div>
                         )}
-                        <button
-                          className="health-chip__remove"
-                          onClick={() => { setStatusPickId(null); onRemoveCondition?.(person.id, c.id); }}
-                          aria-label={`Remove ${c.name}`}
-                        >
-                          <CloseIcon />
-                        </button>
+                        {canEdit && (
+                          <button
+                            className="health-chip__remove"
+                            onClick={() => { setStatusPickId(null); onRemoveCondition?.(person.id, c.id); }}
+                            aria-label={`Remove ${c.name}`}
+                          >
+                            <CloseIcon />
+                          </button>
+                        )}
                       </li>
                     );
                   })}
@@ -584,7 +600,7 @@ export default function PersonSheet({
                   </div>
                 </div>
               )}
-              {(person.conditions?.length || 0) === 0 && !healthPickerOpen && (
+              {canEdit && (person.conditions?.length || 0) === 0 && !healthPickerOpen && (
                 <button className="empty-add" onClick={() => setHealthPickerOpen(true)}>
                   <PlusIcon />
                   Add health conditions
@@ -602,9 +618,11 @@ export default function PersonSheet({
                 <h3 className="profile-section__title">
                   Photos{personPhotos.length > 0 ? ` · ${personPhotos.length}` : ''}
                 </h3>
-                <button className="section-edit" onClick={() => galleryRef.current?.click()}>
-                  Add
-                </button>
+                {canContribute && (
+                  <button className="section-edit" onClick={() => galleryRef.current?.click()}>
+                    Add
+                  </button>
+                )}
               </div>
               <input
                 ref={galleryRef}
@@ -628,11 +646,13 @@ export default function PersonSheet({
                     </li>
                   ))}
                 </ul>
-              ) : (
+              ) : canContribute ? (
                 <button className="empty-add" onClick={() => galleryRef.current?.click()}>
                   <PlusIcon />
                   Add photos
                 </button>
+              ) : (
+                <p className="profile-section__empty">No photos yet</p>
               )}
             </section>
 
@@ -642,9 +662,11 @@ export default function PersonSheet({
                 <h3 className="profile-section__title">
                   Documents{personDocs.length > 0 ? ` · ${personDocs.length}` : ''}
                 </h3>
-                <button className="section-edit" onClick={() => docRef.current?.click()}>
-                  Add
-                </button>
+                {canEdit && (
+                  <button className="section-edit" onClick={() => docRef.current?.click()}>
+                    Add
+                  </button>
+                )}
               </div>
               <input
                 ref={docRef}
@@ -716,11 +738,13 @@ export default function PersonSheet({
                     </li>
                   ))}
                 </ul>
-              ) : (
+              ) : canEdit ? (
                 <button className="empty-add" onClick={() => docRef.current?.click()}>
                   <PlusIcon />
                   Add certificates, letters or records
                 </button>
+              ) : (
+                <p className="profile-section__empty">No documents yet</p>
               )}
             </section>
 
@@ -730,9 +754,11 @@ export default function PersonSheet({
                 <h3 className="profile-section__title">
                   Voice &amp; Video{personMedia.length > 0 ? ` · ${personMedia.length}` : ''}
                 </h3>
-                <button className="section-edit" onClick={() => mediaRef.current?.click()}>
-                  Add
-                </button>
+                {canEdit && (
+                  <button className="section-edit" onClick={() => mediaRef.current?.click()}>
+                    Add
+                  </button>
+                )}
               </div>
               <input
                 ref={mediaRef}
@@ -802,11 +828,13 @@ export default function PersonSheet({
                     </li>
                   ))}
                 </ul>
-              ) : (
+              ) : canEdit ? (
                 <button className="empty-add" onClick={() => mediaRef.current?.click()}>
                   <PlusIcon />
                   Add a voice message or video clip
                 </button>
+              ) : (
+                <p className="profile-section__empty">No voice or video yet</p>
               )}
             </section>
 
@@ -814,9 +842,11 @@ export default function PersonSheet({
             <section className="profile-section">
               <div className="profile-section__head">
                 <h3 className="profile-section__title">Key life events</h3>
-                <button className="section-edit" onClick={() => onEditTimeline?.(person.id)}>
-                  {events.length > 0 ? 'Edit' : null}
-                </button>
+                {canEdit && (
+                  <button className="section-edit" onClick={() => onEditTimeline?.(person.id)}>
+                    {events.length > 0 ? 'Edit' : null}
+                  </button>
+                )}
               </div>
               {events.length > 0 ? (
                 <ol className="timeline">
@@ -831,11 +861,13 @@ export default function PersonSheet({
                     </li>
                   ))}
                 </ol>
-              ) : (
+              ) : canEdit ? (
                 <button className="empty-add" onClick={() => onEditTimeline?.(person.id)}>
                   <PlusIcon />
                   Add a life event
                 </button>
+              ) : (
+                <p className="profile-section__empty">No life events yet</p>
               )}
             </section>
 
@@ -875,7 +907,7 @@ export default function PersonSheet({
                               </span>
                               <RelChevronIcon />
                             </button>
-                            {qualArgs && (
+                            {canEdit && qualArgs && (
                               <button
                                 className={'rel-chip__edit-btn' + (isEditingQual ? ' rel-chip__edit-btn--on' : '')}
                                 onClick={() => setEditingQualId(isEditingQual ? null : item.id)}
@@ -885,7 +917,7 @@ export default function PersonSheet({
                                 <PencilIcon />
                               </button>
                             )}
-                            {unlinkArgs && (
+                            {canEdit && unlinkArgs && (
                               <button
                                 className="rel-chip__unlink"
                                 onClick={() => { setEditingQualId(null); onRemoveRelationship?.(...unlinkArgs); }}
@@ -956,9 +988,11 @@ export default function PersonSheet({
                 <h3 className="profile-section__title">
                   Memories{personMemories.length > 0 ? ` · ${personMemories.length}` : ''}
                 </h3>
-                <button className="section-edit" onClick={() => onAddMemory?.(person.id)}>
-                  Add
-                </button>
+                {canContribute && (
+                  <button className="section-edit" onClick={() => onAddMemory?.(person.id)}>
+                    Add
+                  </button>
+                )}
               </div>
 
               {personMemories.length > 0 ? (
@@ -992,19 +1026,22 @@ export default function PersonSheet({
                     </li>
                   ))}
                 </ul>
-              ) : (
+              ) : canContribute ? (
                 <button className="empty-add" onClick={() => onAddMemory?.(person.id)}>
                   <PlusIcon />
                   Be the first to add a memory
                 </button>
+              ) : (
+                <p className="profile-section__empty">No memories yet</p>
               )}
             </section>
 
             {/* Life Story — AI-generated from the person's timeline + memories. */}
+            {(canEdit || person.story) && (
             <section className="profile-section">
               <div className="profile-section__head">
                 <h3 className="profile-section__title">Life Story</h3>
-                {storyState.phase === 'idle' && (person.story || storyState.error) && (
+                {canEdit && storyState.phase === 'idle' && (person.story || storyState.error) && (
                   <button className="story-regen" onClick={generateStory}>
                     {storyState.error ? 'Try again' : 'Regenerate'}
                   </button>
@@ -1018,7 +1055,7 @@ export default function PersonSheet({
                 <p className="story-error">{storyState.error}</p>
               )}
 
-              {storyState.phase === 'idle' && !person.story && !storyState.error && (
+              {canEdit && storyState.phase === 'idle' && !person.story && !storyState.error && (
                 <button className="ai-generate" onClick={generateStory}>
                   <SparkleIcon />
                   Generate life story with AI
@@ -1058,6 +1095,7 @@ export default function PersonSheet({
                 </>
               )}
             </section>
+            )}
 
             {/* Future features */}
             <section className="profile-section">

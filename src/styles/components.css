@@ -2364,6 +2364,12 @@
   margin-bottom: 12px;
 }
 .profile-section__head .profile-section__title { margin-bottom: 0; }
+.profile-section__empty {
+  font-size: 13.5px;
+  color: var(--ink-faint, #a09590);
+  font-style: italic;
+  margin: 2px 0 0;
+}
 .section-edit {
   font-size: 13.5px;
   font-weight: 600;

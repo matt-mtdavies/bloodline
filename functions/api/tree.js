@@ -92,8 +92,13 @@ export async function onRequestPut({ request, env, data }) {
       membership = { family_id: familyId, role: 'owner' };
     }
 
-    // Editors and above can write; contributors and viewers cannot.
-    if (!['owner', 'coadmin', 'editor'].includes(membership.role)) {
+    // Write permissions:
+    //   • owner / coadmin / editor → may change the whole tree
+    //   • contributor               → may add/change memories & photos only
+    //   • viewer                    → read-only
+    const canEditAll = ['owner', 'coadmin', 'editor'].includes(membership.role);
+    const canContribute = membership.role === 'contributor';
+    if (!canEditAll && !canContribute) {
       return json({ error: 'Forbidden' }, { status: 403 });
     }
 
@@ -110,19 +115,39 @@ export async function onRequestPut({ request, env, data }) {
       }
     }
 
+    const existingTree = await env.DB.prepare(
+      'SELECT tree_json FROM family_tree WHERE family_id = ?',
+    ).bind(membership.family_id).first();
+    let prev = null;
+    if (existingTree) {
+      try { prev = JSON.parse(existingTree.tree_json); } catch { /* unparseable — ignore */ }
+    }
+
+    // Contributors can't alter structure: keep the stored tree and accept only
+    // their memories & photos (plus deletions of those). Everything else — people,
+    // relationships, documents, family name — is preserved from the server copy.
+    let toStore = tree;
+    if (!canEditAll) {
+      const base = prev || {};
+      const deletedIn = tree._deleted || {};
+      toStore = {
+        ...base,
+        memories: Array.isArray(tree.memories) ? tree.memories : (base.memories || []),
+        photos: Array.isArray(tree.photos) ? tree.photos : (base.photos || []),
+        _deleted: {
+          ...(base._deleted || {}),
+          memories: { ...((base._deleted || {}).memories || {}), ...(deletedIn.memories || {}) },
+          photos: { ...((base._deleted || {}).photos || {}), ...(deletedIn.photos || {}) },
+        },
+        _seq: ((base._seq || 0) + 1), // bump so other clients pick up the change
+      };
+    }
+
     // myPersonId is each viewer's OWN perspective (resolved per-user on load),
     // not a shared property. Pin the blob's value to whatever the family already
     // has (set by the owner on first save) so a member's save can't repoint
     // everyone else's seat to themselves.
-    const existingTree = await env.DB.prepare(
-      'SELECT tree_json FROM family_tree WHERE family_id = ?',
-    ).bind(membership.family_id).first();
-    if (existingTree) {
-      try {
-        const prev = JSON.parse(existingTree.tree_json);
-        if (prev && prev.myPersonId != null) tree.myPersonId = prev.myPersonId;
-      } catch { /* unparseable existing blob — keep the client's value */ }
-    }
+    if (prev && prev.myPersonId != null) toStore.myPersonId = prev.myPersonId;
 
     await env.DB.prepare(
       `INSERT INTO family_tree (family_id, tree_json, updated_at)
@@ -130,12 +155,12 @@ export async function onRequestPut({ request, env, data }) {
        ON CONFLICT (family_id) DO UPDATE
          SET tree_json = excluded.tree_json,
              updated_at = excluded.updated_at`,
-    ).bind(membership.family_id, JSON.stringify(tree), now).run();
+    ).bind(membership.family_id, JSON.stringify(toStore), now).run();
 
     // Keep family.name in sync so invite emails always show the current name.
-    if (tree.familyName) {
+    if (canEditAll && toStore.familyName) {
       await env.DB.prepare(`UPDATE family SET name = ? WHERE id = ?`)
-        .bind(tree.familyName, membership.family_id).run();
+        .bind(toStore.familyName, membership.family_id).run();
     }
 
     return json(

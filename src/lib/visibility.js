@@ -26,6 +26,11 @@ export function canEdit(myRole) {
   return roleRank(myRole) >= roleRank('editor');
 }
 
+// Contributors and above may add memories & photos (but not edit structure).
+export function canContribute(myRole) {
+  return roleRank(myRole) >= roleRank('contributor');
+}
+
 export function canInvite(myRole) {
   return roleRank(myRole) >= roleRank('coadmin');
 }
