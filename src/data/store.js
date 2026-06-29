@@ -34,7 +34,38 @@ const EMPTY = {
   hasCompletedOnboarding: false,
   familyName: '',
   myPersonId: null,
+  // Tombstones: ids the user has deleted, kept so a sync merge can't resurrect
+  // them from the server. Shape: { people: {id: ts}, relationships: {...}, ... }.
+  _deleted: {},
 };
+
+// Record deleted ids onto a state object's tombstones so the next sync merge
+// won't re-add them. Returns a new state.
+function withTombstones(next, kind, ids) {
+  if (!ids || !ids.length) return next;
+  const ts = Date.now();
+  const cur = next._deleted || {};
+  const bucket = { ...(cur[kind] || {}) };
+  for (const id of ids) if (id != null) bucket[id] = ts;
+  return { ...next, _deleted: { ...cur, [kind]: bucket } };
+}
+
+// Merge two tombstone maps (union, newest ts wins) — used when reconciling with
+// the server so deletions made on any device are honoured everywhere.
+function mergeTombstones(a = {}, b = {}) {
+  const out = {};
+  for (const kind of new Set([...Object.keys(a), ...Object.keys(b)])) {
+    out[kind] = { ...(a[kind] || {}), ...(b[kind] || {}) };
+  }
+  return out;
+}
+
+// Strip out any items whose id has been tombstoned for the given collection.
+function dropTombstoned(items, deleted, kind) {
+  const graves = deleted?.[kind];
+  if (!graves || !items) return items || [];
+  return items.filter((x) => !(x && x.id in graves));
+}
 
 function load() {
   try {
@@ -120,7 +151,20 @@ if (state.people?.length > 0 && state.memories.length === 0 && state.people.some
 }
 
 // Clean any duplicate / contradictory relationships left in cached data before
-// the first render (the initial state bypasses commit's normalisation).
+// the first render (the initial state bypasses commit's normalisation), and
+// honour any tombstoned deletions still lingering in the cache.
+if (!state._deleted) state._deleted = {};
+if (Array.isArray(state.people)) {
+  state.people = dropTombstoned(state.people, state._deleted, 'people');
+  const ids = new Set(state.people.map((p) => p.id));
+  if (Array.isArray(state.relationships)) {
+    state.relationships = dropTombstoned(state.relationships, state._deleted, 'relationships')
+      .filter((r) => ids.has(r.from_person) && ids.has(r.to_person));
+  }
+  state.memories = dropTombstoned(state.memories, state._deleted, 'memories');
+  state.photos = dropTombstoned(state.photos, state._deleted, 'photos');
+  state.documents = dropTombstoned(state.documents, state._deleted, 'documents');
+}
 if (Array.isArray(state.relationships)) {
   state.relationships = normalizeRelationships(state.relationships);
 }
@@ -328,13 +372,28 @@ async function _fetchAndMerge(local) {
     // as loadFromServer, so the merge never reverts to the owner's perspective.
     const mergeViewerId = resolveViewerPersonId(mergedPeople, local.myPersonId ?? server.myPersonId);
 
+    // Union deletions from both sides, then drop anything tombstoned so neither
+    // side can resurrect what the other deleted; finally drop dangling edges.
+    const deleted = mergeTombstones(local._deleted, server._deleted);
+    const people = dropTombstoned(mergedPeople, deleted, 'people');
+    const peopleIds = new Set(people.map((p) => p.id));
     const merged = {
       ...server,
       ...local, // local top-level scalars win (familyName, myPersonId, etc.)
-      people:        mergedPeople,
-      relationships: [...(local.relationships || []), ...(server.relationships || []).filter((r)  => !lRelIds.has(r.id))],
-      memories:      [...(local.memories      || []), ...(server.memories      || []).filter((m)  => !lMemIds.has(m.id))],
-      photos:        [...(local.photos        || []), ...(server.photos        || []).filter((ph) => !lPhotoIds.has(ph.id))],
+      people,
+      relationships: dropTombstoned(
+        [...(local.relationships || []), ...(server.relationships || []).filter((r) => !lRelIds.has(r.id))],
+        deleted, 'relationships',
+      ).filter((r) => peopleIds.has(r.from_person) && peopleIds.has(r.to_person)),
+      memories: dropTombstoned(
+        [...(local.memories || []), ...(server.memories || []).filter((m) => !lMemIds.has(m.id))],
+        deleted, 'memories',
+      ),
+      photos: dropTombstoned(
+        [...(local.photos || []), ...(server.photos || []).filter((ph) => !lPhotoIds.has(ph.id))],
+        deleted, 'photos',
+      ),
+      _deleted: deleted,
       ...(mergeViewerId ? { myPersonId: mergeViewerId } : {}),
     };
 
@@ -503,18 +562,33 @@ export async function loadFromServer({ forceServerWins = false } = {}) {
     );
     const mergedDocs = [...(data.documents || []), ...localDataDocs];
 
+    // Honour deletions: union local + server tombstones, then drop anything the
+    // user deleted (so the server copy can't resurrect it) and any edge left
+    // dangling to a removed person.
+    const deleted = mergeTombstones(state._deleted, data._deleted);
+    const people = dropTombstoned(mergedPeople, deleted, 'people');
+    const peopleIds = new Set((people || []).map((p) => p.id));
+    const relationships = dropTombstoned(data.relationships, deleted, 'relationships')
+      .filter((r) => peopleIds.has(r.from_person) && peopleIds.has(r.to_person));
+    const memories = dropTombstoned(data.memories, deleted, 'memories');
+    const photos = dropTombstoned(mergedPhotos, deleted, 'photos');
+    const documents = dropTombstoned(mergedDocs, deleted, 'documents');
+
     // Resolve the viewer's own person (their claimed link first, then email)
     // so each family member sees relationship labels from their own seat — not
     // the owner's, which is what the shared myPersonId defaults to.
-    const resolvedMyPersonId = resolveViewerPersonId(mergedPeople, data.myPersonId);
+    const resolvedMyPersonId = resolveViewerPersonId(people, data.myPersonId);
 
     commit(
       {
         ...EMPTY,
         ...data,
-        ...(mergedPeople ? { people: mergedPeople } : {}),
-        photos: mergedPhotos,
-        documents: mergedDocs,
+        people,
+        relationships,
+        memories,
+        photos,
+        documents,
+        _deleted: deleted,
         ...(resolvedMyPersonId ? { myPersonId: resolvedMyPersonId } : {}),
       },
       { fromServer: true },
@@ -857,17 +931,17 @@ export function updateRelationshipQualifier(fromId, toId, qualifier) {
 // For 'parent': fromId is the parent, toId is the child.
 // For 'partner': direction doesn't matter — both orderings are checked.
 export function removeRelationship(fromId, toId, type) {
-  commit({
+  const isMatch = (r) => {
+    if (r.type !== type) return false;
+    if (type === 'parent') return r.from_person === fromId && r.to_person === toId;
+    return (r.from_person === fromId && r.to_person === toId) ||
+      (r.from_person === toId && r.to_person === fromId);
+  };
+  const removedIds = state.relationships.filter(isMatch).map((r) => r.id);
+  commit(withTombstones({
     ...state,
-    relationships: state.relationships.filter((r) => {
-      if (r.type !== type) return true;
-      if (type === 'parent') return !(r.from_person === fromId && r.to_person === toId);
-      return !(
-        (r.from_person === fromId && r.to_person === toId) ||
-        (r.from_person === toId && r.to_person === fromId)
-      );
-    }),
-  });
+    relationships: state.relationships.filter((r) => !isMatch(r)),
+  }, 'relationships', removedIds));
 }
 
 // Merge a duplicate person (dropId) into the one to keep (keepId): repoint every
@@ -934,7 +1008,8 @@ export function mergePeople(keepId, dropId) {
   const reassign = (arr) => (arr || []).map((x) => (x.person_id === dropId ? { ...x, person_id: keepId } : x));
   const people = state.people.filter((p) => p.id !== dropId).map((p) => (p.id === keepId ? merged : p));
 
-  commit(withActivity({
+  // Tombstone the dropped person so a sync merge can't resurrect the duplicate.
+  const next = withTombstones({
     ...state,
     people,
     relationships,
@@ -942,7 +1017,9 @@ export function mergePeople(keepId, dropId) {
     photos: reassign(state.photos),
     documents: reassign(state.documents),
     myPersonId: state.myPersonId === dropId ? keepId : state.myPersonId,
-  }, {
+  }, 'people', [dropId]);
+
+  commit(withActivity(next, {
     type: 'people_merged',
     personId: keepId,
     personName: merged.display_name,
@@ -950,18 +1027,28 @@ export function mergePeople(keepId, dropId) {
   }));
 }
 
-// Remove a person and all traces of them from the tree.
+// Remove a person and all traces of them from the tree. Tombstones the person,
+// their edges, and their content so a sync merge can't bring any of it back.
 export function removePerson(id) {
-  commit({
+  const relIds = state.relationships.filter((r) => r.from_person === id || r.to_person === id).map((r) => r.id);
+  const memIds = (state.memories || []).filter((m) => m.person_id === id).map((m) => m.id);
+  const phIds = (state.photos || []).filter((ph) => ph.person_id === id).map((ph) => ph.id);
+  const docIds = (state.documents || []).filter((d) => d.person_id === id).map((d) => d.id);
+
+  let next = {
     ...state,
     people: state.people.filter((p) => p.id !== id),
-    relationships: state.relationships.filter(
-      (r) => r.from_person !== id && r.to_person !== id,
-    ),
+    relationships: state.relationships.filter((r) => r.from_person !== id && r.to_person !== id),
     memories: (state.memories || []).filter((m) => m.person_id !== id),
     photos: (state.photos || []).filter((ph) => ph.person_id !== id),
     documents: (state.documents || []).filter((d) => d.person_id !== id),
-  });
+  };
+  next = withTombstones(next, 'people', [id]);
+  next = withTombstones(next, 'relationships', relIds);
+  next = withTombstones(next, 'memories', memIds);
+  next = withTombstones(next, 'photos', phIds);
+  next = withTombstones(next, 'documents', docIds);
+  commit(next);
 }
 
 export function setupTree({ me, partner, parents, children, memoryPersonIdx, memoryText, familyName }) {
@@ -1116,7 +1203,7 @@ export function toggleMemoryVote(id) {
 }
 
 export function removeMemory(id) {
-  commit({ ...state, memories: state.memories.filter((mem) => mem.id !== id) });
+  commit(withTombstones({ ...state, memories: state.memories.filter((mem) => mem.id !== id) }, 'memories', [id]));
 }
 
 // ── Photos (gallery) ──────────────────────────────────────────────────────────
@@ -1152,7 +1239,7 @@ export function updatePhotoSrc(id, src) {
 }
 
 export function removePhoto(id) {
-  commit({ ...state, photos: state.photos.filter((p) => p.id !== id) });
+  commit(withTombstones({ ...state, photos: state.photos.filter((p) => p.id !== id) }, 'photos', [id]));
 }
 
 // Upload any data: URL portraits/gallery photos to R2 and replace them with
@@ -1206,7 +1293,7 @@ export function addDocument(personId, { title, mime, src }) {
 }
 
 export function removeDocument(id) {
-  commit({ ...state, documents: state.documents.filter((d) => d.id !== id) });
+  commit(withTombstones({ ...state, documents: state.documents.filter((d) => d.id !== id) }, 'documents', [id]));
 }
 
 export function updateDocSrc(id, src) {
