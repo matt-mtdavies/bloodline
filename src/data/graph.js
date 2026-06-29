@@ -276,11 +276,16 @@ export function relationLabel(graph, focusId, otherId) {
     }
   }
 
-  // Niece / Nephew: a child of one of focus's siblings
+  // Niece / Nephew: a child of one of focus's siblings. It's a *step* niece/
+  // nephew if either link is step — the sibling is a step-sibling, OR they are
+  // the sibling's step-child (e.g. a sibling married someone with kids).
   for (const s of graph.siblings(focusId)) {
-    if (graph.children(s.id).some((x) => x.id === otherId)) {
-      if (s.kind === 'step') return `Step-${g('Nephew', 'Niece', 'Niece/Nephew')}`;
+    const childEntry = graph.children(s.id).find((x) => x.id === otherId);
+    if (childEntry) {
+      const isStep = s.kind === 'step' || childEntry.qualifier === 'step';
+      if (isStep) return `Step-${g('Nephew', 'Niece', 'Niece/Nephew')}`;
       if (s.kind === 'half') return `Half-${g('Nephew', 'Niece', 'Niece/Nephew')}`;
+      if (childEntry.qualifier === 'adoptive') return `Adoptive ${g('Nephew', 'Niece', 'Niece/Nephew')}`;
       return g('Nephew', 'Niece', 'Niece/Nephew');
     }
   }
