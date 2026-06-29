@@ -754,28 +754,40 @@ export function addRelative({ anchorId, relKey, name, given, middle, family, gen
 // bio-parent gender constraint is enforced for type 'parent' (biological qualifier).
 export function addRelationship(fromId, toId, type, qualifier = 'biological') {
   const edgeType = type === 'ex_partner' ? 'partner' : type;
-  const already = state.relationships.some(
-    (r) =>
-      r.type === edgeType &&
-      ((r.from_person === fromId && r.to_person === toId) ||
-        (r.from_person === toId && r.to_person === fromId)),
-  );
-  if (already) return;
+  const isPair = (r) =>
+    (r.from_person === fromId && r.to_person === toId) ||
+    (r.from_person === toId && r.to_person === fromId);
 
-  if (type === 'parent' && qualifier === 'biological') {
-    const parentPerson = state.people.find((p) => p.id === fromId);
-    const parentGender = parentPerson?.gender;
+  const already = state.relationships.some((r) => r.type === edgeType && isPair(r));
+
+  if (!already && type === 'parent' && qualifier === 'biological') {
+    const parentGender = state.people.find((p) => p.id === fromId)?.gender;
     if (parentGender && bioParentGendersFilled(toId).has(parentGender)) return;
   }
 
-  let edge;
-  if (type === 'partner') edge = partnerEdge(fromId, toId, 'current');
-  else if (type === 'ex_partner') edge = partnerEdge(fromId, toId, 'former');
-  else if (type === 'parent') edge = parentEdge(fromId, toId, qualifier);
-  else return;
+  // A pair can hold ONE direct relationship — partner OR parent, never both.
+  // Drop the contradictory other-kind edge(s) between them before adding, so a
+  // mis-added child can't linger as a parent after becoming a partner (and so
+  // such a stale edge self-heals the next time the right relationship is set).
+  const conflictType = edgeType === 'partner' ? 'parent' : 'partner';
+  const base = state.relationships.filter((r) => !(r.type === conflictType && isPair(r)));
+  const hadConflict = base.length !== state.relationships.length;
+
+  if (already && !hadConflict) return; // already linked, nothing to reconcile
+
+  let nextRels = base;
+  if (!already) {
+    let edge;
+    if (type === 'partner') edge = partnerEdge(fromId, toId, 'current');
+    else if (type === 'ex_partner') edge = partnerEdge(fromId, toId, 'former');
+    else if (type === 'parent') edge = parentEdge(fromId, toId, qualifier);
+    else return;
+    nextRels = [...base, edge];
+  }
+
   const fromPerson = state.people.find((p) => p.id === fromId);
   const toPerson = state.people.find((p) => p.id === toId);
-  commit(withActivity({ ...state, relationships: [...state.relationships, edge] }, {
+  commit(withActivity({ ...state, relationships: nextRels }, {
     type: 'relationship_added',
     personId: fromId,
     personName: fromPerson?.display_name ?? '',
