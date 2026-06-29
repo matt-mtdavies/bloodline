@@ -297,7 +297,7 @@ export default function PersonSheet({
   const metaBits = [];
   if (person.occupation) metaBits.push(person.occupation);
   metaBits.push(lifespan(person));
-  if (age && !person.is_deceased) metaBits.push(`age ${age}`);
+  if (age) metaBits.push(person.is_deceased ? age : `age ${age}`);
 
   // "2026-06-22" → "Jun 2026"
   function fmtDocDate(iso) {
