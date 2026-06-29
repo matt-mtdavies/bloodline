@@ -8,6 +8,7 @@ import {
   addRelative,
   addRelationship,
   removeRelationship,
+  setRelationshipKind,
   mergePeople,
   removePerson,
   updateRelationshipQualifier,
@@ -606,42 +607,53 @@ export default function App() {
 
   // Link two existing people without creating a new person.
   // relKey is from AddRelativeSheet; qualifier is 'biological'|'step'|'adoptive'.
+  // Human-readable feedback when a relationship change is blocked.
+  const notifyRelFail = useCallback((reason) => {
+    const messages = {
+      'bio-parent-full': 'They already have a biological parent of that gender. Use a step or adoptive link, or remove the existing one first.',
+      cycle: "That would make someone their own ancestor — relationships can't loop back on themselves.",
+      duplicate: 'They’re already linked that way.',
+      self: "A person can't be related to themselves.",
+    };
+    setSyncToast(messages[reason] || "That relationship change isn't possible.");
+    setTimeout(() => setSyncToast(null), 6000);
+  }, []);
+
   const handleLinkExisting = useCallback(
     (existingId, relKey, qualifier = 'biological') => {
-      // If the two are already directly related (e.g. someone was added as a
-      // child but is really a partner), clear that wrong edge first so picking
-      // a new relationship reassigns it rather than stacking a contradiction.
-      const directEdges = data.relationships.filter((r) =>
-        (r.type === 'partner' || r.type === 'parent') &&
-        ((r.from_person === addAnchorId && r.to_person === existingId) ||
-         (r.from_person === existingId && r.to_person === addAnchorId)),
-      );
-      for (const e of directEdges) removeRelationship(e.from_person, e.to_person, e.type);
-
-      if (relKey === 'partner' || relKey === 'ex_partner') {
-        addRelationship(addAnchorId, existingId, relKey);
-      } else if (relKey === 'mother' || relKey === 'father') {
-        // existing person IS the parent of the anchor
-        addRelationship(existingId, addAnchorId, 'parent', qualifier);
-      } else if (relKey === 'son' || relKey === 'daughter') {
-        // anchor IS the parent of the existing person
-        addRelationship(addAnchorId, existingId, 'parent', qualifier);
-      } else if (relKey === 'brother' || relKey === 'sister') {
-        // Give the existing person the same parents as the anchor (like addRelative does).
+      // setRelationshipKind reassigns atomically (clears any existing direct edge
+      // first, then validates + sets the new one) so a wrong link can be fixed in
+      // one step without leaving a contradiction.
+      let res = { ok: true };
+      if (relKey === 'partner') res = setRelationshipKind(addAnchorId, existingId, 'partner');
+      else if (relKey === 'ex_partner') res = setRelationshipKind(addAnchorId, existingId, 'ex_partner');
+      else if (relKey === 'mother' || relKey === 'father') res = setRelationshipKind(addAnchorId, existingId, 'child_of', qualifier);
+      else if (relKey === 'son' || relKey === 'daughter') res = setRelationshipKind(addAnchorId, existingId, 'parent_of', qualifier);
+      else if (relKey === 'brother' || relKey === 'sister') {
+        // Give the existing person the same parents as the anchor.
         const anchorParents = data.relationships
           .filter((r) => r.type === 'parent' && r.to_person === addAnchorId)
           .map((r) => r.from_person);
         for (const parentId of anchorParents) {
-          addRelationship(parentId, existingId, 'parent');
+          const r = addRelationship(parentId, existingId, 'parent');
+          if (!r.ok) res = r;
         }
       }
+      if (!res.ok) { notifyRelFail(res.reason); return; }
       setAddAnchorId(null);
       viewApi.current?.unpin();
       setExpanded((prev) => new Set(prev).add(addAnchorId).add(existingId));
       setActiveId(existingId);
     },
-    [addAnchorId, data.relationships],
+    [addAnchorId, data.relationships, notifyRelFail],
   );
+
+  // Change the relationship between the focused person and one of their relatives
+  // (from the profile's relationship menu). kind: partner|ex_partner|parent_of|child_of.
+  const handleChangeRelType = useCallback((personId, otherId, kind) => {
+    const res = setRelationshipKind(personId, otherId, kind);
+    if (!res.ok) notifyRelFail(res.reason);
+  }, [notifyRelFail]);
 
   const handleSave = useCallback(
     (fields) => {
@@ -1017,6 +1029,7 @@ export default function App() {
         onUpdateDocument={(id, patch) => updateDocument(id, patch)}
         onRemoveRelationship={removeRelationship}
         onUpdateRelationshipQualifier={updateRelationshipQualifier}
+        onChangeRelationship={handleChangeRelType}
         onUpdateStory={(id, story) => {
           const person = graph.byId.get(id);
           updatePerson(id, { story }, { type: 'person_updated', personId: id, personName: person?.display_name ?? '', detail: 'life story' });

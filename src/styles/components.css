@@ -340,29 +340,57 @@
 .rel-chip__text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .rel-chip__name { font-size: 15.5px; font-weight: 500; color: var(--ink); }
 .rel-chip__kind { font-size: 12.5px; color: var(--ink-soft); }
-.rel-chip__edit-btn,
-.rel-chip__unlink {
+/* Single always-visible ⋯ menu button (hover-only controls are invisible on
+   touch — the primary platform). */
+.rel-chip__menu-btn {
   flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
   width: 34px;
   height: 34px;
+  margin-right: 4px;
   border-radius: 10px;
   color: var(--ink-soft);
-  /* Always visible — hover-only controls are invisible on touch devices, which
-     are the primary platform. A soft resting pill reads as tappable. */
-  opacity: 1;
   background: var(--paper-deep, #f1ece4);
   transition: color 0.15s, background 0.15s, transform 0.1s;
 }
-.rel-chip__edit-btn:active,
-.rel-chip__unlink:active { transform: scale(0.92); }
-.rel-chip__edit-btn { margin-right: 0; }
-.rel-chip__unlink   { margin-right: 4px; }
-.rel-chip__edit-btn--on { color: #fff; background: var(--accent); }
-.rel-chip__edit-btn:hover { color: var(--accent); background: rgba(194,96,58,0.12); }
-.rel-chip__unlink:hover   { color: #c2603a; background: #f5e8e4; }
+.rel-chip__menu-btn:active { transform: scale(0.92); }
+.rel-chip__menu-btn:hover { color: var(--accent); background: rgba(194,96,58,0.12); }
+.rel-chip__menu-btn--on { color: #fff; background: var(--accent); }
+
+/* Inline relationship menu — slides in below the chip row */
+.rel-menu {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 4px 10px 12px;
+  animation: islide-in 0.2s var(--spring) both;
+}
+.rel-menu__group { display: flex; flex-direction: column; gap: 6px; }
+.rel-menu__label {
+  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--ink-faint, #a09590);
+}
+.rel-menu__opts { display: flex; flex-wrap: wrap; gap: 6px; }
+.rel-menu__remove-trigger {
+  display: inline-flex; align-items: center; gap: 7px; align-self: flex-start;
+  padding: 7px 12px; border-radius: 10px;
+  font-size: 13.5px; font-weight: 600; color: #b1442a;
+  background: #f7e9e4;
+}
+.rel-menu__remove-trigger:active { transform: scale(0.97); }
+.rel-menu__confirm { display: flex; flex-direction: column; gap: 8px; font-size: 13.5px; color: var(--ink); }
+.rel-menu__confirm-btns { display: flex; gap: 8px; }
+.rel-menu__remove {
+  padding: 7px 14px; border-radius: 10px; font-size: 13.5px; font-weight: 600;
+  background: #c2603a; color: #fff;
+}
+.rel-menu__cancel {
+  padding: 7px 14px; border-radius: 10px; font-size: 13.5px; font-weight: 500;
+  background: var(--paper-deep, #f1ece4); color: var(--ink-soft);
+}
 
 /* Inline qualifier picker — slides in below the card row */
 .qual-picker {
@@ -2161,6 +2189,24 @@
 .action--invite:hover { background: color-mix(in srgb, var(--accent) 8%, transparent) !important; }
 
 /* Invited state banner */
+.profile__placeholder {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: calc(100% - 48px);
+  margin: 4px 24px 0;
+  padding: 11px 14px;
+  text-align: left;
+  background: #fbf1e2;
+  border: 1px solid #f0dcc0;
+  border-radius: 12px;
+  font-size: 13px;
+  color: #8a5a1c;
+  line-height: 1.4;
+}
+.profile__placeholder:active { transform: scale(0.99); }
+.profile__placeholder-icon { display: inline-flex; flex-shrink: 0; color: #c2843a; }
+
 .profile__invited {
   display: flex;
   align-items: center;

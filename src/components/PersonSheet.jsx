@@ -46,6 +46,7 @@ export default function PersonSheet({
   onInvite,
   onRemoveRelationship,
   onUpdateRelationshipQualifier,
+  onChangeRelationship,
   onUpdateStory,
   onAddCondition,
   onRemoveCondition,
@@ -62,7 +63,8 @@ export default function PersonSheet({
   const mediaRef = useRef(null);
   const storyAbort = useRef(null);
   const [storyState, setStoryState] = useState({ phase: 'idle', text: '', error: null });
-  const [editingQualId, setEditingQualId] = useState(null);
+  const [relMenuId, setRelMenuId] = useState(null);       // rel-chip whose ⋯ menu is open
+  const [confirmUnlinkId, setConfirmUnlinkId] = useState(null); // rel-chip awaiting unlink confirm
   const [editingDocId, setEditingDocId] = useState(null);
   const [editingDocTitle, setEditingDocTitle] = useState('');
   const [editingMediaId, setEditingMediaId] = useState(null);
@@ -419,6 +421,15 @@ export default function PersonSheet({
             </button>
           )}
         </div>
+
+        {/* Placeholder nudge — these stand-in parents are auto-created so a lone
+            person's siblings have something to hang from; prompt to name them. */}
+        {canEdit && person.confidence === 'uncertain' && (
+          <button className="profile__placeholder" onClick={() => onEdit?.(person.id)}>
+            <span className="profile__placeholder-icon"><PencilIcon /></span>
+            <span>This is a placeholder — tap to add their real name and details.</span>
+          </button>
+        )}
 
         {/* Invited state banner */}
         {person.invited_at && person.invited_email && (
@@ -894,10 +905,21 @@ export default function PersonSheet({
                           : g.relType === 'parent_from_self'
                             ? [person.id, item.id]
                             : null;
-                        const isEditingQual = editingQualId === item.id;
+                        // What this relationship can be changed *to* (from this
+                        // person's perspective). kind is passed to onChangeRelationship.
+                        const changeOptions = g.relType === 'partner'
+                          ? [{ kind: 'ex_partner', label: 'Ex-partner' }, { kind: 'child_of', label: 'Parent' }, { kind: 'parent_of', label: 'Child' }]
+                          : g.relType === 'parent_from_item'  // item is this person's parent
+                            ? [{ kind: 'partner', label: 'Partner' }, { kind: 'parent_of', label: 'Child' }]
+                            : g.relType === 'parent_from_self' // item is this person's child
+                              ? [{ kind: 'partner', label: 'Partner' }, { kind: 'child_of', label: 'Parent' }]
+                              : [];
+                        const isMenuOpen = relMenuId === item.id;
+                        const isConfirming = confirmUnlinkId === item.id;
+                        const closeMenu = () => { setRelMenuId(null); setConfirmUnlinkId(null); };
                         return (
-                          <li key={item.id} className={'rel-chip' + (isEditingQual ? ' rel-chip--editing' : '')}>
-                            <button className="rel-chip__nav" onClick={() => { setEditingQualId(null); onOpenPerson(item.id); }}>
+                          <li key={item.id} className={'rel-chip' + (isMenuOpen ? ' rel-chip--editing' : '')}>
+                            <button className="rel-chip__nav" onClick={() => { closeMenu(); onOpenPerson(item.id); }}>
                               <Avatar person={rel} size={40} />
                               <span className="rel-chip__text">
                                 <span className="rel-chip__name">{rel.display_name}</span>
@@ -907,43 +929,69 @@ export default function PersonSheet({
                               </span>
                               <RelChevronIcon />
                             </button>
-                            {canEdit && qualArgs && (
+                            {canEdit && (unlinkArgs || qualArgs) && (
                               <button
-                                className={'rel-chip__edit-btn' + (isEditingQual ? ' rel-chip__edit-btn--on' : '')}
-                                onClick={() => setEditingQualId(isEditingQual ? null : item.id)}
-                                aria-label={`Change qualifier for ${rel.display_name}`}
-                                aria-expanded={isEditingQual}
+                                className={'rel-chip__menu-btn' + (isMenuOpen ? ' rel-chip__menu-btn--on' : '')}
+                                onClick={() => { setConfirmUnlinkId(null); setRelMenuId(isMenuOpen ? null : item.id); }}
+                                aria-label={`Manage relationship with ${rel.display_name}`}
+                                aria-expanded={isMenuOpen}
                               >
-                                <PencilIcon />
+                                <DotsIcon />
                               </button>
                             )}
-                            {canEdit && unlinkArgs && (
-                              <button
-                                className="rel-chip__unlink"
-                                onClick={() => { setEditingQualId(null); onRemoveRelationship?.(...unlinkArgs); }}
-                                aria-label={`Unlink ${rel.display_name}`}
-                              >
-                                <UnlinkIcon />
-                              </button>
-                            )}
-                            {isEditingQual && qualArgs && (
-                              <div className="qual-picker">
-                                {[
-                                  { key: 'biological', label: 'Biological' },
-                                  { key: 'step', label: 'Step' },
-                                  { key: 'adoptive', label: 'Adopted' },
-                                ].map((q) => (
-                                  <button
-                                    key={q.key}
-                                    className={'qual-opt' + ((item.qualifier || 'biological') === q.key ? ' qual-opt--on' : '')}
-                                    onClick={() => {
-                                      onUpdateRelationshipQualifier?.(...qualArgs, q.key);
-                                      setEditingQualId(null);
-                                    }}
-                                  >
-                                    {q.label}
-                                  </button>
-                                ))}
+                            {canEdit && isMenuOpen && (
+                              <div className="rel-menu">
+                                {qualArgs && (
+                                  <div className="rel-menu__group">
+                                    <span className="rel-menu__label">Type</span>
+                                    <div className="rel-menu__opts">
+                                      {[
+                                        { key: 'biological', label: 'Biological' },
+                                        { key: 'step', label: 'Step' },
+                                        { key: 'adoptive', label: 'Adopted' },
+                                      ].map((q) => (
+                                        <button
+                                          key={q.key}
+                                          className={'qual-opt' + ((item.qualifier || 'biological') === q.key ? ' qual-opt--on' : '')}
+                                          onClick={() => { onUpdateRelationshipQualifier?.(...qualArgs, q.key); }}
+                                        >
+                                          {q.label}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                                {changeOptions.length > 0 && (
+                                  <div className="rel-menu__group">
+                                    <span className="rel-menu__label">Change to</span>
+                                    <div className="rel-menu__opts">
+                                      {changeOptions.map((o) => (
+                                        <button
+                                          key={o.kind}
+                                          className="qual-opt"
+                                          onClick={() => { onChangeRelationship?.(person.id, item.id, o.kind); closeMenu(); }}
+                                        >
+                                          {o.label}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                                {unlinkArgs && (
+                                  isConfirming ? (
+                                    <div className="rel-menu__confirm">
+                                      <span>Remove this relationship?</span>
+                                      <div className="rel-menu__confirm-btns">
+                                        <button className="rel-menu__remove" onClick={() => { onRemoveRelationship?.(...unlinkArgs); closeMenu(); }}>Remove</button>
+                                        <button className="rel-menu__cancel" onClick={() => setConfirmUnlinkId(null)}>Cancel</button>
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <button className="rel-menu__remove-trigger" onClick={() => setConfirmUnlinkId(item.id)}>
+                                      <UnlinkIcon /> Remove relationship
+                                    </button>
+                                  )
+                                )}
                               </div>
                             )}
                           </li>
@@ -1205,6 +1253,15 @@ function RelChevronIcon() {
   return (
     <svg className="rel-chip__chev" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <path d="M9 6l6 6-6 6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+function DotsIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <circle cx="5" cy="12" r="1.8" />
+      <circle cx="12" cy="12" r="1.8" />
+      <circle cx="19" cy="12" r="1.8" />
     </svg>
   );
 }

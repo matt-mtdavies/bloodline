@@ -881,11 +881,29 @@ export function addRelative({ anchorId, relKey, name, given, middle, family, gen
   return id;
 }
 
+// Is `ancestorId` an ancestor of `personId` along parent edges? Used to stop a
+// parent link from creating a cycle (someone becoming their own ancestor).
+function isAncestorOf(ancestorId, personId, rels = state.relationships) {
+  const parentsOf = (id) => rels.filter((r) => r.type === 'parent' && r.to_person === id).map((r) => r.from_person);
+  const stack = [...parentsOf(personId)];
+  const seen = new Set();
+  while (stack.length) {
+    const cur = stack.pop();
+    if (cur === ancestorId) return true;
+    if (seen.has(cur)) continue;
+    seen.add(cur);
+    stack.push(...parentsOf(cur));
+  }
+  return false;
+}
+
 // Link two existing people with a partner or parent relationship.
 // fromId is the parent when type is 'parent'; for partner types, order is arbitrary.
-// Guards: partner links are symmetric; duplicate edges are silently skipped;
-// bio-parent gender constraint is enforced for type 'parent' (biological qualifier).
+// Returns { ok: true } or { ok: false, reason } so callers can explain failures:
+//   'duplicate' — already linked that way · 'bio-parent-full' — gender slot taken
+//   'cycle' — would make someone their own ancestor · 'self' — same person.
 export function addRelationship(fromId, toId, type, qualifier = 'biological') {
+  if (!fromId || !toId || fromId === toId) return { ok: false, reason: 'self' };
   const edgeType = type === 'ex_partner' ? 'partner' : type;
   const isPair = (r) =>
     (r.from_person === fromId && r.to_person === toId) ||
@@ -893,9 +911,16 @@ export function addRelationship(fromId, toId, type, qualifier = 'biological') {
 
   const already = state.relationships.some((r) => r.type === edgeType && isPair(r));
 
-  if (!already && type === 'parent' && qualifier === 'biological') {
-    const parentGender = state.people.find((p) => p.id === fromId)?.gender;
-    if (parentGender && bioParentGendersFilled(toId).has(parentGender)) return;
+  if (!already && type === 'parent') {
+    // Cycle guard: fromId would be a parent of toId, so toId must not already be
+    // an ancestor of fromId.
+    if (isAncestorOf(toId, fromId)) return { ok: false, reason: 'cycle' };
+    if (qualifier === 'biological') {
+      const parentGender = state.people.find((p) => p.id === fromId)?.gender;
+      if (parentGender && bioParentGendersFilled(toId).has(parentGender)) {
+        return { ok: false, reason: 'bio-parent-full' };
+      }
+    }
   }
 
   // A pair can hold ONE direct relationship — partner OR parent, never both.
@@ -906,7 +931,7 @@ export function addRelationship(fromId, toId, type, qualifier = 'biological') {
   const base = state.relationships.filter((r) => !(r.type === conflictType && isPair(r)));
   const hadConflict = base.length !== state.relationships.length;
 
-  if (already && !hadConflict) return; // already linked, nothing to reconcile
+  if (already && !hadConflict) return { ok: false, reason: 'duplicate' };
 
   let nextRels = base;
   if (!already) {
@@ -914,7 +939,7 @@ export function addRelationship(fromId, toId, type, qualifier = 'biological') {
     if (type === 'partner') edge = partnerEdge(fromId, toId, 'current');
     else if (type === 'ex_partner') edge = partnerEdge(fromId, toId, 'former');
     else if (type === 'parent') edge = parentEdge(fromId, toId, qualifier);
-    else return;
+    else return { ok: false, reason: 'unknown-type' };
     nextRels = [...base, edge];
   }
 
@@ -926,6 +951,32 @@ export function addRelationship(fromId, toId, type, qualifier = 'biological') {
     personName: fromPerson?.display_name ?? '',
     detail: toPerson?.display_name ?? '',
   }));
+  return { ok: true };
+}
+
+// Set the direct relationship between two existing people to a specific kind,
+// clearing any current direct edge first. kind:
+//   'partner' | 'ex_partner' | 'parent_of' (a is parent of b) | 'child_of' (b is parent of a)
+// Returns the same result shape as addRelationship.
+export function setRelationshipKind(aId, bId, kind, qualifier = 'biological') {
+  if (!aId || !bId || aId === bId) return { ok: false, reason: 'self' };
+  // Clear existing direct edges between the pair so we can re-set cleanly.
+  const isPair = (r) =>
+    (r.from_person === aId && r.to_person === bId) || (r.from_person === bId && r.to_person === aId);
+  const cleared = state.relationships.filter((r) => !((r.type === 'partner' || r.type === 'parent') && isPair(r)));
+  // Validate the new edge against the cleared set (e.g. cycle check).
+  if (kind === 'parent_of' && isAncestorOf(bId, aId, cleared)) return { ok: false, reason: 'cycle' };
+  if (kind === 'child_of' && isAncestorOf(aId, bId, cleared)) return { ok: false, reason: 'cycle' };
+
+  let edge;
+  if (kind === 'partner') edge = partnerEdge(aId, bId, 'current');
+  else if (kind === 'ex_partner') edge = partnerEdge(aId, bId, 'former');
+  else if (kind === 'parent_of') edge = parentEdge(aId, bId, qualifier);
+  else if (kind === 'child_of') edge = parentEdge(bId, aId, qualifier);
+  else return { ok: false, reason: 'unknown-type' };
+
+  commit({ ...state, relationships: [...cleared, edge] });
+  return { ok: true };
 }
 
 // Change the qualifier on a parent→child edge (biological / step / adoptive).
