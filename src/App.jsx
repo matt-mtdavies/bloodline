@@ -691,10 +691,15 @@ export default function App() {
     }
     const body = await res.json().catch(() => ({}));
     // Record invited_email on the person so we can match them to their user
-    // account when they log in (perspective-based relationship labels).
-    updatePerson(personId, { invited_email: email.toLowerCase(), invited_at: Date.now() });
+    // account when they log in (perspective-based relationship labels). Only
+    // attempt this if the inviter can edit the tree — contributors/viewers
+    // can't write it, and the invite itself is already saved server-side.
+    const canEdit = ['owner', 'coadmin', 'editor'].includes(data._meta?.role || 'owner');
+    if (canEdit) {
+      updatePerson(personId, { invited_email: email.toLowerCase(), invited_at: Date.now() });
+    }
     return body; // pass { emailSent } back to InviteSheet
-  }, []);
+  }, [data._meta?.role]);
 
   const activePerson = graph.byId.get(activeId);
 
@@ -1002,6 +1007,7 @@ export default function App() {
       {invitePersonId && graph.byId.get(invitePersonId) && (
         <InviteSheet
           person={graph.byId.get(invitePersonId)}
+          myRole={user ? (data._meta?.role || 'owner') : 'owner'}
           onSend={handleSendInvite}
           onClose={() => setInvitePersonId(null)}
         />

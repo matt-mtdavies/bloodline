@@ -7,6 +7,9 @@ const ROLE_LABELS = {
   contributor: 'Contributor',
   viewer: 'Viewer',
 };
+// Lower number = more access. A member may only invite someone at their own
+// level or below, so nobody can grant more access than they hold themselves.
+const ROLE_RANK = { owner: 0, coadmin: 1, editor: 2, contributor: 3, viewer: 4 };
 
 /*
  * POST /api/invite  { email, role }
@@ -38,8 +41,13 @@ export async function onRequestPost({ request, env, data }) {
   ).bind(data.user.uid).first();
 
   if (!membership) return json({ error: 'No family found' }, { status: 404 });
-  if (!['owner', 'coadmin'].includes(membership.role)) {
-    return json({ error: 'Only owners and co-admins can invite' }, { status: 403 });
+  // Any family member can share, but can't grant more access than they have.
+  const callerRank = ROLE_RANK[membership.role] ?? ROLE_RANK.viewer;
+  if ((ROLE_RANK[role] ?? ROLE_RANK.viewer) < callerRank) {
+    return json(
+      { error: "You can only invite people at your own access level or below." },
+      { status: 403 },
+    );
   }
 
   // Supersede any existing pending invites for this email so there's always

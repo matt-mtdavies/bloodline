@@ -41,9 +41,17 @@ const ROLES = [
   },
 ];
 
-export default function InviteSheet({ person, onSend, onClose }) {
+// Lower number = more access. A member can only grant their own level or below.
+const ROLE_RANK = { owner: 0, coadmin: 1, editor: 2, contributor: 3, viewer: 4 };
+
+export default function InviteSheet({ person, myRole = 'owner', onSend, onClose }) {
+  // Only offer roles at or below the inviter's own access level.
+  const callerRank = ROLE_RANK[myRole] ?? ROLE_RANK.viewer;
+  const allowedRoles = ROLES.filter((r) => (ROLE_RANK[r.key] ?? ROLE_RANK.viewer) >= callerRank);
   const [email, setEmail] = useState(person.email || person.invited_email || '');
-  const [role, setRole] = useState('contributor');
+  const [role, setRole] = useState(
+    allowedRoles.some((r) => r.key === 'contributor') ? 'contributor' : (allowedRoles[0]?.key || 'viewer'),
+  );
   const [phase, setPhase] = useState('idle'); // idle | sending | sent | sent-no-email | error
   const [inviteUrl, setInviteUrl] = useState('');
   const inputRef = useRef(null);
@@ -153,7 +161,7 @@ export default function InviteSheet({ person, onSend, onClose }) {
 
               <label className="invite-sheet__label">What can they do?</label>
               <div className="invite-sheet__roles">
-                {ROLES.map((r) => (
+                {allowedRoles.map((r) => (
                   <button
                     key={r.key}
                     type="button"
