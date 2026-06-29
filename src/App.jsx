@@ -724,26 +724,26 @@ export default function App() {
     });
   }, []);
 
-  const handleSendInvite = useCallback(async (personId, email, role) => {
+  // notify=true emails the invite; notify=false just mints a share link (email
+  // optional). Returns { inviteUrl, emailSent, emailError } for the sheet.
+  const handleSendInvite = useCallback(async (personId, { email = '', role, notify = true } = {}) => {
     const res = await fetch('/api/invite', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ email, role }),
+      body: JSON.stringify({ email, role, notify }),
     });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
       throw new Error(body.error || 'Invite failed');
     }
     const body = await res.json().catch(() => ({}));
-    // Record invited_email on the person so we can match them to their user
-    // account when they log in (perspective-based relationship labels). Only
-    // attempt this if the inviter can edit the tree — contributors/viewers
-    // can't write it, and the invite itself is already saved server-side.
+    // Record invited_email so we can match them to their account on login
+    // (perspective labels). Only when we actually have an email and can edit.
     const canEdit = ['owner', 'coadmin', 'editor'].includes(data._meta?.role || 'owner');
-    if (canEdit) {
-      updatePerson(personId, { invited_email: email.toLowerCase(), invited_at: Date.now() });
+    if (canEdit && email.trim()) {
+      updatePerson(personId, { invited_email: email.trim().toLowerCase(), invited_at: Date.now() });
     }
-    return body; // pass { emailSent } back to InviteSheet
+    return body;
   }, [data._meta?.role]);
 
   const activePerson = graph.byId.get(activeId);

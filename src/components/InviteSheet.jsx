@@ -52,16 +52,12 @@ export default function InviteSheet({ person, myRole = 'owner', onSend, onClose 
   const [role, setRole] = useState(
     allowedRoles.some((r) => r.key === 'contributor') ? 'contributor' : (allowedRoles[0]?.key || 'viewer'),
   );
-  const [phase, setPhase] = useState('idle'); // idle | sending | sent | sent-no-email | error
+  // idle | linking | sending | link | sent | sent-no-email | error
+  const [phase, setPhase] = useState('idle');
   const [inviteUrl, setInviteUrl] = useState('');
   const inputRef = useRef(null);
 
   const firstName = person.display_name.trim().split(/\s+/)[0];
-
-  useEffect(() => {
-    const t = setTimeout(() => inputRef.current?.focus(), 320); // after sheet animates in
-    return () => clearTimeout(t);
-  }, []);
 
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') onClose(); };
@@ -69,13 +65,29 @@ export default function InviteSheet({ person, myRole = 'owner', onSend, onClose 
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
+  const busy = phase === 'linking' || phase === 'sending';
+
+  // Generate a shareable link without sending an email — send it via any channel.
+  async function handleCreateLink() {
+    if (busy) return;
+    setPhase('linking');
+    try {
+      const result = await onSend(person.id, { email: email.trim(), role, notify: false });
+      setInviteUrl(result?.inviteUrl || '');
+      setPhase('link');
+    } catch {
+      setPhase('error');
+    }
+  }
+
+  // Email the invite (existing flow). Requires an address.
   async function handleSend(e) {
     e.preventDefault();
     const trimmed = email.trim();
-    if (!trimmed || phase === 'sending') return;
+    if (!trimmed || busy) return;
     setPhase('sending');
     try {
-      const result = await onSend(person.id, trimmed, role);
+      const result = await onSend(person.id, { email: trimmed, role, notify: true });
       setInviteUrl(result?.inviteUrl || '');
       setPhase(result?.emailSent === false ? 'sent-no-email' : 'sent');
     } catch {
@@ -84,19 +96,24 @@ export default function InviteSheet({ person, myRole = 'owner', onSend, onClose 
   }
 
   const alreadyInvited = !!person.invited_at && !!person.invited_email;
+  const isReady = phase === 'sent' || phase === 'sent-no-email' || phase === 'link';
 
   return (
     <div className="sheet-scrim invite-scrim" onClick={onClose} role="dialog" aria-modal="true" aria-label={`Invite ${firstName}`}>
       <div className="sheet invite-sheet" onClick={(e) => e.stopPropagation()}>
         <div className="sheet__grip" />
 
-        {(phase === 'sent' || phase === 'sent-no-email') ? (
+        {isReady ? (
           <div className="invite-sheet__success">
             <div className={`invite-sheet__success-ring${phase === 'sent-no-email' ? ' invite-sheet__success-ring--warn' : ''}`}>
               {phase === 'sent-no-email' ? (
                 <svg width="28" height="28" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                   <path d="M12 9v4M12 17h.01" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"/>
                   <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/>
+                </svg>
+              ) : phase === 'link' ? (
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M9 15l6-6M10 6l1-1a4 4 0 0 1 6 6l-1 1M14 18l-1 1a4 4 0 0 1-6-6l1-1" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"/>
                 </svg>
               ) : (
                 <svg width="28" height="28" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -106,17 +123,21 @@ export default function InviteSheet({ person, myRole = 'owner', onSend, onClose 
               )}
             </div>
             <h2 className="invite-sheet__sent-title">
-              {phase === 'sent-no-email' ? 'Invite saved — email failed' : 'Invitation sent'}
+              {phase === 'sent-no-email' ? 'Invite saved — email failed'
+                : phase === 'link' ? `${firstName}'s invite link is ready`
+                : 'Invitation sent'}
             </h2>
             <p className="invite-sheet__sent-body">
               {phase === 'sent-no-email'
                 ? `The invite is saved and ${email.trim()} can still accept it, but the email didn't go out. Send them the link below instead.`
+                : phase === 'link'
+                ? `Send this link to ${firstName} however you like — text, WhatsApp, anything. They join the moment they open it.`
                 : `We've emailed ${email.trim()} a link to join the family tree. If it's not in their inbox, ask them to check spam — or just send the link below.`
               }
             </p>
             {inviteUrl && (
               <div className="invite-sheet__share">
-                <p className="invite-sheet__share-label">Or send them this link directly</p>
+                {phase !== 'link' && <p className="invite-sheet__share-label">Or send them this link directly</p>}
                 <ShareLink url={inviteUrl} shareText={`Join our family tree on Bloodline`} />
               </div>
             )}
@@ -141,12 +162,40 @@ export default function InviteSheet({ person, myRole = 'owner', onSend, onClose 
             {alreadyInvited && (
               <p className="invite-sheet__resend-note">
                 <CheckCircleIcon />
-                Already invited to {person.invited_email} — resend below.
+                Already invited to {person.invited_email}.
               </p>
             )}
 
+            <label className="invite-sheet__label">What can they do?</label>
+            <div className="invite-sheet__roles">
+              {allowedRoles.map((r) => (
+                <button
+                  key={r.key}
+                  type="button"
+                  className={`invite-sheet__role${role === r.key ? ' invite-sheet__role--on' : ''}`}
+                  onClick={() => setRole(r.key)}
+                >
+                  <span className="invite-sheet__role-icon">{r.icon}</span>
+                  <span className="invite-sheet__role-name">{r.label}</span>
+                  <span className="invite-sheet__role-desc">{r.desc}</span>
+                </button>
+              ))}
+            </div>
+
+            {/* Share a link — no email needed, send via any channel. */}
+            <button
+              className="invite-sheet__linkbtn"
+              type="button"
+              onClick={handleCreateLink}
+              disabled={busy}
+            >
+              <LinkIcon />
+              {phase === 'linking' ? 'Creating link…' : 'Create a share link'}
+            </button>
+
+            <div className="invite-sheet__or"><span>or send by email</span></div>
+
             <form onSubmit={handleSend} noValidate>
-              <label className="invite-sheet__label" htmlFor="invite-email">Email address</label>
               <input
                 ref={inputRef}
                 id="invite-email"
@@ -159,32 +208,16 @@ export default function InviteSheet({ person, myRole = 'owner', onSend, onClose 
                 inputMode="email"
               />
 
-              <label className="invite-sheet__label">What can they do?</label>
-              <div className="invite-sheet__roles">
-                {allowedRoles.map((r) => (
-                  <button
-                    key={r.key}
-                    type="button"
-                    className={`invite-sheet__role${role === r.key ? ' invite-sheet__role--on' : ''}`}
-                    onClick={() => setRole(r.key)}
-                  >
-                    <span className="invite-sheet__role-icon">{r.icon}</span>
-                    <span className="invite-sheet__role-name">{r.label}</span>
-                    <span className="invite-sheet__role-desc">{r.desc}</span>
-                  </button>
-                ))}
-              </div>
-
               {phase === 'error' && (
-                <p className="invite-sheet__error">Couldn't send — check your connection and try again.</p>
+                <p className="invite-sheet__error">Couldn't do that — check your connection and try again.</p>
               )}
 
               <button
                 className="invite-sheet__send"
                 type="submit"
-                disabled={!email.trim() || phase === 'sending'}
+                disabled={!email.trim() || busy}
               >
-                {phase === 'sending' ? 'Sending…' : `Send invitation to ${firstName} →`}
+                {phase === 'sending' ? 'Sending…' : `Email invitation to ${firstName} →`}
               </button>
             </form>
           </>
@@ -194,6 +227,14 @@ export default function InviteSheet({ person, myRole = 'owner', onSend, onClose 
   );
 }
 
+function LinkIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M9 15l6-6M10 6l1-1a4 4 0 0 1 6 6l-1 1M14 18l-1 1a4 4 0 0 1-6-6l1-1"
+        stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
 function CheckCircleIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"

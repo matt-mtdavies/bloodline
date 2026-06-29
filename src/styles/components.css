@@ -4245,6 +4245,39 @@
 .invite-sheet__send:disabled { opacity: 0.45; cursor: default; }
 .invite-sheet__send:not(:disabled):active { transform: scale(0.98); }
 
+/* Primary "create a share link" action — the link-first path. */
+.invite-sheet__linkbtn {
+  display: flex; align-items: center; justify-content: center; gap: 9px;
+  width: calc(100% - 48px);
+  margin: 16px 24px 0;
+  padding: 16px;
+  background: var(--accent);
+  color: #fff;
+  border-radius: 16px;
+  font-size: 16px; font-weight: 600; font-family: inherit; cursor: pointer;
+  box-shadow: 0 4px 20px color-mix(in srgb, var(--accent) 35%, transparent);
+  transition: opacity 0.15s, transform 0.12s;
+}
+.invite-sheet__linkbtn:disabled { opacity: 0.55; cursor: default; }
+.invite-sheet__linkbtn:not(:disabled):active { transform: scale(0.98); }
+
+/* "or send by email" divider */
+.invite-sheet__or {
+  display: flex; align-items: center; gap: 12px;
+  margin: 18px 24px 14px;
+  color: var(--ink-faint, #a09590);
+  font-size: 12.5px;
+}
+.invite-sheet__or::before, .invite-sheet__or::after {
+  content: ''; flex: 1; height: 1px; background: var(--hairline, #ebedf0);
+}
+/* The email button becomes secondary now that link is the primary action. */
+.invite-sheet__or + form .invite-sheet__send {
+  background: transparent;
+  color: var(--accent);
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
 /* Success state */
 .invite-sheet__success {
   display: flex;

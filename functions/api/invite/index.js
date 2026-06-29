@@ -20,15 +20,22 @@ export async function onRequestPost({ request, env, data }) {
   if (!data.user) return json({ error: 'Unauthorized' }, { status: 401 });
   if (!env.DB) return json({ error: 'Database not configured' }, { status: 503 });
 
-  let email, role;
+  let email, role, notify;
   try {
-    ({ email, role } = await request.json());
+    ({ email, role, notify } = await request.json());
   } catch {
     return json({ error: 'Bad request' }, { status: 400 });
   }
 
-  if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+  // notify defaults to true (email invite). When false, we just mint a share
+  // link and skip the email — email is then optional.
+  const wantsEmail = notify !== false;
+  email = (email || '').trim().toLowerCase();
+  if (wantsEmail && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
     return json({ error: 'A valid email is required' }, { status: 400 });
+  }
+  if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+    return json({ error: 'That email doesn’t look right' }, { status: 400 });
   }
   if (!VALID_ROLES.includes(role)) {
     return json({ error: 'Invalid role' }, { status: 400 });
@@ -50,11 +57,14 @@ export async function onRequestPost({ request, env, data }) {
     );
   }
 
-  // Supersede any existing pending invites for this email so there's always
-  // at most one live invite per address.
-  await env.DB.prepare(
-    `UPDATE invite SET status = 'superseded' WHERE family_id = ? AND email = ? AND status = 'pending'`,
-  ).bind(membership.family_id, email.toLowerCase()).run();
+  // Supersede existing pending invites for this email so there's at most one
+  // live invite per address. Skip for link-only invites with no email, so each
+  // generated link stands on its own.
+  if (email) {
+    await env.DB.prepare(
+      `UPDATE invite SET status = 'superseded' WHERE family_id = ? AND email = ? AND status = 'pending'`,
+    ).bind(membership.family_id, email).run();
+  }
 
   const t = token();
   const inviteId = uid('inv_');
@@ -64,7 +74,7 @@ export async function onRequestPost({ request, env, data }) {
   await env.DB.prepare(
     `INSERT INTO invite (id, family_id, from_user, email, token, role, status, expires_at, created_at)
      VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)`,
-  ).bind(inviteId, membership.family_id, data.user.uid, email.toLowerCase(), t, role, expires, now).run();
+  ).bind(inviteId, membership.family_id, data.user.uid, email, t, role, expires, now).run();
 
   const inviteUrl = `${env.APP_URL || 'https://myfamilybloodline.com'}/invite/${t}`;
   const roleLabel = ROLE_LABELS[role];
@@ -73,23 +83,26 @@ export async function onRequestPost({ request, env, data }) {
 
   let emailSent = false;
   let emailError = null;
-  let emailStatus = 'failed';
-  try {
-    const result = await sendEmail(env, {
-      to: email,
-      subject: `${fromEmail.split('@')[0]} invited you to ${familyName} on Bloodline`,
-      html: inviteEmail({ inviteUrl, fromEmail, familyName, roleLabel }),
-      text: inviteEmailText({ inviteUrl, fromEmail, familyName, roleLabel }),
-      replyTo: fromEmail,
-      tag: 'invite',
-    });
-    emailSent = true;
-    emailStatus = result?.dev ? 'dev' : 'sent';
-  } catch (e) {
-    // Invite row is already in D1 — don't 500. The client surfaces the warning
-    // and offers Resend; return the reason so it can be shown/logged.
-    console.error('[invite] email delivery failed:', e.message);
-    emailError = String(e.message || 'Email delivery failed').slice(0, 200);
+  let emailStatus = 'link'; // link-only invite unless we actually send below
+  if (wantsEmail && email) {
+    emailStatus = 'failed';
+    try {
+      const result = await sendEmail(env, {
+        to: email,
+        subject: `${fromEmail.split('@')[0]} invited you to ${familyName} on Bloodline`,
+        html: inviteEmail({ inviteUrl, fromEmail, familyName, roleLabel }),
+        text: inviteEmailText({ inviteUrl, fromEmail, familyName, roleLabel }),
+        replyTo: fromEmail,
+        tag: 'invite',
+      });
+      emailSent = true;
+      emailStatus = result?.dev ? 'dev' : 'sent';
+    } catch (e) {
+      // Invite row is already in D1 — don't 500. The client surfaces the warning
+      // and offers the link instead; return the reason so it can be shown/logged.
+      console.error('[invite] email delivery failed:', e.message);
+      emailError = String(e.message || 'Email delivery failed').slice(0, 200);
+    }
   }
 
   await recordEmailStatus(env, inviteId, emailStatus, emailError, emailSent ? now : null);
