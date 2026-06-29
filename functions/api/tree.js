@@ -110,6 +110,20 @@ export async function onRequestPut({ request, env, data }) {
       }
     }
 
+    // myPersonId is each viewer's OWN perspective (resolved per-user on load),
+    // not a shared property. Pin the blob's value to whatever the family already
+    // has (set by the owner on first save) so a member's save can't repoint
+    // everyone else's seat to themselves.
+    const existingTree = await env.DB.prepare(
+      'SELECT tree_json FROM family_tree WHERE family_id = ?',
+    ).bind(membership.family_id).first();
+    if (existingTree) {
+      try {
+        const prev = JSON.parse(existingTree.tree_json);
+        if (prev && prev.myPersonId != null) tree.myPersonId = prev.myPersonId;
+      } catch { /* unparseable existing blob — keep the client's value */ }
+    }
+
     await env.DB.prepare(
       `INSERT INTO family_tree (family_id, tree_json, updated_at)
        VALUES (?, ?, ?)

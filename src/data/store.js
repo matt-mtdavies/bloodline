@@ -318,12 +318,9 @@ async function _fetchAndMerge(local) {
     const lMemIds   = new Set((local.memories      || []).map((m) => m.id));
     const lPhotoIds = new Set((local.photos        || []).map((ph) => ph.id));
 
-    // Resolve viewer's own person by email, same logic as loadFromServer.
-    const mergeViewerEmail = _currentUser?.email?.toLowerCase();
-    const mergeClaimedPerson = mergeViewerEmail && mergedPeople.find(
-      (p) => p.email?.toLowerCase() === mergeViewerEmail
-        || p.invited_email?.toLowerCase() === mergeViewerEmail,
-    );
+    // Resolve viewer's own person (claimed link first, then email), same logic
+    // as loadFromServer, so the merge never reverts to the owner's perspective.
+    const mergeViewerId = resolveViewerPersonId(mergedPeople, local.myPersonId ?? server.myPersonId);
 
     const merged = {
       ...server,
@@ -332,7 +329,7 @@ async function _fetchAndMerge(local) {
       relationships: [...(local.relationships || []), ...(server.relationships || []).filter((r)  => !lRelIds.has(r.id))],
       memories:      [...(local.memories      || []), ...(server.memories      || []).filter((m)  => !lMemIds.has(m.id))],
       photos:        [...(local.photos        || []), ...(server.photos        || []).filter((ph) => !lPhotoIds.has(ph.id))],
-      ...(mergeClaimedPerson ? { myPersonId: mergeClaimedPerson.id } : {}),
+      ...(mergeViewerId ? { myPersonId: mergeViewerId } : {}),
     };
 
     commit(merged, { fromServer: true });
@@ -417,7 +414,15 @@ export async function loadFromServer({ forceServerWins = false } = {}) {
     // Skip this when forceServerWins (e.g. joining via invite): we must never
     // let a guest's stale local tree overwrite the family they just joined.
     if (!forceServerWins && localSeq > serverSeq && state.people?.length > 0) {
-      saveToServer();
+      // Still reconcile the viewer's seat from their claim/email so a stale
+      // cached myPersonId (e.g. inherited from the tree owner) self-heals
+      // instead of being skipped on this fast path.
+      const seatId = resolveViewerPersonId(state.people, state.myPersonId);
+      if (seatId && seatId !== state.myPersonId) {
+        commit({ ...state, myPersonId: seatId });
+      } else {
+        saveToServer();
+      }
       return true;
     }
 
@@ -452,15 +457,10 @@ export async function loadFromServer({ forceServerWins = false } = {}) {
     );
     const mergedDocs = [...(data.documents || []), ...localDataDocs];
 
-    // Resolve the viewer's own person by matching their login email against
-    // person.email or person.invited_email. This ensures each family member
-    // sees relationship labels from their own perspective, not the owner's.
-    const viewerEmail = _currentUser?.email?.toLowerCase();
-    const claimedPerson = viewerEmail && (mergedPeople || []).find(
-      (p) => p.email?.toLowerCase() === viewerEmail
-        || p.invited_email?.toLowerCase() === viewerEmail,
-    );
-    const resolvedMyPersonId = claimedPerson?.id || data.myPersonId;
+    // Resolve the viewer's own person (their claimed link first, then email)
+    // so each family member sees relationship labels from their own seat — not
+    // the owner's, which is what the shared myPersonId defaults to.
+    const resolvedMyPersonId = resolveViewerPersonId(mergedPeople, data.myPersonId);
 
     commit(
       {
@@ -511,6 +511,28 @@ const acid = () => 'act_' + Math.random().toString(36).slice(2, 9);
 
 let _currentUser = null;
 export function setCurrentUser(user) { _currentUser = user; }
+
+// Resolve which person in the tree represents the logged-in viewer, so every
+// family member sees relationship labels from their OWN seat. myPersonId is a
+// single field stored on the shared tree (it defaults to the owner), so we must
+// override it per-viewer on load. Priority:
+//   1. The person the user has explicitly claimed (user.person_id) — the
+//      authoritative server-side link; always wins when that person exists.
+//   2. A person whose email / invited_email matches the login email.
+//   3. The tree's stored myPersonId (owner fallback).
+function resolveViewerPersonId(people, fallbackId) {
+  const list = people || [];
+  const claimedId = _currentUser?.person_id;
+  if (claimedId && list.some((p) => p.id === claimedId)) return claimedId;
+  const email = _currentUser?.email?.toLowerCase();
+  if (email) {
+    const match = list.find(
+      (p) => p.email?.toLowerCase() === email || p.invited_email?.toLowerCase() === email,
+    );
+    if (match) return match.id;
+  }
+  return fallbackId;
+}
 
 // Bind the in-memory + cached tree to a logged-in account. If this device's
 // cache belongs to a DIFFERENT user (the previous person never logged out, or
