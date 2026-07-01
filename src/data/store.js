@@ -338,6 +338,39 @@ function _unionStrings(a, b) {
   return [...new Set([...(a || []), ...(b || [])])];
 }
 
+// Merge two arrays of {id, updated_at?} records: whichever side was edited
+// more recently wins for ids present on both; ids unique to either side are
+// kept as-is. Ties (including both sides missing updated_at, e.g. records
+// from before this field existed) prefer local, matching the old behaviour.
+// This is what stops a stale device — one that cached a record before some
+// newer edit reached it — from silently reverting that edit just because it
+// happens to save something else afterward.
+function _mergeByRecency(serverArr, localArr) {
+  const serverMap = new Map((serverArr || []).map((x) => [x.id, x]));
+  const localMap = new Map((localArr || []).map((x) => [x.id, x]));
+  const ids = new Set([...serverMap.keys(), ...localMap.keys()]);
+  const out = [];
+  for (const id of ids) {
+    const s = serverMap.get(id);
+    const l = localMap.get(id);
+    if (s && l) out.push((l.updated_at || 0) >= (s.updated_at || 0) ? l : s);
+    else out.push(l || s);
+  }
+  return out;
+}
+
+// Activity events are append-only (created once, never edited in place), so
+// there's no "newer version" to pick per id — just union both sides so
+// neither device's events are lost, newest first, capped like withActivity().
+function _mergeActivity(serverArr, localArr) {
+  const byId = new Map();
+  for (const e of (serverArr || [])) if (e?.id) byId.set(e.id, e);
+  for (const e of (localArr || [])) if (e?.id) byId.set(e.id, e);
+  return [...byId.values()]
+    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+    .slice(0, 100);
+}
+
 async function _fetchAndMerge(local) {
   try {
     const res = await fetch('/api/tree');
@@ -345,28 +378,7 @@ async function _fetchAndMerge(local) {
     const server = await res.json();
     _serverEtag = res.headers.get('ETag') || _serverEtag;
 
-    // Build lookup maps.
-    const serverPersonMap = new Map((server.people || []).map((p) => [p.id, p]));
-    const localPersonMap  = new Map((local.people  || []).map((p) => [p.id, p]));
-
-    // Merge strategy: LOCAL wins for anything that exists locally (preserves
-    // deletions — e.g. a removed health condition). Server-only items (added
-    // by another editor on a different device) are appended so they aren't lost.
-    // We never re-introduce server items that local has already removed.
-    const mergedPeople = [
-      // For each server person: use local version if one exists (local wins entirely,
-      // preserving any deletions the user made to conditions/events/tags/photos).
-      // If the person only exists on the server, keep the server version.
-      ...(server.people || []).map((sp) => localPersonMap.get(sp.id) ?? sp),
-      // People added locally that the server doesn't have yet.
-      ...(local.people || []).filter((p) => !serverPersonMap.has(p.id)),
-    ];
-
-    // Same pattern for top-level arrays: start from local (user's edits/deletions
-    // are authoritative), then append server items that local hasn't seen yet.
-    const lRelIds   = new Set((local.relationships || []).map((r) => r.id));
-    const lMemIds   = new Set((local.memories      || []).map((m) => m.id));
-    const lPhotoIds = new Set((local.photos        || []).map((ph) => ph.id));
+    const mergedPeople = _mergeByRecency(server.people, local.people);
 
     // Resolve viewer's own person (claimed link first, then email), same logic
     // as loadFromServer, so the merge never reverts to the owner's perspective.
@@ -382,17 +394,13 @@ async function _fetchAndMerge(local) {
       ...local, // local top-level scalars win (familyName, myPersonId, etc.)
       people,
       relationships: dropTombstoned(
-        [...(local.relationships || []), ...(server.relationships || []).filter((r) => !lRelIds.has(r.id))],
+        _mergeByRecency(server.relationships, local.relationships),
         deleted, 'relationships',
       ).filter((r) => peopleIds.has(r.from_person) && peopleIds.has(r.to_person)),
-      memories: dropTombstoned(
-        [...(local.memories || []), ...(server.memories || []).filter((m) => !lMemIds.has(m.id))],
-        deleted, 'memories',
-      ),
-      photos: dropTombstoned(
-        [...(local.photos || []), ...(server.photos || []).filter((ph) => !lPhotoIds.has(ph.id))],
-        deleted, 'photos',
-      ),
+      memories: dropTombstoned(_mergeByRecency(server.memories, local.memories), deleted, 'memories'),
+      photos: dropTombstoned(_mergeByRecency(server.photos, local.photos), deleted, 'photos'),
+      documents: dropTombstoned(_mergeByRecency(server.documents, local.documents), deleted, 'documents'),
+      activity: _mergeActivity(server.activity, local.activity),
       _deleted: deleted,
       ...(mergeViewerId ? { myPersonId: mergeViewerId } : {}),
     };
@@ -471,8 +479,31 @@ function normalizeRelationships(rels) {
   return out;
 }
 
+// Stamps updated_at on any record that's new or whose reference changed since
+// the previous commit (every mutator builds new arrays via .map()/.filter(),
+// which only produces a fresh object reference for the record actually
+// touched — untouched records keep their old reference). This is what lets a
+// sync merge tell "which side was edited more recently" instead of just
+// picking one side wholesale — see _mergeByRecency.
+function stampUpdatedAt(nextArr, prevArr) {
+  if (!Array.isArray(nextArr)) return nextArr;
+  const prevById = new Map((prevArr || []).map((x) => [x.id, x]));
+  const now = Date.now();
+  return nextArr.map((item) => (prevById.get(item.id) === item ? item : { ...item, updated_at: now }));
+}
+
 // fromServer=true: loading from D1 — don't increment _seq or schedule a save.
 function commit(next, { fromServer = false } = {}) {
+  if (!fromServer) {
+    next = {
+      ...next,
+      people: stampUpdatedAt(next.people, state.people),
+      relationships: stampUpdatedAt(next.relationships, state.relationships),
+      memories: stampUpdatedAt(next.memories, state.memories),
+      photos: stampUpdatedAt(next.photos, state.photos),
+      documents: stampUpdatedAt(next.documents, state.documents),
+    };
+  }
   const cleanRels = normalizeRelationships(next.relationships);
   const cleaned = cleanRels.length !== (next.relationships?.length ?? 0);
   next = cleaned ? { ...next, relationships: cleanRels } : next;
