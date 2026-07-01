@@ -33,8 +33,20 @@ export function ageOrAt(person) {
   const m = parts[1];
   const d = parts[2];
   if (person.is_deceased) {
-    const dy = person.death_date ? Number(person.death_date.split('-')[0]) : null;
-    return dy ? `aged ${dy - y}` : null;
+    if (!person.death_date) return null;
+    const dparts = person.death_date.split('-').map(Number);
+    const dy = dparts[0];
+    if (!dy) return null;
+    const dm = dparts[1];
+    const dd = dparts[2];
+    let age = dy - y;
+    // Only adjust for the birthday-not-yet-reached case when both dates carry
+    // a month — otherwise dy - y is the best estimate we can make.
+    if (m && dm) {
+      const hadBirthday = dm > m || (dm === m && (!d || !dd || dd >= d));
+      if (!hadBirthday) age -= 1;
+    }
+    return `aged ${age}`;
   }
   const now = new Date();
   if (m && d) {
