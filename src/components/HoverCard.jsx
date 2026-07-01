@@ -1,0 +1,125 @@
+import { useEffect, useRef, useState } from 'react';
+import Avatar from './Avatar.jsx';
+import { relationLabel } from '../data/graph.js';
+import { lifespan, ageOrAt } from '../lib/dates.js';
+
+const CARD_WIDTH = 288;
+const MARGIN = 16;
+const FLIP_THRESHOLD = 260; // px from top before the card flips below the bubble
+const EXIT_MS = 150; // keep mounted this long after hover ends, to let the fade play
+
+/*
+ * Desktop-only hover preview — rests over a bubble for a beat and a small
+ * card surfaces their core details, without the weight of opening the full
+ * profile. Position tracks the bubble live via getPos() (same rAF pattern as
+ * FocusNameplate); the reveal/dismiss transition runs on a separate inner
+ * element so the per-frame position writes never fight the CSS transition.
+ */
+export default function HoverCard({ graph, personId, viewerId, getPos }) {
+  const anchorRef = useRef(null);
+  const lastPos = useRef(null);
+  const [displayId, setDisplayId] = useState(null);
+  const [show, setShow] = useState(false);
+  const hideTimer = useRef(null);
+
+  useEffect(() => {
+    clearTimeout(hideTimer.current);
+    if (personId) {
+      setDisplayId(personId);
+      let raf1 = requestAnimationFrame(() => {
+        raf1 = requestAnimationFrame(() => setShow(true));
+      });
+      return () => cancelAnimationFrame(raf1);
+    }
+    setShow(false);
+    hideTimer.current = setTimeout(() => setDisplayId(null), EXIT_MS);
+    return () => clearTimeout(hideTimer.current);
+  }, [personId]);
+
+  useEffect(() => {
+    let raf;
+    const tick = () => {
+      const el = anchorRef.current;
+      if (el) {
+        const p = getPos?.() || lastPos.current;
+        if (p) {
+          lastPos.current = p;
+          const flip = p.y < FLIP_THRESHOLD;
+          const gap = 66; // clears the bubble + its name label
+          const y = flip ? p.y + gap : p.y - gap;
+          const halfW = CARD_WIDTH / 2;
+          const minX = halfW + MARGIN;
+          const maxX = (window.innerWidth || 1200) - halfW - MARGIN;
+          const x = Math.max(minX, Math.min(maxX, p.x));
+          el.style.transform = `translate(${x}px, ${y}px) translate(-50%, ${flip ? '0%' : '-100%'})`;
+          el.style.setProperty('--card-origin', flip ? '50% 0%' : '50% 100%');
+        }
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [getPos]);
+
+  useEffect(() => {
+    if (!personId) lastPos.current = null;
+  }, [personId]);
+
+  const person = displayId ? graph.byId.get(displayId) : null;
+  if (!person) return null;
+
+  const minor = person.is_minor && !person.is_deceased;
+  const vis = person.visibility || 'full';
+  const sealed = vis === 'private';
+  const summaryOnly = vis === 'summary';
+  const restricted = minor || sealed || summaryOnly;
+
+  const relToViewer = viewerId && viewerId !== person.id ? relationLabel(graph, viewerId, person.id) : null;
+  const location = !restricted && (person.residence || person.birth_place);
+  const age = ageOrAt(person);
+
+  const metaBits = [];
+  if (!sealed) {
+    if (!restricted && person.occupation) metaBits.push(person.occupation);
+    metaBits.push(lifespan(person));
+    if (!minor && age) metaBits.push(person.is_deceased ? age : `age ${age}`);
+  }
+  const bio = !restricted ? person.bio : null;
+  const tags = !restricted && person.tags?.length ? person.tags.slice(0, 3) : [];
+
+  return (
+    <div className="hover-card-anchor" ref={anchorRef} style={{ width: CARD_WIDTH }} aria-hidden="true">
+      <div className={`hover-card${show ? ' hover-card--show' : ''}`}>
+        <div className="hover-card__head">
+          <Avatar person={person} size={56} />
+          <div className="hover-card__id">
+            <span className="hover-card__name">{person.display_name}</span>
+            {relToViewer && <span className="hover-card__kin">{relToViewer}</span>}
+          </div>
+        </div>
+        {!sealed && metaBits.length > 0 && (
+          <p className="hover-card__meta">{metaBits.join(' · ')}</p>
+        )}
+        {location && (
+          <p className="hover-card__where"><PinIcon />{location}</p>
+        )}
+        {bio && <p className="hover-card__bio">&ldquo;{bio}&rdquo;</p>}
+        {tags.length > 0 && (
+          <div className="hover-card__tags">
+            {tags.map((t) => <span className="hover-card__tag" key={t}>{t}</span>)}
+          </div>
+        )}
+        {sealed && <p className="hover-card__sealed">Private profile</p>}
+      </div>
+    </div>
+  );
+}
+
+function PinIcon() {
+  return (
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" aria-hidden="true" className="hover-card__pin">
+      <path d="M12 22s7-6.5 7-12a7 7 0 1 0-14 0c0 5.5 7 12 7 12z" stroke="currentColor" strokeWidth="1.8" />
+      <circle cx="12" cy="10" r="2.3" stroke="currentColor" strokeWidth="1.8" />
+    </svg>
+  );
+}

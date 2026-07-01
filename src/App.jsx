@@ -48,6 +48,7 @@ import { useReducedMotion } from './hooks/useReducedMotion.js';
 import BubbleTree from './viz/BubbleTree.jsx';
 import TopBar from './components/TopBar.jsx';
 import FocusNameplate from './components/FocusNameplate.jsx';
+import HoverCard from './components/HoverCard.jsx';
 import PersonSheet from './components/PersonSheet.jsx';
 import AddRelativeSheet from './components/AddRelativeSheet.jsx';
 import EditPersonSheet from './components/EditPersonSheet.jsx';
@@ -386,6 +387,9 @@ export default function App() {
   // flight is in progress, else null. upTo advances via the flight's onSegment
   // callback so the relationship chain fills in hop by hop as the camera flies.
   const [flightCaption, setFlightCaption] = useState(null);
+  // Desktop hover preview — id of the bubble the pointer is resting over
+  // (BubbleTree debounces this itself; see onHover).
+  const [hoveredId, setHoveredId] = useState(null);
   const viewApi = useRef(null);
 
   // Notify the user if a commit couldn't persist (localStorage full).
@@ -958,12 +962,19 @@ export default function App() {
             browse={browse}
             onDeselect={deselect}
             onCameraMode={setCameraFree}
+            onHover={setHoveredId}
             apiRef={viewApi}
           />
           <FocusNameplate
             person={activePerson}
             getPos={() => viewApi.current?.getScreenPos(activeId)}
             hidden={!!openId || !!addAnchorId || !!editId || browse || layout === 'chart'}
+          />
+          <HoverCard
+            graph={graph}
+            personId={!openId && !addAnchorId && !editId && !browse && layout !== 'chart' ? hoveredId : null}
+            viewerId={data.myPersonId || DEFAULT_FOCUS}
+            getPos={() => viewApi.current?.getScreenPos(hoveredId)}
           />
           <button
             className={`recenter-btn${cameraFree && !openId ? ' recenter-btn--on' : ''}`}

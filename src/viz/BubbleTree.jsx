@@ -58,6 +58,7 @@ export default function BubbleTree({
   browse = false,
   onDeselect,
   onCameraMode,
+  onHover,
   apiRef,
 }) {
   const hostRef = useRef(null);
@@ -100,10 +101,13 @@ export default function BubbleTree({
   onOpenPersonRef.current = onOpenPerson;
   const onCameraModeRef = useRef(onCameraMode);
   onCameraModeRef.current = onCameraMode;
+  const onHoverRef = useRef(onHover);
+  onHoverRef.current = onHover;
 
   // ── Mount Pixi + the simulation once ──────────────────────────────────────
   useEffect(() => {
     let alive = true;
+    let hoverTimer = null; // shared with the cleanup below, which runs outside the async IIFE
     const host = hostRef.current;
     const app = new Application();
 
@@ -658,6 +662,26 @@ export default function BubbleTree({
       const pointers = new Map();
       const pinch = { active: false, dist0: 0, zoom0: 1 };
 
+      // ── Hover preview (desktop only) ──────────────────────────────────────
+      // Fine-pointer devices only — never activates from touch. A short dwell
+      // avoids firing a card for every bubble the cursor sweeps past while
+      // panning; any drag/pinch/pointer-leave cancels it instantly.
+      const hoverCapable = typeof window !== 'undefined'
+        && window.matchMedia?.('(hover: hover) and (pointer: fine)').matches;
+      const HOVER_DELAY = 350;
+      let hoverCandidate = null; // bubble id the pointer is currently over
+      let hoveredId = null; // committed, debounced — what's actually shown
+      const setHovered = (id) => {
+        if (id === hoveredId) return;
+        hoveredId = id;
+        onHoverRef.current?.(id);
+      };
+      const clearHover = () => {
+        hoverCandidate = null;
+        clearTimeout(hoverTimer);
+        setHovered(null);
+      };
+
       const twoFingerDist = () => {
         const p = [...pointers.values()];
         return Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y);
@@ -711,6 +735,7 @@ export default function BubbleTree({
       app.stage.on('pointerdown', (e) => {
         const g = e.global;
         pointers.set(e.pointerId, { x: g.x, y: g.y });
+        clearHover();
 
         // Second finger down → begin pinch; abandon any single-finger gesture.
         if (pointers.size === 2) {
@@ -768,6 +793,24 @@ export default function BubbleTree({
             zoomTo(pinch.zoom0 * (d / pinch.dist0), mid.x, mid.y);
           }
           return;
+        }
+
+        // Hover preview: only when resting (no active drag/pan), not while a
+        // card is already pinned open, and never for the active bubble itself
+        // (it already carries the nameplate — a hover card there would just
+        // duplicate it).
+        if (hoverCapable && drag.type === 'none' && pointers.size <= 1 && !state.pinnedId) {
+          const id = bubbleIdFromTarget(e.target);
+          const candidate = id && id !== activeRef.current && visibleRef.current?.has(id) ? id : null;
+          if (candidate !== hoverCandidate) {
+            hoverCandidate = candidate;
+            clearTimeout(hoverTimer);
+            if (candidate) {
+              hoverTimer = setTimeout(() => setHovered(candidate), HOVER_DELAY);
+            } else {
+              setHovered(null);
+            }
+          }
         }
 
         if (drag.type === 'none' || !last) return;
@@ -865,11 +908,15 @@ export default function BubbleTree({
         (e) => {
           e.preventDefault();
           state.enterFree();
+          clearHover();
           const factor = e.deltaY > 0 ? 0.9 : 1.0 / 0.9;
           zoomTo(screenAnchor().z * factor, e.offsetX, e.offsetY);
         },
         { passive: false },
       );
+      // Leaving the canvas entirely (mouse exits the app area) always clears
+      // the hover preview — the stage's pointermove alone won't fire for that.
+      app.canvas.addEventListener('pointerleave', clearHover);
 
       // ── The frame loop ─────────────────────────────────────────────────────
       app.ticker.add((ticker) => {
@@ -1178,6 +1225,12 @@ export default function BubbleTree({
             const focusAlpha = d <= 1 ? 1 : d === 2 ? 0.62 : d === 3 ? 0.38 : 0.2;
             target = { ...base, alpha: focusAlpha };
           }
+          // Desktop hover preview: a small pop so the canvas and the floating
+          // card visibly agree on who's being previewed — never touches alpha,
+          // so a dimmed/background bubble stays dim, just a touch larger.
+          if (id === hoveredId) {
+            target = { ...target, scale: target.scale * 1.05, lift: (target.lift ?? 1) * 1.15 };
+          }
           // Name labels: all visible bubbles, hidden when card open or lineage active
           const labelAlpha = (!cardOpen && !lineage && effectiveVis.has(id)) ? 1 : 0;
           const birth = births.get(id);
@@ -1287,6 +1340,7 @@ export default function BubbleTree({
 
     return () => {
       alive = false;
+      clearTimeout(hoverTimer);
       api.current?.sim?.stop();
       try {
         app.destroy(true, { children: true });
