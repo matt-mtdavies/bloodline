@@ -584,7 +584,7 @@ export default function BubbleTree({
           onModeChange?.(false);
         },
         // Search's "wow" moment: fly the camera along an ordered chain of people
-        // (from the active person to a search result) instead of jump-cutting.
+        // (from the viewer's own seat to a search result) instead of jump-cutting.
         // A single continuous glide through everyone's real position — never a
         // slideshow of stops — with the path progressively lighting up as the
         // camera passes (see the ticker's 'flight' branch + effectiveLineage
@@ -614,6 +614,12 @@ export default function BubbleTree({
             phase: 'transit',
             litIndex: 0,
             startZoom: zoom.value,
+            // The route's start (the viewer's seat) may be far from wherever the
+            // camera actually is right now (e.g. it had wandered to look at
+            // someone else's branch) — blend away from the real camera position
+            // over the flight's first stretch instead of a jump-cut.
+            camStartX: camX.value,
+            camStartY: camY.value,
             onSegment: opts.onSegment || null,
             onLand: opts.onLand || null,
           };
@@ -908,8 +914,13 @@ export default function BubbleTree({
             const u = clamp(flight.t / flight.duration, 0, 1);
             const eased = easeInOutCubic(u);
             const p = sampleAlongPath(flight.pts, eased);
-            camX.value = camX.target = p.x;
-            camY.value = camY.target = p.y;
+            // Blend away from wherever the camera actually was (not necessarily
+            // the route's first point) over the opening stretch, so a flight
+            // starting far from the current view eases into the route instead
+            // of snapping to it.
+            const bt = easeInOutCubic(Math.min(1, u / 0.22));
+            camX.value = camX.target = flight.camStartX + (p.x - flight.camStartX) * bt;
+            camY.value = camY.target = flight.camStartY + (p.y - flight.camStartY) * bt;
             camX.velocity = camY.velocity = 0;
 
             const travelZ = clamp(0.72, MIN_ZOOM, MAX_ZOOM);

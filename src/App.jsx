@@ -656,13 +656,15 @@ export default function App() {
   }, []);
 
   // Search's flyover: instead of jump-cutting to the result, reveal every hop
-  // on the path from wherever the camera is now, then fly the camera along it
-  // (see BubbleTree's flyAlong) with the route lighting up as it passes and a
-  // caption filling in the relationship chain. Falls back to the old instant
-  // jump when there's no path, the hop is trivial, or motion is reduced.
+  // on the path from the VIEWER'S OWN seat (not wherever the camera happens to
+  // be) and fly the camera along it (see BubbleTree's flyAlong), with the
+  // route lighting up as it passes and a caption filling in the relationship
+  // chain. Falls back to the old instant jump when there's no path, the hop
+  // is trivial, or motion is reduced.
   const flyToSearchResult = useCallback((targetId) => {
     setSearchOpen(false);
-    const ordered = pathBetweenOrdered(graph, activeId, targetId);
+    const originId = data.myPersonId || DEFAULT_FOCUS;
+    const ordered = pathBetweenOrdered(graph, originId, targetId);
     const hops = ordered ? ordered.length - 1 : 0;
     if (!ordered || reducedMotion || hops <= 1) {
       activateNormal(targetId);
@@ -690,7 +692,7 @@ export default function App() {
         setFlightCaption(null);
       },
     });
-  }, [graph, activeId, reducedMotion, activateNormal]);
+  }, [graph, data.myPersonId, reducedMotion, activateNormal]);
 
   const closePerson = useCallback(() => {
     viewApi.current?.unpin();
