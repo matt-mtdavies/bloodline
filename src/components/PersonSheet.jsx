@@ -424,7 +424,7 @@ export default function PersonSheet({
 
         {/* Placeholder nudge — these stand-in parents are auto-created so a lone
             person's siblings have something to hang from; prompt to name them. */}
-        {canEdit && person.confidence === 'uncertain' && (
+        {canEdit && person.confidence === 'uncertain' && /\b(father|mother|parent)\b/i.test(person.display_name) && (
           <button className="profile__placeholder" onClick={() => onEdit?.(person.id)}>
             <span className="profile__placeholder-icon"><PencilIcon /></span>
             <span>This is a placeholder — tap to add their real name and details.</span>

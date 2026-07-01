@@ -29,5 +29,23 @@ export async function onRequestGet({ env, data }) {
   const isAdmin = !!env.ADMIN_EMAIL
     && data.user.email?.toLowerCase() === env.ADMIN_EMAIL.trim().toLowerCase();
 
-  return json({ uid: data.user.uid, email: data.user.email, display_name, person_id, isAdmin });
+  // Return any pending invites for this email address so the client can
+  // auto-accept them (empty tree) or show a banner (non-empty tree).
+  let pendingInvites = [];
+  if (env.DB) {
+    try {
+      const now = Math.floor(Date.now() / 1000);
+      const rows = await env.DB.prepare(
+        `SELECT i.token, i.role, f.name AS family_name, u2.email AS from_email
+         FROM invite i
+         JOIN family f ON f.id = i.family_id
+         LEFT JOIN user u2 ON u2.id = i.from_user
+         WHERE i.email = ? AND i.status = 'pending' AND i.expires_at > ?
+         ORDER BY i.created_at DESC LIMIT 5`,
+      ).bind(data.user.email, now).all();
+      pendingInvites = rows.results || [];
+    } catch { /* migration may not be applied yet — skip gracefully */ }
+  }
+
+  return json({ uid: data.user.uid, email: data.user.email, display_name, person_id, isAdmin, pendingInvites });
 }

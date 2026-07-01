@@ -127,6 +127,9 @@ export default function App() {
   // Set when a user with existing tree data accepts an invite — gates the app
   // on the merge wizard until they complete or skip the merge.
   const [pendingInvite, setPendingInvite] = useState(_initialPendingInvite);
+  // Pending invites from /api/auth/me for users who already have a non-empty tree.
+  // Shown as a dismissable banner so they can manually choose to switch families.
+  const [pendingFamilyInvites, setPendingFamilyInvites] = useState([]);
 
   async function applySession(loginExtras) {
     // OTP login can return pendingInvite when the user already has a tree.
@@ -167,6 +170,43 @@ export default function App() {
     }
 
     const hadTree = await loadFromServer({ forceServerWins: joiningFamily });
+
+    // Path C: auto-detect pending invites from the server even without an invite
+    // link in the URL (covers users who received an invite but opened the app
+    // directly — e.g. Diane or Amie stuck in a blank tree).
+    if (!joiningFamily && !loginExtras?.pendingInvite) {
+      const serverPendingInvites = u.pendingInvites || [];
+      if (serverPendingInvites.length > 0) {
+        const currentPeople = store.getState().people || [];
+        if (currentPeople.length === 0) {
+          // Empty tree — silently accept the first pending invite and load the family.
+          try {
+            const firstInvite = serverPendingInvites[0];
+            const ar = await fetch('/api/invite/accept', {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ token: firstInvite.token }),
+            });
+            if (ar.ok) {
+              const ab = await ar.json().catch(() => ({}));
+              if (ab.needsMerge) {
+                setPendingInvite(ab.pendingInvite);
+              } else {
+                await loadFromServer({ forceServerWins: true });
+                try {
+                  const seen = localStorage.getItem(`bl_claim_seen_${u.uid}`);
+                  if (!u.person_id && !seen) setPromptClaim(true);
+                } catch { if (!u.person_id) setPromptClaim(true); }
+              }
+            }
+          } catch { /* non-fatal — fall through to whatever tree loaded */ }
+        } else {
+          // Non-empty tree — surface the invite(s) as a dismissable banner.
+          setPendingFamilyInvites(serverPendingInvites);
+        }
+      }
+    }
+
     // Only seed the server from local when this user genuinely has a local tree
     // to push (e.g. just finished onboarding). Never push an empty tree — that
     // would wipe their cloud data after an identity reset or a failed load.
@@ -198,6 +238,25 @@ export default function App() {
     setPromptClaim(false);
     try { if (user?.uid) localStorage.setItem(`bl_claim_seen_${user.uid}`, '1'); } catch { /* ignore */ }
   }, [user]);
+
+  const handleAcceptFamilyInvite = useCallback(async (invite) => {
+    try {
+      const ar = await fetch('/api/invite/accept', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ token: invite.token }),
+      });
+      if (ar.ok) {
+        const ab = await ar.json().catch(() => ({}));
+        setPendingFamilyInvites([]);
+        if (ab.needsMerge) {
+          setPendingInvite(ab.pendingInvite || invite.token);
+        } else {
+          await loadFromServer({ forceServerWins: true });
+        }
+      }
+    } catch { /* non-fatal */ }
+  }, []);
 
   const handleClaimSpot = useCallback(async (personId, personName) => {
     try {
@@ -1138,6 +1197,34 @@ export default function App() {
       {syncToast && (
         <div className="storage-toast" role="status" onClick={() => setSyncToast(null)}>
           {syncToast}
+        </div>
+      )}
+
+      {pendingFamilyInvites.length > 0 && (
+        <div className="invite-banner" role="alert">
+          {pendingFamilyInvites.map((inv) => (
+            <div key={inv.token} className="invite-banner__item">
+              <span className="invite-banner__text">
+                <strong>{inv.from_email || 'Someone'}</strong> invited you to join{' '}
+                <strong>{inv.family_name || 'a family tree'}</strong>
+              </span>
+              <div className="invite-banner__actions">
+                <button
+                  className="invite-banner__join"
+                  onClick={() => handleAcceptFamilyInvite(inv)}
+                >
+                  Join
+                </button>
+                <button
+                  className="invite-banner__dismiss"
+                  aria-label="Dismiss invitation"
+                  onClick={() => setPendingFamilyInvites((prev) => prev.filter((i) => i.token !== inv.token))}
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+          ))}
         </div>
       )}
 
