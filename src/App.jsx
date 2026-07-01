@@ -886,6 +886,20 @@ export default function App() {
 
   const activePerson = graph.byId.get(activeId);
 
+  // Whether ANY sheet/modal/overlay is currently on screen — used to hide the
+  // canvas-anchored overlays (hover card, focus nameplate, recentre button)
+  // that would otherwise float on top of whatever just opened. Kept as one
+  // flag rather than repeating an ad-hoc subset of these checks at each call
+  // site: that's exactly how the hover card ended up missing settingsOpen
+  // (and a dozen others) — every new sheet added over time needs to be
+  // remembered at every gate, and it only takes missing one.
+  const anyOverlayOpen = !!(
+    openId || addAnchorId || editId || timelineId || memoryId || lightbox || crop ||
+    legendOpen || settingsOpen || insightsOpen || timelineOpen || docViewer ||
+    invitePersonId || activityOpen || gedcomOpen || fsImportOpen || profileOpen ||
+    searchOpen || duplicatesOpen || promptClaim || showInstall
+  );
+
   // Photo of the person the logged-in user has claimed as their own bubble.
   const userPhoto = useMemo(() => {
     if (!user?.person_id) return null;
@@ -986,19 +1000,19 @@ export default function App() {
           <FocusNameplate
             person={activePerson}
             getPos={() => viewApi.current?.getScreenPos(activeId)}
-            hidden={!!openId || !!addAnchorId || !!editId || browse || layout === 'chart'}
+            hidden={anyOverlayOpen || browse || layout === 'chart'}
           />
           <HoverCard
             graph={graph}
-            personId={!openId && !addAnchorId && !editId && layout !== 'chart' ? hoveredId : null}
+            personId={!anyOverlayOpen && layout !== 'chart' ? hoveredId : null}
             viewerId={data.myPersonId || DEFAULT_FOCUS}
             getPos={() => viewApi.current?.getScreenPos(hoveredId)}
           />
           <button
-            className={`recenter-btn${!openId && !addAnchorId && !editId && layout !== 'chart' ? ' recenter-btn--on' : ''}`}
+            className={`recenter-btn${!anyOverlayOpen && layout !== 'chart' ? ' recenter-btn--on' : ''}`}
             onClick={() => { setBrowse(false); viewApi.current?.recenter(); }}
             aria-label="Recentre on the family"
-            tabIndex={!openId && !addAnchorId && !editId && layout !== 'chart' ? 0 : -1}
+            tabIndex={!anyOverlayOpen && layout !== 'chart' ? 0 : -1}
           >
             <RecenterIcon />
           </button>
