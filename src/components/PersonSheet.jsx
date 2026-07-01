@@ -1165,7 +1165,7 @@ export default function PersonSheet({
         )}
 
         <footer className="profile__foot">
-          <button className="btn btn--primary" onClick={() => onFocus(person.id)}>
+          <button className="btn" onClick={() => onFocus(person.id)}>
             Centre the tree here
           </button>
         </footer>
