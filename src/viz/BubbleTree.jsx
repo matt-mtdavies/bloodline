@@ -1002,18 +1002,30 @@ export default function BubbleTree({
               camTY = camTY * (1 - BB) + (by / bn) * BB;
             }
           }
-          camX.setTarget(camTX);
-          camY.setTarget(camTY);
           // Fit from the half-extents around the (biased) centre so nothing
           // clips on the far side.
-          const halfX = Math.max(camTX - minX, maxX - camTX, rr);
-          const halfY = Math.max(camTY - minY, maxY - camTY, rr);
           const PAD = 18;
-          const fit = Math.min(
-            MAX_ZOOM,
-            (W / 2 - PAD) / halfX,
-            ((H - topInset) / 2 - PAD) / halfY,
-          );
+          let halfX = Math.max(camTX - minX, maxX - camTX, rr);
+          let halfY = Math.max(camTY - minY, maxY - camTY, rr);
+          let fit = Math.min(MAX_ZOOM, (W / 2 - PAD) / halfX, ((H - topInset) / 2 - PAD) / halfY);
+
+          // The revealed family can be wide enough that fitting everyone would
+          // need to zoom out further than the follow-mode floor allows — most
+          // likely right after a search flyover reveals a long path's full
+          // neighbourhoods at once. The zoom clamp below can't stretch to
+          // compensate, so when that happens, re-centre fully on the active
+          // person and re-fit from there: keeping them actually on screen
+          // matters more than fitting every revealed relative.
+          if (fit < 0.4) {
+            camTX = f.x;
+            camTY = f.y;
+            halfX = Math.max(camTX - minX, maxX - camTX, rr);
+            halfY = Math.max(camTY - minY, maxY - camTY, rr);
+            fit = Math.min(MAX_ZOOM, (W / 2 - PAD) / halfX, ((H - topInset) / 2 - PAD) / halfY);
+          }
+
+          camX.setTarget(camTX);
+          camY.setTarget(camTY);
           zoom.setTarget(clamp(fit, 0.4, MAX_ZOOM));
           camX.step(dt);
           camY.step(dt);
