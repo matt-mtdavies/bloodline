@@ -383,11 +383,16 @@ export default function BubbleTree({
           state.relayout();
         },
         setActive(id, animate = true) {
+          // De-dupe: React re-syncs activeId via a prop effect even when this
+          // imperative state already made the same person active (e.g. right
+          // after a flyover lands) — skip the reorg/zoom kick the second time
+          // so landing doesn't get an extra redundant jolt.
+          const alreadyActive = id === activeRef.current;
           activeRef.current = id;
           state.dist = distancesFrom(graphRef.current, id);
           relCache.clear(); // relationships are relative to the active person
           state.enterFollow();
-          if (!reducedMotion && animate) {
+          if (!reducedMotion && animate && !alreadyActive) {
             zoom.velocity -= 1.6;
             // Briefly spike the Y-generational force so parents visibly float
             // upward and children sink down, making the clicked person's family
@@ -604,8 +609,8 @@ export default function BubbleTree({
             pts,
             hops,
             t: 0,
-            duration: Math.min(0.5 + hops * 0.15, 1.3),
-            landDuration: 0.4,
+            duration: clamp(1.1 + hops * 0.45, 1.6, 3.2),
+            landDuration: 0.7,
             phase: 'transit',
             litIndex: 0,
             startZoom: zoom.value,

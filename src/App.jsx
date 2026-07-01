@@ -666,7 +666,6 @@ export default function App() {
     const hops = ordered ? ordered.length - 1 : 0;
     if (!ordered || reducedMotion || hops <= 1) {
       activateNormal(targetId);
-      setTimeout(() => openPerson(targetId), 80);
       return;
     }
     setExpanded((prev) => {
@@ -689,10 +688,9 @@ export default function App() {
       onLand: () => {
         setActiveId(targetId);
         setFlightCaption(null);
-        setTimeout(() => openPerson(targetId), 120);
       },
     });
-  }, [graph, activeId, reducedMotion, activateNormal, openPerson]);
+  }, [graph, activeId, reducedMotion, activateNormal]);
 
   const closePerson = useCallback(() => {
     viewApi.current?.unpin();
