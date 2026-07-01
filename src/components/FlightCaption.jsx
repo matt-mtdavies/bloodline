@@ -1,33 +1,46 @@
 import { relationLabel } from '../data/graph.js';
 
 /*
- * The search flyover's caption — a relationship chain that fills in hop by
- * hop as the camera passes each person ("James → Father → Grandfather"),
- * tying the visual trace to language. Purely reactive to `upTo`, which the
- * flyover's onSegment callback advances in App.jsx as the camera lands on
- * each hop; the fade-in per crumb is CSS, driven by the --visible class.
+ * The search flyover's caption — each person on the path labelled by their
+ * relation to the VIEWER (not to the previous hop), so a route through an
+ * aunt and a cousin reads as "Mother → Grandmother → Half-Aunt → Half-Cousin"
+ * rather than a flat chain of parent/child steps that wouldn't surface those
+ * terms at all. The final crumb is the destination's actual name — the
+ * payoff, since the profile no longer auto-opens on landing.
+ *
+ * Purely reactive to `upTo`, which the flyover's onSegment callback advances
+ * in App.jsx as the camera passes each hop; the fade-in per crumb is CSS,
+ * driven by the --visible class.
  */
 export default function FlightCaption({ graph, order, upTo }) {
   if (!order || order.length < 2) return null;
-  const start = graph.byId.get(order[0]);
-  const firstName = (start?.display_name || '').trim().split(/\s+/)[0] || 'Start';
-  const hops = [];
-  for (let i = 1; i < order.length; i++) {
-    hops.push(relationLabel(graph, order[i - 1], order[i]));
-  }
+  const originId = order[0];
+  const target = graph.byId.get(order[order.length - 1]);
+  const targetName = (target?.display_name || '').trim();
+
+  // One relation-to-viewer label per hop after the origin (the origin itself
+  // is implicitly "you" and isn't shown as a crumb).
+  const relCrumbs = order.slice(1).map((id) => relationLabel(graph, originId, id));
 
   return (
     <div className="flight-caption" role="status" aria-live="polite">
-      <span className="flight-caption__crumb flight-caption__crumb--visible">{firstName}</span>
-      {hops.map((label, i) => (
+      {relCrumbs.map((label, i) => (
         <span
           key={i}
-          className={`flight-caption__crumb${i <= upTo - 1 ? ' flight-caption__crumb--visible' : ''}`}
+          className={`flight-caption__crumb${i < upTo ? ' flight-caption__crumb--visible' : ''}`}
         >
-          <ArrowGlyph />
+          {i > 0 && <ArrowGlyph />}
           {label}
         </span>
       ))}
+      {targetName && (
+        <span
+          className={`flight-caption__crumb flight-caption__crumb--name${upTo >= relCrumbs.length ? ' flight-caption__crumb--visible' : ''}`}
+        >
+          <ArrowGlyph />
+          {targetName}
+        </span>
+      )}
     </div>
   );
 }

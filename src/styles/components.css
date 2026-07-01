@@ -1621,9 +1621,41 @@
   to { transform: translateY(0) scale(1); opacity: 1; }
 }
 
-.form__head { margin-bottom: 18px; }
-.form__head h2 { font-family: var(--display); font-size: 23px; font-weight: 600; }
+.form__head { margin-bottom: 18px; display: flex; align-items: center; gap: 10px; }
+.form__head h2 { font-family: var(--display); font-size: 23px; font-weight: 600; flex: 1; }
+.form__head .icon-btn { margin-left: auto; }
+.form__back { margin-left: 0; }
 .form__sub { margin: 6px 0 0; color: var(--ink-soft); font-size: 14.5px; }
+
+/* Read-only "Profile" view — shown before Edit is tapped */
+.profile-view {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin-bottom: 8px;
+}
+.profile-view__row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 16px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--hairline, #ebedf0);
+}
+.profile-view__row:last-child { border-bottom: none; }
+.profile-view__label {
+  font-size: 13px;
+  color: var(--ink-soft, #6b6260);
+  flex-shrink: 0;
+}
+.profile-view__value {
+  font-size: 14.5px;
+  color: var(--ink, #241f1c);
+  font-weight: 500;
+  text-align: right;
+  white-space: pre-wrap;
+}
+.profile-view__empty { color: var(--ink-soft, #6b6260); font-size: 14px; padding: 12px 0; }
 
 /* Relationship chips */
 .chipgrid { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -6019,8 +6051,10 @@
   transform: translateY(0);
   color: var(--ink, #241f1c);
 }
-.flight-caption__crumb:last-child.flight-caption__crumb--visible {
+.flight-caption__crumb--name.flight-caption__crumb--visible {
   color: var(--accent, #c2603a);
+  font-family: var(--display);
+  font-weight: 700;
 }
 .flight-caption__arrow { flex-shrink: 0; color: var(--ink-faint, #b0a9a5); }
 @media (prefers-reduced-motion: reduce) {

@@ -407,7 +407,7 @@ export default function PersonSheet({
           {canEdit && (
             <button className="action" onClick={() => onEdit?.(person.id)}>
               <PencilIcon />
-              Edit
+              Profile
             </button>
           )}
           <button className="action action--invite" onClick={() => onInvite?.(person.id)} aria-label={`Invite ${person.display_name.split(' ')[0]}`}>

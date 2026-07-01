@@ -1416,6 +1416,33 @@ function computeGenerations(graph) {
     }
   }
 
+  // The levelling above can pull a parent DOWN past their own child's row —
+  // a child's generation was fixed in the first pass, before their parent
+  // got dragged deeper to match a partner's separate, deeper ancestry (e.g.
+  // Ray gets levelled to Flo's row, which happens to be at or past a row
+  // Ray's own child from an earlier relationship already occupies). Cascade
+  // children forward until every parent sits strictly above their children,
+  // never the reverse — repeated to convergence so it propagates down
+  // multiple generations if needed.
+  // Bounded defensively: a valid family tree converges in well under
+  // people.length passes, but corrupted/cyclic relationship data shouldn't
+  // be able to hang the tab.
+  let cascading = true;
+  let guard = graph.people.length + 1;
+  while (cascading && guard-- > 0) {
+    cascading = false;
+    for (const child of graph.people) {
+      const childGen = gen.get(child.id) ?? 0;
+      for (const parent of graph.parents(child.id)) {
+        const parentGen = gen.get(parent.id) ?? 0;
+        if (parentGen >= childGen) {
+          gen.set(child.id, parentGen + 1);
+          cascading = true;
+        }
+      }
+    }
+  }
+
   return gen;
 }
 

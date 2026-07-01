@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { VISIBILITY_LABELS, VISIBILITY_DESCS, SECTIONS } from '../lib/visibility.js';
 import { formatPhone, toE164 } from '../lib/phone.js';
+import { formatDate } from '../lib/dates.js';
 
 const GENDER_OPTIONS = ['Male', 'Female', 'Non-binary', 'Other'];
 
@@ -42,6 +43,11 @@ function isValidEmail(v) {
 }
 
 export default function EditPersonSheet({ person, onClose, onSave, onRemove }) {
+  // Opens on a read-only "Profile" view — birthday, birthplace, contact info,
+  // etc. are all visible without entering edit mode. "Edit profile" switches
+  // to the actual form below; cancelling the form returns to the view rather
+  // than closing outright.
+  const [mode, setMode] = useState('view'); // 'view' | 'edit'
   const [f, setF] = useState({
     display_name:  person.display_name  || '',
     middle_name:   person.middle_name   || '',
@@ -68,10 +74,14 @@ export default function EditPersonSheet({ person, onClose, onSave, onRemove }) {
   const [confirmRemove, setConfirmRemove] = useState(false);
 
   useEffect(() => {
-    const onKey = (e) => e.key === 'Escape' && onClose();
+    const onKey = (e) => {
+      if (e.key !== 'Escape') return;
+      if (mode === 'edit') setMode('view');
+      else onClose();
+    };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  }, [onClose, mode]);
 
   const set  = (k) => (e) => setF((s) => ({ ...s, [k]: e.target.value }));
   const clear = (k) => () => setF((s) => ({ ...s, [k]: '' }));
@@ -117,6 +127,62 @@ export default function EditPersonSheet({ person, onClose, onSave, onRemove }) {
       sectionVisibility: { ...s.sectionVisibility, [key]: s.sectionVisibility[key] !== false ? false : undefined },
     }));
 
+  if (mode === 'view') {
+    const rows = [
+      ['Name', person.display_name],
+      ['Middle name', person.middle_name],
+      ['Birth name', person.birth_name],
+      ['Date of birth', person.birth_date ? formatDate(person.birth_date) : null],
+      ['Gender', person.gender],
+      ['Birthplace', person.birth_place],
+      ['Lives in', person.residence],
+      ['Hair colour', person.hair_color],
+      ['Eye colour', person.eye_color],
+      ['Occupation', person.occupation],
+      ['Email', person.email],
+      ['Phone', person.phone ? formatPhone(person.phone) : null],
+      ['Tags', person.tags?.length ? person.tags.join(', ') : null],
+      ...(person.is_deceased ? [['Date passed', person.death_date ? formatDate(person.death_date) : null]] : []),
+      ['A memory or story', person.bio],
+    ].filter(([, value]) => !!value);
+
+    return (
+      <div className="sheet-scrim sheet-scrim--modal" onClick={onClose}>
+        <section
+          className="sheet sheet--form"
+          role="dialog"
+          aria-modal="true"
+          aria-label={`${person.display_name} profile`}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <header className="form__head">
+            <h2>Profile</h2>
+            <button type="button" className="icon-btn" onClick={onClose} aria-label="Close">
+              <CloseIcon />
+            </button>
+          </header>
+
+          <div className="profile-view">
+            {rows.length ? rows.map(([label, value]) => (
+              <div className="profile-view__row" key={label}>
+                <span className="profile-view__label">{label}</span>
+                <span className="profile-view__value">{value}</span>
+              </div>
+            )) : (
+              <p className="profile-view__empty">No details added yet.</p>
+            )}
+          </div>
+
+          <footer className="sheet__foot">
+            <button className="btn btn--primary" onClick={() => setMode('edit')}>
+              <PencilIcon /> Edit profile
+            </button>
+          </footer>
+        </section>
+      </div>
+    );
+  }
+
   return (
     <div className="sheet-scrim sheet-scrim--modal" onClick={onClose}>
       <section
@@ -127,6 +193,9 @@ export default function EditPersonSheet({ person, onClose, onSave, onRemove }) {
         onClick={(e) => e.stopPropagation()}
       >
         <header className="form__head">
+          <button type="button" className="icon-btn form__back" onClick={() => setMode('view')} aria-label="Back to profile">
+            <BackIcon />
+          </button>
           <h2>Edit details</h2>
         </header>
 
@@ -416,7 +485,7 @@ export default function EditPersonSheet({ person, onClose, onSave, onRemove }) {
           ) : (
             <>
               <button className="btn btn--primary" onClick={save}>Save</button>
-              <button className="btn" onClick={onClose}>Cancel</button>
+              <button className="btn" onClick={() => setMode('view')}>Cancel</button>
               {onRemove && (
                 <button className="btn btn--remove" onClick={() => setConfirmRemove(true)}>
                   Remove from tree
@@ -427,6 +496,31 @@ export default function EditPersonSheet({ person, onClose, onSave, onRemove }) {
         </footer>
       </section>
     </div>
+  );
+}
+
+function CloseIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+    </svg>
+  );
+}
+
+function BackIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M15 18l-6-6 6-6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  );
+}
+
+function PencilIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M12 20h9" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+      <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
   );
 }
 
