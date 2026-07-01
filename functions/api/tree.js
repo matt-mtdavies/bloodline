@@ -149,10 +149,21 @@ export async function onRequestPut({ request, env, data }) {
     if (!canEditAll) {
       const base = prev || {};
       const deletedIn = tree._deleted || {};
+      // A contributor's own activity events (e.g. "added a memory") must be
+      // folded in here too, not just dropped — this branch is the only place
+      // their save is persisted to tree_json, so if their new events aren't
+      // merged into base.activity now, the fast in-app feed never sees them
+      // (even though activity_log below durably records them regardless).
+      const priorActivityIds = new Set((base.activity || []).map((e) => e?.id).filter(Boolean));
+      const newActivity = (Array.isArray(tree.activity) ? tree.activity : [])
+        .filter((e) => e?.id && !priorActivityIds.has(e.id));
       toStore = {
         ...base,
         memories: Array.isArray(tree.memories) ? tree.memories : (base.memories || []),
         photos: Array.isArray(tree.photos) ? tree.photos : (base.photos || []),
+        activity: [...newActivity, ...(base.activity || [])]
+          .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+          .slice(0, 100),
         _deleted: {
           ...(base._deleted || {}),
           memories: { ...((base._deleted || {}).memories || {}), ...(deletedIn.memories || {}) },
