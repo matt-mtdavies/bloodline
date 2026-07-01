@@ -411,6 +411,12 @@ export default function PersonSheet({
               Profile
             </button>
           )}
+          {!person.invited_at && (
+            <button className="action action--invite" onClick={() => onInvite?.(person.id)} aria-label={`Invite ${person.display_name.split(' ')[0]}`}>
+              <EnvelopeIcon />
+              Invite
+            </button>
+          )}
           {person.birth_date && !restricted && (
             <button className="action action--journey" onClick={() => onLifeJourney?.(person.id)} aria-label={`Watch ${person.display_name.split(' ')[0]}'s life story`}>
               <FilmIcon />
@@ -449,14 +455,13 @@ export default function PersonSheet({
           </div>
         )}
 
-        {/* Quiet access link — covers "never invited" and "joined" states.
-            The pending-invite banner above already covers the middle state
-            (invited, not yet joined) with the same action, so this and that
-            banner are mutually exclusive rather than stacking two ways to
-            do the same thing. */}
-        {canEdit && !person.is_deceased && !(person.invited_at && person.invited_email && !person.joined_at) && (
+        {/* Quiet access link — once someone has joined, changing their role
+            or grabbing a fresh share link is a rare, low-stakes action, so
+            it doesn't need the same visual weight as the Invite button
+            above (which only shows before they've ever been invited). */}
+        {canEdit && !person.is_deceased && person.joined_at && (
           <button className="profile__access-link" onClick={() => onInvite?.(person.id)}>
-            {person.joined_at ? 'Manage access' : 'Invite to collaborate'}
+            Manage access
           </button>
         )}
 
@@ -1215,6 +1220,15 @@ function PlusIcon() {
   return (
     <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+function EnvelopeIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"
+        stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+      <path d="M22 6l-10 7L2 6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
     </svg>
   );
 }
