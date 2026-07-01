@@ -169,7 +169,9 @@ export default function BubbleTree({
       // purely cosmetic edit (a photo/bio/tag update background-migrated to
       // R2, someone else's unrelated save merging in, etc.) doesn't reheat
       // the whole simulation and visibly "jiggle" every bubble on screen.
-      let lastRelationships = graph.relationships;
+      // Content-based (not reference-based): every server merge/reload
+      // rebuilds a fresh relationships array even when nothing changed.
+      let lastRelationshipSig = relSignature(graph.relationships);
 
       const buildLinks = (rels) =>
         rels
@@ -516,8 +518,9 @@ export default function BubbleTree({
               if (i >= 0) nodes.splice(i, 1);
             }
           }
-          if (g.relationships !== lastRelationships) structuralChange = true;
-          lastRelationships = g.relationships;
+          const relSig = relSignature(g.relationships);
+          if (relSig !== lastRelationshipSig) structuralChange = true;
+          lastRelationshipSig = relSig;
           sim.nodes(nodes);
           linkForce.links(buildLinks(g.relationships));
           // Only reheat the simulation when the tree's actual shape changed
@@ -1432,6 +1435,18 @@ export default function BubbleTree({
 }
 
 const easeInOutCubic = (x) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
+
+// Content signature for a relationships array — a server merge or reload
+// always rebuilds this array from scratch (new reference every time), even
+// when nothing in it actually changed, so reference equality can't tell
+// "did the tree's shape change" from "did we just re-fetch the same data".
+// This compares what's actually in it instead.
+function relSignature(rels) {
+  return (rels || [])
+    .map((r) => `${r.id}~${r.from_person}~${r.to_person}~${r.type}~${r.qualifier ?? ''}~${r.partner_status ?? ''}`)
+    .sort()
+    .join('|');
+}
 
 // Smooth Catmull-Rom curve through an ordered list of {x,y} points — the
 // search flyover's flight path. u is normalised progress across the WHOLE
