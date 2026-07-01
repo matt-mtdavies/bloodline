@@ -975,7 +975,7 @@ export default function App() {
           />
           <HoverCard
             graph={graph}
-            personId={!openId && !addAnchorId && !editId && !browse && layout !== 'chart' ? hoveredId : null}
+            personId={!openId && !addAnchorId && !editId && layout !== 'chart' ? hoveredId : null}
             viewerId={data.myPersonId || DEFAULT_FOCUS}
             getPos={() => viewApi.current?.getScreenPos(hoveredId)}
           />
