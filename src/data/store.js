@@ -178,7 +178,7 @@ let _pollTimer = null;
 let _serverEtag = null; // ETag from last successful GET or PUT
 
 // Sync status observable — consumed by TopBar.
-// Values: 'idle' | 'saving' | 'saved' | 'error' | 'error-auth'
+// Values: 'idle' | 'saving' | 'saved' | 'error' | 'error-auth' | 'error-forbidden'
 let _syncStatus = 'idle';
 const _syncListeners = new Set();
 function setSyncStatus(s) { _syncStatus = s; _syncListeners.forEach((l) => l()); }
@@ -210,9 +210,17 @@ function afterSave(ok, statusCode) {
     clearTimeout(_retryTimer);
     _lastSyncError = null;
     _savedTimer = setTimeout(() => setSyncStatus('idle'), 2500);
-  } else if (statusCode === 401 || statusCode === 403) {
+  } else if (statusCode === 401) {
     setSyncStatus('error-auth');
     console.warn('[store] server sync: auth error', statusCode);
+  } else if (statusCode === 403) {
+    // Distinct from 401: the session is fine, the action just isn't allowed
+    // for this role (e.g. an editor tried to remove a person or erase the
+    // tree) — _lastSyncError.message already carries the server's specific
+    // reason from putTree, so TopBar can show that instead of a generic
+    // "session expired" message that would be actively misleading here.
+    setSyncStatus('error-forbidden');
+    console.warn('[store] server sync: forbidden', statusCode);
   } else {
     _lastSyncError = { code: statusCode || 0, message: statusCode === 409 ? 'Conflict' : statusCode ? `HTTP ${statusCode}` : 'Network error' };
     setSyncStatus('error');
@@ -296,6 +304,10 @@ async function putTree(s, attempt = 0) {
       code: r.status,
       message: r.status === 409
         ? 'Conflict (retried)'
+        // 403s here always carry a clear, human-readable reason (a
+        // permission boundary, not a raw server fault) — show it as-is.
+        : r.status === 403 && errorBody?.detail
+        ? errorBody.detail
         : errorBody?.detail
         ? `HTTP ${r.status}: ${errorBody.detail}`
         : `HTTP ${r.status}`,

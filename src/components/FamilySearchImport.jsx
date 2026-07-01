@@ -7,12 +7,14 @@ const GENERATION_OPTIONS = [
   { value: 5, label: '5 generations', sub: 'Up to 63 ancestors' },
 ];
 
-export default function FamilySearchImport({ onImport, onClose }) {
+export default function FamilySearchImport({ onImport, onClose, canReplace = true }) {
   const [step, setStep] = useState('connect'); // connect | fetching | preview | importing | done
   const [generations, setGenerations] = useState(4);
   const [token, setToken] = useState(null);
   const [result, setResult] = useState(null); // { people, relationships }
-  const [mergeMode, setMergeMode] = useState('replace');
+  // Replacing the whole tree is a co-admin+ action (src/lib/visibility.js
+  // canManageTree) — default and restrict accordingly for anyone below that.
+  const [mergeMode, setMergeMode] = useState(canReplace ? 'replace' : 'merge');
   const [error, setError] = useState(null);
 
   async function handleConnect() {
@@ -91,6 +93,7 @@ export default function FamilySearchImport({ onImport, onClose }) {
             onFetch={handleFetch}
             onImport={handleImport}
             onBack={() => setStep('connect')}
+            canReplace={canReplace}
           />
         )}
 
@@ -166,7 +169,7 @@ function FetchingStep({ generations }) {
   );
 }
 
-function PreviewStep({ result, generations, onGenerations, mergeMode, onMergeMode, error, onFetch, onImport, onBack }) {
+function PreviewStep({ result, generations, onGenerations, mergeMode, onMergeMode, error, onFetch, onImport, onBack, canReplace }) {
   const { people, relationships } = result;
   const partnerCount = relationships.filter((r) => r.type === 'partner').length;
   const parentCount = relationships.filter((r) => r.type === 'parent').length;
@@ -221,13 +224,15 @@ function PreviewStep({ result, generations, onGenerations, mergeMode, onMergeMod
       <div className="gedcom__merge-section">
         <p className="gedcom__merge-title">How should we handle your existing tree?</p>
         <div className="gedcom__merge-opts">
-          <button
-            className={`gedcom__merge-opt${mergeMode === 'replace' ? ' gedcom__merge-opt--on' : ''}`}
-            onClick={() => onMergeMode('replace')}
-          >
-            <span className="gedcom__merge-opt-name">Replace</span>
-            <span className="gedcom__merge-opt-desc">Start fresh with the imported tree. Your current tree will be erased.</span>
-          </button>
+          {canReplace && (
+            <button
+              className={`gedcom__merge-opt${mergeMode === 'replace' ? ' gedcom__merge-opt--on' : ''}`}
+              onClick={() => onMergeMode('replace')}
+            >
+              <span className="gedcom__merge-opt-name">Replace</span>
+              <span className="gedcom__merge-opt-desc">Start fresh with the imported tree. Your current tree will be erased.</span>
+            </button>
+          )}
           <button
             className={`gedcom__merge-opt${mergeMode === 'merge' ? ' gedcom__merge-opt--on' : ''}`}
             onClick={() => onMergeMode('merge')}
@@ -236,6 +241,9 @@ function PreviewStep({ result, generations, onGenerations, mergeMode, onMergeMod
             <span className="gedcom__merge-opt-desc">Append to your current tree. Duplicate people may appear.</span>
           </button>
         </div>
+        {!canReplace && (
+          <p className="gedcom__merge-note">Only a co-admin or owner can replace the whole tree.</p>
+        )}
       </div>
 
       <div className="gedcom__preview-actions">

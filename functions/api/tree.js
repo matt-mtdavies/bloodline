@@ -123,6 +123,25 @@ export async function onRequestPut({ request, env, data }) {
       try { prev = JSON.parse(existingTree.tree_json); } catch { /* unparseable — ignore */ }
     }
 
+    // Hard-to-undo, whole-tree-shape changes — erasing the tree, a
+    // replace-mode import, merging duplicate people, or removing a person
+    // outright — all manifest the same way: a person who existed before is
+    // missing from the incoming payload. Rather than gating each of those
+    // actions individually, reject that shape of change from a plain
+    // 'editor' (below co-admin) in one place. This is the actual backstop —
+    // hiding the buttons client-side only helps with the UI, not a direct
+    // API call or a bug in it.
+    if (membership.role === 'editor' && prev?.people?.length) {
+      const incomingIds = new Set((tree.people || []).map((p) => p.id));
+      const removed = prev.people.filter((p) => !incomingIds.has(p.id));
+      if (removed.length > 0) {
+        return json({
+          error: 'Forbidden',
+          detail: 'Only a co-admin or owner can remove people, merge duplicates, replace-import, or erase this tree.',
+        }, { status: 403 });
+      }
+    }
+
     // Contributors can't alter structure: keep the stored tree and accept only
     // their memories & photos (plus deletions of those). Everything else — people,
     // relationships, documents, family name — is preserved from the server copy.
@@ -148,6 +167,28 @@ export async function onRequestPut({ request, env, data }) {
     // has (set by the owner on first save) so a member's save can't repoint
     // everyone else's seat to themselves.
     if (prev && prev.myPersonId != null) toStore.myPersonId = prev.myPersonId;
+
+    // Archive the value we're about to overwrite, so any save — a mistake,
+    // a bug, or a legitimate co-admin action like erasing/replacing the
+    // tree — can be recovered. Wrapped defensively: this table is new
+    // (migration 0009) and applying a migration is a separate manual step
+    // from deploying this code, so a not-yet-migrated table must never
+    // block the actual save.
+    try {
+      if (existingTree?.tree_json) {
+        await env.DB.prepare(
+          `INSERT INTO family_tree_snapshot (id, family_id, tree_json, created_at) VALUES (?, ?, ?, ?)`,
+        ).bind(uid('snap_'), membership.family_id, existingTree.tree_json, now).run();
+        // Keep only the most recent 30 snapshots per family.
+        await env.DB.prepare(
+          `DELETE FROM family_tree_snapshot WHERE family_id = ? AND id NOT IN (
+             SELECT id FROM family_tree_snapshot WHERE family_id = ? ORDER BY created_at DESC LIMIT 30
+           )`,
+        ).bind(membership.family_id, membership.family_id).run();
+      }
+    } catch (e) {
+      console.error('[tree] snapshot write skipped:', e.message);
+    }
 
     await env.DB.prepare(
       `INSERT INTO family_tree (family_id, tree_json, updated_at)

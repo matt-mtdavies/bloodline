@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-  ROLES, ROLE_LABELS, ROLE_COLORS, canInvite, roleRank,
+  ROLES, ROLE_LABELS, ROLE_COLORS, canInvite, canEdit, roleRank,
 } from '../lib/visibility.js';
 import ShareLink from './ShareLink.jsx';
 import { ActivityRow, dayLabel } from './ActivityFeed.jsx';
@@ -571,21 +571,25 @@ export default function FamilySettings({
           </>
         )}
 
-        {/* Import */}
-        <div className="fs__section">
-          <label className="fs__label">Import data</label>
-          <button className="fs__fs-btn" onClick={() => { onClose(); onImportFamilySearch?.(); }}>
-            <LeafIcon />
-            Import from FamilySearch
-          </button>
-          <button className="fs__import-btn" style={{ marginTop: 8 }} onClick={() => { onClose(); onImportGedcom?.(); }}>
-            <GedcomIcon />
-            Import GEDCOM file
-          </button>
-          <p className="fs__import-hint">
-            From Ancestry, MyHeritage, 23andMe, MacFamilyTree, and more.
-          </p>
-        </div>
+        {/* Import — structural change (adds people/relationships), so it
+            needs at least editor rank; replacing the whole tree needs
+            co-admin, enforced inside the import dialogs themselves. */}
+        {canEdit(effectiveRole) && (
+          <div className="fs__section">
+            <label className="fs__label">Import data</label>
+            <button className="fs__fs-btn" onClick={() => { onClose(); onImportFamilySearch?.(); }}>
+              <LeafIcon />
+              Import from FamilySearch
+            </button>
+            <button className="fs__import-btn" style={{ marginTop: 8 }} onClick={() => { onClose(); onImportGedcom?.(); }}>
+              <GedcomIcon />
+              Import GEDCOM file
+            </button>
+            <p className="fs__import-hint">
+              From Ancestry, MyHeritage, 23andMe, MacFamilyTree, and more.
+            </p>
+          </div>
+        )}
 
         {/* Feedback */}
         <div className="fs__section">
@@ -638,9 +642,13 @@ export default function FamilySettings({
               Sign out
             </button>
           )}
-          <button className="fs__danger-btn" onClick={handleReset}>
-            Start over — erase tree
-          </button>
+          {isOwnerOrCoadmin ? (
+            <button className="fs__danger-btn" onClick={handleReset}>
+              Start over — erase tree
+            </button>
+          ) : (
+            <p className="fs__danger-note">Only a co-admin or owner can erase this tree.</p>
+          )}
         </div>
       </div>
     </div>

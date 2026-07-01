@@ -3967,6 +3967,7 @@
   transition: background 0.15s;
 }
 .fs__danger-btn:hover { background: #fef2f2; }
+.fs__danger-note { font-size: 12.5px; color: var(--ink-faint, #a09590); text-align: center; }
 
 /* ── Privacy / visibility controls in EditPersonSheet ─────────────────────── */
 .privacy-section { border-top: 1px solid var(--hairline); margin-top: 8px; padding-top: 12px; }
@@ -4990,6 +4991,12 @@
   font-size: 13px;
   font-weight: 600;
   color: var(--ink);
+  margin: 0;
+}
+
+.gedcom__merge-note {
+  font-size: 12.5px;
+  color: var(--ink-faint, #a09590);
   margin: 0;
 }
 

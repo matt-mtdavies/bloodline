@@ -35,6 +35,14 @@ export function canInvite(myRole) {
   return roleRank(myRole) >= roleRank('coadmin');
 }
 
+// Hard-to-undo, whole-tree-affecting actions (erase tree, replace-import,
+// merge duplicate people, remove a person entirely) — same bar as inviting,
+// named separately so call sites read as "is this destructive enough to
+// need an admin" rather than "can this person send invites".
+export function canManageTree(myRole) {
+  return roleRank(myRole) >= roleRank('coadmin');
+}
+
 // What level of detail a viewer with `myRole` can see for a given person.
 // Returns 'full' | 'summary' | 'hidden'.
 export function effectiveVisibility(person, myRole) {

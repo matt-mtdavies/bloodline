@@ -44,6 +44,7 @@ import {
 import { uploadPhoto, generateThumb, uploadDocument } from './lib/image.js';
 import { buildGraph, pathBetween, pathBetweenOrdered } from './data/graph.js';
 import { findDuplicatePairs } from './lib/duplicates.js';
+import { canManageTree } from './lib/visibility.js';
 import { useReducedMotion } from './hooks/useReducedMotion.js';
 import BubbleTree from './viz/BubbleTree.jsx';
 import TopBar from './components/TopBar.jsx';
@@ -123,6 +124,9 @@ export default function App() {
   const canEditTree = !user || ['owner', 'coadmin', 'editor'].includes(data._meta?.role || 'owner');
   // Contributors may add memories & photos but not change structure.
   const canContributeTree = !user || ['owner', 'coadmin', 'editor', 'contributor'].includes(data._meta?.role || 'owner');
+  // Hard-to-undo, whole-tree actions (erase, replace-import, merge duplicates,
+  // remove a person) are reserved for co-admins/owners — see canManageTree.
+  const canManageTreeStructure = !user || canManageTree(data._meta?.role || 'owner');
   const [promptClaim, setPromptClaim] = useState(false); // welcome a member to claim their spot
   const [installEvent, setInstallEvent] = useState(null); // captured beforeinstallprompt
   const [showInstall, setShowInstall] = useState(false);
@@ -951,8 +955,8 @@ export default function App() {
         onSearch={() => setSearchOpen(true)}
         onOpenInsights={() => setInsightsOpen(true)}
         onOpenTimeline={() => setTimelineOpen(true)}
-        duplicateCount={canEditTree ? duplicatePairs.length : 0}
-        onOpenDuplicates={canEditTree && duplicatePairs.length ? () => setDuplicatesOpen(true) : null}
+        duplicateCount={canManageTreeStructure ? duplicatePairs.length : 0}
+        onOpenDuplicates={canManageTreeStructure && duplicatePairs.length ? () => setDuplicatesOpen(true) : null}
       />
 
       {view === 'bubbles' ? (
@@ -1302,7 +1306,7 @@ export default function App() {
           person={graph.byId.get(editId)}
           onClose={() => setEditId(null)}
           onSave={handleSave}
-          onRemove={handleRemovePerson}
+          onRemove={canManageTreeStructure ? handleRemovePerson : null}
         />
       )}
 
@@ -1454,6 +1458,7 @@ export default function App() {
             }
             setFsImportOpen(false);
           }}
+          canReplace={canManageTreeStructure}
         />
       )}
 
@@ -1470,6 +1475,7 @@ export default function App() {
             }
             setGedcomOpen(false);
           }}
+          canReplace={canManageTreeStructure}
         />
       )}
 

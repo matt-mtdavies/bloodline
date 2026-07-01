@@ -58,6 +58,11 @@ export default function TopBar({ familyName, stats, view, syncStatus, syncError,
           {syncStatus === 'error-auth' && (
             <span className="sync-status sync-status--error" aria-live="assertive">Session expired — please reload</span>
           )}
+          {syncStatus === 'error-forbidden' && (
+            <span className="sync-status sync-status--error" aria-live="assertive">
+              {syncError?.message || 'Not allowed — ask a co-admin'}
+            </span>
+          )}
           <button
             className="pill pill--bell"
             onClick={onOpenActivity}
