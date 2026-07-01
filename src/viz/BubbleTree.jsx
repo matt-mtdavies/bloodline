@@ -10,6 +10,7 @@ import {
 } from 'd3-force';
 import { Bubble } from './bubble.js';
 import { BirthEffect } from './birth.js';
+import { LandingBurst } from './landing.js';
 import { drawLinks, drawLinksChart } from './links.js';
 import { computeChartLayout } from './chartLayout.js';
 import { distancesFrom, relationLabel } from '../data/graph.js';
@@ -262,6 +263,8 @@ export default function BubbleTree({
 
       let reorgTimer = null; // tracks the forceY strength-restore after a tap
       const manualPins = new Set(); // nodes the user has manually repositioned
+      let flight = null;      // active search flyover, see state.flyAlong()
+      let landingFx = null;   // the flyover's arrival burst (single-slot, self-cleaning)
 
       const state = {
         app,
@@ -575,6 +578,42 @@ export default function BubbleTree({
           camMode = 'follow';
           onModeChange?.(false);
         },
+        // Search's "wow" moment: fly the camera along an ordered chain of people
+        // (from the active person to a search result) instead of jump-cutting.
+        // A single continuous glide through everyone's real position — never a
+        // slideshow of stops — with the path progressively lighting up as the
+        // camera passes (see the ticker's 'flight' branch + effectiveLineage
+        // below). Ends with a tight landing punch, then hands back to the
+        // normal follow framing so the spring eases out to reveal the family.
+        flyAlong(orderedIds, opts = {}) {
+          const pts = orderedIds.map((id) => nodeById.get(id)).filter(Boolean);
+          if (reducedMotion || pts.length < 2) {
+            if (pts.length) state.setActive(orderedIds[orderedIds.length - 1]);
+            opts.onLand?.();
+            return;
+          }
+          vx = vy = 0;
+          pointers.clear();
+          pinch.active = false;
+          drag.type = 'none';
+          drag.node = null;
+          camMode = 'flight';
+          const hops = pts.length - 1;
+          flight = {
+            ids: orderedIds,
+            pts,
+            hops,
+            t: 0,
+            duration: Math.min(0.5 + hops * 0.15, 1.3),
+            landDuration: 0.4,
+            phase: 'transit',
+            litIndex: 0,
+            startZoom: zoom.value,
+            onSegment: opts.onSegment || null,
+            onLand: opts.onLand || null,
+          };
+          flight.onSegment?.(orderedIds[0]);
+        },
       };
       api.current = state;
       if (apiRef) apiRef.current = state;
@@ -673,6 +712,7 @@ export default function BubbleTree({
           pinch.active = true;
           pinch.dist0 = twoFingerDist();
           pinch.zoom0 = screenAnchor().z;
+          if (flight) { flight = null; landingFx?.destroy(); landingFx = null; }
           state.enterFree();
           return;
         }
@@ -730,6 +770,9 @@ export default function BubbleTree({
           drag.node.fy = local.y;
           if (!reducedMotion) sim.alphaTarget(0.35); // reheat so neighbours react
         } else if (drag.type === 'pan' && drag.moved) {
+          // A real drag interrupts the flyover — hand control back to the user
+          // right where the camera is, no jump.
+          if (flight) { flight = null; landingFx?.destroy(); landingFx = null; }
           state.enterFree();
           app.stage.cursor = 'grabbing';
           const z = screenAnchor().z;
@@ -766,7 +809,10 @@ export default function BubbleTree({
           }
         }
         if (drag.type === 'bubble') {
-          if (!drag.moved) {
+          if (!drag.moved && flight) {
+            // Ignore taps while the flyover is mid-flight — let it land cleanly
+            // rather than racing a manual selection.
+          } else if (!drag.moved) {
             // Tap routing:
             //   • the little "−" pip   → collapse this branch (only the pip does this)
             //   • the active person    → open their profile
@@ -846,7 +892,63 @@ export default function BubbleTree({
         const cy = (H + topInset) / 2;
 
         const f = nodeById.get(activeRef.current);
-        if (camMode === 'follow' && f && !state.isDraggingBubble?.()) {
+        if (camMode === 'flight' && flight) {
+          // FLIGHT — the search flyover. One continuous glide through everyone's
+          // real position (a Catmull-Rom curve through the path, not a straight
+          // line — see sampleAlongPath), never stopping until landing. Wide
+          // "travel" zoom gives it a drone feel; the landing phase punches in
+          // tight on the destination before handing back to normal follow.
+          if (flight.phase === 'transit') {
+            flight.t += dt;
+            const u = clamp(flight.t / flight.duration, 0, 1);
+            const eased = easeInOutCubic(u);
+            const p = sampleAlongPath(flight.pts, eased);
+            camX.value = camX.target = p.x;
+            camY.value = camY.target = p.y;
+            camX.velocity = camY.velocity = 0;
+
+            const travelZ = clamp(0.72, MIN_ZOOM, MAX_ZOOM);
+            const zt = easeInOutCubic(Math.min(1, u / 0.3));
+            zoom.value = zoom.target = flight.startZoom + (travelZ - flight.startZoom) * zt;
+            zoom.velocity = 0;
+
+            const idx = Math.min(flight.hops, Math.round(eased * flight.hops));
+            if (idx > flight.litIndex) {
+              flight.litIndex = idx;
+              flight.onSegment?.(flight.ids[idx]);
+            }
+
+            if (u >= 1) {
+              flight.phase = 'landing';
+              flight.t = 0;
+              flight.landStartZoom = zoom.value;
+              flight.litIndex = flight.hops;
+              const dest = flight.pts[flight.pts.length - 1];
+              landingFx?.destroy();
+              landingFx = new LandingBurst({ x: dest.x, y: dest.y }, BASE_RADIUS);
+              fxLayer.addChild(landingFx.root);
+            }
+          } else {
+            // 'landing' — punch in tight on the destination, then hand off.
+            flight.t += dt;
+            const u = clamp(flight.t / flight.landDuration, 0, 1);
+            const dest = flight.pts[flight.pts.length - 1];
+            camX.value = camX.target = dest.x;
+            camY.value = camY.target = dest.y;
+            camX.velocity = camY.velocity = 0;
+            const punchZ = clamp(1.85, MIN_ZOOM, MAX_ZOOM);
+            const ez = easeInOutCubic(u);
+            zoom.value = zoom.target = flight.landStartZoom + (punchZ - flight.landStartZoom) * ez;
+            zoom.velocity = 0;
+            if (u >= 1) {
+              const finished = flight;
+              flight = null;
+              state.setActive(finished.ids[finished.ids.length - 1], false);
+              camMode = 'follow'; // setActive() re-enters follow anyway; explicit for clarity
+              finished.onLand?.();
+            }
+          }
+        } else if (camMode === 'follow' && f && !state.isDraggingBubble?.()) {
           // FOLLOW — frame the whole revealed family: centre on the bounding box
           // of the visible bubbles (gently biased toward the active person so
           // they stay central) and zoom so it fills the safe area. Even a handful
@@ -961,7 +1063,18 @@ export default function BubbleTree({
         // everyone else blurs and dims back. In lineage mode non-path bubbles dim.
         const dmap = state.dist;
         const cardOpen = !!state.pinnedId;
-        const lineage = lineageRef.current;
+        // During a search flyover, shadow the real lineage prop with the path
+        // "lit" so far (grows each time the camera passes a hop) — same dim /
+        // highlight / ring rendering Lineage Mode already uses, just fed a
+        // progressively-growing set instead of a static one.
+        const lineage = flight ? new Set(flight.ids.slice(0, flight.litIndex + 1)) : lineageRef.current;
+        const lineageEnd = flight ? flight.ids[flight.ids.length - 1] : lineageEndRef.current;
+
+        // ── Landing burst (search flyover arrival) ───────────────────────────
+        if (landingFx) {
+          landingFx.update(dt);
+          if (landingFx.done) { landingFx.destroy(); landingFx = null; }
+        }
 
         // ── Birth celebrations (time view) ──────────────────────────────────
         // Spot bubbles that *just* appeared because the timeline crossed their
@@ -1023,7 +1136,11 @@ export default function BubbleTree({
             target = { ...visualForDistance(d), alpha: 0.12, blur: 1.5 }; // off-path — recede
           } else if (lineage && lineage.has(id)) {
             // On lineage path: uniform, prominent, un-dimmed regardless of hop distance.
-            target = { scale: 1.02, alpha: 1, lift: 1.3, blur: 0 };
+            // The flyover's destination gets an extra punch during the landing beat.
+            const landingPunch = flight?.phase === 'landing' && id === lineageEnd;
+            target = landingPunch
+              ? { scale: 1.22, alpha: 1, lift: 1.6, blur: 0 }
+              : { scale: 1.02, alpha: 1, lift: 1.3, blur: 0 };
           } else if (cardOpen && id !== state.pinnedId) {
             target = { ...visualForDistance(d), alpha: 0.28, blur: 5 }; // dimmed behind card
           } else {
@@ -1045,10 +1162,10 @@ export default function BubbleTree({
             b.setVisualState({ ...target, labelAlpha }, dt);
           }
           // Ring both ends of a traced lineage so the line's poles stand out.
-          const ringed = id === activeRef.current
-            || (lineageRef.current && id === lineageEndRef.current);
+          const ringed = id === activeRef.current || (lineage && id === lineageEnd);
           b.setActive(!browseRef.current && ringed);
           b.setCollapsePip(
+            !flight &&
             effectiveVis.has(id) &&
             id !== activeRef.current &&
             !!(expandedRef.current?.has(id)),
@@ -1076,9 +1193,9 @@ export default function BubbleTree({
           b.setRelationLabel(relText);
 
           // Depth hints: show on visible bubbles that have family beyond the
-          // current reveal — suppressed in focus mode and the chart (the
-          // relationship caption takes that slot; the chart is a complete tree).
-          if (effectiveVis.has(id) && !focusRef.current && layoutRef.current !== 'chart') {
+          // current reveal — suppressed in focus mode, the chart, and mid-flight
+          // (the relationship caption / flyover glow takes that slot).
+          if (!flight && effectiveVis.has(id) && !focusRef.current && layoutRef.current !== 'chart') {
             const gg = graphRef.current;
             b.setDepthHint(
               gg.parents(id).some((x) => !effectiveVis.has(x.id)),
@@ -1186,6 +1303,32 @@ export default function BubbleTree({
   }, [visibleIds]);
 
   return <div className="stage" ref={hostRef} aria-hidden="true" />;
+}
+
+const easeInOutCubic = (x) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
+
+// Smooth Catmull-Rom curve through an ordered list of {x,y} points — the
+// search flyover's flight path. u is normalised progress across the WHOLE
+// route (0 = first point, 1 = last), so the camera glides through every hop
+// as one continuous curve rather than a chain of straight-line segments.
+// End segments clamp by duplicating the boundary point (standard Catmull-Rom).
+function sampleAlongPath(pts, u) {
+  const n = pts.length;
+  if (n === 1) return { x: pts[0].x, y: pts[0].y };
+  const segCount = n - 1;
+  const scaled = clamp(u, 0, 1) * segCount;
+  let seg = Math.floor(scaled);
+  if (seg >= segCount) seg = segCount - 1;
+  const t = scaled - seg;
+  const p0 = pts[seg - 1] || pts[seg];
+  const p1 = pts[seg];
+  const p2 = pts[seg + 1];
+  const p3 = pts[seg + 2] || pts[seg + 1];
+  const t2 = t * t, t3 = t2 * t;
+  return {
+    x: 0.5 * ((2 * p1.x) + (-p0.x + p2.x) * t + (2 * p0.x - 5 * p1.x + 4 * p2.x - p3.x) * t2 + (-p0.x + 3 * p1.x - 3 * p2.x + p3.x) * t3),
+    y: 0.5 * ((2 * p1.y) + (-p0.y + p2.y) * t + (2 * p0.y - 5 * p1.y + 4 * p2.y - p3.y) * t2 + (-p0.y + 3 * p1.y - 3 * p2.y + p3.y) * t3),
+  };
 }
 
 // Sizing for revealed bubbles by hop-distance from the active person.

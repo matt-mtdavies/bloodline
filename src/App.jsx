@@ -68,6 +68,7 @@ import InviteSheet from './components/InviteSheet.jsx';
 import TreeInsights from './components/TreeInsights.jsx';
 import DuplicatesSheet from './components/DuplicatesSheet.jsx';
 import LineageBanner from './components/LineageBanner.jsx';
+import FlightCaption from './components/FlightCaption.jsx';
 import TimelineView from './components/TimelineView.jsx';
 import ClaimSpot from './components/ClaimSpot.jsx';
 import InstallPrompt from './components/InstallPrompt.jsx';
@@ -381,6 +382,10 @@ export default function App() {
   const [fsImportOpen, setFsImportOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  // Search's flyover caption — { order: [fromId,…,toId], upTo: number } while a
+  // flight is in progress, else null. upTo advances via the flight's onSegment
+  // callback so the relationship chain fills in hop by hop as the camera flies.
+  const [flightCaption, setFlightCaption] = useState(null);
   const viewApi = useRef(null);
 
   // Notify the user if a commit couldn't persist (localStorage full).
@@ -649,6 +654,45 @@ export default function App() {
     viewApi.current?.enterFollow(); // if they'd roamed, re-frame so the card has room
     setOpenId(id);
   }, []);
+
+  // Search's flyover: instead of jump-cutting to the result, reveal every hop
+  // on the path from wherever the camera is now, then fly the camera along it
+  // (see BubbleTree's flyAlong) with the route lighting up as it passes and a
+  // caption filling in the relationship chain. Falls back to the old instant
+  // jump when there's no path, the hop is trivial, or motion is reduced.
+  const flyToSearchResult = useCallback((targetId) => {
+    setSearchOpen(false);
+    const ordered = pathBetweenOrdered(graph, activeId, targetId);
+    const hops = ordered ? ordered.length - 1 : 0;
+    if (!ordered || reducedMotion || hops <= 1) {
+      activateNormal(targetId);
+      setTimeout(() => openPerson(targetId), 80);
+      return;
+    }
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      for (const id of ordered) next.add(id);
+      return next;
+    });
+    setLineageMode(false);
+    setLineagePath(null);
+    setLineageOrder(null);
+    setFocusMode(false);
+    setLifeJourneyId(null);
+    setBrowse(false);
+    setFlightCaption({ order: ordered, upTo: 0 });
+    viewApi.current?.flyAlong(ordered, {
+      onSegment: (id) => {
+        const idx = ordered.indexOf(id);
+        setFlightCaption((c) => (c ? { ...c, upTo: idx } : c));
+      },
+      onLand: () => {
+        setActiveId(targetId);
+        setFlightCaption(null);
+        setTimeout(() => openPerson(targetId), 120);
+      },
+    });
+  }, [graph, activeId, reducedMotion, activateNormal, openPerson]);
 
   const closePerson = useCallback(() => {
     viewApi.current?.unpin();
@@ -1046,7 +1090,7 @@ export default function App() {
               </button>
             </div>
           </div>
-          {!lineageMode && <IntroHint />}
+          {!lineageMode && !flightCaption && <IntroHint />}
           {lineageMode && (
             <LineageBanner
               graph={graph}
@@ -1055,6 +1099,9 @@ export default function App() {
               onClear={() => { setLineagePath(null); setLineageOrder(null); }}
               onExit={toggleLineage}
             />
+          )}
+          {flightCaption && (
+            <FlightCaption graph={graph} order={flightCaption.order} upTo={flightCaption.upTo} />
           )}
         </>
       ) : (
@@ -1118,11 +1165,7 @@ export default function App() {
       {searchOpen && (
         <SearchOverlay
           people={data.people}
-          onSelect={(id) => {
-            setSearchOpen(false);
-            activateNormal(id);
-            setTimeout(() => openPerson(id), 80);
-          }}
+          onSelect={flyToSearchResult}
           onClose={() => setSearchOpen(false)}
         />
       )}

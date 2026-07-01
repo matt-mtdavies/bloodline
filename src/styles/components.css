@@ -5979,6 +5979,55 @@
   .lineage-banner { animation: none; }
 }
 
+/* Search flyover caption — relationship chain that fills in hop by hop
+   ("James → Father → Grandfather") while the camera flies the path. */
+.flight-caption {
+  position: fixed;
+  left: 50%;
+  top: calc(env(safe-area-inset-top, 0px) + 96px);
+  transform: translateX(-50%);
+  z-index: 40;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 4px 2px;
+  max-width: min(92vw, 460px);
+  padding: 9px 16px;
+  background: rgba(255, 255, 255, 0.92);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--hairline, #ebedf0);
+  border-radius: 999px;
+  box-shadow: 0 8px 32px rgba(36, 31, 28, 0.12);
+  pointer-events: none;
+  animation: lb-drop 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.flight-caption__crumb {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-faint, #b0a9a5);
+  opacity: 0;
+  transform: translateY(3px);
+  transition: opacity 0.3s var(--ease, ease), transform 0.3s var(--ease, ease), color 0.3s ease;
+}
+.flight-caption__crumb--visible {
+  opacity: 1;
+  transform: translateY(0);
+  color: var(--ink, #241f1c);
+}
+.flight-caption__crumb:last-child.flight-caption__crumb--visible {
+  color: var(--accent, #c2603a);
+}
+.flight-caption__arrow { flex-shrink: 0; color: var(--ink-faint, #b0a9a5); }
+@media (prefers-reduced-motion: reduce) {
+  .flight-caption { animation: none; }
+  .flight-caption__crumb { transition: none; }
+}
+
 /* ════════════════════════════════════════════════════════════════════════
    Family Timeline
    ════════════════════════════════════════════════════════════════════════ */
