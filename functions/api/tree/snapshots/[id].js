@@ -16,6 +16,15 @@ import { json, uid } from '../../../_lib/util.js';
  * restore the next time it syncs. Stamping "now" makes the restore
  * unambiguously the newest version of everything, which is the correct
  * intent: this is the true state as of right now.
+ *
+ * restored.activity is NOT taken from the snapshot — the snapshot's copy is
+ * frozen at whatever point it was archived, but activity_log (migration
+ * 0008) keeps recording new events the whole time regardless of what the
+ * tree looks like. Using the snapshot's stale array here would make the
+ * quick "Family Activity" feed silently jump backwards to the snapshot's
+ * age, even though nothing else about a restore should touch history that
+ * already happened. So it's repopulated from activity_log instead, which
+ * stays complete and correct across restores.
  */
 export async function onRequestPost({ params, env, data }) {
   if (!data.user) return json({ error: 'Unauthorized' }, { status: 401 });
@@ -76,6 +85,24 @@ export async function onRequestPost({ params, env, data }) {
     restored.photos = stamp(restored.photos);
     restored.documents = stamp(restored.documents);
     restored._seq = currentSeq + 1;
+
+    try {
+      const { results: activityRows } = await env.DB.prepare(
+        `SELECT * FROM activity_log WHERE family_id = ? ORDER BY created_at DESC LIMIT 100`,
+      ).bind(userRow.family_id).all();
+      restored.activity = (activityRows || []).map((r) => ({
+        id: r.id,
+        authorName: r.author_name,
+        authorEmail: r.author_email,
+        type: r.type,
+        personId: r.person_id,
+        personName: r.person_name,
+        detail: r.detail,
+        created_at: r.created_at,
+      }));
+    } catch (e) {
+      console.error('[tree/snapshots restore] activity_log read skipped:', e.message);
+    }
 
     await env.DB.prepare(
       `INSERT INTO family_tree (family_id, tree_json, updated_at)
