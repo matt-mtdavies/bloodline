@@ -1295,13 +1295,6 @@ export function setPhotoCaption(id, caption) {
   });
 }
 
-export function updatePhotoSrc(id, src) {
-  commit({
-    ...state,
-    photos: state.photos.map((p) => (p.id === id ? { ...p, src } : p)),
-  });
-}
-
 export function removePhoto(id) {
   commit(withTombstones({ ...state, photos: state.photos.filter((p) => p.id !== id) }, 'photos', [id]));
 }
@@ -1317,19 +1310,37 @@ export async function migratePhotosToR2(uploadFn) {
 
   let uploaded = 0;
   let failed = 0;
+  // Collect results and apply them in one commit at the end, rather than one
+  // commit per upload as each promise resolves — with several photos pending
+  // (a fresh login on a tree that's never been migrated), that used to fire
+  // a separate save + tree re-render for each one, in a visible burst.
+  const personUpdates = new Map();
+  const photoUpdates = new Map();
 
   await Promise.allSettled([
     ...portraits.map(async (p) => {
       const url = await uploadFn(p.photo);
-      if (url !== p.photo) { updatePerson(p.id, { photo: url, photo_thumb: null }); uploaded++; }
+      if (url !== p.photo) { personUpdates.set(p.id, url); uploaded++; }
       else failed++;
     }),
     ...gallery.map(async (ph) => {
       const url = await uploadFn(ph.src);
-      if (url !== ph.src) { updatePhotoSrc(ph.id, url); uploaded++; }
+      if (url !== ph.src) { photoUpdates.set(ph.id, url); uploaded++; }
       else failed++;
     }),
   ]);
+
+  if (personUpdates.size || photoUpdates.size) {
+    commit({
+      ...state,
+      people: state.people.map((p) =>
+        personUpdates.has(p.id) ? { ...p, photo: personUpdates.get(p.id), photo_thumb: null } : p,
+      ),
+      photos: state.photos.map((ph) =>
+        photoUpdates.has(ph.id) ? { ...ph, src: photoUpdates.get(ph.id) } : ph,
+      ),
+    });
+  }
 
   return { total, uploaded, failed };
 }
@@ -1360,13 +1371,6 @@ export function removeDocument(id) {
   commit(withTombstones({ ...state, documents: state.documents.filter((d) => d.id !== id) }, 'documents', [id]));
 }
 
-export function updateDocSrc(id, src) {
-  commit({
-    ...state,
-    documents: state.documents.map((d) => (d.id === id ? { ...d, src } : d)),
-  });
-}
-
 export function updateDocument(id, patch) {
   commit({
     ...state,
@@ -1380,13 +1384,22 @@ export async function migrateDocsToR2(uploadFn) {
   const docs = (state.documents || []).filter((d) => d.src?.startsWith('data:'));
   if (!docs.length) return { total: 0, uploaded: 0, failed: 0 };
   let uploaded = 0, failed = 0;
+  // Same batching as migratePhotosToR2 — one commit at the end, not one per
+  // upload as each resolves.
+  const docUpdates = new Map();
   await Promise.allSettled(
     docs.map(async (doc) => {
       const url = await uploadFn(doc.src, { title: doc.title, mime: doc.mime });
-      if (url !== doc.src) { updateDocSrc(doc.id, url); uploaded++; }
+      if (url !== doc.src) { docUpdates.set(doc.id, url); uploaded++; }
       else failed++;
     }),
   );
+  if (docUpdates.size) {
+    commit({
+      ...state,
+      documents: state.documents.map((d) => (docUpdates.has(d.id) ? { ...d, src: docUpdates.get(d.id) } : d)),
+    });
+  }
   return { total: docs.length, uploaded, failed };
 }
 

@@ -165,6 +165,11 @@ export default function BubbleTree({
       }));
       const nodeById = new Map(nodes.map((n) => [n.id, n]));
       const pos = new Map(nodes.map((n) => [n.id, n]));
+      // Tracks whether the last sync() actually changed the tree's shape, so a
+      // purely cosmetic edit (a photo/bio/tag update background-migrated to
+      // R2, someone else's unrelated save merging in, etc.) doesn't reheat
+      // the whole simulation and visibly "jiggle" every bubble on screen.
+      let lastRelationships = graph.relationships;
 
       const buildLinks = (rels) =>
         rels
@@ -461,8 +466,10 @@ export default function BubbleTree({
         // (near whoever they connect to, so they appear to sprout from them),
         // refresh edited bubbles, drop removed ones, and rewire the links.
         sync(g) {
+          let structuralChange = false;
           for (const p of g.people) {
             if (!nodeById.has(p.id)) {
+              structuralChange = true;
               const rel = g.relationships.find(
                 (r) =>
                   (r.from_person === p.id && nodeById.has(r.to_person)) ||
@@ -499,6 +506,7 @@ export default function BubbleTree({
           }
           for (const id of [...nodeById.keys()]) {
             if (!g.byId.has(id)) {
+              structuralChange = true;
               bubbles.get(id)?.destroy();
               bubbles.delete(id);
               bubblePerson.delete(id);
@@ -508,9 +516,15 @@ export default function BubbleTree({
               if (i >= 0) nodes.splice(i, 1);
             }
           }
+          if (g.relationships !== lastRelationships) structuralChange = true;
+          lastRelationships = g.relationships;
           sim.nodes(nodes);
           linkForce.links(buildLinks(g.relationships));
-          sim.alpha(0.5);
+          // Only reheat the simulation when the tree's actual shape changed
+          // (someone added/removed, or a relationship changed) — a cosmetic
+          // edit (photo, bio, tags, an R2 migration, an unrelated merge from
+          // another editor) shouldn't make every bubble on screen jiggle.
+          if (structuralChange) sim.alpha(0.5);
           gen = computeGenerations(g);
           state.dist = distancesFrom(g, activeRef.current);
           relCache.clear(); // graph changed — relationship labels may differ
