@@ -4326,7 +4326,18 @@
   z-index: 70; /* above profile (z-50) but below doc viewer (z-80) */
 }
 .invite-sheet {
+  position: relative;
   padding-bottom: calc(var(--safe-bottom) + 28px);
+}
+/* Explicit close — this sheet's content routinely fills the whole viewport
+   (role picker, share-link button, email form), leaving no visible scrim
+   strip to tap-outside on, so it can't rely on that alone like shorter
+   sheets do. */
+.invite-sheet__close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 1;
 }
 
 /* Person header — avatar + headline side by side */
