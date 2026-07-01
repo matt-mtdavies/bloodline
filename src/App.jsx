@@ -704,7 +704,8 @@ export default function App() {
   const closePerson = useCallback(() => {
     viewApi.current?.unpin();
     setOpenId(null);
-  }, []);
+    deselect(); // returning to the tree from a profile lands in browse mode
+  }, [deselect]);
 
   // Add a relative, then fly to the new person so they greet you on the tree.
   const handleAdd = useCallback(
@@ -980,10 +981,10 @@ export default function App() {
             getPos={() => viewApi.current?.getScreenPos(hoveredId)}
           />
           <button
-            className={`recenter-btn${cameraFree && !openId ? ' recenter-btn--on' : ''}`}
+            className={`recenter-btn${!openId && !addAnchorId && !editId && layout !== 'chart' ? ' recenter-btn--on' : ''}`}
             onClick={() => { setBrowse(false); viewApi.current?.recenter(); }}
             aria-label="Recentre on the family"
-            tabIndex={cameraFree && !openId ? 0 : -1}
+            tabIndex={!openId && !addAnchorId && !editId && layout !== 'chart' ? 0 : -1}
           >
             <RecenterIcon />
           </button>

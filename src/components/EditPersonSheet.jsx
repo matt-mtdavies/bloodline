@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { VISIBILITY_LABELS, VISIBILITY_DESCS, SECTIONS } from '../lib/visibility.js';
 import { formatPhone, toE164 } from '../lib/phone.js';
 import { formatDate } from '../lib/dates.js';
+import Avatar from './Avatar.jsx';
 
 const GENDER_OPTIONS = ['Male', 'Female', 'Non-binary', 'Other'];
 
@@ -128,23 +129,44 @@ export default function EditPersonSheet({ person, onClose, onSave, onRemove }) {
     }));
 
   if (mode === 'view') {
-    const rows = [
-      ['Name', person.display_name],
-      ['Middle name', person.middle_name],
-      ['Birth name', person.birth_name],
-      ['Date of birth', person.birth_date ? formatDate(person.birth_date) : null],
-      ['Gender', person.gender],
-      ['Birthplace', person.birth_place],
-      ['Lives in', person.residence],
-      ['Hair colour', person.hair_color],
-      ['Eye colour', person.eye_color],
-      ['Occupation', person.occupation],
-      ['Email', person.email],
-      ['Phone', person.phone ? formatPhone(person.phone) : null],
-      ['Tags', person.tags?.length ? person.tags.join(', ') : null],
-      ...(person.is_deceased ? [['Date passed', person.death_date ? formatDate(person.death_date) : null]] : []),
-      ['A memory or story', person.bio],
-    ].filter(([, value]) => !!value);
+    const sections = [
+      {
+        title: 'Identity',
+        rows: [
+          ['Middle name', person.middle_name],
+          ['Birth name', person.birth_name],
+          ['Gender', person.gender],
+          ['Date of birth', person.birth_date ? formatDate(person.birth_date) : null],
+          ...(person.is_deceased ? [['Date passed', person.death_date ? formatDate(person.death_date) : null]] : []),
+        ],
+      },
+      {
+        title: 'Life',
+        rows: [
+          ['Birthplace', person.birth_place],
+          ['Lives in', person.residence],
+          ['Occupation', person.occupation],
+        ],
+      },
+      {
+        title: 'Appearance',
+        rows: [
+          ['Hair colour', person.hair_color],
+          ['Eye colour', person.eye_color],
+        ],
+      },
+      {
+        title: 'Contact',
+        rows: [
+          ['Email', person.email],
+          ['Phone', person.phone ? formatPhone(person.phone) : null],
+        ],
+      },
+    ]
+      .map((s) => ({ ...s, rows: s.rows.filter(([, value]) => !!value) }))
+      .filter((s) => s.rows.length);
+
+    const hasAnything = sections.length || person.tags?.length || person.bio;
 
     return (
       <div className="sheet-scrim sheet-scrim--modal" onClick={onClose}>
@@ -162,16 +184,46 @@ export default function EditPersonSheet({ person, onClose, onSave, onRemove }) {
             </button>
           </header>
 
-          <div className="profile-view">
-            {rows.length ? rows.map(([label, value]) => (
-              <div className="profile-view__row" key={label}>
-                <span className="profile-view__label">{label}</span>
-                <span className="profile-view__value">{value}</span>
-              </div>
-            )) : (
-              <p className="profile-view__empty">No details added yet.</p>
-            )}
+          <div className="profile-view__hero">
+            <Avatar person={person} size={52} />
+            <span className="profile-view__hero-name">{person.display_name}</span>
           </div>
+
+          {hasAnything ? (
+            <div className="profile-view">
+              {sections.map((s) => (
+                <div className="profile-view__section" key={s.title}>
+                  <h3 className="profile-section__title">{s.title}</h3>
+                  {s.rows.map(([label, value]) => (
+                    <div className="profile-view__row" key={label}>
+                      <span className="profile-view__label">{label}</span>
+                      <span className="profile-view__value">{value}</span>
+                    </div>
+                  ))}
+                </div>
+              ))}
+
+              {person.tags?.length > 0 && (
+                <div className="profile-view__section">
+                  <h3 className="profile-section__title">Tags</h3>
+                  <ul className="chipgrid">
+                    {person.tags.map((t) => (
+                      <li className="tag" key={t}>{t}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {person.bio && (
+                <div className="profile-view__section">
+                  <h3 className="profile-section__title">A memory or story</h3>
+                  <p className="profile__about">{person.bio}</p>
+                </div>
+              )}
+            </div>
+          ) : (
+            <p className="profile-view__empty">No details added yet.</p>
+          )}
 
           <footer className="sheet__foot">
             <button className="btn btn--primary" onClick={() => setMode('edit')}>

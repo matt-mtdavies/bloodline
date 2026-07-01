@@ -1734,12 +1734,28 @@
 .form__sub { margin: 6px 0 0; color: var(--ink-soft); font-size: 14.5px; }
 
 /* Read-only "Profile" view — shown before Edit is tapped */
+.profile-view__hero {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding-bottom: 18px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--hairline, #ebedf0);
+}
+.profile-view__hero-name {
+  font-family: var(--display);
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--ink);
+}
 .profile-view {
   display: flex;
   flex-direction: column;
   gap: 0;
   margin-bottom: 8px;
 }
+.profile-view__section { margin-top: 22px; }
+.profile-view__section:first-child { margin-top: 18px; }
 .profile-view__row {
   display: flex;
   justify-content: space-between;
@@ -1748,7 +1764,7 @@
   padding: 12px 0;
   border-bottom: 1px solid var(--hairline, #ebedf0);
 }
-.profile-view__row:last-child { border-bottom: none; }
+.profile-view__section .profile-view__row:last-child { border-bottom: none; }
 .profile-view__label {
   font-size: 13px;
   color: var(--ink-soft, #6b6260);
@@ -1764,7 +1780,7 @@
 .profile-view__empty { color: var(--ink-soft, #6b6260); font-size: 14px; padding: 12px 0; }
 
 /* Relationship chips */
-.chipgrid { display: flex; flex-wrap: wrap; gap: 8px; }
+.chipgrid { display: flex; flex-wrap: wrap; gap: 8px; list-style: none; margin: 0; padding: 0; }
 .chip {
   padding: 9px 16px;
   border-radius: 999px;
@@ -2363,8 +2379,9 @@
   gap: 10px;
   padding: 18px 24px 6px;
 }
-.profile__actions .action { width: auto; flex: 1; }
-.profile__actions .action:not(.action--primary) { flex: 0 0 auto; padding: 0 18px; }
+.profile__actions .action { width: auto; flex: 1; white-space: nowrap; }
+.profile__actions .action:not(.action--primary):not(.action--journey) { flex: 1 1 0; padding: 0 14px; }
+.profile__actions .action--primary { flex: 0 0 100%; }
 .action--journey {
   flex: 0 0 100% !important;
   justify-content: center;
