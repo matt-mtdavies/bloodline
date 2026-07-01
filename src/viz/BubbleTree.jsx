@@ -919,7 +919,28 @@ export default function BubbleTree({
       app.canvas.addEventListener('pointerleave', clearHover);
 
       // ── The frame loop ─────────────────────────────────────────────────────
+      // The whole per-frame body is wrapped in a try/catch: this runs on every
+      // single animation frame, so any uncaught exception here (a bad data
+      // shape the flight/lit-path logic didn't expect, a stale reference after
+      // a concurrent merge, anything) would otherwise repeat on every
+      // subsequent frame forever — freezing the canvas permanently blank,
+      // surviving even a reload once the state that triggers it is loaded
+      // again. Catching it and resetting the flight/camera state instead lets
+      // the tree keep rendering even if the cinematic search flyover itself
+      // has to be abandoned mid-flight.
       app.ticker.add((ticker) => {
+        try {
+          frameBody(ticker);
+        } catch (err) {
+          console.error('[BubbleTree] frame error — recovering to a safe state:', err);
+          flight = null;
+          landingFx?.destroy();
+          landingFx = null;
+          camMode = 'follow';
+        }
+      });
+
+      function frameBody(ticker) {
         const dt = Math.min(ticker.deltaMS / 1000, 1 / 30);
         // The flyover's own clock uses a much more generous clamp than the
         // spring-safety dt above. It's a plain linear accumulator (not a
@@ -1344,7 +1365,7 @@ export default function BubbleTree({
         } else {
           drawLinks(linkGfx, graphRef.current, pos, (id) => vis.has(id), BASE_RADIUS, mergeRef.current, lineage, activeRef.current);
         }
-      });
+      }
     })();
 
     return () => {
