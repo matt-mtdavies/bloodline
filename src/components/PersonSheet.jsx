@@ -53,6 +53,7 @@ export default function PersonSheet({
   onUpdateCondition,
   onPhoto,
   onLifeJourney,
+  onMarkJoined,
   canEdit = true,        // editor+ : structural changes (people, relationships, edits)
   canContribute = true,  // contributor+ : add memories & photos
 }) {
@@ -431,14 +432,24 @@ export default function PersonSheet({
           </button>
         )}
 
-        {/* Invited state banner */}
-        {person.invited_at && person.invited_email && (
+        {/* Invited state banner — hides itself once the invite has been
+            accepted (joined_at set, e.g. via claiming their spot). Also
+            offers a manual way to clear it for invites accepted before that
+            tracking existed. */}
+        {person.invited_at && person.invited_email && !person.joined_at && (
           <div className="profile__invited">
             <CheckCircleIcon />
             <span>
               Invited · <span className="profile__invited-email">{person.invited_email}</span>
             </span>
-            <button className="profile__invited-resend" onClick={() => onInvite?.(person.id)}>Resend</button>
+            <span className="profile__invited-actions">
+              <button className="profile__invited-resend" onClick={() => onInvite?.(person.id)}>Resend</button>
+              {canEdit && (
+                <button className="profile__invited-resend" onClick={() => onMarkJoined?.(person.id)}>
+                  Already joined
+                </button>
+              )}
+            </span>
           </div>
         )}
 

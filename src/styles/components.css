@@ -2427,14 +2427,15 @@
 }
 .profile__invited svg { flex: none; }
 .profile__invited-email { font-weight: 600; }
+.profile__invited-actions { display: flex; align-items: center; gap: 12px; margin-left: auto; flex: none; }
 .profile__invited-resend {
-  margin-left: auto;
   font-size: 12.5px;
   font-weight: 600;
   color: var(--accent);
   background: none;
   cursor: pointer;
   opacity: 0.75;
+  white-space: nowrap;
 }
 .profile__invited-resend:hover { opacity: 1; }
 
@@ -2599,13 +2600,15 @@
   border-radius: 999px;
 }
 
+/* Deliberately NOT sticky — this is a rarely-used shortcut (the recentre
+   button on the canvas itself covers the common case), so it shouldn't
+   float over content for the entire length of the scroll. It sits once,
+   at the true end of the profile. */
 .profile__foot {
-  position: sticky;
-  bottom: 0;
   display: flex;
   gap: 10px;
-  padding: 16px 24px calc(var(--safe-bottom) + 16px);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0), var(--card) 38%);
+  margin-top: 20px;
+  padding: 0 24px calc(var(--safe-bottom) + 16px);
 }
 
 /* Section head with an inline action (Edit / Add) */

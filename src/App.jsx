@@ -271,9 +271,19 @@ export default function App() {
     setUser((u) => ({ ...u, person_id: personId }));
     setCurrentUser({ ...user, person_id: personId });
     setMyPerson(personId); // store → focuses the tree + perspective on them
+    // Claiming a spot IS accepting the invite — clear the pending "Invited"
+    // banner for everyone else viewing this profile.
+    const person = data.people.find((p) => p.id === personId);
+    if (person?.invited_at) updatePerson(personId, { joined_at: Date.now() });
     markClaimSeen();
     setTimeout(() => viewApi.current?.refocus(0.6), 120);
-  }, [user, markClaimSeen]);
+  }, [user, markClaimSeen, data.people]);
+
+  // Manual escape hatch for invites accepted before joined_at tracking
+  // existed (or accepted on a device this tree never synced with).
+  const handleMarkJoined = useCallback((personId) => {
+    updatePerson(personId, { joined_at: Date.now() });
+  }, []);
 
   // ── Install as a web app ───────────────────────────────────────────────────
   // Capture the install event (Chrome/Android/desktop) so we can fire the real
@@ -1175,6 +1185,7 @@ export default function App() {
         onPhoto={handlePhoto}
         onInvite={(id) => setInvitePersonId(id)}
         onLifeJourney={startLifeJourney}
+        onMarkJoined={handleMarkJoined}
       />
 
       {searchOpen && (
