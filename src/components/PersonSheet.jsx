@@ -398,7 +398,11 @@ export default function PersonSheet({
         </header>
 
         {/* ── Actions ──────────────────────────────────────────────────────── */}
-        <div className="profile__actions">
+        {/* Add relative + Profile share one even row when that's the whole
+            row (nothing to invite); once the Invite button also needs to be
+            there, Add relative takes its own full-width row above so the
+            other two aren't squeezed three-across. */}
+        <div className={`profile__actions${person.invited_at ? '' : ' profile__actions--has-invite'}`}>
           {canEdit && (
             <button className="action action--primary" onClick={() => onAddRelative?.(person.id)}>
               <PlusIcon />

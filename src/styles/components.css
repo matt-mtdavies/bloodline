@@ -2380,7 +2380,7 @@
   padding: 18px 24px 6px;
 }
 .profile__actions .action { width: auto; flex: 1 1 0; white-space: nowrap; padding: 0 14px; }
-.profile__actions .action--primary { flex: 0 0 100%; }
+.profile__actions--has-invite .action--primary { flex: 0 0 100%; }
 .action--journey {
   flex: 0 0 100% !important;
   justify-content: center;
