@@ -3754,6 +3754,32 @@
 }
 .fs__audit-more:disabled { opacity: 0.6; }
 
+.fs__restore { display: flex; flex-direction: column; gap: 2px; }
+.fs__restore-list { display: flex; flex-direction: column; }
+.fs__restore-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--hairline);
+}
+.fs__restore-row:last-child { border-bottom: none; }
+.fs__restore-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.fs__restore-when { font-size: 14px; font-weight: 600; color: var(--ink); }
+.fs__restore-meta { font-size: 12.5px; color: var(--ink-soft); }
+.fs__restore-btn {
+  flex: none;
+  padding: 8px 16px;
+  border-radius: 999px;
+  background: var(--paper-deep);
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+}
+.fs__restore-btn:hover { background: var(--hairline); }
+.fs__restore-done { font-size: 14px; color: var(--ink); padding: 24px 0; text-align: center; font-weight: 600; }
+
 .fs__members { display: flex; flex-direction: column; gap: 2px; }
 .fs__member {
   display: flex;

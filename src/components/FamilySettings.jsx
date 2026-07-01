@@ -11,7 +11,7 @@ export default function FamilySettings({
   myRole, familyName, onUpdateFamilyName, onReset, onLogout, onClose, onImportGedcom, onImportFamilySearch,
   people = [], userEmail, onSelectPerson,
 }) {
-  const [tab, setTab] = useState('members'); // 'members' | 'invite' | 'activity'
+  const [tab, setTab] = useState('members'); // 'members' | 'invite' | 'activity' | 'restore'
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [fbType, setFbType]     = useState('idea');
@@ -65,6 +65,54 @@ export default function FamilySettings({
       setAuditLoaded(true);
     }
   }, []);
+
+  // Point-in-time backups (owner/coadmin only) — one is archived automatically
+  // before every save (migration 0009), so any of these can be restored.
+  const [snapshots, setSnapshots] = useState([]);
+  const [snapshotsLoading, setSnapshotsLoading] = useState(false);
+  const [snapshotsError, setSnapshotsError] = useState(false);
+  const [snapshotsLoaded, setSnapshotsLoaded] = useState(false);
+  const [restoreConfirmId, setRestoreConfirmId] = useState(null);
+  const [restoringId, setRestoringId] = useState(null);
+  const [restoreError, setRestoreError] = useState(false);
+  const [restoreDone, setRestoreDone] = useState(false);
+
+  const loadSnapshots = useCallback(async () => {
+    setSnapshotsLoading(true);
+    setSnapshotsError(false);
+    try {
+      const res = await fetch('/api/tree/snapshots');
+      if (!res.ok) { setSnapshotsError(true); return; }
+      const body = await res.json();
+      setSnapshots(body.items || []);
+    } catch {
+      setSnapshotsError(true);
+    } finally {
+      setSnapshotsLoading(false);
+      setSnapshotsLoaded(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (tab === 'restore' && !snapshotsLoaded) loadSnapshots();
+  }, [tab, snapshotsLoaded, loadSnapshots]);
+
+  async function restoreSnapshot(id) {
+    setRestoringId(id);
+    setRestoreError(false);
+    try {
+      const res = await fetch(`/api/tree/snapshots/${id}`, { method: 'POST' });
+      if (!res.ok) { setRestoreError(true); setRestoringId(null); return; }
+      setRestoreDone(true);
+      // A full reload is the simplest way to guarantee every piece of local
+      // state (canvas, camera, cached tree) picks up the restored data
+      // consistently, rather than trying to hot-swap it in place.
+      setTimeout(() => window.location.reload(), 1400);
+    } catch {
+      setRestoreError(true);
+      setRestoringId(null);
+    }
+  }
 
   useEffect(() => {
     if (tab === 'activity' && !auditLoaded) loadAudit();
@@ -350,6 +398,14 @@ export default function FamilySettings({
                   Audit log
                 </button>
               )}
+              {isOwnerOrCoadmin && (
+                <button
+                  className={`fs__tab${tab === 'restore' ? ' fs__tab--on' : ''}`}
+                  onClick={() => setTab('restore')}
+                >
+                  Restore
+                </button>
+              )}
             </div>
 
             {tab === 'members' && (
@@ -568,6 +624,66 @@ export default function FamilySettings({
                 )}
               </div>
             )}
+
+            {tab === 'restore' && isOwnerOrCoadmin && (
+              <div className="fs__restore">
+                <p className="fs__audit-note">
+                  A backup of the whole tree is saved automatically before every change.
+                  Restoring replaces the current tree with an earlier version — your
+                  current tree is saved as a fresh backup first, so this can always be
+                  undone too.
+                </p>
+                {restoreDone ? (
+                  <p className="fs__restore-done">Restored — reloading…</p>
+                ) : snapshots.length === 0 && !snapshotsLoading ? (
+                  <p className="fs__audit-empty">
+                    {snapshotsError ? 'Could not load backups — check your connection.' : 'No backups yet.'}
+                  </p>
+                ) : (
+                  <div className="fs__restore-list">
+                    {snapshots.map((s) => (
+                      <div className="fs__restore-row" key={s.id}>
+                        <div className="fs__restore-info">
+                          <span className="fs__restore-when">{formatSnapshotTime(s.created_at)}</span>
+                          <span className="fs__restore-meta">
+                            {s.peopleCount != null ? `${s.peopleCount} people` : ''}
+                            {s.relationshipCount != null ? ` · ${s.relationshipCount} relationships` : ''}
+                          </span>
+                        </div>
+                        {restoreConfirmId === s.id ? (
+                          <div className="fs__confirm-inline">
+                            <span className="fs__confirm-label">Restore this version?</span>
+                            <button
+                              className="fs__confirm-yes"
+                              onClick={() => restoreSnapshot(s.id)}
+                              disabled={restoringId === s.id}
+                            >
+                              {restoringId === s.id ? 'Restoring…' : 'Yes'}
+                            </button>
+                            <button
+                              className="fs__confirm-no"
+                              onClick={() => setRestoreConfirmId(null)}
+                              disabled={restoringId === s.id}
+                            >
+                              No
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            className="fs__restore-btn"
+                            onClick={() => setRestoreConfirmId(s.id)}
+                          >
+                            Restore
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {restoreError && <p className="fs__err">Could not restore — please try again.</p>}
+              </div>
+            )}
           </>
         )}
 
@@ -653,6 +769,18 @@ export default function FamilySettings({
       </div>
     </div>
   );
+}
+
+function formatSnapshotTime(iso) {
+  const d = new Date(iso);
+  const now = new Date();
+  const time = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+  if (d.toDateString() === now.toDateString()) return `Today, ${time}`;
+  const date = d.toLocaleDateString('en-GB', {
+    day: 'numeric', month: 'short',
+    year: d.getFullYear() !== now.getFullYear() ? 'numeric' : undefined,
+  });
+  return `${date}, ${time}`;
 }
 
 function MemberRow({ member, myRole, isSelf, onUpdateRole, onRemove, confirming, onRequestConfirm, onCancelConfirm }) {
