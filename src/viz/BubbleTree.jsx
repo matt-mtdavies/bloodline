@@ -921,6 +921,15 @@ export default function BubbleTree({
       // ── The frame loop ─────────────────────────────────────────────────────
       app.ticker.add((ticker) => {
         const dt = Math.min(ticker.deltaMS / 1000, 1 / 30);
+        // The flyover's own clock uses a much more generous clamp than the
+        // spring-safety dt above. It's a plain linear accumulator (not a
+        // physics integrator), so there's no explosion risk from a bigger
+        // step — but reusing the 1/30 clamp meant that on any device
+        // sustaining under ~30fps (a big tree, a slower phone, a software-
+        // rendering fallback), the flight would run in slow motion relative
+        // to wall-clock time, since each real frame only ever credited it
+        // 33ms regardless of how long the frame actually took.
+        const flightDt = Math.min(ticker.deltaMS / 1000, 0.1);
 
         // Gentle perpetual drift gives the organic modes life. Skip in chart mode
         // where clean static positions are the whole point.
@@ -957,7 +966,7 @@ export default function BubbleTree({
           // "travel" zoom gives it a drone feel; the landing phase punches in
           // tight on the destination before handing back to normal follow.
           if (flight.phase === 'transit') {
-            flight.t += dt;
+            flight.t += flightDt;
             const u = clamp(flight.t / flight.duration, 0, 1);
             const eased = easeInOutCubic(u);
             const p = sampleAlongPath(flight.pts, eased);
@@ -993,7 +1002,7 @@ export default function BubbleTree({
             }
           } else {
             // 'landing' — punch in tight on the destination, then hand off.
-            flight.t += dt;
+            flight.t += flightDt;
             const u = clamp(flight.t / flight.landDuration, 0, 1);
             const dest = flight.pts[flight.pts.length - 1];
             camX.value = camX.target = dest.x;

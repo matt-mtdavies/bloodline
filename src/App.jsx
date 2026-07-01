@@ -693,7 +693,10 @@ export default function App() {
       },
       onLand: () => {
         setActiveId(targetId);
-        setFlightCaption(null);
+        // Let the fully-resolved chain sit on screen for a beat — it's the
+        // payoff of the whole flight — instead of wiping it the instant the
+        // camera settles.
+        setTimeout(() => setFlightCaption(null), 2200);
       },
     });
   }, [graph, data.myPersonId, reducedMotion, activateNormal]);
