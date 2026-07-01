@@ -1147,7 +1147,7 @@ export default function App() {
         documents={data.documents}
         canEdit={canEditTree}
         canContribute={canContributeTree}
-        lockEscape={!!(addAnchorId || editId || timelineId || memoryId || lightbox || crop)}
+        lockEscape={!!(addAnchorId || editId || timelineId || memoryId || lightbox || crop || invitePersonId)}
         onClose={closePerson}
         onFocus={(id) => {
           closePerson();

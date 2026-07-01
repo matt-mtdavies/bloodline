@@ -411,10 +411,6 @@ export default function PersonSheet({
               Profile
             </button>
           )}
-          <button className="action action--invite" onClick={() => onInvite?.(person.id)} aria-label={`Invite ${person.display_name.split(' ')[0]}`}>
-            <EnvelopeIcon />
-            Invite
-          </button>
           {person.birth_date && !restricted && (
             <button className="action action--journey" onClick={() => onLifeJourney?.(person.id)} aria-label={`Watch ${person.display_name.split(' ')[0]}'s life story`}>
               <FilmIcon />
@@ -451,6 +447,17 @@ export default function PersonSheet({
               )}
             </span>
           </div>
+        )}
+
+        {/* Quiet access link — covers "never invited" and "joined" states.
+            The pending-invite banner above already covers the middle state
+            (invited, not yet joined) with the same action, so this and that
+            banner are mutually exclusive rather than stacking two ways to
+            do the same thing. */}
+        {canEdit && !person.is_deceased && !(person.invited_at && person.invited_email && !person.joined_at) && (
+          <button className="profile__access-link" onClick={() => onInvite?.(person.id)}>
+            {person.joined_at ? 'Manage access' : 'Invite to collaborate'}
+          </button>
         )}
 
         {(minor || sealed || summaryOnly) ? (
@@ -1324,15 +1331,6 @@ function PhoneIcon() {
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.09 8.81 19.79 19.79 0 01.06 2.18 2 2 0 012 0h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.09 7.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"
         stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-function EnvelopeIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"
-        stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
-      <path d="M22 6l-10 7L2 6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
     </svg>
   );
 }

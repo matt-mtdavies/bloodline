@@ -2379,9 +2379,7 @@
   gap: 10px;
   padding: 18px 24px 6px;
 }
-.profile__actions .action { width: auto; flex: 1; white-space: nowrap; }
-.profile__actions .action:not(.action--primary):not(.action--journey) { flex: 1 1 0; padding: 0 14px; }
-.profile__actions .action--primary { flex: 0 0 100%; }
+.profile__actions .action { width: auto; flex: 1 1 0; white-space: nowrap; padding: 0 14px; }
 .action--journey {
   flex: 0 0 100% !important;
   justify-content: center;
@@ -2391,8 +2389,6 @@
   gap: 8px;
 }
 .action--journey:hover { background: linear-gradient(135deg, #ede8e0 0%, #e4ddd4 100%); }
-.action--invite { color: var(--accent) !important; border-color: color-mix(in srgb, var(--accent) 30%, transparent) !important; }
-.action--invite:hover { background: color-mix(in srgb, var(--accent) 8%, transparent) !important; }
 
 /* Invited state banner */
 .profile__placeholder {
@@ -2438,6 +2434,17 @@
   white-space: nowrap;
 }
 .profile__invited-resend:hover { opacity: 1; }
+
+/* Quiet standalone access link (never-invited / already-joined states) */
+.profile__access-link {
+  display: block;
+  margin: 10px 24px 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+  opacity: 0.8;
+}
+.profile__access-link:hover { opacity: 1; }
 
 .profile__private {
   margin: 8px 0 0;
