@@ -1008,17 +1008,38 @@ export default function App() {
             viewerId={data.myPersonId || DEFAULT_FOCUS}
             getPos={() => viewApi.current?.getScreenPos(hoveredId)}
           />
-          <button
-            className={`recenter-btn${!anyOverlayOpen && layout !== 'chart' ? ' recenter-btn--on' : ''}`}
-            onClick={() => { setBrowse(false); viewApi.current?.recenter(); }}
-            aria-label="Recentre on the family"
-            tabIndex={!anyOverlayOpen && layout !== 'chart' ? 0 : -1}
-          >
-            <RecenterIcon />
-          </button>
           {/* Bottom bar: single floating dock */}
           <div className="bottom-bar">
             <div className="bottom-dock">
+              {/* Browse — the "get me unstuck" control, moved down from its old
+                  floating spot. recenter() clears stuck iOS multi-touch/gesture
+                  state (phantom pointers left when iOS skips pointerup for a
+                  finger) — the actual fix behind "the crosshair breaks focus
+                  mode" — so it must always run first, unconditionally, no
+                  matter which mode the tree is currently in. */}
+              <button
+                className={`dock-btn browse-btn${browse ? ' browse-btn--on' : ''}`}
+                onClick={() => {
+                  viewApi.current?.recenter();
+                  setFocusMode(false);
+                  setLineageMode(false);
+                  setLineagePath(null);
+                  setLineageOrder(null);
+                  setTimeMode(false);
+                  setTimePlaying(false);
+                  setLifeJourneyId(null);
+                  // Deferred so it lands after the effect that clears `browse`
+                  // whenever focus/lineage/time mode changes has settled,
+                  // instead of racing it back off in the same tick.
+                  setTimeout(() => deselect(), 60);
+                }}
+                aria-pressed={browse}
+                aria-label="Browse — deselect and reset the view"
+              >
+                <BrowseIcon />
+                Browse
+              </button>
+              <span className="dock-divider" aria-hidden="true" />
               {/* Focus Family */}
               <button
                 className={`dock-btn focus-btn${focusMode ? ' focus-btn--on' : ''}`}
@@ -1575,13 +1596,18 @@ function CollapseIcon() {
   );
 }
 
-// Crosshair / locate — return the camera to the framed family.
-function RecenterIcon() {
+// A loose, uneven scatter of dots with no centre and no connecting lines —
+// deliberately the visual opposite of FocusIcon's symmetric hub-and-spoke,
+// since the two used to be a near-identical crosshair/node silhouette at
+// dock size. Reads as "everyone, equally, nobody singled out".
+function BrowseIcon() {
   return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <circle cx="12" cy="12" r="4" stroke="currentColor" strokeWidth="1.7" />
-      <circle cx="12" cy="12" r="1.4" fill="currentColor" />
-      <path d="M12 2.5v3.5M12 18v3.5M2.5 12h3.5M18 12h3.5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="7" cy="7" r="2.3" stroke="currentColor" strokeWidth="1.7" />
+      <circle cx="17" cy="6" r="1.9" stroke="currentColor" strokeWidth="1.7" />
+      <circle cx="12" cy="13" r="2.5" stroke="currentColor" strokeWidth="1.7" />
+      <circle cx="6" cy="17" r="1.9" stroke="currentColor" strokeWidth="1.7" />
+      <circle cx="18" cy="17" r="2.1" stroke="currentColor" strokeWidth="1.7" />
     </svg>
   );
 }
