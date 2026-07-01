@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { clearLocalData } from '../data/store.js';
 
 export default function UserProfile({ user, people = [], onClose, onLogout, onSaved, onPhoto }) {
   const [profile, setProfile] = useState(null);
@@ -6,6 +7,9 @@ export default function UserProfile({ user, people = [], onClose, onLogout, onSa
   const [nameEdit, setNameEdit] = useState('');
   const [saving, setSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState(null); // null | 'saved' | string (error)
+  const [families, setFamilies] = useState(null); // null = loading, [] = single/none
+  const [switchingId, setSwitchingId] = useState(null);
+  const [switchError, setSwitchError] = useState('');
   const saveTimer = useRef(null);
   const fileRef = useRef(null);
 
@@ -24,6 +28,37 @@ export default function UserProfile({ user, people = [], onClose, onLogout, onSa
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    fetch('/api/families')
+      .then((r) => (r.ok ? r.json() : { families: [] }))
+      .then((d) => setFamilies(d.families || []))
+      .catch(() => setFamilies([]));
+  }, []);
+
+  async function switchFamily(familyId) {
+    if (switchingId) return;
+    setSwitchingId(familyId);
+    setSwitchError('');
+    try {
+      const res = await fetch('/api/families/switch', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ family_id: familyId }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `HTTP ${res.status}`);
+      }
+      // Wipe the cached tree so the reload can't push this family's data over
+      // the one we're switching to — the fresh load will pull the right tree.
+      clearLocalData();
+      window.location.reload();
+    } catch (e) {
+      setSwitchError(e.message || 'Could not switch families');
+      setSwitchingId(null);
+    }
+  }
 
   useEffect(() => {
     const onKey = (e) => e.key === 'Escape' && onClose();
@@ -164,6 +199,38 @@ export default function UserProfile({ user, people = [], onClose, onLogout, onSa
           )}
         </div>
 
+        {/* Family trees — switcher for anyone who belongs to more than one */}
+        {families && families.length > 1 && (
+          <div className="fs__section">
+            <p className="fs__label">Family trees</p>
+            <div className="up__family-list">
+              {families.map((f) => (
+                <div key={f.family_id} className={`up__family-row${f.is_current ? ' up__family-row--current' : ''}`}>
+                  <div className="up__family-text">
+                    <span className="up__family-name">{f.name || 'Untitled family'}</span>
+                    <span className="up__family-meta">
+                      {roleLabel(f.role)} · {f.member_count} member{f.member_count === 1 ? '' : 's'}
+                    </span>
+                  </div>
+                  {f.is_current ? (
+                    <span className="up__family-current">Viewing</span>
+                  ) : (
+                    <button
+                      className="up__family-switch"
+                      onClick={() => switchFamily(f.family_id)}
+                      disabled={!!switchingId}
+                    >
+                      {switchingId === f.family_id ? 'Switching…' : 'Switch'}
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+            {switchError && <p className="up__save-status up__save-status--err">{switchError}</p>}
+            <p className="up__hint">Switching reloads the app on that family's tree.</p>
+          </div>
+        )}
+
         {/* Notifications */}
         {profile && (
           <div className="fs__section">
@@ -228,6 +295,11 @@ export default function UserProfile({ user, people = [], onClose, onLogout, onSa
       </div>
     </div>
   );
+}
+
+function roleLabel(role) {
+  const labels = { owner: 'Owner', coadmin: 'Co-Admin', editor: 'Editor', contributor: 'Contributor', viewer: 'Viewer' };
+  return labels[role] || role;
 }
 
 function getInitials(str) {
