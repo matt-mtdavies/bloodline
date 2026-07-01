@@ -78,7 +78,7 @@ export default function ActivityFeed({ activity = [], people = [], userEmail, on
   );
 }
 
-function ActivityRow({ event, person, userEmail, nameByEmail, onSelect }) {
+export function ActivityRow({ event, person, userEmail, nameByEmail, onSelect }) {
   const { color, Icon } = typeConfig(event.type);
   const showDetail = (event.type === 'memory_added' || event.type === 'document_added') && event.detail;
   // For join events, there's no tree person — show the member's own avatar.
@@ -188,7 +188,7 @@ function relativeTime(iso) {
   return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
 }
 
-function dayLabel(iso) {
+export function dayLabel(iso) {
   const d = new Date(iso);
   const today = new Date();
   const dDay = new Date(d.getFullYear(), d.getMonth(), d.getDate());

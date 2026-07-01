@@ -1414,6 +1414,13 @@ export default function App() {
           onClose={() => setSettingsOpen(false)}
           onImportGedcom={() => setGedcomOpen(true)}
           onImportFamilySearch={() => setFsImportOpen(true)}
+          people={data.people}
+          userEmail={user?.email}
+          onSelectPerson={(id) => {
+            setSettingsOpen(false);
+            const person = graph.byId.get(id);
+            if (person) openPerson(id);
+          }}
         />
       )}
 

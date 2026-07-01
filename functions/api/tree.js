@@ -163,6 +163,35 @@ export async function onRequestPut({ request, env, data }) {
         .bind(toStore.familyName, membership.family_id).run();
     }
 
+    // Durably log any activity events this save introduced. This is separate
+    // from tree_json's own `activity` array (which is just a capped, fast
+    // local cache the client merges peer-to-peer) — writing straight into
+    // D1 here means it's append-only and can never be silently reverted by
+    // another device's merge the way the blob's copy can.
+    // Wrapped defensively: this table is new (migration 0008) and applying a
+    // migration is a separate manual step from deploying this code, so there
+    // can be a window where activity_log doesn't exist yet. That must never
+    // break the actual tree save.
+    try {
+      if (Array.isArray(tree.activity) && tree.activity.length) {
+        const priorIds = new Set((prev?.activity || []).map((e) => e?.id).filter(Boolean));
+        const freshEvents = tree.activity.filter((e) => e?.id && !priorIds.has(e.id));
+        for (const e of freshEvents) {
+          await env.DB.prepare(
+            `INSERT OR IGNORE INTO activity_log
+               (id, family_id, author_name, author_email, type, person_id, person_name, detail, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          ).bind(
+            e.id, membership.family_id, e.authorName || null, e.authorEmail || null,
+            e.type || null, e.personId || null, e.personName || null, e.detail || null,
+            e.created_at || new Date().toISOString(),
+          ).run();
+        }
+      }
+    } catch (e) {
+      console.error('[tree] activity_log write skipped:', e.message);
+    }
+
     return json(
       { ok: true, familyId: membership.family_id, role: membership.role },
       { headers: { 'ETag': `"${now}"` } },

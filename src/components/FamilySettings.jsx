@@ -3,11 +3,15 @@ import {
   ROLES, ROLE_LABELS, ROLE_COLORS, canInvite, roleRank,
 } from '../lib/visibility.js';
 import ShareLink from './ShareLink.jsx';
+import { ActivityRow, dayLabel } from './ActivityFeed.jsx';
 
 const INVITE_ROLES = ['coadmin', 'editor', 'contributor', 'viewer'];
 
-export default function FamilySettings({ myRole, familyName, onUpdateFamilyName, onReset, onLogout, onClose, onImportGedcom, onImportFamilySearch }) {
-  const [tab, setTab] = useState('members'); // 'members' | 'invite'
+export default function FamilySettings({
+  myRole, familyName, onUpdateFamilyName, onReset, onLogout, onClose, onImportGedcom, onImportFamilySearch,
+  people = [], userEmail, onSelectPerson,
+}) {
+  const [tab, setTab] = useState('members'); // 'members' | 'invite' | 'activity'
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [fbType, setFbType]     = useState('idea');
@@ -23,6 +27,15 @@ export default function FamilySettings({ myRole, familyName, onUpdateFamilyName,
   const [copiedId, setCopiedId] = useState(null); // pending invite whose link was just copied
   const [nameEdit, setNameEdit] = useState(familyName);
 
+  // Full audit log (owner/coadmin only) — backed by the durable server-side
+  // activity_log table, not the client's own capped/mergeable cache, so it
+  // can't be silently thinned out by a stale device's sync.
+  const [auditItems, setAuditItems] = useState([]);
+  const [auditLoading, setAuditLoading] = useState(false);
+  const [auditHasMore, setAuditHasMore] = useState(false);
+  const [auditError, setAuditError] = useState(false);
+  const [auditLoaded, setAuditLoaded] = useState(false);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -34,6 +47,28 @@ export default function FamilySettings({ myRole, familyName, onUpdateFamilyName,
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  const loadAudit = useCallback(async (before) => {
+    setAuditLoading(true);
+    setAuditError(false);
+    try {
+      const url = before ? `/api/activity?before=${encodeURIComponent(before)}` : '/api/activity';
+      const res = await fetch(url);
+      if (!res.ok) { setAuditError(true); return; }
+      const body = await res.json();
+      setAuditItems((prev) => (before ? [...prev, ...(body.items || [])] : (body.items || [])));
+      setAuditHasMore(!!body.hasMore);
+    } catch {
+      setAuditError(true);
+    } finally {
+      setAuditLoading(false);
+      setAuditLoaded(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (tab === 'activity' && !auditLoaded) loadAudit();
+  }, [tab, auditLoaded, loadAudit]);
 
   useEffect(() => {
     const onKey = (e) => e.key === 'Escape' && onClose();
@@ -192,6 +227,36 @@ export default function FamilySettings({ myRole, familyName, onUpdateFamilyName,
   const effectiveRole = data?.myRole || myRole;
   const isOwnerOrCoadmin = canInvite(effectiveRole);
 
+  // Audit log rendering support — same shape ActivityFeed uses, so its
+  // ActivityRow can be reused as-is.
+  const peopleById = useMemo(() => new Map(people.map((p) => [p.id, p])), [people]);
+  const nameByEmail = useMemo(() => {
+    const m = new Map();
+    for (const p of people) {
+      for (const e of [p.email, p.invited_email]) {
+        if (e) m.set(e.toLowerCase(), p.display_name);
+      }
+    }
+    return m;
+  }, [people]);
+  const groupedAudit = useMemo(() => {
+    const groups = [];
+    let currentLabel = null;
+    let currentItems = [];
+    for (const event of auditItems) {
+      const label = dayLabel(event.created_at);
+      if (label !== currentLabel) {
+        if (currentLabel !== null) groups.push({ label: currentLabel, items: currentItems });
+        currentLabel = label;
+        currentItems = [event];
+      } else {
+        currentItems.push(event);
+      }
+    }
+    if (currentLabel !== null) groups.push({ label: currentLabel, items: currentItems });
+    return groups;
+  }, [auditItems]);
+
   function handleNameSave() {
     const trimmed = nameEdit.trim();
     if (trimmed && trimmed !== familyName) onUpdateFamilyName(trimmed);
@@ -275,6 +340,14 @@ export default function FamilySettings({ myRole, familyName, onUpdateFamilyName,
                   onClick={() => setTab('invite')}
                 >
                   Invite
+                </button>
+              )}
+              {isOwnerOrCoadmin && (
+                <button
+                  className={`fs__tab${tab === 'activity' ? ' fs__tab--on' : ''}`}
+                  onClick={() => setTab('activity')}
+                >
+                  Audit log
                 </button>
               )}
             </div>
@@ -448,6 +521,49 @@ export default function FamilySettings({ myRole, familyName, onUpdateFamilyName,
                         {inviteStatus === 'sending' ? 'Sending…' : 'Email invitation →'}
                       </button>
                     </form>
+                  </>
+                )}
+              </div>
+            )}
+
+            {tab === 'activity' && isOwnerOrCoadmin && (
+              <div className="fs__audit">
+                <p className="fs__audit-note">
+                  The complete history of changes to this tree, recorded on the server —
+                  unlike the quick activity feed, this can't be thinned out by any
+                  device's own sync.
+                </p>
+                {auditItems.length === 0 && !auditLoading ? (
+                  <p className="fs__audit-empty">
+                    {auditError ? 'Could not load the audit log — check your connection.' : 'No activity recorded yet.'}
+                  </p>
+                ) : (
+                  <>
+                    {groupedAudit.map(({ label, items }) => (
+                      <div key={label}>
+                        <p className="activity-day">{label}</p>
+                        {items.map((event) => (
+                          <ActivityRow
+                            key={event.id}
+                            event={event}
+                            person={peopleById.get(event.personId) ?? { display_name: event.personName }}
+                            userEmail={userEmail}
+                            nameByEmail={nameByEmail}
+                            onSelect={() => onSelectPerson?.(event.personId)}
+                          />
+                        ))}
+                      </div>
+                    ))}
+                    {auditHasMore && (
+                      <button
+                        type="button"
+                        className="fs__audit-more"
+                        onClick={() => loadAudit(auditItems[auditItems.length - 1]?.created_at)}
+                        disabled={auditLoading}
+                      >
+                        {auditLoading ? 'Loading…' : 'Load more'}
+                      </button>
+                    )}
                   </>
                 )}
               </div>
