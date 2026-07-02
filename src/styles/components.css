@@ -735,13 +735,9 @@
   left: 0;
   right: 0;
   padding: 12px 16px calc(var(--safe-bottom) + 20px);
-  /* Centring the dock via text-align (it's display:inline-flex below) rather
-     than making .bottom-bar itself a flex parent — nesting a shrink-to-fit
-     flex container inside another flex container's auto-sizing pass is
-     ambiguous in practice and was collapsing the dock's children well below
-     their flex-basis even with plenty of room to spare. inline-flow
-     centring sizes the dock strictly by its own max-content, no ambiguity. */
-  text-align: center;
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
   pointer-events: none;
   z-index: 40;
   background: linear-gradient(to top, rgba(250,247,244,0.9) 0%, transparent 100%);
@@ -750,8 +746,16 @@
 /* ── Floating dock pill ───────────────────────────────────────────────────────── */
 .bottom-dock {
   position: relative; /* positioning context for the time slider / life-event card */
-  display: inline-flex;
+  display: flex;
   align-items: center;
+  /* An EXPLICIT width, not shrink-to-fit/auto. Nested flex containers sized
+     by "auto" (shrink-to-fit) have real, engine-specific intrinsic-sizing
+     inconsistencies — this shipped looking fine in Chromium testing but
+     broken in Safari/WebKit in production. A definite width turns "how much
+     room do 5×62px buttons + 4×1px dividers + 10px padding need" into
+     ordinary, unambiguous flex distribution (=324px exactly), which every
+     engine lays out the same way. max-width is just the narrow-phone floor. */
+  width: 324px;
   max-width: calc(100vw - 24px);
   background: rgba(255, 255, 255, 0.93);
   backdrop-filter: blur(20px) saturate(1.6);
