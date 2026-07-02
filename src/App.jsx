@@ -479,17 +479,6 @@ export default function App() {
     return acts.filter((a) => new Date(a.created_at).getTime() > lastReadAt).length;
   }, [data.activity, lastReadAt]);
 
-  // Time slider: the range of known birth years across all people.
-  const yearRange = useMemo(() => {
-    let min = new Date().getFullYear(), max = min;
-    for (const p of data.people) {
-      const by = p.birth_date ? parseInt(p.birth_date) : null;
-      if (by && by < min) min = by;
-      if (by && by > max) max = by;
-    }
-    return { min: min - 5, max: new Date().getFullYear() };
-  }, [data.people]);
-
   // Set of people alive at the selected year (null = show all).
   const aliveAtYear = useMemo(() => {
     if (!timeMode) return null;
@@ -517,6 +506,64 @@ export default function App() {
     }
     return ids;
   }, [focusMode, activeId, graph]);
+
+  // Same neighbour-expansion as visibleIds below, but deliberately NOT
+  // filtered by aliveAtYear/timeYear — this scopes the time slider's own
+  // range (below), and if it depended on the live time filter the slider's
+  // bounds would shift under the user's thumb while they're scrubbing it.
+  // expanded only changes via explicit taps, so this — and the year range
+  // built from it — stays stable through an entire play/scrub session.
+  const structuralVisibleIds = useMemo(() => {
+    const vis = new Set();
+    for (const id of expanded) {
+      vis.add(id);
+      for (const x of graph.parents(id)) {
+        if (bloodlineOnly && x.qualifier === 'step') continue;
+        vis.add(x.id);
+      }
+      for (const x of graph.children(id)) {
+        if (bloodlineOnly && x.qualifier === 'step') continue;
+        vis.add(x.id);
+      }
+      if (!bloodlineOnly) {
+        for (const x of graph.partners(id)) vis.add(x.id);
+      }
+      for (const x of graph.siblings(id)) {
+        if (bloodlineOnly && x.kind === 'step') continue;
+        vis.add(x.id);
+      }
+    }
+    if (focusFamilyIds) {
+      for (const id of [...vis]) {
+        if (!focusFamilyIds.has(id)) vis.delete(id);
+      }
+    }
+    return vis;
+  }, [graph, expanded, focusFamilyIds, bloodlineOnly]);
+
+  // Time slider: scoped to whoever's actually on screen right now (5 years
+  // before the earliest birth among them), not the whole tree — with 160-odd
+  // years of family history, starting the range at the tree's overall
+  // earliest birth meant playback (or just the slider itself) dragged
+  // through decades before anyone in the current view even existed. Falls
+  // back to the whole tree only if nothing currently visible has a known
+  // birth date yet (e.g. before anything's been expanded).
+  const yearRange = useMemo(() => {
+    const thisYear = new Date().getFullYear();
+    let min = thisYear;
+    let sawBirth = false;
+    for (const id of structuralVisibleIds) {
+      const by = graph.byId.get(id)?.birth_date ? parseInt(graph.byId.get(id).birth_date) : null;
+      if (by && by < min) { min = by; sawBirth = true; }
+    }
+    if (!sawBirth) {
+      for (const p of data.people) {
+        const by = p.birth_date ? parseInt(p.birth_date) : null;
+        if (by && by < min) { min = by; sawBirth = true; }
+      }
+    }
+    return { min: min - 5, max: thisYear };
+  }, [structuralVisibleIds, graph, data.people]);
 
   const visibleIds = useMemo(() => {
     const alive = (id) => !aliveAtYear || aliveAtYear.has(id);
