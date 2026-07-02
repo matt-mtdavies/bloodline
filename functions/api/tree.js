@@ -39,9 +39,41 @@ export async function onRequestGet({ env, data }) {
 
     if (!row) return json(null);
 
+    const parsed = JSON.parse(row.tree_json);
+
+    // Self-heal the fast in-app activity feed on every read: tree_json.activity
+    // is just a capped cache, and any code path that fails to keep it in sync
+    // (e.g. the contributor write path used to silently drop new events)
+    // would otherwise freeze the feed indefinitely. activity_log is the
+    // durable, always-correct source, so fold its latest rows in here rather
+    // than trusting whatever's frozen in the blob. Wrapped defensively since
+    // activity_log (migration 0008) may not exist yet in every environment.
+    try {
+      const { results: logRows } = await env.DB.prepare(
+        `SELECT * FROM activity_log WHERE family_id = ? ORDER BY created_at DESC LIMIT 100`,
+      ).bind(membership.family_id).all();
+      const fromLog = (logRows || []).map((r) => ({
+        id: r.id,
+        authorName: r.author_name,
+        authorEmail: r.author_email,
+        type: r.type,
+        personId: r.person_id,
+        personName: r.person_name,
+        detail: r.detail,
+        created_at: r.created_at,
+      }));
+      const knownIds = new Set(fromLog.map((e) => e.id));
+      const extra = (parsed.activity || []).filter((e) => e?.id && !knownIds.has(e.id));
+      parsed.activity = [...fromLog, ...extra]
+        .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+        .slice(0, 100);
+    } catch (e) {
+      console.error('[tree] GET activity_log merge skipped:', e.message);
+    }
+
     const etag = `"${row.updated_at}"`;
     return json(
-      { ...JSON.parse(row.tree_json), _meta: { familyId: membership.family_id, role: membership.role } },
+      { ...parsed, _meta: { familyId: membership.family_id, role: membership.role } },
       { headers: { 'cache-control': 'private, no-store', 'ETag': etag } },
     );
   } catch (e) {
