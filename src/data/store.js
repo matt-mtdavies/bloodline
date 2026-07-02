@@ -457,6 +457,32 @@ function scheduleServerSave(s) {
   _saveTimer = setTimeout(() => putTree(s), 1500);
 }
 
+// If the tab is backgrounded (phone locked, app-switched away from) before
+// the 1.5s debounce above fires, iOS suspends this page's JS and that timer
+// simply never runs — the edit sits safely in localStorage forever (so the
+// device that made it keeps showing it indefinitely) but never reaches the
+// server, and nothing ever surfaces an error because the request never even
+// started. This is extremely easy to hit in practice: edit a profile, then
+// immediately lock the phone or switch apps, which is completely normal
+// mobile behaviour. visibilitychange (fires as the tab goes hidden, before
+// suspension) and pagehide (actual navigation/close) both flush any pending
+// save immediately instead of waiting out the debounce, so the fetch is at
+// least in flight before the tab can be frozen — browsers give an
+// already-started request a real chance to complete through that
+// transition in a way a not-yet-started one never gets.
+function flushPendingSave() {
+  if (!_saveTimer) return;
+  clearTimeout(_saveTimer);
+  _saveTimer = null;
+  putTree(state);
+}
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') flushPendingSave();
+  });
+  window.addEventListener('pagehide', flushPendingSave);
+}
+
 // Canonicalise the relationship list so duplicates and contradictions can never
 // accumulate (they otherwise pile up when concurrent edits get sync-merged):
 //   • drop self-edges,
