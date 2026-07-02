@@ -87,6 +87,24 @@ export default function HoverCard({ graph, personId, viewerId, getPos }) {
   const bio = !restricted ? person.bio : null;
   const tags = !restricted && person.tags?.length ? person.tags.slice(0, 3) : [];
 
+  // A quick "what's their story" hook — sibling/child/grandchild counts read
+  // as an invitation to explore ("oh, 5 grandchildren?") in a way a bare
+  // relationship label doesn't. Skipped for restricted profiles for the same
+  // reason bio/tags/location are — it's still information about who's
+  // connected to them.
+  const familyBits = [];
+  if (!restricted) {
+    const siblingCount = graph.siblings(person.id).length;
+    const childCount = graph.children(person.id).length;
+    const grandchildIds = new Set();
+    for (const c of graph.children(person.id)) {
+      for (const gc of graph.children(c.id)) grandchildIds.add(gc.id);
+    }
+    if (siblingCount) familyBits.push(`${siblingCount} sibling${siblingCount === 1 ? '' : 's'}`);
+    if (childCount) familyBits.push(`${childCount} ${childCount === 1 ? 'child' : 'children'}`);
+    if (grandchildIds.size) familyBits.push(`${grandchildIds.size} grandchild${grandchildIds.size === 1 ? '' : 'ren'}`);
+  }
+
   return (
     <div className="hover-card-anchor" ref={anchorRef} style={{ width: CARD_WIDTH }} aria-hidden="true">
       <div className={`hover-card${show ? ' hover-card--show' : ''}`}>
@@ -100,10 +118,13 @@ export default function HoverCard({ graph, personId, viewerId, getPos }) {
         {!sealed && metaBits.length > 0 && (
           <p className="hover-card__meta">{metaBits.join(' · ')}</p>
         )}
+        {familyBits.length > 0 && (
+          <p className="hover-card__family"><FamilyIcon />{familyBits.join(' · ')}</p>
+        )}
         {location && (
           <p className="hover-card__where"><PinIcon />{location}</p>
         )}
-        {bio && <p className="hover-card__bio">&ldquo;{bio}&rdquo;</p>}
+        {bio && <p className="hover-card__bio">&ldquo;{snippet(bio)}&rdquo;</p>}
         {tags.length > 0 && (
           <div className="hover-card__tags">
             {tags.map((t) => <span className="hover-card__tag" key={t}>{t}</span>)}
@@ -112,6 +133,27 @@ export default function HoverCard({ graph, personId, viewerId, getPos }) {
         {sealed && <p className="hover-card__sealed">Private profile</p>}
       </div>
     </div>
+  );
+}
+
+// A "snapshot", not the full bio — trims to a clause/word boundary near
+// 110 chars so it reads as a teaser rather than getting hard-clipped mid-word.
+function snippet(text, max = 110) {
+  const t = text.trim();
+  if (t.length <= max) return t;
+  const cut = t.slice(0, max);
+  const lastBreak = Math.max(cut.lastIndexOf('. '), cut.lastIndexOf(', '), cut.lastIndexOf(' '));
+  return `${cut.slice(0, lastBreak > 40 ? lastBreak : max).trim()}…`;
+}
+
+function FamilyIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true" className="hover-card__pin">
+      <circle cx="8" cy="8" r="3.2" stroke="currentColor" strokeWidth="1.7" />
+      <circle cx="17" cy="9" r="2.6" stroke="currentColor" strokeWidth="1.7" />
+      <path d="M3 20v-1.5A4.5 4.5 0 0 1 7.5 14h1A4.5 4.5 0 0 1 13 18.5V20" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+      <path d="M14.5 14.3A3.6 3.6 0 0 1 21 16.6V17.6" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+    </svg>
   );
 }
 

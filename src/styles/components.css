@@ -256,6 +256,14 @@
   color: var(--ink-soft);
   line-height: 1.4;
 }
+.hover-card__family {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--ink-soft);
+}
 .hover-card__where {
   display: flex;
   align-items: center;
