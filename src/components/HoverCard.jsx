@@ -87,23 +87,36 @@ export default function HoverCard({ graph, personId, viewerId, getPos }) {
   const bio = !restricted ? person.bio : null;
   const tags = !restricted && person.tags?.length ? person.tags.slice(0, 3) : [];
 
-  // A quick "what's their story" hook — sibling/child/grandchild counts read
-  // as an invitation to explore ("oh, 5 grandchildren?") in a way a bare
+  // A quick "what's their story" hook — child/grandchild counts read as an
+  // invitation to explore ("oh, 5 grandchildren?") in a way a bare
   // relationship label doesn't. Skipped for restricted profiles for the same
   // reason bio/tags/location are — it's still information about who's
   // connected to them.
+  //
+  // Siblings are handled separately (see siblingLabels below), NOT as a
+  // count: "5 siblings" flattens full/half/step into one number, which a
+  // blended family may not want implied about them. Every other relation
+  // label in this app already spells out "Half-Brother" / "Step-Sister"
+  // rather than hiding it in a tally, so folding siblings into an aggregate
+  // count here was the actual inconsistency.
   const familyBits = [];
   if (!restricted) {
-    const siblingCount = graph.siblings(person.id).length;
     const childCount = graph.children(person.id).length;
     const grandchildIds = new Set();
     for (const c of graph.children(person.id)) {
       for (const gc of graph.children(c.id)) grandchildIds.add(gc.id);
     }
-    if (siblingCount) familyBits.push(`${siblingCount} sibling${siblingCount === 1 ? '' : 's'}`);
     if (childCount) familyBits.push(`${childCount} ${childCount === 1 ? 'child' : 'children'}`);
     if (grandchildIds.size) familyBits.push(`${grandchildIds.size} grandchild${grandchildIds.size === 1 ? '' : 'ren'}`);
   }
+
+  // Each sibling named by their actual relation to THIS person — "Sister",
+  // "Half-Brother", "Step-Sibling" — never bucketed into a single number.
+  // Beyond a few, a static line would overflow the card, so it scrolls as a
+  // ticker instead of getting truncated or wrapping into a wall of text.
+  const siblingLabels = !restricted
+    ? graph.siblings(person.id).map((s) => relationLabel(graph, person.id, s.id))
+    : [];
 
   return (
     <div className="hover-card-anchor" ref={anchorRef} style={{ width: CARD_WIDTH }} aria-hidden="true">
@@ -117,6 +130,25 @@ export default function HoverCard({ graph, personId, viewerId, getPos }) {
         </div>
         {!sealed && metaBits.length > 0 && (
           <p className="hover-card__meta">{metaBits.join(' · ')}</p>
+        )}
+        {siblingLabels.length > 0 && (
+          <div className="hover-card__family hover-card__siblings">
+            <FamilyIcon />
+            {siblingLabels.length > 3 ? (
+              <div className="hover-card__ticker">
+                <div
+                  className="hover-card__ticker-track"
+                  style={{ animationDuration: `${siblingLabels.length * 1.4}s` }}
+                >
+                  {[...siblingLabels, ...siblingLabels].map((label, i) => (
+                    <span className="hover-card__ticker-item" key={i}>{label}</span>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <span>{siblingLabels.join(' · ')}</span>
+            )}
+          </div>
         )}
         {familyBits.length > 0 && (
           <p className="hover-card__family"><FamilyIcon />{familyBits.join(' · ')}</p>
