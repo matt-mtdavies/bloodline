@@ -51,6 +51,7 @@ export default function PersonSheet({
   onAddCondition,
   onRemoveCondition,
   onUpdateCondition,
+  onUpdateHealthNotes,
   onPhoto,
   onLifeJourney,
   onMarkJoined,
@@ -73,6 +74,8 @@ export default function PersonSheet({
   const [healthPickerOpen, setHealthPickerOpen] = useState(false);
   const [healthCat, setHealthCat] = useState(HEALTH_CATEGORIES[0].id);
   const [statusPickId, setStatusPickId] = useState(null);
+  const [healthNotesEditing, setHealthNotesEditing] = useState(false);
+  const [healthNotesDraft, setHealthNotesDraft] = useState('');
 
   useEffect(() => {
     if (!person || lockEscape) return; // a stacked overlay owns Escape
@@ -88,6 +91,7 @@ export default function PersonSheet({
     setStoryState({ phase: 'idle', text: '', error: null });
     setHealthPickerOpen(false);
     setStatusPickId(null);
+    setHealthNotesEditing(false);
   }, [personId]);
 
   if (!person) return null;
@@ -644,6 +648,53 @@ export default function PersonSheet({
                   Add health conditions
                 </button>
               )}
+
+              {/* Free-text notes — allergies, medications, family history,
+                  anything that doesn't fit the structured condition chips above. */}
+              {healthNotesEditing ? (
+                <div className="health-notes health-notes--editing">
+                  <textarea
+                    className="field__input field__input--area"
+                    rows={3}
+                    autoFocus
+                    value={healthNotesDraft}
+                    onChange={(e) => setHealthNotesDraft(e.target.value)}
+                    placeholder="Allergies, medications, family history — anything free-form…"
+                  />
+                  <div className="health-notes__foot">
+                    <button
+                      className="section-edit"
+                      onClick={() => {
+                        onUpdateHealthNotes?.(person.id, healthNotesDraft.trim());
+                        setHealthNotesEditing(false);
+                      }}
+                    >
+                      Done
+                    </button>
+                  </div>
+                </div>
+              ) : person.health_notes ? (
+                <button
+                  className="health-notes"
+                  onClick={() => {
+                    if (!canEdit) return;
+                    setHealthNotesDraft(person.health_notes);
+                    setHealthNotesEditing(true);
+                  }}
+                  title={canEdit ? 'Tap to edit' : undefined}
+                >
+                  {person.health_notes}
+                </button>
+              ) : canEdit && (
+                <button
+                  className="empty-add"
+                  onClick={() => { setHealthNotesDraft(''); setHealthNotesEditing(true); }}
+                >
+                  <PlusIcon />
+                  Add free-text notes
+                </button>
+              )}
+
               <p className="health-privacy-note">
                 <LockIcon />
                 Health details are shared within your family only

@@ -88,6 +88,37 @@ export async function uploadPhoto(dataUrl) {
   return dataUrl;
 }
 
+// Save a photo (data: URL or same-origin /api/photos/<key> URL — either way,
+// no CORS hop involved) to the user's device. Web Share's `files` variant is
+// what actually gets a "Save Image"/"Save to Photos" option in the OS share
+// sheet on iOS/Android; a plain <a download> only offers that on desktop, so
+// it's the fallback rather than the primary path. Returns 'shared' | 'downloaded'
+// | 'cancelled' (user dismissed the share sheet — not an error) so the caller
+// can decide whether to surface anything.
+export async function savePhotoToDevice(src, filename = 'photo.jpg') {
+  const res = await fetch(src);
+  const blob = await res.blob();
+  const file = new File([blob], filename, { type: blob.type || 'image/jpeg' });
+
+  if (navigator.canShare?.({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file] });
+      return 'shared';
+    } catch (e) {
+      if (e.name === 'AbortError') return 'cancelled';
+      throw e;
+    }
+  }
+
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+  return 'downloaded';
+}
+
 function loadImage(src) {
   return new Promise((resolve, reject) => {
     const img = new Image();

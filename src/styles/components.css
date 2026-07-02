@@ -2727,6 +2727,24 @@
 }
 .health-privacy-note svg { width: 11px; height: 11px; flex: none; }
 
+/* Free-text health notes */
+button.health-notes {
+  display: block;
+  width: 100%;
+  margin-top: 12px;
+  padding: 12px 14px;
+  background: var(--paper-deep);
+  border-radius: 12px;
+  text-align: left;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--ink);
+  white-space: pre-wrap;
+  cursor: text;
+}
+.health-notes--editing { margin-top: 12px; }
+.health-notes__foot { display: flex; justify-content: flex-end; margin-top: 6px; }
+
 /* Memories */
 .memories { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
 .memory {
@@ -2894,6 +2912,12 @@
   height: 100%;
   object-fit: contain;
   border-radius: 10px;
+  /* Custom pinch/pan is driven entirely off pointer events (see Lightbox.jsx) —
+     touch-action:none stops the browser's own gesture handling from fighting
+     it (page pinch-zoom is already off globally, but iOS still intercepts
+     panning gestures on an <img> unless told not to). */
+  touch-action: none;
+  will-change: transform;
 }
 .lightbox__nav {
   position: absolute;

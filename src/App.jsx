@@ -1242,6 +1242,10 @@ export default function App() {
         onAddCondition={addCondition}
         onRemoveCondition={removeCondition}
         onUpdateCondition={updateCondition}
+        onUpdateHealthNotes={(id, text) => {
+          const person = graph.byId.get(id);
+          updatePerson(id, { health_notes: text || null }, { type: 'person_updated', personId: id, personName: person?.display_name ?? '', detail: 'health notes' });
+        }}
         onPhoto={handlePhoto}
         onInvite={(id) => setInvitePersonId(id)}
         onLifeJourney={startLifeJourney}
