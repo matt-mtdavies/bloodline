@@ -414,10 +414,13 @@ async function _fetchAndMerge(local) {
       documents: dropTombstoned(_mergeByRecency(server.documents, local.documents), deleted, 'documents'),
       activity: _mergeActivity(server.activity, local.activity),
       _deleted: deleted,
-      // See the matching comment in loadFromServer() — one-way ratchet, not a
-      // plain "local wins" scalar, so a fresh device can't un-complete
-      // onboarding for a tree the server already has.
+      // See the matching comments in loadFromServer() — neither is a plain
+      // "local wins" scalar: an empty/false local default (fresh device)
+      // must not clobber a real server value. hasCompletedOnboarding is a
+      // one-way ratchet; familyName falls back to the server's name when
+      // local hasn't genuinely been set to anything.
       hasCompletedOnboarding: !!(local.hasCompletedOnboarding || server.hasCompletedOnboarding),
+      familyName: local.familyName || server.familyName || '',
       ...(mergeViewerId ? { myPersonId: mergeViewerId } : {}),
     };
 
@@ -676,12 +679,18 @@ export async function loadFromServer({ forceServerWins = false } = {}) {
     const merged = {
       ...EMPTY,
       ...data,
-      ...state, // local scalars (familyName, etc.) win, matching _fetchAndMerge's convention
+      ...state, // local scalars win, matching _fetchAndMerge's convention — EXCEPT the ones overridden below
       people,
       relationships,
       memories,
       photos,
       documents,
+      // Dropped by the "local scalars win" spread above on a fresh device: a
+      // brand-new local activity log starts as [], which would otherwise wipe
+      // out everything the server already knows. _fetchAndMerge (the
+      // background-poll path) merges this properly; this was the one path
+      // that didn't, so a fresh sign-in briefly showed an empty activity feed.
+      activity: _mergeActivity(data.activity, state.activity),
       _deleted: deleted,
       _seq: Math.max(state._seq || 0, data._seq || 0),
       // NOT a plain "local wins" scalar like the others above: a fresh device
@@ -692,6 +701,13 @@ export async function loadFromServer({ forceServerWins = false } = {}) {
       // overwrite their real tree via setupTree(). It's a one-way ratchet:
       // true on either side means onboarding is genuinely done.
       hasCompletedOnboarding: !!(state.hasCompletedOnboarding || data.hasCompletedOnboarding),
+      // Also not a plain "local wins" scalar: an empty string is the fresh-
+      // device default, not a real local edit — falling back to it clobbered
+      // the server's actual family name (reported live: a private-tab
+      // sign-in showed "James", the default-focus person's name used as a
+      // last-resort label, instead of the real family name). A genuinely-set
+      // local name (renamed on this device before it last synced) still wins.
+      familyName: state.familyName || data.familyName || '',
       ...(resolvedMyPersonId ? { myPersonId: resolvedMyPersonId } : {}),
     };
 
