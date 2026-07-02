@@ -414,6 +414,10 @@ async function _fetchAndMerge(local) {
       documents: dropTombstoned(_mergeByRecency(server.documents, local.documents), deleted, 'documents'),
       activity: _mergeActivity(server.activity, local.activity),
       _deleted: deleted,
+      // See the matching comment in loadFromServer() — one-way ratchet, not a
+      // plain "local wins" scalar, so a fresh device can't un-complete
+      // onboarding for a tree the server already has.
+      hasCompletedOnboarding: !!(local.hasCompletedOnboarding || server.hasCompletedOnboarding),
       ...(mergeViewerId ? { myPersonId: mergeViewerId } : {}),
     };
 
@@ -680,6 +684,14 @@ export async function loadFromServer({ forceServerWins = false } = {}) {
       documents,
       _deleted: deleted,
       _seq: Math.max(state._seq || 0, data._seq || 0),
+      // NOT a plain "local wins" scalar like the others above: a fresh device
+      // (private tab, cleared storage, new browser) starts with the EMPTY
+      // default of false, which would otherwise clobber a server tree that
+      // already finished onboarding — dropping a returning user straight
+      // into the "brand new user" intro/setup flow, which can go on to
+      // overwrite their real tree via setupTree(). It's a one-way ratchet:
+      // true on either side means onboarding is genuinely done.
+      hasCompletedOnboarding: !!(state.hasCompletedOnboarding || data.hasCompletedOnboarding),
       ...(resolvedMyPersonId ? { myPersonId: resolvedMyPersonId } : {}),
     };
 
