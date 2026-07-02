@@ -438,13 +438,18 @@ async function _pollServer() {
     if (!server) return;
     _serverEtag = freshEtag || _serverEtag;
 
-    const serverSeq = server._seq || 0;
-    const localSeq  = state._seq  || 0;
-    // Only apply if server is genuinely ahead (another editor saved).
-    if (serverSeq <= localSeq) return;
-
-    // Merge rather than overwrite — local edits that haven't finished saving
-    // yet would be silently wiped by a raw commit(server).
+    // NOT gated on _seq. _seq counts commits on a device, not "has the
+    // newer copy of every record" — a device that made several of its own
+    // unrelated edits can have a higher local _seq than the server while
+    // still holding a stale copy of some record a different family member
+    // updated elsewhere. Skipping the merge on that basis meant this
+    // device's _serverEtag still silently advanced to match the server
+    // (above), so a LATER save from here would carry a valid If-Match and
+    // sail through with no 409 to trigger a merge — overwriting the
+    // server's newer record with this device's stale one, with no conflict
+    // ever detected. The ETag check above already established the content
+    // genuinely differs; that's the only signal that matters for whether to
+    // merge, so always do it once we know a merge is possible.
     await _fetchAndMerge(state);
     window.dispatchEvent(new CustomEvent('bloodline:tree-polled'));
   } catch { /* silent — try next interval */ }
@@ -594,33 +599,34 @@ export async function loadFromServer({ forceServerWins = false } = {}) {
 
     _serverEtag = res.headers.get('ETag') || _serverEtag;
 
-    const localSeq = state._seq || 0;
-    const serverSeq = data._seq || 0;
-
-    // Local is ahead — unsaved changes exist. Push them up; don't overwrite.
-    // Skip this when forceServerWins (e.g. joining via invite): we must never
-    // let a guest's stale local tree overwrite the family they just joined.
-    if (!forceServerWins && localSeq > serverSeq && state.people?.length > 0) {
-      // Still reconcile the viewer's seat from their claim/email so a stale
-      // cached myPersonId (e.g. inherited from the tree owner) self-heals
-      // instead of being skipped on this fast path.
-      const seatId = resolveViewerPersonId(state.people, state.myPersonId);
-      if (seatId && seatId !== state.myPersonId) {
-        commit({ ...state, myPersonId: seatId });
-      } else {
-        saveToServer();
-      }
+    // Joining a new family via invite — a guest's local tree must never leak
+    // into (or overwrite) the family they're joining, so take the server's
+    // tree exactly as given, no merge.
+    if (forceServerWins) {
+      commit({ ...EMPTY, ...data }, { fromServer: true });
       return true;
     }
 
-    // Server is same or ahead — apply it. Data: URLs are stripped from the D1
-    // payload to stay under the row size limit; restore them from localStorage.
-    // photo_thumb is a small (~5 KB) thumbnail stored in D1 as a cross-device
-    // sync fallback when R2 is unavailable.
+    // Reconcile per-record by recency (updated_at) rather than picking one
+    // whole side based on a coarse _seq comparison. _seq counts commits on
+    // THIS device — it says nothing about whether this device's copy of any
+    // given record is stale. A device that made several of its own
+    // unrelated edits can have a higher local _seq than the server while
+    // still holding a stale copy of a record a different family member
+    // updated elsewhere; the old code took that as "local wins, push it,"
+    // which silently overwrote the server's newer record with this
+    // device's stale one on the very next boot. This is exactly what
+    // happened to a family member's newly-added profile photo.
     const localPortraits = new Map(
       (state.people || []).filter((p) => p.photo?.startsWith('data:')).map((p) => [p.id, p.photo]),
     );
-    const mergedPeople = Array.isArray(data.people)
+    // Data: URLs are stripped from the D1 payload to stay under the row size
+    // limit; restore them from localStorage before the recency merge so a
+    // server record that's otherwise older doesn't lose its local photo
+    // just because the transport dropped it. photo_thumb is a small
+    // (~5 KB) thumbnail stored in D1 as a cross-device sync fallback when
+    // R2 is unavailable.
+    const serverPeopleWithPhotos = Array.isArray(data.people)
       ? data.people.map((p) => {
           if (!p.photo) {
             if (localPortraits.has(p.id)) return { ...p, photo: localPortraits.get(p.id) };
@@ -629,20 +635,22 @@ export async function loadFromServer({ forceServerWins = false } = {}) {
           return p;
         })
       : data.people;
+    const mergedPeople = _mergeByRecency(serverPeopleWithPhotos, state.people);
 
-    // Restore local gallery photos that have data: URLs (not in D1 payload).
     const serverPhotoIds = new Set((data.photos || []).map((ph) => ph.id));
     const localDataPhotos = (state.photos || []).filter(
       (ph) => ph.src?.startsWith('data:') && !serverPhotoIds.has(ph.id),
     );
-    const mergedPhotos = [...(data.photos || []), ...localDataPhotos];
+    const mergedPhotos = _mergeByRecency([...(data.photos || []), ...localDataPhotos], state.photos);
 
-    // Restore local documents that have data: URLs (stripped from D1 payload).
     const serverDocIds = new Set((data.documents || []).map((d) => d.id));
     const localDataDocs = (state.documents || []).filter(
       (d) => d.src?.startsWith('data:') && !serverDocIds.has(d.id),
     );
-    const mergedDocs = [...(data.documents || []), ...localDataDocs];
+    const mergedDocuments = _mergeByRecency([...(data.documents || []), ...localDataDocs], state.documents);
+
+    const mergedRelationships = _mergeByRecency(data.relationships, state.relationships);
+    const mergedMemories = _mergeByRecency(data.memories, state.memories);
 
     // Honour deletions: union local + server tombstones, then drop anything the
     // user deleted (so the server copy can't resurrect it) and any edge left
@@ -650,31 +658,41 @@ export async function loadFromServer({ forceServerWins = false } = {}) {
     const deleted = mergeTombstones(state._deleted, data._deleted);
     const people = dropTombstoned(mergedPeople, deleted, 'people');
     const peopleIds = new Set((people || []).map((p) => p.id));
-    const relationships = dropTombstoned(data.relationships, deleted, 'relationships')
+    const relationships = dropTombstoned(mergedRelationships, deleted, 'relationships')
       .filter((r) => peopleIds.has(r.from_person) && peopleIds.has(r.to_person));
-    const memories = dropTombstoned(data.memories, deleted, 'memories');
+    const memories = dropTombstoned(mergedMemories, deleted, 'memories');
     const photos = dropTombstoned(mergedPhotos, deleted, 'photos');
-    const documents = dropTombstoned(mergedDocs, deleted, 'documents');
+    const documents = dropTombstoned(mergedDocuments, deleted, 'documents');
 
     // Resolve the viewer's own person (their claimed link first, then email)
     // so each family member sees relationship labels from their own seat — not
     // the owner's, which is what the shared myPersonId defaults to.
-    const resolvedMyPersonId = resolveViewerPersonId(people, data.myPersonId);
+    const resolvedMyPersonId = resolveViewerPersonId(people, state.myPersonId ?? data.myPersonId);
 
-    commit(
-      {
-        ...EMPTY,
-        ...data,
-        people,
-        relationships,
-        memories,
-        photos,
-        documents,
-        _deleted: deleted,
-        ...(resolvedMyPersonId ? { myPersonId: resolvedMyPersonId } : {}),
-      },
-      { fromServer: true },
-    );
+    const merged = {
+      ...EMPTY,
+      ...data,
+      ...state, // local scalars (familyName, etc.) win, matching _fetchAndMerge's convention
+      people,
+      relationships,
+      memories,
+      photos,
+      documents,
+      _deleted: deleted,
+      _seq: Math.max(state._seq || 0, data._seq || 0),
+      ...(resolvedMyPersonId ? { myPersonId: resolvedMyPersonId } : {}),
+    };
+
+    commit(merged, { fromServer: true });
+
+    // If this device had any local content, the merge above may include
+    // genuinely-unsaved local edits (or a newer photo the server's stripped
+    // payload didn't carry) that the server doesn't have yet — push the
+    // reconciled result back up rather than assuming a fetch alone caught
+    // it up. This is the only place that used to push raw, unmerged local
+    // state; now it always pushes the merged (safe) result instead.
+    if (state.people?.length > 0) scheduleServerSave(merged);
+
     return true;
   } catch {
     return false;
