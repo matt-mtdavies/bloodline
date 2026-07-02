@@ -1771,10 +1771,13 @@
 
 /* Storage-full warning toast */
 .storage-toast {
-  position: fixed;
-  bottom: 24px;
-  left: 50%;
-  transform: translateX(-50%);
+  /* Normal-flow child of .topbar (fixed header), stacked right under the
+     stats row — not position:fixed/bottom anymore, so it can never land on
+     top of the bottom dock's tap targets, and it tracks the header's real
+     height automatically (safe-area inset, family-name wrapping, etc.)
+     instead of a hardcoded offset. */
+  align-self: center;
+  margin: 0 16px 12px;
   background: #3a2f28;
   color: #fff;
   font-size: 13.5px;
@@ -1783,8 +1786,15 @@
   max-width: calc(100vw - 32px);
   text-align: center;
   z-index: 9999;
-  animation: fade-up 0.3s var(--spring) both;
-  pointer-events: none;
+  /* Not the shared fade-up keyframe — that one bakes in translateX(-50%) for
+     elements centred via left:50%, which this no longer is (align-self does
+     the centring now); reapplying it here would offset the toast sideways. */
+  animation: toast-in 0.3s var(--spring) both;
+  pointer-events: auto;
+}
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(-8px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 @keyframes fade-up {
   from { opacity: 0; transform: translateX(-50%) translateY(12px); }

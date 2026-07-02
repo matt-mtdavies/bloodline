@@ -501,7 +501,20 @@ function stampUpdatedAt(nextArr, prevArr) {
   if (!Array.isArray(nextArr)) return nextArr;
   const prevById = new Map((prevArr || []).map((x) => [x.id, x]));
   const now = Date.now();
-  return nextArr.map((item) => (prevById.get(item.id) === item ? item : { ...item, updated_at: now }));
+  let changed = false;
+  const mapped = nextArr.map((item) => {
+    if (prevById.get(item.id) === item) return item;
+    changed = true;
+    return { ...item, updated_at: now };
+  });
+  // .map() always allocates a new array, even when every item passed through
+  // unchanged — commit() below calls this on EVERY local commit, including
+  // ones that only touch memories/photos/activity, so without this early
+  // return, data.people/data.relationships got a fresh array reference on
+  // every single action. Anything downstream keyed on that reference (the
+  // graph memo in App.jsx, BubbleTree's sync effect) recomputed constantly —
+  // the real source of the tree jiggling on unrelated changes.
+  return changed ? mapped : nextArr;
 }
 
 // fromServer=true: loading from D1 — don't increment _seq or schedule a save.

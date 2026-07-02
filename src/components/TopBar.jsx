@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, forwardRef } from 'react';
 import Logo from './Logo.jsx';
 
-export default function TopBar({ familyName, stats, view, syncStatus, syncError, onRetrySync, onToggleView, onOpenLegend, legendActive = false, onOpenSettings, onOpenActivity, activityCount = 0, user, userPhoto, onOpenProfile, onSearch, onOpenInsights, onOpenTimeline, onOpenDuplicates, duplicateCount = 0 }) {
+export default function TopBar({ familyName, stats, view, syncStatus, syncError, onRetrySync, onToggleView, onOpenLegend, legendActive = false, onOpenSettings, onOpenActivity, activityCount = 0, user, userPhoto, onOpenProfile, onSearch, onOpenInsights, onOpenTimeline, onOpenDuplicates, duplicateCount = 0, storageWarning, syncToast, onDismissSyncToast }) {
   const [statsOpen, setStatsOpen] = useState(false);
   const popoverRef = useRef(null);
   const statsRef = useRef(null);
@@ -130,6 +130,22 @@ export default function TopBar({ familyName, stats, view, syncStatus, syncError,
           {view === 'bubbles' ? <ListIcon /> : <TreeIcon />}
         </button>
       </div>
+
+      {/* Toasts — anchored right under the stats row rather than floating
+          over the bottom dock, so they never compete with the tap targets
+          down there. Lives in normal flow inside this fixed header, so it
+          tracks the header's real height (safe-area inset, family-name
+          wrapping, etc.) with no hardcoded offset to keep in sync. */}
+      {storageWarning && (
+        <div className="storage-toast" role="alert">
+          Storage full — this change won&apos;t survive a reload. Try removing some photos.
+        </div>
+      )}
+      {syncToast && (
+        <div className="storage-toast" role="status" onClick={onDismissSyncToast}>
+          {syncToast}
+        </div>
+      )}
 
       {/* Stats detail popover */}
       {statsOpen && stats && (

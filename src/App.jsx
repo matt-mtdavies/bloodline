@@ -103,7 +103,19 @@ export default function App() {
   const data = useSyncExternalStore(store.subscribe, store.getState);
   const syncStatus = useSyncExternalStore(syncStore.subscribe, syncStore.getState);
   const syncError  = useSyncExternalStore(syncStore.subscribe, syncStore.getLastError);
-  const graph = useMemo(() => buildGraph(data.people, data.relationships), [data]);
+  // Deps are exactly what buildGraph reads — NOT [data]. useSyncExternalStore
+  // hands back a brand-new top-level `data` object on every single commit,
+  // including ones that only touch activity/_seq/sync-status-adjacent fields
+  // (e.g. the 60s background poll, or another editor's memory/photo save).
+  // Depending on the whole object rebuilt `graph` — and hence re-ran
+  // BubbleTree's `sync(graph)` effect below — on every one of those, which is
+  // the actual source of the repeated "saving…/saved" jiggle: even when the
+  // structural-change checks inside sync() correctly skip a physics reheat,
+  // the bubble-rebuild pass and generation/relCache recompute still run for
+  // no reason. Keying on the two arrays buildGraph actually reads means
+  // `graph` — and that whole pipeline — only reruns when people or
+  // relationships genuinely change reference.
+  const graph = useMemo(() => buildGraph(data.people, data.relationships), [data.people, data.relationships]);
   const reducedMotion = useReducedMotion();
 
   // Possible duplicate people (same name + corroborating evidence) to offer for
@@ -973,6 +985,9 @@ export default function App() {
         onOpenTimeline={() => setTimelineOpen(true)}
         duplicateCount={canManageTreeStructure ? duplicatePairs.length : 0}
         onOpenDuplicates={canManageTreeStructure && duplicatePairs.length ? () => setDuplicatesOpen(true) : null}
+        storageWarning={storageWarning}
+        syncToast={syncToast}
+        onDismissSyncToast={() => setSyncToast(null)}
       />
 
       {view === 'bubbles' ? (
@@ -1300,18 +1315,6 @@ export default function App() {
           onAdd={handleAdd}
           onLinkExisting={handleLinkExisting}
         />
-      )}
-
-      {storageWarning && (
-        <div className="storage-toast" role="alert">
-          Storage full — this change won&apos;t survive a reload. Try removing some photos.
-        </div>
-      )}
-
-      {syncToast && (
-        <div className="storage-toast" role="status" onClick={() => setSyncToast(null)}>
-          {syncToast}
-        </div>
       )}
 
       {pendingFamilyInvites.length > 0 && (
