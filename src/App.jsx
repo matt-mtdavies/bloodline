@@ -1039,7 +1039,7 @@ export default function App() {
                 aria-label="Browse — deselect and reset the view"
               >
                 <BrowseIcon />
-                Browse
+                <span className="dock-btn__label">Browse</span>
               </button>
               <span className="dock-divider" aria-hidden="true" />
               {/* Focus Family */}
@@ -1054,7 +1054,7 @@ export default function App() {
                 aria-label={focusMode ? 'Exit focus family view' : 'Focus on this family'}
               >
                 <FocusIcon />
-                {focusMode ? 'Exit Focus' : 'Focus'}
+                <span className="dock-btn__label">{focusMode ? 'Exit Focus' : 'Focus'}</span>
               </button>
               <span className="dock-divider" aria-hidden="true" />
               {/* Time — wrapper is position:relative so slider/card float above */}
@@ -1119,13 +1119,15 @@ export default function App() {
                   aria-label={timeMode ? `Time view: ${timeYear}` : 'View family over time'}
                 >
                   <ClockIcon />
-                  {timeMode ? (
-                    lifeJourneyPerson ? (
-                      <>{lifeJourneyPerson.display_name.split(' ')[0]} · {timeYear}</>
-                    ) : (
-                      timeYear
-                    )
-                  ) : 'Time'}
+                  <span className="dock-btn__label">
+                    {timeMode ? (
+                      lifeJourneyPerson ? (
+                        <>{lifeJourneyPerson.display_name.split(' ')[0]} · {timeYear}</>
+                      ) : (
+                        timeYear
+                      )
+                    ) : 'Time'}
+                  </span>
                 </button>
               </div>
               <span className="dock-divider" aria-hidden="true" />
@@ -1137,11 +1139,13 @@ export default function App() {
                 aria-label={lineageMode ? 'Exit lineage mode' : 'Trace a family line'}
               >
                 <LineageIcon />
-                {lineageMode
-                  ? lineagePath
-                    ? `${[...lineagePath].length} links`
-                    : 'Tap…'
-                  : 'Lineage'}
+                <span className="dock-btn__label">
+                  {lineageMode
+                    ? lineagePath
+                      ? `${[...lineagePath].length} links`
+                      : 'Tap…'
+                    : 'Lineage'}
+                </span>
               </button>
               <span className="dock-divider" aria-hidden="true" />
               {/* Show All / Collapse */}
@@ -1152,7 +1156,7 @@ export default function App() {
                 aria-label={canCollapse ? 'Collapse to active person' : 'Show all people in the tree'}
               >
                 {canCollapse ? <CollapseIcon /> : <ExpandAllIcon />}
-                {canCollapse ? 'Collapse' : 'All'}
+                <span className="dock-btn__label">{canCollapse ? 'Collapse' : 'All'}</span>
               </button>
             </div>
           </div>

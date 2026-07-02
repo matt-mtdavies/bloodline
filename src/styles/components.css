@@ -735,9 +735,13 @@
   left: 0;
   right: 0;
   padding: 12px 16px calc(var(--safe-bottom) + 20px);
-  display: flex;
-  justify-content: center;
-  align-items: flex-end;
+  /* Centring the dock via text-align (it's display:inline-flex below) rather
+     than making .bottom-bar itself a flex parent — nesting a shrink-to-fit
+     flex container inside another flex container's auto-sizing pass is
+     ambiguous in practice and was collapsing the dock's children well below
+     their flex-basis even with plenty of room to spare. inline-flow
+     centring sizes the dock strictly by its own max-content, no ambiguity. */
+  text-align: center;
   pointer-events: none;
   z-index: 40;
   background: linear-gradient(to top, rgba(250,247,244,0.9) 0%, transparent 100%);
@@ -746,8 +750,9 @@
 /* ── Floating dock pill ───────────────────────────────────────────────────────── */
 .bottom-dock {
   position: relative; /* positioning context for the time slider / life-event card */
-  display: flex;
+  display: inline-flex;
   align-items: center;
+  max-width: calc(100vw - 24px);
   background: rgba(255, 255, 255, 0.93);
   backdrop-filter: blur(20px) saturate(1.6);
   -webkit-backdrop-filter: blur(20px) saturate(1.6);
@@ -767,7 +772,7 @@
   align-items: center;
   justify-content: center;
   gap: 3px;
-  padding: 9px 14px;
+  padding: 9px 8px;
   border-radius: 22px;
   border: none;
   background: transparent;
@@ -779,11 +784,28 @@
   transition: background 0.14s, color 0.14s, transform 0.14s var(--spring);
   white-space: nowrap;
   font-family: inherit;
+  /* Shared floor so all five read as equal, deliberate segments at rest — the
+     widest resting label (Lineage) sets it. flex-shrink must stay OFF: in
+     this nested (dock is itself a flex container sized by content) layout,
+     Chromium's shrink-to-fit sizing shrinks flex-basis items well below
+     their basis even with plenty of room to spare the moment shrink>0 is
+     set — a real, reproducible quirk, not a matter of tuning the numbers.
+     A button whose label grows in an active state (Exit Focus, a running
+     year, "N links") is allowed to grow past this floor instead; its
+     neighbours stay put and the label span ellipses only if that growth
+     ever hits the dock's own max-width. */
+  flex: 0 0 62px;
   min-width: 0;
   line-height: 1;
 }
 .dock-btn:hover { background: rgba(139, 120, 100, 0.07); }
 .dock-btn:active { transform: scale(0.91); }
+.dock-btn__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
 
 /* ── Dock divider ─────────────────────────────────────────────────────────────── */
 .dock-divider {
@@ -1143,8 +1165,28 @@
      (positioning context is .bottom-dock, not this button slot) */
   display: flex;
   flex-direction: column;
-  align-items: center;
+  /* stretch (not center) so .time-toggle fills whatever width this wrapper
+     ends up with, letting its label ellipsis instead of ignoring it */
+  align-items: stretch;
   pointer-events: none;
+  /* This div, not .time-toggle, is the actual dock-row flex item — mirror
+     .dock-btn's sizing so Time keeps pace with its siblings. */
+  flex: 0 0 62px;
+  min-width: 0;
+}
+/* .dock-btn's shared flex-basis targets the horizontal dock row's main axis;
+   .time-toggle's real parent is .time-bar, a COLUMN flex container, where
+   the same rule would size its HEIGHT instead. Cancel it here and let
+   align-items:stretch above (a cross-axis / width property in that column
+   context) do the sizing instead. */
+.time-toggle {
+  flex: 0 0 auto;
+  width: 100%;
+  /* .time-bar (its real parent) sets pointer-events:none so the absolutely
+     positioned slider/card don't block canvas taps when hidden; this button
+     must opt back in explicitly or clicks pass through to .bottom-dock
+     underneath and the Time button goes dead. */
+  pointer-events: auto;
 }
 .time-slider-wrap {
   position: absolute;
