@@ -83,8 +83,6 @@ export default function SearchOverlay({ people, onSelect, onClose }) {
   return (
     <div className="search-scrim" onClick={onClose} role="dialog" aria-modal="true" aria-label="Search people">
       <div className="search-sheet" onClick={(e) => e.stopPropagation()}>
-        <div className="sheet__grip" />
-
         {/* Input */}
         <div className="search-input-row">
           <SearchIcon />

@@ -843,7 +843,12 @@
   backdrop-filter: blur(2px);
   display: flex;
   flex-direction: column;
-  justify-content: flex-end;
+  /* Search opens from the top bar's search button — the panel should drop
+     down from there, not rise from the bottom like every other (person- or
+     item-editing) sheet in the app. Matches the app's existing "things
+     animate from their trigger" language (the profile card already floats
+     out from wherever a bubble was tapped) rather than fighting it. */
+  justify-content: flex-start;
   animation: scrim-in 0.18s ease both;
 }
 @keyframes scrim-in {
@@ -853,16 +858,16 @@
 
 .search-sheet {
   background: var(--surface, #faf7f4);
-  border-radius: 24px 24px 0 0;
-  padding: 0 0 calc(var(--safe-bottom, 0px) + 16px);
+  border-radius: 0 0 24px 24px;
+  padding: calc(var(--safe-top, 0px) + 16px) 0 16px;
   max-height: 78vh;
   display: flex;
   flex-direction: column;
-  animation: sheet-up 0.28s var(--spring, cubic-bezier(.34,1.56,.64,1)) both;
+  animation: sheet-down 0.28s var(--spring, cubic-bezier(.34,1.56,.64,1)) both;
 }
-@keyframes sheet-up {
-  from { transform: translateY(60px); opacity: 0; }
-  to   { transform: translateY(0);    opacity: 1; }
+@keyframes sheet-down {
+  from { transform: translateY(-60px); opacity: 0; }
+  to   { transform: translateY(0);     opacity: 1; }
 }
 
 /* ── Search input row ────────────────────────────────────────────────────────── */
