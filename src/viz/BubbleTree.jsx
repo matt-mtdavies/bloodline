@@ -11,6 +11,8 @@ import {
 import { Bubble } from './bubble.js';
 import { BirthEffect } from './birth.js';
 import { LandingBurst } from './landing.js';
+import { IgniteEffect } from './ignite.js';
+import { FlightComet } from './comet.js';
 import { drawLinks, drawLinksChart } from './links.js';
 import { computeChartLayout } from './chartLayout.js';
 import { distancesFrom, relationLabel } from '../data/graph.js';
@@ -276,6 +278,23 @@ export default function BubbleTree({
       const manualPins = new Set(); // nodes the user has manually repositioned
       let flight = null;      // active search flyover, see state.flyAlong()
       let landingFx = null;   // the flyover's arrival burst (single-slot, self-cleaning)
+      let flightComet = null; // the "drone light" riding the route during transit
+      const igniteFx = new Set(); // in-flight IgniteEffect instances, self-removing when done
+      // The lit path persists after the flight lands (not just the caption) —
+      // see the frame loop below. null once expired/not applicable; when set,
+      // it's the SAME expanded id set flight.litSet held (path ids + each lit
+      // person's current partner, so a couple lights up together).
+      let postFlightIds = null;
+      let postFlightUntil = 0;
+      const POST_FLIGHT_MS = 10000; // how long the lit path lingers after landing
+
+      // A lit person's current partner lights up alongside them — most
+      // visibly when the route passes through a parent: the couple pod is
+      // drawn as one visual unit, so lighting only one half of it would read
+      // as broken. Former partners are excluded (no active bond to reflect).
+      const bonusPartners = (id) => graphRef.current.partners(id)
+        .filter((p) => p.status !== 'former' && nodeById.has(p.id))
+        .map((p) => p.id);
 
       const state = {
         app,
@@ -624,16 +643,20 @@ export default function BubbleTree({
           drag.type = 'none';
           drag.node = null;
           camMode = 'flight';
+          postFlightIds = null; // a fresh flight supersedes any lingering previous one
           const hops = pts.length - 1;
           flight = {
             ids: orderedIds,
             pts,
             hops,
             t: 0,
-            duration: clamp(1.8 + hops * 0.65, 2.4, 4.8),
-            landDuration: 0.9,
+            // Slow and cinematic — this is a drone gliding the family's real
+            // shape, not a quick cut. ~55-70% longer than the original pacing.
+            duration: clamp(2.8 + hops * 1.05, 3.6, 8.5),
+            landDuration: 1.1,
             phase: 'transit',
             litIndex: 0,
+            litSet: new Set(),
             startZoom: zoom.value,
             // The route's start (the viewer's seat) may be far from wherever the
             // camera actually is right now (e.g. it had wandered to look at
@@ -644,6 +667,22 @@ export default function BubbleTree({
             onSegment: opts.onSegment || null,
             onLand: opts.onLand || null,
           };
+          // Origin lights immediately (no ignite flourish — it's where the
+          // journey starts, not an arrival) but its own partner, if any, is
+          // a genuine reveal and gets one, same as every hop after it.
+          flight.litSet.add(orderedIds[0]);
+          for (const pid of bonusPartners(orderedIds[0])) {
+            flight.litSet.add(pid);
+            const n = nodeById.get(pid);
+            if (n) {
+              const fx = new IgniteEffect({ x: n.x, y: n.y }, BASE_RADIUS);
+              fxLayer.addChild(fx.root);
+              igniteFx.add(fx);
+            }
+          }
+          flightComet?.destroy();
+          flightComet = new FlightComet(BASE_RADIUS);
+          fxLayer.addChild(flightComet.root);
           flight.onSegment?.(orderedIds[0]);
         },
       };
@@ -765,7 +804,8 @@ export default function BubbleTree({
           pinch.active = true;
           pinch.dist0 = twoFingerDist();
           pinch.zoom0 = screenAnchor().z;
-          if (flight) { flight = null; landingFx?.destroy(); landingFx = null; }
+          if (flight) { flight = null; landingFx?.destroy(); landingFx = null; flightComet?.destroy(); flightComet = null; }
+          postFlightIds = null; // the user's taken control — stop lingering on the old route
           state.enterFree();
           return;
         }
@@ -843,7 +883,8 @@ export default function BubbleTree({
         } else if (drag.type === 'pan' && drag.moved) {
           // A real drag interrupts the flyover — hand control back to the user
           // right where the camera is, no jump.
-          if (flight) { flight = null; landingFx?.destroy(); landingFx = null; }
+          if (flight) { flight = null; landingFx?.destroy(); landingFx = null; flightComet?.destroy(); flightComet = null; }
+          postFlightIds = null; // the user's taken control — stop lingering on the old route
           state.enterFree();
           app.stage.cursor = 'grabbing';
           const z = screenAnchor().z;
@@ -953,6 +994,11 @@ export default function BubbleTree({
           flight = null;
           landingFx?.destroy();
           landingFx = null;
+          flightComet?.destroy();
+          flightComet = null;
+          for (const fx of igniteFx) fx.destroy();
+          igniteFx.clear();
+          postFlightIds = null;
           camMode = 'follow';
         }
       });
@@ -1013,19 +1059,50 @@ export default function BubbleTree({
             // starting far from the current view eases into the route instead
             // of snapping to it.
             const bt = easeInOutCubic(Math.min(1, u / 0.22));
-            camX.value = camX.target = flight.camStartX + (p.x - flight.camStartX) * bt;
-            camY.value = camY.target = flight.camStartY + (p.y - flight.camStartY) * bt;
+            // A slow, gentle drift orbiting the path point — the "drone hover"
+            // rather than a perfectly rigid camera-on-rails glide. Small enough
+            // to read as atmosphere, never enough to fight the route itself.
+            const swayAmt = BASE_RADIUS * 0.14 * bt;
+            const swayX = Math.sin(flight.t * 2 * Math.PI * 0.5) * swayAmt;
+            const swayY = Math.cos(flight.t * 2 * Math.PI * 0.63) * swayAmt * 0.7;
+            camX.value = camX.target = flight.camStartX + (p.x - flight.camStartX) * bt + swayX;
+            camY.value = camY.target = flight.camStartY + (p.y - flight.camStartY) * bt + swayY;
             camX.velocity = camY.velocity = 0;
 
-            const travelZ = clamp(0.72, MIN_ZOOM, MAX_ZOOM);
+            // Wider "travel" zoom than before — more altitude, more drone-like,
+            // taking in more of the family as the route glides past it.
+            const travelZ = clamp(0.6, MIN_ZOOM, MAX_ZOOM);
             const zt = easeInOutCubic(Math.min(1, u / 0.3));
             zoom.value = zoom.target = flight.startZoom + (travelZ - flight.startZoom) * zt;
             zoom.velocity = 0;
 
+            flightComet?.update(dt, p);
+
             const idx = Math.min(flight.hops, Math.round(eased * flight.hops));
             if (idx > flight.litIndex) {
               flight.litIndex = idx;
-              flight.onSegment?.(flight.ids[idx]);
+              const id = flight.ids[idx];
+              flight.litSet.add(id);
+              const n = nodeById.get(id);
+              if (n) {
+                const fx = new IgniteEffect({ x: n.x, y: n.y }, BASE_RADIUS);
+                fxLayer.addChild(fx.root);
+                igniteFx.add(fx);
+              }
+              // Passing through a parent lights their partner too — a couple
+              // pod is one visual unit, so only lighting half of it would
+              // look broken. Gets its own ignite flourish, same as any hop.
+              for (const pid of bonusPartners(id)) {
+                if (flight.litSet.has(pid)) continue;
+                flight.litSet.add(pid);
+                const pn = nodeById.get(pid);
+                if (pn) {
+                  const pfx = new IgniteEffect({ x: pn.x, y: pn.y }, BASE_RADIUS);
+                  fxLayer.addChild(pfx.root);
+                  igniteFx.add(pfx);
+                }
+              }
+              flight.onSegment?.(id);
             }
 
             if (u >= 1) {
@@ -1034,6 +1111,8 @@ export default function BubbleTree({
               flight.landStartZoom = zoom.value;
               flight.litIndex = flight.hops;
               const dest = flight.pts[flight.pts.length - 1];
+              flightComet?.destroy();
+              flightComet = null;
               landingFx?.destroy();
               landingFx = new LandingBurst({ x: dest.x, y: dest.y }, BASE_RADIUS);
               fxLayer.addChild(landingFx.root);
@@ -1053,6 +1132,12 @@ export default function BubbleTree({
             if (u >= 1) {
               const finished = flight;
               flight = null;
+              // The fully-lit path (every hop + each one's partner) lingers on
+              // screen for a while after landing — the payoff of the whole
+              // flight, not something that should vanish the instant the
+              // camera stops moving.
+              postFlightIds = finished.litSet;
+              postFlightUntil = performance.now() + POST_FLIGHT_MS;
               state.setActive(finished.ids[finished.ids.length - 1], false);
               camMode = 'follow'; // setActive() re-enters follow anyway; explicit for clarity
               finished.onLand?.();
@@ -1189,13 +1274,22 @@ export default function BubbleTree({
         // "lit" so far (grows each time the camera passes a hop) — same dim /
         // highlight / ring rendering Lineage Mode already uses, just fed a
         // progressively-growing set instead of a static one.
-        const lineage = flight ? new Set(flight.ids.slice(0, flight.litIndex + 1)) : lineageRef.current;
+        if (postFlightIds && performance.now() > postFlightUntil) postFlightIds = null;
+        const lineage = flight ? flight.litSet : (postFlightIds || lineageRef.current);
         const lineageEnd = flight ? flight.ids[flight.ids.length - 1] : lineageEndRef.current;
 
         // ── Landing burst (search flyover arrival) ───────────────────────────
         if (landingFx) {
           landingFx.update(dt);
           if (landingFx.done) { landingFx.destroy(); landingFx = null; }
+        }
+
+        // ── Ignite flourishes (search flyover, one per bubble as it's lit) ───
+        if (igniteFx.size) {
+          for (const fx of igniteFx) {
+            fx.update(dt);
+            if (fx.done) { fx.destroy(); igniteFx.delete(fx); }
+          }
         }
 
         // ── Birth celebrations (time view) ──────────────────────────────────

@@ -814,10 +814,13 @@ export default function App() {
       },
       onLand: () => {
         setActiveId(targetId);
-        // Let the fully-resolved chain sit on screen for a beat — it's the
-        // payoff of the whole flight — instead of wiping it the instant the
-        // camera settles.
-        setTimeout(() => setFlightCaption(null), 2200);
+        // Let the fully-resolved chain sit on screen for a while — it's the
+        // payoff of the whole flight — instead of wiping it soon after the
+        // camera settles. Matches how long the canvas itself keeps the route
+        // lit (see BubbleTree's postFlightIds), so the text caption and the
+        // illuminated path disappear together rather than the text vanishing
+        // first while the path is still glowing.
+        setTimeout(() => setFlightCaption(null), 10000);
       },
     });
   }, [graph, data.myPersonId, reducedMotion, activateNormal]);
