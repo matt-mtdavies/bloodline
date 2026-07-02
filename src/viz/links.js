@@ -37,7 +37,10 @@ function stepEdgeMediated(graph, parentId, childId) {
  * Link opacity follows the ego camera: bonds far from the focused person fade
  * back with their bubbles.
  */
-export function drawLinks(g, graph, pos, isVisible, baseRadius, mergeParents = false, lineagePath = null, activeId = null) {
+export function drawLinks(
+  g, graph, pos, isVisible, baseRadius, mergeParents = false, lineagePath = null, activeId = null,
+  edgeLitAt = null, nowMs = 0, extinguishAt = null, extinguishMs = 1,
+) {
   g.clear();
   // Only draw a link when both people are currently revealed.
   const hidden = (a, b) => !(isVisible(a) && isVisible(b));
@@ -45,6 +48,24 @@ export function drawLinks(g, graph, pos, isVisible, baseRadius, mergeParents = f
   // drawn normally then re-highlighted in a second pass at the end.
   const onPath = lineagePath ? (a, b) => lineagePath.has(a) && lineagePath.has(b) : () => false;
   const edgeAlpha = lineagePath ? (a, b) => (onPath(a, b) ? 1 : 0.12) : () => 1;
+  // How brightly a lit edge's accent glow burns right now: 0 -> 1 igniting
+  // over a beat as the drone's light actually reaches it (edgeLitAt is only
+  // stamped once both ends are lit — see BubbleTree's markNewEdgesLit), held
+  // near full while the flight/its afterglow is active, then eased back down
+  // as the lingering window's end approaches (extinguishAt), same fade the
+  // bubbles' pop-rest scale uses so the whole path cools down together. No
+  // edgeLitAt at all (real Lineage Mode) burns at a flat, non-fading 1.
+  const IGNITE_MS = 420;
+  const burnIntensity = (key) => {
+    if (!edgeLitAt) return 1;
+    const litAt = edgeLitAt.get(key);
+    if (litAt == null) return 0;
+    const ignite = Math.min(1, (nowMs - litAt) / IGNITE_MS);
+    if (extinguishAt == null) return ignite;
+    const remain = extinguishAt - nowMs;
+    const fade = remain > extinguishMs ? 1 : Math.max(0, remain / extinguishMs);
+    return ignite * fade;
+  };
 
   // ── Couple membranes (drawn first, furthest back) ─────────────────────────
   // Each union is a closed capsule — fill + a complete border that wraps all
@@ -208,14 +229,20 @@ export function drawLinks(g, graph, pos, isVisible, baseRadius, mergeParents = f
       const key = [r.from_person, r.to_person].sort().join('|') + r.type;
       if (done.has(key)) continue;
       done.add(key);
+      const burn = burnIntensity(key);
+      if (burn <= 0) continue; // not yet reached, or fully extinguished — nothing to draw
       const a = pos.get(r.from_person);
       const b = pos.get(r.to_person);
       if (!a || !b) continue;
+      // A touch of overshoot on width while igniting (bright/thick flare
+      // easing back to a steady thinner glow) reads as catching light rather
+      // than a flat colour switch — same idea the bubble pop uses.
+      const flare = 0.7 + 0.3 * Math.min(1, burn * 1.6);
       if (r.type === 'partner') {
-        g.moveTo(a.x, a.y).lineTo(b.x, b.y).stroke({ width: baseRadius * 2.4, color: accentFill, alpha: 0.22, cap: 'round' });
-        g.moveTo(a.x, a.y).lineTo(b.x, b.y).stroke({ width: 3, color: accentFill, alpha: 0.75, cap: 'round' });
+        g.moveTo(a.x, a.y).lineTo(b.x, b.y).stroke({ width: baseRadius * 2.4, color: accentFill, alpha: 0.22 * burn, cap: 'round' });
+        g.moveTo(a.x, a.y).lineTo(b.x, b.y).stroke({ width: 3 * flare, color: accentFill, alpha: 0.75 * burn, cap: 'round' });
       } else {
-        curve(g, a, b, { width: 3, color: accentFill, alpha: 0.8 });
+        curve(g, a, b, { width: 3 * flare, color: accentFill, alpha: 0.8 * burn });
       }
     }
   }
