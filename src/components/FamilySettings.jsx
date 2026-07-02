@@ -11,7 +11,7 @@ export default function FamilySettings({
   myRole, familyName, onUpdateFamilyName, onReset, onLogout, onClose, onImportGedcom, onImportFamilySearch,
   people = [], userEmail, onSelectPerson,
 }) {
-  const [tab, setTab] = useState('members'); // 'members' | 'invite' | 'activity' | 'restore'
+  const [tab, setTab] = useState('members'); // 'members' | 'invite' | 'activity' | 'restore' | 'calendar'
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [fbType, setFbType]     = useState('idea');
@@ -96,6 +96,104 @@ export default function FamilySettings({
   useEffect(() => {
     if (tab === 'restore' && !snapshotsLoaded) loadSnapshots();
   }, [tab, snapshotsLoaded, loadSnapshots]);
+
+  // Birthday calendar feed — a curated opt-in list, not "everyone with a
+  // birthday": a big tree would otherwise dump dozens of recurring reminders
+  // on whoever subscribes. calendarSelected is the editable draft; it's only
+  // pushed to the server on an explicit Save so ticking boxes never fires a
+  // request per click.
+  const [calendarUrl, setCalendarUrl] = useState('');
+  const [calendarPeople, setCalendarPeople] = useState([]);
+  const [calendarSelected, setCalendarSelected] = useState(new Set());
+  const [calendarSavedIds, setCalendarSavedIds] = useState(new Set());
+  const [calendarLoading, setCalendarLoading] = useState(false);
+  const [calendarLoaded, setCalendarLoaded] = useState(false);
+  const [calendarError, setCalendarError] = useState(false);
+  const [calendarSaving, setCalendarSaving] = useState(false);
+  const [calendarSaved, setCalendarSaved] = useState(false);
+  const [regenConfirm, setRegenConfirm] = useState(false);
+
+  const loadCalendar = useCallback(async () => {
+    setCalendarLoading(true);
+    setCalendarError(false);
+    try {
+      const res = await fetch('/api/calendar-token');
+      if (!res.ok) { setCalendarError(true); return; }
+      const body = await res.json();
+      setCalendarUrl(body.url || '');
+      setCalendarPeople(body.people || []);
+      const ids = new Set(body.selectedIds || []);
+      setCalendarSelected(ids);
+      setCalendarSavedIds(ids);
+    } catch {
+      setCalendarError(true);
+    } finally {
+      setCalendarLoading(false);
+      setCalendarLoaded(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (tab === 'calendar' && !calendarLoaded) loadCalendar();
+  }, [tab, calendarLoaded, loadCalendar]);
+
+  function toggleCalendarPerson(id) {
+    setCalendarSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+    setCalendarSaved(false);
+  }
+
+  const calendarDirty = useMemo(() => {
+    if (calendarSelected.size !== calendarSavedIds.size) return true;
+    for (const id of calendarSelected) if (!calendarSavedIds.has(id)) return true;
+    return false;
+  }, [calendarSelected, calendarSavedIds]);
+
+  async function saveCalendarSelection() {
+    setCalendarSaving(true);
+    try {
+      const res = await fetch('/api/calendar-token', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ personIds: [...calendarSelected] }),
+      });
+      if (!res.ok) { setCalendarError(true); return; }
+      const body = await res.json();
+      const ids = new Set(body.selectedIds || []);
+      setCalendarSavedIds(ids);
+      setCalendarSaved(true);
+      setTimeout(() => setCalendarSaved(false), 2200);
+    } catch {
+      setCalendarError(true);
+    } finally {
+      setCalendarSaving(false);
+    }
+  }
+
+  async function regenerateCalendarLink() {
+    setRegenConfirm(false);
+    setCalendarSaving(true);
+    try {
+      const res = await fetch('/api/calendar-token', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ regenerate: true }),
+      });
+      if (!res.ok) { setCalendarError(true); return; }
+      const body = await res.json();
+      setCalendarUrl(body.url || '');
+    } catch {
+      setCalendarError(true);
+    } finally {
+      setCalendarSaving(false);
+    }
+  }
+
+  const calendarAbsoluteUrl = calendarUrl && typeof window !== 'undefined'
+    ? `${window.location.origin}${calendarUrl}` : '';
 
   async function restoreSnapshot(id) {
     setRestoringId(id);
@@ -406,6 +504,14 @@ export default function FamilySettings({
                   Restore
                 </button>
               )}
+              {isOwnerOrCoadmin && (
+                <button
+                  className={`fs__tab${tab === 'calendar' ? ' fs__tab--on' : ''}`}
+                  onClick={() => setTab('calendar')}
+                >
+                  Birthdays
+                </button>
+              )}
             </div>
 
             {tab === 'members' && (
@@ -682,6 +788,73 @@ export default function FamilySettings({
                   </div>
                 )}
                 {restoreError && <p className="fs__err">Could not restore — please try again.</p>}
+              </div>
+            )}
+
+            {tab === 'calendar' && isOwnerOrCoadmin && (
+              <div className="fs__calendar">
+                <p className="fs__audit-note">
+                  Pick who to include, then subscribe this link in Apple Calendar,
+                  Google Calendar, or Outlook — each birthday repeats every year
+                  and links straight back to their profile.
+                </p>
+                {calendarLoading && !calendarLoaded ? (
+                  <p className="fs__audit-empty">Loading…</p>
+                ) : calendarError && !calendarPeople.length ? (
+                  <p className="fs__audit-empty">Could not load — check your connection.</p>
+                ) : (
+                  <>
+                    {calendarAbsoluteUrl && (
+                      <>
+                        <ShareLink url={calendarAbsoluteUrl} shareText="Our family birthdays calendar" compact />
+                        {regenConfirm ? (
+                          <div className="fs__confirm-inline" style={{ marginTop: 8 }}>
+                            <span className="fs__confirm-label">This breaks the old link. Continue?</span>
+                            <button className="fs__confirm-yes" onClick={regenerateCalendarLink}>Yes</button>
+                            <button className="fs__confirm-no" onClick={() => setRegenConfirm(false)}>No</button>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            className="fs__audit-more"
+                            style={{ marginTop: 8 }}
+                            onClick={() => setRegenConfirm(true)}
+                            disabled={calendarSaving}
+                          >
+                            Generate a new link
+                          </button>
+                        )}
+                      </>
+                    )}
+
+                    <p className="fs__section-label" style={{ marginTop: 18 }}>Include in the feed</p>
+                    {calendarPeople.length === 0 ? (
+                      <p className="fs__audit-empty">No one has a full birth date on file yet.</p>
+                    ) : (
+                      <div className="fs__calendar-list">
+                        {calendarPeople.map((p) => (
+                          <label key={p.id} className="fs__calendar-row">
+                            <input
+                              type="checkbox"
+                              checked={calendarSelected.has(p.id)}
+                              onChange={() => toggleCalendarPerson(p.id)}
+                            />
+                            <span>{p.name}{p.is_deceased ? ' (in memory)' : ''}</span>
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      className="fs__link-btn"
+                      style={{ marginTop: 12 }}
+                      onClick={saveCalendarSelection}
+                      disabled={!calendarDirty || calendarSaving}
+                    >
+                      {calendarSaving ? 'Saving…' : calendarSaved ? 'Saved ✓' : 'Save selection'}
+                    </button>
+                  </>
+                )}
               </div>
             )}
           </>

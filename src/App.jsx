@@ -99,6 +99,16 @@ const _initialInviteToken = (() => {
   return new URLSearchParams(window.location.search).get('invite');
 })();
 
+// ?person=<id> deep link (from the birthday calendar feed's per-event URL —
+// see functions/api/calendar/[token].js). Left in place until the tree has
+// actually loaded and we can act on it, unlike the invite/pending_invite
+// tokens above which strip immediately — the target person may not exist in
+// `data.people` on the very first render.
+const _initialPersonParam = (() => {
+  if (typeof window === 'undefined') return null;
+  return new URLSearchParams(window.location.search).get('person');
+})();
+
 export default function App() {
   const data = useSyncExternalStore(store.subscribe, store.getState);
   const syncStatus = useSyncExternalStore(syncStore.subscribe, syncStore.getState);
@@ -733,6 +743,22 @@ export default function App() {
     viewApi.current?.enterFollow(); // if they'd roamed, re-frame so the card has room
     setOpenId(id);
   }, []);
+
+  // Resolve the ?person= deep link once the tree has actually loaded — a
+  // birthday calendar notification should drop the tapper straight onto
+  // that person's profile instead of the default focus person.
+  const personDeepLinkHandled = useRef(false);
+  useEffect(() => {
+    if (personDeepLinkHandled.current || !_initialPersonParam) return;
+    if (!data.people?.length) return;
+    personDeepLinkHandled.current = true;
+    if (data.people.some((p) => p.id === _initialPersonParam)) {
+      setActiveId(_initialPersonParam);
+      setExpanded((prev) => new Set(prev).add(_initialPersonParam));
+      openPerson(_initialPersonParam);
+    }
+    window.history.replaceState({}, '', window.location.pathname);
+  }, [data.people, openPerson]);
 
   // Search's flyover: instead of jump-cutting to the result, reveal every hop
   // on the path from the VIEWER'S OWN seat (not wherever the camera happens to
