@@ -853,12 +853,14 @@ export default function BubbleTree({
         }
 
         // Hover preview: only when resting (no active drag/pan), not while a
-        // card is already pinned open, and never for the active bubble itself
-        // (it already carries the nameplate — a hover card there would just
-        // duplicate it).
+        // card is already pinned open. Includes the active bubble itself —
+        // it normally just carries the plain nameplate (name + dates), but
+        // hovering it should upgrade to the same richer card everyone else
+        // gets, not stay stuck on the terser default. App.jsx hides the
+        // nameplate while hoveredId === activeId so the two don't overlap.
         if (hoverCapable && drag.type === 'none' && pointers.size <= 1 && !state.pinnedId) {
           const id = bubbleIdFromTarget(e.target);
-          const candidate = id && id !== activeRef.current && visibleRef.current?.has(id) ? id : null;
+          const candidate = id && visibleRef.current?.has(id) ? id : null;
           if (candidate !== hoverCandidate) {
             hoverCandidate = candidate;
             clearTimeout(hoverTimer);

@@ -1123,7 +1123,10 @@ export default function App() {
           <FocusNameplate
             person={activePerson}
             getPos={() => viewApi.current?.getScreenPos(activeId)}
-            hidden={anyOverlayOpen || browse || layout === 'chart'}
+            // Also hidden while the active person is themselves being hovered —
+            // HoverCard takes over then, showing the same richer view everyone
+            // else gets on hover instead of the plain name+dates nameplate.
+            hidden={anyOverlayOpen || browse || layout === 'chart' || hoveredId === activeId}
           />
           <HoverCard
             graph={graph}
