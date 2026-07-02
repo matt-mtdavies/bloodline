@@ -46,6 +46,7 @@ import { uploadPhoto, generateThumb, uploadDocument } from './lib/image.js';
 import { buildGraph, pathBetween, pathBetweenOrdered } from './data/graph.js';
 import { findDuplicatePairs } from './lib/duplicates.js';
 import { canManageTree } from './lib/visibility.js';
+import { profileCompleteness } from './lib/profile.js';
 import { useReducedMotion } from './hooks/useReducedMotion.js';
 import BubbleTree from './viz/BubbleTree.jsx';
 import TopBar from './components/TopBar.jsx';
@@ -304,7 +305,16 @@ export default function App() {
     if (person?.invited_at) updatePerson(personId, { joined_at: Date.now() });
     markClaimSeen();
     setTimeout(() => viewApi.current?.refocus(0.6), 120);
-  }, [user, markClaimSeen, data.people]);
+
+    // A freshly-claimed profile is usually thin (just a name). Send them
+    // straight into editing it — rather than dropping them into the tree
+    // with a bare bubble — so the profile they're now "the destination" for
+    // actually has something on it before they wander off.
+    const memoryCount = data.memories.filter((m) => m.person_id === personId).length;
+    if (person && profileCompleteness(person, graph, memoryCount).score < 100) {
+      setTimeout(() => setEditId(personId), 150);
+    }
+  }, [user, markClaimSeen, data.people, data.memories, graph]);
 
   // Manual escape hatch for invites accepted before joined_at tracking
   // existed (or accepted on a device this tree never synced with).
