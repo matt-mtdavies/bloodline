@@ -150,7 +150,7 @@ export default function HoverCard({ graph, personId, viewerId, getPos }) {
               <div className="hover-card__ticker">
                 <div
                   className="hover-card__ticker-track"
-                  style={{ animationDuration: `${familyRelBits.length * 1.8}s` }}
+                  style={{ animationDuration: `${familyRelBits.length * 1.98}s` }}
                 >
                   {[...familyRelBits, ...familyRelBits].map((label, i) => (
                     <span className="hover-card__ticker-item" key={i}>{label}</span>
