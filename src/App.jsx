@@ -568,7 +568,9 @@ export default function App() {
     setExpanded((prev) => (prev.has(id) ? prev : new Set(prev).add(id)));
     setLineagePath(null);
     setLineageOrder(null);
-    setFocusMode(false); // navigating exits focus mode
+    // Focus mode stays on across navigation — focusFamilyIds is derived from
+    // activeId, so selecting someone else re-centres the nuclear-family view
+    // on them instead of dropping back to the whole tree.
     setLifeJourneyId(null);
   }, []);
 
