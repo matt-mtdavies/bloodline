@@ -590,8 +590,17 @@ export default function App() {
     const alive = (id) => !aliveAtYear || aliveAtYear.has(id);
     const vis = new Set();
     for (const id of expanded) {
-      if (!alive(id)) continue;
-      vis.add(id);
+      // Gate ONLY this anchor's own bubble on its own aliveness — never skip
+      // the neighbour traversal below just because the anchor itself hasn't
+      // been born yet. Each neighbour has its own alive() check right where
+      // it's added, so a parent who was born decades before an unborn child
+      // is still introduced (with the time-view birth animation) at the
+      // parent's own birth year. The old `continue` here suppressed that
+      // whole branch until the anchor became alive, which is why relatives
+      // of whoever you'd focused on used to all pop in at once, silently,
+      // the moment the anchor was born — instead of each being greeted at
+      // their own birth like everyone else.
+      if (alive(id)) vis.add(id);
       for (const x of graph.parents(id)) {
         if (bloodlineOnly && x.qualifier === 'step') continue;
         if (alive(x.id)) vis.add(x.id);
