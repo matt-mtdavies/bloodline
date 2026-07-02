@@ -273,7 +273,7 @@
   color: var(--ink-soft);
 }
 .hover-card__pin { flex-shrink: 0; color: var(--ink-faint); }
-.hover-card__siblings > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hover-card__relbits > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .hover-card__ticker {
   flex: 1;
   min-width: 0;

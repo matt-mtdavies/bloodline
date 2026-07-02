@@ -87,36 +87,48 @@ export default function HoverCard({ graph, personId, viewerId, getPos }) {
   const bio = !restricted ? person.bio : null;
   const tags = !restricted && person.tags?.length ? person.tags.slice(0, 3) : [];
 
-  // A quick "what's their story" hook — child/grandchild counts read as an
-  // invitation to explore ("oh, 5 grandchildren?") in a way a bare
-  // relationship label doesn't. Skipped for restricted profiles for the same
-  // reason bio/tags/location are — it's still information about who's
-  // connected to them.
+  // A quick "what's their story" hook — counts read as an invitation to
+  // explore ("oh, 5 grandchildren?") in a way a bare relationship label
+  // doesn't. Skipped for restricted profiles for the same reason bio/tags/
+  // location are — it's still information about who's connected to them.
   //
-  // Siblings are handled separately (see siblingLabels below), NOT as a
-  // count: "5 siblings" flattens full/half/step into one number, which a
-  // blended family may not want implied about them. Every other relation
-  // label in this app already spells out "Half-Brother" / "Step-Sister"
-  // rather than hiding it in a tally, so folding siblings into an aggregate
-  // count here was the actual inconsistency.
-  const familyBits = [];
+  // Grouped by kind (full/half/step, biological/adopted), not flattened into
+  // one number per relation type: "5 siblings" hides whether that's five
+  // full siblings or one full and four step, which a blended family may not
+  // want implied about them. Every individual relation label elsewhere in
+  // this app already spells out "Half-Brother" / "Step-Sister" rather than
+  // hiding it in a tally, so an aggregate count should say the same thing —
+  // just counted, e.g. "2 sisters, 1 half-brother" instead of "3 siblings".
+  // All three relation types share one row/ticker rather than three
+  // separate lines.
+  const familyRelBits = [];
   if (!restricted) {
-    const childCount = graph.children(person.id).length;
-    const grandchildIds = new Set();
-    for (const c of graph.children(person.id)) {
-      for (const gc of graph.children(c.id)) grandchildIds.add(gc.id);
-    }
-    if (childCount) familyBits.push(`${childCount} ${childCount === 1 ? 'child' : 'children'}`);
-    if (grandchildIds.size) familyBits.push(`${grandchildIds.size} grandchild${grandchildIds.size === 1 ? '' : 'ren'}`);
-  }
+    const counts = new Map(); // singular label -> count, insertion-order preserved
+    const bump = (label) => counts.set(label, (counts.get(label) || 0) + 1);
 
-  // Each sibling named by their actual relation to THIS person — "Sister",
-  // "Half-Brother", "Step-Sibling" — never bucketed into a single number.
-  // Beyond a few, a static line would overflow the card, so it scrolls as a
-  // ticker instead of getting truncated or wrapping into a wall of text.
-  const siblingLabels = !restricted
-    ? graph.siblings(person.id).map((s) => relationLabel(graph, person.id, s.id))
-    : [];
+    for (const s of graph.siblings(person.id)) {
+      bump(siblingWord(s.kind, graph.byId.get(s.id)?.gender));
+    }
+    for (const c of graph.children(person.id)) {
+      bump(qualifierWord(c.qualifier, 'child'));
+    }
+    // Grandchildren are deduped by id first (a grandchild reachable through
+    // two different children would otherwise double-count), then bucketed
+    // by whether either link in the chain is step/adopted — same rule
+    // relationLabel() uses for "Step-Grandchild" / "Adoptive Grandchild".
+    const grandKind = new Map(); // id -> 'step' | 'adoptive' | null (biological)
+    for (const c of graph.children(person.id)) {
+      for (const gc of graph.children(c.id)) {
+        if (grandKind.has(gc.id)) continue;
+        const isStep = c.qualifier === 'step' || gc.qualifier === 'step';
+        const isAdopt = !isStep && (c.qualifier === 'adoptive' || gc.qualifier === 'adoptive');
+        grandKind.set(gc.id, isStep ? 'step' : isAdopt ? 'adoptive' : null);
+      }
+    }
+    for (const kind of grandKind.values()) bump(qualifierWord(kind, 'grandchild'));
+
+    for (const [label, count] of counts) familyRelBits.push(`${count} ${pluralize(label, count)}`);
+  }
 
   return (
     <div className="hover-card-anchor" ref={anchorRef} style={{ width: CARD_WIDTH }} aria-hidden="true">
@@ -131,27 +143,24 @@ export default function HoverCard({ graph, personId, viewerId, getPos }) {
         {!sealed && metaBits.length > 0 && (
           <p className="hover-card__meta">{metaBits.join(' · ')}</p>
         )}
-        {siblingLabels.length > 0 && (
-          <div className="hover-card__family hover-card__siblings">
+        {familyRelBits.length > 0 && (
+          <div className="hover-card__family hover-card__relbits">
             <FamilyIcon />
-            {siblingLabels.length > 3 ? (
+            {familyRelBits.length > 3 ? (
               <div className="hover-card__ticker">
                 <div
                   className="hover-card__ticker-track"
-                  style={{ animationDuration: `${siblingLabels.length * 1.4}s` }}
+                  style={{ animationDuration: `${familyRelBits.length * 1.8}s` }}
                 >
-                  {[...siblingLabels, ...siblingLabels].map((label, i) => (
+                  {[...familyRelBits, ...familyRelBits].map((label, i) => (
                     <span className="hover-card__ticker-item" key={i}>{label}</span>
                   ))}
                 </div>
               </div>
             ) : (
-              <span>{siblingLabels.join(' · ')}</span>
+              <span>{familyRelBits.join(' · ')}</span>
             )}
           </div>
-        )}
-        {familyBits.length > 0 && (
-          <p className="hover-card__family"><FamilyIcon />{familyBits.join(' · ')}</p>
         )}
         {location && (
           <p className="hover-card__where"><PinIcon />{location}</p>
@@ -166,6 +175,34 @@ export default function HoverCard({ graph, personId, viewerId, getPos }) {
       </div>
     </div>
   );
+}
+
+// Singular label for a sibling of the given kind + gender — "brother",
+// "half sister", "step sibling" — pluralized later by pluralize().
+function siblingWord(kind, gender) {
+  const g = (gender || '').toLowerCase();
+  const masc = ['male', 'm', 'man'].includes(g);
+  const fem = ['female', 'f', 'woman'].includes(g);
+  const noun = masc ? 'brother' : fem ? 'sister' : 'sibling';
+  const prefix = kind === 'half' ? 'half ' : kind === 'step' ? 'step ' : '';
+  return `${prefix}${noun}`;
+}
+
+// Singular label for a child/grandchild relation given its qualifier —
+// unmarked for biological (the default, matching every other count here),
+// otherwise the qualifier as a plain adjective. 'adoptive' reads as
+// "adopted", matching the label already used for it in AddRelativeSheet/
+// EditPersonSheet's qualifier picker, rather than the raw stored value.
+function qualifierWord(qualifier, noun) {
+  if (!qualifier || qualifier === 'biological') return noun;
+  if (qualifier === 'adoptive') return `adopted ${noun}`;
+  return `${qualifier} ${noun}`; // 'step', 'foster', 'guardian'
+}
+
+function pluralize(word, count) {
+  if (count === 1) return word;
+  if (word.endsWith('child')) return word.replace(/child$/, 'children');
+  return `${word}s`;
 }
 
 // A "snapshot", not the full bio — trims to a clause/word boundary near
