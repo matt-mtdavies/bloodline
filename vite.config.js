@@ -8,6 +8,13 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
+      // The default auto-injected registration script just calls
+      // navigator.serviceWorker.register() and stops — it has no idea when
+      // a new version has taken over, so a tab left open across a deploy
+      // just keeps running the old JS indefinitely with no way to know it's
+      // stale. main.jsx registers manually via virtual:pwa-register instead,
+      // so it can reload the instant an update is ready.
+      injectRegister: false,
       includeAssets: ['favicon.svg'],
       manifest: {
         name: 'Bloodline',

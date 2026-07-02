@@ -1,7 +1,19 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
+import { registerSW } from 'virtual:pwa-register';
 import './styles/global.css';
 import App from './App.jsx';
+
+// Registers the service worker AND actually acts on updates. skipWaiting +
+// clientsClaim (vite.config.js) mean a new SW takes control the moment it's
+// ready, but a tab that's already open keeps running its OLD JavaScript
+// in memory regardless — nothing about "the new SW is in control" swaps out
+// already-loaded modules. Without this, that tab is stuck silently running
+// a stale build until the user happens to fully close and reopen the app,
+// which is exactly the manual step that left people staring at a broken
+// layout with no idea why or how to fix it. Reloading the instant an
+// update is ready means every device self-heals on its own.
+registerSW({ immediate: true, onNeedRefresh: () => window.location.reload() });
 
 class ErrorBoundary extends React.Component {
   state = { error: null };
