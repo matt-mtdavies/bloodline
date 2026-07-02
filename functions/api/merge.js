@@ -34,7 +34,7 @@ export async function onRequestGet({ request, env, data }) {
   }
 
   const treeRow = await env.DB.prepare(
-    `SELECT tree_json FROM family_tree WHERE family_id = ?`,
+    `SELECT tree_json, updated_at FROM family_tree WHERE family_id = ?`,
   ).bind(invite.family_id).first();
 
   let tree = { people: [], relationships: [] };
@@ -48,6 +48,9 @@ export async function onRequestGet({ request, env, data }) {
     role: invite.role,
     fromEmail: invite.from_email,
     tree,
+    // Lets the client detect, on submit, whether this family's tree changed
+    // while the merge wizard was open — see the check in onRequestPost below.
+    treeUpdatedAt: treeRow?.updated_at ?? null,
   });
 }
 
@@ -55,9 +58,9 @@ export async function onRequestPost({ request, env, data }) {
   if (!data.user) return json({ error: 'Unauthorized' }, { status: 401 });
   if (!env.DB) return json({ error: 'Database not configured' }, { status: 503 });
 
-  let inviteToken, mergedTree;
+  let inviteToken, mergedTree, baseUpdatedAt;
   try {
-    ({ invite: inviteToken, tree: mergedTree } = await request.json());
+    ({ invite: inviteToken, tree: mergedTree, baseUpdatedAt } = await request.json());
   } catch {
     return json({ error: 'Bad request' }, { status: 400 });
   }
@@ -74,7 +77,33 @@ export async function onRequestPost({ request, env, data }) {
     return json({ error: 'Invite not valid or expired' }, { status: 410 });
   }
 
-  // Add user to the target family.
+  // mergedTree was computed client-side (MergeWizard) against a snapshot of
+  // the target family's tree fetched by GET above — potentially minutes
+  // earlier, while the user reviewed which people to match. If anyone in
+  // that family saved a change in the meantime, writing mergedTree straight
+  // over the current row would silently erase it with no conflict ever
+  // detected — unlike every other write path here (PUT /api/tree uses
+  // ETag/If-Match specifically to prevent this). Guard the same way: compare
+  // against the current row's updated_at, and if it moved, refuse the write
+  // so the client can recompute the merge against the fresh tree and retry.
+  // Checked here, before any of the membership/invite writes below, so a 409
+  // leaves nothing mutated and the whole request is safely retryable — doing
+  // this check only right before the tree write would leave the invite
+  // already marked accepted, breaking a retry with a spurious 410.
+  const currentTree = await env.DB.prepare(
+    `SELECT tree_json, updated_at FROM family_tree WHERE family_id = ?`,
+  ).bind(invite.family_id).first();
+  if (currentTree && currentTree.updated_at !== baseUpdatedAt) {
+    let freshTree = { people: [], relationships: [] };
+    try { freshTree = JSON.parse(currentTree.tree_json); } catch { /* corrupt — fall through to empty */ }
+    return json(
+      { error: 'conflict', detail: 'The family tree changed while merging.', tree: freshTree, treeUpdatedAt: currentTree.updated_at },
+      { status: 409 },
+    );
+  }
+
+  // Add user to the target family. Idempotent — safe to re-run if the tree
+  // write below hits a conflict and the client retries this whole request.
   const alreadyMember = await env.DB.prepare(
     `SELECT user_id FROM family_member WHERE family_id = ? AND user_id = ?`,
   ).bind(invite.family_id, data.user.uid).first();
@@ -97,17 +126,48 @@ export async function onRequestPost({ request, env, data }) {
 
   await env.DB.prepare(`UPDATE user SET family_id = ? WHERE id = ?`)
     .bind(invite.family_id, data.user.uid).run();
+
+  // Persist the merged tree with a real compare-and-swap, not the earlier
+  // read-then-write check above (which still leaves a gap between that read
+  // and this write — small, but real, since several awaited queries run in
+  // between for the membership updates). Deliberately NOT marking the invite
+  // accepted until this succeeds: if it conflicts, the invite must still
+  // read as 'pending' so the client's retry (recomputed merge, fresh
+  // baseUpdatedAt) doesn't get rejected by the status check at the top of
+  // this function. The membership writes above are harmless to repeat.
+  let persisted;
+  if (currentTree) {
+    persisted = await env.DB.prepare(
+      `UPDATE family_tree SET tree_json = ?, updated_at = ?
+        WHERE family_id = ? AND updated_at = ?`,
+    ).bind(JSON.stringify(mergedTree), now, invite.family_id, currentTree.updated_at).run();
+  } else {
+    try {
+      await env.DB.prepare(
+        `INSERT INTO family_tree (family_id, tree_json, updated_at) VALUES (?, ?, ?)`,
+      ).bind(invite.family_id, JSON.stringify(mergedTree), now).run();
+      persisted = { meta: { changes: 1 } };
+    } catch {
+      // A row appeared between the early check and here (e.g. this family's
+      // very first save happened concurrently) — treat as a conflict below.
+      persisted = { meta: { changes: 0 } };
+    }
+  }
+
+  if (!persisted?.meta?.changes) {
+    const freshRow = await env.DB.prepare(
+      `SELECT tree_json, updated_at FROM family_tree WHERE family_id = ?`,
+    ).bind(invite.family_id).first();
+    let freshTree = { people: [], relationships: [] };
+    try { freshTree = freshRow ? JSON.parse(freshRow.tree_json) : freshTree; } catch { /* corrupt — fall through to empty */ }
+    return json(
+      { error: 'conflict', detail: 'The family tree changed while merging.', tree: freshTree, treeUpdatedAt: freshRow?.updated_at ?? null },
+      { status: 409 },
+    );
+  }
+
   await env.DB.prepare(`UPDATE invite SET status = 'accepted' WHERE id = ?`)
     .bind(invite.id).run();
-
-  // Persist the merged tree.
-  await env.DB.prepare(
-    `INSERT INTO family_tree (family_id, tree_json, updated_at)
-     VALUES (?, ?, ?)
-     ON CONFLICT (family_id) DO UPDATE
-       SET tree_json = excluded.tree_json,
-           updated_at = excluded.updated_at`,
-  ).bind(invite.family_id, JSON.stringify(mergedTree), now).run();
 
   if (mergedTree.familyName) {
     await env.DB.prepare(`UPDATE family SET name = ? WHERE id = ?`)

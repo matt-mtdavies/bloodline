@@ -35,26 +35,56 @@ export default function MergeWizard({ inviteToken, myTree, onComplete }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inviteToken]); // myTree intentionally omitted — captured in ref above
 
+  // Builds the tree to submit for a given choice against whatever target-family
+  // tree snapshot is passed in — factored out so a 409 retry (below) can
+  // recompute against the fresh tree the server sends back, reusing the same
+  // pairings the user already reviewed rather than restarting the wizard.
+  function computeMergedTree(choice, theirTree) {
+    return choice === 'join'
+      ? { people: [], relationships: [], memories: [], photos: [], documents: [], ...theirTree }
+      : buildMergedTree(myTreeRef.current, theirTree, pairings);
+  }
+
   async function completeMerge(choice) {
     setStep('merging');
     setError(null);
     try {
-      const theirTree = theirData.tree || {};
-      const mergedTree =
-        choice === 'join'
-          ? { people: [], relationships: [], memories: [], photos: [], documents: [], ...theirTree }
-          : buildMergedTree(myTreeRef.current, theirTree, pairings);
+      let theirTree = theirData.tree || {};
+      let baseUpdatedAt = theirData.treeUpdatedAt ?? null;
+      let mergedTree = computeMergedTree(choice, theirTree);
 
-      const res = await fetch('/api/merge', {
+      let res = await fetch('/api/merge', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ invite: inviteToken, tree: mergedTree }),
+        body: JSON.stringify({ invite: inviteToken, tree: mergedTree, baseUpdatedAt }),
       });
+
+      // Someone in the target family saved a change while this wizard was
+      // open — the server refused to overwrite it (see functions/api/merge.js).
+      // Recompute once against the fresh tree it sent back, using the same
+      // pairings already reviewed, and retry — this only fails a second time
+      // if another save lands in the couple hundred ms the retry itself
+      // takes, astronomically unlikely, so one retry is enough.
+      if (res.status === 409) {
+        const conflictBody = await res.json().catch(() => ({}));
+        theirTree = conflictBody.tree || theirTree;
+        baseUpdatedAt = conflictBody.treeUpdatedAt ?? null;
+        mergedTree = computeMergedTree(choice, theirTree);
+        res = await fetch('/api/merge', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ invite: inviteToken, tree: mergedTree, baseUpdatedAt }),
+        });
+        if (res.status === 409) {
+          throw new Error('The family tree kept changing — please try the merge again.');
+        }
+      }
+
       if (!res.ok) throw new Error('Server error');
       setStep('done');
       setTimeout(onComplete, 1600);
-    } catch {
-      setError('Something went wrong. Please try again.');
+    } catch (e) {
+      setError(e?.message || 'Something went wrong. Please try again.');
       setStep('confirm');
     }
   }

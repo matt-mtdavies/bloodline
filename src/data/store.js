@@ -390,6 +390,20 @@ async function _fetchAndMerge(local) {
     const server = await res.json();
     _serverEtag = res.headers.get('ETag') || _serverEtag;
 
+    // Re-bind to the freshest local state, not the snapshot the caller passed
+    // in. fetch() above is the one real await in this function — anywhere
+    // from tens of ms to a couple of seconds where the user can keep editing.
+    // Every edit goes through commit(), which replaces the module-level
+    // `state` wholesale; if this function kept using the stale `local`
+    // snapshot from before the fetch, the commit(merged) below would replace
+    // `state` with something that never saw whatever was edited during that
+    // window — silently reverting it locally AND dropping it from the next
+    // save, since the save timer reads `state` at fire time, not a snapshot.
+    // `state` is always a superset of what `local` knew (commits only move
+    // forward), so swapping in the latest can only preserve more real work,
+    // never lose any — including the case where local IS already state.
+    local = state;
+
     const mergedPeople = _mergeByRecency(server.people, local.people);
 
     // Resolve viewer's own person (claimed link first, then email), same logic
