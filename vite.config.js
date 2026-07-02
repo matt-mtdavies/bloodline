@@ -26,9 +26,41 @@ export default defineConfig({
         // Take over immediately on update — no need to close all tabs first.
         skipWaiting: true,
         clientsClaim: true,
-        // Keep the app shell offline-tolerant; faces are remote and best-effort.
-        globPatterns: ['**/*.{js,css,html,svg,woff2}'],
+        // NOT 'html' — index.html references content-hashed JS/CSS filenames
+        // for the exact build that produced it, so precaching it pins a
+        // client to that one build's asset graph until its service worker
+        // fully cuts over. Any mismatch during that window (an update racing
+        // a page load, iOS Safari's aggressive SW/cache eviction, a stale SW
+        // reaching for a prior deploy's now-recycled asset hashes) serves an
+        // HTML shell pointing at JS/CSS that doesn't match what's live — the
+        // JS often still boots from memory (hence the UI looking "alive",
+        // e.g. still showing "Saving…") while the CSS fails outright and the
+        // whole layout collapses to unstyled block flow. Reported multiple
+        // times as exactly that: a giant unstyled photo, everything stacked
+        // top to bottom instead of the fixed canvas layout.
+        globPatterns: ['**/*.{js,css,svg,woff2}'],
+        // vite-plugin-pwa defaults this to 'index.html', which makes
+        // workbox-build register an automatic NavigationRoute bound to
+        // whatever's precached at that URL — since index.html is no longer
+        // precached (see above), that route would still win over the
+        // runtimeCaching rule below (routes match in registration order,
+        // and the auto-added one comes first) and fail to serve anything.
+        // Disabling it outright lets the runtimeCaching NetworkFirst rule
+        // actually be the one handling navigations.
+        navigateFallback: null,
         runtimeCaching: [
+          {
+            // Navigations always go to the network first (short timeout),
+            // so the HTML shell is fresh and points at the CURRENT
+            // deployment's assets — falls back to the last-cached shell
+            // only when genuinely offline.
+            urlPattern: ({ request }) => request.mode === 'navigate',
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'html-shell',
+              networkTimeoutSeconds: 3,
+            },
+          },
           {
             urlPattern: ({ url }) => url.origin.includes('randomuser.me'),
             handler: 'CacheFirst',
