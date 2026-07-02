@@ -7,13 +7,15 @@ export default function SearchOverlay({ people, onSelect, onClose }) {
   const inputRef = useRef(null);
   const listRef = useRef(null);
 
-  // Auto-focus only on non-touch devices — on mobile the keyboard should only
-  // open when the user explicitly taps the input, not on sheet open.
+  // Focus the input as soon as the sheet mounts, on every device — tapping
+  // the search icon should bring the keyboard straight up rather than
+  // requiring a second tap on the field. The short delay keeps this inside
+  // the window browsers (notably iOS Safari) honour for showing the
+  // keyboard off the tap that opened the sheet, since the sheet's own mount
+  // happens on the next render after that tap, not synchronously within it.
   useEffect(() => {
-    if (window.matchMedia('(hover: hover)').matches) {
-      const t = setTimeout(() => inputRef.current?.focus(), 60);
-      return () => clearTimeout(t);
-    }
+    const t = setTimeout(() => inputRef.current?.focus(), 60);
+    return () => clearTimeout(t);
   }, []);
 
   useEffect(() => {
