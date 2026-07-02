@@ -1,4 +1,5 @@
 import { useMemo, useState, useCallback, useRef, useEffect, useSyncExternalStore } from 'react';
+import { flushSync } from 'react-dom';
 import './styles/components.css';
 import { DEFAULT_FOCUS } from './data/seed.js';
 import Logo from './components/Logo.jsx';
@@ -1053,7 +1054,17 @@ export default function App() {
         user={user}
         userPhoto={userPhoto}
         onOpenProfile={user ? () => setProfileOpen(true) : null}
-        onSearch={() => setSearchOpen(true)}
+        onSearch={() => {
+          // iOS Safari only auto-shows the keyboard when focus() runs
+          // synchronously inside the tap's own call stack. A plain setState
+          // here mounts SearchOverlay (and its input) on a later React
+          // commit, which is why the sheet opened but no keyboard ever
+          // appeared. flushSync forces that mount to finish before this
+          // handler returns, so the focus() right after still lands inside
+          // the same user-gesture stack.
+          flushSync(() => setSearchOpen(true));
+          document.querySelector('.search-input')?.focus();
+        }}
         onOpenInsights={() => setInsightsOpen(true)}
         onOpenTimeline={() => setTimelineOpen(true)}
         duplicateCount={canManageTreeStructure ? duplicatePairs.length : 0}
