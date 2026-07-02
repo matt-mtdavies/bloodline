@@ -942,60 +942,6 @@
   margin: 0;
 }
 
-/* ── Expand All / Collapse button ────────────────────────────────────────────── */
-.expand-btn {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 9px 14px;
-  min-height: 38px;
-  white-space: nowrap;
-  background: rgba(255, 255, 255, 0.88);
-  backdrop-filter: blur(12px) saturate(1.2);
-  border-radius: 999px;
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--ink-soft);
-  box-shadow: var(--shadow-soft);
-  cursor: pointer;
-  transition: background 0.18s, color 0.18s, box-shadow 0.18s, transform 0.18s var(--spring);
-  pointer-events: auto;
-}
-.expand-btn:hover { background: rgba(255,255,255,0.96); box-shadow: var(--shadow-lift); }
-.expand-btn:active { transform: scale(0.95); }
-.expand-btn--on {
-  background: var(--surface);
-  color: var(--ink-soft);
-}
-
-/* ── Lineage mode button ────────────────────────────────────────────────────── */
-.lineage-btn {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 9px 16px;
-  min-height: 38px;
-  white-space: nowrap;
-  background: rgba(255, 255, 255, 0.88);
-  backdrop-filter: blur(12px) saturate(1.2);
-  border-radius: 999px;
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--ink-soft);
-  box-shadow: var(--shadow-soft);
-  cursor: pointer;
-  transition: background 0.18s, color 0.18s, box-shadow 0.18s, transform 0.18s var(--spring);
-  pointer-events: auto;
-}
-.lineage-btn:hover { background: rgba(255,255,255,0.96); box-shadow: var(--shadow-lift); }
-.lineage-btn:active { transform: scale(0.95); }
-.lineage-btn--on {
-  background: var(--accent-soft);
-  color: var(--accent-deep);
-  box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--accent) 35%, transparent), var(--shadow-soft);
-}
-
-
 /* ── TopBar stats row ────────────────────────────────────────────────────── */
 .topbar__treerow { pointer-events: auto; }
 .topbar__stats {
@@ -1191,37 +1137,6 @@
   text-align: center;
 }
 
-/* ── Focus Family button — sits in the bottom row alongside Time + Lineage ── */
-.focus-btn {
-  justify-self: start;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 9px 14px;
-  min-height: 38px;
-  white-space: nowrap;
-  background: rgba(255,255,255,0.88);
-  backdrop-filter: blur(12px) saturate(1.2);
-  border-radius: 999px;
-  font-size: 13.5px;
-  font-weight: 500;
-  color: var(--ink-soft);
-  box-shadow: var(--shadow-soft);
-  cursor: pointer;
-  border: none;
-  font-family: inherit;
-  letter-spacing: 0.01em;
-  pointer-events: auto;
-  transition: background 0.18s, color 0.18s, box-shadow 0.18s, transform 0.18s var(--spring);
-}
-.focus-btn--on {
-  background: #2d2620;
-  color: #fff;
-  box-shadow: 0 4px 18px rgba(0,0,0,0.22);
-}
-.focus-btn:hover { box-shadow: var(--shadow-lift); }
-.focus-btn:active { transform: scale(0.95); }
-
 /* ── Time slider ─────────────────────────────────────────────────────────── */
 .time-bar {
   /* slider + life-event-card float above, centred over the whole dock
@@ -1231,33 +1146,6 @@
   align-items: center;
   pointer-events: none;
 }
-.time-toggle {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 9px 16px;
-  min-height: 38px;
-  white-space: nowrap;
-  border-radius: 20px;
-  background: rgba(255,255,255,0.92);
-  box-shadow: var(--shadow-soft);
-  font-size: 13.5px;
-  font-weight: 600;
-  color: var(--ink-soft);
-  cursor: pointer;
-  pointer-events: auto;
-  transition: background 0.2s, color 0.2s, box-shadow 0.2s;
-  border: none;
-  font-family: inherit;
-  letter-spacing: 0.01em;
-}
-.time-toggle--on {
-  background: var(--ink);
-  color: #fff;
-  box-shadow: 0 4px 18px rgba(0,0,0,0.18);
-}
-.time-toggle:hover { box-shadow: var(--shadow-lift); }
-.time-toggle:active { transform: scale(0.95); }
 .time-slider-wrap {
   position: absolute;
   bottom: calc(100% + 10px);
