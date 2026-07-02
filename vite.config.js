@@ -15,7 +15,7 @@ export default defineConfig({
       // stale. main.jsx registers manually via virtual:pwa-register instead,
       // so it can reload the instant an update is ready.
       injectRegister: false,
-      includeAssets: ['favicon.svg'],
+      includeAssets: ['favicon.svg', 'apple-touch-icon.png', 'icon-192.png', 'icon-512.png', 'icon-512-maskable.png'],
       manifest: {
         name: 'Bloodline',
         short_name: 'Bloodline',
@@ -24,9 +24,19 @@ export default defineConfig({
         background_color: '#f7f3ec',
         display: 'standalone',
         orientation: 'portrait',
+        // SVG-only icons render inconsistently across launchers — some
+        // (notably several Android/Chrome versions) want an actual raster
+        // bitmap and silently fall back to something blurrier without one.
+        // 'maskable' points at a separately-padded source (favicon-maskable.svg
+        // → icon-512-maskable.png) with real safe-zone margin, not the same
+        // artwork reused — Android crops maskable icons to its own shape
+        // (circle, squircle, etc.), and the tightly-cropped default icon
+        // would lose its edges under that treatment.
         icons: [
           { src: 'favicon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' },
-          { src: 'favicon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'maskable' },
+          { src: 'icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+          { src: 'icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+          { src: 'icon-512-maskable.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
         ],
       },
       workbox: {
