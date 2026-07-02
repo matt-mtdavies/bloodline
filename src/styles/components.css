@@ -753,10 +753,15 @@
      inconsistencies — this shipped looking fine in Chromium testing but
      broken in Safari/WebKit in production. A definite width turns "how much
      room do 5×62px buttons + 4×1px dividers + 10px padding need" into
-     ordinary, unambiguous flex distribution (=324px exactly), which every
-     engine lays out the same way. max-width is just the narrow-phone floor. */
-  width: 324px;
-  max-width: calc(100vw - 24px);
+     ordinary, unambiguous flex distribution, which every engine lays out
+     the same way — 324px on any normal phone, shrinking only below ~348px
+     of viewport (old/small devices, split-view, folded foldables) where
+     min() hands the buttons a smaller-but-still-DEFINITE width to divide up.
+     That's still zero ambiguity (flex-shrink resolving against a known
+     container size is ordinary, well-specified behaviour everywhere) —
+     the bug was specifically about engines guessing an auto/content-based
+     size, never about shrinking within a known one. */
+  width: min(324px, calc(100vw - 24px));
   background: rgba(255, 255, 255, 0.93);
   backdrop-filter: blur(20px) saturate(1.6);
   -webkit-backdrop-filter: blur(20px) saturate(1.6);
@@ -789,16 +794,15 @@
   white-space: nowrap;
   font-family: inherit;
   /* Shared floor so all five read as equal, deliberate segments at rest — the
-     widest resting label (Lineage) sets it. flex-shrink must stay OFF: in
-     this nested (dock is itself a flex container sized by content) layout,
-     Chromium's shrink-to-fit sizing shrinks flex-basis items well below
-     their basis even with plenty of room to spare the moment shrink>0 is
-     set — a real, reproducible quirk, not a matter of tuning the numbers.
-     A button whose label grows in an active state (Exit Focus, a running
-     year, "N links") is allowed to grow past this floor instead; its
-     neighbours stay put and the label span ellipses only if that growth
-     ever hits the dock's own max-width. */
-  flex: 0 0 62px;
+     widest resting label (Lineage) sets it. flex-shrink is safe here because
+     .bottom-dock now has a DEFINITE width (see its min() comment) — shrinking
+     flex-basis items against a known container size is ordinary, universally
+     consistent flexbox math. It only activates below ~348px viewport width;
+     normally every button just sits at its 62px basis. A button whose label
+     grows in an active state (Exit Focus, a running year, "N links") is
+     allowed to grow past this floor instead of shrinking its neighbours; the
+     label span ellipses only if that growth still doesn't fit. */
+  flex: 0 1 62px;
   min-width: 0;
   line-height: 1;
 }
@@ -1175,7 +1179,7 @@
   pointer-events: none;
   /* This div, not .time-toggle, is the actual dock-row flex item — mirror
      .dock-btn's sizing so Time keeps pace with its siblings. */
-  flex: 0 0 62px;
+  flex: 0 1 62px;
   min-width: 0;
 }
 /* .dock-btn's shared flex-basis targets the horizontal dock row's main axis;
