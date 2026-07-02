@@ -71,9 +71,19 @@ export async function onRequestGet({ env, data }) {
       console.error('[tree] GET activity_log merge skipped:', e.message);
     }
 
+    // tree_json.familyName is what the client actually displays and lets the
+    // owner rename via Settings — but it's a separate field from family.name
+    // (set once at family creation, e.g. from an invite/signup default) that
+    // never gets backfilled. A family that never explicitly renamed via
+    // Settings has an empty tree_json.familyName forever, which falls back
+    // client-side to the focused person's first name — confusing, and not
+    // even the same string as the perfectly good name already sitting in
+    // family.name. Prefer the real family.name over that empty string here.
+    const familyName = parsed.familyName || membership.family_name || '';
+
     const etag = `"${row.updated_at}"`;
     return json(
-      { ...parsed, _meta: { familyId: membership.family_id, role: membership.role } },
+      { ...parsed, familyName, _meta: { familyId: membership.family_id, role: membership.role } },
       { headers: { 'cache-control': 'private, no-store', 'ETag': etag } },
     );
   } catch (e) {
