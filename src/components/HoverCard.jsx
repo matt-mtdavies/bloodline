@@ -127,8 +127,26 @@ export default function HoverCard({ graph, personId, viewerId, getPos }) {
     }
     for (const kind of grandKind.values()) bump(qualifierWord(kind, 'grandchild'));
 
+    // Great-grandchildren: same idea one generation further down — deduped
+    // by id (reachable through more than one grandchild otherwise double-
+    // counts), bucketed by step/adoptive found anywhere across all three
+    // links in the chain.
+    const greatGrandKind = new Map(); // id -> 'step' | 'adoptive' | null (biological)
+    for (const c of graph.children(person.id)) {
+      for (const gc of graph.children(c.id)) {
+        for (const ggc of graph.children(gc.id)) {
+          if (greatGrandKind.has(ggc.id)) continue;
+          const isStep = c.qualifier === 'step' || gc.qualifier === 'step' || ggc.qualifier === 'step';
+          const isAdopt = !isStep && (c.qualifier === 'adoptive' || gc.qualifier === 'adoptive' || ggc.qualifier === 'adoptive');
+          greatGrandKind.set(ggc.id, isStep ? 'step' : isAdopt ? 'adoptive' : null);
+        }
+      }
+    }
+    for (const kind of greatGrandKind.values()) bump(qualifierWord(kind, 'great-grandchild'));
+
     for (const [label, count] of counts) familyRelBits.push(`${count} ${pluralize(label, count)}`);
   }
+  const relSummary = familyRelBits.join(' · ');
 
   return (
     <div className="hover-card-anchor" ref={anchorRef} style={{ width: CARD_WIDTH }} aria-hidden="true">
@@ -146,7 +164,11 @@ export default function HoverCard({ graph, personId, viewerId, getPos }) {
         {familyRelBits.length > 0 && (
           <div className="hover-card__family hover-card__relbits">
             <FamilyIcon />
-            {familyRelBits.length > 3 ? (
+            {/* Ticker kicks in either once there are enough items to page
+                through, or once the joined text is long enough to clip on
+                one line — "great-grandchildren" alone can push even 3 items
+                past the card width, where 3 shorter words wouldn't. */}
+            {familyRelBits.length > 3 || relSummary.length > 40 ? (
               <div className="hover-card__ticker">
                 <div
                   className="hover-card__ticker-track"
@@ -158,7 +180,7 @@ export default function HoverCard({ graph, personId, viewerId, getPos }) {
                 </div>
               </div>
             ) : (
-              <span>{familyRelBits.join(' · ')}</span>
+              <span>{relSummary}</span>
             )}
           </div>
         )}
