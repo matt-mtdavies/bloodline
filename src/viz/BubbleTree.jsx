@@ -283,34 +283,105 @@ export default function BubbleTree({
       // The lit path persists after the flight lands (not just the caption) —
       // see the frame loop below. null once expired/not applicable; when set,
       // these are the SAME Map instances flight.litSet / flight.edgeLitAt
-      // held (id/edge-key -> the timestamp each was lit), so the pop/burn/
-      // extinguish timing continues uninterrupted into the linger window.
-      let postFlightIds = null;  // Map<personId, litAtMs>
-      let postFlightEdges = null; // Map<edgeKey, litAtMs>
-      let postFlightUntil = 0;
-      const POST_FLIGHT_MS = 10000; // how long the lit path lingers after landing
-      const EXTINGUISH_MS = 2600;   // the tail end of that window spent fading out
+      // held (id/edge-key -> { litAt, hopIndex }), so the pop/burn/extinguish
+      // timing continues uninterrupted into the linger window. hopIndex is
+      // what drives the extinguish sweep below — it has nothing to do with
+      // when a thing was lit, only where it sits along the route.
+      let postFlightIds = null;    // Map<personId, {litAt, hopIndex}>
+      let postFlightEdges = null; // Map<edgeKey, {litAt, hopIndex}>
+      let postFlightLandedAt = 0; // 0 = not applicable (no flight has landed since)
+      let postFlightHops = 0;     // how many hops the finished flight had, for the sweep + overall expiry
+      // The lit path doesn't fade all at once — it goes dark the same order it
+      // lit, starting from the viewer's own seat (hopIndex 0) and sweeping
+      // toward the destination, each hop's fade starting STAGGER_MS after the
+      // previous one's. Held fully bright for HOLD_MS after landing first.
+      const HOLD_MS = 3200;
+      const STAGGER_MS = 480;
+      const FADE_MS = 1500;
 
-      // A lit person's current partner lights up alongside them — most
-      // visibly when the route passes through a parent: the couple pod is
-      // drawn as one visual unit, so lighting only one half of it would read
-      // as broken. Former partners are excluded (no active bond to reflect).
-      const bonusPartners = (id) => graphRef.current.partners(id)
-        .filter((p) => p.status !== 'former' && nodeById.has(p.id))
+      // 1 while a hop hasn't reached its turn to fade yet, easing to 0 over
+      // FADE_MS once it has. landedAt === 0 means "still mid-flight, or no
+      // flight involved at all" — always fully lit, no sweep.
+      const hopFade = (landedAt, hopIndex, nowMs) => {
+        if (!landedAt) return 1;
+        const age = nowMs - (landedAt + HOLD_MS + hopIndex * STAGGER_MS);
+        if (age <= 0) return 1;
+        return clamp(1 - age / FADE_MS, 0, 1);
+      };
+
+      // The *specific* co-parent bonus: when a hop is a real parent-child
+      // step (parentId is a recorded parent of childId), their current
+      // partner lights too ONLY if that partner is *also* a recorded parent
+      // of the same child — the actual other half of "childId's parents",
+      // not just whoever parentId happens to be married to today. A parent
+      // who has since repartnered with someone unrelated to this child stays
+      // dark; a genuine co-parent (including an ex, if still on record as a
+      // parent) lights alongside them.
+      const coParentsOf = (parentId, childId) => graphRef.current.partners(parentId)
+        .filter((p) => nodeById.has(p.id))
+        .filter((p) => graphRef.current.parents(childId).some((par) => par.id === p.id))
         .map((p) => p.id);
 
       // Every relationship edge directly between two currently-lit people
-      // gets its own "ignite" timestamp the moment BOTH ends are lit — once
-      // recorded it never resets, so the burn-in only plays once per edge
-      // even as later hops add more lit people around it.
+      // gets its own ignite record (litAt + the later of the two ends'
+      // hopIndex, since that's when the comet actually finished "delivering"
+      // to this edge) the moment BOTH ends are lit — recorded once, never
+      // reset, so the burn-in only plays once per edge even as later hops
+      // add more lit people around it.
       const markNewEdgesLit = (litMap, edgeMap) => {
         const now = performance.now();
         for (const r of graphRef.current.relationships) {
           if (r.type !== 'parent' && r.type !== 'partner') continue;
-          if (!litMap.has(r.from_person) || !litMap.has(r.to_person)) continue;
+          const from = litMap.get(r.from_person);
+          const to = litMap.get(r.to_person);
+          if (!from || !to) continue;
           const key = [r.from_person, r.to_person].sort().join('|') + r.type;
-          if (!edgeMap.has(key)) edgeMap.set(key, now);
+          if (!edgeMap.has(key)) {
+            edgeMap.set(key, { litAt: now, hopIndex: Math.max(from.hopIndex, to.hopIndex) });
+          }
         }
+      };
+
+      // Lights flight.ids[idx] (if not already lit) plus, when the step from
+      // idx-1 to idx is a genuine parent-child edge, that parent's actual
+      // co-parent for this child — see coParentsOf above. Spawns an ignite
+      // flourish for every id newly lit this call (the very first, idx=0,
+      // never gets one for itself — it's the journey's start, not an
+      // arrival — but a bonus co-parent revealed alongside it still does).
+      const lightHop = (idx) => {
+        const id = flight.ids[idx];
+        const litAt = performance.now();
+        const isNewArrival = !flight.litSet.has(id);
+        if (isNewArrival) flight.litSet.set(id, { litAt, hopIndex: idx });
+        if (isNewArrival && idx > 0) {
+          const n = nodeById.get(id);
+          if (n) {
+            const fx = new IgniteEffect({ x: n.x, y: n.y }, BASE_RADIUS);
+            fxLayer.addChild(fx.root);
+            igniteFx.add(fx);
+          }
+        }
+        if (idx > 0) {
+          const prevId = flight.ids[idx - 1];
+          const prevIsParent = graphRef.current.parents(id).some((p) => p.id === prevId);
+          const curIsParent = !prevIsParent && graphRef.current.parents(prevId).some((p) => p.id === id);
+          const parentId = prevIsParent ? prevId : curIsParent ? id : null;
+          const childId = prevIsParent ? id : curIsParent ? prevId : null;
+          const parentHopIndex = prevIsParent ? idx - 1 : idx;
+          if (parentId) {
+            for (const pid of coParentsOf(parentId, childId)) {
+              if (flight.litSet.has(pid)) continue;
+              flight.litSet.set(pid, { litAt, hopIndex: parentHopIndex });
+              const pn = nodeById.get(pid);
+              if (pn) {
+                const pfx = new IgniteEffect({ x: pn.x, y: pn.y }, BASE_RADIUS);
+                fxLayer.addChild(pfx.root);
+                igniteFx.add(pfx);
+              }
+            }
+          }
+        }
+        markNewEdgesLit(flight.litSet, flight.edgeLitAt);
       };
 
       const state = {
@@ -662,6 +733,7 @@ export default function BubbleTree({
           camMode = 'flight';
           postFlightIds = null; // a fresh flight supersedes any lingering previous one
           postFlightEdges = null;
+          postFlightLandedAt = 0;
           const hops = pts.length - 1;
           flight = {
             ids: orderedIds,
@@ -674,8 +746,8 @@ export default function BubbleTree({
             landDuration: 1.1,
             phase: 'transit',
             litIndex: 0,
-            litSet: new Map(),    // personId -> litAtMs, drives the grow-then-settle pop
-            edgeLitAt: new Map(), // edgeKey  -> litAtMs, drives the ignite/extinguish burn
+            litSet: new Map(),    // personId -> {litAt, hopIndex}, drives the pop + extinguish sweep
+            edgeLitAt: new Map(), // edgeKey  -> {litAt, hopIndex}, drives the burn + extinguish sweep
             startZoom: zoom.value,
             // The route's start (the viewer's seat) may be far from wherever the
             // camera actually is right now (e.g. it had wandered to look at
@@ -686,21 +758,7 @@ export default function BubbleTree({
             onSegment: opts.onSegment || null,
             onLand: opts.onLand || null,
           };
-          // Origin lights immediately (no ignite flourish — it's where the
-          // journey starts, not an arrival) but its own partner, if any, is
-          // a genuine reveal and gets one, same as every hop after it.
-          const t0 = performance.now();
-          flight.litSet.set(orderedIds[0], t0);
-          for (const pid of bonusPartners(orderedIds[0])) {
-            flight.litSet.set(pid, t0);
-            const n = nodeById.get(pid);
-            if (n) {
-              const fx = new IgniteEffect({ x: n.x, y: n.y }, BASE_RADIUS);
-              fxLayer.addChild(fx.root);
-              igniteFx.add(fx);
-            }
-          }
-          markNewEdgesLit(flight.litSet, flight.edgeLitAt);
+          lightHop(0); // origin lights immediately, no ignite flourish for itself
           flightComet?.destroy();
           flightComet = new FlightComet(BASE_RADIUS);
           fxLayer.addChild(flightComet.root);
@@ -828,6 +886,7 @@ export default function BubbleTree({
           if (flight) { flight = null; landingFx?.destroy(); landingFx = null; flightComet?.destroy(); flightComet = null; }
           postFlightIds = null; // the user's taken control — stop lingering on the old route
           postFlightEdges = null;
+          postFlightLandedAt = 0;
           state.enterFree();
           return;
         }
@@ -910,6 +969,7 @@ export default function BubbleTree({
           if (flight) { flight = null; landingFx?.destroy(); landingFx = null; flightComet?.destroy(); flightComet = null; }
           postFlightIds = null; // the user's taken control — stop lingering on the old route
           postFlightEdges = null;
+          postFlightLandedAt = 0;
           state.enterFree();
           app.stage.cursor = 'grabbing';
           const z = screenAnchor().z;
@@ -1025,6 +1085,7 @@ export default function BubbleTree({
           igniteFx.clear();
           postFlightIds = null;
           postFlightEdges = null;
+          postFlightLandedAt = 0;
           camMode = 'follow';
         }
       });
@@ -1107,30 +1168,8 @@ export default function BubbleTree({
             const idx = Math.min(flight.hops, Math.round(eased * flight.hops));
             if (idx > flight.litIndex) {
               flight.litIndex = idx;
-              const id = flight.ids[idx];
-              const litAt = performance.now();
-              flight.litSet.set(id, litAt);
-              const n = nodeById.get(id);
-              if (n) {
-                const fx = new IgniteEffect({ x: n.x, y: n.y }, BASE_RADIUS);
-                fxLayer.addChild(fx.root);
-                igniteFx.add(fx);
-              }
-              // Passing through a parent lights their partner too — a couple
-              // pod is one visual unit, so only lighting half of it would
-              // look broken. Gets its own ignite flourish, same as any hop.
-              for (const pid of bonusPartners(id)) {
-                if (flight.litSet.has(pid)) continue;
-                flight.litSet.set(pid, litAt);
-                const pn = nodeById.get(pid);
-                if (pn) {
-                  const pfx = new IgniteEffect({ x: pn.x, y: pn.y }, BASE_RADIUS);
-                  fxLayer.addChild(pfx.root);
-                  igniteFx.add(pfx);
-                }
-              }
-              markNewEdgesLit(flight.litSet, flight.edgeLitAt);
-              flight.onSegment?.(id);
+              lightHop(idx);
+              flight.onSegment?.(flight.ids[idx]);
             }
 
             if (u >= 1) {
@@ -1163,10 +1202,12 @@ export default function BubbleTree({
               // The fully-lit path (every hop + each one's partner) lingers on
               // screen for a while after landing — the payoff of the whole
               // flight, not something that should vanish the instant the
-              // camera stops moving.
+              // camera stops moving. It fades out the same order it lit, not
+              // all at once — see hopFade above.
               postFlightIds = finished.litSet;
               postFlightEdges = finished.edgeLitAt;
-              postFlightUntil = performance.now() + POST_FLIGHT_MS;
+              postFlightLandedAt = performance.now();
+              postFlightHops = finished.hops;
               state.setActive(finished.ids[finished.ids.length - 1], false);
               camMode = 'follow'; // setActive() re-enters follow anyway; explicit for clarity
               finished.onLand?.();
@@ -1304,13 +1345,19 @@ export default function BubbleTree({
         // highlight / ring rendering Lineage Mode already uses, just fed a
         // progressively-growing set instead of a static one.
         const nowMs = performance.now();
-        if (postFlightIds && nowMs > postFlightUntil) { postFlightIds = null; postFlightEdges = null; }
+        if (postFlightLandedAt) {
+          const expiresAt = postFlightLandedAt + HOLD_MS + postFlightHops * STAGGER_MS + FADE_MS;
+          if (nowMs > expiresAt) { postFlightIds = null; postFlightEdges = null; postFlightLandedAt = 0; }
+        }
         const lineage = flight ? flight.litSet : (postFlightIds || lineageRef.current);
         const lineageEdges = flight ? flight.edgeLitAt : postFlightEdges; // null in real Lineage Mode — no burn timing, just static
         const lineageEnd = flight ? flight.ids[flight.ids.length - 1] : lineageEndRef.current;
-        // Only the flight/post-flight window has a known "go dark by" time;
-        // real Lineage Mode has none, so its burn intensity never fades.
-        const lineageExtinguishAt = flight ? null : (postFlightIds ? postFlightUntil : null);
+        // 0 during an active flight (always fully lit, no sweep yet) or in
+        // real Lineage Mode (static, no timing at all); the actual landing
+        // timestamp once the flight's afterglow is what's showing, which is
+        // what makes hopFade() below sweep the extinguish from the viewer's
+        // own seat (hopIndex 0) through to the destination.
+        const lineageLandedAt = flight ? 0 : postFlightLandedAt;
 
         // ── Landing burst (search flyover arrival) ───────────────────────────
         if (landingFx) {
@@ -1392,16 +1439,16 @@ export default function BubbleTree({
             // Lineage Mode is a plain Set with no per-person timing) — that's
             // what drives the "grows as the camera passes" pop: a brief big
             // burst right as it's lit, settling to a smaller-but-still-clearly-
-            // elevated size, easing back to baseline as the glow extinguishes.
-            // A parent's partner gets the identical litAt, so both pop in the
-            // same frame — "parents both getting larger together".
-            const litAt = lineage.get ? lineage.get(id) : null;
+            // elevated size, easing back toward baseline in hopIndex order as
+            // the sweep reaches this person — a co-parent shares their
+            // partner's hopIndex, so both fade on the same beat too.
+            const entry = lineage.get ? lineage.get(id) : null;
             let restScale = 1.06;
-            if (litAt != null) {
-              const age = nowMs - litAt;
+            if (entry != null) {
+              const age = nowMs - entry.litAt;
               const POP_MS = 450;
-              const fade = fadeFactor(nowMs, lineageExtinguishAt, EXTINGUISH_MS);
-              const settledRest = 1 + (1.32 - 1) * fade; // eases back toward 1.0 as it extinguishes
+              const fade = hopFade(lineageLandedAt, entry.hopIndex, nowMs);
+              const settledRest = 1 + (1.32 - 1) * fade; // eases back toward 1.0 as its turn to extinguish arrives
               restScale = age < POP_MS ? 1.85 : settledRest;
             }
             target = landingPunch
@@ -1526,7 +1573,7 @@ export default function BubbleTree({
         } else {
           drawLinks(
             linkGfx, graphRef.current, pos, (id) => vis.has(id), BASE_RADIUS, mergeRef.current,
-            lineage, activeRef.current, lineageEdges, nowMs, lineageExtinguishAt, EXTINGUISH_MS,
+            lineage, activeRef.current, lineageEdges, nowMs, lineageLandedAt, HOLD_MS, STAGGER_MS, FADE_MS,
           );
         }
       }
@@ -1709,18 +1756,6 @@ function computeGenerations(graph) {
 function clamp(v, lo, hi) {
   return Math.max(lo, Math.min(hi, v));
 }
-
-// 1 while there's no known "go dark by" time (still mid-flight) or plenty of
-// it left, ramping down to 0 over the last `fadeMs` before extinguishAt —
-// shared by both the bubble pop-rest scale and the line's burn intensity so
-// the whole path cools down together at the end of its lingering window.
-function fadeFactor(nowMs, extinguishAt, fadeMs) {
-  if (extinguishAt == null) return 1;
-  const remain = extinguishAt - nowMs;
-  if (remain > fadeMs) return 1;
-  return clamp(remain / fadeMs, 0, 1);
-}
-
 
 /*
  * Sectored-radial target positions (the prototype layout). The active person is

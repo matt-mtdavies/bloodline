@@ -37,9 +37,20 @@ function stepEdgeMediated(graph, parentId, childId) {
  * Link opacity follows the ego camera: bonds far from the focused person fade
  * back with their bubbles.
  */
+const ACCENT = 0xc2603a;
+
+// Linear-interpolate two 0xRRGGBB colours.
+function lerpColor(a, b, t) {
+  const ar = (a >> 16) & 255, ag = (a >> 8) & 255, ab = a & 255;
+  const br = (b >> 16) & 255, bg = (b >> 8) & 255, bb = b & 255;
+  return (Math.round(ar + (br - ar) * t) << 16)
+    | (Math.round(ag + (bg - ag) * t) << 8)
+    | Math.round(ab + (bb - ab) * t);
+}
+
 export function drawLinks(
   g, graph, pos, isVisible, baseRadius, mergeParents = false, lineagePath = null, activeId = null,
-  edgeLitAt = null, nowMs = 0, extinguishAt = null, extinguishMs = 1,
+  edgeLitAt = null, nowMs = 0, landedAt = 0, holdMs = 0, staggerMs = 0, fadeMs = 1,
 ) {
   g.clear();
   // Only draw a link when both people are currently revealed.
@@ -48,23 +59,40 @@ export function drawLinks(
   // drawn normally then re-highlighted in a second pass at the end.
   const onPath = lineagePath ? (a, b) => lineagePath.has(a) && lineagePath.has(b) : () => false;
   const edgeAlpha = lineagePath ? (a, b) => (onPath(a, b) ? 1 : 0.12) : () => 1;
-  // How brightly a lit edge's accent glow burns right now: 0 -> 1 igniting
-  // over a beat as the drone's light actually reaches it (edgeLitAt is only
-  // stamped once both ends are lit — see BubbleTree's markNewEdgesLit), held
-  // near full while the flight/its afterglow is active, then eased back down
-  // as the lingering window's end approaches (extinguishAt), same fade the
-  // bubbles' pop-rest scale uses so the whole path cools down together. No
-  // edgeLitAt at all (real Lineage Mode) burns at a flat, non-fading 1.
+  // How brightly a lit edge burns right now, 0 -> 1: igniting over a beat as
+  // the drone's light actually reaches it (edgeLitAt is only stamped once
+  // both ends are lit — see BubbleTree's markNewEdgesLit), held near full,
+  // then — once its hopIndex's turn comes up — eased back down in the same
+  // origin-to-destination sweep the bubbles' pop-rest scale fades in. No
+  // edgeLitAt at all (real Lineage Mode) burns at a flat, non-fading 1;
+  // landedAt === 0 (still mid-flight) means no sweep has started yet either.
   const IGNITE_MS = 420;
-  const burnIntensity = (key) => {
+  // Gated by onPath first: only edges actually on the lit route ever burn.
+  // Real Lineage Mode (lineagePath set, edgeLitAt null — no flight in
+  // progress) burns every on-path edge at a flat, non-fading 1; the flyover
+  // supplies edgeLitAt and this ramps/holds/fades per-edge as above.
+  const burnIntensity = (aId, bId, key) => {
+    if (!onPath(aId, bId)) return 0;
     if (!edgeLitAt) return 1;
-    const litAt = edgeLitAt.get(key);
-    if (litAt == null) return 0;
-    const ignite = Math.min(1, (nowMs - litAt) / IGNITE_MS);
-    if (extinguishAt == null) return ignite;
-    const remain = extinguishAt - nowMs;
-    const fade = remain > extinguishMs ? 1 : Math.max(0, remain / extinguishMs);
+    const entry = edgeLitAt.get(key);
+    if (entry == null) return 0;
+    const ignite = Math.min(1, (nowMs - entry.litAt) / IGNITE_MS);
+    if (!landedAt) return ignite;
+    const age = nowMs - (landedAt + holdMs + entry.hopIndex * staggerMs);
+    const fade = age <= 0 ? 1 : Math.max(0, 1 - age / fadeMs);
     return ignite * fade;
+  };
+  // A burning edge blends its normal colour toward the warm accent and gets
+  // a width/alpha boost — applied to the SAME geometry the edge would draw
+  // with anyway (merged trunk, dashed step bond, whatever), never a second
+  // line layered on top of it. burn=0 reproduces the old unlit look exactly.
+  const litStroke = (normalColor, normalWidth, normalAlpha, burn) => {
+    if (burn <= 0) return { color: normalColor, width: normalWidth, alpha: normalAlpha };
+    return {
+      color: lerpColor(normalColor, ACCENT, burn),
+      width: normalWidth * (1 + 0.7 * Math.min(1, burn * 1.6)),
+      alpha: normalAlpha + (1 - normalAlpha) * burn,
+    };
   };
 
   // ── Couple membranes (drawn first, furthest back) ─────────────────────────
@@ -95,15 +123,18 @@ export function drawLinks(
                       : status === 'former'  ? '#a89280'
                       :                        '#c2603a';
 
-    // Fill — semi-transparent capsule behind the pair.
-    capsulePath(g, a, b, hw).fill({ color: hex(fillColor), alpha: alpha * 0.52 });
+    const burn = burnIntensity(r.from_person, r.to_person, key + 'partner');
+    // Fill — semi-transparent capsule behind the pair. A lit couple's fill
+    // warms and deepens a touch too, not just the border.
+    const fillAlpha = alpha * 0.52 + burn * 0.18;
+    capsulePath(g, a, b, hw).fill({ color: burn > 0 ? lerpColor(hex(fillColor), ACCENT, burn * 0.4) : hex(fillColor), alpha: fillAlpha });
 
     // Border — wraps fully around each bubble (complete capsule outline).
-    const bAlpha = alpha * 0.82;
+    const border = litStroke(hex(borderColor), 2.5, alpha * 0.82, burn);
     if (status === 'former') {
-      dashedCapsuleBorder(g, a, b, hw, { width: 2.5, color: hex(borderColor), alpha: bAlpha, cap: 'round' });
+      dashedCapsuleBorder(g, a, b, hw, { ...border, cap: 'round' });
     } else {
-      capsulePath(g, a, b, hw).stroke({ width: 2.5, color: hex(borderColor), alpha: bAlpha, cap: 'round' });
+      capsulePath(g, a, b, hw).stroke({ ...border, cap: 'round' });
     }
   }
 
@@ -159,28 +190,39 @@ export function drawLinks(
       if (!a1 || !a2) return;
       const biological = grp.qualifier === 'biological';
       const color = hex(biological ? '#8a7d6b' : '#b6a892');
-      const seg = (from, to) =>
+      // A child's branch burns if EITHER co-parent's edge to that specific
+      // child is lit — under the flyover's co-parent model both are lit
+      // together, but take the max so a stray mismatch never leaves a gap.
+      const branchBurn = (childId) => Math.max(
+        burnIntensity(grp.p1, childId, [grp.p1, childId].sort().join('|') + 'parent'),
+        burnIntensity(grp.p2, childId, [grp.p2, childId].sort().join('|') + 'parent'),
+      );
+      const seg = (from, to, burn) =>
         biological
-          ? curve(g, from, to, { width: 2, color, alpha: 0.7 })
-          : dashedCurve(g, from, to, 14, 0.5, { width: 2, color, alpha: 0.85 });
-      const stemSeg = (from, to) =>
+          ? curve(g, from, to, litStroke(color, 2, 0.7, burn))
+          : dashedCurve(g, from, to, 14, 0.5, litStroke(color, 2, 0.85, burn));
+      const stemSeg = (from, to, burn) =>
         biological
-          ? curve(g, from, to, { width: 3, color, alpha: 0.7 })
-          : dashedCurve(g, from, to, 14, 0.5, { width: 3, color, alpha: 0.85 });
+          ? curve(g, from, to, litStroke(color, 3, 0.7, burn))
+          : dashedCurve(g, from, to, 14, 0.5, litStroke(color, 3, 0.85, burn));
 
       // Origin: bottom edge of the couple's shaded band.
       const start = { x: (a1.x + a2.x) / 2, y: (a1.y + a2.y) / 2 + baseRadius * 1.05 };
-      const kids = grp.kids.map((id) => pos.get(id)).filter(Boolean);
-      if (kids.length === 0) return;
+      const kidEntries = grp.kids.map((id) => ({ id, p: pos.get(id) })).filter((e) => e.p);
+      if (kidEntries.length === 0) return;
 
-      if (kids.length === 1) {
-        seg(start, kids[0]);
+      if (kidEntries.length === 1) {
+        seg(start, kidEntries[0].p, branchBurn(kidEntries[0].id));
       } else {
-        const avgX = kids.reduce((s, k) => s + k.x, 0) / kids.length;
-        const nearestY = Math.min(...kids.map((k) => k.y));
+        const avgX = kidEntries.reduce((s, e) => s + e.p.x, 0) / kidEntries.length;
+        const nearestY = Math.min(...kidEntries.map((e) => e.p.y));
         const junction = { x: start.x * 0.55 + avgX * 0.45, y: start.y + (nearestY - start.y) * 0.72 };
-        stemSeg(start, junction);
-        for (const k of kids) seg(junction, k);
+        const burns = kidEntries.map((e) => branchBurn(e.id));
+        // The stem carries the strongest branch's fire — it's lit the moment
+        // any child down that trunk is on the route, and only fully goes
+        // dark once every branch through it has faded.
+        stemSeg(start, junction, Math.max(0, ...burns));
+        kidEntries.forEach((e, i) => seg(junction, e.p, burns[i]));
       }
     };
 
@@ -196,6 +238,8 @@ export function drawLinks(
     const b = pos.get(r.to_person);
     if (!a || !b) continue;
     const alpha = edgeAlpha(r.from_person, r.to_person);
+    const key = [r.from_person, r.to_person].sort().join('|') + 'parent';
+    const burn = burnIntensity(r.from_person, r.to_person, key);
 
     // Step bonds: suppress entirely when implied by a current partnership to a
     // bio/adoptive parent (the pod conveys it). Orphan step bonds stay but ghost
@@ -203,47 +247,17 @@ export function drawLinks(
     if (r.qualifier === 'step') {
       if (stepEdgeMediated(graph, r.from_person, r.to_person)) continue;
       const touched = activeId != null && (r.from_person === activeId || r.to_person === activeId);
-      dashedCurve(g, a, b, 18, 0.5, { width: 2, color: hex('#b6a892'), alpha: alpha * (touched ? 0.85 : 0.16) });
+      dashedCurve(g, a, b, 18, 0.5, litStroke(hex('#b6a892'), 2, alpha * (touched ? 0.85 : 0.16), burn));
       continue;
     }
 
     const biological = r.qualifier === 'biological';
-    const color = biological ? '#8a7d6b' : '#b6a892';
+    const color = hex(biological ? '#8a7d6b' : '#b6a892');
 
     if (biological) {
-      curve(g, a, b, { width: 2, color: hex(color), alpha: alpha * 0.7 });
+      curve(g, a, b, litStroke(color, 2, alpha * 0.7, burn));
     } else {
-      dashedCurve(g, a, b, 18, 0.5, { width: 2, color: hex(color), alpha: alpha * 0.85 });
-    }
-  }
-
-  // ── Lineage highlight pass ─────────────────────────────────────────────────
-  // Re-draw the edges that connect adjacent path nodes in the accent colour +
-  // thicker, so the selected line leaps forward from the dimmed family.
-  if (lineagePath) {
-    const accentFill = hex('#c2603a');
-    const done = new Set();
-    for (const r of graph.relationships) {
-      if (!onPath(r.from_person, r.to_person)) continue;
-      if (hidden(r.from_person, r.to_person)) continue;
-      const key = [r.from_person, r.to_person].sort().join('|') + r.type;
-      if (done.has(key)) continue;
-      done.add(key);
-      const burn = burnIntensity(key);
-      if (burn <= 0) continue; // not yet reached, or fully extinguished — nothing to draw
-      const a = pos.get(r.from_person);
-      const b = pos.get(r.to_person);
-      if (!a || !b) continue;
-      // A touch of overshoot on width while igniting (bright/thick flare
-      // easing back to a steady thinner glow) reads as catching light rather
-      // than a flat colour switch — same idea the bubble pop uses.
-      const flare = 0.7 + 0.3 * Math.min(1, burn * 1.6);
-      if (r.type === 'partner') {
-        g.moveTo(a.x, a.y).lineTo(b.x, b.y).stroke({ width: baseRadius * 2.4, color: accentFill, alpha: 0.22 * burn, cap: 'round' });
-        g.moveTo(a.x, a.y).lineTo(b.x, b.y).stroke({ width: 3 * flare, color: accentFill, alpha: 0.75 * burn, cap: 'round' });
-      } else {
-        curve(g, a, b, { width: 3 * flare, color: accentFill, alpha: 0.8 * burn });
-      }
+      dashedCurve(g, a, b, 18, 0.5, litStroke(color, 2, alpha * 0.85, burn));
     }
   }
 }
