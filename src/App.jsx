@@ -42,7 +42,8 @@ import {
   clearLocalData,
   isNewUrl,
 } from './data/store.js';
-import { uploadPhoto, generateThumb, uploadDocument } from './lib/image.js';
+import { uploadPhoto, generateThumb, uploadDocument, savePhotoToDevice } from './lib/image.js';
+import { useImageZoom } from './lib/useImageZoom.js';
 import { buildGraph, pathBetween, pathBetweenOrdered } from './data/graph.js';
 import { findDuplicatePairs } from './lib/duplicates.js';
 import { canManageTree } from './lib/visibility.js';
@@ -1650,13 +1651,28 @@ export default function App() {
 // Renders in-app so the session cookie is sent with the fetch — iOS PWA has a
 // separate cookie store from Safari, so window.open() loses auth entirely.
 function DocViewer({ doc, onClose }) {
+  const isImage = doc.mime?.startsWith('image/');
+  const { xf, stageRef, handlers } = useImageZoom();
+  const [saveState, setSaveState] = useState('idle'); // idle | saving | error
+
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  const isImage = doc.mime?.startsWith('image/');
+  async function handleSave() {
+    if (saveState === 'saving') return;
+    setSaveState('saving');
+    try {
+      await savePhotoToDevice(doc.src, `${(doc.title || 'document').replace(/[^\w-]+/g, '_')}.jpg`);
+      setSaveState('idle');
+    } catch (e) {
+      console.warn('[doc viewer] save failed:', e.message);
+      setSaveState('error');
+      setTimeout(() => setSaveState('idle'), 2500);
+    }
+  }
 
   return (
     <div className="doc-viewer-scrim" onClick={onClose}>
@@ -1670,9 +1686,28 @@ function DocViewer({ doc, onClose }) {
           </button>
         </div>
         {isImage ? (
-          <div className="doc-viewer__img-wrap">
-            <img className="doc-viewer__img" src={doc.src} alt={doc.title} />
-          </div>
+          <>
+            <div className="doc-viewer__img-wrap" ref={stageRef}>
+              <img
+                className="doc-viewer__img"
+                src={doc.src}
+                alt={doc.title}
+                crossOrigin="anonymous"
+                draggable={false}
+                style={{ transform: `translate(${xf.x}px, ${xf.y}px) scale(${xf.scale})` }}
+                onPointerDown={(e) => { e.stopPropagation(); handlers.onPointerDown(e); }}
+                onPointerMove={(e) => { e.stopPropagation(); handlers.onPointerMove(e); }}
+                onPointerUp={(e) => { e.stopPropagation(); handlers.onPointerUp(e); }}
+                onPointerCancel={(e) => { e.stopPropagation(); handlers.onPointerCancel(e); }}
+                onClick={(e) => e.stopPropagation()}
+              />
+            </div>
+            <div className="doc-viewer__bar doc-viewer__bar--bottom">
+              <button className="doc-viewer__save" onClick={handleSave} disabled={saveState === 'saving'}>
+                {saveState === 'saving' ? 'Saving…' : saveState === 'error' ? "Couldn't save" : 'Save'}
+              </button>
+            </div>
+          </>
         ) : (
           <iframe
             className="doc-viewer__frame"

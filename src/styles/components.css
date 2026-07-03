@@ -1601,19 +1601,26 @@
 }
 .doc-viewer__close:hover { background: var(--hairline); color: var(--ink); }
 .doc-viewer__img-wrap {
+  position: relative;
   flex: 1;
-  overflow: auto;
+  overflow: hidden;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: center;
   padding: 20px;
   background: var(--paper-deep);
+  min-height: 0;
 }
 .doc-viewer__img {
-  max-width: 100%;
-  height: auto;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
   border-radius: 6px;
   box-shadow: 0 4px 24px rgba(0,0,0,0.18);
+  /* Custom pinch/pan is driven off pointer events (see useImageZoom) —
+     touch-action:none stops the browser's own gesture handling fighting it. */
+  touch-action: none;
+  will-change: transform;
 }
 .doc-viewer__frame {
   flex: 1;
@@ -1621,6 +1628,23 @@
   border: none;
   background: var(--paper-deep);
 }
+.doc-viewer__bar--bottom {
+  border-bottom: none;
+  border-top: 1px solid var(--hairline);
+  justify-content: center;
+}
+.doc-viewer__save {
+  height: 40px;
+  padding: 0 22px;
+  border-radius: 12px;
+  background: var(--paper-deep);
+  color: var(--ink);
+  font-size: 14.5px;
+  font-weight: 600;
+  transition: background 0.15s;
+}
+.doc-viewer__save:hover { background: var(--hairline); }
+.doc-viewer__save:active { transform: scale(0.98); }
 
 .legend__privacy {
   margin-top: 20px;
