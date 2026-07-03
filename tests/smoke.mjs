@@ -92,7 +92,9 @@ try {
   await page.waitForTimeout(300);
 
   // The add-memory composer opens over the profile and dismisses cleanly.
-  await page.locator('.profile-section__head .section-edit', { hasText: 'Add' }).last().click();
+  // Scoped to the Memories section specifically (not just "the last Add
+  // button") since section order is a deliberate, changeable choice.
+  await page.locator('.profile-section', { hasText: 'Memories' }).locator('.section-edit').click();
   await page.waitForSelector('[aria-label^="Add a memory"]', { timeout: 4000 });
   await page.screenshot({ path: shot('02b-memory.png') });
   await page.keyboard.press('Escape');

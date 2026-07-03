@@ -551,161 +551,91 @@ export default function PersonSheet({
               </section>
             )}
 
-            {/* Health history */}
+            {/* Key life events */}
             <section className="profile-section">
               <div className="profile-section__head">
-                <h3 className="profile-section__title">
-                  Health history{(person.conditions?.length || 0) > 0 ? ` · ${person.conditions.length}` : ''}
-                </h3>
+                <h3 className="profile-section__title">Key life events</h3>
                 {canEdit && (
-                  <button
-                    className="section-edit"
-                    onClick={() => { setHealthPickerOpen((v) => !v); setStatusPickId(null); }}
-                  >
-                    {healthPickerOpen ? 'Done' : 'Add'}
+                  <button className="section-edit" onClick={() => onEditTimeline?.(person.id)}>
+                    {events.length > 0 ? 'Edit' : null}
                   </button>
                 )}
               </div>
-              {(person.conditions?.length || 0) > 0 && (
-                <ul className="health-chips">
-                  {person.conditions.map((c) => {
-                    const catColor = colorFor(c.category);
-                    const isPickingStatus = statusPickId === c.id;
-                    const statusLabel = HEALTH_STATUSES.find((s) => s.key === c.status)?.label;
-                    return (
-                      <li key={c.id} className="health-chip">
-                        <span className="health-chip__dot" style={{ background: catColor }} />
-                        <button
-                          className="health-chip__body"
-                          onClick={() => canEdit && setStatusPickId(isPickingStatus ? null : c.id)}
-                          title={canEdit ? 'Tap to change status' : undefined}
-                        >
-                          <span className="health-chip__name">{c.name}</span>
-                          {c.status !== 'active' && (
-                            <span className="health-chip__status">{statusLabel}</span>
+              {events.length > 0 ? (
+                <ol className="timeline">
+                  {events.map((e, i) => (
+                    <li className="timeline__item" key={`${e.year}-${i}`}>
+                      <span className="timeline__year">{e.year}</span>
+                      <span className="timeline__dot" aria-hidden="true" />
+                      <span className="timeline__body">
+                        <span className="timeline__title">{e.title}</span>
+                        {e.detail && <span className="timeline__detail">{e.detail}</span>}
+                      </span>
+                    </li>
+                  ))}
+                </ol>
+              ) : canEdit ? (
+                <button className="empty-add" onClick={() => onEditTimeline?.(person.id)}>
+                  <PlusIcon />
+                  Add a life event
+                </button>
+              ) : (
+                <p className="profile-section__empty">No life events yet</p>
+              )}
+            </section>
+
+            {/* Memories — the heart of the profile. */}
+            <section className="profile-section">
+              <div className="profile-section__head">
+                <h3 className="profile-section__title">
+                  Memories{personMemories.length > 0 ? ` · ${personMemories.length}` : ''}
+                </h3>
+                {canContribute && (
+                  <button className="section-edit" onClick={() => onAddMemory?.(person.id)}>
+                    Add
+                  </button>
+                )}
+              </div>
+
+              {personMemories.length > 0 ? (
+                <ul className="memories">
+                  {personMemories.map((mem) => (
+                    <li className="memory" key={mem.id}>
+                      <p className="memory__text">{mem.text}</p>
+                      <div className="memory__foot">
+                        <span className="memory__by">{mem.author}</span>
+                        <span className="memory__actions">
+                          {mem.author === 'You' && (
+                            <button
+                              className="memory__del"
+                              onClick={() => onRemoveMemory?.(mem.id)}
+                              aria-label="Remove memory"
+                            >
+                              Remove
+                            </button>
                           )}
-                        </button>
-                        {isPickingStatus && (
-                          <div className="health-chip__status-picker">
-                            {HEALTH_STATUSES.map((s) => (
-                              <button
-                                key={s.key}
-                                className={'health-status-opt' + (c.status === s.key ? ' health-status-opt--on' : '')}
-                                onClick={() => {
-                                  onUpdateCondition?.(person.id, c.id, { status: s.key });
-                                  setStatusPickId(null);
-                                }}
-                              >
-                                {s.label}
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                        {canEdit && (
                           <button
-                            className="health-chip__remove"
-                            onClick={() => { setStatusPickId(null); onRemoveCondition?.(person.id, c.id); }}
-                            aria-label={`Remove ${c.name}`}
+                            className={'memory__vote' + (mem.youVoted ? ' memory__vote--on' : '')}
+                            onClick={() => onVoteMemory?.(mem.id)}
+                            aria-pressed={mem.youVoted}
+                            aria-label={`${mem.votes} ${mem.votes === 1 ? 'person finds' : 'people find'} this meaningful`}
                           >
-                            <CloseIcon />
+                            <HeartIcon filled={mem.youVoted} />
+                            {mem.votes > 0 ? mem.votes : ''}
                           </button>
-                        )}
-                      </li>
-                    );
-                  })}
+                        </span>
+                      </div>
+                    </li>
+                  ))}
                 </ul>
-              )}
-              {healthPickerOpen && (
-                <div className="condition-picker">
-                  <div className="condition-picker__cats">
-                    {HEALTH_CATEGORIES.map((cat) => (
-                      <button
-                        key={cat.id}
-                        className={'condition-cat' + (healthCat === cat.id ? ' condition-cat--on' : '')}
-                        style={healthCat === cat.id ? { borderColor: cat.color, color: cat.color } : {}}
-                        onClick={() => setHealthCat(cat.id)}
-                      >
-                        {cat.label}
-                      </button>
-                    ))}
-                  </div>
-                  <div className="condition-picker__list">
-                    {HEALTH_CONDITIONS.filter((c) => c.category === healthCat).map((cond) => {
-                      const added = (person.conditions || []).some((c) => c.name === cond.name);
-                      return (
-                        <button
-                          key={cond.name}
-                          className={'condition-option' + (added ? ' condition-option--added' : '')}
-                          disabled={added}
-                          onClick={() => {
-                            if (!added) onAddCondition?.(person.id, { name: cond.name, category: cond.category });
-                          }}
-                        >
-                          {cond.name}
-                          {added && <CheckedIcon />}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-              {canEdit && (person.conditions?.length || 0) === 0 && !healthPickerOpen && (
-                <button className="empty-add" onClick={() => setHealthPickerOpen(true)}>
+              ) : canContribute ? (
+                <button className="empty-add" onClick={() => onAddMemory?.(person.id)}>
                   <PlusIcon />
-                  Add health conditions
+                  Be the first to add a memory
                 </button>
+              ) : (
+                <p className="profile-section__empty">No memories yet</p>
               )}
-
-              {/* Free-text notes — allergies, medications, family history,
-                  anything that doesn't fit the structured condition chips above. */}
-              {healthNotesEditing ? (
-                <div className="health-notes health-notes--editing">
-                  <textarea
-                    className="field__input field__input--area"
-                    rows={3}
-                    autoFocus
-                    value={healthNotesDraft}
-                    onChange={(e) => setHealthNotesDraft(e.target.value)}
-                    placeholder="Allergies, medications, family history — anything free-form…"
-                  />
-                  <div className="health-notes__foot">
-                    <button
-                      className="section-edit"
-                      onClick={() => {
-                        onUpdateHealthNotes?.(person.id, healthNotesDraft.trim());
-                        setHealthNotesEditing(false);
-                      }}
-                    >
-                      Done
-                    </button>
-                  </div>
-                </div>
-              ) : person.health_notes ? (
-                <button
-                  className="health-notes"
-                  onClick={() => {
-                    if (!canEdit) return;
-                    setHealthNotesDraft(person.health_notes);
-                    setHealthNotesEditing(true);
-                  }}
-                  title={canEdit ? 'Tap to edit' : undefined}
-                >
-                  {person.health_notes}
-                </button>
-              ) : canEdit && (
-                <button
-                  className="empty-add"
-                  onClick={() => { setHealthNotesDraft(''); setHealthNotesEditing(true); }}
-                >
-                  <PlusIcon />
-                  Add free-text notes
-                </button>
-              )}
-
-              <p className="health-privacy-note">
-                <LockIcon />
-                Health details are shared within your family only
-              </p>
             </section>
 
             {/* Photos */}
@@ -936,38 +866,223 @@ export default function PersonSheet({
               )}
             </section>
 
-            {/* Key life events */}
+            {/* Health history */}
             <section className="profile-section">
               <div className="profile-section__head">
-                <h3 className="profile-section__title">Key life events</h3>
+                <h3 className="profile-section__title">
+                  Health history{(person.conditions?.length || 0) > 0 ? ` · ${person.conditions.length}` : ''}
+                </h3>
                 {canEdit && (
-                  <button className="section-edit" onClick={() => onEditTimeline?.(person.id)}>
-                    {events.length > 0 ? 'Edit' : null}
+                  <button
+                    className="section-edit"
+                    onClick={() => { setHealthPickerOpen((v) => !v); setStatusPickId(null); }}
+                  >
+                    {healthPickerOpen ? 'Done' : 'Add'}
                   </button>
                 )}
               </div>
-              {events.length > 0 ? (
-                <ol className="timeline">
-                  {events.map((e, i) => (
-                    <li className="timeline__item" key={`${e.year}-${i}`}>
-                      <span className="timeline__year">{e.year}</span>
-                      <span className="timeline__dot" aria-hidden="true" />
-                      <span className="timeline__body">
-                        <span className="timeline__title">{e.title}</span>
-                        {e.detail && <span className="timeline__detail">{e.detail}</span>}
-                      </span>
-                    </li>
-                  ))}
-                </ol>
-              ) : canEdit ? (
-                <button className="empty-add" onClick={() => onEditTimeline?.(person.id)}>
+              {(person.conditions?.length || 0) > 0 && (
+                <ul className="health-chips">
+                  {person.conditions.map((c) => {
+                    const catColor = colorFor(c.category);
+                    const isPickingStatus = statusPickId === c.id;
+                    const statusLabel = HEALTH_STATUSES.find((s) => s.key === c.status)?.label;
+                    return (
+                      <li key={c.id} className="health-chip">
+                        <span className="health-chip__dot" style={{ background: catColor }} />
+                        <button
+                          className="health-chip__body"
+                          onClick={() => canEdit && setStatusPickId(isPickingStatus ? null : c.id)}
+                          title={canEdit ? 'Tap to change status' : undefined}
+                        >
+                          <span className="health-chip__name">{c.name}</span>
+                          {c.status !== 'active' && (
+                            <span className="health-chip__status">{statusLabel}</span>
+                          )}
+                        </button>
+                        {isPickingStatus && (
+                          <div className="health-chip__status-picker">
+                            {HEALTH_STATUSES.map((s) => (
+                              <button
+                                key={s.key}
+                                className={'health-status-opt' + (c.status === s.key ? ' health-status-opt--on' : '')}
+                                onClick={() => {
+                                  onUpdateCondition?.(person.id, c.id, { status: s.key });
+                                  setStatusPickId(null);
+                                }}
+                              >
+                                {s.label}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                        {canEdit && (
+                          <button
+                            className="health-chip__remove"
+                            onClick={() => { setStatusPickId(null); onRemoveCondition?.(person.id, c.id); }}
+                            aria-label={`Remove ${c.name}`}
+                          >
+                            <CloseIcon />
+                          </button>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+              {healthPickerOpen && (
+                <div className="condition-picker">
+                  <div className="condition-picker__cats">
+                    {HEALTH_CATEGORIES.map((cat) => (
+                      <button
+                        key={cat.id}
+                        className={'condition-cat' + (healthCat === cat.id ? ' condition-cat--on' : '')}
+                        style={healthCat === cat.id ? { borderColor: cat.color, color: cat.color } : {}}
+                        onClick={() => setHealthCat(cat.id)}
+                      >
+                        {cat.label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="condition-picker__list">
+                    {HEALTH_CONDITIONS.filter((c) => c.category === healthCat).map((cond) => {
+                      const added = (person.conditions || []).some((c) => c.name === cond.name);
+                      return (
+                        <button
+                          key={cond.name}
+                          className={'condition-option' + (added ? ' condition-option--added' : '')}
+                          disabled={added}
+                          onClick={() => {
+                            if (!added) onAddCondition?.(person.id, { name: cond.name, category: cond.category });
+                          }}
+                        >
+                          {cond.name}
+                          {added && <CheckedIcon />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+              {canEdit && (person.conditions?.length || 0) === 0 && !healthPickerOpen && (
+                <button className="empty-add" onClick={() => setHealthPickerOpen(true)}>
                   <PlusIcon />
-                  Add a life event
+                  Add health conditions
                 </button>
-              ) : (
-                <p className="profile-section__empty">No life events yet</p>
+              )}
+
+              {/* Free-text notes — allergies, medications, family history,
+                  anything that doesn't fit the structured condition chips above. */}
+              {healthNotesEditing ? (
+                <div className="health-notes health-notes--editing">
+                  <textarea
+                    className="field__input field__input--area"
+                    rows={3}
+                    autoFocus
+                    value={healthNotesDraft}
+                    onChange={(e) => setHealthNotesDraft(e.target.value)}
+                    placeholder="Allergies, medications, family history — anything free-form…"
+                  />
+                  <div className="health-notes__foot">
+                    <button
+                      className="section-edit"
+                      onClick={() => {
+                        onUpdateHealthNotes?.(person.id, healthNotesDraft.trim());
+                        setHealthNotesEditing(false);
+                      }}
+                    >
+                      Done
+                    </button>
+                  </div>
+                </div>
+              ) : person.health_notes ? (
+                <button
+                  className="health-notes"
+                  onClick={() => {
+                    if (!canEdit) return;
+                    setHealthNotesDraft(person.health_notes);
+                    setHealthNotesEditing(true);
+                  }}
+                  title={canEdit ? 'Tap to edit' : undefined}
+                >
+                  {person.health_notes}
+                </button>
+              ) : canEdit && (
+                <button
+                  className="empty-add"
+                  onClick={() => { setHealthNotesDraft(''); setHealthNotesEditing(true); }}
+                >
+                  <PlusIcon />
+                  Add free-text notes
+                </button>
+              )}
+
+              <p className="health-privacy-note">
+                <LockIcon />
+                Health details are shared within your family only
+              </p>
+            </section>
+
+            {/* Life Story — AI-generated from the person's timeline + memories. */}
+            {(canEdit || person.story) && (
+            <section className="profile-section">
+              <div className="profile-section__head">
+                <h3 className="profile-section__title">Life Story</h3>
+                {canEdit && storyState.phase === 'idle' && (person.story || storyState.error) && (
+                  <button className="story-regen" onClick={generateStory}>
+                    {storyState.error ? 'Try again' : 'Regenerate'}
+                  </button>
+                )}
+                {storyState.phase === 'generating' && (
+                  <span style={{ fontSize: 12, color: 'var(--ink-faint)' }}>Writing…</span>
+                )}
+              </div>
+
+              {storyState.phase === 'idle' && storyState.error && (
+                <p className="story-error">{storyState.error}</p>
+              )}
+
+              {canEdit && storyState.phase === 'idle' && !person.story && !storyState.error && (
+                <button className="ai-generate" onClick={generateStory}>
+                  <SparkleIcon />
+                  Generate life story with AI
+                </button>
+              )}
+
+              {storyState.phase === 'idle' && person.story && (
+                <p className="story">{person.story}</p>
+              )}
+
+              {(storyState.phase === 'generating' || storyState.phase === 'done') && (
+                <p className={`story${storyState.phase === 'generating' ? ' story--generating' : ''}`}>
+                  {storyState.text}
+                </p>
+              )}
+
+              {storyState.phase === 'done' && (
+                <>
+                  <div className="story-actions">
+                    <button
+                      className="btn btn--primary"
+                      onClick={() => {
+                        onUpdateStory?.(person.id, storyState.text);
+                        setStoryState({ phase: 'idle', text: '', error: null });
+                      }}
+                    >
+                      Keep it
+                    </button>
+                    <button
+                      className="btn"
+                      onClick={() => setStoryState({ phase: 'idle', text: '', error: null })}
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                  <p className="story-note">Generated by AI · review before keeping</p>
+                </>
               )}
             </section>
+            )}
 
             {/* Relationships */}
             {(groups.length > 0 || extendedGroups.length > 0) && (
@@ -1116,138 +1231,6 @@ export default function PersonSheet({
                 ))}
               </section>
             )}
-
-            {/* Memories — the heart of the profile. */}
-            <section className="profile-section">
-              <div className="profile-section__head">
-                <h3 className="profile-section__title">
-                  Memories{personMemories.length > 0 ? ` · ${personMemories.length}` : ''}
-                </h3>
-                {canContribute && (
-                  <button className="section-edit" onClick={() => onAddMemory?.(person.id)}>
-                    Add
-                  </button>
-                )}
-              </div>
-
-              {personMemories.length > 0 ? (
-                <ul className="memories">
-                  {personMemories.map((mem) => (
-                    <li className="memory" key={mem.id}>
-                      <p className="memory__text">{mem.text}</p>
-                      <div className="memory__foot">
-                        <span className="memory__by">{mem.author}</span>
-                        <span className="memory__actions">
-                          {mem.author === 'You' && (
-                            <button
-                              className="memory__del"
-                              onClick={() => onRemoveMemory?.(mem.id)}
-                              aria-label="Remove memory"
-                            >
-                              Remove
-                            </button>
-                          )}
-                          <button
-                            className={'memory__vote' + (mem.youVoted ? ' memory__vote--on' : '')}
-                            onClick={() => onVoteMemory?.(mem.id)}
-                            aria-pressed={mem.youVoted}
-                            aria-label={`${mem.votes} ${mem.votes === 1 ? 'person finds' : 'people find'} this meaningful`}
-                          >
-                            <HeartIcon filled={mem.youVoted} />
-                            {mem.votes > 0 ? mem.votes : ''}
-                          </button>
-                        </span>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              ) : canContribute ? (
-                <button className="empty-add" onClick={() => onAddMemory?.(person.id)}>
-                  <PlusIcon />
-                  Be the first to add a memory
-                </button>
-              ) : (
-                <p className="profile-section__empty">No memories yet</p>
-              )}
-            </section>
-
-            {/* Life Story — AI-generated from the person's timeline + memories. */}
-            {(canEdit || person.story) && (
-            <section className="profile-section">
-              <div className="profile-section__head">
-                <h3 className="profile-section__title">Life Story</h3>
-                {canEdit && storyState.phase === 'idle' && (person.story || storyState.error) && (
-                  <button className="story-regen" onClick={generateStory}>
-                    {storyState.error ? 'Try again' : 'Regenerate'}
-                  </button>
-                )}
-                {storyState.phase === 'generating' && (
-                  <span style={{ fontSize: 12, color: 'var(--ink-faint)' }}>Writing…</span>
-                )}
-              </div>
-
-              {storyState.phase === 'idle' && storyState.error && (
-                <p className="story-error">{storyState.error}</p>
-              )}
-
-              {canEdit && storyState.phase === 'idle' && !person.story && !storyState.error && (
-                <button className="ai-generate" onClick={generateStory}>
-                  <SparkleIcon />
-                  Generate life story with AI
-                </button>
-              )}
-
-              {storyState.phase === 'idle' && person.story && (
-                <p className="story">{person.story}</p>
-              )}
-
-              {(storyState.phase === 'generating' || storyState.phase === 'done') && (
-                <p className={`story${storyState.phase === 'generating' ? ' story--generating' : ''}`}>
-                  {storyState.text}
-                </p>
-              )}
-
-              {storyState.phase === 'done' && (
-                <>
-                  <div className="story-actions">
-                    <button
-                      className="btn btn--primary"
-                      onClick={() => {
-                        onUpdateStory?.(person.id, storyState.text);
-                        setStoryState({ phase: 'idle', text: '', error: null });
-                      }}
-                    >
-                      Keep it
-                    </button>
-                    <button
-                      className="btn"
-                      onClick={() => setStoryState({ phase: 'idle', text: '', error: null })}
-                    >
-                      Dismiss
-                    </button>
-                  </div>
-                  <p className="story-note">Generated by AI · review before keeping</p>
-                </>
-              )}
-            </section>
-            )}
-
-            {/* Future features */}
-            <section className="profile-section">
-              <h3 className="profile-section__title">Coming soon</h3>
-              <ul className="soon-list">
-                <li className="soon-row">
-                  <span className="soon-row__icon">❀</span>
-                  <span className="soon-row__text">
-                    <span className="soon-row__title">Legacy</span>
-                    <span className="soon-row__sub">
-                      Advice, values and the things future generations should know.
-                    </span>
-                  </span>
-                  <span className="soon-row__tag">Soon</span>
-                </li>
-              </ul>
-            </section>
           </div>
         )}
 
