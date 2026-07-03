@@ -262,7 +262,14 @@ export default function PersonSheet({
         if (file.size > 20 * 1024 * 1024) continue;
         const title = file.name.replace(/\.[^.]+$/, '');
         const src = await uploadDoc(file);
-        onAddDocument?.(person.id, { title, mime: file.type, src });
+        let thumb = null;
+        if (file.type === 'application/pdf') {
+          // Lazy-loaded — pdf.js is a large dependency only worth paying for
+          // when someone actually uploads a PDF (see PdfViewer.jsx).
+          const { generatePdfThumbnail } = await import('../lib/pdf.js');
+          thumb = await generatePdfThumbnail(src);
+        }
+        onAddDocument?.(person.id, { title, mime: file.type, src, thumb });
       } catch {
         /* skip unreadable file */
       }
@@ -772,6 +779,8 @@ export default function PersonSheet({
                       <div className="doc-row">
                         {doc.mime?.startsWith('image/') ? (
                           <SmartImg className="doc-thumb" src={doc.src} alt={doc.title} />
+                        ) : doc.thumb ? (
+                          <img className="doc-thumb" src={doc.thumb} alt={doc.title} />
                         ) : (
                           <span className="doc-row__icon" aria-hidden="true">
                             <DocFileIcon />

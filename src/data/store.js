@@ -1489,14 +1489,18 @@ export async function migratePhotosToR2(uploadFn) {
 
 // ── Documents ─────────────────────────────────────────────────────────────────
 // Stored as base64 data URLs for the stub phase; will move to R2 URLs later.
-// Shape: { id, person_id, title, mime, src, created_at }
-export function addDocument(personId, { title, mime, src }) {
+// Shape: { id, person_id, title, mime, src, thumb, created_at }
+// `thumb` is an optional small JPEG data URL (page-1 preview) generated once
+// at upload time for PDFs, so the document row can show a real preview
+// without loading pdf.js just to render the list — see PersonSheet's onDocPick.
+export function addDocument(personId, { title, mime, src, thumb = null }) {
   const doc = {
     id: docid(),
     person_id: personId,
     title: title.trim(),
     mime,
     src,
+    thumb,
     created_at: new Date().toISOString().slice(0, 10),
   };
   const person = state.people.find((p) => p.id === personId);

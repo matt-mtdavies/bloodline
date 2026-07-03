@@ -1,4 +1,4 @@
-import { useMemo, useState, useCallback, useRef, useEffect, useSyncExternalStore } from 'react';
+import { useMemo, useState, useCallback, useRef, useEffect, useSyncExternalStore, lazy, Suspense } from 'react';
 import { flushSync } from 'react-dom';
 import './styles/components.css';
 import { DEFAULT_FOCUS } from './data/seed.js';
@@ -59,6 +59,10 @@ import EditPersonSheet from './components/EditPersonSheet.jsx';
 import TimelineEditor from './components/TimelineEditor.jsx';
 import MemorySheet from './components/MemorySheet.jsx';
 import Lightbox from './components/Lightbox.jsx';
+// pdf.js is a ~450KB dependency only a fraction of visitors ever need (only
+// once someone actually opens a PDF document) — code-split so everyone else
+// never pays for it in the initial load.
+const PdfViewer = lazy(() => import('./components/PdfViewer.jsx'));
 import PhotoCropper from './components/PhotoCropper.jsx';
 import AccessibleTree from './components/AccessibleTree.jsx';
 import Legend from './components/Legend.jsx';
@@ -1652,6 +1656,7 @@ export default function App() {
 // separate cookie store from Safari, so window.open() loses auth entirely.
 function DocViewer({ doc, onClose }) {
   const isImage = doc.mime?.startsWith('image/');
+  const isPdf = doc.mime === 'application/pdf';
   const { xf, stageRef, handlers } = useImageZoom();
   const [saveState, setSaveState] = useState('idle'); // idle | saving | error
 
@@ -1665,7 +1670,8 @@ function DocViewer({ doc, onClose }) {
     if (saveState === 'saving') return;
     setSaveState('saving');
     try {
-      await savePhotoToDevice(doc.src, `${(doc.title || 'document').replace(/[^\w-]+/g, '_')}.jpg`);
+      const ext = isPdf ? 'pdf' : doc.mime?.split('/')[1] || 'jpg';
+      await savePhotoToDevice(doc.src, `${(doc.title || 'document').replace(/[^\w-]+/g, '_')}.${ext}`);
       setSaveState('idle');
     } catch (e) {
       console.warn('[doc viewer] save failed:', e.message);
@@ -1686,35 +1692,39 @@ function DocViewer({ doc, onClose }) {
           </button>
         </div>
         {isImage ? (
-          <>
-            <div className="doc-viewer__img-wrap" ref={stageRef}>
-              <img
-                className="doc-viewer__img"
-                src={doc.src}
-                alt={doc.title}
-                crossOrigin="anonymous"
-                draggable={false}
-                style={{ transform: `translate(${xf.x}px, ${xf.y}px) scale(${xf.scale})` }}
-                onPointerDown={(e) => { e.stopPropagation(); handlers.onPointerDown(e); }}
-                onPointerMove={(e) => { e.stopPropagation(); handlers.onPointerMove(e); }}
-                onPointerUp={(e) => { e.stopPropagation(); handlers.onPointerUp(e); }}
-                onPointerCancel={(e) => { e.stopPropagation(); handlers.onPointerCancel(e); }}
-                onClick={(e) => e.stopPropagation()}
-              />
-            </div>
-            <div className="doc-viewer__bar doc-viewer__bar--bottom">
-              <button className="doc-viewer__save" onClick={handleSave} disabled={saveState === 'saving'}>
-                {saveState === 'saving' ? 'Saving…' : saveState === 'error' ? "Couldn't save" : 'Save'}
-              </button>
-            </div>
-          </>
+          <div className="doc-viewer__img-wrap" ref={stageRef}>
+            <img
+              className="doc-viewer__img"
+              src={doc.src}
+              alt={doc.title}
+              crossOrigin="anonymous"
+              draggable={false}
+              style={{ transform: `translate(${xf.x}px, ${xf.y}px) scale(${xf.scale})` }}
+              onPointerDown={(e) => { e.stopPropagation(); handlers.onPointerDown(e); }}
+              onPointerMove={(e) => { e.stopPropagation(); handlers.onPointerMove(e); }}
+              onPointerUp={(e) => { e.stopPropagation(); handlers.onPointerUp(e); }}
+              onPointerCancel={(e) => { e.stopPropagation(); handlers.onPointerCancel(e); }}
+              onClick={(e) => e.stopPropagation()}
+            />
+          </div>
+        ) : isPdf ? (
+          <Suspense fallback={<div className="pdf-viewer__stage"><div className="mw__spinner" aria-label="Loading" /></div>}>
+            <PdfViewer src={doc.src} />
+          </Suspense>
         ) : (
-          <iframe
-            className="doc-viewer__frame"
-            src={doc.src}
-            title={doc.title}
-            sandbox="allow-same-origin allow-scripts allow-popups"
-          />
+          <div className="pdf-viewer__fallback">
+            <p>This file type can't be previewed here.</p>
+            <a href={doc.src} target="_blank" rel="noreferrer" className="pdf-viewer__open-link">
+              Open in a new tab
+            </a>
+          </div>
+        )}
+        {(isImage || isPdf) && (
+          <div className="doc-viewer__bar doc-viewer__bar--bottom">
+            <button className="doc-viewer__save" onClick={handleSave} disabled={saveState === 'saving'}>
+              {saveState === 'saving' ? 'Saving…' : saveState === 'error' ? "Couldn't save" : 'Save'}
+            </button>
+          </div>
         )}
       </div>
     </div>
