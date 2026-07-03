@@ -236,6 +236,32 @@ export default function BubbleTree({
         }
       });
 
+      // Parent-above-child correction: the resting Y-band force (restingYStrength)
+      // is deliberately gentle so the organic layout can drift and breathe, which
+      // occasionally lets local crowding (siblings bunching, charge/collision) push
+      // a parent below their own child even though its band target is correctly
+      // above. This only nudges pairs that are ACTUALLY inverted right now — a
+      // correctly-ordered pair is left completely alone, so most of the time this
+      // does nothing at all. It never touches a manually-dragged bubble's resting
+      // spot: nodes with fx/fy set are repositioned by the simulation's own tick
+      // regardless of any vy this adds, so a pinned bubble still doesn't move.
+      sim.force('parentAbove', (alpha) => {
+        const mode = layoutRef.current;
+        if (mode === 'chart' || mode === 'radial') return;
+        const minGap = GEN_GAP * 0.35;
+        for (const r of graphRef.current.relationships) {
+          if (r.type !== 'parent') continue;
+          const parent = nodeById.get(r.from_person);
+          const child = nodeById.get(r.to_person);
+          if (!parent || !child) continue;
+          const violation = (parent.y + minGap) - child.y; // >0 → parent too low
+          if (violation <= 0) continue;
+          const push = violation * 0.1 * alpha;
+          parent.vy -= push;
+          child.vy += push;
+        }
+      });
+
       // Warm the layout so the tree opens already settled, not reorganising.
       for (let i = 0; i < 220; i++) sim.tick();
       sim.alpha(0.35); // a little life left to breathe into
