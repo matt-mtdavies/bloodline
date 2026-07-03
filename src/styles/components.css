@@ -2907,6 +2907,8 @@ button.health-notes {
 .memory__del:hover { color: var(--memorial); }
 .memory__editing { display: flex; flex-direction: column; gap: 10px; }
 .memory__editing-actions { display: flex; justify-content: flex-end; gap: 10px; }
+.memory__author-picker { display: flex; flex-direction: column; gap: 4px; }
+.memory__author-picker .field__input { height: 38px; }
 .memory__vote {
   display: inline-flex;
   align-items: center;

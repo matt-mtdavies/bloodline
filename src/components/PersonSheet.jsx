@@ -75,6 +75,7 @@ export default function PersonSheet({
   const [editingMediaTitle, setEditingMediaTitle] = useState('');
   const [editingMemoryId, setEditingMemoryId] = useState(null);
   const [editingMemoryText, setEditingMemoryText] = useState('');
+  const [editingMemoryAuthorId, setEditingMemoryAuthorId] = useState('');
   const [healthPickerOpen, setHealthPickerOpen] = useState(false);
   const [healthCat, setHealthCat] = useState(HEALTH_CATEGORIES[0].id);
   const [statusPickId, setStatusPickId] = useState(null);
@@ -201,10 +202,17 @@ export default function PersonSheet({
   // Legacy memories (added before authorId existed) fall back to their old
   // free-text `author` string for display; only an admin can manage those,
   // since there's no reliable way to attribute them to anyone specific.
+  // "You" specifically was never a real name — it's what the old composer
+  // defaulted to when the free-text field was left blank, and it only ever
+  // meant "the person typing this, right now" to whoever wrote it. Displayed
+  // to anyone else later, it reads as "you personally added this", which is
+  // wrong as often as not. Show a neutral label instead until an admin
+  // reassigns it to whoever actually wrote it (see the author picker below).
   const memoryAuthorLabel = (mem) => {
     if (mem.anonymous) return mem.authorId === viewerId ? 'Anonymous (you)' : 'Anonymous';
     if (mem.authorId) return graph.byId.get(mem.authorId)?.display_name || 'Someone';
-    return mem.author || 'Someone';
+    if (!mem.author?.trim() || mem.author.trim().toLowerCase() === 'you') return 'Family member';
+    return mem.author;
   };
   const canManageMemory = (mem) => isAdmin || (!!mem.authorId && mem.authorId === viewerId);
 
@@ -624,12 +632,34 @@ export default function PersonSheet({
                             value={editingMemoryText}
                             onChange={(e) => setEditingMemoryText(e.target.value)}
                           />
+                          {isAdmin && (
+                            <label className="memory__author-picker">
+                              <span className="field__label">Author</span>
+                              <select
+                                className="field__input"
+                                value={editingMemoryAuthorId}
+                                onChange={(e) => setEditingMemoryAuthorId(e.target.value)}
+                              >
+                                <option value="">Unknown / not sure</option>
+                                {[...graph.people]
+                                  .sort((a, b) => a.display_name.localeCompare(b.display_name))
+                                  .map((p) => (
+                                    <option key={p.id} value={p.id}>{p.display_name}</option>
+                                  ))}
+                              </select>
+                            </label>
+                          )}
                           <div className="memory__editing-actions">
                             <button
                               className="section-edit"
                               onClick={() => {
                                 const t = editingMemoryText.trim();
-                                if (t) onUpdateMemory?.(mem.id, { text: t });
+                                if (t) {
+                                  onUpdateMemory?.(mem.id, {
+                                    text: t,
+                                    ...(isAdmin ? { authorId: editingMemoryAuthorId || null } : {}),
+                                  });
+                                }
                                 setEditingMemoryId(null);
                               }}
                             >
@@ -650,7 +680,11 @@ export default function PersonSheet({
                             <>
                               <button
                                 className="memory__edit"
-                                onClick={() => { setEditingMemoryId(mem.id); setEditingMemoryText(mem.text); }}
+                                onClick={() => {
+                                  setEditingMemoryId(mem.id);
+                                  setEditingMemoryText(mem.text);
+                                  setEditingMemoryAuthorId(mem.authorId || '');
+                                }}
                                 aria-label="Edit memory"
                               >
                                 Edit
