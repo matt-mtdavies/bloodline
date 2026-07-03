@@ -19,6 +19,7 @@ import {
   addMemory,
   toggleMemoryVote,
   removeMemory,
+  updateMemory,
   addPhoto,
   setPhotoCaption,
   removePhoto,
@@ -1334,6 +1335,7 @@ export default function App() {
         onAddMemory={setMemoryId}
         onVoteMemory={toggleMemoryVote}
         onRemoveMemory={removeMemory}
+        onUpdateMemory={updateMemory}
         onAddPhoto={(id, src) => addPhoto(id, { src })}
         onOpenLightbox={(personId, index) => setLightbox({ personId, index })}
         onAddDocument={(personId, fields) => addDocument(personId, fields)}

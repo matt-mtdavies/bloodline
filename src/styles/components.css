@@ -2893,12 +2893,20 @@ button.health-notes {
 }
 .memory__by::before { content: '— '; color: var(--ink-faint); }
 .memory__actions { display: inline-flex; align-items: center; gap: 12px; }
+.memory__edit {
+  font-size: 12.5px;
+  color: var(--ink-faint);
+  font-weight: 500;
+}
+.memory__edit:hover { color: var(--accent); }
 .memory__del {
   font-size: 12.5px;
   color: var(--ink-faint);
   font-weight: 500;
 }
 .memory__del:hover { color: var(--memorial); }
+.memory__editing { display: flex; flex-direction: column; gap: 10px; }
+.memory__editing-actions { display: flex; justify-content: flex-end; gap: 10px; }
 .memory__vote {
   display: inline-flex;
   align-items: center;

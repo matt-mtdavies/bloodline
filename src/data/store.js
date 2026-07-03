@@ -1412,6 +1412,13 @@ export function removeMemory(id) {
   commit(withTombstones({ ...state, memories: state.memories.filter((mem) => mem.id !== id) }, 'memories', [id]));
 }
 
+export function updateMemory(id, patch) {
+  commit({
+    ...state,
+    memories: state.memories.map((mem) => (mem.id === id ? { ...mem, ...patch } : mem)),
+  });
+}
+
 // ── Photos (gallery) ──────────────────────────────────────────────────────────
 export function addPhoto(personId, { src, caption, date }) {
   const photo = {

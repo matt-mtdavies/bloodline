@@ -37,6 +37,7 @@ export default function PersonSheet({
   onAddMemory,
   onVoteMemory,
   onRemoveMemory,
+  onUpdateMemory,
   onAddPhoto,
   onOpenLightbox,
   onAddDocument,
@@ -71,6 +72,8 @@ export default function PersonSheet({
   const [editingDocTitle, setEditingDocTitle] = useState('');
   const [editingMediaId, setEditingMediaId] = useState(null);
   const [editingMediaTitle, setEditingMediaTitle] = useState('');
+  const [editingMemoryId, setEditingMemoryId] = useState(null);
+  const [editingMemoryText, setEditingMemoryText] = useState('');
   const [healthPickerOpen, setHealthPickerOpen] = useState(false);
   const [healthCat, setHealthCat] = useState(HEALTH_CATEGORIES[0].id);
   const [statusPickId, setStatusPickId] = useState(null);
@@ -601,18 +604,54 @@ export default function PersonSheet({
                 <ul className="memories">
                   {personMemories.map((mem) => (
                     <li className="memory" key={mem.id}>
-                      <p className="memory__text">{mem.text}</p>
+                      {editingMemoryId === mem.id ? (
+                        <div className="memory__editing">
+                          <textarea
+                            className="field__input field__input--area"
+                            rows={3}
+                            autoFocus
+                            value={editingMemoryText}
+                            onChange={(e) => setEditingMemoryText(e.target.value)}
+                          />
+                          <div className="memory__editing-actions">
+                            <button
+                              className="section-edit"
+                              onClick={() => {
+                                const t = editingMemoryText.trim();
+                                if (t) onUpdateMemory?.(mem.id, { text: t });
+                                setEditingMemoryId(null);
+                              }}
+                            >
+                              Save
+                            </button>
+                            <button className="section-edit" onClick={() => setEditingMemoryId(null)}>
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="memory__text">{mem.text}</p>
+                      )}
                       <div className="memory__foot">
                         <span className="memory__by">{mem.author}</span>
                         <span className="memory__actions">
-                          {mem.author === 'You' && (
-                            <button
-                              className="memory__del"
-                              onClick={() => onRemoveMemory?.(mem.id)}
-                              aria-label="Remove memory"
-                            >
-                              Remove
-                            </button>
+                          {canContribute && editingMemoryId !== mem.id && (
+                            <>
+                              <button
+                                className="memory__edit"
+                                onClick={() => { setEditingMemoryId(mem.id); setEditingMemoryText(mem.text); }}
+                                aria-label="Edit memory"
+                              >
+                                Edit
+                              </button>
+                              <button
+                                className="memory__del"
+                                onClick={() => onRemoveMemory?.(mem.id)}
+                                aria-label="Remove memory"
+                              >
+                                Remove
+                              </button>
+                            </>
                           )}
                           <button
                             className={'memory__vote' + (mem.youVoted ? ' memory__vote--on' : '')}
