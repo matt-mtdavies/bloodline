@@ -1375,12 +1375,22 @@ export function setPhoto(id, dataUrl, { recordActivity = false } = {}) {
 }
 
 // ── Memories ────────────────────────────────────────────────────────────────
-export function addMemory(personId, { text, author }) {
+// authorId is the real resolved viewer (state.myPersonId — never client-typed
+// free text), so editing/removing can later be restricted to "the person who
+// actually wrote this, or an admin" (see PersonSheet). `anonymous` only hides
+// the identity from the *display* — the author still keeps their own
+// edit/remove rights, they just read as "Anonymous" to everyone else.
+// Legacy memories (from before this field existed) keep their old free-text
+// `author` string for display, but have no authorId — only an admin can
+// manage those, since there's no reliable way to attribute them.
+export function addMemory(personId, { text, anonymous = false }) {
+  const authorId = state.myPersonId || null;
   const memory = {
     id: mid(),
     person_id: personId,
     text: text.trim(),
-    author: (author || '').trim() || 'You',
+    authorId,
+    anonymous: !!anonymous,
     created_at: new Date().toISOString().slice(0, 10),
     votes: 0,
     youVoted: false,
@@ -1390,7 +1400,7 @@ export function addMemory(personId, { text, author }) {
     type: 'memory_added',
     personId,
     personName: person?.display_name ?? '',
-    authorName: memory.author,
+    ...(anonymous ? { authorName: 'Anonymous' } : {}),
     detail: text.trim().slice(0, 140),
   }));
   return memory.id;

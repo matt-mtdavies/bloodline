@@ -3,10 +3,15 @@ import { useEffect, useState } from 'react';
 /*
  * Add a memory. The little things — a habit, a phrase, a Sunday ritual — that
  * say more about a person than any set of dates. Short and human by design.
+ *
+ * Author is always the real signed-in viewer (never free-typed) — see
+ * store.js#addMemory — so "who wrote this" can later gate editing/removing.
+ * The "post anonymously" toggle only affects display; the author keeps their
+ * own edit/remove rights either way.
  */
-export default function MemorySheet({ person, onClose, onAdd }) {
+export default function MemorySheet({ person, viewerName, onClose, onAdd }) {
   const [text, setText] = useState('');
-  const [author, setAuthor] = useState('');
+  const [anonymous, setAnonymous] = useState(false);
 
   useEffect(() => {
     const onKey = (e) => e.key === 'Escape' && onClose();
@@ -16,7 +21,7 @@ export default function MemorySheet({ person, onClose, onAdd }) {
 
   const save = () => {
     if (!text.trim()) return;
-    onAdd({ text, author });
+    onAdd({ text, anonymous });
   };
 
   return (
@@ -44,17 +49,18 @@ export default function MemorySheet({ person, onClose, onAdd }) {
               placeholder="Every Christmas he made pancakes for everyone…"
             />
           </label>
-          <label className="field">
-            <span className="field__label">From</span>
-            <div className="input-wrap">
-              <input
-                className="field__input"
-                value={author}
-                onChange={(e) => setAuthor(e.target.value)}
-                placeholder="Your name (optional)"
-              />
-              {author && <button type="button" className="input-clear" onClick={() => setAuthor('')} aria-label="Clear" tabIndex={-1}>×</button>}
-            </div>
+          <label className="toggle">
+            <input
+              type="checkbox"
+              checked={anonymous}
+              onChange={(e) => setAnonymous(e.target.checked)}
+            />
+            <span>
+              Post anonymously
+              {!anonymous && viewerName && (
+                <span className="field__hint"> — otherwise posted as {viewerName}</span>
+              )}
+            </span>
           </label>
         </div>
 

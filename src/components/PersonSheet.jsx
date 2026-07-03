@@ -58,6 +58,7 @@ export default function PersonSheet({
   onMarkJoined,
   canEdit = true,        // editor+ : structural changes (people, relationships, edits)
   canContribute = true,  // contributor+ : add memories & photos
+  isAdmin = true,        // owner/co-admin : manage anyone's memory, not just your own
 }) {
   const person = personId ? graph.byId.get(personId) : null;
   const fileRef = useRef(null);
@@ -196,6 +197,16 @@ export default function PersonSheet({
     (d) => d.mime?.startsWith('audio/') || d.mime?.startsWith('video/'),
   );
   const completeness = restricted ? null : profileCompleteness(person, graph, personMemories.length);
+
+  // Legacy memories (added before authorId existed) fall back to their old
+  // free-text `author` string for display; only an admin can manage those,
+  // since there's no reliable way to attribute them to anyone specific.
+  const memoryAuthorLabel = (mem) => {
+    if (mem.anonymous) return mem.authorId === viewerId ? 'Anonymous (you)' : 'Anonymous';
+    if (mem.authorId) return graph.byId.get(mem.authorId)?.display_name || 'Someone';
+    return mem.author || 'Someone';
+  };
+  const canManageMemory = (mem) => isAdmin || (!!mem.authorId && mem.authorId === viewerId);
 
   const generateStory = async () => {
     storyAbort.current?.abort();
@@ -633,9 +644,9 @@ export default function PersonSheet({
                         <p className="memory__text">{mem.text}</p>
                       )}
                       <div className="memory__foot">
-                        <span className="memory__by">{mem.author}</span>
+                        <span className="memory__by">{memoryAuthorLabel(mem)}</span>
                         <span className="memory__actions">
-                          {canContribute && editingMemoryId !== mem.id && (
+                          {canManageMemory(mem) && editingMemoryId !== mem.id && (
                             <>
                               <button
                                 className="memory__edit"

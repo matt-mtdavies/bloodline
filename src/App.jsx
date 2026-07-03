@@ -1322,6 +1322,7 @@ export default function App() {
         documents={data.documents}
         canEdit={canEditTree}
         canContribute={canContributeTree}
+        isAdmin={canManageTreeStructure}
         lockEscape={!!(addAnchorId || editId || timelineId || memoryId || lightbox || crop || invitePersonId)}
         onClose={closePerson}
         onFocus={(id) => {
@@ -1485,6 +1486,7 @@ export default function App() {
       {memoryId && graph.byId.get(memoryId) && (
         <MemorySheet
           person={graph.byId.get(memoryId)}
+          viewerName={graph.byId.get(data.myPersonId || DEFAULT_FOCUS)?.display_name}
           onClose={() => setMemoryId(null)}
           onAdd={handleAddMemory}
         />
