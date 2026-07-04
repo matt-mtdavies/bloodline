@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, forwardRef } from 'react';
 import Logo from './Logo.jsx';
 
-export default function TopBar({ familyName, stats, view, syncStatus, syncError, onRetrySync, onToggleView, onOpenLegend, legendActive = false, onOpenSettings, onOpenActivity, activityCount = 0, user, userPhoto, onOpenProfile, onSearch, onOpenInsights, onOpenTimeline, onOpenDuplicates, duplicateCount = 0, storageWarning, syncToast, onDismissSyncToast }) {
+export default function TopBar({ familyName, stats, view, syncStatus, syncError, onRetrySync, onToggleView, onOpenLegend, bloodlineOnly = false, onToggleBloodlineOnly, onOpenSettings, onOpenActivity, activityCount = 0, user, userPhoto, onOpenProfile, onSearch, onOpenInsights, onOpenTimeline, onOpenDuplicates, duplicateCount = 0, storageWarning, syncToast, onDismissSyncToast }) {
   const [statsOpen, setStatsOpen] = useState(false);
   const popoverRef = useRef(null);
   const statsRef = useRef(null);
@@ -94,16 +94,30 @@ export default function TopBar({ familyName, stats, view, syncStatus, syncError,
         </div>
       </div>
 
-      {/* Row 2: legend (left) + family name + stats (centre) + view toggle (right) */}
+      {/* Row 2: legend + bloodline-only (left, stacked) + family name + stats
+          (centre) + view toggle (right). The stack keeps both quick-access
+          toggles within thumb's reach of each other, Legend on top since it's
+          opened far more often. */}
       <div className="topbar__treerow">
-        <button
-          className={`topbar__row2-btn${legendActive ? ' topbar__row2-btn--active' : ''}`}
-          onClick={onOpenLegend}
-          aria-label="Legend — visual guide and display options"
-        >
-          <LegendIcon />
-          {legendActive && <span className="topbar__filter-dot" aria-hidden="true" />}
-        </button>
+        <div className="topbar__row2-stack">
+          <button
+            className="topbar__row2-btn"
+            onClick={onOpenLegend}
+            aria-label="Legend — visual guide and display options"
+          >
+            <LegendIcon />
+            <span className="row2-tip">Legend</span>
+          </button>
+          <button
+            className={`topbar__row2-btn${bloodlineOnly ? ' topbar__row2-btn--active' : ''}`}
+            onClick={onToggleBloodlineOnly}
+            aria-label="Bloodline only — show only biological and adoptive connections"
+            aria-pressed={bloodlineOnly}
+          >
+            <BloodlineIcon />
+            <span className="row2-tip">Bloodline only</span>
+          </button>
+        </div>
         <div className="topbar__treerow__center">
           <span className="topbar__familyname">{familyName}</span>
           {stats && stats.people > 0 && (
@@ -374,6 +388,21 @@ function LegendIcon() {
       <path d="M12.5 12h7" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
       <path d="M17 12v2.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
       <path d="M19.5 12v1.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
+    </svg>
+  );
+}
+
+// A single unbroken line of three generations — no side branches — for the
+// "Bloodline only" toggle, deliberately the quiet opposite of TreeIcon's
+// branching Y: this is the one straight line of blood the network reduces to
+// once partners, in-laws and step-relatives are filtered out.
+function BloodlineIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="4.5" r="2.3" stroke="currentColor" strokeWidth="1.6"/>
+      <circle cx="12" cy="12" r="2.6" stroke="currentColor" strokeWidth="1.6"/>
+      <circle cx="12" cy="19.5" r="2.3" stroke="currentColor" strokeWidth="1.6"/>
+      <path d="M12 6.8v2.7M12 14.6v2.7" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
     </svg>
   );
 }

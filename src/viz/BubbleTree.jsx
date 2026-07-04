@@ -50,7 +50,6 @@ export default function BubbleTree({
   onOpenPerson,
   reducedMotion,
   layout = 'organic',
-  mergeParents = false,
   lineagePath = null,
   lineageEndId = null,
   invitedIds = null,
@@ -70,8 +69,6 @@ export default function BubbleTree({
   visibleRef.current = visibleIds;
   const graphRef = useRef(graph);
   graphRef.current = graph; // always the live graph for the loop + sync
-  const mergeRef = useRef(mergeParents);
-  mergeRef.current = mergeParents;
   const lineageRef = useRef(lineagePath);
   lineageRef.current = lineagePath;
   const lineageEndRef = useRef(lineageEndId);
@@ -1616,7 +1613,7 @@ export default function BubbleTree({
           drawLinksChart(linkGfx, graphRef.current, pos, (id) => effectiveVis.has(id), BASE_RADIUS, lineage);
         } else {
           drawLinks(
-            linkGfx, graphRef.current, pos, (id) => vis.has(id), BASE_RADIUS, mergeRef.current,
+            linkGfx, graphRef.current, pos, (id) => vis.has(id), BASE_RADIUS,
             lineage, activeRef.current, lineageEdges, nowMs, lineageLandedAt, HOLD_MS, STAGGER_MS, FADE_MS,
           );
         }

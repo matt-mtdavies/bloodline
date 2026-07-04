@@ -49,7 +49,7 @@ function lerpColor(a, b, t) {
 }
 
 export function drawLinks(
-  g, graph, pos, isVisible, baseRadius, mergeParents = false, lineagePath = null, activeId = null,
+  g, graph, pos, isVisible, baseRadius, lineagePath = null, activeId = null,
   edgeLitAt = null, nowMs = 0, landedAt = 0, holdMs = 0, staggerMs = 0, fadeMs = 1,
 ) {
   g.clear();
@@ -139,7 +139,7 @@ export function drawLinks(
   }
 
   // ── Parent → child links ──────────────────────────────────────────────────
-  // Optionally merge co-parents into a single origin point per couple. Two cases:
+  // Co-parents always merge into a single origin point per couple. Two cases:
   //
   // 1. Current / widowed couple: one line from the bottom of the warm pod.
   // 2. Divorced co-parents: two grey arms converging at a small open-circle
@@ -150,85 +150,83 @@ export function drawLinks(
   // Both cases add their edges to `merged` so the per-parent pass skips them.
   // Everything else (single parent, mixed bio/step, non-coupled) falls through.
   const merged = new Set();
-  if (mergeParents) {
-    // Gather co-parent groups by checking every pair of a child's parents.
-    // Requires exactly that the two parents are partners (any status).
-    // Using pairs instead of requiring parents.length===2 means a child with
-    // 3 parents (e.g. bio-mum + bio-dad + step-parent) still gets the bio
-    // co-parent line merged; the step line falls through to the per-edge pass.
-    const groups = new Map();        // current / widowed co-parents
-    const divorceGroups = new Map(); // former co-parents
+  // Gather co-parent groups by checking every pair of a child's parents.
+  // Requires exactly that the two parents are partners (any status).
+  // Using pairs instead of requiring parents.length===2 means a child with
+  // 3 parents (e.g. bio-mum + bio-dad + step-parent) still gets the bio
+  // co-parent line merged; the step line falls through to the per-edge pass.
+  const groups = new Map();        // current / widowed co-parents
+  const divorceGroups = new Map(); // former co-parents
 
-    for (const person of graph.people) {
-      const childId = person.id;
-      if (!isVisible(childId)) continue;
-      const parents = graph.parents(childId).filter((p) => isVisible(p.id));
-      if (parents.length < 2) continue;
+  for (const person of graph.people) {
+    const childId = person.id;
+    if (!isVisible(childId)) continue;
+    const parents = graph.parents(childId).filter((p) => isVisible(p.id));
+    if (parents.length < 2) continue;
 
-      for (let i = 0; i < parents.length; i++) {
-        for (let j = i + 1; j < parents.length; j++) {
-          const p1 = parents[i];
-          const p2 = parents[j];
-          if (p1.qualifier !== p2.qualifier) continue;
-          const bond = graph.partners(p1.id).find((x) => x.id === p2.id);
-          if (!bond) continue;
+    for (let i = 0; i < parents.length; i++) {
+      for (let j = i + 1; j < parents.length; j++) {
+        const p1 = parents[i];
+        const p2 = parents[j];
+        if (p1.qualifier !== p2.qualifier) continue;
+        const bond = graph.partners(p1.id).find((x) => x.id === p2.id);
+        if (!bond) continue;
 
-          const key = [p1.id, p2.id].sort().join('|') + '|' + p1.qualifier;
-          const target = bond.status === 'former' ? divorceGroups : groups;
-          if (!target.has(key))
-            target.set(key, { p1: p1.id, p2: p2.id, qualifier: p1.qualifier, kids: [] });
-          target.get(key).kids.push(childId);
-          merged.add(`${p1.id}>${childId}`);
-          merged.add(`${p2.id}>${childId}`);
-        }
+        const key = [p1.id, p2.id].sort().join('|') + '|' + p1.qualifier;
+        const target = bond.status === 'former' ? divorceGroups : groups;
+        if (!target.has(key))
+          target.set(key, { p1: p1.id, p2: p2.id, qualifier: p1.qualifier, kids: [] });
+        target.get(key).kids.push(childId);
+        merged.add(`${p1.id}>${childId}`);
+        merged.add(`${p2.id}>${childId}`);
       }
     }
-
-    const drawGroup = (grp) => {
-      const a1 = pos.get(grp.p1);
-      const a2 = pos.get(grp.p2);
-      if (!a1 || !a2) return;
-      const biological = grp.qualifier === 'biological';
-      const color = hex(biological ? '#8a7d6b' : '#b6a892');
-      // A child's branch burns if EITHER co-parent's edge to that specific
-      // child is lit — under the flyover's co-parent model both are lit
-      // together, but take the max so a stray mismatch never leaves a gap.
-      const branchBurn = (childId) => Math.max(
-        burnIntensity(grp.p1, childId, [grp.p1, childId].sort().join('|') + 'parent'),
-        burnIntensity(grp.p2, childId, [grp.p2, childId].sort().join('|') + 'parent'),
-      );
-      const seg = (from, to, burn) =>
-        biological
-          ? curve(g, from, to, litStroke(color, 2, 0.7, burn))
-          : dashedCurve(g, from, to, 14, 0.5, litStroke(color, 2, 0.85, burn));
-      const stemSeg = (from, to, burn) =>
-        biological
-          ? curve(g, from, to, litStroke(color, 3, 0.7, burn))
-          : dashedCurve(g, from, to, 14, 0.5, litStroke(color, 3, 0.85, burn));
-
-      // Origin: bottom edge of the couple's shaded band.
-      const start = { x: (a1.x + a2.x) / 2, y: (a1.y + a2.y) / 2 + baseRadius * 1.05 };
-      const kidEntries = grp.kids.map((id) => ({ id, p: pos.get(id) })).filter((e) => e.p);
-      if (kidEntries.length === 0) return;
-
-      if (kidEntries.length === 1) {
-        seg(start, kidEntries[0].p, branchBurn(kidEntries[0].id));
-      } else {
-        const avgX = kidEntries.reduce((s, e) => s + e.p.x, 0) / kidEntries.length;
-        const nearestY = Math.min(...kidEntries.map((e) => e.p.y));
-        const junction = { x: start.x * 0.55 + avgX * 0.45, y: start.y + (nearestY - start.y) * 0.72 };
-        const burns = kidEntries.map((e) => branchBurn(e.id));
-        // The stem carries the strongest branch's fire — it's lit the moment
-        // any child down that trunk is on the route, and only fully goes
-        // dark once every branch through it has faded.
-        stemSeg(start, junction, Math.max(0, ...burns));
-        kidEntries.forEach((e, i) => seg(junction, e.p, burns[i]));
-      }
-    };
-
-    for (const grp of groups.values()) drawGroup(grp);
-    for (const grp of divorceGroups.values()) drawGroup(grp);
   }
+
+  const drawGroup = (grp) => {
+    const a1 = pos.get(grp.p1);
+    const a2 = pos.get(grp.p2);
+    if (!a1 || !a2) return;
+    const biological = grp.qualifier === 'biological';
+    const color = hex(biological ? '#8a7d6b' : '#b6a892');
+    // A child's branch burns if EITHER co-parent's edge to that specific
+    // child is lit — under the flyover's co-parent model both are lit
+    // together, but take the max so a stray mismatch never leaves a gap.
+    const branchBurn = (childId) => Math.max(
+      burnIntensity(grp.p1, childId, [grp.p1, childId].sort().join('|') + 'parent'),
+      burnIntensity(grp.p2, childId, [grp.p2, childId].sort().join('|') + 'parent'),
+    );
+    const seg = (from, to, burn) =>
+      biological
+        ? curve(g, from, to, litStroke(color, 2, 0.7, burn))
+        : dashedCurve(g, from, to, 14, 0.5, litStroke(color, 2, 0.85, burn));
+    const stemSeg = (from, to, burn) =>
+      biological
+        ? curve(g, from, to, litStroke(color, 3, 0.7, burn))
+        : dashedCurve(g, from, to, 14, 0.5, litStroke(color, 3, 0.85, burn));
+
+    // Origin: bottom edge of the couple's shaded band.
+    const start = { x: (a1.x + a2.x) / 2, y: (a1.y + a2.y) / 2 + baseRadius * 1.05 };
+    const kidEntries = grp.kids.map((id) => ({ id, p: pos.get(id) })).filter((e) => e.p);
+    if (kidEntries.length === 0) return;
+
+    if (kidEntries.length === 1) {
+      seg(start, kidEntries[0].p, branchBurn(kidEntries[0].id));
+    } else {
+      const avgX = kidEntries.reduce((s, e) => s + e.p.x, 0) / kidEntries.length;
+      const nearestY = Math.min(...kidEntries.map((e) => e.p.y));
+      const junction = { x: start.x * 0.55 + avgX * 0.45, y: start.y + (nearestY - start.y) * 0.72 };
+      const burns = kidEntries.map((e) => branchBurn(e.id));
+      // The stem carries the strongest branch's fire — it's lit the moment
+      // any child down that trunk is on the route, and only fully goes
+      // dark once every branch through it has faded.
+      stemSeg(start, junction, Math.max(0, ...burns));
+      kidEntries.forEach((e, i) => seg(junction, e.p, burns[i]));
+    }
+  };
+
+  for (const grp of groups.values()) drawGroup(grp);
+  for (const grp of divorceGroups.values()) drawGroup(grp);
 
   for (const r of graph.relationships) {
     if (r.type !== 'parent') continue;

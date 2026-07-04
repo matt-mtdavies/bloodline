@@ -411,7 +411,6 @@ export default function App() {
   const [view, setView] = useState('bubbles');
   const [legendOpen, setLegendOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [mergeParents, setMergeParents] = useState(true);
   const [bloodlineOnly, setBloodlineOnly] = useState(false);
   const [lineageMode, setLineageMode] = useState(false);
   const [lineagePath, setLineagePath] = useState(null); // Set<id> | null
@@ -1085,7 +1084,8 @@ export default function App() {
         onRetrySync={() => saveToServer()}
         onToggleView={() => setView((v) => (v === 'bubbles' ? 'list' : 'bubbles'))}
         onOpenLegend={() => setLegendOpen(true)}
-        legendActive={bloodlineOnly}
+        bloodlineOnly={bloodlineOnly}
+        onToggleBloodlineOnly={() => setBloodlineOnly((v) => !v)}
         onOpenSettings={() => setSettingsOpen(true)}
         onOpenActivity={() => { setActivityOpen(true); setLastReadAt(Date.now()); }}
         activityCount={unreadCount}
@@ -1124,7 +1124,6 @@ export default function App() {
             onOpenPerson={lineageMode ? null : openPerson}
             reducedMotion={reducedMotion}
             layout={layout}
-            mergeParents={mergeParents}
             lineagePath={lineagePath}
             lineageEndId={lineageOrder ? lineageOrder[lineageOrder.length - 1] : null}
             timeMode={timeMode}
@@ -1562,10 +1561,6 @@ export default function App() {
       <Legend
         open={legendOpen}
         onClose={() => setLegendOpen(false)}
-        mergeParents={mergeParents}
-        onToggleMerge={() => setMergeParents((v) => !v)}
-        bloodlineOnly={bloodlineOnly}
-        onToggleBloodlineOnly={() => setBloodlineOnly((v) => !v)}
         layout={layout}
         onSetLayout={(mode) => {
           setLayout(mode);
