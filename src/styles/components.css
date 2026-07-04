@@ -726,8 +726,11 @@
 
 /* "Show in tree" — the flight-across-the-tree flourish (same engine as
    search), as a per-row action distinct from the row's own tap-to-centre.
-   Muted at rest so it doesn't compete with the name/meta text; warms on
-   hover like every other icon-only affordance in the app. */
+   A hairline outline ring at rest (not a filled circle — this repeats down
+   a list that can run to hundreds of rows, so a solid tint would get heavy)
+   marks it as a discrete control even before touch, since :hover alone
+   never fires on a phone; warms to a filled accent circle on hover/press
+   like every other icon-only affordance in the app. */
 .person-row__map {
   flex: none;
   display: grid;
@@ -735,11 +738,12 @@
   width: 34px;
   height: 34px;
   border-radius: 50%;
-  color: var(--ink-faint);
+  color: var(--ink-soft);
   background: transparent;
-  transition: color 0.15s ease, background 0.15s ease, transform 0.2s var(--spring);
+  border: 1px solid var(--hairline);
+  transition: color 0.15s ease, background 0.15s ease, border-color 0.15s ease, transform 0.2s var(--spring);
 }
-.person-row__map:hover { color: var(--accent); background: var(--accent-soft); }
+.person-row__map:hover { color: var(--accent); background: var(--accent-soft); border-color: transparent; }
 .person-row__map:active { transform: scale(0.9); }
 
 .search-wrap { position: relative; display: flex; align-items: center; margin-bottom: 12px; }
