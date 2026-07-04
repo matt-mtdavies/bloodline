@@ -71,6 +71,7 @@ export default function PersonSheet({
   const [confirmUnlinkId, setConfirmUnlinkId] = useState(null); // rel-chip awaiting unlink confirm
   const [editingDocId, setEditingDocId] = useState(null);
   const [editingDocTitle, setEditingDocTitle] = useState('');
+  const [confirmDeleteDocId, setConfirmDeleteDocId] = useState(null); // awaiting "remove this document?" confirm
   const [editingMediaId, setEditingMediaId] = useState(null);
   const [editingMediaTitle, setEditingMediaTitle] = useState('');
   const [editingMemoryId, setEditingMemoryId] = useState(null);
@@ -790,17 +791,23 @@ export default function PersonSheet({
                 <ul className="doc-list">
                   {personDocs.map((doc) => (
                     <li key={doc.id}>
-                      <div className="doc-row">
-                        {doc.mime?.startsWith('image/') ? (
-                          <SmartImg className="doc-thumb" src={doc.src} alt={doc.title} />
-                        ) : doc.thumb ? (
-                          <img className="doc-thumb" src={doc.thumb} alt={doc.title} />
-                        ) : (
-                          <span className="doc-row__icon" aria-hidden="true">
-                            <DocFileIcon />
-                          </span>
-                        )}
-                        <span className="doc-row__text">
+                      <div className="doc-card">
+                        <button
+                          className="doc-card__preview"
+                          onClick={() => openDoc(doc)}
+                          aria-label={`Open ${doc.title}`}
+                        >
+                          {doc.mime?.startsWith('image/') ? (
+                            <SmartImg src={doc.src} alt={doc.title} />
+                          ) : doc.thumb ? (
+                            <img src={doc.thumb} alt={doc.title} />
+                          ) : (
+                            <span className="doc-card__icon" aria-hidden="true">
+                              <DocFileIcon />
+                            </span>
+                          )}
+                        </button>
+                        <div className="doc-card__body">
                           {editingDocId === doc.id ? (
                             <input
                               className="doc-row__title-input"
@@ -819,33 +826,49 @@ export default function PersonSheet({
                             />
                           ) : (
                             <button
-                              className="doc-row__title"
+                              className="doc-card__title"
                               onClick={() => { setEditingDocId(doc.id); setEditingDocTitle(doc.title); }}
                               title="Tap to rename"
                             >
                               {doc.title}
                             </button>
                           )}
-                          <span className="doc-row__meta">
+                          <span className="doc-card__meta">
                             {doc.mime === 'application/pdf' ? 'PDF' : 'Image'}{doc.created_at ? ` · ${fmtDocDate(doc.created_at)}` : ''}
                           </span>
-                        </span>
-                        <span className="doc-row__actions">
-                          <button
-                            className="doc-row__open"
-                            onClick={() => openDoc(doc)}
-                            aria-label={`Open ${doc.title}`}
-                          >
-                            Open
-                          </button>
-                          <button
-                            className="doc-row__del"
-                            onClick={() => onRemoveDocument?.(doc.id)}
-                            aria-label={`Remove ${doc.title}`}
-                          >
-                            <CloseIcon />
-                          </button>
-                        </span>
+                          {confirmDeleteDocId === doc.id ? (
+                            <div className="doc-card__confirm">
+                              <span>Remove this document?</span>
+                              <div className="doc-card__confirm-btns">
+                                <button
+                                  className="doc-card__confirm-remove"
+                                  onClick={() => { onRemoveDocument?.(doc.id); setConfirmDeleteDocId(null); }}
+                                >
+                                  Remove
+                                </button>
+                                <button
+                                  className="doc-card__confirm-cancel"
+                                  onClick={() => setConfirmDeleteDocId(null)}
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="doc-card__actions">
+                              <button className="doc-card__open" onClick={() => openDoc(doc)}>
+                                Open
+                              </button>
+                              <button
+                                className="doc-card__del"
+                                onClick={() => setConfirmDeleteDocId(doc.id)}
+                                aria-label={`Remove ${doc.title}`}
+                              >
+                                <CloseIcon />
+                              </button>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </li>
                   ))}
@@ -1438,10 +1461,10 @@ function UnlinkIcon() {
 }
 function DocFileIcon() {
   return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path d="M4 4a2 2 0 0 1 2-2h8l6 6v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4Z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
-      <path d="M14 2v6h6" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
-      <path d="M8 13h8M8 17h5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M4 4a2 2 0 0 1 2-2h8l6 6v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+      <path d="M14 2v6h6" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+      <path d="M8 13h8M8 17h5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
     </svg>
   );
 }

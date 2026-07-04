@@ -1386,36 +1386,61 @@
 .layout-seg__btn:hover:not(.layout-seg__btn--on) { background: var(--paper-deep); }
 
 /* ── Documents ──────────────────────────────────────────────────────────────── */
-.doc-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
-.doc-row {
+/* A flex column, not grid: grid items get an implicit min-width:auto that
+   refuses to shrink below their content's intrinsic size, which is exactly
+   what was pushing this row's Open/Remove past the right edge on narrow
+   screens. min-width:0 down the whole chain is the actual fix; flex column
+   items don't have that same trap, but it's set explicitly anyway so this
+   can never regress the same way. */
+.doc-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.doc-list > li { min-width: 0; }
+.doc-card {
   display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 11px 14px;
+  gap: 14px;
+  padding: 12px;
   background: var(--card);
-  border-radius: 14px;
+  border-radius: 16px;
   box-shadow: var(--shadow-soft);
+  min-width: 0;
 }
-.doc-row__icon { flex: none; color: var(--ink-soft); }
-/* .smartimg sets width/height to 100% — override with higher specificity here */
-.doc-row .doc-thumb { width: 40px; height: 40px; border-radius: 6px; flex: none; }
-.doc-row__text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.doc-row__meta { font-size: 12px; color: var(--ink-soft); white-space: nowrap; }
-.doc-row__actions { display: flex; gap: 8px; align-items: center; flex: none; }
-.doc-row__title {
-  font-size: 14.5px;
-  font-weight: 500;
-  color: var(--ink);
-  white-space: nowrap;
+/* A real, legible preview — big enough to actually recognise the document
+   at a glance, not just a generic file chip. */
+.doc-card__preview {
+  flex: none;
+  width: 72px;
+  height: 90px;
+  border-radius: 10px;
   overflow: hidden;
-  text-overflow: ellipsis;
+  background: var(--paper-deep);
+  border: 1px solid var(--hairline);
+  display: grid;
+  place-items: center;
+  padding: 0;
+}
+.doc-card__preview img,
+.doc-card__preview .smartimg {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.doc-card__icon { color: var(--ink-faint); }
+.doc-card__body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; padding: 1px 0; }
+.doc-card__title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink);
   background: none;
   cursor: text;
   text-align: left;
   padding: 0;
   border-radius: 4px;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
-.doc-row__title:hover { color: var(--accent); }
+.doc-card__title:hover { color: var(--accent); }
 .doc-row__title-input {
   font-size: 14.5px;
   font-weight: 500;
@@ -1428,10 +1453,46 @@
   outline: none;
   font-family: inherit;
 }
-.doc-row__open { font-size: 13px; color: var(--accent); font-weight: 500; background: none; cursor: pointer; white-space: nowrap; }
-.doc-row__open:hover { text-decoration: underline; }
-.doc-row__del { display: flex; align-items: center; justify-content: center; width: 26px; height: 26px; color: var(--ink-faint); background: none; cursor: pointer; border-radius: 50%; flex: none; }
-.doc-row__del:hover { color: #b94040; background: #b9404014; }
+.doc-card__meta { font-size: 12.5px; color: var(--ink-soft); }
+.doc-card__actions { display: flex; align-items: center; gap: 10px; margin-top: auto; padding-top: 6px; }
+.doc-card__open {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #fffdf9;
+  background: var(--accent);
+  padding: 7px 18px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.doc-card__open:hover { filter: brightness(1.05); }
+.doc-card__open:active { transform: scale(0.97); }
+/* Deliberately last in a roomy flex row, well clear of Open, with a generous
+   hit target and its own confirm step below — a stray thumb bump opens a
+   confirmation, never an instant, unrecoverable delete. */
+.doc-card__del {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  margin-left: auto;
+  color: var(--ink-faint);
+  background: none;
+  cursor: pointer;
+  border-radius: 50%;
+  flex: none;
+}
+.doc-card__del:hover { color: #b94040; background: #b9404014; }
+.doc-card__confirm { display: flex; flex-direction: column; gap: 8px; font-size: 13.5px; color: var(--ink); margin-top: auto; padding-top: 6px; }
+.doc-card__confirm-btns { display: flex; gap: 8px; }
+.doc-card__confirm-remove {
+  padding: 6px 14px; border-radius: 10px; font-size: 13px; font-weight: 600;
+  background: #c2603a; color: #fff;
+}
+.doc-card__confirm-cancel {
+  padding: 6px 14px; border-radius: 10px; font-size: 13px; font-weight: 500;
+  background: var(--paper-deep); color: var(--ink-soft);
+}
 
 /* ── Voice & Video ───────────────────────────────────────────────────────── */
 .media-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
