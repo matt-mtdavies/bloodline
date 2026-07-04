@@ -45,7 +45,7 @@ import {
 } from './data/store.js';
 import { uploadPhoto, generateThumb, uploadDocument, savePhotoToDevice } from './lib/image.js';
 import { useImageZoom } from './lib/useImageZoom.js';
-import { buildGraph, pathBetween, pathBetweenOrdered } from './data/graph.js';
+import { buildGraph, pathBetween, pathBetweenOrdered, bloodRelativesOf } from './data/graph.js';
 import { detectRegion, nearestWorldEvent } from './lib/worldEvents.js';
 import { findDuplicatePairs } from './lib/duplicates.js';
 import { canManageTree } from './lib/visibility.js';
@@ -534,6 +534,24 @@ export default function App() {
     return ids;
   }, [focusMode, activeId, graph]);
 
+  // Who counts as "blood" when Bloodline-only is on — anchored to the signed-in
+  // VIEWER's own person (same convention as the search flyover's origin, the
+  // hover card's viewerId, etc.), never the currently-tapped/active bubble.
+  // Whoever you're looking at shouldn't redefine what "blood" means for the
+  // rest of the session; it should mean the same thing every time you turn
+  // the filter on, and — since it's keyed to myPersonId — genuinely differ
+  // per family member: your mother-in-law is blood from your spouse's seat
+  // in the tree and an in-law from yours, on the same shared tree data.
+  // The neighbour-widening filters below (skipping step/partner hops) only
+  // stop a NON-blood person from being newly revealed as someone's neighbour;
+  // they don't do anything for someone already in `expanded` directly (a
+  // search result, a direct tap, or — critically — "Show all", which dumps
+  // every single person in at once). This closes that gap as a final filter pass.
+  const bloodIds = useMemo(
+    () => (bloodlineOnly ? bloodRelativesOf(graph, data.myPersonId || DEFAULT_FOCUS) : null),
+    [graph, data.myPersonId, bloodlineOnly],
+  );
+
   // Same neighbour-expansion as visibleIds below, but deliberately NOT
   // filtered by aliveAtYear/timeYear — this scopes the time slider's own
   // range (below), and if it depended on the live time filter the slider's
@@ -560,13 +578,18 @@ export default function App() {
         vis.add(x.id);
       }
     }
+    if (bloodIds) {
+      for (const id of [...vis]) {
+        if (!bloodIds.has(id)) vis.delete(id);
+      }
+    }
     if (focusFamilyIds) {
       for (const id of [...vis]) {
         if (!focusFamilyIds.has(id)) vis.delete(id);
       }
     }
     return vis;
-  }, [graph, expanded, focusFamilyIds, bloodlineOnly]);
+  }, [graph, expanded, focusFamilyIds, bloodlineOnly, bloodIds]);
 
   // Time slider: scoped to whoever's actually on screen right now (5 years
   // before the earliest birth among them), not the whole tree — with 160-odd
@@ -623,6 +646,15 @@ export default function App() {
         if (alive(x.id)) vis.add(x.id);
       }
     }
+    // Bloodline-only: strip anyone not blood/adopted-reachable from the
+    // active person, however they got into `expanded` — including "Show
+    // all", which (by design) adds every single person at once and would
+    // otherwise bypass the per-neighbour step/partner filtering above entirely.
+    if (bloodIds) {
+      for (const id of [...vis]) {
+        if (!bloodIds.has(id)) vis.delete(id);
+      }
+    }
     // Focus mode: collapse everyone outside the nuclear family
     if (focusFamilyIds) {
       for (const id of [...vis]) {
@@ -630,7 +662,7 @@ export default function App() {
       }
     }
     return vis;
-  }, [graph, expanded, aliveAtYear, focusFamilyIds, bloodlineOnly]);
+  }, [graph, expanded, aliveAtYear, focusFamilyIds, bloodlineOnly, bloodIds]);
 
   // Play animation: life journey = 350 ms/step (cinematic), time mode = 600 ms/step
   // — slowed so each birth's light-arrival animation gets room to land and be felt.

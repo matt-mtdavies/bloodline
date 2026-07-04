@@ -91,6 +91,53 @@ export function distancesFrom(graph, focusId) {
   return dist;
 }
 
+// Every ancestor, descendant, and collateral relative (sibling, aunt/uncle,
+// cousin, …) connected to focusId by an unbroken chain of biological/adoptive
+// parent-child links — the actual "blood or adoptive relative" the
+// Bloodline-only toggle promises, computed once from the viewer rather than
+// derived from however someone happened to end up in the expanded/visible
+// set (a direct tap, a search result, or "Show all" — none of which imply
+// anything about blood).
+//
+// Deliberately NOT a single symmetric BFS over parent+child edges: walking
+// child edges up to a shared kid and then back UP through parent edges would
+// also surface that kid's OTHER biological parent — an in-law who had
+// children with a blood relative, but who isn't themselves an ancestor or a
+// descendant of one. So this walks in two disciplined passes instead: first
+// up to every ancestor (parents only, repeatedly), then down from each of
+// those ancestors (children only, repeatedly) — which is exactly "everyone
+// descended from someone I'm descended from," the standard definition of a
+// blood/adoptive relative, and naturally covers full AND half siblings too
+// (both are simply other children of a shared ancestor) with no separate
+// sibling-edge lookup needed.
+export function bloodRelativesOf(graph, focusId) {
+  const ancestors = new Set([focusId]);
+  let frontier = [focusId];
+  while (frontier.length) {
+    const next = [];
+    for (const cur of frontier) {
+      for (const p of graph.parents(cur)) {
+        if (p.qualifier === 'step' || ancestors.has(p.id)) continue;
+        ancestors.add(p.id);
+        next.push(p.id);
+      }
+    }
+    frontier = next;
+  }
+
+  const blood = new Set(ancestors);
+  const queue = [...ancestors];
+  while (queue.length) {
+    const cur = queue.shift();
+    for (const c of graph.children(cur)) {
+      if (c.qualifier === 'step' || blood.has(c.id)) continue;
+      blood.add(c.id);
+      queue.push(c.id);
+    }
+  }
+  return blood;
+}
+
 // Like pathBetween, but returns the ordered array [fromId, …, toId] (or null),
 // so callers can render the chain start → end. pathBetween wraps this in a Set.
 export function pathBetweenOrdered(graph, fromId, toId) {
