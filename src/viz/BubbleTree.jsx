@@ -1398,7 +1398,13 @@ export default function BubbleTree({
               recap.t = 0;
               const id = recap.ids[recap.idx];
               bubbles.get(id)?.setRecapGlow(true);
-              const fx = new BirthEffect({ x: node.x, y: node.y }, { x: node.x, y: node.y }, BASE_RADIUS);
+              // BirthEffect's halo rings peak at ~3.1x whatever radius they're
+              // given, in WORLD units — multiplied by RECAP_ZOOM (2.2) that's
+              // a ~314px screen radius at full-size BASE_RADIUS, big enough to
+              // blanket nearly an entire phone screen. A smaller radius here
+              // keeps the bloom a contained flourish around the bubble rather
+              // than a burst that swallows the whole viewport.
+              const fx = new BirthEffect({ x: node.x, y: node.y }, { x: node.x, y: node.y }, BASE_RADIUS * 0.55);
               fxLayer.addChild(fx.root);
               recapFx.set(id, fx);
               recap.onArrive?.(id);

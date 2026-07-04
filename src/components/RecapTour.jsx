@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import Avatar from './Avatar.jsx';
 
 /*
@@ -9,11 +9,18 @@ import Avatar from './Avatar.jsx';
  * per-stop caption, and the queue list, and reports taps back up as
  * onSkipTo/onDismiss/onCloseAll/onClose.
  *
- * The queue panel doubles as a bottom drawer on narrow phones and a side
- * panel on wider screens — same markup, repositioned by CSS — since a fixed
- * side panel has no room next to a live canvas at phone width.
+ * The camera's target bubble is always screen-CENTRED (see BubbleTree's
+ * world.position.set), and on a phone the queue panel's width reaches well
+ * past that centre point — so on narrow screens it starts collapsed to a
+ * small peek pill (tap to expand) rather than a full list, leaving the
+ * actual reveal visible instead of covered by an overlay competing for the
+ * same screen real estate. Wider screens have room for both, so the full
+ * panel there is unaffected by this state. Auto-expands once the tour
+ * finishes — there's no more animation to protect at that point.
  */
 export default function RecapTour({ graph, queue, reducedMotion, allDone, onDismiss, onSkipTo, onCloseAll, onClose }) {
+  const [expanded, setExpanded] = useState(false);
+
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') onCloseAll(); };
     window.addEventListener('keydown', onKey);
@@ -49,7 +56,15 @@ export default function RecapTour({ graph, queue, reducedMotion, allDone, onDism
         </div>
       )}
 
-      <div className="recap-queue">
+      {!expanded && !allDone && (
+        <button className="recap-queue-peek" onClick={() => setExpanded(true)}>
+          <span className="recap-queue-peek__count">{remaining}</span>
+          <span>to go</span>
+          <ChevronUpIcon />
+        </button>
+      )}
+
+      <div className={`recap-queue${(expanded || allDone) ? ' recap-queue--expanded' : ''}`}>
         <div className="recap-queue__header">
           <div>
             <p className="recap-queue__title">What&apos;s changed</p>
@@ -102,6 +117,14 @@ function CloseIcon() {
   return (
     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function ChevronUpIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M18 15l-6-6-6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
