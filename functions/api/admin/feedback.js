@@ -17,7 +17,7 @@ export async function onRequestGet({ env, data }) {
 
   try {
     const result = await env.DB.prepare(
-      `SELECT type, email, message, created_at
+      `SELECT type, email, message, created_at, email_status, email_error
          FROM feedback
         ORDER BY created_at DESC
         LIMIT 50`,
@@ -25,10 +25,12 @@ export async function onRequestGet({ env, data }) {
 
     return json({
       rows: (result.results || []).map((r) => ({
-        type:       r.type,
-        email:      r.email,
-        message:    r.message,
-        created_at: new Date(r.created_at * 1000).toISOString(),
+        type:         r.type,
+        email:        r.email,
+        message:      r.message,
+        created_at:   new Date(r.created_at * 1000).toISOString(),
+        email_status: r.email_status,
+        email_error:  r.email_error,
       })),
     });
   } catch (e) {

@@ -105,7 +105,7 @@ export async function onRequestPost({ request, env, data }) {
     }
   }
 
-  await recordEmailStatus(env, inviteId, emailStatus, emailError, emailSent ? now : null);
+  await recordEmailStatus(env, 'invite', inviteId, emailStatus, emailError, emailSent ? now : null);
 
   // Return the link too so the client can offer copy / share — handy when the
   // inviter would rather text it than rely on email.

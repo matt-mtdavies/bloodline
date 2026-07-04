@@ -69,16 +69,19 @@ export function clearSessionCookie() {
   return 'bl_session=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0';
 }
 
-// Record an invite's email-delivery outcome for the admin deliverability
-// metric. Best-effort and self-contained: if migration 0007 hasn't added the
-// columns yet (or DB is absent), it silently no-ops so invite creation is
-// never affected.
-export async function recordEmailStatus(env, inviteId, status, error, sentAt) {
-  if (!env.DB || !inviteId) return;
+// Record a row's email-delivery outcome for the admin deliverability metric
+// (invite or feedback — see migrations 0007 / 0011). Best-effort and
+// self-contained: if the columns haven't been migrated yet (or DB is
+// absent), it silently no-ops so the caller's own write is never affected.
+// `table` is always a fixed string literal from the call site, never
+// user input, so interpolating it into the query is safe.
+const EMAIL_STATUS_TABLES = new Set(['invite', 'feedback']);
+export async function recordEmailStatus(env, table, id, status, error, sentAt) {
+  if (!env.DB || !id || !EMAIL_STATUS_TABLES.has(table)) return;
   try {
     await env.DB.prepare(
-      `UPDATE invite SET email_status = ?, email_error = ?, email_sent_at = ? WHERE id = ?`,
-    ).bind(status, error ? String(error).slice(0, 300) : null, sentAt ?? null, inviteId).run();
+      `UPDATE ${table} SET email_status = ?, email_error = ?, email_sent_at = ? WHERE id = ?`,
+    ).bind(status, error ? String(error).slice(0, 300) : null, sentAt ?? null, id).run();
   } catch {
     /* columns not migrated yet — the metric simply won't populate */
   }

@@ -1,4 +1,4 @@
-import { json, uid, sendEmail } from '../_lib/util.js';
+import { json, uid, sendEmail, recordEmailStatus } from '../_lib/util.js';
 
 /*
  * POST /api/feedback  { type, message, page? }
@@ -26,38 +26,54 @@ export async function onRequestPost({ request, env, data }) {
   const safePage = page ? String(page).slice(0, 200) : null;
   const now = Math.floor(Date.now() / 1000);
 
+  const feedbackId = uid('fb_');
   try {
     await env.DB.prepare(
       `INSERT INTO feedback (id, user_id, email, type, message, page, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    ).bind(uid('fb_'), data.user.uid, data.user.email, safeType, safeMsg, safePage, now).run();
+    ).bind(feedbackId, data.user.uid, data.user.email, safeType, safeMsg, safePage, now).run();
   } catch (e) {
     console.error('[feedback] DB error:', e.message);
     return json({ error: 'Could not save feedback' }, { status: 500 });
   }
 
-  // Email the owner — fire and forget (don't block the response).
+  // Email the owner. Must be awaited, not fired-and-forgotten — an
+  // un-awaited fetch here can be torn down by the runtime the moment this
+  // handler returns its response, silently dropping the send before Brevo
+  // ever receives it (this was the bug: feedback saved every time, the
+  // notification email sent essentially never). Outcome is recorded either
+  // way so a failure is visible in the feedback table, not just server logs.
   const adminEmail = env.ADMIN_EMAIL;
+  let emailStatus = null, emailError = null, emailSent = false;
   if (adminEmail) {
     const typeLabels = { idea: '💡 Idea', bug: '🐛 Bug report', praise: '🙌 Praise', other: '📬 Feedback' };
     const label = typeLabels[safeType] || 'Feedback';
-    sendEmail(env, {
-      to: adminEmail,
-      subject: `[Bloodline] ${label} from ${data.user.email}`,
-      html: `
-        <p style="font-family:sans-serif;color:#3a3330">
-          <strong>${label}</strong> from <a href="mailto:${data.user.email}">${data.user.email}</a>
-          ${safePage ? `<br><small style="color:#8a8480">Page: ${safePage}</small>` : ''}
-        </p>
-        <blockquote style="font-family:sans-serif;color:#3a3330;border-left:3px solid #c2603a;margin:12px 0;padding:8px 16px;background:#fdf8f2">
-          ${safeMsg.replace(/\n/g, '<br>')}
-        </blockquote>
-        <p style="font-family:sans-serif;font-size:12px;color:#8a8480">
-          View all feedback at <a href="${env.APP_URL || 'https://myfamilybloodline.com'}/admin.html">the admin dashboard</a>
-        </p>
-      `,
-    }).catch((e) => console.error('[feedback] email error:', e.message));
+    emailStatus = 'failed';
+    try {
+      const result = await sendEmail(env, {
+        to: adminEmail,
+        subject: `[Bloodline] ${label} from ${data.user.email}`,
+        html: `
+          <p style="font-family:sans-serif;color:#3a3330">
+            <strong>${label}</strong> from <a href="mailto:${data.user.email}">${data.user.email}</a>
+            ${safePage ? `<br><small style="color:#8a8480">Page: ${safePage}</small>` : ''}
+          </p>
+          <blockquote style="font-family:sans-serif;color:#3a3330;border-left:3px solid #c2603a;margin:12px 0;padding:8px 16px;background:#fdf8f2">
+            ${safeMsg.replace(/\n/g, '<br>')}
+          </blockquote>
+          <p style="font-family:sans-serif;font-size:12px;color:#8a8480">
+            View all feedback at <a href="${env.APP_URL || 'https://myfamilybloodline.com'}/admin.html">the admin dashboard</a>
+          </p>
+        `,
+      });
+      emailSent = true;
+      emailStatus = result?.dev ? 'dev' : 'sent';
+    } catch (e) {
+      console.error('[feedback] email error:', e.message);
+      emailError = String(e.message || 'Email delivery failed').slice(0, 200);
+    }
   }
+  await recordEmailStatus(env, 'feedback', feedbackId, emailStatus, emailError, emailSent ? now : null);
 
   return json({ ok: true });
 }

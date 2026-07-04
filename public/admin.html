@@ -377,6 +377,7 @@
           <th>From</th>
           <th>Message</th>
           <th>When</th>
+          <th>Email</th>
         </tr></thead>
         <tbody></tbody>
       </table>
@@ -698,16 +699,22 @@
   function renderFeedbackTable(rows) {
     const tbody = document.querySelector('#table-feedback tbody');
     if (!rows.length) {
-      tbody.innerHTML = '<tr><td colspan="4" style="padding:14px 0;color:#5c5f66">No feedback yet</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="5" style="padding:14px 0;color:#5c5f66">No feedback yet</td></tr>';
       return;
     }
     const icons = { idea: '💡', bug: '🐛', praise: '🙌', other: '📬' };
-    tbody.innerHTML = rows.map((f) => `<tr>
+    const emailBadge = { sent: '✅ Sent', failed: '❌ Failed', dev: '⚪ Suppressed (dev)' };
+    tbody.innerHTML = rows.map((f) => {
+      const badge = emailBadge[f.email_status] || (f.email_status ? escHtml(f.email_status) : '—');
+      const title = f.email_status === 'failed' && f.email_error ? ` title="${escHtml(f.email_error)}"` : '';
+      return `<tr>
       <td style="white-space:nowrap">${icons[f.type] || '📬'} ${escHtml(f.type)}</td>
       <td class="muted">${escHtml(f.email)}</td>
       <td class="primary" style="max-width:340px;white-space:pre-wrap;word-break:break-word">${escHtml(f.message)}</td>
       <td class="muted" style="white-space:nowrap">${fmt(f.created_at)}</td>
-    </tr>`).join('');
+      <td class="muted" style="white-space:nowrap"${title}>${badge}</td>
+    </tr>`;
+    }).join('');
   }
 
   function escHtml(s) {

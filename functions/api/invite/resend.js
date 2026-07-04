@@ -59,7 +59,7 @@ export async function onRequestPost({ request, env, data }) {
     emailError = String(e.message || 'Email delivery failed').slice(0, 200);
   }
 
-  await recordEmailStatus(env, invite.id, emailStatus, emailError, emailSent ? Math.floor(Date.now() / 1000) : null);
+  await recordEmailStatus(env, 'invite', invite.id, emailStatus, emailError, emailSent ? Math.floor(Date.now() / 1000) : null);
 
   return json({ ok: true, emailSent, emailError, inviteUrl });
 }
