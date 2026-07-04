@@ -5147,6 +5147,14 @@ button.health-notes {
   font-size: 24px;
   font-weight: 700;
   color: var(--ink);
+  max-width: 100%;
+  /* Forced to one line (ellipsis for the rare very-long name) so the
+     caption's height is predictable — a two-line wrap here (longer names,
+     larger device text-size settings) was pushing the caption taller than
+     the queue panel's fixed clearance below it, cutting the caption off. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .recap-caption__what { font-size: 14px; font-weight: 600; color: var(--accent-deep); }
 .recap-caption--done { padding: 20px 32px; }
@@ -5180,7 +5188,7 @@ button.health-notes {
    centred recap-caption (both fight for the same horizontal band) — drop
    the panel's top edge below the caption's zone instead of overlapping it. */
 @media (max-width: 700px) {
-  .recap-queue { top: calc(var(--safe-top, 0px) + 250px); border-top-left-radius: 20px; }
+  .recap-queue { top: calc(var(--safe-top, 0px) + 270px); border-top-left-radius: 20px; }
 }
 .recap-queue__header {
   display: flex;
