@@ -129,9 +129,9 @@ export default function AccessibleTree({ graph, focusId, onFocus, onOpenPerson, 
                       <button
                         className="person-row__map"
                         onClick={() => onShowOnMap?.(item.id)}
-                        aria-label={`Show ${p.display_name} on the map`}
+                        aria-label={`Show ${p.display_name} in the tree`}
                       >
-                        <MapPinIcon />
+                        <TreeIcon />
                       </button>
                     </div>
                   </li>
@@ -197,9 +197,9 @@ export default function AccessibleTree({ graph, focusId, onFocus, onOpenPerson, 
                   <button
                     className="person-row__map"
                     onClick={() => onShowOnMap?.(p.id)}
-                    aria-label={`Show ${p.display_name} on the map`}
+                    aria-label={`Show ${p.display_name} in the tree`}
                   >
-                    <MapPinIcon />
+                    <TreeIcon />
                   </button>
                 </div>
               </li>
@@ -213,19 +213,17 @@ export default function AccessibleTree({ graph, focusId, onFocus, onOpenPerson, 
   );
 }
 
-// Same glyph as the profile page's "Show on map" — the flight-across-the-
-// tree flourish (see App.jsx's flyToPersonFromAnywhere), reused here as a
-// per-row action distinct from the row's own tap-to-centre.
-function MapPinIcon() {
+// Same glyph as the topbar's tree/list view toggle and the profile page's
+// "Show in tree" — the flight-across-the-tree flourish (see App.jsx's
+// flyToPersonFromAnywhere), reused here as a per-row action distinct from
+// the row's own tap-to-centre.
+function TreeIcon() {
   return (
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path
-        d="M12 21s7-6.2 7-11a7 7 0 1 0-14 0c0 4.8 7 11 7 11Z"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinejoin="round"
-      />
-      <circle cx="12" cy="10" r="2.4" stroke="currentColor" strokeWidth="1.7" />
+      <circle cx="12" cy="4" r="2.2" stroke="currentColor" strokeWidth="1.6" />
+      <circle cx="5" cy="19" r="2.2" stroke="currentColor" strokeWidth="1.6" />
+      <circle cx="19" cy="19" r="2.2" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M12 6.2v5.3M12 11.5l-5 4.8M12 11.5l5 4.8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
     </svg>
   );
 }

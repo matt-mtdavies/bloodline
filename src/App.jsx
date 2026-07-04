@@ -885,7 +885,7 @@ export default function App() {
   }, [graph, data.myPersonId, reducedMotion, activateNormal]);
 
   // Same flight as flyToSearchResult, but callable from anywhere — the
-  // profile page's "Show on map" and the list view's per-row action, not
+  // profile page's "Show in tree" and the list view's per-row action, not
   // just a search result. Switches back to the bubble canvas first if
   // needed, since the flight animates it and it isn't even mounted while
   // browsing the list view.

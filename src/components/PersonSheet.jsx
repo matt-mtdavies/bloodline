@@ -441,9 +441,9 @@ export default function PersonSheet({
             there, Add relative takes its own full-width row above so the
             other two aren't squeezed three-across. */}
         <div className={`profile__actions${person.invited_at ? '' : ' profile__actions--has-invite'}`}>
-          <button className="action action--map" onClick={() => onShowOnMap?.(person.id)} aria-label={`Show ${person.display_name.split(' ')[0]} on the map`}>
-            <PinIcon />
-            Show on map
+          <button className="action action--map" onClick={() => onShowOnMap?.(person.id)} aria-label={`Show ${person.display_name.split(' ')[0]} in the tree`}>
+            <TreeIcon />
+            Show in tree
           </button>
           {canEdit && (
             <button className="action action--primary" onClick={() => onAddRelative?.(person.id)}>
@@ -1413,6 +1413,19 @@ function CrosshairIcon() {
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <circle cx="12" cy="12" r="7" stroke="currentColor" strokeWidth="1.7" />
       <path d="M12 2v4M12 18v4M2 12h4M18 12h4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+    </svg>
+  );
+}
+// Same glyph as the topbar's tree/list view toggle — reused here so "Show
+// in tree" reads as this app's tree metaphor, not a literal geo pin (which
+// is already spoken for by the residence/birthplace PinIcon above).
+function TreeIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="4" r="2.2" stroke="currentColor" strokeWidth="1.6" />
+      <circle cx="5" cy="19" r="2.2" stroke="currentColor" strokeWidth="1.6" />
+      <circle cx="19" cy="19" r="2.2" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M12 6.2v5.3M12 11.5l-5 4.8M12 11.5l5 4.8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
     </svg>
   );
 }
