@@ -15,6 +15,7 @@ import { IgniteEffect } from './ignite.js';
 import { FlightComet } from './comet.js';
 import { drawLinks, drawLinksChart } from './links.js';
 import { computeChartLayout } from './chartLayout.js';
+import { computeUncrossedXTargets } from './declutter.js';
 import { distancesFrom, relationLabel } from '../data/graph.js';
 import { Spring } from '../lib/spring.js';
 
@@ -205,11 +206,29 @@ export default function BubbleTree({
       };
       const genYTarget = (d) => layoutGen(d.id) * GEN_GAP - 260;
 
+      // Within-row ordering that minimises parent-child line crossings (see
+      // declutter.js) — a target slot per node, fed to forceX below. Only
+      // recomputed when the visible set actually changes (sync(), or a
+      // reference change caught in frameBody), never every frame: it's a
+      // one-shot ordering pass, not a continuous force, so re-running it
+      // constantly would just make bubbles chase a moving target.
+      let xTargets = new Map();
+      let lastXTargetVis = null; // reference watched in frameBody
+      const recomputeXTargets = (visSet) => {
+        xTargets = computeUncrossedXTargets(
+          graphRef.current,
+          visSet,
+          layoutGen,
+          (id) => nodeById.get(id)?.x,
+        );
+      };
+      recomputeXTargets(visibleRef.current);
+
       const sim = forceSimulation(nodes)
         .force('link', linkForce)
         .force('charge', forceManyBody().strength(ORGANIC_CHARGE).distanceMax(1200))
         .force('collide', forceCollide(COLLIDE).strength(0.9))
-        .force('x', forceX(0).strength(SPREAD_X))
+        .force('x', forceX((d) => xTargets.get(d.id) ?? 0).strength(SPREAD_X))
         .force('y', forceY(genYTarget).strength(restingYStrength()))
         .alpha(1)
         .alphaDecay(0.018)
@@ -469,7 +488,7 @@ export default function BubbleTree({
           } else if (mode === 'hybrid') {
             // Organic feel but with clear generational banding (70% organic / 30% gen)
             sim.force('charge', forceManyBody().strength(-1400).distanceMax(1100));
-            sim.force('x', forceX(0).strength(SPREAD_X));
+            sim.force('x', forceX((d) => xTargets.get(d.id) ?? 0).strength(SPREAD_X));
             sim.force('y', forceY(genY).strength(0.22));
             linkForce
               .distance((l) => (l.kind === 'partner' ? 112 : 280))
@@ -486,7 +505,7 @@ export default function BubbleTree({
             // organic — the default; free-flowing with gentle gen bands
             // (stronger generational rows while Focus Family is active).
             sim.force('charge', forceManyBody().strength(ORGANIC_CHARGE).distanceMax(1200));
-            sim.force('x', forceX(0).strength(SPREAD_X));
+            sim.force('x', forceX((d) => xTargets.get(d.id) ?? 0).strength(SPREAD_X));
             sim.force('y', forceY(genY).strength(restingYStrength()));
             linkForce
               .distance((l) => (l.kind === 'partner' ? 112 : 280))
@@ -659,6 +678,7 @@ export default function BubbleTree({
           // another editor) shouldn't make every bubble on screen jiggle.
           if (structuralChange) sim.alpha(0.5);
           gen = computeGenerations(g);
+          if (structuralChange) recomputeXTargets(visibleRef.current);
           state.dist = distancesFrom(g, activeRef.current);
           relCache.clear(); // graph changed — relationship labels may differ
           if (state.layoutMode === 'radial' || state.layoutMode === 'weighted') state.relayout();
@@ -1135,7 +1155,6 @@ export default function BubbleTree({
             n.vy += Math.cos(t * 0.5 + i * 0.7) * 0.012;
           }
         }
-        sim.tick();
         const vis = visibleRef.current;
         // In chart mode we render a scoped subset (±2 generations around the focal
         // person) rather than the full visible set, so 76 people don't collapse to
@@ -1143,6 +1162,19 @@ export default function BubbleTree({
         const effectiveVis = layoutRef.current === 'chart' && state._chartVisible
           ? state._chartVisible
           : vis;
+        // Re-run the crossing-reduction ordering only when the revealed set
+        // actually changed (a new reference — App.jsx's useMemo — not every
+        // frame), and only for the modes that use it. A small alpha nudge
+        // lets the newly-reordered slots ease in rather than snapping.
+        if (
+          effectiveVis !== lastXTargetVis &&
+          (layoutRef.current === 'organic' || layoutRef.current === 'hybrid')
+        ) {
+          lastXTargetVis = effectiveVis;
+          recomputeXTargets(effectiveVis);
+          sim.alpha(Math.max(sim.alpha(), 0.3));
+        }
+        sim.tick();
 
         const W = app.screen.width;
         const H = app.screen.height;
