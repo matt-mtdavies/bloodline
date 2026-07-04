@@ -107,6 +107,7 @@
 }
 
 .pill {
+  position: relative;
   height: 38px;
   min-width: 38px;
   padding: 0 12px;
@@ -5608,6 +5609,7 @@ button.health-notes {
 
 /* ── TopBar user avatar ────────────────────────────────────────────────── */
 .topbar-avatar {
+  position: relative;
   width: 30px;
   height: 30px;
   border-radius: 50%;
@@ -5616,7 +5618,6 @@ button.health-notes {
   align-items: center;
   justify-content: center;
   border: none;
-  overflow: hidden;
   cursor: pointer;
   flex-shrink: 0;
   padding: 0;
@@ -6006,6 +6007,9 @@ button.health-notes {
   height: 100%;
   object-fit: cover;
   display: block;
+  /* Self-clips to a circle (rather than the button using overflow:hidden)
+     so the hover-label tooltip, also a child of the button, isn't clipped. */
+  border-radius: 50%;
 }
 
 /* ── TopBar Row 2: legend, centre, view-toggle + bloodline-only stack ────── */
@@ -6032,16 +6036,20 @@ button.health-notes {
   transition: color 0.15s ease, background 0.15s ease;
 }
 .topbar__row2-btn:hover { color: var(--ink); background: var(--ground); }
-.topbar__row2-btn--active { color: var(--accent); background: var(--accent-soft); }
+/* A solid fill, not a tint — this is the ONLY always-visible sign the filter
+   is on (no persistent text label like the bottom dock's toggles have), so
+   it needs to read at a glance, not just on close inspection. */
+.topbar__row2-btn--active { color: #fff; background: var(--accent); }
 
-/* Hover label — desktop only (mouse/trackpad), never on touch, so a tap can't
-   leave a tooltip stuck open. Sits clear to the right of the stack rather
-   than above/below so it never collides with the family name or stats pill. */
-.row2-tip {
+/* ── Hover labels — desktop only (mouse/trackpad), never on touch, so a tap
+   can't leave a tooltip stuck open. Used on every icon-only button in the
+   header (row 1's search/activity/settings/avatar, row 2's legend/view/
+   bloodline-only): none of them carry a persistent visible label, unlike
+   the bottom dock's buttons, so hover is the only way to name them. Three
+   directions cover every position in the header without ever clipping
+   off-screen. */
+.hover-tip {
   position: absolute;
-  left: calc(100% + 10px);
-  top: 50%;
-  transform: translateY(-50%) translateX(-4px);
   white-space: nowrap;
   padding: 5px 10px;
   border-radius: 999px;
@@ -6055,31 +6063,37 @@ button.health-notes {
   transition: opacity 0.16s ease, transform 0.16s ease;
   z-index: 5;
 }
+/* Row 2's left button (Legend) opens rightward, into open canvas space. */
+.hover-tip--right { left: calc(100% + 10px); top: 50%; transform: translateY(-50%) translateX(-4px); }
+/* Row 2's right stack (view toggle, bloodline-only) sits at the screen's
+   right edge, so it opens leftward instead — same treatment, mirrored. */
+.hover-tip--left { right: calc(100% + 10px); top: 50%; transform: translateY(-50%) translateX(4px); }
+/* Row 1's icon pills (search, activity, settings, avatar) have nothing
+   above them, so their labels drop down instead; right-aligned so the
+   right-most items (settings, avatar) never clip past the screen edge. */
+.hover-tip--down { top: calc(100% + 8px); right: 0; transform: translateY(-4px); }
+
 @media (hover: hover) and (pointer: fine) {
-  .topbar__row2-btn:hover .row2-tip,
-  .topbar__row2-btn:focus-visible .row2-tip {
+  .pill:hover .hover-tip, .pill:focus-visible .hover-tip,
+  .topbar-avatar:hover .hover-tip, .topbar-avatar:focus-visible .hover-tip,
+  .topbar__row2-btn:hover .hover-tip, .topbar__row2-btn:focus-visible .hover-tip {
     opacity: 1;
-    transform: translateY(-50%) translateX(0);
   }
-}
-/* The right-hand stack (view toggle + bloodline-only) sits near the screen's
-   right edge, so its tooltip opens leftward instead — same treatment, mirrored. */
-.topbar__row2-stack--right .row2-tip {
-  left: auto;
-  right: calc(100% + 10px);
-  transform: translateY(-50%) translateX(4px);
-}
-@media (hover: hover) and (pointer: fine) {
-  .topbar__row2-stack--right .topbar__row2-btn:hover .row2-tip,
-  .topbar__row2-stack--right .topbar__row2-btn:focus-visible .row2-tip {
+  .pill:hover .hover-tip--down, .pill:focus-visible .hover-tip--down,
+  .topbar-avatar:hover .hover-tip--down, .topbar-avatar:focus-visible .hover-tip--down {
+    transform: translateY(0);
+  }
+  .topbar__row2-btn:hover .hover-tip--right, .topbar__row2-btn:focus-visible .hover-tip--right,
+  .topbar__row2-btn:hover .hover-tip--left, .topbar__row2-btn:focus-visible .hover-tip--left {
     transform: translateY(-50%) translateX(0);
   }
 }
 
-/* Bloodline-only's active-state flag on the family stats pill — small accent
-   text, same "· fact · fact" rhythm the pill already uses, so the filter's
-   ON state stays legible without relying on the tiny toggle icon's tint. */
-.topbar__stats-flag { color: var(--accent); font-weight: 600; }
+/* Bloodline-only's active-state flag, led at the FRONT of the family stats
+   pill (not appended) — the pill truncates with an ellipsis once it runs
+   long on a real family, so anything after the visible facts would silently
+   never render. Bold accent text reads as a status, not just another fact. */
+.topbar__stats-flag { color: var(--accent); font-weight: 700; }
 
 /* ── Save Nudge (anonymous ?new trial) ──────────────────────────────────────── */
 .save-nudge {

@@ -37,6 +37,7 @@ export default function TopBar({ familyName, stats, view, syncStatus, syncError,
           {onSearch && (
             <button className="pill" onClick={onSearch} aria-label="Search family members">
               <TopBarSearchIcon />
+              <span className="hover-tip hover-tip--down">Search</span>
             </button>
           )}
           {syncStatus === 'saving' && (
@@ -74,21 +75,23 @@ export default function TopBar({ familyName, stats, view, syncStatus, syncError,
                 {activityCount > 9 ? '9+' : activityCount}
               </span>
             )}
+            <span className="hover-tip hover-tip--down">Activity</span>
           </button>
           <button className="pill" onClick={onOpenSettings} aria-label="Family settings">
             <SettingsIcon />
+            <span className="hover-tip hover-tip--down">Settings</span>
           </button>
           {user && onOpenProfile && (
             <button
               className="topbar-avatar"
               onClick={onOpenProfile}
               aria-label="Your profile"
-              title={user.display_name || user.email}
             >
               {userPhoto
                 ? <img src={userPhoto} alt="" className="topbar-avatar__img" />
                 : <span className="topbar-avatar__initials">{userInitials(user)}</span>
               }
+              <span className="hover-tip hover-tip--down">{user.display_name || user.email}</span>
             </button>
           )}
         </div>
@@ -105,7 +108,7 @@ export default function TopBar({ familyName, stats, view, syncStatus, syncError,
           aria-label="Legend — visual guide and display options"
         >
           <LegendIcon />
-          <span className="row2-tip">Legend</span>
+          <span className="hover-tip hover-tip--right">Legend</span>
         </button>
         <div className="topbar__treerow__center">
           <span className="topbar__familyname">{familyName}</span>
@@ -117,12 +120,15 @@ export default function TopBar({ familyName, stats, view, syncStatus, syncError,
               aria-label="View family archive details"
               aria-expanded={statsOpen}
             >
+              {/* Leads the string (not trailing) — the pill truncates with an
+                  ellipsis once it runs long on a real family, and a flag
+                  appended at the end would silently never render. */}
+              {bloodlineOnly && <><span className="topbar__stats-flag">Bloodline only</span> · </>}
               {stats.people} {stats.people === 1 ? 'person' : 'people'}
               {stats.surnames && <> · {stats.surnames}</>}
               {stats.yearSpan && <> · {stats.yearSpan}</>}
               {stats.photos > 0 && <> · {stats.photos} {stats.photos === 1 ? 'photo' : 'photos'}</>}
               {stats.memories > 0 && <> · {stats.memories} {stats.memories === 1 ? 'memory' : 'memories'}</>}
-              {bloodlineOnly && <> · <span className="topbar__stats-flag">Bloodline only</span></>}
             </button>
           )}
         </div>
@@ -133,7 +139,7 @@ export default function TopBar({ familyName, stats, view, syncStatus, syncError,
             aria-label={view === 'bubbles' ? 'Switch to list view' : 'Switch to tree view'}
           >
             {view === 'bubbles' ? <ListIcon /> : <TreeIcon />}
-            <span className="row2-tip">{view === 'bubbles' ? 'List view' : 'Tree view'}</span>
+            <span className="hover-tip hover-tip--left">{view === 'bubbles' ? 'List view' : 'Tree view'}</span>
           </button>
           <button
             className={`topbar__row2-btn${bloodlineOnly ? ' topbar__row2-btn--active' : ''}`}
@@ -142,7 +148,7 @@ export default function TopBar({ familyName, stats, view, syncStatus, syncError,
             aria-pressed={bloodlineOnly}
           >
             <BloodlineIcon />
-            <span className="row2-tip">Bloodline only</span>
+            <span className="hover-tip hover-tip--left">Bloodline only</span>
           </button>
         </div>
       </div>
