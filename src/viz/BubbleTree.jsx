@@ -27,6 +27,7 @@ const SPREAD_X = 0.004; // weaker centring lets nodes fan out naturally
 const MAX_ZOOM = 2.0; // auto-fit (follow mode) — higher cap so small focus families fill the screen
 const MIN_ZOOM = 0.32; // free zoom-out: take in a huge tree at a glance
 const MAX_ZOOM_FREE = 2.8; // free zoom-in: lean right into a single face
+const RECAP_ZOOM = 2.2; // the recap tour's "hero" close-up — big and dramatic, but under MAX_ZOOM_FREE
 const PAN_FRICTION = 0.92; // inertial glide decay (per 1/60 s)
 const FLICK_STOP = 1.5; // world units/s below which the glide rests
 const DOUBLE_TAP_MS = 280; // window for a double-tap-to-recentre
@@ -143,6 +144,7 @@ export default function BubbleTree({
       fxLayer.eventMode = 'none';
       world.addChild(fxLayer);
       const births = new Map();      // personId → BirthEffect (currently animating)
+      const recapFx = new Map();     // personId → BirthEffect-style bloom (recap tour arrivals)
       const wasVisible = new Set();  // bubbles visible last frame, to spot new arrivals
       let fxSeeded = false;          // first frame seeds wasVisible without celebrating
       // Focus-mode relationship captions (e.g. "Father", "Niece"), cached by id
@@ -301,6 +303,7 @@ export default function BubbleTree({
       const manualPins = new Set(); // nodes the user has manually repositioned
       let flight = null;      // active search flyover, see state.flyAlong()
       let landingFx = null;   // the flyover's arrival burst (single-slot, self-cleaning)
+      let recap = null;       // active recap tour, see state.spotlightTour()
       let flightComet = null; // the "drone light" riding the route during transit
       const igniteFx = new Set(); // in-flight IgniteEffect instances, self-removing when done
       // The lit path persists after the flight lands (not just the caption) —
@@ -405,6 +408,37 @@ export default function BubbleTree({
           }
         }
         markNewEdgesLit(flight.litSet, flight.edgeLitAt);
+      };
+
+      // Starts the travel phase toward recap.ids[recap.idx]'s current world
+      // position, timed from wherever the camera actually is right now (not
+      // the previous stop's position — matters after a skip-ahead or a
+      // mid-flight removal, where "now" and "the previous stop" differ).
+      const beginRecapTravel = () => {
+        const node = recap.pts[recap.idx];
+        recap.phase = 'travel';
+        recap.t = 0;
+        recap.startX = camX.value;
+        recap.startY = camY.value;
+        recap.startZ = zoom.value;
+        const dist = Math.hypot(node.x - camX.value, node.y - camY.value);
+        recap.travelDuration = clamp(2.0 + dist / 1400, 2.2, 4.5);
+      };
+
+      // Ends the current dwell (if any) and either moves to the next stop or,
+      // if this was the last one, finishes the tour and hands back to follow.
+      const advanceRecap = () => {
+        if (!recap) return;
+        const nextIdx = recap.idx + 1;
+        if (nextIdx >= recap.ids.length) {
+          const onDone = recap.onDone;
+          recap = null;
+          camMode = 'follow';
+          onDone?.();
+          return;
+        }
+        recap.idx = nextIdx;
+        beginRecapTravel();
       };
 
       const state = {
@@ -787,6 +821,105 @@ export default function BubbleTree({
           fxLayer.addChild(flightComet.root);
           flight.onSegment?.(orderedIds[0]);
         },
+        // The activity recap's "wow" moment — a slow, deliberate tour that
+        // visits one changed person at a time (never a continuous glide like
+        // flyAlong; each stop gets its own dwell), lands close, blooms a
+        // recognition glow, and leaves a lingering ring so by the end you can
+        // see the whole constellation of who changed. `orderedIds` need not be
+        // connected by any relationship — recap groups are an arbitrary set of
+        // people, not a path — so each hop just eases camera position/zoom
+        // directly toward the next id's real position.
+        spotlightTour(orderedIds, opts = {}) {
+          const pts = orderedIds.map((id) => nodeById.get(id)).filter(Boolean);
+          if (!pts.length) { opts.onDone?.(); return; }
+          if (reducedMotion) {
+            // No flythrough — just light every bubble at once so the (fully
+            // static) queue list the caller shows instead still has something
+            // to point at, and hand back immediately.
+            for (const id of orderedIds) bubbles.get(id)?.setRecapGlow(true);
+            opts.onDone?.();
+            return;
+          }
+          vx = vy = 0;
+          pointers.clear();
+          pinch.active = false;
+          drag.type = 'none';
+          drag.node = null;
+          camMode = 'recap';
+          recap = {
+            ids: [...orderedIds],
+            pts,
+            idx: 0,
+            phase: 'travel',
+            t: 0,
+            startX: camX.value,
+            startY: camY.value,
+            startZ: zoom.value,
+            dwellDuration: 3.2,
+            onArrive: opts.onArrive || null,
+            onDone: opts.onDone || null,
+          };
+          beginRecapTravel();
+        },
+        // Jump the tour straight to a given person (the queue list's
+        // "skip ahead" tap) — cancels whatever hop is in flight and eases
+        // toward the new target from wherever the camera is right now.
+        spotlightGoTo(id) {
+          if (!recap) return;
+          const idx = recap.ids.indexOf(id);
+          if (idx === -1) return;
+          const fx = recapFx.get(recap.ids[recap.idx]);
+          if (fx) { fx.destroy(); recapFx.delete(recap.ids[recap.idx]); }
+          recap.idx = idx;
+          beginRecapTravel();
+        },
+        // Drop one person from the active tour (the queue list's per-row
+        // dismiss) without disturbing the rest of the sequence. If it was the
+        // stop currently being visited, moves straight on to whatever's next.
+        spotlightRemove(id) {
+          if (!recap) return;
+          const idx = recap.ids.indexOf(id);
+          if (idx === -1) return;
+          const wasCurrent = idx === recap.idx;
+          recap.ids.splice(idx, 1);
+          recap.pts.splice(idx, 1);
+          const fx = recapFx.get(id);
+          if (fx) { fx.destroy(); recapFx.delete(id); }
+          if (!recap.ids.length) {
+            const onDone = recap.onDone;
+            recap = null;
+            camMode = 'follow';
+            onDone?.();
+            return;
+          }
+          if (wasCurrent) {
+            if (recap.idx >= recap.ids.length) recap.idx = recap.ids.length - 1;
+            beginRecapTravel();
+          } else if (idx < recap.idx) {
+            recap.idx -= 1;
+          }
+        },
+        // End the tour right now (the queue list's "Close all") — camera
+        // hands back to normal follow framing. Lingering rings are left lit;
+        // the caller decides when to call spotlightClearGlow() (typically
+        // after a short grace period, so the "who changed" picture doesn't
+        // vanish the instant you dismiss the panel).
+        spotlightEnd() {
+          if (recap) {
+            const onDone = recap.onDone;
+            recap = null;
+            onDone?.();
+          }
+          camMode = 'follow';
+          for (const [, fx] of recapFx) fx.destroy();
+          recapFx.clear();
+        },
+        // Turn off the lingering recap rings — for the given ids, or every
+        // bubble if omitted.
+        spotlightClearGlow(ids) {
+          const list = ids || [...bubbles.keys()];
+          for (const id of list) bubbles.get(id)?.setRecapGlow(false);
+        },
       };
       api.current = state;
       if (apiRef) apiRef.current = state;
@@ -1109,6 +1242,9 @@ export default function BubbleTree({
           postFlightIds = null;
           postFlightEdges = null;
           postFlightLandedAt = 0;
+          if (recap) { const onDone = recap.onDone; recap = null; onDone?.(); }
+          for (const [, fx] of recapFx) fx.destroy();
+          recapFx.clear();
           camMode = 'follow';
         }
       });
@@ -1242,6 +1378,38 @@ export default function BubbleTree({
               camMode = 'follow'; // setActive() re-enters follow anyway; explicit for clarity
               finished.onLand?.();
             }
+          }
+        } else if (camMode === 'recap' && recap) {
+          // RECAP — the activity tour. Unlike flight (one continuous glide),
+          // this is deliberately a slideshow of stops: ease to each person in
+          // turn, hold there while their bloom/caption reads, then move on.
+          const node = recap.pts[recap.idx];
+          if (recap.phase === 'travel') {
+            recap.t += flightDt;
+            const u = clamp(recap.t / recap.travelDuration, 0, 1);
+            const e = easeInOutCubic(u);
+            camX.value = camX.target = recap.startX + (node.x - recap.startX) * e;
+            camY.value = camY.target = recap.startY + (node.y - recap.startY) * e;
+            camX.velocity = camY.velocity = 0;
+            zoom.value = zoom.target = recap.startZ + (RECAP_ZOOM - recap.startZ) * e;
+            zoom.velocity = 0;
+            if (u >= 1) {
+              recap.phase = 'dwell';
+              recap.t = 0;
+              const id = recap.ids[recap.idx];
+              bubbles.get(id)?.setRecapGlow(true);
+              const fx = new BirthEffect({ x: node.x, y: node.y }, { x: node.x, y: node.y }, BASE_RADIUS);
+              fxLayer.addChild(fx.root);
+              recapFx.set(id, fx);
+              recap.onArrive?.(id);
+            }
+          } else {
+            camX.value = camX.target = node.x;
+            camY.value = camY.target = node.y;
+            zoom.value = zoom.target = RECAP_ZOOM;
+            zoom.velocity = camX.velocity = camY.velocity = 0;
+            recap.t += flightDt;
+            if (recap.t >= recap.dwellDuration) advanceRecap();
           }
         } else if (camMode === 'follow' && f && !state.isDraggingBubble?.()) {
           // FOLLOW — frame the whole revealed family: centre on the bounding box
@@ -1575,6 +1743,19 @@ export default function BubbleTree({
             if (fx.done || !effectiveVis.has(id)) {
               fx.destroy();
               births.delete(id);
+            }
+          }
+        }
+
+        // Advance + retire recap-tour arrival blooms (the transient flash/
+        // halo/motes only — the lingering ring itself lives on the bubble via
+        // setRecapGlow and isn't touched here).
+        if (recapFx.size) {
+          for (const [id, fx] of recapFx) {
+            fx.update(dt);
+            if (fx.done) {
+              fx.destroy();
+              recapFx.delete(id);
             }
           }
         }

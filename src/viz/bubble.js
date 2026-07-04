@@ -490,6 +490,24 @@ export class Bubble {
     }
   }
 
+  // Warm gold ring left behind after the "what's changed" recap tour visits
+  // this bubble — stays lit for the rest of the tour (and a little after) so
+  // by the time it ends you can see the whole constellation of who changed,
+  // at a glance, without re-reading the queue list.
+  setRecapGlow(on) {
+    if (on === this._recapGlow) return;
+    this._recapGlow = on;
+    if (!this._recapRing) {
+      this._recapRing = new Graphics();
+      this._recapRing.eventMode = 'none';
+      this.root.addChild(this._recapRing);
+    }
+    this._recapRing.clear();
+    if (on) {
+      this._recapRing.circle(0, 0, this.r + 5.5).stroke({ width: 2.2, color: hex('#e8a53d'), alpha: 0.85 });
+    }
+  }
+
   // Warm dashed accent ring for people who've been sent an invite.
   setInvited(invited) {
     if (invited === this._invited) return;

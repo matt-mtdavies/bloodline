@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, forwardRef } from 'react';
 import Logo from './Logo.jsx';
 
-export default function TopBar({ familyName, stats, view, syncStatus, syncError, onRetrySync, onToggleView, onOpenLegend, bloodlineOnly = false, onToggleBloodlineOnly, onOpenSettings, onOpenActivity, activityCount = 0, user, userPhoto, onOpenProfile, onSearch, onOpenInsights, onOpenTimeline, onOpenDuplicates, duplicateCount = 0, storageWarning, syncToast, onDismissSyncToast }) {
+export default function TopBar({ familyName, stats, view, syncStatus, syncError, onRetrySync, onToggleView, onOpenLegend, bloodlineOnly = false, onToggleBloodlineOnly, onOpenSettings, onOpenActivity, activityCount = 0, user, userPhoto, onOpenProfile, onSearch, onOpenInsights, onOpenTimeline, onOpenDuplicates, duplicateCount = 0, storageWarning, syncToast, onDismissSyncToast, recapNudgeCount = 0, onShowRecap, onDismissRecapNudge }) {
   const [statsOpen, setStatsOpen] = useState(false);
   const popoverRef = useRef(null);
   const statsRef = useRef(null);
@@ -167,6 +167,22 @@ export default function TopBar({ familyName, stats, view, syncStatus, syncError,
         <div className="storage-toast" role="status" onClick={onDismissSyncToast}>
           {syncToast}
         </div>
+      )}
+      {recapNudgeCount > 0 && (
+        <button className="recap-nudge" onClick={onShowRecap}>
+          <span className="recap-nudge__spark" aria-hidden="true">✨</span>
+          {recapNudgeCount} {recapNudgeCount === 1 ? 'update' : 'updates'} while you were away — Show me
+          <span
+            className="recap-nudge__dismiss"
+            role="button"
+            tabIndex={0}
+            aria-label="Dismiss"
+            onClick={(e) => { e.stopPropagation(); onDismissRecapNudge?.(); }}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); onDismissRecapNudge?.(); } }}
+          >
+            ×
+          </span>
+        </button>
       )}
 
       {/* Stats detail popover */}

@@ -23,6 +23,11 @@ const KEY = 'bloodline:v1';
 // multiple people who share one browser/device from inheriting or overwriting
 // each other's tree — see bindIdentity() / clearLocalData().
 const OWNER_KEY = 'bloodline:owner';
+// Device-scoped read markers, kept outside the synced state blob (`state`)
+// so a server merge can never clobber or reset them. See getActivityReadAt()/
+// setActivityReadAt() and takeRecapCutoff() below.
+const ACTIVITY_READ_KEY = 'bloodline:activityReadAt';
+const RECAP_CUTOFF_KEY = 'bloodline:recapCutoffAt';
 
 const EMPTY = {
   people: [],
@@ -813,8 +818,14 @@ export function bindIdentity(uid) {
   try { owner = localStorage.getItem(OWNER_KEY); } catch { /* ignore */ }
   const sameUser = owner === uid;
   if (owner && !sameUser) {
-    // A different person is signing in on this device — forget their tree.
-    try { localStorage.removeItem(KEY); } catch { /* ignore */ }
+    // A different person is signing in on this device — forget their tree
+    // and their read markers, so the new person gets their own "since last
+    // here" baseline instead of inheriting the previous user's.
+    try {
+      localStorage.removeItem(KEY);
+      localStorage.removeItem(ACTIVITY_READ_KEY);
+      localStorage.removeItem(RECAP_CUTOFF_KEY);
+    } catch { /* ignore */ }
     state = { ...EMPTY };
     _serverEtag = null;
   }
@@ -829,11 +840,45 @@ export function clearLocalData() {
   try {
     localStorage.removeItem(KEY);
     localStorage.removeItem(OWNER_KEY);
+    localStorage.removeItem(ACTIVITY_READ_KEY);
+    localStorage.removeItem(RECAP_CUTOFF_KEY);
   } catch { /* ignore */ }
   state = { ...EMPTY };
   _serverEtag = null;
   _currentUser = null;
   listeners.forEach((l) => l());
+}
+
+// The activity bell badge's "seen up to" marker — persisted so a reload
+// doesn't forget you've already looked and re-flash everything as unread.
+export function getActivityReadAt() {
+  try {
+    const raw = localStorage.getItem(ACTIVITY_READ_KEY);
+    return raw ? Number(raw) : null;
+  } catch {
+    return null;
+  }
+}
+export function setActivityReadAt(ts) {
+  try { localStorage.setItem(ACTIVITY_READ_KEY, String(ts)); } catch { /* ignore */ }
+}
+
+// "Since you were last here" for the recap tour — distinct from the activity
+// badge's marker above, which resets the moment you open the activity panel
+// (before you've necessarily played the recap). Call once per app boot: it
+// returns whatever was stored from the END of your previous session (frozen
+// for this whole session, so opening the activity panel mid-session doesn't
+// shrink the recap queue out from under you), then immediately persists a
+// fresh cutoff for next time. Returns null on a person's very first visit —
+// callers should treat that as "nothing to recap," not "recap everything ever".
+export function takeRecapCutoff() {
+  let prev = null;
+  try {
+    const raw = localStorage.getItem(RECAP_CUTOFF_KEY);
+    prev = raw ? Number(raw) : null;
+  } catch { /* ignore */ }
+  try { localStorage.setItem(RECAP_CUTOFF_KEY, String(Date.now())); } catch { /* ignore */ }
+  return prev;
 }
 
 function nameFromEmail(email) {

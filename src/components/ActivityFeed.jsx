@@ -1,7 +1,7 @@
 import { useMemo, useEffect } from 'react';
 import Avatar from './Avatar.jsx';
 
-export default function ActivityFeed({ activity = [], people = [], userEmail, onClose, onSelectPerson }) {
+export default function ActivityFeed({ activity = [], people = [], userEmail, onClose, onSelectPerson, recapCount = 0, onShowRecap }) {
   const byId = useMemo(() => new Map(people.map((p) => [p.id, p])), [people]);
   // Resolve an author's real name from their email by matching a tree person —
   // so the feed shows "Jess Ransom", not the "jscottd" guessed from the address.
@@ -51,6 +51,19 @@ export default function ActivityFeed({ activity = [], people = [], userEmail, on
             <CloseIcon />
           </button>
         </div>
+
+        {recapCount > 0 && onShowRecap && (
+          <button className="activity-recap-hero" onClick={onShowRecap}>
+            <span className="activity-recap-hero__spark" aria-hidden="true"><SparkIcon /></span>
+            <span className="activity-recap-hero__text">
+              <span className="activity-recap-hero__title">
+                {recapCount} {recapCount === 1 ? 'update' : 'updates'} since you were last here
+              </span>
+              <span className="activity-recap-hero__cta">Show me</span>
+            </span>
+            <ChevronRightIcon />
+          </button>
+        )}
 
         {activity.length === 0 ? (
           <ActivityEmpty />
@@ -289,6 +302,23 @@ function JoinIcon() {
       <circle cx="9" cy="7" r="4" stroke="currentColor" strokeWidth="2.2" />
       <path d="M2 21c0-4 3.1-7 7-7" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
       <path d="M19 12l-5 5 5 5M14 17h7" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function SparkIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M12 3l1.8 4.9L18.7 9.7l-4.9 1.8L12 16.4l-1.8-4.9L5.3 9.7l4.9-1.8L12 3z" fill="currentColor" />
+      <path d="M19 14l.7 1.9 1.9.7-1.9.7-.7 1.9-.7-1.9-1.9-.7 1.9-.7L19 14z" fill="currentColor" opacity="0.7" />
+    </svg>
+  );
+}
+
+function ChevronRightIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M9 18l6-6-6-6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }

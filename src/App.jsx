@@ -42,7 +42,11 @@ import {
   bindIdentity,
   clearLocalData,
   isNewUrl,
+  getActivityReadAt,
+  setActivityReadAt,
+  takeRecapCutoff,
 } from './data/store.js';
+import { groupRecapUpdates, captionForRecapGroup } from './lib/recap.js';
 import { uploadPhoto, generateThumb, uploadDocument, savePhotoToDevice } from './lib/image.js';
 import { useImageZoom } from './lib/useImageZoom.js';
 import { buildGraph, pathBetween, pathBetweenOrdered, bloodRelativesOf } from './data/graph.js';
@@ -84,6 +88,7 @@ import TimelineView from './components/TimelineView.jsx';
 import ClaimSpot from './components/ClaimSpot.jsx';
 import InstallPrompt from './components/InstallPrompt.jsx';
 import ActivityFeed from './components/ActivityFeed.jsx';
+import RecapTour from './components/RecapTour.jsx';
 import GedcomImport from './components/GedcomImport.jsx';
 import FamilySearchImport from './components/FamilySearchImport.jsx';
 import SaveNudge from './components/SaveNudge.jsx';
@@ -117,6 +122,15 @@ const _initialPersonParam = (() => {
   if (typeof window === 'undefined') return null;
   return new URLSearchParams(window.location.search).get('person');
 })();
+
+// The recap tour's "since you were last here" cutoff — captured once at
+// module scope, same reasoning as _initialPendingInvite above: this reads
+// AND bumps a localStorage timestamp, so it must run exactly once per real
+// page load. A hook-based guard (useState/useRef initializer) isn't enough —
+// StrictMode's dev-only mount → unmount → remount would reset any
+// component-local guard and re-run the side effect, silently erasing the
+// real cutoff the second time through.
+const _initialRecapCutoff = typeof window === 'undefined' ? null : takeRecapCutoff();
 
 export default function App() {
   const data = useSyncExternalStore(store.subscribe, store.getState);
@@ -443,7 +457,17 @@ export default function App() {
   const [docViewer, setDocViewer] = useState(null); // { title, src, mime }
   const [invitePersonId, setInvitePersonId] = useState(null);
   const [activityOpen, setActivityOpen] = useState(false);
-  const [lastReadAt, setLastReadAt] = useState(null); // null = never opened = all unread
+  const [lastReadAt, setLastReadAt] = useState(() => getActivityReadAt()); // null = never opened = all unread
+  // "Since you were last here" — frozen once per real page load (see
+  // _initialRecapCutoff above), deliberately independent of lastReadAt below:
+  // opening the activity panel shouldn't shrink the recap queue out from
+  // under a tour that's using it.
+  const recapCutoff = _initialRecapCutoff;
+  const [recapOpen, setRecapOpen] = useState(false);
+  const [recapQueue, setRecapQueue] = useState([]);
+  const [recapAllDone, setRecapAllDone] = useState(false);
+  const [recapNudge, setRecapNudge] = useState(false);
+  const recapNudgeShownRef = useRef(false);
   const [gedcomOpen, setGedcomOpen] = useState(false);
   const [fsImportOpen, setFsImportOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
@@ -517,6 +541,25 @@ export default function App() {
     if (lastReadAt === null) return acts.length;
     return acts.filter((a) => new Date(a.created_at).getTime() > lastReadAt).length;
   }, [data.activity, lastReadAt]);
+
+  // The recap tour's queue — one stop per person changed since recapCutoff,
+  // capped to a real "highlights reel" (see groupRecapUpdates). null cutoff
+  // (first-ever visit, nothing to diff against) always yields an empty queue.
+  const recapGroups = useMemo(
+    () => (recapCutoff ? groupRecapUpdates(data.activity ?? [], recapCutoff) : []),
+    [data.activity, recapCutoff],
+  );
+
+  // Proactive nudge: the activity page's "Show me" only pays off for people
+  // who already habitually open it, so surface it once, right after a real
+  // session is established, if there's anything to recap. One-time per app
+  // boot — recapNudgeShownRef guards against re-firing as data settles in.
+  useEffect(() => {
+    if (recapNudgeShownRef.current) return;
+    if (!user || !recapGroups.length) return;
+    recapNudgeShownRef.current = true;
+    setRecapNudge(true);
+  }, [user, recapGroups.length]);
 
   // Set of people alive at the selected year (null = show all).
   const aliveAtYear = useMemo(() => {
@@ -908,6 +951,86 @@ export default function App() {
     }
   }, [view, flyToSearchResult]);
 
+  // The activity recap's cinematic tour — see BubbleTree's spotlightTour and
+  // RecapTour.jsx. Builds the queue from recapGroups, reveals every stop
+  // (they may be scattered anywhere in the tree, not connected by a path —
+  // see groupRecapUpdates), and lets the camera visit them one at a time.
+  const openRecap = useCallback(() => {
+    if (!recapGroups.length) return;
+    setActivityOpen(false);
+    const ids = recapGroups.map((g) => g.personId);
+    setRecapQueue(
+      recapGroups.map((g) => ({
+        personId: g.personId,
+        personName: g.personName,
+        caption: captionForRecapGroup(g),
+        status: 'pending',
+      })),
+    );
+    setRecapAllDone(false);
+    setRecapOpen(true);
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      for (const id of ids) next.add(id);
+      return next;
+    });
+    setLineageMode(false);
+    setLineagePath(null);
+    setLineageOrder(null);
+    setFocusMode(false);
+    setLifeJourneyId(null);
+    setBrowse(false);
+
+    const onArrive = (id) => {
+      setRecapQueue((q) =>
+        q.map((item) => {
+          if (item.personId === id) return { ...item, status: 'active' };
+          if (item.status === 'active') return { ...item, status: 'done' };
+          return item;
+        }),
+      );
+    };
+    const onDone = () => {
+      setRecapQueue((q) => q.map((item) => ({ ...item, status: 'done' })));
+      setRecapAllDone(true);
+    };
+
+    const startTour = () => {
+      if (!viewApi.current) { requestAnimationFrame(startTour); return; }
+      viewApi.current.spotlightTour(ids, { onArrive, onDone });
+    };
+    if (view !== 'bubbles') {
+      setView('bubbles');
+      requestAnimationFrame(startTour);
+    } else {
+      requestAnimationFrame(startTour);
+    }
+  }, [recapGroups, view]);
+
+  const closeRecapAll = useCallback(() => {
+    viewApi.current?.spotlightEnd();
+    setRecapOpen(false);
+    // The lit constellation lingers a moment after the panel closes — the
+    // payoff of the whole tour — rather than vanishing the instant you tap
+    // away.
+    setTimeout(() => viewApi.current?.spotlightClearGlow(), 2600);
+  }, []);
+
+  const dismissRecapItem = useCallback((id) => {
+    viewApi.current?.spotlightRemove(id);
+    setRecapQueue((q) => {
+      const next = q.filter((item) => item.personId !== id);
+      if (!next.length) {
+        setRecapAllDone(true);
+      }
+      return next;
+    });
+  }, []);
+
+  const skipRecapTo = useCallback((id) => {
+    viewApi.current?.spotlightGoTo(id);
+  }, []);
+
   const closePerson = useCallback(() => {
     viewApi.current?.unpin();
     setOpenId(null);
@@ -1159,7 +1282,12 @@ export default function App() {
         bloodlineOnly={bloodlineOnly}
         onToggleBloodlineOnly={() => setBloodlineOnly((v) => !v)}
         onOpenSettings={() => setSettingsOpen(true)}
-        onOpenActivity={() => { setActivityOpen(true); setLastReadAt(Date.now()); }}
+        onOpenActivity={() => {
+          setActivityOpen(true);
+          const now = Date.now();
+          setLastReadAt(now);
+          setActivityReadAt(now);
+        }}
         activityCount={unreadCount}
         user={user}
         userPhoto={userPhoto}
@@ -1182,6 +1310,9 @@ export default function App() {
         storageWarning={storageWarning}
         syncToast={syncToast}
         onDismissSyncToast={() => setSyncToast(null)}
+        recapNudgeCount={recapNudge ? recapGroups.length : 0}
+        onShowRecap={() => { setRecapNudge(false); openRecap(); }}
+        onDismissRecapNudge={() => setRecapNudge(false)}
       />
 
       {view === 'bubbles' ? (
@@ -1658,6 +1789,21 @@ export default function App() {
             const person = graph.byId.get(id);
             if (person) openPerson(id);
           }}
+          recapCount={recapGroups.length}
+          onShowRecap={openRecap}
+        />
+      )}
+
+      {recapOpen && (
+        <RecapTour
+          graph={graph}
+          queue={recapQueue}
+          reducedMotion={reducedMotion}
+          allDone={recapAllDone}
+          onDismiss={dismissRecapItem}
+          onSkipTo={skipRecapTo}
+          onCloseAll={closeRecapAll}
+          onClose={closeRecapAll}
         />
       )}
 
