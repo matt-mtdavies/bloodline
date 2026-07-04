@@ -407,14 +407,17 @@ function LegendIcon() {
 // continuous stroke (not two short disconnected segments) with generations
 // tapering largest-to-smallest top-to-bottom, so it reads as beads on a
 // strand — not three uniform dots, which at this size could pass for a
-// kebab/overflow-menu icon.
+// kebab/overflow-menu icon. Stroke weight matches the other row-2 icons
+// (1.5-1.6) rather than running heavier — three circles plus a spine is
+// already more ink than a single-glyph icon like Legend, so anything bolder
+// reads as "on" even at rest, undermining the active state's own contrast.
 function BloodlineIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path d="M12 2.5v18.3" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-      <circle cx="12" cy="4.2" r="3" stroke="currentColor" strokeWidth="1.7"/>
-      <circle cx="12" cy="12" r="2.3" stroke="currentColor" strokeWidth="1.7"/>
-      <circle cx="12" cy="19.2" r="1.6" stroke="currentColor" strokeWidth="1.7"/>
+      <path d="M12 3v17.6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+      <circle cx="12" cy="4.4" r="2.7" stroke="currentColor" strokeWidth="1.5"/>
+      <circle cx="12" cy="12" r="2" stroke="currentColor" strokeWidth="1.5"/>
+      <circle cx="12" cy="19.2" r="1.5" stroke="currentColor" strokeWidth="1.5"/>
     </svg>
   );
 }
