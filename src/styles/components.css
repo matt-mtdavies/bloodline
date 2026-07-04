@@ -6508,11 +6508,14 @@ button.health-notes {
 }
 
 /* Search flyover caption — relationship chain that fills in hop by hop
-   ("James → Father → Grandfather") while the camera flies the path. */
+   ("James → Father → Grandfather") while the camera flies the path. Cleared
+   below the full two-row topbar (brand row + family name/stats row, ~138px
+   at safe-top:0) rather than guessing a number tuned to just the first row —
+   otherwise this pill sits on top of and obscures the stats pill beneath it. */
 .flight-caption {
   position: fixed;
   left: 50%;
-  top: calc(env(safe-area-inset-top, 0px) + 96px);
+  top: calc(var(--safe-top, 0px) + 150px);
   transform: translateX(-50%);
   z-index: 40;
   display: flex;
