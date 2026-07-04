@@ -884,6 +884,30 @@ export default function App() {
     });
   }, [graph, data.myPersonId, reducedMotion, activateNormal]);
 
+  // Same flight as flyToSearchResult, but callable from anywhere — the
+  // profile page's "Show on map" and the list view's per-row action, not
+  // just a search result. Switches back to the bubble canvas first if
+  // needed, since the flight animates it and it isn't even mounted while
+  // browsing the list view.
+  const flyToPersonFromAnywhere = useCallback((targetId) => {
+    if (view !== 'bubbles') {
+      setView('bubbles');
+      // BubbleTree mounts fresh here (a real PIXI/WebGL setup, not just a
+      // re-render) and only populates viewApi once that effect has run —
+      // poll a few frames rather than guessing a fixed delay that could be
+      // too short on a slow device or needlessly long on a fast one.
+      let tries = 0;
+      const tryFly = () => {
+        if (viewApi.current) { flyToSearchResult(targetId); return; }
+        if (tries++ > 90) return; // ~1.5s at 60fps — give up quietly, never throws
+        requestAnimationFrame(tryFly);
+      };
+      requestAnimationFrame(tryFly);
+    } else {
+      flyToSearchResult(targetId);
+    }
+  }, [view, flyToSearchResult]);
+
   const closePerson = useCallback(() => {
     viewApi.current?.unpin();
     setOpenId(null);
@@ -1375,6 +1399,7 @@ export default function App() {
           focusId={activeId}
           onFocus={activate}
           onOpenPerson={openPerson}
+          onShowOnMap={flyToPersonFromAnywhere}
         />
       )}
 
@@ -1393,6 +1418,10 @@ export default function App() {
         onFocus={(id) => {
           closePerson();
           activate(id);
+        }}
+        onShowOnMap={(id) => {
+          closePerson();
+          flyToPersonFromAnywhere(id);
         }}
         onOpenPerson={openPerson}
         onAddRelative={setAddAnchorId}

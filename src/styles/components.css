@@ -673,6 +673,11 @@
 }
 .listview__empty { padding: 16px 12px; font-size: 14.5px; color: var(--ink-faint); }
 
+/* Card container. The standalone "centred here" row (person-row--focus) is
+   still a single <button> with avatar+text direct inside it, so this keeps
+   the original padding/gap/press-scale for that case; the group/directory
+   rows below wrap TWO independent buttons in here instead (a <button> can't
+   nest another <button>), each styled separately below. */
 .person-row {
   display: flex;
   align-items: center;
@@ -692,6 +697,21 @@
   padding: 14px;
 }
 .person-row--current { outline: 2px solid var(--accent-soft); }
+
+/* The row's main tap target (avatar + name/meta) — grows to fill the row,
+   no background/shadow of its own (the div or button carrying .person-row
+   already provides the card look). */
+.person-row__main {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  background: none;
+}
+.person-row__main:active { transform: scale(0.985); }
+
 .person-row__text { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
 .person-row__name {
   font-size: 16px;
@@ -702,8 +722,25 @@
   text-overflow: ellipsis;
 }
 .person-row__meta { font-size: 12.5px; color: var(--ink-soft); }
-.person-row__go { font-size: 13px; color: var(--accent); font-weight: 600; flex: none; }
 .person-row--focus .person-row__name { font-family: var(--display); font-size: 21px; font-weight: 600; }
+
+/* "Show on map" — the flight-across-the-tree flourish (same engine as
+   search), as a per-row action distinct from the row's own tap-to-centre.
+   Muted at rest so it doesn't compete with the name/meta text; warms on
+   hover like every other icon-only affordance in the app. */
+.person-row__map {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  color: var(--ink-faint);
+  background: transparent;
+  transition: color 0.15s ease, background 0.15s ease, transform 0.2s var(--spring);
+}
+.person-row__map:hover { color: var(--accent); background: var(--accent-soft); }
+.person-row__map:active { transform: scale(0.9); }
 
 .search-wrap { position: relative; display: flex; align-items: center; margin-bottom: 12px; }
 .search-wrap .input-clear { right: 10px; }
@@ -2428,6 +2465,27 @@
 .profile__close:hover { background: var(--paper-deep); }
 .profile__close:active { transform: scale(0.9); }
 
+/* Mirrors .profile__close on the opposite corner — a quick, no-ceremony
+   recentre, distinct from the "Show on map" flight in the actions row below
+   (that one's the showpiece; this is the plain utility jump). */
+.profile__centre {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  color: var(--ink-soft);
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(6px);
+  transition: transform 0.3s var(--spring), background 0.2s var(--ease);
+}
+.profile__centre:hover { background: var(--paper-deep); }
+.profile__centre:active { transform: scale(0.9); }
+
 /* Hero — a calm, centred crown to the page. */
 .profile__hero {
   display: flex;
@@ -2512,6 +2570,11 @@
 .action--journey:hover { background: linear-gradient(135deg, #ede8e0 0%, #e4ddd4 100%); }
 .action--invite { color: var(--accent) !important; border-color: color-mix(in srgb, var(--accent) 30%, transparent) !important; }
 .action--invite:hover { background: color-mix(in srgb, var(--accent) 8%, transparent) !important; }
+/* The flight-across-the-tree flourish (same engine as search) — accent text
+   on the same quiet pill everything else uses, not a solid fill, so it
+   doesn't compete with Add a relative's primary button for attention. */
+.action--map { color: var(--accent) !important; }
+.action--map:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); }
 
 /* Invited state banner */
 .profile__placeholder {

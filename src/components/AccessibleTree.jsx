@@ -9,7 +9,7 @@ import { relationLabel } from '../data/graph.js';
  * pixel of canvas. It mirrors the ego model: the focused person, then the people
  * immediately around them, then a searchable directory of everyone.
  */
-export default function AccessibleTree({ graph, focusId, onFocus, onOpenPerson }) {
+export default function AccessibleTree({ graph, focusId, onFocus, onOpenPerson, onShowOnMap }) {
   const [q, setQ] = useState('');
   const [filter, setFilter] = useState('all');
   const focus = graph.byId.get(focusId);
@@ -116,18 +116,24 @@ export default function AccessibleTree({ graph, focusId, onFocus, onOpenPerson }
                 if (!p) return null;
                 return (
                   <li key={item.id}>
-                    <button className="person-row" onClick={() => onFocus(item.id)}>
-                      <Avatar person={p} size={46} />
-                      <span className="person-row__text">
-                        <span className="person-row__name">{p.display_name}</span>
-                        <span className="person-row__meta">
-                          {relationLabel(graph, focusId, item.id)} · {lifespan(p)}
+                    <div className="person-row">
+                      <button className="person-row__main" onClick={() => onFocus(item.id)}>
+                        <Avatar person={p} size={46} />
+                        <span className="person-row__text">
+                          <span className="person-row__name">{p.display_name}</span>
+                          <span className="person-row__meta">
+                            {relationLabel(graph, focusId, item.id)} · {lifespan(p)}
+                          </span>
                         </span>
-                      </span>
-                      <span className="person-row__go" aria-hidden="true">
-                        Centre →
-                      </span>
-                    </button>
+                      </button>
+                      <button
+                        className="person-row__map"
+                        onClick={() => onShowOnMap?.(item.id)}
+                        aria-label={`Show ${p.display_name} on the map`}
+                      >
+                        <MapPinIcon />
+                      </button>
+                    </div>
                   </li>
                 );
               })}
@@ -177,19 +183,25 @@ export default function AccessibleTree({ graph, focusId, onFocus, onOpenPerson }
           {directory.length > 0 ? (
             directory.map((p) => (
               <li key={p.id}>
-                <button
-                  className={'person-row' + (p.id === focusId ? ' person-row--current' : '')}
-                  onClick={() => onFocus(p.id)}
-                >
-                  <Avatar person={p} size={42} />
-                  <span className="person-row__text">
-                    <span className="person-row__name">{p.display_name}</span>
-                    <span className="person-row__meta">
-                      {lifespan(p)}
-                      {p.occupation ? ` · ${p.occupation}` : ''}
+                <div className={'person-row' + (p.id === focusId ? ' person-row--current' : '')}>
+                  <button className="person-row__main" onClick={() => onFocus(p.id)}>
+                    <Avatar person={p} size={42} />
+                    <span className="person-row__text">
+                      <span className="person-row__name">{p.display_name}</span>
+                      <span className="person-row__meta">
+                        {lifespan(p)}
+                        {p.occupation ? ` · ${p.occupation}` : ''}
+                      </span>
                     </span>
-                  </span>
-                </button>
+                  </button>
+                  <button
+                    className="person-row__map"
+                    onClick={() => onShowOnMap?.(p.id)}
+                    aria-label={`Show ${p.display_name} on the map`}
+                  >
+                    <MapPinIcon />
+                  </button>
+                </div>
               </li>
             ))
           ) : (
@@ -198,5 +210,22 @@ export default function AccessibleTree({ graph, focusId, onFocus, onOpenPerson }
         </ul>
       </section>
     </main>
+  );
+}
+
+// Same glyph as the profile page's "Show on map" — the flight-across-the-
+// tree flourish (see App.jsx's flyToPersonFromAnywhere), reused here as a
+// per-row action distinct from the row's own tap-to-centre.
+function MapPinIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M12 21s7-6.2 7-11a7 7 0 1 0-14 0c0 4.8 7 11 7 11Z"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinejoin="round"
+      />
+      <circle cx="12" cy="10" r="2.4" stroke="currentColor" strokeWidth="1.7" />
+    </svg>
   );
 }

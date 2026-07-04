@@ -30,6 +30,7 @@ export default function PersonSheet({
   lockEscape = false,
   onClose,
   onFocus,
+  onShowOnMap,
   onOpenPerson,
   onAddRelative,
   onEdit,
@@ -355,6 +356,9 @@ export default function PersonSheet({
         <button className="profile__close" onClick={onClose} aria-label="Close profile">
           <CloseIcon />
         </button>
+        <button className="profile__centre" onClick={() => onFocus(person.id)} aria-label="Centre the tree here">
+          <CrosshairIcon />
+        </button>
 
         {/* ── Hero ─────────────────────────────────────────────────────────── */}
         <header className="profile__hero">
@@ -437,6 +441,10 @@ export default function PersonSheet({
             there, Add relative takes its own full-width row above so the
             other two aren't squeezed three-across. */}
         <div className={`profile__actions${person.invited_at ? '' : ' profile__actions--has-invite'}`}>
+          <button className="action action--map" onClick={() => onShowOnMap?.(person.id)} aria-label={`Show ${person.display_name.split(' ')[0]} on the map`}>
+            <PinIcon />
+            Show on map
+          </button>
           {canEdit && (
             <button className="action action--primary" onClick={() => onAddRelative?.(person.id)}>
               <PlusIcon />
@@ -1341,11 +1349,6 @@ export default function PersonSheet({
           </div>
         )}
 
-        <footer className="profile__foot">
-          <button className="btn" onClick={() => onFocus(person.id)}>
-            Centre the tree here
-          </button>
-        </footer>
       </article>
     </div>
   );
@@ -1402,6 +1405,14 @@ function CloseIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+function CrosshairIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="12" r="7" stroke="currentColor" strokeWidth="1.7" />
+      <path d="M12 2v4M12 18v4M2 12h4M18 12h4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
     </svg>
   );
 }
