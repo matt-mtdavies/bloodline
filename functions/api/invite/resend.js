@@ -30,7 +30,7 @@ export async function onRequestPost({ request, env, data }) {
   }
 
   const invite = await env.DB.prepare(
-    `SELECT id, email, role, token FROM invite WHERE id = ? AND family_id = ? AND status = 'pending'`,
+    `SELECT id, email, role, token, person_name FROM invite WHERE id = ? AND family_id = ? AND status = 'pending'`,
   ).bind(id, membership.family_id).first();
 
   if (!invite) return json({ error: 'Invite not found or already accepted' }, { status: 404 });
@@ -47,8 +47,8 @@ export async function onRequestPost({ request, env, data }) {
     const result = await sendEmail(env, {
       to: invite.email,
       subject: `${fromEmail.split('@')[0]} invited you to ${familyName} on Bloodline`,
-      html: inviteHtml({ inviteUrl, fromEmail, familyName, roleLabel }),
-      text: inviteText({ inviteUrl, fromEmail, familyName, roleLabel }),
+      html: inviteHtml({ inviteUrl, fromEmail, familyName, roleLabel, personName: invite.person_name }),
+      text: inviteText({ inviteUrl, fromEmail, familyName, roleLabel, personName: invite.person_name }),
       replyTo: fromEmail,
       tag: 'invite',
     });
@@ -64,11 +64,14 @@ export async function onRequestPost({ request, env, data }) {
   return json({ ok: true, emailSent, emailError, inviteUrl });
 }
 
-function inviteText({ inviteUrl, fromEmail, familyName, roleLabel }) {
+function inviteText({ inviteUrl, fromEmail, familyName, roleLabel, personName }) {
+  const forLine = personName
+    ? `${fromEmail} has invited you to join the family tree as ${roleLabel}, to help tell ${personName}'s story.`
+    : `${fromEmail} has invited you to join the family tree as ${roleLabel}.`;
   return [
     `You're invited to join ${familyName} on Bloodline`,
     '',
-    `${fromEmail} has invited you to join the family tree as ${roleLabel}.`,
+    forLine,
     '',
     'Bloodline is a living portrait of your family — an interactive tree, stories, memories and photos across generations.',
     '',
@@ -81,7 +84,7 @@ function inviteText({ inviteUrl, fromEmail, familyName, roleLabel }) {
   ].join('\n');
 }
 
-function inviteHtml({ inviteUrl, fromEmail, familyName, roleLabel }) {
+function inviteHtml({ inviteUrl, fromEmail, familyName, roleLabel, personName }) {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -100,7 +103,7 @@ function inviteHtml({ inviteUrl, fromEmail, familyName, roleLabel }) {
     <h1 style="margin:0 0 8px;font-size:28px;font-weight:700;color:#241f1c;line-height:1.2;">${familyName}</h1>
     <p style="margin:0 0 32px;font-size:15px;color:#6b6260;line-height:1.5;">
       <strong style="color:#241f1c;">${fromEmail}</strong> has invited you to join the family tree
-      as <span style="color:#c2603a;font-weight:600;">${roleLabel}</span>.
+      as <span style="color:#c2603a;font-weight:600;">${roleLabel}</span>${personName ? `, to help tell <strong style="color:#241f1c;">${personName}</strong>'s story` : ''}.
     </p>
     <a href="${inviteUrl}"
        style="display:block;text-align:center;background:#c2603a;color:#ffffff;font-size:17px;font-weight:600;padding:18px 24px;border-radius:14px;text-decoration:none;letter-spacing:0.01em;box-shadow:0 4px 20px rgba(194,96,58,0.3);">

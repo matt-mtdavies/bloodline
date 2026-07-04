@@ -4,12 +4,17 @@ import { uid } from './util.js';
  * Shared invite-processing logic used by both the OTP verify flow and the
  * direct accept endpoint (for users who are already logged in).
  *
- * Returns null on success, or { needsMerge: true, token } when the invitee
- * already belongs to a different family that has tree data.
+ * Returns null when there's no valid invite to process, { needsMerge: true,
+ * token } when the invitee already belongs to a different family that has
+ * tree data, or { personId } on a normal successful join — personId is the
+ * person this invite was created for (see invite/index.js), or null for an
+ * invite sent without one (a generic link-only share, or one created before
+ * this field existed). Existing callers that only ever checked
+ * `result?.needsMerge` keep working unchanged either way.
  */
 export async function processInvite(db, inviteToken, userId, now) {
   const invite = await db.prepare(
-    `SELECT id, family_id, from_user, role, status, expires_at FROM invite WHERE token = ?`,
+    `SELECT id, family_id, from_user, role, status, expires_at, person_id FROM invite WHERE token = ?`,
   ).bind(inviteToken).first();
 
   if (!invite || invite.status !== 'pending' || invite.expires_at < now) return null;
@@ -80,5 +85,5 @@ export async function processInvite(db, inviteToken, userId, now) {
 
   await db.prepare(`UPDATE user SET family_id = ? WHERE id = ?`).bind(invite.family_id, userId).run();
   await db.prepare(`UPDATE invite SET status = 'accepted' WHERE id = ?`).bind(invite.id).run();
-  return null;
+  return { personId: invite.person_id || null };
 }

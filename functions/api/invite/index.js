@@ -20,12 +20,19 @@ export async function onRequestPost({ request, env, data }) {
   if (!data.user) return json({ error: 'Unauthorized' }, { status: 401 });
   if (!env.DB) return json({ error: 'Database not configured' }, { status: 503 });
 
-  let email, role, notify;
+  let email, role, notify, person_id, person_name;
   try {
-    ({ email, role, notify } = await request.json());
+    ({ email, role, notify, person_id, person_name } = await request.json());
   } catch {
     return json({ error: 'Bad request' }, { status: 400 });
   }
+  // Optional — every existing caller/flow that doesn't send these keeps
+  // working exactly as before (NULL, generic email copy, email-match-only
+  // suggestion on accept).
+  const personId = (typeof person_id === 'string' && person_id.trim()) ? person_id.trim() : null;
+  const personName = (typeof person_name === 'string' && person_name.trim())
+    ? person_name.trim().slice(0, 120)
+    : null;
 
   // notify defaults to true (email invite). When false, we just mint a share
   // link and skip the email — email is then optional.
@@ -72,9 +79,9 @@ export async function onRequestPost({ request, env, data }) {
   const expires = now + 60 * 60 * 24 * 7; // 7 days
 
   await env.DB.prepare(
-    `INSERT INTO invite (id, family_id, from_user, email, token, role, status, expires_at, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)`,
-  ).bind(inviteId, membership.family_id, data.user.uid, email, t, role, expires, now).run();
+    `INSERT INTO invite (id, family_id, from_user, email, token, role, status, expires_at, created_at, person_id, person_name)
+     VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)`,
+  ).bind(inviteId, membership.family_id, data.user.uid, email, t, role, expires, now, personId, personName).run();
 
   const inviteUrl = `${env.APP_URL || 'https://myfamilybloodline.com'}/invite/${t}`;
   const roleLabel = ROLE_LABELS[role];
@@ -90,8 +97,8 @@ export async function onRequestPost({ request, env, data }) {
       const result = await sendEmail(env, {
         to: email,
         subject: `${fromEmail.split('@')[0]} invited you to ${familyName} on Bloodline`,
-        html: inviteEmail({ inviteUrl, fromEmail, familyName, roleLabel }),
-        text: inviteEmailText({ inviteUrl, fromEmail, familyName, roleLabel }),
+        html: inviteEmail({ inviteUrl, fromEmail, familyName, roleLabel, personName }),
+        text: inviteEmailText({ inviteUrl, fromEmail, familyName, roleLabel, personName }),
         replyTo: fromEmail,
         tag: 'invite',
       });
@@ -216,11 +223,14 @@ export async function onRequestGet({ env, data }) {
   return json({ invites: invitesWithLinks, members });
 }
 
-function inviteEmailText({ inviteUrl, fromEmail, familyName, roleLabel }) {
+function inviteEmailText({ inviteUrl, fromEmail, familyName, roleLabel, personName }) {
+  const forLine = personName
+    ? `${fromEmail} has invited you to join the family tree as ${roleLabel}, to help tell ${personName}'s story.`
+    : `${fromEmail} has invited you to join the family tree as ${roleLabel}.`;
   return [
     `You're invited to join ${familyName} on Bloodline`,
     '',
-    `${fromEmail} has invited you to join the family tree as ${roleLabel}.`,
+    forLine,
     '',
     'Bloodline is a living portrait of your family — an interactive tree, stories, memories and photos across generations.',
     '',
@@ -233,7 +243,7 @@ function inviteEmailText({ inviteUrl, fromEmail, familyName, roleLabel }) {
   ].join('\n');
 }
 
-function inviteEmail({ inviteUrl, fromEmail, familyName, roleLabel }) {
+function inviteEmail({ inviteUrl, fromEmail, familyName, roleLabel, personName }) {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -256,7 +266,7 @@ function inviteEmail({ inviteUrl, fromEmail, familyName, roleLabel }) {
     <h1 style="margin:0 0 8px;font-size:28px;font-weight:700;color:#241f1c;line-height:1.2;">${familyName}</h1>
     <p style="margin:0 0 32px;font-size:15px;color:#6b6260;line-height:1.5;">
       <strong style="color:#241f1c;">${fromEmail}</strong> has invited you to join the family tree
-      as <span style="color:#c2603a;font-weight:600;">${roleLabel}</span>.
+      as <span style="color:#c2603a;font-weight:600;">${roleLabel}</span>${personName ? `, to help tell <strong style="color:#241f1c;">${personName}</strong>'s story` : ''}.
     </p>
 
     <a href="${inviteUrl}"

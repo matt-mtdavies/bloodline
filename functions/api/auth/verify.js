@@ -137,6 +137,7 @@ export async function onRequestPost({ request, env }) {
     env.SESSION_SECRET || 'dev',
   );
 
+  let personId = null;
   if (invite) {
     const merge = await processInvite(env.DB, invite, user.id, now);
     if (merge?.needsMerge) {
@@ -145,8 +146,9 @@ export async function onRequestPost({ request, env }) {
         { headers: { 'set-cookie': sessionCookie(session) } },
       );
     }
+    personId = merge?.personId ?? null;
   }
 
-  return json({ ok: true }, { headers: { 'set-cookie': sessionCookie(session) } });
+  return json({ ok: true, personId }, { headers: { 'set-cookie': sessionCookie(session) } });
 }
 

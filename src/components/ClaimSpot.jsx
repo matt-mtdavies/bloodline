@@ -3,19 +3,26 @@ import Avatar from './Avatar.jsx';
 
 /*
  * Claim Your Spot — a warm welcome shown to a member who hasn't yet linked
- * themselves to a person in the tree. If the invite was tied to a specific
- * bubble (their email was recorded on it) we suggest it directly; otherwise
- * they search and pick. They can also say they're not in the tree yet.
+ * themselves to a person in the tree. If the invite that brought them here
+ * was created for a specific bubble, suggestedPersonId names it directly —
+ * the strongest signal, since it doesn't depend on the invitee actually
+ * signing in with the exact email the invite was sent to. Otherwise we fall
+ * back to the older heuristic (a person whose recorded invited_email/email
+ * matches the viewer's), which still covers invites sent before that field
+ * existed, or a link-only share with no email at all. Failing both, they
+ * search and pick, or say they're not in the tree yet.
  */
-export default function ClaimSpot({ graph, familyName, viewerEmail, onClaim, onSkip }) {
+export default function ClaimSpot({ graph, familyName, viewerEmail, suggestedPersonId, onClaim, onSkip }) {
   const people = graph.people || [];
   const email = (viewerEmail || '').toLowerCase();
 
-  // Strong match: a person whose recorded invited_email / email is the viewer's.
-  const suggested = useMemo(
-    () => people.find((p) => p.invited_email?.toLowerCase() === email || p.email?.toLowerCase() === email) || null,
-    [people, email],
-  );
+  const suggested = useMemo(() => {
+    if (suggestedPersonId) {
+      const named = people.find((p) => p.id === suggestedPersonId);
+      if (named) return named;
+    }
+    return people.find((p) => p.invited_email?.toLowerCase() === email || p.email?.toLowerCase() === email) || null;
+  }, [people, email, suggestedPersonId]);
 
   const [mode, setMode] = useState(suggested ? 'suggest' : 'pick'); // suggest | pick
   const [q, setQ] = useState('');

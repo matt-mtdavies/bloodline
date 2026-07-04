@@ -22,5 +22,5 @@ export async function onRequestPost({ request, env, data }) {
   if (result?.needsMerge) {
     return json({ needsMerge: true, pendingInvite: result.token });
   }
-  return json({ ok: true });
+  return json({ ok: true, personId: result?.personId ?? null });
 }

@@ -159,6 +159,11 @@ export default function App() {
   // remove a person) are reserved for co-admins/owners — see canManageTree.
   const canManageTreeStructure = !user || canManageTree(data._meta?.role || 'owner');
   const [promptClaim, setPromptClaim] = useState(false); // welcome a member to claim their spot
+  // The person the invite that brought them here was actually for (if any) —
+  // a stronger, deterministic signal than ClaimSpot's own invited_email
+  // guess. Null whenever that invite predates this field or never had one;
+  // ClaimSpot falls back to its existing email match in that case.
+  const [suggestedClaimPersonId, setSuggestedClaimPersonId] = useState(null);
   const [installEvent, setInstallEvent] = useState(null); // captured beforeinstallprompt
   const [showInstall, setShowInstall] = useState(false);
   // Set when a user with existing tree data accepts an invite — gates the app
@@ -190,6 +195,10 @@ export default function App() {
     // B) Already logged in → ?invite param in URL, OTP never shown → accept here
     const inviteToken = _initialInviteToken;
     const joiningFamily = !!loginExtras?.joinedViaInvite || !!inviteToken;
+    // Whoever the invite that brought this session in was actually for, if
+    // any — threaded from whichever of paths A/B/C below actually fires, and
+    // handed to ClaimSpot at the bottom of this function.
+    let claimSuggestPersonId = loginExtras?.personId || null;
 
     if (inviteToken && !loginExtras?.joinedViaInvite) {
       // Logged-in path: process the invite server-side before loading the tree.
@@ -202,6 +211,7 @@ export default function App() {
         if (ar.ok) {
           const ab = await ar.json().catch(() => ({}));
           if (ab.needsMerge) setPendingInvite(ab.pendingInvite);
+          else if (ab.personId) claimSuggestPersonId = ab.personId;
         }
       } catch { /* non-fatal — load whatever tree the server has */ }
     }
@@ -229,11 +239,12 @@ export default function App() {
               if (ab.needsMerge) {
                 setPendingInvite(ab.pendingInvite);
               } else {
+                if (ab.personId) claimSuggestPersonId = ab.personId;
                 await loadFromServer({ forceServerWins: true });
                 try {
                   const seen = localStorage.getItem(`bl_claim_seen_${u.uid}`);
-                  if (!u.person_id && !seen) setPromptClaim(true);
-                } catch { if (!u.person_id) setPromptClaim(true); }
+                  if (!u.person_id && !seen) { setPromptClaim(true); setSuggestedClaimPersonId(claimSuggestPersonId); }
+                } catch { if (!u.person_id) { setPromptClaim(true); setSuggestedClaimPersonId(claimSuggestPersonId); } }
               }
             }
           } catch { /* non-fatal — fall through to whatever tree loaded */ }
@@ -267,12 +278,13 @@ export default function App() {
     // join flow (not onboarding owners) and to a one-time dismissal per user.
     try {
       const seen = localStorage.getItem(`bl_claim_seen_${u.uid}`);
-      if (joiningFamily && !u.person_id && !seen) setPromptClaim(true);
-    } catch { if (joiningFamily && !u.person_id) setPromptClaim(true); }
+      if (joiningFamily && !u.person_id && !seen) { setPromptClaim(true); setSuggestedClaimPersonId(claimSuggestPersonId); }
+    } catch { if (joiningFamily && !u.person_id) { setPromptClaim(true); setSuggestedClaimPersonId(claimSuggestPersonId); } }
   }
 
   const markClaimSeen = useCallback(() => {
     setPromptClaim(false);
+    setSuggestedClaimPersonId(null);
     try { if (user?.uid) localStorage.setItem(`bl_claim_seen_${user.uid}`, '1'); } catch { /* ignore */ }
   }, [user]);
 
@@ -1022,10 +1034,14 @@ export default function App() {
   // notify=true emails the invite; notify=false just mints a share link (email
   // optional). Returns { inviteUrl, emailSent, emailError } for the sheet.
   const handleSendInvite = useCallback(async (personId, { email = '', role, notify = true } = {}) => {
+    // Personalizes the invite email/landing page and, on acceptance, lets
+    // ClaimSpot suggest this exact person instead of only guessing from a
+    // later email match — see /api/invite for the (fully optional) fields.
+    const personName = data.people.find((p) => p.id === personId)?.display_name || '';
     const res = await fetch('/api/invite', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ email, role, notify }),
+      body: JSON.stringify({ email, role, notify, person_id: personId, person_name: personName }),
     });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
@@ -1039,7 +1055,7 @@ export default function App() {
       updatePerson(personId, { invited_email: email.trim().toLowerCase(), invited_at: Date.now() });
     }
     return body;
-  }, [data._meta?.role]);
+  }, [data._meta?.role, data.people]);
 
   const activePerson = graph.byId.get(activeId);
 
@@ -1467,6 +1483,7 @@ export default function App() {
           graph={graph}
           familyName={data.familyName}
           viewerEmail={user?.email}
+          suggestedPersonId={suggestedClaimPersonId}
           onClaim={handleClaimSpot}
           onSkip={markClaimSeen}
         />

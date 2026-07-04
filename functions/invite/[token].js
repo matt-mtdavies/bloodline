@@ -14,7 +14,7 @@ export async function onRequestGet({ params, env }) {
 
   const now = Math.floor(Date.now() / 1000);
   const invite = await env.DB.prepare(
-    `SELECT i.id, i.email, i.role, i.status, i.expires_at,
+    `SELECT i.id, i.email, i.role, i.status, i.expires_at, i.person_name,
             f.name  AS family_name,
             u.email AS from_email
        FROM invite i
@@ -74,7 +74,7 @@ function landingHtml({ token, invite, roleLabel, home }) {
       <h1>${invite.family_name}</h1>
       <p class="invite-meta">
         ${fromName} has invited you to join the family tree
-        as <strong class="role-chip">${roleLabel}</strong>
+        as <strong class="role-chip">${roleLabel}</strong>${invite.person_name ? `, to help tell <strong>${invite.person_name}</strong>'s story` : ''}
       </p>
 
       <div class="features">
