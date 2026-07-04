@@ -1356,6 +1356,20 @@
   margin: 0;
   min-height: 22px;
 }
+.life-event-card__world {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  margin: 7px 0 0;
+  padding-top: 7px;
+  border-top: 1px dashed rgba(0,0,0,0.1);
+  font-size: 12px;
+  font-style: italic;
+  color: var(--ink-faint);
+  line-height: 1.3;
+}
+.life-event-card__world svg { flex: none; opacity: 0.7; }
 
 /* ── Layout algorithm segmented control ────────────────────────────────── */
 .legend__setting--layout { flex-direction: column; align-items: flex-start; gap: 10px; }
@@ -6533,6 +6547,18 @@ button.health-notes {
 .tl__scroll { flex: 1; overflow-y: auto; padding: 4px 2px 12px; }
 .tl__empty { color: var(--ink-soft, #8a8480); font-size: 14px; text-align: center; padding: 40px 16px; line-height: 1.5; }
 
+/* Each decade is its own soft, era-tinted panel — a subtle warm-to-cool wash
+   across the full span (old decades read a touch sepia, modern ones a touch
+   cleaner/cooler), entirely within the app's existing warm-paper palette.
+   Content cards stay crisp white on top of it, so it reads as "cards resting
+   on a period backdrop", not a color change fighting the content. */
+.tl__decade {
+  background: var(--era-tint, transparent);
+  border-radius: 18px;
+  padding: 4px 10px 14px;
+  margin: 0 -10px 2px;
+}
+
 /* Decade header sits on the spine */
 .tl__decade-head { position: relative; padding: 14px 0 14px 46px; }
 .tl__decade-head::before {
@@ -6543,14 +6569,14 @@ button.health-notes {
   position: relative; z-index: 1;
   display: inline-block; font-family: 'Fraunces', Georgia, serif;
   font-size: 17px; font-weight: 700; color: var(--ink, #241f1c);
-  background: #fff; padding: 2px 12px 2px 0;
+  background: var(--era-tint, #fff); padding: 2px 12px 2px 0;
   margin-left: -8px;
 }
 .tl__decade-head::after {
   content: ''; position: absolute; left: 23px; top: 50%; width: 9px; height: 9px;
   border-radius: 50%; background: var(--accent, #c2603a);
   transform: translate(-50%, -50%); z-index: 2;
-  box-shadow: 0 0 0 4px #fff;
+  box-shadow: 0 0 0 4px var(--era-tint, #fff);
 }
 
 /* Entry */
@@ -6570,7 +6596,7 @@ button.health-notes {
   position: absolute; left: 23px; top: 16px; transform: translate(-50%, -50%);
   width: 26px; height: 26px; border-radius: 50%;
   display: grid; place-items: center; color: #fff; z-index: 1;
-  box-shadow: 0 0 0 4px #fff;
+  box-shadow: 0 0 0 4px var(--era-tint, #fff);
   background: var(--accent, #c2603a);
 }
 .tl-entry--birth .tl-entry__dot { background: #3f5e4e; }
@@ -6590,6 +6616,40 @@ button.health-notes {
 .tl-entry__who { font-size: 12px; color: var(--ink-faint, #b0a9a5); margin-top: 1px; }
 .tl-entry__photo { margin-top: 8px; border-radius: 10px; overflow: hidden; }
 .tl-entry__photo img { display: block; width: 100%; max-height: 180px; object-fit: cover; }
+
+/* World-history context — deliberately quieter than family entries: a
+   hollow (not filled) dot, a dashed translucent card, muted ink. It should
+   read as ambient backdrop you glance at, never compete with the family
+   moment it sits beside. Not clickable (no person to navigate to). */
+.tl-entry--world { cursor: default; }
+.tl-entry--world:hover .tl-entry__card { transform: none; border-color: #d8cdbe; }
+.tl-entry--world .tl-entry__dot {
+  background: transparent; color: #9c8d7d;
+  border: 1.5px solid #b8ab9a;
+  box-shadow: 0 0 0 4px var(--era-tint, #fff);
+}
+.tl-entry--world .tl-entry__card {
+  background: rgba(255, 255, 255, 0.5);
+  border-style: dashed;
+  border-color: #d8cdbe;
+}
+.tl-entry--world .tl-entry__title { font-size: 13.5px; font-weight: 500; color: #6b6058; }
+.tl-entry--world .tl-entry__year { color: #a8998a; }
+.tl-entry__category {
+  font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em;
+  color: #b3a695; margin-top: 2px;
+}
+
+/* The specific, personal echo — a birth landing on the same year as a world
+   event — rendered right on the family card itself rather than as a
+   separate card, so the connection reads as "about this person", not
+   "here's a history lesson". */
+.tl-entry__echo {
+  display: flex; align-items: center; gap: 5px;
+  font-size: 11.5px; font-style: italic; color: #a8998a;
+  margin-top: 5px; padding-top: 5px; border-top: 1px dashed var(--hairline, #ebedf0);
+}
+.tl-entry__echo svg { flex: none; }
 
 @media (prefers-reduced-motion: reduce) {
   .tl-entry { opacity: 1; transform: none; transition: none; }

@@ -46,6 +46,7 @@ import {
 import { uploadPhoto, generateThumb, uploadDocument, savePhotoToDevice } from './lib/image.js';
 import { useImageZoom } from './lib/useImageZoom.js';
 import { buildGraph, pathBetween, pathBetweenOrdered } from './data/graph.js';
+import { detectRegion, nearestWorldEvent } from './lib/worldEvents.js';
 import { findDuplicatePairs } from './lib/duplicates.js';
 import { canManageTree } from './lib/visibility.js';
 import { profileCompleteness } from './lib/profile.js';
@@ -712,6 +713,15 @@ export default function App() {
 
   const lifeJourneyPerson = lifeJourneyId ? graph.byId.get(lifeJourneyId) : null;
 
+  // World-history context for Time Mode's year-scrubber — same curated dataset
+  // and region-bias as the Family Timeline, so scrubbing years alone (with no
+  // life-journey person picked) still surfaces "what was happening" context.
+  const timeRegion = useMemo(() => detectRegion(graph), [graph]);
+  const worldEvent = useMemo(
+    () => (timeMode ? nearestWorldEvent(timeYear, timeRegion) : null),
+    [timeMode, timeYear, timeRegion],
+  );
+
   const startLifeJourney = useCallback((id) => {
     const p = graph.byId.get(id);
     const birthYear = p?.birth_date ? parseInt(p.birth_date) : yearRange.min;
@@ -1189,17 +1199,25 @@ export default function App() {
               <span className="dock-divider" aria-hidden="true" />
               {/* Time — wrapper is position:relative so slider/card float above */}
               <div className={`time-bar${timeMode ? ' time-bar--on' : ''}`}>
-                {timeMode && lifeJourneyPerson && (() => {
-                  const ev = lifeJourneyPerson.events?.find(
+                {timeMode && (lifeJourneyPerson || worldEvent) && (() => {
+                  const ev = lifeJourneyPerson?.events?.find(
                     (e) => Math.abs(parseInt(e.year) - timeYear) <= 1,
                   );
+                  const visible = !!ev || (!lifeJourneyPerson && !!worldEvent);
                   return (
-                    <div className={`life-event-card${ev ? ' life-event-card--visible' : ''}`}>
+                    <div className={`life-event-card${visible ? ' life-event-card--visible' : ''}`}>
                       <div className="life-event-card__meta">
-                        <span className="life-event-card__who">{lifeJourneyPerson.display_name.split(' ')[0]}</span>
+                        {lifeJourneyPerson && (
+                          <span className="life-event-card__who">{lifeJourneyPerson.display_name.split(' ')[0]}</span>
+                        )}
                         <span className="life-event-card__year">{timeYear}</span>
                       </div>
-                      <p className="life-event-card__title">{ev?.title ?? '\u00a0'}</p>
+                      <p className="life-event-card__title">
+                        {lifeJourneyPerson ? (ev?.title ?? '\u00a0') : (worldEvent?.title ?? '\u00a0')}
+                      </p>
+                      {lifeJourneyPerson && worldEvent && (
+                        <p className="life-event-card__world"><GlobeIcon /> {worldEvent.title}</p>
+                      )}
                     </div>
                   );
                 })()}
@@ -1787,6 +1805,14 @@ function ClockIcon() {
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.7" />
       <path d="M12 7v5l3 3" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+function GlobeIcon() {
+  return (
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.7" />
+      <path d="M3 12h18M12 3c2.5 2.7 2.5 15.3 0 18M12 3c-2.5 2.7-2.5 15.3 0 18" stroke="currentColor" strokeWidth="1.5" />
     </svg>
   );
 }
