@@ -1215,12 +1215,19 @@ export default function BubbleTree({
             flight.t += flightDt;
             const u = clamp(flight.t / flight.landDuration, 0, 1);
             const dest = flight.pts[flight.pts.length - 1];
-            camX.value = camX.target = dest.x;
-            camY.value = camY.target = dest.y;
-            camX.velocity = camY.velocity = 0;
             const punchZ = clamp(1.85, MIN_ZOOM, MAX_ZOOM);
             const ez = easeInOutCubic(u);
-            zoom.value = zoom.target = flight.landStartZoom + (punchZ - flight.landStartZoom) * ez;
+            const z = flight.landStartZoom + (punchZ - flight.landStartZoom) * ez;
+            // The flight caption sits in a fixed banner up top and grows a line
+            // per hop — centring dead-on the destination (as the generic safe
+            // area assumes a short nameplate) lets a deep, many-hop chain's
+            // caption overlap the couple pod it just lit. Nudge the landing
+            // point down proportionally so longer chains land further from it.
+            const captionBias = Math.min(90, flight.hops * 16) / clamp(z, MIN_ZOOM, MAX_ZOOM_FREE);
+            camX.value = camX.target = dest.x;
+            camY.value = camY.target = dest.y - captionBias;
+            camX.velocity = camY.velocity = 0;
+            zoom.value = zoom.target = z;
             zoom.velocity = 0;
             if (u >= 1) {
               const finished = flight;
@@ -1476,6 +1483,17 @@ export default function BubbleTree({
               const fade = hopFade(lineageLandedAt, entry.hopIndex, nowMs);
               const settledRest = 1 + (1.32 - 1) * fade; // eases back toward 1.0 as its turn to extinguish arrives
               restScale = age < POP_MS ? 1.85 : settledRest;
+              // A co-parent lights alongside its partner (see coParentsOf), so a
+              // couple pod can have BOTH members popping at once — at a fixed
+              // 112px partner-link distance, the normal 1.85/1.32 bump balloons
+              // them into each other. Cap the pop for whichever half of a pod is
+              // currently sharing the spotlight so the two bubbles never grow
+              // past what that link distance can hold (2 × BASE_RADIUS × 1.15
+              // stays comfortably inside the 112px gap).
+              const hasLitPartner = graphRef.current
+                .partners(id)
+                .some((x) => lineage.has(x.id));
+              if (hasLitPartner) restScale = Math.min(restScale, 1.15);
             }
             target = landingPunch
               ? { scale: 1.22, alpha: 1, lift: 1.6, blur: 0 }
