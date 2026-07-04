@@ -94,30 +94,19 @@ export default function TopBar({ familyName, stats, view, syncStatus, syncError,
         </div>
       </div>
 
-      {/* Row 2: legend + bloodline-only (left, stacked) + family name + stats
-          (centre) + view toggle (right). The stack keeps both quick-access
-          toggles within thumb's reach of each other, Legend on top since it's
-          opened far more often. */}
+      {/* Row 2: legend (left, alone — it's a reference/help icon) + family
+          name + stats (centre) + view toggle & bloodline-only (right,
+          stacked — both are "how the tree displays" controls, so they read
+          as one cluster and keep the row visually balanced left/right). */}
       <div className="topbar__treerow">
-        <div className="topbar__row2-stack">
-          <button
-            className="topbar__row2-btn"
-            onClick={onOpenLegend}
-            aria-label="Legend — visual guide and display options"
-          >
-            <LegendIcon />
-            <span className="row2-tip">Legend</span>
-          </button>
-          <button
-            className={`topbar__row2-btn${bloodlineOnly ? ' topbar__row2-btn--active' : ''}`}
-            onClick={onToggleBloodlineOnly}
-            aria-label="Bloodline only — show only biological and adoptive connections"
-            aria-pressed={bloodlineOnly}
-          >
-            <BloodlineIcon />
-            <span className="row2-tip">Bloodline only</span>
-          </button>
-        </div>
+        <button
+          className="topbar__row2-btn"
+          onClick={onOpenLegend}
+          aria-label="Legend — visual guide and display options"
+        >
+          <LegendIcon />
+          <span className="row2-tip">Legend</span>
+        </button>
         <div className="topbar__treerow__center">
           <span className="topbar__familyname">{familyName}</span>
           {stats && stats.people > 0 && (
@@ -133,16 +122,29 @@ export default function TopBar({ familyName, stats, view, syncStatus, syncError,
               {stats.yearSpan && <> · {stats.yearSpan}</>}
               {stats.photos > 0 && <> · {stats.photos} {stats.photos === 1 ? 'photo' : 'photos'}</>}
               {stats.memories > 0 && <> · {stats.memories} {stats.memories === 1 ? 'memory' : 'memories'}</>}
+              {bloodlineOnly && <> · <span className="topbar__stats-flag">Bloodline only</span></>}
             </button>
           )}
         </div>
-        <button
-          className="topbar__row2-btn"
-          onClick={onToggleView}
-          aria-label={view === 'bubbles' ? 'Switch to list view' : 'Switch to tree view'}
-        >
-          {view === 'bubbles' ? <ListIcon /> : <TreeIcon />}
-        </button>
+        <div className="topbar__row2-stack topbar__row2-stack--right">
+          <button
+            className="topbar__row2-btn"
+            onClick={onToggleView}
+            aria-label={view === 'bubbles' ? 'Switch to list view' : 'Switch to tree view'}
+          >
+            {view === 'bubbles' ? <ListIcon /> : <TreeIcon />}
+            <span className="row2-tip">{view === 'bubbles' ? 'List view' : 'Tree view'}</span>
+          </button>
+          <button
+            className={`topbar__row2-btn${bloodlineOnly ? ' topbar__row2-btn--active' : ''}`}
+            onClick={onToggleBloodlineOnly}
+            aria-label="Bloodline only — show only biological and adoptive connections"
+            aria-pressed={bloodlineOnly}
+          >
+            <BloodlineIcon />
+            <span className="row2-tip">Bloodline only</span>
+          </button>
+        </div>
       </div>
 
       {/* Toasts — anchored right under the stats row rather than floating

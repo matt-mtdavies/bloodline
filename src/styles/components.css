@@ -6008,7 +6008,7 @@ button.health-notes {
   display: block;
 }
 
-/* ── TopBar Row 2: legend + bloodline stack, centre, view toggle ─────────── */
+/* ── TopBar Row 2: legend, centre, view-toggle + bloodline-only stack ────── */
 .topbar__row2-stack {
   display: flex;
   flex-direction: column;
@@ -6062,6 +6062,24 @@ button.health-notes {
     transform: translateY(-50%) translateX(0);
   }
 }
+/* The right-hand stack (view toggle + bloodline-only) sits near the screen's
+   right edge, so its tooltip opens leftward instead — same treatment, mirrored. */
+.topbar__row2-stack--right .row2-tip {
+  left: auto;
+  right: calc(100% + 10px);
+  transform: translateY(-50%) translateX(4px);
+}
+@media (hover: hover) and (pointer: fine) {
+  .topbar__row2-stack--right .topbar__row2-btn:hover .row2-tip,
+  .topbar__row2-stack--right .topbar__row2-btn:focus-visible .row2-tip {
+    transform: translateY(-50%) translateX(0);
+  }
+}
+
+/* Bloodline-only's active-state flag on the family stats pill — small accent
+   text, same "· fact · fact" rhythm the pill already uses, so the filter's
+   ON state stays legible without relying on the tiny toggle icon's tint. */
+.topbar__stats-flag { color: var(--accent); font-weight: 600; }
 
 /* ── Save Nudge (anonymous ?new trial) ──────────────────────────────────────── */
 .save-nudge {
