@@ -3958,8 +3958,16 @@ button.health-notes {
   gap: 4px;
   border-bottom: 1.5px solid var(--hairline);
   margin-bottom: 20px;
+  /* Owner/co-admin sees 5 tabs — wider than a phone screen, so this
+     scrolls horizontally instead of clipping the last one (Birthdays)
+     off the edge with no indication there was more. */
+  overflow-x: auto;
+  scrollbar-width: none;
 }
+.fs__tabs::-webkit-scrollbar { display: none; }
 .fs__tab {
+  flex: none;
+  white-space: nowrap;
   padding: 10px 16px;
   font-size: 14px;
   font-weight: 500;
