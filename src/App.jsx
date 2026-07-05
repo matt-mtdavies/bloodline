@@ -1129,16 +1129,43 @@ export default function App() {
   const handleSave = useCallback(
     (fields) => {
       const person = graph.byId.get(editId);
+      // EditPersonSheet always submits the whole form (every field, touched
+      // or not), so "the key is present" was never a real signal — only an
+      // actual value comparison is. This previously covered barely half of
+      // what's editable (nothing for name/gender/colours/contact/deceased/
+      // privacy), and unconditionally flagged "tags" on every single save
+      // regardless of whether tags changed. Field NAMES only, never values —
+      // this is what shows up in the activity feed and the recap tour.
+      const changed = (key) => key in fields && fields[key] !== (person?.[key] ?? null);
+      const sameTags = (a, b) => {
+        const x = a || [], y = b || [];
+        return x.length === y.length && x.every((t, i) => t === y[i]);
+      };
       const parts = [];
-      if ('birth_date' in fields && fields.birth_date !== person?.birth_date) parts.push('birthdate');
-      if ('birth_place' in fields && fields.birth_place !== person?.birth_place) parts.push('birthplace');
-      if ('death_date' in fields && fields.death_date !== person?.death_date) parts.push('death date');
-      if ('bio' in fields && fields.bio !== person?.bio) parts.push('biography');
-      if ('occupation' in fields && fields.occupation !== person?.occupation) parts.push('occupation');
-      if ('residence' in fields && fields.residence !== person?.residence) parts.push('location');
-      if ('display_name' in fields && fields.display_name !== person?.display_name) parts.push('name');
-      if ('tags' in fields) parts.push('tags');
-      const detail = parts.length ? parts.join(' and ') : null;
+      if (changed('display_name')) parts.push('name');
+      if (changed('middle_name')) parts.push('middle name');
+      if (changed('birth_name')) parts.push('birth name');
+      if (changed('gender')) parts.push('gender');
+      if (changed('birth_date')) parts.push('birthdate');
+      if (changed('birth_place')) parts.push('birthplace');
+      if (changed('residence')) parts.push('location');
+      if (changed('occupation')) parts.push('occupation');
+      if (changed('eye_color')) parts.push('eye colour');
+      if (changed('hair_color')) parts.push('hair colour');
+      if (('email' in fields && fields.email !== (person?.email ?? null)) ||
+          ('phone' in fields && fields.phone !== (person?.phone ?? null))) parts.push('contact info');
+      if ('tags' in fields && !sameTags(fields.tags, person?.tags)) parts.push('tags');
+      if (changed('bio')) parts.push('biography');
+      if (changed('is_deceased')) parts.push('deceased status');
+      if (changed('death_date')) parts.push('death date');
+      if (('visibility' in fields && fields.visibility !== (person?.visibility ?? 'full')) ||
+          ('sectionVisibility' in fields && JSON.stringify(fields.sectionVisibility || {}) !== JSON.stringify(person?.sectionVisibility || {}))) {
+        parts.push('privacy settings');
+      }
+      // "a, b and c" rather than "a and b and c" once there's more than two.
+      const detail = parts.length === 0 ? null
+        : parts.length <= 2 ? parts.join(' and ')
+        : `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`;
       const actEvent = detail
         ? { type: 'person_updated', personId: editId, personName: person?.display_name ?? '', detail }
         : null;
