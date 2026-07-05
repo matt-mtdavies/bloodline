@@ -1,9 +1,32 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import Avatar from './Avatar.jsx';
+import { relationshipCategories } from '../data/graph.js';
 
-export default function SearchOverlay({ people, onSelect, onClose }) {
+// Coarser than PersonSheet's extended-family groups (which fold in
+// great-grandparents/great-grandchildren and split grandchildren from
+// nieces/nephews) — these are quick shortcuts to a shortlist, not a full
+// relationship breakdown; List View already covers that in more depth.
+const CATEGORIES = [
+  { key: 'immediate', label: 'Immediate Family' },
+  { key: 'grandparents', label: 'Grandparents' },
+  { key: 'aunts_uncles', label: 'Aunts & Uncles' },
+  { key: 'cousins', label: 'Cousins' },
+  { key: 'descendants', label: 'Nieces, Nephews & Grandchildren' },
+  { key: 'in_laws', label: 'In-Laws' },
+  { key: 'everyone_else', label: 'Everyone Else' },
+];
+
+const STATUSES = [
+  { key: 'all', label: 'All' },
+  { key: 'living', label: 'Living' },
+  { key: 'deceased', label: 'Deceased' },
+];
+
+export default function SearchOverlay({ people, graph, viewerId, onSelect, onClose }) {
   const [query, setQuery] = useState('');
   const [cursor, setCursor] = useState(0);
+  const [category, setCategory] = useState(null); // one of CATEGORIES[].key, or null
+  const [status, setStatus] = useState('all');
   const inputRef = useRef(null);
   const listRef = useRef(null);
 
@@ -24,6 +47,29 @@ export default function SearchOverlay({ people, onSelect, onClose }) {
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
+  // Bucket the whole tree relative to the viewer once — cheap (a handful of
+  // graph walks), memoized on viewer/graph identity.
+  const categoryMap = useMemo(() => relationshipCategories(graph, viewerId), [graph, viewerId]);
+
+  // Only offer chips for buckets that actually have someone in them — no
+  // point showing "Cousins" as a live option if this tree has none.
+  const availableCategories = useMemo(() => {
+    const counts = new Map();
+    for (const c of categoryMap.values()) counts.set(c, (counts.get(c) ?? 0) + 1);
+    return CATEGORIES.filter((c) => counts.get(c.key) > 0);
+  }, [categoryMap]);
+
+  // Everyone matching the active chip + status filter — the pool a text
+  // query further narrows, and what a chip-only browse (no query) lists in full.
+  const basePool = useMemo(() => {
+    return people.filter((p) => {
+      if (category && categoryMap.get(p.id) !== category) return false;
+      if (status === 'living' && p.is_deceased) return false;
+      if (status === 'deceased' && !p.is_deceased) return false;
+      return true;
+    });
+  }, [people, category, status, categoryMap]);
+
   const results = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return [];
@@ -39,7 +85,7 @@ export default function SearchOverlay({ people, onSelect, onClose }) {
       if (parts[0]?.includes(q))             return 1; // "mat" → "Matthew"
       return 0;
     };
-    return people
+    return basePool
       .map((p) => {
         // birth_name is the canonical field; maiden_name is legacy seed data.
         const birthName = p.birth_name || p.maiden_name || '';
@@ -55,19 +101,30 @@ export default function SearchOverlay({ people, onSelect, onClose }) {
       .filter(Boolean)
       .sort((a, b) => b._score - a._score || a.display_name.localeCompare(b.display_name))
       .slice(0, 10);
-  }, [query, people]);
+  }, [query, basePool]);
 
-  useEffect(() => { setCursor(0); }, [results]);
+  // No text typed, but a chip or status filter narrowed the pool — browse it
+  // in full (alphabetical, uncapped) rather than showing the "start typing"
+  // hint over an already-deliberate choice to filter.
+  const browsing = !query.trim() && (category || status !== 'all');
+  const browseList = useMemo(() => {
+    if (!browsing) return [];
+    return [...basePool].sort((a, b) => a.display_name.localeCompare(b.display_name));
+  }, [browsing, basePool]);
+
+  const activeList = query.trim() ? results : browseList;
+
+  useEffect(() => { setCursor(0); }, [activeList]);
 
   function handleKey(e) {
     if (e.key === 'ArrowDown') {
       e.preventDefault();
-      setCursor((c) => Math.min(c + 1, results.length - 1));
+      setCursor((c) => Math.min(c + 1, activeList.length - 1));
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
       setCursor((c) => Math.max(c - 1, 0));
-    } else if (e.key === 'Enter' && results[cursor]) {
-      onSelect(results[cursor].id);
+    } else if (e.key === 'Enter' && activeList[cursor]) {
+      onSelect(activeList[cursor].id);
     }
   }
 
@@ -80,6 +137,10 @@ export default function SearchOverlay({ people, onSelect, onClose }) {
     if (!p.birth_date) return null;
     const y = String(p.birth_date).slice(0, 4);
     return /^\d{4}$/.test(y) ? y : null;
+  }
+
+  function toggleCategory(key) {
+    setCategory((c) => (c === key ? null : key));
   }
 
   return (
@@ -105,6 +166,37 @@ export default function SearchOverlay({ people, onSelect, onClose }) {
             </button>
           )}
         </div>
+
+        {availableCategories.length > 0 && (
+          <div className="search-chips" role="group" aria-label="Filter by relationship">
+            {availableCategories.map((c) => (
+              <button
+                key={c.key}
+                type="button"
+                className={`filter-pill${category === c.key ? ' filter-pill--active' : ''}`}
+                onClick={() => toggleCategory(c.key)}
+                aria-pressed={category === c.key}
+              >
+                {c.label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {availableCategories.length > 0 && (
+          <div className="filter-pills filter-pills--search" role="group" aria-label="Filter by status">
+            {STATUSES.map(({ key, label }) => (
+              <button
+                key={key}
+                className={`filter-pill${status === key ? ' filter-pill--active' : ''}`}
+                onClick={() => setStatus(key)}
+                aria-pressed={status === key}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* Results */}
         {query && (
@@ -140,7 +232,35 @@ export default function SearchOverlay({ people, onSelect, onClose }) {
           </ul>
         )}
 
-        {!query && (
+        {!query && browsing && (
+          <ul ref={listRef} className="search-results" role="listbox">
+            {browseList.length === 0 ? (
+              <li className="search-empty">No one matches this filter</li>
+            ) : browseList.map((p, i) => (
+              <li
+                key={p.id}
+                role="option"
+                aria-selected={i === cursor}
+                className={`search-result${i === cursor ? ' search-result--focus' : ''}`}
+                onClick={() => onSelect(p.id)}
+                onMouseEnter={() => setCursor(i)}
+              >
+                <Avatar person={p} size={40} />
+                <div className="search-result__info">
+                  <span className="search-result__name">{p.display_name}</span>
+                  <span className="search-result__meta">
+                    {birthYear(p) && <>b. {birthYear(p)}{p.is_deceased ? ' – ' + (p.death_date?.slice(0, 4) || '†') : ''}</>}
+                    {p.occupation && <>{birthYear(p) ? ' · ' : ''}{p.occupation}</>}
+                    {!birthYear(p) && !p.occupation && (p.is_deceased ? 'Deceased' : 'Living')}
+                  </span>
+                </div>
+                <ChevronIcon />
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {!query && !browsing && (
           <p className="search-hint">Start typing a name to find anyone in the tree</p>
         )}
       </div>

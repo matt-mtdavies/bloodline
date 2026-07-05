@@ -138,6 +138,64 @@ export function bloodRelativesOf(graph, focusId) {
   return blood;
 }
 
+// Buckets every person in the tree into one relationship category relative
+// to viewerId, for the search overlay's filter chips — a person's SEARCH
+// shortlist, not a replacement for the full relationship breakdown a
+// profile shows. Same derivation PersonSheet/AccessibleTree already use for
+// their extended-family groups (grandparents, aunts/uncles, cousins, ...),
+// just computed once from the viewer's own seat instead of per-profile, and
+// collapsed to fewer, coarser buckets — great-grandparents fold into
+// "grandparents", grandchildren/nieces/nephews fold into one "descendants"
+// bucket. Earlier/closer categories win on the rare overlap (e.g. a
+// half-sibling who's also a step-cousin some other way stays "immediate").
+export function relationshipCategories(graph, viewerId) {
+  const cat = new Map();
+  if (!viewerId || !graph.byId.has(viewerId)) return cat;
+
+  const partners = graph.partners(viewerId);
+  const parents = graph.parents(viewerId);
+  const children = graph.children(viewerId);
+  const siblings = graph.siblings(viewerId);
+  for (const id of [viewerId, ...partners.map((x) => x.id), ...parents.map((x) => x.id),
+    ...children.map((x) => x.id), ...siblings.map((x) => x.id)]) {
+    cat.set(id, 'immediate');
+  }
+
+  // Only bio/adoptive lines propagate outward — step lines stop at the
+  // immediate tier, same convention used for grandparents/aunts elsewhere.
+  const upwardParents = parents.filter(
+    (p) => !p.qualifier || p.qualifier === 'biological' || p.qualifier === 'adoptive',
+  );
+  const grandparentIds = upwardParents.flatMap((p) => graph.parents(p.id).map((gp) => gp.id));
+  const greatGrandparentIds = grandparentIds.flatMap((id) => graph.parents(id).map((gp) => gp.id));
+  for (const id of [...grandparentIds, ...greatGrandparentIds]) if (!cat.has(id)) cat.set(id, 'grandparents');
+
+  const auntUncleIds = upwardParents.flatMap((p) => graph.siblings(p.id).map((s) => s.id));
+  for (const id of auntUncleIds) if (!cat.has(id)) cat.set(id, 'aunts_uncles');
+
+  const cousinIds = upwardParents.flatMap((p) =>
+    graph.siblings(p.id).flatMap((s) => graph.children(s.id).map((c) => c.id)));
+  for (const id of cousinIds) if (!cat.has(id)) cat.set(id, 'cousins');
+
+  const grandchildIds = children.flatMap((c) => graph.children(c.id).map((gc) => gc.id));
+  const greatGrandchildIds = grandchildIds.flatMap((id) => graph.children(id).map((gc) => gc.id));
+  const nieceNephewIds = siblings.flatMap((s) => graph.children(s.id).map((c) => c.id));
+  for (const id of [...grandchildIds, ...greatGrandchildIds, ...nieceNephewIds]) {
+    if (!cat.has(id)) cat.set(id, 'descendants');
+  }
+
+  // Everyone left: blood relatives further out than the named buckets above
+  // (2nd cousins, great-great-grandparents, ...) vs. everyone only
+  // connected through a partnership — the graph only has parent/partner
+  // edges, so "not blood" already means "in-law", no separate walk needed.
+  const blood = bloodRelativesOf(graph, viewerId);
+  for (const p of graph.people) {
+    if (cat.has(p.id) || p.id === viewerId) continue;
+    cat.set(p.id, blood.has(p.id) ? 'everyone_else' : 'in_laws');
+  }
+  return cat;
+}
+
 // Like pathBetween, but returns the ordered array [fromId, …, toId] (or null),
 // so callers can render the chain start → end. pathBetween wraps this in a Set.
 export function pathBetweenOrdered(graph, fromId, toId) {

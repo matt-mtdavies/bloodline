@@ -1677,6 +1677,8 @@ export default function App() {
       {searchOpen && (
         <SearchOverlay
           people={data.people}
+          graph={graph}
+          viewerId={data.myPersonId || DEFAULT_FOCUS}
           onSelect={flyToSearchResult}
           onClose={() => setSearchOpen(false)}
         />
