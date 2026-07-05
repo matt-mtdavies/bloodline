@@ -497,12 +497,19 @@ export default function App() {
   }, []);
 
   // Family stats for the header: people count, top surnames, year span, photos, memories.
+  // Scoped to blood relatives only when "Bloodline only" is on — otherwise the
+  // pill reads "Bloodline only · 268 people" while still describing the whole
+  // tree, flatly contradicting the filter it's supposed to be summarizing.
   const familyStats = useMemo(() => {
+    const scopeIds = bloodlineOnly ? bloodRelativesOf(graph, data.myPersonId || DEFAULT_FOCUS) : null;
+    const people = scopeIds ? graph.people.filter((p) => scopeIds.has(p.id)) : graph.people;
+    const photos = scopeIds ? data.photos.filter((ph) => scopeIds.has(ph.person_id)) : data.photos;
+    const memories = scopeIds ? data.memories.filter((m) => scopeIds.has(m.person_id)) : data.memories;
     const freq = new Map();
     let yearMin = Infinity, yearMax = -Infinity;
     let oldestPerson = null, youngestPerson = null;
     let withPhoto = 0, withBio = 0, withBirthDate = 0;
-    for (const p of graph.people) {
+    for (const p of people) {
       const surname = p.display_name?.trim().split(/\s+/).slice(-1)[0];
       if (surname) freq.set(surname, (freq.get(surname) ?? 0) + 1);
       const by = p.birth_date ? parseInt(p.birth_date) : null;
@@ -522,11 +529,11 @@ export default function App() {
       ? yearMin === yearMax ? `${yearMin}` : `${yearMin}–${yearMax}`
       : null;
     return {
-      people: graph.people.length,
+      people: people.length,
       surnames,
       yearSpan,
-      photos: data.photos.length,
-      memories: data.memories.length,
+      photos: photos.length,
+      memories: memories.length,
       // Detail fields for the stats popover
       surnameList: sorted.map(([name, count]) => ({ name, count })),
       yearMin: isFinite(yearMin) ? yearMin : null,
@@ -537,7 +544,7 @@ export default function App() {
       withBio,
       withBirthDate,
     };
-  }, [graph, data.photos.length, data.memories.length]);
+  }, [graph, data.photos, data.memories, data.myPersonId, bloodlineOnly]);
 
   // Unread activity count — null lastReadAt means never opened, so all events are "new".
   const unreadCount = useMemo(() => {
