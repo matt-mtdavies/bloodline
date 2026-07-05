@@ -932,13 +932,11 @@ export default function App() {
       },
       onLand: () => {
         setActiveId(targetId);
-        // Let the fully-resolved chain sit on screen for a while — it's the
-        // payoff of the whole flight — instead of wiping it soon after the
-        // camera settles. Matches how long the canvas itself keeps the route
-        // lit (see BubbleTree's postFlightIds), so the text caption and the
-        // illuminated path disappear together rather than the text vanishing
-        // first while the path is still glowing.
-        setTimeout(() => setFlightCaption(null), 10000);
+        // Switch the caption from crumb-trail to the landed two-photo card —
+        // FlightCaption now owns its own dismiss timing from here (15s
+        // untouched, or persists once the chain is expanded), so this just
+        // flips the flag rather than scheduling a fixed hide.
+        setFlightCaption((c) => (c ? { ...c, landed: true } : c));
       },
     });
   }, [graph, data.myPersonId, reducedMotion, activateNormal]);
@@ -1565,7 +1563,13 @@ export default function App() {
             />
           )}
           {flightCaption && (
-            <FlightCaption graph={graph} order={flightCaption.order} upTo={flightCaption.upTo} />
+            <FlightCaption
+              graph={graph}
+              order={flightCaption.order}
+              upTo={flightCaption.upTo}
+              landed={!!flightCaption.landed}
+              onDone={() => setFlightCaption(null)}
+            />
           )}
         </>
       ) : (

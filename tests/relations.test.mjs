@@ -794,6 +794,54 @@ test('three-generation chain: alice→son→grandson labels from alice\'s view',
   assert.equal(relationLabel(g, 'gs',    'alice'), 'Paternal Grandparent'); // son is male → paternal side; alice has no gender → Grandparent not Grandfather
 });
 
+// ── General compound-relationship fallback (beyond named patterns) ──────────
+
+test('1st-cousin-once-removed shape reads as "[side] great-grandfather\'s grandson"', () => {
+  // Jason -> mother -> maternal grandmother -> great-grandfather (up 3)
+  // great-grandfather -> other child -> grandchild = Peter (down 2)
+  const g = buildGraph(
+    [
+      person('ggf', 'male'), person('ggm', 'female'),
+      person('gma', 'female'), person('ggf-other-child', 'female'),
+      person('mum', 'female'),
+      person('jason', 'male'), person('peter', 'male'),
+    ],
+    [
+      partnerEdge('ggf', 'ggm'),
+      parentEdge('ggf', 'gma'), parentEdge('ggm', 'gma'),
+      parentEdge('ggf', 'ggf-other-child'), parentEdge('ggm', 'ggf-other-child'),
+      parentEdge('gma', 'mum'),
+      parentEdge('mum', 'jason'),
+      parentEdge('ggf-other-child', 'peter'),
+    ],
+  );
+  assert.equal(relationLabel(g, 'jason', 'peter'), 'Maternal Great-grandfather\'s Grandson');
+});
+
+test('4 generations up with no named pattern → "Paternal 2x Great-grandfather"', () => {
+  const g = buildGraph(
+    [person('a'), person('p1', 'male'), person('p2'), person('p3'), person('p4', 'male')],
+    [parentEdge('p1', 'a'), parentEdge('p2', 'p1'), parentEdge('p3', 'p2'), parentEdge('p4', 'p3')],
+  );
+  assert.equal(relationLabel(g, 'a', 'p4'), 'Paternal 2x Great-grandfather');
+});
+
+test('4 generations down with no named pattern → "2x Great-grandson"', () => {
+  const g = buildGraph(
+    [person('a'), person('c1'), person('c2'), person('c3'), person('c4', 'male')],
+    [parentEdge('a', 'c1'), parentEdge('c1', 'c2'), parentEdge('c2', 'c3'), parentEdge('c3', 'c4')],
+  );
+  assert.equal(relationLabel(g, 'a', 'c4'), '2x Great-grandson');
+});
+
+test('truly unrelated people (no common ancestor within range) still → Relative', () => {
+  const g = buildGraph(
+    [person('a'), person('b'), person('unrelated')],
+    [parentEdge('a', 'b')],
+  );
+  assert.equal(relationLabel(g, 'a', 'unrelated'), 'Relative');
+});
+
 // ── Report ────────────────────────────────────────────────────────────────────
 
 console.log('\n── Bloodline relationship logic tests ─────────────────────────\n');

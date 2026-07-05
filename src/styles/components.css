@@ -6862,6 +6862,129 @@ button.health-notes {
   .flight-caption__crumb { transition: none; }
 }
 
+/* Search flyover's landed card — same visual language as the Lineage
+   banner (.lineage-banner__result), reused deliberately so the two
+   "here's how these people connect" moments in the app feel like one
+   family of components, not two competing designs. Interactive (unlike
+   the transit caption above), so pointer-events are re-enabled here. */
+.flight-result {
+  position: fixed;
+  left: 50%;
+  top: calc(var(--safe-top, 0px) + 150px);
+  transform: translateX(-50%);
+  z-index: 40;
+  width: min(92vw, 440px);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.92);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--hairline, #ebedf0);
+  border-radius: 18px;
+  box-shadow: 0 8px 32px rgba(36, 31, 28, 0.12);
+  padding: 12px 14px;
+  pointer-events: auto;
+  animation: lb-drop 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.flight-result__chain { display: flex; align-items: center; justify-content: center; gap: 6px; }
+.flight-result__node { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.flight-result__node-name { font-size: 12px; font-weight: 600; color: var(--ink, #241f1c); }
+/* A real button (the transit crumbs above it are decorative only) — tap
+   the count to bring the full chain back, per the request that the hop
+   number itself double as the "show me how" control. */
+.flight-result__connector {
+  position: relative;
+  flex: 1;
+  max-width: 120px;
+  height: 2px;
+  background: linear-gradient(90deg, var(--accent, #c2603a), #d2814f);
+  border: none;
+  border-radius: 2px;
+  margin: 0 4px;
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.flight-result__count {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: var(--accent, #c2603a);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  box-shadow: 0 2px 6px rgba(194, 96, 58, 0.35);
+  transition: transform 0.15s var(--spring);
+}
+.flight-result__connector:hover .flight-result__count,
+.flight-result__connector:active .flight-result__count { transform: translate(-50%, -50%) scale(1.12); }
+.flight-result__rel {
+  margin: 0;
+  text-align: center;
+  font-size: 13px;
+  color: var(--ink-soft, #6b6260);
+}
+.flight-result__rel strong { color: var(--accent, #c2603a); }
+
+/* The full crumb trail, revealed on demand under the card rather than
+   shown by default — most searches are 1-2 hops, where a permanent
+   breadcrumb would just be clutter; a long/interesting path is exactly
+   what someone taps the hop count to see. */
+.flight-result__breadcrumb {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 4px 2px;
+  padding-top: 4px;
+  border-top: 1px solid var(--hairline, #ebedf0);
+  /* Not lb-drop — that keyframe's translate(-50%, ...) is meant for the
+     outer self-centering card (left:50% + translateX(-50%)); reused here on
+     a normal in-flow div it shifted the whole breadcrumb left by 50% of
+     its own width, pushing it off the card entirely. */
+  animation: crumb-in 0.25s var(--ease, ease) both;
+}
+@keyframes crumb-in {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.flight-result__crumb {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-soft, #6b6260);
+}
+.flight-result__done {
+  align-self: center;
+  margin-top: 2px;
+  border: none;
+  background: var(--accent, #c2603a);
+  color: #fff;
+  border-radius: 999px;
+  padding: 6px 18px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.flight-result__done:hover { background: var(--accent-deep, #a84f2e); }
+@media (prefers-reduced-motion: reduce) {
+  .flight-result, .flight-result__breadcrumb { animation: none; }
+}
+
 /* ════════════════════════════════════════════════════════════════════════
    Family Timeline
    ════════════════════════════════════════════════════════════════════════ */

@@ -194,6 +194,66 @@ export function pathBetween(graph, fromId, toId) {
   return null;
 }
 
+const MASC_TERMS = ['male', 'm', 'man'];
+const FEM_TERMS = ['female', 'f', 'woman'];
+function byGender(gender, m, f, n) {
+  const gl = (gender || '').toLowerCase();
+  return MASC_TERMS.includes(gl) ? m : FEM_TERMS.includes(gl) ? f : n;
+}
+
+// Walks upward from `id` via biological/adoptive parent links only — step
+// lines stop at the immediate tier, same convention used elsewhere for
+// grandparents/aunts (see the `upwardParents` filter in PersonSheet). Records
+// each ancestor's distance and the very FIRST hop's parent entry, since the
+// paternal/maternal side of a relationship is always determined by that
+// first step, never recomputed at each level up.
+function ancestorsWithDistance(graph, id, maxDepth = 8) {
+  const map = new Map();
+  let frontier = [{ id, distance: 0, firstHopParent: null }];
+  // The starting person counts as their own distance-0 "ancestor" — without
+  // this, a case where the common ancestor IS focus or IS other (a pure
+  // ascending/descending chain, e.g. a 4x-great-grandparent with no named
+  // pattern) could never be found: looking up the other side's map by that
+  // id would come back empty even though the relationship is real.
+  map.set(id, frontier[0]);
+  const visited = new Set([id]);
+  for (let d = 0; d < maxDepth && frontier.length; d++) {
+    const next = [];
+    for (const node of frontier) {
+      const upwardParents = graph.parents(node.id).filter(
+        (p) => !p.qualifier || p.qualifier === 'biological' || p.qualifier === 'adoptive',
+      );
+      for (const p of upwardParents) {
+        if (visited.has(p.id)) continue;
+        visited.add(p.id);
+        const n = { id: p.id, distance: node.distance + 1, firstHopParent: node.firstHopParent || p };
+        next.push(n);
+        map.set(n.id, n);
+      }
+    }
+    frontier = next;
+  }
+  return map;
+}
+
+// "N generations up" — Parent/Grandparent/Great-grandparent/2x Great-.../etc.
+function ascendingTerm(n, gender) {
+  if (n === 1) return byGender(gender, 'Father', 'Mother', 'Parent');
+  if (n === 2) return byGender(gender, 'Grandfather', 'Grandmother', 'Grandparent');
+  const greats = n - 2;
+  const prefix = greats === 1 ? 'Great-' : `${greats}x Great-`;
+  return `${prefix}${byGender(gender, 'grandfather', 'grandmother', 'grandparent')}`;
+}
+
+// "N generations down" — Child/Grandchild/Great-grandchild/2x Great-.../etc.
+function descendingTerm(n, gender) {
+  if (n === 1) return byGender(gender, 'Son', 'Daughter', 'Child');
+  if (n === 2) return byGender(gender, 'Grandson', 'Granddaughter', 'Grandchild');
+  const greats = n - 2;
+  const prefix = greats === 1 ? 'Great-' : `${greats}x Great-`;
+  return `${prefix}${byGender(gender, 'grandson', 'granddaughter', 'grandchild')}`;
+}
+
 // Human-readable relationship of `otherId` relative to `focusId`, for the
 // accessible view and the person sheet. Best-effort, kept warm and plain.
 export function relationLabel(graph, focusId, otherId) {
@@ -347,6 +407,34 @@ export function relationLabel(graph, focusId, otherId) {
         return 'Cousin';
       }
     }
+  }
+
+  // General fallback for anything more distant than the named patterns
+  // above — reduces the relationship to "up N generations (from focus) to
+  // a shared ancestor, down M generations (to other)" and describes it
+  // as "[side] [ascending term]'s [descending term]" — e.g. what a
+  // genealogist would call "1st cousin once removed" instead reads as
+  // "Maternal Great-grandfather's Grandson". Only ever reached here, since
+  // every closer/named relationship already returned above.
+  const upFromFocus = ancestorsWithDistance(graph, focusId);
+  const upFromOther = ancestorsWithDistance(graph, otherId);
+  let nearest = null;
+  for (const [ancId, focusNode] of upFromFocus) {
+    const otherNode = upFromOther.get(ancId);
+    if (!otherNode) continue;
+    const total = focusNode.distance + otherNode.distance;
+    if (!nearest || total < nearest.total) {
+      nearest = { ancId, upDist: focusNode.distance, downDist: otherNode.distance, total, firstHopParent: focusNode.firstHopParent };
+    }
+  }
+  if (nearest && nearest.total > 0) {
+    const { ancId, upDist, downDist, firstHopParent } = nearest;
+    const side = firstHopParent ? parentSide(firstHopParent) : null;
+    const sidePrefix = side ? `${side} ` : '';
+    if (downDist === 0) return `${sidePrefix}${ascendingTerm(upDist, other?.gender)}`;
+    if (upDist === 0) return descendingTerm(downDist, other?.gender);
+    const ancestorGender = graph.byId.get(ancId)?.gender;
+    return `${sidePrefix}${ascendingTerm(upDist, ancestorGender)}'s ${descendingTerm(downDist, other?.gender)}`;
   }
 
   return 'Relative';
