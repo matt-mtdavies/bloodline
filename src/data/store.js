@@ -1172,20 +1172,36 @@ export function setRelationshipKind(aId, bId, kind, qualifier = 'biological') {
   else if (kind === 'child_of') edge = parentEdge(bId, aId, qualifier);
   else return { ok: false, reason: 'unknown-type' };
 
-  commit({ ...state, relationships: [...cleared, edge] });
+  const aPerson = state.people.find((p) => p.id === aId);
+  const bPerson = state.people.find((p) => p.id === bId);
+  const kindLabel = { partner: 'Partner', ex_partner: 'Ex-partner', parent_of: 'Parent', child_of: 'Child' }[kind];
+  commit(withActivity({ ...state, relationships: [...cleared, edge] }, {
+    type: 'relationship_changed',
+    personId: aId,
+    personName: aPerson?.display_name ?? '',
+    detail: `${kindLabel} of ${bPerson?.display_name ?? ''}`,
+  }));
   return { ok: true };
 }
 
 // Change the qualifier on a parent→child edge (biological / step / adoptive).
 export function updateRelationshipQualifier(fromId, toId, qualifier) {
-  commit({
+  const parent = state.people.find((p) => p.id === fromId);
+  const child = state.people.find((p) => p.id === toId);
+  const qualifierLabel = qualifier.charAt(0).toUpperCase() + qualifier.slice(1);
+  commit(withActivity({
     ...state,
     relationships: state.relationships.map((r) =>
       r.type === 'parent' && r.from_person === fromId && r.to_person === toId
         ? { ...r, qualifier }
         : r,
     ),
-  });
+  }, {
+    type: 'relationship_changed',
+    personId: fromId,
+    personName: parent?.display_name ?? '',
+    detail: `${qualifierLabel} parent of ${child?.display_name ?? ''}`,
+  }));
 }
 
 // Remove a specific relationship edge between two people.
@@ -1199,10 +1215,17 @@ export function removeRelationship(fromId, toId, type) {
       (r.from_person === toId && r.to_person === fromId);
   };
   const removedIds = state.relationships.filter(isMatch).map((r) => r.id);
-  commit(withTombstones({
+  const fromPerson = state.people.find((p) => p.id === fromId);
+  const toPerson = state.people.find((p) => p.id === toId);
+  commit(withActivity(withTombstones({
     ...state,
     relationships: state.relationships.filter((r) => !isMatch(r)),
-  }, 'relationships', removedIds));
+  }, 'relationships', removedIds), {
+    type: 'relationship_removed',
+    personId: fromId,
+    personName: fromPerson?.display_name ?? '',
+    detail: toPerson?.display_name ?? '',
+  }));
 }
 
 // Merge a duplicate person (dropId) into the one to keep (keepId): repoint every
@@ -1291,6 +1314,7 @@ export function mergePeople(keepId, dropId) {
 // Remove a person and all traces of them from the tree. Tombstones the person,
 // their edges, and their content so a sync merge can't bring any of it back.
 export function removePerson(id) {
+  const removedPerson = state.people.find((p) => p.id === id);
   const relIds = state.relationships.filter((r) => r.from_person === id || r.to_person === id).map((r) => r.id);
   const memIds = (state.memories || []).filter((m) => m.person_id === id).map((m) => m.id);
   const phIds = (state.photos || []).filter((ph) => ph.person_id === id).map((ph) => ph.id);
@@ -1309,7 +1333,15 @@ export function removePerson(id) {
   next = withTombstones(next, 'memories', memIds);
   next = withTombstones(next, 'photos', phIds);
   next = withTombstones(next, 'documents', docIds);
-  commit(next);
+  // personId here no longer resolves to anyone (they're gone) — the activity
+  // feed already falls back to the captured personName for exactly this case
+  // (see member_joined), and groupRecapUpdates excludes this type since
+  // there's no bubble left to fly to.
+  commit(withActivity(next, {
+    type: 'person_removed',
+    personId: id,
+    personName: removedPerson?.display_name ?? '',
+  }));
 }
 
 export function setupTree({ me, partner, parents, children, memoryPersonIdx, memoryText, familyName }) {
@@ -1652,35 +1684,42 @@ export function importFromGedcom(newPeople, newRelationships, { merge = false } 
 }
 
 // ── Health conditions ──────────────────────────────────────────────────────────
+// Activity/recap detail is deliberately generic ("Health information updated")
+// rather than naming the condition — same "which field, not the actual data"
+// principle as person_updated, just more warranted here since this is
+// sensitive medical information, not an occupation or a tag.
 export function addCondition(personId, { name, category, status = 'active', onset_year = null }) {
-  commit({
+  const person = state.people.find((p) => p.id === personId);
+  commit(withActivity({
     ...state,
     people: state.people.map((p) =>
       p.id === personId
         ? { ...p, conditions: [...(p.conditions || []), { id: cid(), name, category, status, onset_year }] }
         : p,
     ),
-  });
+  }, { type: 'health_updated', personId, personName: person?.display_name ?? '' }));
 }
 
 export function removeCondition(personId, conditionId) {
-  commit({
+  const person = state.people.find((p) => p.id === personId);
+  commit(withActivity({
     ...state,
     people: state.people.map((p) =>
       p.id === personId
         ? { ...p, conditions: (p.conditions || []).filter((c) => c.id !== conditionId) }
         : p,
     ),
-  });
+  }, { type: 'health_updated', personId, personName: person?.display_name ?? '' }));
 }
 
 export function updateCondition(personId, conditionId, fields) {
-  commit({
+  const person = state.people.find((p) => p.id === personId);
+  commit(withActivity({
     ...state,
     people: state.people.map((p) =>
       p.id === personId
         ? { ...p, conditions: (p.conditions || []).map((c) => (c.id === conditionId ? { ...c, ...fields } : c)) }
         : p,
     ),
-  });
+  }, { type: 'health_updated', personId, personName: person?.display_name ?? '' }));
 }

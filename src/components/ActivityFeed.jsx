@@ -98,10 +98,13 @@ export function ActivityRow({ event, person, userEmail, nameByEmail, onSelect })
   const avatarPerson = event.type === 'member_joined'
     ? { display_name: event.personName || event.authorName }
     : person;
+  // Nothing to navigate to for either — the person's gone (member_joined has
+  // no tree person at all; person_removed's personId no longer resolves).
+  const nonInteractive = event.type === 'member_joined' || event.type === 'person_removed';
 
   return (
-    <button className="activity-row" onClick={event.type === 'member_joined' ? undefined : onSelect}
-      style={event.type === 'member_joined' ? { cursor: 'default' } : undefined}>
+    <button className="activity-row" onClick={nonInteractive ? undefined : onSelect}
+      style={nonInteractive ? { cursor: 'default' } : undefined}>
       <div className="activity-row__avatar-wrap">
         <Avatar person={avatarPerson} size={40} />
         <span className="activity-row__badge" style={{ background: color }} aria-hidden="true">
@@ -154,6 +157,31 @@ function EventDescription({ event, userEmail, nameByEmail }) {
       );
     case 'member_joined':
       return <>{author} joined the family tree</>;
+    case 'relationship_changed':
+      return (
+        <>
+          {author} updated {subject}'s relationship
+          {event.detail ? <> — <strong key="d">{event.detail}</strong></> : null}
+        </>
+      );
+    case 'relationship_removed':
+      return (
+        <>
+          {author} removed the connection between {subject}
+          {event.detail ? <> and <strong key="d">{event.detail}</strong></> : null}
+        </>
+      );
+    case 'people_merged':
+      return (
+        <>
+          {author} merged {subject}
+          {event.detail ? <> with <strong key="d">{event.detail}</strong></> : null}
+        </>
+      );
+    case 'person_removed':
+      return <>{author} removed {subject} from the tree</>;
+    case 'health_updated':
+      return <>{author} updated {subject}'s health information</>;
     default:
       return <>{author} updated {subject}</>;
   }
@@ -182,6 +210,11 @@ function typeConfig(type) {
     case 'portrait_updated':  return { color: '#c2603a', Icon: PortraitIcon };
     case 'person_updated':    return { color: '#6b6f76', Icon: EditIcon };
     case 'relationship_added':return { color: '#4b6ea8', Icon: LinkIcon };
+    case 'relationship_changed': return { color: '#6b7fb8', Icon: LinkIcon };
+    case 'relationship_removed': return { color: '#8a5a52', Icon: UnlinkIcon };
+    case 'people_merged':     return { color: '#3d8c7a', Icon: MergeIcon };
+    case 'person_removed':    return { color: '#8a6f52', Icon: PersonRemoveIcon };
+    case 'health_updated':    return { color: '#5a8a72', Icon: HeartIcon };
     case 'member_joined':     return { color: '#2a7a6a', Icon: JoinIcon };
     default:                  return { color: '#6b6f76', Icon: EditIcon };
   }
@@ -292,6 +325,48 @@ function LinkIcon() {
         stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
       <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"
         stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function UnlinkIcon() {
+  return (
+    <svg width="9" height="9" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M8.5 15.5a5 5 0 0 0 7.54.04l3-3a5 5 0 0 0-7.07-7.07l-1 1"
+        stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M15.5 8.5a5 5 0 0 0-7.54-.04l-3 3a5 5 0 0 0 7.07 7.07l1-1"
+        stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <line x1="3" y1="21" x2="21" y2="3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function MergeIcon() {
+  return (
+    <svg width="9" height="9" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="7" cy="6" r="3" stroke="currentColor" strokeWidth="2.2" />
+      <circle cx="17" cy="6" r="3" stroke="currentColor" strokeWidth="2.2" />
+      <path d="M7 9v2a5 5 0 0 0 10 0V9" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
+      <circle cx="12" cy="18" r="3.5" stroke="currentColor" strokeWidth="2.2" />
+    </svg>
+  );
+}
+
+function PersonRemoveIcon() {
+  return (
+    <svg width="9" height="9" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="10" cy="8" r="4" stroke="currentColor" strokeWidth="2.2" />
+      <path d="M2 20c0-4 3.6-7 8-7" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
+      <path d="M14.5 16.5h7" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function HeartIcon() {
+  return (
+    <svg width="9" height="9" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M12 20.5s-8-5-8-11a4.5 4.5 0 0 1 8-2.8A4.5 4.5 0 0 1 20 9.5c0 6-8 11-8 11z"
+        stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
     </svg>
   );
 }
