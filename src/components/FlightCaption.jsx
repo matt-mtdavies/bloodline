@@ -6,10 +6,11 @@ import { relationLabel } from '../data/graph.js';
  * The search flyover's payoff — one card that builds itself progressively
  * across the whole flight, rather than a transit caption that gets replaced
  * by a different landed card. Both avatars and the connector are on screen
- * from the first frame; the hop-count badge increments live as the camera
- * passes each stop (`upTo`, from App.jsx's onSegment) and the breadcrumb
- * strip beneath it fills in the same way, fully visible while the chain is
- * still building. Landing just finishes what's already there: the avatars
+ * from the first frame; the badge counts (possibly-collapsed, see below)
+ * relationship steps rather than raw camera stops, ticking up live as each
+ * one completes (`upTo`, from App.jsx's onSegment), and the breadcrumb strip
+ * beneath it fills in the same way, fully visible while the chain is still
+ * building. Landing just finishes what's already there: the avatars
  * scale up (a CSS transition on their size, not a swap of components), the
  * relation sentence fades in, the breadcrumb tucks itself away behind the
  * badge (matching the collapsed-by-default landed design), and the badge
@@ -74,7 +75,17 @@ export default function FlightCaption({ graph, order, upTo, landed, onDone, onPe
     crumbs.push({ label: relationLabel(graph, order[i - 1], mid), toIndex: i });
     i += 1;
   }
-  const shownHops = landed ? hops : Math.min(upTo, hops);
+  // revealedUpTo: how far the camera has actually travelled (an order-index,
+  // real hops — unaffected by wording collapse), used to decide which crumbs
+  // have been passed. shownCrumbs: the badge's own number — how many of the
+  // (possibly collapsed) crumbs above are fully revealed. These intentionally
+  // differ during a sibling-detour: the badge holds rather than ticking up
+  // for the "extra" real hop through the shared parent, then jumps once the
+  // camera reaches the sibling — never overshooting past the final count
+  // (crumbs.length) the way counting raw camera hops would, so the badge and
+  // the chain text underneath it always agree once landed.
+  const revealedUpTo = landed ? hops : Math.min(upTo, hops);
+  const shownCrumbs = landed ? crumbs.length : crumbs.filter((c) => c.toIndex <= revealedUpTo).length;
 
   const relation = landed ? relationLabel(graph, originId, order[order.length - 1]) : null;
   const avatarSize = landed ? 30 : 20;
@@ -102,12 +113,12 @@ export default function FlightCaption({ graph, order, upTo, landed, onDone, onPe
           aria-expanded={landed ? chainOpen : undefined}
           tabIndex={landed ? 0 : -1}
         >
-          <span className="flight-card__count">{shownHops}</span>
+          <span className="flight-card__count">{shownCrumbs}</span>
         </button>
         <span className="flight-card__node">
           <Avatar person={target} size={avatarSize} />
-          <span className={`flight-card__node-name${landed || shownHops >= hops ? '' : ' flight-card__node-name--pending'}`}>
-            {landed ? first(target) : (shownHops >= hops ? targetName : '')}
+          <span className={`flight-card__node-name${landed || revealedUpTo >= hops ? '' : ' flight-card__node-name--pending'}`}>
+            {landed ? first(target) : (revealedUpTo >= hops ? targetName : '')}
           </span>
         </span>
       </div>
@@ -129,7 +140,7 @@ export default function FlightCaption({ graph, order, upTo, landed, onDone, onPe
             <button
               key={i}
               type="button"
-              className={`flight-card__crumb${c.toIndex <= shownHops ? ' flight-card__crumb--visible' : ''}`}
+              className={`flight-card__crumb${c.toIndex <= revealedUpTo ? ' flight-card__crumb--visible' : ''}`}
               onClick={landed ? () => onPeek?.(order[c.toIndex]) : undefined}
               tabIndex={landed && chainOpen ? 0 : -1}
             >
