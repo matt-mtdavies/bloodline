@@ -3226,6 +3226,20 @@ button.health-notes {
   touch-action: none;
   will-change: transform;
 }
+/* Filling 100%/100% of the stage is right on a phone — the photo fills the
+   frame, which is how you'd expect to view one there. On a big desktop
+   monitor the exact same rule balloons it edge-to-edge, reading as "way
+   zoomed in" (the doc viewer already caps itself at max-width:860px for
+   the same reason — this never got the same treatment). Cap to a sane
+   viewing size with real breathing room instead of filling the window. */
+@media (min-width: 600px) {
+  .lightbox__img {
+    width: auto;
+    height: auto;
+    max-width: min(90%, 1000px);
+    max-height: min(90%, 78vh);
+  }
+}
 .lightbox__nav {
   position: absolute;
   top: 50%;
