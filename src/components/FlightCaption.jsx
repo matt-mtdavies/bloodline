@@ -94,6 +94,11 @@ export default function FlightCaption({ graph, order, upTo, landed, onDone, onPe
 
       <div className={`flight-card__breadcrumb${chainVisible ? ' flight-card__breadcrumb--open' : ''}`}>
         <div className="flight-card__breadcrumb-inner">
+          {/* A possessive chain reads as one flowing phrase — "Father's
+              Father's Daughter's Daughter's Daughter" — rather than discrete
+              arrow-separated labels, matching how the headline relation
+              sentence above it is phrased. Every word but the last takes the
+              's; the last is the terminal noun describing the target's role. */}
           {hopLabels.map((label, i) => (
             <button
               key={i}
@@ -102,8 +107,7 @@ export default function FlightCaption({ graph, order, upTo, landed, onDone, onPe
               onClick={landed ? () => onPeek?.(order[i + 1]) : undefined}
               tabIndex={landed && chainOpen ? 0 : -1}
             >
-              {i > 0 && <ArrowGlyph />}
-              {label}
+              {label}{i < hopLabels.length - 1 ? "'s" : ''}
             </button>
           ))}
         </div>
@@ -111,13 +115,5 @@ export default function FlightCaption({ graph, order, upTo, landed, onDone, onPe
 
       {landed && <button className="flight-card__done" onClick={() => onDone?.()}>Done</button>}
     </div>
-  );
-}
-
-function ArrowGlyph() {
-  return (
-    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" aria-hidden="true" className="flight-card__arrow">
-      <path d="M5 12h13M13 6l6 6-6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
   );
 }

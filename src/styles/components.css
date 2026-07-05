@@ -6855,10 +6855,13 @@ button.health-notes {
 
 .flight-card__chain { display: flex; align-items: center; justify-content: center; gap: 6px; }
 .flight-card__node { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+/* --spring overshoots past the target size before settling (a real bounce,
+   not a straight ease) — landing should feel like the avatar springs up
+   toward the flight's zoomed-in size and eases back, not just resizes. */
 .flight-card__node .avatar {
-  transition: width 0.35s var(--ease), height 0.35s var(--ease);
+  transition: width 0.5s var(--spring), height 0.5s var(--spring);
 }
-.flight-card__node .avatar__mono { transition: font-size 0.35s var(--ease); }
+.flight-card__node .avatar__mono { transition: font-size 0.5s var(--spring); }
 .flight-card__node-name {
   font-size: 12px;
   font-weight: 600;
@@ -6938,21 +6941,20 @@ button.health-notes {
 }
 .flight-card__breadcrumb--open { grid-template-rows: 1fr; }
 .flight-card__breadcrumb-inner {
+  /* A flowing possessive phrase ("Father's Father's Daughter's...") rather
+     than arrow-separated pills — normal word-spacing reads as one sentence. */
   overflow: hidden;
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
+  align-items: baseline;
   justify-content: center;
-  gap: 4px 2px;
+  gap: 4px 5px;
 }
 .flight-card--landed .flight-card__breadcrumb--open .flight-card__breadcrumb-inner {
   padding-top: 4px;
   border-top: 1px solid var(--hairline, #ebedf0);
 }
 .flight-card__crumb {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
   border: none;
   background: none;
   padding: 0;
@@ -6971,7 +6973,6 @@ button.health-notes {
   color: var(--ink, #241f1c);
 }
 .flight-card--landed .flight-card__crumb--visible:hover { color: var(--accent, #c2603a); }
-.flight-card__arrow { flex-shrink: 0; color: var(--ink-faint, #b0a9a5); }
 
 .flight-card__done {
   align-self: center;

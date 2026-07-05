@@ -796,9 +796,13 @@ test('three-generation chain: alice→son→grandson labels from alice\'s view',
 
 // ── General compound-relationship fallback (beyond named patterns) ──────────
 
-test('1st-cousin-once-removed shape reads as "[side] great-grandfather\'s grandson"', () => {
+test('1st-cousin-once-removed shape reads colloquially as "Mother\'s Cousin"', () => {
   // Jason -> mother -> maternal grandmother -> great-grandfather (up 3)
   // great-grandfather -> other child -> grandchild = Peter (down 2)
+  // Jason's mother and Peter are both 2 hops from the shared great-grandfather
+  // (i.e. they're 1st cousins) — "Mother's Cousin" reads far more naturally
+  // than the genealogist's "Maternal Great-grandfather's Grandson" for the
+  // exact same relationship.
   const g = buildGraph(
     [
       person('ggf', 'male'), person('ggm', 'female'),
@@ -815,7 +819,43 @@ test('1st-cousin-once-removed shape reads as "[side] great-grandfather\'s grands
       parentEdge('ggf-other-child', 'peter'),
     ],
   );
-  assert.equal(relationLabel(g, 'jason', 'peter'), 'Maternal Great-grandfather\'s Grandson');
+  assert.equal(relationLabel(g, 'jason', 'peter'), "Mother's Cousin");
+});
+
+test('cousin-shaped compound (2 up / 3 down) reads as "Cousin\'s Daughter"', () => {
+  // Jason -> father -> paternal grandfather (up 2)
+  // grandfather -> other child (aunt) -> her daughter (cousin) -> Mia (down 3)
+  const g = buildGraph(
+    [
+      person('gf', 'male'),
+      person('dad', 'male'), person('aunt', 'female'),
+      person('jason', 'male'), person('cousin', 'female'), person('mia', 'female'),
+    ],
+    [
+      parentEdge('gf', 'dad'), parentEdge('gf', 'aunt'),
+      parentEdge('dad', 'jason'),
+      parentEdge('aunt', 'cousin'),
+      parentEdge('cousin', 'mia'),
+    ],
+  );
+  assert.equal(relationLabel(g, 'jason', 'mia'), "Cousin's Daughter");
+});
+
+test('exact 2nd-cousin shape (3 up / 3 down) reads as "2nd Cousin"', () => {
+  const g = buildGraph(
+    [
+      person('ggp'),
+      person('gpA'), person('gpB'),
+      person('parentA'), person('parentB'),
+      person('jason'), person('other'),
+    ],
+    [
+      parentEdge('ggp', 'gpA'), parentEdge('ggp', 'gpB'),
+      parentEdge('gpA', 'parentA'), parentEdge('gpB', 'parentB'),
+      parentEdge('parentA', 'jason'), parentEdge('parentB', 'other'),
+    ],
+  );
+  assert.equal(relationLabel(g, 'jason', 'other'), '2nd Cousin');
 });
 
 test('4 generations up with no named pattern → "Paternal 2x Great-grandfather"', () => {

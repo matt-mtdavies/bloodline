@@ -254,6 +254,13 @@ function descendingTerm(n, gender) {
   return `${prefix}${byGender(gender, 'grandson', 'granddaughter', 'grandchild')}`;
 }
 
+// 2 -> "2nd", 3 -> "3rd", 11 -> "11th", 21 -> "21st"... for "2nd Cousin" etc.
+function ordinal(n) {
+  const v = n % 100;
+  if (v >= 11 && v <= 13) return `${n}th`;
+  return `${n}${['th', 'st', 'nd', 'rd'][n % 10] || 'th'}`;
+}
+
 // Human-readable relationship of `otherId` relative to `focusId`, for the
 // accessible view and the person sheet. Best-effort, kept warm and plain.
 export function relationLabel(graph, focusId, otherId) {
@@ -433,6 +440,27 @@ export function relationLabel(graph, focusId, otherId) {
     const sidePrefix = side ? `${side} ` : '';
     if (downDist === 0) return `${sidePrefix}${ascendingTerm(upDist, other?.gender)}`;
     if (upDist === 0) return descendingTerm(downDist, other?.gender);
+
+    // Cousin-shaped: both focus and other are at least two generations down
+    // from the shared ancestor (neither is the ancestor's direct child) —
+    // "cousin's daughter" reads far more naturally here than continuing to
+    // describe the shared ancestor itself ("paternal grandfather's
+    // great-granddaughter" for the exact same person). No side prefix on
+    // this branch — "paternal cousin" isn't how anyone actually says it.
+    if (upDist >= 2 && downDist >= 2) {
+      const degree = Math.min(upDist, downDist) - 1; // 1 = cousin, 2 = 2nd cousin, ...
+      const cousinWord = degree === 1 ? 'Cousin' : `${ordinal(degree)} Cousin`;
+      const removed = downDist - upDist;
+      if (removed === 0) return cousinWord;
+      if (removed > 0) return `${cousinWord}'s ${descendingTerm(removed, other?.gender)}`;
+      // Other is closer to the shared ancestor than focus is — exactly 1
+      // hop up from focus, `firstHopParent`'s gender is known precisely;
+      // further than that, there's no per-hop gender tracked, so it reads
+      // as the neutral "Parent"/"Grandparent" rather than guessing wrong.
+      const upGender = -removed === 1 ? graph.byId.get(firstHopParent?.id)?.gender : null;
+      return `${ascendingTerm(-removed, upGender)}'s ${cousinWord}`;
+    }
+
     const ancestorGender = graph.byId.get(ancId)?.gender;
     return `${sidePrefix}${ascendingTerm(upDist, ancestorGender)}'s ${descendingTerm(downDist, other?.gender)}`;
   }
