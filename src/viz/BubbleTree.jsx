@@ -31,6 +31,7 @@ const RECAP_ZOOM = 2.2; // the recap tour's "hero" close-up — big and dramatic
 const PAN_FRICTION = 0.92; // inertial glide decay (per 1/60 s)
 const FLICK_STOP = 1.5; // world units/s below which the glide rests
 const DOUBLE_TAP_MS = 280; // window for a double-tap-to-recentre
+const SEARCH_LANDED_SCALE = 1.55; // bigger than the default active-person baseline (1.38) — the just-found search target keeps reading as the standout even once the camera has zoomed back out to fit the family
 
 /*
  * The visualization. Everything that matters in Phase 1 lives here:
@@ -146,6 +147,8 @@ export default function BubbleTree({
       const births = new Map();      // personId → BirthEffect (currently animating)
       const recapFx = new Map();     // personId → BirthEffect-style bloom (recap tour arrivals)
       const recapVisited = new Set(); // personId → already visited this recap tour (stays legible, not blurred)
+      let searchSpotlightId = null;  // personId just landed on via search flyover — stays visually elevated until focus moves elsewhere
+      const crumbPulse = new Map();  // personId → pulseAt, a brief tap-feedback bump when a landed FlightCaption crumb is tapped
       const wasVisible = new Set();  // bubbles visible last frame, to spot new arrivals
       let fxSeeded = false;          // first frame seeds wasVisible without celebrating
       // Focus-mode relationship captions (e.g. "Father", "Niece"), cached by id
@@ -574,6 +577,9 @@ export default function BubbleTree({
           // after a flyover lands) — skip the reorg/zoom kick the second time
           // so landing doesn't get an extra redundant jolt.
           const alreadyActive = id === activeRef.current;
+          // A search-landed spotlight (see flyAlong) stays elevated until
+          // focus genuinely moves elsewhere — this is that "elsewhere".
+          if (searchSpotlightId && id !== searchSpotlightId) searchSpotlightId = null;
           activeRef.current = id;
           state.dist = distancesFrom(graphRef.current, id);
           relCache.clear(); // relationships are relative to the active person
@@ -802,6 +808,7 @@ export default function BubbleTree({
           postFlightIds = null; // a fresh flight supersedes any lingering previous one
           postFlightEdges = null;
           postFlightLandedAt = 0;
+          searchSpotlightId = null; // ditto for the previous search's spotlight
           const hops = pts.length - 1;
           flight = {
             ids: orderedIds,
@@ -938,6 +945,13 @@ export default function BubbleTree({
         spotlightClearGlow(ids) {
           const list = ids || [...bubbles.keys()];
           for (const id of list) { bubbles.get(id)?.setRecapGlow(false); recapVisited.delete(id); }
+        },
+        // A landed FlightCaption's reopened chain calls this when a hop is
+        // tapped — brief "there it is" bump on that bubble, no camera move
+        // (the whole path is already on screen, per flyToSearchResult
+        // expanding every hop before the flight starts).
+        pulseBubble(id) {
+          crumbPulse.set(id, performance.now());
         },
       };
       api.current = state;
@@ -1395,6 +1409,11 @@ export default function BubbleTree({
               postFlightHops = finished.hops;
               state.setActive(finished.ids[finished.ids.length - 1], false);
               camMode = 'follow'; // setActive() re-enters follow anyway; explicit for clarity
+              // Keep the found person visually elevated even once the camera
+              // has zoomed back out to fit the whole family — see the
+              // lineage-linger and default-branch checks below for how this
+              // is applied, and setActive() above for how it's cleared.
+              searchSpotlightId = finished.ids[finished.ids.length - 1];
               finished.onLand?.();
             }
           }
@@ -1672,7 +1691,19 @@ export default function BubbleTree({
               const age = nowMs - entry.litAt;
               const POP_MS = 450;
               const fade = hopFade(lineageLandedAt, entry.hopIndex, nowMs);
-              const settledRest = 1 + (1.32 - 1) * fade; // eases back toward 1.0 as its turn to extinguish arrives
+              // The search target eases toward SEARCH_LANDED_SCALE instead of
+              // the normal 1.0 floor, so there's no dip when postFlightIds
+              // eventually clears and the default branch's spotlight check
+              // (below) picks up at exactly the same value — one continuous
+              // ease from the landing punch to "settled but still the star",
+              // never a shrink-then-regrow.
+              // Not `id === lineageEnd` — that ref falls back to the (unrelated)
+              // real Lineage Mode prop once flight is null, i.e. exactly during
+              // the post-flight lingering phase this needs to work correctly in.
+              const isSearchTarget = searchSpotlightId === id;
+              const settledRest = isSearchTarget
+                ? SEARCH_LANDED_SCALE + (1.85 - SEARCH_LANDED_SCALE) * fade
+                : 1 + (1.32 - 1) * fade; // eases back toward 1.0 as its turn to extinguish arrives
               restScale = age < POP_MS ? 1.85 : settledRest;
               // A co-parent lights alongside its partner (see coParentsOf), so a
               // couple pod can have BOTH members popping at once — at a fixed
@@ -1680,11 +1711,12 @@ export default function BubbleTree({
               // them into each other. Cap the pop for whichever half of a pod is
               // currently sharing the spotlight so the two bubbles never grow
               // past what that link distance can hold (2 × BASE_RADIUS × 1.15
-              // stays comfortably inside the 112px gap).
+              // stays comfortably inside the 112px gap). Exempt the search
+              // target — it's the whole point of the spotlight.
               const hasLitPartner = graphRef.current
                 .partners(id)
                 .some((x) => lineage.has(x.id));
-              if (hasLitPartner) restScale = Math.min(restScale, 1.15);
+              if (hasLitPartner && !isSearchTarget) restScale = Math.min(restScale, 1.15);
             }
             target = landingPunch
               ? { scale: 1.22, alpha: 1, lift: 1.6, blur: 0 }
@@ -1711,13 +1743,31 @@ export default function BubbleTree({
             // This gives the graph visible hierarchy without a card being open.
             const base = visualForDistance(d);
             const focusAlpha = d <= 1 ? 1 : d === 2 ? 0.62 : d === 3 ? 0.38 : 0.2;
-            target = { ...base, alpha: focusAlpha };
+            // Once the post-flight lingering (above) finally clears, hand off
+            // at the same elevated size rather than dropping back to the
+            // ordinary active-person baseline — see searchSpotlightId.
+            const spotlighted = id === searchSpotlightId && d === 0;
+            target = { ...base, alpha: focusAlpha, scale: spotlighted ? SEARCH_LANDED_SCALE : base.scale };
           }
           // Desktop hover preview: a small pop so the canvas and the floating
           // card visibly agree on who's being previewed — never touches alpha,
           // so a dimmed/background bubble stays dim, just a touch larger.
           if (id === hoveredId) {
             target = { ...target, scale: target.scale * 1.05, lift: (target.lift ?? 1) * 1.15 };
+          }
+          // Tapping a hop in the landed FlightCaption's reopened chain (see
+          // pulseBubble) — a single brief "there it is" bump layered on top
+          // of whatever this bubble's base treatment already is, regardless
+          // of camera mode or how far it is from the active person.
+          const pulseAt = crumbPulse.get(id);
+          if (pulseAt != null) {
+            const PULSE_MS = 700;
+            const page = nowMs - pulseAt;
+            if (page > PULSE_MS) crumbPulse.delete(id);
+            else {
+              const bump = Math.sin(clamp(page / PULSE_MS, 0, 1) * Math.PI) * 0.28;
+              target = { ...target, scale: target.scale * (1 + bump), lift: (target.lift ?? 1) * (1 + bump * 0.5) };
+            }
           }
           // Name labels: all visible bubbles, hidden when card open or lineage active
           const labelAlpha = (!cardOpen && !lineage && effectiveVis.has(id)) ? 1 : 0;

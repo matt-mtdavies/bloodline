@@ -6823,66 +6823,15 @@ button.health-notes {
   .lineage-banner { animation: none; }
 }
 
-/* Search flyover caption — relationship chain that fills in hop by hop
-   ("James → Father → Grandfather") while the camera flies the path. Cleared
-   below the full two-row topbar (brand row + family name/stats row, ~138px
-   at safe-top:0) rather than guessing a number tuned to just the first row —
-   otherwise this pill sits on top of and obscures the stats pill beneath it. */
-.flight-caption {
-  position: fixed;
-  left: 50%;
-  top: calc(var(--safe-top, 0px) + 150px);
-  transform: translateX(-50%);
-  z-index: 40;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: center;
-  gap: 4px 2px;
-  max-width: min(92vw, 460px);
-  padding: 9px 16px;
-  background: rgba(255, 255, 255, 0.92);
-  -webkit-backdrop-filter: blur(12px);
-  backdrop-filter: blur(12px);
-  border: 1px solid var(--hairline, #ebedf0);
-  border-radius: 999px;
-  box-shadow: 0 8px 32px rgba(36, 31, 28, 0.12);
-  pointer-events: none;
-  animation: lb-drop 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-.flight-caption__crumb {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--ink-faint, #b0a9a5);
-  opacity: 0;
-  transform: translateY(3px);
-  transition: opacity 0.3s var(--ease, ease), transform 0.3s var(--ease, ease), color 0.3s ease;
-}
-.flight-caption__crumb--visible {
-  opacity: 1;
-  transform: translateY(0);
-  color: var(--ink, #241f1c);
-}
-.flight-caption__crumb--name.flight-caption__crumb--visible {
-  color: var(--accent, #c2603a);
-  font-family: var(--display);
-  font-weight: 700;
-}
-.flight-caption__arrow { flex-shrink: 0; color: var(--ink-faint, #b0a9a5); }
-@media (prefers-reduced-motion: reduce) {
-  .flight-caption { animation: none; }
-  .flight-caption__crumb { transition: none; }
-}
-
-/* Search flyover's landed card — same visual language as the Lineage
-   banner (.lineage-banner__result), reused deliberately so the two
-   "here's how these people connect" moments in the app feel like one
-   family of components, not two competing designs. Interactive (unlike
-   the transit caption above), so pointer-events are re-enabled here. */
-.flight-result {
+/* Search flyover's card — one element that builds itself progressively
+   across the whole flight instead of swapping between a transit caption and
+   a different landed card. Cleared below the full two-row topbar (brand row
+   + family name/stats row, ~138px at safe-top:0) rather than guessing a
+   number tuned to just the first row — otherwise this sits on top of and
+   obscures the stats pill beneath it. Not interactive until landed (the
+   connector/crumbs are plain text mid-flight); pointer-events flip on via
+   the --landed modifier. */
+.flight-card {
   position: fixed;
   left: 50%;
   top: calc(var(--safe-top, 0px) + 150px);
@@ -6891,7 +6840,7 @@ button.health-notes {
   width: min(92vw, 440px);
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
   background: rgba(255, 255, 255, 0.92);
   -webkit-backdrop-filter: blur(12px);
   backdrop-filter: blur(12px);
@@ -6899,16 +6848,30 @@ button.health-notes {
   border-radius: 18px;
   box-shadow: 0 8px 32px rgba(36, 31, 28, 0.12);
   padding: 12px 14px;
-  pointer-events: auto;
+  pointer-events: none;
   animation: lb-drop 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
-.flight-result__chain { display: flex; align-items: center; justify-content: center; gap: 6px; }
-.flight-result__node { display: flex; flex-direction: column; align-items: center; gap: 3px; }
-.flight-result__node-name { font-size: 12px; font-weight: 600; color: var(--ink, #241f1c); }
-/* A real button (the transit crumbs above it are decorative only) — tap
-   the count to bring the full chain back, per the request that the hop
-   number itself double as the "show me how" control. */
-.flight-result__connector {
+.flight-card--landed { pointer-events: auto; }
+
+.flight-card__chain { display: flex; align-items: center; justify-content: center; gap: 6px; }
+.flight-card__node { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.flight-card__node .avatar {
+  transition: width 0.35s var(--ease), height 0.35s var(--ease);
+}
+.flight-card__node .avatar__mono { transition: font-size 0.35s var(--ease); }
+.flight-card__node-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink, #241f1c);
+  min-height: 15px;
+}
+.flight-card__node-name--pending { opacity: 0; }
+
+/* Inert during transit (no cursor, no focus stop); becomes the real "show
+   the chain" control once landed — the hop number doubling as the control
+   is the whole point of the connector shape. A one-time pulse (stopped the
+   instant it's tapped, see --pulse) hints that it's now interactive. */
+.flight-card__connector {
   position: relative;
   flex: 1;
   max-width: 120px;
@@ -6921,9 +6884,10 @@ button.health-notes {
   display: flex;
   align-items: center;
   justify-content: center;
-  cursor: pointer;
+  cursor: default;
 }
-.flight-result__count {
+.flight-card--landed .flight-card__connector { cursor: pointer; }
+.flight-card__count {
   position: absolute;
   top: 50%;
   left: 50%;
@@ -6942,47 +6906,74 @@ button.health-notes {
   box-shadow: 0 2px 6px rgba(194, 96, 58, 0.35);
   transition: transform 0.15s var(--spring);
 }
-.flight-result__connector:hover .flight-result__count,
-.flight-result__connector:active .flight-result__count { transform: translate(-50%, -50%) scale(1.12); }
-.flight-result__rel {
+.flight-card--landed .flight-card__connector:hover .flight-card__count,
+.flight-card--landed .flight-card__connector:active .flight-card__count {
+  transform: translate(-50%, -50%) scale(1.12);
+}
+.flight-card__connector--pulse .flight-card__count {
+  animation: flight-badge-pulse 1.6s ease-in-out infinite;
+}
+@keyframes flight-badge-pulse {
+  0%, 100% { box-shadow: 0 2px 6px rgba(194, 96, 58, 0.35), 0 0 0 0 rgba(194, 96, 58, 0.45); }
+  50% { box-shadow: 0 2px 6px rgba(194, 96, 58, 0.35), 0 0 0 6px rgba(194, 96, 58, 0); }
+}
+
+.flight-card__rel {
   margin: 0;
   text-align: center;
   font-size: 13px;
   color: var(--ink-soft, #6b6260);
 }
-.flight-result__rel strong { color: var(--accent, #c2603a); }
+.flight-card__rel strong { color: var(--accent, #c2603a); }
 
-/* The full crumb trail, revealed on demand under the card rather than
-   shown by default — most searches are 1-2 hops, where a permanent
-   breadcrumb would just be clutter; a long/interesting path is exactly
-   what someone taps the hop count to see. */
-.flight-result__breadcrumb {
+/* Collapsible via the modern grid 0fr→1fr trick — animates to its natural
+   height with no JS measurement, and (unlike max-height) never clips a crumb
+   that happens to wrap onto its own line. Visible & filling in live during
+   transit (chainVisible = !landed); collapses shut the instant landing
+   happens (chainOpen defaults false), then reopens on demand via the badge. */
+.flight-card__breadcrumb {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.35s var(--ease);
+}
+.flight-card__breadcrumb--open { grid-template-rows: 1fr; }
+.flight-card__breadcrumb-inner {
+  overflow: hidden;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: center;
   gap: 4px 2px;
+}
+.flight-card--landed .flight-card__breadcrumb--open .flight-card__breadcrumb-inner {
   padding-top: 4px;
   border-top: 1px solid var(--hairline, #ebedf0);
-  /* Not lb-drop — that keyframe's translate(-50%, ...) is meant for the
-     outer self-centering card (left:50% + translateX(-50%)); reused here on
-     a normal in-flow div it shifted the whole breadcrumb left by 50% of
-     its own width, pushing it off the card entirely. */
-  animation: crumb-in 0.25s var(--ease, ease) both;
 }
-@keyframes crumb-in {
-  from { opacity: 0; transform: translateY(-6px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-.flight-result__crumb {
+.flight-card__crumb {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
   font-size: 12px;
   font-weight: 600;
-  color: var(--ink-soft, #6b6260);
+  color: var(--ink-faint, #b0a9a5);
+  opacity: 0;
+  transform: translateY(3px);
+  transition: opacity 0.3s var(--ease, ease), transform 0.3s var(--ease, ease), color 0.3s ease;
+  cursor: default;
 }
-.flight-result__done {
+.flight-card__crumb--visible { opacity: 1; transform: translateY(0); color: var(--ink-soft, #6b6260); }
+.flight-card--landed .flight-card__crumb--visible {
+  cursor: pointer;
+  color: var(--ink, #241f1c);
+}
+.flight-card--landed .flight-card__crumb--visible:hover { color: var(--accent, #c2603a); }
+.flight-card__arrow { flex-shrink: 0; color: var(--ink-faint, #b0a9a5); }
+
+.flight-card__done {
   align-self: center;
   margin-top: 2px;
   border: none;
@@ -6995,9 +6986,13 @@ button.health-notes {
   cursor: pointer;
   transition: background 0.15s;
 }
-.flight-result__done:hover { background: var(--accent-deep, #a84f2e); }
+.flight-card__done:hover { background: var(--accent-deep, #a84f2e); }
+
 @media (prefers-reduced-motion: reduce) {
-  .flight-result, .flight-result__breadcrumb { animation: none; }
+  .flight-card { animation: none; }
+  .flight-card__node .avatar, .flight-card__node .avatar__mono,
+  .flight-card__breadcrumb, .flight-card__crumb { transition: none; }
+  .flight-card__connector--pulse .flight-card__count { animation: none; }
 }
 
 /* ════════════════════════════════════════════════════════════════════════

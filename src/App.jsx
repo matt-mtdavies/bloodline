@@ -1593,6 +1593,7 @@ export default function App() {
               upTo={flightCaption.upTo}
               landed={!!flightCaption.landed}
               onDone={() => setFlightCaption(null)}
+              onPeek={(id) => viewApi.current?.pulseBubble(id)}
             />
           )}
         </>

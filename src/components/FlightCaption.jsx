@@ -3,21 +3,27 @@ import Avatar from './Avatar.jsx';
 import { relationLabel } from '../data/graph.js';
 
 /*
- * The search flyover's payoff. Two phases:
- *
- *  - Transit: a breadcrumb trail lights up hop by hop as the camera passes
- *    each relative (driven by `upTo`, advanced from App.jsx's onSegment) —
- *    unchanged from before.
- *  - Landed: once the camera settles, this replaces itself with a two-photo
- *    relationship card — the same visual language as the Lineage banner
- *    (avatar · hop-count badge · avatar, a plain-English relation line) —
- *    with the full crumb trail hidden by default behind the hop-count
- *    badge (tap to reveal). Auto-dismisses 15s after landing if left
- *    untouched; the moment the chain is expanded that timer is cancelled
- *    for good, and it stays up until "Done" is tapped.
+ * The search flyover's payoff — one card that builds itself progressively
+ * across the whole flight, rather than a transit caption that gets replaced
+ * by a different landed card. Both avatars and the connector are on screen
+ * from the first frame; the hop-count badge increments live as the camera
+ * passes each stop (`upTo`, from App.jsx's onSegment) and the breadcrumb
+ * strip beneath it fills in the same way, fully visible while the chain is
+ * still building. Landing just finishes what's already there: the avatars
+ * scale up (a CSS transition on their size, not a swap of components), the
+ * relation sentence fades in, the breadcrumb tucks itself away behind the
+ * badge (matching the collapsed-by-default landed design), and the badge
+ * becomes a real button — pulsing once, briefly, to hint it's now tappable —
+ * that brings the chain back. Each hop in the reopened chain is itself
+ * tappable: it briefly highlights that person's bubble out on the tree
+ * (BubbleTree's pulseBubble) so you can see where a step actually lives
+ * without losing this card. Auto-dismisses 15s after landing if left
+ * untouched; expanding the chain cancels that for good, and it stays up
+ * until "Done" is tapped.
  */
-export default function FlightCaption({ graph, order, upTo, landed, onDone }) {
+export default function FlightCaption({ graph, order, upTo, landed, onDone, onPeek }) {
   const [chainOpen, setChainOpen] = useState(false);
+  const [badgeTapped, setBadgeTapped] = useState(false);
 
   useEffect(() => {
     if (!landed || chainOpen) return;
@@ -32,76 +38,85 @@ export default function FlightCaption({ graph, order, upTo, landed, onDone }) {
   const targetName = (target?.display_name || '').trim();
   const first = (p) => (p?.display_name || '').trim().split(/\s+/)[0] || '';
 
-  // One relation-to-viewer label per hop after the origin (the origin itself
-  // is implicitly "you" and isn't shown as a crumb).
-  const relCrumbs = order.slice(1).map((id) => relationLabel(graph, originId, id));
+  // Turn-by-turn: each hop's relation to the person immediately before it in
+  // the chain, not to the viewer — always resolvable, since adjacent path
+  // nodes are always directly connected by exactly one real edge (parent/
+  // child/partner/sibling). Relation-to-viewer (what this used to show)
+  // degrades to a generic "Relative" for anyone reached via an in-law or
+  // sideways branch, which is why long chains used to read as a string of
+  // "Relative"s in a row.
+  const hopLabels = [];
+  for (let i = 1; i < order.length; i++) hopLabels.push(relationLabel(graph, order[i - 1], order[i]));
+  const hops = hopLabels.length;
+  const shownHops = landed ? hops : Math.min(upTo, hops);
 
-  if (landed) {
-    const relation = relationLabel(graph, originId, order[order.length - 1]);
-    return (
-      <div className="flight-result" role="status" aria-live="polite">
-        <div className="flight-result__chain">
-          <span className="flight-result__node">
-            <Avatar person={origin} size={30} />
-            <span className="flight-result__node-name">{first(origin)}</span>
-          </span>
-          <button
-            className="flight-result__connector"
-            onClick={() => setChainOpen((v) => !v)}
-            aria-label="Show the full relationship chain"
-            aria-expanded={chainOpen}
-          >
-            <span className="flight-result__count">{order.length - 1}</span>
-          </button>
-          <span className="flight-result__node">
-            <Avatar person={target} size={30} />
-            <span className="flight-result__node-name">{first(target)}</span>
-          </span>
-        </div>
-        <p className="flight-result__rel">
-          {targetName} is {first(origin)}&apos;s <strong>{relation.toLowerCase()}</strong>
-        </p>
-        {chainOpen && (
-          <div className="flight-result__breadcrumb">
-            {relCrumbs.map((label, i) => (
-              <span key={i} className="flight-result__crumb">
-                {i > 0 && <ArrowGlyph />}
-                {label}
-              </span>
-            ))}
-          </div>
-        )}
-        <button className="flight-result__done" onClick={() => onDone?.()}>Done</button>
-      </div>
-    );
-  }
+  const relation = landed ? relationLabel(graph, originId, order[order.length - 1]) : null;
+  const avatarSize = landed ? 30 : 20;
+  // Visible & building while in transit; once landed, collapsed behind the
+  // badge by default (chainOpen starts false) until tapped back open.
+  const chainVisible = !landed || chainOpen;
+
+  const toggleChain = () => {
+    setChainOpen((v) => !v);
+    setBadgeTapped(true);
+  };
 
   return (
-    <div className="flight-caption" role="status" aria-live="polite">
-      {relCrumbs.map((label, i) => (
-        <span
-          key={i}
-          className={`flight-caption__crumb${i < upTo ? ' flight-caption__crumb--visible' : ''}`}
-        >
-          {i > 0 && <ArrowGlyph />}
-          {label}
+    <div className={`flight-card${landed ? ' flight-card--landed' : ''}`} role="status" aria-live="polite">
+      <div className="flight-card__chain">
+        <span className="flight-card__node">
+          <Avatar person={origin} size={avatarSize} />
+          <span className="flight-card__node-name">{first(origin)}</span>
         </span>
-      ))}
-      {targetName && (
-        <span
-          className={`flight-caption__crumb flight-caption__crumb--name${upTo >= relCrumbs.length ? ' flight-caption__crumb--visible' : ''}`}
+        <button
+          type="button"
+          className={`flight-card__connector${landed && !badgeTapped ? ' flight-card__connector--pulse' : ''}`}
+          onClick={landed ? toggleChain : undefined}
+          aria-label={landed ? 'Show the full relationship chain' : undefined}
+          aria-expanded={landed ? chainOpen : undefined}
+          tabIndex={landed ? 0 : -1}
         >
-          <ArrowGlyph />
-          {targetName}
+          <span className="flight-card__count">{shownHops}</span>
+        </button>
+        <span className="flight-card__node">
+          <Avatar person={target} size={avatarSize} />
+          <span className={`flight-card__node-name${landed || shownHops >= hops ? '' : ' flight-card__node-name--pending'}`}>
+            {landed ? first(target) : (shownHops >= hops ? targetName : '')}
+          </span>
         </span>
+      </div>
+
+      {landed && (
+        <p className="flight-card__rel">
+          {targetName} is {first(origin)}&apos;s <strong>{relation.toLowerCase()}</strong>
+        </p>
       )}
+
+      <div className={`flight-card__breadcrumb${chainVisible ? ' flight-card__breadcrumb--open' : ''}`}>
+        <div className="flight-card__breadcrumb-inner">
+          {hopLabels.map((label, i) => (
+            <button
+              key={i}
+              type="button"
+              className={`flight-card__crumb${i < shownHops ? ' flight-card__crumb--visible' : ''}`}
+              onClick={landed ? () => onPeek?.(order[i + 1]) : undefined}
+              tabIndex={landed && chainOpen ? 0 : -1}
+            >
+              {i > 0 && <ArrowGlyph />}
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {landed && <button className="flight-card__done" onClick={() => onDone?.()}>Done</button>}
     </div>
   );
 }
 
 function ArrowGlyph() {
   return (
-    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" aria-hidden="true" className="flight-caption__arrow">
+    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" aria-hidden="true" className="flight-card__arrow">
       <path d="M5 12h13M13 6l6 6-6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
