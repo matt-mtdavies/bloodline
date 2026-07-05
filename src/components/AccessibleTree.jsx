@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import Avatar from './Avatar.jsx';
 import { lifespan } from '../lib/dates.js';
 import { relationLabel } from '../data/graph.js';
@@ -13,6 +13,15 @@ export default function AccessibleTree({ graph, focusId, onFocus, onOpenPerson, 
   const [q, setQ] = useState('');
   const [filter, setFilter] = useState('all');
   const focus = graph.byId.get(focusId);
+  const listRef = useRef(null);
+
+  // This view stays mounted across a re-focus (same component, new focusId —
+  // see App.jsx), so the scrollable .listview never reset on its own: tapping
+  // a relative deep in the directory re-centred the page around them but left
+  // you scrolled to wherever you'd been on the PREVIOUS person's page.
+  useEffect(() => {
+    if (listRef.current) listRef.current.scrollTop = 0;
+  }, [focusId]);
 
   const groups = useMemo(() => {
     if (!focus) return [];
@@ -98,7 +107,7 @@ export default function AccessibleTree({ graph, focusId, onFocus, onOpenPerson, 
   const isFiltered = q.trim() || filter !== 'all';
 
   return (
-    <main className="listview" aria-label="Family directory">
+    <main ref={listRef} className="listview" aria-label="Family directory">
       <section className="listview__focus">
         <button
           className="person-row person-row--focus"
