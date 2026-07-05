@@ -10,20 +10,24 @@ import { relationLabel } from '../data/graph.js';
  * relationship steps rather than raw camera stops, ticking up live as each
  * one completes (`upTo`, from App.jsx's onSegment), and the breadcrumb strip
  * beneath it fills in the same way, fully visible while the chain is still
- * building. Landing just finishes what's already there: the avatars
- * scale up (a CSS transition on their size, not a swap of components), the
- * relation sentence fades in, the breadcrumb tucks itself away behind the
- * badge (matching the collapsed-by-default landed design), and the badge
- * becomes a real button — pulsing once, briefly, to hint it's now tappable —
- * that brings the chain back. Each hop in the reopened chain is itself
- * tappable: it briefly highlights that person's bubble out on the tree
- * (BubbleTree's pulseBubble) so you can see where a step actually lives
- * without losing this card. Auto-dismisses 15s after landing if left
- * untouched; expanding the chain cancels that for good, and it stays up
+ * building. Landing just finishes what's already there: the avatars scale
+ * up (a CSS transition on their size, not a swap of components), the
+ * relation sentence fades in, and the breadcrumb stays open, exactly as it
+ * was mid-flight — seeing how two people connect shouldn't take an extra
+ * tap. The badge still becomes a real toggle button (tap to collapse the
+ * chain, tap again to bring it back), pulsing once, briefly, to hint it's
+ * interactive. Each hop in the chain is itself tappable: it briefly
+ * highlights that person's bubble out on the tree (BubbleTree's
+ * pulseBubble) so you can see where a step actually lives without losing
+ * this card. Auto-dismisses 15s after landing if the chain is left
+ * collapsed; expanding it back cancels that for good, and it stays up
  * until "Done" is tapped.
  */
 export default function FlightCaption({ graph, order, upTo, landed, onDone, onPeek }) {
-  const [chainOpen, setChainOpen] = useState(false);
+  // Chain starts expanded on landing — as if the badge had already been
+  // tapped — rather than making that a required extra step to see how two
+  // people actually connect.
+  const [chainOpen, setChainOpen] = useState(true);
   const [badgeTapped, setBadgeTapped] = useState(false);
 
   useEffect(() => {
