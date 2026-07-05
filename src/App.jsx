@@ -45,6 +45,7 @@ import {
   getActivityReadAt,
   setActivityReadAt,
   takeRecapCutoff,
+  setRecapCutoff,
 } from './data/store.js';
 import { groupRecapUpdates, captionForRecapGroup } from './lib/recap.js';
 import { uploadPhoto, generateThumb, uploadDocument, savePhotoToDevice } from './lib/image.js';
@@ -458,11 +459,14 @@ export default function App() {
   const [invitePersonId, setInvitePersonId] = useState(null);
   const [activityOpen, setActivityOpen] = useState(false);
   const [lastReadAt, setLastReadAt] = useState(() => getActivityReadAt()); // null = never opened = all unread
-  // "Since you were last here" — frozen once per real page load (see
+  // "Since you were last here" — seeded once per real page load (see
   // _initialRecapCutoff above), deliberately independent of lastReadAt below:
   // opening the activity panel shouldn't shrink the recap queue out from
-  // under a tour that's using it.
-  const recapCutoff = _initialRecapCutoff;
+  // under a tour that's using it. Real state (not the plain constant it used
+  // to be) so opening the recap can advance it — see markRecapSeen below —
+  // otherwise reopening Activity later in the same session (or on a later
+  // visit) would show the exact same "N updates" again forever.
+  const [recapCutoff, setRecapCutoffState] = useState(_initialRecapCutoff);
   const [recapOpen, setRecapOpen] = useState(false);
   const [recapQueue, setRecapQueue] = useState([]);
   const [recapAllDone, setRecapAllDone] = useState(false);
@@ -542,13 +546,25 @@ export default function App() {
     return acts.filter((a) => new Date(a.created_at).getTime() > lastReadAt).length;
   }, [data.activity, lastReadAt]);
 
-  // The recap tour's queue — one stop per person changed since recapCutoff,
-  // capped to a real "highlights reel" (see groupRecapUpdates). null cutoff
-  // (first-ever visit, nothing to diff against) always yields an empty queue.
+  // The recap tour's queue — one stop per OTHER person's change since
+  // recapCutoff (your own edits are excluded — see groupRecapUpdates),
+  // capped to a real "highlights reel". null cutoff (first-ever visit,
+  // nothing to diff against) always yields an empty queue.
   const recapGroups = useMemo(
-    () => (recapCutoff ? groupRecapUpdates(data.activity ?? [], recapCutoff) : []),
-    [data.activity, recapCutoff],
+    () => (recapCutoff ? groupRecapUpdates(data.activity ?? [], recapCutoff, { viewerEmail: user?.email }) : []),
+    [data.activity, recapCutoff, user?.email],
   );
+
+  // Advances the "seen" cutoff the moment the recap is opened (from the
+  // nudge or the activity panel's hero) — matches how opening the activity
+  // panel itself marks the bell badge read, rather than requiring you to
+  // watch every stop. Without this, recapCutoff never moves mid-session and
+  // reopening Activity later would show the exact same "N updates" again.
+  const markRecapSeen = useCallback(() => {
+    const now = Date.now();
+    setRecapCutoffState(now);
+    setRecapCutoff(now);
+  }, []);
 
   // Proactive nudge: the activity page's "Show me" only pays off for people
   // who already habitually open it, so surface it once, right after a real
@@ -958,6 +974,7 @@ export default function App() {
   const openRecap = useCallback(() => {
     if (!recapGroups.length) return;
     setActivityOpen(false);
+    markRecapSeen();
     const ids = recapGroups.map((g) => g.personId);
     setRecapQueue(
       recapGroups.map((g) => ({
@@ -1005,7 +1022,7 @@ export default function App() {
     } else {
       requestAnimationFrame(startTour);
     }
-  }, [recapGroups, view]);
+  }, [recapGroups, view, markRecapSeen]);
 
   const closeRecapAll = useCallback(() => {
     viewApi.current?.spotlightEnd();

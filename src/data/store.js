@@ -881,6 +881,16 @@ export function takeRecapCutoff() {
   return prev;
 }
 
+// Advances the persisted cutoff mid-session — call this the moment the
+// recap is opened (nudge or the activity panel's hero), so it reads as
+// "seen" immediately rather than only updating on the next full page load.
+// Without this, reopening the activity panel later in the same session (or
+// on a later visit) would show the exact same "N updates" again, since
+// takeRecapCutoff() only ever runs once per boot.
+export function setRecapCutoff(ts) {
+  try { localStorage.setItem(RECAP_CUTOFF_KEY, String(ts)); } catch { /* ignore */ }
+}
+
 function nameFromEmail(email) {
   if (!email) return 'Someone';
   const first = email.split('@')[0].split(/[._\-0-9]/)[0];

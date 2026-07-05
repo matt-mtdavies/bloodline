@@ -5332,39 +5332,46 @@ button.health-notes {
 
 /* Proactive login-time nudge — normal-flow child of .topbar, same slot as
    the sync/storage toasts, so it never overlaps the bottom dock and tracks
-   the header's real height automatically. */
+   the header's real height automatically. Sized and weighted like the
+   stats pill next to it (topbar__stats--btn) rather than a bold full-width
+   alert banner — it's a small, content-hugging pill among other pills, not
+   the loudest thing in the header. */
 .recap-nudge {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   align-self: center;
   margin: 0 16px 12px;
-  background: linear-gradient(135deg, #c2603a 0%, #a84f2e 100%);
-  color: #fff;
-  font-size: 13.5px;
+  background: var(--accent-soft);
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
+  color: var(--accent-deep);
+  font-size: 12px;
   font-weight: 600;
-  padding: 11px 14px 11px 18px;
+  padding: 6px 14px;
   border-radius: 999px;
   max-width: calc(100vw - 32px);
   text-align: center;
   z-index: 9999;
   animation: toast-in 0.3s var(--spring) both;
   pointer-events: auto;
+  transition: background 0.15s ease, border-color 0.15s ease;
 }
-.recap-nudge__spark { flex-shrink: 0; }
+.recap-nudge:hover { background: color-mix(in srgb, var(--accent) 14%, var(--accent-soft)); }
+.recap-nudge__spark { flex-shrink: 0; font-size: 11px; }
 .recap-nudge__dismiss {
   flex-shrink: 0;
   display: grid;
   place-items: center;
-  width: 20px;
-  height: 20px;
+  width: 16px;
+  height: 16px;
   margin-left: 2px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.18);
-  font-size: 15px;
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--accent-deep);
+  font-size: 11px;
   line-height: 1;
 }
-.recap-nudge__dismiss:hover { background: rgba(255, 255, 255, 0.3); }
+.recap-nudge__dismiss:hover { background: color-mix(in srgb, var(--accent) 28%, transparent); }
 
 @media (prefers-reduced-motion: reduce) {
   .recap-tour__scrim, .recap-queue, .recap-nudge, .activity-recap-hero { animation: none; }

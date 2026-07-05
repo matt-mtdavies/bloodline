@@ -5,15 +5,19 @@
 //
 // `member_joined` events have no tree person to fly to, so they're excluded;
 // everything else already carries the personId/personName the activity feed
-// itself relies on.
+// itself relies on. Your OWN edits are excluded too — this is "what changed
+// while you were away", not a personal changelog of your own actions, so
+// editing your own tree shouldn't make it look like something needs
+// catching up on.
 const CAP = 20; // keep the tour to a real "highlights reel", not a slog
 
-export function groupRecapUpdates(activity, sinceMs, { cap = CAP } = {}) {
+export function groupRecapUpdates(activity, sinceMs, { cap = CAP, viewerEmail = null } = {}) {
   if (!sinceMs || !activity?.length) return [];
 
   const byPerson = new Map();
   for (const event of activity) {
     if (!event.personId || event.type === 'member_joined') continue;
+    if (viewerEmail && event.authorEmail && event.authorEmail === viewerEmail) continue;
     const at = new Date(event.created_at).getTime();
     if (!(at > sinceMs)) continue;
     let group = byPerson.get(event.personId);
