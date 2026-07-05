@@ -1005,9 +1005,15 @@ export default function App() {
         }),
       );
     };
-    const onDone = () => {
+    const onDone = (lastId) => {
       setRecapQueue((q) => q.map((item) => ({ ...item, status: 'done' })));
       setRecapAllDone(true);
+      // Land the tree's own focus on whoever the tour finished on, rather
+      // than leaving it pointed at whoever was active before it started —
+      // BubbleTree already updated its own internal notion of "active" (see
+      // spotlightTour/spotlightEnd), this is the other half so React's
+      // activeId (the nameplate, "Add relative", etc. all read this) agrees.
+      if (lastId) setActiveId(lastId);
     };
 
     const startTour = () => {

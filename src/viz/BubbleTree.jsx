@@ -145,6 +145,7 @@ export default function BubbleTree({
       world.addChild(fxLayer);
       const births = new Map();      // personId → BirthEffect (currently animating)
       const recapFx = new Map();     // personId → BirthEffect-style bloom (recap tour arrivals)
+      const recapVisited = new Set(); // personId → already visited this recap tour (stays legible, not blurred)
       const wasVisible = new Set();  // bubbles visible last frame, to spot new arrivals
       let fxSeeded = false;          // first frame seeds wasVisible without celebrating
       // Focus-mode relationship captions (e.g. "Father", "Niece"), cached by id
@@ -432,9 +433,19 @@ export default function BubbleTree({
         const nextIdx = recap.idx + 1;
         if (nextIdx >= recap.ids.length) {
           const onDone = recap.onDone;
+          const lastId = recap.ids[recap.idx];
           recap = null;
           camMode = 'follow';
-          onDone?.();
+          // Land the tree's own focus on whoever the tour just finished on,
+          // rather than snapping back to whoever was active before it
+          // started — false (no animate) since the camera is already there.
+          // React's activeId is the actual source of truth (a prop-effect
+          // pushes it back into this internal state on every change — see
+          // that effect's de-dupe comment), so this call alone won't stick;
+          // onDone(lastId) below tells the caller to setActiveId too, same
+          // two-call pattern flyAlong's onLand already uses.
+          if (lastId) state.setActive(lastId, false);
+          onDone?.(lastId);
           return;
         }
         recap.idx = nextIdx;
@@ -832,12 +843,15 @@ export default function BubbleTree({
         spotlightTour(orderedIds, opts = {}) {
           const pts = orderedIds.map((id) => nodeById.get(id)).filter(Boolean);
           if (!pts.length) { opts.onDone?.(); return; }
+          recapVisited.clear();
           if (reducedMotion) {
             // No flythrough — just light every bubble at once so the (fully
             // static) queue list the caller shows instead still has something
             // to point at, and hand back immediately.
-            for (const id of orderedIds) bubbles.get(id)?.setRecapGlow(true);
-            opts.onDone?.();
+            for (const id of orderedIds) { bubbles.get(id)?.setRecapGlow(true); recapVisited.add(id); }
+            const lastId = orderedIds[orderedIds.length - 1];
+            if (lastId) state.setActive(lastId, false);
+            opts.onDone?.(lastId);
             return;
           }
           vx = vy = 0;
@@ -907,8 +921,13 @@ export default function BubbleTree({
         spotlightEnd() {
           if (recap) {
             const onDone = recap.onDone;
+            const lastId = recap.ids[recap.idx];
             recap = null;
-            onDone?.();
+            // Same reasoning as advanceRecap's natural-completion path: land
+            // on whoever the tour was showing when it was cut short, rather
+            // than snapping back to whoever was active before it began.
+            if (lastId) state.setActive(lastId, false);
+            onDone?.(lastId);
           }
           camMode = 'follow';
           for (const [, fx] of recapFx) fx.destroy();
@@ -918,7 +937,7 @@ export default function BubbleTree({
         // bubble if omitted.
         spotlightClearGlow(ids) {
           const list = ids || [...bubbles.keys()];
-          for (const id of list) bubbles.get(id)?.setRecapGlow(false);
+          for (const id of list) { bubbles.get(id)?.setRecapGlow(false); recapVisited.delete(id); }
         },
       };
       api.current = state;
@@ -1398,6 +1417,7 @@ export default function BubbleTree({
               recap.t = 0;
               const id = recap.ids[recap.idx];
               bubbles.get(id)?.setRecapGlow(true);
+              recapVisited.add(id);
               // BirthEffect's halo rings peak at ~3.1x whatever radius they're
               // given, in WORLD units — multiplied by RECAP_ZOOM (2.2) that's
               // a ~314px screen radius at full-size BASE_RADIUS, big enough to
@@ -1671,6 +1691,21 @@ export default function BubbleTree({
               : { scale: restScale, alpha: 1, lift: 1.1 + (restScale - 1) * 0.6, blur: 0 };
           } else if (cardOpen && id !== state.pinnedId) {
             target = { ...visualForDistance(d), alpha: 0.28, blur: 5 }; // dimmed behind card
+          } else if (camMode === 'recap' && recap) {
+            // Recap tour: the person currently being visited must read as
+            // sharp regardless of their graph-distance from whoever was
+            // active before the tour started — the whole point is jumping
+            // to scattered, often-unrelated parts of the tree, so falling
+            // through to the default distance-based fade below would leave
+            // the target greyed out instead of in focus. Already-visited
+            // people (their gold ring still lit) stay legible but recede a
+            // touch, so the current stop still reads as the standout one.
+            const isCurrent = id === recap.ids[recap.idx];
+            target = isCurrent
+              ? { scale: 1.08, alpha: 1, lift: 1.3, blur: 0 }
+              : recapVisited.has(id)
+                ? { ...visualForDistance(d), alpha: 0.7, blur: 0 }
+                : { ...visualForDistance(d), alpha: 0.2, blur: 1.5 };
           } else {
             // Focus fading: immediate family pops; extended family recedes softly.
             // This gives the graph visible hierarchy without a card being open.
