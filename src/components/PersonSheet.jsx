@@ -62,6 +62,7 @@ export default function PersonSheet({
   isAdmin = true,        // owner/co-admin : manage anyone's memory, not just your own
 }) {
   const person = personId ? graph.byId.get(personId) : null;
+  const profileRef = useRef(null);
   const fileRef = useRef(null);
   const galleryRef = useRef(null);
   const docRef = useRef(null);
@@ -92,6 +93,10 @@ export default function PersonSheet({
   }, [person, onClose, lockEscape]);
 
   // Reset generation + health state whenever the viewed person changes.
+  // Switching from a relationship chip swaps `person` in place (this sheet
+  // stays mounted — see App.jsx's <PersonSheet personId={openId}>, no key
+  // prop), so the scroll position was otherwise carried over from whoever
+  // you were previously reading, landing you mid-page on someone new.
   useEffect(() => {
     storyAbort.current?.abort();
     storyAbort.current = null;
@@ -99,6 +104,7 @@ export default function PersonSheet({
     setHealthPickerOpen(false);
     setStatusPickId(null);
     setHealthNotesEditing(false);
+    if (profileRef.current) profileRef.current.scrollTop = 0;
   }, [personId]);
 
   if (!person) return null;
@@ -150,9 +156,12 @@ export default function PersonSheet({
   const upwardParents = parents.filter(
     (p) => !p.qualifier || p.qualifier === 'biological' || p.qualifier === 'adoptive',
   );
-  const grandparents = extDedup(
-    upwardParents.flatMap((p) => graph.parents(p.id).map((gp) => ({ id: gp.id }))),
-  );
+  // Keep raw grandparent IDs (before dedup) so great-grandparents can be
+  // derived from the full set even if some grandparents were deduped into
+  // another group — same pattern as rawGrandchildIds below, going up
+  // instead of down.
+  const rawGrandparentIds = upwardParents.flatMap((p) => graph.parents(p.id).map((gp) => gp.id));
+  const grandparents = extDedup(rawGrandparentIds.map((id) => ({ id })));
   const auntsUncles = extDedup(
     upwardParents.flatMap((p) => graph.siblings(p.id).map((s) => ({ id: s.id }))),
   );
@@ -169,10 +178,14 @@ export default function PersonSheet({
       graph.siblings(p.id).flatMap((s) => graph.children(s.id).map((c) => ({ id: c.id }))),
     ),
   );
+  const greatGrandparents = extDedup(
+    rawGrandparentIds.flatMap((gpId) => graph.parents(gpId).map((ggp) => ({ id: ggp.id }))),
+  );
   const greatGrandchildren = extDedup(
     rawGrandchildIds.flatMap((gcId) => graph.children(gcId).map((ggc) => ({ id: ggc.id }))),
   );
   const extendedGroups = [
+    { title: 'Great Grandparents', items: greatGrandparents },
     { title: 'Grandparents', items: grandparents },
     { title: 'Aunts & Uncles', items: auntsUncles },
     { title: 'Cousins', items: cousins },
@@ -347,6 +360,7 @@ export default function PersonSheet({
   return (
     <div className="profile-scrim" onClick={onClose}>
       <article
+        ref={profileRef}
         className="profile"
         role="dialog"
         aria-modal="true"

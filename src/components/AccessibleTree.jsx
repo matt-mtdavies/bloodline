@@ -51,16 +51,21 @@ export default function AccessibleTree({ graph, focusId, onFocus, onOpenPerson, 
     const upwardParents = parents.filter(
       (p) => !p.qualifier || p.qualifier === 'biological' || p.qualifier === 'adoptive',
     );
-    const grandparents = ext(upwardParents.flatMap((p) => graph.parents(p.id).map((gp) => ({ id: gp.id }))));
+    const rawGrandparentIds = upwardParents.flatMap((p) => graph.parents(p.id).map((gp) => gp.id));
+    const grandparents = ext(rawGrandparentIds.map((id) => ({ id })));
     const auntsUncles = ext(upwardParents.flatMap((p) => graph.siblings(p.id).map((s) => ({ id: s.id }))));
     const rawGrandchildIds = children.flatMap((c) => graph.children(c.id).map((gc) => gc.id));
     const grandchildren = ext(rawGrandchildIds.map((id) => ({ id })));
     const niecesNephews = ext(siblings.flatMap((s) => graph.children(s.id).map((c) => ({ id: c.id }))));
+    const greatGrandparents = ext(
+      rawGrandparentIds.flatMap((gpId) => graph.parents(gpId).map((ggp) => ({ id: ggp.id }))),
+    );
     const greatGrandchildren = ext(
       rawGrandchildIds.flatMap((gcId) => graph.children(gcId).map((ggc) => ({ id: ggc.id }))),
     );
 
     const extended = [
+      { title: 'Great Grandparents', items: greatGrandparents },
       { title: 'Grandparents', items: grandparents },
       { title: 'Aunts & Uncles', items: auntsUncles },
       { title: 'Grandchildren', items: grandchildren },
