@@ -431,6 +431,7 @@ export default function App() {
   const [openId, setOpenId] = useState(null); // person card
   const [addAnchorId, setAddAnchorId] = useState(null); // add-relative sheet
   const [editId, setEditId] = useState(null); // edit sheet
+  const [editStartInEdit, setEditStartInEdit] = useState(false); // skip the view mode (see handleAdd's "Add & edit details")
   const [timelineId, setTimelineId] = useState(null); // timeline editor
   const [memoryId, setMemoryId] = useState(null); // add-memory sheet
   const [lightbox, setLightbox] = useState(null); // { personId, index }
@@ -1071,11 +1072,24 @@ export default function App() {
         setTimeout(() => setSyncToast(null), 6000);
         return;
       }
+      // A mother/father added alongside an already-linked other parent never
+      // gets connected to them by addRelative() itself — the sheet asks how
+      // the two relate up front (see AddRelativeSheet's coParent prompt) so
+      // the couple pod (links.js) renders instead of two disconnected stems.
+      if (fields.coParentId && fields.coParentStatus) {
+        addRelationship(newId, fields.coParentId, fields.coParentStatus);
+      }
       setAddAnchorId(null);
       viewApi.current?.unpin();
       setOpenId(null);
       setExpanded((prev) => new Set(prev).add(addAnchorId).add(newId));
       setActiveId(newId);
+      // "Add & edit details" — skip the birth-year-only mini form the quick
+      // add used to have and go straight to the real profile editor, already
+      // in edit mode rather than the read-only view of an almost-blank profile.
+      if (fields.openDetails) {
+        setTimeout(() => { setEditId(newId); setEditStartInEdit(true); }, 150);
+      }
     },
     [addAnchorId, graph],
   );
@@ -1095,7 +1109,7 @@ export default function App() {
   }, []);
 
   const handleLinkExisting = useCallback(
-    (existingId, relKey, qualifier = 'biological') => {
+    (existingId, relKey, qualifier = 'biological', coParentId = null, coParentStatus = null) => {
       // setRelationshipKind reassigns atomically (clears any existing direct edge
       // first, then validates + sets the new one) so a wrong link can be fixed in
       // one step without leaving a contradiction.
@@ -1115,6 +1129,10 @@ export default function App() {
         }
       }
       if (!res.ok) { notifyRelFail(res.reason); return; }
+      // Same co-parent link as the new-person path (see handleAdd) — linking
+      // an existing person in as mother/father doesn't otherwise connect them
+      // to the other parent already on the tree.
+      if (coParentId && coParentStatus) addRelationship(existingId, coParentId, coParentStatus);
       setAddAnchorId(null);
       viewApi.current?.unpin();
       setExpanded((prev) => new Set(prev).add(addAnchorId).add(existingId));
@@ -1749,7 +1767,8 @@ export default function App() {
       {editId && graph.byId.get(editId) && (
         <EditPersonSheet
           person={graph.byId.get(editId)}
-          onClose={() => setEditId(null)}
+          startInEdit={editStartInEdit}
+          onClose={() => { setEditId(null); setEditStartInEdit(false); }}
           onSave={handleSave}
           onRemove={canManageTreeStructure ? handleRemovePerson : null}
         />

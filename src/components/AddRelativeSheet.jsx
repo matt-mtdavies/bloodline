@@ -12,8 +12,10 @@ const LINKABLE = new Set(['partner', 'ex_partner', 'mother', 'father', 'son', 'd
 
 /*
  * Relationship-first add (§4): the only required answer is *who* they are to
- * the anchor person and their name — three seconds. Dates and "no longer with
- * us" are optional, revealed progressively so the form never feels like work.
+ * the anchor person and their name — three seconds. Everything else (dates,
+ * birthplace, occupation, deceased, tags...) lives in the one real profile
+ * form (EditPersonSheet) — "Add & edit details" creates the person then opens
+ * it immediately, rather than duplicating a slice of those fields in here.
  *
  * When the relationship type is linkable, a toggle lets the user pick an
  * existing person from the tree instead of creating a new one.
@@ -26,10 +28,7 @@ export default function AddRelativeSheet({ anchor, people = [], relationships = 
   const [middle, setMiddle] = useState('');
   const [family, setFamily] = useState('');
   const [search, setSearch] = useState('');
-  const [more, setMore] = useState(false);
-  const [birthYear, setBirthYear] = useState('');
-  const [deceased, setDeceased] = useState(false);
-  const [deathYear, setDeathYear] = useState('');
+  const [coParentStatus, setCoParentStatus] = useState(null); // 'partner' | 'ex_partner'
   const nameRef = useRef(null);
   const searchRef = useRef(null);
 
@@ -45,7 +44,25 @@ export default function AddRelativeSheet({ anchor, people = [], relationships = 
     setQualifier('biological');
     setMode('new');
     setSearch('');
+    setCoParentStatus(null);
   };
+
+  // Adding a mother while a father is already linked (or vice versa) — find
+  // that existing co-parent so we can ask how the two of them relate. Without
+  // this, addRelative()/setRelationshipKind() never link the two parents to
+  // each other at all: no partner edge means no couple pod in the tree (see
+  // links.js, which requires one) and the pair silently renders as two
+  // disconnected single parents.
+  const coParent = useMemo(() => {
+    if (relKey !== 'mother' && relKey !== 'father') return null;
+    const otherGender = relKey === 'mother' ? 'male' : 'female';
+    for (const r of relationships) {
+      if (r.type !== 'parent' || r.to_person !== anchor.id) continue;
+      const p = people.find((x) => x.id === r.from_person);
+      if (p?.gender === otherGender) return p;
+    }
+    return null;
+  }, [relKey, relationships, people, anchor.id]);
 
   // Which bio-parent genders are already filled for the anchor.
   const filledGenders = useMemo(() => bioParentGendersFilled
@@ -87,10 +104,11 @@ export default function AddRelativeSheet({ anchor, people = [], relationships = 
     });
   }, [people, search, anchor.id]);
 
-  const canAdd = relKey && given.trim().length > 0;
-  const canLink = relKey && mode === 'existing';
+  const needsCoParentAnswer = !!coParent && !coParentStatus;
+  const canAdd = relKey && given.trim().length > 0 && !needsCoParentAnswer;
+  const canLink = relKey && mode === 'existing' && !needsCoParentAnswer;
 
-  const submit = () => {
+  const submit = (openDetails = false) => {
     if (!canAdd) return;
     onAdd({
       relKey,
@@ -98,9 +116,9 @@ export default function AddRelativeSheet({ anchor, people = [], relationships = 
       given: given.trim(),
       middle: middle.trim(),
       family: family.trim(),
-      birth_date: birthYear.trim() || null,
-      is_deceased: deceased,
-      death_date: deceased ? deathYear.trim() || null : null,
+      coParentId: coParent?.id || null,
+      coParentStatus: coParent ? coParentStatus : null,
+      openDetails,
     });
   };
 
@@ -125,8 +143,9 @@ export default function AddRelativeSheet({ anchor, people = [], relationships = 
   };
 
   const linkToExisting = (personId) => {
+    if (!canLink) return;
     const q = QUALIFIER_KEYS.has(relKey) ? qualifier : 'biological';
-    onLinkExisting?.(personId, relKey, q);
+    onLinkExisting?.(personId, relKey, q, coParent?.id || null, coParent ? coParentStatus : null);
   };
 
   const firstName = anchor.display_name.split(/\s+/)[0];
@@ -199,6 +218,32 @@ export default function AddRelativeSheet({ anchor, people = [], relationships = 
           </div>
         )}
 
+        {coParent && (
+          <div className="coparent-row" role="radiogroup" aria-label="Relationship between parents">
+            <p className="coparent-row__label">
+              Are {given.trim() || 'they'} and {coParent.display_name.split(/\s+/)[0]} partners, or ex-partners?
+            </p>
+            <div className="qualifier-row">
+              <button
+                role="radio"
+                aria-checked={coParentStatus === 'partner'}
+                className={'qualifier-chip' + (coParentStatus === 'partner' ? ' qualifier-chip--on' : '')}
+                onClick={() => setCoParentStatus('partner')}
+              >
+                Partners
+              </button>
+              <button
+                role="radio"
+                aria-checked={coParentStatus === 'ex_partner'}
+                className={'qualifier-chip' + (coParentStatus === 'ex_partner' ? ' qualifier-chip--on' : '')}
+                onClick={() => setCoParentStatus('ex_partner')}
+              >
+                Ex-partners
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* New person form */}
         {mode === 'new' && (
           <div className={'form__reveal' + (relKey ? ' form__reveal--open' : '')}>
@@ -247,51 +292,6 @@ export default function AddRelativeSheet({ anchor, people = [], relationships = 
                 {family && <button type="button" className="input-clear" onClick={() => setFamily('')} aria-label="Clear" tabIndex={-1}>×</button>}
               </div>
             </label>
-
-            {!more ? (
-              <button className="link-btn" onClick={() => setMore(true)}>
-                + Add a few details
-              </button>
-            ) : (
-              <div className="form__more">
-                <label className="field field--inline">
-                  <span className="field__label">Born</span>
-                  <div className="input-wrap">
-                    <input
-                      className="field__input field__input--year"
-                      value={birthYear}
-                      onChange={(e) => setBirthYear(e.target.value)}
-                      placeholder="Year"
-                      inputMode="numeric"
-                    />
-                    {birthYear && <button type="button" className="input-clear" onClick={() => setBirthYear('')} aria-label="Clear" tabIndex={-1}>×</button>}
-                  </div>
-                </label>
-                <label className="toggle">
-                  <input
-                    type="checkbox"
-                    checked={deceased}
-                    onChange={(e) => setDeceased(e.target.checked)}
-                  />
-                  <span>No longer with us</span>
-                </label>
-                {deceased && (
-                  <label className="field field--inline">
-                    <span className="field__label">Passed</span>
-                    <div className="input-wrap">
-                      <input
-                        className="field__input field__input--year"
-                        value={deathYear}
-                        onChange={(e) => setDeathYear(e.target.value)}
-                        placeholder="Year"
-                        inputMode="numeric"
-                      />
-                      {deathYear && <button type="button" className="input-clear" onClick={() => setDeathYear('')} aria-label="Clear" tabIndex={-1}>×</button>}
-                    </div>
-                  </label>
-                )}
-              </div>
-            )}
           </div>
         )}
 
@@ -319,6 +319,7 @@ export default function AddRelativeSheet({ anchor, people = [], relationships = 
                   <li key={p.id} role="option">
                     <button
                       className="link-existing__item"
+                      disabled={!canLink}
                       onClick={() => linkToExisting(p.id)}
                     >
                       <span className="link-existing__name">{p.display_name}</span>
@@ -335,8 +336,11 @@ export default function AddRelativeSheet({ anchor, people = [], relationships = 
         <footer className="sheet__foot">
           {mode === 'new' ? (
             <>
-              <button className="btn btn--primary" disabled={!canAdd} onClick={submit}>
+              <button className="btn btn--primary" disabled={!canAdd} onClick={() => submit(false)}>
                 {given.trim() ? `Add ${given.trim()}` : 'Add'}
+              </button>
+              <button className="btn" disabled={!canAdd} onClick={() => submit(true)}>
+                Add &amp; edit details
               </button>
               <button className="btn" onClick={onClose}>
                 Cancel

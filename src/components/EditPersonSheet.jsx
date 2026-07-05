@@ -43,12 +43,14 @@ function isValidEmail(v) {
   return !v || /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v);
 }
 
-export default function EditPersonSheet({ person, onClose, onSave, onRemove }) {
+export default function EditPersonSheet({ person, onClose, onSave, onRemove, startInEdit = false }) {
   // Opens on a read-only "Profile" view — birthday, birthplace, contact info,
   // etc. are all visible without entering edit mode. "Edit profile" switches
   // to the actual form below; cancelling the form returns to the view rather
-  // than closing outright.
-  const [mode, setMode] = useState('view'); // 'view' | 'edit'
+  // than closing outright. startInEdit skips straight to the form — used
+  // right after creating a person via "Add & edit details", where a view of
+  // an almost-empty profile isn't the point, filling it in is.
+  const [mode, setMode] = useState(startInEdit ? 'edit' : 'view'); // 'view' | 'edit'
   const [f, setF] = useState({
     display_name:  person.display_name  || '',
     middle_name:   person.middle_name   || '',
