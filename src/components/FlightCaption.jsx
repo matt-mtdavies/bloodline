@@ -45,9 +45,35 @@ export default function FlightCaption({ graph, order, upTo, landed, onDone, onPe
   // degrades to a generic "Relative" for anyone reached via an in-law or
   // sideways branch, which is why long chains used to read as a string of
   // "Relative"s in a row.
-  const hopLabels = [];
-  for (let i = 1; i < order.length; i++) hopLabels.push(relationLabel(graph, order[i - 1], order[i]));
-  const hops = hopLabels.length;
+  //
+  // One collapse on top of that: siblings have no direct edge of their own
+  // (see graph.js) — the camera still has to visit their shared parent to
+  // get from one to the other, since that parent is the only real drawn
+  // line connecting them (the flight's line-lighting can only light real
+  // edges). But narrating that stop as its own word reads as "Father's
+  // Father's Son" for what is actually just "Father's Brother" — so two
+  // hops that go up to a shared parent and immediately back down to their
+  // other child collapse into one sibling crumb. The camera still visits
+  // every real stop (hops/shownHops below stay in terms of the full path);
+  // only the words simplify.
+  const hops = order.length - 1;
+  const crumbs = [];
+  for (let i = 1; i < order.length; ) {
+    const mid = order[i];
+    if (i + 1 < order.length) {
+      const a = order[i - 1];
+      const b = order[i + 1];
+      const midIsSharedParent =
+        graph.parents(a).some((p) => p.id === mid) && graph.parents(b).some((p) => p.id === mid);
+      if (midIsSharedParent) {
+        crumbs.push({ label: relationLabel(graph, a, b), toIndex: i + 1 });
+        i += 2;
+        continue;
+      }
+    }
+    crumbs.push({ label: relationLabel(graph, order[i - 1], mid), toIndex: i });
+    i += 1;
+  }
   const shownHops = landed ? hops : Math.min(upTo, hops);
 
   const relation = landed ? relationLabel(graph, originId, order[order.length - 1]) : null;
@@ -95,19 +121,19 @@ export default function FlightCaption({ graph, order, upTo, landed, onDone, onPe
       <div className={`flight-card__breadcrumb${chainVisible ? ' flight-card__breadcrumb--open' : ''}`}>
         <div className="flight-card__breadcrumb-inner">
           {/* A possessive chain reads as one flowing phrase — "Father's
-              Father's Daughter's Daughter's Daughter" — rather than discrete
+              Brother's Daughter's Daughter" — rather than discrete
               arrow-separated labels, matching how the headline relation
               sentence above it is phrased. Every word but the last takes the
               's; the last is the terminal noun describing the target's role. */}
-          {hopLabels.map((label, i) => (
+          {crumbs.map((c, i) => (
             <button
               key={i}
               type="button"
-              className={`flight-card__crumb${i < shownHops ? ' flight-card__crumb--visible' : ''}`}
-              onClick={landed ? () => onPeek?.(order[i + 1]) : undefined}
+              className={`flight-card__crumb${c.toIndex <= shownHops ? ' flight-card__crumb--visible' : ''}`}
+              onClick={landed ? () => onPeek?.(order[c.toIndex]) : undefined}
               tabIndex={landed && chainOpen ? 0 : -1}
             >
-              {label}{i < hopLabels.length - 1 ? "'s" : ''}
+              {c.label}{i < crumbs.length - 1 ? "'s" : ''}
             </button>
           ))}
         </div>
