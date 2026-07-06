@@ -6442,64 +6442,100 @@ button.health-notes {
   to { opacity: 1; transform: translateY(0); }
 }
 
+/* Hero — the same warm aurora treatment as Tree Insights / Claim Your Spot,
+   so the hub reads as an arrival moment rather than a settings page. */
+.home__hero {
+  position: relative;
+  overflow: hidden;
+  padding: calc(env(safe-area-inset-top, 0px) + 40px) 24px 40px;
+  text-align: center;
+  background: linear-gradient(160deg, #fbf4ee 0%, #f6ece3 100%);
+  border-bottom-left-radius: 32px;
+  border-bottom-right-radius: 32px;
+}
+.home__hero-aurora {
+  position: absolute; inset: -40% -10% auto -10%; height: 180%;
+  background:
+    radial-gradient(40% 40% at 20% 30%, rgba(194,96,58,0.22), transparent 70%),
+    radial-gradient(40% 40% at 80% 20%, rgba(176,134,66,0.20), transparent 70%),
+    radial-gradient(50% 50% at 60% 85%, rgba(63,94,78,0.14), transparent 70%);
+  background-size: 200% 200%;
+  animation: ti-aurora 14s ease infinite;
+  pointer-events: none;
+}
+
 .home__close {
-  position: fixed;
+  position: absolute;
   top: calc(env(safe-area-inset-top, 0px) + 16px);
   right: 16px;
   z-index: 1;
   width: 36px;
   height: 36px;
   border-radius: 50%;
-  background: var(--paper-deep);
-  border: none;
+  background: rgba(255,255,255,0.7);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255,255,255,0.6);
   color: var(--ink-soft);
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
 }
-.home__close:hover { color: var(--ink); }
+.home__close:hover { color: var(--ink); background: rgba(255,255,255,0.92); }
+
+.home__mark {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  margin-bottom: 14px;
+  animation: home-mark-in 0.7s var(--spring) both;
+}
+@keyframes home-mark-in {
+  from { opacity: 0; transform: translateY(-8px) scale(0.85); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.home__word {
+  position: relative;
+  font-family: var(--display);
+  font-size: 32px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  margin-bottom: 8px;
+}
+.home__greeting {
+  position: relative;
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--accent-deep);
+}
 
 .home__scroll {
   max-width: 560px;
   margin: 0 auto;
-  padding: calc(env(safe-area-inset-top, 0px) + 56px) 24px calc(var(--safe-bottom) + 48px);
+  padding: 28px 24px calc(var(--safe-bottom) + 48px);
   display: flex;
   flex-direction: column;
-}
-
-.home__mark {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 8px;
-}
-.home__word {
-  font-family: var(--display);
-  font-size: 26px;
-  font-weight: 600;
-  letter-spacing: -0.02em;
-  color: var(--ink);
-}
-.home__greeting {
-  text-align: center;
-  font-size: 14px;
-  color: var(--ink-soft);
-  margin-bottom: 28px;
 }
 
 .home__section {
-  padding: 20px 0;
+  padding: 22px 0;
   border-top: 1px solid var(--hairline);
+  animation: home-section-in 0.5s var(--ease) both;
+  animation-delay: calc(var(--i, 0) * 70ms);
 }
-.home__section:first-of-type { border-top: none; }
+.home__section:first-of-type { border-top: none; padding-top: 0; }
+@keyframes home-section-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
 .home__section-title {
   font-family: var(--display);
   font-size: 15px;
   font-weight: 600;
   color: var(--ink);
-  margin-bottom: 10px;
+  margin-bottom: 12px;
 }
 .home__hint {
   font-size: 12.5px;
@@ -6508,55 +6544,148 @@ button.health-notes {
   margin-top: 8px;
 }
 
-.home__create-btn {
+/* Tree list — richer than a plain settings row: a mark medallion carries the
+   brand's own three-circle glyph so each tree reads as a distinct place. */
+.home__tree-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.home__tree-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1.5px solid var(--hairline);
+  border-radius: 16px;
+  background: #faf8f5;
+}
+.home__tree-row--current {
+  border-color: var(--accent-soft);
+  background: linear-gradient(160deg, #fdf4ee 0%, #fbeee3 100%);
+  box-shadow: 0 2px 12px rgba(194, 96, 58, 0.08);
+}
+.home__tree-medallion {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  width: 100%;
-  margin-top: 10px;
-  padding: 12px;
-  border-radius: 14px;
-  border: 1.5px dashed var(--hairline);
-  background: transparent;
-  color: var(--ink);
-  font-size: 13.5px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: border-color 0.15s ease, color 0.15s ease;
+  background: var(--paper-deep);
 }
-.home__create-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
-.home__create-btn:disabled { opacity: 0.6; cursor: default; }
+.home__tree-medallion--current { background: #fff; box-shadow: 0 2px 8px rgba(194, 96, 58, 0.14); }
+.home__tree-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.home__tree-name {
+  font-size: 14.5px;
+  font-weight: 700;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.home__tree-meta { font-size: 12px; color: var(--ink-soft); }
+.home__tree-current {
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent-deep);
+}
+.home__tree-switch {
+  flex-shrink: 0;
+  background: #fff;
+  border: 1.5px solid var(--hairline);
+  border-radius: 999px;
+  padding: 7px 15px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--ink);
+  cursor: pointer;
+}
+.home__tree-switch:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.home__tree-switch:disabled { opacity: 0.5; cursor: default; }
 
 .home__row-btn {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  gap: 13px;
   width: 100%;
   padding: 14px;
   border: 1.5px solid var(--hairline);
-  border-radius: 14px;
+  border-radius: 16px;
   background: #faf8f5;
   color: var(--ink);
   cursor: pointer;
+  margin-top: 8px;
+  transition: border-color 0.15s ease, transform 0.15s ease;
 }
+.home__row-btn:first-of-type { margin-top: 0; }
 .home__row-btn:hover { border-color: var(--accent); }
-.home__row-text { display: flex; flex-direction: column; gap: 2px; text-align: left; }
-.home__row-title { font-size: 14px; font-weight: 600; }
-.home__row-desc { font-size: 12px; color: var(--ink-soft); }
-
-.home__learn-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  font-size: 13.5px;
-  color: var(--ink-soft);
-  line-height: 1.5;
+.home__row-btn:active { transform: scale(0.99); }
+.home__row-btn--create {
+  border-color: var(--accent-soft);
+  background: linear-gradient(160deg, #fdf4ee 0%, #faece0 100%);
 }
-.home__learn-list strong { color: var(--ink); font-weight: 600; }
+.home__row-icon {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--paper-deep);
+  color: var(--ink-soft);
+}
+.home__row-icon--create { background: var(--accent); color: #fff; }
+.home__row-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; text-align: left; }
+.home__row-title { font-size: 14.5px; font-weight: 700; }
+.home__row-desc { font-size: 12px; color: var(--ink-soft); }
+.home__row-arrow { flex-shrink: 0; color: var(--ink-faint); }
+
+/* Learn — a small grid of feature tiles rather than a bullet list. */
+.home__learn-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.home__learn-tile {
+  padding: 16px 14px;
+  border: 1px solid var(--hairline);
+  border-radius: 16px;
+  background: #faf8f5;
+}
+.home__learn-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: var(--accent-soft);
+  color: var(--accent-deep);
+  margin-bottom: 10px;
+}
+.home__learn-title { font-size: 13.5px; font-weight: 700; color: var(--ink); margin-bottom: 3px; }
+.home__learn-desc { font-size: 12px; line-height: 1.45; color: var(--ink-soft); }
 
 .home__signout { padding-top: 8px; }
+
+@media (max-width: 420px) {
+  .home__learn-grid { grid-template-columns: 1fr; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home, .home__mark, .home__section, .home__hero-aurora { animation: none; }
+}
 
 /* ── TopBar: avatar photo support ─────────────────────────────────────── */
 .topbar-avatar__img {
