@@ -1503,9 +1503,18 @@ export default function App() {
                     <button
                       className={`time-play${timePlaying ? ' time-play--on' : ''}`}
                       onClick={() => {
-                        if (!timePlaying && timeYear >= yearRange.max) {
+                        const starting = !timePlaying;
+                        if (starting && timeYear >= yearRange.max) {
                           setTimeYear(lifeJourneyPerson?.birth_date ? parseInt(lifeJourneyPerson.birth_date) : yearRange.min);
                         }
+                        // Starting general playback (not a life journey, which
+                        // is deliberately about one person's card staying up)
+                        // drops any active selection first — otherwise
+                        // whoever was last focused keeps dimming everyone
+                        // else for the whole time-lapse, and their nameplate
+                        // keeps floating on screen for no reason once you've
+                        // hit play to watch the WHOLE family unfold.
+                        if (starting && !lifeJourneyId) deselect();
                         setTimePlaying((p) => !p);
                       }}
                       aria-label={timePlaying ? 'Pause' : 'Play family history'}

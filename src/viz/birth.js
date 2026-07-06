@@ -1,4 +1,4 @@
-import { Container, Graphics, Sprite } from 'pixi.js';
+import { Container, Graphics, Sprite, Text } from 'pixi.js';
 import { warmGlowTexture } from './textures.js';
 import { hex } from '../lib/color.js';
 
@@ -17,22 +17,34 @@ import { hex } from '../lib/color.js';
  *      elastic overshoot while a soft glow swells behind it.
  *   C. Motes   (1.0 → 2.6s)  A handful of warm embers drift up and outward and
  *      fade, like seeds on the wind — life settling into the tree.
+ *   D. Year    (1.5 → 2.9s)  Once the face is settled and visible, the birth
+ *      year emerges from the bubble, growing and fading as it goes — with
+ *      several births landing close together on the timeline it's otherwise
+ *      hard to tell which bubble just arrived and what year it happened in;
+ *      this ties the two together explicitly. Only rendered when a year is
+ *      given — the recap tour reuses this same effect for its own "what
+ *      changed" bloom, where there's no birth year to show.
  *
  * The effect owns the bubble's scale/alpha through phases A–B (so the pop is
  * synced to the bloom), then hands control back seamlessly once settled. All
  * luminous parts use additive blending for a glow that sings on the cream
- * ground. The whole thing self-cleans when done.
+ * ground; the year text is a normal (non-additive) solid fill so it stays
+ * legible rather than washing out. The whole thing self-cleans when done.
  */
 
 const GOLD       = 0xf7c87a;
 const TERRACOTTA = 0xc2603a;
 const CREAM      = 0xfff3e0;
+const TREE_FONT  = 'Hanken Grotesk, system-ui, sans-serif';
 
 const DESCENT_DUR = 0.65;   // s — mote falls into place
 const POP_AT      = 0.55;   // s — bubble starts to appear (overlaps descent end)
 const POP_DUR     = 0.72;   // s — elastic pop duration
 const SETTLE_AT   = POP_AT + POP_DUR + 0.05; // hand bubble back to normal control
-const TOTAL       = 2.6;    // s — full effect lifetime
+const YEAR_DELAY  = 0.18;   // s after settle before the year starts emerging
+const YEAR_START  = SETTLE_AT + YEAR_DELAY;
+const YEAR_DUR    = 1.4;    // s — grows + fades over this long (~1-2s, per design)
+const TOTAL       = YEAR_START + YEAR_DUR + 0.2; // s — full effect lifetime
 
 const easeInOutCubic = (x) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
 const easeOutCubic   = (x) => 1 - Math.pow(1 - x, 3);
@@ -45,12 +57,15 @@ const clamp01 = (x) => (x < 0 ? 0 : x > 1 ? 1 : x);
 
 export class BirthEffect {
   /*
-   * dest   {x,y}   world position of the new person's bubble
-   * origin {x,y}   where the light descends from (parents' midpoint, or just
-   *                above `dest` for a person with no visible parents)
-   * baseRadius     the bubble radius, so the bloom scales with the tree
+   * dest      {x,y}   world position of the new person's bubble
+   * origin    {x,y}   where the light descends from (parents' midpoint, or
+   *                   just above `dest` for a person with no visible parents)
+   * baseRadius        the bubble radius, so the bloom scales with the tree
+   * birthYear number|null  when given, the year emerges from the bubble
+   *                   after it settles (phase D); omitted entirely for the
+   *                   recap tour's reuse of this effect, which isn't a birth
    */
-  constructor(dest, origin, baseRadius) {
+  constructor(dest, origin, baseRadius, birthYear = null) {
     this.dest = dest;
     this.origin = origin;
     this.r = baseRadius;
@@ -116,6 +131,30 @@ export class BirthEffect {
         delay: 0.45 + Math.random() * 0.5,
         wob: Math.random() * Math.PI * 2,
       });
+    }
+
+    // ── Birth year, emerging from the settled bubble (phase D) ────────────
+    // Solid fill, not additive — this needs to stay readable, not glow and
+    // wash out against the pale canvas the way the light-effects above do.
+    if (birthYear != null) {
+      const yr = new Text({
+        text: String(birthYear),
+        style: {
+          fontFamily: TREE_FONT,
+          fontSize: Math.round(baseRadius * 0.85),
+          fontWeight: '700',
+          fill: '#c2603a',
+          letterSpacing: 0.5,
+        },
+      });
+      yr.anchor.set(0.5);
+      yr.resolution = 2;
+      yr.alpha = 0;
+      yr.position.set(dest.x, dest.y);
+      root.addChild(yr);
+      this.yearText = yr;
+    } else {
+      this.yearText = null;
     }
   }
 
@@ -213,6 +252,24 @@ export class BirthEffect {
       const sz = m.size * (1.1 - lp * 0.7);
       m.sprite.width = m.sprite.height = Math.max(1, sz * 2);
       m.sprite.alpha = Math.sin(lp * Math.PI) * 0.85;
+    }
+
+    // ── D. Birth year emerging from the settled bubble ────────────────────
+    if (this.yearText) {
+      const yp = clamp01((t - YEAR_START) / YEAR_DUR);
+      if (t < YEAR_START || t > YEAR_START + YEAR_DUR) {
+        this.yearText.alpha = 0;
+      } else {
+        const growth = easeOutCubic(yp);
+        const scale = 0.65 + growth * 1.45; // 0.65 -> 2.1, "coming out" of the bubble
+        this.yearText.scale.set(scale);
+        // Hold at full opacity briefly so the number has a moment to actually
+        // be read before it starts dissolving, rather than fading from the
+        // instant it appears.
+        const fadeP = clamp01((yp - 0.2) / 0.8);
+        this.yearText.alpha = 1 - easeInOutCubic(fadeP);
+        this.yearText.position.set(this.dest.x, this.dest.y - r * 0.35 * growth);
+      }
     }
 
     if (t >= TOTAL) this.done = true;

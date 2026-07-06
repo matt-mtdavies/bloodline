@@ -1646,7 +1646,7 @@ export default function BubbleTree({
             } else {
               origin = { x: dest.x, y: dest.y - BASE_RADIUS * 5 };
             }
-            const fx = new BirthEffect({ x: dest.x, y: dest.y }, origin, BASE_RADIUS);
+            const fx = new BirthEffect({ x: dest.x, y: dest.y }, origin, BASE_RADIUS, born);
             fxLayer.addChild(fx.root);
             births.set(id, fx);
           }
