@@ -563,11 +563,13 @@ export default function App() {
     [data.activity, recapCutoff, user?.email],
   );
 
-  // Advances the "seen" cutoff the moment the recap is opened (from the
-  // nudge or the activity panel's hero) — matches how opening the activity
-  // panel itself marks the bell badge read, rather than requiring you to
-  // watch every stop. Without this, recapCutoff never moves mid-session and
-  // reopening Activity later would show the exact same "N updates" again.
+  // Advances the "seen" cutoff on genuine intent only: watching the recap
+  // (from the nudge or the activity panel's hero, both via openRecap) or
+  // explicitly dismissing the nudge with its X — never merely by the app
+  // booting or the nudge flashing on screen unread (see takeRecapCutoff in
+  // store.js). Leaving it untouched otherwise is what lets an ignored "N
+  // updates" nudge keep showing up as a standing option in the activity
+  // panel across later visits, instead of silently vanishing.
   const markRecapSeen = useCallback(() => {
     const now = Date.now();
     setRecapCutoffState(now);
@@ -1385,7 +1387,7 @@ export default function App() {
         onDismissSyncToast={() => setSyncToast(null)}
         recapNudgeCount={recapNudge ? recapGroups.length : 0}
         onShowRecap={() => { setRecapNudge(false); openRecap(); }}
-        onDismissRecapNudge={() => setRecapNudge(false)}
+        onDismissRecapNudge={() => { setRecapNudge(false); markRecapSeen(); }}
       />
 
       {view === 'bubbles' ? (

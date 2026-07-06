@@ -865,20 +865,29 @@ export function setActivityReadAt(ts) {
 
 // "Since you were last here" for the recap tour — distinct from the activity
 // badge's marker above, which resets the moment you open the activity panel
-// (before you've necessarily played the recap). Call once per app boot: it
-// returns whatever was stored from the END of your previous session (frozen
-// for this whole session, so opening the activity panel mid-session doesn't
-// shrink the recap queue out from under you), then immediately persists a
-// fresh cutoff for next time. Returns null on a person's very first visit —
-// callers should treat that as "nothing to recap," not "recap everything ever".
+// (before you've necessarily played the recap). A plain read, deliberately
+// NOT consume-on-read: merely booting the app (and the nudge/hero flashing
+// on screen as a result) must not advance this, or ignoring it — not
+// watching the tour, not dismissing the nudge — would silently lose it the
+// next time the tree is opened. This used to persist a fresh cutoff on
+// every single call, which is exactly that bug: ignore the "N updates"
+// nudge, close the app, reopen it, and the updates were gone with no way
+// to see them, because the previous boot had already quietly marked them
+// seen. It only moves forward via setRecapCutoff() below, called when the
+// recap is actually watched or the nudge is explicitly dismissed (see
+// App.jsx's markRecapSeen and its wiring to the nudge's own dismiss). The
+// one exception is a person's very first-ever visit, where a baseline has
+// to be established somehow — otherwise a brand-new device would surface
+// the entire historical activity log as "N updates" the first time it
+// loads. Returns null that one time — callers should treat that as
+// "nothing to recap yet," not "recap everything ever".
 export function takeRecapCutoff() {
-  let prev = null;
   try {
     const raw = localStorage.getItem(RECAP_CUTOFF_KEY);
-    prev = raw ? Number(raw) : null;
+    if (raw != null) return Number(raw);
+    localStorage.setItem(RECAP_CUTOFF_KEY, String(Date.now()));
   } catch { /* ignore */ }
-  try { localStorage.setItem(RECAP_CUTOFF_KEY, String(Date.now())); } catch { /* ignore */ }
-  return prev;
+  return null;
 }
 
 // Advances the persisted cutoff mid-session — call this the moment the
