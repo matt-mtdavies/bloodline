@@ -6432,7 +6432,7 @@ button.health-notes {
   position: fixed;
   inset: 0;
   z-index: 500;
-  background: var(--paper);
+  background: linear-gradient(180deg, #fff 0%, #fdfaf7 420px);
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   animation: home-in 0.4s var(--ease) both;
@@ -6442,33 +6442,52 @@ button.health-notes {
   to { opacity: 1; transform: translateY(0); }
 }
 
-/* Hero — the same warm aurora treatment as Tree Insights / Claim Your Spot,
-   so the hub reads as an arrival moment rather than a settings page. */
+/* Hero — a full-bleed editorial masthead, not a card header: drifting
+   colour washes plus small crisp bubbles (the tree's own bubble motif,
+   brought forward as ambient motion) sit behind a big serif pull. */
 .home__hero {
   position: relative;
   overflow: hidden;
-  padding: calc(env(safe-area-inset-top, 0px) + 40px) 24px 40px;
+  min-height: 300px;
+  padding: calc(env(safe-area-inset-top, 0px) + 44px) 28px 46px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
   text-align: center;
-  background: linear-gradient(160deg, #fbf4ee 0%, #f6ece3 100%);
-  border-bottom-left-radius: 32px;
-  border-bottom-right-radius: 32px;
+  background: linear-gradient(165deg, #fbf4ee 0%, #f7ede2 55%, #f6ebe0 100%);
+  border-bottom-left-radius: 36px;
+  border-bottom-right-radius: 36px;
 }
-.home__hero-aurora {
-  position: absolute; inset: -40% -10% auto -10%; height: 180%;
-  background:
-    radial-gradient(40% 40% at 20% 30%, rgba(194,96,58,0.22), transparent 70%),
-    radial-gradient(40% 40% at 80% 20%, rgba(176,134,66,0.20), transparent 70%),
-    radial-gradient(50% 50% at 60% 85%, rgba(63,94,78,0.14), transparent 70%);
-  background-size: 200% 200%;
-  animation: ti-aurora 14s ease infinite;
-  pointer-events: none;
+
+.home__orbs { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+.home__orb { position: absolute; border-radius: 50%; }
+.home__orb--wash1 {
+  width: 280px; height: 280px; left: -90px; top: -100px;
+  background: radial-gradient(circle at 35% 35%, rgba(194,96,58,0.28), transparent 70%);
+  filter: blur(6px);
+  animation: home-orb-drift-a 20s ease-in-out infinite;
 }
+.home__orb--wash2 {
+  width: 300px; height: 300px; right: -100px; top: -60px;
+  background: radial-gradient(circle at 60% 40%, rgba(63,94,78,0.22), transparent 70%);
+  filter: blur(8px);
+  animation: home-orb-drift-b 24s ease-in-out infinite;
+}
+.home__orb--bubble { border: 2.5px solid #fff; box-shadow: 0 2px 10px rgba(36,31,28,0.08); }
+.home__orb--b1 { width: 30px; height: 30px; left: 12%; top: 66%; background: #c2603a; animation: home-orb-float 9s ease-in-out infinite; }
+.home__orb--b2 { width: 20px; height: 20px; right: 16%; top: 22%; background: #3f5e4e; animation: home-orb-float 11s ease-in-out infinite reverse; }
+.home__orb--b3 { width: 15px; height: 15px; right: 30%; top: 74%; background: #b08642; animation: home-orb-float 8s ease-in-out infinite; animation-delay: -3s; }
+.home__orb--b4 { width: 12px; height: 12px; left: 26%; top: 26%; background: #6b5e7a; opacity: 0.85; animation: home-orb-float 10s ease-in-out infinite; animation-delay: -5s; }
+@keyframes home-orb-drift-a { 0%, 100% { transform: translate(0,0); } 50% { transform: translate(22px, 16px); } }
+@keyframes home-orb-drift-b { 0%, 100% { transform: translate(0,0); } 50% { transform: translate(-18px, 18px); } }
+@keyframes home-orb-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-16px); } }
 
 .home__close {
   position: absolute;
   top: calc(env(safe-area-inset-top, 0px) + 16px);
   right: 16px;
-  z-index: 1;
+  z-index: 2;
   width: 36px;
   height: 36px;
   border-radius: 50%;
@@ -6484,32 +6503,70 @@ button.health-notes {
 }
 .home__close:hover { color: var(--ink); background: rgba(255,255,255,0.92); }
 
-.home__mark {
+.home__hero-inner {
   position: relative;
+  z-index: 1;
   display: flex;
-  justify-content: center;
-  margin-bottom: 14px;
-  animation: home-mark-in 0.7s var(--spring) both;
+  flex-direction: column;
+  align-items: center;
+  animation: home-hero-in 0.7s var(--spring) both;
 }
-@keyframes home-mark-in {
-  from { opacity: 0; transform: translateY(-8px) scale(0.85); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
+@keyframes home-hero-in {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: translateY(0); }
 }
-.home__word {
-  position: relative;
-  font-family: var(--display);
-  font-size: 32px;
+.home__hero-mark { margin-bottom: 14px; }
+.home__eyebrow {
+  font-size: 12px;
   font-weight: 700;
-  letter-spacing: -0.02em;
-  color: var(--ink);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent-deep);
   margin-bottom: 8px;
 }
-.home__greeting {
-  position: relative;
-  font-size: 14.5px;
-  font-weight: 600;
-  color: var(--accent-deep);
+.home__headline {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: clamp(30px, 8vw, 42px);
+  line-height: 1.08;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  margin: 0;
 }
+.home__hero-thesis {
+  font-family: var(--display);
+  font-style: italic;
+  font-size: 15px;
+  color: var(--ink-soft);
+  margin: 14px 0 0;
+  max-width: 320px;
+}
+.home__hero-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 20px;
+  padding: 10px 20px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.65);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255,255,255,0.7);
+}
+.home__hero-num {
+  font-family: var(--display);
+  font-size: 36px;
+  font-weight: 700;
+  color: var(--accent-deep);
+  line-height: 1;
+}
+.home__hero-stat-text {
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--ink-soft);
+  text-align: left;
+}
+.home__hero-stat-text strong { color: var(--ink); font-weight: 700; }
 
 .home__scroll {
   max-width: 560px;
@@ -6537,6 +6594,8 @@ button.health-notes {
   color: var(--ink);
   margin-bottom: 12px;
 }
+.home__section-title--big { font-size: 22px; font-weight: 700; margin-bottom: 14px; }
+.home__eyebrow--section { margin-bottom: 4px; }
 .home__hint {
   font-size: 12.5px;
   color: var(--ink-soft);
@@ -6651,40 +6710,80 @@ button.health-notes {
 .home__row-desc { font-size: 12px; color: var(--ink-soft); }
 .home__row-arrow { flex-shrink: 0; color: var(--ink-faint); }
 
-/* Learn — a small grid of feature tiles rather than a bullet list. */
-.home__learn-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
+/* How it works — full-width rows, each carrying its own tiny looping
+   animation, so the icon doubles as a live demo rather than a static glyph. */
+.home__feature-list {
+  display: flex;
+  flex-direction: column;
   gap: 10px;
 }
-.home__learn-tile {
-  padding: 16px 14px;
+.home__feature-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 18px;
   border: 1px solid var(--hairline);
-  border-radius: 16px;
+  border-radius: 18px;
   background: #faf8f5;
 }
-.home__learn-icon {
+.home__feature-icon {
+  flex-shrink: 0;
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
-  border-radius: 10px;
   background: var(--accent-soft);
   color: var(--accent-deep);
-  margin-bottom: 10px;
 }
-.home__learn-title { font-size: 13.5px; font-weight: 700; color: var(--ink); margin-bottom: 3px; }
-.home__learn-desc { font-size: 12px; line-height: 1.45; color: var(--ink-soft); }
+.home__feature-icon--tap { background: var(--accent-soft); color: var(--accent-deep); }
+.home__feature-icon--search { background: #f3e8d2; color: #8a6a2c; }
+.home__feature-icon--lineage { background: var(--sage-soft); color: var(--sage); }
+.home__feature-icon--timeline { background: var(--memorial-soft); color: var(--memorial); }
+.home__feature-text { display: flex; flex-direction: column; gap: 2px; }
+.home__feature-title { font-size: 15px; font-weight: 700; color: var(--ink); }
+.home__feature-desc { font-size: 12.5px; line-height: 1.42; color: var(--ink-soft); }
+
+/* Per-icon micro-loops */
+.home__anim-ripple {
+  transform-origin: 8px 16px;
+  opacity: 0;
+  animation: home-ripple 2.4s ease-out infinite;
+}
+.home__anim-ripple--2 { animation-delay: 1.2s; }
+@keyframes home-ripple {
+  0% { transform: scale(0.55); opacity: 0.75; }
+  100% { transform: scale(1.9); opacity: 0; }
+}
+.home__anim-glass { animation: home-glass-slide 3.2s ease-in-out infinite; }
+@keyframes home-glass-slide {
+  0%, 100% { transform: translateX(0); }
+  50% { transform: translateX(11px); }
+}
+.home__anim-path { animation: home-path-draw 2.6s ease-in-out infinite; }
+@keyframes home-path-draw {
+  0% { stroke-dashoffset: 1; }
+  40% { stroke-dashoffset: 0; }
+  70% { stroke-dashoffset: 0; }
+  100% { stroke-dashoffset: -1; }
+}
+.home__anim-hand {
+  transform-origin: center;
+  animation: home-hand-sweep 6s linear infinite;
+}
+@keyframes home-hand-sweep {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
 
 .home__signout { padding-top: 8px; }
 
-@media (max-width: 420px) {
-  .home__learn-grid { grid-template-columns: 1fr; }
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .home, .home__mark, .home__section, .home__hero-aurora { animation: none; }
+  .home, .home__hero-inner, .home__section, .home__orb,
+  .home__anim-ripple, .home__anim-glass, .home__anim-path, .home__anim-hand {
+    animation: none;
+  }
 }
 
 /* ── TopBar: avatar photo support ─────────────────────────────────────── */

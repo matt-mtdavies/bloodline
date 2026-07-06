@@ -3,12 +3,11 @@ import Logo from './Logo.jsx';
 import { clearLocalData } from '../data/store.js';
 
 /*
- * The home hub — reached by tapping the logo. A calm step outside the tree:
- * switch between trees you belong to, start a brand-new one, jump to account
- * settings, or sign out. Full-screen (not a bottom sheet) so it reads as its
- * own place rather than another overlay stacked on the canvas — an aurora
- * hero up top (same treatment as Tree Insights / Claim Your Spot) gives it
- * the same "wow" arrival moment those already have.
+ * The home hub — reached by tapping the logo. An editorial arrival moment,
+ * not a settings page: a full-bleed hero with drifting bubbles (the tree's
+ * own visual motif, brought forward as ambient motion) and a big stat pull,
+ * then a magazine-style walkthrough of the tree's key moves, each with its
+ * own small looping animation rather than a static glyph.
  */
 export default function Home({ user, onClose, onOpenAccount, onLogout }) {
   const [families, setFamilies] = useState(null); // null = loading
@@ -79,22 +78,47 @@ export default function Home({ user, onClose, onOpenAccount, onLogout }) {
     }
   }
 
+  const currentFamily = families?.find((f) => f.is_current) || null;
+
   return (
     <div className="home" role="dialog" aria-modal="true" aria-label="Bloodline home">
       <div className="home__hero">
-        <div className="home__hero-aurora" aria-hidden="true" />
+        <div className="home__orbs" aria-hidden="true">
+          <span className="home__orb home__orb--wash1" />
+          <span className="home__orb home__orb--wash2" />
+          <span className="home__orb home__orb--bubble home__orb--b1" />
+          <span className="home__orb home__orb--bubble home__orb--b2" />
+          <span className="home__orb home__orb--bubble home__orb--b3" />
+          <span className="home__orb home__orb--bubble home__orb--b4" />
+        </div>
         <button className="home__close" onClick={onClose} aria-label="Back to your tree">
           <CloseIcon />
         </button>
-        <div className="home__mark">
-          <Logo size={58} />
+
+        <div className="home__hero-inner">
+          <div className="home__hero-mark"><Logo size={30} /></div>
+          {user ? (
+            <>
+              <p className="home__eyebrow">Welcome back</p>
+              <h1 className="home__headline">{firstName(user.display_name) || 'there'}</h1>
+              {currentFamily && (
+                <div className="home__hero-stat">
+                  <span className="home__hero-num">{currentFamily.member_count}</span>
+                  <span className="home__hero-stat-text">
+                    {currentFamily.member_count === 1 ? 'person' : 'people'} in<br />
+                    <strong>{currentFamily.name}</strong>
+                  </span>
+                </div>
+              )}
+            </>
+          ) : (
+            <>
+              <p className="home__eyebrow">Bloodline</p>
+              <h1 className="home__headline">A living portrait<br />of your family.</h1>
+              <p className="home__hero-thesis">The tree is navigation. The profile is the destination.</p>
+            </>
+          )}
         </div>
-        <p className="home__word">Bloodline</p>
-        {user && (
-          <p className="home__greeting">
-            {user.display_name ? `Welcome back, ${firstName(user.display_name)}` : user.email}
-          </p>
-        )}
       </div>
 
       <div className="home__scroll">
@@ -169,27 +193,36 @@ export default function Home({ user, onClose, onOpenAccount, onLogout }) {
         )}
 
         <section className="home__section" style={{ '--i': 2 }}>
-          <h2 className="home__section-title">Learn</h2>
-          <div className="home__learn-grid">
-            <div className="home__learn-tile">
-              <span className="home__learn-icon"><TapIcon /></span>
-              <p className="home__learn-title">Tap a face</p>
-              <p className="home__learn-desc">Bring their branch of the family into view.</p>
+          <p className="home__eyebrow home__eyebrow--section">A quick tour</p>
+          <h2 className="home__section-title home__section-title--big">How it works</h2>
+          <div className="home__feature-list">
+            <div className="home__feature-row">
+              <span className="home__feature-icon home__feature-icon--tap"><TapIcon /></span>
+              <span className="home__feature-text">
+                <span className="home__feature-title">Tap a face</span>
+                <span className="home__feature-desc">Bring their branch of the family into view.</span>
+              </span>
             </div>
-            <div className="home__learn-tile">
-              <span className="home__learn-icon"><SearchTileIcon /></span>
-              <p className="home__learn-title">Search</p>
-              <p className="home__learn-desc">Jump straight to anyone and expand their relationships.</p>
+            <div className="home__feature-row">
+              <span className="home__feature-icon home__feature-icon--search"><SearchTileIcon /></span>
+              <span className="home__feature-text">
+                <span className="home__feature-title">Search</span>
+                <span className="home__feature-desc">Jump straight to anyone and expand their relationships.</span>
+              </span>
             </div>
-            <div className="home__learn-tile">
-              <span className="home__learn-icon"><LineageTileIcon /></span>
-              <p className="home__learn-title">Lineage mode</p>
-              <p className="home__learn-desc">Trace the direct bloodline between two people.</p>
+            <div className="home__feature-row">
+              <span className="home__feature-icon home__feature-icon--lineage"><LineageTileIcon /></span>
+              <span className="home__feature-text">
+                <span className="home__feature-title">Lineage mode</span>
+                <span className="home__feature-desc">Trace the direct bloodline between two people.</span>
+              </span>
             </div>
-            <div className="home__learn-tile">
-              <span className="home__learn-icon"><ClockTileIcon /></span>
-              <p className="home__learn-title">Timeline</p>
-              <p className="home__learn-desc">Play your family's history back in order.</p>
+            <div className="home__feature-row">
+              <span className="home__feature-icon home__feature-icon--timeline"><ClockTileIcon /></span>
+              <span className="home__feature-text">
+                <span className="home__feature-title">Timeline</span>
+                <span className="home__feature-desc">Play your family's history back in order.</span>
+              </span>
             </div>
           </div>
         </section>
@@ -246,40 +279,57 @@ function PersonIcon() {
   );
 }
 
+// Each of these carries its own small infinite loop — a glance at the icon
+// IS the demo, not just a label for it.
+
 function TapIcon() {
   return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <circle cx="8" cy="16" r="2.3" fill="currentColor"/>
-      <path d="M12.3 15.6c2.3-1 3.7-3.3 3.7-6.3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
-      <path d="M15.6 18.2c3.2-1.5 5.2-4.9 5.2-9" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" opacity="0.5"/>
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="8" cy="16" r="2.1" fill="currentColor"/>
+      <circle className="home__anim-ripple home__anim-ripple--1" cx="8" cy="16" r="4.4" stroke="currentColor" strokeWidth="1.4"/>
+      <circle className="home__anim-ripple home__anim-ripple--2" cx="8" cy="16" r="4.4" stroke="currentColor" strokeWidth="1.4"/>
     </svg>
   );
 }
 
 function SearchTileIcon() {
   return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <circle cx="10.5" cy="10.5" r="6.5" stroke="currentColor" strokeWidth="1.7"/>
-      <path d="M19 19l-3.8-3.8" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/>
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="6" cy="16" r="1.4" fill="currentColor" opacity="0.3"/>
+      <circle cx="12" cy="16" r="1.4" fill="currentColor" opacity="0.3"/>
+      <circle cx="18" cy="16" r="1.4" fill="currentColor" opacity="0.3"/>
+      <g className="home__anim-glass">
+        <circle cx="6" cy="9" r="4" stroke="currentColor" strokeWidth="1.6"/>
+        <path d="M8.9 12l2.7 2.7" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
+      </g>
     </svg>
   );
 }
 
 function LineageTileIcon() {
   return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <circle cx="5.5" cy="18.5" r="2.5" stroke="currentColor" strokeWidth="1.6"/>
-      <circle cx="18.5" cy="5.5" r="2.5" stroke="currentColor" strokeWidth="1.6"/>
-      <path d="M7.4 16.8C11 12 13 12 16.6 7.2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="5.5" cy="18.5" r="2.3" stroke="currentColor" strokeWidth="1.5"/>
+      <circle cx="18.5" cy="5.5" r="2.3" stroke="currentColor" strokeWidth="1.5"/>
+      <path
+        className="home__anim-path"
+        pathLength="1"
+        strokeDasharray="1"
+        d="M7.6 16.8C11 12 13 12 16.4 7.2"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+      />
     </svg>
   );
 }
 
 function ClockTileIcon() {
   return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <circle cx="12" cy="12" r="8.5" stroke="currentColor" strokeWidth="1.7"/>
-      <path d="M12 7v5l3.2 1.9" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/>
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="12" r="8.3" stroke="currentColor" strokeWidth="1.6"/>
+      <line className="home__anim-hand" x1="12" y1="12" x2="12" y2="6.8" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/>
+      <circle cx="12" cy="12" r="1" fill="currentColor"/>
     </svg>
   );
 }
