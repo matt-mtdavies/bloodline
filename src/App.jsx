@@ -1947,6 +1947,8 @@ export default function App() {
       {homeOpen && (
         <Home
           user={user}
+          familyName={data.familyName}
+          stats={familyStats}
           onClose={() => setHomeOpen(false)}
           onOpenAccount={() => { setHomeOpen(false); setProfileOpen(true); }}
           onLogout={user ? handleLogout : null}

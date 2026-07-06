@@ -3,13 +3,14 @@ import Logo from './Logo.jsx';
 import { clearLocalData } from '../data/store.js';
 
 /*
- * The home hub — reached by tapping the logo. An editorial arrival moment,
- * not a settings page: a full-bleed hero with drifting bubbles (the tree's
- * own visual motif, brought forward as ambient motion) and a big stat pull,
- * then a magazine-style walkthrough of the tree's key moves, each with its
- * own small looping animation rather than a static glyph.
+ * The home hub — reached by tapping the logo. Built like a product page,
+ * not a settings screen: a real stat card up top (your actual family's
+ * numbers, not marketing copy), then a walkthrough where each feature is a
+ * small faithful mockup of its real in-app look — the ripple when you tap a
+ * face, the card a search result lands in, the path Lineage mode draws, the
+ * scrubber Timeline plays — rather than a static icon standing in for it.
  */
-export default function Home({ user, onClose, onOpenAccount, onLogout }) {
+export default function Home({ user, familyName, stats = null, onClose, onOpenAccount, onLogout }) {
   const [families, setFamilies] = useState(null); // null = loading
   const [switchingId, setSwitchingId] = useState(null);
   const [switchError, setSwitchError] = useState('');
@@ -78,50 +79,64 @@ export default function Home({ user, onClose, onOpenAccount, onLogout }) {
     }
   }
 
-  const currentFamily = families?.find((f) => f.is_current) || null;
+  const first = user?.display_name ? firstName(user.display_name) : null;
+  const insights = buildInsights(stats);
 
   return (
     <div className="home" role="dialog" aria-modal="true" aria-label="Bloodline home">
-      <div className="home__hero">
-        <div className="home__orbs" aria-hidden="true">
-          <span className="home__orb home__orb--wash1" />
-          <span className="home__orb home__orb--wash2" />
-          <span className="home__orb home__orb--bubble home__orb--b1" />
-          <span className="home__orb home__orb--bubble home__orb--b2" />
-          <span className="home__orb home__orb--bubble home__orb--b3" />
-          <span className="home__orb home__orb--bubble home__orb--b4" />
+      <div className="home__top">
+        <div className="home__brand">
+          <Logo size={22} animate={false} />
+          <span className="home__brand-word">Bloodline</span>
         </div>
         <button className="home__close" onClick={onClose} aria-label="Back to your tree">
           <CloseIcon />
         </button>
-
-        <div className="home__hero-inner">
-          <div className="home__hero-mark"><Logo size={30} /></div>
-          {user ? (
-            <>
-              <p className="home__eyebrow">Welcome back</p>
-              <h1 className="home__headline">{firstName(user.display_name) || 'there'}</h1>
-              {currentFamily && (
-                <div className="home__hero-stat">
-                  <span className="home__hero-num">{currentFamily.member_count}</span>
-                  <span className="home__hero-stat-text">
-                    {currentFamily.member_count === 1 ? 'person' : 'people'} in<br />
-                    <strong>{currentFamily.name}</strong>
-                  </span>
-                </div>
-              )}
-            </>
-          ) : (
-            <>
-              <p className="home__eyebrow">Bloodline</p>
-              <h1 className="home__headline">A living portrait<br />of your family.</h1>
-              <p className="home__hero-thesis">The tree is navigation. The profile is the destination.</p>
-            </>
-          )}
-        </div>
       </div>
 
       <div className="home__scroll">
+        {/* The hero: real numbers from this family's own tree, not stock copy */}
+        <div className="home__hero-card">
+          <div className="home__hero-card-head">
+            <p className="home__hero-card-eyebrow">{first ? `Welcome back, ${first}` : 'Currently viewing'}</p>
+            <h2 className="home__hero-card-title">{familyName || 'Your family'}</h2>
+            {stats && stats.people > 0 && (
+              <p className="home__hero-card-sub">
+                {stats.people} {stats.people === 1 ? 'person' : 'people'}
+                {stats.yearSpan && <> · {stats.yearSpan}</>}
+              </p>
+            )}
+          </div>
+
+          <TreeConstellation />
+
+          {insights.length > 0 && (
+            <div className="home__insights">
+              {insights.map((row, i) => (
+                <div className="home__insight-row" key={i}>
+                  <span className={`home__insight-icon home__insight-icon--${row.tone}`}>{row.icon}</span>
+                  <div className="home__insight-text">
+                    <span className="home__insight-stat">{row.stat}</span>
+                    <span className="home__insight-desc">{row.desc}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* The editorial line — the brief's own thesis, given room to breathe */}
+        <div className="home__editorial">
+          <h1 className="home__editorial-head">
+            The tree is navigation.<br />
+            <em>The profile is the destination.</em>
+          </h1>
+          <p className="home__editorial-sub">
+            Tap into any branch to bring it into focus, trace a straight line of blood
+            between two people, or watch your family's history unfold year by year.
+          </p>
+        </div>
+
         {user && (
           <section className="home__section" style={{ '--i': 0 }}>
             <h2 className="home__section-title">Your trees</h2>
@@ -195,34 +210,36 @@ export default function Home({ user, onClose, onOpenAccount, onLogout }) {
         <section className="home__section" style={{ '--i': 2 }}>
           <p className="home__eyebrow home__eyebrow--section">A quick tour</p>
           <h2 className="home__section-title home__section-title--big">How it works</h2>
-          <div className="home__feature-list">
-            <div className="home__feature-row">
-              <span className="home__feature-icon home__feature-icon--tap"><TapIcon /></span>
-              <span className="home__feature-text">
-                <span className="home__feature-title">Tap a face</span>
-                <span className="home__feature-desc">Bring their branch of the family into view.</span>
-              </span>
+
+          <div className="home__feature-card">
+            <TapMock />
+            <div className="home__feature-text">
+              <span className="home__feature-title">Tap a face</span>
+              <span className="home__feature-desc">Bring their branch of the family into view.</span>
             </div>
-            <div className="home__feature-row">
-              <span className="home__feature-icon home__feature-icon--search"><SearchTileIcon /></span>
-              <span className="home__feature-text">
-                <span className="home__feature-title">Search</span>
-                <span className="home__feature-desc">Jump straight to anyone and expand their relationships.</span>
-              </span>
+          </div>
+
+          <div className="home__feature-card">
+            <SearchMock />
+            <div className="home__feature-text">
+              <span className="home__feature-title">Search</span>
+              <span className="home__feature-desc">Jump straight to anyone and expand their relationships.</span>
             </div>
-            <div className="home__feature-row">
-              <span className="home__feature-icon home__feature-icon--lineage"><LineageTileIcon /></span>
-              <span className="home__feature-text">
-                <span className="home__feature-title">Lineage mode</span>
-                <span className="home__feature-desc">Trace the direct bloodline between two people.</span>
-              </span>
+          </div>
+
+          <div className="home__feature-card">
+            <LineageMock />
+            <div className="home__feature-text">
+              <span className="home__feature-title">Lineage mode</span>
+              <span className="home__feature-desc">Trace the direct bloodline between two people.</span>
             </div>
-            <div className="home__feature-row">
-              <span className="home__feature-icon home__feature-icon--timeline"><ClockTileIcon /></span>
-              <span className="home__feature-text">
-                <span className="home__feature-title">Timeline</span>
-                <span className="home__feature-desc">Play your family's history back in order.</span>
-              </span>
+          </div>
+
+          <div className="home__feature-card">
+            <TimelineMock />
+            <div className="home__feature-text">
+              <span className="home__feature-title">Timeline</span>
+              <span className="home__feature-desc">Play your family's history back in order.</span>
             </div>
           </div>
         </section>
@@ -244,6 +261,54 @@ function firstName(name) {
 function roleLabel(role) {
   const labels = { owner: 'Owner', coadmin: 'Co-Admin', editor: 'Editor', contributor: 'Contributor', viewer: 'Viewer' };
   return labels[role] || role;
+}
+
+// Builds up to two real, computed facts about this family for the hero card
+// — the same trick as showing an actual chart instead of a generic graphic.
+function buildInsights(stats) {
+  if (!stats || !stats.people) return [];
+  const rows = [];
+  rows.push({
+    tone: 'accent',
+    icon: <CheckGlyph />,
+    stat: `${stats.withPhoto} of ${stats.people}`,
+    desc: 'people have a portrait added',
+  });
+  if (stats.yearSpan && stats.yearMin && stats.yearMax && stats.yearMax > stats.yearMin) {
+    rows.push({
+      tone: 'sage',
+      icon: <SparkGlyph />,
+      stat: stats.yearSpan,
+      desc: `${stats.yearMax - stats.yearMin} years of family history captured`,
+    });
+  } else if (stats.surnames) {
+    rows.push({
+      tone: 'sage',
+      icon: <SparkGlyph />,
+      stat: stats.surnames,
+      desc: 'surnames carried through your tree',
+    });
+  }
+  return rows;
+}
+
+/* ── The hero's centrepiece: a small family-tree graphic instead of a
+   generic chart, reusing the same three-generation shape as the intro. */
+function TreeConstellation() {
+  return (
+    <svg className="home__constellation" viewBox="0 0 200 150" aria-hidden="true">
+      <line x1="100" y1="26" x2="100" y2="62" stroke="var(--hairline)" strokeWidth="1.6" />
+      <line x1="100" y1="62" x2="54" y2="96" stroke="var(--hairline)" strokeWidth="1.6" />
+      <line x1="100" y1="62" x2="146" y2="96" stroke="var(--hairline)" strokeWidth="1.6" />
+      <line x1="54" y1="96" x2="34" y2="132" stroke="var(--hairline)" strokeWidth="1.6" />
+      <line x1="54" y1="96" x2="74" y2="132" stroke="var(--hairline)" strokeWidth="1.6" />
+      <circle className="home__const-node home__const-node--1" cx="100" cy="18" r="16" fill="#c2603a" />
+      <circle className="home__const-node home__const-node--2" cx="54" cy="88" r="14.5" fill="#3f5e4e" />
+      <circle className="home__const-node home__const-node--3" cx="146" cy="88" r="14.5" fill="#b08642" />
+      <circle className="home__const-node home__const-node--4" cx="34" cy="138" r="11" fill="#6b5e7a" />
+      <circle className="home__const-node home__const-node--5" cx="74" cy="138" r="11" fill="#a44d2c" />
+    </svg>
+  );
 }
 
 function CloseIcon() {
@@ -279,57 +344,105 @@ function PersonIcon() {
   );
 }
 
-// Each of these carries its own small infinite loop — a glance at the icon
-// IS the demo, not just a label for it.
-
-function TapIcon() {
+function CheckGlyph() {
   return (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <circle cx="8" cy="16" r="2.1" fill="currentColor"/>
-      <circle className="home__anim-ripple home__anim-ripple--1" cx="8" cy="16" r="4.4" stroke="currentColor" strokeWidth="1.4"/>
-      <circle className="home__anim-ripple home__anim-ripple--2" cx="8" cy="16" r="4.4" stroke="currentColor" strokeWidth="1.4"/>
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M5 13l4 4L19 7" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
     </svg>
   );
 }
 
-function SearchTileIcon() {
+function SparkGlyph() {
   return (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <circle cx="6" cy="16" r="1.4" fill="currentColor" opacity="0.3"/>
-      <circle cx="12" cy="16" r="1.4" fill="currentColor" opacity="0.3"/>
-      <circle cx="18" cy="16" r="1.4" fill="currentColor" opacity="0.3"/>
-      <g className="home__anim-glass">
-        <circle cx="6" cy="9" r="4" stroke="currentColor" strokeWidth="1.6"/>
-        <path d="M8.9 12l2.7 2.7" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
-      </g>
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M12 3l1.8 4.9L18.7 9.7l-4.9 1.8L12 16.4l-1.8-4.9L5.3 9.7l4.9-1.8L12 3z" fill="currentColor"/>
     </svg>
   );
 }
 
-function LineageTileIcon() {
+/* ── Feature mockups — small faithful reproductions of the real in-app
+   look, each animating on its own loop, standing in for a screenshot. */
+
+function TapMock() {
   return (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <circle cx="5.5" cy="18.5" r="2.3" stroke="currentColor" strokeWidth="1.5"/>
-      <circle cx="18.5" cy="5.5" r="2.3" stroke="currentColor" strokeWidth="1.5"/>
-      <path
-        className="home__anim-path"
-        pathLength="1"
-        strokeDasharray="1"
-        d="M7.6 16.8C11 12 13 12 16.4 7.2"
-        stroke="currentColor"
-        strokeWidth="1.6"
-        strokeLinecap="round"
-      />
+    <div className="home__mock">
+      <svg className="home__mock-lines" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+        <line x1="50" y1="54" x2="24" y2="30" stroke="var(--hairline)" strokeWidth="1.4" />
+        <line x1="50" y1="54" x2="76" y2="26" stroke="var(--hairline)" strokeWidth="1.4" />
+      </svg>
+      <span className="home__mock-bubble" style={{ left: '24%', top: '30%', width: 30, height: 30, background: '#3f5e4e' }} />
+      <span className="home__mock-bubble" style={{ left: '76%', top: '26%', width: 26, height: 26, background: '#b08642' }} />
+      <span className="home__mock-bubble" style={{ left: '70%', top: '78%', width: 22, height: 22, background: '#6b5e7a' }} />
+      <span className="home__mock-bubble home__mock-bubble--focus" style={{ left: '50%', top: '54%', width: 40, height: 40, background: '#c2603a' }}>
+        <span className="home__mock-ripple home__mock-ripple--1" />
+        <span className="home__mock-ripple home__mock-ripple--2" />
+      </span>
+      <span className="home__mock-pill" style={{ left: '50%', top: '26%' }}>Grandma Rose</span>
+    </div>
+  );
+}
+
+function SearchMock() {
+  return (
+    <div className="home__mock home__mock--search">
+      <div className="home__mock-searchbar">
+        <SearchGlyph />
+        <span className="home__mock-typing">Grandma Rose</span>
+      </div>
+      <div className="home__mock-result">
+        <span className="home__mock-result-avatar" />
+        <span className="home__mock-result-text">
+          <strong>Rose Carter</strong>
+          <em>Maternal grandmother</em>
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function SearchGlyph() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
+      <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="1.8"/>
+      <path d="M16.5 16.5L21 21" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
     </svg>
   );
 }
 
-function ClockTileIcon() {
+function LineageMock() {
   return (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <circle cx="12" cy="12" r="8.3" stroke="currentColor" strokeWidth="1.6"/>
-      <line className="home__anim-hand" x1="12" y1="12" x2="12" y2="6.8" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/>
-      <circle cx="12" cy="12" r="1" fill="currentColor"/>
-    </svg>
+    <div className="home__mock">
+      <svg className="home__mock-lines" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+        <path
+          className="home__mock-lineage-path"
+          pathLength="1"
+          strokeDasharray="1"
+          d="M18 78 C 40 78 40 30 50 30 S 70 55 82 22"
+          stroke="var(--sage)"
+          strokeWidth="2.2"
+          fill="none"
+          strokeLinecap="round"
+        />
+      </svg>
+      <span className="home__mock-bubble home__mock-bubble--muted" style={{ left: '40%', top: '50%', width: 18, height: 18, background: '#b0a898' }} />
+      <span className="home__mock-bubble home__mock-bubble--muted" style={{ left: '60%', top: '62%', width: 16, height: 16, background: '#b0a898' }} />
+      <span className="home__mock-bubble home__mock-bubble--end" style={{ left: '18%', top: '78%', width: 28, height: 28, background: '#3f5e4e' }} />
+      <span className="home__mock-bubble home__mock-bubble--end" style={{ left: '82%', top: '22%', width: 28, height: 28, background: '#3f5e4e' }} />
+    </div>
+  );
+}
+
+function TimelineMock() {
+  return (
+    <div className="home__mock home__mock--timeline">
+      <div className="home__mock-track">
+        <span className="home__mock-tick home__mock-tick--start">1952</span>
+        <span className="home__mock-tick home__mock-tick--end">2024</span>
+        <span className="home__mock-playhead" />
+      </div>
+      <span className="home__mock-tl-node home__mock-tl-node--1" style={{ background: '#c2603a' }} />
+      <span className="home__mock-tl-node home__mock-tl-node--2" style={{ background: '#3f5e4e' }} />
+      <span className="home__mock-tl-node home__mock-tl-node--3" style={{ background: '#b08642' }} />
+    </div>
   );
 }
