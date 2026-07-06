@@ -211,37 +211,30 @@ export default function Home({ user, familyName, stats = null, onClose, onOpenAc
           <p className="home__eyebrow home__eyebrow--section">A quick tour</p>
           <h2 className="home__section-title home__section-title--big">How it works</h2>
 
-          <div className="home__feature-card">
-            <TapMock />
-            <div className="home__feature-text">
-              <span className="home__feature-title">Tap a face</span>
-              <span className="home__feature-desc">Bring their branch of the family into view.</span>
-            </div>
-          </div>
-
-          <div className="home__feature-card">
-            <SearchMock />
-            <div className="home__feature-text">
-              <span className="home__feature-title">Search</span>
-              <span className="home__feature-desc">Jump straight to anyone and expand their relationships.</span>
-            </div>
-          </div>
-
-          <div className="home__feature-card">
-            <LineageMock />
-            <div className="home__feature-text">
-              <span className="home__feature-title">Lineage mode</span>
-              <span className="home__feature-desc">Trace the direct bloodline between two people.</span>
-            </div>
-          </div>
-
-          <div className="home__feature-card">
-            <TimelineMock />
-            <div className="home__feature-text">
-              <span className="home__feature-title">Timeline</span>
-              <span className="home__feature-desc">Play your family's history back in order.</span>
-            </div>
-          </div>
+          <FeatureClip
+            src="/tutorials/tap.mp4"
+            poster="/tutorials/tap.jpg"
+            title="Tap a face"
+            desc="Bring their branch of the family into view."
+          />
+          <FeatureClip
+            src="/tutorials/search.mp4"
+            poster="/tutorials/search.jpg"
+            title="Search"
+            desc="Jump straight to anyone and expand their relationships."
+          />
+          <FeatureClip
+            src="/tutorials/lineage.mp4"
+            poster="/tutorials/lineage.jpg"
+            title="Lineage mode"
+            desc="Trace the direct bloodline between two people."
+          />
+          <FeatureClip
+            src="/tutorials/timeline.mp4"
+            poster="/tutorials/timeline.jpg"
+            title="Timeline"
+            desc="Play your family's history back in order."
+          />
         </section>
 
         {user && onLogout && (
@@ -360,100 +353,26 @@ function SparkGlyph() {
   );
 }
 
-/* ── Feature mockups — small faithful reproductions of the real in-app
-   look, each animating on its own loop, standing in for a screenshot. */
-
-function TapMock() {
+/* ── Feature clips — real screen recordings of the actual app (captured
+   headless against the demo family, trimmed/encoded with ffmpeg), not
+   hand-built mockups. Silent, looping, autoplaying — see public/tutorials/. */
+function FeatureClip({ src, poster, title, desc }) {
   return (
-    <div className="home__mock home__mock--tap">
-      <svg className="home__mock-lines" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-        <line x1="50" y1="54" x2="24" y2="30" stroke="var(--hairline)" strokeWidth="1.4" />
-        <line x1="50" y1="54" x2="76" y2="26" stroke="var(--hairline)" strokeWidth="1.4" />
-      </svg>
-      <span className="home__mock-bubble home__mock-tap-neighbor" style={{ left: '24%', top: '30%', width: 30, height: 30, background: '#3f5e4e' }} />
-      <span className="home__mock-bubble home__mock-tap-neighbor" style={{ left: '76%', top: '26%', width: 26, height: 26, background: '#b08642' }} />
-      <span className="home__mock-bubble" style={{ left: '70%', top: '78%', width: 22, height: 22, background: '#6b5e7a', opacity: 0.55 }} />
-      <span className="home__mock-bubble home__mock-bubble--focus" style={{ left: '50%', top: '54%', width: 40, height: 40, background: '#c2603a' }}>
-        <span className="home__mock-ripple home__mock-ripple--1" />
-        <span className="home__mock-ripple home__mock-ripple--2" />
-      </span>
-      <span className="home__mock-pill home__mock-tap-pill" style={{ left: '50%', top: '26%' }}>Grandma Rose</span>
-      <span className="home__mock-touch" style={{ left: '50%', top: '54%' }} />
-    </div>
-  );
-}
-
-function SearchMock() {
-  return (
-    <div className="home__mock home__mock--search">
-      <div className="home__mock-searchbar">
-        <SearchGlyph />
-        <span className="home__mock-typing">Grandma Rose</span>
-      </div>
-      <div className="home__mock-result">
-        <span className="home__mock-result-avatar" />
-        <span className="home__mock-result-text">
-          <strong>Rose Carter</strong>
-          <em>Maternal grandmother</em>
-        </span>
+    <div className="home__feature-card">
+      <video
+        className="home__clip"
+        src={src}
+        poster={poster}
+        autoPlay
+        loop
+        muted
+        playsInline
+        preload="metadata"
+      />
+      <div className="home__feature-text">
+        <span className="home__feature-title">{title}</span>
+        <span className="home__feature-desc">{desc}</span>
       </div>
     </div>
-  );
-}
-
-function SearchGlyph() {
-  return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
-      <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="1.8"/>
-      <path d="M16.5 16.5L21 21" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
-    </svg>
-  );
-}
-
-function LineageMock() {
-  return (
-    <div className="home__mock">
-      <svg className="home__mock-lines" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-        <path
-          className="home__mock-lineage-path"
-          pathLength="1"
-          strokeDasharray="1"
-          d="M18 78 C 40 78 40 30 50 30 S 70 55 82 22"
-          stroke="var(--sage)"
-          strokeWidth="2.2"
-          fill="none"
-          strokeLinecap="round"
-        />
-      </svg>
-      <span className="home__mock-bubble home__mock-bubble--muted" style={{ left: '40%', top: '50%', width: 18, height: 18, background: '#b0a898' }} />
-      <span className="home__mock-bubble home__mock-bubble--muted" style={{ left: '60%', top: '62%', width: 16, height: 16, background: '#b0a898' }} />
-      <span className="home__mock-bubble home__mock-bubble--end home__mock-lineage-end" style={{ left: '18%', top: '78%', width: 28, height: 28, background: '#3f5e4e' }} />
-      <span className="home__mock-bubble home__mock-bubble--end home__mock-lineage-end" style={{ left: '82%', top: '22%', width: 28, height: 28, background: '#3f5e4e' }} />
-      <span className="home__mock-pill home__mock-lineage-label" style={{ left: '58%', top: '46%' }}>3 generations</span>
-    </div>
-  );
-}
-
-function TimelineMock() {
-  return (
-    <div className="home__mock home__mock--timeline">
-      <div className="home__mock-track">
-        <span className="home__mock-tick home__mock-tick--start">1952</span>
-        <span className="home__mock-tick home__mock-tick--end">2024</span>
-        <span className="home__mock-playhead" />
-      </div>
-      <span className="home__mock-tl-node home__mock-tl-node--1" style={{ background: '#c2603a' }} />
-      <span className="home__mock-tl-node home__mock-tl-node--2" style={{ background: '#3f5e4e' }} />
-      <span className="home__mock-tl-node home__mock-tl-node--3" style={{ background: '#b08642' }} />
-      <span className="home__mock-play-btn"><PlayGlyph /></span>
-    </div>
-  );
-}
-
-function PlayGlyph() {
-  return (
-    <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-      <path d="M6 4l15 8-15 8V4z" />
-    </svg>
   );
 }
