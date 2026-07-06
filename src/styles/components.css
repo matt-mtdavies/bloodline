@@ -6454,10 +6454,11 @@ button.health-notes {
 .home__brand { display: flex; align-items: center; gap: 8px; }
 .home__brand-word {
   font-family: var(--display);
-  font-style: italic;
+  font-size: 20px;
   font-weight: 600;
-  font-size: 19px;
-  color: var(--ink);
+  letter-spacing: -0.022em;
+  color: var(--accent);
+  line-height: 1;
 }
 .home__close {
   width: 34px;
@@ -6522,14 +6523,26 @@ button.health-notes {
   height: auto;
   margin: 18px auto 6px;
 }
-.home__const-node { transform-box: fill-box; transform-origin: center; animation: home-const-breathe 4.4s ease-in-out infinite; }
-.home__const-node--2 { animation-delay: 0.4s; }
-.home__const-node--3 { animation-delay: 0.9s; }
-.home__const-node--4 { animation-delay: 1.3s; }
-.home__const-node--5 { animation-delay: 1.7s; }
-@keyframes home-const-breathe {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.08); }
+/* Real drift, not just a breathing pulse — small independent orbits per
+   node (like the actual tree's d3-force settle) so the graphic reads as
+   alive rather than a static chart. */
+.home__const-node { transform-box: fill-box; transform-origin: center; }
+.home__const-node--1 { animation: home-const-drift-a 7s ease-in-out infinite; }
+.home__const-node--2 { animation: home-const-drift-b 8.5s ease-in-out infinite; animation-delay: -1.2s; }
+.home__const-node--3 { animation: home-const-drift-c 6.5s ease-in-out infinite; animation-delay: -3.4s; }
+.home__const-node--4 { animation: home-const-drift-b 7.5s ease-in-out infinite; animation-delay: -0.6s; }
+.home__const-node--5 { animation: home-const-drift-a 9s ease-in-out infinite; animation-delay: -2.1s; }
+@keyframes home-const-drift-a {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(3px, -5px) scale(1.06); }
+}
+@keyframes home-const-drift-b {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(-4px, 4px) scale(1.07); }
+}
+@keyframes home-const-drift-c {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(4px, 5px) scale(1.05); }
 }
 
 .home__insights {
@@ -6746,18 +6759,51 @@ button.health-notes {
 .home__mock-bubble--focus { z-index: 2; }
 .home__mock-bubble--muted { opacity: 0.4; }
 .home__mock-bubble--end { z-index: 2; }
+
+/* ── Tap a face — a 4.4s tutorial loop: a touch indicator descends onto
+   the focused bubble, it ripples, and the two connected people brighten
+   as though just revealed, then everything resets. */
+.home__mock-touch {
+  position: absolute;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: rgba(36,31,28,0.16);
+  border: 1.5px solid rgba(36,31,28,0.3);
+  transform: translate(-50%, -50%) translateY(-34px) scale(0.85);
+  opacity: 0;
+  animation: home-mock-touch 4.4s ease-in-out infinite;
+}
+@keyframes home-mock-touch {
+  0% { opacity: 0; transform: translate(-50%, -50%) translateY(-34px) scale(0.85); }
+  8% { opacity: 1; transform: translate(-50%, -50%) translateY(-34px) scale(0.85); }
+  24% { opacity: 1; transform: translate(-50%, -50%) translateY(0) scale(1); }
+  30% { opacity: 1; transform: translate(-50%, -50%) translateY(0) scale(0.82); }
+  38% { opacity: 1; transform: translate(-50%, -50%) translateY(0) scale(1); }
+  50% { opacity: 0; transform: translate(-50%, -50%) translateY(4px) scale(0.9); }
+  100% { opacity: 0; }
+}
 .home__mock-ripple {
   position: absolute;
   inset: -7px;
   border-radius: 50%;
   border: 2px solid var(--accent);
   opacity: 0;
-  animation: home-mock-ripple 2.4s ease-out infinite;
+  animation: home-mock-ripple 4.4s ease-out infinite;
 }
-.home__mock-ripple--2 { animation-delay: 1.2s; }
+.home__mock-ripple--2 { animation-delay: 0.35s; }
 @keyframes home-mock-ripple {
-  0% { transform: scale(0.7); opacity: 0.6; }
-  100% { transform: scale(2); opacity: 0; }
+  0%, 28% { transform: scale(0.7); opacity: 0; }
+  30% { transform: scale(0.7); opacity: 0.65; }
+  62% { transform: scale(2.1); opacity: 0; }
+  100% { opacity: 0; }
+}
+.home__mock-tap-neighbor { animation: home-mock-neighbor-glow 4.4s ease-in-out infinite; }
+@keyframes home-mock-neighbor-glow {
+  0%, 26% { opacity: 0.5; }
+  36% { opacity: 1; }
+  75% { opacity: 1; }
+  92%, 100% { opacity: 0.5; }
 }
 .home__mock-pill {
   position: absolute;
@@ -6771,18 +6817,46 @@ button.health-notes {
   font-weight: 700;
   color: var(--ink);
   white-space: nowrap;
-  animation: home-mock-pill-fade 2.4s ease-in-out infinite;
 }
-@keyframes home-mock-pill-fade { 0%, 100% { opacity: 0.45; } 50% { opacity: 1; } }
+.home__mock-tap-pill {
+  opacity: 0;
+  animation: home-mock-tap-pill-in 4.4s ease-in-out infinite;
+}
+@keyframes home-mock-tap-pill-in {
+  0%, 30% { opacity: 0; transform: translate(-50%, -100%) translateY(4px); }
+  40% { opacity: 1; transform: translate(-50%, -100%) translateY(0); }
+  80% { opacity: 1; transform: translate(-50%, -100%) translateY(0); }
+  95%, 100% { opacity: 0; transform: translate(-50%, -100%) translateY(4px); }
+}
 
-.home__mock-lineage-path { animation: home-mock-path-draw 3s ease-in-out infinite; }
+/* ── Lineage mode — the path draws between two people while a small
+   label confirms the connection, then the line recedes for the next pass. */
+.home__mock-lineage-path { animation: home-mock-path-draw 4s ease-in-out infinite; }
 @keyframes home-mock-path-draw {
-  0% { stroke-dashoffset: 1; }
-  45% { stroke-dashoffset: 0; }
-  70% { stroke-dashoffset: 0; }
+  0%, 8% { stroke-dashoffset: 1; }
+  50% { stroke-dashoffset: 0; }
+  82% { stroke-dashoffset: 0; }
   100% { stroke-dashoffset: -1; }
 }
+.home__mock-lineage-end { animation: home-mock-lineage-pulse 4s ease-in-out infinite; }
+@keyframes home-mock-lineage-pulse {
+  0%, 46% { transform: translate(-50%, -50%) scale(1); }
+  54% { transform: translate(-50%, -50%) scale(1.18); }
+  62%, 100% { transform: translate(-50%, -50%) scale(1); }
+}
+.home__mock-lineage-label {
+  opacity: 0;
+  animation: home-mock-lineage-label-in 4s ease-in-out infinite;
+}
+@keyframes home-mock-lineage-label-in {
+  0%, 54% { opacity: 0; transform: translate(-50%, -100%) translateY(4px); }
+  64% { opacity: 1; transform: translate(-50%, -100%) translateY(0); }
+  85% { opacity: 1; transform: translate(-50%, -100%) translateY(0); }
+  96%, 100% { opacity: 0; transform: translate(-50%, -100%) translateY(4px); }
+}
 
+/* ── Search — types a name, reveals the matching result, then gives it a
+   quick "selected" pulse before the loop restarts. */
 .home__mock--search { display: flex; flex-direction: column; justify-content: center; gap: 10px; padding: 14px 16px; }
 .home__mock-searchbar {
   display: flex;
@@ -6804,11 +6878,11 @@ button.health-notes {
   display: inline-block;
   border-right: 2px solid var(--accent);
   width: 0;
-  animation: home-mock-type 3.6s steps(13, end) infinite;
+  animation: home-mock-type 3.8s steps(13, end) infinite;
 }
 @keyframes home-mock-type {
   0% { width: 0; }
-  40% { width: 6.5em; }
+  38% { width: 6.5em; }
   85% { width: 6.5em; }
   100% { width: 0; }
 }
@@ -6823,18 +6897,22 @@ button.health-notes {
   width: 86%;
   align-self: flex-end;
   opacity: 0;
-  animation: home-mock-result-in 3.6s ease-in-out infinite;
+  animation: home-mock-result-in 3.8s ease-in-out infinite;
 }
 @keyframes home-mock-result-in {
-  0%, 45% { opacity: 0; transform: translateY(6px); }
-  60%, 85% { opacity: 1; transform: translateY(0); }
-  100% { opacity: 0; transform: translateY(6px); }
+  0%, 42% { opacity: 0; transform: translateY(6px) scale(1); }
+  55%, 72% { opacity: 1; transform: translateY(0) scale(1); }
+  78% { opacity: 1; transform: translateY(0) scale(1.035); }
+  86% { opacity: 1; transform: translateY(0) scale(1); }
+  100% { opacity: 0; transform: translateY(6px) scale(1); }
 }
 .home__mock-result-avatar { width: 26px; height: 26px; border-radius: 50%; background: #3f5e4e; border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.12); flex-shrink: 0; }
 .home__mock-result-text { display: flex; flex-direction: column; font-size: 11px; }
 .home__mock-result-text strong { color: var(--ink); font-size: 12px; }
 .home__mock-result-text em { color: var(--ink-soft); font-style: normal; font-size: 10.5px; }
 
+/* ── Timeline — a play button presses once, then the scrubber sweeps the
+   track, revealing people as it passes them. */
 .home__mock--timeline { display: flex; }
 .home__mock-track { position: absolute; left: 12%; right: 12%; top: 50%; height: 2px; background: var(--hairline); }
 .home__mock-tick { position: absolute; top: -18px; font-size: 9px; font-weight: 700; color: var(--ink-faint); }
@@ -6853,7 +6931,29 @@ button.health-notes {
   transform: translate(-50%, -50%);
   animation: home-mock-scrub 4.5s linear infinite;
 }
-@keyframes home-mock-scrub { 0% { left: 0%; } 100% { left: 100%; } }
+@keyframes home-mock-scrub { 0%, 4% { left: 0%; } 100% { left: 100%; } }
+.home__mock-play-btn {
+  position: absolute;
+  left: 12%;
+  top: 50%;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-left: 2px;
+  transform: translate(-50%, -50%) scale(1);
+  animation: home-mock-play-press 4.5s ease-out infinite;
+}
+@keyframes home-mock-play-press {
+  0% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  6% { opacity: 1; transform: translate(-50%, -50%) scale(1.25); }
+  14% { opacity: 0; transform: translate(-50%, -50%) scale(0.6); }
+  100% { opacity: 0; }
+}
 .home__mock-tl-node {
   position: absolute;
   top: 50%;
@@ -6865,9 +6965,9 @@ button.health-notes {
   opacity: 0;
   transform: translate(-50%, -50%) scale(0.4);
 }
-.home__mock-tl-node--1 { left: 22%; animation: home-mock-node-pop 4.5s linear infinite; animation-delay: 0.85s; }
-.home__mock-tl-node--2 { left: 52%; animation: home-mock-node-pop 4.5s linear infinite; animation-delay: 2.1s; }
-.home__mock-tl-node--3 { left: 80%; animation: home-mock-node-pop 4.5s linear infinite; animation-delay: 3.4s; }
+.home__mock-tl-node--1 { left: 22%; animation: home-mock-node-pop 4.5s linear infinite; animation-delay: 0.95s; }
+.home__mock-tl-node--2 { left: 52%; animation: home-mock-node-pop 4.5s linear infinite; animation-delay: 2.2s; }
+.home__mock-tl-node--3 { left: 80%; animation: home-mock-node-pop 4.5s linear infinite; animation-delay: 3.5s; }
 @keyframes home-mock-node-pop {
   0% { opacity: 0; transform: translate(-50%, -50%) scale(0.3); }
   8% { opacity: 1; transform: translate(-50%, -50%) scale(1.15); }
@@ -6880,8 +6980,10 @@ button.health-notes {
 
 @media (prefers-reduced-motion: reduce) {
   .home, .home__hero-card, .home__section, .home__const-node,
-  .home__mock-ripple, .home__mock-pill, .home__mock-lineage-path,
-  .home__mock-typing, .home__mock-result, .home__mock-playhead, .home__mock-tl-node {
+  .home__mock-touch, .home__mock-ripple, .home__mock-tap-neighbor, .home__mock-pill,
+  .home__mock-lineage-path, .home__mock-lineage-end, .home__mock-lineage-label,
+  .home__mock-typing, .home__mock-result, .home__mock-playhead, .home__mock-play-btn,
+  .home__mock-tl-node {
     animation: none;
   }
 }
