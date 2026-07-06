@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, forwardRef } from 'react';
 import Logo from './Logo.jsx';
 
-export default function TopBar({ familyName, stats, view, syncStatus, syncError, onRetrySync, onToggleView, onOpenLegend, bloodlineOnly = false, onToggleBloodlineOnly, onOpenSettings, onOpenActivity, activityCount = 0, user, userPhoto, onOpenProfile, onSearch, onOpenInsights, onOpenTimeline, onOpenDuplicates, duplicateCount = 0, storageWarning, syncToast, onDismissSyncToast, recapNudgeCount = 0, onShowRecap, onDismissRecapNudge }) {
+export default function TopBar({ familyName, stats, view, syncStatus, syncError, onRetrySync, onToggleView, onOpenLegend, bloodlineOnly = false, onToggleBloodlineOnly, onOpenSettings, onOpenActivity, activityCount = 0, user, userPhoto, onOpenProfile, onOpenHome, onSearch, onOpenInsights, onOpenTimeline, onOpenDuplicates, duplicateCount = 0, storageWarning, syncToast, onDismissSyncToast, recapNudgeCount = 0, onShowRecap, onDismissRecapNudge }) {
   const [statsOpen, setStatsOpen] = useState(false);
   const popoverRef = useRef(null);
   const statsRef = useRef(null);
@@ -29,10 +29,10 @@ export default function TopBar({ familyName, stats, view, syncStatus, syncError,
     <header className="topbar">
       {/* Row 1: app brand left, actions right */}
       <div className="topbar__bar">
-        <div className="topbar__brand">
+        <button className="topbar__brand" onClick={onOpenHome} aria-label="Home">
           <Logo size={26} />
           <span className="topbar__word">Bloodline</span>
-        </div>
+        </button>
         <div className="topbar__actions">
           {onSearch && (
             <button className="pill" onClick={onSearch} aria-label="Search family members">

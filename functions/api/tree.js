@@ -1,4 +1,5 @@
 import { json, uid } from '../_lib/util.js';
+import { createFamily } from '../_lib/family.js';
 
 /*
  * GET /api/tree  — load the authenticated user's family tree.
@@ -120,18 +121,8 @@ export async function onRequestPut({ request, env, data }) {
 
     if (!membership) {
       // First save — create the family and make this user the owner.
-      const familyId = uid('f_');
-      const familyName = tree.familyName || 'My Family';
-      await env.DB.prepare(
-        `INSERT INTO family (id, name, created_by, created_at) VALUES (?, ?, ?, ?)`,
-      ).bind(familyId, familyName, data.user.uid, now).run();
-      await env.DB.prepare(
-        `INSERT INTO family_member (family_id, user_id, role, joined_at) VALUES (?, ?, 'owner', ?)`,
-      ).bind(familyId, data.user.uid, now).run();
-      await env.DB.prepare(
-        `UPDATE user SET family_id = ? WHERE id = ?`,
-      ).bind(familyId, data.user.uid).run();
-      membership = { family_id: familyId, role: 'owner' };
+      const created = await createFamily(env, data.user.uid, tree.familyName);
+      membership = { family_id: created.family_id, role: created.role };
     }
 
     // Write permissions:

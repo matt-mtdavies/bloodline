@@ -79,6 +79,7 @@ import Onboarding from './components/Onboarding.jsx';
 import LoginScreen from './components/LoginScreen.jsx';
 import FamilySettings from './components/FamilySettings.jsx';
 import UserProfile from './components/UserProfile.jsx';
+import Home from './components/Home.jsx';
 import MergeWizard from './components/MergeWizard.jsx';
 import InviteSheet from './components/InviteSheet.jsx';
 import TreeInsights from './components/TreeInsights.jsx';
@@ -476,6 +477,7 @@ export default function App() {
   const [gedcomOpen, setGedcomOpen] = useState(false);
   const [fsImportOpen, setFsImportOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [homeOpen, setHomeOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   // Search's flyover caption — { order: [fromId,…,toId], upTo: number } while a
   // flight is in progress, else null. upTo advances via the flight's onSegment
@@ -1253,6 +1255,12 @@ export default function App() {
     });
   }, []);
 
+  const handleLogout = useCallback(async () => {
+    await fetch('/api/auth/logout', { method: 'POST' });
+    clearLocalData(); // don't leave this user's tree for the next person
+    window.location.reload();
+  }, []);
+
   // notify=true emails the invite; notify=false just mints a share link (email
   // optional). Returns { inviteUrl, emailSent, emailError } for the sheet.
   const handleSendInvite = useCallback(async (personId, { email = '', role, notify = true } = {}) => {
@@ -1292,7 +1300,7 @@ export default function App() {
     openId || addAnchorId || editId || timelineId || memoryId || lightbox || crop ||
     legendOpen || settingsOpen || insightsOpen || timelineOpen || docViewer ||
     invitePersonId || activityOpen || gedcomOpen || fsImportOpen || profileOpen ||
-    searchOpen || duplicatesOpen || promptClaim || showInstall
+    homeOpen || searchOpen || duplicatesOpen || promptClaim || showInstall
   );
 
   // Photo of the person the logged-in user has claimed as their own bubble.
@@ -1367,6 +1375,7 @@ export default function App() {
         user={user}
         userPhoto={userPhoto}
         onOpenProfile={user ? () => setProfileOpen(true) : null}
+        onOpenHome={() => setHomeOpen(true)}
         onSearch={() => {
           // iOS Safari only auto-shows the keyboard when focus() runs
           // synchronously inside the tap's own call stack. A plain setState
@@ -1907,11 +1916,7 @@ export default function App() {
           familyName={data.familyName || 'My Family'}
           onUpdateFamilyName={updateFamilyName}
           onReset={resetTree}
-          onLogout={user ? async () => {
-            await fetch('/api/auth/logout', { method: 'POST' });
-            clearLocalData(); // don't leave this user's tree for the next person
-            window.location.reload();
-          } : null}
+          onLogout={user ? handleLogout : null}
           onClose={() => setSettingsOpen(false)}
           onImportGedcom={() => setGedcomOpen(true)}
           onImportFamilySearch={() => setFsImportOpen(true)}
@@ -1930,16 +1935,21 @@ export default function App() {
           user={user}
           people={data.people}
           onClose={() => setProfileOpen(false)}
-          onLogout={async () => {
-            await fetch('/api/auth/logout', { method: 'POST' });
-            clearLocalData(); // don't leave this user's tree for the next person
-            window.location.reload();
-          }}
+          onLogout={handleLogout}
           onSaved={(updated) => {
             setUser((u) => ({ ...u, ...updated }));
             setCurrentUser({ ...user, ...updated });
           }}
           onPhoto={handlePhoto}
+        />
+      )}
+
+      {homeOpen && (
+        <Home
+          user={user}
+          onClose={() => setHomeOpen(false)}
+          onOpenAccount={() => { setHomeOpen(false); setProfileOpen(true); }}
+          onLogout={user ? handleLogout : null}
         />
       )}
 
