@@ -1,91 +1,35 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState } from 'react';
 import Logo from './Logo.jsx';
-import { clearLocalData } from '../data/store.js';
+import { ActivityRow } from './ActivityFeed.jsx';
 
 /*
- * The home hub — reached by tapping the logo. Built like a product page,
- * not a settings screen: a real stat card up top (your actual family's
- * numbers, not marketing copy), then a walkthrough where each feature is a
- * small faithful mockup of its real in-app look — the ripple when you tap a
- * face, the card a search result lands in, the path Lineage mode draws, the
- * scrubber Timeline plays — rather than a static icon standing in for it.
+ * The home hub — reached by tapping the logo. A launch point, not the whole
+ * app in one scroll: a real stat card up top (your actual family's numbers,
+ * not marketing copy), a condensed look at what's changed recently, and a
+ * tight checklist that hands off to dedicated pages (family trees, the
+ * tutorial clips, account, install) rather than stacking all of it inline.
  */
-export default function Home({ user, familyName, stats = null, onClose, onOpenAccount, onLogout, onOpenInstall }) {
-  const [families, setFamilies] = useState(null); // null = loading
-  const [switchingId, setSwitchingId] = useState(null);
-  const [switchError, setSwitchError] = useState('');
-  const [creating, setCreating] = useState(false);
-  const [createError, setCreateError] = useState('');
+export default function Home({
+  user, familyName, stats = null, activity = [], people = [], userEmail,
+  onClose, onOpenAccount, onLogout, onOpenInstall, onOpenHowItWorks, onOpenFamilyTrees,
+  onOpenActivity, onSelectPerson,
+}) {
   // Already-installed (standalone) visits have nothing to gain from this
   // row, so it only shows where it's actually actionable.
   const [isStandalone] = useState(
     () => window.matchMedia?.('(display-mode: standalone)').matches || window.navigator.standalone || false,
   );
 
-  const loadFamilies = useCallback(() => {
-    if (!user) { setFamilies([]); return; }
-    fetch('/api/families')
-      .then((r) => (r.ok ? r.json() : { families: [] }))
-      .then((d) => setFamilies(d.families || []))
-      .catch(() => setFamilies([]));
-  }, [user]);
-
-  useEffect(() => { loadFamilies(); }, [loadFamilies]);
-
-  useEffect(() => {
-    const onKey = (e) => e.key === 'Escape' && onClose();
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
-
-  async function switchFamily(familyId) {
-    if (switchingId) return;
-    setSwitchingId(familyId);
-    setSwitchError('');
-    try {
-      const res = await fetch('/api/families/switch', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ family_id: familyId }),
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || `HTTP ${res.status}`);
-      }
-      // Wipe the cached tree so the reload can't push this family's data over
-      // the one we're switching to — the fresh load will pull the right tree.
-      clearLocalData();
-      window.location.reload();
-    } catch (e) {
-      setSwitchError(e.message || 'Could not switch families');
-      setSwitchingId(null);
-    }
-  }
-
-  async function createTree() {
-    if (creating) return;
-    setCreating(true);
-    setCreateError('');
-    try {
-      const res = await fetch('/api/families', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({}),
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || `HTTP ${res.status}`);
-      }
-      clearLocalData();
-      window.location.reload();
-    } catch (e) {
-      setCreateError(e.message || 'Could not create a new tree');
-      setCreating(false);
-    }
-  }
-
   const first = user?.display_name ? firstName(user.display_name) : null;
-  const insights = buildInsights(stats);
+  const tiles = buildStatTiles(stats);
+  const recent = activity.slice(0, 3);
+  const byId = new Map(people.map((p) => [p.id, p]));
+  const nameByEmail = new Map();
+  for (const p of people) {
+    for (const e of [p.email, p.invited_email]) {
+      if (e) nameByEmail.set(e.toLowerCase(), p.display_name);
+    }
+  }
 
   return (
     <div className="home" role="dialog" aria-modal="true" aria-label="Bloodline home">
@@ -115,15 +59,12 @@ export default function Home({ user, familyName, stats = null, onClose, onOpenAc
 
           <TreeConstellation />
 
-          {insights.length > 0 && (
-            <div className="home__insights">
-              {insights.map((row, i) => (
-                <div className="home__insight-row" key={i}>
-                  <span className={`home__insight-icon home__insight-icon--${row.tone}`}>{row.icon}</span>
-                  <div className="home__insight-text">
-                    <span className="home__insight-stat">{row.stat}</span>
-                    <span className="home__insight-desc">{row.desc}</span>
-                  </div>
+          {tiles.length > 0 && (
+            <div className="home__stat-grid">
+              {tiles.map((t, i) => (
+                <div className="home__stat-tile" key={i}>
+                  <span className="home__stat-value">{t.value}</span>
+                  <span className="home__stat-label">{t.label}</span>
                 </div>
               ))}
             </div>
@@ -133,8 +74,8 @@ export default function Home({ user, familyName, stats = null, onClose, onOpenAc
         {/* The editorial line — the brief's own thesis, given room to breathe */}
         <div className="home__editorial">
           <h1 className="home__editorial-head">
-            The tree is navigation.<br />
-            <em>The profile is the destination.</em>
+            The tree is where you explore.<br />
+            <em>The profile is where you discover.</em>
           </h1>
           <p className="home__editorial-sub">
             Tap into any branch to bring it into focus, trace a straight line of blood
@@ -142,65 +83,53 @@ export default function Home({ user, familyName, stats = null, onClose, onOpenAc
           </p>
         </div>
 
-        {user && (
+        {recent.length > 0 && onOpenActivity && (
           <section className="home__section" style={{ '--i': 0 }}>
-            <h2 className="home__section-title">Your trees</h2>
-            {families == null && <p className="home__hint">Loading…</p>}
-            {families && families.length > 0 && (
-              <div className="home__tree-list">
-                {families.map((f) => (
-                  <div key={f.family_id} className={`home__tree-row${f.is_current ? ' home__tree-row--current' : ''}`}>
-                    <span className={`home__tree-medallion${f.is_current ? ' home__tree-medallion--current' : ''}`} aria-hidden="true">
-                      <Logo size={20} animate={false} />
-                    </span>
-                    <div className="home__tree-text">
-                      <span className="home__tree-name">{f.name || 'Untitled family'}</span>
-                      <span className="home__tree-meta">
-                        {roleLabel(f.role)} · {f.member_count} member{f.member_count === 1 ? '' : 's'}
-                      </span>
-                    </div>
-                    {f.is_current ? (
-                      <span className="home__tree-current">Viewing</span>
-                    ) : (
-                      <button
-                        className="home__tree-switch"
-                        onClick={() => switchFamily(f.family_id)}
-                        disabled={!!switchingId}
-                      >
-                        {switchingId === f.family_id ? 'Switching…' : 'Switch'}
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-            {switchError && <p className="up__save-status up__save-status--err">{switchError}</p>}
+            <h2 className="home__section-title">Continue your journey</h2>
+            <div className="home__recent-list">
+              {recent.map((event) => (
+                <ActivityRow
+                  key={event.id}
+                  event={event}
+                  person={byId.get(event.personId) ?? { display_name: event.personName }}
+                  userEmail={userEmail}
+                  nameByEmail={nameByEmail}
+                  onSelect={() => onSelectPerson?.(event.personId)}
+                />
+              ))}
+            </div>
+            <button className="home__view-all" onClick={onOpenActivity}>View all recent activity</button>
+          </section>
+        )}
 
-            <button className="home__row-btn home__row-btn--create" onClick={createTree} disabled={creating}>
-              <span className="home__row-icon home__row-icon--create"><PlusIcon /></span>
+        <section className="home__section" style={{ '--i': 1 }}>
+          <h2 className="home__section-title">Explore</h2>
+
+          {onOpenFamilyTrees && (
+            <button className="home__row-btn" onClick={onOpenFamilyTrees}>
+              <span className="home__row-icon"><TreeIcon /></span>
               <span className="home__row-text">
-                <span className="home__row-title">{creating ? 'Creating…' : 'Create a new tree'}</span>
-                <span className="home__row-desc">Start fresh — your other trees stay untouched</span>
+                <span className="home__row-title">Family trees</span>
+                <span className="home__row-desc">
+                  {user ? 'Switch trees, or start a new one' : 'Sign in to save a tree of your own'}
+                </span>
               </span>
               <ArrowIcon />
             </button>
-            {createError && <p className="up__save-status up__save-status--err">{createError}</p>}
-          </section>
-        )}
+          )}
 
-        {!user && (
-          <section className="home__section" style={{ '--i': 0 }}>
-            <h2 className="home__section-title">Your trees</h2>
-            <p className="home__hint">
-              Sign in to save a tree of your own, invite relatives, and switch between
-              multiple trees.
-            </p>
-          </section>
-        )}
+          {onOpenHowItWorks && (
+            <button className="home__row-btn" onClick={onOpenHowItWorks}>
+              <span className="home__row-icon"><PlayIcon /></span>
+              <span className="home__row-text">
+                <span className="home__row-title">How it works</span>
+                <span className="home__row-desc">A quick tour of tap, search, lineage and timeline</span>
+              </span>
+              <ArrowIcon />
+            </button>
+          )}
 
-        {user && (
-          <section className="home__section" style={{ '--i': 1 }}>
-            <h2 className="home__section-title">Account</h2>
+          {user && (
             <button className="home__row-btn" onClick={onOpenAccount}>
               <span className="home__row-icon"><PersonIcon /></span>
               <span className="home__row-text">
@@ -209,51 +138,18 @@ export default function Home({ user, familyName, stats = null, onClose, onOpenAc
               </span>
               <ArrowIcon />
             </button>
-          </section>
-        )}
+          )}
 
-        {!isStandalone && onOpenInstall && (
-          <section className="home__section" style={{ '--i': 2 }}>
-            <h2 className="home__section-title">Get the app</h2>
+          {!isStandalone && onOpenInstall && (
             <button className="home__row-btn" onClick={onOpenInstall}>
               <span className="home__row-icon"><InstallIcon /></span>
               <span className="home__row-text">
                 <span className="home__row-title">Install Bloodline</span>
-                <span className="home__row-desc">Add it to your home screen or dock for full-screen, app-like access</span>
+                <span className="home__row-desc">Add it to your home screen or dock for full-screen access</span>
               </span>
               <ArrowIcon />
             </button>
-          </section>
-        )}
-
-        <section className="home__section" style={{ '--i': 3 }}>
-          <p className="home__eyebrow home__eyebrow--section">A quick tour</p>
-          <h2 className="home__section-title home__section-title--big">How it works</h2>
-
-          <FeatureClip
-            src="/tutorials/tap.mp4"
-            poster="/tutorials/tap.jpg"
-            title="Tap a face"
-            desc="Bring their branch of the family into view."
-          />
-          <FeatureClip
-            src="/tutorials/search.mp4"
-            poster="/tutorials/search.jpg"
-            title="Search"
-            desc="Jump straight to anyone and expand their relationships."
-          />
-          <FeatureClip
-            src="/tutorials/lineage.mp4"
-            poster="/tutorials/lineage.jpg"
-            title="Lineage mode"
-            desc="Trace the direct bloodline between two people."
-          />
-          <FeatureClip
-            src="/tutorials/timeline.mp4"
-            poster="/tutorials/timeline.jpg"
-            title="Timeline"
-            desc="Play your family's history back in order."
-          />
+          )}
         </section>
 
         {user && onLogout && (
@@ -270,38 +166,23 @@ function firstName(name) {
   return (name || '').trim().split(/\s+/)[0] || name;
 }
 
-function roleLabel(role) {
-  const labels = { owner: 'Owner', coadmin: 'Co-Admin', editor: 'Editor', contributor: 'Contributor', viewer: 'Viewer' };
-  return labels[role] || role;
-}
-
-// Builds up to two real, computed facts about this family for the hero card
-// — the same trick as showing an actual chart instead of a generic graphic.
-function buildInsights(stats) {
+// Up to four real, computed facts about this family for the hero card — the
+// same trick as showing an actual chart instead of a generic graphic. The
+// first tile is either the family's year span or, failing that (no birth
+// dates recorded yet), how many surnames it carries — never both, since
+// they're two ways of answering the same "how much history is here" beat.
+function buildStatTiles(stats) {
   if (!stats || !stats.people) return [];
-  const rows = [];
-  rows.push({
-    tone: 'accent',
-    icon: <CheckGlyph />,
-    stat: `${stats.withPhoto} of ${stats.people}`,
-    desc: 'people have a portrait added',
-  });
-  if (stats.yearSpan && stats.yearMin && stats.yearMax && stats.yearMax > stats.yearMin) {
-    rows.push({
-      tone: 'sage',
-      icon: <SparkGlyph />,
-      stat: stats.yearSpan,
-      desc: `${stats.yearMax - stats.yearMin} years of family history captured`,
-    });
+  const tiles = [];
+  if (stats.yearMin != null && stats.yearMax != null && stats.yearMax > stats.yearMin) {
+    tiles.push({ value: String(stats.yearMax - stats.yearMin), label: 'Years of history' });
   } else if (stats.surnames) {
-    rows.push({
-      tone: 'sage',
-      icon: <SparkGlyph />,
-      stat: stats.surnames,
-      desc: 'surnames carried through your tree',
-    });
+    tiles.push({ value: stats.surnames, label: 'Surnames carried' });
   }
-  return rows;
+  tiles.push({ value: String(stats.withPhoto), label: 'Faces preserved' });
+  tiles.push({ value: String(stats.connections), label: 'Family connections' });
+  tiles.push({ value: String(stats.memories), label: 'Stories recorded' });
+  return tiles;
 }
 
 /* ── The hero's centrepiece: a small family-tree graphic instead of a
@@ -327,14 +208,6 @@ function CloseIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
-    </svg>
-  );
-}
-
-function PlusIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
     </svg>
   );
 }
@@ -365,42 +238,22 @@ function PersonIcon() {
   );
 }
 
-function CheckGlyph() {
+function TreeIcon() {
   return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path d="M5 13l4 4L19 7" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="6" r="3.2" stroke="currentColor" strokeWidth="1.7" />
+      <circle cx="6" cy="17" r="3.2" stroke="currentColor" strokeWidth="1.7" />
+      <circle cx="18" cy="17" r="3.2" stroke="currentColor" strokeWidth="1.7" />
+      <path d="M12 9.2v3.3M12 12.5L6 14.2M12 12.5l6 1.7" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
     </svg>
   );
 }
 
-function SparkGlyph() {
+function PlayIcon() {
   return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path d="M12 3l1.8 4.9L18.7 9.7l-4.9 1.8L12 16.4l-1.8-4.9L5.3 9.7l4.9-1.8L12 3z" fill="currentColor"/>
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.7" />
+      <path d="M10 8.5l6 3.5-6 3.5v-7z" fill="currentColor" />
     </svg>
-  );
-}
-
-/* ── Feature clips — real screen recordings of the actual app (captured
-   headless against the demo family, trimmed/encoded with ffmpeg), not
-   hand-built mockups. Silent, looping, autoplaying — see public/tutorials/. */
-function FeatureClip({ src, poster, title, desc }) {
-  return (
-    <div className="home__feature-card">
-      <video
-        className="home__clip"
-        src={src}
-        poster={poster}
-        autoPlay
-        loop
-        muted
-        playsInline
-        preload="metadata"
-      />
-      <div className="home__feature-text">
-        <span className="home__feature-title">{title}</span>
-        <span className="home__feature-desc">{desc}</span>
-      </div>
-    </div>
   );
 }

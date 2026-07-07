@@ -80,6 +80,8 @@ import LoginScreen from './components/LoginScreen.jsx';
 import FamilySettings from './components/FamilySettings.jsx';
 import UserProfile from './components/UserProfile.jsx';
 import Home from './components/Home.jsx';
+import HowItWorks from './components/HowItWorks.jsx';
+import FamilyTrees from './components/FamilyTrees.jsx';
 import MergeWizard from './components/MergeWizard.jsx';
 import InviteSheet from './components/InviteSheet.jsx';
 import TreeInsights from './components/TreeInsights.jsx';
@@ -478,6 +480,8 @@ export default function App() {
   const [fsImportOpen, setFsImportOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [homeOpen, setHomeOpen] = useState(false);
+  const [howItWorksOpen, setHowItWorksOpen] = useState(false);
+  const [familyTreesOpen, setFamilyTreesOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   // Search's flyover caption — { order: [fromId,…,toId], upTo: number } while a
   // flight is in progress, else null. upTo advances via the flight's onSegment
@@ -507,6 +511,9 @@ export default function App() {
     const people = scopeIds ? graph.people.filter((p) => scopeIds.has(p.id)) : graph.people;
     const photos = scopeIds ? data.photos.filter((ph) => scopeIds.has(ph.person_id)) : data.photos;
     const memories = scopeIds ? data.memories.filter((m) => scopeIds.has(m.person_id)) : data.memories;
+    const relationships = scopeIds
+      ? data.relationships.filter((r) => scopeIds.has(r.from_person) && scopeIds.has(r.to_person))
+      : data.relationships;
     const freq = new Map();
     let yearMin = Infinity, yearMax = -Infinity;
     let oldestPerson = null, youngestPerson = null;
@@ -536,6 +543,7 @@ export default function App() {
       yearSpan,
       photos: photos.length,
       memories: memories.length,
+      connections: relationships.length,
       // Detail fields for the stats popover
       surnameList: sorted.map(([name, count]) => ({ name, count })),
       yearMin: isFinite(yearMin) ? yearMin : null,
@@ -546,7 +554,7 @@ export default function App() {
       withBio,
       withBirthDate,
     };
-  }, [graph, data.photos, data.memories, data.myPersonId, bloodlineOnly]);
+  }, [graph, data.photos, data.memories, data.relationships, data.myPersonId, bloodlineOnly]);
 
   // Unread activity count — null lastReadAt means never opened, so all events are "new".
   const unreadCount = useMemo(() => {
@@ -1300,7 +1308,7 @@ export default function App() {
     openId || addAnchorId || editId || timelineId || memoryId || lightbox || crop ||
     legendOpen || settingsOpen || insightsOpen || timelineOpen || docViewer ||
     invitePersonId || activityOpen || gedcomOpen || fsImportOpen || profileOpen ||
-    homeOpen || searchOpen || duplicatesOpen || promptClaim || showInstall
+    homeOpen || howItWorksOpen || familyTreesOpen || searchOpen || duplicatesOpen || promptClaim || showInstall
   );
 
   // Photo of the person the logged-in user has claimed as their own bubble.
@@ -1951,12 +1959,33 @@ export default function App() {
           user={user}
           familyName={data.familyName}
           stats={familyStats}
+          activity={data.activity ?? []}
+          people={data.people}
+          userEmail={user?.email}
           onClose={() => setHomeOpen(false)}
           onOpenAccount={() => { setHomeOpen(false); setProfileOpen(true); }}
           onLogout={user ? handleLogout : null}
           onOpenInstall={() => { setHomeOpen(false); setShowInstall(true); }}
+          onOpenHowItWorks={() => { setHomeOpen(false); setHowItWorksOpen(true); }}
+          onOpenFamilyTrees={() => { setHomeOpen(false); setFamilyTreesOpen(true); }}
+          onOpenActivity={() => {
+            setHomeOpen(false);
+            setActivityOpen(true);
+            const now = Date.now();
+            setLastReadAt(now);
+            setActivityReadAt(now);
+          }}
+          onSelectPerson={(id) => {
+            setHomeOpen(false);
+            const person = graph.byId.get(id);
+            if (person) openPerson(id);
+          }}
         />
       )}
+
+      {howItWorksOpen && <HowItWorks onClose={() => setHowItWorksOpen(false)} />}
+
+      {familyTreesOpen && <FamilyTrees user={user} onClose={() => setFamilyTreesOpen(false)} />}
 
       {fsImportOpen && (
         <FamilySearchImport

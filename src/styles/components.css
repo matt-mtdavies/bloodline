@@ -6574,29 +6574,67 @@ button.health-notes {
   50% { transform: translate(4px, 5px) scale(1.05); }
 }
 
-.home__insights {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin-top: 14px;
-  padding-top: 16px;
+/* Tight 4-across (2x2 on narrow phones) grid of real, computed family
+   numbers — replaces the old prose insight rows with something closer to a
+   glance-able dashboard tile, each carrying one of the brand's own accent
+   colors on its top rule for a little variety. */
+.home__stat-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px 20px;
+  margin-top: 18px;
+  padding-top: 18px;
   border-top: 1px solid var(--hairline);
 }
-.home__insight-row { display: flex; align-items: center; gap: 12px; }
-.home__insight-icon {
-  flex-shrink: 0;
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
+.home__stat-tile {
   display: flex;
-  align-items: center;
-  justify-content: center;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 9px;
+  border-top: 2.5px solid var(--accent);
 }
-.home__insight-icon--accent { background: var(--accent-soft); color: var(--accent-deep); }
-.home__insight-icon--sage { background: var(--sage-soft); color: var(--sage); }
-.home__insight-text { display: flex; flex-direction: column; gap: 1px; }
-.home__insight-stat { font-size: 14px; font-weight: 700; color: var(--ink); }
-.home__insight-desc { font-size: 12px; color: var(--ink-soft); }
+.home__stat-tile:nth-child(4n+2) { border-top-color: var(--sage); }
+.home__stat-tile:nth-child(4n+3) { border-top-color: #b08642; }
+.home__stat-tile:nth-child(4n+4) { border-top-color: #6b5e7a; }
+.home__stat-value {
+  font-family: var(--display);
+  font-size: 25px;
+  font-weight: 700;
+  color: var(--ink);
+  line-height: 1;
+}
+.home__stat-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+/* Condensed activity teaser on Home — reuses ActivityFeed's own row
+   component so the look matches exactly, just wrapped in a card. */
+.home__recent-list {
+  background: #fff;
+  border-radius: 18px;
+  box-shadow: var(--shadow-soft);
+  overflow: hidden;
+  margin-bottom: 10px;
+}
+.home__recent-list .activity-row { padding: 13px 16px; }
+.home__recent-list .activity-row:last-child { border-bottom: none; }
+.home__view-all {
+  display: block;
+  width: 100%;
+  text-align: center;
+  background: none;
+  border: none;
+  padding: 10px 0 2px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent-deep);
+  cursor: pointer;
+}
+.home__view-all:hover { text-decoration: underline; }
 
 /* The editorial pull — mixed weight/style headline, curve-style. */
 .home__editorial { padding: 30px 6px 26px; text-align: center; }
@@ -6634,15 +6672,6 @@ button.health-notes {
   color: var(--ink);
   margin-bottom: 12px;
 }
-.home__section-title--big { font-size: 23px; font-weight: 700; margin-bottom: 16px; }
-.home__eyebrow {
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--accent-deep);
-}
-.home__eyebrow--section { margin-bottom: 4px; }
 .home__hint {
   font-size: 12.5px;
   color: var(--ink-soft);
@@ -6781,6 +6810,74 @@ button.health-notes {
   .home, .home__hero-card, .home__section, .home__const-node {
     animation: none;
   }
+}
+
+/* ── Subpages (How it works, Family trees) ───────────────────────────────
+   Reached from Home's checklist rather than scrolled past — same shell
+   language as Home (cream full-screen page, centered scroll column) but
+   with a back button + centered title instead of the brand mark. */
+.subpage {
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  background: #f7f3ec;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  animation: home-in 0.4s var(--ease) both;
+}
+.subpage__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: calc(env(safe-area-inset-top, 0px) + 16px) 20px 8px;
+}
+.subpage__close {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: rgba(36,31,28,0.06);
+  border: none;
+  color: var(--ink-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.subpage__close:hover { color: var(--ink); background: rgba(36,31,28,0.1); }
+.subpage__top-title {
+  font-family: var(--display);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.subpage__top-spacer { width: 34px; flex-shrink: 0; }
+.subpage__scroll {
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 8px 20px calc(var(--safe-bottom) + 48px);
+  display: flex;
+  flex-direction: column;
+}
+.subpage__eyebrow {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--accent-deep);
+  margin-bottom: 4px;
+}
+.subpage__title {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: clamp(22px, 6vw, 28px);
+  line-height: 1.15;
+  letter-spacing: -0.015em;
+  color: var(--ink);
+  margin: 0 0 20px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .subpage { animation: none; }
 }
 
 /* ── TopBar: avatar photo support ─────────────────────────────────────── */
