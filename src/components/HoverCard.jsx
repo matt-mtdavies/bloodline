@@ -150,14 +150,13 @@ export default function HoverCard({ graph, personId, viewerId, getPos, photos, d
 
   // Quiet "there's more here" signal — not clickable, not counted anywhere
   // else on the card. Any document at all counts (a scanned letter or
-  // certificate is a real find, however few a family has uploaded), but a
-  // gallery photo only counts once there are a few — a single snapshot is
-  // the common case and shouldn't light up on nearly every bubble, or the
-  // badge stops meaning "richer profile" and just means "profile."
+  // certificate is a real find, however few a family has uploaded), and a
+  // couple of gallery photos is enough too — just not a single lone one,
+  // which is the common case and shouldn't light up on nearly every bubble.
   const hasRicherContent =
     !restricted &&
     ((documents?.some((d) => d.person_id === person.id)) ||
-      (photos?.filter((p) => p.person_id === person.id).length || 0) >= 3);
+      (photos?.filter((p) => p.person_id === person.id).length || 0) >= 2);
 
   return (
     <div className="hover-card-anchor" ref={anchorRef} style={{ width: CARD_WIDTH }} aria-hidden="true">
