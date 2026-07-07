@@ -119,27 +119,27 @@
    fighting the entrance for the same property. Two comma-separated
    animations on one element/property compose in listed order — this only
    works declared together like this, not as separately-cascading rules. */
-.logo--in.logo--idle .logo__a { animation: logo-pop 0.55s var(--spring) both, logo-idle-a 4.5s ease-in-out 0.6s infinite; }
-.logo--in.logo--idle .logo__b { animation: logo-pop 0.55s var(--spring) 0.09s both, logo-idle-b 5.2s ease-in-out 0.7s infinite; }
-.logo--in.logo--idle .logo__c { animation: logo-pop 0.55s var(--spring) 0.18s both, logo-idle-c 6s ease-in-out 0.8s infinite; }
-.logo--idle:not(.logo--in) .logo__a { animation: logo-idle-a 4.5s ease-in-out infinite; }
-.logo--idle:not(.logo--in) .logo__b { animation: logo-idle-b 5.2s ease-in-out infinite; }
-.logo--idle:not(.logo--in) .logo__c { animation: logo-idle-c 6s ease-in-out infinite; }
-/* A sub-pixel translate alone (the original version of these keyframes)
-   turned out completely imperceptible at a 26px icon size — "breathing"
-   needs an actual size change to read as breathing at all. A few percent
-   of scale, staggered per bubble so they don't pulse in lockstep. */
+.logo--in.logo--idle .logo__a { animation: logo-pop 0.55s var(--spring) both, logo-idle-a 3.2s ease-in-out 0.6s infinite; }
+.logo--in.logo--idle .logo__b { animation: logo-pop 0.55s var(--spring) 0.09s both, logo-idle-b 3.8s ease-in-out 0.7s infinite; }
+.logo--in.logo--idle .logo__c { animation: logo-pop 0.55s var(--spring) 0.18s both, logo-idle-c 4.4s ease-in-out 0.8s infinite; }
+.logo--idle:not(.logo--in) .logo__a { animation: logo-idle-a 3.2s ease-in-out infinite; }
+.logo--idle:not(.logo--in) .logo__b { animation: logo-idle-b 3.8s ease-in-out infinite; }
+.logo--idle:not(.logo--in) .logo__c { animation: logo-idle-c 4.4s ease-in-out infinite; }
+/* Two rounds too subtle already (first a sub-pixel translate, then a 6-8%
+   scale) — turns out a small icon needs a genuinely large relative size
+   swing plus a bit of motion together before "breathing" actually reads
+   as breathing rather than a barely-there shimmer. */
 @keyframes logo-idle-a {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.07); }
+  0%, 100% { transform: scale(1) translate(0, 0); }
+  50% { transform: scale(1.22) translate(0.6px, -0.8px); }
 }
 @keyframes logo-idle-b {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.06); }
+  0%, 100% { transform: scale(1) translate(0, 0); }
+  50% { transform: scale(1.2) translate(-0.7px, 0.6px); }
 }
 @keyframes logo-idle-c {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.08); }
+  0%, 100% { transform: scale(1) translate(0, 0); }
+  50% { transform: scale(1.24) translate(0.5px, 0.7px); }
 }
 @keyframes logo-pop {
   from { transform: scale(0); opacity: 0; }
