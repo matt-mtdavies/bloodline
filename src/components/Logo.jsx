@@ -9,9 +9,16 @@
  * overlap at rest, drawn explicit here), then grow back together — giving the
  * loading screen's otherwise-static wait a bit of the same "family, connected"
  * idea the mark already carries, rather than a generic spinner.
+ *
+ * `idle` is the quiet, permanent version of that same idea for the topbar
+ * mark — a barely-there independent drift per bubble (fractions of a pixel,
+ * nothing like the loading screen's more obvious reveal) so the mark reads
+ * as alive rather than a static icon, without competing for attention while
+ * someone's actually using the app. Picks up seamlessly once the entrance
+ * pop-in finishes, rather than fighting it for the same frames.
  */
-export default function Logo({ size = 30, animate = true, loading = false }) {
-  const cls = 'logo' + (animate ? ' logo--in' : '') + (loading ? ' logo--loading' : '');
+export default function Logo({ size = 30, animate = true, loading = false, idle = false }) {
+  const cls = 'logo' + (animate ? ' logo--in' : '') + (loading ? ' logo--loading' : '') + (idle ? ' logo--idle' : '');
   return (
     <svg
       className={cls}

@@ -30,7 +30,7 @@ export default function TopBar({ familyName, stats, view, syncStatus, syncError,
       {/* Row 1: app brand left, actions right */}
       <div className="topbar__bar">
         <button className="topbar__brand" onClick={onOpenHome} aria-label="Home">
-          <Logo size={26} />
+          <Logo size={26} idle />
           <span className="topbar__word">Bloodline</span>
           <span className="hover-tip hover-tip--down">Home</span>
         </button>

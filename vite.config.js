@@ -7,7 +7,18 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      registerType: 'autoUpdate',
+      // NOT 'autoUpdate' — that bakes a build-time flag into vite-plugin-pwa's
+      // OWN generated register.js wrapper that reloads unconditionally the
+      // instant a new SW activates (see node_modules/vite-plugin-pwa/dist/
+      // client/build/register.js's `if (auto) wb.addEventListener('activated',
+      // ...window.location.reload())` branch) — completely bypassing whatever
+      // onNeedRefresh callback main.jsx passes to registerSW() at runtime.
+      // Every bit of custom reload-timing logic in main.jsx (grace window,
+      // deferring until backgrounded) was silently dead code under
+      // 'autoUpdate': the flash-tree-then-reload bug was never actually
+      // routed through any of it. 'prompt' takes the OTHER branch in that
+      // same file, the one that actually calls onNeedRefresh.
+      registerType: 'prompt',
       // The default auto-injected registration script just calls
       // navigator.serviceWorker.register() and stops — it has no idea when
       // a new version has taken over, so a tab left open across a deploy
@@ -40,8 +51,15 @@ export default defineConfig({
         ],
       },
       workbox: {
-        // Take over immediately on update — no need to close all tabs first.
-        skipWaiting: true,
+        // NOT skipWaiting — that makes a newly-installed worker activate
+        // itself immediately regardless of what main.jsx decides, which is
+        // exactly how the flash-tree-then-reload bug kept happening even
+        // after main.jsx grew careful reload-timing logic: the new worker
+        // was already taking over on its own schedule. A worker now sits
+        // patiently in the "waiting" state until main.jsx explicitly calls
+        // the update function returned by registerSW() — clientsClaim then
+        // still takes effect immediately at THAT point, so there's still
+        // no need to close every tab first once an update is actually applied.
         clientsClaim: true,
         // NOT 'html' — index.html references content-hashed JS/CSS filenames
         // for the exact build that produced it, so precaching it pins a

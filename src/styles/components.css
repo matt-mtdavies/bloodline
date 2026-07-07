@@ -112,6 +112,31 @@
 .logo--in .logo__a { animation: logo-pop 0.55s var(--spring) both; }
 .logo--in .logo__b { animation: logo-pop 0.55s var(--spring) 0.09s both; }
 .logo--in .logo__c { animation: logo-pop 0.55s var(--spring) 0.18s both; }
+
+/* Idle variant (topbar mark) — the entrance pop-in still plays first;
+   each idle keyframe starts from translate(0,0) and is delayed until just
+   after its own pop-in finishes, so the handoff is seamless rather than
+   fighting the entrance for the same property. Two comma-separated
+   animations on one element/property compose in listed order — this only
+   works declared together like this, not as separately-cascading rules. */
+.logo--in.logo--idle .logo__a { animation: logo-pop 0.55s var(--spring) both, logo-idle-a 6.5s ease-in-out 0.6s infinite; }
+.logo--in.logo--idle .logo__b { animation: logo-pop 0.55s var(--spring) 0.09s both, logo-idle-b 7.5s ease-in-out 0.7s infinite; }
+.logo--in.logo--idle .logo__c { animation: logo-pop 0.55s var(--spring) 0.18s both, logo-idle-c 8.5s ease-in-out 0.8s infinite; }
+.logo--idle:not(.logo--in) .logo__a { animation: logo-idle-a 6.5s ease-in-out infinite; }
+.logo--idle:not(.logo--in) .logo__b { animation: logo-idle-b 7.5s ease-in-out infinite; }
+.logo--idle:not(.logo--in) .logo__c { animation: logo-idle-c 8.5s ease-in-out infinite; }
+@keyframes logo-idle-a {
+  0%, 100% { transform: translate(0, 0); }
+  50% { transform: translate(0.5px, -0.6px); }
+}
+@keyframes logo-idle-b {
+  0%, 100% { transform: translate(0, 0); }
+  50% { transform: translate(-0.6px, 0.5px); }
+}
+@keyframes logo-idle-c {
+  0%, 100% { transform: translate(0, 0); }
+  50% { transform: translate(0.4px, 0.6px); }
+}
 @keyframes logo-pop {
   from { transform: scale(0); opacity: 0; }
   to { transform: scale(1); opacity: 1; }
@@ -1607,7 +1632,7 @@
   font-family: inherit;
 }
 .doc-card__meta { font-size: 12.5px; color: var(--ink-soft); }
-.doc-card__actions { display: flex; align-items: center; gap: 10px; margin-top: auto; padding-top: 6px; }
+.doc-card__actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px; margin-top: auto; padding-top: 6px; }
 .doc-card__open {
   font-size: 13.5px;
   font-weight: 600;
@@ -1620,23 +1645,27 @@
 .doc-card__open:hover { filter: brightness(1.05); }
 .doc-card__open:active { transform: scale(0.97); }
 /* Re-runs the same AI title suggestion onDocPick uses at upload time —
-   fixes a legacy "IMG_0166" title without re-uploading. Accent-colored
-   (not the neutral ink-faint of Del) to read as the same AI-action
-   language as the profile's "Generate life story" button. */
+   fixes a legacy "IMG_0166" title without re-uploading. A labeled pill
+   rather than a bare icon (an icon-only circle here read as unexplained),
+   in the same soft accent-tinted "AI action" language as the profile's
+   "Generate life story" button, just compact enough for this row. */
 .doc-card__suggest {
   display: flex;
   align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  color: var(--accent);
-  background: none;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--accent-deep);
+  background: var(--accent-soft);
+  padding: 7px 14px 7px 11px;
+  border-radius: 999px;
+  white-space: nowrap;
   cursor: pointer;
-  border-radius: 50%;
   flex: none;
 }
-.doc-card__suggest:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 10%, transparent); }
-.doc-card__suggest:disabled { opacity: 0.6; cursor: default; }
+.doc-card__suggest:hover:not(:disabled) { filter: brightness(0.97); }
+.doc-card__suggest:active:not(:disabled) { transform: scale(0.97); }
+.doc-card__suggest:disabled { opacity: 0.65; cursor: default; }
 /* Deliberately last in a roomy flex row, well clear of Open, with a generous
    hit target and its own confirm step below — a stray thumb bump opens a
    confirmation, never an instant, unrecoverable delete. */

@@ -922,13 +922,14 @@ export default function PersonSheet({
                                   onClick={() => suggestTitleForExistingDoc(doc)}
                                   disabled={suggestingDocId === doc.id}
                                   aria-label={`Suggest a title for ${doc.title}`}
-                                  title="Suggest a title from the document"
+                                  title="Reads the document and suggests a title from it"
                                 >
                                   {suggestingDocId === doc.id ? (
                                     <span className="mw__spinner mw__spinner--sm" aria-hidden="true" />
                                   ) : (
                                     <SparkleIcon />
                                   )}
+                                  {suggestingDocId === doc.id ? 'Suggesting…' : 'Suggest title'}
                                 </button>
                               )}
                               <button

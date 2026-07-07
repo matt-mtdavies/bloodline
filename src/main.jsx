@@ -27,7 +27,10 @@ class ErrorBoundary extends React.Component {
   }
 }
 
+let mounted = false;
 function boot() {
+  if (mounted) return; // idempotent — see the safety-net timer below
+  mounted = true;
   createRoot(document.getElementById('root')).render(
     <React.StrictMode>
       <ErrorBoundary>
@@ -37,20 +40,48 @@ function boot() {
   );
 }
 
-// An update found once the tree's already on screen must never yank it away
-// mid-session — reload immediately only if the tab's already in the
-// background (nobody's looking), otherwise wait until it's backgrounded
-// (switch away / lock the phone) and reload then. They simply find the
-// fresh build next time they open the app.
-function reloadForUpdate() {
+// registerType is 'prompt' (see vite.config.js) and workbox.skipWaiting is
+// OFF — a new service worker installs and then waits, patiently, until
+// something explicitly tells it to take over. That "something" is calling
+// updateSW() (the function registerSW() returns): it sends the skip-waiting
+// message, the new worker activates and claims clients, and — this part is
+// vite-plugin-pwa's own built-in behaviour once a waiting worker was ever
+// reported, not something we wire ourselves — the page reloads the moment
+// that worker actually becomes "controlling". So the entire question of
+// *when* an update becomes visible reduces to *when we choose to call
+// updateSW()*, and this file's only job is answering that safely.
+//
+// An update found once the tree's already on screen must never yank it
+// away mid-session — call updateSW() immediately only if the tab's already
+// in the background (nobody's looking), otherwise wait until it IS
+// backgrounded (switch away / lock the phone) and call it then. They
+// simply find the fresh build next time they open the app.
+//
+// "Hidden" is confirmed with a short delay rather than trusted the instant
+// it fires — some mobile browsers (iOS Safari/PWA in particular) fire a
+// spurious visibilitychange during the launch handoff or a tab-switch
+// gesture, hidden for only a moment before returning to visible. Applying
+// the update on that blip is exactly the bug this mechanism exists to
+// prevent — a real backgrounding stays hidden far longer than this check
+// needs.
+// Takes a thunk rather than the update function directly — registerSW()
+// returns it, but onNeedRefresh (the callback passed alongside) is invoked
+// with zero arguments, so each call site closes over its own registerSW()
+// result instead.
+function applyUpdateWhenSafe(callUpdateSW) {
+  const confirmHiddenThenUpdate = () => {
+    setTimeout(() => {
+      if (document.visibilityState === 'hidden') callUpdateSW();
+    }, 1000);
+  };
   if (document.visibilityState === 'hidden') {
-    window.location.reload();
+    confirmHiddenThenUpdate();
     return;
   }
   const onHidden = () => {
     if (document.visibilityState !== 'hidden') return;
     document.removeEventListener('visibilitychange', onHidden);
-    window.location.reload();
+    confirmHiddenThenUpdate();
   };
   document.addEventListener('visibilitychange', onHidden);
 }
@@ -61,23 +92,26 @@ function reloadForUpdate() {
 //
 // A RETURNING visit is the case that used to flash the tree in and yank it
 // back a couple of seconds later: the page loads under the OLD service
-// worker, then the new one (already deployed, found almost instantly thanks
-// to skipWaiting+clientsClaim) swaps in right as the tree finishes its first
-// paint. So here, give the registration a short, HARD-CAPPED window to say
-// "found an update, reloading" BEFORE mounting anything — if it does, the
-// reload happens invisibly (nothing was ever shown to yank away, just a
-// beat longer on the loading screen). If the cap elapses first, mount
-// normally regardless of what the registration is doing — a stalled
-// network, a registration error, anything — this can never hang past the
-// cap, and once mounted, a late update falls back to the same safe,
-// deferred reload as a long-running session.
+// worker, then the new one (already deployed) is found within moments of
+// registering. So here, give the registration a short, HARD-CAPPED window
+// to say "found one" BEFORE mounting anything — if it does, apply it right
+// then (invisible: nothing was ever shown to yank away, just a beat longer
+// on the loading screen). If the cap elapses first, mount normally
+// regardless of what the registration is doing — a stalled network, a
+// registration error, anything — this can never hang past the cap, and
+// once mounted, a late update falls back to the same safe, deferred
+// behaviour as a long-running session.
 const hadControllerAlready = !!(window.navigator?.serviceWorker?.controller);
 
 if (!hadControllerAlready) {
   boot();
-  registerSW({ immediate: true, onNeedRefresh: reloadForUpdate });
+  const updateSW = registerSW({ immediate: true, onNeedRefresh: () => applyUpdateWhenSafe(updateSW) });
 } else {
-  const GRACE_MS = 400;
+  // 400ms proved too tight against a real deploy's actual registration/
+  // update-check latency (cold network, a real Cloudflare edge round trip)
+  // — an update was routinely found just after the cap. Longer, but still
+  // capped: this can never hang past it, same guarantee as before.
+  const GRACE_MS = 1200;
   let decided = false;
   const timer = setTimeout(() => {
     if (decided) return;
@@ -85,16 +119,20 @@ if (!hadControllerAlready) {
     boot();
   }, GRACE_MS);
 
-  registerSW({
+  const updateSW = registerSW({
     immediate: true,
     onNeedRefresh() {
       if (decided) {
-        reloadForUpdate(); // already mounted — defer, don't yank
+        applyUpdateWhenSafe(updateSW); // already mounted — defer, don't yank
         return;
       }
       decided = true;
       clearTimeout(timer);
-      window.location.reload(); // nothing mounted yet — invisible
+      updateSW(); // nothing mounted yet — the eventual reload is invisible
+      // Safety net: if the activate→"controlling"→reload cascade never
+      // actually completes (a dropped message, a browser quirk), mount
+      // anyway rather than risk hanging on the loading screen forever.
+      setTimeout(() => { if (!mounted) boot(); }, 2500);
     },
   });
 }
