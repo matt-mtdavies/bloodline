@@ -1952,6 +1952,7 @@ export default function App() {
           onClose={() => setHomeOpen(false)}
           onOpenAccount={() => { setHomeOpen(false); setProfileOpen(true); }}
           onLogout={user ? handleLogout : null}
+          onOpenInstall={() => { setHomeOpen(false); setShowInstall(true); }}
         />
       )}
 

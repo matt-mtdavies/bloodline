@@ -10,12 +10,17 @@ import { clearLocalData } from '../data/store.js';
  * face, the card a search result lands in, the path Lineage mode draws, the
  * scrubber Timeline plays — rather than a static icon standing in for it.
  */
-export default function Home({ user, familyName, stats = null, onClose, onOpenAccount, onLogout }) {
+export default function Home({ user, familyName, stats = null, onClose, onOpenAccount, onLogout, onOpenInstall }) {
   const [families, setFamilies] = useState(null); // null = loading
   const [switchingId, setSwitchingId] = useState(null);
   const [switchError, setSwitchError] = useState('');
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState('');
+  // Already-installed (standalone) visits have nothing to gain from this
+  // row, so it only shows where it's actually actionable.
+  const [isStandalone] = useState(
+    () => window.matchMedia?.('(display-mode: standalone)').matches || window.navigator.standalone || false,
+  );
 
   const loadFamilies = useCallback(() => {
     if (!user) { setFamilies([]); return; }
@@ -207,7 +212,21 @@ export default function Home({ user, familyName, stats = null, onClose, onOpenAc
           </section>
         )}
 
-        <section className="home__section" style={{ '--i': 2 }}>
+        {!isStandalone && onOpenInstall && (
+          <section className="home__section" style={{ '--i': 2 }}>
+            <h2 className="home__section-title">Get the app</h2>
+            <button className="home__row-btn" onClick={onOpenInstall}>
+              <span className="home__row-icon"><InstallIcon /></span>
+              <span className="home__row-text">
+                <span className="home__row-title">Install Bloodline</span>
+                <span className="home__row-desc">Add it to your home screen or dock for full-screen, app-like access</span>
+              </span>
+              <ArrowIcon />
+            </button>
+          </section>
+        )}
+
+        <section className="home__section" style={{ '--i': 3 }}>
           <p className="home__eyebrow home__eyebrow--section">A quick tour</p>
           <h2 className="home__section-title home__section-title--big">How it works</h2>
 
@@ -324,6 +343,15 @@ function ArrowIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true" className="home__row-arrow">
       <path d="M9 18l6-6-6-6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  );
+}
+
+function InstallIcon() {
+  return (
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M12 3v12M12 15l-4.5-4.5M12 15l4.5-4.5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/>
+      <path d="M4.5 16v3a2 2 0 002 2h11a2 2 0 002-2v-3" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/>
     </svg>
   );
 }
