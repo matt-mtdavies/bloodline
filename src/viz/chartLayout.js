@@ -236,6 +236,7 @@ export function computeChartLayout(graph, focalId) {
 export const CHART_POD_W = 236;
 export const CHART_POD_SOLO_H = 60;
 export const CHART_POD_COUPLE_H = 100;
+const TOGGLE_ROW_H = 26; // extra card height reserved when a pod has children (see podHeight, below)
 const CHART_SIB_GAP = 32;
 const CHART_FAM_GAP = 90;
 const CHART_GEN_GAP = 150; // edge-to-edge between generation rows
@@ -258,7 +259,16 @@ export function computeChartPods(graph, focalId, { collapsed, orientation = 'ver
   const collapsedSet = collapsed instanceof Set ? collapsed : new Set();
   const isCollapsed = (pod) => collapsedSet.has(pod.id);
   const kidsOf = (pod) => (isCollapsed(pod) ? [] : pod.childPods);
-  const podHeight = (pod) => (pod.members.length === 2 ? CHART_POD_COUPLE_H : CHART_POD_SOLO_H);
+  // A pod with children always renders its "▾ N children" toggle (it doubles
+  // as the collapse control when expanded, not just the expand control when
+  // collapsed) — that's a real extra row ChartTree.jsx adds under the
+  // member row(s). Reserve room for it here, or the card's own CSS
+  // `overflow: hidden` silently clips the toggle clean off the bottom of the
+  // card, which is what "I can't see how to expand it" turned out to be.
+  const podHeight = (pod) => {
+    const base = pod.members.length === 2 ? CHART_POD_COUPLE_H : CHART_POD_SOLO_H;
+    return pod.childPods.length > 0 ? base + TOGGLE_ROW_H : base;
+  };
 
   const horizontal = orientation === 'horizontal';
   // "Cross" is the axis siblings spread along; "main" is the axis generations
