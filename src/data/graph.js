@@ -294,21 +294,23 @@ function ancestorsWithDistance(graph, id, maxDepth = 8) {
   return map;
 }
 
-// "N generations up" — Parent/Grandparent/Great-grandparent/2x Great-.../etc.
+// "N generations up" — Parent/Grandparent/Great-grandparent/Great-great-.../etc.
 function ascendingTerm(n, gender) {
   if (n === 1) return byGender(gender, 'Father', 'Mother', 'Parent');
   if (n === 2) return byGender(gender, 'Grandfather', 'Grandmother', 'Grandparent');
+  // Spelled out (great-great-grandfather), not "2x Great-" shorthand — only
+  // the leading "Great-" is capitalised, matching normal usage.
   const greats = n - 2;
-  const prefix = greats === 1 ? 'Great-' : `${greats}x Great-`;
+  const prefix = 'Great-' + 'great-'.repeat(greats - 1);
   return `${prefix}${byGender(gender, 'grandfather', 'grandmother', 'grandparent')}`;
 }
 
-// "N generations down" — Child/Grandchild/Great-grandchild/2x Great-.../etc.
+// "N generations down" — Child/Grandchild/Great-grandchild/Great-great-.../etc.
 function descendingTerm(n, gender) {
   if (n === 1) return byGender(gender, 'Son', 'Daughter', 'Child');
   if (n === 2) return byGender(gender, 'Grandson', 'Granddaughter', 'Grandchild');
   const greats = n - 2;
-  const prefix = greats === 1 ? 'Great-' : `${greats}x Great-`;
+  const prefix = 'Great-' + 'great-'.repeat(greats - 1);
   return `${prefix}${byGender(gender, 'grandson', 'granddaughter', 'grandchild')}`;
 }
 

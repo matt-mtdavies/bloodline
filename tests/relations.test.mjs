@@ -858,20 +858,20 @@ test('exact 2nd-cousin shape (3 up / 3 down) reads as "2nd Cousin"', () => {
   assert.equal(relationLabel(g, 'jason', 'other'), '2nd Cousin');
 });
 
-test('4 generations up with no named pattern → "Paternal 2x Great-grandfather"', () => {
+test('4 generations up with no named pattern → "Paternal Great-great-grandfather"', () => {
   const g = buildGraph(
     [person('a'), person('p1', 'male'), person('p2'), person('p3'), person('p4', 'male')],
     [parentEdge('p1', 'a'), parentEdge('p2', 'p1'), parentEdge('p3', 'p2'), parentEdge('p4', 'p3')],
   );
-  assert.equal(relationLabel(g, 'a', 'p4'), 'Paternal 2x Great-grandfather');
+  assert.equal(relationLabel(g, 'a', 'p4'), 'Paternal Great-great-grandfather');
 });
 
-test('4 generations down with no named pattern → "2x Great-grandson"', () => {
+test('4 generations down with no named pattern → "Great-great-grandson"', () => {
   const g = buildGraph(
     [person('a'), person('c1'), person('c2'), person('c3'), person('c4', 'male')],
     [parentEdge('a', 'c1'), parentEdge('c1', 'c2'), parentEdge('c2', 'c3'), parentEdge('c3', 'c4')],
   );
-  assert.equal(relationLabel(g, 'a', 'c4'), '2x Great-grandson');
+  assert.equal(relationLabel(g, 'a', 'c4'), 'Great-great-grandson');
 });
 
 test('truly unrelated people (no common ancestor within range) still → Relative', () => {

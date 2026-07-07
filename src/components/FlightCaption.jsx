@@ -62,7 +62,7 @@ export default function FlightCaption({ graph, order, upTo, landed, onDone, onPe
   // every real stop (hops/shownHops below stay in terms of the full path);
   // only the words simplify.
   const hops = order.length - 1;
-  const crumbs = [];
+  const rawCrumbs = [];
   for (let i = 1; i < order.length; ) {
     const mid = order[i];
     if (i + 1 < order.length) {
@@ -71,13 +71,40 @@ export default function FlightCaption({ graph, order, upTo, landed, onDone, onPe
       const midIsSharedParent =
         graph.parents(a).some((p) => p.id === mid) && graph.parents(b).some((p) => p.id === mid);
       if (midIsSharedParent) {
-        crumbs.push({ label: relationLabel(graph, a, b), toIndex: i + 1 });
+        rawCrumbs.push({ label: relationLabel(graph, a, b), fromIndex: i - 1, toIndex: i + 1 });
         i += 2;
         continue;
       }
     }
-    crumbs.push({ label: relationLabel(graph, order[i - 1], mid), toIndex: i });
+    rawCrumbs.push({ label: relationLabel(graph, order[i - 1], mid), fromIndex: i - 1, toIndex: i });
     i += 1;
+  }
+
+  // A second collapse on top of the sibling-detour one above: "Sister's Son"
+  // and "Mother's Sister" are real, correctly-worded steps, but they're not
+  // how anyone would actually say it — those pairs of adjacent crumbs read
+  // as one relationship (Nephew/Niece, Aunt/Uncle) once you say them
+  // together, so merge them into that single word wherever the two crumbs'
+  // own endpoints genuinely form that pattern in the graph.
+  const crumbs = [];
+  for (let i = 0; i < rawCrumbs.length; i++) {
+    const cur = rawCrumbs[i];
+    const nxt = rawCrumbs[i + 1];
+    if (nxt) {
+      const a = order[cur.fromIndex];
+      const mid = order[cur.toIndex];
+      const c = order[nxt.toIndex];
+      const siblingThenChild =
+        graph.siblings(a).some((s) => s.id === mid) && graph.children(mid).some((ch) => ch.id === c);
+      const parentThenSibling =
+        graph.parents(a).some((p) => p.id === mid) && graph.siblings(mid).some((s) => s.id === c);
+      if (siblingThenChild || parentThenSibling) {
+        crumbs.push({ label: relationLabel(graph, a, c), fromIndex: cur.fromIndex, toIndex: nxt.toIndex });
+        i += 1;
+        continue;
+      }
+    }
+    crumbs.push(cur);
   }
   // revealedUpTo: how far the camera has actually travelled (an order-index,
   // real hops — unaffected by wording collapse), used to decide which crumbs
