@@ -83,74 +83,76 @@ export default function Home({
           </p>
         </div>
 
-        {recent.length > 0 && onOpenActivity && (
-          <section className="home__section" style={{ '--i': 0 }}>
-            <h2 className="home__section-title">Continue your journey</h2>
-            <div className="home__recent-list">
-              {recent.map((event) => (
-                <ActivityRow
-                  key={event.id}
-                  event={event}
-                  person={byId.get(event.personId) ?? { display_name: event.personName }}
-                  userEmail={userEmail}
-                  nameByEmail={nameByEmail}
-                  onSelect={() => onSelectPerson?.(event.personId)}
-                />
-              ))}
-            </div>
-            <button className="home__view-all" onClick={onOpenActivity}>View all recent activity</button>
-          </section>
-        )}
+        <div className="home__row">
+          {recent.length > 0 && onOpenActivity && (
+            <section className="home__section" style={{ '--i': 0 }}>
+              <h2 className="home__section-title">Continue your journey</h2>
+              <div className="home__recent-list">
+                {recent.map((event) => (
+                  <ActivityRow
+                    key={event.id}
+                    event={event}
+                    person={byId.get(event.personId) ?? { display_name: event.personName }}
+                    userEmail={userEmail}
+                    nameByEmail={nameByEmail}
+                    onSelect={() => onSelectPerson?.(event.personId)}
+                  />
+                ))}
+              </div>
+              <button className="home__view-all" onClick={onOpenActivity}>View all recent activity</button>
+            </section>
+          )}
 
-        <section className="home__section" style={{ '--i': 1 }}>
-          <h2 className="home__section-title">Explore</h2>
+          <section className="home__section" style={{ '--i': 1 }}>
+            <h2 className="home__section-title">Explore</h2>
 
-          {onOpenFamilyTrees && (
-            <button className="home__row-btn" onClick={onOpenFamilyTrees}>
-              <span className="home__row-icon"><TreeIcon /></span>
-              <span className="home__row-text">
-                <span className="home__row-title">Family trees</span>
-                <span className="home__row-desc">
-                  {user ? 'Switch trees, or start a new one' : 'Sign in to save a tree of your own'}
+            {onOpenFamilyTrees && (
+              <button className="home__row-btn" onClick={onOpenFamilyTrees}>
+                <span className="home__row-icon"><TreeIcon /></span>
+                <span className="home__row-text">
+                  <span className="home__row-title">Family trees</span>
+                  <span className="home__row-desc">
+                    {user ? 'Switch trees, or start a new one' : 'Sign in to save a tree of your own'}
+                  </span>
                 </span>
-              </span>
-              <ArrowIcon />
-            </button>
-          )}
+                <ArrowIcon />
+              </button>
+            )}
 
-          {onOpenHowItWorks && (
-            <button className="home__row-btn" onClick={onOpenHowItWorks}>
-              <span className="home__row-icon"><PlayIcon /></span>
-              <span className="home__row-text">
-                <span className="home__row-title">How it works</span>
-                <span className="home__row-desc">A quick tour of tap, search, lineage and timeline</span>
-              </span>
-              <ArrowIcon />
-            </button>
-          )}
+            {onOpenHowItWorks && (
+              <button className="home__row-btn" onClick={onOpenHowItWorks}>
+                <span className="home__row-icon"><PlayIcon /></span>
+                <span className="home__row-text">
+                  <span className="home__row-title">How it works</span>
+                  <span className="home__row-desc">A quick tour of tap, search, lineage and timeline</span>
+                </span>
+                <ArrowIcon />
+              </button>
+            )}
 
-          {user && (
-            <button className="home__row-btn" onClick={onOpenAccount}>
-              <span className="home__row-icon"><PersonIcon /></span>
-              <span className="home__row-text">
-                <span className="home__row-title">Profile &amp; settings</span>
-                <span className="home__row-desc">Display name, notifications, claimed bubble</span>
-              </span>
-              <ArrowIcon />
-            </button>
-          )}
+            {user && (
+              <button className="home__row-btn" onClick={onOpenAccount}>
+                <span className="home__row-icon"><PersonIcon /></span>
+                <span className="home__row-text">
+                  <span className="home__row-title">Profile &amp; settings</span>
+                  <span className="home__row-desc">Display name, notifications, claimed bubble</span>
+                </span>
+                <ArrowIcon />
+              </button>
+            )}
 
-          {!isStandalone && onOpenInstall && (
-            <button className="home__row-btn" onClick={onOpenInstall}>
-              <span className="home__row-icon"><InstallIcon /></span>
-              <span className="home__row-text">
-                <span className="home__row-title">Install Bloodline</span>
-                <span className="home__row-desc">Add it to your home screen or dock for full-screen access</span>
-              </span>
-              <ArrowIcon />
-            </button>
-          )}
-        </section>
+            {!isStandalone && onOpenInstall && (
+              <button className="home__row-btn" onClick={onOpenInstall}>
+                <span className="home__row-icon"><InstallIcon /></span>
+                <span className="home__row-text">
+                  <span className="home__row-title">Install Bloodline</span>
+                  <span className="home__row-desc">Add it to your home screen or dock for full-screen access</span>
+                </span>
+                <ArrowIcon />
+              </button>
+            )}
+          </section>
+        </div>
 
         {user && onLogout && (
           <div className="home__signout">

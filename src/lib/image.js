@@ -6,19 +6,27 @@
 export async function fileToDataUrl(file, max = 640) {
   const url = URL.createObjectURL(file);
   try {
-    const img = await loadImage(url);
-    const scale = Math.min(1, max / Math.max(img.width, img.height));
-    const w = Math.round(img.width * scale);
-    const h = Math.round(img.height * scale);
-    const canvas = document.createElement('canvas');
-    canvas.width = w;
-    canvas.height = h;
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(img, 0, 0, w, h);
-    return canvas.toDataURL('image/jpeg', 0.85);
+    return await imageSrcToDataUrl(url, max);
   } finally {
     URL.revokeObjectURL(url);
   }
+}
+
+// Same downscale as fileToDataUrl, but from an existing src (a same-origin
+// /api/documents/<key> URL, or an already-data: URL) rather than a freshly
+// picked File — used to re-run the AI title suggestion against a document
+// that's already been uploaded (see suggestDocumentTitle in PersonSheet).
+export async function imageSrcToDataUrl(src, max = 640) {
+  const img = await loadImage(src);
+  const scale = Math.min(1, max / Math.max(img.width, img.height));
+  const w = Math.round(img.width * scale);
+  const h = Math.round(img.height * scale);
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(img, 0, 0, w, h);
+  return canvas.toDataURL('image/jpeg', 0.85);
 }
 
 export function dataUrlToBlob(dataUrl) {

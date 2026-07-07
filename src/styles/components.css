@@ -32,15 +32,24 @@
   pointer-events: auto;
 }
 .topbar__brand {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 9px;
   background: none;
   border: none;
-  padding: 0;
+  padding: 6px 10px;
+  margin: -6px -10px; /* offsets the padding above so nothing else shifts */
+  border-radius: 999px;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
+  transition: background 0.15s ease, transform 0.15s ease;
 }
+/* The only real signal (beyond the aria-label) that this opens the home
+   hub rather than being pure branding — a hover-only cue, so it's paired
+   with a one-time first-login nudge (see HomeNudge) for anyone on touch. */
+.topbar__brand:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.topbar__brand:active { transform: scale(0.97); }
 .topbar__word {
   font-family: var(--display);
   font-size: 20px;
@@ -1576,6 +1585,15 @@
   overflow: hidden;
 }
 .doc-card__title:hover { color: var(--accent); }
+/* Always visible, not just a hover/cursor cue — the only way anyone on a
+   touch device (no hover at all) can tell this text is editable. */
+.doc-card__title-pencil {
+  display: inline-flex;
+  vertical-align: -2px;
+  margin-left: 5px;
+  color: var(--ink-faint);
+}
+.doc-card__title:hover .doc-card__title-pencil { color: var(--accent); }
 .doc-row__title-input {
   font-size: 14.5px;
   font-weight: 500;
@@ -1601,6 +1619,24 @@
 }
 .doc-card__open:hover { filter: brightness(1.05); }
 .doc-card__open:active { transform: scale(0.97); }
+/* Re-runs the same AI title suggestion onDocPick uses at upload time —
+   fixes a legacy "IMG_0166" title without re-uploading. Accent-colored
+   (not the neutral ink-faint of Del) to read as the same AI-action
+   language as the profile's "Generate life story" button. */
+.doc-card__suggest {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  color: var(--accent);
+  background: none;
+  cursor: pointer;
+  border-radius: 50%;
+  flex: none;
+}
+.doc-card__suggest:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.doc-card__suggest:disabled { opacity: 0.6; cursor: default; }
 /* Deliberately last in a roomy flex row, well clear of Open, with a generous
    hit target and its own confirm step below — a stray thumb bump opens a
    confirmation, never an instant, unrecoverable delete. */
@@ -4723,6 +4759,7 @@ button.health-notes {
   border-radius: 50%;
   animation: mw-spin 0.8s linear infinite;
 }
+.mw__spinner--sm { width: 15px; height: 15px; border-width: 2px; }
 @keyframes mw-spin {
   to { transform: rotate(360deg); }
 }
@@ -6838,10 +6875,41 @@ button.health-notes {
 
 .home__signout { padding-top: 8px; }
 
+/* "Continue your journey" + "Explore" — stacked on phone, side by side once
+   there's room. A single flex row rather than a fixed grid so either one
+   alone (a brand-new account with no activity yet) still takes the full
+   width instead of leaving an empty column beside it. */
+.home__row { display: flex; flex-direction: column; }
+
 @media (prefers-reduced-motion: reduce) {
   .home, .home__hero-card, .home__section, .home__const-node {
     animation: none;
   }
+}
+
+/* ── Home hub: desktop ────────────────────────────────────────────────────
+   Below this width it's the mobile-first single column above; past it, a
+   real desktop layout rather than that same narrow column stretched into a
+   sea of blank space. */
+@media (min-width: 900px) {
+  .home__scroll { max-width: 1040px; }
+
+  .home__hero-card {
+    display: grid;
+    grid-template-columns: 1fr 280px;
+    grid-template-areas: "head const" "stats const";
+    column-gap: 40px;
+    align-items: center;
+  }
+  .home__hero-card-head { grid-area: head; text-align: left; margin-bottom: 0; }
+  .home__constellation { grid-area: const; max-width: 100%; margin: 0; justify-self: center; }
+  .home__stat-grid { grid-area: stats; grid-template-columns: repeat(4, 1fr); }
+
+  /* Centred pull-quote still reads best capped, not stretched edge to edge. */
+  .home__editorial-head { max-width: 760px; margin-left: auto; margin-right: auto; }
+
+  .home__row { flex-direction: row; align-items: flex-start; gap: 24px; }
+  .home__row > .home__section { flex: 1; min-width: 0; }
 }
 
 /* ── Subpages (How it works, Family trees) ───────────────────────────────
@@ -6987,11 +7055,13 @@ button.health-notes {
 @media (hover: hover) and (pointer: fine) {
   .pill:hover .hover-tip, .pill:focus-visible .hover-tip,
   .topbar-avatar:hover .hover-tip, .topbar-avatar:focus-visible .hover-tip,
+  .topbar__brand:hover .hover-tip, .topbar__brand:focus-visible .hover-tip,
   .topbar__row2-btn:hover .hover-tip, .topbar__row2-btn:focus-visible .hover-tip {
     opacity: 1;
   }
   .pill:hover .hover-tip--down, .pill:focus-visible .hover-tip--down,
-  .topbar-avatar:hover .hover-tip--down, .topbar-avatar:focus-visible .hover-tip--down {
+  .topbar-avatar:hover .hover-tip--down, .topbar-avatar:focus-visible .hover-tip--down,
+  .topbar__brand:hover .hover-tip--down, .topbar__brand:focus-visible .hover-tip--down {
     transform: translateY(0);
   }
   .topbar__row2-btn:hover .hover-tip--right, .topbar__row2-btn:focus-visible .hover-tip--right,
@@ -7005,6 +7075,61 @@ button.health-notes {
    long on a real family, so anything after the visible facts would silently
    never render. Bold accent text reads as a status, not just another fact. */
 .topbar__stats-flag { color: var(--accent); font-weight: 700; }
+
+/* ── Home Nudge (one-time coach-mark on the logo) ────────────────────────── */
+.home-nudge {
+  position: fixed;
+  top: calc(var(--safe-top) + 52px);
+  left: 16px;
+  z-index: 21;
+  max-width: min(280px, calc(100vw - 32px));
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  background: rgba(36, 31, 28, 0.93);
+  backdrop-filter: blur(14px) saturate(1.3);
+  -webkit-backdrop-filter: blur(14px) saturate(1.3);
+  color: #fff;
+  border-radius: 14px;
+  padding: 10px 10px 10px 14px;
+  box-shadow: 0 4px 28px rgba(0, 0, 0, 0.28);
+  animation: home-nudge-in 0.45s var(--spring) both;
+}
+@keyframes home-nudge-in {
+  from { opacity: 0; transform: translateY(-8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.home-nudge__arrow {
+  position: absolute;
+  top: -6px;
+  left: 22px;
+  width: 12px;
+  height: 12px;
+  background: rgba(36, 31, 28, 0.93);
+  transform: rotate(45deg);
+  border-radius: 2px;
+}
+.home-nudge__text {
+  font-size: 13px;
+  line-height: 1.4;
+  color: rgba(255, 255, 255, 0.9);
+  flex: 1;
+}
+.home-nudge__close {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  color: rgba(255, 255, 255, 0.6);
+  background: none;
+}
+.home-nudge__close:hover { color: #fff; background: rgba(255, 255, 255, 0.12); }
+@media (prefers-reduced-motion: reduce) {
+  .home-nudge { animation: none; }
+}
 
 /* ── Save Nudge (anonymous ?new trial) ──────────────────────────────────────── */
 .save-nudge {

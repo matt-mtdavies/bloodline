@@ -32,6 +32,7 @@ export default function TopBar({ familyName, stats, view, syncStatus, syncError,
         <button className="topbar__brand" onClick={onOpenHome} aria-label="Home">
           <Logo size={26} />
           <span className="topbar__word">Bloodline</span>
+          <span className="hover-tip hover-tip--down">Home</span>
         </button>
         <div className="topbar__actions">
           {onSearch && (

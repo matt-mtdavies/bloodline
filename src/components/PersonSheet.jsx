@@ -4,7 +4,7 @@ import SmartImg from './SmartImg.jsx';
 import { lifespan, formatDate, ageOrAt } from '../lib/dates.js';
 import { relationLabel } from '../data/graph.js';
 import { profileCompleteness, lifeEvents, fullName } from '../lib/profile.js';
-import { fileToDataUrl, uploadPhoto, suggestDocumentTitle } from '../lib/image.js';
+import { fileToDataUrl, uploadPhoto, suggestDocumentTitle, imageSrcToDataUrl } from '../lib/image.js';
 import { streamBio } from '../lib/ai.js';
 import { VISIBILITY_LABELS, VISIBILITY_DESCS } from '../lib/visibility.js';
 import { HEALTH_CATEGORIES, HEALTH_CONDITIONS, HEALTH_STATUSES, colorFor } from '../lib/health.js';
@@ -74,6 +74,7 @@ export default function PersonSheet({
   const [editingDocId, setEditingDocId] = useState(null);
   const [editingDocTitle, setEditingDocTitle] = useState('');
   const [confirmDeleteDocId, setConfirmDeleteDocId] = useState(null); // awaiting "remove this document?" confirm
+  const [suggestingDocId, setSuggestingDocId] = useState(null); // doc awaiting an AI title suggestion
   const [editingMediaId, setEditingMediaId] = useState(null);
   const [editingMediaTitle, setEditingMediaTitle] = useState('');
   const [editingMemoryId, setEditingMemoryId] = useState(null);
@@ -322,6 +323,27 @@ export default function PersonSheet({
       } catch {
         /* skip unreadable file */
       }
+    }
+  };
+
+  // Re-run the same title suggestion against a document that's already been
+  // uploaded — fixes the legacy "IMG_0166"/"image" titles that predate this
+  // feature, without needing to re-upload anything. Reads the doc's own
+  // image (downscaled fresh from its src) or, for a PDF, its existing
+  // first-page thumbnail — same best-effort contract as onDocPick: any
+  // failure just leaves the current title untouched.
+  const suggestTitleForExistingDoc = async (doc) => {
+    if (suggestingDocId) return;
+    setSuggestingDocId(doc.id);
+    try {
+      const preview = doc.mime?.startsWith('image/')
+        ? await imageSrcToDataUrl(doc.src, 1000).catch(() => null)
+        : doc.thumb || null;
+      if (!preview) return;
+      const suggested = await suggestDocumentTitle(preview);
+      if (suggested) onUpdateDocument?.(doc.id, { title: suggested });
+    } finally {
+      setSuggestingDocId(null);
     }
   };
 
@@ -865,6 +887,7 @@ export default function PersonSheet({
                               title="Tap to rename"
                             >
                               {doc.title}
+                              <span className="doc-card__title-pencil" aria-hidden="true"><PencilIcon /></span>
                             </button>
                           )}
                           <span className="doc-card__meta">
@@ -893,6 +916,21 @@ export default function PersonSheet({
                               <button className="doc-card__open" onClick={() => openDoc(doc)}>
                                 Open
                               </button>
+                              {(doc.mime?.startsWith('image/') || doc.thumb) && (
+                                <button
+                                  className="doc-card__suggest"
+                                  onClick={() => suggestTitleForExistingDoc(doc)}
+                                  disabled={suggestingDocId === doc.id}
+                                  aria-label={`Suggest a title for ${doc.title}`}
+                                  title="Suggest a title from the document"
+                                >
+                                  {suggestingDocId === doc.id ? (
+                                    <span className="mw__spinner mw__spinner--sm" aria-hidden="true" />
+                                  ) : (
+                                    <SparkleIcon />
+                                  )}
+                                </button>
+                              )}
                               <button
                                 className="doc-card__del"
                                 onClick={() => setConfirmDeleteDocId(doc.id)}

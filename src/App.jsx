@@ -96,6 +96,7 @@ import RecapTour from './components/RecapTour.jsx';
 import GedcomImport from './components/GedcomImport.jsx';
 import FamilySearchImport from './components/FamilySearchImport.jsx';
 import SaveNudge from './components/SaveNudge.jsx';
+import HomeNudge from './components/HomeNudge.jsx';
 import SearchOverlay from './components/SearchOverlay.jsx';
 
 const isDemo = typeof window !== 'undefined' &&
@@ -184,6 +185,7 @@ export default function App() {
   const [suggestedClaimPersonId, setSuggestedClaimPersonId] = useState(null);
   const [installEvent, setInstallEvent] = useState(null); // captured beforeinstallprompt
   const [showInstall, setShowInstall] = useState(false);
+  const [showHomeNudge, setShowHomeNudge] = useState(false);
   // Set when a user with existing tree data accepts an invite — gates the app
   // on the merge wizard until they complete or skip the merge.
   const [pendingInvite, setPendingInvite] = useState(_initialPendingInvite);
@@ -391,6 +393,31 @@ export default function App() {
     const t = setTimeout(() => setShowInstall(true), 1600);
     return () => clearTimeout(t);
   }, [authState, promptClaim, installEvent]);
+
+  const dismissHomeNudge = useCallback(() => {
+    setShowHomeNudge(false);
+    try { localStorage.setItem('bl_home_nudge_seen', '1'); } catch { /* ignore */ }
+  }, []);
+
+  // A one-time coach-mark on the logo — the only way anyone on touch (no
+  // hover, so no hover-tip) would learn tapping it opens the home hub.
+  // Timed a beat after the install nudge (a different corner, so they'd
+  // never actually overlap, but no reason to compete for a first glance)
+  // and gated on the tree having actually rendered, not just any authState.
+  useEffect(() => {
+    if (authState === 'loading' || authState === 'login') return;
+    let seen = false;
+    try { seen = !!localStorage.getItem('bl_home_nudge_seen'); } catch { /* ignore */ }
+    if (seen) return;
+    const t = setTimeout(() => setShowHomeNudge(true), 2600);
+    return () => clearTimeout(t);
+  }, [authState]);
+
+  useEffect(() => {
+    if (!showHomeNudge) return;
+    const t = setTimeout(dismissHomeNudge, 8000);
+    return () => clearTimeout(t);
+  }, [showHomeNudge, dismissHomeNudge]);
 
   useEffect(() => {
     if (isDemo || isNewUrl) return;
@@ -1396,7 +1423,7 @@ export default function App() {
         user={user}
         userPhoto={userPhoto}
         onOpenProfile={user ? () => setProfileOpen(true) : null}
-        onOpenHome={() => setHomeOpen(true)}
+        onOpenHome={() => { setHomeOpen(true); if (showHomeNudge) dismissHomeNudge(); }}
         onSearch={() => {
           // iOS Safari only auto-shows the keyboard when focus() runs
           // synchronously inside the tap's own call stack. A plain setState
@@ -1777,6 +1804,10 @@ export default function App() {
 
       {showInstall && (
         <InstallPrompt installEvent={installEvent} onClose={dismissInstall} />
+      )}
+
+      {showHomeNudge && !anyOverlayOpen && (
+        <HomeNudge onDismiss={dismissHomeNudge} />
       )}
 
       {addAnchorId && graph.byId.get(addAnchorId) && (
