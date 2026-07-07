@@ -21,7 +21,7 @@ const STATUSES = [
   { key: 'deceased', label: 'Deceased' },
 ];
 
-export default function SearchOverlay({ people, graph, viewerId, onSelect, onClose }) {
+export default function SearchOverlay({ people, graph, viewerId, onSelect, onClose, hint = null }) {
   const [query, setQuery] = useState('');
   const [cursor, setCursor] = useState(0);
   const [category, setCategory] = useState(null); // one of CATEGORIES[].key, or null
@@ -145,6 +145,12 @@ export default function SearchOverlay({ people, graph, viewerId, onSelect, onClo
   return (
     <div className="search-scrim" onClick={onClose} role="dialog" aria-modal="true" aria-label="Search people">
       <div className="search-sheet" onClick={(e) => e.stopPropagation()}>
+        {hint && (
+          <div className="search-hint-banner">
+            <LineageIcon />
+            <span>{hint}</span>
+          </div>
+        )}
         {/* Input */}
         <div className="search-input-row">
           <SearchIcon />
@@ -152,7 +158,7 @@ export default function SearchOverlay({ people, graph, viewerId, onSelect, onClo
             ref={inputRef}
             className="search-input"
             type="search"
-            placeholder="Search family members…"
+            placeholder={hint ? 'Search for who to trace to…' : 'Search family members…'}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={handleKey}
@@ -278,6 +284,17 @@ function highlight(name, query) {
       <mark className="search-mark">{name.slice(idx, idx + q.length)}</mark>
       {name.slice(idx + q.length)}
     </>
+  );
+}
+
+function LineageIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="4" r="2.5" stroke="currentColor" strokeWidth="1.8" />
+      <circle cx="4" cy="20" r="2.5" stroke="currentColor" strokeWidth="1.8" />
+      <circle cx="20" cy="20" r="2.5" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M12 6.5v4M12 10.5l-5.5 7M12 10.5l5.5 7" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
   );
 }
 

@@ -994,6 +994,34 @@ export default function App() {
     });
   }, [graph, data.myPersonId, reducedMotion, activateNormal]);
 
+  // Search, while tracing a lineage, needs to feed the SAME "tap another
+  // relative" logic activate() uses in that mode — not flyToSearchResult,
+  // which unconditionally cancels lineage mode and jumps the camera instead.
+  // The path is computed from the trace's own anchor (activeId), not the
+  // viewer's default person, and its nodes are expanded into view first since
+  // (unlike tapping a bubble) a search result may not be on screen yet.
+  const selectFromSearch = useCallback((targetId) => {
+    setSearchOpen(false);
+    if (!lineageMode) { flyToSearchResult(targetId); return; }
+    if (targetId === activeId) {
+      setLineagePath(null);
+      setLineageOrder(null);
+      return;
+    }
+    const ordered = pathBetweenOrdered(graph, activeId, targetId);
+    if (ordered) {
+      setExpanded((prev) => {
+        const next = new Set(prev);
+        for (const id of ordered) next.add(id);
+        return next;
+      });
+    }
+    setLineagePath(ordered ? new Set(ordered) : null);
+    setLineageOrder(ordered);
+    // Give the newly-expanded nodes a beat to lay out before framing them.
+    setTimeout(() => viewApi.current?.refocus(0.5), 100);
+  }, [lineageMode, activeId, graph, flyToSearchResult]);
+
   // Same flight as flyToSearchResult, but callable from anywhere — the
   // profile page's "Show in tree" and the list view's per-row action, not
   // just a search result. Switches back to the bubble canvas first if
@@ -1777,8 +1805,9 @@ export default function App() {
           people={data.people}
           graph={graph}
           viewerId={data.myPersonId || DEFAULT_FOCUS}
-          onSelect={flyToSearchResult}
+          onSelect={selectFromSearch}
           onClose={() => setSearchOpen(false)}
+          hint={lineageMode ? `Tracing from ${(activePerson?.display_name || 'this person').split(' ')[0]} — pick who to connect to` : null}
         />
       )}
 

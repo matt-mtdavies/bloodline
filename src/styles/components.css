@@ -1044,6 +1044,22 @@
   to   { transform: translateY(0);     opacity: 1; }
 }
 
+/* ── Lineage-mode hint (shown when search is opened mid-trace) ───────────────── */
+.search-hint-banner {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0 20px 12px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: rgba(194, 96, 58, 0.10);
+  color: var(--accent-deep, #a44d2c);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.35;
+}
+.search-hint-banner svg { flex-shrink: 0; }
+
 /* ── Search input row ────────────────────────────────────────────────────────── */
 .search-input-row {
   display: flex;
