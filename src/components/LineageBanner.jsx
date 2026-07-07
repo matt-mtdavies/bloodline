@@ -1,19 +1,28 @@
 import Avatar from './Avatar.jsx';
-import { relationLabel } from '../data/graph.js';
+import { relationLabel, buildRelationCrumbs } from '../data/graph.js';
 
 /*
  * Lineage Mode banner — floats below the masthead while you trace a family
  * line. Empty state guides you ("tap another relative"); once a path is set it
  * shows the two ends with their faces, the relationship between them, and the
  * length of the line. Slides in with a soft motion.
+ *
+ * Below the headline relation, the same possessive breadcrumb chain the
+ * search flyover shows ("Father's Brother's Daughter") — built once with
+ * buildRelationCrumbs (shared with FlightCaption) rather than leaving the
+ * headline as the only explanation of how the two people actually connect.
+ * Always shown in full (no build-up/collapse to animate — the whole line is
+ * already drawn on the tree the moment a path exists); each crumb is
+ * tappable, same as in search, to pulse that person's bubble.
  */
-export default function LineageBanner({ graph, anchorId, order, onClear, onExit }) {
+export default function LineageBanner({ graph, anchorId, order, onClear, onExit, onPeek }) {
   const anchor = graph.byId.get(anchorId);
   const first = (p) => (p?.display_name || '').trim().split(/\s+/)[0] || '';
   const hasPath = order && order.length >= 2;
   const start = hasPath ? graph.byId.get(order[0]) : null;
   const end = hasPath ? graph.byId.get(order[order.length - 1]) : null;
   const relation = hasPath ? relationLabel(graph, order[0], order[order.length - 1]) : null;
+  const crumbs = hasPath ? buildRelationCrumbs(graph, order) : [];
 
   return (
     <div className="lineage-banner" role="status" aria-live="polite">
@@ -44,6 +53,20 @@ export default function LineageBanner({ graph, anchorId, order, onClear, onExit 
             {first(end)} is {first(start)}&apos;s <strong>{relation.toLowerCase()}</strong>
             <span className="lineage-banner__muted"> · {order.length} in this line</span>
           </p>
+          {crumbs.length > 1 && (
+            <div className="lineage-banner__breadcrumb">
+              {crumbs.map((c, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  className="lineage-banner__crumb"
+                  onClick={() => onPeek?.(order[c.toIndex])}
+                >
+                  {c.label}{i < crumbs.length - 1 ? "'s" : ''}
+                </button>
+              ))}
+            </div>
+          )}
           <div className="lineage-banner__actions">
             <button className="lineage-banner__clear" onClick={onClear}>Clear</button>
             <button className="lineage-banner__exit" onClick={onExit}>Done</button>

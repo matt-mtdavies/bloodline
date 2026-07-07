@@ -1634,6 +1634,7 @@ export default function App() {
               order={lineageOrder}
               onClear={() => { setLineagePath(null); setLineageOrder(null); }}
               onExit={toggleLineage}
+              onPeek={(id) => viewApi.current?.pulseBubble(id)}
             />
           )}
           {flightCaption && (

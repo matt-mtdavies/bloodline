@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import Avatar from './Avatar.jsx';
-import { relationLabel } from '../data/graph.js';
+import { relationLabel, buildRelationCrumbs } from '../data/graph.js';
 
 /*
  * The search flyover's payoff — one card that builds itself progressively
@@ -43,69 +43,11 @@ export default function FlightCaption({ graph, order, upTo, landed, onDone, onPe
   const targetName = (target?.display_name || '').trim();
   const first = (p) => (p?.display_name || '').trim().split(/\s+/)[0] || '';
 
-  // Turn-by-turn: each hop's relation to the person immediately before it in
-  // the chain, not to the viewer — always resolvable, since adjacent path
-  // nodes are always directly connected by exactly one real edge (parent/
-  // child/partner/sibling). Relation-to-viewer (what this used to show)
-  // degrades to a generic "Relative" for anyone reached via an in-law or
-  // sideways branch, which is why long chains used to read as a string of
-  // "Relative"s in a row.
-  //
-  // One collapse on top of that: siblings have no direct edge of their own
-  // (see graph.js) — the camera still has to visit their shared parent to
-  // get from one to the other, since that parent is the only real drawn
-  // line connecting them (the flight's line-lighting can only light real
-  // edges). But narrating that stop as its own word reads as "Father's
-  // Father's Son" for what is actually just "Father's Brother" — so two
-  // hops that go up to a shared parent and immediately back down to their
-  // other child collapse into one sibling crumb. The camera still visits
-  // every real stop (hops/shownHops below stay in terms of the full path);
-  // only the words simplify.
+  // The possessive relationship chain ("Father's Brother's Daughter") —
+  // shared with Lineage mode's banner; see buildRelationCrumbs in graph.js
+  // for the turn-by-turn labeling and the sibling/nephew-aunt collapses.
   const hops = order.length - 1;
-  const rawCrumbs = [];
-  for (let i = 1; i < order.length; ) {
-    const mid = order[i];
-    if (i + 1 < order.length) {
-      const a = order[i - 1];
-      const b = order[i + 1];
-      const midIsSharedParent =
-        graph.parents(a).some((p) => p.id === mid) && graph.parents(b).some((p) => p.id === mid);
-      if (midIsSharedParent) {
-        rawCrumbs.push({ label: relationLabel(graph, a, b), fromIndex: i - 1, toIndex: i + 1 });
-        i += 2;
-        continue;
-      }
-    }
-    rawCrumbs.push({ label: relationLabel(graph, order[i - 1], mid), fromIndex: i - 1, toIndex: i });
-    i += 1;
-  }
-
-  // A second collapse on top of the sibling-detour one above: "Sister's Son"
-  // and "Mother's Sister" are real, correctly-worded steps, but they're not
-  // how anyone would actually say it — those pairs of adjacent crumbs read
-  // as one relationship (Nephew/Niece, Aunt/Uncle) once you say them
-  // together, so merge them into that single word wherever the two crumbs'
-  // own endpoints genuinely form that pattern in the graph.
-  const crumbs = [];
-  for (let i = 0; i < rawCrumbs.length; i++) {
-    const cur = rawCrumbs[i];
-    const nxt = rawCrumbs[i + 1];
-    if (nxt) {
-      const a = order[cur.fromIndex];
-      const mid = order[cur.toIndex];
-      const c = order[nxt.toIndex];
-      const siblingThenChild =
-        graph.siblings(a).some((s) => s.id === mid) && graph.children(mid).some((ch) => ch.id === c);
-      const parentThenSibling =
-        graph.parents(a).some((p) => p.id === mid) && graph.siblings(mid).some((s) => s.id === c);
-      if (siblingThenChild || parentThenSibling) {
-        crumbs.push({ label: relationLabel(graph, a, c), fromIndex: cur.fromIndex, toIndex: nxt.toIndex });
-        i += 1;
-        continue;
-      }
-    }
-    crumbs.push(cur);
-  }
+  const crumbs = buildRelationCrumbs(graph, order);
   // revealedUpTo: how far the camera has actually travelled (an order-index,
   // real hops — unaffected by wording collapse), used to decide which crumbs
   // have been passed. shownCrumbs: the badge's own number — how many of the

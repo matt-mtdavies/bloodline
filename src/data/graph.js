@@ -527,3 +527,69 @@ export function relationLabel(graph, focusId, otherId) {
 
   return 'Relative';
 }
+
+// Turn an ordered path (as returned by pathBetweenOrdered) into the
+// possessive relationship chain shown by both the search flyover
+// (FlightCaption) and Lineage mode (LineageBanner) — "Father's Brother's
+// Daughter" rather than a relation-to-viewer for every hop, which degrades
+// to a generic "Relative" for anyone reached via an in-law or sideways
+// branch. Each crumb is the hop's relation to the person immediately
+// before it in the chain, which is always resolvable since adjacent path
+// nodes are always directly connected by exactly one real edge (parent/
+// child/partner/sibling).
+//
+// Two collapses on top of that turn-by-turn base:
+//  1. Siblings have no direct edge of their own (derived, never stored) —
+//     the path still runs through their shared parent, but narrating that
+//     stop as its own word reads as "Father's Father's Son" for what is
+//     actually just "Father's Brother", so two hops that go up to a shared
+//     parent and immediately back down to their other child collapse into
+//     one sibling crumb.
+//  2. "Sister's Son" / "Mother's Sister" are correctly-worded but not how
+//     anyone would actually say it — those adjacent-crumb pairs read as one
+//     relationship (Nephew/Niece, Aunt/Uncle) once said together, so they
+//     merge into that single word wherever the two crumbs' own endpoints
+//     genuinely form that pattern in the graph.
+//
+// Returns [{ label, fromIndex, toIndex }], indices into `order`.
+export function buildRelationCrumbs(graph, order) {
+  const rawCrumbs = [];
+  for (let i = 1; i < order.length; ) {
+    const mid = order[i];
+    if (i + 1 < order.length) {
+      const a = order[i - 1];
+      const b = order[i + 1];
+      const midIsSharedParent =
+        graph.parents(a).some((p) => p.id === mid) && graph.parents(b).some((p) => p.id === mid);
+      if (midIsSharedParent) {
+        rawCrumbs.push({ label: relationLabel(graph, a, b), fromIndex: i - 1, toIndex: i + 1 });
+        i += 2;
+        continue;
+      }
+    }
+    rawCrumbs.push({ label: relationLabel(graph, order[i - 1], mid), fromIndex: i - 1, toIndex: i });
+    i += 1;
+  }
+
+  const crumbs = [];
+  for (let i = 0; i < rawCrumbs.length; i++) {
+    const cur = rawCrumbs[i];
+    const nxt = rawCrumbs[i + 1];
+    if (nxt) {
+      const a = order[cur.fromIndex];
+      const mid = order[cur.toIndex];
+      const c = order[nxt.toIndex];
+      const siblingThenChild =
+        graph.siblings(a).some((s) => s.id === mid) && graph.children(mid).some((ch) => ch.id === c);
+      const parentThenSibling =
+        graph.parents(a).some((p) => p.id === mid) && graph.siblings(mid).some((s) => s.id === c);
+      if (siblingThenChild || parentThenSibling) {
+        crumbs.push({ label: relationLabel(graph, a, c), fromIndex: cur.fromIndex, toIndex: nxt.toIndex });
+        i += 1;
+        continue;
+      }
+    }
+    crumbs.push(cur);
+  }
+  return crumbs;
+}

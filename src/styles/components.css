@@ -7315,6 +7315,32 @@ button.health-notes {
 .lineage-banner__rel strong { color: var(--accent, #c2603a); }
 .lineage-banner__muted { color: var(--ink-faint, #b0a9a5); }
 
+/* The same possessive chain the search flyover shows, but always fully
+   visible here (no build-up to animate — the whole path is already drawn
+   the moment it's set) rather than the collapsible grid-trick FlightCaption
+   uses for its in-transit reveal. */
+.lineage-banner__breadcrumb {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: center;
+  gap: 4px 5px;
+  padding-top: 4px;
+  border-top: 1px solid var(--hairline, #ebedf0);
+}
+.lineage-banner__crumb {
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-soft, #6b6260);
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+.lineage-banner__crumb:hover { color: var(--accent, #c2603a); }
+
 .lineage-banner__actions { display: flex; justify-content: center; gap: 8px; margin-top: 2px; }
 .lineage-banner__clear, .lineage-banner__exit {
   border: 1px solid var(--hairline, #ebedf0); background: var(--ground, #f7f3ec);
