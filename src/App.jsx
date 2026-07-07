@@ -928,6 +928,20 @@ export default function App() {
     });
   }, []);
 
+  // Shared by the top bar's search pill and the lineage banner's own search
+  // button — both need the exact same iOS-keyboard timing fix (see below),
+  // so it's one place instead of two copies quietly drifting apart.
+  const openSearch = useCallback(() => {
+    // iOS Safari only auto-shows the keyboard when focus() runs synchronously
+    // inside the tap's own call stack. A plain setState here mounts
+    // SearchOverlay (and its input) on a later React commit, which is why
+    // the sheet would open but no keyboard ever appeared. flushSync forces
+    // that mount to finish before this handler returns, so the focus() right
+    // after still lands inside the same user-gesture stack.
+    flushSync(() => setSearchOpen(true));
+    document.querySelector('.search-input')?.focus();
+  }, []);
+
   const openPerson = useCallback((id) => {
     viewApi.current?.unpin();
     viewApi.current?.pin(id);
@@ -1470,17 +1484,7 @@ export default function App() {
         userPhoto={userPhoto}
         onOpenProfile={user ? () => setProfileOpen(true) : null}
         onOpenHome={() => { setHomeOpen(true); if (showHomeNudge) dismissHomeNudge(); }}
-        onSearch={() => {
-          // iOS Safari only auto-shows the keyboard when focus() runs
-          // synchronously inside the tap's own call stack. A plain setState
-          // here mounts SearchOverlay (and its input) on a later React
-          // commit, which is why the sheet opened but no keyboard ever
-          // appeared. flushSync forces that mount to finish before this
-          // handler returns, so the focus() right after still lands inside
-          // the same user-gesture stack.
-          flushSync(() => setSearchOpen(true));
-          document.querySelector('.search-input')?.focus();
-        }}
+        onSearch={openSearch}
         onOpenInsights={() => setInsightsOpen(true)}
         onOpenTimeline={() => setTimelineOpen(true)}
         duplicateCount={canManageTreeStructure ? duplicatePairs.length : 0}
@@ -1716,6 +1720,7 @@ export default function App() {
               onClear={() => { setLineagePath(null); setLineageOrder(null); }}
               onExit={toggleLineage}
               onPeek={(id) => viewApi.current?.pulseBubble(id)}
+              onSearch={openSearch}
             />
           )}
           {flightCaption && (

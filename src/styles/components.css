@@ -7595,6 +7595,20 @@ button.health-notes {
 .lineage-banner__exit { background: var(--accent, #c2603a); color: #fff; border-color: transparent; }
 .lineage-banner__clear:hover { background: #fff; }
 .lineage-banner__guide .lineage-banner__exit { flex-shrink: 0; padding: 6px 14px; }
+.lineage-banner__search {
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--hairline, #ebedf0);
+  background: var(--ground, #f7f3ec);
+  border-radius: 50%;
+  color: var(--ink-soft, #6b6260);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.lineage-banner__search:hover { background: #fff; color: var(--accent, #c2603a); }
 
 @keyframes lb-drop {
   from { opacity: 0; transform: translate(-50%, -14px); }

@@ -15,7 +15,7 @@ import { relationLabel, buildRelationCrumbs } from '../data/graph.js';
  * already drawn on the tree the moment a path exists); each crumb is
  * tappable, same as in search, to pulse that person's bubble.
  */
-export default function LineageBanner({ graph, anchorId, order, onClear, onExit, onPeek }) {
+export default function LineageBanner({ graph, anchorId, order, onClear, onExit, onPeek, onSearch }) {
   const anchor = graph.byId.get(anchorId);
   const first = (p) => (p?.display_name || '').trim().split(/\s+/)[0] || '';
   const hasPath = order && order.length >= 2;
@@ -30,8 +30,13 @@ export default function LineageBanner({ graph, anchorId, order, onClear, onExit,
         <div className="lineage-banner__guide">
           <span className="lineage-banner__glyph"><LineageGlyph /></span>
           <p className="lineage-banner__text">
-            Tracing from <strong>{anchor ? first(anchor) : 'someone'}</strong> — tap another relative to draw the line.
+            Tracing from <strong>{anchor ? first(anchor) : 'someone'}</strong> — tap another relative, or search, to draw the line.
           </p>
+          {onSearch && (
+            <button className="lineage-banner__search" onClick={onSearch} aria-label="Search for who to trace to">
+              <SearchGlyph />
+            </button>
+          )}
           <button className="lineage-banner__exit" onClick={onExit}>Done</button>
         </div>
       ) : (
@@ -74,6 +79,15 @@ export default function LineageBanner({ graph, anchorId, order, onClear, onExit,
         </div>
       )}
     </div>
+  );
+}
+
+function SearchGlyph() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M16.5 16.5L21 21" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
   );
 }
 
