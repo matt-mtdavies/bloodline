@@ -8015,3 +8015,173 @@ button.health-notes {
 @media (prefers-reduced-motion: reduce) {
   .claim__spark, .claim__hero-aurora, .install-card { animation: none; }
 }
+
+/* ── Chart view (ChartTree.jsx) ───────────────────────────────────────────────
+   A traditional, DOM-rendered family chart — rectangular cards with real
+   text, not the canvas bubbles the other views share. Its own pan/zoom
+   surface, entirely separate from BubbleTree's Pixi stage. */
+.chart-tree {
+  position: fixed;
+  inset: 0;
+  touch-action: none;
+}
+.chart-tree__viewport {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  cursor: grab;
+}
+.chart-tree__viewport:active { cursor: grabbing; }
+.chart-tree__world {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+  will-change: transform;
+}
+.chart-tree__lines {
+  position: absolute;
+  left: 0;
+  top: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+.chart-link {
+  stroke: var(--bio);
+  stroke-width: 2;
+  opacity: 0.5;
+}
+
+.chart-card {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  background: var(--card);
+  border: 1px solid var(--hairline);
+  border-radius: 14px;
+  box-shadow: var(--shadow-soft);
+  overflow: hidden;
+}
+.chart-card--active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2.5px var(--accent-soft), var(--shadow-soft);
+}
+
+.chart-card__row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex: 1;
+  min-width: 0;
+  padding: 7px 12px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--body);
+}
+.chart-card__row:hover { background: var(--paper-deep); }
+.chart-card__row + .chart-card__row { border-top: 1px solid var(--hairline); }
+.chart-card__row-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.chart-card__name {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.chart-card__dates {
+  font-size: 11.5px;
+  color: var(--ink-soft);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chart-card__collapse {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border: none;
+  border-top: 1px solid var(--hairline);
+  background: var(--paper-deep);
+  color: var(--ink-soft);
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 4px 6px;
+  cursor: pointer;
+  font-family: var(--body);
+}
+.chart-card__collapse:hover { background: var(--accent-soft); color: var(--accent-deep); }
+
+.chart-card--placeholder {
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1.5px dashed var(--ink-faint);
+  background: transparent;
+  color: var(--ink-faint);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: var(--body);
+}
+.chart-card--placeholder:hover {
+  border-color: var(--accent);
+  color: var(--accent-deep);
+  background: var(--accent-soft);
+}
+
+/* Orientation + zoom cluster — floats below the topbar, top-right, styled
+   like the bottom dock (frosted pill) so it reads as the same design system. */
+.chart-controls {
+  position: fixed;
+  /* Same offset .listview uses to clear the full topbar (brand row + the
+     family-stats treerow below it) — sitting any closer overlapped the
+     treerow's own tap targets. */
+  top: calc(var(--safe-top) + 128px);
+  right: 16px;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  background: rgba(255, 255, 255, 0.93);
+  backdrop-filter: blur(20px) saturate(1.6);
+  -webkit-backdrop-filter: blur(20px) saturate(1.6);
+  border-radius: 999px;
+  padding: 5px;
+  box-shadow:
+    0 10px 36px rgba(0, 0, 0, 0.10),
+    0 2px 8px rgba(0, 0, 0, 0.06),
+    inset 0 0 0 0.5px rgba(255, 255, 255, 0.85);
+}
+.chart-controls__seg { display: flex; gap: 2px; }
+.chart-controls__btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  border: none;
+  background: transparent;
+  color: var(--ink-soft);
+  cursor: pointer;
+  transition: background 0.14s, color 0.14s;
+}
+.chart-controls__btn:hover { background: rgba(139, 120, 100, 0.07); }
+.chart-controls__btn:active { transform: scale(0.9); }
+.chart-controls__btn--on { background: var(--ink); color: #fff; }
+.chart-controls__divider {
+  width: 1px;
+  height: 20px;
+  background: var(--hairline);
+  margin: 0 2px;
+}

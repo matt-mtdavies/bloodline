@@ -57,6 +57,7 @@ import { canManageTree } from './lib/visibility.js';
 import { profileCompleteness } from './lib/profile.js';
 import { useReducedMotion } from './hooks/useReducedMotion.js';
 import BubbleTree from './viz/BubbleTree.jsx';
+import ChartTree from './viz/ChartTree.jsx';
 import TopBar from './components/TopBar.jsx';
 import FocusNameplate from './components/FocusNameplate.jsx';
 import HoverCard from './components/HoverCard.jsx';
@@ -1448,6 +1449,14 @@ export default function App() {
       />
 
       {view === 'bubbles' ? (
+        layout === 'chart' ? (
+          <ChartTree
+            graph={graph}
+            activeId={activeId}
+            onOpenPerson={openPerson}
+            onAddRelative={setAddAnchorId}
+          />
+        ) : (
         <>
           <BubbleTree
             graph={graph}
@@ -1675,6 +1684,7 @@ export default function App() {
             />
           )}
         </>
+        )
       ) : (
         <AccessibleTree
           graph={graph}
@@ -1929,11 +1939,7 @@ export default function App() {
         open={legendOpen}
         onClose={() => setLegendOpen(false)}
         layout={layout}
-        onSetLayout={(mode) => {
-          setLayout(mode);
-          // Chart mode works best with Focus Family limiting the visible set.
-          if (mode === 'chart' && !focusMode) setFocusMode(true);
-        }}
+        onSetLayout={setLayout}
       />
 
       {activityOpen && (
