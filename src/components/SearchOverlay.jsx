@@ -12,7 +12,6 @@ const CATEGORIES = [
   { key: 'aunts_uncles', label: 'Aunts & Uncles' },
   { key: 'cousins', label: 'Cousins' },
   { key: 'descendants', label: 'Nieces, Nephews & Grandchildren' },
-  { key: 'in_laws', label: 'In-Laws' },
   { key: 'everyone_else', label: 'Everyone Else' },
 ];
 
