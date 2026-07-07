@@ -5060,8 +5060,14 @@ button.health-notes {
 .activity-badge {
   position: absolute;
   top: -5px; right: -5px;
-  min-width: 17px; height: 17px;
-  padding: 0 4px;
+  /* A hair roomier than the "9+" text strictly needs — border-box means the
+     2px white ring and this padding eat into min-width/height before any
+     text renders, and at 1x (non-retina) DPR, small bold digits hint/snap
+     to slightly different glyph widths than at high-DPI, which made "9+"
+     read as touching the edge on a real desktop display even though it
+     looked fine on a retina phone screen. More headroom fixes it at either. */
+  min-width: 19px; height: 18px;
+  padding: 0 5px;
   border-radius: 999px;
   background: var(--accent);
   color: #ffffff;
