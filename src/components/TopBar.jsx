@@ -1,10 +1,19 @@
 import { useState, useRef, useEffect, forwardRef } from 'react';
 import Logo from './Logo.jsx';
 
-export default function TopBar({ familyName, stats, view, syncStatus, syncError, onRetrySync, onToggleView, onOpenLegend, bloodlineOnly = false, onToggleBloodlineOnly, onOpenSettings, onOpenActivity, activityCount = 0, user, userPhoto, onOpenProfile, onOpenHome, onSearch, onOpenInsights, onOpenTimeline, onOpenDuplicates, duplicateCount = 0, storageWarning, syncToast, onDismissSyncToast, recapNudgeCount = 0, onShowRecap, onDismissRecapNudge }) {
+export default function TopBar({ familyName, stats, view, layout, syncStatus, syncError, onRetrySync, onSetViewMode, onOpenLegend, bloodlineOnly = false, onToggleBloodlineOnly, onOpenSettings, onOpenActivity, activityCount = 0, user, userPhoto, onOpenProfile, onOpenHome, onSearch, onOpenInsights, onOpenTimeline, onOpenDuplicates, duplicateCount = 0, storageWarning, syncToast, onDismissSyncToast, recapNudgeCount = 0, onShowRecap, onDismissRecapNudge }) {
   const [statsOpen, setStatsOpen] = useState(false);
+  const [viewMenuOpen, setViewMenuOpen] = useState(false);
   const popoverRef = useRef(null);
   const statsRef = useRef(null);
+  const viewMenuRef = useRef(null);
+  const viewMenuBtnRef = useRef(null);
+
+  // The three ways of seeing the family — tree is the default, chart trades
+  // the organic camera for a traditional static chart, list drops canvas
+  // entirely for a screen-reader-friendly directory. Layout (organic/chart)
+  // only means anything while view === 'bubbles', hence the nesting here.
+  const viewMode = view !== 'bubbles' ? 'list' : layout === 'chart' ? 'chart' : 'tree';
 
   useEffect(() => {
     if (!statsOpen) return;
@@ -24,6 +33,25 @@ export default function TopBar({ familyName, stats, view, syncStatus, syncError,
       document.removeEventListener('keydown', onKey);
     };
   }, [statsOpen]);
+
+  useEffect(() => {
+    if (!viewMenuOpen) return;
+    const onDown = (e) => {
+      if (
+        viewMenuRef.current && !viewMenuRef.current.contains(e.target) &&
+        viewMenuBtnRef.current && !viewMenuBtnRef.current.contains(e.target)
+      ) {
+        setViewMenuOpen(false);
+      }
+    };
+    const onKey = (e) => { if (e.key === 'Escape') setViewMenuOpen(false); };
+    document.addEventListener('pointerdown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('pointerdown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [viewMenuOpen]);
 
   return (
     <header className="topbar">
@@ -135,13 +163,27 @@ export default function TopBar({ familyName, stats, view, syncStatus, syncError,
         </div>
         <div className="topbar__row2-stack topbar__row2-stack--right">
           <button
-            className="topbar__row2-btn"
-            onClick={onToggleView}
-            aria-label={view === 'bubbles' ? 'Switch to list view' : 'Switch to tree view'}
+            ref={viewMenuBtnRef}
+            className={`topbar__row2-btn${viewMenuOpen ? ' topbar__row2-btn--active' : ''}`}
+            onClick={() => setViewMenuOpen((o) => !o)}
+            aria-label="Change how the family is shown"
+            aria-expanded={viewMenuOpen}
           >
-            {view === 'bubbles' ? <ListIcon /> : <TreeIcon />}
-            <span className="hover-tip hover-tip--left">{view === 'bubbles' ? 'List view' : 'Tree view'}</span>
+            <span className="viewmode-trigger__icon">
+              {viewModeIcon(viewMode)}
+              <ChevronDownMiniIcon />
+            </span>
+            <span className="hover-tip hover-tip--left">
+              {viewMode === 'tree' ? 'Tree view' : viewMode === 'chart' ? 'Chart view' : 'List view'}
+            </span>
           </button>
+          {viewMenuOpen && (
+            <ViewModeMenu
+              ref={viewMenuRef}
+              mode={viewMode}
+              onSelect={(m) => { onSetViewMode(m); setViewMenuOpen(false); }}
+            />
+          )}
           <button
             className={`topbar__row2-btn${bloodlineOnly ? ' topbar__row2-btn--active' : ''}`}
             onClick={onToggleBloodlineOnly}
@@ -319,6 +361,45 @@ function CompRow({ label, value, total }) {
   );
 }
 
+const VIEW_MODES = [
+  { id: 'tree', label: 'Tree', desc: 'Free-flowing network' },
+  { id: 'chart', label: 'Chart', desc: 'Traditional family tree chart' },
+  { id: 'list', label: 'List', desc: 'Accessible, searchable directory' },
+];
+
+function viewModeIcon(mode) {
+  if (mode === 'chart') return <ChartModeIcon />;
+  if (mode === 'list') return <ListIcon />;
+  return <TreeIcon />;
+}
+
+// The three ways of seeing the family, moved here from what used to be a
+// segmented control buried in the Legend sheet — a primary navigation choice
+// belongs in the header next to the thing it switches, not inside a
+// reference sheet for what the colours and lines mean.
+const ViewModeMenu = forwardRef(function ViewModeMenu({ mode, onSelect }, ref) {
+  return (
+    <div ref={ref} className="viewmode-popover" role="menu" aria-label="Change how the family is shown">
+      {VIEW_MODES.map((m) => (
+        <button
+          key={m.id}
+          className={`viewmode-popover__option${mode === m.id ? ' viewmode-popover__option--active' : ''}`}
+          onClick={() => onSelect(m.id)}
+          role="menuitemradio"
+          aria-checked={mode === m.id}
+        >
+          <span className="viewmode-popover__icon">{viewModeIcon(m.id)}</span>
+          <span className="viewmode-popover__text">
+            <span className="viewmode-popover__label">{m.label}</span>
+            <span className="viewmode-popover__desc">{m.desc}</span>
+          </span>
+          {mode === m.id && <CheckIcon />}
+        </button>
+      ))}
+    </div>
+  );
+});
+
 function userInitials(user) {
   const src = user.display_name || user.email || '';
   const parts = src.trim().split(/[\s@._]+/).filter(Boolean);
@@ -459,6 +540,39 @@ function TreeIcon() {
       <circle cx="5" cy="19" r="2.2" stroke="currentColor" strokeWidth="1.6"/>
       <circle cx="19" cy="19" r="2.2" stroke="currentColor" strokeWidth="1.6"/>
       <path d="M12 6.2v5.3M12 11.5l-5 4.8M12 11.5l5 4.8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
+    </svg>
+  );
+}
+
+// Rectangular boxes on tidy rows, not TreeIcon's circles-and-branches — the
+// deliberate visual cue that this is the static, card-based chart, not the
+// organic network.
+function ChartModeIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{flexShrink:0}}>
+      <rect x="8" y="3" width="8" height="5" rx="1.2" stroke="currentColor" strokeWidth="1.6"/>
+      <rect x="2" y="16" width="8" height="5" rx="1.2" stroke="currentColor" strokeWidth="1.6"/>
+      <rect x="14" y="16" width="8" height="5" rx="1.2" stroke="currentColor" strokeWidth="1.6"/>
+      <path d="M12 8v4M12 12H6v4M12 12h6v4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+    </svg>
+  );
+}
+
+// A tiny affordance chevron, not a standalone control — signals "tap opens a
+// menu" the same way a native <select> does, since a single click here no
+// longer just toggles between two states now that there are three.
+function ChevronDownMiniIcon() {
+  return (
+    <svg width="8" height="8" viewBox="0 0 24 24" fill="none" aria-hidden="true" className="viewmode-trigger__chevron">
+      <path d="M5 9l7 7 7-7" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  );
+}
+
+function CheckIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{flexShrink:0}}>
+      <path d="M5 13l4 4L19 7" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
     </svg>
   );
 }

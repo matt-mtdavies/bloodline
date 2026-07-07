@@ -1406,10 +1406,15 @@ export default function App() {
         familyName={data.familyName || DEFAULT_FOCUS}
         stats={familyStats}
         view={view}
+        layout={layout}
         syncStatus={syncStatus}
         syncError={syncError}
         onRetrySync={() => saveToServer()}
-        onToggleView={() => setView((v) => (v === 'bubbles' ? 'list' : 'bubbles'))}
+        onSetViewMode={(mode) => {
+          if (mode === 'list') { setView('list'); return; }
+          setView('bubbles');
+          setLayout(mode === 'chart' ? 'chart' : 'organic');
+        }}
         onOpenLegend={() => setLegendOpen(true)}
         bloodlineOnly={bloodlineOnly}
         onToggleBloodlineOnly={() => setBloodlineOnly((v) => !v)}
@@ -1938,8 +1943,6 @@ export default function App() {
       <Legend
         open={legendOpen}
         onClose={() => setLegendOpen(false)}
-        layout={layout}
-        onSetLayout={setLayout}
       />
 
       {activityOpen && (

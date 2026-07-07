@@ -103,14 +103,17 @@ try {
   await page.keyboard.press('Escape');
   await page.waitForTimeout(500);
 
-  // Re-centre deterministically through the accessible view.
-  await page.locator('[aria-label="Switch to list view"]').click();
+  // Re-centre deterministically through the accessible view. View mode lives
+  // behind a small menu now (Tree/Chart/List), not a direct toggle button.
+  await page.locator('[aria-label="Change how the family is shown"]').click();
+  await page.locator('.viewmode-popover__option', { has: page.locator('.viewmode-popover__label', { hasText: 'List' }) }).click();
   await page.waitForSelector('.listview', { timeout: 5000 });
   await page.screenshot({ path: shot('03-list.png') });
   const firstRel = page.locator('.listview__group .person-row').first();
   const relName = (await firstRel.locator('.person-row__name').textContent()) || '';
   await firstRel.click();
-  await page.locator('[aria-label="Switch to tree view"]').click();
+  await page.locator('[aria-label="Change how the family is shown"]').click();
+  await page.locator('.viewmode-popover__option', { has: page.locator('.viewmode-popover__label', { hasText: 'Tree' }) }).click();
   await page.waitForTimeout(1600); // watch the glide settle
   const focus2 = (await page.textContent('.nameplate__name').catch(() => '')) || '';
   check(
