@@ -5373,8 +5373,10 @@ button.health-notes {
     display: flex;
     /* Clears the per-stop caption above it (still visible while the tour
        runs, even with the list expanded) rather than fighting it for the
-       same band. */
-    top: calc(var(--safe-top, 0px) + 270px);
+       same band. A bit more headroom than the caption's typical height —
+       it now names every distinct change rather than capping at two, so
+       someone with several different kinds of edits wraps to 2-3 lines. */
+    top: calc(var(--safe-top, 0px) + 300px);
     border-top-left-radius: 20px;
   }
 }

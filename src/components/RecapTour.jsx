@@ -88,7 +88,7 @@ export default function RecapTour({ graph, queue, reducedMotion, allDone, onDism
                     <Avatar person={person} size={38} />
                     <span className="recap-row__text">
                       <span className="recap-row__name">{item.personName}</span>
-                      <span className="recap-row__caption">{item.detail || item.caption}</span>
+                      <span className="recap-row__caption">{item.caption}</span>
                     </span>
                   </button>
                   {item.status !== 'done' && (
