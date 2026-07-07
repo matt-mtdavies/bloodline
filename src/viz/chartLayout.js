@@ -43,47 +43,29 @@ function buildPodTree(graph, focalId) {
     return (ps.find((p) => p.status !== 'former') || ps[0]).id;
   };
 
-  // ── 1. Choose a single root: the most senior ancestor whose descendant tree
-  //       is the largest and contains the focal person (or their partner). This
-  //       gives one complete, unambiguous tree instead of a forest. ──────────
-  const ancestorsRoots = (startId) => {
-    const up = new Set([startId]);
-    const stack = [startId];
+  // ── 1-2. Visible set: the WHOLE family component reachable from the focal
+  //       person via any parent, child, or partner edge — not just one
+  //       "senior ancestor"'s descendants. A real, well-connected family
+  //       constantly has separate ancestor lines converge through marriage
+  //       (someone's daughter marries someone else's son); picking only one
+  //       such line as "the" root silently dropped the OTHER line entirely —
+  //       its parents, its other children, its grandchildren, all of it —
+  //       even though the data was completely intact. Every blood or
+  //       marriage line connected to the focal person now stays reachable;
+  //       per-branch collapse (ChartTree.jsx's default-collapsed spine) is
+  //       what keeps the INITIAL view small, not this. ─────────────────────
+  const visible = new Set([focalId]);
+  {
+    const stack = [focalId];
     while (stack.length) {
       const id = stack.pop();
-      for (const p of parentsOf(id)) if (!up.has(p.id)) { up.add(p.id); stack.push(p.id); }
+      const neighbors = [
+        ...parentsOf(id).map((p) => p.id),
+        ...childrenOf(id).map((c) => c.id),
+        ...partnersOf(id).map((p) => p.id),
+      ];
+      for (const n of neighbors) if (!visible.has(n)) { visible.add(n); stack.push(n); }
     }
-    return [...up].filter((id) => parentsOf(id).length === 0);
-  };
-  const descendantsOf = (rootId) => {
-    const set = new Set([rootId]);
-    const stack = [rootId];
-    while (stack.length) {
-      const id = stack.pop();
-      for (const c of childrenOf(id)) if (!set.has(c.id)) { set.add(c.id); stack.push(c.id); }
-    }
-    return set;
-  };
-
-  const focalPartner = primaryPartnerId(focalId);
-  const candidateRoots = new Set([
-    ...ancestorsRoots(focalId),
-    ...(focalPartner ? ancestorsRoots(focalPartner) : []),
-  ]);
-  if (!candidateRoots.size) candidateRoots.add(focalId);
-
-  let root = focalId, rootSet = descendantsOf(focalId), best = -1;
-  for (const r of candidateRoots) {
-    const set = descendantsOf(r);
-    if (!(set.has(focalId) || (focalPartner && set.has(focalPartner)))) continue;
-    if (set.size > best) { best = set.size; root = r; rootSet = set; }
-  }
-
-  // ── 2. Visible set: the chosen lineage + each member's primary partner. ────
-  const visible = new Set(rootSet);
-  for (const id of rootSet) {
-    const pp = primaryPartnerId(id);
-    if (pp) visible.add(pp);
   }
   const inV = (id) => visible.has(id);
   const vParents = (id) => parentsOf(id).filter((p) => inV(p.id));
@@ -107,7 +89,7 @@ function buildPodTree(graph, focalId) {
   // Anchor preference: a pod's anchor should be the member with bloodline
   // parents when only one member has them (so up-links and children resolve to
   // the right side); ties broken by who has more children, then id order.
-  for (const id of rootSet) {
+  for (const id of visible) {
     if (assigned.has(id)) continue;
     const partner = primaryPartnerId(id);
     if (partner && inV(partner) && !assigned.has(partner)) {
@@ -139,7 +121,7 @@ function buildPodTree(graph, focalId) {
 
   // ── 4. Parent → child pod links (each child attaches to one parent pod). ──
   const childPodOf = new Map(); // childPersonId → parent podId
-  for (const id of rootSet) {
+  for (const id of visible) {
     const par = vParents(id).map((p) => p.id);
     if (!par.length) continue;
     // Prefer the pod that contains the most of this child's parents (a couple).
@@ -187,7 +169,7 @@ export function computeChartLayout(graph, focalId) {
   if (!focalId || !graph?.byId?.has(focalId)) return pos;
   const { rootPods } = buildPodTree(graph, focalId);
 
-  // Keep only the chosen lineage's root tree(s); prefer the one containing root.
+  // Widest root tree first, so multiple converging ancestor lines lay out deterministically.
   rootPods.sort((a, b) => subWidth(b) - subWidth(a));
 
   // ── 6. Tidy layout. ───────────────────────────────────────────────────────
