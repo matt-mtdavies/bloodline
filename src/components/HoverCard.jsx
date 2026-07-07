@@ -162,7 +162,11 @@ export default function HoverCard({ graph, personId, viewerId, getPos, photos, d
   return (
     <div className="hover-card-anchor" ref={anchorRef} style={{ width: CARD_WIDTH }} aria-hidden="true">
       <div className={`hover-card${show ? ' hover-card--show' : ''}`}>
-        {hasRicherContent && <span className="hover-card__fold" aria-hidden="true" />}
+        {hasRicherContent && (
+          <span className="hover-card__attach" aria-hidden="true">
+            <StackIcon />
+          </span>
+        )}
         <div className="hover-card__head">
           <Avatar person={person} size={56} />
           <div className="hover-card__id">
@@ -256,6 +260,19 @@ function FamilyIcon() {
       <circle cx="17" cy="9" r="2.6" stroke="currentColor" strokeWidth="1.7" />
       <path d="M3 20v-1.5A4.5 4.5 0 0 1 7.5 14h1A4.5 4.5 0 0 1 13 18.5V20" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
       <path d="M14.5 14.3A3.6 3.6 0 0 1 21 16.6V17.6" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+// The "richer profile" badge — two overlapping squares, the same shorthand
+// carousel apps use for "more than one item here." Deliberately not a
+// paperclip: it reads as media in general (photos or documents) rather than
+// committing to "there's a file attached."
+function StackIcon() {
+  return (
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <rect x="3" y="7" width="14" height="14" rx="3" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M8 5.5V5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
     </svg>
   );
 }

@@ -225,36 +225,31 @@
   transform-origin: var(--card-origin, 50% 100%);
   transition: opacity 0.18s ease-out, transform 0.18s cubic-bezier(0.22, 1, 0.36, 1);
 }
-/* A folded page corner, not an icon — "there's more tucked in here" reads
-   without needing anyone to parse a glyph. Sized/clipped to the card's own
-   top-right radius so it looks cut from the corner rather than stuck on top;
-   fades in a beat after the card itself so it never competes with the name
-   for the first glance. */
-.hover-card__fold {
+/* A small "richer profile" badge, not a decorative shape — a familiar
+   corner-chip-with-glyph (the same language as a carousel indicator on a
+   multi-photo post) reads instantly as "more here" without needing to sell
+   an illusion. Inset from the corner rather than flush, so it sits on the
+   card as its own element instead of looking cut from it; fades in a beat
+   after the card itself so it never competes with the name for the first
+   glance. */
+.hover-card__attach {
   position: absolute;
-  top: 0;
-  right: 0;
-  width: 24px;
-  height: 24px;
-  overflow: hidden;
-  border-radius: 0 20px 0 7px;
+  top: 10px;
+  right: 10px;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--paper-deep);
+  border: 1px solid var(--hairline);
+  color: var(--accent);
   opacity: 0;
   transition: opacity 0.2s ease-out 0.12s;
   pointer-events: none;
 }
-.hover-card__fold::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  right: 0;
-  width: 0;
-  height: 0;
-  border-style: solid;
-  border-width: 24px 24px 0 0;
-  border-color: var(--accent) transparent transparent transparent;
-  opacity: 0.55;
-}
-.hover-card--show .hover-card__fold {
+.hover-card--show .hover-card__attach {
   opacity: 1;
 }
 .hover-card--show {
@@ -372,7 +367,7 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .hover-card { transition: none; }
-  .hover-card__fold { transition: none; }
+  .hover-card__attach { transition: none; }
 }
 
 /* ── Sheets (person card + legend) ───────────────────────────────────────── */
