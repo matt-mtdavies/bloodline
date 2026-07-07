@@ -41,9 +41,12 @@ const DESCENT_DUR = 0.65;   // s — mote falls into place
 const POP_AT      = 0.55;   // s — bubble starts to appear (overlaps descent end)
 const POP_DUR     = 0.72;   // s — elastic pop duration
 const SETTLE_AT   = POP_AT + POP_DUR + 0.05; // hand bubble back to normal control
-const YEAR_DELAY  = 0.18;   // s after settle before the year starts emerging
+const YEAR_DELAY  = 0.32;   // s after settle before the year starts emerging — gives
+                            // the bubble-glow's warm swell (which fades ~1s after
+                            // POP_AT) time to clear first, so the year never has to
+                            // compete with another warm glow sitting right behind it
 const YEAR_START  = SETTLE_AT + YEAR_DELAY;
-const YEAR_DUR    = 1.4;    // s — grows + fades over this long (~1-2s, per design)
+const YEAR_DUR    = 1.6;    // s — grows + fades over this long (~1-2s, per design)
 const TOTAL       = YEAR_START + YEAR_DUR + 0.2; // s — full effect lifetime
 
 const easeInOutCubic = (x) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
@@ -136,6 +139,9 @@ export class BirthEffect {
     // ── Birth year, emerging from the settled bubble (phase D) ────────────
     // Solid fill, not additive — this needs to stay readable, not glow and
     // wash out against the pale canvas the way the light-effects above do.
+    // A cream stroke + soft shadow give it guaranteed separation from
+    // whatever happens to be behind it — a face photo, a warm bubble colour,
+    // another gold glow — rather than relying on the canvas staying pale.
     if (birthYear != null) {
       const yr = new Text({
         text: String(birthYear),
@@ -144,6 +150,8 @@ export class BirthEffect {
           fontSize: Math.round(baseRadius * 0.85),
           fontWeight: '700',
           fill: '#c2603a',
+          stroke: { color: '#fff8f0', width: Math.max(2, baseRadius * 0.09) },
+          dropShadow: { color: '#241f1c', alpha: 0.28, blur: 4, distance: 1.5, angle: Math.PI / 2 },
           letterSpacing: 0.5,
         },
       });
@@ -263,12 +271,14 @@ export class BirthEffect {
         const growth = easeOutCubic(yp);
         const scale = 0.65 + growth * 1.45; // 0.65 -> 2.1, "coming out" of the bubble
         this.yearText.scale.set(scale);
-        // Hold at full opacity briefly so the number has a moment to actually
-        // be read before it starts dissolving, rather than fading from the
-        // instant it appears.
-        const fadeP = clamp01((yp - 0.2) / 0.8);
+        // Hold at full opacity for a real beat before it starts dissolving —
+        // long enough to actually read four digits, not just glimpse them.
+        const fadeP = clamp01((yp - 0.4) / 0.6);
         this.yearText.alpha = 1 - easeInOutCubic(fadeP);
-        this.yearText.position.set(this.dest.x, this.dest.y - r * 0.35 * growth);
+        // Rise clear of the bubble as it grows, rather than growing in place
+        // on top of it — by full size the number sits above the face, not
+        // stacked over it.
+        this.yearText.position.set(this.dest.x, this.dest.y - r * (0.55 + growth * 1.15));
       }
     }
 
