@@ -70,6 +70,32 @@ export async function uploadDocument(dataUrl, { title = 'document', mime = 'appl
   return dataUrl;
 }
 
+// Ask the server to read a heading/letterhead/document-type out of a preview
+// image and suggest a title for it — "Certificate of Discharge" instead of
+// whatever the camera app named the file. Best-effort: returns null (never
+// throws) on any failure, a slow/unconfigured server, or a genuine "nothing
+// to suggest" reply, so the caller can just keep its filename-derived title.
+export async function suggestDocumentTitle(previewDataUrl, { timeoutMs = 10000 } = {}) {
+  if (!previewDataUrl?.startsWith('data:image/')) return null;
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), timeoutMs);
+  try {
+    const res = await fetch('/api/documents/title', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ image: previewDataUrl }),
+      signal: ac.signal,
+    });
+    if (!res.ok) return null;
+    const { title } = await res.json();
+    return title || null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // Upload a photo data URL to R2. Returns the /api/photos/<key> URL on success,
 // or the original data URL as a fallback if the upload fails (e.g. offline).
 export async function uploadPhoto(dataUrl) {

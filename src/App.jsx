@@ -2107,6 +2107,7 @@ function DocViewer({ doc, onClose }) {
               onPointerMove={(e) => { e.stopPropagation(); handlers.onPointerMove(e); }}
               onPointerUp={(e) => { e.stopPropagation(); handlers.onPointerUp(e); }}
               onPointerCancel={(e) => { e.stopPropagation(); handlers.onPointerCancel(e); }}
+              onWheel={(e) => { e.stopPropagation(); handlers.onWheel(e); }}
               onClick={(e) => e.stopPropagation()}
             />
           </div>

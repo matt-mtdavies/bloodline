@@ -4,7 +4,7 @@ import SmartImg from './SmartImg.jsx';
 import { lifespan, formatDate, ageOrAt } from '../lib/dates.js';
 import { relationLabel } from '../data/graph.js';
 import { profileCompleteness, lifeEvents, fullName } from '../lib/profile.js';
-import { fileToDataUrl, uploadPhoto } from '../lib/image.js';
+import { fileToDataUrl, uploadPhoto, suggestDocumentTitle } from '../lib/image.js';
 import { streamBio } from '../lib/ai.js';
 import { VISIBILITY_LABELS, VISIBILITY_DESCS } from '../lib/visibility.js';
 import { HEALTH_CATEGORIES, HEALTH_CONDITIONS, HEALTH_STATUSES, colorFor } from '../lib/health.js';
@@ -297,14 +297,26 @@ export default function PersonSheet({
     for (const file of files) {
       try {
         if (file.size > 20 * 1024 * 1024) continue;
-        const title = file.name.replace(/\.[^.]+$/, '');
+        let title = file.name.replace(/\.[^.]+$/, '');
         const src = await uploadDoc(file);
         let thumb = null;
+        let preview = null; // small image handed to the title suggester below
         if (file.type === 'application/pdf') {
           // Lazy-loaded — pdf.js is a large dependency only worth paying for
           // when someone actually uploads a PDF (see PdfViewer.jsx).
           const { generatePdfThumbnail } = await import('../lib/pdf.js');
           thumb = await generatePdfThumbnail(src);
+          preview = thumb;
+        } else if (file.type.startsWith('image/')) {
+          preview = await fileToDataUrl(file, 1000).catch(() => null);
+        }
+        // Read any heading/letterhead/document type off the page itself —
+        // "Certificate of Discharge" beats whatever the camera named the
+        // file. Best-effort: falls straight back to the filename above if
+        // AI isn't configured, the request fails, or there's nothing to read.
+        if (preview) {
+          const suggested = await suggestDocumentTitle(preview);
+          if (suggested) title = suggested;
         }
         onAddDocument?.(person.id, { title, mime: file.type, src, thumb });
       } catch {

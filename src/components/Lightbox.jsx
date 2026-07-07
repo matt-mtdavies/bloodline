@@ -81,6 +81,7 @@ export default function Lightbox({ photos, startIndex = 0, onClose, onSetCaption
           onPointerMove={(e) => { e.stopPropagation(); handlers.onPointerMove(e); }}
           onPointerUp={(e) => { e.stopPropagation(); handlers.onPointerUp(e); }}
           onPointerCancel={(e) => { e.stopPropagation(); handlers.onPointerCancel(e); }}
+          onWheel={(e) => { e.stopPropagation(); handlers.onWheel(e); }}
           onClick={(e) => e.stopPropagation()}
         />
         {photos.length > 1 && xf.scale === 1 && (
