@@ -173,9 +173,11 @@ export default function TopBar({ familyName, stats, view, layout, syncStatus, sy
               {viewModeIcon(viewMode)}
               <ChevronDownMiniIcon />
             </span>
-            <span className="hover-tip hover-tip--left">
-              {viewMode === 'tree' ? 'Tree view' : viewMode === 'chart' ? 'Chart view' : 'List view'}
-            </span>
+            {/* Names the CONTROL, not the current state — a click here opens
+                a picker between three modes now, it doesn't just toggle to
+                the other one, so "Tree view" read as a stale, inaccurate
+                label once this stopped being a direct switch. */}
+            <span className="hover-tip hover-tip--left">Change view</span>
           </button>
           {viewMenuOpen && (
             <ViewModeMenu
