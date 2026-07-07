@@ -852,7 +852,7 @@
   border: 1px solid var(--hairline);
   background: var(--card);
   padding: 0 16px;
-  font-size: 15px;
+  font-size: 16px; /* not smaller — see the note on .doc-row__title-input */
   font-family: var(--body);
   color: var(--ink);
 }
@@ -1624,7 +1624,11 @@
 }
 .doc-card__title:hover .doc-card__title-pencil { color: var(--accent); }
 .doc-row__title-input {
-  font-size: 14.5px;
+  /* 16px, not smaller — iOS Safari auto-zooms the whole page in on focus
+     for any text input under that size, and often doesn't zoom back out
+     once the input blurs, leaving the tree stuck zoomed in after leaving
+     and returning to it. Same reasoning on every input fix below. */
+  font-size: 16px;
   font-weight: 500;
   color: var(--ink);
   background: var(--paper-deep);
@@ -3400,7 +3404,7 @@ button.health-notes {
   background: rgba(255, 255, 255, 0.06);
   padding: 0 14px;
   color: #fff;
-  font-size: 15px;
+  font-size: 16px; /* not smaller — see the note on .doc-row__title-input */
   font-family: var(--body);
 }
 .lightbox__caption-input::placeholder { color: rgba(255, 255, 255, 0.4); }
@@ -5980,7 +5984,7 @@ button.health-notes {
   border: 1.5px solid var(--hairline);
   border-radius: 10px;
   padding: 10px 12px;
-  font-size: 14px;
+  font-size: 16px; /* not smaller — see the note on .doc-row__title-input */
   font-family: inherit;
   color: var(--ink);
   background: var(--surface);
@@ -6310,7 +6314,7 @@ button.health-notes {
   border-radius: 10px;
   background: var(--ground, #f7f3ec);
   padding: 10px 12px;
-  font-size: 13px;
+  font-size: 16px; /* not smaller — see the note on .doc-row__title-input */
   color: var(--ink-soft, #6b6260);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   text-overflow: ellipsis;
@@ -6337,7 +6341,7 @@ button.health-notes {
   color: var(--ink, #241f1c);
   border: 1px solid var(--hairline, #ebedf0);
 }
-.sharelink--compact .sharelink__url { padding: 8px 10px; font-size: 12px; }
+.sharelink--compact .sharelink__url { padding: 8px 10px; font-size: 16px; } /* not smaller — see the note on .doc-row__title-input */
 
 .fs__share-label,
 .invite-sheet__share-label {
