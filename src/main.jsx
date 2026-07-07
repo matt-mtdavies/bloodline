@@ -4,38 +4,6 @@ import { registerSW } from 'virtual:pwa-register';
 import './styles/global.css';
 import App from './App.jsx';
 
-// Registers the service worker AND actually acts on updates. skipWaiting +
-// clientsClaim (vite.config.js) mean a new SW takes control the moment it's
-// ready, but a tab that's already open keeps running its OLD JavaScript in
-// memory regardless — nothing about "the new SW is in control" swaps out
-// already-loaded modules. Without this, that tab is stuck silently running
-// a stale build until the user happens to fully close and reopen the app.
-//
-// But reloading the INSTANT an update is ready — with no regard for whether
-// the user is mid-session looking at the tree — is what caused the app to
-// flash the tree in and then yank back to the loading screen a couple
-// seconds later. Instead: reload immediately only if the tab is already in
-// the background (nobody's looking, so it's invisible); otherwise wait
-// until the user backgrounds it (switches away / locks the phone) and
-// reload then. They'll simply find the fresh build next time they open the
-// app — never a visible flash-and-reload mid-session, and never a delay to
-// the app's own initial mount (this only changes *when* a reload happens,
-// nothing about how or when the tree itself loads or saves).
-function reloadForUpdate() {
-  if (document.visibilityState === 'hidden') {
-    window.location.reload();
-    return;
-  }
-  const onHidden = () => {
-    if (document.visibilityState !== 'hidden') return;
-    document.removeEventListener('visibilitychange', onHidden);
-    window.location.reload();
-  };
-  document.addEventListener('visibilitychange', onHidden);
-}
-
-registerSW({ immediate: true, onNeedRefresh: reloadForUpdate });
-
 class ErrorBoundary extends React.Component {
   state = { error: null };
   static getDerivedStateFromError(e) { return { error: e }; }
@@ -59,10 +27,74 @@ class ErrorBoundary extends React.Component {
   }
 }
 
-createRoot(document.getElementById('root')).render(
-  <React.StrictMode>
-    <ErrorBoundary>
-      <App />
-    </ErrorBoundary>
-  </React.StrictMode>,
-);
+function boot() {
+  createRoot(document.getElementById('root')).render(
+    <React.StrictMode>
+      <ErrorBoundary>
+        <App />
+      </ErrorBoundary>
+    </React.StrictMode>,
+  );
+}
+
+// An update found once the tree's already on screen must never yank it away
+// mid-session — reload immediately only if the tab's already in the
+// background (nobody's looking), otherwise wait until it's backgrounded
+// (switch away / lock the phone) and reload then. They simply find the
+// fresh build next time they open the app.
+function reloadForUpdate() {
+  if (document.visibilityState === 'hidden') {
+    window.location.reload();
+    return;
+  }
+  const onHidden = () => {
+    if (document.visibilityState !== 'hidden') return;
+    document.removeEventListener('visibilitychange', onHidden);
+    window.location.reload();
+  };
+  document.addEventListener('visibilitychange', onHidden);
+}
+
+// A brand-new visit has no existing service worker controlling the page, so
+// there's nothing for an update to be found against — mount right away,
+// no reason to pay any grace period for a check that can't produce one.
+//
+// A RETURNING visit is the case that used to flash the tree in and yank it
+// back a couple of seconds later: the page loads under the OLD service
+// worker, then the new one (already deployed, found almost instantly thanks
+// to skipWaiting+clientsClaim) swaps in right as the tree finishes its first
+// paint. So here, give the registration a short, HARD-CAPPED window to say
+// "found an update, reloading" BEFORE mounting anything — if it does, the
+// reload happens invisibly (nothing was ever shown to yank away, just a
+// beat longer on the loading screen). If the cap elapses first, mount
+// normally regardless of what the registration is doing — a stalled
+// network, a registration error, anything — this can never hang past the
+// cap, and once mounted, a late update falls back to the same safe,
+// deferred reload as a long-running session.
+const hadControllerAlready = !!(window.navigator?.serviceWorker?.controller);
+
+if (!hadControllerAlready) {
+  boot();
+  registerSW({ immediate: true, onNeedRefresh: reloadForUpdate });
+} else {
+  const GRACE_MS = 400;
+  let decided = false;
+  const timer = setTimeout(() => {
+    if (decided) return;
+    decided = true;
+    boot();
+  }, GRACE_MS);
+
+  registerSW({
+    immediate: true,
+    onNeedRefresh() {
+      if (decided) {
+        reloadForUpdate(); // already mounted — defer, don't yank
+        return;
+      }
+      decided = true;
+      clearTimeout(timer);
+      window.location.reload(); // nothing mounted yet — invisible
+    },
+  });
+}

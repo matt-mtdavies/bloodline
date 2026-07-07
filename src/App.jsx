@@ -2227,7 +2227,7 @@ function FocusIcon() {
 function AppLoadingScreen() {
   return (
     <div className="app-loading">
-      <Logo size={42} />
+      <Logo size={42} animate={false} loading />
     </div>
   );
 }

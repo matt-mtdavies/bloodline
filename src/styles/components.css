@@ -107,8 +107,33 @@
   from { transform: scale(0); opacity: 0; }
   to { transform: scale(1); opacity: 1; }
 }
+
+/* Loading variant — a slow breathing loop instead of the one-shot pop-in,
+   scoped entirely to logo--loading so the ordinary mark (topbar, Home, etc.)
+   is completely unaffected. */
+.logo__link {
+  stroke: #beb2a6;
+  stroke-width: 1.6;
+  opacity: 0;
+}
+.logo--loading .logo__a { animation: logo-breathe 2.2s ease-in-out infinite; }
+.logo--loading .logo__b { animation: logo-breathe 2.2s ease-in-out infinite; animation-delay: 0.12s; }
+.logo--loading .logo__c { animation: logo-breathe 2.2s ease-in-out infinite; animation-delay: 0.24s; }
+.logo--loading .logo__link { animation: logo-link-fade 2.2s ease-in-out infinite; }
+@keyframes logo-breathe {
+  0%, 100% { transform: scale(1); }
+  45%, 55% { transform: scale(0.62); }
+}
+@keyframes logo-link-fade {
+  0%, 100% { opacity: 0; }
+  45%, 55% { opacity: 1; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .topbar, .logo__a, .logo__b, .logo__c { animation-duration: 0.001ms !important; }
+  .logo--loading .logo__a, .logo--loading .logo__b, .logo--loading .logo__c, .logo--loading .logo__link {
+    animation: none;
+  }
 }
 
 .pill {
@@ -4951,9 +4976,6 @@ button.health-notes {
   align-items: center;
   justify-content: center;
   background: var(--paper);
-}
-.app-loading > * {
-  animation: hint-pulse 1.8s ease-in-out infinite;
 }
 
 /* ── Activity feed bell button ───────────────────────────────────────────── */
