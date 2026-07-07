@@ -6,14 +6,35 @@ import App from './App.jsx';
 
 // Registers the service worker AND actually acts on updates. skipWaiting +
 // clientsClaim (vite.config.js) mean a new SW takes control the moment it's
-// ready, but a tab that's already open keeps running its OLD JavaScript
-// in memory regardless — nothing about "the new SW is in control" swaps out
+// ready, but a tab that's already open keeps running its OLD JavaScript in
+// memory regardless — nothing about "the new SW is in control" swaps out
 // already-loaded modules. Without this, that tab is stuck silently running
-// a stale build until the user happens to fully close and reopen the app,
-// which is exactly the manual step that left people staring at a broken
-// layout with no idea why or how to fix it. Reloading the instant an
-// update is ready means every device self-heals on its own.
-registerSW({ immediate: true, onNeedRefresh: () => window.location.reload() });
+// a stale build until the user happens to fully close and reopen the app.
+//
+// But reloading the INSTANT an update is ready — with no regard for whether
+// the user is mid-session looking at the tree — is what caused the app to
+// flash the tree in and then yank back to the loading screen a couple
+// seconds later. Instead: reload immediately only if the tab is already in
+// the background (nobody's looking, so it's invisible); otherwise wait
+// until the user backgrounds it (switches away / locks the phone) and
+// reload then. They'll simply find the fresh build next time they open the
+// app — never a visible flash-and-reload mid-session, and never a delay to
+// the app's own initial mount (this only changes *when* a reload happens,
+// nothing about how or when the tree itself loads or saves).
+function reloadForUpdate() {
+  if (document.visibilityState === 'hidden') {
+    window.location.reload();
+    return;
+  }
+  const onHidden = () => {
+    if (document.visibilityState !== 'hidden') return;
+    document.removeEventListener('visibilitychange', onHidden);
+    window.location.reload();
+  };
+  document.addEventListener('visibilitychange', onHidden);
+}
+
+registerSW({ immediate: true, onNeedRefresh: reloadForUpdate });
 
 class ErrorBoundary extends React.Component {
   state = { error: null };
