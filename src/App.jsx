@@ -1117,6 +1117,18 @@ export default function App() {
     }
   }, [deselect, returnToHome]);
 
+  // "Centre the tree here" / "Show in tree" are an explicit request to land
+  // on the tree, focused on this person — never back to Home, even if that's
+  // where the sheet was opened from (returnToHome would otherwise still be
+  // set, and closePerson() would honour it, silently bouncing back to Home
+  // right as activate()/flyTo() moved the camera underneath it — the tree
+  // WAS updated, just never shown, until the next manual visit revealed it).
+  const closePersonForTreeAction = useCallback(() => {
+    viewApi.current?.unpin();
+    setOpenId(null);
+    setReturnToHome(false);
+  }, []);
+
   // Add a relative, then fly to the new person so they greet you on the tree.
   const handleAdd = useCallback(
     (fields) => {
@@ -1713,11 +1725,11 @@ export default function App() {
         lockEscape={!!(addAnchorId || editId || timelineId || memoryId || lightbox || crop || invitePersonId)}
         onClose={closePerson}
         onFocus={(id) => {
-          closePerson();
+          closePersonForTreeAction();
           activate(id);
         }}
         onShowOnMap={(id) => {
-          closePerson();
+          closePersonForTreeAction();
           flyToPersonFromAnywhere(id);
         }}
         onOpenPerson={openPerson}
