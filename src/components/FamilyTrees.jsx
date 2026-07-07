@@ -9,7 +9,7 @@ import { clearLocalData } from '../data/store.js';
  * scroll so someone with several trees doesn't have to scroll past all of
  * them to reach the rest of the hub.
  */
-export default function FamilyTrees({ user, onClose }) {
+export default function FamilyTrees({ user, onClose, onGoToTree }) {
   const [families, setFamilies] = useState(null); // null = loading
   const [switchingId, setSwitchingId] = useState(null);
   const [switchError, setSwitchError] = useState('');
@@ -102,30 +102,42 @@ export default function FamilyTrees({ user, onClose }) {
 
         {user && families && families.length > 0 && (
           <div className="home__tree-list">
-            {families.map((f) => (
-              <div key={f.family_id} className={`home__tree-row${f.is_current ? ' home__tree-row--current' : ''}`}>
-                <span className={`home__tree-medallion${f.is_current ? ' home__tree-medallion--current' : ''}`} aria-hidden="true">
-                  <Logo size={20} animate={false} />
-                </span>
-                <div className="home__tree-text">
-                  <span className="home__tree-name">{f.name || 'Untitled family'}</span>
-                  <span className="home__tree-meta">
-                    {roleLabel(f.role)} · {f.member_count} member{f.member_count === 1 ? '' : 's'}
+            {families.map((f) => {
+              // The tree you're already on is a zero-risk tap straight back
+              // to the canvas — the whole row is clickable. Switching to a
+              // different tree reloads and clears the local cache, so that
+              // stays a deliberate tap on its own smaller button instead.
+              const Row = f.is_current ? 'button' : 'div';
+              return (
+                <Row
+                  key={f.family_id}
+                  type={f.is_current ? 'button' : undefined}
+                  onClick={f.is_current ? onGoToTree : undefined}
+                  className={`home__tree-row${f.is_current ? ' home__tree-row--current home__tree-row--clickable' : ''}`}
+                >
+                  <span className={`home__tree-medallion${f.is_current ? ' home__tree-medallion--current' : ''}`} aria-hidden="true">
+                    <Logo size={20} animate={false} />
                   </span>
-                </div>
-                {f.is_current ? (
-                  <span className="home__tree-current">Viewing</span>
-                ) : (
-                  <button
-                    className="home__tree-switch"
-                    onClick={() => switchFamily(f.family_id)}
-                    disabled={!!switchingId}
-                  >
-                    {switchingId === f.family_id ? 'Switching…' : 'Switch'}
-                  </button>
-                )}
-              </div>
-            ))}
+                  <div className="home__tree-text">
+                    <span className="home__tree-name">{f.name || 'Untitled family'}</span>
+                    <span className="home__tree-meta">
+                      {roleLabel(f.role)} · {f.member_count} member{f.member_count === 1 ? '' : 's'}
+                    </span>
+                  </div>
+                  {f.is_current ? (
+                    <span className="home__tree-current">Viewing</span>
+                  ) : (
+                    <button
+                      className="home__tree-switch"
+                      onClick={() => switchFamily(f.family_id)}
+                      disabled={!!switchingId}
+                    >
+                      {switchingId === f.family_id ? 'Switching…' : 'Switch'}
+                    </button>
+                  )}
+                </Row>
+              );
+            })}
           </div>
         )}
         {switchError && <p className="up__save-status up__save-status--err">{switchError}</p>}

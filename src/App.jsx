@@ -432,6 +432,10 @@ export default function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data.myPersonId]);
   const [openId, setOpenId] = useState(null); // person card
+  // Set when a profile is opened from the home hub (e.g. tapping an activity
+  // row on Home) — closing that profile should land back on the hub, not the
+  // bare tree, since that's where the person actually navigated from.
+  const [returnToHome, setReturnToHome] = useState(false);
   const [addAnchorId, setAddAnchorId] = useState(null); // add-relative sheet
   const [editId, setEditId] = useState(null); // edit sheet
   const [editStartInEdit, setEditStartInEdit] = useState(false); // skip the view mode (see handleAdd's "Add & edit details")
@@ -856,6 +860,7 @@ export default function App() {
     setTimeYear(startYear);
     setTimePlaying(true);
     setOpenId(null);
+    setReturnToHome(false); // jumping into Time Mode, not just closing the profile
     // Re-enter follow mode and warm the sim so the focus family spreads to fill screen.
     setTimeout(() => viewApi.current?.refocus(0.5), 100);
   }, [graph, yearRange.min]);
@@ -1075,8 +1080,13 @@ export default function App() {
   const closePerson = useCallback(() => {
     viewApi.current?.unpin();
     setOpenId(null);
-    deselect(); // returning to the tree from a profile lands in browse mode
-  }, [deselect]);
+    if (returnToHome) {
+      setReturnToHome(false);
+      setHomeOpen(true);
+    } else {
+      deselect(); // returning to the tree from a profile lands in browse mode
+    }
+  }, [deselect, returnToHome]);
 
   // Add a relative, then fly to the new person so they greet you on the tree.
   const handleAdd = useCallback(
@@ -1101,6 +1111,7 @@ export default function App() {
       setAddAnchorId(null);
       viewApi.current?.unpin();
       setOpenId(null);
+      setReturnToHome(false); // adding a relative lands on the tree, not the hub
       setExpanded((prev) => new Set(prev).add(addAnchorId).add(newId));
       setActiveId(newId);
       // "Add & edit details" — skip the birth-year-only mini form the quick
@@ -1220,6 +1231,7 @@ export default function App() {
     const id = editId;
     setEditId(null);
     setOpenId(null);
+    setReturnToHome(false); // the profile they were viewing is gone — land on the tree
     removePerson(id);
     if (activeId === id) {
       const next = data.myPersonId || data.people.find((p) => p.id !== id)?.id || DEFAULT_FOCUS;
@@ -1978,14 +1990,24 @@ export default function App() {
           onSelectPerson={(id) => {
             setHomeOpen(false);
             const person = graph.byId.get(id);
-            if (person) openPerson(id);
+            if (person) { setReturnToHome(true); openPerson(id); }
           }}
         />
       )}
 
-      {howItWorksOpen && <HowItWorks onClose={() => setHowItWorksOpen(false)} />}
+      {/* Both subpages are reached only from the hub, so their back button
+          always returns there — not the bare tree. */}
+      {howItWorksOpen && (
+        <HowItWorks onClose={() => { setHowItWorksOpen(false); setHomeOpen(true); }} />
+      )}
 
-      {familyTreesOpen && <FamilyTrees user={user} onClose={() => setFamilyTreesOpen(false)} />}
+      {familyTreesOpen && (
+        <FamilyTrees
+          user={user}
+          onClose={() => { setFamilyTreesOpen(false); setHomeOpen(true); }}
+          onGoToTree={() => setFamilyTreesOpen(false)}
+        />
+      )}
 
       {fsImportOpen && (
         <FamilySearchImport

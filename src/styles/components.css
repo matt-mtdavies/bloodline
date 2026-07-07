@@ -6698,6 +6698,16 @@ button.health-notes {
   box-shadow: var(--shadow-soft);
 }
 .home__tree-row--current { box-shadow: 0 2px 14px rgba(194, 96, 58, 0.14); }
+.home__tree-row--clickable {
+  border: none;
+  width: 100%;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: box-shadow 0.15s ease, transform 0.15s ease;
+}
+.home__tree-row--clickable:hover { box-shadow: 0 4px 18px rgba(194, 96, 58, 0.2); }
+.home__tree-row--clickable:active { transform: scale(0.99); }
 .home__tree-medallion {
   flex-shrink: 0;
   width: 40px;
