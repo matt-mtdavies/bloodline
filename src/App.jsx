@@ -47,7 +47,7 @@ import {
   takeRecapCutoff,
   setRecapCutoff,
 } from './data/store.js';
-import { groupRecapUpdates, captionForRecapGroup } from './lib/recap.js';
+import { groupRecapUpdates, captionForRecapGroup, detailForRecapGroup } from './lib/recap.js';
 import { uploadPhoto, generateThumb, uploadDocument, savePhotoToDevice } from './lib/image.js';
 import { useImageZoom } from './lib/useImageZoom.js';
 import { buildGraph, pathBetween, pathBetweenOrdered, bloodRelativesOf } from './data/graph.js';
@@ -1004,6 +1004,7 @@ export default function App() {
         personId: g.personId,
         personName: g.personName,
         caption: captionForRecapGroup(g),
+        detail: detailForRecapGroup(g),
         status: 'pending',
       })),
     );

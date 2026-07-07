@@ -37,9 +37,41 @@ export function groupRecapUpdates(activity, sinceMs, { cap = CAP, viewerEmail = 
   return groups.length > cap ? groups.slice(groups.length - cap) : groups;
 }
 
+// The per-stop spotlight caption — capped at 2 joined items ("+N more"
+// beyond that) rather than a bare "3 updates", so you actually see what
+// changed without risking a caption tall enough to run into the queue
+// panel's fixed clearance below it on a phone (see .recap-queue's
+// `top: …270px` in components.css, sized for a short caption).
 export function captionForRecapGroup(group) {
-  if (group.events.length > 1) return `${group.events.length} updates`;
-  return captionForEvent(group.events[0]);
+  if (group.events.length === 1) return captionForEvent(group.events[0]);
+  return joinCaptionItems(distinctCaptionCounts(group.events), 2);
+}
+
+// The fuller, uncapped version for the queue list row — that one lives in
+// a scrollable list with no fixed-height assumption, so it can afford to
+// name everything rather than capping at 2.
+export function detailForRecapGroup(group) {
+  if (group.events.length === 1) return null;
+  const items = distinctCaptionCounts(group.events);
+  return joinCaptionItems(items, items.length);
+}
+
+// Captions for a person's events, deduplicated (repeats of the same kind —
+// e.g. two photos added — collapse into one "…×2" entry instead of
+// repeating the identical phrase), in first-occurrence order.
+function distinctCaptionCounts(events) {
+  const counts = new Map(); // caption -> count, insertion order preserved
+  for (const event of events) {
+    const caption = captionForEvent(event);
+    counts.set(caption, (counts.get(caption) || 0) + 1);
+  }
+  return [...counts.entries()].map(([caption, count]) => (count > 1 ? `${caption} ×${count}` : caption));
+}
+
+function joinCaptionItems(items, cap) {
+  if (items.length <= cap) return items.join(' · ');
+  const rest = items.length - cap;
+  return `${items.slice(0, cap).join(' · ')} +${rest} more`;
 }
 
 function captionForEvent(event) {
