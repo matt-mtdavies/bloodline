@@ -1435,6 +1435,8 @@ export default function App() {
             personId={!anyOverlayOpen && layout !== 'chart' ? hoveredId : null}
             viewerId={data.myPersonId || DEFAULT_FOCUS}
             getPos={() => viewApi.current?.getScreenPos(hoveredId)}
+            photos={data.photos}
+            documents={data.documents}
           />
           {/* Bottom bar: single floating dock */}
           <div className="bottom-bar">

@@ -15,7 +15,7 @@ const EXIT_MS = 150; // keep mounted this long after hover ends, to let the fade
  * FocusNameplate); the reveal/dismiss transition runs on a separate inner
  * element so the per-frame position writes never fight the CSS transition.
  */
-export default function HoverCard({ graph, personId, viewerId, getPos }) {
+export default function HoverCard({ graph, personId, viewerId, getPos, photos, documents }) {
   const anchorRef = useRef(null);
   const lastPos = useRef(null);
   const [displayId, setDisplayId] = useState(null);
@@ -148,9 +148,21 @@ export default function HoverCard({ graph, personId, viewerId, getPos }) {
   }
   const relSummary = familyRelBits.join(' · ');
 
+  // Quiet "there's more here" signal — not clickable, not counted anywhere
+  // else on the card. Any document at all counts (a scanned letter or
+  // certificate is a real find, however few a family has uploaded), but a
+  // gallery photo only counts once there are a few — a single snapshot is
+  // the common case and shouldn't light up on nearly every bubble, or the
+  // badge stops meaning "richer profile" and just means "profile."
+  const hasRicherContent =
+    !restricted &&
+    ((documents?.some((d) => d.person_id === person.id)) ||
+      (photos?.filter((p) => p.person_id === person.id).length || 0) >= 3);
+
   return (
     <div className="hover-card-anchor" ref={anchorRef} style={{ width: CARD_WIDTH }} aria-hidden="true">
       <div className={`hover-card${show ? ' hover-card--show' : ''}`}>
+        {hasRicherContent && <span className="hover-card__fold" aria-hidden="true" />}
         <div className="hover-card__head">
           <Avatar person={person} size={56} />
           <div className="hover-card__id">

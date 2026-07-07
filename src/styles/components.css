@@ -212,6 +212,7 @@
   pointer-events: none;
 }
 .hover-card {
+  position: relative;
   background: rgba(255, 255, 255, 0.94);
   -webkit-backdrop-filter: blur(14px) saturate(1.1);
   backdrop-filter: blur(14px) saturate(1.1);
@@ -223,6 +224,38 @@
   transform: scale(0.96) translateY(6px);
   transform-origin: var(--card-origin, 50% 100%);
   transition: opacity 0.18s ease-out, transform 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+}
+/* A folded page corner, not an icon — "there's more tucked in here" reads
+   without needing anyone to parse a glyph. Sized/clipped to the card's own
+   top-right radius so it looks cut from the corner rather than stuck on top;
+   fades in a beat after the card itself so it never competes with the name
+   for the first glance. */
+.hover-card__fold {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 24px;
+  height: 24px;
+  overflow: hidden;
+  border-radius: 0 20px 0 7px;
+  opacity: 0;
+  transition: opacity 0.2s ease-out 0.12s;
+  pointer-events: none;
+}
+.hover-card__fold::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 24px 24px 0 0;
+  border-color: var(--accent) transparent transparent transparent;
+  opacity: 0.55;
+}
+.hover-card--show .hover-card__fold {
+  opacity: 1;
 }
 .hover-card--show {
   opacity: 1;
@@ -339,6 +372,7 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .hover-card { transition: none; }
+  .hover-card__fold { transition: none; }
 }
 
 /* ── Sheets (person card + legend) ───────────────────────────────────────── */
