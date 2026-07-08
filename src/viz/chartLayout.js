@@ -445,13 +445,19 @@ export function computeChartPods(graph, focalId, { collapsed, orientation = 'ver
     for (const p of pos.values()) { if (horizontal) p.y += shift; else p.x += shift; }
   }
 
-  // Ghost "Add Father / Add Mother" cards one generation-step further from
-  // the root pod, on the "past" side (up in vertical mode, left in
-  // horizontal). Root pods are, by construction (see buildPodTree's
+  // Ghost "Add Father / Add Mother / Add Parents" card one generation-step
+  // further from the root pod, on the "past" side (up in vertical mode, left
+  // in horizontal). Root pods are, by construction (see buildPodTree's
   // ancestorsRoots filter), genuinely parentless in the underlying graph —
   // this never fires for someone whose parents simply live outside the
-  // chosen lineage. Purely a layout affordance; the click still opens the
-  // same AddRelativeSheet used everywhere else in the app.
+  // chosen lineage. Purely a layout affordance; the click opens the same
+  // AddRelativeSheet used everywhere else in the app, where the actual
+  // relationship gets picked — which is why both missing parents share ONE
+  // centred card rather than two spread side by side: the spread pushed each
+  // card ~half a pod-width past its root's own footprint, and two narrow
+  // neighbouring root trees (spaced for their real cards, which the layout
+  // knows about — these ghosts are appended after it runs) ended up with
+  // their ghost cards printed over each other.
   const placeholderLinks = [];
   for (const rp of rootPods) {
     const rpPos = pos.get(rp.id);
@@ -459,26 +465,18 @@ export function computeChartPods(graph, focalId, { collapsed, orientation = 'ver
     const realParents = graph.parents(rp.anchor);
     if (realParents.length >= 2) continue;
     const haveGenders = new Set(realParents.map((p) => graph.byId.get(p.id)?.gender).filter(Boolean));
-    const slots = [];
-    if (realParents.length === 0) {
-      slots.push('father', 'mother');
-    } else if (!haveGenders.has('male')) {
-      slots.push('father');
-    } else if (!haveGenders.has('female')) {
-      slots.push('mother');
-    }
-    if (!slots.length) continue;
-    const spread = slots.length === 2 ? (horizontal ? CHART_POD_COUPLE_H * 0.7 : CHART_POD_W * 0.62) : 0;
-    slots.forEach((slot, i) => {
-      const id = `ph_${slot}_${rp.anchor}`;
-      const off = slots.length === 2 ? (i === 0 ? -spread : spread) : 0;
-      const entry = horizontal
-        ? { x: rpPos.x - MAIN_STEP, y: rpPos.y + off, w: CHART_POD_W, h: CHART_POD_SOLO_H }
-        : { x: rpPos.x + off, y: rpPos.y - MAIN_STEP, w: CHART_POD_W, h: CHART_POD_SOLO_H };
-      pos.set(id, entry);
-      pods.set(id, { id, placeholder: true, slot, forPersonId: rp.anchor, members: [], childPods: [] });
-      placeholderLinks.push({ id, forPodId: rp.id });
-    });
+    let slot = null;
+    if (realParents.length === 0) slot = 'parents';
+    else if (!haveGenders.has('male')) slot = 'father';
+    else if (!haveGenders.has('female')) slot = 'mother';
+    if (!slot) continue;
+    const id = `ph_${slot}_${rp.anchor}`;
+    const entry = horizontal
+      ? { x: rpPos.x - MAIN_STEP, y: rpPos.y, w: CHART_POD_W, h: CHART_POD_SOLO_H }
+      : { x: rpPos.x, y: rpPos.y - MAIN_STEP, w: CHART_POD_W, h: CHART_POD_SOLO_H };
+    pos.set(id, entry);
+    pods.set(id, { id, placeholder: true, slot, forPersonId: rp.anchor, members: [], childPods: [] });
+    placeholderLinks.push({ id, forPodId: rp.id });
   }
 
   const connectors = [];

@@ -293,7 +293,7 @@ export default function ChartTree({ graph, activeId, onOpenPerson, onAddRelative
           onClick={() => onAddRelative?.(pod.forPersonId)}
         >
           <PlusIcon />
-          <span>Add {pod.slot === 'father' ? 'Father' : 'Mother'}</span>
+          <span>Add {pod.slot === 'father' ? 'Father' : pod.slot === 'mother' ? 'Mother' : 'Parents'}</span>
         </button>,
       );
       continue;
