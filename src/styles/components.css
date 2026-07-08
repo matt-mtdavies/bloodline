@@ -148,19 +148,36 @@
 
 /* Loading variant — a slow breathing loop instead of the one-shot pop-in,
    scoped entirely to logo--loading so the ordinary mark (topbar, Home, etc.)
-   is completely unaffected. */
+   is completely unaffected.
+   Each bubble's white knockout ring is only invisible where a neighbour
+   overlaps it — shrinking a bubble in place (the original approach) pulls
+   its edge away from that overlap and suddenly exposes its own full ring
+   as a fat, disproportionate halo relative to the now-smaller circle, right
+   as the stroke itself thins out from the scale-down. Growing each bubble
+   slightly instead, while nudging it outward along its own radius from the
+   cluster's centre, gets the same "gaps open, lines show, then it knits
+   back together" reveal from motion rather than shrinkage — the ring
+   barely changes size at all, so there's nothing to pop. */
 .logo__link {
   stroke: #beb2a6;
   stroke-width: 1.6;
   opacity: 0;
 }
-.logo--loading .logo__a { animation: logo-breathe 2.2s ease-in-out infinite; }
-.logo--loading .logo__b { animation: logo-breathe 2.2s ease-in-out infinite; animation-delay: 0.12s; }
-.logo--loading .logo__c { animation: logo-breathe 2.2s ease-in-out infinite; animation-delay: 0.24s; }
+.logo--loading .logo__a { animation: logo-breathe-a 2.2s ease-in-out infinite; }
+.logo--loading .logo__b { animation: logo-breathe-b 2.2s ease-in-out infinite; animation-delay: 0.12s; }
+.logo--loading .logo__c { animation: logo-breathe-c 2.2s ease-in-out infinite; animation-delay: 0.24s; }
 .logo--loading .logo__link { animation: logo-link-fade 2.2s ease-in-out infinite; }
-@keyframes logo-breathe {
-  0%, 100% { transform: scale(1); }
-  45%, 55% { transform: scale(0.62); }
+@keyframes logo-breathe-a {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  45%, 55% { transform: translate(-3px, -2px) scale(1.08); }
+}
+@keyframes logo-breathe-b {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  45%, 55% { transform: translate(3px, -2px) scale(1.08); }
+}
+@keyframes logo-breathe-c {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  45%, 55% { transform: translate(0, 4px) scale(1.08); }
 }
 @keyframes logo-link-fade {
   0%, 100% { opacity: 0; }
