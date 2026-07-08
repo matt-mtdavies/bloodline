@@ -1032,8 +1032,16 @@ export default function App() {
     }
     setLineagePath(ordered ? new Set(ordered) : null);
     setLineageOrder(ordered);
-    // Give the newly-expanded nodes a beat to lay out before framing them.
-    setTimeout(() => viewApi.current?.refocus(0.5), 100);
+    // A search result may not be anywhere near wherever the camera was
+    // last looking (unlike tapping a bubble, which by definition is already
+    // on screen) — recenter() hands the camera back to follow mode, which
+    // continuously frames the bounding box of whatever's now visible every
+    // frame on its own (see BubbleTree's ticker). refocus() would only have
+    // forced the newly-revealed nodes into a tidy radial cluster around the
+    // trace's anchor, fighting the normal generational layout for no reason
+    // — the camera catching up to wherever they actually are is all that
+    // was ever needed.
+    viewApi.current?.recenter();
   }, [lineageMode, activeId, graph, flyToSearchResult]);
 
   // Same flight as flyToSearchResult, but callable from anywhere — the
@@ -1691,8 +1699,11 @@ export default function App() {
                 <LineageIcon />
                 <span className="dock-btn__label">
                   {lineageMode
-                    ? lineagePath
-                      ? `${[...lineagePath].length} links`
+                    ? lineageOrder
+                      // Edges, not people — matches the banner's own connector
+                      // count (order.length would double-count as "3 links"
+                      // for a 2-hop, 3-person line like a grandparent trace).
+                      ? `${lineageOrder.length - 1} links`
                       : 'Tap…'
                     : 'Lineage'}
                 </span>
