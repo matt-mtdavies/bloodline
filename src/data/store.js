@@ -1160,6 +1160,31 @@ export function addRelationship(fromId, toId, type, qualifier = 'biological') {
   return { ok: true };
 }
 
+// Record (or clear) marriage details on the partner edge between two people —
+// additive metadata the pedigree chart's marriage strip renders; absent
+// fields never block anything. Accepts partial dates ('1979' or
+// '1979-06-14'), same as birth/death dates everywhere else.
+export function updatePartnerMeta(aId, bId, { marriage_date, marriage_place } = {}) {
+  const isPair = (r) =>
+    (r.from_person === aId && r.to_person === bId) || (r.from_person === bId && r.to_person === aId);
+  const idx = state.relationships.findIndex((r) => r.type === 'partner' && isPair(r));
+  if (idx < 0) return { ok: false, reason: 'no-partner-edge' };
+  const next = state.relationships.slice();
+  next[idx] = {
+    ...next[idx],
+    marriage_date: marriage_date || null,
+    marriage_place: marriage_place || null,
+  };
+  const aPerson = state.people.find((p) => p.id === aId);
+  commit(withActivity({ ...state, relationships: next }, {
+    type: 'relationship_changed',
+    personId: aId,
+    personName: aPerson?.display_name ?? '',
+    detail: 'marriage details',
+  }));
+  return { ok: true };
+}
+
 // Set the direct relationship between two existing people to a specific kind,
 // clearing any current direct edge first. kind:
 //   'partner' | 'ex_partner' | 'parent_of' (a is parent of b) | 'child_of' (b is parent of a)

@@ -49,6 +49,7 @@ export default function PersonSheet({
   onRemoveRelationship,
   onUpdateRelationshipQualifier,
   onChangeRelationship,
+  onUpdatePartnerMeta,
   onUpdateStory,
   onAddCondition,
   onRemoveCondition,
@@ -1343,6 +1344,13 @@ export default function PersonSheet({
                                     </div>
                                   </div>
                                 )}
+                                {g.relType === 'partner' && (
+                                  <MarriageDetailsEditor
+                                    key={item.id}
+                                    item={item}
+                                    onSave={(meta) => onUpdatePartnerMeta?.(person.id, item.id, meta)}
+                                  />
+                                )}
                                 {changeOptions.length > 0 && (
                                   <div className="rel-menu__group">
                                     <span className="rel-menu__label">Change to</span>
@@ -1538,6 +1546,46 @@ function DotsIcon() {
       <circle cx="12" cy="12" r="1.8" />
       <circle cx="19" cy="12" r="1.8" />
     </svg>
+  );
+}
+
+// Marriage date/place on the partner edge — the pedigree chart's marriage
+// strip renders these. Draft state is local; Save writes both fields at
+// once (see store.updatePartnerMeta). `item` is the graph's partner entry,
+// which carries the current values.
+function MarriageDetailsEditor({ item, onSave }) {
+  const [date, setDate] = useState(item.marriage_date || '');
+  const [place, setPlace] = useState(item.marriage_place || '');
+  const [saved, setSaved] = useState(false);
+  const dirty = date !== (item.marriage_date || '') || place !== (item.marriage_place || '');
+  return (
+    <div className="rel-menu__group">
+      <span className="rel-menu__label">Marriage</span>
+      <div className="marriage-edit">
+        <input
+          className="marriage-edit__input"
+          type="text"
+          inputMode="numeric"
+          placeholder="Year or date (1979 or 1979-06-14)"
+          value={date}
+          onChange={(e) => { setDate(e.target.value); setSaved(false); }}
+        />
+        <input
+          className="marriage-edit__input"
+          type="text"
+          placeholder="Place (optional)"
+          value={place}
+          onChange={(e) => { setPlace(e.target.value); setSaved(false); }}
+        />
+        <button
+          className="marriage-edit__save"
+          disabled={!dirty}
+          onClick={() => { onSave({ marriage_date: date.trim() || null, marriage_place: place.trim() || null }); setSaved(true); }}
+        >
+          {saved && !dirty ? 'Saved' : 'Save'}
+        </button>
+      </div>
+    </div>
   );
 }
 function UnlinkIcon() {

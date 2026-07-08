@@ -630,6 +630,30 @@
   color: var(--ink-faint, #a09590);
 }
 .rel-menu__opts { display: flex; flex-wrap: wrap; gap: 6px; }
+.marriage-edit { display: flex; flex-direction: column; gap: 6px; }
+.marriage-edit__input {
+  padding: 8px 11px;
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  background: var(--paper);
+  font-family: var(--body);
+  font-size: 13px;
+  color: var(--ink);
+}
+.marriage-edit__input:focus { outline: none; border-color: var(--accent); }
+.marriage-edit__save {
+  align-self: flex-start;
+  padding: 7px 16px;
+  border: none;
+  border-radius: 10px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 12.5px;
+  font-weight: 600;
+  font-family: var(--body);
+  cursor: pointer;
+}
+.marriage-edit__save:disabled { opacity: 0.45; cursor: default; }
 .rel-menu__remove-trigger {
   display: inline-flex; align-items: center; gap: 7px; align-self: flex-start;
   padding: 7px 12px; border-radius: 10px;
@@ -8027,6 +8051,12 @@ button.health-notes {
   transform-origin: 0 0;
   will-change: transform;
 }
+/* Programmatic camera moves (re-root, fit, zoom buttons) glide; gestures
+   remove this class so the finger never fights a transition. */
+.chart-tree__world--glide { transition: transform 0.55s cubic-bezier(0.22, 1, 0.36, 1); }
+@media (prefers-reduced-motion: reduce) {
+  .chart-tree__world--glide { transition: none; }
+}
 .chart-tree__lines {
   position: absolute;
   left: 0;
@@ -8034,49 +8064,50 @@ button.health-notes {
   overflow: visible;
   pointer-events: none;
 }
-.chart-link {
+.ped-link {
   stroke: var(--bio);
   stroke-width: 2;
-  opacity: 0.5;
+  fill: none;
+  opacity: 0.55;
 }
 
-.chart-card {
+/* ── Pedigree cards ─────────────────────────────────────────────────────── */
+.ped-card {
   position: absolute;
   display: flex;
   flex-direction: column;
   background: var(--card);
   border: 1px solid var(--hairline);
-  border-radius: 14px;
+  border-radius: 15px;
   box-shadow: var(--shadow-soft);
-  overflow: hidden;
 }
-.chart-card--active {
+.ped-card--focal {
   border-color: var(--accent);
-  box-shadow: 0 0 0 2.5px var(--accent-soft), var(--shadow-soft);
+  box-shadow: 0 0 0 2.5px var(--accent-soft), 0 10px 30px rgba(36, 31, 28, 0.12);
 }
-
-.chart-card__row {
+.ped-row-wrap { display: contents; }
+.ped-row { position: relative; height: 48px; display: flex; align-items: center; }
+.ped-row__main {
   display: flex;
   align-items: center;
   gap: 9px;
   flex: 1;
   min-width: 0;
-  padding: 7px 12px;
+  height: 100%;
+  padding: 0 10px;
   border: none;
   background: none;
   cursor: pointer;
   text-align: left;
   font-family: var(--body);
+  border-radius: 14px;
 }
-.chart-card__row:hover { background: var(--paper-deep); }
-.chart-card__row + .chart-card__row { border-top: 1px solid var(--hairline); }
-.chart-card__row-text {
-  min-width: 0;
+.ped-row__main:hover { background: var(--paper-deep); }
+.ped-row__text { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.ped-row__name {
   display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-.chart-card__name {
+  align-items: center;
+  gap: 6px;
   font-size: 13.5px;
   font-weight: 700;
   color: var(--ink);
@@ -8084,48 +8115,261 @@ button.health-notes {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.chart-card__dates {
-  font-size: 11.5px;
+.ped-row__dates {
+  font-size: 11px;
   color: var(--ink-soft);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.ped-row--passed .ped-row__name { color: color-mix(in srgb, var(--ink) 78%, var(--paper)); }
 
-.chart-card__collapse {
+/* The marriage strip between a couple's rows — a quiet centre line naming
+   the union (date/place when recorded); bio co-parents with no partner
+   edge get just the hairline, asserting co-parenthood without inventing a
+   marriage. Height must equal MARRIAGE_H in pedigreeMetrics.js. */
+.ped-marriage {
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+.ped-marriage::before {
+  content: '';
+  position: absolute;
+  left: 10px; right: 10px; top: 50%;
+  border-top: 1px solid var(--hairline);
+}
+.ped-marriage__text {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px;
+  background: var(--card);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--ink-soft);
+  white-space: nowrap;
+  max-width: 92%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ped-marriage__text svg { color: var(--gold, #b08642); flex-shrink: 0; }
+
+/* Children footer — count + affordance. Height = FOOTER_H. */
+.ped-footer {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 5px;
+  height: 27px;
   border: none;
   border-top: 1px solid var(--hairline);
   background: var(--paper-deep);
+  border-radius: 0 0 14px 14px;
   color: var(--ink-soft);
   font-size: 10.5px;
   font-weight: 600;
-  padding: 4px 6px;
   cursor: pointer;
   font-family: var(--body);
 }
-.chart-card__collapse:hover { background: var(--accent-soft); color: var(--accent-deep); }
+.ped-footer:hover { background: var(--accent-soft); color: var(--accent-deep); }
 
-.chart-card--placeholder {
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  border: 1.5px dashed var(--ink-faint);
-  background: transparent;
+/* Per-member up-line buttons riding the card edge: expand/collapse a
+   member's parents, or (dashed) add them where none are recorded yet. */
+.ped-up {
+  position: absolute;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1px solid var(--hairline);
+  background: var(--card);
+  color: var(--ink-soft);
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(36, 31, 28, 0.10);
+  transition: transform 0.25s var(--spring), background 0.15s ease, color 0.15s ease;
+  z-index: 2;
+}
+.ped-up:hover { background: var(--accent-soft); color: var(--accent-deep); }
+.ped-up:active { transform: scale(0.9); }
+.ped-up--open { background: var(--ink); border-color: var(--ink); color: #fff; }
+.ped-up--open:hover { background: var(--ink); color: #fff; opacity: 0.88; }
+.ped-up--open svg { transform: rotate(180deg); }
+.ped-up--add { border-style: dashed; color: var(--ink-faint); box-shadow: none; }
+.ped-up--add:hover { border-color: var(--accent); color: var(--accent-deep); background: var(--accent-soft); }
+
+/* Spouse switcher — appears only for members with other recorded partners
+   or co-parents; flips the displayed union, FamilySearch-style. */
+.ped-switch {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  margin-right: 6px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: none;
+  background: var(--paper-deep);
   color: var(--ink-faint);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.ped-switch:hover, .ped-switch--on { background: var(--accent-soft); color: var(--accent-deep); }
+
+.ped-spouse-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 4px;
+  z-index: 5;
+  min-width: 190px;
+  padding: 5px;
+  background: var(--card);
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  box-shadow: 0 14px 36px rgba(36, 31, 28, 0.18);
+  animation: fade-up 0.18s var(--ease) both;
+}
+.ped-spouse-menu__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--body);
+  font-size: 12px;
+  color: var(--ink);
+}
+.ped-spouse-menu__row:hover { background: var(--paper-deep); }
+.ped-spouse-menu__text { display: flex; flex-direction: column; gap: 0; min-width: 0; }
+.ped-spouse-menu__text > span:first-child { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ped-spouse-menu__note { font-size: 10.5px; color: var(--ink-soft); }
+.ped-spouse-menu__reset { color: var(--ink-soft); font-size: 11.5px; justify-content: flex-start; }
+
+/* Step/adopted chips. */
+.ped-chip {
+  flex-shrink: 0;
+  padding: 1.5px 7px;
+  border-radius: 999px;
+  background: var(--paper-deep);
+  border: 1px solid var(--hairline);
+  color: var(--ink-soft);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.ped-chip--inline { margin-left: 2px; }
+
+/* Children popover — screen-space (doesn't scale with zoom), anchored
+   beneath its card, clamped to the viewport. */
+.ped-pop {
+  position: absolute;
+  transform: translateX(-50%);
+  z-index: 20;
+  width: 280px;
+  max-height: 46vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--card);
+  border: 1px solid var(--hairline);
+  border-radius: 16px;
+  box-shadow: 0 18px 48px rgba(36, 31, 28, 0.2);
+  animation: fade-up 0.2s var(--ease) both;
+}
+.ped-pop__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 8px 8px 14px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink);
+  border-bottom: 1px solid var(--hairline);
+}
+.ped-pop__close {
+  width: 26px; height: 26px;
+  display: grid; place-items: center;
+  border: none; border-radius: 50%;
+  background: var(--paper-deep);
+  color: var(--ink-soft);
+  font-size: 15px;
+  cursor: pointer;
+}
+.ped-pop__close:hover { background: var(--hairline); }
+.ped-pop__scroll { overflow-y: auto; overscroll-behavior: contain; padding: 6px; }
+.ped-pop__grouplabel {
+  margin: 6px 8px 2px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+.ped-pop__row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 10px;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--body);
+}
+.ped-pop__row:hover { background: var(--paper-deep); }
+.ped-pop__rowtext { display: flex; flex-direction: column; gap: 0; min-width: 0; flex: 1; }
+.ped-pop__rowname { font-size: 12.5px; font-weight: 600; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ped-pop__rowdates { font-size: 10.5px; color: var(--ink-soft); }
+.ped-pop__add {
+  border: none;
+  border-top: 1px solid var(--hairline);
+  background: none;
+  padding: 9px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent-deep);
+  cursor: pointer;
+  font-family: var(--body);
+  border-radius: 0 0 16px 16px;
+}
+.ped-pop__add:hover { background: var(--accent-soft); }
+
+/* "Back to you" — floats above the bottom dock when the chart is rooted on
+   someone other than the viewer. */
+.ped-backchip {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(var(--safe-bottom, 0px) + 100px);
+  z-index: 30;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 16px;
+  border: none;
+  border-radius: 999px;
+  background: rgba(36, 31, 28, 0.82);
+  color: #fff;
   font-size: 12.5px;
   font-weight: 600;
-  cursor: pointer;
   font-family: var(--body);
+  cursor: pointer;
+  box-shadow: 0 8px 24px rgba(20, 22, 28, 0.22);
+  animation: recap-progress-in 0.3s var(--spring) both;
 }
-.chart-card--placeholder:hover {
-  border-color: var(--accent);
-  color: var(--accent-deep);
-  background: var(--accent-soft);
-}
+.ped-backchip:hover { background: rgba(36, 31, 28, 0.92); }
 
 /* Orientation + zoom cluster — floats below the topbar, top-right, styled
    like the bottom dock (frosted pill) so it reads as the same design system. */

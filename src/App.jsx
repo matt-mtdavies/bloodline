@@ -10,6 +10,7 @@ import {
   addRelationship,
   removeRelationship,
   setRelationshipKind,
+  updatePartnerMeta,
   mergePeople,
   removePerson,
   updateRelationshipQualifier,
@@ -1515,8 +1516,10 @@ export default function App() {
           <ChartTree
             graph={graph}
             activeId={activeId}
+            viewerId={data.myPersonId || DEFAULT_FOCUS}
             onOpenPerson={openPerson}
             onAddRelative={setAddAnchorId}
+            onActivate={activateNormal}
           />
         ) : (
         <>
@@ -1804,6 +1807,7 @@ export default function App() {
         onRemoveRelationship={removeRelationship}
         onUpdateRelationshipQualifier={updateRelationshipQualifier}
         onChangeRelationship={handleChangeRelType}
+        onUpdatePartnerMeta={(aId, bId, meta) => updatePartnerMeta(aId, bId, meta)}
         onUpdateStory={(id, story) => {
           const person = graph.byId.get(id);
           updatePerson(id, { story }, { type: 'person_updated', personId: id, personName: person?.display_name ?? '', detail: 'life story' });

@@ -1,196 +1,146 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
-import { computeChartPods } from './chartLayout.js';
-import { lifespan, ageOrAt } from '../lib/dates.js';
+import { computePedigree, primaryUnionPartner, unionCandidates } from './pedigreeLayout.js';
+import { ROW_H, MARRIAGE_H } from './pedigreeMetrics.js';
+import { lifespan, ageOrAt, formatDate } from '../lib/dates.js';
 import Avatar from '../components/Avatar.jsx';
 
-// MIN_ZOOM floors manual zoom-out (the − button) at a level where cards are
-// still legible. Fit-to-view deliberately does NOT clamp to it — a large
-// family can genuinely need a smaller zoom than that to show every branch at
-// once, and flooring it there would force the fitted zoom back up, clipping
-// cards off the edges (the actual bug this comment replaced).
+/*
+ * The pedigree chart — the "traditional chart" view, rebuilt around the
+ * classic genealogy pedigree (FamilySearch's landscape view is the
+ * reference): the focal person's union card at the root, each member of
+ * every card carrying their OWN expandable line upward, children drawn one
+ * row below the focal card, and everything further behind deliberate taps
+ * — a children popover to navigate down (re-rooting the chart), per-member
+ * arrows to grow it up. The layout is lazy: nothing outside what's been
+ * revealed is ever computed (see pedigreeLayout.js for why the previous
+ * whole-tree engine could never stop sprawling or mis-pairing remarriages).
+ *
+ * DOM/CSS rather than canvas for the same reasons as before: crisp text at
+ * any zoom, and cards/arrows/popovers are just elements. Self-contained
+ * pan/pinch/zoom, swapped in wholesale for BubbleTree when layout==='chart'.
+ */
+
 const MIN_ZOOM = 0.28;
 const FIT_MIN_ZOOM = 0.06;
 const MAX_ZOOM = 1.6;
 const FIT_PADDING = 72;
+const isBioAdopt = (q) => !q || q === 'biological' || q === 'adoptive' || q === 'adopted';
 
-// Parent pointers for every pod reachable from the root(s), via a plain BFS
-// over childPods — shared by the spine calculation below and by toggleCollapse's
-// accordion logic, so both agree on the same notion of "ancestor chain".
-function buildParentMap(pods, rootPodIds) {
-  const parentOf = new Map();
-  const visited = new Set(rootPodIds);
-  const queue = [...rootPodIds];
-  while (queue.length) {
-    const id = queue.shift();
-    const pod = pods.get(id);
-    if (!pod) continue;
-    for (const child of pod.childPods) {
-      if (visited.has(child.id)) continue;
-      visited.add(child.id);
-      parentOf.set(child.id, id);
-      queue.push(child.id);
-    }
+// The opening state for a fresh root: the focal couple's own parents
+// revealed (one generation up both sides), plus the focal person's
+// grandparents' slots ready behind their arrows — focused, not sprawling.
+function initialExpandedUp(graph, focusId) {
+  const set = new Set([focusId]);
+  const partner = primaryUnionPartner(graph, focusId);
+  if (partner) set.add(partner);
+  for (const p of graph.parents(focusId)) {
+    if (isBioAdopt(p.qualifier)) set.add(p.id);
   }
-  return parentOf;
-}
-function ancestorChain(parentOf, targetPodId) {
-  const chain = new Set([targetPodId]);
-  let cur = targetPodId;
-  while (parentOf.has(cur)) { cur = parentOf.get(cur); chain.add(cur); }
-  return chain;
+  return set;
 }
 
-// Every pod that has children AND isn't on the spine from the tree's root(s)
-// down to the focal person starts collapsed. A big family fully expanded
-// doesn't fit a phone screen at any legible zoom (the actual bug this
-// replaced — "fit everything" forced text down to unreadable size); this
-// keeps the direct line + the focal person's own immediate family open by
-// default and lets everything else be expanded on demand, same as how a
-// paper family chart is usually drawn "solid line, dotted elsewhere".
-function findSpinePodIds(pods, rootPodIds, activeId) {
-  let targetId = null;
-  for (const [id, pod] of pods) {
-    if (!pod.placeholder && pod.members.includes(activeId)) { targetId = id; break; }
-  }
-  if (!targetId) return new Set();
-  return ancestorChain(buildParentMap(pods, rootPodIds), targetId);
-}
-function computeDefaultCollapsed(pods, rootPodIds, activeId) {
-  const spine = findSpinePodIds(pods, rootPodIds, activeId);
-  const collapsed = new Set();
-  for (const [id, pod] of pods) {
-    if (!pod.placeholder && pod.childPods.length && !spine.has(id)) collapsed.add(id);
-  }
-  return collapsed;
-}
-
-/*
- * The "traditional" chart view — a DOM/CSS tree of rectangular cards, not the
- * canvas/WebGL bubbles the other views share. Built as a self-contained
- * sibling renderer (own pan/zoom, own click handling) so it can be swapped in
- * for BubbleTree wholesale when layout === 'chart' without touching anything
- * BubbleTree.jsx does for the organic/focus/lineage/time views.
- *
- * Real DOM text stays crisp at any zoom (unlike Pixi text, which needs
- * per-scale texture regeneration) — the main reason this exists as HTML
- * rather than more canvas drawing, plus it makes per-branch collapse and
- * "Add Father/Mother" placeholder buttons trivial (they're just elements).
- */
-export default function ChartTree({ graph, activeId, onOpenPerson, onAddRelative }) {
+export default function ChartTree({ graph, activeId, viewerId, onOpenPerson, onAddRelative, onActivate }) {
   const [orientation, setOrientation] = useState('vertical');
-  const [collapsed, setCollapsed] = useState(() => {
-    const full = computeChartPods(graph, activeId, { collapsed: new Set(), orientation: 'vertical' });
-    return computeDefaultCollapsed(full.pods, full.rootPodIds, activeId);
-  });
-  const [view, setView] = useState({ zoom: 0.85, panX: 0, panY: 0 });
+  const [expandedUp, setExpandedUp] = useState(() => initialExpandedUp(graph, activeId));
+  const [partnerChoice, setPartnerChoice] = useState(() => new Map());
+  const [childrenFor, setChildrenFor] = useState(null); // cardId with open children popover
+  const [switcherFor, setSwitcherFor] = useState(null); // memberId with open spouse menu
+  const [view, setView] = useState({ zoom: 0.9, panX: 0, panY: 0 });
+  const [gliding, setGliding] = useState(false);
   const viewportRef = useRef(null);
   const dragRef = useRef(null);
-  const pointersRef = useRef(new Map()); // pointerId -> {x, y}, live touches only
+  const pointersRef = useRef(new Map());
   const pinchRef = useRef(null);
+  const glideTimer = useRef(null);
 
   const layout = useMemo(
-    () => computeChartPods(graph, activeId, { collapsed, orientation }),
-    [graph, activeId, collapsed, orientation],
+    () => computePedigree(graph, activeId, { expandedUp, partnerChoice, orientation }),
+    [graph, activeId, expandedUp, partnerChoice, orientation],
   );
+  const cardById = useMemo(() => new Map(layout.cards.map((c) => [c.id, c])), [layout]);
 
-  const childrenByParent = useMemo(() => {
-    const m = new Map();
-    for (const c of layout.connectors) {
-      if (!m.has(c.parentPodId)) m.set(c.parentPodId, []);
-      m.get(c.parentPodId).push(c.childPodId);
-    }
-    return m;
-  }, [layout.connectors]);
-
-  const fitLayoutToView = useCallback((lay) => {
-    const vp = viewportRef.current;
-    if (!vp || !lay.pos.size) return;
-    const rect = vp.getBoundingClientRect();
-    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-    for (const p of lay.pos.values()) {
-      minX = Math.min(minX, p.x - p.w / 2); maxX = Math.max(maxX, p.x + p.w / 2);
-      minY = Math.min(minY, p.y - p.h / 2); maxY = Math.max(maxY, p.y + p.h / 2);
-    }
-    const boxW = Math.max(1, maxX - minX), boxH = Math.max(1, maxY - minY);
-    const availW = Math.max(1, rect.width - FIT_PADDING * 2);
-    const availH = Math.max(1, rect.height - FIT_PADDING * 2);
-    const zoom = Math.min(MAX_ZOOM, Math.max(FIT_MIN_ZOOM, Math.min(availW / boxW, availH / boxH)));
-    const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
-    setView({ zoom, panX: rect.width / 2 - cx * zoom, panY: rect.height / 2 - cy * zoom });
+  // Smooth programmatic camera moves: the world glides via a CSS transform
+  // transition that is ONLY enabled around deliberate moves (re-root, fit,
+  // zoom buttons) — never during a drag or pinch, where it would lag the
+  // finger.
+  const glideTo = useCallback((next) => {
+    setGliding(true);
+    setView(next);
+    clearTimeout(glideTimer.current);
+    glideTimer.current = setTimeout(() => setGliding(false), 620);
   }, []);
-  const fitToView = useCallback(() => fitLayoutToView(layout), [fitLayoutToView, layout]);
+  useEffect(() => () => clearTimeout(glideTimer.current), []);
 
-  // A whole family "fit to screen" forces text down to unreadable size on a
-  // phone (the actual bug this replaced) — genealogy charts are meant to be
-  // panned, not shown whole. So the default view instead centres the focal
-  // person's own card at a fixed, legible zoom; "Fit" (fitToView, above)
-  // stays available as an explicit, deliberate zoom-out overview action.
-  const CENTER_ZOOM = 0.92;
-  const centerOnActive = useCallback((lay) => {
+  // Opening frame: fit the (small, focused) initial layout inside the safe
+  // area — real clearance for the topbar above and the dock below — capped
+  // at a fully-legible zoom so a compact family isn't blown up huge.
+  const centerOnFocal = useCallback((lay) => {
     const vp = viewportRef.current;
-    if (!vp) return;
+    if (!vp || !lay.cards.length) return;
     const rect = vp.getBoundingClientRect();
-    let target = null;
-    for (const [id, pod] of lay.pods) {
-      if (!pod.placeholder && pod.members.includes(activeId)) { target = id; break; }
-    }
-    const p = target ? lay.pos.get(target) : null;
-    const cx = p ? p.x : 0, cy = p ? p.y : 0;
-    setView({ zoom: CENTER_ZOOM, panX: rect.width / 2 - cx * CENTER_ZOOM, panY: rect.height / 2 - cy * CENTER_ZOOM });
-  }, [activeId]);
+    const PAD = { top: 170, bottom: 150, side: 36 };
+    const { minX, maxX, minY, maxY } = lay.bounds;
+    const boxW = Math.max(1, maxX - minX), boxH = Math.max(1, maxY - minY);
+    const zoom = Math.min(0.92, Math.max(FIT_MIN_ZOOM,
+      Math.min((rect.width - PAD.side * 2) / boxW, (rect.height - PAD.top - PAD.bottom) / boxH)));
+    const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+    glideTo({
+      zoom,
+      panX: rect.width / 2 - cx * zoom,
+      panY: PAD.top + (rect.height - PAD.top - PAD.bottom) / 2 - cy * zoom,
+    });
+  }, [glideTo]);
 
-  // Whenever the focal person (or orientation) changes, reset which branches
-  // are collapsed back to the spine-only default AND re-centre on that
-  // freshly-collapsed layout in the same pass — computed directly rather
-  // than via the memoized `layout`, since state set here hasn't re-rendered
-  // yet and reading it would still see the previous focal person's shape.
-  // Collapsing/expanding a single branch by hand deliberately does NOT
-  // re-centre or reset its siblings — that would yank the view out from
-  // under someone who just wanted to peek at one branch.
+  // Re-root: reset expansion + choices to the fresh opening state and glide
+  // the camera to the new focal card.
   useEffect(() => {
-    const full = computeChartPods(graph, activeId, { collapsed: new Set(), orientation });
-    const nextCollapsed = computeDefaultCollapsed(full.pods, full.rootPodIds, activeId);
-    setCollapsed(nextCollapsed);
-    centerOnActive(computeChartPods(graph, activeId, { collapsed: nextCollapsed, orientation }));
-    // Intentionally NOT keyed on `graph` — an edit anywhere else in the tree
-    // (a bio tweak, a synced update) shouldn't discard the collapse choices
-    // someone already made in this view. Reads the latest `graph` from
-    // closure regardless; only re-fires on a focal-person or orientation change.
-  }, [activeId, orientation]); // eslint-disable-line react-hooks/exhaustive-deps
+    const nextExpanded = initialExpandedUp(graph, activeId);
+    setExpandedUp(nextExpanded);
+    setPartnerChoice(new Map());
+    setChildrenFor(null);
+    setSwitcherFor(null);
+    centerOnFocal(
+      computePedigree(graph, activeId, { expandedUp: nextExpanded, partnerChoice: new Map(), orientation }),
+      orientation,
+    );
+    // Intentionally NOT keyed on graph/orientation — edits elsewhere must
+    // not discard expansion state; orientation has its own effect below.
+  }, [activeId]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
-    const onResize = () => fitToView();
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
-  }, [fitToView]);
+    centerOnFocal(computePedigree(graph, activeId, { expandedUp, partnerChoice, orientation }), orientation);
+  }, [orientation]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const fitToView = useCallback(() => {
+    const vp = viewportRef.current;
+    if (!vp || !layout.cards.length) return;
+    const rect = vp.getBoundingClientRect();
+    const { minX, maxX, minY, maxY } = layout.bounds;
+    const boxW = Math.max(1, maxX - minX), boxH = Math.max(1, maxY - minY);
+    const zoom = Math.min(MAX_ZOOM, Math.max(FIT_MIN_ZOOM,
+      Math.min((rect.width - FIT_PADDING * 2) / boxW, (rect.height - FIT_PADDING * 2) / boxH)));
+    const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+    glideTo({ zoom, panX: rect.width / 2 - cx * zoom, panY: rect.height / 2 - cy * zoom });
+  }, [layout, glideTo]);
 
   const zoomBy = (factor, anchor) => {
     setView((v) => {
-      const vp = viewportRef.current;
-      const rect = vp?.getBoundingClientRect();
+      const rect = viewportRef.current?.getBoundingClientRect();
       const ax = anchor?.x ?? (rect ? rect.width / 2 : 0);
       const ay = anchor?.y ?? (rect ? rect.height / 2 : 0);
       const nextZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, v.zoom * factor));
       const ratio = nextZoom / v.zoom;
-      return {
-        zoom: nextZoom,
-        panX: ax - (ax - v.panX) * ratio,
-        panY: ay - (ay - v.panY) * ratio,
-      };
+      return { zoom: nextZoom, panX: ax - (ax - v.panX) * ratio, panY: ay - (ay - v.panY) * ratio };
     });
   };
 
+  // ── Gestures (unchanged mechanics from the previous chart) ───────────────
   const onWheel = (e) => {
     e.preventDefault();
+    setGliding(false);
     const rect = viewportRef.current?.getBoundingClientRect();
     const anchor = rect ? { x: e.clientX - rect.left, y: e.clientY - rect.top } : null;
     zoomBy(e.deltaY < 0 ? 1.08 : 1 / 1.08, anchor);
   };
-
-  // Anchors the pinch on whatever world point sits under the fingers' START
-  // midpoint, then keeps solving for the pan that keeps that same world
-  // point under the CURRENT midpoint every move — one formula covers zoom
-  // (the distance ratio) and a two-finger drag (the midpoint moving) at
-  // once, rather than treating them as separate gestures.
   const beginPinch = (rect) => {
     const pts = [...pointersRef.current.values()];
     const midX = (pts[0].x + pts[1].x) / 2 - rect.left;
@@ -202,19 +152,12 @@ export default function ChartTree({ graph, activeId, onOpenPerson, onAddRelative
       worldY: (midY - view.panY) / view.zoom,
     };
   };
-
   const onPointerDown = (e) => {
-    // Only the FIRST finger gets excluded for landing on a card/control —
-    // once a gesture is already in progress, a second finger completing a
-    // pinch must register no matter what it happens to land on, or pinching
-    // near any card (common in a dense chart) would silently only track one
-    // finger and never zoom.
-    if (pointersRef.current.size === 0 && (e.target.closest('.chart-card') || e.target.closest('.chart-controls'))) return;
-    // Capture can reject a pointer the browser doesn't consider active (seen
-    // from embedded webviews/synthetic input) — losing capture only means an
-    // in-progress drag can end early if the finger leaves the element, not a
-    // functional break, so it's not worth failing the whole gesture over.
-    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+    if (pointersRef.current.size === 0 && (e.target.closest('.ped-card') || e.target.closest('.chart-controls') || e.target.closest('.ped-pop') || e.target.closest('.ped-backchip'))) return;
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* synthetic pointers */ }
+    setGliding(false);
+    setChildrenFor(null);
+    setSwitcherFor(null);
     pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     const rect = viewportRef.current?.getBoundingClientRect();
     if (pointersRef.current.size === 2 && rect) {
@@ -248,129 +191,107 @@ export default function ChartTree({ graph, activeId, onOpenPerson, onAddRelative
     pointersRef.current.delete(e.pointerId);
     pinchRef.current = null;
     const remaining = [...pointersRef.current.values()];
-    // One finger still down after lifting the other — resume a plain pan
-    // from here instead of stopping dead until a fresh gesture starts.
     dragRef.current = remaining.length === 1
       ? { startX: remaining[0].x, startY: remaining[0].y, panX: view.panX, panY: view.panY }
       : null;
   };
 
-  // Opening a branch closes whichever other branch was open — same idea as
-  // a paper chart's arrows: only one line is ever expanded outside the
-  // direct spine, so the chart never sprawls into a messy everything-open
-  // tangle. Closing a branch is a plain toggle-off; opening one rebuilds
-  // the collapse set from the default (spine only) plus this pod's own
-  // ancestor chain, so every OTHER branch folds back at the same time.
-  const toggleCollapse = (podId) => {
-    setCollapsed((prev) => {
-      if (!prev.has(podId)) {
-        const next = new Set(prev);
-        next.add(podId);
-        return next;
-      }
-      const parentOf = buildParentMap(layout.pods, layout.rootPodIds);
-      const spine = findSpinePodIds(layout.pods, layout.rootPodIds, activeId);
-      const keepOpen = ancestorChain(parentOf, podId);
-      const next = new Set();
-      for (const [id, pod] of layout.pods) {
-        if (pod.placeholder) continue;
-        if (pod.childPods.length && !spine.has(id) && !keepOpen.has(id)) next.add(id);
-      }
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === 'Escape') { setChildrenFor(null); setSwitcherFor(null); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  const toggleUp = (memberId) => {
+    setSwitcherFor(null);
+    setExpandedUp((prev) => {
+      const next = new Set(prev);
+      if (next.has(memberId)) next.delete(memberId); else next.add(memberId);
       return next;
     });
   };
 
-  const cards = [];
-  for (const [id, p] of layout.pos) {
-    const pod = layout.pods.get(id);
-    if (!pod) continue;
-    if (pod.placeholder) {
-      cards.push(
-        <button
-          key={id}
-          className="chart-card chart-card--placeholder"
-          style={{ left: p.x - p.w / 2, top: p.y - p.h / 2, width: p.w, height: p.h }}
-          onClick={() => onAddRelative?.(pod.forPersonId)}
-        >
-          <PlusIcon />
-          <span>Add {pod.slot === 'father' ? 'Father' : pod.slot === 'mother' ? 'Mother' : 'Parents'}</span>
-        </button>,
-      );
-      continue;
+  const chooseSpouse = (lineMemberId, partnerId) => {
+    setSwitcherFor(null);
+    setPartnerChoice((prev) => {
+      const next = new Map(prev);
+      if (partnerId === undefined) next.delete(lineMemberId);
+      else next.set(lineMemberId, partnerId);
+      return next;
+    });
+  };
+
+  // ── Geometry helpers shared by cards and connectors ──────────────────────
+  const horizontal = orientation === 'horizontal';
+  // Where member i's up-line leaves the card: along the top edge (vertical
+  // mode) split into halves for a couple, or the right edge at that
+  // member's own row centre (horizontal — the FamilySearch look).
+  const upAnchor = (card, memberId) => {
+    const i = card.members.indexOf(memberId);
+    if (horizontal) {
+      const rowCenter = -card.h / 2 + ROW_H / 2 + (i === 1 ? ROW_H + MARRIAGE_H : 0);
+      return { x: card.x + card.w / 2, y: card.y + rowCenter };
     }
-    const hasKids = pod.childPods.length > 0;
-    const isCollapsed = collapsed.has(id);
-    cards.push(
-      <div
-        key={id}
-        className={'chart-card' + (activeId && pod.members.includes(activeId) ? ' chart-card--active' : '')}
-        style={{ left: p.x - p.w / 2, top: p.y - p.h / 2, width: p.w, height: p.h }}
-      >
-        {pod.members.map((personId) => {
-          const person = graph.byId.get(personId);
-          if (!person) return null;
-          // Age is withheld for minors — same privacy guard HoverCard/PersonSheet
-          // apply, since a birth year is far less identifying than a live age.
-          const age = !person.is_minor || person.is_deceased ? ageOrAt(person) : null;
-          const dates = age ? `${lifespan(person)} · ${person.is_deceased ? age : `age ${age}`}` : lifespan(person);
-          return (
-            <button key={personId} className="chart-card__row" onClick={() => onOpenPerson?.(personId)}>
-              <Avatar person={person} size={32} />
-              <span className="chart-card__row-text">
-                <span className="chart-card__name">{person.display_name}</span>
-                <span className="chart-card__dates">{dates}</span>
-              </span>
-            </button>
-          );
-        })}
-        {hasKids && (
-          <button
-            className="chart-card__collapse"
-            onClick={() => toggleCollapse(id)}
-            title={isCollapsed ? 'Show children' : 'Hide children'}
-          >
-            {isCollapsed ? <ChevronRightIcon /> : <ChevronDownIcon />}
-            <span>{pod.childPods.length} {pod.childPods.length === 1 ? 'child' : 'children'}</span>
-          </button>
-        )}
-      </div>,
-    );
+    const off = card.members.length === 2 ? (i === 0 ? -card.w / 4 : card.w / 4) : 0;
+    return { x: card.x + off, y: card.y - card.h / 2 };
+  };
+  const downAnchor = (card, side) => {
+    const off = card.members.length === 2 ? (side === 'a' ? -card.w / 4 : side === 'b' ? card.w / 4 : 0) : 0;
+    if (horizontal) return { x: card.x - card.w / 2, y: card.y + (side === 'a' ? -card.h / 4 : side === 'b' ? card.h / 4 : 0) };
+    return { x: card.x + off, y: card.y + card.h / 2 };
+  };
+
+  // Rounded orthogonal elbow between two points, leaving along `axis`.
+  const elbow = (x0, y0, x1, y1, axis) => {
+    const r = 9;
+    if (axis === 'v') {
+      const midY = (y0 + y1) / 2;
+      if (Math.abs(x1 - x0) < 1) return `M ${x0} ${y0} L ${x1} ${y1}`;
+      const dx = x1 > x0 ? 1 : -1, dy = y1 > y0 ? 1 : -1;
+      const rr = Math.min(r, Math.abs(x1 - x0) / 2, Math.abs(y1 - y0) / 2);
+      return `M ${x0} ${y0} L ${x0} ${midY - rr * dy} Q ${x0} ${midY} ${x0 + rr * dx} ${midY} L ${x1 - rr * dx} ${midY} Q ${x1} ${midY} ${x1} ${midY + rr * dy} L ${x1} ${y1}`;
+    }
+    const midX = (x0 + x1) / 2;
+    if (Math.abs(y1 - y0) < 1) return `M ${x0} ${y0} L ${x1} ${y1}`;
+    const dx = x1 > x0 ? 1 : -1, dy = y1 > y0 ? 1 : -1;
+    const rr = Math.min(r, Math.abs(x1 - x0) / 2, Math.abs(y1 - y0) / 2);
+    return `M ${x0} ${y0} L ${midX - rr * dx} ${y0} Q ${midX} ${y0} ${midX} ${y0 + rr * dy} L ${midX} ${y1 - rr * dy} Q ${midX} ${y1} ${midX + rr * dx} ${y1} L ${x1} ${y1}`;
+  };
+
+  const paths = [];
+  for (const conn of layout.connectors) {
+    const from = cardById.get(conn.fromCardId);
+    const to = cardById.get(conn.toCardId);
+    if (!from || !to) continue;
+    if (conn.kind === 'up') {
+      const a = upAnchor(from, conn.fromMemberId);
+      const b = horizontal
+        ? { x: to.x - to.w / 2, y: to.y }
+        : { x: to.x, y: to.y + to.h / 2 };
+      paths.push(<path key={conn.id} d={elbow(a.x, a.y, b.x, b.y, horizontal ? 'h' : 'v')} className="ped-link" />);
+    } else {
+      const a = downAnchor(from, conn.side);
+      const b = horizontal
+        ? { x: to.x + to.w / 2, y: to.y }
+        : { x: to.x, y: to.y - to.h / 2 };
+      paths.push(<path key={conn.id} d={elbow(a.x, a.y, b.x, b.y, horizontal ? 'h' : 'v')} className="ped-link" />);
+    }
   }
 
-  const lines = [];
-  for (const [parentId, kidIds] of childrenByParent) {
-    const parentPos = layout.pos.get(parentId);
-    if (!parentPos) continue;
-    const kidPositions = kidIds.map((k) => layout.pos.get(k)).filter(Boolean);
-    if (!kidPositions.length) continue;
-    if (orientation === 'horizontal') {
-      const px = parentPos.x + parentPos.w / 2;
-      const py = parentPos.y;
-      const trunkX = px + (kidPositions[0].x - px) * 0.5;
-      const minY = Math.min(py, ...kidPositions.map((k) => k.y));
-      const maxY = Math.max(py, ...kidPositions.map((k) => k.y));
-      lines.push(<line key={`${parentId}-h1`} x1={px} y1={py} x2={trunkX} y2={py} className="chart-link" />);
-      if (kidPositions.length > 1 || Math.abs(kidPositions[0].y - py) > 1) {
-        lines.push(<line key={`${parentId}-h2`} x1={trunkX} y1={minY} x2={trunkX} y2={maxY} className="chart-link" />);
-      }
-      kidPositions.forEach((k, i) => {
-        lines.push(<line key={`${parentId}-h3-${i}`} x1={trunkX} y1={k.y} x2={k.x - k.w / 2} y2={k.y} className="chart-link" />);
-      });
-    } else {
-      const px = parentPos.x;
-      const py = parentPos.y + parentPos.h / 2;
-      const trunkY = py + (kidPositions[0].y - py) * 0.5;
-      const minX = Math.min(px, ...kidPositions.map((k) => k.x));
-      const maxX = Math.max(px, ...kidPositions.map((k) => k.x));
-      lines.push(<line key={`${parentId}-v1`} x1={px} y1={py} x2={px} y2={trunkY} className="chart-link" />);
-      if (kidPositions.length > 1 || Math.abs(kidPositions[0].x - px) > 1) {
-        lines.push(<line key={`${parentId}-v2`} x1={minX} y1={trunkY} x2={maxX} y2={trunkY} className="chart-link" />);
-      }
-      kidPositions.forEach((k, i) => {
-        lines.push(<line key={`${parentId}-v3-${i}`} x1={k.x} y1={trunkY} x2={k.x} y2={k.y - k.h / 2} className="chart-link" />);
-      });
-    }
-  }
+  // ── Children popover ──────────────────────────────────────────────────────
+  const popCard = childrenFor ? cardById.get(childrenFor) : null;
+  const popover = popCard ? buildPopoverData(graph, popCard) : null;
+  const popoverScreen = popCard && viewportRef.current ? (() => {
+    const rect = viewportRef.current.getBoundingClientRect();
+    const sx = view.panX + popCard.x * view.zoom;
+    const sy = view.panY + (popCard.y + popCard.h / 2) * view.zoom;
+    return {
+      left: Math.min(Math.max(sx, 150), rect.width - 150),
+      top: Math.min(sy + 10, rect.height - 120),
+    };
+  })() : null;
 
   return (
     <div className="chart-tree">
@@ -385,22 +306,82 @@ export default function ChartTree({ graph, activeId, onOpenPerson, onAddRelative
         onPointerCancel={onPointerUp}
       >
         <div
-          className="chart-tree__world"
+          className={'chart-tree__world' + (gliding ? ' chart-tree__world--glide' : '')}
           style={{ transform: `translate(${view.panX}px, ${view.panY}px) scale(${view.zoom})` }}
         >
           <svg className="chart-tree__lines" width="1" height="1" style={{ overflow: 'visible' }}>
-            {lines}
+            {paths}
           </svg>
-          {cards}
+          {layout.cards.map((card) => (
+            <PedCard
+              key={card.id}
+              card={card}
+              graph={graph}
+              activeId={activeId}
+              horizontal={horizontal}
+              isFocal={card.id === layout.focalCardId}
+              switcherFor={switcherFor}
+              onOpenPerson={onOpenPerson}
+              onActivate={onActivate}
+              onToggleUp={toggleUp}
+              onAddRelative={onAddRelative}
+              onOpenChildren={(id) => { setSwitcherFor(null); setChildrenFor((cur) => (cur === id ? null : id)); }}
+              onOpenSwitcher={(memberId) => { setChildrenFor(null); setSwitcherFor((cur) => (cur === memberId ? null : memberId)); }}
+              onChooseSpouse={chooseSpouse}
+              partnerChoice={partnerChoice}
+            />
+          ))}
         </div>
+
+        {popover && popoverScreen && (
+          <div className="ped-pop" style={{ left: popoverScreen.left, top: popoverScreen.top }} role="dialog" aria-label="Children">
+            <div className="ped-pop__head">
+              <span>{popover.total} {popover.total === 1 ? 'child' : 'children'}</span>
+              <button className="ped-pop__close" onClick={() => setChildrenFor(null)} aria-label="Close">×</button>
+            </div>
+            <div className="ped-pop__scroll">
+              {popover.groups.map((g) => (
+                <div key={g.key} className="ped-pop__group">
+                  {g.label && <p className="ped-pop__grouplabel">{g.label}</p>}
+                  {g.rows.map((row) => {
+                    const person = graph.byId.get(row.id);
+                    if (!person) return null;
+                    return (
+                      <button key={row.id} className="ped-pop__row" onClick={() => { setChildrenFor(null); onActivate?.(row.id); }}>
+                        <Avatar person={person} size={30} />
+                        <span className="ped-pop__rowtext">
+                          <span className="ped-pop__rowname">{person.display_name}</span>
+                          <span className="ped-pop__rowdates">{lifespan(person)}</span>
+                        </span>
+                        {row.chip && <span className="ped-chip">{row.chip}</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+            <button
+              className="ped-pop__add"
+              onClick={() => { setChildrenFor(null); onAddRelative?.(popCard.members[0]); }}
+            >
+              + Add a child
+            </button>
+          </div>
+        )}
       </div>
+
+      {viewerId && activeId !== viewerId && graph.byId.has(viewerId) && (
+        <button className="ped-backchip" onClick={() => onActivate?.(viewerId)}>
+          <BackIcon /> Back to you
+        </button>
+      )}
 
       <div className="chart-controls">
         <div className="chart-controls__seg" role="group" aria-label="Chart orientation">
           <button
             className={'chart-controls__btn' + (orientation === 'vertical' ? ' chart-controls__btn--on' : '')}
             onClick={() => setOrientation('vertical')}
-            title="Vertical layout"
+            title="Portrait — ancestors above"
             aria-pressed={orientation === 'vertical'}
           >
             <LayoutVerticalIcon />
@@ -408,7 +389,7 @@ export default function ChartTree({ graph, activeId, onOpenPerson, onAddRelative
           <button
             className={'chart-controls__btn' + (orientation === 'horizontal' ? ' chart-controls__btn--on' : '')}
             onClick={() => setOrientation('horizontal')}
-            title="Horizontal layout"
+            title="Landscape — ancestors to the right"
             aria-pressed={orientation === 'horizontal'}
           >
             <LayoutHorizontalIcon />
@@ -429,58 +410,229 @@ export default function ChartTree({ graph, activeId, onOpenPerson, onAddRelative
   );
 }
 
-function ChevronDownIcon() {
+// ── One card ─────────────────────────────────────────────────────────────────
+
+function PedCard({ card, graph, activeId, horizontal, isFocal, switcherFor, partnerChoice, onOpenPerson, onActivate, onToggleUp, onAddRelative, onOpenChildren, onOpenSwitcher, onChooseSpouse }) {
+  const isChild = card.kind === 'child';
   return (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path d="M5 9l7 7 7-7" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
+    <div
+      className={'ped-card' + (isFocal ? ' ped-card--focal' : '') + (isChild ? ' ped-card--child' : '')}
+      style={{ left: card.x - card.w / 2, top: card.y - card.h / 2, width: card.w, height: card.h }}
+    >
+      {card.members.map((personId, i) => {
+        const person = graph.byId.get(personId);
+        if (!person) return null;
+        const slot = card.slots.find((s) => s.id === personId);
+        const age = !person.is_minor || person.is_deceased ? ageOrAt(person) : null;
+        const dates = age ? `${lifespan(person)} · ${person.is_deceased ? age : `age ${age}`}` : lifespan(person);
+        const stepChip = isChild && (card.qualifiers?.a === 'step' || card.qualifiers?.b === 'step') ? 'Step'
+          : isChild && ['adopted', 'adoptive'].includes(card.qualifiers?.a) ? 'Adopted' : null;
+        return (
+          <div key={personId} className="ped-row-wrap">
+            {i === 1 && <MarriageStrip marriage={card.marriage} />}
+            <div className={'ped-row' + (person.is_deceased ? ' ped-row--passed' : '')}>
+              <button className="ped-row__main" onClick={() => onOpenPerson?.(personId)} title="Open profile">
+                <Avatar person={person} size={34} />
+                <span className="ped-row__text">
+                  <span className="ped-row__name">
+                    {person.display_name}
+                    {stepChip && <span className="ped-chip ped-chip--inline">{stepChip}</span>}
+                  </span>
+                  <span className="ped-row__dates">{dates}</span>
+                </span>
+              </button>
+              {!isChild && slot?.isLine && slot.altPartnerIds.length > 0 && (
+                <button
+                  className={'ped-switch' + (switcherFor === personId ? ' ped-switch--on' : '')}
+                  onClick={() => onOpenSwitcher(personId)}
+                  title="Show a different partner"
+                  aria-label={`Show a different partner of ${person.display_name}`}
+                  aria-expanded={switcherFor === personId}
+                >
+                  <SwapIcon />
+                </button>
+              )}
+              {switcherFor === personId && (
+                <SpouseMenu
+                  graph={graph}
+                  memberId={personId}
+                  card={card}
+                  partnerChoice={partnerChoice}
+                  onChoose={onChooseSpouse}
+                />
+              )}
+            </div>
+          </div>
+        );
+      })}
+
+      {/* Per-member up-lines: expand arrow when parents exist, a quiet
+          "add parent" affordance when the line simply hasn't been recorded
+          yet — placed exactly where the missing card would appear. */}
+      {!isChild && card.slots.map((slot, i) => {
+        const person = graph.byId.get(slot.id);
+        const pos = upButtonStyle(card, i, horizontal);
+        if (slot.hasMoreUp) {
+          return (
+            <button
+              key={'up_' + slot.id}
+              className={'ped-up' + (slot.expanded ? ' ped-up--open' : '')}
+              style={pos}
+              onClick={() => onToggleUp(slot.id)}
+              title={slot.expanded ? `Hide ${person?.display_name.split(' ')[0]}’s parents` : `Show ${person?.display_name.split(' ')[0]}’s parents`}
+              aria-expanded={slot.expanded}
+            >
+              <ChevronUpIcon />
+            </button>
+          );
+        }
+        return (
+          <button
+            key={'add_' + slot.id}
+            className="ped-up ped-up--add"
+            style={pos}
+            onClick={() => onAddRelative?.(slot.id)}
+            title={`Add ${person?.display_name.split(' ')[0]}’s parents`}
+          >
+            <PlusIcon />
+          </button>
+        );
+      })}
+
+      {card.childrenCount > 0 && !isFocal && (
+        <button
+          className="ped-footer"
+          onClick={() => (isChild ? onActivate?.(card.members[0]) : onOpenChildren(card.id))}
+          title={isChild ? 'Focus the chart here' : 'Show children'}
+        >
+          {card.childrenCount} {card.childrenCount === 1 ? 'child' : 'children'}
+          {isChild ? <ArrowRightIcon /> : <ChevronDownIcon />}
+        </button>
+      )}
+    </div>
   );
 }
-function ChevronRightIcon() {
+
+function MarriageStrip({ marriage }) {
+  let text = null;
+  if (marriage) {
+    if (marriage.status === 'former') text = 'Formerly married';
+    else if (marriage.status === 'widowed') text = marriage.date ? `Married ${formatDate(marriage.date)}` : 'Widowed';
+    else text = marriage.date ? `Married ${formatDate(marriage.date)}` : 'Married';
+    if (marriage.place && marriage.date) text += ` · ${marriage.place}`;
+  }
   return (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path d="M9 5l7 7-7 7" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
+    <div className={'ped-marriage' + (text ? '' : ' ped-marriage--bare')}>
+      {text && <span className="ped-marriage__text"><RingsIcon /> {text}</span>}
+    </div>
   );
+}
+
+function SpouseMenu({ graph, memberId, card, partnerChoice, onChoose }) {
+  const current = card.members.find((m) => m !== memberId) ?? null;
+  const candidates = unionCandidates(graph, memberId).filter((c) => c.id !== current);
+  const hasChoice = partnerChoice.get(memberId) !== undefined;
+  return (
+    <div className="ped-spouse-menu" role="menu" aria-label="Show with which partner">
+      {candidates.map((c) => {
+        const p = graph.byId.get(c.id);
+        if (!p) return null;
+        const note = c.sharedChildren > 0
+          ? `${c.sharedChildren} ${c.sharedChildren === 1 ? 'child' : 'children'} together`
+          : c.status === 'former' ? 'Former partner' : c.status === 'widowed' ? 'Widowed' : 'Partner';
+        return (
+          <button key={c.id} className="ped-spouse-menu__row" onClick={() => onChoose(memberId, c.id)} role="menuitem">
+            <Avatar person={p} size={26} />
+            <span className="ped-spouse-menu__text">
+              <span>{p.display_name}</span>
+              <span className="ped-spouse-menu__note">{note}</span>
+            </span>
+          </button>
+        );
+      })}
+      {hasChoice && current && (
+        <button className="ped-spouse-menu__row ped-spouse-menu__reset" onClick={() => onChoose(memberId, undefined)} role="menuitem">
+          ↩ Back to {graph.byId.get(current)?.display_name?.split(' ')[0] ?? 'default'}
+        </button>
+      )}
+    </div>
+  );
+}
+
+function upButtonStyle(card, slotIndex, horizontal) {
+  if (horizontal) {
+    const rowCenter = ROW_H / 2 + (slotIndex === 1 ? ROW_H + MARRIAGE_H : 0);
+    return { right: -13, top: rowCenter - 13 };
+  }
+  const off = card.members.length === 2 ? (slotIndex === 0 ? card.w / 4 : (3 * card.w) / 4) : card.w / 2;
+  return { left: off - 13, top: -13 };
+}
+
+// The popover's grouped rows: children of both displayed members first
+// (plain), then per-outside-partner groups for children this union's
+// members had elsewhere — named honestly rather than silently mixed in.
+function buildPopoverData(graph, card) {
+  const [aId, bId] = card.members;
+  const rows = card.childRows;
+  const shared = [], byOther = new Map();
+  for (const row of rows) {
+    const linkedBoth = row.aQualifier != null && (bId ? row.bQualifier != null : true);
+    const chipQ = [row.aQualifier, row.bQualifier].find((q) => q && q !== 'biological');
+    const chip = chipQ === 'step' ? 'Step' : chipQ === 'adopted' || chipQ === 'adoptive' ? 'Adopted' : chipQ ? capitalize(chipQ) : null;
+    if (linkedBoth) shared.push({ id: row.id, chip });
+    else {
+      const key = row.otherParentId ?? '__solo__';
+      if (!byOther.has(key)) byOther.set(key, []);
+      byOther.get(key).push({ id: row.id, chip });
+    }
+  }
+  const groups = [];
+  if (shared.length) groups.push({ key: 'shared', label: null, rows: shared });
+  for (const [otherId, list] of byOther) {
+    const insideId = graph.parents(list[0].id).some((p) => p.id === aId) ? aId : bId;
+    const inside = graph.byId.get(insideId)?.display_name?.split(' ')[0] ?? '';
+    const label = otherId === '__solo__'
+      ? `${inside}’s`
+      : `${inside}’s, with ${graph.byId.get(otherId)?.display_name ?? 'another partner'}`;
+    groups.push({ key: 'o_' + otherId, label, rows: list });
+  }
+  return { total: rows.length, groups };
+}
+
+function capitalize(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+
+// ── Icons ────────────────────────────────────────────────────────────────────
+
+function ChevronUpIcon() {
+  return <svg width="11" height="11" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 15l7-7 7 7" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" /></svg>;
+}
+function ChevronDownIcon() {
+  return <svg width="11" height="11" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 9l7 7 7-7" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" /></svg>;
+}
+function ArrowRightIcon() {
+  return <svg width="11" height="11" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" /></svg>;
 }
 function PlusIcon() {
-  return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
-    </svg>
-  );
+  return <svg width="11" height="11" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" /></svg>;
 }
 function MinusIcon() {
-  return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path d="M5 12h14" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
-    </svg>
-  );
+  return <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h14" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" /></svg>;
+}
+function SwapIcon() {
+  return <svg width="11" height="11" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M7 16V5m0 0L3 9m4-4l4 4M17 8v11m0 0l4-4m-4 4l-4-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>;
+}
+function RingsIcon() {
+  return <svg width="10" height="10" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="9" cy="13" r="6" stroke="currentColor" strokeWidth="1.8" /><circle cx="15" cy="11" r="6" stroke="currentColor" strokeWidth="1.8" /></svg>;
+}
+function BackIcon() {
+  return <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M19 12H5M11 6l-6 6 6 6" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" /></svg>;
 }
 function FitIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path d="M9 4H5a1 1 0 00-1 1v4M15 4h4a1 1 0 011 1v4M9 20H5a1 1 0 01-1-1v-4M15 20h4a1 1 0 001-1v-4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
+  return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9 4H5a1 1 0 00-1 1v4M15 4h4a1 1 0 011 1v4M9 20H5a1 1 0 01-1-1v-4M15 20h4a1 1 0 001-1v-4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>;
 }
 function LayoutVerticalIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <rect x="9" y="3" width="6" height="4" rx="1" stroke="currentColor" strokeWidth="1.6" />
-      <rect x="4" y="17" width="6" height="4" rx="1" stroke="currentColor" strokeWidth="1.6" />
-      <rect x="14" y="17" width="6" height="4" rx="1" stroke="currentColor" strokeWidth="1.6" />
-      <path d="M12 7v5M12 12H7v5M12 12h5v5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-    </svg>
-  );
+  return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="9" y="3" width="6" height="4" rx="1" stroke="currentColor" strokeWidth="1.6" /><rect x="4" y="17" width="6" height="4" rx="1" stroke="currentColor" strokeWidth="1.6" /><rect x="14" y="17" width="6" height="4" rx="1" stroke="currentColor" strokeWidth="1.6" /><path d="M12 7v5M12 12H7v5M12 12h5v5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" /></svg>;
 }
 function LayoutHorizontalIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <rect x="3" y="9" width="4" height="6" rx="1" stroke="currentColor" strokeWidth="1.6" />
-      <rect x="17" y="4" width="4" height="6" rx="1" stroke="currentColor" strokeWidth="1.6" />
-      <rect x="17" y="14" width="4" height="6" rx="1" stroke="currentColor" strokeWidth="1.6" />
-      <path d="M7 12h5M12 12V7h5M12 12v5h5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-    </svg>
-  );
+  return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3" y="9" width="4" height="6" rx="1" stroke="currentColor" strokeWidth="1.6" /><rect x="17" y="4" width="4" height="6" rx="1" stroke="currentColor" strokeWidth="1.6" /><rect x="17" y="14" width="4" height="6" rx="1" stroke="currentColor" strokeWidth="1.6" /><path d="M7 12h5M12 12V7h5M12 12v5h5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" /></svg>;
 }
