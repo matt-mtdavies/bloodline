@@ -13,6 +13,33 @@ const FIT_MIN_ZOOM = 0.06;
 const MAX_ZOOM = 1.6;
 const FIT_PADDING = 72;
 
+// Parent pointers for every pod reachable from the root(s), via a plain BFS
+// over childPods — shared by the spine calculation below and by toggleCollapse's
+// accordion logic, so both agree on the same notion of "ancestor chain".
+function buildParentMap(pods, rootPodIds) {
+  const parentOf = new Map();
+  const visited = new Set(rootPodIds);
+  const queue = [...rootPodIds];
+  while (queue.length) {
+    const id = queue.shift();
+    const pod = pods.get(id);
+    if (!pod) continue;
+    for (const child of pod.childPods) {
+      if (visited.has(child.id)) continue;
+      visited.add(child.id);
+      parentOf.set(child.id, id);
+      queue.push(child.id);
+    }
+  }
+  return parentOf;
+}
+function ancestorChain(parentOf, targetPodId) {
+  const chain = new Set([targetPodId]);
+  let cur = targetPodId;
+  while (parentOf.has(cur)) { cur = parentOf.get(cur); chain.add(cur); }
+  return chain;
+}
+
 // Every pod that has children AND isn't on the spine from the tree's root(s)
 // down to the focal person starts collapsed. A big family fully expanded
 // doesn't fit a phone screen at any legible zoom (the actual bug this
@@ -21,28 +48,12 @@ const FIT_PADDING = 72;
 // default and lets everything else be expanded on demand, same as how a
 // paper family chart is usually drawn "solid line, dotted elsewhere".
 function findSpinePodIds(pods, rootPodIds, activeId) {
-  const parentOf = new Map();
-  const visited = new Set(rootPodIds);
-  const queue = [...rootPodIds];
   let targetId = null;
-  while (queue.length) {
-    const id = queue.shift();
-    const pod = pods.get(id);
-    if (!pod) continue;
+  for (const [id, pod] of pods) {
     if (!pod.placeholder && pod.members.includes(activeId)) { targetId = id; break; }
-    for (const child of pod.childPods) {
-      if (visited.has(child.id)) continue;
-      visited.add(child.id);
-      parentOf.set(child.id, id);
-      queue.push(child.id);
-    }
   }
-  const spine = new Set();
-  if (!targetId) return spine;
-  spine.add(targetId);
-  let cur = targetId;
-  while (parentOf.has(cur)) { cur = parentOf.get(cur); spine.add(cur); }
-  return spine;
+  if (!targetId) return new Set();
+  return ancestorChain(buildParentMap(pods, rootPodIds), targetId);
 }
 function computeDefaultCollapsed(pods, rootPodIds, activeId) {
   const spine = findSpinePodIds(pods, rootPodIds, activeId);
@@ -74,6 +85,8 @@ export default function ChartTree({ graph, activeId, onOpenPerson, onAddRelative
   const [view, setView] = useState({ zoom: 0.85, panX: 0, panY: 0 });
   const viewportRef = useRef(null);
   const dragRef = useRef(null);
+  const pointersRef = useRef(new Map()); // pointerId -> {x, y}, live touches only
+  const pinchRef = useRef(null);
 
   const layout = useMemo(
     () => computeChartPods(graph, activeId, { collapsed, orientation }),
@@ -173,22 +186,96 @@ export default function ChartTree({ graph, activeId, onOpenPerson, onAddRelative
     zoomBy(e.deltaY < 0 ? 1.08 : 1 / 1.08, anchor);
   };
 
+  // Anchors the pinch on whatever world point sits under the fingers' START
+  // midpoint, then keeps solving for the pan that keeps that same world
+  // point under the CURRENT midpoint every move — one formula covers zoom
+  // (the distance ratio) and a two-finger drag (the midpoint moving) at
+  // once, rather than treating them as separate gestures.
+  const beginPinch = (rect) => {
+    const pts = [...pointersRef.current.values()];
+    const midX = (pts[0].x + pts[1].x) / 2 - rect.left;
+    const midY = (pts[0].y + pts[1].y) / 2 - rect.top;
+    pinchRef.current = {
+      startDist: Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) || 1,
+      startZoom: view.zoom,
+      worldX: (midX - view.panX) / view.zoom,
+      worldY: (midY - view.panY) / view.zoom,
+    };
+  };
+
   const onPointerDown = (e) => {
-    if (e.target.closest('.chart-card') || e.target.closest('.chart-controls')) return;
-    dragRef.current = { startX: e.clientX, startY: e.clientY, panX: view.panX, panY: view.panY };
-    e.currentTarget.setPointerCapture(e.pointerId);
+    // Only the FIRST finger gets excluded for landing on a card/control —
+    // once a gesture is already in progress, a second finger completing a
+    // pinch must register no matter what it happens to land on, or pinching
+    // near any card (common in a dense chart) would silently only track one
+    // finger and never zoom.
+    if (pointersRef.current.size === 0 && (e.target.closest('.chart-card') || e.target.closest('.chart-controls'))) return;
+    // Capture can reject a pointer the browser doesn't consider active (seen
+    // from embedded webviews/synthetic input) — losing capture only means an
+    // in-progress drag can end early if the finger leaves the element, not a
+    // functional break, so it's not worth failing the whole gesture over.
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+    pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    const rect = viewportRef.current?.getBoundingClientRect();
+    if (pointersRef.current.size === 2 && rect) {
+      dragRef.current = null;
+      beginPinch(rect);
+    } else if (pointersRef.current.size === 1) {
+      dragRef.current = { startX: e.clientX, startY: e.clientY, panX: view.panX, panY: view.panY };
+    }
   };
   const onPointerMove = (e) => {
-    if (!dragRef.current) return;
-    const { startX, startY, panX, panY } = dragRef.current;
-    setView((v) => ({ ...v, panX: panX + (e.clientX - startX), panY: panY + (e.clientY - startY) }));
+    if (!pointersRef.current.has(e.pointerId)) return;
+    pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pointersRef.current.size >= 2 && pinchRef.current) {
+      const pts = [...pointersRef.current.values()].slice(0, 2);
+      const rect = viewportRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) || 1;
+      const midX = (pts[0].x + pts[1].x) / 2 - rect.left;
+      const midY = (pts[0].y + pts[1].y) / 2 - rect.top;
+      const { startDist, startZoom, worldX, worldY } = pinchRef.current;
+      const nextZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, startZoom * (dist / startDist)));
+      setView({ zoom: nextZoom, panX: midX - worldX * nextZoom, panY: midY - worldY * nextZoom });
+      return;
+    }
+    if (dragRef.current) {
+      const { startX, startY, panX, panY } = dragRef.current;
+      setView((v) => ({ ...v, panX: panX + (e.clientX - startX), panY: panY + (e.clientY - startY) }));
+    }
   };
-  const onPointerUp = () => { dragRef.current = null; };
+  const onPointerUp = (e) => {
+    pointersRef.current.delete(e.pointerId);
+    pinchRef.current = null;
+    const remaining = [...pointersRef.current.values()];
+    // One finger still down after lifting the other — resume a plain pan
+    // from here instead of stopping dead until a fresh gesture starts.
+    dragRef.current = remaining.length === 1
+      ? { startX: remaining[0].x, startY: remaining[0].y, panX: view.panX, panY: view.panY }
+      : null;
+  };
 
+  // Opening a branch closes whichever other branch was open — same idea as
+  // a paper chart's arrows: only one line is ever expanded outside the
+  // direct spine, so the chart never sprawls into a messy everything-open
+  // tangle. Closing a branch is a plain toggle-off; opening one rebuilds
+  // the collapse set from the default (spine only) plus this pod's own
+  // ancestor chain, so every OTHER branch folds back at the same time.
   const toggleCollapse = (podId) => {
     setCollapsed((prev) => {
-      const next = new Set(prev);
-      if (next.has(podId)) next.delete(podId); else next.add(podId);
+      if (!prev.has(podId)) {
+        const next = new Set(prev);
+        next.add(podId);
+        return next;
+      }
+      const parentOf = buildParentMap(layout.pods, layout.rootPodIds);
+      const spine = findSpinePodIds(layout.pods, layout.rootPodIds, activeId);
+      const keepOpen = ancestorChain(parentOf, podId);
+      const next = new Set();
+      for (const [id, pod] of layout.pods) {
+        if (pod.placeholder) continue;
+        if (pod.childPods.length && !spine.has(id) && !keepOpen.has(id)) next.add(id);
+      }
       return next;
     });
   };
@@ -291,6 +378,7 @@ export default function ChartTree({ graph, activeId, onOpenPerson, onAddRelative
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerLeave={onPointerUp}
+        onPointerCancel={onPointerUp}
       >
         <div
           className="chart-tree__world"
