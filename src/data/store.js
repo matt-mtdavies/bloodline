@@ -1164,7 +1164,7 @@ export function addRelationship(fromId, toId, type, qualifier = 'biological') {
 // additive metadata the pedigree chart's marriage strip renders; absent
 // fields never block anything. Accepts partial dates ('1979' or
 // '1979-06-14'), same as birth/death dates everywhere else.
-export function updatePartnerMeta(aId, bId, { marriage_date, marriage_place } = {}) {
+export function updatePartnerMeta(aId, bId, { is_married, marriage_date, marriage_place } = {}) {
   const isPair = (r) =>
     (r.from_person === aId && r.to_person === bId) || (r.from_person === bId && r.to_person === aId);
   const idx = state.relationships.findIndex((r) => r.type === 'partner' && isPair(r));
@@ -1172,6 +1172,8 @@ export function updatePartnerMeta(aId, bId, { marriage_date, marriage_place } = 
   const next = state.relationships.slice();
   next[idx] = {
     ...next[idx],
+    // A recorded date/place is itself evidence of a marriage.
+    is_married: !!is_married || !!marriage_date || !!marriage_place,
     marriage_date: marriage_date || null,
     marriage_place: marriage_place || null,
   };

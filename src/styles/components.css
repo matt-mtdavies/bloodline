@@ -631,6 +631,16 @@
 }
 .rel-menu__opts { display: flex; flex-wrap: wrap; gap: 6px; }
 .marriage-edit { display: flex; flex-direction: column; gap: 6px; }
+.marriage-edit__check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink);
+  cursor: pointer;
+}
+.marriage-edit__check input { accent-color: var(--accent); width: 16px; height: 16px; }
 .marriage-edit__input {
   padding: 8px 11px;
   border: 1px solid var(--hairline);

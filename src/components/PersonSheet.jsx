@@ -1554,33 +1554,52 @@ function DotsIcon() {
 // once (see store.updatePartnerMeta). `item` is the graph's partner entry,
 // which carries the current values.
 function MarriageDetailsEditor({ item, onSave }) {
+  const [married, setMarried] = useState(!!item.is_married || !!item.marriage_date || !!item.marriage_place);
   const [date, setDate] = useState(item.marriage_date || '');
   const [place, setPlace] = useState(item.marriage_place || '');
   const [saved, setSaved] = useState(false);
-  const dirty = date !== (item.marriage_date || '') || place !== (item.marriage_place || '');
+  const dirty = married !== (!!item.is_married || !!item.marriage_date || !!item.marriage_place)
+    || date !== (item.marriage_date || '') || place !== (item.marriage_place || '');
   return (
     <div className="rel-menu__group">
       <span className="rel-menu__label">Marriage</span>
       <div className="marriage-edit">
-        <input
-          className="marriage-edit__input"
-          type="text"
-          inputMode="numeric"
-          placeholder="Year or date (1979 or 1979-06-14)"
-          value={date}
-          onChange={(e) => { setDate(e.target.value); setSaved(false); }}
-        />
-        <input
-          className="marriage-edit__input"
-          type="text"
-          placeholder="Place (optional)"
-          value={place}
-          onChange={(e) => { setPlace(e.target.value); setSaved(false); }}
-        />
+        <label className="marriage-edit__check">
+          <input
+            type="checkbox"
+            checked={married}
+            onChange={(e) => { setMarried(e.target.checked); setSaved(false); }}
+          />
+          They married
+        </label>
+        {married && (
+          <>
+            <input
+              className="marriage-edit__input"
+              type="text"
+              inputMode="numeric"
+              placeholder="Year or date (1979 or 1979-06-14)"
+              value={date}
+              onChange={(e) => { setDate(e.target.value); setSaved(false); }}
+            />
+            <input
+              className="marriage-edit__input"
+              type="text"
+              placeholder="Place (optional)"
+              value={place}
+              onChange={(e) => { setPlace(e.target.value); setSaved(false); }}
+            />
+          </>
+        )}
         <button
           className="marriage-edit__save"
           disabled={!dirty}
-          onClick={() => { onSave({ marriage_date: date.trim() || null, marriage_place: place.trim() || null }); setSaved(true); }}
+          onClick={() => {
+            onSave(married
+              ? { is_married: true, marriage_date: date.trim() || null, marriage_place: place.trim() || null }
+              : { is_married: false, marriage_date: null, marriage_place: null });
+            setSaved(true);
+          }}
         >
           {saved && !dirty ? 'Saved' : 'Save'}
         </button>

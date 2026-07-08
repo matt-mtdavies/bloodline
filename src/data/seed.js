@@ -496,7 +496,7 @@ export const relationships = [
   partner('thomas', 'eleanor', 'widowed', { marriage_date: '1957' }),
   partner('robert', 'linda', 'current', { marriage_date: '1983-04-16', marriage_place: 'Canterbury' }),
   partner('susan', 'david', 'current', { marriage_date: '1984' }),
-  partner('james', 'rachel', 'former'), // divorced
+  partner('james', 'rachel', 'former', { is_married: true }), // divorced
   partner('james', 'megan', 'current', { marriage_date: '2016-09-03', marriage_place: 'Whitstable' }), // remarried
   partner('sarah', 'mark', 'current', { marriage_date: '2011' }),
 ];
@@ -520,6 +520,7 @@ function partner(a, b, status, meta = {}) {
     type: 'partner',
     qualifier: 'biological',
     partner_status: status,
+    is_married: !!meta.is_married || !!meta.marriage_date || !!meta.marriage_place,
     marriage_date: meta.marriage_date ?? null,
     marriage_place: meta.marriage_place ?? null,
   };

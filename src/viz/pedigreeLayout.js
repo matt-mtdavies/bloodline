@@ -152,6 +152,7 @@ function marriageOf(graph, aId, bId) {
     status: edge.status ?? 'current',
     date: edge.marriage_date ?? null,
     place: edge.marriage_place ?? null,
+    isMarried: !!edge.is_married,
   };
 }
 

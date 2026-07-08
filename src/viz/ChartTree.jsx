@@ -513,17 +513,23 @@ function PedCard({ card, graph, activeId, horizontal, isFocal, switcherFor, part
   );
 }
 
+// "Married" is a claim, so it needs evidence: an explicit married flag or a
+// recorded marriage date/place on the partner edge. A bare current
+// partnership says the neutral "Partners" — the data model's partner_status
+// only knows current/former/widowed, and mapping current → "Married"
+// invented weddings for unmarried couples.
 function MarriageStrip({ marriage }) {
   let text = null;
   if (marriage) {
-    if (marriage.status === 'former') text = 'Formerly married';
-    else if (marriage.status === 'widowed') text = marriage.date ? `Married ${formatDate(marriage.date)}` : 'Widowed';
-    else text = marriage.date ? `Married ${formatDate(marriage.date)}` : 'Married';
-    if (marriage.place && marriage.date) text += ` · ${marriage.place}`;
+    const wed = marriage.isMarried || marriage.date || marriage.place;
+    if (marriage.status === 'former') text = wed ? 'Formerly married' : 'Former partners';
+    else if (marriage.status === 'widowed') text = wed && marriage.date ? `Married ${formatDate(marriage.date)}` : 'Widowed';
+    else text = wed ? (marriage.date ? `Married ${formatDate(marriage.date)}` : 'Married') : 'Partners';
+    if (marriage.place && marriage.date && marriage.status !== 'former') text += ` · ${marriage.place}`;
   }
   return (
     <div className={'ped-marriage' + (text ? '' : ' ped-marriage--bare')}>
-      {text && <span className="ped-marriage__text"><RingsIcon /> {text}</span>}
+      {text && <span className="ped-marriage__text">{marriage && (marriage.isMarried || marriage.date || marriage.place) ? <RingsIcon /> : null} {text}</span>}
     </div>
   );
 }
