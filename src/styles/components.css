@@ -5350,6 +5350,7 @@ button.health-notes {
   text-overflow: ellipsis;
 }
 .recap-caption__what { font-size: 14px; font-weight: 600; color: var(--accent-deep); }
+.recap-caption__meta { font-size: 12px; font-weight: 500; color: var(--ink-soft); }
 .recap-caption--done { padding: 20px 32px; }
 @keyframes recap-caption-in {
   from { opacity: 0; transform: translateX(-50%) translateY(-10px) scale(0.96); }
@@ -5359,167 +5360,60 @@ button.health-notes {
   .recap-caption { animation: none; }
 }
 
-/* Queue panel — same right-drawer pattern as the activity panel itself,
-   but deliberately translucent rather than solid: the camera's target
-   bubble is always screen-centred (see world.position.set in the ticker),
-   and on a phone this panel's width reaches well past that centre point —
-   an opaque panel would completely hide the bloom/glow it's meant to be
-   reporting on. Frosted instead of solid lets the glow read straight
-   through it. */
-.recap-queue {
+/* Progress pill — the tour's ONLY persistent chrome besides the caption, on
+   every screen size. There used to be a full right-hand queue drawer here
+   (frosted, "wide screens have room for both") — but the camera centres its
+   target bubble on screen, and on an iPad the drawer reached well past that
+   centre: the panel narrating the reveal was covering the reveal. Browsing
+   and revisiting updates is the Activity tab's job; while the tour plays,
+   all anyone needs is how much is left and a way out. Bottom-anchored,
+   clear of the bottom dock. */
+.recap-progress {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   position: fixed;
-  top: 0; right: 0; bottom: 0;
-  width: min(340px, 86vw);
-  background: rgba(255, 255, 255, 0.82);
-  -webkit-backdrop-filter: blur(18px);
-  backdrop-filter: blur(18px);
-  box-shadow: -3px 0 50px rgba(20, 22, 28, 0.14);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  z-index: 62;
-  animation: activity-panel-in 0.45s var(--spring) both;
+  left: 50%;
+  bottom: calc(var(--safe-bottom, 0px) + 100px);
+  transform: translateX(-50%);
+  z-index: 63;
+  padding: 8px 10px 8px 16px;
+  border-radius: 999px;
+  background: rgba(36, 31, 28, 0.82);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: 0 8px 24px rgba(20, 22, 28, 0.22);
+  /* Not the shared toast-in — its keyframes end at a bare translateY(0),
+     which (with `both` fill) would stomp the translateX(-50%) centring. */
+  animation: recap-progress-in 0.3s var(--spring) both;
 }
-/* On a phone the panel's width reaches past the screen-centred bubble no
-   matter how it's positioned, so rather than chase an overlap-free spot,
-   it starts collapsed (see .recap-queue-peek below) and only takes over
-   the screen once the person has actually asked to see the list. */
-@media (max-width: 700px) {
-  .recap-queue { display: none; }
-  .recap-queue.recap-queue--expanded {
-    display: flex;
-    /* Clears the per-stop caption above it (still visible while the tour
-       runs, even with the list expanded) rather than fighting it for the
-       same band. A bit more headroom than the caption's typical height —
-       it now names every distinct change rather than capping at two, so
-       someone with several different kinds of edits wraps to 2-3 lines. */
-    top: calc(var(--safe-top, 0px) + 300px);
-    border-top-left-radius: 20px;
-  }
+@keyframes recap-progress-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(-8px); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
 }
-
-/* Collapsed state on a phone — a small tappable pill, not a panel, so the
-   reveal underneath stays fully visible until you deliberately ask for
-   the list. Bottom-anchored, clear of the bottom dock. */
-.recap-queue-peek {
-  display: none;
-}
-@media (max-width: 700px) {
-  .recap-queue-peek {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    position: fixed;
-    left: 50%;
-    bottom: calc(var(--safe-bottom, 0px) + 100px);
-    transform: translateX(-50%);
-    z-index: 63;
-    padding: 10px 18px;
-    border-radius: 999px;
-    background: rgba(36, 31, 28, 0.82);
-    color: #fff;
-    font-size: 13px;
-    font-weight: 600;
-    box-shadow: 0 8px 24px rgba(20, 22, 28, 0.22);
-    animation: toast-in 0.3s var(--spring) both;
-  }
-  .recap-queue-peek__count {
-    display: grid;
-    place-items: center;
-    width: 20px;
-    height: 20px;
-    border-radius: 50%;
-    background: var(--accent);
-    font-size: 11.5px;
-  }
-}
-.recap-queue__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: calc(var(--safe-top) + 16px) 20px 14px;
-  border-bottom: 1px solid var(--hairline);
-  flex-shrink: 0;
-}
-.recap-queue__title { font-size: 16px; font-weight: 600; color: var(--ink); margin: 0; }
-.recap-queue__sub { font-size: 12.5px; color: var(--ink-soft); margin: 2px 0 0; }
-.recap-queue__close {
+.recap-progress__count {
   display: grid;
   place-items: center;
-  width: 34px; height: 34px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
-  color: var(--ink-soft);
-  background: var(--paper-deep);
-  flex-shrink: 0;
-  transition: background 0.2s var(--ease), transform 0.3s var(--spring);
+  background: var(--accent);
+  font-size: 11.5px;
 }
-.recap-queue__close:hover { background: var(--hairline); }
-.recap-queue__close:active { transform: scale(0.9); }
-
-.recap-queue__list { flex: 1; overflow-y: auto; overscroll-behavior: contain; padding: 8px 14px; }
-.recap-queue__list li { list-style: none; margin-bottom: 8px; }
-
-.recap-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  border-radius: 14px;
-  background: var(--paper-deep);
-  transition: background 0.2s var(--ease), opacity 0.3s var(--ease);
-}
-.recap-row--active { background: color-mix(in srgb, var(--accent) 12%, var(--paper-deep)); outline: 1.5px solid var(--accent-soft); }
-.recap-row--done { opacity: 0.45; }
-
-.recap-row__main {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex: 1;
-  min-width: 0;
-  text-align: left;
-  background: none;
-  padding: 10px 8px 10px 10px;
-}
-.recap-row__main:disabled { cursor: default; }
-.recap-row__main:not(:disabled):active { transform: scale(0.985); }
-.recap-row__text { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
-.recap-row__name {
-  font-size: 14.5px;
-  font-weight: 600;
-  color: var(--ink);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.recap-row__caption { font-size: 12px; color: var(--ink-soft); }
-
-.recap-row__dismiss {
-  flex: none;
+.recap-progress__close {
   display: grid;
   place-items: center;
-  width: 30px;
-  height: 30px;
-  margin-right: 8px;
+  width: 26px;
+  height: 26px;
+  margin-left: 4px;
   border-radius: 50%;
-  color: var(--ink-faint);
-  background: transparent;
-  transition: color 0.15s ease, background 0.15s ease, transform 0.2s var(--spring);
+  color: rgba(255, 255, 255, 0.85);
+  background: rgba(255, 255, 255, 0.14);
+  transition: background 0.15s ease, transform 0.2s var(--spring);
 }
-.recap-row__dismiss:hover { color: var(--accent); background: var(--accent-soft); }
-.recap-row__dismiss:active { transform: scale(0.9); }
-
-.recap-queue__closeall {
-  flex-shrink: 0;
-  margin: 8px 16px calc(var(--safe-bottom, 0px) + 16px);
-  padding: 12px;
-  border-radius: 12px;
-  background: var(--paper-deep);
-  color: var(--ink-soft);
-  font-size: 14px;
-  font-weight: 600;
-  text-align: center;
-}
-.recap-queue__closeall:hover { background: var(--hairline); }
+.recap-progress__close:hover { background: rgba(255, 255, 255, 0.26); }
+.recap-progress__close:active { transform: scale(0.9); }
 
 /* Proactive login-time nudge — normal-flow child of .topbar, same slot as
    the sync/storage toasts, so it never overlaps the bottom dock and tracks
@@ -5565,7 +5459,7 @@ button.health-notes {
 .recap-nudge__dismiss:hover { background: color-mix(in srgb, var(--accent) 28%, transparent); }
 
 @media (prefers-reduced-motion: reduce) {
-  .recap-tour__scrim, .recap-queue, .recap-nudge, .activity-recap-hero { animation: none; }
+  .recap-tour__scrim, .recap-progress, .recap-nudge, .activity-recap-hero { animation: none; }
 }
 
 /* ── GEDCOM Import Wizard ──────────────────────────────────────────────────── */

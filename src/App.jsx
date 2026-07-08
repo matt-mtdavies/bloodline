@@ -1088,12 +1088,23 @@ export default function App() {
     markRecapSeen();
     const ids = recapGroups.map((g) => g.personId);
     setRecapQueue(
-      recapGroups.map((g) => ({
-        personId: g.personId,
-        personName: g.personName,
-        caption: captionForRecapGroup(g),
-        status: 'pending',
-      })),
+      recapGroups.map((g) => {
+        // "by whom, when" for the caption's meta line — distinct authors
+        // (usually one), and the most recent of the group's events.
+        const authors = [...new Set(g.events.map((e) => e.authorName).filter(Boolean))];
+        const latest = g.events.reduce((max, e) => {
+          const t = new Date(e.created_at).getTime();
+          return t > max ? t : max;
+        }, 0);
+        return {
+          personId: g.personId,
+          personName: g.personName,
+          caption: captionForRecapGroup(g),
+          authorName: authors.length > 1 ? `${authors[0]} & ${authors.length - 1} more` : (authors[0] || null),
+          at: latest ? new Date(latest).toISOString() : null,
+          status: 'pending',
+        };
+      }),
     );
     setRecapAllDone(false);
     setRecapOpen(true);
@@ -1148,21 +1159,6 @@ export default function App() {
     // payoff of the whole tour — rather than vanishing the instant you tap
     // away.
     setTimeout(() => viewApi.current?.spotlightClearGlow(), 2600);
-  }, []);
-
-  const dismissRecapItem = useCallback((id) => {
-    viewApi.current?.spotlightRemove(id);
-    setRecapQueue((q) => {
-      const next = q.filter((item) => item.personId !== id);
-      if (!next.length) {
-        setRecapAllDone(true);
-      }
-      return next;
-    });
-  }, []);
-
-  const skipRecapTo = useCallback((id) => {
-    viewApi.current?.spotlightGoTo(id);
   }, []);
 
   const closePerson = useCallback(() => {
@@ -2029,12 +2025,9 @@ export default function App() {
 
       {recapOpen && (
         <RecapTour
-          graph={graph}
           queue={recapQueue}
           reducedMotion={reducedMotion}
           allDone={recapAllDone}
-          onDismiss={dismissRecapItem}
-          onSkipTo={skipRecapTo}
           onCloseAll={closeRecapAll}
           onClose={closeRecapAll}
         />

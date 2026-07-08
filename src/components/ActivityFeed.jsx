@@ -220,7 +220,7 @@ function typeConfig(type) {
   }
 }
 
-function relativeTime(iso) {
+export function relativeTime(iso) {
   const diff = Date.now() - new Date(iso).getTime();
   const secs = Math.floor(diff / 1000);
   if (secs < 60) return 'just now';
