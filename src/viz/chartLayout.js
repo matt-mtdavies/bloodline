@@ -120,17 +120,34 @@ function buildPodTree(graph, focalId) {
   }
 
   // ── 4. Parent → child pod links (each child attaches to one parent pod). ──
+  const isBioAdopt = (q) => !q || q === 'biological' || q === 'adoptive';
   const childPodOf = new Map(); // childPersonId → parent podId
   for (const id of visible) {
-    const par = vParents(id).map((p) => p.id);
-    if (!par.length) continue;
-    // Prefer the pod that contains the most of this child's parents (a couple).
-    let best2 = null, bestScore = -1;
-    for (const pid of par) {
-      const pod = pods.get(podOfPerson.get(pid));
+    const parEntries = vParents(id); // [{id, qualifier}]
+    if (!parEntries.length) continue;
+    // The chart can only draw ONE line up from a child, so it should trace
+    // blood/adoption, not whichever parent happens to be in a recorded
+    // couple. A step-parent's household would otherwise systematically win
+    // this pick purely by having two members instead of one — even though
+    // neither of those members need be more biologically related than a
+    // lone biological parent living apart from the family. So a
+    // biological/adoptive parent's pod always outranks a step parent's;
+    // within the same tier, more of the child's parents in one pod (a
+    // couple) still breaks the tie over a solo parent — but the overlap
+    // count only credits members who are themselves biological/adoptive,
+    // so a step co-parent can never inflate that tiebreak either.
+    const bioParIds = parEntries.filter((p) => isBioAdopt(p.qualifier)).map((p) => p.id);
+    const allParIds = parEntries.map((p) => p.id);
+    let best2 = null, bestTier = -1, bestScore = -1;
+    for (const pe of parEntries) {
+      const pod = pods.get(podOfPerson.get(pe.id));
       if (!pod) continue;
-      const score = pod.members.filter((m) => par.includes(m)).length;
-      if (score > bestScore) { bestScore = score; best2 = pod; }
+      const tier = isBioAdopt(pe.qualifier) ? 1 : 0;
+      const pool = tier ? bioParIds : allParIds;
+      const score = pod.members.filter((m) => pool.includes(m)).length;
+      if (tier > bestTier || (tier === bestTier && score > bestScore)) {
+        bestTier = tier; bestScore = score; best2 = pod;
+      }
     }
     if (best2) childPodOf.set(id, best2.id);
   }
