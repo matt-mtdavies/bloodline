@@ -37,11 +37,7 @@ function buildPodTree(graph, focalId) {
   const parentsOf = (id) => graph.parents(id);
   const childrenOf = (id) => graph.children(id);
   const partnersOf = (id) => graph.partners(id);
-  const primaryPartnerId = (id) => {
-    const ps = partnersOf(id);
-    if (!ps.length) return null;
-    return (ps.find((p) => p.status !== 'former') || ps[0]).id;
-  };
+  const isBioAdopt = (q) => !q || q === 'biological' || q === 'adoptive';
 
   // ── 1-2. Visible set: the WHOLE family component reachable from the focal
   //       person via any parent, child, or partner edge — not just one
@@ -71,6 +67,38 @@ function buildPodTree(graph, focalId) {
   const vParents = (id) => parentsOf(id).filter((p) => inV(p.id));
   const vChildren = (id) => childrenOf(id).filter((c) => inV(c.id));
 
+  // A pod pairs someone with a partner for display. Defaulting to whoever
+  // they're CURRENTLY with (the original rule) is right almost always — even
+  // a step-parent who co-parents at least one child alongside them is a
+  // genuine present household, and should keep winning even if an ex happens
+  // to share more children by raw count (a divorced couple's kids don't
+  // outweigh who's actually still in the picture). The rule only breaks for
+  // someone whose CURRENT partner shares NO children with them at all — a
+  // spouse from a separate, later relationship — where defaulting to
+  // "current" mislabels that spouse as the parent of kids from an earlier
+  // one and drops the real co-parent (an ex) from the pod entirely. So:
+  // keep the current partner whenever they share at least one child; only
+  // search past them, for whoever shares the most, when they share none.
+  const primaryPartnerId = (id) => {
+    const ps = partnersOf(id).filter((p) => inV(p.id));
+    if (!ps.length) return null;
+    const myKids = vChildren(id).map((c) => c.id);
+    const sharedKids = (partnerId) => myKids.filter((kid) =>
+      vParents(kid).some((par) => par.id === partnerId && isBioAdopt(par.qualifier))).length;
+    const current = ps.find((p) => p.status !== 'former');
+    if (current && sharedKids(current.id) > 0) return current.id;
+    const statusRank = (s) => (s === 'former' ? 0 : s === 'widowed' ? 1 : 2);
+    let best = ps[0], bestShared = sharedKids(ps[0].id), bestRank = statusRank(ps[0].status);
+    for (const p of ps.slice(1)) {
+      const shared = sharedKids(p.id);
+      const rank = statusRank(p.status);
+      if (shared > bestShared || (shared === bestShared && rank > bestRank)) {
+        best = p; bestShared = shared; bestRank = rank;
+      }
+    }
+    return best.id;
+  };
+
   // ── 3. Build pods (anchor = bloodline member; spouse drawn beside). ────────
   const pods = new Map();      // podId → pod
   const podOfPerson = new Map(); // personId → podId
@@ -89,10 +117,15 @@ function buildPodTree(graph, focalId) {
   // Anchor preference: a pod's anchor should be the member with bloodline
   // parents when only one member has them (so up-links and children resolve to
   // the right side); ties broken by who has more children, then id order.
+  // Pairing must be MUTUAL (each picks the other as their best partner) — not
+  // just "whoever gets visited first claims their own pick" — otherwise a
+  // childless current spouse visited before the real co-parent would lock in
+  // first purely on iteration order, since their own one-sided pick (their
+  // only partner) can't see that the other side has a better match elsewhere.
   for (const id of visible) {
     if (assigned.has(id)) continue;
     const partner = primaryPartnerId(id);
-    if (partner && inV(partner) && !assigned.has(partner)) {
+    if (partner && inV(partner) && !assigned.has(partner) && primaryPartnerId(partner) === id) {
       let anchor = id, spouse = partner;
       const idP = hasParents(id), ptP = hasParents(partner);
       if (ptP && !idP) { anchor = partner; spouse = id; }
@@ -120,7 +153,6 @@ function buildPodTree(graph, focalId) {
   }
 
   // ── 4. Parent → child pod links (each child attaches to one parent pod). ──
-  const isBioAdopt = (q) => !q || q === 'biological' || q === 'adoptive';
   const childPodOf = new Map(); // childPersonId → parent podId
   for (const id of visible) {
     const parEntries = vParents(id); // [{id, qualifier}]
