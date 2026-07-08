@@ -1574,14 +1574,24 @@ function MarriageDetailsEditor({ item, onSave }) {
         </label>
         {married && (
           <>
-            <input
-              className="marriage-edit__input"
-              type="text"
-              inputMode="numeric"
-              placeholder="Year or date (1979 or 1979-06-14)"
-              value={date}
-              onChange={(e) => { setDate(e.target.value); setSaved(false); }}
-            />
+            {/* Same convention as the profile's Date of Birth field: a native
+                date picker, with a legacy year-only value (seed/GEDCOM data)
+                preserved and surfaced as a hint until a full date replaces it. */}
+            <div className="input-wrap">
+              <input
+                className="marriage-edit__input marriage-edit__input--date"
+                type="date"
+                max={new Date().toISOString().slice(0, 10)}
+                value={date.includes('-') ? date : ''}
+                onChange={(e) => { if (e.target.value) { setDate(e.target.value); setSaved(false); } }}
+              />
+              {date && (
+                <button type="button" className="input-clear" onClick={() => { setDate(''); setSaved(false); }} aria-label="Clear date" tabIndex={-1}>×</button>
+              )}
+            </div>
+            {date && !date.includes('-') && (
+              <span className="marriage-edit__hint">Year {date} — pick a full date to refine</span>
+            )}
             <input
               className="marriage-edit__input"
               type="text"

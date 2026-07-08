@@ -641,6 +641,15 @@
   cursor: pointer;
 }
 .marriage-edit__check input { accent-color: var(--accent); width: 16px; height: 16px; }
+.marriage-edit .input-wrap { width: 100%; }
+.marriage-edit .input-wrap > .marriage-edit__input { flex: 1; padding-right: 38px; }
+.marriage-edit__input--date {
+  min-height: 38px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: var(--paper);
+}
+.marriage-edit__hint { font-size: 11.5px; color: var(--ink-soft); margin: -2px 0 0 2px; }
 .marriage-edit__input {
   padding: 8px 11px;
   border: 1px solid var(--hairline);
