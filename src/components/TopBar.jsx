@@ -384,7 +384,7 @@ function viewModeIcon(mode) {
 // this" independent of which one happens to be active.
 function ViewSwitcherIcon() {
   return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{flexShrink:0}}>
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{flexShrink:0}}>
       <rect x="4" y="4" width="13" height="13" rx="3" stroke="currentColor" strokeWidth="1.7"/>
       <rect x="8" y="9" width="13" height="13" rx="3" stroke="currentColor" strokeWidth="1.7"/>
     </svg>

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { computePedigree, primaryUnionPartner, unionCandidates } from './pedigreeLayout.js';
 import { ROW_H, MARRIAGE_H } from './pedigreeMetrics.js';
-import { lifespan, ageOrAt, formatDate } from '../lib/dates.js';
+import { lifespan, ageOrAt } from '../lib/dates.js';
 import Avatar from '../components/Avatar.jsx';
 
 /*
@@ -513,23 +513,26 @@ function PedCard({ card, graph, activeId, horizontal, isFocal, switcherFor, part
   );
 }
 
-// "Married" is a claim, so it needs evidence: an explicit married flag or a
-// recorded marriage date/place on the partner edge. A bare current
-// partnership says the neutral "Partners" — the data model's partner_status
-// only knows current/former/widowed, and mapping current → "Married"
-// invented weddings for unmarried couples.
+// Two tiers, nothing in between. No marriage evidence: the plain
+// partner_status word (current → "Partners", former → "Former partners",
+// widowed → "Widowed") — this base wording is deliberately untouched by
+// marriage evidence at all. Evidence (the explicit is_married flag, or a
+// recorded date/place implying it): just "Married", full stop — no date, no
+// place, no "Formerly" variant. The date/place still lives in the profile's
+// marriage editor for anyone who wants it; the compact card only ever
+// needs to answer "were they married," not recite the wedding details.
 function MarriageStrip({ marriage }) {
   let text = null;
   if (marriage) {
     const wed = marriage.isMarried || marriage.date || marriage.place;
-    if (marriage.status === 'former') text = wed ? 'Formerly married' : 'Former partners';
-    else if (marriage.status === 'widowed') text = wed && marriage.date ? `Married ${formatDate(marriage.date)}` : 'Widowed';
-    else text = wed ? (marriage.date ? `Married ${formatDate(marriage.date)}` : 'Married') : 'Partners';
-    if (marriage.place && marriage.date && marriage.status !== 'former') text += ` · ${marriage.place}`;
+    if (wed) text = 'Married';
+    else if (marriage.status === 'former') text = 'Former partners';
+    else if (marriage.status === 'widowed') text = 'Widowed';
+    else text = 'Partners';
   }
   return (
     <div className={'ped-marriage' + (text ? '' : ' ped-marriage--bare')}>
-      {text && <span className="ped-marriage__text">{marriage && (marriage.isMarried || marriage.date || marriage.place) ? <RingsIcon /> : null} {text}</span>}
+      {text && <span className="ped-marriage__text">{text === 'Married' ? <RingsIcon /> : null} {text}</span>}
     </div>
   );
 }
