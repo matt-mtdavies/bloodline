@@ -12,9 +12,12 @@
  *   • Subtree widths are computed bottom-up (Reingold–Tilford style) so siblings
  *     never overlap and a parent is centred over the span of its children.
  *
- * Only the primary partner is shown per pod (the bloodline + who they married);
- * additional/former married-in partners are omitted to keep the tree unambiguous
- * — they remain fully present everywhere else in the app and in the data.
+ * A pod holds at most two people, and biological/adoptive co-parents pod
+ * together FIRST — computed from the parent-child rows themselves, regardless
+ * of partner status — so a child's card always hangs beneath both of their
+ * recorded parents. Partners who share no children pod together from partner
+ * edges afterwards; anyone left over stands alone. Every relationship remains
+ * fully present everywhere else in the app and in the data.
  *
  * computeChartLayout(graph, focalId) → Map<personId, {x, y}>
  * The set of positioned ids IS the chart's visible set (pos.keys()).
@@ -37,7 +40,9 @@ function buildPodTree(graph, focalId) {
   const parentsOf = (id) => graph.parents(id);
   const childrenOf = (id) => graph.children(id);
   const partnersOf = (id) => graph.partners(id);
-  const isBioAdopt = (q) => !q || q === 'biological' || q === 'adoptive';
+  // Both 'adoptive' (AddRelativeSheet) and 'adopted' (seed/GEDCOM data) occur
+  // in real stores; the chart treats either as a bloodline-equivalent edge.
+  const isBioAdopt = (q) => !q || q === 'biological' || q === 'adoptive' || q === 'adopted';
 
   // ── 1-2. Visible set: the WHOLE family component reachable from the focal
   //       person via any parent, child, or partner edge — not just one
@@ -67,57 +72,18 @@ function buildPodTree(graph, focalId) {
   const vParents = (id) => parentsOf(id).filter((p) => inV(p.id));
   const vChildren = (id) => childrenOf(id).filter((c) => inV(c.id));
 
-  // A pod pairs someone with a partner for display. Biological/adoptive
-  // co-parenthood is the primary signal, computed straight from the
-  // parent-child data — whoever else is recorded as a bio/adoptive parent of
-  // the most of this person's children, full stop, ahead of any notion of
-  // current vs. former relationship status. That works even with no partner
-  // edge between the two of them at all (a real family often only records
-  // an ex as each child's other parent, never as a formal "partner"
-  // relationship), and it isn't derailed by either of them having gone on to
-  // a separate current relationship that also happens to share a child —
-  // the actual co-parent still wins by sharing more. Status only breaks a
-  // genuine tie in shared-child count; relationship recency alone is the
-  // fallback only when nobody shares any children at all.
-  const primaryPartnerId = (id) => {
-    const ps = partnersOf(id).filter((p) => inV(p.id));
-    const statusRank = (s) => (s === 'former' ? 0 : s === 'widowed' ? 1 : 2);
-    const rankOf = (pid) => {
-      const p = ps.find((x) => x.id === pid);
-      return p ? statusRank(p.status) : -1; // not even a recorded partner — lowest tiebreak priority
-    };
-
-    const myKids = vChildren(id).map((c) => c.id);
-    if (myKids.length) {
-      const tally = new Map(); // co-parent id -> shared bio/adoptive child count
-      for (const kid of myKids) {
-        for (const par of vParents(kid)) {
-          if (par.id === id || !isBioAdopt(par.qualifier)) continue;
-          tally.set(par.id, (tally.get(par.id) || 0) + 1);
-        }
-      }
-      if (tally.size) {
-        let best = null, bestCount = -1, bestRank = -2;
-        for (const [pid, count] of tally) {
-          const rank = rankOf(pid);
-          if (count > bestCount || (count === bestCount && rank > bestRank)) {
-            best = pid; bestCount = count; bestRank = rank;
-          }
-        }
-        return best;
-      }
-    }
-
-    if (!ps.length) return null;
-    let best = ps[0], bestRank = statusRank(ps[0].status);
-    for (const p of ps.slice(1)) {
-      const rank = statusRank(p.status);
-      if (rank > bestRank) { best = p; bestRank = rank; }
-    }
-    return best.id;
-  };
-
-  // ── 3. Build pods (anchor = bloodline member; spouse drawn beside). ────────
+  // ── 3. Build pods. Biological/adoptive CO-PARENT PAIRS pod together first,
+  //       read straight off the parent-child rows — the exact rows the
+  //       profile's "Father" / "Mother" labels render from. Partner edges get
+  //       no say in this pass. Every previous version of this pairing worked
+  //       through partner edges (each person picks a "best partner", couple
+  //       forms if mutual) — and remarriage kept breaking it, because the
+  //       current spouse and the actual co-parent compete on BOTH sides of
+  //       that match and some real family shape always lost. The chart's
+  //       whole contract is "biological parents shown together above their
+  //       children, regardless of partner status" — so the children ARE the
+  //       ground truth, and couples with no shared children pair afterwards
+  //       (3b) from whatever partner edges remain. ──────────────────────────
   const pods = new Map();      // podId → pod
   const podOfPerson = new Map(); // personId → podId
   const assigned = new Set();
@@ -132,42 +98,79 @@ function buildPodTree(graph, focalId) {
     return pod;
   };
 
-  // Anchor preference: a pod's anchor should be the member with bloodline
-  // parents when only one member has them (so up-links and children resolve to
-  // the right side); ties broken by who has more children, then id order.
-  // Pairing must be MUTUAL (each picks the other as their best partner) — not
-  // just "whoever gets visited first claims their own pick" — otherwise a
-  // childless current spouse visited before the real co-parent would lock in
-  // first purely on iteration order, since their own one-sided pick (their
-  // only partner) can't see that the other side has a better match elsewhere.
-  for (const id of visible) {
-    if (assigned.has(id)) continue;
-    const partner = primaryPartnerId(id);
-    if (partner && inV(partner) && !assigned.has(partner) && primaryPartnerId(partner) === id) {
-      let anchor = id, spouse = partner;
-      const idP = hasParents(id), ptP = hasParents(partner);
-      if (ptP && !idP) { anchor = partner; spouse = id; }
-      else if (idP === ptP) {
-        const ci = vChildren(id).length, cp = vChildren(partner).length;
-        if (cp > ci || (cp === ci && partner < id)) { anchor = partner; spouse = id; }
+  // Anchor preference (shared by both pairing passes): the member with
+  // bloodline parents in the tree, so up-links resolve to the right side;
+  // ties broken by who has more children, then id order.
+  const makeCouplePod = (a, b) => {
+    let anchor = a, spouse = b;
+    const aP = hasParents(a), bP = hasParents(b);
+    if (bP && !aP) { anchor = b; spouse = a; }
+    else if (aP === bP) {
+      const ca = vChildren(a).length, cb = vChildren(b).length;
+      if (cb > ca || (cb === ca && b < a)) { anchor = b; spouse = a; }
+    }
+    return makePod(anchor, spouse);
+  };
+
+  const statusRank = (s) => (s === 'former' ? 0 : s === 'widowed' ? 1 : 2);
+  // Rank of the partner edge between two specific people; -1 when none is
+  // recorded (bio co-parents often have no formal partner row at all).
+  const coupleRank = (a, b) => {
+    const edge = partnersOf(a).find((p) => p.id === b);
+    return edge ? statusRank(edge.status) : -1;
+  };
+
+  // 3a. Tally each bio/adoptive co-parent pair by distinct shared children,
+  // then let the strongest pairs claim their pods greedily. Count decides —
+  // so someone's two-kid line with an ex beats their one-kid line with a new
+  // partner, on whichever side of the family that happens. The partner-edge
+  // rank between the two only breaks exact count ties (an intact marriage
+  // with two kids outranks a two-kid ex), and the key comparison keeps even
+  // that deterministic.
+  const pairKey = (a, b) => (a < b ? `${a}\u0000${b}` : `${b}\u0000${a}`);
+  const pairCount = new Map();
+  for (const kid of visible) {
+    const bioPar = [...new Set(vParents(kid).filter((p) => isBioAdopt(p.qualifier)).map((p) => p.id))];
+    for (let i = 0; i < bioPar.length; i++) {
+      for (let j = i + 1; j < bioPar.length; j++) {
+        const k = pairKey(bioPar[i], bioPar[j]);
+        pairCount.set(k, (pairCount.get(k) || 0) + 1);
       }
-      makePod(anchor, spouse);
-    } else {
-      makePod(id, null);
     }
   }
-  // Any visible person still unassigned (e.g. a primary partner who married in)
-  // attaches to their partner's pod if there's room, else stands alone.
+  const rankedPairs = [...pairCount.entries()]
+    .map(([key, count]) => {
+      const [a, b] = key.split('\u0000');
+      return { a, b, count, rank: coupleRank(a, b), key };
+    })
+    .sort((x, y) => y.count - x.count || y.rank - x.rank || (x.key < y.key ? -1 : 1));
+  for (const { a, b } of rankedPairs) {
+    if (assigned.has(a) || assigned.has(b)) continue;
+    makeCouplePod(a, b);
+  }
+
+  // 3b. Everyone left pairs through partner edges — couples with no shared
+  // children (a remarriage, a childless couple) and singles. Mutuality (each
+  // is the other's best remaining partner) keeps iteration order from
+  // deciding contested cases; anyone whose partner was already claimed by a
+  // bio pairing in 3a stands alone, which is exactly the point — they are
+  // NOT the parent of that household's children, and drawing them into it
+  // silently said they were.
+  const bestFreePartner = (id) => {
+    const ps = partnersOf(id).filter((p) => inV(p.id) && !assigned.has(p.id));
+    if (!ps.length) return null;
+    let best = ps[0], bestRank = statusRank(ps[0].status);
+    for (const p of ps.slice(1)) {
+      const r = statusRank(p.status);
+      if (r > bestRank) { best = p; bestRank = r; }
+    }
+    return best.id;
+  };
   for (const id of visible) {
     if (assigned.has(id)) continue;
-    const partner = primaryPartnerId(id);
-    const ppod = partner && pods.get(podOfPerson.get(partner));
-    if (ppod && ppod.members.length === 1) {
-      ppod.members.push(id); ppod.spouse = id;
-      podOfPerson.set(id, ppod.id); assigned.add(id);
-    } else {
-      makePod(id, null);
-    }
+    const partner = bestFreePartner(id);
+    if (partner && bestFreePartner(partner) === id) makeCouplePod(id, partner);
+    else makePod(id, null);
   }
 
   // ── 4. Parent → child pod links (each child attaches to one parent pod). ──
