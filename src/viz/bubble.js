@@ -34,6 +34,14 @@ export class Bubble {
     this.r = baseRadius;
     this.deceased = !!person.is_deceased;
     this.visibility = person.visibility || 'full'; // 'full' | 'summary' | 'private'
+    // Deterministic per-person phase/period so the "breathing" scale pulse
+    // BubbleTree applies to living bubbles desyncs across the tree instead
+    // of every alive bubble pulsing in lockstep (a cheap string hash — no
+    // need for anything stronger than a spread-out phase offset).
+    let h = 0;
+    for (let i = 0; i < person.id.length; i++) h = (h * 31 + person.id.charCodeAt(i)) >>> 0;
+    this._breathPhase = ((h % 1000) / 1000) * Math.PI * 2;
+    this._breathPeriod = 3.6 + (h % 7) * 0.35; // ~3.6s – 5.85s, varies per person
     // Eased display state. Scale springs (with a little overshoot) so bubbles
     // pop in when revealed; alpha eases so they fade cleanly.
     this.scaleSpring = new Spring(0, { stiffness: 150, damping: 14 });
