@@ -72,6 +72,33 @@ function buildPodTree(graph, focalId) {
   const vParents = (id) => parentsOf(id).filter((p) => inV(p.id));
   const vChildren = (id) => childrenOf(id).filter((c) => inV(c.id));
 
+  // The focal person's BLOOD relatives: themselves, every bio/adoptive
+  // ancestor, and every bio/adoptive descendant of any of those ancestors
+  // (siblings, cousins, nieces — anyone sharing a common ancestor). Married-in
+  // partners are deliberately NOT in this set: a couple pod can only hang
+  // under ONE member's parents, and it must be the member on the viewer's own
+  // side of the family — otherwise someone looking at their own parents' card
+  // finds their married-away child missing entirely, hung under the in-laws
+  // instead (the pod tree is rebuilt per focal person, so from the in-laws'
+  // own seat it flips the other way, which is exactly right).
+  const blood = new Set([focalId]);
+  {
+    const up = [focalId];
+    while (up.length) {
+      const id = up.pop();
+      for (const p of vParents(id)) {
+        if (isBioAdopt(p.qualifier) && !blood.has(p.id)) { blood.add(p.id); up.push(p.id); }
+      }
+    }
+    const down = [...blood];
+    while (down.length) {
+      const id = down.pop();
+      for (const c of vChildren(id)) {
+        if (isBioAdopt(c.qualifier) && !blood.has(c.id)) { blood.add(c.id); down.push(c.id); }
+      }
+    }
+  }
+
   // ── 3. Build pods. Biological/adoptive CO-PARENT PAIRS pod together first,
   //       read straight off the parent-child rows — the exact rows the
   //       profile's "Father" / "Mother" labels render from. Partner edges get
@@ -98,16 +125,24 @@ function buildPodTree(graph, focalId) {
     return pod;
   };
 
-  // Anchor preference (shared by both pairing passes): the member with
-  // bloodline parents in the tree, so up-links resolve to the right side;
-  // ties broken by who has more children, then id order.
+  // Anchor preference (shared by both pairing passes). A pod hangs under its
+  // ANCHOR's parents only, so anchor choice decides which side of a marriage
+  // the chart traces through: first the member blood-related to the focal
+  // person (see `blood` above — this is what puts a married-away child back
+  // under their own parents when viewing from that side of the family), then
+  // the member with bloodline parents in the tree, then who has more
+  // children, then id order.
   const makeCouplePod = (a, b) => {
     let anchor = a, spouse = b;
-    const aP = hasParents(a), bP = hasParents(b);
-    if (bP && !aP) { anchor = b; spouse = a; }
-    else if (aP === bP) {
-      const ca = vChildren(a).length, cb = vChildren(b).length;
-      if (cb > ca || (cb === ca && b < a)) { anchor = b; spouse = a; }
+    const aB = blood.has(a), bB = blood.has(b);
+    if (bB && !aB) { anchor = b; spouse = a; }
+    else if (aB === bB) {
+      const aP = hasParents(a), bP = hasParents(b);
+      if (bP && !aP) { anchor = b; spouse = a; }
+      else if (aP === bP) {
+        const ca = vChildren(a).length, cb = vChildren(b).length;
+        if (cb > ca || (cb === ca && b < a)) { anchor = b; spouse = a; }
+      }
     }
     return makePod(anchor, spouse);
   };

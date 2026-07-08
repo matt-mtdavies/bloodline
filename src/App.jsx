@@ -973,6 +973,16 @@ export default function App() {
   // is trivial, or motion is reduced.
   const flyToSearchResult = useCallback((targetId) => {
     setSearchOpen(false);
+    // Chart layout has no canvas to fly — the flight API belongs to
+    // BubbleTree, which isn't even MOUNTED in chart mode, so flyAlong would
+    // silently no-op and activeId (only ever set in the flight's onLand
+    // callback) would never change: picking a search result would do
+    // nothing at all. Activate directly instead; ChartTree recomputes its
+    // pod tree around the new focal person and centres on them itself.
+    if (layout === 'chart') {
+      activateNormal(targetId);
+      return;
+    }
     const originId = data.myPersonId || DEFAULT_FOCUS;
     const ordered = pathBetweenOrdered(graph, originId, targetId);
     const hops = ordered ? ordered.length - 1 : 0;
@@ -1006,7 +1016,7 @@ export default function App() {
         setFlightCaption((c) => (c ? { ...c, landed: true } : c));
       },
     });
-  }, [graph, data.myPersonId, reducedMotion, activateNormal]);
+  }, [graph, data.myPersonId, reducedMotion, activateNormal, layout]);
 
   // Search, while tracing a lineage, needs to feed the SAME "tap another
   // relative" logic activate() uses in that mode — not flyToSearchResult,
