@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { computeChartPods } from './chartLayout.js';
-import { lifespan } from '../lib/dates.js';
+import { lifespan, ageOrAt } from '../lib/dates.js';
 import Avatar from '../components/Avatar.jsx';
 
 // MIN_ZOOM floors manual zoom-out (the − button) at a level where cards are
@@ -309,12 +309,16 @@ export default function ChartTree({ graph, activeId, onOpenPerson, onAddRelative
         {pod.members.map((personId) => {
           const person = graph.byId.get(personId);
           if (!person) return null;
+          // Age is withheld for minors — same privacy guard HoverCard/PersonSheet
+          // apply, since a birth year is far less identifying than a live age.
+          const age = !person.is_minor || person.is_deceased ? ageOrAt(person) : null;
+          const dates = age ? `${lifespan(person)} · ${person.is_deceased ? age : `age ${age}`}` : lifespan(person);
           return (
             <button key={personId} className="chart-card__row" onClick={() => onOpenPerson?.(personId)}>
               <Avatar person={person} size={32} />
               <span className="chart-card__row-text">
                 <span className="chart-card__name">{person.display_name}</span>
-                <span className="chart-card__dates">{lifespan(person)}</span>
+                <span className="chart-card__dates">{dates}</span>
               </span>
             </button>
           );
