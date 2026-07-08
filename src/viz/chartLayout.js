@@ -226,15 +226,28 @@ function buildPodTree(graph, focalId) {
     // so a step co-parent can never inflate that tiebreak either.
     const bioParIds = parEntries.filter((p) => isBioAdopt(p.qualifier)).map((p) => p.id);
     const allParIds = parEntries.map((p) => p.id);
-    let best2 = null, bestTier = -1, bestScore = -1;
+    // When both bio parents landed in DIFFERENT pods (each re-partnered, or
+    // one was claimed by a stronger co-parent pairing), the overlap score
+    // ties 1–1 and the pick used to fall to raw iteration order — so which
+    // parent a child hung under was arbitrary, and from that parent's own
+    // side of the family the child simply looked missing. Blood-side
+    // preference (same focal-relative set the anchor choice uses) breaks
+    // that tie toward the parent on the viewer's side; overlap still
+    // decides among same-side candidates (a couple pod beats a solo one).
+    let best2 = null, bestTier = -1, bestBlood = -1, bestScore = -1;
     for (const pe of parEntries) {
       const pod = pods.get(podOfPerson.get(pe.id));
       if (!pod) continue;
       const tier = isBioAdopt(pe.qualifier) ? 1 : 0;
+      const bloodPref = blood.has(pe.id) ? 1 : 0;
       const pool = tier ? bioParIds : allParIds;
       const score = pod.members.filter((m) => pool.includes(m)).length;
-      if (tier > bestTier || (tier === bestTier && score > bestScore)) {
-        bestTier = tier; bestScore = score; best2 = pod;
+      if (
+        tier > bestTier
+        || (tier === bestTier && bloodPref > bestBlood)
+        || (tier === bestTier && bloodPref === bestBlood && score > bestScore)
+      ) {
+        bestTier = tier; bestBlood = bloodPref; bestScore = score; best2 = pod;
       }
     }
     if (best2) childPodOf.set(id, best2.id);
