@@ -67,34 +67,56 @@ function buildPodTree(graph, focalId) {
   const vParents = (id) => parentsOf(id).filter((p) => inV(p.id));
   const vChildren = (id) => childrenOf(id).filter((c) => inV(c.id));
 
-  // A pod pairs someone with a partner for display. Defaulting to whoever
-  // they're CURRENTLY with (the original rule) is right almost always — even
-  // a step-parent who co-parents at least one child alongside them is a
-  // genuine present household, and should keep winning even if an ex happens
-  // to share more children by raw count (a divorced couple's kids don't
-  // outweigh who's actually still in the picture). The rule only breaks for
-  // someone whose CURRENT partner shares NO children with them at all — a
-  // spouse from a separate, later relationship — where defaulting to
-  // "current" mislabels that spouse as the parent of kids from an earlier
-  // one and drops the real co-parent (an ex) from the pod entirely. So:
-  // keep the current partner whenever they share at least one child; only
-  // search past them, for whoever shares the most, when they share none.
+  // A pod pairs someone with a partner for display. Three tiers, most
+  // specific first:
+  //
+  // 1. A CURRENT (or widowed) partner who shares at least one child wins
+  //    outright — that's the real, present household, and stays the pairing
+  //    even if an ex happens to share more children by raw count (a step-
+  //    parent's ongoing marriage shouldn't lose to a divorced co-parent just
+  //    because the ex has a higher headcount).
+  // 2. Otherwise — no current partner, or a current partner unconnected to
+  //    any of these children (a later, separate relationship) — pair with
+  //    whoever is actually recorded as a biological/adoptive co-parent of
+  //    these children, computed straight from the parent-child data. This
+  //    works even with NO partner edge between the two of them at all: a
+  //    real family often only records an ex as each child's other parent,
+  //    never as a formal "partner" relationship, and that co-parenthood is
+  //    exactly what a chart pod should reflect — not "whoever they happen to
+  //    be currently, unrelatedly, married to" (a current spouse otherwise
+  //    silently gets shown as the mother/father of kids that aren't theirs).
+  // 3. No child-based signal at all (a childless relationship) — plain
+  //    relationship recency.
   const primaryPartnerId = (id) => {
     const ps = partnersOf(id).filter((p) => inV(p.id));
-    if (!ps.length) return null;
     const myKids = vChildren(id).map((c) => c.id);
     const sharedKids = (partnerId) => myKids.filter((kid) =>
       vParents(kid).some((par) => par.id === partnerId && isBioAdopt(par.qualifier))).length;
+
     const current = ps.find((p) => p.status !== 'former');
     if (current && sharedKids(current.id) > 0) return current.id;
-    const statusRank = (s) => (s === 'former' ? 0 : s === 'widowed' ? 1 : 2);
-    let best = ps[0], bestShared = sharedKids(ps[0].id), bestRank = statusRank(ps[0].status);
-    for (const p of ps.slice(1)) {
-      const shared = sharedKids(p.id);
-      const rank = statusRank(p.status);
-      if (shared > bestShared || (shared === bestShared && rank > bestRank)) {
-        best = p; bestShared = shared; bestRank = rank;
+
+    if (myKids.length) {
+      const tally = new Map(); // co-parent id -> shared bio/adoptive child count
+      for (const kid of myKids) {
+        for (const par of vParents(kid)) {
+          if (par.id === id || !isBioAdopt(par.qualifier)) continue;
+          tally.set(par.id, (tally.get(par.id) || 0) + 1);
+        }
       }
+      if (tally.size) {
+        let best = null, bestCount = -1;
+        for (const [pid, count] of tally) if (count > bestCount) { best = pid; bestCount = count; }
+        return best;
+      }
+    }
+
+    if (!ps.length) return null;
+    const statusRank = (s) => (s === 'former' ? 0 : s === 'widowed' ? 1 : 2);
+    let best = ps[0], bestRank = statusRank(ps[0].status);
+    for (const p of ps.slice(1)) {
+      const rank = statusRank(p.status);
+      if (rank > bestRank) { best = p; bestRank = rank; }
     }
     return best.id;
   };
