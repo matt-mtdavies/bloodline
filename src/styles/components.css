@@ -163,25 +163,25 @@
   stroke-width: 1.6;
   opacity: 0;
 }
-.logo--loading .logo__a { animation: logo-breathe-a 2.2s ease-in-out infinite; }
-.logo--loading .logo__b { animation: logo-breathe-b 2.2s ease-in-out infinite; animation-delay: 0.12s; }
-.logo--loading .logo__c { animation: logo-breathe-c 2.2s ease-in-out infinite; animation-delay: 0.24s; }
-.logo--loading .logo__link { animation: logo-link-fade 2.2s ease-in-out infinite; }
+.logo--loading .logo__a { animation: logo-breathe-a 2.4s ease-in-out infinite; }
+.logo--loading .logo__b { animation: logo-breathe-b 2.4s ease-in-out infinite; animation-delay: 0.12s; }
+.logo--loading .logo__c { animation: logo-breathe-c 2.4s ease-in-out infinite; animation-delay: 0.24s; }
+.logo--loading .logo__link { animation: logo-link-fade 2.4s ease-in-out infinite; }
 @keyframes logo-breathe-a {
   0%, 100% { transform: translate(0, 0) scale(1); }
-  45%, 55% { transform: translate(-3px, -2px) scale(1.08); }
+  40%, 60% { transform: translate(-8px, -4px) scale(1.14); }
 }
 @keyframes logo-breathe-b {
   0%, 100% { transform: translate(0, 0) scale(1); }
-  45%, 55% { transform: translate(3px, -2px) scale(1.08); }
+  40%, 60% { transform: translate(8px, -4px) scale(1.14); }
 }
 @keyframes logo-breathe-c {
   0%, 100% { transform: translate(0, 0) scale(1); }
-  45%, 55% { transform: translate(0, 4px) scale(1.08); }
+  40%, 60% { transform: translate(0, 8px) scale(1.14); }
 }
 @keyframes logo-link-fade {
   0%, 100% { opacity: 0; }
-  45%, 55% { opacity: 1; }
+  40%, 60% { opacity: 1; }
 }
 
 @media (prefers-reduced-motion: reduce) {
