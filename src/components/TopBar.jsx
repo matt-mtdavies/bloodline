@@ -170,7 +170,7 @@ export default function TopBar({ familyName, stats, view, layout, syncStatus, sy
             aria-expanded={viewMenuOpen}
           >
             <span className="viewmode-trigger__icon">
-              {viewModeIcon(viewMode)}
+              <ViewSwitcherIcon />
               <ChevronDownMiniIcon />
             </span>
             {/* Names the CONTROL, not the current state — a click here opens
@@ -375,6 +375,22 @@ function viewModeIcon(mode) {
   return <TreeIcon />;
 }
 
+// The trigger button's own icon — deliberately NOT viewModeIcon(viewMode).
+// That would make the button's icon change every time you switch modes,
+// which reads as "what does this button even do" rather than "tap to
+// switch view" — a control should look the same regardless of the state
+// it's currently in. A generic stacked-layers glyph (distinct from all
+// three per-mode icons below) reads as "there are several ways to see
+// this" independent of which one happens to be active.
+function ViewSwitcherIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{flexShrink:0}}>
+      <rect x="4" y="4" width="13" height="13" rx="3" stroke="currentColor" strokeWidth="1.7"/>
+      <rect x="8" y="9" width="13" height="13" rx="3" stroke="currentColor" strokeWidth="1.7"/>
+    </svg>
+  );
+}
+
 // The three ways of seeing the family, moved here from what used to be a
 // segmented control buried in the Legend sheet — a primary navigation choice
 // belongs in the header next to the thing it switches, not inside a
@@ -535,13 +551,18 @@ function ListIcon() {
   );
 }
 
+// Overlapping bubbles at varying size — echoes the organic canvas itself
+// (and the brand mark) rather than Lineage's straight branching path, which
+// this used to be a near-duplicate of (both a root node forking to two
+// others). Lineage genuinely is a point-to-point route, so it keeps that
+// glyph; Tree mode is the free-flowing bubble network, so its icon should
+// look like one.
 function TreeIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{flexShrink:0}}>
-      <circle cx="12" cy="4" r="2.2" stroke="currentColor" strokeWidth="1.6"/>
-      <circle cx="5" cy="19" r="2.2" stroke="currentColor" strokeWidth="1.6"/>
-      <circle cx="19" cy="19" r="2.2" stroke="currentColor" strokeWidth="1.6"/>
-      <path d="M12 6.2v5.3M12 11.5l-5 4.8M12 11.5l5 4.8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
+      <circle cx="10" cy="9" r="5.5" fill="currentColor" opacity="0.85"/>
+      <circle cx="16" cy="14" r="4.6" fill="currentColor" opacity="0.55"/>
+      <circle cx="7" cy="17" r="3.2" fill="currentColor" opacity="0.7"/>
     </svg>
   );
 }
