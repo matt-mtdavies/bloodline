@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Application, Container, Graphics } from 'pixi.js';
 import {
   forceSimulation,
@@ -65,6 +65,12 @@ export default function BubbleTree({
   apiRef,
 }) {
   const hostRef = useRef(null);
+  // WebGL context creation can fail silently on some devices (observed on
+  // iOS Safari: repeated PWA suspend/relaunch cycles can exhaust its
+  // per-process WebGL context limit) — app.init() then rejects and, with no
+  // handler, the canvas just never appears with no visible error at all.
+  // Catching it turns that into a legible "reload" state instead.
+  const [initFailed, setInitFailed] = useState(false);
   const api = useRef(null);
   const activeRef = useRef(activeId);
   const visibleRef = useRef(visibleIds);
@@ -113,14 +119,20 @@ export default function BubbleTree({
     const app = new Application();
 
     (async () => {
-      await app.init({
-        antialias: true,
-        backgroundAlpha: 0,
-        resolution: Math.min(window.devicePixelRatio || 1, 2),
-        autoDensity: true,
-        resizeTo: host,
-        preference: 'webgl',
-      });
+      try {
+        await app.init({
+          antialias: true,
+          backgroundAlpha: 0,
+          resolution: Math.min(window.devicePixelRatio || 1, 2),
+          autoDensity: true,
+          resizeTo: host,
+          preference: 'webgl',
+        });
+      } catch (err) {
+        console.error('BubbleTree: PixiJS/WebGL failed to initialize', err);
+        if (alive) setInitFailed(true);
+        return;
+      }
       if (!alive) {
         app.destroy(true);
         return;
@@ -1949,7 +1961,19 @@ export default function BubbleTree({
     if (m === 'chart') api.current?.applyChartLayout();
   }, [visibleIds]);
 
-  return <div className="stage" ref={hostRef} aria-hidden="true" />;
+  return (
+    <>
+      <div className="stage" ref={hostRef} aria-hidden="true" />
+      {initFailed && (
+        <div className="stage-error">
+          <p className="stage-error__text">Couldn't load the tree view.</p>
+          <button type="button" className="stage-error__btn" onClick={() => window.location.reload()}>
+            Reload
+          </button>
+        </div>
+      )}
+    </>
+  );
 }
 
 const easeInOutCubic = (x) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
