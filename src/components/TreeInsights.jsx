@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { computeInsights, aggregatesHash } from '../lib/insights.js';
-import { computeInsightModules } from '../lib/insightModules.js';
+import { computeInsightModules, buildInsightHighlights } from '../lib/insightModules.js';
 import InsightModules from './InsightModules.jsx';
 
 /*
@@ -32,7 +32,15 @@ export default function TreeInsights({ graph, viewerId, onNavigate, onClose }) {
   }, [onClose]);
 
   // ── AI narrative: cached by a hash of the facts; auto-generate once per hash ──
-  const hash = useMemo(() => aggregatesHash(aggregates), [aggregates]);
+  // The narrative draws on the same visual modules the sheet already shows —
+  // one richer paragraph from a single call, not a separate AI round-trip per
+  // module (11x the cost/latency for a garnish, not the point).
+  const highlights = useMemo(() => buildInsightHighlights(modules), [modules]);
+  const enrichedAggregates = useMemo(
+    () => (highlights ? { ...aggregates, highlights } : aggregates),
+    [aggregates, highlights],
+  );
+  const hash = useMemo(() => aggregatesHash(enrichedAggregates), [enrichedAggregates]);
   const cacheKey = `bl_insight_${hash}`;
   const [narrative, setNarrative] = useState(() => {
     try { return localStorage.getItem(cacheKey) || ''; } catch { return ''; }
@@ -46,7 +54,7 @@ export default function TreeInsights({ graph, viewerId, onNavigate, onClose }) {
       const res = await fetch('/api/insights', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ aggregates }),
+        body: JSON.stringify({ aggregates: enrichedAggregates }),
       });
       if (res.status === 503) { setAiState('unavailable'); return; }
       const body = await res.json().catch(() => ({}));

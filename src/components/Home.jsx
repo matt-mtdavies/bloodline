@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import Logo from './Logo.jsx';
 import { ActivityRow } from './ActivityFeed.jsx';
+import { computeThisMonth } from '../lib/insightModules.js';
 
 /*
  * The home hub — reached by tapping the logo. A launch point, not the whole
@@ -10,7 +11,7 @@ import { ActivityRow } from './ActivityFeed.jsx';
  * tutorial clips, account, install) rather than stacking all of it inline.
  */
 export default function Home({
-  user, familyName, stats = null, activity = [], people = [], userEmail,
+  user, familyName, stats = null, activity = [], people = [], graph = null, userEmail,
   onClose, onOpenAccount, onLogout, onOpenInstall, onOpenHowItWorks, onOpenFamilyTrees,
   onOpenActivity, onSelectPerson,
 }) {
@@ -22,6 +23,7 @@ export default function Home({
 
   const first = user?.display_name ? firstName(user.display_name) : null;
   const tiles = buildStatTiles(stats);
+  const thisMonth = useMemo(() => (graph ? computeThisMonth(graph) : null), [graph]);
   const recent = activity.slice(0, 3);
   const byId = new Map(people.map((p) => [p.id, p]));
   const nameByEmail = new Map();
@@ -82,6 +84,10 @@ export default function Home({
             between two people, or watch your family's history unfold year by year.
           </p>
         </div>
+
+        {thisMonth && (
+          <ThisMonth data={thisMonth} onSelectPerson={onSelectPerson} />
+        )}
 
         <div className="home__row">
           {recent.length > 0 && onOpenActivity && (
@@ -166,6 +172,58 @@ export default function Home({
 
 function firstName(name) {
   return (name || '').trim().split(/\s+/)[0] || name;
+}
+
+// A practical, always-current digest — not a threshold-gated "insight" (see
+// lib/insightModules.js#computeThisMonth). Capped so a birthday-heavy family
+// doesn't turn the hub into a scrolling calendar; the rest are still there
+// next time the sheet's own record books/birthday wheel get opened.
+const MONTH_CAP = 5;
+function ThisMonth({ data, onSelectPerson }) {
+  const { month, birthdays, anniversaries } = data;
+  const items = [
+    ...birthdays.map((b) => ({ kind: 'birthday', day: b.day, ...b })),
+    ...anniversaries.map((a) => ({ kind: 'anniversary', day: a.day, ...a })),
+  ]
+    .sort((a, b) => a.day - b.day)
+    .slice(0, MONTH_CAP);
+  const overflow = birthdays.length + anniversaries.length - items.length;
+
+  return (
+    <section className="home__section home__month" style={{ '--i': 0 }}>
+      <h2 className="home__section-title">{month} in your family</h2>
+      <div className="home__month-list">
+        {items.map((item) => (
+          <button
+            key={`${item.kind}-${item.kind === 'birthday' ? item.id : item.aId + item.bId}`}
+            className={`home__month-row${item.isToday ? ' home__month-row--today' : ''}`}
+            onClick={() => onSelectPerson?.(item.kind === 'birthday' ? item.id : item.aId)}
+          >
+            <span className="home__month-day">{item.day}</span>
+            <span className="home__month-body">
+              {item.kind === 'birthday' ? (
+                <>
+                  <span className="home__month-t">{item.name}</span>
+                  <span className="home__month-d">
+                    {item.isToday ? 'Birthday today' : 'Birthday'}
+                    {item.turning != null ? ` · turning ${item.turning}` : ''}
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span className="home__month-t">{item.aName} &amp; {item.bName}</span>
+                  <span className="home__month-d">
+                    {item.isToday ? 'Anniversary today' : 'Anniversary'} · {item.years} {item.years === 1 ? 'year' : 'years'}
+                  </span>
+                </>
+              )}
+            </span>
+          </button>
+        ))}
+      </div>
+      {overflow > 0 && <p className="home__month-more">+{overflow} more this month</p>}
+    </section>
+  );
 }
 
 // Up to four real, computed facts about this family for the hero card — the

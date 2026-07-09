@@ -1,5 +1,8 @@
+import { useRef, useState } from 'react';
+import { toBlob } from 'html-to-image';
+
 /*
- * Tree Insights — the Wave-1 visual modules. Each takes the precomputed data
+ * Tree Insights — the Wave-1/2 visual modules. Each takes the precomputed data
  * from lib/insightModules.js and renders one Bloodline card: icon + serif
  * headline, a drawn comparison (the chart IS the insight), and a caption that
  * says why it matters. A module whose data is null simply isn't rendered —
@@ -8,6 +11,9 @@
  * Charts are inline SVG sized by viewBox so they scale with the sheet. Colors
  * are the app's own: terracotta for the living/primary series, the memorial
  * violet for the deceased — the same encoding the tree itself uses.
+ *
+ * Every card is also a shareable image (see Module's share button) — rendered
+ * straight from the live DOM via html-to-image, nothing bespoke per chart.
  */
 
 const ACC = '#c2603a';
@@ -69,8 +75,9 @@ export default function InsightModules({ modules, onNavigate }) {
 }
 
 function Module({ icon, title, sub, caption, children }) {
+  const nodeRef = useRef(null);
   return (
-    <div className="tim">
+    <div className="tim" ref={nodeRef}>
       <div className="tim__top">
         <span className="tim__ico">{icon}</span>
         <div>
@@ -80,7 +87,72 @@ function Module({ icon, title, sub, caption, children }) {
       </div>
       {children && <div className="tim__body">{children}</div>}
       {caption && <p className="tim__caption">{caption}</p>}
+      <ShareButton nodeRef={nodeRef} title={title} />
     </div>
+  );
+}
+
+// Captures the card exactly as shown (minus this button itself) and either
+// hands it to the OS share sheet — the point, since these are made to send
+// to a family chat — or falls back to a plain download when Web Share
+// (or file-sharing specifically) isn't available, e.g. most desktop browsers.
+function ShareButton({ nodeRef, title }) {
+  const [state, setState] = useState('idle'); // idle | busy | error
+
+  const handleShare = async () => {
+    if (state === 'busy' || !nodeRef.current) return;
+    setState('busy');
+    try {
+      const blob = await toBlob(nodeRef.current, {
+        pixelRatio: 2,
+        backgroundColor: '#ffffff',
+        cacheBust: true,
+        // The card's fonts are already loaded and rendering correctly in the
+        // live page — html-to-image's font-embedding step exists for
+        // producing a portable, standalone SVG, not for capturing what's
+        // already on screen. Skipping it avoids a remote CSS re-fetch
+        // (Google Fonts) that's slow at best and network/CORS-fragile at
+        // worst, for zero visible benefit here.
+        skipFonts: true,
+        filter: (node) => !node.classList?.contains('tim__share'),
+      });
+      if (!blob) throw new Error('empty capture');
+      const fileName = `${title.replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '-').toLowerCase()}.png`;
+      const file = new File([blob], fileName, { type: 'image/png' });
+
+      if (navigator.canShare?.({ files: [file] })) {
+        await navigator.share({ files: [file], title: 'Bloodline', text: title });
+      } else {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        // Some browsers only honor a programmatic download click when the
+        // anchor is actually attached to the document.
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 4000);
+      }
+      setState('idle');
+    } catch (err) {
+      // A user cancelling the native share sheet also lands here (AbortError)
+      // — that's not a failure, just don't show an error for it.
+      setState(err?.name === 'AbortError' ? 'idle' : 'error');
+      if (err?.name !== 'AbortError') setTimeout(() => setState('idle'), 2400);
+    }
+  };
+
+  return (
+    <button
+      className={`tim__share${state === 'error' ? ' tim__share--error' : ''}`}
+      onClick={handleShare}
+      disabled={state === 'busy'}
+      aria-label={state === 'error' ? "Couldn't create image — try again" : `Share "${title}"`}
+      title={state === 'error' ? "Couldn't create image" : 'Share as image'}
+    >
+      {state === 'busy' ? <SpinnerIcon /> : state === 'error' ? <ErrorIcon /> : <ShareIcon />}
+    </button>
   );
 }
 
@@ -680,4 +752,14 @@ function ToolsIcon() {
 }
 function TrophyIcon() {
   return (<svg {...ip}><path d="M8 4h8v6a4 4 0 01-8 0V4z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" /><path d="M8 6H4.5c0 3 1.5 4.5 3.5 4.5M16 6h3.5c0 3-1.5 4.5-3.5 4.5M12 14v3m-3.5 3h7M10 20l.5-3h3l.5 3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>);
+}
+
+function ShareIcon() {
+  return (<svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /><path d="M5 14v4a2 2 0 002 2h10a2 2 0 002-2v-4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>);
+}
+function SpinnerIcon() {
+  return (<svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true" className="tim__spin"><path d="M21 12a9 9 0 11-3-6.7" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" /></svg>);
+}
+function ErrorIcon() {
+  return (<svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.8" /><path d="M12 8v5M12 16.5v.01" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" /></svg>);
 }

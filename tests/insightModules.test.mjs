@@ -6,7 +6,7 @@
  */
 import assert from 'node:assert/strict';
 import { buildGraph } from '../src/data/graph.js';
-import { computeInsightModules } from '../src/lib/insightModules.js';
+import { computeInsightModules, computeThisMonth, buildInsightHighlights } from '../src/lib/insightModules.js';
 
 let passed = 0, failed = 0;
 function test(label, fn) {
@@ -238,6 +238,50 @@ test('trades: eras run from the railway age to Software engineer', () => {
     assert.ok(yo.fullestYear, 'fullest year only needs years');
   });
 }
+
+// ── Wave 3: this-month digest + AI-narrative highlights ────────────────────
+test('this month: birthdays + anniversaries filtered to the given month, sorted by day', () => {
+  const people = [
+    { id: 'a', display_name: 'Ann Lee', birth_date: '1950-06-05', is_deceased: false },
+    { id: 'b', display_name: 'Bo Lee', birth_date: '1948-06-20', is_deceased: false },
+    { id: 'c', display_name: 'Cy Lee', birth_date: '1980-01-01', is_deceased: false }, // wrong month
+    { id: 'd', display_name: 'Deceased Lee', birth_date: '1920-06-10', is_deceased: true, death_date: '1990-01-01' },
+  ];
+  const rels = [
+    { id: 'r1', type: 'partner', from_person: 'a', to_person: 'b', partner_status: 'current', is_married: true, marriage_date: '1975-06-15' },
+    { id: 'r2', type: 'partner', from_person: 'a', to_person: 'b', partner_status: 'current' }, // dup edge, no date
+  ];
+  const g = buildGraph(people, rels);
+  const june15 = new Date(2026, 5, 15); // month is 0-indexed in JS Date
+  const r = computeThisMonth(g, june15);
+  assert.ok(r, 'should render — June has entries');
+  assert.equal(r.month, 'June');
+  assert.deepEqual(r.birthdays.map((b) => b.id), ['a', 'b']); // deceased excluded, wrong-month excluded, sorted by day
+  assert.equal(r.birthdays[0].isToday, false); // Ann's the 5th; "today" is the 15th
+  assert.equal(r.anniversaries.length, 1);
+  assert.equal(r.anniversaries[0].years, 2026 - 1975);
+  assert.equal(r.anniversaries[0].isToday, true);
+});
+
+test('this month: null when nothing falls in the given month', () => {
+  const people = [{ id: 'a', display_name: 'Ann Lee', birth_date: '1950-06-05', is_deceased: false }];
+  const g = buildGraph(people, []);
+  const r = computeThisMonth(g, new Date(2026, 0, 15)); // January
+  assert.equal(r, null);
+});
+
+test('highlights: pulls a compact digest from whatever modules rendered', () => {
+  const h = buildInsightHighlights(mods);
+  assert.ok(h.handshake);
+  assert.equal(h.handshake.earliestBirth, 1820);
+  assert.ok(h.bridge);
+  assert.ok(h.longestMarriage);
+  assert.match(h.longestMarriage, /45 years/);
+});
+
+test('highlights: null when no module rendered anything', () => {
+  assert.equal(buildInsightHighlights({}), null);
+});
 
 console.log(`\n  ${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);

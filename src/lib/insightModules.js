@@ -684,6 +684,100 @@ function heartlands(graph, gen) {
   return { places: ranked, migration: steps.length >= 2 ? steps : null };
 }
 
+/* ── This month in your family: birthdays and marriage anniversaries falling
+      in the current calendar month — a practical digest for the home hub,
+      not a threshold-gated "insight" (an empty month is just an empty
+      month, nothing to hide). ────────────────────────────────────────────── */
+export function computeThisMonth(graph, now = new Date()) {
+  const month = now.getMonth() + 1;
+  const today = now.getDate();
+  const thisYear = now.getFullYear();
+
+  const birthdays = [];
+  for (const p of graph.people) {
+    if (p.is_deceased) continue;
+    const m = monthOf(p.birth_date);
+    if (m !== month) continue;
+    const d = dayOf(p.birth_date);
+    if (d == null) continue;
+    const b = year(p.birth_date);
+    birthdays.push({ id: p.id, name: p.display_name, day: d, isToday: d === today, turning: b != null ? thisYear - b : null });
+  }
+  birthdays.sort((a, b) => a.day - b.day);
+
+  const anniversaries = [];
+  const seen = new Set();
+  for (const r of graph.relationships) {
+    if (r.type !== 'partner' || !r.marriage_date) continue;
+    const m = monthOf(r.marriage_date);
+    if (m !== month) continue;
+    const d = dayOf(r.marriage_date);
+    const startYear = year(r.marriage_date);
+    if (d == null || startYear == null) continue;
+    const key = [r.from_person, r.to_person].sort().join('|');
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const a = graph.byId.get(r.from_person), b = graph.byId.get(r.to_person);
+    if (!a || !b) continue;
+    anniversaries.push({
+      aId: a.id, aName: firstNameOf(a), bId: b.id, bName: firstNameOf(b),
+      day: d, isToday: d === today, years: thisYear - startYear,
+    });
+  }
+  anniversaries.sort((a, b) => a.day - b.day);
+
+  if (!birthdays.length && !anniversaries.length) return null;
+  return { month: MONTHS[month - 1], birthdays, anniversaries };
+}
+
+/* ── Highlights: a compact, privacy-safe digest of the visual modules, for
+      the AI narrative to draw on — grounding facts only, no raw people[]. ── */
+export function buildInsightHighlights(modules) {
+  const h = {};
+  if (modules.handshakes) {
+    const m = modules.handshakes;
+    h.handshake = {
+      hops: m.hops,
+      earliestBirth: m.earliestBirth,
+      earliestName: m.people[0].name,
+      anchor: m.anchor ? `${m.anchor.year}: ${m.anchor.title}` : null,
+    };
+  }
+  if (modules.giftOfYears) {
+    const g = modules.giftOfYears;
+    h.lifespanGain = { firstDecade: g.first.decade, firstAvg: g.first.avg, lastDecade: g.last.decade, lastAvg: g.last.avg };
+  }
+  if (modules.fullestYear) {
+    const f = modules.fullestYear;
+    h.fullestYear = { peakYear: f.isNow ? 'now' : f.peak.year, peakCount: f.peak.count };
+  }
+  if (modules.bridges) {
+    const b = modules.bridges;
+    h.bridge = {
+      name: b.name,
+      sideACount: b.sideA.count, sideASurname: b.sideA.surname,
+      sideBCount: b.sideB.count, sideBSurname: b.sideB.surname,
+    };
+  }
+  if (modules.names) {
+    h.topName = { name: modules.names.top[0].name, count: modules.names.top[0].count, generationsPresent: modules.names.thread.present };
+  }
+  if (modules.heartlands) {
+    h.heartland = { place: modules.heartlands.places[0].display, migration: modules.heartlands.migration?.map((s) => s.display) || null };
+  }
+  if (modules.trades) {
+    h.trades = { from: modules.trades.firstTop, to: modules.trades.lastTop, distinct: modules.trades.distinct };
+  }
+  if (modules.birthdays) {
+    h.birthdayPeak = { month: modules.birthdays.peakLabel, count: modules.birthdays.peakCount };
+  }
+  if (modules.records) {
+    const marriage = modules.records.records.find((r) => r.key === 'marriage');
+    if (marriage) h.longestMarriage = marriage.title.replace(/^.* — /, '');
+  }
+  return Object.keys(h).length ? h : null;
+}
+
 /* ── The birthday wheel + birthday twins ─────────────────────────────────── */
 function birthdays(graph, gen) {
   const months = Array(12).fill(0);

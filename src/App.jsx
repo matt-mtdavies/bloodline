@@ -2087,6 +2087,7 @@ export default function App() {
           stats={familyStats}
           activity={data.activity ?? []}
           people={data.people}
+          graph={graph}
           userEmail={user?.email}
           onClose={() => setHomeOpen(false)}
           onOpenAccount={() => { setHomeOpen(false); setProfileOpen(true); }}
