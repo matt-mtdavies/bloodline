@@ -274,13 +274,19 @@ export default function ChartTree({ graph, activeId, viewerId, onOpenPerson, onA
     return { x: card.x + off, y: card.y + card.h / 2 };
   };
 
-  // Rounded orthogonal elbow between two points, leaving along `axis`.
-  const elbow = (x0, y0, x1, y1, axis) => {
+  // Rounded orthogonal elbow between two points, leaving along `axis`. The
+  // turn normally sits at the midpoint; `bias` (vertical axis only) pulls it
+  // close to the start instead — used for the member up-lines so the long,
+  // dead-straight run happens at the aligned x near the PARENT, and the
+  // "turn into the tile" happens right at the child's own edge, not glued
+  // flush against it for a long stretch first (which read as the line just
+  // tracing the card's border rather than leaving it).
+  const elbow = (x0, y0, x1, y1, axis, bias) => {
     const r = 9;
     if (axis === 'v') {
-      const midY = (y0 + y1) / 2;
       if (Math.abs(x1 - x0) < 1) return `M ${x0} ${y0} L ${x1} ${y1}`;
       const dx = x1 > x0 ? 1 : -1, dy = y1 > y0 ? 1 : -1;
+      const midY = bias != null ? y0 + dy * Math.min(bias, Math.abs(y1 - y0) / 2) : (y0 + y1) / 2;
       const rr = Math.min(r, Math.abs(x1 - x0) / 2, Math.abs(y1 - y0) / 2);
       return `M ${x0} ${y0} L ${x0} ${midY - rr * dy} Q ${x0} ${midY} ${x0 + rr * dx} ${midY} L ${x1 - rr * dx} ${midY} Q ${x1} ${midY} ${x1} ${midY + rr * dy} L ${x1} ${y1}`;
     }
@@ -289,30 +295,6 @@ export default function ChartTree({ graph, activeId, viewerId, onOpenPerson, onA
     const dx = x1 > x0 ? 1 : -1, dy = y1 > y0 ? 1 : -1;
     const rr = Math.min(r, Math.abs(x1 - x0) / 2, Math.abs(y1 - y0) / 2);
     return `M ${x0} ${y0} L ${midX - rr * dx} ${y0} Q ${midX} ${y0} ${midX} ${y0 + rr * dy} L ${midX} ${y1 - rr * dy} Q ${midX} ${y1} ${midX + rr * dx} ${y1} L ${x1} ${y1}`;
-  };
-
-  // Rounded path through an arbitrary run of axis-aligned points — used for
-  // the vertical-mode member up-lines, which need one more corner than a
-  // plain elbow: step OUT from the card's side first, only then turn to
-  // travel toward the parent. Without that first step, the line's initial
-  // leg runs at the exact same x as the card's own edge, reading as if it's
-  // just tracing the card's border rather than visibly leaving it.
-  const STEP_OUT = 18;
-  const roundedPath = (points) => {
-    const r = 9;
-    let d = `M ${points[0].x} ${points[0].y}`;
-    for (let i = 1; i < points.length - 1; i++) {
-      const p0 = points[i - 1], p1 = points[i], p2 = points[i + 1];
-      const len1 = Math.hypot(p1.x - p0.x, p1.y - p0.y) || 1;
-      const len2 = Math.hypot(p2.x - p1.x, p2.y - p1.y) || 1;
-      const rr = Math.min(r, len1 / 2, len2 / 2);
-      const preX = p1.x - ((p1.x - p0.x) / len1) * rr, preY = p1.y - ((p1.y - p0.y) / len1) * rr;
-      const postX = p1.x + ((p2.x - p1.x) / len2) * rr, postY = p1.y + ((p2.y - p1.y) / len2) * rr;
-      d += ` L ${preX} ${preY} Q ${p1.x} ${p1.y} ${postX} ${postY}`;
-    }
-    const last = points[points.length - 1];
-    d += ` L ${last.x} ${last.y}`;
-    return d;
   };
 
   const paths = [];
@@ -326,16 +308,8 @@ export default function ChartTree({ graph, activeId, viewerId, onOpenPerson, onA
       const b = horizontal
         ? { x: to.x + to.w / 2, y: to.y }
         : { x: to.x, y: to.y + to.h / 2 };
-      if (!horizontal && a.dir) {
-        const stepOut = { x: a.x + a.dir * STEP_OUT, y: a.y };
-        const midY = (stepOut.y + b.y) / 2;
-        const d = roundedPath([
-          { x: a.x, y: a.y }, stepOut, { x: stepOut.x, y: midY }, { x: b.x, y: midY }, b,
-        ]);
-        paths.push(<path key={conn.id} d={d} className="ped-link" />);
-      } else {
-        paths.push(<path key={conn.id} d={elbow(a.x, a.y, b.x, b.y, horizontal ? 'h' : 'v')} className="ped-link" />);
-      }
+      const bias = !horizontal && a.dir ? 24 : null;
+      paths.push(<path key={conn.id} d={elbow(a.x, a.y, b.x, b.y, horizontal ? 'h' : 'v', bias)} className="ped-link" />);
     } else {
       const a = downAnchor(from, conn.side);
       // Child card now sits to the right, so we arrive at its left edge.
