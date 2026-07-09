@@ -174,12 +174,19 @@ export default function BubbleTree({
       // and the radial sectors. Recomputed when people are added.
       let gen = computeGenerations(graph);
 
-      // Simulation nodes, spread by generation so the layout settles cleanly.
-      const nodes = graph.people.map((p, i) => ({
-        id: p.id,
-        x: (Math.random() - 0.5) * 600,
-        y: (gen.get(p.id) ?? 0) * GEN_GAP - 260 + (Math.random() - 0.5) * 30,
-      }));
+      // Simulation nodes exist only for people who are actually part of the
+      // revealed set — not the whole family. A 1000-person tree someone is
+      // quietly browsing one branch of shouldn't pay simulation/render cost
+      // for the other 950 they've never navigated to. Anyone not yet tracked
+      // is spawned lazily the moment they enter visibleIds — see
+      // ensureVisible() below and its [visibleIds] effect.
+      const nodes = graph.people
+        .filter((p) => visibleRef.current?.has(p.id))
+        .map((p) => ({
+          id: p.id,
+          x: (Math.random() - 0.5) * 600,
+          y: (gen.get(p.id) ?? 0) * GEN_GAP - 260 + (Math.random() - 0.5) * 30,
+        }));
       const nodeById = new Map(nodes.map((n) => [n.id, n]));
       const pos = new Map(nodes.map((n) => [n.id, n]));
       // Tracks whether the last sync() actually changed the tree's shape, so a
@@ -190,9 +197,15 @@ export default function BubbleTree({
       // rebuilds a fresh relationships array even when nothing changed.
       let lastRelationshipSig = relSignature(graph.relationships);
 
+      // Only links between two currently-tracked people are meaningful to the
+      // simulation — a relationship reaching an untracked (not-yet-revealed)
+      // person would otherwise hand d3-force an unresolvable link id.
       const buildLinks = (rels) =>
         rels
-          .filter((r) => r.type === 'partner' || r.type === 'parent')
+          .filter(
+            (r) => (r.type === 'partner' || r.type === 'parent')
+              && nodeById.has(r.from_person) && nodeById.has(r.to_person),
+          )
           .map((r) => ({ source: r.from_person, target: r.to_person, kind: r.type }));
 
       const linkForce = forceLink(buildLinks(graph.relationships))
@@ -286,13 +299,45 @@ export default function BubbleTree({
       // person object a bubble was built from, so edits can refresh in place.
       const bubbles = new Map();
       const bubblePerson = new Map();
-      for (const p of graph.people) {
+      for (const n of nodes) {
+        const p = graph.byId.get(n.id);
         const b = new Bubble(p, BASE_RADIUS);
         b.root.__bubbleId = p.id;
         bubbleLayer.addChild(b.root);
         bubbles.set(p.id, b);
         bubblePerson.set(p.id, p);
       }
+
+      // Materializes a sim node + Pixi bubble for a person who wasn't tracked
+      // yet — either a brand-new person from a data edit (sync()) or an
+      // existing person who's only just entered the revealed set
+      // (ensureVisible()). Anchored near whichever already-tracked relative
+      // connects to them, so they appear to sprout from that person rather
+      // than pop in at the world origin.
+      const spawnBubble = (p) => {
+        const rel = graphRef.current.relationships.find(
+          (r) =>
+            (r.from_person === p.id && nodeById.has(r.to_person)) ||
+            (r.to_person === p.id && nodeById.has(r.from_person)),
+        );
+        const anchor = rel
+          ? nodeById.get(rel.from_person === p.id ? rel.to_person : rel.from_person)
+          : nodeById.get(activeRef.current);
+        const node = {
+          id: p.id,
+          x: (anchor?.x ?? 0) + (Math.random() - 0.5) * 24,
+          y: (anchor?.y ?? 0) + (Math.random() - 0.5) * 24,
+        };
+        nodes.push(node);
+        nodeById.set(p.id, node);
+        pos.set(p.id, node);
+        const b = new Bubble(p, BASE_RADIUS);
+        b.root.__bubbleId = p.id;
+        b.root.position.set(node.x, node.y);
+        bubbleLayer.addChild(b.root);
+        bubbles.set(p.id, b);
+        bubblePerson.set(p.id, p);
+      };
 
       // ── Camera ───────────────────────────────────────────────────────────
       // ONE authoritative camera: (camX, camY) is the world point shown at the
@@ -664,29 +709,13 @@ export default function BubbleTree({
           let structuralChange = false;
           for (const p of g.people) {
             if (!nodeById.has(p.id)) {
+              // Not yet part of the revealed set — stays untracked until the
+              // user actually navigates to them (see ensureVisible()), so a
+              // bulk import of hundreds of new people doesn't spawn hundreds
+              // of bubbles nobody's looking at yet.
+              if (!visibleRef.current?.has(p.id)) continue;
               structuralChange = true;
-              const rel = g.relationships.find(
-                (r) =>
-                  (r.from_person === p.id && nodeById.has(r.to_person)) ||
-                  (r.to_person === p.id && nodeById.has(r.from_person)),
-              );
-              const anchor = rel
-                ? nodeById.get(rel.from_person === p.id ? rel.to_person : rel.from_person)
-                : null;
-              const node = {
-                id: p.id,
-                x: (anchor?.x ?? 0) + (Math.random() - 0.5) * 24,
-                y: (anchor?.y ?? 0) + (Math.random() - 0.5) * 24,
-              };
-              nodes.push(node);
-              nodeById.set(p.id, node);
-              pos.set(p.id, node);
-              const b = new Bubble(p, BASE_RADIUS);
-              b.root.__bubbleId = p.id;
-              b.root.position.set(node.x, node.y);
-              bubbleLayer.addChild(b.root);
-              bubbles.set(p.id, b);
-              bubblePerson.set(p.id, p);
+              spawnBubble(p);
             } else if (bubblePerson.get(p.id) !== p) {
               // The person object changed (an edit / new photo): rebuild in place.
               const node = nodeById.get(p.id);
@@ -726,6 +755,26 @@ export default function BubbleTree({
           relCache.clear(); // graph changed — relationship labels may differ
           if (state.layoutMode === 'radial' || state.layoutMode === 'weighted') state.relayout();
           if (state.layoutMode === 'chart') state.applyChartLayout();
+        },
+        // Called whenever the revealed set (visibleIds) grows — materializes
+        // a sim node + bubble for anyone newly part of it who wasn't tracked
+        // yet. A mild, LOCAL reheat (not sync()'s full 0.5) lets the new
+        // arrival settle in among its neighbours without visibly jiggling the
+        // whole tree on every single expand tap.
+        ensureVisible(ids) {
+          let added = false;
+          for (const id of ids ?? []) {
+            if (nodeById.has(id)) continue;
+            const p = graphRef.current.byId.get(id);
+            if (!p) continue;
+            spawnBubble(p);
+            added = true;
+          }
+          if (added) {
+            sim.nodes(nodes);
+            linkForce.links(buildLinks(graphRef.current.relationships));
+            sim.alpha(Math.max(sim.alpha(), 0.3));
+          }
         },
         // Focus Family toggled — re-apply the (now stronger/weaker) generational
         // banding, refresh relationship captions, and reheat so rows re-form.
@@ -805,6 +854,12 @@ export default function BubbleTree({
         // below). Ends with a tight landing punch, then hands back to the
         // normal follow framing so the spring eases out to reveal the family.
         flyAlong(orderedIds, opts = {}) {
+          // The caller (search flyover) expands orderedIds into visibleIds in
+          // the same handler that calls this, but that's an async React state
+          // update — this runs synchronously, before the [visibleIds] effect
+          // has had a chance to spawn them. Ensure directly rather than
+          // trusting timing, or un-tracked hops would just vanish from pts.
+          state.ensureVisible(orderedIds);
           const pts = orderedIds.map((id) => nodeById.get(id)).filter(Boolean);
           if (reducedMotion || pts.length < 2) {
             if (pts.length) state.setActive(orderedIds[orderedIds.length - 1]);
@@ -860,6 +915,10 @@ export default function BubbleTree({
         // people, not a path — so each hop just eases camera position/zoom
         // directly toward the next id's real position.
         spotlightTour(orderedIds, opts = {}) {
+          // Same defensive reasoning as flyAlong — don't assume the caller's
+          // visibleIds expansion has already been reconciled into tracked
+          // nodes by the time this runs.
+          state.ensureVisible(orderedIds);
           const pts = orderedIds.map((id) => nodeById.get(id)).filter(Boolean);
           if (!pts.length) { opts.onDone?.(); return; }
           recapVisited.clear();
@@ -1954,8 +2013,11 @@ export default function BubbleTree({
   }, [focusMode]);
 
   // Re-place nodes when the visible set changes: radial/weighted re-run forces,
-  // chart re-computes fixed grid positions.
+  // chart re-computes fixed grid positions. ensureVisible runs first so any
+  // newly-revealed person already has a tracked node/bubble before relayout
+  // tries to place them.
   useEffect(() => {
+    api.current?.ensureVisible(visibleIds);
     const m = api.current?.layoutMode;
     if (m === 'radial' || m === 'weighted') api.current.relayout();
     if (m === 'chart') api.current?.applyChartLayout();
