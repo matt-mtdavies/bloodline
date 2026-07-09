@@ -156,10 +156,21 @@ function marriageOf(graph, aId, bId) {
   };
 }
 
+// A tile claims "this exact pair parented this child" — reserved for rows
+// where every displayed member is a recorded biological/adoptive parent. A
+// step-link, or a child only one member has any recorded tie to at all,
+// doesn't earn a tile even though it's still real; those stay reachable
+// (correctly grouped and chip-labelled) through the children popover.
+function isTileWorthyChild(row, hasSecondMember) {
+  return isBioAdopt(row.aQualifier) && (hasSecondMember ? isBioAdopt(row.bQualifier) : true);
+}
+
 function cardHeight(card) {
   const rows = card.members.length;
   const marriage = card.members.length === 2 ? MARRIAGE_H : 0;
-  const footer = card.childrenCount > 0 && card.kind !== 'focalUnion' ? FOOTER_H : 0;
+  const footer = card.kind === 'focalUnion'
+    ? (card.hiddenChildrenCount > 0 ? FOOTER_H : 0)
+    : (card.childrenCount > 0 ? FOOTER_H : 0);
   return rows * ROW_H + marriage + footer;
 }
 
@@ -168,6 +179,8 @@ function cardHeight(card) {
 function makeUnionCard(graph, lineMemberIds, displayed, kind, { expandedUp, partnerChoice }) {
   const members = displayed.filter(Boolean);
   const kidRows = childrenOfUnion(graph, members[0], members[1] ?? null);
+  const hasSecondMember = members.length === 2;
+  const hiddenChildrenCount = kidRows.filter((r) => !isTileWorthyChild(r, hasSecondMember)).length;
   const slots = members.map((id) => {
     const parents = bioParentsOf(graph, id);
     const alt = unionCandidates(graph, id).filter((c) => !members.includes(c.id));
@@ -190,6 +203,7 @@ function makeUnionCard(graph, lineMemberIds, displayed, kind, { expandedUp, part
     marriage: members.length === 2 ? marriageOf(graph, members[0], members[1]) : null,
     childrenCount: kidRows.length,
     childRows: kidRows,
+    hiddenChildrenCount,
     x: 0, y: 0, w: CARD_W, h: 0,
   };
   card.h = cardHeight({ ...card, kind: kind === 'focal' ? 'focalUnion' : kind });
@@ -304,10 +318,17 @@ export function computePedigree(graph, focusId, { expandedUp, partnerChoice, ori
 
   // ── Focal children row: drawn cards one step below, honest connectors —
   //    a child linked to only ONE displayed member hangs from that member's
-  //    half of the card, not from the couple's shared middle. ───────────────
+  //    half of the card, not from the couple's shared middle. A tile claims
+  //    "this pair parented this child," so it's reserved for children where
+  //    every displayed member is a recorded biological/adoptive parent —
+  //    a step-link, or a child only one member has any recorded tie to at
+  //    all, doesn't earn a tile even though it's still real. Those stay
+  //    reachable (correctly grouped and chip-labelled) through the same
+  //    children popover ancestor cards use, via focal.hiddenChildrenCount. ──
   const childCards = [];
   {
-    const rows = focal.childRows;
+    const hasSecondMember = focal.members.length === 2;
+    const rows = focal.childRows.filter((r) => isTileWorthyChild(r, hasSecondMember));
     if (rows.length) {
       const sideOf = (row) => {
         const linkedA = row.aQualifier != null, linkedB = row.bQualifier != null;
