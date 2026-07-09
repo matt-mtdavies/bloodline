@@ -458,10 +458,8 @@ function PedCard({ card, graph, activeId, horizontal, isFocal, switcherFor, part
         const slot = card.slots.find((s) => s.id === personId);
         const age = !person.is_minor || person.is_deceased ? ageOrAt(person) : null;
         const dates = age ? `${lifespan(person)} · ${person.is_deceased ? age : `age ${age}`}` : lifespan(person);
-        // Step-linked children no longer get a tile at all (see the focal
-        // children row filter in pedigreeLayout.js) — only Adopted can still
-        // reach a tile here.
-        const adoptedChip = isChild && ['adopted', 'adoptive'].includes(card.qualifiers?.a) ? 'Adopted' : null;
+        const stepChip = isChild && (card.qualifiers?.a === 'step' || card.qualifiers?.b === 'step') ? 'Step'
+          : isChild && ['adopted', 'adoptive'].includes(card.qualifiers?.a) ? 'Adopted' : null;
         return (
           <div key={personId} className="ped-row-wrap">
             {i === 1 && <MarriageStrip marriage={card.marriage} />}
@@ -471,7 +469,7 @@ function PedCard({ card, graph, activeId, horizontal, isFocal, switcherFor, part
                 <span className="ped-row__text">
                   <span className="ped-row__name">
                     {person.display_name}
-                    {adoptedChip && <span className="ped-chip ped-chip--inline">{adoptedChip}</span>}
+                    {stepChip && <span className="ped-chip ped-chip--inline">{stepChip}</span>}
                   </span>
                   <span className="ped-row__dates">{dates}</span>
                 </span>
@@ -542,20 +540,6 @@ function PedCard({ card, graph, activeId, horizontal, isFocal, switcherFor, part
         >
           {card.childrenCount} {card.childrenCount === 1 ? 'child' : 'children'}
           {isChild ? <ArrowRightIcon /> : <ChevronDownIcon />}
-        </button>
-      )}
-      {/* The focal card shows its bio/adoptive children as tiles directly
-          below it; anyone else (step-links, children only one member has any
-          tie to) doesn't get a tile but still needs a way in — same popover
-          as everywhere else. */}
-      {isFocal && card.hiddenChildrenCount > 0 && (
-        <button
-          className="ped-footer"
-          onClick={() => onOpenChildren(card.id)}
-          title="Show all children, including step and other-parent links"
-        >
-          +{card.hiddenChildrenCount} more
-          <ChevronDownIcon />
         </button>
       )}
     </div>

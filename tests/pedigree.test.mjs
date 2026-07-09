@@ -77,16 +77,14 @@ t('allen has switcher candidates (nancy + shirley)', () => {
   assert.deepEqual(alts, ['nancy', 'shirley']);
 });
 
-t('a tile claims "this pair parented this child" — step-linked children get no tile', () => {
-  const { cards, connectors, focalCardId } = computePedigree(graph, 'matthew', { expandedUp: new Set() });
+t('drawn children include the step-child, hung from kaitlin\'s side only', () => {
+  const { cards, connectors } = computePedigree(graph, 'matthew', { expandedUp: new Set() });
   const step = cards.find((c) => c.id === 'c_stepkid');
-  assert.equal(step, undefined, 'stepkid gets no tile — matthew is only a step-parent, not bio/adoptive');
+  assert.ok(step, 'stepkid drawn');
+  // matthew is member A (line member first): step edge to A, bio to B.
+  assert.equal(step.side, 'both' /* linked to both, one step */, 'linked to both members');
   const conn = connectors.find((c) => c.toCardId === 'c_stepkid');
-  assert.equal(conn, undefined, 'no connector drawn to a tile that was never made');
-  // Still discoverable — the focal card exposes it as a "+N more" count for
-  // the same children popover ancestor cards use.
-  const focal = cards.find((c) => c.id === focalCardId);
-  assert.equal(focal.hiddenChildrenCount, 1, 'stepkid counted as hidden, not silently dropped');
+  assert.ok(conn);
 });
 
 t('childrenOfUnion groups a cross-union child with its outside co-parent', () => {
@@ -100,8 +98,7 @@ t('childrenOfUnion groups a cross-union child with its outside co-parent', () =>
 t('lazy: nothing beyond focal+children computed when nothing expanded', () => {
   const { cards } = computePedigree(graph, 'matthew', { expandedUp: new Set() });
   assert.equal(cards.filter((c) => c.kind === 'ancestor').length, 0);
-  // jackson, isla, liv are tiles; stepkid isn't (see the tile-worthiness test).
-  assert.equal(cards.filter((c) => c.kind === 'child').length, 3);
+  assert.equal(cards.filter((c) => c.kind === 'child').length, 4);
 });
 
 t('deep expansion places generations without overlap on the cross axis', () => {
