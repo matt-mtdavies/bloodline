@@ -79,7 +79,7 @@ export function nearestWorldEvent(year, region, maxDistance = 4) {
 // color change. Used as the decade band's background tint.
 const ERA_OLD = [0xf3, 0xe9, 0xd6];   // warm sepia-cream
 const ERA_NEW = [0xf1, 0xf2, 0xf4];   // clean, cool-neutral paper
-const ERA_SPAN = [1830, 2030];
+const ERA_SPAN = [1750, 2030];
 
 export function eraTint(decade) {
   const t = Math.min(1, Math.max(0, (decade - ERA_SPAN[0]) / (ERA_SPAN[1] - ERA_SPAN[0])));
