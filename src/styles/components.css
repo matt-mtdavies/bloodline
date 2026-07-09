@@ -8391,6 +8391,114 @@ button.health-notes {
   opacity: 0.55;
 }
 
+/* ── Direction B — horizontal-couple portrait cards ─────────────────────────
+   Two flat plates side by side, joined across the seam by the partner-link.
+   Calm by default: editing chrome lives in the on-select action bar; the
+   resting card carries only navigation pips. */
+.pcard { position: absolute; }
+.pcard__row { display: flex; gap: 16px; height: 100%; align-items: stretch; }
+.pplate {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 100%;
+  padding: 0 11px;
+  border: 1px solid var(--hairline);
+  border-radius: 15px;
+  background: var(--card);
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--body);
+  transition: border-color 0.15s ease, box-shadow 0.2s var(--ease), background 0.15s ease;
+}
+.pplate:hover { border-color: #d8d2c8; background: var(--paper-deep); }
+.pplate__text { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.pplate__name {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 14.5px; font-weight: 600; color: var(--ink);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  letter-spacing: -0.005em;
+}
+.pplate__dates {
+  font-size: 11px; color: var(--ink-faint);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.pplate--passed .pplate__name { color: color-mix(in srgb, var(--ink) 74%, var(--paper)); }
+.pcard--focal .pplate { border-color: var(--accent); }
+.pcard--focal .pplate:hover { background: var(--card); }
+.pplate--selected,
+.pplate--selected:hover {
+  border-color: var(--accent);
+  background: var(--card);
+  box-shadow: 0 0 0 2.5px var(--accent-soft), 0 10px 26px rgba(36, 31, 28, 0.12);
+}
+
+/* Partner-link across the couple's seam — status by style, drawn in SVG. */
+.ped-partnerlink { stroke: var(--bond-current, #c2603a); stroke-width: 2.4; fill: none; opacity: 0.9; stroke-linecap: round; }
+.ped-partnerlink--former { stroke: var(--bond-former, #b9ab98); stroke-dasharray: 3 4; opacity: 0.85; }
+.ped-partnerlink--widowed { stroke: var(--memorial, #6b5e7a); }
+
+/* Navigation pips — subtle, outlined, calm. Never the dark filled circles of
+   the old chart. Expand a member's ancestry (up) or drop into children (down). */
+.pnav {
+  position: absolute;
+  width: 22px; height: 22px;
+  display: grid; place-items: center;
+  border-radius: 50%;
+  border: 1px solid var(--hairline);
+  background: var(--card);
+  color: var(--ink-faint);
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(36, 31, 28, 0.08);
+  transition: transform 0.2s var(--spring), background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  z-index: 3;
+}
+.pnav:hover { color: var(--accent-deep); border-color: var(--accent); background: var(--accent-soft); }
+.pnav:active { transform: scale(0.88); }
+.pnav--on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-deep); }
+.pnav--on.pnav--up svg { transform: rotate(180deg); }
+
+/* On-select contextual action bar — the only editing chrome, screen-space so
+   it stays crisp at any zoom. A calm frosted pill floating above the plate. */
+.pbar {
+  position: absolute;
+  transform: translateX(-50%);
+  z-index: 24;
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  padding: 5px;
+  background: rgba(255, 255, 255, 0.94);
+  backdrop-filter: blur(20px) saturate(1.5);
+  -webkit-backdrop-filter: blur(20px) saturate(1.5);
+  border-radius: 15px;
+  box-shadow: 0 12px 32px rgba(36, 31, 28, 0.18), inset 0 0 0 0.5px rgba(255, 255, 255, 0.8);
+  animation: pbar-in 0.18s var(--ease) both;
+}
+@keyframes pbar-in { from { opacity: 0; transform: translate(-50%, 5px); } to { opacity: 1; transform: translate(-50%, 0); } }
+.pbar__btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  min-width: 54px;
+  padding: 7px 9px 6px;
+  border: none;
+  border-radius: 11px;
+  background: none;
+  color: var(--ink-soft);
+  cursor: pointer;
+  font-family: var(--body);
+  font-size: 10.5px;
+  font-weight: 600;
+  transition: background 0.14s ease, color 0.14s ease;
+}
+.pbar__btn:hover { background: var(--paper-deep); color: var(--accent-deep); }
+.pbar__btn--on { background: var(--accent-soft); color: var(--accent-deep); }
+.pbar-menu { position: absolute; transform: translateX(-50%); z-index: 24; }
+.pbar-menu .ped-spouse-menu { position: static; animation: pbar-in 0.18s var(--ease) both; }
+@media (prefers-reduced-motion: reduce) { .pbar, .pbar-menu .ped-spouse-menu { animation: none; } }
+
 /* ── Pedigree cards ─────────────────────────────────────────────────────── */
 .ped-card {
   position: absolute;
@@ -8517,8 +8625,8 @@ button.health-notes {
 }
 .ped-up:hover { background: var(--accent-soft); color: var(--accent-deep); }
 .ped-up:active { transform: scale(0.9); }
-.ped-up--open { background: var(--ink); border-color: var(--ink); color: #fff; }
-.ped-up--open:hover { background: var(--ink); color: #fff; opacity: 0.88; }
+.ped-up--open { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-deep); }
+.ped-up--open:hover { background: var(--accent-soft); color: var(--accent-deep); }
 .ped-up--open svg { transform: rotate(180deg); }
 .ped-up--add { border-style: dashed; color: var(--ink-faint); box-shadow: none; }
 .ped-up--add:hover { border-color: var(--accent); color: var(--accent-deep); background: var(--accent-soft); }

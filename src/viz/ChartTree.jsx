@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { computePedigree, primaryUnionPartner, unionCandidates } from './pedigreeLayout.js';
-import { ROW_H, MARRIAGE_H } from './pedigreeMetrics.js';
+import { ROW_H, MARRIAGE_H, PLATE_W, PLATE_H, LINK_GAP } from './pedigreeMetrics.js';
 import { lifespan, ageOrAt } from '../lib/dates.js';
 import Avatar from '../components/Avatar.jsx';
 
@@ -45,6 +45,7 @@ export default function ChartTree({ graph, activeId, viewerId, onOpenPerson, onA
   const [partnerChoice, setPartnerChoice] = useState(() => new Map());
   const [childrenFor, setChildrenFor] = useState(null); // cardId with open children popover
   const [switcherFor, setSwitcherFor] = useState(null); // memberId with open spouse menu
+  const [selectedId, setSelectedId] = useState(null); // personId selected → contextual action bar
   const [view, setView] = useState({ zoom: 0.9, panX: 0, panY: 0 });
   const [gliding, setGliding] = useState(false);
   const viewportRef = useRef(null);
@@ -115,6 +116,7 @@ export default function ChartTree({ graph, activeId, viewerId, onOpenPerson, onA
     setPartnerChoice(new Map());
     setChildrenFor(null);
     setSwitcherFor(null);
+    setSelectedId(null);
     centerOnFocal(
       computePedigree(graph, activeId, { expandedUp: nextExpanded, partnerChoice: new Map(), orientation }),
       orientation,
@@ -176,11 +178,16 @@ export default function ChartTree({ graph, activeId, viewerId, onOpenPerson, onA
     };
   };
   const onPointerDown = (e) => {
-    if (pointersRef.current.size === 0 && (e.target.closest('.ped-card') || e.target.closest('.chart-controls') || e.target.closest('.ped-pop') || e.target.closest('.ped-backchip'))) return;
+    if (pointersRef.current.size === 0 && (
+      e.target.closest('.ped-card') || e.target.closest('.pcard') || e.target.closest('.pnav')
+      || e.target.closest('.pbar') || e.target.closest('.chart-controls')
+      || e.target.closest('.ped-pop') || e.target.closest('.ped-backchip')
+    )) return;
     try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* synthetic pointers */ }
     setGliding(false);
     setChildrenFor(null);
     setSwitcherFor(null);
+    setSelectedId(null); // tap empty canvas dismisses the selection
     pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     const rect = viewportRef.current?.getBoundingClientRect();
     if (pointersRef.current.size === 2 && rect) {
@@ -221,7 +228,7 @@ export default function ChartTree({ graph, activeId, viewerId, onOpenPerson, onA
 
   useEffect(() => {
     const onKey = (e) => {
-      if (e.key === 'Escape') { setChildrenFor(null); setSwitcherFor(null); }
+      if (e.key === 'Escape') { setChildrenFor(null); setSwitcherFor(null); setSelectedId(null); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -248,18 +255,24 @@ export default function ChartTree({ graph, activeId, viewerId, onOpenPerson, onA
 
   // ── Geometry helpers shared by cards and connectors ──────────────────────
   const horizontal = orientation === 'horizontal';
-  // Distance from a card's own centre to member i's row centre — same for
-  // both orientations, since cards are always stacked-row shaped regardless
-  // of which axis the tree grows along.
+  const portrait = !horizontal;
+
+  // Portrait: a couple is two plates side by side. Member i's plate centre.
+  const plateCenterX = (card, i) =>
+    card.members.length === 2
+      ? card.x - card.w / 2 + PLATE_W / 2 + i * (PLATE_W + LINK_GAP)
+      : card.x;
+
+  // Landscape (stacked rows) — kept from the previous chart.
   const rowCenterOffset = (card, i) => -card.h / 2 + ROW_H / 2 + (i === 1 ? ROW_H + MARRIAGE_H : 0);
-  // Where member i's up-line leaves the card. Horizontal: ancestors recede
-  // left, so every line exits the card's left edge at that member's own row
-  // height (the FamilySearch look). Vertical: a couple's two lines exit
-  // opposite side edges at their own row height — never a shared top-centre
-  // point — so each line is unambiguously "this partner's", not "the
-  // couple's"; a solo card (nothing to disambiguate) still exits top-centre.
+
+  // Consistent ports (Direction B). Portrait: ancestry leaves the TOP-CENTRE
+  // of the member's own plate; children enter the TOP-CENTRE of the child
+  // plate and descend from the union's BOTTOM-CENTRE. Landscape retains the
+  // side-entry FamilySearch look.
   const upAnchor = (card, memberId) => {
     const i = card.members.indexOf(memberId);
+    if (portrait) return { x: plateCenterX(card, i), y: card.y - card.h / 2 };
     const rowCenter = rowCenterOffset(card, i);
     if (horizontal) return { x: card.x - card.w / 2, y: card.y + rowCenter };
     if (card.members.length === 2) {
@@ -268,26 +281,17 @@ export default function ChartTree({ graph, activeId, viewerId, onOpenPerson, onA
     }
     return { x: card.x, y: card.y - card.h / 2 };
   };
-  const downAnchor = (card, side) => {
-    const off = card.members.length === 2 ? (side === 'a' ? -card.w / 4 : side === 'b' ? card.w / 4 : 0) : 0;
-    if (horizontal) return { x: card.x + card.w / 2, y: card.y + (side === 'a' ? -card.h / 4 : side === 'b' ? card.h / 4 : 0) };
-    return { x: card.x + off, y: card.y + card.h / 2 };
-  };
 
-  // Rounded orthogonal elbow between two points, leaving along `axis`. The
-  // turn normally sits at the midpoint; `bias` (vertical axis only) pulls it
-  // close to the start instead — used for the member up-lines so the long,
-  // dead-straight run happens at the aligned x near the PARENT, and the
-  // "turn into the tile" happens right at the child's own edge, not glued
-  // flush against it for a long stretch first (which read as the line just
-  // tracing the card's border rather than leaving it).
-  const elbow = (x0, y0, x1, y1, axis, bias) => {
+  // Rounded orthogonal elbow between two points. axis 'v' turns on the Y run,
+  // 'h' on the X run. `turnAt` (0..1, v-axis) places the horizontal jog along
+  // the run — 0 near the start, 1 near the end; default 0.5 (midpoint).
+  const elbow = (x0, y0, x1, y1, axis, turnAt = 0.5) => {
     const r = 9;
     if (axis === 'v') {
       if (Math.abs(x1 - x0) < 1) return `M ${x0} ${y0} L ${x1} ${y1}`;
       const dx = x1 > x0 ? 1 : -1, dy = y1 > y0 ? 1 : -1;
-      const midY = bias != null ? y0 + dy * Math.min(bias, Math.abs(y1 - y0) / 2) : (y0 + y1) / 2;
-      const rr = Math.min(r, Math.abs(x1 - x0) / 2, Math.abs(y1 - y0) / 2);
+      const midY = y0 + (y1 - y0) * turnAt;
+      const rr = Math.min(r, Math.abs(x1 - x0) / 2, Math.abs(midY - y0), Math.abs(y1 - midY));
       return `M ${x0} ${y0} L ${x0} ${midY - rr * dy} Q ${x0} ${midY} ${x0 + rr * dx} ${midY} L ${x1 - rr * dx} ${midY} Q ${x1} ${midY} ${x1} ${midY + rr * dy} L ${x1} ${y1}`;
     }
     const midX = (x0 + x1) / 2;
@@ -298,25 +302,75 @@ export default function ChartTree({ graph, activeId, viewerId, onOpenPerson, onA
   };
 
   const paths = [];
+  // Partner links — a short segment across the seam of each couple, its style
+  // carrying the union's status (married / former / widowed). Portrait only;
+  // landscape's marriage strip lives inside the stacked card.
+  if (portrait) {
+    for (const card of layout.cards) {
+      if (card.kind === 'child' || card.members.length !== 2) continue;
+      const y = card.y;
+      const x0 = card.x - LINK_GAP / 2 - 1, x1 = card.x + LINK_GAP / 2 + 1;
+      const status = card.marriage?.status;
+      const cls = 'ped-partnerlink'
+        + (status === 'former' ? ' ped-partnerlink--former' : '')
+        + (status === 'widowed' ? ' ped-partnerlink--widowed' : '');
+      paths.push(<path key={'plink_' + card.id} d={`M ${x0} ${y} L ${x1} ${y}`} className={cls} />);
+    }
+  }
+
+  // Ancestry (up) connectors.
   for (const conn of layout.connectors) {
+    if (conn.kind !== 'up') continue;
     const from = cardById.get(conn.fromCardId);
     const to = cardById.get(conn.toCardId);
     if (!from || !to) continue;
-    if (conn.kind === 'up') {
-      const a = upAnchor(from, conn.fromMemberId);
-      // Parent card now recedes to the left, so we arrive at its right edge.
-      const b = horizontal
-        ? { x: to.x + to.w / 2, y: to.y }
-        : { x: to.x, y: to.y + to.h / 2 };
-      const bias = !horizontal && a.dir ? 24 : null;
-      paths.push(<path key={conn.id} d={elbow(a.x, a.y, b.x, b.y, horizontal ? 'h' : 'v', bias)} className="ped-link" />);
+    const a = upAnchor(from, conn.fromMemberId);
+    if (portrait) {
+      const b = { x: to.x, y: to.y + to.h / 2 };
+      // Rise straight up in the child's own column, then jog into the parent
+      // near the top — ancestry reads as belonging to that person.
+      paths.push(<path key={conn.id} d={elbow(a.x, a.y, b.x, b.y, 'v', 0.72)} className="ped-link" />);
     } else {
-      const a = downAnchor(from, conn.side);
-      // Child card now sits to the right, so we arrive at its left edge.
-      const b = horizontal
-        ? { x: to.x - to.w / 2, y: to.y }
-        : { x: to.x, y: to.y - to.h / 2 };
-      paths.push(<path key={conn.id} d={elbow(a.x, a.y, b.x, b.y, horizontal ? 'h' : 'v')} className="ped-link" />);
+      const b = horizontal ? { x: to.x + to.w / 2, y: to.y } : { x: to.x, y: to.y + to.h / 2 };
+      paths.push(<path key={conn.id} d={elbow(a.x, a.y, b.x, b.y, horizontal ? 'h' : 'v', a.dir ? 0.18 : 0.5)} className="ped-link" />);
+    }
+  }
+
+  // Children — portrait draws ONE sibling bus from the union's bottom-centre:
+  // a stem down to a shared horizontal bar, then a drop into each child's
+  // top-centre. The classic sibling bracket the eye reads instantly.
+  const downConns = layout.connectors.filter((c) => c.kind === 'down');
+  if (downConns.length) {
+    const from = cardById.get(downConns[0].fromCardId);
+    const kids = downConns.map((c) => cardById.get(c.toCardId)).filter(Boolean);
+    if (from && kids.length) {
+      if (portrait) {
+        const stemX = from.x, stemTop = from.y + from.h / 2;
+        const kidTop = Math.min(...kids.map((k) => k.y - k.h / 2));
+        const busY = stemTop + (kidTop - stemTop) * 0.5;
+        const r = 8;
+        const xs = kids.map((k) => k.x);
+        const minX = Math.min(...xs, stemX), maxX = Math.max(...xs, stemX);
+        paths.push(<path key="bus_stem" d={`M ${stemX} ${stemTop} L ${stemX} ${busY}`} className="ped-link" />);
+        if (kids.length > 1) paths.push(<path key="bus_bar" d={`M ${minX} ${busY} L ${maxX} ${busY}`} className="ped-link" />);
+        for (const k of kids) {
+          const kx = k.x, ky = k.y - k.h / 2;
+          const dx = kx > stemX ? 1 : kx < stemX ? -1 : 0;
+          const rr = Math.min(r, Math.abs(ky - busY) / 2, dx ? Math.abs(kx - stemX) / 2 : r);
+          const d = dx === 0
+            ? `M ${kx} ${busY} L ${kx} ${ky}`
+            : `M ${kx - rr * dx} ${busY} Q ${kx} ${busY} ${kx} ${busY + rr} L ${kx} ${ky}`;
+          paths.push(<path key={'kid_' + k.id} d={d} className="ped-link" />);
+        }
+      } else {
+        for (const conn of downConns) {
+          const to = cardById.get(conn.toCardId);
+          if (!to) continue;
+          const a = { x: from.x + from.w / 2, y: from.y + (conn.side === 'a' ? -from.h / 4 : conn.side === 'b' ? from.h / 4 : 0) };
+          const b = { x: to.x - to.w / 2, y: to.y };
+          paths.push(<path key={conn.id} d={elbow(a.x, a.y, b.x, b.y, 'h')} className="ped-link" />);
+        }
+      }
     }
   }
 
@@ -332,6 +386,32 @@ export default function ChartTree({ graph, activeId, viewerId, onOpenPerson, onA
       top: Math.min(sy + 10, rect.height - 120),
     };
   })() : null;
+
+  // ── Selection → contextual action bar (Direction B) ──────────────────────
+  // The selected person's plate, in screen space, so the floating bar stays
+  // crisp and readable regardless of zoom.
+  const selInfo = (() => {
+    if (!selectedId || !portrait) return null;
+    const card = layout.cards.find((c) => c.members.includes(selectedId));
+    if (!card) return null;
+    const i = card.members.indexOf(selectedId);
+    const plateCx = card.members.length === 2
+      ? card.x - card.w / 2 + PLATE_W / 2 + i * (PLATE_W + LINK_GAP)
+      : card.x;
+    const slot = card.slots?.find((s) => s.id === selectedId) ?? null;
+    return { card, plateCx, plateTop: card.y - card.h / 2, slot };
+  })();
+  const selScreen = selInfo && viewportRef.current ? (() => {
+    const rect = viewportRef.current.getBoundingClientRect();
+    const sx = view.panX + selInfo.plateCx * view.zoom;
+    const sy = view.panY + selInfo.plateTop * view.zoom;
+    return {
+      left: Math.min(Math.max(sx, 130), rect.width - 130),
+      top: Math.max(sy - 54, 8),
+    };
+  })() : null;
+  const selPerson = selectedId ? graph.byId.get(selectedId) : null;
+  const dismissSel = () => setSelectedId(null);
 
   return (
     <div className="chart-tree">
@@ -369,6 +449,8 @@ export default function ChartTree({ graph, activeId, viewerId, onOpenPerson, onA
               onOpenSwitcher={(memberId) => { setChildrenFor(null); setSwitcherFor((cur) => (cur === memberId ? null : memberId)); }}
               onChooseSpouse={chooseSpouse}
               partnerChoice={partnerChoice}
+              selectedId={selectedId}
+              onSelect={(id) => { setChildrenFor(null); setSelectedId((cur) => (cur === id ? null : id)); }}
             />
           ))}
         </div>
@@ -406,6 +488,44 @@ export default function ChartTree({ graph, activeId, viewerId, onOpenPerson, onA
             >
               + Add a child
             </button>
+          </div>
+        )}
+
+        {/* Contextual action bar — the ONLY editing chrome, and only for the
+            selected person. Everything else stays calm. */}
+        {selInfo && selScreen && selPerson && (
+          <div className="pbar" style={{ left: selScreen.left, top: selScreen.top }} role="toolbar" aria-label={`Actions for ${selPerson.display_name}`}>
+            <button className="pbar__btn" onClick={() => { dismissSel(); onOpenPerson?.(selectedId); }}>
+              <ProfileIcon /><span>Profile</span>
+            </button>
+            {activeId !== selectedId && (
+              <button className="pbar__btn" onClick={() => { dismissSel(); onActivate?.(selectedId); }}>
+                <CentreIcon /><span>Centre</span>
+              </button>
+            )}
+            <button className="pbar__btn" onClick={() => { dismissSel(); onAddRelative?.(selectedId); }}>
+              <PlusIcon /><span>Add</span>
+            </button>
+            {selInfo.slot?.altPartnerIds?.length > 0 && (
+              <button
+                className={'pbar__btn' + (switcherFor === selectedId ? ' pbar__btn--on' : '')}
+                onClick={() => setSwitcherFor((cur) => (cur === selectedId ? null : selectedId))}
+                aria-expanded={switcherFor === selectedId}
+              >
+                <SwapIcon /><span>Partner</span>
+              </button>
+            )}
+          </div>
+        )}
+        {selInfo && selScreen && switcherFor === selectedId && (
+          <div className="pbar-menu" style={{ left: selScreen.left, top: selScreen.top + 46 }}>
+            <SpouseMenu
+              graph={graph}
+              memberId={selectedId}
+              card={selInfo.card}
+              partnerChoice={partnerChoice}
+              onChoose={chooseSpouse}
+            />
           </div>
         )}
       </div>
@@ -452,7 +572,89 @@ export default function ChartTree({ graph, activeId, viewerId, onOpenPerson, onA
 
 // ── One card ─────────────────────────────────────────────────────────────────
 
-function PedCard({ card, graph, activeId, horizontal, isFocal, switcherFor, partnerChoice, onOpenPerson, onActivate, onToggleUp, onAddRelative, onOpenChildren, onOpenSwitcher, onChooseSpouse }) {
+function PedCard(props) {
+  const { card, horizontal } = props;
+  if (!horizontal) return <PortraitCard {...props} />;
+  return <StackedCard {...props} />;
+}
+
+// ── Portrait: horizontal-couple plates (Direction B) ──────────────────────────
+// Two flat plates side by side (one, if solo), joined across the seam by the
+// partner-link drawn in the SVG layer. Ancestry rises from each plate's top;
+// children descend from the union's centre. Editing chrome is deferred to the
+// on-select action bar — the resting card carries only navigation pips.
+function PortraitCard({ card, graph, isFocal, selectedId, onOpenPerson, onSelect, onActivate, onToggleUp, onAddRelative, onOpenChildren }) {
+  const isChild = card.kind === 'child';
+  return (
+    <div
+      className={'pcard' + (isFocal ? ' pcard--focal' : '') + (isChild ? ' pcard--child' : '')}
+      style={{ left: card.x - card.w / 2, top: card.y - card.h / 2, width: card.w, height: card.h }}
+    >
+      <div className="pcard__row">
+        {card.members.map((personId, i) => {
+          const person = graph.byId.get(personId);
+          if (!person) return null;
+          const stepChip = isChild && (card.qualifiers?.a === 'step' || card.qualifiers?.b === 'step') ? 'Step'
+            : isChild && ['adopted', 'adoptive'].includes(card.qualifiers?.a) ? 'Adopted' : null;
+          return (
+            <button
+              key={personId}
+              className={'pplate'
+                + (person.is_deceased ? ' pplate--passed' : '')
+                + (personId === selectedId ? ' pplate--selected' : '')}
+              style={{ width: PLATE_W }}
+              onClick={() => onSelect?.(personId)}
+              onDoubleClick={() => onOpenPerson?.(personId)}
+            >
+              <Avatar person={person} size={32} />
+              <span className="pplate__text">
+                <span className="pplate__name">
+                  {person.display_name}
+                  {stepChip && <span className="ped-chip ped-chip--inline">{stepChip}</span>}
+                </span>
+                <span className="pplate__dates">{lifespan(person)}</span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Navigation pips (viewing state): expand a member's ancestry, or drop
+          into this card's children. Editing actions live in the action bar. */}
+      {!isChild && card.slots.map((slot, i) => {
+        if (!slot.hasMoreUp) return null;
+        const person = graph.byId.get(slot.id);
+        const cx = card.members.length === 2 ? PLATE_W / 2 + i * (PLATE_W + LINK_GAP) : card.w / 2;
+        return (
+          <button
+            key={'up_' + slot.id}
+            className={'pnav pnav--up' + (slot.expanded ? ' pnav--on' : '')}
+            style={{ left: cx - 11, top: -11 }}
+            onClick={(e) => { e.stopPropagation(); onToggleUp(slot.id); }}
+            title={slot.expanded ? `Hide ${person?.display_name.split(' ')[0]}’s parents` : `Show ${person?.display_name.split(' ')[0]}’s parents`}
+            aria-expanded={slot.expanded}
+          >
+            <ChevronUpIcon />
+          </button>
+        );
+      })}
+
+      {card.childrenCount > 0 && !isFocal && (
+        <button
+          className="pnav pnav--down"
+          style={{ left: card.w / 2 - 11, top: card.h - 11 }}
+          onClick={(e) => { e.stopPropagation(); isChild ? onActivate?.(card.members[0]) : onOpenChildren(card.id); }}
+          title={isChild ? 'Focus the chart here' : `Show ${card.childrenCount} ${card.childrenCount === 1 ? 'child' : 'children'}`}
+        >
+          {isChild ? <ArrowDownIcon /> : <ChevronDownIcon />}
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ── Landscape: the previous stacked-row union card, unchanged ─────────────────
+function StackedCard({ card, graph, activeId, horizontal, isFocal, switcherFor, partnerChoice, onOpenPerson, onActivate, onToggleUp, onAddRelative, onOpenChildren, onOpenSwitcher, onChooseSpouse }) {
   const isChild = card.kind === 'child';
   return (
     <div
@@ -667,6 +869,15 @@ function ChevronDownIcon() {
 }
 function ArrowRightIcon() {
   return <svg width="11" height="11" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" /></svg>;
+}
+function ArrowDownIcon() {
+  return <svg width="11" height="11" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5v14M6 13l6 6 6-6" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" /></svg>;
+}
+function ProfileIcon() {
+  return <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="8.5" r="3.6" stroke="currentColor" strokeWidth="1.7" /><path d="M5 19.5c1.3-3.3 4-5 7-5s5.7 1.7 7 5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" /></svg>;
+}
+function CentreIcon() {
+  return <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="3.2" stroke="currentColor" strokeWidth="1.7" /><path d="M12 3v3.2M12 17.8V21M3 12h3.2M17.8 12H21" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" /></svg>;
 }
 function PlusIcon() {
   return <svg width="11" height="11" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" /></svg>;

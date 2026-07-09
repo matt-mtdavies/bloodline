@@ -28,7 +28,7 @@
  * conn: { id, kind: 'up'|'down', fromCardId, toCardId, fromAnchorX, ... }
  */
 
-import { CARD_W, ROW_H, MARRIAGE_H, FOOTER_H, CHILD_W } from './pedigreeMetrics.js';
+import { CARD_W, ROW_H, MARRIAGE_H, FOOTER_H, CHILD_W, PLATE_W, PLATE_H, UNION_W, CHILD_PW } from './pedigreeMetrics.js';
 
 const GEN_GAP = 72;        // edge-to-edge between a card and its parents' row
 const PAIR_GAP = 40;       // between the two parent cards above one card
@@ -165,7 +165,7 @@ function cardHeight(card) {
 
 // Orders a displayed pair for presentation: line members keep their given
 // order (child's parents in edge order); a switched-in partner sits second.
-function makeUnionCard(graph, lineMemberIds, displayed, kind, { expandedUp, partnerChoice }) {
+function makeUnionCard(graph, lineMemberIds, displayed, kind, { expandedUp, partnerChoice, portrait }) {
   const members = displayed.filter(Boolean);
   const kidRows = childrenOfUnion(graph, members[0], members[1] ?? null);
   const slots = members.map((id) => {
@@ -192,7 +192,15 @@ function makeUnionCard(graph, lineMemberIds, displayed, kind, { expandedUp, part
     childRows: kidRows,
     x: 0, y: 0, w: CARD_W, h: 0,
   };
-  card.h = cardHeight({ ...card, kind: kind === 'focal' ? 'focalUnion' : kind });
+  if (portrait) {
+    // Horizontal couple: two plates side by side (or one, solo), a single
+    // row tall. Children navigation is a pip, not a footer row, so it adds
+    // no height.
+    card.w = members.length === 2 ? UNION_W : PLATE_W;
+    card.h = PLATE_H;
+  } else {
+    card.h = cardHeight({ ...card, kind: kind === 'focal' ? 'focalUnion' : kind });
+  }
   return card;
 }
 
@@ -219,7 +227,8 @@ export function computePedigree(graph, focusId, { expandedUp, partnerChoice, ori
   if (!focusId || !graph?.byId?.has(focusId)) return empty;
   expandedUp = expandedUp ?? new Set();
   partnerChoice = partnerChoice ?? new Map();
-  const opts = { expandedUp, partnerChoice };
+  const portrait = orientation !== 'horizontal';
+  const opts = { expandedUp, partnerChoice, portrait };
 
   const cards = [];
   const connectors = [];
@@ -318,7 +327,8 @@ export function computePedigree(graph, focusId, { expandedUp, partnerChoice, ori
         ...rows.filter((r) => sideOf(r) === 'both'),
         ...rows.filter((r) => sideOf(r) === 'b'),
       ];
-      const totalW = ordered.length * CHILD_W + (ordered.length - 1) * CHILD_GAP;
+      const childW = portrait ? CHILD_PW : CHILD_W;
+      const totalW = ordered.length * childW + (ordered.length - 1) * CHILD_GAP;
       let cursor = -totalW / 2;
       for (const row of ordered) {
         const grandkids = childrenOfUnion(graph, row.id, null).length;
@@ -332,13 +342,13 @@ export function computePedigree(graph, focusId, { expandedUp, partnerChoice, ori
           childrenCount: grandkids,
           side: sideOf(row),
           qualifiers: { a: row.aQualifier, b: row.bQualifier },
-          w: CHILD_W,
-          h: ROW_H + (grandkids > 0 ? FOOTER_H : 0),
-          _cross: cursor + CHILD_W / 2,
+          w: childW,
+          h: portrait ? PLATE_H : ROW_H + (grandkids > 0 ? FOOTER_H : 0),
+          _cross: cursor + childW / 2,
           _gen: -1,
         };
         cc._main = -(focal.h / 2 + CHILD_DROP + cc.h / 2);
-        cursor += CHILD_W + CHILD_GAP;
+        cursor += childW + CHILD_GAP;
         childCards.push(cc);
         cards.push(cc);
         connectors.push({
