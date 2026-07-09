@@ -650,6 +650,68 @@
   background: var(--paper);
 }
 .marriage-edit__hint { font-size: 11.5px; color: var(--ink-soft); margin: -2px 0 0 2px; }
+
+/* ── Phone field: country selector + national input ─────────────────────── */
+.phone-field { position: relative; }
+.phone-field__row { display: flex; gap: 8px; align-items: stretch; }
+.phone-field__country {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 50px;
+  padding: 0 10px;
+  border: 1px solid var(--hairline);
+  border-radius: 14px;
+  background: #fff;
+  color: var(--ink);
+  font-family: var(--body);
+  font-size: 14.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.phone-field__country:hover { background: var(--paper-deep); }
+.phone-field__flag { font-size: 17px; line-height: 1; }
+.phone-field__dial { color: var(--ink-soft); }
+.phone-field__country svg { color: var(--ink-faint); flex-shrink: 0; }
+.phone-field__input-wrap { flex: 1; min-width: 0; }
+.phone-field__menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 8;
+  width: 240px;
+  max-height: 260px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 5px;
+  background: var(--card);
+  border: 1px solid var(--hairline);
+  border-radius: 14px;
+  box-shadow: 0 16px 40px rgba(36, 31, 28, 0.2);
+  animation: fade-up 0.18s var(--ease) both;
+}
+.phone-field__opt {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 8px 9px;
+  border: none;
+  border-radius: 9px;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--body);
+  font-size: 13px;
+  color: var(--ink);
+}
+.phone-field__opt:hover { background: var(--paper-deep); }
+.phone-field__opt--on { background: var(--accent-soft); color: var(--accent-deep); font-weight: 600; }
+.phone-field__optname { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.phone-field__optdial { flex: none; color: var(--ink-soft); font-size: 12px; }
+.phone-field__opt--on .phone-field__optdial { color: inherit; }
 .marriage-edit__input {
   padding: 8px 11px;
   border: 1px solid var(--hairline);
@@ -1830,15 +1892,25 @@
   align-items: center;
   justify-content: center;
 }
-.contact-row__value {
+.contact-row__valuewrap {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.contact-row__value {
   font-size: 14.5px;
   font-weight: 500;
   color: var(--ink);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.contact-row__flag {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #b1442a;
 }
 .contact-row__action {
   flex: none;

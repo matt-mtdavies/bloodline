@@ -1,106 +1,171 @@
 /*
- * Lightweight country-aware phone formatter.
- * No third-party library — covers the most common country codes.
+ * Country-aware phone handling — no third-party library, covers the most
+ * common country codes.
  *
- * toE164(raw)      → "+14389792323"   (canonical, for storage)
- * formatPhone(raw) → "+1 (438) 979-2323"  (pretty, for display)
+ * The core problem this exists to solve: someone types a phone number the
+ * way they'd actually dial it at home ("0417 384 533" in Australia), not
+ * the way it needs to be STORED (E.164: "+61417384533", country code first,
+ * no trunk prefix). A single free-text field can't tell "0" apart from a
+ * real country code, so it used to just prepend "+" to whatever was typed —
+ * "+0417384533", which is not a phone number anyone can dial. PhoneField.jsx
+ * is the UI half (a country selector + a national-format input); this
+ * module is the data + conversion half both it and read-only display share.
+ *
+ * PHONE_COUNTRIES[i] = {
+ *   iso2, name, flag, dial (calling code, no +),
+ *   nationalLen (significant local digits, i.e. E.164 length minus the
+ *     dial code — NOT counting a domestic trunk "0"),
+ *   formatNational(digits) — pretty-print the significant digits the way
+ *     this country writes its own domestic number (WITH a leading 0 where
+ *     that's the standard local convention),
+ *   placeholder — example shown in the input.
+ * }
  */
-
-// Country code → { digits: expected local digit count, fmt: format fn }
-// fmt receives the local digit string (after stripping the country code).
-// If the local string is shorter (still being typed), we fall back to
-// "+CC localDigits" so formatting is always progressive.
-const FORMATS = [
-  // US/Canada: +1 (xxx) xxx-xxxx
-  { cc: '1', len: 10,
-    fmt: (d) => `+1 (${d.slice(0,3)}) ${d.slice(3,6)}-${d.slice(6)}` },
-
-  // Australia: mobile +61 4xx xxx xxx, landline +61 (x) xxxx xxxx
-  { cc: '61', len: 9,
-    fmt: (d) => d[0] === '4'
-      ? `+61 ${d[0]} ${d.slice(1,4)} ${d.slice(4,7)} ${d.slice(7)}`
-      : `+61 (${d[0]}) ${d.slice(1,5)} ${d.slice(5)}` },
-
-  // UK: +44 xxxx xxxxxx
-  { cc: '44', len: 10,
-    fmt: (d) => `+44 ${d.slice(0,4)} ${d.slice(4)}` },
-
-  // New Zealand: +64 x xxx xxxx
-  { cc: '64', len: 9,
-    fmt: (d) => `+64 ${d[0]} ${d.slice(1,4)} ${d.slice(4)}` },
-
-  // Ireland: +353 xx xxx xxxx
-  { cc: '353', len: 9,
-    fmt: (d) => `+353 ${d.slice(0,2)} ${d.slice(2,5)} ${d.slice(5)}` },
-
-  // France: +33 x xx xx xx xx
-  { cc: '33', len: 9,
-    fmt: (d) => `+33 ${d[0]} ${d.slice(1,3)} ${d.slice(3,5)} ${d.slice(5,7)} ${d.slice(7)}` },
-
-  // Germany: +49 xxx xxxx xxxx (mobile-ish)
-  { cc: '49', len: 10,
-    fmt: (d) => `+49 ${d.slice(0,3)} ${d.slice(3,7)} ${d.slice(7)}` },
-
-  // India: +91 xxxxx xxxxx
-  { cc: '91', len: 10,
-    fmt: (d) => `+91 ${d.slice(0,5)} ${d.slice(5)}` },
-
-  // China: +86 xxx xxxx xxxx
-  { cc: '86', len: 11,
-    fmt: (d) => `+86 ${d.slice(0,3)} ${d.slice(3,7)} ${d.slice(7)}` },
-
-  // Japan: +81 xx-xxxx-xxxx
-  { cc: '81', len: 10,
-    fmt: (d) => `+81 ${d.slice(0,2)}-${d.slice(2,6)}-${d.slice(6)}` },
-
-  // South Africa: +27 xx xxx xxxx
-  { cc: '27', len: 9,
-    fmt: (d) => `+27 ${d.slice(0,2)} ${d.slice(2,5)} ${d.slice(5)}` },
-
-  // Brazil: +55 (xx) xxxxx-xxxx
-  { cc: '55', len: 11,
-    fmt: (d) => `+55 (${d.slice(0,2)}) ${d.slice(2,7)}-${d.slice(7)}` },
-
-  // Singapore: +65 xxxx xxxx
-  { cc: '65', len: 8,
-    fmt: (d) => `+65 ${d.slice(0,4)} ${d.slice(4)}` },
-
-  // UAE: +971 5x xxx xxxx
-  { cc: '971', len: 9,
-    fmt: (d) => `+971 ${d[0]} ${d.slice(1,4)} ${d.slice(4,7)} ${d.slice(7)}` },
+export const PHONE_COUNTRIES = [
+  { iso2: 'AU', name: 'Australia', flag: '🇦🇺', dial: '61', nationalLen: 9,
+    placeholder: '04XX XXX XXX',
+    formatNational: (d) => d[0] === '4'
+      ? `0${d[0]} ${d.slice(1, 4)} ${d.slice(4, 7)} ${d.slice(7)}`
+      : `0${d[0]} ${d.slice(1, 5)} ${d.slice(5)}` },
+  { iso2: 'US', name: 'United States', flag: '🇺🇸', dial: '1', nationalLen: 10,
+    placeholder: '(XXX) XXX-XXXX',
+    formatNational: (d) => `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}` },
+  { iso2: 'CA', name: 'Canada', flag: '🇨🇦', dial: '1', nationalLen: 10,
+    placeholder: '(XXX) XXX-XXXX',
+    formatNational: (d) => `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}` },
+  { iso2: 'GB', name: 'United Kingdom', flag: '🇬🇧', dial: '44', nationalLen: 10,
+    placeholder: '0XXXX XXXXXX',
+    formatNational: (d) => `0${d.slice(0, 4)} ${d.slice(4)}` },
+  { iso2: 'NZ', name: 'New Zealand', flag: '🇳🇿', dial: '64', nationalLen: 9,
+    placeholder: '0X XXX XXXX',
+    formatNational: (d) => `0${d[0]} ${d.slice(1, 4)} ${d.slice(4)}` },
+  { iso2: 'IE', name: 'Ireland', flag: '🇮🇪', dial: '353', nationalLen: 9,
+    placeholder: '0XX XXX XXXX',
+    formatNational: (d) => `0${d.slice(0, 2)} ${d.slice(2, 5)} ${d.slice(5)}` },
+  { iso2: 'FR', name: 'France', flag: '🇫🇷', dial: '33', nationalLen: 9,
+    placeholder: '0X XX XX XX XX',
+    formatNational: (d) => `0${d[0]} ${d.slice(1, 3)} ${d.slice(3, 5)} ${d.slice(5, 7)} ${d.slice(7)}` },
+  { iso2: 'DE', name: 'Germany', flag: '🇩🇪', dial: '49', nationalLen: 10,
+    placeholder: '0XXX XXXX XXXX',
+    formatNational: (d) => `0${d.slice(0, 3)} ${d.slice(3, 7)} ${d.slice(7)}` },
+  { iso2: 'ZA', name: 'South Africa', flag: '🇿🇦', dial: '27', nationalLen: 9,
+    placeholder: '0XX XXX XXXX',
+    formatNational: (d) => `0${d.slice(0, 2)} ${d.slice(2, 5)} ${d.slice(5)}` },
+  { iso2: 'JP', name: 'Japan', flag: '🇯🇵', dial: '81', nationalLen: 10,
+    placeholder: '0XX-XXXX-XXXX',
+    formatNational: (d) => `0${d.slice(0, 2)}-${d.slice(2, 6)}-${d.slice(6)}` },
+  { iso2: 'IN', name: 'India', flag: '🇮🇳', dial: '91', nationalLen: 10,
+    placeholder: 'XXXXX XXXXX',
+    formatNational: (d) => `${d.slice(0, 5)} ${d.slice(5)}` },
+  { iso2: 'CN', name: 'China', flag: '🇨🇳', dial: '86', nationalLen: 11,
+    placeholder: 'XXX XXXX XXXX',
+    formatNational: (d) => `${d.slice(0, 3)} ${d.slice(3, 7)} ${d.slice(7)}` },
+  { iso2: 'SG', name: 'Singapore', flag: '🇸🇬', dial: '65', nationalLen: 8,
+    placeholder: 'XXXX XXXX',
+    formatNational: (d) => `${d.slice(0, 4)} ${d.slice(4)}` },
+  { iso2: 'AE', name: 'United Arab Emirates', flag: '🇦🇪', dial: '971', nationalLen: 9,
+    placeholder: '0 5X XXX XXXX',
+    formatNational: (d) => `0${d[0]} ${d.slice(1, 4)} ${d.slice(4, 7)} ${d.slice(7)}` },
+  { iso2: 'BR', name: 'Brazil', flag: '🇧🇷', dial: '55', nationalLen: 11,
+    placeholder: '(XX) XXXXX-XXXX',
+    formatNational: (d) => `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}` },
 ];
 
-// Build prefix lookup sorted longest-first so +353 matches before +35, +1, etc.
-const LOOKUP = FORMATS.slice().sort((a, b) => b.cc.length - a.cc.length);
+const BY_ISO2 = new Map(PHONE_COUNTRIES.map((c) => [c.iso2, c]));
+// Longest dial code first, so +353 (Ireland) matches before a shorter +1/+61
+// prefix could accidentally swallow part of it.
+const BY_DIAL_DESC = PHONE_COUNTRIES.slice().sort((a, b) => b.dial.length - a.dial.length);
 
-/*
- * Strip a raw phone string to E.164 digits + leading +.
- * "+1 (438) 979-2323" → "+14389792323"
- */
-export function toE164(raw) {
-  if (!raw) return '';
-  const digits = raw.replace(/\D/g, '');
-  return digits ? `+${digits}` : '';
+export function countryByIso2(iso2) {
+  return BY_ISO2.get(iso2) || PHONE_COUNTRIES[0];
+}
+
+// A typed national number almost always carries the local trunk prefix
+// (Australia/UK/NZ/Ireland/France/Germany/South Africa/Japan/UAE all dial
+// domestically with a leading 0 that is NOT part of the number in E.164).
+// Rather than track which countries use a trunk digit as a per-country
+// flag, one length check covers all of them at once: if what's typed is
+// exactly one digit longer than the country's real significant length AND
+// that extra digit is a leading 0, it's the trunk prefix — drop it.
+// Matches the exact count with no stripping for a country with no trunk
+// convention (US/Canada's NANP never has one).
+export function significantDigits(rawDigits, country) {
+  if (rawDigits.length === country.nationalLen + 1 && rawDigits[0] === '0') {
+    return rawDigits.slice(1);
+  }
+  return rawDigits;
+}
+
+// national (as typed, any punctuation) + a chosen country → E.164 for
+// storage. Returns '' for empty input.
+export function toE164(national, country) {
+  const digits = String(national || '').replace(/\D/g, '');
+  if (!digits) return '';
+  return `+${country.dial}${significantDigits(digits, country)}`;
+}
+
+// The reverse: an existing stored value → { country, digits } if it matches
+// a known country's dial code and expected length exactly, else null. A
+// malformed legacy value (someone's national number got the bug's bare "+"
+// treatment, e.g. "+0417384533" — no real country code starts with 0) never
+// matches anything here, which is exactly the signal PhoneField uses to
+// know a value needs re-confirming rather than trusting it as-is.
+export function splitE164(raw) {
+  if (!raw) return null;
+  const digits = String(raw).replace(/\D/g, '');
+  if (!digits) return null;
+  for (const country of BY_DIAL_DESC) {
+    if (digits.startsWith(country.dial) && digits.length === country.dial.length + country.nationalLen) {
+      return { country, digits: digits.slice(country.dial.length) };
+    }
+  }
+  return null;
+}
+
+// True only for a value that will actually dial — used to flag legacy
+// numbers (stored before country-aware input existed) that need a look.
+export function isPhoneValid(raw) {
+  return !!splitE164(raw);
+}
+
+// A light heuristic default when a stored number can't be parsed and there's
+// no last-used country yet: match the free-text residence field against a
+// handful of common country names/aliases. Best-effort only — this narrows
+// "which of 14 countries" down for someone re-confirming a number, it
+// doesn't (and can't) silently fix anything on its own.
+const RESIDENCE_HINTS = [
+  [/\bAustralia\b/i, 'AU'],
+  [/\bNew Zealand\b/i, 'NZ'],
+  [/\b(England|Scotland|Wales|Northern Ireland|United Kingdom|\bUK\b)\b/i, 'GB'],
+  [/\bIreland\b/i, 'IE'],
+  [/\b(United States|USA|\bUS\b)\b/i, 'US'],
+  [/\bCanada\b/i, 'CA'],
+  [/\bGermany\b/i, 'DE'],
+  [/\bFrance\b/i, 'FR'],
+  [/\bSouth Africa\b/i, 'ZA'],
+  [/\bJapan\b/i, 'JP'],
+  [/\bIndia\b/i, 'IN'],
+  [/\bChina\b/i, 'CN'],
+  [/\bSingapore\b/i, 'SG'],
+  [/\b(United Arab Emirates|\bUAE\b)\b/i, 'AE'],
+  [/\bBrazil\b/i, 'BR'],
+];
+export function guessCountryFromResidence(residence) {
+  if (!residence) return null;
+  for (const [re, iso2] of RESIDENCE_HINTS) if (re.test(residence)) return countryByIso2(iso2);
+  return null;
 }
 
 /*
- * Format a phone string for display, detecting the country code.
- * Accepts E.164, already-formatted, or partial strings.
- * Returns the original string unchanged if the country isn't recognised.
+ * Format a phone string for display, detecting the country code. Accepts
+ * E.164 or an already-formatted string. Falls back to showing the raw
+ * value unchanged when it doesn't match a known country (rather than
+ * guessing) — that's the read-only path's job (PhoneField.jsx handles the
+ * editable, re-confirm-the-country path).
  */
 export function formatPhone(raw) {
   if (!raw) return '';
-  const digits = raw.replace(/\D/g, '');
-  if (!digits) return raw;
-
-  const entry = LOOKUP.find((f) => digits.startsWith(f.cc));
-  if (!entry) return raw; // unknown country — show as-is
-
-  const local = digits.slice(entry.cc.length);
-  if (local.length === entry.len) {
-    // Complete number — apply full format
-    return entry.fmt(local);
-  }
-  // Partial — show +CC then whatever digits we have so far
-  return `+${entry.cc} ${local}`;
+  const parsed = splitE164(raw);
+  if (!parsed) return raw;
+  return `+${parsed.country.dial} ${parsed.country.formatNational(parsed.digits)}`;
 }

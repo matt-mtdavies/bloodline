@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { VISIBILITY_LABELS, VISIBILITY_DESCS, SECTIONS } from '../lib/visibility.js';
-import { formatPhone, toE164 } from '../lib/phone.js';
+import { formatPhone } from '../lib/phone.js';
 import { formatDate } from '../lib/dates.js';
 import Avatar from './Avatar.jsx';
+import PhoneField from './PhoneField.jsx';
 
 const GENDER_OPTIONS = ['Male', 'Female', 'Non-binary', 'Other'];
 
@@ -28,13 +29,6 @@ const HAIR_OPTIONS = [
 ];
 
 const TODAY = new Date().toISOString().slice(0, 10);
-
-/*
- * Allow digits, +, spaces, dashes, parens while typing.
- */
-function normalisePhone(raw) {
-  return raw.replace(/[^\d+\s\-().]/g, '');
-}
 
 /*
  * Validate email loosely — only flag on blur if it looks wrong.
@@ -63,7 +57,7 @@ export default function EditPersonSheet({ person, onClose, onSave, onRemove, sta
     eye_color:     person.eye_color     || '',
     hair_color:    person.hair_color    || '',
     email:         person.email         || '',
-    phone:         formatPhone(person.phone || ''),
+    phone:         person.phone         || '',
     tags:          (person.tags || []).join(', '),
     bio:           person.bio           || '',
     is_deceased:   !!person.is_deceased,
@@ -90,9 +84,6 @@ export default function EditPersonSheet({ person, onClose, onSave, onRemove, sta
   const clear = (k) => () => setF((s) => ({ ...s, [k]: '' }));
   const pick  = (k) => (v) => setF((s) => ({ ...s, [k]: s[k] === v ? '' : v }));
 
-  const setPhone   = (e) => setF((s) => ({ ...s, phone: normalisePhone(e.target.value) }));
-  const blurPhone  = ()  => setF((s) => ({ ...s, phone: formatPhone(s.phone) }));
-
   const dobIsFullDate = f.birth_date.includes('-');
   const dobYearOnly   = f.birth_date && !dobIsFullDate;
 
@@ -113,7 +104,7 @@ export default function EditPersonSheet({ person, onClose, onSave, onRemove, sta
       eye_color:     f.eye_color            || null,
       hair_color:    f.hair_color           || null,
       email:         f.email.trim()         || null,
-      phone:         toE164(f.phone)          || null,
+      phone:         f.phone                || null,
       tags:          f.tags.split(',').map((t) => t.trim()).filter(Boolean),
       bio:           f.bio.trim()           || null,
       is_deceased:   f.is_deceased,
@@ -387,44 +378,37 @@ export default function EditPersonSheet({ person, onClose, onSave, onRemove, sta
             </div>
           </label>
 
-          {/* ── Email + Phone ── */}
+          {/* ── Email ── */}
           {!f.is_deceased && (
-            <div className="field-row">
-              <label className="field">
-                <span className="field__label">Email</span>
-                <div className={`input-wrap${emailError ? ' input-wrap--err' : ''}`}>
-                  <input
-                    className="field__input"
-                    type="email"
-                    inputMode="email"
-                    value={f.email}
-                    onChange={(e) => { setEmailError(false); set('email')(e); }}
-                    onBlur={() => setEmailError(!isValidEmail(f.email))}
-                    placeholder="their@email.com"
-                    autoComplete="off"
-                  />
-                  {f.email && <button type="button" className="input-clear" onClick={() => { clear('email')(); setEmailError(false); }} aria-label="Clear" tabIndex={-1}>×</button>}
-                </div>
-                {emailError && <span className="field__err">Enter a valid email address</span>}
-              </label>
-              <label className="field">
-                <span className="field__label">Phone</span>
-                <div className="input-wrap">
-                  <input
-                    className="field__input"
-                    type="tel"
-                    inputMode="tel"
-                    value={f.phone}
-                    onChange={setPhone}
-                    onBlur={blurPhone}
-                    placeholder="+61 4xx xxx xxx"
-                    autoComplete="off"
-                  />
-                  {f.phone && <button type="button" className="input-clear" onClick={clear('phone')} aria-label="Clear" tabIndex={-1}>×</button>}
-                </div>
-                <span className="field__hint">Include country code e.g. +61, +1, +44</span>
-              </label>
-            </div>
+            <label className="field">
+              <span className="field__label">Email</span>
+              <div className={`input-wrap${emailError ? ' input-wrap--err' : ''}`}>
+                <input
+                  className="field__input"
+                  type="email"
+                  inputMode="email"
+                  value={f.email}
+                  onChange={(e) => { setEmailError(false); set('email')(e); }}
+                  onBlur={() => setEmailError(!isValidEmail(f.email))}
+                  placeholder="their@email.com"
+                  autoComplete="off"
+                />
+                {f.email && <button type="button" className="input-clear" onClick={() => { clear('email')(); setEmailError(false); }} aria-label="Clear" tabIndex={-1}>×</button>}
+              </div>
+              {emailError && <span className="field__err">Enter a valid email address</span>}
+            </label>
+          )}
+
+          {/* ── Phone (full width — a country selector + national number needs the room) ── */}
+          {!f.is_deceased && (
+            <label className="field">
+              <span className="field__label">Phone</span>
+              <PhoneField
+                value={f.phone}
+                residence={f.residence}
+                onChange={(e164) => setF((s) => ({ ...s, phone: e164 }))}
+              />
+            </label>
           )}
 
           {/* ── Tags ── */}
