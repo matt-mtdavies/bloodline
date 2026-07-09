@@ -21,18 +21,22 @@ function richTree() {
   const people = [];
   const rels = [];
   let rid = 0;
-  const addPerson = (id, name, birth, death, place) => {
+  const addPerson = (id, name, birth, death, place, occupation) => {
     people.push({
       id, display_name: name,
       birth_date: birth, death_date: death || undefined,
       is_deceased: !!death, birth_place: place || '',
+      occupation: occupation || '',
     });
   };
   const addParent = (parentId, childId) => {
     rels.push({ id: `r${rid++}`, type: 'parent', from_person: parentId, to_person: childId, qualifier: 'biological' });
   };
-  const addPartner = (a, b) => {
-    rels.push({ id: `r${rid++}`, type: 'partner', from_person: a, to_person: b, partner_status: 'current' });
+  const addPartner = (a, b, marriage_date) => {
+    rels.push({
+      id: `r${rid++}`, type: 'partner', from_person: a, to_person: b, partner_status: 'current',
+      ...(marriage_date ? { is_married: true, marriage_date } : {}),
+    });
   };
 
   // G1: five founding couples born 1820s, died in their 40s-50s.
@@ -40,35 +44,43 @@ function richTree() {
   const names = ['John', 'Margaret', 'John', 'Sarah', 'John', 'Margaret', 'David', 'Sarah', 'David', 'Margaret'];
   for (let c = 0; c < 5; c++) {
     const h = `g1h${c}`, w = `g1w${c}`;
-    addPerson(h, `${names[c * 2]} Alpha`, `182${c}-03-12`, `${1868 + c}-05-01`, 'Aberdare, Wales');
-    addPerson(w, `${names[c * 2 + 1]} Alpha`, `182${c}-07-0${c + 1}`, `${1870 + c}-02-01`, 'Aberdare, Wales');
+    addPerson(h, `${names[c * 2]} Alpha`, `182${c}-03-12`, `${1868 + c}-05-01`, 'Aberdare, Wales', 'Collier');
+    addPerson(w, `${names[c * 2 + 1]} Alpha`, `182${c}-07-0${c + 1}`, `${1870 + c}-02-01`, 'Aberdare, Wales', 'Collier');
     addPartner(h, w);
     // Each G1 couple has 6 children (big broods), born 1850s.
     for (let k = 0; k < 6; k++) {
       const kid = `g2_${c}_${k}`;
-      addPerson(kid, `${names[k]} Beta`, `185${k}-0${(k % 9) + 1}-1${k}`, `${1920 + k}-06-01`, k < 3 ? 'Aberdare, Wales' : 'Cardiff, Wales');
+      addPerson(kid, `${names[k]} Beta`, `185${k}-0${(k % 9) + 1}-1${k}`, `${1920 + k}-06-01`, k < 3 ? 'Aberdare, Wales' : 'Cardiff, Wales', 'Railwayman');
       addParent(h, kid);
       addParent(w, kid);
     }
   }
   // G3: children of the first G2 child of each couple, 3 kids each, born 1890s.
+  // The first G2 couple carries a dated marriage: 1875 → husband's 1920 death,
+  // 45 years — the only dated marriage, so the record books' longest.
+  // g3_0_0 lives to 1992 so the living G4 kids genuinely overlapped him —
+  // that's the middle link of the handshake chain.
   for (let c = 0; c < 5; c++) {
     const parent = `g2_${c}_0`;
     const spouse = `g2s${c}`;
-    addPerson(spouse, `Eleanor Gamma${c}`, `1855-04-0${c + 1}`, `1930-01-01`, 'Cardiff, Wales');
-    addPartner(parent, spouse);
+    addPerson(spouse, `Eleanor Gamma${c}`, `1855-04-0${c + 1}`, '1930-01-01', 'Cardiff, Wales', 'Teacher');
+    addPartner(parent, spouse, c === 0 ? '1875-06-01' : null);
     for (let k = 0; k < 3; k++) {
       const kid = `g3_${c}_${k}`;
-      addPerson(kid, `${names[k]} Delta`, `189${k}-0${(k % 9) + 1}-2${k}`, `${1970 + k}-03-01`, 'Cardiff, Wales');
+      const death = c === 0 && k === 0 ? '1992-03-01' : `${1970 + k}-03-01`;
+      addPerson(kid, `${names[k]} Delta`, `189${k}-0${(k % 9) + 1}-2${k}`, death, 'Cardiff, Wales', 'Nurse');
       addParent(parent, kid);
       addParent(spouse, kid);
     }
   }
+  // Chain the five family clusters into one connected tree via G2 marriages —
+  // these links are the articulation points the bridges module should find.
+  for (let c = 0; c < 4; c++) addPartner(`g2_${c}_1`, `g2_${c + 1}_2`);
   // G4: living, born 1980s-90s in London. One is a birthday twin of a G1
   // founder (both 12 March — different years, different generations).
   for (let i = 0; i < 12; i++) {
     const id = `g4_${i}`;
-    addPerson(id, `${i === 0 ? 'John' : 'Liv'} Epsilon${i}`, i === 0 ? '1985-03-12' : `198${i % 10}-0${(i % 9) + 1}-0${(i % 27) + 1}`.slice(0, 10), null, 'London, England');
+    addPerson(id, `${i === 0 ? 'John' : 'Liv'} Epsilon${i}`, i === 0 ? '1985-03-12' : `198${i % 10}-0${(i % 9) + 1}-0${(i % 27) + 1}`.slice(0, 10), null, 'London, England', 'Software engineer');
     addParent('g3_0_0', id);
   }
   return { people, rels };
@@ -141,6 +153,49 @@ test('birthdays: wheel renders; twins are cross-year same-day pairs', () => {
   assert.notEqual(t.aId, t.bId);
 });
 
+// ── Wave 2: handshakes, bridges, records, trades ────────────────────────────
+test('handshakes: 3-hop chain from g4_0 back to an 1820 founder', () => {
+  assert.ok(mods.handshakes, 'module should render');
+  const h = mods.handshakes;
+  assert.equal(h.earliestBirth, 1820);
+  // Viewer (b.1985) overlaps only g3_0_0 (d.1992); g3_0_0 (b.1890) overlaps
+  // the G2 layer; G2 (b.1850s) overlaps the founders — no shortcut exists.
+  assert.equal(h.people.length, 4);
+  assert.equal(h.hops, 3);
+  assert.equal(h.people[h.people.length - 1].id, 'g4_0'); // viewer last
+  assert.equal(h.people[0].birth, 1820);                  // earliest first
+  for (const link of h.links) assert.ok(link.years >= 1, 'every link is a real overlap');
+});
+
+test('bridges: the best split is a mid-chain G2 marriage link (35 vs 36)', () => {
+  assert.ok(mods.bridges, 'module should render');
+  // Severing either middle chain link splits families {0,1} from {2,3,4} —
+  // the most balanced cut available (35/36); outer links leave lopsided cuts.
+  assert.ok(['g2_1_1', 'g2_2_2'].includes(mods.bridges.personId), `got ${mods.bridges.personId}`);
+  const counts = [mods.bridges.sideA.count, mods.bridges.sideB.count].sort((a, b) => a - b);
+  assert.deepEqual(counts, [35, 36]);
+});
+
+test('records: 45-year marriage + longest life + most grandchildren', () => {
+  assert.ok(mods.records, 'module should render');
+  const keys = mods.records.records.map((r) => r.key);
+  assert.ok(keys.includes('marriage'));
+  const marriage = mods.records.records.find((r) => r.key === 'marriage');
+  assert.match(marriage.title, /married 45 years/);
+  // Implausible parent ages (g3_0_0 "fathering" at 90+ in this fixture)
+  // must be filtered by the sanity window, never crowned a record.
+  assert.ok(!keys.includes('oldestParent'));
+});
+
+test('trades: eras run from the railway age to Software engineer', () => {
+  assert.ok(mods.trades, 'module should render');
+  // The first 50-year band contains 10 colliers AND 30 railwaymen — the
+  // majority trade of the band leads, not the chronologically first one.
+  assert.equal(mods.trades.firstTop, 'Railwayman');
+  assert.equal(mods.trades.lastTop, 'Software engineer');
+  assert.ok(mods.trades.bands.length >= 2);
+});
+
 // ── Thin tree: thresholds hide everything gracefully ───────────────────────
 {
   const thinPeople = [
@@ -162,6 +217,10 @@ test('birthdays: wheel renders; twins are cross-year same-day pairs', () => {
     assert.equal(thin.names, null);
     assert.equal(thin.heartlands, null);
     assert.equal(thin.birthdays, null);
+    assert.equal(thin.handshakes, null, 'chain only 76 years deep — below the 90-year bar');
+    assert.equal(thin.bridges, null);
+    assert.equal(thin.records, null);
+    assert.equal(thin.trades, null);
   });
 }
 

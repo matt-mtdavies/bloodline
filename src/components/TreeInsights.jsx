@@ -14,12 +14,16 @@ export default function TreeInsights({ graph, viewerId, onNavigate, onClose }) {
   const insights = useMemo(() => computeInsights(graph, viewerId), [graph, viewerId]);
   const modules = useMemo(() => computeInsightModules(graph, viewerId), [graph, viewerId]);
   const { viewer, nudges, aggregates } = insights;
-  // The strata module IS the generations fact, drawn — drop the text version
-  // when it renders so the same number doesn't appear twice in one sheet.
-  const facts = useMemo(
-    () => (modules.strata ? insights.facts.filter((f) => f.key !== 'generations') : insights.facts),
-    [insights.facts, modules.strata],
-  );
+  // Some text facts are the same number a module now draws — drop the text
+  // version when its module renders so nothing appears twice in one sheet:
+  // strata replaces "N generations around you"; record books' pool always
+  // contains the longest life when one exists.
+  const facts = useMemo(() => {
+    const drop = new Set();
+    if (modules.strata) drop.add('generations');
+    if (modules.records) drop.add('longest');
+    return drop.size ? insights.facts.filter((f) => !drop.has(f.key)) : insights.facts;
+  }, [insights.facts, modules.strata, modules.records]);
 
   useEffect(() => {
     const onKey = (e) => e.key === 'Escape' && onClose();

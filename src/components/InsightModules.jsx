@@ -25,24 +25,31 @@ const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 
 export default function InsightModules({ modules, onNavigate }) {
   if (!modules) return null;
-  const { giftOfYears, fullestYear, strata, brood, names, heartlands, birthdays } = modules;
+  const {
+    handshakes, giftOfYears, fullestYear, strata, brood, bridges,
+    names, heartlands, trades, birthdays, records,
+  } = modules;
   const chapters = [
     ['Deep time', [
+      handshakes && <HandshakesModule key="hands" data={handshakes} onNavigate={onNavigate} />,
       giftOfYears && <GiftModule key="gift" data={giftOfYears} />,
       fullestYear && <FullestModule key="fullest" data={fullestYear} />,
     ]],
     ['The shape of us', [
       strata && <StrataModule key="strata" data={strata} />,
       brood && <BroodModule key="brood" data={brood} onNavigate={onNavigate} />,
+      bridges && <BridgesModule key="bridge" data={bridges} onNavigate={onNavigate} />,
     ]],
     ['Names', [
       names && <NamesModule key="names" data={names} />,
     ]],
-    ['Places', [
+    ['Places & work', [
       heartlands && <HeartlandsModule key="heart" data={heartlands} />,
+      trades && <TradesModule key="trades" data={trades} />,
     ]],
-    ['Seasons', [
+    ['Seasons & milestones', [
       birthdays && <BirthdaysModule key="bday" data={birthdays} onNavigate={onNavigate} />,
+      records && <RecordsModule key="records" data={records} onNavigate={onNavigate} />,
     ]],
   ]
     .map(([label, items]) => [label, items.filter(Boolean)])
@@ -78,6 +85,97 @@ function Module({ icon, title, sub, caption, children }) {
 }
 
 /* ── Deep time ─────────────────────────────────────────────────────────── */
+
+function HandshakesModule({ data, onNavigate }) {
+  const { people, links, hops, earliestBirth, thisYear, anchor } = data;
+  // Shared time axis, padded back a touch so the earliest bar doesn't start
+  // flush against the edge.
+  const axisStart = Math.floor((earliestBirth - 8) / 10) * 10;
+  const span = thisYear - axisStart;
+  const pct = (y) => ((y - axisStart) / span) * 100;
+  const last = people.length - 1;
+  const nameOf = (i) => (i === last ? 'You' : people[i].firstName);
+
+  // The chain, told from the near end toward the past: "You knew Gwen, who
+  // knew William, who knew John." Capped at the three oldest links so a long
+  // chain doesn't run the caption off the card.
+  let chain;
+  if (people.length === 2) {
+    chain = <><b>You and {people[0].firstName} were alive at the same time</b> — {links[0].years} shared years.</>;
+  } else {
+    const start = Math.min(2, last);
+    const parts = [];
+    for (let i = start; i >= 1; i--) parts.push(nameOf(i));
+    chain = <><b>{parts[0]} knew {parts.slice(1).concat(people[0].firstName).join(', who knew ')}</b> — hand to hand across {thisYear - earliestBirth} years.</>;
+  }
+
+  return (
+    <Module
+      icon={<HandshakeIcon />}
+      title={`You are ${asWord(hops)} handshake${hops === 1 ? '' : 's'} from ${earliestBirth}`}
+      sub={`Lives that overlapped, hand to hand, from you back to ${people[0].name}.`}
+      caption={<>
+        {chain}
+        {anchor && (
+          <span className="tim-hs__anchor">
+            <span className="tim-hs__anchor-year">{anchor.year}</span> {anchor.title}
+          </span>
+        )}
+      </>}
+    >
+      <div className="tim-hs">
+        {people.map((p, i) => {
+          const end = p.death ?? thisYear;
+          const link = i < links.length ? links[i] : null;
+          return (
+            <div key={p.id}>
+              <div className="tim-hs__row">
+                <button
+                  className="tim-hs__name"
+                  onClick={() => onNavigate?.(p.id)}
+                  aria-label={`Open ${p.name}`}
+                >
+                  <b>{i === last ? 'You' : p.name}</b>
+                  {p.death ? `${p.birth}–${p.death}` : `b. ${p.birth}`}
+                </button>
+                <div className="tim-hs__track">
+                  <div
+                    className={`tim-hs__bar${p.death ? '' : ' tim-hs__bar--living'}`}
+                    style={{ left: `${pct(p.birth)}%`, width: `${Math.max(pct(end) - pct(p.birth), 2)}%` }}
+                  />
+                  {link && (
+                    <div
+                      className="tim-hs__olap"
+                      style={{ left: `${pct(link.from)}%`, width: `${Math.max(pct(link.to) - pct(link.from), 1.5)}%` }}
+                    />
+                  )}
+                </div>
+              </div>
+              {link && (
+                <div className="tim-hs__link">
+                  <span />
+                  <span>
+                    <i style={{ left: `${Math.min(Math.max((pct(link.from) + pct(link.to)) / 2, 12), 86)}%` }}>
+                      {link.years} year{link.years === 1 ? '' : 's'}{i === 0 ? ' together' : ''}
+                    </i>
+                  </span>
+                </div>
+              )}
+            </div>
+          );
+        })}
+        <div className="tim-hs__axis">
+          <span />
+          <span>
+            <span>{axisStart}</span>
+            <span>{Math.round(axisStart + span / 2)}</span>
+            <span>Today</span>
+          </span>
+        </div>
+      </div>
+    </Module>
+  );
+}
 
 function GiftModule({ data }) {
   const { cohorts, first, last, gained } = data;
@@ -296,6 +394,56 @@ function KidGlyph() {
   );
 }
 
+function BridgesModule({ data, onNavigate }) {
+  const { personId, name, firstName, lifespan, sideA, sideB } = data;
+  // "34 Fosters", but "26 Millses" — the Joneses rule for s-ending surnames.
+  const label = (s) => (s.surname
+    ? `${s.count} ${s.surname}${/(?:s|x|z|ch|sh)$/i.test(s.surname) ? 'es' : 's'}`
+    : `${s.count} people`);
+  return (
+    <Module
+      icon={<BridgeIcon />}
+      title={`${firstName} holds two families together`}
+      sub={`Two halves of the tree meet only through ${firstName}.`}
+      caption={<>
+        <button className="tim-linky" onClick={() => onNavigate?.(personId)}>{name}</button>
+        {lifespan ? <b>, {lifespan}.</b> : <b>.</b>} Every path between {label(sideA)} and {label(sideB)} passes
+        through {firstName}.
+      </>}
+    >
+      <BridgeDiagram firstName={firstName} labelA={label(sideA)} labelB={label(sideB)} />
+    </Module>
+  );
+}
+
+// Two decorative clusters joined through the one highlighted person. The dot
+// positions are fixed composition, not data — the counts in the labels are
+// the data.
+function BridgeDiagram({ firstName, labelA, labelB }) {
+  const left = [[46, 44], [30, 78], [64, 96], [88, 56], [58, 26]];
+  const right = [[292, 46], [308, 84], [274, 100], [252, 58], [282, 22]];
+  const hub = [170, 66];
+  const spokesL = [left[0], left[2], left[3]];
+  const spokesR = [right[0], right[2], right[3]];
+  const mesh = (ns) => ns.slice(0, -1).map((p, i) => (
+    <line key={i} x1={p[0]} y1={p[1]} x2={ns[i + 1][0]} y2={ns[i + 1][1]} stroke={HAIR} strokeWidth="1.4" />
+  ));
+  return (
+    <svg viewBox="0 0 340 150" width="100%" role="img"
+      aria-label={`Two family clusters, ${labelA} and ${labelB}, joined only through ${firstName}`}>
+      {mesh(left)}
+      {mesh(right)}
+      {spokesL.map(([x, y], i) => <line key={`l${i}`} x1={x} y1={y} x2={hub[0]} y2={hub[1]} stroke="#d9b8a8" strokeWidth="1.6" />)}
+      {spokesR.map(([x, y], i) => <line key={`r${i}`} x1={x} y1={y} x2={hub[0]} y2={hub[1]} stroke="#d9b8a8" strokeWidth="1.6" />)}
+      {left.concat(right).map(([x, y], i) => <circle key={i} cx={x} cy={y} r="7" fill="#e4e0da" />)}
+      <circle cx={hub[0]} cy={hub[1]} r="13" fill={ACC} stroke="#fff" strokeWidth="2.5" />
+      <text x={hub[0]} y={hub[1] + 32} fontSize="12" fontWeight="700" fill={INK} textAnchor="middle">{firstName}</text>
+      <text x="58" y="132" fontSize="11" fill={SOFT} textAnchor="middle">{labelA}</text>
+      <text x="282" y="132" fontSize="11" fill={SOFT} textAnchor="middle">{labelB}</text>
+    </svg>
+  );
+}
+
 /* ── Names ─────────────────────────────────────────────────────────────── */
 
 function NamesModule({ data }) {
@@ -370,6 +518,34 @@ function HeartlandsModule({ data }) {
   );
 }
 
+function TradesModule({ data }) {
+  const { bands, firstTop, lastTop, distinct, total } = data;
+  // Lowercase a normally-cased occupation for mid-sentence use, leaving
+  // all-caps forms ("IT consultant") alone.
+  const lc = (s) => (/^[A-Z][a-z]/.test(s) ? s.charAt(0).toLowerCase() + s.slice(1) : s);
+  return (
+    <Module
+      icon={<ToolsIcon />}
+      title={`From ${lc(firstTop)} to ${lc(lastTop)}`}
+      sub="What the family did for a living, era by era."
+      caption={<><b>{distinct} different trades</b> across {total} working lives recorded so far.</>}
+    >
+      <div className="tim-eras">
+        {bands.map((b) => (
+          <div className="tim-era" key={b.from}>
+            <div className="tim-era__when">{b.from} – {b.isNow ? 'today' : b.to}</div>
+            <div className="tim-era__tags">
+              {b.top.map((t) => (
+                <span key={t.name}>{t.name}{t.count > 1 ? ` ×${t.count}` : ''}</span>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </Module>
+  );
+}
+
 /* ── Seasons ───────────────────────────────────────────────────────────── */
 
 function BirthdaysModule({ data, onNavigate }) {
@@ -430,6 +606,43 @@ function BirthdayWheel({ data }) {
   );
 }
 
+function RecordsModule({ data, onNavigate }) {
+  const { records: shown, poolSize } = data;
+  return (
+    <Module
+      icon={<TrophyIcon />}
+      title="Records the family holds"
+      sub="The superlatives hiding in the dates."
+      caption={poolSize > shown.length
+        ? <>{poolSize} records so far — a different three each day. Every record taps through to who holds it.</>
+        : <>Every record taps through to the person who holds it.</>}
+    >
+      <div className="tim-ms">
+        {shown.map((r) => (
+          <button key={r.key} className="tim-ms__row" onClick={() => r.personId && onNavigate?.(r.personId)}>
+            <span className="tim-ms__ico"><RecordIcon name={r.icon} /></span>
+            <span className="tim-ms__body">
+              <span className="tim-ms__t">{r.title}</span>
+              <span className="tim-ms__d">{r.detail}</span>
+            </span>
+          </button>
+        ))}
+      </div>
+    </Module>
+  );
+}
+
+function RecordIcon({ name }) {
+  const p = { width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none', 'aria-hidden': true };
+  switch (name) {
+    case 'rings': return (<svg {...p}><circle cx="9" cy="12" r="5" stroke="currentColor" strokeWidth="1.7" /><circle cx="15" cy="12" r="5" stroke="currentColor" strokeWidth="1.7" /></svg>);
+    case 'star': return (<svg {...p}><path d="M12 3.5l2.5 5.2 5.7.8-4.1 4 1 5.6L12 16.5 6.9 19.2l1-5.6-4.1-4 5.7-.8L12 3.5z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" /></svg>);
+    case 'time': return (<svg {...p}><circle cx="12" cy="12" r="8.5" stroke="currentColor" strokeWidth="1.7" /><path d="M12 7v5l3.5 2" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" /></svg>);
+    case 'seedling': return (<svg {...p}><path d="M12 21v-8M12 13c0-4 3-6 7-6 0 4-3 6-7 6zM12 11c0-4-3-6-7-6 0 4 3 6 7 6z" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>);
+    case 'heart': default: return (<svg {...p}><path d="M12 20s-7-4.5-9.2-9C1.3 8 3 4.5 6.3 4.5c2 0 3.2 1.3 3.7 2.2.5-.9 1.7-2.2 3.7-2.2C20 4.5 21.7 8 21.2 11 19 15.5 12 20 12 20z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" /></svg>);
+  }
+}
+
 /* ── Icons (same 18px outline family as the fact cards) ────────────────── */
 const ip = { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none', 'aria-hidden': true };
 function TrendIcon() {
@@ -455,4 +668,16 @@ function WheelIcon() {
 }
 function ArrowIcon() {
   return (<svg width="14" height="10" viewBox="0 0 14 10" aria-hidden="true"><path d="M1 5h11m-4-3.5L12 5l-4 3.5" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" /></svg>);
+}
+function HandshakeIcon() {
+  return (<svg {...ip}><path d="M7 12l3 3 7-8M3 12h2m14 0h2" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" /></svg>);
+}
+function BridgeIcon() {
+  return (<svg {...ip}><path d="M3 17c3-6 6-6 9-6s6 0 9 6M3 17h18" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" /><path d="M7 14.2V17m5-6v6m5-2.8V17" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>);
+}
+function ToolsIcon() {
+  return (<svg {...ip}><path d="M14.5 6.5L18 3l3 3-3.5 3.5M11 10L3 18l3 3 8-8m-3-3l3 3m-3-3l3.5-3.5M14 13l3.5-3.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>);
+}
+function TrophyIcon() {
+  return (<svg {...ip}><path d="M8 4h8v6a4 4 0 01-8 0V4z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" /><path d="M8 6H4.5c0 3 1.5 4.5 3.5 4.5M16 6h3.5c0 3-1.5 4.5-3.5 4.5M12 14v3m-3.5 3h7M10 20l.5-3h3l.5 3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>);
 }

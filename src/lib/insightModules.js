@@ -1,4 +1,5 @@
 import { computeGenerations } from '../data/graph.js';
+import { detectRegion, nearestWorldEvent } from './worldEvents.js';
 
 /*
  * Tree Insights — layer 2: the visual modules (Wave 1).
@@ -33,18 +34,399 @@ const dayOf = (d) => {
   return n >= 1 && n <= 31 ? n : null;
 };
 const firstNameOf = (p) => (p?.display_name || '').trim().split(/\s+/)[0] || '';
+const surnameOf = (p) => {
+  const parts = (p?.display_name || '').trim().split(/\s+/);
+  return parts.length > 1 ? parts[parts.length - 1] : '';
+};
 const isBioAdopt = (q) => !q || q === 'biological' || q === 'adoptive';
 
 export function computeInsightModules(graph, viewerId) {
   const gen = computeGenerations(graph);
   return {
+    handshakes: handshakes(graph, viewerId),
     giftOfYears: giftOfYears(graph),
     fullestYear: fullestYear(graph),
     strata: strata(graph, viewerId, gen),
     brood: brood(graph),
+    bridges: bridges(graph),
     names: names(graph, gen),
     heartlands: heartlands(graph, gen),
+    trades: trades(graph),
     birthdays: birthdays(graph, gen),
+    records: records(graph),
+  };
+}
+
+// A person's decidable alive-window [birthYear, deathYear|thisYear], or null.
+// A deceased relative with no death date has no decidable window — the
+// overlap chain never guesses whether two lives actually crossed.
+function windowOf(p, thisYear) {
+  const b = year(p?.birth_date);
+  if (b == null || b > thisYear) return null;
+  if (p.is_deceased) {
+    const d = year(p.death_date);
+    if (d == null || d < b) return null;
+    return [b, d];
+  }
+  return [b, thisYear];
+}
+
+/* ── Handshakes: the shortest chain of overlapping lives to the earliest-
+      born ancestor. Each consecutive pair was genuinely alive at the same
+      time — "someone you hugged once hugged someone born in 1809". ──────── */
+function handshakes(graph, viewerId) {
+  const thisYear = new Date().getFullYear();
+  const viewer = graph.byId.get(viewerId);
+  const vWin = windowOf(viewer, thisYear);
+  if (!vWin) return null;
+
+  // Every ancestor of the viewer (any parent qualifier) with a decidable window.
+  const winById = new Map([[viewerId, vWin]]);
+  const stack = [viewerId];
+  const seen = new Set([viewerId]);
+  while (stack.length) {
+    const id = stack.pop();
+    for (const par of graph.parents(id)) {
+      if (seen.has(par.id)) continue;
+      seen.add(par.id);
+      stack.push(par.id);
+      const w = windowOf(graph.byId.get(par.id), thisYear);
+      if (w) winById.set(par.id, w);
+    }
+  }
+  if (winById.size < 2) return null;
+
+  // BFS across the overlap graph: an edge wherever two lives shared ≥ 1 year.
+  const overlap = (a, b) => Math.min(a[1], b[1]) - Math.max(a[0], b[0]);
+  const prev = new Map([[viewerId, null]]);
+  let frontier = [viewerId];
+  while (frontier.length) {
+    const next = [];
+    for (const id of frontier) {
+      const w = winById.get(id);
+      for (const [oid, ow] of winById) {
+        if (prev.has(oid)) continue;
+        if (overlap(w, ow) >= 1) { prev.set(oid, id); next.push(oid); }
+      }
+    }
+    frontier = next;
+  }
+
+  // Aim for the earliest-born reachable ancestor.
+  let target = null;
+  for (const [id] of winById) {
+    if (id === viewerId || !prev.has(id)) continue;
+    if (!target || winById.get(id)[0] < winById.get(target)[0]) target = id;
+  }
+  if (!target) return null;
+  const earliestBirth = winById.get(target)[0];
+  if (thisYear - earliestBirth < 90) return null; // not deep enough to gasp at
+
+  // Reconstruct, earliest ancestor first (the order the story is told in).
+  const path = [];
+  for (let id = target; id != null; id = prev.get(id)) path.push(id);
+  const people = path.map((id) => {
+    const p = graph.byId.get(id);
+    const [b, d] = winById.get(id);
+    return { id, name: p.display_name, firstName: firstNameOf(p), birth: b, death: p.is_deceased ? d : null };
+  });
+  const links = [];
+  for (let i = 0; i < people.length - 1; i++) {
+    const a = winById.get(people[i].id), b = winById.get(people[i + 1].id);
+    links.push({ years: overlap(a, b), from: Math.max(a[0], b[0]), to: Math.min(a[1], b[1]) });
+  }
+  const anchor = nearestWorldEvent(earliestBirth, detectRegion(graph), 8);
+  return {
+    people, // earliest first, viewer last
+    links,  // links[i] joins people[i] and people[i+1]
+    hops: people.length - 1,
+    earliestBirth,
+    thisYear,
+    anchor: anchor ? { year: anchor.year, title: anchor.title } : null,
+  };
+}
+
+/* ── Bridges: the one person whose removal splits the family into two big
+      halves — almost always a marriage that joined two clans. ───────────── */
+function bridges(graph) {
+  const n = graph.people.length;
+  if (n < 25) return null;
+
+  const adj = new Map();
+  const link = (a, b) => {
+    if (!adj.has(a)) adj.set(a, []);
+    adj.get(a).push(b);
+  };
+  for (const r of graph.relationships) {
+    if (r.type !== 'parent' && r.type !== 'partner') continue;
+    link(r.from_person, r.to_person);
+    link(r.to_person, r.from_person);
+  }
+
+  // The tree may already be several disconnected fragments (imports, stubs) —
+  // a "bridge" only means something within the removed person's OWN fragment,
+  // so map base components first and measure each split against them alone.
+  const compOf = new Map();
+  const compMembers = [];
+  for (const p of graph.people) {
+    if (compOf.has(p.id)) continue;
+    const members = [];
+    const queue = [p.id];
+    compOf.set(p.id, compMembers.length);
+    while (queue.length) {
+      const id = queue.pop();
+      members.push(id);
+      for (const o of adj.get(id) || []) {
+        if (compOf.has(o)) continue;
+        compOf.set(o, compMembers.length);
+        queue.push(o);
+      }
+    }
+    compMembers.push(members);
+  }
+
+  // Exhaustive but cheap: remove each person once and BFS their component's
+  // remains. O(people × edges) — a few million ops at 1,000 people, computed
+  // once and memoized by the caller like everything else here.
+  let best = null;
+  for (const p of graph.people) {
+    const members = compMembers[compOf.get(p.id)];
+    if (members.length < 21) continue; // can't yield two ≥10 sides
+    const seen = new Set([p.id]);
+    const pieces = [];
+    for (const startId of members) {
+      if (seen.has(startId)) continue;
+      const piece = [];
+      const queue = [startId];
+      seen.add(startId);
+      while (queue.length) {
+        const id = queue.pop();
+        piece.push(id);
+        for (const o of adj.get(id) || []) {
+          if (seen.has(o)) continue;
+          seen.add(o);
+          queue.push(o);
+        }
+      }
+      pieces.push(piece);
+    }
+    if (pieces.length < 2) continue; // removal didn't split their fragment
+    pieces.sort((a, b) => b.length - a.length);
+    const minSide = Math.min(pieces[0].length, pieces[1].length);
+    if (minSide < 10) continue;
+    if (!best || minSide > best.minSide) {
+      best = { person: p, minSide, sideA: pieces[0], sideB: pieces[1] };
+    }
+  }
+  if (!best) return null;
+
+  const sideInfo = (ids) => {
+    const freq = new Map();
+    for (const id of ids) {
+      const s = surnameOf(graph.byId.get(id));
+      if (s) freq.set(s, (freq.get(s) || 0) + 1);
+    }
+    let top = null, topN = 0;
+    for (const [s, c] of freq) if (c > topN) { top = s; topN = c; }
+    const dominant = top && topN >= 5 && topN >= ids.length * 0.3 ? top : null;
+    return { count: ids.length, surname: dominant };
+  };
+  const p = best.person;
+  return {
+    personId: p.id,
+    name: p.display_name,
+    firstName: firstNameOf(p),
+    lifespan: year(p.birth_date) != null
+      ? `${year(p.birth_date)}${p.is_deceased && year(p.death_date) != null ? `–${year(p.death_date)}` : ''}`
+      : null,
+    sideA: sideInfo(best.sideA),
+    sideB: sideInfo(best.sideB),
+  };
+}
+
+/* ── Record books: the superlatives hiding in the dates. Rotates three per
+      day so repeat visits keep finding something new. ────────────────────── */
+function records(graph) {
+  const thisYear = new Date().getFullYear();
+  const pool = [];
+  const first = (id) => firstNameOf(graph.byId.get(id));
+
+  // Longest marriage — needs the marriage details couples can fill in.
+  {
+    let bestPair = null, bestYears = -1, bestStart = 0, bestOngoing = false;
+    for (const r of graph.relationships) {
+      if (r.type !== 'partner' || !r.marriage_date) continue;
+      const start = year(r.marriage_date);
+      if (start == null) continue;
+      const a = graph.byId.get(r.from_person), b = graph.byId.get(r.to_person);
+      if (!a || !b) continue;
+      const ends = [a, b]
+        .filter((p) => p.is_deceased)
+        .map((p) => year(p.death_date))
+        .filter((y) => y != null);
+      const ongoing = !ends.length && r.partner_status !== 'former';
+      if (!ends.length && !ongoing) continue;
+      const end = ongoing ? thisYear : Math.min(...ends);
+      const years = end - start;
+      if (years <= 0 || years >= 100) continue;
+      if (years > bestYears) {
+        bestYears = years; bestPair = [a, b]; bestStart = start; bestOngoing = ongoing;
+      }
+    }
+    if (bestPair && bestYears >= 25) {
+      pool.push({
+        key: 'marriage', icon: 'rings',
+        title: `${firstNameOf(bestPair[0])} & ${firstNameOf(bestPair[1])} — married ${bestYears} years`,
+        detail: bestOngoing
+          ? `Since ${bestStart}, and still going — the longest marriage on record.`
+          : `${bestStart} to ${bestStart + bestYears}, the longest marriage on record.`,
+        personId: bestPair[0].id,
+      });
+    }
+  }
+
+  // Longest life.
+  {
+    let bestP = null, span = -1;
+    for (const p of graph.people) {
+      const b = year(p.birth_date), d = year(p.death_date);
+      if (b != null && d != null && d - b > span && d - b < 120) { span = d - b; bestP = p; }
+    }
+    if (bestP && span >= 85) {
+      const nineties = graph.people.filter((p) => {
+        const b = year(p.birth_date), d = year(p.death_date);
+        return b != null && d != null && d - b >= 90 && d - b < 120;
+      }).length;
+      pool.push({
+        key: 'life', icon: 'star',
+        title: `${span} years, the longest life`,
+        detail: `${bestP.display_name}, ${year(bestP.birth_date)}–${year(bestP.death_date)}${nineties >= 2 ? ` — ${nineties} relatives reached their 90s` : ''}.`,
+        personId: bestP.id,
+      });
+    }
+  }
+
+  // Oldest new parent + youngest parent, from parent-edge age-at-birth.
+  {
+    let oldest = null, youngest = null;
+    for (const r of graph.relationships) {
+      if (r.type !== 'parent' || !isBioAdopt(r.qualifier)) continue;
+      const parent = graph.byId.get(r.from_person);
+      const child = graph.byId.get(r.to_person);
+      const pb = year(parent?.birth_date), cb = year(child?.birth_date);
+      if (pb == null || cb == null) continue;
+      const age = cb - pb;
+      if (age < 13 || age > 75) continue; // outside plausibility → bad data, skip
+      if (!oldest || age > oldest.age) oldest = { parent, age, when: cb };
+      if (!youngest || age < youngest.age) youngest = { parent, age, when: cb };
+    }
+    const role = (p) => (p.gender === 'male' ? 'father' : p.gender === 'female' ? 'mother' : 'parent');
+    if (oldest && oldest.age >= 45) {
+      pool.push({
+        key: 'oldestParent', icon: 'time',
+        title: `A ${role(oldest.parent)} again at ${oldest.age}`,
+        detail: `${oldest.parent.display_name}, ${oldest.when} — the oldest new parent in the tree.`,
+        personId: oldest.parent.id,
+      });
+    }
+    if (youngest && youngest.age >= 15 && youngest.age <= 20 && (!oldest || youngest.parent.id !== oldest.parent.id)) {
+      pool.push({
+        key: 'youngestParent', icon: 'seedling',
+        title: `A ${role(youngest.parent)} at just ${youngest.age}`,
+        detail: `${youngest.parent.display_name}, ${youngest.when} — the youngest in the tree.`,
+        personId: youngest.parent.id,
+      });
+    }
+  }
+
+  // Most grandchildren.
+  {
+    let bestP = null, bestN = 0;
+    for (const p of graph.people) {
+      const grandkids = new Set();
+      for (const c of graph.children(p.id)) {
+        if (!isBioAdopt(c.qualifier)) continue;
+        for (const gc of graph.children(c.id)) {
+          if (isBioAdopt(gc.qualifier)) grandkids.add(gc.id);
+        }
+      }
+      if (grandkids.size > bestN) { bestN = grandkids.size; bestP = p; }
+    }
+    if (bestP && bestN >= 8) {
+      pool.push({
+        key: 'grandchildren', icon: 'heart',
+        title: `${firstNameOf(bestP)}: ${bestN} grandchildren`,
+        detail: `${bestP.display_name} — more than anyone else in the tree.`,
+        personId: bestP.id,
+      });
+    }
+  }
+
+  if (pool.length < 2) return null;
+  // Rotate which three show, changing daily — stable within a session so the
+  // sheet doesn't reshuffle on every re-render.
+  const day = Math.floor(Date.now() / 86400000);
+  const shown = pool.length <= 3
+    ? pool
+    : Array.from({ length: 3 }, (_, i) => pool[(day + i * Math.max(1, Math.floor(pool.length / 3))) % pool.length])
+      .filter((r, i, arr) => arr.findIndex((x) => x.key === r.key) === i);
+  return { records: shown, poolSize: pool.length };
+}
+
+/* ── Trades: what the family did for a living, era by era ────────────────── */
+function trades(graph) {
+  const entries = [];
+  for (const p of graph.people) {
+    const occ = (p.occupation || '').trim();
+    const b = year(p.birth_date);
+    if (!occ || b == null) continue;
+    entries.push({ occ, workYear: b + 25 }); // roughly the start of a working life
+  }
+  if (entries.length < 12) return null;
+
+  const years = entries.map((e) => e.workYear);
+  const minY = Math.min(...years), maxY = Math.max(...years);
+  if (maxY - minY < 50) return null;
+  const bandCount = maxY - minY >= 120 ? 4 : 3;
+  const width = Math.ceil((maxY - minY + 1) / bandCount / 10) * 10;
+  const start0 = Math.floor(minY / 10) * 10;
+
+  const bands = [];
+  for (let i = 0; i < bandCount; i++) {
+    const from = start0 + i * width;
+    const to = from + width;
+    const inBand = entries.filter((e) => e.workYear >= from && e.workYear < to);
+    if (inBand.length < 4) continue;
+    const freq = new Map();
+    for (const e of inBand) {
+      const key = e.occ.toLowerCase();
+      if (!freq.has(key)) freq.set(key, { name: e.occ, count: 0 });
+      freq.get(key).count++;
+    }
+    const top = [...freq.values()].sort((a, b) => b.count - a.count).slice(0, 3);
+    bands.push({
+      from,
+      to: Math.min(to, new Date().getFullYear()),
+      isNow: to >= new Date().getFullYear(),
+      top,
+      n: inBand.length,
+    });
+  }
+  if (bands.length < 2) return null;
+
+  const overall = new Map();
+  for (const e of entries) {
+    const key = e.occ.toLowerCase();
+    if (!overall.has(key)) overall.set(key, { name: e.occ, count: 0 });
+    overall.get(key).count++;
+  }
+  const distinct = overall.size;
+  return {
+    bands,
+    firstTop: bands[0].top[0].name,
+    lastTop: bands[bands.length - 1].top[0].name,
+    distinct,
+    total: entries.length,
   };
 }
 
