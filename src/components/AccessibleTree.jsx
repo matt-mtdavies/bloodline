@@ -1,7 +1,14 @@
-import { useState, useMemo, useEffect, useRef } from 'react';
+import { useState, useMemo, useEffect, useLayoutEffect, useRef } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import Avatar from './Avatar.jsx';
 import { lifespan } from '../lib/dates.js';
 import { relationLabel } from '../data/graph.js';
+
+// Measured from a live render (390px viewport): a person-row is 62px tall,
+// the directory <ul> has a 6px row gap — 68px is the fixed stride the
+// virtualizer positions rows at. Kept in sync with .person-row / gap in
+// components.css; if those change, update this too.
+const DIRECTORY_ROW_HEIGHT = 68;
 
 /*
  * The parallel, fully accessible view (§1) — semantic, keyboard-navigable, and
@@ -14,6 +21,9 @@ export default function AccessibleTree({ graph, focusId, onFocus, onOpenPerson, 
   const [filter, setFilter] = useState('all');
   const focus = graph.byId.get(focusId);
   const listRef = useRef(null);
+  const focusSectionRef = useRef(null);
+  const directoryListRef = useRef(null);
+  const [scrollMargin, setScrollMargin] = useState(0);
 
   // This view stays mounted across a re-focus (same component, new focusId —
   // see App.jsx), so the scrollable .listview never reset on its own: tapping
@@ -85,6 +95,30 @@ export default function AccessibleTree({ graph, focusId, onFocus, onOpenPerson, 
     return [...immediate, ...extended];
   }, [graph, focusId, focus]);
 
+  // The directory is virtualized but shares one continuous scroll container
+  // with the focus/groups section above it, whose height varies with focusId
+  // (different relatives → different group count). The virtualizer needs to
+  // know the directory's actual pixel offset within that container to
+  // position rows correctly — re-measure whenever that offset could shift.
+  useLayoutEffect(() => {
+    const container = listRef.current;
+    const ul = directoryListRef.current;
+    if (!container || !ul) return;
+    const measure = () => {
+      const containerRect = container.getBoundingClientRect();
+      const ulRect = ul.getBoundingClientRect();
+      setScrollMargin(ulRect.top - containerRect.top + container.scrollTop);
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    if (focusSectionRef.current) ro.observe(focusSectionRef.current);
+    window.addEventListener('resize', measure);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', measure);
+    };
+  }, [focusId, groups.length]);
+
   const directory = useMemo(() => {
     const term = q.trim().toLowerCase();
     return graph.people
@@ -102,13 +136,21 @@ export default function AccessibleTree({ graph, focusId, onFocus, onOpenPerson, 
       .sort((a, b) => a.display_name.localeCompare(b.display_name));
   }, [graph, q, filter]);
 
+  const rowVirtualizer = useVirtualizer({
+    count: directory.length,
+    getScrollElement: () => listRef.current,
+    estimateSize: () => DIRECTORY_ROW_HEIGHT,
+    overscan: 10,
+    scrollMargin,
+  });
+
   if (!focus) return null;
 
   const isFiltered = q.trim() || filter !== 'all';
 
   return (
     <main ref={listRef} className="listview" aria-label="Family directory">
-      <section className="listview__focus">
+      <section className="listview__focus" ref={focusSectionRef}>
         <button
           className="person-row person-row--focus"
           onClick={() => onOpenPerson(focusId)}
@@ -193,31 +235,57 @@ export default function AccessibleTree({ graph, focusId, onFocus, onOpenPerson, 
             </button>
           ))}
         </div>
-        <ul>
+        <ul
+          ref={directoryListRef}
+          style={
+            directory.length > 0
+              ? { position: 'relative', height: rowVirtualizer.getTotalSize(), display: 'block' }
+              : undefined
+          }
+        >
           {directory.length > 0 ? (
-            directory.map((p) => (
-              <li key={p.id}>
-                <div className={'person-row' + (p.id === focusId ? ' person-row--current' : '')}>
-                  <button className="person-row__main" onClick={() => onFocus(p.id)}>
-                    <Avatar person={p} size={42} />
-                    <span className="person-row__text">
-                      <span className="person-row__name">{p.display_name}</span>
-                      <span className="person-row__meta">
-                        {lifespan(p)}
-                        {p.occupation ? ` · ${p.occupation}` : ''}
+            rowVirtualizer.getVirtualItems().map((vRow) => {
+              const p = directory[vRow.index];
+              return (
+                <li
+                  key={p.id}
+                  data-index={vRow.index}
+                  ref={rowVirtualizer.measureElement}
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    // Bakes the directory ul's 6px row gap (see components.css)
+                    // into each row's own measured box, since absolute
+                    // positioning takes rows out of the grid flow that used
+                    // to supply it.
+                    paddingBottom: 6,
+                    transform: `translateY(${vRow.start - scrollMargin}px)`,
+                  }}
+                >
+                  <div className={'person-row' + (p.id === focusId ? ' person-row--current' : '')}>
+                    <button className="person-row__main" onClick={() => onFocus(p.id)}>
+                      <Avatar person={p} size={42} />
+                      <span className="person-row__text">
+                        <span className="person-row__name">{p.display_name}</span>
+                        <span className="person-row__meta">
+                          {lifespan(p)}
+                          {p.occupation ? ` · ${p.occupation}` : ''}
+                        </span>
                       </span>
-                    </span>
-                  </button>
-                  <button
-                    className="person-row__map"
-                    onClick={() => onShowOnMap?.(p.id)}
-                    aria-label={`Show ${p.display_name} in the tree`}
-                  >
-                    <TreeIcon />
-                  </button>
-                </div>
-              </li>
-            ))
+                    </button>
+                    <button
+                      className="person-row__map"
+                      onClick={() => onShowOnMap?.(p.id)}
+                      aria-label={`Show ${p.display_name} in the tree`}
+                    >
+                      <TreeIcon />
+                    </button>
+                  </div>
+                </li>
+              );
+            })
           ) : (
             <li className="listview__empty">No one matches this search.</li>
           )}
