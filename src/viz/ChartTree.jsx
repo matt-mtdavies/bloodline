@@ -263,8 +263,8 @@ export default function ChartTree({ graph, activeId, viewerId, onOpenPerson, onA
     const rowCenter = rowCenterOffset(card, i);
     if (horizontal) return { x: card.x - card.w / 2, y: card.y + rowCenter };
     if (card.members.length === 2) {
-      const side = i === 0 ? -1 : 1;
-      return { x: card.x + side * card.w / 2, y: card.y + rowCenter };
+      const dir = i === 0 ? -1 : 1;
+      return { x: card.x + dir * card.w / 2, y: card.y + rowCenter, dir };
     }
     return { x: card.x, y: card.y - card.h / 2 };
   };
@@ -291,6 +291,30 @@ export default function ChartTree({ graph, activeId, viewerId, onOpenPerson, onA
     return `M ${x0} ${y0} L ${midX - rr * dx} ${y0} Q ${midX} ${y0} ${midX} ${y0 + rr * dy} L ${midX} ${y1 - rr * dy} Q ${midX} ${y1} ${midX + rr * dx} ${y1} L ${x1} ${y1}`;
   };
 
+  // Rounded path through an arbitrary run of axis-aligned points — used for
+  // the vertical-mode member up-lines, which need one more corner than a
+  // plain elbow: step OUT from the card's side first, only then turn to
+  // travel toward the parent. Without that first step, the line's initial
+  // leg runs at the exact same x as the card's own edge, reading as if it's
+  // just tracing the card's border rather than visibly leaving it.
+  const STEP_OUT = 18;
+  const roundedPath = (points) => {
+    const r = 9;
+    let d = `M ${points[0].x} ${points[0].y}`;
+    for (let i = 1; i < points.length - 1; i++) {
+      const p0 = points[i - 1], p1 = points[i], p2 = points[i + 1];
+      const len1 = Math.hypot(p1.x - p0.x, p1.y - p0.y) || 1;
+      const len2 = Math.hypot(p2.x - p1.x, p2.y - p1.y) || 1;
+      const rr = Math.min(r, len1 / 2, len2 / 2);
+      const preX = p1.x - ((p1.x - p0.x) / len1) * rr, preY = p1.y - ((p1.y - p0.y) / len1) * rr;
+      const postX = p1.x + ((p2.x - p1.x) / len2) * rr, postY = p1.y + ((p2.y - p1.y) / len2) * rr;
+      d += ` L ${preX} ${preY} Q ${p1.x} ${p1.y} ${postX} ${postY}`;
+    }
+    const last = points[points.length - 1];
+    d += ` L ${last.x} ${last.y}`;
+    return d;
+  };
+
   const paths = [];
   for (const conn of layout.connectors) {
     const from = cardById.get(conn.fromCardId);
@@ -302,7 +326,16 @@ export default function ChartTree({ graph, activeId, viewerId, onOpenPerson, onA
       const b = horizontal
         ? { x: to.x + to.w / 2, y: to.y }
         : { x: to.x, y: to.y + to.h / 2 };
-      paths.push(<path key={conn.id} d={elbow(a.x, a.y, b.x, b.y, horizontal ? 'h' : 'v')} className="ped-link" />);
+      if (!horizontal && a.dir) {
+        const stepOut = { x: a.x + a.dir * STEP_OUT, y: a.y };
+        const midY = (stepOut.y + b.y) / 2;
+        const d = roundedPath([
+          { x: a.x, y: a.y }, stepOut, { x: stepOut.x, y: midY }, { x: b.x, y: midY }, b,
+        ]);
+        paths.push(<path key={conn.id} d={d} className="ped-link" />);
+      } else {
+        paths.push(<path key={conn.id} d={elbow(a.x, a.y, b.x, b.y, horizontal ? 'h' : 'v')} className="ped-link" />);
+      }
     } else {
       const a = downAnchor(from, conn.side);
       // Child card now sits to the right, so we arrive at its left edge.
