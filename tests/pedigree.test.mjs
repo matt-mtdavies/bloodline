@@ -118,14 +118,15 @@ t('deep expansion places generations without overlap on the cross axis', () => {
   }
 });
 
-t('horizontal orientation maps ancestors to +x and children left of focal', () => {
+t('horizontal orientation maps ancestors left and children right of focal', () => {
   const expandedUp = new Set(['matthew']);
   const { cards, focalCardId } = computePedigree(graph, 'matthew', { expandedUp, orientation: 'horizontal' });
   const focal = cards.find((c) => c.id === focalCardId);
   const anc = cards.find((c) => c.kind === 'ancestor');
   const child = cards.find((c) => c.kind === 'child');
-  assert.ok(anc.x > focal.x, 'ancestors to the right');
-  assert.ok(child.x < focal.x, 'children to the left');
+  assert.ok(Math.abs(focal.x) < 1e-9, 'focal stays at the origin'); // -0 is a valid "0" here
+  assert.ok(anc.x < focal.x, 'ancestors recede to the left');
+  assert.ok(child.x > focal.x, 'children sit to the right');
 });
 
 process.exit(failures ? 1 : 0);

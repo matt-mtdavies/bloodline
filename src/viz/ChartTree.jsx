@@ -74,16 +74,32 @@ export default function ChartTree({ graph, activeId, viewerId, onOpenPerson, onA
   // Opening frame: fit the (small, focused) initial layout inside the safe
   // area — real clearance for the topbar above and the dock below — capped
   // at a fully-legible zoom so a compact family isn't blown up huge.
-  const centerOnFocal = useCallback((lay) => {
+  //
+  // Horizontal mode additionally guarantees the focal card sits exactly at
+  // the viewport's horizontal centre (it's always at local x=0 — see
+  // place(focal, 0) in pedigreeLayout.js): ancestor branches usually sprawl
+  // wider than the children row, so centring on the bounding box's own
+  // midpoint would otherwise drift focal off-centre. Sizing the box
+  // symmetrically around 0 (using whichever side reaches furthest) keeps
+  // "you" fixed in the middle at the cost of some empty margin on the
+  // shorter side — the intended trade-off, not a bug.
+  const centerOnFocal = useCallback((lay, orient) => {
     const vp = viewportRef.current;
     if (!vp || !lay.cards.length) return;
     const rect = vp.getBoundingClientRect();
     const PAD = { top: 170, bottom: 150, side: 36 };
     const { minX, maxX, minY, maxY } = lay.bounds;
-    const boxW = Math.max(1, maxX - minX), boxH = Math.max(1, maxY - minY);
+    let boxW, boxH, cx, cy;
+    if (orient === 'horizontal') {
+      boxW = Math.max(1, Math.max(Math.abs(minX), Math.abs(maxX)) * 2);
+      boxH = Math.max(1, Math.max(Math.abs(minY), Math.abs(maxY)) * 2);
+      cx = 0; cy = 0;
+    } else {
+      boxW = Math.max(1, maxX - minX); boxH = Math.max(1, maxY - minY);
+      cx = (minX + maxX) / 2; cy = (minY + maxY) / 2;
+    }
     const zoom = Math.min(0.92, Math.max(FIT_MIN_ZOOM,
       Math.min((rect.width - PAD.side * 2) / boxW, (rect.height - PAD.top - PAD.bottom) / boxH)));
-    const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
     glideTo({
       zoom,
       panX: rect.width / 2 - cx * zoom,
@@ -115,12 +131,19 @@ export default function ChartTree({ graph, activeId, viewerId, onOpenPerson, onA
     if (!vp || !layout.cards.length) return;
     const rect = vp.getBoundingClientRect();
     const { minX, maxX, minY, maxY } = layout.bounds;
-    const boxW = Math.max(1, maxX - minX), boxH = Math.max(1, maxY - minY);
+    let boxW, boxH, cx, cy;
+    if (orientation === 'horizontal') {
+      boxW = Math.max(1, Math.max(Math.abs(minX), Math.abs(maxX)) * 2);
+      boxH = Math.max(1, Math.max(Math.abs(minY), Math.abs(maxY)) * 2);
+      cx = 0; cy = 0;
+    } else {
+      boxW = Math.max(1, maxX - minX); boxH = Math.max(1, maxY - minY);
+      cx = (minX + maxX) / 2; cy = (minY + maxY) / 2;
+    }
     const zoom = Math.min(MAX_ZOOM, Math.max(FIT_MIN_ZOOM,
       Math.min((rect.width - FIT_PADDING * 2) / boxW, (rect.height - FIT_PADDING * 2) / boxH)));
-    const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
     glideTo({ zoom, panX: rect.width / 2 - cx * zoom, panY: rect.height / 2 - cy * zoom });
-  }, [layout, glideTo]);
+  }, [layout, glideTo, orientation]);
 
   const zoomBy = (factor, anchor) => {
     setView((v) => {
@@ -225,21 +248,29 @@ export default function ChartTree({ graph, activeId, viewerId, onOpenPerson, onA
 
   // ── Geometry helpers shared by cards and connectors ──────────────────────
   const horizontal = orientation === 'horizontal';
-  // Where member i's up-line leaves the card: along the top edge (vertical
-  // mode) split into halves for a couple, or the right edge at that
-  // member's own row centre (horizontal — the FamilySearch look).
+  // Distance from a card's own centre to member i's row centre — same for
+  // both orientations, since cards are always stacked-row shaped regardless
+  // of which axis the tree grows along.
+  const rowCenterOffset = (card, i) => -card.h / 2 + ROW_H / 2 + (i === 1 ? ROW_H + MARRIAGE_H : 0);
+  // Where member i's up-line leaves the card. Horizontal: ancestors recede
+  // left, so every line exits the card's left edge at that member's own row
+  // height (the FamilySearch look). Vertical: a couple's two lines exit
+  // opposite side edges at their own row height — never a shared top-centre
+  // point — so each line is unambiguously "this partner's", not "the
+  // couple's"; a solo card (nothing to disambiguate) still exits top-centre.
   const upAnchor = (card, memberId) => {
     const i = card.members.indexOf(memberId);
-    if (horizontal) {
-      const rowCenter = -card.h / 2 + ROW_H / 2 + (i === 1 ? ROW_H + MARRIAGE_H : 0);
-      return { x: card.x + card.w / 2, y: card.y + rowCenter };
+    const rowCenter = rowCenterOffset(card, i);
+    if (horizontal) return { x: card.x - card.w / 2, y: card.y + rowCenter };
+    if (card.members.length === 2) {
+      const side = i === 0 ? -1 : 1;
+      return { x: card.x + side * card.w / 2, y: card.y + rowCenter };
     }
-    const off = card.members.length === 2 ? (i === 0 ? -card.w / 4 : card.w / 4) : 0;
-    return { x: card.x + off, y: card.y - card.h / 2 };
+    return { x: card.x, y: card.y - card.h / 2 };
   };
   const downAnchor = (card, side) => {
     const off = card.members.length === 2 ? (side === 'a' ? -card.w / 4 : side === 'b' ? card.w / 4 : 0) : 0;
-    if (horizontal) return { x: card.x - card.w / 2, y: card.y + (side === 'a' ? -card.h / 4 : side === 'b' ? card.h / 4 : 0) };
+    if (horizontal) return { x: card.x + card.w / 2, y: card.y + (side === 'a' ? -card.h / 4 : side === 'b' ? card.h / 4 : 0) };
     return { x: card.x + off, y: card.y + card.h / 2 };
   };
 
@@ -267,14 +298,16 @@ export default function ChartTree({ graph, activeId, viewerId, onOpenPerson, onA
     if (!from || !to) continue;
     if (conn.kind === 'up') {
       const a = upAnchor(from, conn.fromMemberId);
+      // Parent card now recedes to the left, so we arrive at its right edge.
       const b = horizontal
-        ? { x: to.x - to.w / 2, y: to.y }
+        ? { x: to.x + to.w / 2, y: to.y }
         : { x: to.x, y: to.y + to.h / 2 };
       paths.push(<path key={conn.id} d={elbow(a.x, a.y, b.x, b.y, horizontal ? 'h' : 'v')} className="ped-link" />);
     } else {
       const a = downAnchor(from, conn.side);
+      // Child card now sits to the right, so we arrive at its left edge.
       const b = horizontal
-        ? { x: to.x + to.w / 2, y: to.y }
+        ? { x: to.x - to.w / 2, y: to.y }
         : { x: to.x, y: to.y - to.h / 2 };
       paths.push(<path key={conn.id} d={elbow(a.x, a.y, b.x, b.y, horizontal ? 'h' : 'v')} className="ped-link" />);
     }
@@ -389,7 +422,7 @@ export default function ChartTree({ graph, activeId, viewerId, onOpenPerson, onA
           <button
             className={'chart-controls__btn' + (orientation === 'horizontal' ? ' chart-controls__btn--on' : '')}
             onClick={() => setOrientation('horizontal')}
-            title="Landscape — ancestors to the right"
+            title="Landscape — ancestors to the left"
             aria-pressed={orientation === 'horizontal'}
           >
             <LayoutHorizontalIcon />

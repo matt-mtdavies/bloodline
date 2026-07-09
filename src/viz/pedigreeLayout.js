@@ -370,11 +370,12 @@ export function computePedigree(graph, focusId, { expandedUp, partnerChoice, ori
   }
 
   // ── Map (cross, main) → screen. Vertical: ancestors above, children
-  //    below. Horizontal: focal left, ancestors right (the FamilySearch
-  //    landscape), children stacked to the left. ────────────────────────────
+  //    below. Horizontal: focal fixed at the centre (always local origin —
+  //    see place(focal, 0) above), ancestors recede to the LEFT, children
+  //    sit to the RIGHT — you now, past behind, future ahead. ──────────────
   const horizontal = orientation === 'horizontal';
   for (const c of cards) {
-    if (horizontal) { c.x = c._main; c.y = c._cross; }
+    if (horizontal) { c.x = -c._main; c.y = c._cross; }
     else { c.x = c._cross; c.y = -c._main; }
   }
   // In horizontal mode the drawn children (negative main) stack better with
@@ -383,7 +384,7 @@ export function computePedigree(graph, focusId, { expandedUp, partnerChoice, ori
     const totalH = childCards.reduce((s, c) => s + c.h, 0) + (childCards.length - 1) * CHILD_GAP;
     let cursor = -totalH / 2;
     for (const c of childCards) {
-      c.x = -(focal.w / 2 + CHILD_DROP + c.w / 2 + 40);
+      c.x = focal.w / 2 + CHILD_DROP + c.w / 2 + 40;
       c.y = cursor + c.h / 2;
       cursor += c.h + CHILD_GAP;
     }
