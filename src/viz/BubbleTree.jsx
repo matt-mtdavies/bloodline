@@ -15,7 +15,7 @@ import { IgniteEffect } from './ignite.js';
 import { FlightComet } from './comet.js';
 import { drawLinks, drawLinksChart } from './links.js';
 import { computeChartLayout } from './chartLayout.js';
-import { distancesFrom, relationLabel } from '../data/graph.js';
+import { distancesFrom, relationLabel, computeGenerations } from '../data/graph.js';
 import { Spring } from '../lib/spring.js';
 
 const BASE_RADIUS = 46;
@@ -2086,81 +2086,6 @@ function visualForDistance(d) {
     case 3: return { scale: 0.67, alpha: 1, lift: 1,   blur: 0 }; // distant
     default: return { scale: 0.58, alpha: 1, lift: 1,  blur: 0 }; // far
   }
-}
-
-// Longest-path generation index from the eldest ancestors (no parents = 0).
-function computeGenerations(graph) {
-  const gen = new Map();
-  const visit = (id, guard) => {
-    if (gen.has(id)) return gen.get(id);
-    if (guard.has(id)) return 0;
-    guard.add(id);
-    const parents = graph.parents(id);
-    let g = 0;
-    for (const p of parents) g = Math.max(g, visit(p.id, guard) + 1);
-    guard.delete(id);
-    gen.set(id, g);
-    return g;
-  };
-  for (const p of graph.people) visit(p.id, new Set());
-
-  // Level active partners onto the same generation band using MAX — the deeper
-  // partner's row wins, pulling the shallower one down to meet them.
-  //
-  // Former/ex partners are deliberately EXCLUDED: an ex from a different family
-  // branch may have deeper ancestry, and dragging the current family member
-  // down to match would cascade incorrectly (e.g. Jason getting pulled to
-  // Kate's row instead of staying with Matthew).
-  //
-  // Multi-pass until stable so any chains converge (A=B, B=C → A=B=C).
-  let changed = true;
-  while (changed) {
-    changed = false;
-    const seen = new Set();
-    for (const p of graph.people) {
-      for (const partner of graph.partners(p.id)) {
-        if (partner.status === 'former') continue;
-        const key = [p.id, partner.id].sort().join('|');
-        if (seen.has(key)) continue;
-        seen.add(key);
-        const a = gen.get(p.id) ?? 0;
-        const b = gen.get(partner.id) ?? 0;
-        if (a === b) continue;
-        const lvl = Math.max(a, b);
-        if (a !== lvl) { gen.set(p.id, lvl);           changed = true; }
-        if (b !== lvl) { gen.set(partner.id, lvl);     changed = true; }
-      }
-    }
-  }
-
-  // The levelling above can pull a parent DOWN past their own child's row —
-  // a child's generation was fixed in the first pass, before their parent
-  // got dragged deeper to match a partner's separate, deeper ancestry (e.g.
-  // Ray gets levelled to Flo's row, which happens to be at or past a row
-  // Ray's own child from an earlier relationship already occupies). Cascade
-  // children forward until every parent sits strictly above their children,
-  // never the reverse — repeated to convergence so it propagates down
-  // multiple generations if needed.
-  // Bounded defensively: a valid family tree converges in well under
-  // people.length passes, but corrupted/cyclic relationship data shouldn't
-  // be able to hang the tab.
-  let cascading = true;
-  let guard = graph.people.length + 1;
-  while (cascading && guard-- > 0) {
-    cascading = false;
-    for (const child of graph.people) {
-      const childGen = gen.get(child.id) ?? 0;
-      for (const parent of graph.parents(child.id)) {
-        const parentGen = gen.get(parent.id) ?? 0;
-        if (parentGen >= childGen) {
-          gen.set(child.id, parentGen + 1);
-          cascading = true;
-        }
-      }
-    }
-  }
-
-  return gen;
 }
 
 function clamp(v, lo, hi) {

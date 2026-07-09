@@ -1,5 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { computeInsights, aggregatesHash } from '../lib/insights.js';
+import { computeInsightModules } from '../lib/insightModules.js';
+import InsightModules from './InsightModules.jsx';
 
 /*
  * Tree Insights sheet — the family archive, felt from the viewer's seat.
@@ -10,7 +12,14 @@ import { computeInsights, aggregatesHash } from '../lib/insights.js';
  */
 export default function TreeInsights({ graph, viewerId, onNavigate, onClose }) {
   const insights = useMemo(() => computeInsights(graph, viewerId), [graph, viewerId]);
-  const { viewer, facts, nudges, aggregates } = insights;
+  const modules = useMemo(() => computeInsightModules(graph, viewerId), [graph, viewerId]);
+  const { viewer, nudges, aggregates } = insights;
+  // The strata module IS the generations fact, drawn — drop the text version
+  // when it renders so the same number doesn't appear twice in one sheet.
+  const facts = useMemo(
+    () => (modules.strata ? insights.facts.filter((f) => f.key !== 'generations') : insights.facts),
+    [insights.facts, modules.strata],
+  );
 
   useEffect(() => {
     const onKey = (e) => e.key === 'Escape' && onClose();
@@ -102,6 +111,9 @@ export default function TreeInsights({ graph, viewerId, onNavigate, onClose }) {
             )}
           </div>
         )}
+
+        {/* The visual modules — the drawn comparisons, in chapters */}
+        <InsightModules modules={modules} onNavigate={onNavigate} />
 
         {/* Perspective facts */}
         {facts.length > 0 && (
