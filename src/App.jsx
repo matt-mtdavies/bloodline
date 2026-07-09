@@ -435,14 +435,9 @@ export default function App() {
   // Listen for background sync events from the store.
   useEffect(() => {
     const showToast = (msg) => { setSyncToast(msg); setTimeout(() => setSyncToast(null), 5000); };
-    const onMerge = () => showToast('Tree updated by another editor — changes merged');
-    const onPoll  = () => showToast('Tree refreshed with new changes');
-    window.addEventListener('bloodline:tree-conflict-merged', onMerge);
+    const onPoll = () => showToast('Tree refreshed with new changes');
     window.addEventListener('bloodline:tree-polled', onPoll);
-    return () => {
-      window.removeEventListener('bloodline:tree-conflict-merged', onMerge);
-      window.removeEventListener('bloodline:tree-polled', onPoll);
-    };
+    return () => window.removeEventListener('bloodline:tree-polled', onPoll);
   }, []);
 
   // Onboarding gate: new users see intro → questionnaire before the tree.
