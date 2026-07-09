@@ -16,8 +16,8 @@ export const CHILD_W = 200;    // drawn child cards are slimmer than unions
  * plate's top; children descend from the union's centre. These drive the
  * layout engine's card dimensions and MUST match the rendered plate size in
  * ChartTree's CSS or connectors drift off the ports. */
-export const PLATE_W = 182;    // one person plate (avatar + name + dates)
+export const PLATE_W = 192;    // one person plate (avatar + name + dates·age)
 export const PLATE_H = 60;     // a plate is one row tall
 export const LINK_GAP = 18;    // gap between a couple's two plates (the link)
 export const UNION_W = PLATE_W * 2 + LINK_GAP; // a full couple card
-export const CHILD_PW = 182;   // portrait child plate width
+export const CHILD_PW = 192;   // portrait child plate width

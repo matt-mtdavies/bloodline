@@ -180,7 +180,7 @@ export default function ChartTree({ graph, activeId, viewerId, onOpenPerson, onA
   const onPointerDown = (e) => {
     if (pointersRef.current.size === 0 && (
       e.target.closest('.ped-card') || e.target.closest('.pcard') || e.target.closest('.pnav')
-      || e.target.closest('.pbar') || e.target.closest('.chart-controls')
+      || e.target.closest('.pbar') || e.target.closest('.pbar-menu') || e.target.closest('.chart-controls')
       || e.target.closest('.ped-pop') || e.target.closest('.ped-backchip')
     )) return;
     try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* synthetic pointers */ }
@@ -594,6 +594,8 @@ function PortraitCard({ card, graph, isFocal, selectedId, onOpenPerson, onSelect
         {card.members.map((personId, i) => {
           const person = graph.byId.get(personId);
           if (!person) return null;
+          const age = !person.is_minor || person.is_deceased ? ageOrAt(person) : null;
+          const dates = age ? `${lifespan(person)} · ${person.is_deceased ? age : `age ${age}`}` : lifespan(person);
           const stepChip = isChild && (card.qualifiers?.a === 'step' || card.qualifiers?.b === 'step') ? 'Step'
             : isChild && ['adopted', 'adoptive'].includes(card.qualifiers?.a) ? 'Adopted' : null;
           return (
@@ -612,7 +614,7 @@ function PortraitCard({ card, graph, isFocal, selectedId, onOpenPerson, onSelect
                   {person.display_name}
                   {stepChip && <span className="ped-chip ped-chip--inline">{stepChip}</span>}
                 </span>
-                <span className="pplate__dates">{lifespan(person)}</span>
+                <span className="pplate__dates">{dates}</span>
               </span>
             </button>
           );
