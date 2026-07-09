@@ -601,13 +601,20 @@ function SpouseMenu({ graph, memberId, card, partnerChoice, onChoose }) {
   );
 }
 
+// Mirrors upAnchor's geometry exactly (see the connector-drawing code
+// above) so a member's expand/add-parent control always sits right where
+// their own line actually meets the card — never floating somewhere else
+// on a shared edge where it's unclear whose arrow is whose.
 function upButtonStyle(card, slotIndex, horizontal) {
   if (horizontal) {
     const rowCenter = ROW_H / 2 + (slotIndex === 1 ? ROW_H + MARRIAGE_H : 0);
     return { right: -13, top: rowCenter - 13 };
   }
-  const off = card.members.length === 2 ? (slotIndex === 0 ? card.w / 4 : (3 * card.w) / 4) : card.w / 2;
-  return { left: off - 13, top: -13 };
+  if (card.members.length === 2) {
+    const rowCenter = ROW_H / 2 + (slotIndex === 1 ? ROW_H + MARRIAGE_H : 0);
+    return slotIndex === 0 ? { left: -13, top: rowCenter - 13 } : { right: -13, top: rowCenter - 13 };
+  }
+  return { left: card.w / 2 - 13, top: -13 };
 }
 
 // The popover's grouped rows: children of both displayed members first
