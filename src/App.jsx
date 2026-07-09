@@ -476,6 +476,7 @@ export default function App() {
   const [lineageOrder, setLineageOrder] = useState(null); // ordered [fromId,…,toId] | null
   const [cameraFree, setCameraFree] = useState(false); // user has panned/zoomed away
   const [storageWarning, setStorageWarning] = useState(false);
+  const [storageNearLimit, setStorageNearLimit] = useState(false);
   const [syncToast, setSyncToast] = useState(null);
   const [layout, setLayout] = useState('organic'); // 'organic' | 'weighted' | 'hybrid'
   const [timeMode, setTimeMode] = useState(false);
@@ -528,6 +529,18 @@ export default function App() {
     };
     window.addEventListener('bloodline:storage-full', handler);
     return () => window.removeEventListener('bloodline:storage-full', handler);
+  }, []);
+
+  // Proactive counterpart to the above: warns while there's still room to
+  // act (remove some photos) rather than only after an edit has already
+  // failed to save. See store.js's STORAGE_WARN_BYTES threshold.
+  useEffect(() => {
+    const handler = () => {
+      setStorageNearLimit(true);
+      setTimeout(() => setStorageNearLimit(false), 8000);
+    };
+    window.addEventListener('bloodline:storage-near-limit', handler);
+    return () => window.removeEventListener('bloodline:storage-near-limit', handler);
   }, []);
 
   // Family stats for the header: people count, top surnames, year span, photos, memories.
@@ -1499,6 +1512,7 @@ export default function App() {
         duplicateCount={canManageTreeStructure ? duplicatePairs.length : 0}
         onOpenDuplicates={canManageTreeStructure && duplicatePairs.length ? () => setDuplicatesOpen(true) : null}
         storageWarning={storageWarning}
+        storageNearLimit={storageNearLimit}
         syncToast={syncToast}
         onDismissSyncToast={() => setSyncToast(null)}
         recapNudgeCount={recapNudge ? recapGroups.length : 0}

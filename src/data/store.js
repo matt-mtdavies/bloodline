@@ -29,6 +29,16 @@ const OWNER_KEY = 'bloodline:owner';
 const ACTIVITY_READ_KEY = 'bloodline:activityReadAt';
 const RECAP_CUTOFF_KEY = 'bloodline:recapCutoffAt';
 
+// localStorage quota is unspecified but consistently ~5MB per origin across
+// major browsers (desktop and mobile Safari/PWA included) — there's no
+// synchronous API to ask "how much is actually left", so this is a
+// conservative fixed heuristic, not a measured limit. Warning at 80% gives
+// real headroom to act (remove some photos) before an edit silently fails
+// to persist, rather than only ever finding out after the fact.
+const STORAGE_WARN_BYTES = 4 * 1024 * 1024;
+const STORAGE_WARN_COOLDOWN_MS = 5 * 60 * 1000;
+let lastStorageWarnAt = 0;
+
 const EMPTY = {
   people: [],
   relationships: [],
@@ -590,13 +600,25 @@ function commit(next, { fromServer = false } = {}) {
   const cleaned = cleanRels.length !== (next.relationships?.length ?? 0);
   next = cleaned ? { ...next, relationships: cleanRels } : next;
   state = fromServer ? next : { ...next, _seq: (next._seq || 0) + 1 };
+  const serialized = JSON.stringify(state);
   try {
-    localStorage.setItem(KEY, JSON.stringify(state));
+    localStorage.setItem(KEY, serialized);
   } catch {
     // Storage full — changes live in-memory but won't survive a reload.
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('bloodline:storage-full'));
     }
+  }
+  // .length is UTF-16 code units, not bytes — close enough for a threshold
+  // check (this data is overwhelmingly ASCII field values; the gap only
+  // matters for a precise byte count, not for "getting close or not").
+  if (
+    typeof window !== 'undefined' &&
+    serialized.length > STORAGE_WARN_BYTES &&
+    Date.now() - lastStorageWarnAt > STORAGE_WARN_COOLDOWN_MS
+  ) {
+    lastStorageWarnAt = Date.now();
+    window.dispatchEvent(new CustomEvent('bloodline:storage-near-limit'));
   }
   // Persist whenever we made a local change, OR when normalisation cleaned up a
   // mess that arrived from the server — so the fix propagates instead of being
