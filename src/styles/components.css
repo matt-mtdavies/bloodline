@@ -677,10 +677,16 @@
 .phone-field__country svg { color: var(--ink-faint); flex-shrink: 0; }
 .phone-field__input-wrap { flex: 1; min-width: 0; }
 .phone-field__menu {
-  position: absolute;
-  top: calc(100% + 6px);
-  left: 0;
-  z-index: 8;
+  /* Portaled to document.body and positioned via getBoundingClientRect (see
+     PhoneField.jsx) rather than rendered inline with CSS position:absolute —
+     a containing sheet's lingering entrance-animation transform hijacks
+     position:fixed too, not just absolute, so anything short of escaping
+     that ancestor's DOM subtree entirely still rendered off in the wrong
+     spot on iOS Safari. left/top are explicit computed pixels, not the
+     left:50%-plus-translateX(-50%) convention .fade-up assumes, so this
+     gets its own keyframes rather than sharing that one. */
+  position: fixed;
+  z-index: 60;
   width: 240px;
   max-height: 260px;
   overflow-y: auto;
@@ -690,7 +696,11 @@
   border: 1px solid var(--hairline);
   border-radius: 14px;
   box-shadow: 0 16px 40px rgba(36, 31, 28, 0.2);
-  animation: fade-up 0.18s var(--ease) both;
+  animation: phone-menu-in 0.18s var(--ease) both;
+}
+@keyframes phone-menu-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 .phone-field__opt {
   display: flex;

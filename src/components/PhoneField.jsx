@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { PHONE_COUNTRIES, countryByIso2, splitE164, guessCountryFromResidence, toE164, significantDigits } from '../lib/phone.js';
 
 const LAST_COUNTRY_KEY = 'bloodline:lastPhoneCountry';
@@ -34,11 +35,17 @@ function initialNational(value, country) {
  * than literally prepending "+" to whatever was typed. See lib/phone.js for
  * the country table and the conversion rule.
  */
+const MENU_W = 240;
+const MENU_MARGIN = 10;
+
 export default function PhoneField({ value, residence, onChange }) {
   const [country, setCountry] = useState(() => initialCountry(value, residence));
   const [national, setNational] = useState(() => initialNational(value, country));
   const [open, setOpen] = useState(false);
+  const [menuPos, setMenuPos] = useState(null); // { left, top } in viewport px
   const wrapRef = useRef(null);
+  const countryBtnRef = useRef(null);
+  const menuRef = useRef(null);
   const didMount = useRef(false);
 
   useEffect(() => {
@@ -52,12 +59,46 @@ export default function PhoneField({ value, residence, onChange }) {
 
   useEffect(() => {
     if (!open) return;
-    const onDoc = (e) => { if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false); };
+    const onDoc = (e) => {
+      if (wrapRef.current?.contains(e.target)) return;
+      if (menuRef.current?.contains(e.target)) return; // portaled outside wrapRef — see below
+      setOpen(false);
+    };
     const onKey = (e) => { if (e.key === 'Escape') setOpen(false); };
+    // Editing sheets scroll their own inner content rather than the window,
+    // so a plain scroll listener needs capture:true to see it. A floating
+    // menu with a stale position is worse than one that just closes.
+    const onScroll = () => setOpen(false);
     document.addEventListener('mousedown', onDoc);
     window.addEventListener('keydown', onKey);
-    return () => { document.removeEventListener('mousedown', onDoc); window.removeEventListener('keydown', onKey); };
+    document.addEventListener('scroll', onScroll, true);
+    return () => {
+      document.removeEventListener('mousedown', onDoc);
+      window.removeEventListener('keydown', onKey);
+      document.removeEventListener('scroll', onScroll, true);
+    };
   }, [open]);
+
+  // Positioned via getBoundingClientRect + portaled to document.body as
+  // position:fixed, rather than CSS position:absolute inside the form.
+  // An editing sheet's own entrance-animation transform lingers as its
+  // applied style after the animation ends (fill-mode "both") — and a
+  // transformed ancestor doesn't just redefine position:absolute's
+  // containing block, it hijacks position:fixed too, so simply switching
+  // to fixed while staying inside the sheet's DOM subtree still rendered
+  // off in the wrong spot (observed on iOS Safari: menu flush against the
+  // screen's left edge instead of under the button). Only escaping that
+  // subtree entirely — a portal straight to <body> — actually gets fixed
+  // positioning relative to the real viewport.
+  const toggleOpen = () => {
+    if (open) { setOpen(false); return; }
+    const r = countryBtnRef.current?.getBoundingClientRect();
+    if (r) {
+      const left = Math.min(Math.max(r.left, MENU_MARGIN), window.innerWidth - MENU_W - MENU_MARGIN);
+      setMenuPos({ left, top: r.bottom + 6 });
+    }
+    setOpen(true);
+  };
 
   const chooseCountry = (c) => {
     setCountry(c);
@@ -79,9 +120,10 @@ export default function PhoneField({ value, residence, onChange }) {
     <div className="phone-field" ref={wrapRef}>
       <div className="phone-field__row">
         <button
+          ref={countryBtnRef}
           type="button"
           className="phone-field__country"
-          onClick={() => setOpen((o) => !o)}
+          onClick={toggleOpen}
           aria-label={`Country code, currently ${country.name} +${country.dial}`}
           aria-expanded={open}
         >
@@ -105,8 +147,14 @@ export default function PhoneField({ value, residence, onChange }) {
           )}
         </div>
       </div>
-      {open && (
-        <div className="phone-field__menu" role="listbox" aria-label="Choose a country code">
+      {open && menuPos && createPortal(
+        <div
+          ref={menuRef}
+          className="phone-field__menu"
+          role="listbox"
+          aria-label="Choose a country code"
+          style={{ left: menuPos.left, top: menuPos.top }}
+        >
           {PHONE_COUNTRIES.map((c) => (
             <button
               key={c.iso2}
@@ -121,7 +169,8 @@ export default function PhoneField({ value, residence, onChange }) {
               <span className="phone-field__optdial">+{c.dial}</span>
             </button>
           ))}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );
