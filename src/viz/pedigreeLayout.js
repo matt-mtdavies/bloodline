@@ -104,7 +104,7 @@ export function unionCandidates(graph, personId) {
 // annotated for the popover: which member(s) each child is linked to, with
 // what qualifiers, and (when linked to only one member) who the OTHER
 // recorded co-parent is, for "with <name>" grouping.
-export function childrenOfUnion(graph, aId, bId) {
+export function childrenOfUnion(graph, aId, bId, bloodlineOnly = false) {
   const rows = new Map(); // childId -> row
   const collect = (memberId, key) => {
     if (!memberId) return;
@@ -126,11 +126,23 @@ export function childrenOfUnion(graph, aId, bId) {
       row.otherParentId = other?.id ?? null;
     }
   }
+  let list = [...rows.values()];
+  // Bloodline mode: keep only descent — a child that is the biological or
+  // adopted child of at least one displayed member. A pure step-child (their
+  // partner's child from elsewhere, no bio/adoptive link to either shown
+  // person) is a social bond, not a bloodline, so it drops from the chart
+  // (it still lives on every profile). qualifiers are 'biological' /
+  // 'adopted' / 'adoptive' / 'step' / 'foster', or null when not that
+  // member's child at all.
+  if (bloodlineOnly) {
+    const isBlood = (q) => q === 'biological' || q === 'adoptive' || q === 'adopted';
+    list = list.filter((row) => isBlood(row.aQualifier) || isBlood(row.bQualifier));
+  }
   const birthYear = (id) => {
     const m = String(graph.byId.get(id)?.birth_date || '').match(/\d{4}/);
     return m ? parseInt(m[0], 10) : 9999;
   };
-  return [...rows.values()].sort((x, y) => birthYear(x.id) - birthYear(y.id)
+  return list.sort((x, y) => birthYear(x.id) - birthYear(y.id)
     || (graph.byId.get(x.id)?.display_name || '').localeCompare(graph.byId.get(y.id)?.display_name || ''));
 }
 
@@ -165,9 +177,9 @@ function cardHeight(card) {
 
 // Orders a displayed pair for presentation: line members keep their given
 // order (child's parents in edge order); a switched-in partner sits second.
-function makeUnionCard(graph, lineMemberIds, displayed, kind, { expandedUp, partnerChoice, portrait }) {
+function makeUnionCard(graph, lineMemberIds, displayed, kind, { expandedUp, partnerChoice, portrait, bloodlineOnly }) {
   const members = displayed.filter(Boolean);
-  const kidRows = childrenOfUnion(graph, members[0], members[1] ?? null);
+  const kidRows = childrenOfUnion(graph, members[0], members[1] ?? null, bloodlineOnly);
   const slots = members.map((id) => {
     const parents = bioParentsOf(graph, id);
     const alt = unionCandidates(graph, id).filter((c) => !members.includes(c.id));
@@ -222,13 +234,13 @@ function displayedPairForSlot(parentIds, partnerChoice) {
 
 // ── The pedigree itself ──────────────────────────────────────────────────────
 
-export function computePedigree(graph, focusId, { expandedUp, partnerChoice, orientation = 'vertical' } = {}) {
+export function computePedigree(graph, focusId, { expandedUp, partnerChoice, orientation = 'vertical', bloodlineOnly = false } = {}) {
   const empty = { cards: [], connectors: [], focalCardId: null, bounds: { minX: 0, maxX: 0, minY: 0, maxY: 0 } };
   if (!focusId || !graph?.byId?.has(focusId)) return empty;
   expandedUp = expandedUp ?? new Set();
   partnerChoice = partnerChoice ?? new Map();
   const portrait = orientation !== 'horizontal';
-  const opts = { expandedUp, partnerChoice, portrait };
+  const opts = { expandedUp, partnerChoice, portrait, bloodlineOnly };
 
   const cards = [];
   const connectors = [];
@@ -331,7 +343,7 @@ export function computePedigree(graph, focusId, { expandedUp, partnerChoice, ori
       const totalW = ordered.length * childW + (ordered.length - 1) * CHILD_GAP;
       let cursor = -totalW / 2;
       for (const row of ordered) {
-        const grandkids = childrenOfUnion(graph, row.id, null).length;
+        const grandkids = childrenOfUnion(graph, row.id, null, bloodlineOnly).length;
         const cc = {
           id: 'c_' + row.id,
           kind: 'child',

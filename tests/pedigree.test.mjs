@@ -129,4 +129,34 @@ t('horizontal orientation maps ancestors left and children right of focal', () =
   assert.ok(child.x > focal.x, 'children sit to the right');
 });
 
+// ── Bloodline mode: step children filtered, bio + adopted kept ──────────────
+{
+  const bp = ['dad', 'mum', 'bioKid', 'adoptKid', 'pureStep', 'exPartner'].map(person);
+  const brel = [
+    ptn('dad', 'mum'),
+    par('dad', 'bioKid'), par('mum', 'bioKid'),
+    par('dad', 'adoptKid', 'adopted'), par('mum', 'adoptKid', 'adopted'),
+    // pureStep is the ex-partner's biological child; dad is only a step-parent,
+    // mum is unrelated — a social bond, not a bloodline.
+    par('exPartner', 'pureStep'), par('dad', 'pureStep', 'step'),
+  ];
+  const bg = buildGraph(bp, brel);
+
+  t('bloodline off: step child shows alongside bio + adopted', () => {
+    const rows = childrenOfUnion(bg, 'dad', 'mum', false).map((r) => r.id);
+    assert.deepEqual(new Set(rows), new Set(['bioKid', 'adoptKid', 'pureStep']));
+  });
+  t('bloodline on: pure step child filtered; biological + adopted kept', () => {
+    const rows = childrenOfUnion(bg, 'dad', 'mum', true).map((r) => r.id);
+    assert.deepEqual(new Set(rows), new Set(['bioKid', 'adoptKid']));
+  });
+  t('bloodline on: focal childrenCount reflects the filtered set', () => {
+    const all = computePedigree(bg, 'dad', { expandedUp: new Set() });
+    const blood = computePedigree(bg, 'dad', { expandedUp: new Set(), bloodlineOnly: true });
+    assert.equal(all.cards.find((c) => c.id === all.focalCardId).childrenCount, 3);
+    assert.equal(blood.cards.find((c) => c.id === blood.focalCardId).childrenCount, 2);
+    assert.ok(!blood.cards.some((c) => c.id === 'c_pureStep'), 'no step child card drawn');
+  });
+}
+
 process.exit(failures ? 1 : 0);

@@ -1526,6 +1526,7 @@ export default function App() {
             graph={graph}
             activeId={activeId}
             viewerId={data.myPersonId || DEFAULT_FOCUS}
+            bloodlineOnly={bloodlineOnly}
             onOpenPerson={openPerson}
             onAddRelative={setAddAnchorId}
             onActivate={activateNormal}

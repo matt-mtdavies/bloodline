@@ -39,7 +39,7 @@ function initialExpandedUp(graph, focusId) {
   return set;
 }
 
-export default function ChartTree({ graph, activeId, viewerId, onOpenPerson, onAddRelative, onActivate }) {
+export default function ChartTree({ graph, activeId, viewerId, bloodlineOnly = false, onOpenPerson, onAddRelative, onActivate }) {
   const [orientation, setOrientation] = useState('vertical');
   const [expandedUp, setExpandedUp] = useState(() => initialExpandedUp(graph, activeId));
   const [partnerChoice, setPartnerChoice] = useState(() => new Map());
@@ -65,8 +65,8 @@ export default function ChartTree({ graph, activeId, viewerId, onOpenPerson, onA
   const glideTimer = useRef(null);
 
   const layout = useMemo(
-    () => computePedigree(graph, activeId, { expandedUp, partnerChoice, orientation }),
-    [graph, activeId, expandedUp, partnerChoice, orientation],
+    () => computePedigree(graph, activeId, { expandedUp, partnerChoice, orientation, bloodlineOnly }),
+    [graph, activeId, expandedUp, partnerChoice, orientation, bloodlineOnly],
   );
   const cardById = useMemo(() => new Map(layout.cards.map((c) => [c.id, c])), [layout]);
 
@@ -128,15 +128,20 @@ export default function ChartTree({ graph, activeId, viewerId, onOpenPerson, onA
     setSwitcherFor(null);
     setSelectedId(null);
     centerOnFocal(
-      computePedigree(graph, activeId, { expandedUp: nextExpanded, partnerChoice: new Map(), orientation }),
+      computePedigree(graph, activeId, { expandedUp: nextExpanded, partnerChoice: new Map(), orientation, bloodlineOnly }),
       orientation,
     );
     // Intentionally NOT keyed on graph/orientation — edits elsewhere must
     // not discard expansion state; orientation has its own effect below.
   }, [activeId]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
-    centerOnFocal(computePedigree(graph, activeId, { expandedUp, partnerChoice, orientation }), orientation);
+    centerOnFocal(computePedigree(graph, activeId, { expandedUp, partnerChoice, orientation, bloodlineOnly }), orientation);
   }, [orientation]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Toggling Bloodline mode re-fits: children appear/disappear, so re-frame
+  // the (now differently-shaped) tree rather than leaving it half off-screen.
+  useEffect(() => {
+    centerOnFocal(computePedigree(graph, activeId, { expandedUp, partnerChoice, orientation, bloodlineOnly }), orientation);
+  }, [bloodlineOnly]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const fitToView = useCallback(() => {
     const vp = viewportRef.current;
