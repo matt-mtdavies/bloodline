@@ -8395,8 +8395,27 @@ button.health-notes {
    Two flat plates side by side, joined across the seam by the partner-link.
    Calm by default: editing chrome lives in the on-select action bar; the
    resting card carries only navigation pips. */
-.pcard { position: absolute; }
-.pcard__row { display: flex; gap: 16px; height: 100%; align-items: stretch; }
+.pcard { position: absolute; transition: opacity 0.25s var(--ease); }
+/* Emphasis tiers — deep ancestors recede gently; hover or selection restores
+   full presence so nothing interactive ever reads as disabled. */
+.pcard--recede1 { opacity: 0.9; }
+.pcard--recede2 { opacity: 0.76; }
+.pcard:hover, .pcard:has(.pplate--selected) { opacity: 1; }
+.pcard__row { display: flex; gap: 18px; height: 100%; align-items: stretch; }
+
+/* Appear motion (Direction B, Phase 2): on a structural change (expand,
+   re-root) new cards ease in just after their connectors, so a branch looks
+   like it grows rather than snaps. Keyframes specify only `from` with
+   fill-mode backwards, so each card animates up to ITS OWN resting opacity —
+   the recede tiers survive, no end-snap. Only runs on mount, never on
+   pan/zoom re-renders. */
+@keyframes pcard-in { from { opacity: 0; transform: translateY(7px) scale(0.975); } }
+.pcard { animation: pcard-in 0.36s var(--ease) 0.07s backwards; }
+@keyframes ped-link-in { from { opacity: 0; } }
+.ped-link, .ped-partnerlink { animation: ped-link-in 0.3s var(--ease) backwards; }
+@media (prefers-reduced-motion: reduce) {
+  .pcard, .ped-link, .ped-partnerlink { animation: none; }
+}
 .pplate {
   display: flex;
   align-items: center;

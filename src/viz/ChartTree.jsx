@@ -46,6 +46,16 @@ export default function ChartTree({ graph, activeId, viewerId, onOpenPerson, onA
   const [childrenFor, setChildrenFor] = useState(null); // cardId with open children popover
   const [switcherFor, setSwitcherFor] = useState(null); // memberId with open spouse menu
   const [selectedId, setSelectedId] = useState(null); // personId selected → contextual action bar
+  const [hoveredId, setHoveredId] = useState(null);   // desktop hover-preview of the action bar
+  const hoverClear = useRef(null);
+  // Desktop only: hover previews a person's action bar; a short grace lets the
+  // pointer travel from the plate up into the bar without it closing.
+  const hoverEnter = useCallback((id) => { clearTimeout(hoverClear.current); setHoveredId(id); }, []);
+  const hoverLeave = useCallback(() => {
+    clearTimeout(hoverClear.current);
+    hoverClear.current = setTimeout(() => setHoveredId(null), 130);
+  }, []);
+  useEffect(() => () => clearTimeout(hoverClear.current), []);
   const [view, setView] = useState({ zoom: 0.9, panX: 0, panY: 0 });
   const [gliding, setGliding] = useState(false);
   const viewportRef = useRef(null);
@@ -387,18 +397,19 @@ export default function ChartTree({ graph, activeId, viewerId, onOpenPerson, onA
     };
   })() : null;
 
-  // ── Selection → contextual action bar (Direction B) ──────────────────────
-  // The selected person's plate, in screen space, so the floating bar stays
-  // crisp and readable regardless of zoom.
+  // ── Selection / hover → contextual action bar (Direction B) ──────────────
+  // The bar targets the selected person, or (desktop) the hovered one as a
+  // preview. Positioned in screen space so it stays crisp at any zoom.
+  const barId = selectedId || hoveredId;
   const selInfo = (() => {
-    if (!selectedId || !portrait) return null;
-    const card = layout.cards.find((c) => c.members.includes(selectedId));
+    if (!barId || !portrait) return null;
+    const card = layout.cards.find((c) => c.members.includes(barId));
     if (!card) return null;
-    const i = card.members.indexOf(selectedId);
+    const i = card.members.indexOf(barId);
     const plateCx = card.members.length === 2
       ? card.x - card.w / 2 + PLATE_W / 2 + i * (PLATE_W + LINK_GAP)
       : card.x;
-    const slot = card.slots?.find((s) => s.id === selectedId) ?? null;
+    const slot = card.slots?.find((s) => s.id === barId) ?? null;
     return { card, plateCx, plateTop: card.y - card.h / 2, slot };
   })();
   const selScreen = selInfo && viewportRef.current ? (() => {
@@ -410,8 +421,8 @@ export default function ChartTree({ graph, activeId, viewerId, onOpenPerson, onA
       top: Math.max(sy - 54, 8),
     };
   })() : null;
-  const selPerson = selectedId ? graph.byId.get(selectedId) : null;
-  const dismissSel = () => setSelectedId(null);
+  const selPerson = barId ? graph.byId.get(barId) : null;
+  const dismissSel = () => { setSelectedId(null); setHoveredId(null); };
 
   return (
     <div className="chart-tree">
@@ -451,6 +462,8 @@ export default function ChartTree({ graph, activeId, viewerId, onOpenPerson, onA
               partnerChoice={partnerChoice}
               selectedId={selectedId}
               onSelect={(id) => { setChildrenFor(null); setSelectedId((cur) => (cur === id ? null : id)); }}
+              onHoverEnter={hoverEnter}
+              onHoverLeave={hoverLeave}
             />
           ))}
         </div>
@@ -494,34 +507,41 @@ export default function ChartTree({ graph, activeId, viewerId, onOpenPerson, onA
         {/* Contextual action bar — the ONLY editing chrome, and only for the
             selected person. Everything else stays calm. */}
         {selInfo && selScreen && selPerson && (
-          <div className="pbar" style={{ left: selScreen.left, top: selScreen.top }} role="toolbar" aria-label={`Actions for ${selPerson.display_name}`}>
-            <button className="pbar__btn" onClick={() => { dismissSel(); onOpenPerson?.(selectedId); }}>
+          <div
+            className="pbar"
+            style={{ left: selScreen.left, top: selScreen.top }}
+            role="toolbar"
+            aria-label={`Actions for ${selPerson.display_name}`}
+            onPointerEnter={(e) => { if (e.pointerType === 'mouse') hoverEnter(barId); }}
+            onPointerLeave={(e) => { if (e.pointerType === 'mouse') hoverLeave(); }}
+          >
+            <button className="pbar__btn" onClick={() => { dismissSel(); onOpenPerson?.(barId); }}>
               <ProfileIcon /><span>Profile</span>
             </button>
-            {activeId !== selectedId && (
-              <button className="pbar__btn" onClick={() => { dismissSel(); onActivate?.(selectedId); }}>
+            {activeId !== barId && (
+              <button className="pbar__btn" onClick={() => { dismissSel(); onActivate?.(barId); }}>
                 <CentreIcon /><span>Centre</span>
               </button>
             )}
-            <button className="pbar__btn" onClick={() => { dismissSel(); onAddRelative?.(selectedId); }}>
+            <button className="pbar__btn" onClick={() => { dismissSel(); onAddRelative?.(barId); }}>
               <PlusIcon /><span>Add</span>
             </button>
             {selInfo.slot?.altPartnerIds?.length > 0 && (
               <button
-                className={'pbar__btn' + (switcherFor === selectedId ? ' pbar__btn--on' : '')}
-                onClick={() => setSwitcherFor((cur) => (cur === selectedId ? null : selectedId))}
-                aria-expanded={switcherFor === selectedId}
+                className={'pbar__btn' + (switcherFor === barId ? ' pbar__btn--on' : '')}
+                onClick={() => { setSelectedId(barId); setSwitcherFor((cur) => (cur === barId ? null : barId)); }}
+                aria-expanded={switcherFor === barId}
               >
                 <SwapIcon /><span>Partner</span>
               </button>
             )}
           </div>
         )}
-        {selInfo && selScreen && switcherFor === selectedId && (
+        {selInfo && selScreen && switcherFor === barId && (
           <div className="pbar-menu" style={{ left: selScreen.left, top: selScreen.top + 46 }}>
             <SpouseMenu
               graph={graph}
-              memberId={selectedId}
+              memberId={barId}
               card={selInfo.card}
               partnerChoice={partnerChoice}
               onChoose={chooseSpouse}
@@ -583,11 +603,16 @@ function PedCard(props) {
 // partner-link drawn in the SVG layer. Ancestry rises from each plate's top;
 // children descend from the union's centre. Editing chrome is deferred to the
 // on-select action bar — the resting card carries only navigation pips.
-function PortraitCard({ card, graph, isFocal, selectedId, onOpenPerson, onSelect, onActivate, onToggleUp, onAddRelative, onOpenChildren }) {
+function PortraitCard({ card, graph, isFocal, selectedId, onOpenPerson, onSelect, onActivate, onToggleUp, onAddRelative, onOpenChildren, onHoverEnter, onHoverLeave }) {
   const isChild = card.kind === 'child';
+  // Emphasis tiers — the eye follows the active family. Focal + immediate
+  // (parents, children) at full strength; each generation further up recedes
+  // a step, so deep ancestors settle quietly into the past.
+  const depth = Math.abs(card._gen ?? 0);
+  const recede = depth <= 1 ? '' : depth === 2 ? ' pcard--recede1' : ' pcard--recede2';
   return (
     <div
-      className={'pcard' + (isFocal ? ' pcard--focal' : '') + (isChild ? ' pcard--child' : '')}
+      className={'pcard' + (isFocal ? ' pcard--focal' : '') + (isChild ? ' pcard--child' : '') + recede}
       style={{ left: card.x - card.w / 2, top: card.y - card.h / 2, width: card.w, height: card.h }}
     >
       <div className="pcard__row">
@@ -607,6 +632,8 @@ function PortraitCard({ card, graph, isFocal, selectedId, onOpenPerson, onSelect
               style={{ width: PLATE_W }}
               onClick={() => onSelect?.(personId)}
               onDoubleClick={() => onOpenPerson?.(personId)}
+              onPointerEnter={(e) => { if (e.pointerType === 'mouse') onHoverEnter?.(personId); }}
+              onPointerLeave={(e) => { if (e.pointerType === 'mouse') onHoverLeave?.(); }}
             >
               <Avatar person={person} size={32} />
               <span className="pplate__text">
