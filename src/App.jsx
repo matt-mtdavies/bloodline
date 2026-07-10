@@ -2132,6 +2132,7 @@ export default function App() {
           onOpenHowItWorks={() => { setHomeOpen(false); setHowItWorksOpen(true); }}
           onOpenFamilyTrees={() => { setHomeOpen(false); setFamilyTreesOpen(true); }}
           onOpenFamilySettings={() => { setHomeOpen(false); setSettingsOpen(true); }}
+          onOpenInsights={() => { setHomeOpen(false); setInsightsOpen(true); }}
           onOpenActivity={() => {
             setHomeOpen(false);
             setActivityOpen(true);

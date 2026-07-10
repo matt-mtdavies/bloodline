@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import Logo from './Logo.jsx';
 import { ActivityRow } from './ActivityFeed.jsx';
-import { computeThisMonth } from '../lib/insightModules.js';
+import { computeThisMonth, computeInsightModules, pickDailyHighlight } from '../lib/insightModules.js';
 
 /*
  * The home hub — reached by tapping the logo. A launch point, not the whole
@@ -13,7 +13,7 @@ import { computeThisMonth } from '../lib/insightModules.js';
 export default function Home({
   user, familyName, stats = null, activity = [], people = [], graph = null, userEmail,
   onClose, onOpenAccount, onLogout, onOpenInstall, onOpenHowItWorks, onOpenFamilyTrees,
-  onOpenActivity, onSelectPerson, onOpenFamilySettings,
+  onOpenActivity, onSelectPerson, onOpenFamilySettings, onOpenInsights,
 }) {
   // Already-installed (standalone) visits have nothing to gain from this
   // row, so it only shows where it's actually actionable.
@@ -24,6 +24,12 @@ export default function Home({
   const first = user?.display_name ? firstName(user.display_name) : null;
   const tiles = buildStatTiles(stats);
   const thisMonth = useMemo(() => (graph ? computeThisMonth(graph) : null), [graph]);
+  // No specific viewer stands behind the hub, so only the modules that don't
+  // lean on "your" position in the tree (see pickDailyHighlight) contribute.
+  const insightTeaser = useMemo(
+    () => (graph ? pickDailyHighlight(computeInsightModules(graph, null)) : null),
+    [graph],
+  );
   const recent = activity.slice(0, 3);
   const byId = new Map(people.map((p) => [p.id, p]));
   const nameByEmail = new Map();
@@ -87,6 +93,17 @@ export default function Home({
 
         {thisMonth && (
           <ThisMonth data={thisMonth} onSelectPerson={onSelectPerson} />
+        )}
+
+        {insightTeaser && onOpenInsights && (
+          <button className="home__insights-card" onClick={onOpenInsights}>
+            <span className="home__insights-ico"><SparkIcon /></span>
+            <span className="home__insights-body">
+              <span className="home__insights-label">Did you know?</span>
+              <span className="home__insights-text">{insightTeaser}</span>
+            </span>
+            <ArrowIcon />
+          </button>
         )}
 
         <div className="home__row">
@@ -325,6 +342,15 @@ function SettingsIcon() {
     <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="1.6"/>
       <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  );
+}
+
+function SparkIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M12 3l1.8 4.9L18.7 9.7l-4.9 1.8L12 16.4l-1.8-4.9L5.3 9.7l4.9-1.8L12 3z" fill="currentColor"/>
+      <path d="M19 14l.7 1.9 1.9.7-1.9.7-.7 1.9-.7-1.9-1.9-.7 1.9-.7L19 14z" fill="currentColor" opacity="0.7"/>
     </svg>
   );
 }

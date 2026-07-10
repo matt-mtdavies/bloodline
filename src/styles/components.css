@@ -6857,6 +6857,43 @@ button.health-notes {
 .home__month-row--today .home__month-d { color: var(--accent-deep, #a44d2c); font-weight: 600; }
 .home__month-more { font-size: 12.5px; color: var(--ink-faint, #b0a9a5); text-align: center; margin: 10px 0 0; }
 
+/* The insights teaser — a marquee entry point, not a plain row: an
+   accent-tinted icon chip and a gradient card give it more visual weight
+   than the utility rows in "Explore" below, since Tree Insights deserves
+   more than an overflow-menu discovery path. */
+.home__insights-card {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  width: 100%;
+  margin: 22px 0 0;
+  padding: 15px 16px;
+  border: none;
+  border-radius: 18px;
+  background: linear-gradient(160deg, #fff 0%, #fdf3ec 100%);
+  color: var(--ink);
+  cursor: pointer;
+  text-align: left;
+  box-shadow: var(--shadow-soft);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.home__insights-card:hover { box-shadow: 0 4px 18px rgba(36,31,28,0.1); }
+.home__insights-card:active { transform: scale(0.99); }
+.home__insights-ico {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent, #c2603a);
+  color: #fff;
+}
+.home__insights-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.home__insights-label { font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--accent-deep, #a44d2c); }
+.home__insights-text { font-size: 14px; font-weight: 600; line-height: 1.35; color: var(--ink); }
+
 /* Tree list — a mark medallion carries the brand's own three-circle glyph
    so each tree reads as a distinct place, on the same elevated-card language
    as the hero. */

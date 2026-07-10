@@ -524,5 +524,127 @@ test('highlights: null when no module rendered anything', () => {
   assert.equal(buildInsightHighlights({}), null);
 });
 
+// ── Wave 4: parenthood age, partner age-gap record, never-met ──────────────
+// records() only renders once its pool holds 2+ qualifying entries (never a
+// single lonely stat), so every fixture below plants one extra long marriage
+// alongside the thing actually under test to clear that floor honestly.
+let wid = 0;
+function pRel(parentId, childId, qualifier = 'biological') {
+  return { id: `w${wid++}`, type: 'parent', from_person: parentId, to_person: childId, qualifier };
+}
+function uRel(a, b, marriageDate = null) {
+  return {
+    id: `w${wid++}`, type: 'partner', from_person: a, to_person: b, partner_status: 'current',
+    ...(marriageDate ? { is_married: true, marriage_date: marriageDate } : {}),
+  };
+}
+
+test('parenthood: average, range and gender split over 8+ recorded births', () => {
+  const people = [];
+  const rels = [];
+  const ages = [20, 22, 24, 26, 28, 30, 32, 34]; // avg 27
+  ages.forEach((age, i) => {
+    const parentId = `par${i}`, childId = `kid${i}`;
+    people.push({ id: parentId, display_name: `Parent${i}`, birth_date: '1970-01-01', gender: i % 2 === 0 ? 'female' : 'male' });
+    people.push({ id: childId, display_name: `Kid${i}`, birth_date: `${1970 + age}-01-01` });
+    rels.push(pRel(parentId, childId));
+  });
+  const graph = buildGraph(people, rels);
+  const mods = computeInsightModules(graph, 'par0');
+  assert.ok(mods.parenthood, 'module should render at 8 samples');
+  assert.equal(mods.parenthood.avg, 27);
+  assert.equal(mods.parenthood.min, 20);
+  assert.equal(mods.parenthood.max, 34);
+  assert.equal(mods.parenthood.n, 8);
+  assert.ok(mods.parenthood.byGender.female, 'female parents split out (4 samples)');
+  assert.ok(mods.parenthood.byGender.male, 'male parents split out (4 samples)');
+  const total = mods.parenthood.histogram.reduce((s, b) => s + b.count, 0);
+  assert.equal(total, 8, 'histogram buckets account for every sample');
+});
+
+test('parenthood: hides below the 8-sample threshold', () => {
+  const people = [];
+  const rels = [];
+  for (let i = 0; i < 5; i++) {
+    people.push({ id: `p${i}`, display_name: `Parent${i}`, birth_date: '1970-01-01' });
+    people.push({ id: `c${i}`, display_name: `Kid${i}`, birth_date: '1998-01-01' });
+    rels.push(pRel(`p${i}`, `c${i}`));
+  }
+  const graph = buildGraph(people, rels);
+  assert.equal(computeInsightModules(graph, 'p0').parenthood, null);
+});
+
+test('records: widest partner age gap is surfaced with a 5-deep leaderboard', () => {
+  const people = [
+    { id: 'a1', display_name: 'Old One', birth_date: '1930-01-01' },
+    { id: 'b1', display_name: 'Young One', birth_date: '1955-01-01' }, // 25 yrs
+    { id: 'a2', display_name: 'Close A', birth_date: '1940-01-01' },
+    { id: 'b2', display_name: 'Close B', birth_date: '1942-01-01' }, // 2 yrs — below the 10-yr floor
+    // An unrelated long marriage, just to clear records()'s "2+ pool entries" floor.
+    { id: 'm1', display_name: 'Married One', birth_date: '1900-01-01' },
+    { id: 'm2', display_name: 'Married Two', birth_date: '1902-01-01' },
+  ];
+  const rels = [uRel('a1', 'b1'), uRel('a2', 'b2'), uRel('m1', 'm2', '1930-01-01')];
+  const graph = buildGraph(people, rels);
+  const mods = computeInsightModules(graph, 'a1');
+  const entry = mods.records?.records?.find((r) => r.key === 'ageGap');
+  assert.ok(entry, 'expected an ageGap record from the 25-year pair');
+  assert.equal(entry.title, '25-year age gap');
+  assert.equal(entry.personId, 'a1');
+});
+
+test('records: no ageGap record when every partner pair is within the 10-year floor', () => {
+  const people = [
+    { id: 'a', display_name: 'A', birth_date: '1940-01-01' },
+    { id: 'b', display_name: 'B', birth_date: '1945-01-01' }, // 5 yrs
+  ];
+  const rels = [uRel('a', 'b')];
+  const graph = buildGraph(people, rels);
+  const mods = computeInsightModules(graph, 'a');
+  const entry = mods.records?.records?.find((r) => r.key === 'ageGap');
+  assert.equal(entry, undefined);
+});
+
+test('records: a grandchild born after a grandparent died surfaces as "never met"', () => {
+  const people = [
+    { id: 'gp1', display_name: 'Grandpa Old', birth_date: '1900-01-01', is_deceased: true, death_date: '1960-01-01' },
+    { id: 'gp2', display_name: 'Grandma Old', birth_date: '1902-01-01', is_deceased: true, death_date: '1961-01-01' },
+    { id: 'parent', display_name: 'Middle Gen', birth_date: '1930-01-01' },
+    { id: 'grandkid', display_name: 'The Grandkid', birth_date: '1972-01-01' }, // 12 yrs after gp1 died
+    // Two more never-met pairs elsewhere in the tree, to clear the "3+ instances" floor.
+    { id: 'gp3', display_name: 'Great Aunt Old', birth_date: '1898-01-01', is_deceased: true, death_date: '1955-01-01' },
+    { id: 'parent2', display_name: 'Cousin Parent', birth_date: '1928-01-01' },
+    { id: 'cousin', display_name: 'A Cousin', birth_date: '1970-01-01' },
+    { id: 'gp4', display_name: 'Uncle Old', birth_date: '1897-01-01', is_deceased: true, death_date: '1950-01-01' },
+    { id: 'parent3', display_name: 'Third Parent', birth_date: '1925-01-01' },
+    { id: 'third', display_name: 'Third Grandkid', birth_date: '1965-01-01' },
+  ];
+  const rels = [
+    pRel('gp1', 'parent'), pRel('gp2', 'parent'), pRel('parent', 'grandkid'),
+    pRel('gp3', 'parent2'), pRel('parent2', 'cousin'),
+    pRel('gp4', 'parent3'), pRel('parent3', 'third'),
+    // gp1 & gp2's own long marriage, just to clear records()'s "2+ pool entries" floor.
+    uRel('gp1', 'gp2', '1925-01-01'),
+  ];
+  const graph = buildGraph(people, rels);
+  const mods = computeInsightModules(graph, 'grandkid');
+  const entry = mods.records?.records?.find((r) => r.key === 'neverMet');
+  assert.ok(entry, 'expected a neverMet record with 3+ instances');
+  assert.match(entry.detail, /3 grandchildren/);
+});
+
+test('records: a lone never-met pair (below the 3-instance floor) does not surface', () => {
+  const people = [
+    { id: 'gp', display_name: 'Grandpa', birth_date: '1900-01-01', is_deceased: true, death_date: '1960-01-01' },
+    { id: 'parent', display_name: 'Parent', birth_date: '1930-01-01' },
+    { id: 'grandkid', display_name: 'Grandkid', birth_date: '1972-01-01' },
+  ];
+  const rels = [pRel('gp', 'parent'), pRel('parent', 'grandkid')];
+  const graph = buildGraph(people, rels);
+  const mods = computeInsightModules(graph, 'grandkid');
+  const entry = mods.records?.records?.find((r) => r.key === 'neverMet');
+  assert.equal(entry, undefined);
+});
+
 console.log(`\n  ${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);

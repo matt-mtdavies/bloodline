@@ -36,7 +36,7 @@ export default function InsightModules({ modules, graph, onNavigate }) {
   if (!modules) return null;
   const {
     handshakes, giftOfYears, fullestYear, strata, brood, bridges,
-    names, heartlands, trades, birthdays, records,
+    names, heartlands, trades, birthdays, records, parenthood,
   } = modules;
   const chapters = [
     ['Deep time', [
@@ -47,6 +47,7 @@ export default function InsightModules({ modules, graph, onNavigate }) {
     ['The shape of us', [
       strata && <StrataModule key="strata" data={strata} graph={graph} onNavigate={onNavigate} />,
       brood && <BroodModule key="brood" data={brood} graph={graph} onNavigate={onNavigate} />,
+      parenthood && <ParenthoodModule key="parenthood" data={parenthood} graph={graph} onNavigate={onNavigate} />,
       bridges && <BridgesModule key="bridge" data={bridges} onNavigate={onNavigate} />,
     ]],
     ['Names', [
@@ -718,6 +719,91 @@ function KidGlyph() {
   );
 }
 
+function ParenthoodModule({ data, graph, onNavigate }) {
+  const { avg, n, min, max, byGender, histogram } = data;
+  const [sel, setSel] = useState(null); // bucket "from" | null
+  const selBucket = sel != null ? histogram.find((b) => b.from === sel) : null;
+  return (
+    <Module
+      icon={<CradleIcon />}
+      title={`${avg} — average age becoming a parent`}
+      sub={`Across ${n} recorded births, ${min} to ${max}. Tap a bar for who's in it.`}
+      caption={byGender
+        ? <>
+          {byGender.female && <>Mothers averaged <b>{byGender.female.avg}</b>. </>}
+          {byGender.male && <>Fathers averaged <b>{byGender.male.avg}</b>.</>}
+        </>
+        : null}
+    >
+      <ParenthoodChart histogram={histogram} selected={sel} onPick={(f) => setSel((cur) => (cur === f ? null : f))} />
+      {selBucket && (
+        <PeopleDrawer
+          title={`Age ${selBucket.from}–${selBucket.to} at the time — ${selBucket.count}`}
+          rows={selBucket.people.map(({ parent, child, age }) => ({
+            id: parent.id,
+            detail: `age ${age}, with ${firstNameOfDisplay(child)}`,
+          }))}
+          graph={graph}
+          onNavigate={onNavigate}
+          onClose={() => setSel(null)}
+        />
+      )}
+    </Module>
+  );
+}
+
+function ParenthoodChart({ histogram, selected = null, onPick }) {
+  const W = 340, H = 130, L = 16, R = 16, T = 20, B = 28;
+  const slot = (W - L - R) / histogram.length;
+  const bw = Math.min(30, slot * 0.65);
+  const maxCount = Math.max(...histogram.map((b) => b.count));
+  const y = (v) => T + (1 - v / (maxCount + 1)) * (H - T - B);
+  const everyOther = histogram.length > 7;
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} width="100%" role="img"
+      aria-label={`Age at parenthood, in five-year bands from ${histogram[0].from} to ${histogram[histogram.length - 1].to}. Each band is tappable.`}>
+      {histogram.map((b, i) => {
+        const cx = L + slot * i + slot / 2;
+        const top = y(b.count), bot = H - B;
+        const on = b.from === selected;
+        return (
+          <g
+            key={b.from}
+            className="tim-petal"
+            onClick={() => onPick?.(b.from)}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onPick?.(b.from); } }}
+            aria-label={`${b.from}–${b.to}: ${b.count} ${b.count === 1 ? 'person' : 'people'}`}
+          >
+            <rect x={cx - slot / 2} y={T - 8} width={slot} height={H - T - B + 16} fill="transparent" />
+            <path
+              d={`M${cx - bw / 2},${bot} L${cx - bw / 2},${top + 4} Q${cx - bw / 2},${top} ${cx - bw / 2 + 4},${top} L${cx + bw / 2 - 4},${top} Q${cx + bw / 2},${top} ${cx + bw / 2},${top + 4} L${cx + bw / 2},${bot} Z`}
+              fill={on ? INK : ACC_SOFT}
+            />
+            {(!everyOther || i % 2 === 0) && (
+              <text x={cx} y={H - 10} fontSize="10" fill={on ? INK : FAINT} fontWeight={on ? 700 : 400} textAnchor="middle">{b.from}</text>
+            )}
+            {b.count > 0 && (on || b.count === maxCount) && (
+              <text x={cx} y={top - 7} fontSize="12" fontWeight="700" fill={INK} textAnchor="middle">{b.count}</text>
+            )}
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
+function CradleIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M4 15c2.5 2 13.5 2 16 0" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      <path d="M4 15a8 4 0 0 1 16 0" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      <path d="M12 3v4M8 5l4 2 4-2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 function BridgesModule({ data, onNavigate }) {
   const { personId, name, firstName, lifespan, sideA, sideB } = data;
   // "34 Fosters", but "26 Millses" — the Joneses rule for s-ending surnames.
@@ -1148,6 +1234,8 @@ function RecordIcon({ name }) {
     case 'star': return (<svg {...p}><path d="M12 3.5l2.5 5.2 5.7.8-4.1 4 1 5.6L12 16.5 6.9 19.2l1-5.6-4.1-4 5.7-.8L12 3.5z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" /></svg>);
     case 'time': return (<svg {...p}><circle cx="12" cy="12" r="8.5" stroke="currentColor" strokeWidth="1.7" /><path d="M12 7v5l3.5 2" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" /></svg>);
     case 'seedling': return (<svg {...p}><path d="M12 21v-8M12 13c0-4 3-6 7-6 0 4-3 6-7 6zM12 11c0-4-3-6-7-6 0 4 3 6 7 6z" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>);
+    case 'gap': return (<svg {...p}><circle cx="7" cy="12" r="3.2" stroke="currentColor" strokeWidth="1.7" /><circle cx="17" cy="12" r="4.6" stroke="currentColor" strokeWidth="1.7" /><path d="M11 12h2" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeDasharray="0.5 2.5" /></svg>);
+    case 'hourglass': return (<svg {...p}><path d="M6 3h12M6 21h12M7 3c0 4 3.5 5.5 5 6.5V12c-1.5 1-5 2.5-5 6.5M17 3c0 4-3.5 5.5-5 6.5V12c1.5 1 5 2.5 5 6.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>);
     case 'heart': default: return (<svg {...p}><path d="M12 20s-7-4.5-9.2-9C1.3 8 3 4.5 6.3 4.5c2 0 3.2 1.3 3.7 2.2.5-.9 1.7-2.2 3.7-2.2C20 4.5 21.7 8 21.2 11 19 15.5 12 20 12 20z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" /></svg>);
   }
 }

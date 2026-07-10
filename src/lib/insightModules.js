@@ -94,6 +94,7 @@ export function computeInsightModules(graph, viewerId) {
     trades: trades(graph),
     birthdays: birthdays(graph, gen),
     records: records(graph),
+    parenthood: parenthood(graph),
   };
 }
 
@@ -484,6 +485,86 @@ function records(graph) {
     }
   }
 
+  // Biggest age gap between partners.
+  {
+    const all = [];
+    const seen = new Set();
+    for (const r of graph.relationships) {
+      if (r.type !== 'partner') continue;
+      const key = [r.from_person, r.to_person].sort().join('|');
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const a = graph.byId.get(r.from_person), b = graph.byId.get(r.to_person);
+      if (!a || !b || !a.birth_date || !b.birth_date) continue;
+      const rawGap = yearsBetween(a.birth_date, b.birth_date);
+      if (rawGap == null) continue;
+      const gap = Math.abs(rawGap);
+      if (gap <= 0) continue;
+      const [older, younger] = rawGap >= 0 ? [a, b] : [b, a];
+      all.push({ older, younger, gap });
+    }
+    all.sort((x, y) => y.gap - x.gap);
+    const best = all[0];
+    if (best && best.gap >= 10) {
+      pool.push({
+        key: 'ageGap', icon: 'gap',
+        title: `${best.gap}-year age gap`,
+        detail: `${firstNameOf(best.older)} & ${firstNameOf(best.younger)} — the widest partner age gap on record.`,
+        personId: best.older.id,
+        board: all.slice(0, 5).map((x) => ({
+          id: x.older.id,
+          label: `${firstNameOf(x.older)} & ${firstNameOf(x.younger)}`,
+          detail: `${x.gap} yrs apart`,
+        })),
+      });
+    }
+  }
+
+  // Grandchildren born after a grandparent had already passed — the
+  // overlap that never happened. Framed as connection, not a "gotcha": what's
+  // missing is the chance to have met, not anything wrong with the record.
+  {
+    const pairs = [];
+    for (const p of graph.people) {
+      const pb = year(p.birth_date);
+      if (pb == null) continue;
+      const parents = graph.parents(p.id).filter((x) => isBioAdopt(x.qualifier));
+      const grandparents = new Set();
+      for (const par of parents) {
+        for (const gp of graph.parents(par.id)) {
+          if (isBioAdopt(gp.qualifier)) grandparents.add(gp.id);
+        }
+      }
+      for (const gpId of grandparents) {
+        const gp = graph.byId.get(gpId);
+        if (!gp?.is_deceased) continue;
+        const dYear = year(gp.death_date);
+        if (dYear == null) continue;
+        const gap = pb - dYear;
+        if (gap <= 0) continue; // died the same year or after — overlap isn't decidable either way, so don't claim a miss
+        pairs.push({ child: p, grandparent: gp, gap });
+      }
+    }
+    pairs.sort((a, b) => b.gap - a.gap);
+    const best = pairs[0];
+    // Count distinct grandchildren, not pairs — a child missing both
+    // grandparents is one grandchild affected twice, not two grandchildren.
+    const distinctChildren = new Set(pairs.map((x) => x.child.id)).size;
+    if (best && distinctChildren >= 3) {
+      pool.push({
+        key: 'neverMet', icon: 'hourglass',
+        title: `${firstNameOf(best.child)} never met ${firstNameOf(best.grandparent)}`,
+        detail: `${best.grandparent.display_name} passed ${best.gap} year${best.gap === 1 ? '' : 's'} before ${firstNameOf(best.child)} was born — ${distinctChildren} grandchildren in the family never met a grandparent.`,
+        personId: best.child.id,
+        board: pairs.slice(0, 5).map((x) => ({
+          id: x.child.id,
+          label: `${firstNameOf(x.child)} & ${firstNameOf(x.grandparent)}`,
+          detail: `${x.gap} yr${x.gap === 1 ? '' : 's'} apart`,
+        })),
+      });
+    }
+  }
+
   if (pool.length < 2) return null;
   // Rotate which three show, changing daily — stable within a session so the
   // sheet doesn't reshuffle on every re-render.
@@ -493,6 +574,57 @@ function records(graph) {
     : Array.from({ length: 3 }, (_, i) => pool[(day + i * Math.max(1, Math.floor(pool.length / 3))) % pool.length])
       .filter((r, i, arr) => arr.findIndex((x) => x.key === r.key) === i);
   return { records: shown, poolSize: pool.length };
+}
+
+/* ── Parenthood: how old people were when they had children ──────────────── */
+function parenthood(graph) {
+  const ages = []; // { age, parent, child }
+  for (const r of graph.relationships) {
+    if (r.type !== 'parent' || !isBioAdopt(r.qualifier)) continue;
+    const parent = graph.byId.get(r.from_person);
+    const child = graph.byId.get(r.to_person);
+    if (!parent || !child) continue;
+    const age = yearsBetween(parent.birth_date, child.birth_date);
+    // Same plausibility window as the records module's parent-age checks —
+    // outside it is bad data (a typo'd year), not a real early/late parent.
+    if (age == null || age < 13 || age > 75) continue;
+    ages.push({ age, parent, child });
+  }
+  if (ages.length < 8) return null;
+
+  const avg = Math.round(ages.reduce((s, a) => s + a.age, 0) / ages.length);
+  const byGender = {};
+  for (const g of ['female', 'male']) {
+    const list = ages.filter((a) => a.parent.gender === g);
+    if (list.length >= 4) {
+      byGender[g] = { avg: Math.round(list.reduce((s, a) => s + a.age, 0) / list.length), n: list.length };
+    }
+  }
+
+  // 5-year buckets for the histogram, each carrying its own drill-down rows.
+  const buckets = new Map();
+  for (const a of ages) {
+    const from = Math.floor(a.age / 5) * 5;
+    if (!buckets.has(from)) buckets.set(from, []);
+    buckets.get(from).push(a);
+  }
+  const histogram = [...buckets.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([from, list]) => ({
+      from,
+      to: from + 4,
+      count: list.length,
+      people: list.slice().sort((a, b) => a.age - b.age),
+    }));
+
+  return {
+    avg,
+    n: ages.length,
+    min: Math.min(...ages.map((a) => a.age)),
+    max: Math.max(...ages.map((a) => a.age)),
+    byGender: Object.keys(byGender).length ? byGender : null,
+    histogram,
+  };
 }
 
 /* ── Trades: what the family did for a living, era by era ────────────────── */
@@ -933,7 +1065,51 @@ export function buildInsightHighlights(modules) {
     const marriage = modules.records.records.find((r) => r.key === 'marriage');
     if (marriage) h.longestMarriage = marriage.title.replace(/^.* — /, '');
   }
+  if (modules.parenthood) {
+    h.parenthood = { avg: modules.parenthood.avg, n: modules.parenthood.n };
+  }
   return Object.keys(h).length ? h : null;
+}
+
+/* ── The home hub's "did you know" teaser: one fact, rotated daily, that taps
+      through to the full Insights sheet. Deep-time/strata are left out — they
+      lean on a specific viewer's position in the tree, which the hub doesn't
+      carry — so only the modules that stand on their own are candidates. ──── */
+export function pickDailyHighlight(modules) {
+  if (!modules) return null;
+  const candidates = [];
+  if (modules.giftOfYears) {
+    const g = modules.giftOfYears;
+    candidates.push(`Relatives born in the ${g.first.decade}s lived to ${g.first.avg} on average — those born in the ${g.last.decade}s reached ${g.last.avg}.`);
+  }
+  if (modules.bridges) {
+    candidates.push(`${modules.bridges.firstName} is the family's bridge — the one marriage joining its two biggest branches.`);
+  }
+  if (modules.names) {
+    const n = modules.names.top[0];
+    candidates.push(`${n.name} is the family's most-carried name — ${n.count} people across ${modules.names.thread.present} generations.`);
+  }
+  if (modules.heartlands) {
+    candidates.push(`Most of the family traces back to ${modules.heartlands.places[0].display}.`);
+  }
+  if (modules.trades) {
+    candidates.push(`The family's work has shifted from ${modules.trades.firstTop} to ${modules.trades.lastTop}.`);
+  }
+  if (modules.birthdays) {
+    candidates.push(`${modules.birthdays.peakLabel} is the family's busiest birthday month.`);
+  }
+  if (modules.records?.records?.length) {
+    const r = modules.records.records[0];
+    // detail alone often omits who (e.g. "1927 to 1985, the longest
+    // marriage on record.") — the title carries the name, so combine them.
+    candidates.push(`${r.title} — ${r.detail}`);
+  }
+  if (modules.parenthood) {
+    candidates.push(`On average, people in the family became parents at ${modules.parenthood.avg}.`);
+  }
+  if (!candidates.length) return null;
+  const day = Math.floor(Date.now() / 86400000);
+  return candidates[day % candidates.length];
 }
 
 /* ── The birthday wheel + birthday twins ─────────────────────────────────── */
