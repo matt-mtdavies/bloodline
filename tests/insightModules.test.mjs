@@ -208,6 +208,44 @@ test('gift of years: each cohort carries its people, longest life first', () => 
   }
 });
 
+// Data-integrity regression: a lifespan computed by insights must match the
+// tree's own age display exactly — plain year subtraction overstates a life
+// by a year whenever the death fell before that birth-year's anniversary.
+// Reported case: Barbara Wagener, b. 1946-xx-xx (day unknown but month
+// known), d. 1974, before her birthday that year — the tree said "aged 27",
+// insights said "28".
+test('gift of years / longest life: precise age, not year subtraction (the Barbara Wagener case)', () => {
+  const people = [
+    // Born mid-March, died in January — birthday not yet reached: 27, not 28.
+    { id: 'bw', display_name: 'Barbara Wagener', birth_date: '1946-03-15', death_date: '1974-01-10', is_deceased: true },
+    // Three padding lives in the same decade so the 1940s cohort clears its
+    // own n>=4 bar, plus two more full decades so the module clears its
+    // separate "at least 3 decade rows" bar.
+    { id: 'p1', display_name: 'Pad One', birth_date: '1946-05-01', death_date: '2000-05-01', is_deceased: true },
+    { id: 'p2', display_name: 'Pad Two', birth_date: '1947-05-01', death_date: '2001-05-01', is_deceased: true },
+    { id: 'p3', display_name: 'Pad Three', birth_date: '1948-05-01', death_date: '2002-05-01', is_deceased: true },
+    { id: 'p4', display_name: 'Pad Four', birth_date: '1950-05-01', death_date: '2010-05-01', is_deceased: true },
+    { id: 'p5', display_name: 'Pad Five', birth_date: '1951-05-01', death_date: '2011-05-01', is_deceased: true },
+    { id: 'p6', display_name: 'Pad Six', birth_date: '1952-05-01', death_date: '2012-05-01', is_deceased: true },
+    { id: 'p7', display_name: 'Pad Seven', birth_date: '1953-05-01', death_date: '2013-05-01', is_deceased: true },
+    { id: 'p8', display_name: 'Pad Eight', birth_date: '1960-05-01', death_date: '2020-05-01', is_deceased: true },
+    { id: 'p9', display_name: 'Pad Nine', birth_date: '1961-05-01', death_date: '2021-05-01', is_deceased: true },
+    { id: 'p10', display_name: 'Pad Ten', birth_date: '1962-05-01', death_date: '2022-05-01', is_deceased: true },
+    { id: 'p11', display_name: 'Pad Eleven', birth_date: '1963-05-01', death_date: '2023-05-01', is_deceased: true },
+  ];
+  const g = buildGraph(people, []);
+  const m = computeInsightModules(g, 'p1');
+  assert.ok(m.giftOfYears, 'module should render');
+  const cohort = m.giftOfYears.cohorts.find((c) => c.decade === 1940);
+  const bw = cohort.people.find((x) => x.id === 'bw');
+  assert.equal(bw.span, 27, 'died before her March birthday in 1974 — 27, not 28');
+
+  // records' own "longest life" record needs a life of 85+ to qualify, which
+  // this fixture deliberately doesn't have — giftOfYears above is the
+  // primary check. Where records DOES render (see the richTree suite below),
+  // its board is checked the same way.
+});
+
 test('brood: each trend bucket carries its households, fullest first', () => {
   for (const t of mods.brood.trend) {
     assert.equal(t.households.length, t.n);

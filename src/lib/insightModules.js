@@ -1,5 +1,6 @@
 import { computeGenerations } from '../data/graph.js';
 import { detectRegion, nearestWorldEvent } from './worldEvents.js';
+import { yearsBetween } from './dates.js';
 
 /*
  * Tree Insights — layer 2: the visual modules (Wave 1).
@@ -391,12 +392,15 @@ function records(graph) {
     }
   }
 
-  // Longest life.
+  // Longest life. The span is the SAME precise "had the birthday happened
+  // yet" age the profile itself shows — plain year-subtraction overstates a
+  // life by up to a year whenever death fell before that year's birthday.
   {
     const all = [];
     for (const p of graph.people) {
       const b = year(p.birth_date), d = year(p.death_date);
-      if (b != null && d != null && d - b > 0 && d - b < 120) all.push({ p, span: d - b, b, d });
+      const span = yearsBetween(p.birth_date, p.death_date);
+      if (b != null && d != null && span != null && span > 0 && span < 120) all.push({ p, span, b, d });
     }
     all.sort((x, y) => y.span - x.span);
     const best = all[0];
@@ -419,10 +423,10 @@ function records(graph) {
       if (r.type !== 'parent' || !isBioAdopt(r.qualifier)) continue;
       const parent = graph.byId.get(r.from_person);
       const child = graph.byId.get(r.to_person);
-      const pb = year(parent?.birth_date), cb = year(child?.birth_date);
-      if (pb == null || cb == null) continue;
-      const age = cb - pb;
-      if (age < 13 || age > 75) continue; // outside plausibility → bad data, skip
+      const cb = year(child?.birth_date);
+      if (cb == null) continue;
+      const age = yearsBetween(parent?.birth_date, child?.birth_date);
+      if (age == null || age < 13 || age > 75) continue; // outside plausibility → bad data, skip
       const e = byParent.get(parent.id) || { parent, oldest: null, youngest: null };
       if (!e.oldest || age > e.oldest.age) e.oldest = { age, when: cb };
       if (!e.youngest || age < e.youngest.age) e.youngest = { age, when: cb };
@@ -557,8 +561,12 @@ function giftOfYears(graph) {
     if (!p.is_deceased) continue;
     const b = year(p.birth_date), d = year(p.death_date);
     if (b == null || d == null) continue;
-    const span = d - b;
-    if (span <= 0 || span >= 120) continue;
+    // Precise age at death, not plain year subtraction — the latter
+    // overstates a life by up to a year whenever death fell before that
+    // year's birthday (the bug: "1946–1974" read as 28, the profile's own
+    // age said 27).
+    const span = yearsBetween(p.birth_date, p.death_date);
+    if (span == null || span <= 0 || span >= 120) continue;
     const dec = Math.floor(b / 10) * 10;
     if (!cohorts.has(dec)) cohorts.set(dec, []);
     cohorts.get(dec).push({ id: p.id, span });
