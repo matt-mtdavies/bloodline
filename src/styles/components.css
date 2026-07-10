@@ -7868,6 +7868,18 @@ button.health-notes {
 .tim-ms__row--on { border-color: var(--accent, #c2603a); }
 .tim-ms .tim-drawer { margin-top: 6px; }
 
+/* ── Wave 3: handshakes-to-anyone result panel ─────────────────────────────
+   Same bordered-card frame as .tim-drawer (reuses its head/close), but holds
+   a full HandshakeChain rather than a person list. */
+.tim-hs-panel {
+  margin-top: 12px; border: 1px solid var(--hairline, #ebedf0); border-radius: 14px;
+  overflow: hidden; animation: ti-fade 0.25s ease both;
+}
+.tim-hs-panel__lede { margin: 12px 13px 4px; font-size: 12.5px; color: var(--ink-faint, #b0a9a5); line-height: 1.5; }
+.tim-hs-panel__lede b { color: var(--ink-soft, #6b6260); font-weight: 600; }
+.tim-hs-panel .tim-hs { padding: 4px 13px 13px; }
+@media (prefers-reduced-motion: reduce) { .tim-hs-panel { animation: none; } }
+
 @media (prefers-reduced-motion: reduce) { .tim-drawer { animation: none; } }
 
 @keyframes ti-rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }

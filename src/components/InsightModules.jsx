@@ -1,8 +1,8 @@
-import { useRef, useState } from 'react';
+import { useRef, useState, useMemo } from 'react';
 import { toBlob } from 'html-to-image';
 import Avatar from './Avatar.jsx';
 import { lifespan } from '../lib/dates.js';
-import { aliveInYear } from '../lib/insightModules.js';
+import { aliveInYear, handshakesTo } from '../lib/insightModules.js';
 
 /*
  * Tree Insights — the Wave-1/2 visual modules. Each takes the precomputed data
@@ -40,7 +40,7 @@ export default function InsightModules({ modules, graph, onNavigate }) {
   } = modules;
   const chapters = [
     ['Deep time', [
-      handshakes && <HandshakesModule key="hands" data={handshakes} onNavigate={onNavigate} />,
+      handshakes && <HandshakesModule key="hands" data={handshakes} graph={graph} onNavigate={onNavigate} />,
       giftOfYears && <GiftModule key="gift" data={giftOfYears} graph={graph} onNavigate={onNavigate} />,
       fullestYear && <FullestModule key="fullest" data={fullestYear} graph={graph} onNavigate={onNavigate} />,
     ]],
@@ -119,7 +119,7 @@ function ShareButton({ nodeRef, title }) {
         skipFonts: true,
         // The shared image is the collapsed card: no share button, no open
         // drill-down drawer, no explorer input — the chart and its caption.
-        filter: (node) => !['tim__share', 'tim-drawer', 'tim-explore', 'tim-chiprow']
+        filter: (node) => !['tim__share', 'tim-drawer', 'tim-explore', 'tim-chiprow', 'tim-hs-panel']
           .some((cls) => node.classList?.contains(cls)),
       });
       if (!blob) throw new Error('empty capture');
@@ -195,28 +195,105 @@ const ordinal = (n) => `${n}${['th', 'st', 'nd', 'rd'][(n % 100 > 10 && n % 100 
 
 /* ── Deep time ─────────────────────────────────────────────────────────── */
 
-function HandshakesModule({ data, onNavigate }) {
-  const { people, links, hops, earliestBirth, thisYear, anchor } = data;
+// The chain, told from the near end toward the past: "You knew Gwen, who
+// knew William, who knew John." Capped at the three oldest links so a long
+// chain doesn't run the caption off the card. Shared by the deep-time
+// default and any "handshakes to ___" result — the wording holds regardless
+// of which direction chronology runs, since it's just walking the array.
+function chainSentence(people, links, thisYear, earliestBirth) {
+  const last = people.length - 1;
+  const nameOf = (i) => (i === last ? 'You' : people[i].firstName);
+  if (people.length === 2) {
+    return <><b>You and {people[0].firstName} were alive at the same time</b> — {links[0].years} shared years.</>;
+  }
+  const start = Math.min(2, last);
+  const parts = [];
+  for (let i = start; i >= 1; i--) parts.push(nameOf(i));
+  return <><b>{parts[0]} knew {parts.slice(1).concat(people[0].firstName).join(', who knew ')}</b> — hand to hand across {thisYear - earliestBirth} years.</>;
+}
+
+// The lifespan-bar chain itself — shared by the deep-time default and any
+// picked-target result below it.
+function HandshakeChain({ data, onNavigate }) {
+  const { people, links, earliestBirth, thisYear } = data;
   // Shared time axis, padded back a touch so the earliest bar doesn't start
   // flush against the edge.
   const axisStart = Math.floor((earliestBirth - 8) / 10) * 10;
   const span = thisYear - axisStart;
   const pct = (y) => ((y - axisStart) / span) * 100;
   const last = people.length - 1;
-  const nameOf = (i) => (i === last ? 'You' : people[i].firstName);
+  return (
+    <div className="tim-hs">
+      {people.map((p, i) => {
+        const end = p.death ?? thisYear;
+        const link = i < links.length ? links[i] : null;
+        return (
+          <div key={p.id}>
+            <div className="tim-hs__row">
+              <button
+                className="tim-hs__name"
+                onClick={() => onNavigate?.(p.id)}
+                aria-label={`Open ${p.name}`}
+              >
+                <b>{i === last ? 'You' : p.name}</b>
+                {p.death ? `${p.birth}–${p.death}` : `b. ${p.birth}`}
+              </button>
+              <div className="tim-hs__track">
+                <div
+                  className={`tim-hs__bar${p.death ? '' : ' tim-hs__bar--living'}`}
+                  style={{ left: `${pct(p.birth)}%`, width: `${Math.max(pct(end) - pct(p.birth), 2)}%` }}
+                />
+                {link && (
+                  <div
+                    className="tim-hs__olap"
+                    style={{ left: `${pct(link.from)}%`, width: `${Math.max(pct(link.to) - pct(link.from), 1.5)}%` }}
+                  />
+                )}
+              </div>
+            </div>
+            {link && (
+              <div className="tim-hs__link">
+                <span />
+                <span>
+                  <i style={{ left: `${Math.min(Math.max((pct(link.from) + pct(link.to)) / 2, 12), 86)}%` }}>
+                    {link.years} year{link.years === 1 ? '' : 's'}{i === 0 ? ' together' : ''}
+                  </i>
+                </span>
+              </div>
+            )}
+          </div>
+        );
+      })}
+      <div className="tim-hs__axis">
+        <span />
+        <span>
+          <span>{axisStart}</span>
+          <span>{Math.round(axisStart + span / 2)}</span>
+          <span>Today</span>
+        </span>
+      </div>
+    </div>
+  );
+}
 
-  // The chain, told from the near end toward the past: "You knew Gwen, who
-  // knew William, who knew John." Capped at the three oldest links so a long
-  // chain doesn't run the caption off the card.
-  let chain;
-  if (people.length === 2) {
-    chain = <><b>You and {people[0].firstName} were alive at the same time</b> — {links[0].years} shared years.</>;
-  } else {
-    const start = Math.min(2, last);
-    const parts = [];
-    for (let i = start; i >= 1; i--) parts.push(nameOf(i));
-    chain = <><b>{parts[0]} knew {parts.slice(1).concat(people[0].firstName).join(', who knew ')}</b> — hand to hand across {thisYear - earliestBirth} years.</>;
-  }
+function HandshakesModule({ data, graph, onNavigate }) {
+  const { people, links, hops, earliestBirth, thisYear, anchor } = data;
+  const viewerId = people[people.length - 1].id;
+  const chain = chainSentence(people, links, thisYear, earliestBirth);
+
+  // "Curious about someone else?" — the same overlap chain, to anyone you
+  // pick. Computed on demand: nothing runs until a name is actually tapped.
+  const [q, setQ] = useState('');
+  const [targetId, setTargetId] = useState(null);
+  const query = q.trim().toLowerCase();
+  const matches = query
+    ? graph.people.filter((p) => p.id !== viewerId && (p.display_name || '').toLowerCase().includes(query)).slice(0, 6)
+    : [];
+  const result = useMemo(
+    () => (targetId ? handshakesTo(graph, viewerId, targetId) : null),
+    [graph, viewerId, targetId],
+  );
+  const target = targetId ? graph.byId.get(targetId) : null;
 
   return (
     <Module
@@ -232,56 +309,52 @@ function HandshakesModule({ data, onNavigate }) {
         )}
       </>}
     >
-      <div className="tim-hs">
-        {people.map((p, i) => {
-          const end = p.death ?? thisYear;
-          const link = i < links.length ? links[i] : null;
-          return (
-            <div key={p.id}>
-              <div className="tim-hs__row">
-                <button
-                  className="tim-hs__name"
-                  onClick={() => onNavigate?.(p.id)}
-                  aria-label={`Open ${p.name}`}
-                >
-                  <b>{i === last ? 'You' : p.name}</b>
-                  {p.death ? `${p.birth}–${p.death}` : `b. ${p.birth}`}
-                </button>
-                <div className="tim-hs__track">
-                  <div
-                    className={`tim-hs__bar${p.death ? '' : ' tim-hs__bar--living'}`}
-                    style={{ left: `${pct(p.birth)}%`, width: `${Math.max(pct(end) - pct(p.birth), 2)}%` }}
-                  />
-                  {link && (
-                    <div
-                      className="tim-hs__olap"
-                      style={{ left: `${pct(link.from)}%`, width: `${Math.max(pct(link.to) - pct(link.from), 1.5)}%` }}
-                    />
-                  )}
-                </div>
-              </div>
-              {link && (
-                <div className="tim-hs__link">
-                  <span />
-                  <span>
-                    <i style={{ left: `${Math.min(Math.max((pct(link.from) + pct(link.to)) / 2, 12), 86)}%` }}>
-                      {link.years} year{link.years === 1 ? '' : 's'}{i === 0 ? ' together' : ''}
-                    </i>
-                  </span>
-                </div>
-              )}
-            </div>
-          );
-        })}
-        <div className="tim-hs__axis">
-          <span />
-          <span>
-            <span>{axisStart}</span>
-            <span>{Math.round(axisStart + span / 2)}</span>
-            <span>Today</span>
-          </span>
-        </div>
+      <HandshakeChain data={data} onNavigate={onNavigate} />
+      <div className="tim-explore">
+        <input
+          type="search"
+          value={q}
+          onChange={(e) => { setQ(e.target.value); setTargetId(null); }}
+          placeholder="Curious about someone else? Try a name…"
+          aria-label="Find how many handshakes you are from anyone in the tree"
+        />
+        {query && matches.length === 0 && (
+          <p className="tim-explore__none">No one matches “{q.trim()}”.</p>
+        )}
+        {matches.length > 0 && (
+          <div className="tim-chiprow">
+            {matches.map((p) => (
+              <button
+                key={p.id}
+                className={'tim-chipbtn' + (p.id === targetId ? ' tim-chipbtn--on' : '')}
+                onClick={() => setTargetId((cur) => (cur === p.id ? null : p.id))}
+              >
+                {p.display_name}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
+      {target && (
+        <div className="tim-hs-panel">
+          <div className="tim-drawer__head">
+            <span>{result ? `${asWord(result.hops)} handshake${result.hops === 1 ? '' : 's'} to ${firstNameOfDisplay(target)}` : firstNameOfDisplay(target)}</span>
+            <button className="tim-drawer__close" onClick={() => setTargetId(null)} aria-label="Close">×</button>
+          </div>
+          {result ? (
+            <>
+              <p className="tim-hs-panel__lede">
+                {chainSentence(result.people, result.links, result.thisYear, result.earliestBirth)}
+              </p>
+              <HandshakeChain data={result} onNavigate={onNavigate} />
+            </>
+          ) : (
+            <p className="tim-explore__none tim-hs-panel__lede">
+              No overlap chain found yet — a birth or death date is probably missing somewhere along the way.
+            </p>
+          )}
+        </div>
+      )}
     </Module>
   );
 }

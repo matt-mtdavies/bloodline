@@ -6,7 +6,7 @@
  */
 import assert from 'node:assert/strict';
 import { buildGraph } from '../src/data/graph.js';
-import { computeInsightModules, computeThisMonth, buildInsightHighlights, aliveInYear } from '../src/lib/insightModules.js';
+import { computeInsightModules, computeThisMonth, buildInsightHighlights, aliveInYear, handshakesTo } from '../src/lib/insightModules.js';
 
 let passed = 0, failed = 0;
 function test(label, fn) {
@@ -272,6 +272,41 @@ test('handshakes: 3-hop chain from g4_0 back to an 1820 founder', () => {
   assert.equal(h.people[h.people.length - 1].id, 'g4_0'); // viewer last
   assert.equal(h.people[0].birth, 1820);                  // earliest first
   for (const link of h.links) assert.ok(link.years >= 1, 'every link is a real overlap');
+});
+
+// ── Wave 3: handshakes to anyone ─────────────────────────────────────────────
+test('handshakesTo: direct parent/child overlap is a single hop, target first, viewer last', () => {
+  const r = handshakesTo(graph, 'g4_0', 'g3_0_0');
+  assert.ok(r, 'g3_0_0 directly overlapped g4_0\'s early years');
+  assert.equal(r.hops, 1);
+  assert.equal(r.people.length, 2);
+  assert.equal(r.people[0].id, 'g3_0_0');
+  assert.equal(r.people[r.people.length - 1].id, 'g4_0');
+});
+
+test('handshakesTo: reaches the same 1820 founder the deep-time default finds, in no more hops', () => {
+  const founderId = mods.handshakes.people[0].id;
+  const r = handshakesTo(graph, 'g4_0', founderId);
+  assert.ok(r, 'a chain to the default\'s own target must exist');
+  assert.equal(r.people[0].id, founderId);
+  assert.equal(r.people[r.people.length - 1].id, 'g4_0');
+  assert.ok(r.hops <= mods.handshakes.hops, 'searching the whole tree can only match or beat the ancestor-only path');
+});
+
+test('handshakesTo: same person, or a person with no decidable dates, returns null', () => {
+  assert.equal(handshakesTo(graph, 'g4_0', 'g4_0'), null);
+  const ghostPeople = [...people, { id: 'ghost', display_name: 'No Dates' }];
+  const ghostGraph = buildGraph(ghostPeople, rels);
+  assert.equal(handshakesTo(ghostGraph, 'g4_0', 'ghost'), null);
+});
+
+test('handshakesTo: two people in disconnected, non-overlapping fragments find no chain', () => {
+  const isolated = [
+    ...people,
+    { id: 'iso1', display_name: 'Iso One', birth_date: '1400-01-01', death_date: '1450-01-01', is_deceased: true },
+  ];
+  const isoGraph = buildGraph(isolated, rels); // no relationship links iso1 to anyone
+  assert.equal(handshakesTo(isoGraph, 'g4_0', 'iso1'), null);
 });
 
 test('bridges: the best split is a mid-chain G2 marriage link (35 vs 36)', () => {

@@ -174,6 +174,64 @@ function handshakes(graph, viewerId) {
   };
 }
 
+// Handshakes to ANY chosen person — the same "who overlapped whose life"
+// chain, generalized beyond the ancestor line so it can answer "how many
+// handshakes am I from [any relative]?" Computed on demand (when a user
+// actually picks a target from the search box), not speculatively for
+// everyone: the BFS considers every person's decidable window, so it's
+// O(people²) worst case — a few hundred thousand comparisons at 600 people,
+// fine once, not worth doing for names nobody asks about.
+export function handshakesTo(graph, fromId, toId) {
+  if (fromId == null || toId == null || fromId === toId) return null;
+  const thisYear = new Date().getFullYear();
+  const winById = new Map();
+  for (const p of graph.people) {
+    const w = windowOf(p, thisYear);
+    if (w) winById.set(p.id, w);
+  }
+  if (!winById.has(fromId) || !winById.has(toId)) return null; // missing dates
+
+  const overlap = (a, b) => Math.min(a[1], b[1]) - Math.max(a[0], b[0]);
+  const prev = new Map([[fromId, null]]);
+  let frontier = [fromId];
+  while (frontier.length && !prev.has(toId)) {
+    const next = [];
+    for (const id of frontier) {
+      const w = winById.get(id);
+      for (const [oid, ow] of winById) {
+        if (prev.has(oid)) continue;
+        if (overlap(w, ow) >= 1) { prev.set(oid, id); next.push(oid); }
+      }
+    }
+    frontier = next;
+  }
+  if (!prev.has(toId)) return null; // no overlap chain connects them
+
+  // Reconstruct from the target back to the viewer — the same "far endpoint
+  // first, You last" convention the deep-time chain uses, so both share one
+  // renderer regardless of which direction chronology actually runs.
+  const path = [];
+  for (let id = toId; id != null; id = prev.get(id)) path.push(id);
+  const people = path.map((id) => {
+    const p = graph.byId.get(id);
+    const [b, d] = winById.get(id);
+    return { id, name: p.display_name, firstName: firstNameOf(p), birth: b, death: p.is_deceased ? d : null };
+  });
+  const links = [];
+  for (let i = 0; i < people.length - 1; i++) {
+    const a = winById.get(people[i].id), b = winById.get(people[i + 1].id);
+    links.push({ years: overlap(a, b), from: Math.max(a[0], b[0]), to: Math.min(a[1], b[1]) });
+  }
+  return {
+    people,
+    links,
+    hops: people.length - 1,
+    earliestBirth: Math.min(...people.map((p) => p.birth)),
+    thisYear,
+    anchor: null, // the historical-event anchor is a deep-time-default flourish only
+  };
+}
+
 /* ── Bridges: the one person whose removal splits the family into two big
       halves — almost always a marriage that joined two clans. ───────────── */
 function bridges(graph) {
