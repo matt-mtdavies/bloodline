@@ -1201,7 +1201,20 @@ export default function App() {
   // Add a relative, then fly to the new person so they greet you on the tree.
   const handleAdd = useCallback(
     (fields) => {
-      const newId = addRelative({ anchorId: addAnchorId, ...fields });
+      // A biological child's other parent: either an existing partner picked
+      // in the sheet (childCoParentId, already set), or a brand-new person
+      // named "someone not in the tree" — create THEM first, as a partner of
+      // the anchor, so the child's parentEdge below has a real id to target.
+      let childCoParentId = fields.childCoParentId || null;
+      if (fields.childCoParentMode === 'new' && fields.childCoParentNew?.given) {
+        childCoParentId = addRelative({
+          anchorId: addAnchorId,
+          relKey: 'partner',
+          given: fields.childCoParentNew.given,
+          family: fields.childCoParentNew.family,
+        });
+      }
+      const newId = addRelative({ anchorId: addAnchorId, ...fields, childCoParentId });
       if (!newId) {
         // Blocked by a constraint — tell the user why instead of silently failing.
         const anchor = graph.byId.get(addAnchorId);
@@ -1915,6 +1928,7 @@ export default function App() {
           anchor={graph.byId.get(addAnchorId)}
           people={data.people.filter((p) => p.id !== addAnchorId)}
           relationships={data.relationships}
+          graph={graph}
           onClose={() => setAddAnchorId(null)}
           onAdd={handleAdd}
           onLinkExisting={handleLinkExisting}

@@ -963,13 +963,9 @@ function partnerEdge(a, b, status = 'current') {
 }
 
 // Build the edges that connect a new person to the person they were added from.
-function edgesFor(relKey, anchorId, newId, current, qualifier = 'biological') {
+function edgesFor(relKey, anchorId, newId, current, qualifier = 'biological', childCoParentId = null) {
   const parentsOf = (id) =>
     current.relationships.filter((r) => r.type === 'parent' && r.to_person === id).map((r) => r.from_person);
-  const partnersOf = (id) =>
-    current.relationships
-      .filter((r) => r.type === 'partner' && (r.from_person === id || r.to_person === id))
-      .map((r) => (r.from_person === id ? r.to_person : r.from_person));
 
   switch (relKey) {
     case 'mother':
@@ -982,9 +978,13 @@ function edgesFor(relKey, anchorId, newId, current, qualifier = 'biological') {
     case 'son':
     case 'daughter': {
       const edges = [parentEdge(anchorId, newId, qualifier)];
-      // Only co-parent with current partner for biological children
-      if (qualifier === 'biological') {
-        for (const p of partnersOf(anchorId)) edges.push(parentEdge(p, newId));
+      // The other biological parent is an explicit choice made in the sheet
+      // (a chip picker when the anchor has multiple partners on record,
+      // silent when there's exactly one) — never every partner the anchor
+      // has ever had. Looping every partner used to hand a child two
+      // "biological" fathers/mothers the moment an ex was still on record.
+      if (qualifier === 'biological' && childCoParentId) {
+        edges.push(parentEdge(childCoParentId, newId));
       }
       return edges;
     }
@@ -1010,7 +1010,7 @@ export function bioParentGendersFilled(personId) {
   return genders; // Set of 'male'|'female' already occupied
 }
 
-export function addRelative({ anchorId, relKey, name, given, middle, family, gender, birth_date, is_deceased, death_date, qualifier = 'biological' }) {
+export function addRelative({ anchorId, relKey, name, given, middle, family, birth_name, gender, birth_date, birth_place, residence, is_deceased, death_date, qualifier = 'biological', childCoParentId = null }) {
   const id = uid();
   const meta = RELATIONSHIPS.find((r) => r.key === relKey);
 
@@ -1038,14 +1038,15 @@ export function addRelative({ anchorId, relKey, name, given, middle, family, gen
     given_names: givenNames,
     middle_name: m || null,
     family_name: familyName,
+    birth_name: (birth_name || '').trim() || null,
     gender: gender || meta?.gender || null,
     birth_date: birth_date || null,
     death_date: is_deceased ? death_date || null : null,
     is_living: !is_deceased,
     is_deceased: !!is_deceased,
     is_minor: false,
-    birth_place: null,
-    residence: null,
+    birth_place: (birth_place || '').trim() || null,
+    residence: (residence || '').trim() || null,
     occupation: null,
     tags: [],
     events: [],
@@ -1055,7 +1056,7 @@ export function addRelative({ anchorId, relKey, name, given, middle, family, gen
     created_by: 'me',
     visibility: defaultVisibility,
   };
-  const edges = edgesFor(relKey, anchorId, id, state, qualifier);
+  const edges = edgesFor(relKey, anchorId, id, state, qualifier, childCoParentId);
 
   // When adding a sibling to someone with no parents in the tree, the new person
   // would have zero link-force connections and float free in d3. Fix: auto-create

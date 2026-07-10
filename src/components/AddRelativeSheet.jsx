@@ -7,6 +7,9 @@ const QUALIFIERS = [
   { key: 'adoptive', label: 'Adopted' },
 ];
 
+const GENDER_OPTIONS = ['Male', 'Female', 'Non-binary', 'Other'];
+const TODAY = new Date().toISOString().slice(0, 10);
+
 // Relationship types that support linking to an already-existing person.
 const LINKABLE = new Set(['partner', 'ex_partner', 'mother', 'father', 'son', 'daughter', 'brother', 'sister']);
 
@@ -20,7 +23,7 @@ const LINKABLE = new Set(['partner', 'ex_partner', 'mother', 'father', 'son', 'd
  * When the relationship type is linkable, a toggle lets the user pick an
  * existing person from the tree instead of creating a new one.
  */
-export default function AddRelativeSheet({ anchor, people = [], relationships = [], onClose, onAdd, onLinkExisting }) {
+export default function AddRelativeSheet({ anchor, people = [], relationships = [], graph, onClose, onAdd, onLinkExisting }) {
   const [relKey, setRelKey] = useState(null);
   const [qualifier, setQualifier] = useState('biological');
   const [mode, setMode] = useState('new'); // 'new' | 'existing'
@@ -29,6 +32,24 @@ export default function AddRelativeSheet({ anchor, people = [], relationships = 
   const [family, setFamily] = useState('');
   const [search, setSearch] = useState('');
   const [coParentStatus, setCoParentStatus] = useState(null); // 'partner' | 'ex_partner'
+  // The rest of what a real record needs, captured up front instead of left
+  // for a later edit that often never happens (see the sheet's own comment
+  // below on why this still isn't the FULL profile form).
+  const [gender, setGender] = useState(''); // only asked for partner/ex-partner — every other type implies it
+  const [birthName, setBirthName] = useState('');
+  const [birthDate, setBirthDate] = useState('');
+  const [birthPlace, setBirthPlace] = useState('');
+  const [residence, setResidence] = useState('');
+  const [isDeceased, setIsDeceased] = useState(false);
+  const [deathDate, setDeathDate] = useState('');
+  // A biological child's other parent: silent when the anchor has exactly one
+  // partner on record (today's frictionless case, unchanged); an explicit
+  // chip choice the moment there's more than one, so a new child is never
+  // handed every partner the anchor has ever had as a "biological" parent.
+  const [childCoParentMode, setChildCoParentMode] = useState(null); // null | 'existing' | 'none' | 'new'
+  const [childCoParentId, setChildCoParentId] = useState(null);
+  const [childCoParentGiven, setChildCoParentGiven] = useState('');
+  const [childCoParentFamily, setChildCoParentFamily] = useState('');
   const nameRef = useRef(null);
   const searchRef = useRef(null);
 
@@ -45,6 +66,18 @@ export default function AddRelativeSheet({ anchor, people = [], relationships = 
     setMode('new');
     setSearch('');
     setCoParentStatus(null);
+    const meta = RELATIONSHIPS.find((r) => r.key === key);
+    setGender(meta?.gender === 'male' ? 'Male' : meta?.gender === 'female' ? 'Female' : '');
+    setBirthName('');
+    setBirthDate('');
+    setBirthPlace('');
+    setResidence('');
+    setIsDeceased(false);
+    setDeathDate('');
+    setChildCoParentMode(null);
+    setChildCoParentId(null);
+    setChildCoParentGiven('');
+    setChildCoParentFamily('');
   };
 
   // Adding a mother while a father is already linked (or vice versa) — find
@@ -63,6 +96,29 @@ export default function AddRelativeSheet({ anchor, people = [], relationships = 
     }
     return null;
   }, [relKey, relationships, people, anchor.id]);
+
+  // The flip side, for a biological son/daughter: who (if anyone already on
+  // record) is the child's other parent? Every partner the anchor has EVER
+  // had is a candidate — including exes, since a child from a past
+  // relationship is exactly the honest case this replaces "assume all of
+  // them" with. Silent (no picker shown) when there's exactly one, since
+  // that's unambiguous; an explicit choice the moment there's more than one.
+  const childCoParentCandidates = useMemo(() => {
+    if (!graph || (relKey !== 'son' && relKey !== 'daughter') || qualifier !== 'biological') return [];
+    return graph.partners(anchor.id).map((p) => graph.byId.get(p.id)).filter(Boolean);
+  }, [graph, relKey, qualifier, anchor.id]);
+
+  useEffect(() => {
+    if (childCoParentCandidates.length === 1 && childCoParentMode == null) {
+      setChildCoParentMode('existing');
+      setChildCoParentId(childCoParentCandidates[0].id);
+    }
+  }, [childCoParentCandidates, childCoParentMode]);
+
+  const needsChildCoParentAnswer = childCoParentCandidates.length > 1 && (
+    childCoParentMode == null ||
+    (childCoParentMode === 'new' && !childCoParentGiven.trim())
+  );
 
   // Which bio-parent genders are already filled for the anchor.
   const filledGenders = useMemo(() => bioParentGendersFilled
@@ -105,7 +161,7 @@ export default function AddRelativeSheet({ anchor, people = [], relationships = 
   }, [people, search, anchor.id]);
 
   const needsCoParentAnswer = !!coParent && !coParentStatus;
-  const canAdd = relKey && given.trim().length > 0 && !needsCoParentAnswer;
+  const canAdd = relKey && given.trim().length > 0 && !needsCoParentAnswer && !needsChildCoParentAnswer;
   const canLink = relKey && mode === 'existing' && !needsCoParentAnswer;
 
   const submit = (openDetails = false) => {
@@ -116,8 +172,20 @@ export default function AddRelativeSheet({ anchor, people = [], relationships = 
       given: given.trim(),
       middle: middle.trim(),
       family: family.trim(),
+      birth_name: birthName.trim(),
+      gender: (relKey === 'partner' || relKey === 'ex_partner') ? (gender || null) : null,
+      birth_date: birthDate.trim(),
+      birth_place: birthPlace.trim(),
+      residence: residence.trim(),
+      is_deceased: isDeceased,
+      death_date: isDeceased ? deathDate.trim() : '',
       coParentId: coParent?.id || null,
       coParentStatus: coParent ? coParentStatus : null,
+      childCoParentMode,
+      childCoParentId: childCoParentMode === 'existing' ? childCoParentId : null,
+      childCoParentNew: childCoParentMode === 'new'
+        ? { given: childCoParentGiven.trim(), family: childCoParentFamily.trim() }
+        : null,
       openDetails,
     });
   };
@@ -210,11 +278,83 @@ export default function AddRelativeSheet({ anchor, people = [], relationships = 
                 role="radio"
                 aria-checked={qualifier === q.key}
                 className={'qualifier-chip' + (qualifier === q.key ? ' qualifier-chip--on' : '')}
-                onClick={() => setQualifier(q.key)}
+                onClick={() => {
+                  setQualifier(q.key);
+                  setChildCoParentMode(null);
+                  setChildCoParentId(null);
+                  setChildCoParentGiven('');
+                  setChildCoParentFamily('');
+                }}
               >
                 {q.label}
               </button>
             ))}
+          </div>
+        )}
+
+        {/* Who's the other biological parent? Only surfaces once there's a
+            real choice to make (the anchor has 2+ partners on record) —
+            exactly one candidate is applied silently, above. */}
+        {childCoParentCandidates.length > 1 && (
+          <div className="coparent-row" role="radiogroup" aria-label="Who's the other parent">
+            <p className="coparent-row__label">
+              Who's {given.trim() || 'their'} other parent?
+            </p>
+            <div className="qualifier-row">
+              {childCoParentCandidates.map((c) => (
+                <button
+                  key={c.id}
+                  role="radio"
+                  aria-checked={childCoParentMode === 'existing' && childCoParentId === c.id}
+                  className={'qualifier-chip' + (childCoParentMode === 'existing' && childCoParentId === c.id ? ' qualifier-chip--on' : '')}
+                  onClick={() => { setChildCoParentMode('existing'); setChildCoParentId(c.id); }}
+                >
+                  {c.display_name.split(/\s+/)[0]}
+                </button>
+              ))}
+              <button
+                role="radio"
+                aria-checked={childCoParentMode === 'new'}
+                className={'qualifier-chip' + (childCoParentMode === 'new' ? ' qualifier-chip--on' : '')}
+                onClick={() => { setChildCoParentMode('new'); setChildCoParentId(null); }}
+              >
+                Someone not in the tree
+              </button>
+              <button
+                role="radio"
+                aria-checked={childCoParentMode === 'none'}
+                className={'qualifier-chip' + (childCoParentMode === 'none' ? ' qualifier-chip--on' : '')}
+                onClick={() => { setChildCoParentMode('none'); setChildCoParentId(null); }}
+              >
+                Skip for now
+              </button>
+            </div>
+            {childCoParentMode === 'new' && (
+              <div className="field-row coparent-row__new">
+                <label className="field">
+                  <span className="field__label">Their first name</span>
+                  <div className="input-wrap">
+                    <input
+                      className="field__input"
+                      value={childCoParentGiven}
+                      onChange={(e) => setChildCoParentGiven(e.target.value)}
+                      autoComplete="off"
+                    />
+                  </div>
+                </label>
+                <label className="field">
+                  <span className="field__label">Family name <span className="field__label-sub">optional</span></span>
+                  <div className="input-wrap">
+                    <input
+                      className="field__input"
+                      value={childCoParentFamily}
+                      onChange={(e) => setChildCoParentFamily(e.target.value)}
+                      autoComplete="off"
+                    />
+                  </div>
+                </label>
+              </div>
+            )}
           </div>
         )}
 
@@ -292,6 +432,118 @@ export default function AddRelativeSheet({ anchor, people = [], relationships = 
                 {family && <button type="button" className="input-clear" onClick={() => setFamily('')} aria-label="Clear" tabIndex={-1}>×</button>}
               </div>
             </label>
+
+            <label className="field">
+              <span className="field__label">Birth name <span className="field__label-sub">/ maiden name</span></span>
+              <div className="input-wrap">
+                <input
+                  className="field__input"
+                  value={birthName}
+                  onChange={(e) => setBirthName(e.target.value)}
+                  placeholder="If different from current name"
+                  autoComplete="off"
+                />
+                {birthName && <button type="button" className="input-clear" onClick={() => setBirthName('')} aria-label="Clear" tabIndex={-1}>×</button>}
+              </div>
+            </label>
+
+            {(relKey === 'partner' || relKey === 'ex_partner') ? (
+              <div className="field-row">
+                <label className="field">
+                  <span className="field__label">Date of birth</span>
+                  <div className="input-wrap dob-wrap">
+                    <input
+                      className="field__input field__input--date"
+                      type="date"
+                      value={birthDate.includes('-') ? birthDate : ''}
+                      max={TODAY}
+                      onChange={(e) => e.target.value && setBirthDate(e.target.value)}
+                    />
+                    {birthDate && <button type="button" className="input-clear" onClick={() => setBirthDate('')} aria-label="Clear" tabIndex={-1}>×</button>}
+                  </div>
+                </label>
+                <label className="field">
+                  <span className="field__label">Gender</span>
+                  <div className="pill-pick pill-pick--gender">
+                    {GENDER_OPTIONS.map((g) => (
+                      <button
+                        key={g}
+                        type="button"
+                        className={`pill-pick__opt${gender === g ? ' pill-pick__opt--on' : ''}`}
+                        onClick={() => setGender((cur) => (cur === g ? '' : g))}
+                      >{g}</button>
+                    ))}
+                  </div>
+                </label>
+              </div>
+            ) : (
+              <label className="field">
+                <span className="field__label">Date of birth</span>
+                <div className="input-wrap dob-wrap">
+                  <input
+                    className="field__input field__input--date"
+                    type="date"
+                    value={birthDate.includes('-') ? birthDate : ''}
+                    max={TODAY}
+                    onChange={(e) => e.target.value && setBirthDate(e.target.value)}
+                  />
+                  {birthDate && <button type="button" className="input-clear" onClick={() => setBirthDate('')} aria-label="Clear" tabIndex={-1}>×</button>}
+                </div>
+              </label>
+            )}
+
+            <div className="field-row">
+              <label className="field">
+                <span className="field__label">Birthplace</span>
+                <div className="input-wrap">
+                  <input
+                    className="field__input"
+                    value={birthPlace}
+                    onChange={(e) => setBirthPlace(e.target.value)}
+                    placeholder="e.g. Cardiff, Wales"
+                    autoComplete="off"
+                  />
+                  {birthPlace && <button type="button" className="input-clear" onClick={() => setBirthPlace('')} aria-label="Clear" tabIndex={-1}>×</button>}
+                </div>
+              </label>
+              <label className="field">
+                <span className="field__label">Lives in</span>
+                <div className="input-wrap">
+                  <input
+                    className="field__input"
+                    value={residence}
+                    onChange={(e) => setResidence(e.target.value)}
+                    placeholder="City, Country"
+                    autoComplete="off"
+                  />
+                  {residence && <button type="button" className="input-clear" onClick={() => setResidence('')} aria-label="Clear" tabIndex={-1}>×</button>}
+                </div>
+              </label>
+            </div>
+
+            <label className="toggle">
+              <input
+                type="checkbox"
+                checked={isDeceased}
+                onChange={(e) => setIsDeceased(e.target.checked)}
+              />
+              <span>No longer with us</span>
+            </label>
+            {isDeceased && (
+              <label className="field">
+                <span className="field__label">Date passed</span>
+                <div className="input-wrap dob-wrap">
+                  <input
+                    className="field__input field__input--date"
+                    type="date"
+                    value={deathDate.includes('-') ? deathDate : ''}
+                    max={TODAY}
+                    onChange={(e) => e.target.value && setDeathDate(e.target.value)}
+                  />
+                  {deathDate && <button type="button" className="input-clear" onClick={() => setDeathDate('')} aria-label="Clear" tabIndex={-1}>×</button>}
+                </div>
+              </label>
+            )}
           </div>
         )}
 

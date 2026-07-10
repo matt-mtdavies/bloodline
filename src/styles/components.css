@@ -2413,6 +2413,7 @@
   color: var(--ink-soft);
 }
 .coparent-row .qualifier-row { margin-top: 0; animation: none; }
+.coparent-row__new { margin-top: 12px; }
 
 /* Progressive reveal of the rest of the form once a relationship is chosen */
 .form__reveal {
