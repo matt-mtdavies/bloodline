@@ -47,7 +47,7 @@ const isBioAdopt = (q) => !q || q === 'biological' || q === 'adoptive' || q === 
 // other parent, never as a formal partner), tie-broken by partner-edge
 // status (current > widowed > former > no edge), falling back to their
 // best-status partner when there are no children in the picture.
-export function primaryUnionPartner(graph, personId) {
+export function primaryUnionPartner(graph, personId, bloodlineOnly = false) {
   const partners = graph.partners(personId);
   const statusRank = (s) => (s === 'former' ? 0 : s === 'widowed' ? 1 : 2);
   const rankOf = (id) => {
@@ -72,6 +72,11 @@ export function primaryUnionPartner(graph, personId) {
     }
     return best;
   }
+  // Bloodline mode shows only descent: with no biological/adopted co-parent
+  // there is no bloodline pairing, so the person stands solo rather than being
+  // paired with a purely-social partner (whose presence would misattribute the
+  // person's OWN children to a union that never produced them).
+  if (bloodlineOnly) return null;
   if (!partners.length) return null;
   let best = partners[0], bestRank = statusRank(partners[0].status);
   for (const p of partners.slice(1)) {
@@ -83,7 +88,12 @@ export function primaryUnionPartner(graph, personId) {
 
 // Everyone who could sit beside this person on a card: recorded partners
 // plus bio/adoptive co-parents (deduped) — the spouse-switcher's menu.
-export function unionCandidates(graph, personId) {
+// In bloodline mode the menu is narrowed to biological/adopted co-parents
+// only (sharedChildren > 0): you can still flip between two BLOODLINE unions
+// (a person who had children with two different partners), but never display a
+// purely-social pairing. Status is preserved for co-parents who are also
+// recorded partners, so the menu can still note "Former partner", etc.
+export function unionCandidates(graph, personId, bloodlineOnly = false) {
   const out = new Map(); // id -> {id, status|null, sharedChildren}
   for (const p of graph.partners(personId)) {
     out.set(p.id, { id: p.id, status: p.status ?? null, sharedChildren: 0 });
@@ -97,7 +107,15 @@ export function unionCandidates(graph, personId) {
       out.set(par.id, cur);
     }
   }
-  return [...out.values()];
+  let list = [...out.values()];
+  if (bloodlineOnly) list = list.filter((c) => c.sharedChildren > 0);
+  return list;
+}
+
+// The ids this person shares biological/adopted children with — the only
+// partners Bloodline mode will display or switch to.
+function bioCoParentIds(graph, personId) {
+  return unionCandidates(graph, personId, true).map((c) => c.id);
 }
 
 // All children belonging to a displayed union (either member), deduped and
@@ -175,7 +193,7 @@ function makeUnionCard(graph, lineMemberIds, displayed, kind, { expandedUp, part
   const kidRows = childrenOfUnion(graph, members[0], members[1] ?? null, bloodlineOnly);
   const slots = members.map((id) => {
     const parents = bioParentsOf(graph, id);
-    const alt = unionCandidates(graph, id).filter((c) => !members.includes(c.id));
+    const alt = unionCandidates(graph, id, bloodlineOnly).filter((c) => !members.includes(c.id));
     return {
       id,
       hasMoreUp: parents.length > 0,
@@ -215,15 +233,20 @@ function makeUnionCard(graph, lineMemberIds, displayed, kind, { expandedUp, part
 // Resolve which pair an ancestor slot displays: the child's own recorded
 // parents by default; a spouse-switch on either parent swaps the OTHER
 // side out for the chosen partner (and that side's up-line with it).
-function displayedPairForSlot(parentIds, partnerChoice) {
+function displayedPairForSlot(graph, parentIds, partnerChoice, bloodlineOnly) {
   const [p1, p2] = parentIds;
+  // A choice of null ("show solo") is always honoured; a chosen partner is
+  // honoured only if it's a valid bloodline co-parent when bloodline mode is on
+  // — a stale social-partner selection from before the toggle is ignored, so
+  // the slot falls back to the child's own two biological parents.
+  const valid = (owner, chosen) => !bloodlineOnly || chosen == null || bioCoParentIds(graph, owner).includes(chosen);
   if (p1 && partnerChoice.get(p1) !== undefined) {
     const chosen = partnerChoice.get(p1);
-    return chosen ? [p1, chosen] : [p1];
+    if (valid(p1, chosen)) return chosen ? [p1, chosen] : [p1];
   }
   if (p2 && partnerChoice.get(p2) !== undefined) {
     const chosen = partnerChoice.get(p2);
-    return chosen ? [p2, chosen] : [p2];
+    if (valid(p2, chosen)) return chosen ? [p2, chosen] : [p2];
   }
   return parentIds;
 }
@@ -246,11 +269,14 @@ export function computePedigree(graph, focusId, { expandedUp, partnerChoice, ori
   const cards = [];
   const connectors = [];
 
-  // Focal union: the focus person plus their displayed partner.
+  // Focal union: the focus person plus their displayed partner. A stale
+  // social-partner choice is ignored in bloodline mode (see displayedPairForSlot).
   const chosenFocalPartner = partnerChoice.get(focusId);
-  const focalPartner = chosenFocalPartner !== undefined
+  const focalChoiceValid = chosenFocalPartner !== undefined
+    && (!bloodlineOnly || chosenFocalPartner == null || bioCoParentIds(graph, focusId).includes(chosenFocalPartner));
+  const focalPartner = focalChoiceValid
     ? chosenFocalPartner
-    : primaryUnionPartner(graph, focusId);
+    : primaryUnionPartner(graph, focusId, bloodlineOnly);
   const focal = makeUnionCard(graph, [focusId], focalPartner ? [focusId, focalPartner] : [focusId], 'focal', opts);
   cards.push(focal);
 
@@ -268,7 +294,7 @@ export function computePedigree(graph, focusId, { expandedUp, partnerChoice, ori
       // A cycle in the data (guarded on write, but trees sync from outside)
       // must never hang the layout.
       if (parentIds.some((p) => seen.has(p))) continue;
-      const displayed = displayedPairForSlot(parentIds, partnerChoice);
+      const displayed = displayedPairForSlot(graph, parentIds, partnerChoice, bloodlineOnly);
       const pCard = makeUnionCard(graph, parentIds, displayed, 'ancestor', opts);
       pCard._childCardId = card.id;
       pCard._viaMemberId = slot.id;

@@ -159,7 +159,7 @@ t('horizontal couple card is one plate wide, two plates tall', () => {
 
 // ── Bloodline mode: step children filtered, bio + adopted kept ──────────────
 {
-  const bp = ['dad', 'mum', 'bioKid', 'adoptKid', 'pureStep', 'exPartner'].map(person);
+  const bp = ['dad', 'mum', 'bioKid', 'adoptKid', 'pureStep', 'exPartner', 'newWife'].map(person);
   const brel = [
     ptn('dad', 'mum'),
     par('dad', 'bioKid'), par('mum', 'bioKid'),
@@ -167,6 +167,9 @@ t('horizontal couple card is one plate wide, two plates tall', () => {
     // pureStep is the ex-partner's biological child; dad is only a step-parent,
     // mum is unrelated — a social bond, not a bloodline.
     par('exPartner', 'pureStep'), par('dad', 'pureStep', 'step'),
+    // newWife is dad's current partner with NO children together — a purely
+    // social pairing that bloodline mode must never display or offer.
+    ptn('dad', 'newWife', 'current'),
   ];
   const bg = buildGraph(bp, brel);
 
@@ -184,6 +187,36 @@ t('horizontal couple card is one plate wide, two plates tall', () => {
     assert.equal(all.cards.find((c) => c.id === all.focalCardId).childrenCount, 3);
     assert.equal(blood.cards.find((c) => c.id === blood.focalCardId).childrenCount, 2);
     assert.ok(!blood.cards.some((c) => c.id === 'c_pureStep'), 'no step child card drawn');
+  });
+
+  t('bloodline on: switcher offers only biological co-parents (drops social)', () => {
+    const all = unionCandidates(bg, 'dad', false).map((c) => c.id).sort();
+    const blood = unionCandidates(bg, 'dad', true).map((c) => c.id).sort();
+    assert.deepEqual(all, ['mum', 'newWife']);   // both partners normally
+    assert.deepEqual(blood, ['mum']);            // only the bloodline co-parent
+  });
+  t('bloodline on: default focal partner is the bloodline co-parent, not the social spouse', () => {
+    assert.equal(primaryUnionPartner(bg, 'dad', false), 'mum'); // most shared children
+    assert.equal(primaryUnionPartner(bg, 'dad', true), 'mum');
+  });
+  t('bloodline on: a purely-social pairing yields a solo card (no partner)', () => {
+    // newWife has no bloodline children with anyone → stands solo in bloodline.
+    assert.equal(primaryUnionPartner(bg, 'newWife', true), null);
+    const { cards, focalCardId } = computePedigree(bg, 'newWife', { expandedUp: new Set(), bloodlineOnly: true });
+    assert.deepEqual(cards.find((c) => c.id === focalCardId).members, ['newWife']);
+  });
+  t('bloodline on: a stale social-partner choice is ignored, falls back to bloodline default', () => {
+    const partnerChoice = new Map([['dad', 'newWife']]);
+    const { cards, focalCardId } = computePedigree(bg, 'dad', { expandedUp: new Set(), partnerChoice, bloodlineOnly: true });
+    const focal = cards.find((c) => c.id === focalCardId);
+    assert.deepEqual(focal.members.slice().sort(), ['dad', 'mum']);
+    // ...and the children stay the bloodline set, correctly attributed.
+    assert.equal(focal.childrenCount, 2);
+  });
+  t('bloodline off: the social spouse choice is honoured (unchanged behaviour)', () => {
+    const partnerChoice = new Map([['dad', 'newWife']]);
+    const { cards, focalCardId } = computePedigree(bg, 'dad', { expandedUp: new Set(), partnerChoice });
+    assert.deepEqual(cards.find((c) => c.id === focalCardId).members.slice().sort(), ['dad', 'newWife']);
   });
 }
 

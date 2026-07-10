@@ -566,6 +566,7 @@ export default function ChartTree({ graph, activeId, viewerId, bloodlineOnly = f
               memberId={barId}
               card={selInfo.card}
               partnerChoice={partnerChoice}
+              bloodlineOnly={bloodlineOnly}
               onChoose={chooseSpouse}
             />
           </div>
@@ -707,9 +708,9 @@ function PlateCard({ card, graph, horizontal, isFocal, selectedId, onOpenPerson,
   );
 }
 
-function SpouseMenu({ graph, memberId, card, partnerChoice, onChoose }) {
+function SpouseMenu({ graph, memberId, card, partnerChoice, bloodlineOnly = false, onChoose }) {
   const current = card.members.find((m) => m !== memberId) ?? null;
-  const candidates = unionCandidates(graph, memberId).filter((c) => c.id !== current);
+  const candidates = unionCandidates(graph, memberId, bloodlineOnly).filter((c) => c.id !== current);
   const hasChoice = partnerChoice.get(memberId) !== undefined;
   return (
     <div className="ped-spouse-menu" role="menu" aria-label="Show with which partner">
