@@ -471,6 +471,11 @@ export default function App() {
   const [legendOpen, setLegendOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [bloodlineOnly, setBloodlineOnly] = useState(false);
+  // Chart view is a pedigree — bloodline-only is its natural default. We apply
+  // it once, the first time the chart is opened in a session; after that the
+  // (global) toggle is the user's to control, so bouncing between views never
+  // re-forces it back on.
+  const chartBloodlineDefaulted = useRef(false);
   const [lineageMode, setLineageMode] = useState(false);
   const [lineagePath, setLineagePath] = useState(null); // Set<id> | null
   const [lineageOrder, setLineageOrder] = useState(null); // ordered [fromId,…,toId] | null
@@ -1490,6 +1495,11 @@ export default function App() {
           if (mode === 'list') { setView('list'); return; }
           setView('bubbles');
           setLayout(mode === 'chart' ? 'chart' : 'organic');
+          // Default the chart to bloodline-only the first time it's opened.
+          if (mode === 'chart' && !chartBloodlineDefaulted.current) {
+            chartBloodlineDefaulted.current = true;
+            setBloodlineOnly(true);
+          }
         }}
         onOpenLegend={() => setLegendOpen(true)}
         bloodlineOnly={bloodlineOnly}
