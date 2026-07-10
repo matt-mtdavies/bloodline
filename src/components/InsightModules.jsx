@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { toBlob } from 'html-to-image';
 import Avatar from './Avatar.jsx';
 import { lifespan } from '../lib/dates.js';
+import { aliveInYear } from '../lib/insightModules.js';
 
 /*
  * Tree Insights — the Wave-1/2 visual modules. Each takes the precomputed data
@@ -40,12 +41,12 @@ export default function InsightModules({ modules, graph, onNavigate }) {
   const chapters = [
     ['Deep time', [
       handshakes && <HandshakesModule key="hands" data={handshakes} onNavigate={onNavigate} />,
-      giftOfYears && <GiftModule key="gift" data={giftOfYears} />,
-      fullestYear && <FullestModule key="fullest" data={fullestYear} />,
+      giftOfYears && <GiftModule key="gift" data={giftOfYears} graph={graph} onNavigate={onNavigate} />,
+      fullestYear && <FullestModule key="fullest" data={fullestYear} graph={graph} onNavigate={onNavigate} />,
     ]],
     ['The shape of us', [
       strata && <StrataModule key="strata" data={strata} graph={graph} onNavigate={onNavigate} />,
-      brood && <BroodModule key="brood" data={brood} onNavigate={onNavigate} />,
+      brood && <BroodModule key="brood" data={brood} graph={graph} onNavigate={onNavigate} />,
       bridges && <BridgesModule key="bridge" data={bridges} onNavigate={onNavigate} />,
     ]],
     ['Names', [
@@ -53,11 +54,11 @@ export default function InsightModules({ modules, graph, onNavigate }) {
     ]],
     ['Places & work', [
       heartlands && <HeartlandsModule key="heart" data={heartlands} graph={graph} onNavigate={onNavigate} />,
-      trades && <TradesModule key="trades" data={trades} />,
+      trades && <TradesModule key="trades" data={trades} graph={graph} onNavigate={onNavigate} />,
     ]],
     ['Seasons & milestones', [
       birthdays && <BirthdaysModule key="bday" data={birthdays} graph={graph} onNavigate={onNavigate} />,
-      records && <RecordsModule key="records" data={records} onNavigate={onNavigate} />,
+      records && <RecordsModule key="records" data={records} graph={graph} onNavigate={onNavigate} />,
     ]],
   ]
     .map(([label, items]) => [label, items.filter(Boolean)])
@@ -163,7 +164,8 @@ function ShareButton({ nodeRef, title }) {
 
 /* ── Drill-down drawer — the one gesture shared by every interactive card:
    tap a chart element, see exactly who is behind the number, tap a person,
-   land on their profile. rows: [{ id, detail?, tag? }]. ─────────────────── */
+   land on their profile. rows: [{ id, detail?, tag?, label? }] — label
+   overrides the display name where the entry is a couple/household. ─────── */
 function PeopleDrawer({ title, rows, graph, onNavigate, onClose }) {
   return (
     <div className="tim-drawer">
@@ -172,13 +174,13 @@ function PeopleDrawer({ title, rows, graph, onNavigate, onClose }) {
         <button className="tim-drawer__close" onClick={onClose} aria-label="Close list">×</button>
       </div>
       <div className="tim-drawer__list">
-        {rows.map(({ id, detail, tag }) => {
+        {rows.map(({ id, detail, tag, label }, i) => {
           const person = graph?.byId?.get(id);
           if (!person) return null;
           return (
-            <button key={id} className="tim-drawer__row" onClick={() => onNavigate?.(id)}>
+            <button key={`${id}_${i}`} className="tim-drawer__row" onClick={() => onNavigate?.(id)}>
               <Avatar person={person} size={28} />
-              <span className="tim-drawer__name">{person.display_name}</span>
+              <span className="tim-drawer__name">{label ?? person.display_name}</span>
               {tag && <em className="tim-drawer__tag">{tag}</em>}
               <span className="tim-drawer__detail">{detail ?? lifespan(person)}</span>
             </button>
@@ -284,8 +286,10 @@ function HandshakesModule({ data, onNavigate }) {
   );
 }
 
-function GiftModule({ data }) {
+function GiftModule({ data, graph, onNavigate }) {
   const { cohorts, first, last, gained } = data;
+  const [sel, setSel] = useState(null); // decade | null
+  const selCohort = sel != null ? cohorts.find((c) => c.decade === sel) : null;
   const title = gained >= 5
     ? `The family gained ${gained} years`
     : 'The length of a life, era by era';
@@ -293,17 +297,26 @@ function GiftModule({ data }) {
     <Module
       icon={<TrendIcon />}
       title={title}
-      sub="Average length of life, by the decade people were born into."
+      sub="Average length of life, by the decade people were born into. Tap a decade to meet its cohort."
       caption={<>Relatives born in the <b>{first.decade}s</b> lived
         to <b>{first.avg}</b> on average. Those born in
         the <b>{last.decade}s</b>: <b>{last.avg}</b>.</>}
     >
-      <GiftChart cohorts={cohorts} />
+      <GiftChart cohorts={cohorts} selected={sel} onPick={(d) => setSel((cur) => (cur === d ? null : d))} />
+      {selCohort && (
+        <PeopleDrawer
+          title={`Born in the ${selCohort.decade}s — ${selCohort.n} lives, avg ${selCohort.avg}`}
+          rows={selCohort.people.map(({ id, span }) => ({ id, detail: `${span} years` }))}
+          graph={graph}
+          onNavigate={onNavigate}
+          onClose={() => setSel(null)}
+        />
+      )}
     </Module>
   );
 }
 
-function GiftChart({ cohorts }) {
+function GiftChart({ cohorts, selected = null, onPick }) {
   const W = 340, H = 170, L = 34, R = 20, T = 26, B = 34;
   const vals = cohorts.map((c) => c.avg);
   const lo = Math.floor((Math.min(...vals) - 6) / 10) * 10;
@@ -314,9 +327,10 @@ function GiftChart({ cohorts }) {
   for (let v = lo; v <= hi; v += Math.ceil((hi - lo) / 3 / 10) * 10 || 10) grid.push(v);
   const pts = cohorts.map((c, i) => `${x(i)},${y(c.avg)}`).join(' ');
   const everyOther = cohorts.length > 6;
+  const slotW = cohorts.length > 1 ? (W - L - R) / (cohorts.length - 1) : W - L - R;
   return (
     <svg viewBox={`0 0 ${W} ${H}`} width="100%" role="img"
-      aria-label={`Average lifespan by birth decade, from ${cohorts[0].avg} years for the ${cohorts[0].decade}s to ${cohorts[cohorts.length - 1].avg} for the ${cohorts[cohorts.length - 1].decade}s`}>
+      aria-label={`Average lifespan by birth decade, from ${cohorts[0].avg} years for the ${cohorts[0].decade}s to ${cohorts[cohorts.length - 1].avg} for the ${cohorts[cohorts.length - 1].decade}s. Each decade is tappable.`}>
       {grid.map((v) => (
         <g key={v}>
           <line x1={L} x2={W - R} y1={y(v)} y2={y(v)} stroke={HAIR} strokeWidth="1" />
@@ -326,15 +340,30 @@ function GiftChart({ cohorts }) {
       <polyline points={pts} fill="none" stroke={ACC} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
       {cohorts.map((c, i) => {
         const end = i === 0 || i === cohorts.length - 1;
+        const on = c.decade === selected;
         return (
-          <g key={c.decade}>
-            <circle cx={x(i)} cy={y(c.avg)} r="4.5" fill={ACC} stroke="#fff" strokeWidth="2" />
+          <g
+            key={c.decade}
+            className="tim-petal"
+            onClick={() => onPick?.(c.decade)}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onPick?.(c.decade); } }}
+            aria-label={`${c.decade}s: average ${c.avg} years across ${c.n} lives`}
+          >
+            {/* invisible full-height hit target so the tap doesn't demand a 9px dot */}
+            <rect x={x(i) - slotW / 2} y={T - 10} width={slotW} height={H - T - B + 20} fill="transparent" />
+            <circle cx={x(i)} cy={y(c.avg)} r={on ? 6.5 : 4.5} fill={on ? INK : ACC} stroke="#fff" strokeWidth="2" />
             {(!everyOther || i % 2 === 0 || end) && (
-              <text x={x(i)} y={H - 12} fontSize="10" fill={FAINT} textAnchor="middle">{c.decade}s</text>
+              <text x={x(i)} y={H - 12} fontSize="10" fill={on ? INK : FAINT} fontWeight={on ? 700 : 400} textAnchor="middle">{c.decade}s</text>
             )}
-            {end && (
+            {end && !on && (
               <text x={x(i)} y={y(c.avg) - 11} fontSize="12" fontWeight="700" fill={INK}
                 textAnchor={i === 0 ? 'start' : 'end'}>{c.avg} yrs</text>
+            )}
+            {on && (
+              <text x={x(i)} y={y(c.avg) - 11} fontSize="12" fontWeight="700" fill={INK}
+                textAnchor={i === 0 ? 'start' : i === cohorts.length - 1 ? 'end' : 'middle'}>{c.avg} yrs</text>
             )}
           </g>
         );
@@ -343,24 +372,39 @@ function GiftChart({ cohorts }) {
   );
 }
 
-function FullestModule({ data }) {
-  const { peak, isNow, firstYear, firstCount } = data;
+function FullestModule({ data, graph, onNavigate }) {
+  const { peak, isNow, firstYear, firstCount, spans } = data;
+  const [selYear, setSelYear] = useState(null);
+  const alive = selYear != null ? aliveInYear(spans, selYear) : null;
   return (
     <Module
       icon={<PeopleIcon />}
       title={isNow ? 'Your family has never been bigger' : `${peak.year} was the family's fullest year`}
-      sub={`How many relatives were alive, year by year since ${firstYear}.`}
+      sub={`How many relatives were alive, year by year since ${firstYear}. Slide across the years — see who was alive when.`}
       caption={isNow
         ? <>From <b>{firstCount || 'a handful of'} {firstCount === 1 ? 'person' : 'people'}</b> in {firstYear} to <b>{peak.count} alive right now</b> — today is the fullest the family has ever been.</>
         : <><b>{peak.count} relatives were alive at once in {peak.year}</b> — the fullest the family has ever been.</>}
     >
-      <AliveChart data={data} />
+      <AliveChart data={data} selYear={selYear} aliveCount={alive?.length ?? 0} onScrub={setSelYear} />
+      {selYear != null && (
+        <PeopleDrawer
+          title={`Alive in ${selYear} — ${alive.length} ${alive.length === 1 ? 'relative' : 'relatives'}`}
+          rows={alive.map(({ id, ageThen }) => ({ id, detail: ageThen === 0 ? `born ${selYear}` : `age ${ageThen}` }))}
+          graph={graph}
+          onNavigate={onNavigate}
+          onClose={() => setSelYear(null)}
+        />
+      )}
     </Module>
   );
 }
 
-function AliveChart({ data }) {
+// The scrubber: drag (or tap, or arrow-key) anywhere on the curve to pin a
+// year; the marker, count chip and drawer follow. Horizontal pans scrub,
+// vertical pans still scroll the sheet (touch-action: pan-y).
+function AliveChart({ data, selYear = null, aliveCount = 0, onScrub }) {
   const { series, peak, isNow, thisYear } = data;
+  const svgRef = useRef(null);
   const W = 340, H = 170, L = 34, R = 30, T = 22, B = 34;
   const minYear = series[0].year;
   const maxCount = Math.max(...series.map((s) => s.count));
@@ -369,9 +413,46 @@ function AliveChart({ data }) {
   const y = (v) => T + (1 - v / yMax) * (H - T - B);
   const line = series.map((s) => `${x(s.year)},${y(s.count)}`).join(' ');
   const mid = Math.round((minYear + thisYear) / 2);
+
+  const yearFromClientX = (clientX) => {
+    const rect = svgRef.current?.getBoundingClientRect();
+    if (!rect) return null;
+    const vx = ((clientX - rect.left) / rect.width) * W;
+    const yr = Math.round(minYear + ((vx - L) / (W - L - R)) * (thisYear - minYear));
+    return Math.min(thisYear, Math.max(minYear, yr));
+  };
+  const dragging = useRef(false);
+  const scrubTo = (clientX) => {
+    const yr = yearFromClientX(clientX);
+    if (yr != null) onScrub?.(yr);
+  };
+
+  const scrubbing = selYear != null;
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} width="100%" role="img"
-      aria-label={`Living relatives per year, peaking at ${peak.count} in ${isNow ? 'the present day' : peak.year}`}>
+    <svg
+      ref={svgRef}
+      viewBox={`0 0 ${W} ${H}`}
+      width="100%"
+      role="slider"
+      tabIndex={0}
+      aria-label={`Living relatives per year, peaking at ${peak.count} in ${isNow ? 'the present day' : peak.year}. Drag or use arrow keys to pick a year.`}
+      aria-valuemin={minYear}
+      aria-valuemax={thisYear}
+      aria-valuenow={selYear ?? peak.year}
+      className="tim-scrub"
+      style={{ touchAction: 'pan-y' }}
+      onPointerDown={(e) => { dragging.current = true; e.currentTarget.setPointerCapture?.(e.pointerId); scrubTo(e.clientX); }}
+      onPointerMove={(e) => { if (dragging.current) scrubTo(e.clientX); }}
+      onPointerUp={() => { dragging.current = false; }}
+      onPointerCancel={() => { dragging.current = false; }}
+      onKeyDown={(e) => {
+        const step = e.shiftKey ? 10 : 1;
+        const base = selYear ?? peak.year;
+        if (e.key === 'ArrowLeft') { e.preventDefault(); onScrub?.(Math.max(minYear, base - step)); }
+        if (e.key === 'ArrowRight') { e.preventDefault(); onScrub?.(Math.min(thisYear, base + step)); }
+        if (e.key === 'Escape') onScrub?.(null);
+      }}
+    >
       {[0, yMax / 2, yMax].map((v) => (
         <g key={v}>
           <line x1={L} x2={W - R} y1={y(v)} y2={y(v)} stroke={HAIR} strokeWidth="1" />
@@ -380,10 +461,26 @@ function AliveChart({ data }) {
       ))}
       <polygon points={`${x(minYear)},${y(0)} ${line} ${x(thisYear)},${y(0)}`} fill={ACC} opacity="0.1" />
       <polyline points={line} fill="none" stroke={ACC} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
-      <circle cx={x(peak.year)} cy={y(peak.count)} r="5" fill={ACC} stroke="#fff" strokeWidth="2" />
-      <text x={x(peak.year) - 8} y={y(peak.count) - 10} fontSize="12" fontWeight="700" fill={INK} textAnchor="end">
-        {peak.count}{isNow ? ' alive today' : ` in ${peak.year}`}
-      </text>
+      {!scrubbing && (
+        <>
+          <circle cx={x(peak.year)} cy={y(peak.count)} r="5" fill={ACC} stroke="#fff" strokeWidth="2" />
+          <text x={x(peak.year) - 8} y={y(peak.count) - 10} fontSize="12" fontWeight="700" fill={INK} textAnchor="end">
+            {peak.count}{isNow ? ' alive today' : ` in ${peak.year}`}
+          </text>
+        </>
+      )}
+      {scrubbing && (
+        <g pointerEvents="none">
+          <line x1={x(selYear)} x2={x(selYear)} y1={T - 6} y2={H - B} stroke={INK} strokeWidth="1.2" strokeDasharray="3 3" opacity="0.55" />
+          <circle cx={x(selYear)} cy={y(aliveCount)} r="6" fill={INK} stroke="#fff" strokeWidth="2" />
+          <text
+            x={Math.min(Math.max(x(selYear), L + 44), W - R - 44)} y={T - 8}
+            fontSize="12" fontWeight="700" fill={INK} textAnchor="middle"
+          >
+            {aliveCount} alive in {selYear}
+          </text>
+        </g>
+      )}
       <text x={x(minYear)} y={H - 12} fontSize="10" fill={FAINT} textAnchor="start">{minYear}</text>
       <text x={x(mid)} y={H - 12} fontSize="10" fill={FAINT} textAnchor="middle">{mid}</text>
       <text x={x(thisYear)} y={H - 12} fontSize="10" fill={FAINT} textAnchor="end">Today</text>
@@ -445,13 +542,21 @@ function StrataModule({ data, graph, onNavigate }) {
   );
 }
 
-function BroodModule({ data, onNavigate }) {
+function BroodModule({ data, graph, onNavigate }) {
   const { record, trend } = data;
+  const [sel, setSel] = useState(null); // trend bucket start | null
+  const selBucket = sel != null && trend ? trend.find((t) => t.start === sel) : null;
   const title = record
     ? `${record.parentNames.join(' & ')} raised ${asWord(record.count)}`
     : 'How full the households were';
   const first = trend && trend[0];
   const last = trend && trend[trend.length - 1];
+  // A household row: both parents named, first parent's avatar + profile.
+  const householdRow = (h) => ({
+    id: h.parentIds[0],
+    label: h.parentIds.map((id) => firstNameOfDisplay(graph?.byId?.get(id))).filter(Boolean).join(' & '),
+    detail: `${h.count} ${h.count === 1 ? 'child' : 'children'}`,
+  });
   return (
     <Module
       icon={<FamilyIcon />}
@@ -460,7 +565,7 @@ function BroodModule({ data, onNavigate }) {
         ? `The fullest household in the tree${record.span ? `, ${record.span}` : ''}.`
         : 'Average children per household, over time.'}
       caption={trend
-        ? <>Households begun in the <b>{first.label}</b> averaged <b>{first.avg} children</b>. Those begun in the <b>{last.label}</b>: <b>{last.avg}</b>.</>
+        ? <>Households begun in the <b>{first.label}</b> averaged <b>{first.avg} children</b>. Those begun in the <b>{last.label}</b>: <b>{last.avg}</b>. Tap an era's bar for its households.</>
         : null}
     >
       {record && (
@@ -472,12 +577,25 @@ function BroodModule({ data, onNavigate }) {
           {Array.from({ length: record.count }, (_, i) => <KidGlyph key={i} />)}
         </button>
       )}
-      {trend && <BroodChart trend={trend} />}
+      {trend && <BroodChart trend={trend} selected={sel} onPick={(s) => setSel((cur) => (cur === s ? null : s))} />}
+      {selBucket && (
+        <PeopleDrawer
+          title={`Households begun in the ${selBucket.label} — ${selBucket.n}`}
+          rows={selBucket.households.map(householdRow)}
+          graph={graph}
+          onNavigate={onNavigate}
+          onClose={() => setSel(null)}
+        />
+      )}
     </Module>
   );
 }
 
-function BroodChart({ trend }) {
+function firstNameOfDisplay(p) {
+  return (p?.display_name || '').trim().split(/\s+/)[0] || null;
+}
+
+function BroodChart({ trend, selected = null, onPick }) {
   const W = 340, H = 130, L = 16, R = 16, T = 20, B = 28;
   const slot = (W - L - R) / trend.length;
   const bw = Math.min(22, slot * 0.6);
@@ -486,21 +604,31 @@ function BroodChart({ trend }) {
   const everyOther = trend.length > 6;
   return (
     <svg viewBox={`0 0 ${W} ${H}`} width="100%" role="img"
-      aria-label={`Average children per household, from ${trend[0].avg} (${trend[0].label}) to ${trend[trend.length - 1].avg} (${trend[trend.length - 1].label})`}>
+      aria-label={`Average children per household, from ${trend[0].avg} (${trend[0].label}) to ${trend[trend.length - 1].avg} (${trend[trend.length - 1].label}). Each era is tappable.`}>
       {trend.map((t, i) => {
         const cx = L + slot * i + slot / 2;
         const top = y(t.avg), bot = H - B;
         const end = i === 0 || i === trend.length - 1;
+        const on = t.start === selected;
         return (
-          <g key={t.start}>
+          <g
+            key={t.start}
+            className="tim-petal"
+            onClick={() => onPick?.(t.start)}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onPick?.(t.start); } }}
+            aria-label={`${t.label}: ${t.avg} children per household on average, ${t.n} households`}
+          >
+            <rect x={cx - slot / 2} y={T - 8} width={slot} height={H - T - B + 16} fill="transparent" />
             <path
               d={`M${cx - bw / 2},${bot} L${cx - bw / 2},${top + 4} Q${cx - bw / 2},${top} ${cx - bw / 2 + 4},${top} L${cx + bw / 2 - 4},${top} Q${cx + bw / 2},${top} ${cx + bw / 2},${top + 4} L${cx + bw / 2},${bot} Z`}
-              fill={end ? ACC : ACC_SOFT}
+              fill={on ? INK : end ? ACC : ACC_SOFT}
             />
             {(!everyOther || end || (i % 2 === 0 && i < trend.length - 2)) && (
-              <text x={cx} y={H - 10} fontSize="10" fill={FAINT} textAnchor="middle">{t.label}</text>
+              <text x={cx} y={H - 10} fontSize="10" fill={on ? INK : FAINT} fontWeight={on ? 700 : 400} textAnchor="middle">{t.label}</text>
             )}
-            {end && <text x={cx} y={top - 7} fontSize="12" fontWeight="700" fill={INK} textAnchor="middle">{t.avg}</text>}
+            {(end || on) && <text x={cx} y={top - 7} fontSize="12" fontWeight="700" fill={INK} textAnchor="middle">{t.avg}</text>}
           </g>
         );
       })}
@@ -710,8 +838,11 @@ function HeartlandsModule({ data, graph, onNavigate }) {
   );
 }
 
-function TradesModule({ data }) {
+function TradesModule({ data, graph, onNavigate }) {
   const { bands, firstTop, lastTop, distinct, total } = data;
+  const [sel, setSel] = useState(null); // { from, name } | null
+  const selTag = sel ? bands.find((b) => b.from === sel.from)?.top.find((t) => t.name === sel.name) : null;
+  const selBand = sel ? bands.find((b) => b.from === sel.from) : null;
   // Lowercase a normally-cased occupation for mid-sentence use, leaving
   // all-caps forms ("IT consultant") alone.
   const lc = (s) => (/^[A-Z][a-z]/.test(s) ? s.charAt(0).toLowerCase() + s.slice(1) : s);
@@ -719,7 +850,7 @@ function TradesModule({ data }) {
     <Module
       icon={<ToolsIcon />}
       title={`From ${lc(firstTop)} to ${lc(lastTop)}`}
-      sub="What the family did for a living, era by era."
+      sub="What the family did for a living, era by era. Tap a trade to see who."
       caption={<><b>{distinct} different trades</b> across {total} working lives recorded so far.</>}
     >
       <div className="tim-eras">
@@ -728,12 +859,28 @@ function TradesModule({ data }) {
             <div className="tim-era__when">{b.from} – {b.isNow ? 'today' : b.to}</div>
             <div className="tim-era__tags">
               {b.top.map((t) => (
-                <span key={t.name}>{t.name}{t.count > 1 ? ` ×${t.count}` : ''}</span>
+                <button
+                  key={t.name}
+                  className={'tim-eratag' + (sel && sel.from === b.from && sel.name === t.name ? ' tim-eratag--on' : '')}
+                  onClick={() => setSel((cur) => (cur && cur.from === b.from && cur.name === t.name ? null : { from: b.from, name: t.name }))}
+                  aria-expanded={!!(sel && sel.from === b.from && sel.name === t.name)}
+                >
+                  {t.name}{t.count > 1 ? ` ×${t.count}` : ''}
+                </button>
               ))}
             </div>
           </div>
         ))}
       </div>
+      {selTag && selBand && (
+        <PeopleDrawer
+          title={`${selTag.name} — ${selTag.count}, ${selBand.from}–${selBand.isNow ? 'today' : selBand.to}`}
+          rows={selTag.ids.map((id) => ({ id }))}
+          graph={graph}
+          onNavigate={onNavigate}
+          onClose={() => setSel(null)}
+        />
+      )}
     </Module>
   );
 }
@@ -877,26 +1024,44 @@ function BirthdayWheel({ data, selected = null, onPick }) {
   );
 }
 
-function RecordsModule({ data, onNavigate }) {
+function RecordsModule({ data, graph, onNavigate }) {
   const { records: shown, poolSize } = data;
+  const [sel, setSel] = useState(null); // record key | null
   return (
     <Module
       icon={<TrophyIcon />}
       title="Records the family holds"
       sub="The superlatives hiding in the dates."
       caption={poolSize > shown.length
-        ? <>{poolSize} records so far — a different three each day. Every record taps through to who holds it.</>
-        : <>Every record taps through to the person who holds it.</>}
+        ? <>{poolSize} records so far — a different three each day. Tap a record for its full leaderboard.</>
+        : <>Tap a record for its full leaderboard.</>}
     >
       <div className="tim-ms">
         {shown.map((r) => (
-          <button key={r.key} className="tim-ms__row" onClick={() => r.personId && onNavigate?.(r.personId)}>
-            <span className="tim-ms__ico"><RecordIcon name={r.icon} /></span>
-            <span className="tim-ms__body">
-              <span className="tim-ms__t">{r.title}</span>
-              <span className="tim-ms__d">{r.detail}</span>
-            </span>
-          </button>
+          <div key={r.key}>
+            <button
+              className={'tim-ms__row' + (sel === r.key ? ' tim-ms__row--on' : '')}
+              onClick={() => (r.board?.length
+                ? setSel((cur) => (cur === r.key ? null : r.key))
+                : r.personId && onNavigate?.(r.personId))}
+              aria-expanded={r.board?.length ? sel === r.key : undefined}
+            >
+              <span className="tim-ms__ico"><RecordIcon name={r.icon} /></span>
+              <span className="tim-ms__body">
+                <span className="tim-ms__t">{r.title}</span>
+                <span className="tim-ms__d">{r.detail}</span>
+              </span>
+            </button>
+            {sel === r.key && r.board?.length > 0 && (
+              <PeopleDrawer
+                title={`The top ${r.board.length}`}
+                rows={r.board}
+                graph={graph}
+                onNavigate={onNavigate}
+                onClose={() => setSel(null)}
+              />
+            )}
+          </div>
         ))}
       </div>
     </Module>

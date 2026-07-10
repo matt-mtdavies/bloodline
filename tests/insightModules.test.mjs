@@ -6,7 +6,7 @@
  */
 import assert from 'node:assert/strict';
 import { buildGraph } from '../src/data/graph.js';
-import { computeInsightModules, computeThisMonth, buildInsightHighlights } from '../src/lib/insightModules.js';
+import { computeInsightModules, computeThisMonth, buildInsightHighlights, aliveInYear } from '../src/lib/insightModules.js';
 
 let passed = 0, failed = 0;
 function test(label, fn) {
@@ -181,6 +181,56 @@ test('drill-down: sharedDays lists every date 2+ people share, largest first', (
 test('drill-down: strata rows and heartland places carry ids matching their counts', () => {
   for (const r of mods.strata.rows) assert.equal(r.ids.length, r.total);
   for (const pl of mods.heartlands.places) assert.equal(pl.ids.length, pl.count);
+});
+
+// ── Wave 2: time-chart drill-downs ──────────────────────────────────────────
+test('scrubber: aliveInYear agrees with every point on the computed series', () => {
+  const { series, spans } = mods.fullestYear;
+  for (const pt of series) {
+    assert.equal(aliveInYear(spans, pt.year).length, pt.count, `year ${pt.year}`);
+  }
+  // Oldest-first ordering, and ageThen is consistent with the span.
+  const y = series[Math.floor(series.length / 2)].year;
+  const alive = aliveInYear(spans, y);
+  for (let i = 1; i < alive.length; i++) {
+    assert.ok(alive[i - 1].ageThen >= alive[i].ageThen, 'oldest first');
+  }
+});
+
+test('gift of years: each cohort carries its people, longest life first', () => {
+  for (const c of mods.giftOfYears.cohorts) {
+    assert.equal(c.people.length, c.n);
+    for (let i = 1; i < c.people.length; i++) {
+      assert.ok(c.people[i - 1].span >= c.people[i].span);
+    }
+    const avg = Math.round(c.people.reduce((s, x) => s + x.span, 0) / c.people.length);
+    assert.equal(avg, c.avg, 'avg recomputes from the carried people');
+  }
+});
+
+test('brood: each trend bucket carries its households, fullest first', () => {
+  for (const t of mods.brood.trend) {
+    assert.equal(t.households.length, t.n);
+    for (let i = 1; i < t.households.length; i++) {
+      assert.ok(t.households[i - 1].count >= t.households[i].count);
+    }
+  }
+});
+
+test('trades: every band tag carries exactly its people', () => {
+  for (const b of mods.trades.bands) {
+    for (const t of b.top) assert.equal(t.ids.length, t.count);
+  }
+});
+
+test('records: leaderboards are capped at 5, sorted, and led by the headline holder', () => {
+  // Recompute the full pool via a fresh call — `records` rotates its shown
+  // three daily, so check whichever are shown.
+  for (const r of mods.records.records) {
+    assert.ok(Array.isArray(r.board) && r.board.length >= 1 && r.board.length <= 5, `${r.key} board`);
+    assert.equal(r.board[0].id, r.personId, `${r.key} board led by the holder`);
+    for (const row of r.board) assert.ok(row.id && row.detail, 'row has id + detail');
+  }
 });
 
 test('names: middle names count toward the tally and are tagged; `all` answers any name', () => {

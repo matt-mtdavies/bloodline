@@ -7855,6 +7855,19 @@ button.health-notes {
   background: var(--accent-soft, #f7efe9); border-color: var(--accent-soft, #f7efe9);
   color: var(--accent-deep, #a44d2c);
 }
+/* Wave 2: the year scrubber + era-tag buttons + records leaderboard state */
+.tim-scrub { cursor: ew-resize; user-select: none; -webkit-user-select: none; outline: none; }
+.tim-scrub:focus-visible { outline: 2px solid var(--accent, #c2603a); outline-offset: 3px; border-radius: 8px; }
+.tim-eratag {
+  border: 0; cursor: pointer; font: inherit;
+  font-size: 11.5px; background: var(--paper-deep, #f4f5f7); color: var(--ink-soft, #6b6260);
+  border-radius: 999px; padding: 2px 9px; transition: background 0.15s, color 0.15s;
+}
+.tim-eratag:hover { background: var(--accent-soft, #f7efe9); color: var(--accent-deep, #a44d2c); }
+.tim-eratag--on { background: var(--accent-soft, #f7efe9); color: var(--accent-deep, #a44d2c); font-weight: 600; }
+.tim-ms__row--on { border-color: var(--accent, #c2603a); }
+.tim-ms .tim-drawer { margin-top: 6px; }
+
 @media (prefers-reduced-motion: reduce) { .tim-drawer { animation: none; } }
 
 @keyframes ti-rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }

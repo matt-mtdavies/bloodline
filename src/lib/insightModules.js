@@ -279,9 +279,13 @@ function records(graph) {
   const pool = [];
   const first = (id) => firstNameOf(graph.byId.get(id));
 
+  // Each record now carries a `board`: the top-5 leaderboard behind the
+  // headline holder — rows { id, label?, detail } for the drill-down drawer
+  // (label overrides the person's name where the entry is a couple).
+
   // Longest marriage — needs the marriage details couples can fill in.
   {
-    let bestPair = null, bestYears = -1, bestStart = 0, bestOngoing = false;
+    const all = [];
     for (const r of graph.relationships) {
       if (r.type !== 'partner' || !r.marriage_date) continue;
       const start = year(r.marriage_date);
@@ -297,46 +301,51 @@ function records(graph) {
       const end = ongoing ? thisYear : Math.min(...ends);
       const years = end - start;
       if (years <= 0 || years >= 100) continue;
-      if (years > bestYears) {
-        bestYears = years; bestPair = [a, b]; bestStart = start; bestOngoing = ongoing;
-      }
+      all.push({ a, b, years, start, ongoing });
     }
-    if (bestPair && bestYears >= 25) {
+    all.sort((x, y) => y.years - x.years);
+    const best = all[0];
+    if (best && best.years >= 25) {
       pool.push({
         key: 'marriage', icon: 'rings',
-        title: `${firstNameOf(bestPair[0])} & ${firstNameOf(bestPair[1])} — married ${bestYears} years`,
-        detail: bestOngoing
-          ? `Since ${bestStart}, and still going — the longest marriage on record.`
-          : `${bestStart} to ${bestStart + bestYears}, the longest marriage on record.`,
-        personId: bestPair[0].id,
+        title: `${firstNameOf(best.a)} & ${firstNameOf(best.b)} — married ${best.years} years`,
+        detail: best.ongoing
+          ? `Since ${best.start}, and still going — the longest marriage on record.`
+          : `${best.start} to ${best.start + best.years}, the longest marriage on record.`,
+        personId: best.a.id,
+        board: all.slice(0, 5).map((m) => ({
+          id: m.a.id,
+          label: `${firstNameOf(m.a)} & ${firstNameOf(m.b)}`,
+          detail: `${m.years} yrs · ${m.start}`,
+        })),
       });
     }
   }
 
   // Longest life.
   {
-    let bestP = null, span = -1;
+    const all = [];
     for (const p of graph.people) {
       const b = year(p.birth_date), d = year(p.death_date);
-      if (b != null && d != null && d - b > span && d - b < 120) { span = d - b; bestP = p; }
+      if (b != null && d != null && d - b > 0 && d - b < 120) all.push({ p, span: d - b, b, d });
     }
-    if (bestP && span >= 85) {
-      const nineties = graph.people.filter((p) => {
-        const b = year(p.birth_date), d = year(p.death_date);
-        return b != null && d != null && d - b >= 90 && d - b < 120;
-      }).length;
+    all.sort((x, y) => y.span - x.span);
+    const best = all[0];
+    if (best && best.span >= 85) {
+      const nineties = all.filter((x) => x.span >= 90).length;
       pool.push({
         key: 'life', icon: 'star',
-        title: `${span} years, the longest life`,
-        detail: `${bestP.display_name}, ${year(bestP.birth_date)}–${year(bestP.death_date)}${nineties >= 2 ? ` — ${nineties} relatives reached their 90s` : ''}.`,
-        personId: bestP.id,
+        title: `${best.span} years, the longest life`,
+        detail: `${best.p.display_name}, ${best.b}–${best.d}${nineties >= 2 ? ` — ${nineties} relatives reached their 90s` : ''}.`,
+        personId: best.p.id,
+        board: all.slice(0, 5).map((x) => ({ id: x.p.id, detail: `${x.span} yrs · ${x.b}–${x.d}` })),
       });
     }
   }
 
   // Oldest new parent + youngest parent, from parent-edge age-at-birth.
   {
-    let oldest = null, youngest = null;
+    const byParent = new Map(); // parentId -> { parent, oldest: {age, when}, youngest: {age, when} }
     for (const r of graph.relationships) {
       if (r.type !== 'parent' || !isBioAdopt(r.qualifier)) continue;
       const parent = graph.byId.get(r.from_person);
@@ -345,9 +354,16 @@ function records(graph) {
       if (pb == null || cb == null) continue;
       const age = cb - pb;
       if (age < 13 || age > 75) continue; // outside plausibility → bad data, skip
-      if (!oldest || age > oldest.age) oldest = { parent, age, when: cb };
-      if (!youngest || age < youngest.age) youngest = { parent, age, when: cb };
+      const e = byParent.get(parent.id) || { parent, oldest: null, youngest: null };
+      if (!e.oldest || age > e.oldest.age) e.oldest = { age, when: cb };
+      if (!e.youngest || age < e.youngest.age) e.youngest = { age, when: cb };
+      byParent.set(parent.id, e);
     }
+    // One leaderboard entry per PERSON (their own extreme), not per birth.
+    const olds = [...byParent.values()].sort((x, y) => y.oldest.age - x.oldest.age);
+    const youngs = [...byParent.values()].sort((x, y) => x.youngest.age - y.youngest.age);
+    const oldest = olds[0] ? { parent: olds[0].parent, ...olds[0].oldest } : null;
+    const youngest = youngs[0] ? { parent: youngs[0].parent, ...youngs[0].youngest } : null;
     const role = (p) => (p.gender === 'male' ? 'father' : p.gender === 'female' ? 'mother' : 'parent');
     if (oldest && oldest.age >= 45) {
       pool.push({
@@ -355,6 +371,7 @@ function records(graph) {
         title: `A ${role(oldest.parent)} again at ${oldest.age}`,
         detail: `${oldest.parent.display_name}, ${oldest.when} — the oldest new parent in the tree.`,
         personId: oldest.parent.id,
+        board: olds.slice(0, 5).map((x) => ({ id: x.parent.id, detail: `age ${x.oldest.age} · ${x.oldest.when}` })),
       });
     }
     if (youngest && youngest.age >= 15 && youngest.age <= 20 && (!oldest || youngest.parent.id !== oldest.parent.id)) {
@@ -363,13 +380,14 @@ function records(graph) {
         title: `A ${role(youngest.parent)} at just ${youngest.age}`,
         detail: `${youngest.parent.display_name}, ${youngest.when} — the youngest in the tree.`,
         personId: youngest.parent.id,
+        board: youngs.slice(0, 5).map((x) => ({ id: x.parent.id, detail: `age ${x.youngest.age} · ${x.youngest.when}` })),
       });
     }
   }
 
   // Most grandchildren.
   {
-    let bestP = null, bestN = 0;
+    const all = [];
     for (const p of graph.people) {
       const grandkids = new Set();
       for (const c of graph.children(p.id)) {
@@ -378,14 +396,17 @@ function records(graph) {
           if (isBioAdopt(gc.qualifier)) grandkids.add(gc.id);
         }
       }
-      if (grandkids.size > bestN) { bestN = grandkids.size; bestP = p; }
+      if (grandkids.size > 0) all.push({ p, n: grandkids.size });
     }
-    if (bestP && bestN >= 8) {
+    all.sort((x, y) => y.n - x.n);
+    const best = all[0];
+    if (best && best.n >= 8) {
       pool.push({
         key: 'grandchildren', icon: 'heart',
-        title: `${firstNameOf(bestP)}: ${bestN} grandchildren`,
-        detail: `${bestP.display_name} — more than anyone else in the tree.`,
-        personId: bestP.id,
+        title: `${firstNameOf(best.p)}: ${best.n} grandchildren`,
+        detail: `${best.p.display_name} — more than anyone else in the tree.`,
+        personId: best.p.id,
+        board: all.slice(0, 5).map((x) => ({ id: x.p.id, detail: `${x.n} grandchildren` })),
       });
     }
   }
@@ -408,7 +429,7 @@ function trades(graph) {
     const occ = (p.occupation || '').trim();
     const b = year(p.birth_date);
     if (!occ || b == null) continue;
-    entries.push({ occ, workYear: b + 25 }); // roughly the start of a working life
+    entries.push({ id: p.id, occ, workYear: b + 25 }); // roughly the start of a working life
   }
   if (entries.length < 12) return null;
 
@@ -428,8 +449,10 @@ function trades(graph) {
     const freq = new Map();
     for (const e of inBand) {
       const key = e.occ.toLowerCase();
-      if (!freq.has(key)) freq.set(key, { name: e.occ, count: 0 });
-      freq.get(key).count++;
+      if (!freq.has(key)) freq.set(key, { name: e.occ, count: 0, ids: [] });
+      const f = freq.get(key);
+      f.count++;
+      f.ids.push(e.id);
     }
     const top = [...freq.values()].sort((a, b) => b.count - a.count).slice(0, 3);
     bands.push({
@@ -460,7 +483,7 @@ function trades(graph) {
 
 /* ── The gift of years: average lifespan per birth-decade cohort ─────────── */
 function giftOfYears(graph) {
-  const cohorts = new Map(); // decade -> [spans]
+  const cohorts = new Map(); // decade -> [{ id, span }]
   for (const p of graph.people) {
     if (!p.is_deceased) continue;
     const b = year(p.birth_date), d = year(p.death_date);
@@ -469,14 +492,15 @@ function giftOfYears(graph) {
     if (span <= 0 || span >= 120) continue;
     const dec = Math.floor(b / 10) * 10;
     if (!cohorts.has(dec)) cohorts.set(dec, []);
-    cohorts.get(dec).push(span);
+    cohorts.get(dec).push({ id: p.id, span });
   }
   const rows = [...cohorts.entries()]
-    .filter(([, spans]) => spans.length >= 4)
-    .map(([decade, spans]) => ({
+    .filter(([, people]) => people.length >= 4)
+    .map(([decade, people]) => ({
       decade,
-      avg: Math.round(spans.reduce((s, x) => s + x, 0) / spans.length),
-      n: spans.length,
+      avg: Math.round(people.reduce((s, x) => s + x.span, 0) / people.length),
+      n: people.length,
+      people: people.slice().sort((a, b) => b.span - a.span),
     }))
     .sort((a, b) => a.decade - b.decade);
   if (rows.length < 3) return null;
@@ -497,36 +521,47 @@ function fullestYear(graph) {
     if (p.is_deceased) {
       const d = year(p.death_date);
       if (d == null || d < b) continue;
-      spans.push([b, d]);
+      spans.push({ id: p.id, from: b, to: d });
     } else {
-      spans.push([b, thisYear]);
+      spans.push({ id: p.id, from: b, to: thisYear });
     }
   }
   if (spans.length < 15) return null;
-  const minYear = Math.min(...spans.map(([b]) => b));
+  const minYear = Math.min(...spans.map((s) => s.from));
   if (thisYear - minYear < 40) return null;
   const step = Math.max(1, Math.ceil((thisYear - minYear) / 110));
   const series = [];
   let peak = { year: minYear, count: 0 };
   for (let y = minYear; y <= thisYear; y += step) {
-    const count = spans.reduce((n, [b, d]) => n + (b <= y && y <= d ? 1 : 0), 0);
+    const count = spans.reduce((n, s) => n + (s.from <= y && y <= s.to ? 1 : 0), 0);
     series.push({ year: y, count });
     if (count >= peak.count) peak = { year: y, count };
   }
   // Always land the series exactly on the current year so "today" is a point.
   if (series[series.length - 1].year !== thisYear) {
-    const count = spans.reduce((n, [b, d]) => n + (b <= thisYear && thisYear <= d ? 1 : 0), 0);
+    const count = spans.reduce((n, s) => n + (s.from <= thisYear && thisYear <= s.to ? 1 : 0), 0);
     series.push({ year: thisYear, count });
     if (count >= peak.count) peak = { year: thisYear, count };
   }
   return {
     series,
+    // The raw alive-windows behind the curve, so the renderer's scrubber can
+    // answer "who was alive in YEAR?" for ANY year without a per-year index.
+    spans,
     peak,
     isNow: peak.year >= thisYear - step,
     firstYear: minYear,
     firstCount: series[0].count,
     thisYear,
   };
+}
+
+// Who was alive in a given year, oldest first — the scrubber's drill-down.
+export function aliveInYear(spans, y) {
+  return spans
+    .filter((s) => s.from <= y && y <= s.to)
+    .sort((a, b) => a.from - b.from)
+    .map((s) => ({ id: s.id, ageThen: y - s.from }));
 }
 
 /* ── Generation strata: everyone, stacked oldest-first ───────────────────── */
@@ -603,15 +638,16 @@ function brood(graph) {
       if (!years.length) continue;
       const start = Math.floor(Math.min(...years) / width) * width;
       if (!buckets.has(start)) buckets.set(start, []);
-      buckets.get(start).push(h.kids.length);
+      buckets.get(start).push({ parentIds: h.parentIds, count: h.kids.length });
     }
     return [...buckets.entries()]
-      .filter(([, counts]) => counts.length >= 3)
-      .map(([start, counts]) => ({
+      .filter(([, hs]) => hs.length >= 3)
+      .map(([start, hs]) => ({
         start,
         label: width === 10 ? `${start}s` : `${start}–${start + width - 1}`,
-        avg: Math.round((counts.reduce((s, x) => s + x, 0) / counts.length) * 10) / 10,
-        n: counts.length,
+        avg: Math.round((hs.reduce((s, x) => s + x.count, 0) / hs.length) * 10) / 10,
+        n: hs.length,
+        households: hs.slice().sort((a, b) => b.count - a.count),
       }))
       .sort((a, b) => a.start - b.start);
   };
