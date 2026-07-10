@@ -35,8 +35,17 @@ t('isPhoneValid flags the legacy bug output so it can be surfaced for fixing', (
   assert.equal(isPhoneValid('+61417384533'), true);
 });
 
-t('formatPhone pretty-prints a valid number', () => {
-  assert.equal(formatPhone('+61417384533'), '+61 04 173 845 33');
+t('formatPhone drops the domestic trunk 0 for AU mobiles (the reported bug)', () => {
+  assert.equal(formatPhone('+61417384533'), '+61 417 384 533');
+});
+t('formatPhone groups an AU mobile 4-3-3, not 1-3-3-2', () => {
+  assert.equal(countryByIso2('AU').formatNational('417384533'), '0417 384 533');
+});
+t('formatPhone drops the trunk 0 for other trunk-prefix countries too (GB)', () => {
+  assert.equal(formatPhone('+442079460958'), '+44 2079 460958');
+});
+t('formatPhone leaves non-trunk countries alone (US area code never starts with 0)', () => {
+  assert.equal(formatPhone('+14389792323'), '+1 (438) 979-2323');
 });
 t('formatPhone falls back to the raw string for an unrecognised value (never invents a country)', () => {
   assert.equal(formatPhone('+0417384533'), '+0417384533');

@@ -24,8 +24,12 @@
 export const PHONE_COUNTRIES = [
   { iso2: 'AU', name: 'Australia', flag: '🇦🇺', dial: '61', nationalLen: 9,
     placeholder: '04XX XXX XXX',
+    // Mobile groups as 4-3-3 ("0433 707 747"); landline as area-code digit +
+    // 4 + 4 ("02 1234 5678"). The mobile branch used to split 1-3-3-2
+    // instead of 3-3-3 after the leading 0, e.g. "04 337 077 47" for the
+    // same number — wrong grouping, not just a display nit.
     formatNational: (d) => d[0] === '4'
-      ? `0${d[0]} ${d.slice(1, 4)} ${d.slice(4, 7)} ${d.slice(7)}`
+      ? `0${d.slice(0, 3)} ${d.slice(3, 6)} ${d.slice(6)}`
       : `0${d[0]} ${d.slice(1, 5)} ${d.slice(5)}` },
   { iso2: 'US', name: 'United States', flag: '🇺🇸', dial: '1', nationalLen: 10,
     placeholder: '(XXX) XXX-XXXX',
@@ -167,5 +171,15 @@ export function formatPhone(raw) {
   if (!raw) return '';
   const parsed = splitE164(raw);
   if (!parsed) return raw;
-  return `+${parsed.country.dial} ${parsed.country.formatNational(parsed.digits)}`;
+  const national = parsed.country.formatNational(parsed.digits);
+  // formatNational renders the DOMESTIC form, which for most countries here
+  // hardcodes the local trunk "0" (see the module doc comment above). That
+  // "0" is not part of the number once the +dial country code is already
+  // shown — "+61 0433 707 747" isn't dialable — so it's dropped here, not in
+  // formatNational itself, which PhoneField.jsx still needs for domestic
+  // display. Only ever strips a literal leading "0" character; a country
+  // with no trunk convention (US/CA/IN/CN/SG/BR) never starts its formatted
+  // string with one, so this never touches a real area-code digit.
+  const significant = national[0] === '0' ? national.slice(1).trimStart() : national;
+  return `+${parsed.country.dial} ${significant}`;
 }
