@@ -260,6 +260,33 @@ test('names: middle names count toward the tally and are tagged; `all` answers a
   assert.ok(!m.names.all.find((e) => e.name === '(Katie)') && !m.names.all.find((e) => e.name === 'Katie'));
 });
 
+// A middle name often lives in its OWN field, never spelled out in
+// display_name — the profile heading weaves person.middle_name in only for
+// that one view (fullName() in lib/profile.js: "Sari Stein" the record,
+// "Sari Heather Stein" the heading). The tally must count it either way.
+test('names: a middle_name field counts even when display_name never spells it out', () => {
+  const people = [
+    { id: 's1', display_name: 'Sari Stein', middle_name: 'Heather', birth_date: '1980-01-01' },
+    { id: 'h1', display_name: 'Heather Davies', birth_date: '1959-01-01' },
+    { id: 'h2', display_name: 'Heather Lone', birth_date: '1965-01-01' },
+    // middle_name already spelled out in display_name — must not double-count.
+    { id: 'j1', display_name: 'Peter John Smith', middle_name: 'John', birth_date: '1940-01-01' },
+    // Padding so a second name also clears the module's own >=3 bar-chart
+    // threshold — irrelevant to what's under test, which is `all`.
+    { id: 'j2', display_name: 'John Roe', birth_date: '1961-01-01' },
+    { id: 'j3', display_name: 'John Poe', birth_date: '1971-01-01' },
+  ];
+  const g = buildGraph(people, []);
+  const m = computeInsightModules(g, 'h1');
+  assert.ok(m.names, 'module renders');
+  const heather = m.names.all.find((e) => e.name === 'Heather');
+  assert.equal(heather.count, 3, 'Sari (middle_name), Heather Davies, Heather Lone');
+  assert.ok(heather.people.find((x) => x.id === 's1' && x.middle), 'Sari counted via middle_name, tagged middle');
+  const john = m.names.all.find((e) => e.name === 'John');
+  assert.equal(john.count, 3, 'Peter (middle_name, not double-counted) + John Roe + John Poe');
+  assert.equal(john.people.filter((x) => x.id === 'j1').length, 1, 'Peter appears once, not twice');
+});
+
 // ── Wave 2: handshakes, bridges, records, trades ────────────────────────────
 test('handshakes: 3-hop chain from g4_0 back to an 1820 founder', () => {
   assert.ok(mods.handshakes, 'module should render');

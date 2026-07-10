@@ -58,13 +58,24 @@ const surnameOf = (p) => {
 // parenthesised/quoted tokens are nicknames ("Kaitlin (Katie) Davies"), not
 // given names. Returns [{ name, middle }] so a John-by-middle-name can be
 // labelled as such in the drill-down without being counted any differently.
+//
+// A middle name often lives in its OWN field, not in display_name: the
+// profile heading weaves person.middle_name into display_name only for that
+// one view (see fullName() in lib/profile.js) — "Sari Stein" the record,
+// "Sari Heather Stein" the heading. Mirror that same weave-and-dedupe here
+// so "Heather" counts even when display_name itself never spelled it out.
 const givenNamesOf = (p) => {
-  const tokens = (p?.display_name || '').trim().split(/\s+/)
-    .filter((t) => !/^[("'“‘]/.test(t));
+  const display = (p?.display_name || '').trim();
+  const tokens = display.split(/\s+/).filter((t) => !/^[("'“‘]/.test(t));
   const given = tokens.length > 1 ? tokens.slice(0, -1) : tokens;
-  return given
+  const out = given
     .filter((t) => t.length >= 2)
     .map((name, i) => ({ name, middle: i > 0 }));
+  const middleName = (p?.middle_name || '').trim();
+  if (middleName && !display.toLowerCase().includes(middleName.toLowerCase())) {
+    out.push({ name: middleName, middle: true });
+  }
+  return out;
 };
 const isBioAdopt = (q) => !q || q === 'biological' || q === 'adoptive';
 
