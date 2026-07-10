@@ -6,6 +6,7 @@ import { relationLabel } from '../data/graph.js';
 import { profileCompleteness, lifeEvents, fullName } from '../lib/profile.js';
 import { fileToDataUrl, uploadPhoto, suggestDocumentTitle, imageSrcToDataUrl } from '../lib/image.js';
 import { streamBio } from '../lib/ai.js';
+import EnrichSheet from './EnrichSheet.jsx';
 import { VISIBILITY_LABELS, VISIBILITY_DESCS } from '../lib/visibility.js';
 import { HEALTH_CATEGORIES, HEALTH_CONDITIONS, HEALTH_STATUSES, colorFor } from '../lib/health.js';
 import { formatPhone, isPhoneValid } from '../lib/phone.js';
@@ -58,6 +59,8 @@ export default function PersonSheet({
   onPhoto,
   onLifeJourney,
   onMarkJoined,
+  onReviewDuplicate,
+  onApplyEnrichedPlace,
   canEdit = true,        // editor+ : structural changes (people, relationships, edits)
   canContribute = true,  // contributor+ : add memories & photos
   isAdmin = true,        // owner/co-admin : manage anyone's memory, not just your own
@@ -86,13 +89,14 @@ export default function PersonSheet({
   const [statusPickId, setStatusPickId] = useState(null);
   const [healthNotesEditing, setHealthNotesEditing] = useState(false);
   const [healthNotesDraft, setHealthNotesDraft] = useState('');
+  const [enrichOpen, setEnrichOpen] = useState(false);
 
   useEffect(() => {
-    if (!person || lockEscape) return; // a stacked overlay owns Escape
+    if (!person || lockEscape || enrichOpen) return; // a stacked overlay owns Escape
     const onKey = (e) => e.key === 'Escape' && onClose();
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [person, onClose, lockEscape]);
+  }, [person, onClose, lockEscape, enrichOpen]);
 
   // Reset generation + health state whenever the viewed person changes.
   // Switching from a relationship chip swaps `person` in place (this sheet
@@ -588,6 +592,12 @@ export default function PersonSheet({
                   <span className="meter__fill" style={{ width: `${completeness.score}%` }} />
                 </div>
               </div>
+            )}
+
+            {canEdit && (
+              <button className="enrich-trigger" onClick={() => setEnrichOpen(true)}>
+                <SparkleIcon /> Enrich this profile
+              </button>
             )}
 
             {/* Contact — living people only */}
@@ -1430,6 +1440,20 @@ export default function PersonSheet({
         )}
 
       </article>
+
+      {enrichOpen && (
+        <EnrichSheet
+          person={person}
+          graph={graph}
+          memoryCount={personMemories.length}
+          onClose={() => setEnrichOpen(false)}
+          onEdit={() => { setEnrichOpen(false); onEdit?.(person.id); }}
+          onAddRelative={() => { setEnrichOpen(false); onAddRelative?.(person.id); }}
+          onReviewDuplicate={() => { setEnrichOpen(false); onReviewDuplicate?.(person.id); }}
+          onGenerateStory={() => { setEnrichOpen(false); generateStory(); }}
+          onApplyPlace={(key, value) => onApplyEnrichedPlace?.(person.id, key, value)}
+        />
+      )}
     </div>
   );
 }

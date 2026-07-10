@@ -172,6 +172,10 @@ export default function App() {
   const [isAnonymousTrial] = useState(() => isNewUrl);
   const [user, setUser] = useState(null);
   const [duplicatesOpen, setDuplicatesOpen] = useState(false);
+  // When opened from a person's "Enrich this profile" sheet, filters the
+  // duplicates list down to just that person's own possible matches.
+  const [duplicatesFocusId, setDuplicatesFocusId] = useState(null);
+  const openDuplicatesFor = (personId) => { setDuplicatesFocusId(personId); setDuplicatesOpen(true); };
   // Whether the signed-in member can edit the tree (drives merge/cleanup tools).
   const canEditTree = !user || ['owner', 'coadmin', 'editor'].includes(data._meta?.role || 'owner');
   // Contributors may add memories & photos but not change structure.
@@ -1806,7 +1810,7 @@ export default function App() {
         canEdit={canEditTree}
         canContribute={canContributeTree}
         isAdmin={canManageTreeStructure}
-        lockEscape={!!(addAnchorId || editId || timelineId || memoryId || lightbox || crop || invitePersonId)}
+        lockEscape={!!(addAnchorId || editId || timelineId || memoryId || lightbox || crop || invitePersonId || duplicatesOpen)}
         onClose={closePerson}
         onFocus={(id) => {
           closePersonForTreeAction();
@@ -1855,6 +1859,12 @@ export default function App() {
         onInvite={(id) => setInvitePersonId(id)}
         onLifeJourney={startLifeJourney}
         onMarkJoined={handleMarkJoined}
+        onReviewDuplicate={openDuplicatesFor}
+        onApplyEnrichedPlace={(id, key, value) => {
+          const person = graph.byId.get(id);
+          const label = key === 'birth_place' ? 'birthplace' : 'residence';
+          updatePerson(id, { [key]: value }, { type: 'person_updated', personId: id, personName: person?.display_name ?? '', detail: label });
+        }}
       />
 
       {searchOpen && (
@@ -1888,10 +1898,12 @@ export default function App() {
 
       {duplicatesOpen && (
         <DuplicatesSheet
-          pairs={duplicatePairs}
+          pairs={duplicatesFocusId
+            ? duplicatePairs.filter((p) => p.aId === duplicatesFocusId || p.bId === duplicatesFocusId)
+            : duplicatePairs}
           graph={graph}
           onMerge={(keepId, dropId) => { mergePeople(keepId, dropId); if (activeId === dropId) activate(keepId); }}
-          onClose={() => setDuplicatesOpen(false)}
+          onClose={() => { setDuplicatesOpen(false); setDuplicatesFocusId(null); }}
         />
       )}
 
