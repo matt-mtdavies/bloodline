@@ -1504,7 +1504,6 @@ export default function App() {
         onOpenLegend={() => setLegendOpen(true)}
         bloodlineOnly={bloodlineOnly}
         onToggleBloodlineOnly={() => setBloodlineOnly((v) => !v)}
-        onOpenSettings={() => setSettingsOpen(true)}
         onOpenActivity={() => {
           setActivityOpen(true);
           const now = Date.now();
@@ -2106,6 +2105,7 @@ export default function App() {
           onOpenInstall={() => { setHomeOpen(false); setShowInstall(true); }}
           onOpenHowItWorks={() => { setHomeOpen(false); setHowItWorksOpen(true); }}
           onOpenFamilyTrees={() => { setHomeOpen(false); setFamilyTreesOpen(true); }}
+          onOpenFamilySettings={() => { setHomeOpen(false); setSettingsOpen(true); }}
           onOpenActivity={() => {
             setHomeOpen(false);
             setActivityOpen(true);

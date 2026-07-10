@@ -6191,16 +6191,21 @@ button.health-notes {
 }
 
 /* ── TopBar user avatar ────────────────────────────────────────────────── */
+/* Sized and bordered to match .pill exactly (38px, hairline ring, soft
+   shadow) — the one photograph in a row of outlined line-icons otherwise
+   reads as a different visual system and pulls the eye on sight, regardless
+   of its own size. */
 .topbar-avatar {
   position: relative;
-  width: 30px;
-  height: 30px;
+  width: 38px;
+  height: 38px;
   border-radius: 50%;
-  background: transparent;
+  background: #ffffff;
+  border: 1px solid var(--hairline);
+  box-shadow: var(--shadow-soft);
   display: flex;
   align-items: center;
   justify-content: center;
-  border: none;
   cursor: pointer;
   flex-shrink: 0;
   padding: 0;
@@ -6216,7 +6221,7 @@ button.health-notes {
   height: 100%;
   background: var(--accent);
   color: #fff;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 700;
   letter-spacing: 0.02em;
   border-radius: 50%;

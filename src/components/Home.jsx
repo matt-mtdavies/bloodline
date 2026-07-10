@@ -13,7 +13,7 @@ import { computeThisMonth } from '../lib/insightModules.js';
 export default function Home({
   user, familyName, stats = null, activity = [], people = [], graph = null, userEmail,
   onClose, onOpenAccount, onLogout, onOpenInstall, onOpenHowItWorks, onOpenFamilyTrees,
-  onOpenActivity, onSelectPerson,
+  onOpenActivity, onSelectPerson, onOpenFamilySettings,
 }) {
   // Already-installed (standalone) visits have nothing to gain from this
   // row, so it only shows where it's actually actionable.
@@ -142,6 +142,17 @@ export default function Home({
                 <span className="home__row-text">
                   <span className="home__row-title">Profile &amp; settings</span>
                   <span className="home__row-desc">Display name, notifications, claimed bubble</span>
+                </span>
+                <ArrowIcon />
+              </button>
+            )}
+
+            {onOpenFamilySettings && (
+              <button className="home__row-btn" onClick={onOpenFamilySettings}>
+                <span className="home__row-icon"><SettingsIcon /></span>
+                <span className="home__row-text">
+                  <span className="home__row-title">Family settings</span>
+                  <span className="home__row-desc">Invite people, manage roles, rename the family</span>
                 </span>
                 <ArrowIcon />
               </button>
@@ -305,6 +316,15 @@ function TreeIcon() {
       <circle cx="6" cy="17" r="3.2" stroke="currentColor" strokeWidth="1.7" />
       <circle cx="18" cy="17" r="3.2" stroke="currentColor" strokeWidth="1.7" />
       <path d="M12 9.2v3.3M12 12.5L6 14.2M12 12.5l6 1.7" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function SettingsIcon() {
+  return (
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="1.6"/>
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
     </svg>
   );
 }
