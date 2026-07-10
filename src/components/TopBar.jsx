@@ -93,6 +93,21 @@ export default function TopBar({ familyName, stats, view, layout, syncStatus, sy
               {syncError?.message || 'Not allowed — ask a co-admin'}
             </span>
           )}
+          {/* Bloodline-only — a GLOBAL display filter (it affects every view,
+              not just the chart), so it lives with the other global controls
+              up here rather than paired with the chart-specific view switcher.
+              Circular like its neighbours; its "on" state is a soft accent
+              tint, not a solid slab — the stats pill already spells out
+              "Bloodline only", so this need only whisper. */}
+          <button
+            className={`pill${bloodlineOnly ? ' pill--on' : ''}`}
+            onClick={onToggleBloodlineOnly}
+            aria-label="Bloodline only — show only biological and adoptive connections"
+            aria-pressed={bloodlineOnly}
+          >
+            <BloodlineIcon />
+            <span className="hover-tip hover-tip--down">Bloodline only</span>
+          </button>
           <button
             className="pill pill--bell"
             onClick={onOpenActivity}
@@ -186,15 +201,6 @@ export default function TopBar({ familyName, stats, view, layout, syncStatus, sy
               onSelect={(m) => { onSetViewMode(m); setViewMenuOpen(false); }}
             />
           )}
-          <button
-            className={`topbar__row2-btn${bloodlineOnly ? ' topbar__row2-btn--active' : ''}`}
-            onClick={onToggleBloodlineOnly}
-            aria-label="Bloodline only — show only biological and adoptive connections"
-            aria-pressed={bloodlineOnly}
-          >
-            <BloodlineIcon />
-            <span className="hover-tip hover-tip--left">Bloodline only</span>
-          </button>
         </div>
       </div>
 

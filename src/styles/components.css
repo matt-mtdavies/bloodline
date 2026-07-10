@@ -210,6 +210,15 @@
   transition: transform 0.4s var(--spring), box-shadow 0.3s var(--ease);
 }
 .pill:active { transform: scale(0.94); }
+/* A persistent display filter (Bloodline only) reads as "on" with a soft
+   accent tint + accent glyph — calmer than a solid fill, and the stats pill
+   already spells the state out in words, so this only needs to whisper. */
+.pill--on {
+  background: var(--accent-soft);
+  border-color: var(--accent-soft);
+  color: var(--accent-deep);
+}
+.pill--on:hover { background: color-mix(in srgb, var(--accent-soft) 82%, var(--accent)); }
 
 /* ── Intro hint ──────────────────────────────────────────────────────────── */
 .intro-hint {
@@ -8827,10 +8836,10 @@ button.health-notes {
    like the bottom dock (frosted pill) so it reads as the same design system. */
 .chart-controls {
   position: fixed;
-  /* Same offset .listview uses to clear the full topbar (brand row + the
-     family-stats treerow below it) — sitting any closer overlapped the
-     treerow's own tap targets. */
-  top: calc(var(--safe-top) + 128px);
+  /* Canvas controls (orientation · zoom · fit) live in the bottom-right — the
+     conventional home for map/canvas manipulation — so the top of the screen
+     stays identity & navigation only. Clear of the safe-area inset. */
+  bottom: calc(var(--safe-bottom, 0px) + 18px);
   right: 16px;
   z-index: 30;
   display: flex;
