@@ -270,6 +270,40 @@ test('this month: null when nothing falls in the given month', () => {
   assert.equal(r, null);
 });
 
+// January 1st is a very common "I only know the year" placeholder — imported
+// trees and this app's own onboarding both default to it. Treated as a real
+// date it manufactures a fake spike in "This month" and the birthday wheel.
+test('this month: January-1st placeholder dates are excluded; a real Jan-15 birthday still counts', () => {
+  const people = [
+    { id: 'a', display_name: 'Unknown-Day Lee', birth_date: '1950-01-01', is_deceased: false },
+    { id: 'b', display_name: 'Real Birthday Lee', birth_date: '1960-01-15', is_deceased: false },
+  ];
+  const g = buildGraph(people, []);
+  const r = computeThisMonth(g, new Date(2026, 0, 20)); // January
+  assert.ok(r, 'should still render — Jan 15 is a real birthday');
+  assert.deepEqual(r.birthdays.map((b) => b.id), ['b']);
+});
+
+test('birthdays module: January-1st placeholders never inflate the month tally or fake a twin pair', () => {
+  const people = [];
+  // 20 real February birthdays (comfortably clears both thresholds) plus 10
+  // people whose only recorded date is the Jan-1 placeholder.
+  for (let i = 0; i < 20; i++) {
+    people.push({ id: `feb${i}`, display_name: `Feb Person ${i}`, birth_date: `19${50 + i}-02-1${i % 9}`, is_deceased: false });
+  }
+  for (let i = 0; i < 10; i++) {
+    people.push({ id: `jan1_${i}`, display_name: `Placeholder Person ${i}`, birth_date: `19${60 + i}-01-01`, is_deceased: false });
+  }
+  const g = buildGraph(people, []);
+  const mods2 = computeInsightModules(g, 'feb0');
+  assert.ok(mods2.birthdays, 'module should render off the 20 real February dates');
+  assert.equal(mods2.birthdays.months[0], 0, 'January bucket must not count the placeholder dates');
+  assert.equal(mods2.birthdays.withMonth, 20, 'the 10 placeholder people are excluded entirely');
+  assert.equal(mods2.birthdays.peakLabel, 'February');
+  // Two placeholder people sharing "Jan 1" must never be reported as birthday twins.
+  assert.ok(!mods2.birthdays.twins.some((t) => t.dateLabel === '1 January'), 'no fake January-1st twin pair');
+});
+
 test('highlights: pulls a compact digest from whatever modules rendered', () => {
   const h = buildInsightHighlights(mods);
   assert.ok(h.handshake);

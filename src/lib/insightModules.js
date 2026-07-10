@@ -33,6 +33,21 @@ const dayOf = (d) => {
   const n = p ? parseInt(p, 10) : NaN;
   return n >= 1 && n <= 31 ? n : null;
 };
+// Many imported trees (and this app's own "I don't know the exact date"
+// entry) fall back to January 1st when only the birth YEAR is actually
+// known. Treated as a real date, it manufactures a fake "January is
+// birthday season" spike and false birthday-twin matches out of nothing but
+// shared ignorance. Insights that read a birth_date's month/day go through
+// these instead of the raw monthOf/dayOf so that specific placeholder never
+// counts as a real birthday — the year is still trusted everywhere else.
+const birthMonthOf = (d) => {
+  const m = monthOf(d);
+  return m === 1 && dayOf(d) === 1 ? null : m;
+};
+const birthDayOf = (d) => {
+  const m = monthOf(d), day = dayOf(d);
+  return m === 1 && day === 1 ? null : day;
+};
 const firstNameOf = (p) => (p?.display_name || '').trim().split(/\s+/)[0] || '';
 const surnameOf = (p) => {
   const parts = (p?.display_name || '').trim().split(/\s+/);
@@ -696,9 +711,9 @@ export function computeThisMonth(graph, now = new Date()) {
   const birthdays = [];
   for (const p of graph.people) {
     if (p.is_deceased) continue;
-    const m = monthOf(p.birth_date);
+    const m = birthMonthOf(p.birth_date);
     if (m !== month) continue;
-    const d = dayOf(p.birth_date);
+    const d = birthDayOf(p.birth_date);
     if (d == null) continue;
     const b = year(p.birth_date);
     birthdays.push({ id: p.id, name: p.display_name, day: d, isToday: d === today, turning: b != null ? thisYear - b : null });
@@ -784,11 +799,11 @@ function birthdays(graph, gen) {
   const byExactDay = new Map(); // 'MM-DD' -> [person]
   let withMonth = 0;
   for (const p of graph.people) {
-    const m = monthOf(p.birth_date);
+    const m = birthMonthOf(p.birth_date);
     if (m == null) continue;
     withMonth++;
     months[m - 1]++;
-    const d = dayOf(p.birth_date);
+    const d = birthDayOf(p.birth_date);
     if (d != null) {
       const key = `${m}-${d}`;
       if (!byExactDay.has(key)) byExactDay.set(key, []);
@@ -810,7 +825,7 @@ function birthdays(graph, gen) {
       for (let j = i + 1; j < people.length; j++) {
         const a = people[i], b = people[j];
         if (year(a.birth_date) === year(b.birth_date)) continue;
-        const m = monthOf(a.birth_date), d = dayOf(a.birth_date);
+        const m = birthMonthOf(a.birth_date), d = birthDayOf(a.birth_date);
         twins.push({
           aId: a.id, aName: a.display_name,
           bId: b.id, bName: b.display_name,
