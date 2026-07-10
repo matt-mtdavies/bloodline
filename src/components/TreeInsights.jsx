@@ -125,7 +125,7 @@ export default function TreeInsights({ graph, viewerId, onNavigate, onClose }) {
         )}
 
         {/* The visual modules — the drawn comparisons, in chapters */}
-        <InsightModules modules={modules} onNavigate={onNavigate} />
+        <InsightModules modules={modules} graph={graph} onNavigate={onNavigate} />
 
         {/* Perspective facts */}
         {facts.length > 0 && (

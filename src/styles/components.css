@@ -7767,6 +7767,96 @@ button.health-notes {
 }
 .tim-linky:hover { text-decoration-color: var(--accent, #c2603a); }
 
+/* ── Drill-down interactivity (Wave 1) ──────────────────────────────────────
+   .tim-tap makes an existing chart row a button without disturbing its grid;
+   .tim-drawer is the expandable "who's behind this number" people list. */
+.tim-tap {
+  border: 0; background: transparent; font: inherit; text-align: left;
+  cursor: pointer; padding: 3px 6px; margin: -3px -6px; border-radius: 10px;
+  transition: background 0.15s ease;
+}
+.tim-tap:hover { background: var(--paper-deep, #f4f5f7); }
+.tim-tap--on { background: var(--accent-soft, #f7efe9); }
+.tim-tap--on:hover { background: var(--accent-soft, #f7efe9); }
+
+.tim-petal { cursor: pointer; }
+.tim-petal:focus-visible path { stroke: var(--ink, #241f1c); stroke-width: 1.8; }
+
+.tim-drawer {
+  margin-top: 12px; border: 1px solid var(--hairline, #ebedf0); border-radius: 14px;
+  overflow: hidden; animation: ti-fade 0.25s ease both;
+}
+.tim-drawer__head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 9px 13px; background: var(--paper-deep, #f7f5f1);
+  font-size: 12px; font-weight: 600; color: var(--ink-soft, #6b6260);
+  letter-spacing: 0.04em;
+}
+.tim-drawer__close {
+  border: 0; background: transparent; padding: 0 2px; cursor: pointer;
+  font-size: 17px; line-height: 1; color: var(--ink-faint, #b0a9a5);
+}
+.tim-drawer__close:hover { color: var(--ink, #241f1c); }
+.tim-drawer__list { max-height: 300px; overflow-y: auto; overscroll-behavior: contain; }
+.tim-drawer__row {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  padding: 8px 13px; border: 0; background: transparent; cursor: pointer;
+  font: inherit; text-align: left; border-top: 1px solid var(--hairline, #f2efe9);
+}
+.tim-drawer__row:first-child { border-top: 0; }
+.tim-drawer__row:hover { background: var(--paper-deep, #f7f5f1); }
+.tim-drawer__name {
+  flex: 1; min-width: 0; font-size: 13.5px; font-weight: 500; color: var(--ink, #241f1c);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.tim-drawer__tag {
+  flex-shrink: 0;
+  font-style: normal; font-size: 10px; font-weight: 600; letter-spacing: 0.04em;
+  color: var(--accent-deep, #a44d2c); background: var(--accent-soft, #f7efe9);
+  border-radius: 999px; padding: 2px 7px; white-space: nowrap;
+}
+.tim-drawer__detail {
+  flex-shrink: 0; font-size: 11.5px; color: var(--ink-faint, #b0a9a5);
+  font-variant-numeric: tabular-nums;
+}
+
+/* shared-birthday groups inside the drawer */
+.tim-shared {
+  display: flex; align-items: baseline; gap: 10px; padding: 8px 13px;
+  border-top: 1px solid var(--hairline, #f2efe9);
+}
+.tim-shared:first-child { border-top: 0; }
+.tim-shared__date {
+  flex-shrink: 0; width: 92px; font-size: 12px; font-weight: 600;
+  color: var(--ink-soft, #6b6260); font-variant-numeric: tabular-nums;
+}
+.tim-shared__names { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 13px; }
+.tim-shared__names .tim-linky { font-size: 13px; }
+
+/* the name explorer: "wonder how many Jasons?" */
+.tim-explore { margin-top: 13px; }
+.tim-explore input {
+  width: 100%; padding: 9px 13px; border-radius: 12px;
+  border: 1px solid var(--hairline, #ebedf0); background: var(--paper-deep, #f7f5f1);
+  font: inherit; font-size: 13.5px; color: var(--ink, #241f1c);
+}
+.tim-explore input:focus { outline: none; border-color: var(--accent, #c2603a); background: #fff; }
+.tim-explore input::placeholder { color: var(--ink-faint, #b0a9a5); }
+.tim-explore__none { margin: 8px 2px 0; font-size: 12.5px; color: var(--ink-faint, #b0a9a5); }
+.tim-chiprow { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
+.tim-chiprow--center { justify-content: center; margin-top: 4px; }
+.tim-chipbtn {
+  border: 1px solid var(--hairline, #ebedf0); background: transparent; cursor: pointer;
+  font: inherit; font-size: 12px; font-weight: 600; color: var(--ink-soft, #6b6260);
+  border-radius: 999px; padding: 5px 12px; transition: all 0.15s ease;
+}
+.tim-chipbtn:hover { border-color: var(--accent, #c2603a); color: var(--accent-deep, #a44d2c); }
+.tim-chipbtn--on {
+  background: var(--accent-soft, #f7efe9); border-color: var(--accent-soft, #f7efe9);
+  color: var(--accent-deep, #a44d2c);
+}
+@media (prefers-reduced-motion: reduce) { .tim-drawer { animation: none; } }
+
 @keyframes ti-rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
 @keyframes ti-fade { from { opacity: 0; } to { opacity: 1; } }
 @keyframes ti-shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }

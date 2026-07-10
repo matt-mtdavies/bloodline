@@ -53,6 +53,19 @@ const surnameOf = (p) => {
   const parts = (p?.display_name || '').trim().split(/\s+/);
   return parts.length > 1 ? parts[parts.length - 1] : '';
 };
+// All of a person's given names — first AND middle — for the names module.
+// The last token is the surname (when there's more than one token), and
+// parenthesised/quoted tokens are nicknames ("Kaitlin (Katie) Davies"), not
+// given names. Returns [{ name, middle }] so a John-by-middle-name can be
+// labelled as such in the drill-down without being counted any differently.
+const givenNamesOf = (p) => {
+  const tokens = (p?.display_name || '').trim().split(/\s+/)
+    .filter((t) => !/^[("'“‘]/.test(t));
+  const given = tokens.length > 1 ? tokens.slice(0, -1) : tokens;
+  return given
+    .filter((t) => t.length >= 2)
+    .map((name, i) => ({ name, middle: i > 0 }));
+};
 const isBioAdopt = (q) => !q || q === 'biological' || q === 'adoptive';
 
 export function computeInsightModules(graph, viewerId) {
@@ -522,16 +535,19 @@ function strata(graph, viewerId, gen) {
   const byGen = new Map();
   for (const p of graph.people) {
     const g = gen.get(p.id) ?? 0;
-    if (!byGen.has(g)) byGen.set(g, { total: 0, living: 0, remembered: 0 });
+    if (!byGen.has(g)) byGen.set(g, { total: 0, living: 0, remembered: 0, ids: [] });
     const row = byGen.get(g);
     row.total++;
+    row.ids.push(p.id);
     if (p.is_deceased) row.remembered++;
     else row.living++;
   }
   if (byGen.size < 3) return null;
+  const byBirth = (a, b) =>
+    (year(graph.byId.get(a)?.birth_date) ?? 9999) - (year(graph.byId.get(b)?.birth_date) ?? 9999);
   const rows = [...byGen.entries()]
     .sort((a, b) => a[0] - b[0])
-    .map(([g, r], i) => ({ gen: g, label: `G${i + 1}`, ...r }));
+    .map(([g, r], i) => ({ gen: g, label: `G${i + 1}`, ...r, ids: r.ids.slice().sort(byBirth) }));
   let widest = rows[0];
   for (const r of rows) if (r.total > widest.total) widest = r;
   const viewerGen = viewerId != null && gen.has(viewerId) ? gen.get(viewerId) : null;
@@ -607,34 +623,43 @@ function brood(graph) {
   return { record: recordOut, trend };
 }
 
-/* ── The name hall of fame + the thread of the most-passed-down name ─────── */
+/* ── The name hall of fame + the thread of the most-passed-down name ───────
+   Counts GIVEN names — first and middle both, so "Sarah Jane Davies" carries
+   Jane forward too — keyed case-insensitively. Every entry keeps its people
+   ({ id, middle }), and the full tally ships as `all` so the card's explorer
+   can answer "how many Jasons?" for any name, not just the top five bars. */
 function names(graph, gen) {
-  const freq = new Map(); // name -> { count, people: [] }
+  const freq = new Map(); // lowercased name -> { name, count, people: [{id, middle}] }
   for (const p of graph.people) {
-    const n = firstNameOf(p);
-    if (!n || n.length < 2) continue;
-    if (!freq.has(n)) freq.set(n, { count: 0, people: [] });
-    const e = freq.get(n);
-    e.count++;
-    e.people.push(p);
+    for (const { name, middle } of givenNamesOf(p)) {
+      const key = name.toLowerCase();
+      if (!freq.has(key)) freq.set(key, { name, count: 0, people: [] });
+      const e = freq.get(key);
+      e.count++;
+      e.people.push({ id: p.id, middle });
+    }
   }
-  const top = [...freq.entries()]
-    .filter(([, e]) => e.count >= 3)
-    .sort((a, b) => b[1].count - a[1].count || a[0].localeCompare(b[0]))
-    .slice(0, 5)
-    .map(([name, e]) => ({ name, count: e.count }));
+  const byBirth = (a, b) =>
+    (year(graph.byId.get(a.id)?.birth_date) ?? 9999) - (year(graph.byId.get(b.id)?.birth_date) ?? 9999);
+  const all = [...freq.values()]
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
+    .map((e) => ({ name: e.name, count: e.count, people: e.people.slice().sort(byBirth) }));
+  const top = all.filter((e) => e.count >= 3).slice(0, 5);
   if (top.length < 2) return null;
 
   // The thread: which generations the #1 name has appeared in.
   const maxGen = Math.max(...[...gen.values()], 0);
-  const lead = freq.get(top[0].name);
-  const gensWith = new Set(lead.people.map((p) => gen.get(p.id) ?? 0));
+  const lead = top[0];
+  const gensWith = new Set(lead.people.map((x) => gen.get(x.id) ?? 0));
   const thread = Array.from({ length: maxGen + 1 }, (_, g) => gensWith.has(g));
-  const years = lead.people.map((p) => year(p.birth_date)).filter((y) => y != null);
+  const years = lead.people
+    .map((x) => year(graph.byId.get(x.id)?.birth_date))
+    .filter((y) => y != null);
   return {
     top,
+    all,
     thread: {
-      name: top[0].name,
+      name: lead.name,
       generations: thread,
       present: gensWith.size,
       first: years.length ? Math.min(...years) : null,
@@ -657,13 +682,18 @@ function heartlands(graph, gen) {
     const pl = placeOf(p);
     if (!pl) continue;
     placed++;
-    if (!places.has(pl.key)) places.set(pl.key, { display: pl.display, count: 0 });
-    places.get(pl.key).count++;
+    if (!places.has(pl.key)) places.set(pl.key, { display: pl.display, count: 0, ids: [] });
+    const e = places.get(pl.key);
+    e.count++;
+    e.ids.push(p.id);
   }
+  const byBirth = (a, b) =>
+    (year(graph.byId.get(a)?.birth_date) ?? 9999) - (year(graph.byId.get(b)?.birth_date) ?? 9999);
   const ranked = [...places.values()]
     .filter((e) => e.count >= 2)
     .sort((a, b) => b.count - a.count)
-    .slice(0, 5);
+    .slice(0, 5)
+    .map((e) => ({ ...e, ids: e.ids.slice().sort(byBirth) }));
   if (placed < 8 || ranked.length < 2) return null;
 
   // Migration: each generation's most common birthplace, consecutive
@@ -796,6 +826,7 @@ export function buildInsightHighlights(modules) {
 /* ── The birthday wheel + birthday twins ─────────────────────────────────── */
 function birthdays(graph, gen) {
   const months = Array(12).fill(0);
+  const monthPeople = Array.from({ length: 12 }, () => []); // [{ id, day|null }]
   const byExactDay = new Map(); // 'MM-DD' -> [person]
   let withMonth = 0;
   for (const p of graph.people) {
@@ -804,6 +835,7 @@ function birthdays(graph, gen) {
     withMonth++;
     months[m - 1]++;
     const d = birthDayOf(p.birth_date);
+    monthPeople[m - 1].push({ id: p.id, day: d });
     if (d != null) {
       const key = `${m}-${d}`;
       if (!byExactDay.has(key)) byExactDay.set(key, []);
@@ -811,6 +843,24 @@ function birthdays(graph, gen) {
     }
   }
   if (withMonth < 15) return null;
+  for (const list of monthPeople) list.sort((a, b) => (a.day ?? 32) - (b.day ?? 32));
+
+  // Every date shared by 2+ people — the full "who shares a birthday" list
+  // behind the caption's single twin pair. Same-year pairs (actual twins)
+  // belong here too; the headline twins below still exclude them.
+  const sharedDays = [...byExactDay.entries()]
+    .filter(([, people]) => people.length >= 2)
+    .map(([key, people]) => {
+      const [m, d] = key.split('-').map(Number);
+      return {
+        month: m, day: d,
+        dateLabel: `${d} ${MONTHS[m - 1]}`,
+        ids: people.slice()
+          .sort((a, b) => (year(a.birth_date) ?? 9999) - (year(b.birth_date) ?? 9999))
+          .map((p) => p.id),
+      };
+    })
+    .sort((a, b) => b.ids.length - a.ids.length || a.month - b.month || a.day - b.day);
   let peakMonth = 0;
   for (let i = 1; i < 12; i++) if (months[i] > months[peakMonth]) peakMonth = i;
   if (months[peakMonth] < 4) return null;
@@ -839,6 +889,8 @@ function birthdays(graph, gen) {
   twins.sort((a, b) => Number(b.crossGen) - Number(a.crossGen));
   return {
     months,
+    monthPeople,
+    sharedDays,
     peakMonth,
     peakCount: months[peakMonth],
     peakLabel: MONTHS[peakMonth],

@@ -153,6 +153,63 @@ test('birthdays: wheel renders; twins are cross-year same-day pairs', () => {
   assert.notEqual(t.aId, t.bId);
 });
 
+// ── Wave 1 interactivity: every bucket keeps the people behind its number ──
+test('drill-down: month petals carry their people, tallies match', () => {
+  const { months, monthPeople } = mods.birthdays;
+  for (let m = 0; m < 12; m++) {
+    assert.equal(monthPeople[m].length, months[m], `month ${m} people == tally`);
+  }
+  // Sorted by day within the month.
+  for (const list of monthPeople) {
+    for (let i = 1; i < list.length; i++) {
+      assert.ok((list[i - 1].day ?? 32) <= (list[i].day ?? 32), 'sorted by day');
+    }
+  }
+});
+
+test('drill-down: sharedDays lists every date 2+ people share, largest first', () => {
+  const { sharedDays } = mods.birthdays;
+  assert.ok(sharedDays.length >= 1, 'the planted 12 March group exists');
+  const march12 = sharedDays.find((g) => g.dateLabel === '12 March');
+  assert.ok(march12, '12 March group present');
+  assert.ok(march12.ids.length >= 2);
+  for (let i = 1; i < sharedDays.length; i++) {
+    assert.ok(sharedDays[i - 1].ids.length >= sharedDays[i].ids.length, 'largest group first');
+  }
+});
+
+test('drill-down: strata rows and heartland places carry ids matching their counts', () => {
+  for (const r of mods.strata.rows) assert.equal(r.ids.length, r.total);
+  for (const pl of mods.heartlands.places) assert.equal(pl.ids.length, pl.count);
+});
+
+test('names: middle names count toward the tally and are tagged; `all` answers any name', () => {
+  const people = [
+    { id: 'j1', display_name: 'John Doe', birth_date: '1950-01-15' },
+    { id: 'j2', display_name: 'John Roe', birth_date: '1960-02-15' },
+    { id: 'j3', display_name: 'John Poe', birth_date: '1970-03-15' },
+    { id: 'j4', display_name: 'Peter John Smith', birth_date: '1940-04-15' }, // middle John
+    { id: 'm1', display_name: 'Mary Doe', birth_date: '1951-05-15' },
+    { id: 'm2', display_name: 'Mary Roe', birth_date: '1961-06-15' },
+    { id: 'm3', display_name: 'Mary Poe', birth_date: '1971-07-15' },
+    { id: 'n1', display_name: 'Kaitlin (Katie) Davies', birth_date: '1990-08-15' }, // nickname skipped
+    { id: 'x1', display_name: 'Jason Lone', birth_date: '1995-09-15' }, // below bar threshold
+  ];
+  const g = buildGraph(people, []);
+  const m = computeInsightModules(g, 'j1');
+  assert.ok(m.names, 'module renders');
+  const john = m.names.all.find((e) => e.name === 'John');
+  assert.equal(john.count, 4, 'middle-name John counts');
+  assert.equal(john.people.filter((x) => x.middle).length, 1);
+  assert.equal(john.people[0].id, 'j4', 'people sorted by birth year (1940 first)');
+  // Below-threshold names are still explorable via `all`.
+  const jason = m.names.all.find((e) => e.name === 'Jason');
+  assert.equal(jason.count, 1);
+  // Nickname token "(Katie)" is not a given name; "Kaitlin" is.
+  assert.ok(m.names.all.find((e) => e.name === 'Kaitlin'));
+  assert.ok(!m.names.all.find((e) => e.name === '(Katie)') && !m.names.all.find((e) => e.name === 'Katie'));
+});
+
 // ── Wave 2: handshakes, bridges, records, trades ────────────────────────────
 test('handshakes: 3-hop chain from g4_0 back to an 1820 founder', () => {
   assert.ok(mods.handshakes, 'module should render');

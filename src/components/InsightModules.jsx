@@ -1,5 +1,7 @@
 import { useRef, useState } from 'react';
 import { toBlob } from 'html-to-image';
+import Avatar from './Avatar.jsx';
+import { lifespan } from '../lib/dates.js';
 
 /*
  * Tree Insights — the Wave-1/2 visual modules. Each takes the precomputed data
@@ -29,7 +31,7 @@ const WORDS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven',
 const asWord = (n) => (n >= 0 && n <= 12 ? WORDS[n] : String(n));
 const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 
-export default function InsightModules({ modules, onNavigate }) {
+export default function InsightModules({ modules, graph, onNavigate }) {
   if (!modules) return null;
   const {
     handshakes, giftOfYears, fullestYear, strata, brood, bridges,
@@ -42,19 +44,19 @@ export default function InsightModules({ modules, onNavigate }) {
       fullestYear && <FullestModule key="fullest" data={fullestYear} />,
     ]],
     ['The shape of us', [
-      strata && <StrataModule key="strata" data={strata} />,
+      strata && <StrataModule key="strata" data={strata} graph={graph} onNavigate={onNavigate} />,
       brood && <BroodModule key="brood" data={brood} onNavigate={onNavigate} />,
       bridges && <BridgesModule key="bridge" data={bridges} onNavigate={onNavigate} />,
     ]],
     ['Names', [
-      names && <NamesModule key="names" data={names} />,
+      names && <NamesModule key="names" data={names} graph={graph} onNavigate={onNavigate} />,
     ]],
     ['Places & work', [
-      heartlands && <HeartlandsModule key="heart" data={heartlands} />,
+      heartlands && <HeartlandsModule key="heart" data={heartlands} graph={graph} onNavigate={onNavigate} />,
       trades && <TradesModule key="trades" data={trades} />,
     ]],
     ['Seasons & milestones', [
-      birthdays && <BirthdaysModule key="bday" data={birthdays} onNavigate={onNavigate} />,
+      birthdays && <BirthdaysModule key="bday" data={birthdays} graph={graph} onNavigate={onNavigate} />,
       records && <RecordsModule key="records" data={records} onNavigate={onNavigate} />,
     ]],
   ]
@@ -114,7 +116,10 @@ function ShareButton({ nodeRef, title }) {
         // (Google Fonts) that's slow at best and network/CORS-fragile at
         // worst, for zero visible benefit here.
         skipFonts: true,
-        filter: (node) => !node.classList?.contains('tim__share'),
+        // The shared image is the collapsed card: no share button, no open
+        // drill-down drawer, no explorer input — the chart and its caption.
+        filter: (node) => !['tim__share', 'tim-drawer', 'tim-explore', 'tim-chiprow']
+          .some((cls) => node.classList?.contains(cls)),
       });
       if (!blob) throw new Error('empty capture');
       const fileName = `${title.replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '-').toLowerCase()}.png`;
@@ -155,6 +160,36 @@ function ShareButton({ nodeRef, title }) {
     </button>
   );
 }
+
+/* ── Drill-down drawer — the one gesture shared by every interactive card:
+   tap a chart element, see exactly who is behind the number, tap a person,
+   land on their profile. rows: [{ id, detail?, tag? }]. ─────────────────── */
+function PeopleDrawer({ title, rows, graph, onNavigate, onClose }) {
+  return (
+    <div className="tim-drawer">
+      <div className="tim-drawer__head">
+        <span>{title}</span>
+        <button className="tim-drawer__close" onClick={onClose} aria-label="Close list">×</button>
+      </div>
+      <div className="tim-drawer__list">
+        {rows.map(({ id, detail, tag }) => {
+          const person = graph?.byId?.get(id);
+          if (!person) return null;
+          return (
+            <button key={id} className="tim-drawer__row" onClick={() => onNavigate?.(id)}>
+              <Avatar person={person} size={28} />
+              <span className="tim-drawer__name">{person.display_name}</span>
+              {tag && <em className="tim-drawer__tag">{tag}</em>}
+              <span className="tim-drawer__detail">{detail ?? lifespan(person)}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+const ordinal = (n) => `${n}${['th', 'st', 'nd', 'rd'][(n % 100 > 10 && n % 100 < 14) ? 0 : Math.min(n % 10, 4) % 4] ?? 'th'}`;
 
 /* ── Deep time ─────────────────────────────────────────────────────────── */
 
@@ -358,21 +393,28 @@ function AliveChart({ data }) {
 
 /* ── The shape of us ───────────────────────────────────────────────────── */
 
-function StrataModule({ data }) {
+function StrataModule({ data, graph, onNavigate }) {
   const { rows, widest, viewerLabel, viewerIsWidest, living, remembered } = data;
   const max = widest.total;
+  const [sel, setSel] = useState(null); // row.gen | null
+  const selRow = sel != null ? rows.find((r) => r.gen === sel) : null;
   return (
     <Module
       icon={<LayersIcon />}
       title={`${cap(asWord(rows.length))} generations, stacked`}
-      sub="Everyone in the tree, oldest generation at the top."
+      sub="Everyone in the tree, oldest generation at the top. Tap a row to meet a generation."
       caption={viewerIsWidest
         ? <>Your generation, <b>{viewerLabel}, is the widest the family has ever been</b> — {widest.total} people across it.</>
         : <><b>{widest.label} is the widest generation</b> — {widest.total} people across it{viewerLabel ? <>; you sit in {viewerLabel}</> : null}.</>}
     >
       <div className="tim-strata">
         {rows.map((r) => (
-          <div className="tim-strata__row" key={r.gen}>
+          <button
+            className={'tim-strata__row tim-tap' + (r.gen === sel ? ' tim-tap--on' : '')}
+            key={r.gen}
+            onClick={() => setSel((cur) => (cur === r.gen ? null : r.gen))}
+            aria-expanded={r.gen === sel}
+          >
             <span className="tim-strata__g">{r.label}</span>
             <div className="tim-strata__track">
               {r.remembered > 0 && (
@@ -383,13 +425,22 @@ function StrataModule({ data }) {
               )}
             </div>
             <span className="tim-strata__n">{r.total}</span>
-          </div>
+          </button>
         ))}
       </div>
       <div className="tim-legend">
         <span><i style={{ background: ACC }} />Living · {living}</span>
         <span><i style={{ background: MEMORIAL }} />Remembered · {remembered}</span>
       </div>
+      {selRow && (
+        <PeopleDrawer
+          title={`${selRow.label} — ${selRow.total} ${selRow.total === 1 ? 'person' : 'people'}`}
+          rows={selRow.ids.map((id) => ({ id }))}
+          graph={graph}
+          onNavigate={onNavigate}
+          onClose={() => setSel(null)}
+        />
+      )}
     </Module>
   );
 }
@@ -518,15 +569,29 @@ function BridgeDiagram({ firstName, labelA, labelB }) {
 
 /* ── Names ─────────────────────────────────────────────────────────────── */
 
-function NamesModule({ data }) {
-  const { top, thread } = data;
+function NamesModule({ data, graph, onNavigate }) {
+  const { top, all, thread } = data;
   const max = top[0].count;
   const plural = /(?:s|x|z|ch|sh)$/i.test(top[0].name) ? 'es' : 's';
+  const [sel, setSel] = useState(null); // a name from the bars or the explorer
+  const [q, setQ] = useState('');
+
+  // The explorer: any given name in the tree, middle names included. Prefix
+  // match first (typing "Jas" should surface Jason), substring as fallback.
+  const query = q.trim().toLowerCase();
+  const matches = query
+    ? (() => {
+        const pre = all.filter((e) => e.name.toLowerCase().startsWith(query));
+        return pre.length ? pre : all.filter((e) => e.name.toLowerCase().includes(query));
+      })().slice(0, 6)
+    : [];
+  const selEntry = sel ? all.find((e) => e.name === sel) : null;
+
   return (
     <Module
       icon={<TypeIcon />}
       title={`${cap(asWord(top[0].count))} ${top[0].name}${plural} and counting`}
-      sub="The names your family keeps coming back to."
+      sub="First and middle names both. Tap a bar — or look any name up."
       caption={<><b>{thread.name} has appeared in {thread.present} of
         your {thread.generations.length} generations</b>{thread.first != null
         ? <> — first in {thread.first}{thread.last !== thread.first ? <>, most recently in {thread.last}</> : null}</>
@@ -534,47 +599,102 @@ function NamesModule({ data }) {
     >
       <div className="tim-names">
         {top.map((n) => (
-          <div className="tim-names__row" key={n.name}>
+          <button
+            className={'tim-names__row tim-tap' + (n.name === sel ? ' tim-tap--on' : '')}
+            key={n.name}
+            onClick={() => { setSel((cur) => (cur === n.name ? null : n.name)); }}
+            aria-expanded={n.name === sel}
+          >
             <span className="tim-names__name">{n.name}</span>
             <div className="tim-names__track">
               <div className="tim-names__fill" style={{ width: `${(n.count / max) * 100}%` }} />
             </div>
             <span className="tim-names__count">{n.count}</span>
-          </div>
+          </button>
         ))}
       </div>
       <div className="tim-thread" aria-label={`${thread.name} appears in ${thread.present} of ${thread.generations.length} generations`}>
         {thread.generations.map((on, i) => <i key={i} className={on ? 'on' : ''} />)}
       </div>
+      <div className="tim-explore">
+        <input
+          type="search"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Wonder about a name? Try “Jason”…"
+          aria-label="Look up any name in the family"
+        />
+        {query && matches.length === 0 && (
+          <p className="tim-explore__none">No {cap(q.trim())}s in the tree yet.</p>
+        )}
+        {matches.length > 0 && (
+          <div className="tim-chiprow">
+            {matches.map((e) => (
+              <button
+                key={e.name}
+                className={'tim-chipbtn' + (e.name === sel ? ' tim-chipbtn--on' : '')}
+                onClick={() => setSel((cur) => (cur === e.name ? null : e.name))}
+              >
+                {e.name} · {e.count}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      {selEntry && (
+        <PeopleDrawer
+          title={`${selEntry.count} ${selEntry.name}${/(?:s|x|z|ch|sh)$/i.test(selEntry.name) ? 'es' : 's'}`}
+          rows={selEntry.people.map(({ id, middle }) => ({ id, tag: middle ? 'middle name' : null }))}
+          graph={graph}
+          onNavigate={onNavigate}
+          onClose={() => setSel(null)}
+        />
+      )}
     </Module>
   );
 }
 
 /* ── Places ────────────────────────────────────────────────────────────── */
 
-function HeartlandsModule({ data }) {
+function HeartlandsModule({ data, graph, onNavigate }) {
   const { places, migration } = data;
   const max = places[0].count;
+  const [sel, setSel] = useState(null); // place display name
+  const selPlace = sel ? places.find((p) => p.display === sel) : null;
   return (
     <Module
       icon={<PinIcon />}
       title={`${places[0].display} is your heartland`}
-      sub="Where the family was born, and how far it has walked."
+      sub="Where the family was born, and how far it has walked. Tap a place to see who."
       caption={migration
         ? <>The family's birthplace has moved <b>{asWord(migration.length - 1)} time{migration.length === 2 ? '' : 's'}</b> across the generations.</>
         : null}
     >
       <div className="tim-names">
         {places.map((p) => (
-          <div className="tim-names__row" key={p.display}>
+          <button
+            className={'tim-names__row tim-tap' + (p.display === sel ? ' tim-tap--on' : '')}
+            key={p.display}
+            onClick={() => setSel((cur) => (cur === p.display ? null : p.display))}
+            aria-expanded={p.display === sel}
+          >
             <span className="tim-names__name tim-names__name--place">{p.display}</span>
             <div className="tim-names__track">
               <div className="tim-names__fill" style={{ width: `${(p.count / max) * 100}%` }} />
             </div>
             <span className="tim-names__count">{p.count}</span>
-          </div>
+          </button>
         ))}
       </div>
+      {selPlace && (
+        <PeopleDrawer
+          title={`Born in ${selPlace.display} — ${selPlace.count}`}
+          rows={selPlace.ids.map((id) => ({ id }))}
+          graph={graph}
+          onNavigate={onNavigate}
+          onClose={() => setSel(null)}
+        />
+      )}
       {migration && (
         <div className="tim-mig" aria-label="Migration path across the generations">
           {migration.map((s, i) => (
@@ -620,21 +740,81 @@ function TradesModule({ data }) {
 
 /* ── Seasons ───────────────────────────────────────────────────────────── */
 
-function BirthdaysModule({ data, onNavigate }) {
-  const { peakLabel, peakCount, twins } = data;
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December'];
+
+function BirthdaysModule({ data, graph, onNavigate }) {
+  const { peakLabel, peakCount, twins, monthPeople, sharedDays } = data;
   const twin = twins[0];
+  const [selMonth, setSelMonth] = useState(null); // 0-11 | null
+  const [showShared, setShowShared] = useState(false);
+  const monthRows = selMonth != null
+    ? (monthPeople?.[selMonth] ?? []).map(({ id, day }) => ({ id, detail: day != null ? `the ${ordinal(day)}` : 'day unknown' }))
+    : null;
   return (
     <Module
       icon={<WheelIcon />}
       title={`${peakLabel} is birthday season`}
-      sub="Every family birthday, arranged around the year."
+      sub="Every family birthday, arranged around the year. Tap a month to see whose."
       caption={<>
         <b>{peakCount} birthdays in {peakLabel}</b>
         {twin && <> — and birthday twins: {twinName(twin, 'a', onNavigate)} and {twinName(twin, 'b', onNavigate)}, both {twin.dateLabel}.</>}
         {!twin && '.'}
       </>}
     >
-      <div className="tim-wheel"><BirthdayWheel data={data} /></div>
+      <div className="tim-wheel">
+        <BirthdayWheel
+          data={data}
+          selected={selMonth}
+          onPick={(i) => { setShowShared(false); setSelMonth((cur) => (cur === i ? null : i)); }}
+        />
+      </div>
+      {sharedDays?.length > 0 && (
+        <div className="tim-chiprow tim-chiprow--center">
+          <button
+            className={'tim-chipbtn' + (showShared ? ' tim-chipbtn--on' : '')}
+            onClick={() => { setSelMonth(null); setShowShared((s) => !s); }}
+            aria-expanded={showShared}
+          >
+            {sharedDays.length} shared birthday{sharedDays.length === 1 ? '' : 's'}
+          </button>
+        </div>
+      )}
+      {monthRows && (
+        <PeopleDrawer
+          title={`${MONTH_NAMES[selMonth]} — ${monthRows.length} birthday${monthRows.length === 1 ? '' : 's'}`}
+          rows={monthRows}
+          graph={graph}
+          onNavigate={onNavigate}
+          onClose={() => setSelMonth(null)}
+        />
+      )}
+      {showShared && (
+        <div className="tim-drawer">
+          <div className="tim-drawer__head">
+            <span>Shared birthdays</span>
+            <button className="tim-drawer__close" onClick={() => setShowShared(false)} aria-label="Close list">×</button>
+          </div>
+          <div className="tim-drawer__list">
+            {sharedDays.map((g) => (
+              <div key={`${g.month}-${g.day}`} className="tim-shared">
+                <span className="tim-shared__date">{g.dateLabel}</span>
+                <span className="tim-shared__names">
+                  {g.ids.map((id) => {
+                    const person = graph?.byId?.get(id);
+                    if (!person) return null;
+                    return (
+                      <button key={id} className="tim-linky" onClick={() => onNavigate?.(id)}>
+                        {person.display_name}
+                      </button>
+                    );
+                  })}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </Module>
   );
 }
@@ -646,7 +826,7 @@ function twinName(twin, side, onNavigate) {
   );
 }
 
-function BirthdayWheel({ data }) {
+function BirthdayWheel({ data, selected = null, onPick }) {
   const { months, peakMonth, peakCount, peakLabel } = data;
   const LETTERS = ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'];
   const cx = 150, cy = 122, r0 = 34, rMax = 88;
@@ -659,21 +839,40 @@ function BirthdayWheel({ data }) {
     const [lx, ly] = p((a0 + a1) / 2, rMax + 13);
     return { i, n, d: `M${x0},${y0} A${r0},${r0} 0 0 1 ${x1},${y1} L${x2},${y2} A${r},${r} 0 0 0 ${x3},${y3} Z`, lx, ly };
   });
+  const showing = selected != null;
+  const centerCount = showing ? months[selected] : peakCount;
+  const centerLabel = showing ? `in ${MONTH_NAMES[selected]}` : `in ${peakLabel}`;
   return (
     <svg viewBox="0 0 300 240" width="86%" role="img"
-      aria-label={`Birthdays per month arranged in a ring, ${peakLabel} the largest with ${peakCount}`}>
+      aria-label={`Birthdays per month arranged in a ring, ${peakLabel} the largest with ${peakCount}. Each month is tappable.`}>
       {petals.map((pt) => (
-        <g key={pt.i}>
-          <path d={pt.d} fill={pt.i === peakMonth ? ACC : ACC_SOFT} />
+        // A petal with zero birthdays still draws its inner stub, so every
+        // month stays a visible, tappable slice of the ring.
+        <g
+          key={pt.i}
+          className="tim-petal"
+          onClick={() => onPick?.(pt.i)}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onPick?.(pt.i); } }}
+          aria-label={`${MONTH_NAMES[pt.i]}: ${pt.n} ${pt.n === 1 ? 'birthday' : 'birthdays'}`}
+        >
+          <path
+            d={pt.d}
+            fill={pt.i === peakMonth ? ACC : ACC_SOFT}
+            stroke={pt.i === selected ? INK : 'none'}
+            strokeWidth={pt.i === selected ? 1.8 : 0}
+          />
           <text x={pt.lx} y={pt.ly + 3.5} fontSize="10.5" textAnchor="middle"
-            fill={pt.i === peakMonth ? INK : FAINT} fontWeight={pt.i === peakMonth ? 700 : 400}>
+            fill={pt.i === (showing ? selected : peakMonth) ? INK : FAINT}
+            fontWeight={pt.i === (showing ? selected : peakMonth) ? 700 : 400}>
             {LETTERS[pt.i]}
           </text>
         </g>
       ))}
       <text x={cx} y={cy - 2} fontSize="26" fontWeight="700" fill={INK} textAnchor="middle"
-        style={{ fontFamily: "var(--display, Georgia, serif)" }}>{peakCount}</text>
-      <text x={cx} y={cy + 15} fontSize="10.5" fill={SOFT} textAnchor="middle">in {peakLabel}</text>
+        style={{ fontFamily: "var(--display, Georgia, serif)" }}>{centerCount}</text>
+      <text x={cx} y={cy + 15} fontSize="10.5" fill={SOFT} textAnchor="middle">{centerLabel}</text>
     </svg>
   );
 }
