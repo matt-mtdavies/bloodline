@@ -129,6 +129,34 @@ t('horizontal orientation maps ancestors left and children right of focal', () =
   assert.ok(child.x > focal.x, 'children sit to the right');
 });
 
+t('horizontal deep expansion stacks generations without vertical overlap', () => {
+  const expandedUp = new Set(['matthew', 'kaitlin', 'heather', 'chris', 'cathy', 'richard']);
+  const { cards } = computePedigree(graph, 'matthew', { expandedUp, orientation: 'horizontal' });
+  // In landscape the cross axis is vertical: within a generation column (same
+  // x), cards must not overlap in y.
+  const byGen = new Map();
+  for (const c of cards.filter((c) => c._gen >= 0)) {
+    if (!byGen.has(c._gen)) byGen.set(c._gen, []);
+    byGen.get(c._gen).push(c);
+  }
+  for (const [, col] of byGen) {
+    col.sort((a, b) => a.y - b.y);
+    for (let i = 1; i < col.length; i++) {
+      assert.ok(col[i].y - col[i].h / 2 >= col[i - 1].y + col[i - 1].h / 2 - 1,
+        `vertical overlap in gen column between ${col[i - 1].id} and ${col[i].id}`);
+    }
+  }
+});
+
+t('horizontal couple card is one plate wide, two plates tall', () => {
+  const { cards, focalCardId } = computePedigree(graph, 'matthew', { expandedUp: new Set(), orientation: 'horizontal' });
+  const focal = cards.find((c) => c.id === focalCardId);
+  assert.equal(focal.members.length, 2);
+  // One plate wide (PLATE_W=192), two plates + the seam gap tall (60*2+18=138).
+  assert.equal(focal.w, 192);
+  assert.equal(focal.h, 138);
+});
+
 // ── Bloodline mode: step children filtered, bio + adopted kept ──────────────
 {
   const bp = ['dad', 'mum', 'bioKid', 'adoptKid', 'pureStep', 'exPartner'].map(person);

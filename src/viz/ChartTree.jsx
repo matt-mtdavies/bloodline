@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { computePedigree, primaryUnionPartner, unionCandidates } from './pedigreeLayout.js';
-import { ROW_H, MARRIAGE_H, PLATE_W, PLATE_H, LINK_GAP } from './pedigreeMetrics.js';
+import { PLATE_W, PLATE_H, LINK_GAP } from './pedigreeMetrics.js';
 import { lifespan, ageOrAt } from '../lib/dates.js';
 import Avatar from '../components/Avatar.jsx';
 
@@ -272,29 +272,21 @@ export default function ChartTree({ graph, activeId, viewerId, bloodlineOnly = f
   const horizontal = orientation === 'horizontal';
   const portrait = !horizontal;
 
-  // Portrait: a couple is two plates side by side. Member i's plate centre.
-  const plateCenterX = (card, i) =>
-    card.members.length === 2
-      ? card.x - card.w / 2 + PLATE_W / 2 + i * (PLATE_W + LINK_GAP)
-      : card.x;
+  // A member's plate centre within its card. Portrait: plates sit side by side
+  // (offset along X). Landscape: plates stack (offset along Y). Handles a solo
+  // card too (a single plate centred on the card).
+  const plateGeom = (card, i) => {
+    if (portrait) return { cx: card.x - card.w / 2 + PLATE_W / 2 + i * (PLATE_W + LINK_GAP), cy: card.y };
+    return { cx: card.x, cy: card.y - card.h / 2 + PLATE_H / 2 + i * (PLATE_H + LINK_GAP) };
+  };
 
-  // Landscape (stacked rows) — kept from the previous chart.
-  const rowCenterOffset = (card, i) => -card.h / 2 + ROW_H / 2 + (i === 1 ? ROW_H + MARRIAGE_H : 0);
-
-  // Consistent ports (Direction B). Portrait: ancestry leaves the TOP-CENTRE
-  // of the member's own plate; children enter the TOP-CENTRE of the child
-  // plate and descend from the union's BOTTOM-CENTRE. Landscape retains the
-  // side-entry FamilySearch look.
+  // Consistent ports (Direction B). Ancestry leaves the member's OWN plate —
+  // its top-centre in portrait, its left-centre in landscape — so the two
+  // lines out of a couple visibly belong to their own people, in both layouts.
   const upAnchor = (card, memberId) => {
     const i = card.members.indexOf(memberId);
-    if (portrait) return { x: plateCenterX(card, i), y: card.y - card.h / 2 };
-    const rowCenter = rowCenterOffset(card, i);
-    if (horizontal) return { x: card.x - card.w / 2, y: card.y + rowCenter };
-    if (card.members.length === 2) {
-      const dir = i === 0 ? -1 : 1;
-      return { x: card.x + dir * card.w / 2, y: card.y + rowCenter, dir };
-    }
-    return { x: card.x, y: card.y - card.h / 2 };
+    const g = plateGeom(card, i);
+    return portrait ? { x: g.cx, y: card.y - card.h / 2 } : { x: card.x - card.w / 2, y: g.cy };
   };
 
   // Rounded orthogonal elbow between two points. axis 'v' turns on the Y run,
@@ -318,19 +310,24 @@ export default function ChartTree({ graph, activeId, viewerId, bloodlineOnly = f
 
   const paths = [];
   // Partner links — a short segment across the seam of each couple, its style
-  // carrying the union's status (married / former / widowed). Portrait only;
-  // landscape's marriage strip lives inside the stacked card.
-  if (portrait) {
-    for (const card of layout.cards) {
-      if (card.kind === 'child' || card.members.length !== 2) continue;
-      const y = card.y;
-      const x0 = card.x - LINK_GAP / 2 - 1, x1 = card.x + LINK_GAP / 2 + 1;
-      const status = card.marriage?.status;
-      const cls = 'ped-partnerlink'
-        + (status === 'former' ? ' ped-partnerlink--former' : '')
-        + (status === 'widowed' ? ' ped-partnerlink--widowed' : '');
-      paths.push(<path key={'plink_' + card.id} d={`M ${x0} ${y} L ${x1} ${y}`} className={cls} />);
+  // carrying the union's status (married / former / widowed). Portrait draws it
+  // horizontally between the side-by-side plates; landscape draws it vertically
+  // between the stacked plates. Either way it bridges the LINK_GAP seam.
+  for (const card of layout.cards) {
+    if (card.kind === 'child' || card.members.length !== 2) continue;
+    const status = card.marriage?.status;
+    const cls = 'ped-partnerlink'
+      + (status === 'former' ? ' ped-partnerlink--former' : '')
+      + (status === 'widowed' ? ' ped-partnerlink--widowed' : '');
+    let d;
+    if (portrait) {
+      const y = card.y, x0 = card.x - LINK_GAP / 2 - 1, x1 = card.x + LINK_GAP / 2 + 1;
+      d = `M ${x0} ${y} L ${x1} ${y}`;
+    } else {
+      const x = card.x, seam = card.y - card.h / 2 + PLATE_H + LINK_GAP / 2;
+      d = `M ${x} ${seam - LINK_GAP / 2 - 1} L ${x} ${seam + LINK_GAP / 2 + 1}`;
     }
+    paths.push(<path key={'plink_' + card.id} d={d} className={cls} />);
   }
 
   // Ancestry (up) connectors.
@@ -346,8 +343,10 @@ export default function ChartTree({ graph, activeId, viewerId, bloodlineOnly = f
       // near the top — ancestry reads as belonging to that person.
       paths.push(<path key={conn.id} d={elbow(a.x, a.y, b.x, b.y, 'v', 0.72)} className="ped-link" />);
     } else {
-      const b = horizontal ? { x: to.x + to.w / 2, y: to.y } : { x: to.x, y: to.y + to.h / 2 };
-      paths.push(<path key={conn.id} d={elbow(a.x, a.y, b.x, b.y, horizontal ? 'h' : 'v', a.dir ? 0.18 : 0.5)} className="ped-link" />);
+      // Landscape: leave the member's plate leftward, jog into the parent
+      // union's right-centre.
+      const b = { x: to.x + to.w / 2, y: to.y };
+      paths.push(<path key={conn.id} d={elbow(a.x, a.y, b.x, b.y, 'h')} className="ped-link" />);
     }
   }
 
@@ -378,12 +377,25 @@ export default function ChartTree({ graph, activeId, viewerId, bloodlineOnly = f
           paths.push(<path key={'kid_' + k.id} d={d} className="ped-link" />);
         }
       } else {
-        for (const conn of downConns) {
-          const to = cardById.get(conn.toCardId);
-          if (!to) continue;
-          const a = { x: from.x + from.w / 2, y: from.y + (conn.side === 'a' ? -from.h / 4 : conn.side === 'b' ? from.h / 4 : 0) };
-          const b = { x: to.x - to.w / 2, y: to.y };
-          paths.push(<path key={conn.id} d={elbow(a.x, a.y, b.x, b.y, 'h')} className="ped-link" />);
+        // Landscape: ONE sibling bus to the RIGHT — a stem out of the union's
+        // right-centre to a shared vertical bar, then a branch into each
+        // child's left-centre. The portrait bus, transposed.
+        const stemY = from.y, stemLeft = from.x + from.w / 2;
+        const kidLeft = Math.min(...kids.map((k) => k.x - k.w / 2));
+        const busX = stemLeft + (kidLeft - stemLeft) * 0.5;
+        const r = 8;
+        const ys = kids.map((k) => k.y);
+        const minY = Math.min(...ys, stemY), maxY = Math.max(...ys, stemY);
+        paths.push(<path key="bus_stem" d={`M ${stemLeft} ${stemY} L ${busX} ${stemY}`} className="ped-link" />);
+        if (kids.length > 1) paths.push(<path key="bus_bar" d={`M ${busX} ${minY} L ${busX} ${maxY}`} className="ped-link" />);
+        for (const k of kids) {
+          const kx = k.x - k.w / 2, ky = k.y;
+          const dy = ky > stemY ? 1 : ky < stemY ? -1 : 0;
+          const rr = Math.min(r, Math.abs(kx - busX) / 2, dy ? Math.abs(ky - stemY) / 2 : r);
+          const d = dy === 0
+            ? `M ${busX} ${ky} L ${kx} ${ky}`
+            : `M ${busX} ${ky - rr * dy} Q ${busX} ${ky} ${busX + rr} ${ky} L ${kx} ${ky}`;
+          paths.push(<path key={'kid_' + k.id} d={d} className="ped-link" />);
         }
       }
     }
@@ -407,15 +419,20 @@ export default function ChartTree({ graph, activeId, viewerId, bloodlineOnly = f
   // preview. Positioned in screen space so it stays crisp at any zoom.
   const barId = selectedId || hoveredId;
   const selInfo = (() => {
-    if (!barId || !portrait) return null;
+    if (!barId) return null;
     const card = layout.cards.find((c) => c.members.includes(barId));
     if (!card) return null;
     const i = card.members.indexOf(barId);
-    const plateCx = card.members.length === 2
-      ? card.x - card.w / 2 + PLATE_W / 2 + i * (PLATE_W + LINK_GAP)
+    // The plate's centre-x and top edge, for anchoring the action bar just
+    // above it. Portrait plates offset along X; landscape plates offset along Y.
+    const plateCx = portrait
+      ? (card.members.length === 2 ? card.x - card.w / 2 + PLATE_W / 2 + i * (PLATE_W + LINK_GAP) : card.x)
       : card.x;
+    const plateTop = portrait
+      ? card.y - card.h / 2
+      : card.y - card.h / 2 + i * (PLATE_H + LINK_GAP);
     const slot = card.slots?.find((s) => s.id === barId) ?? null;
-    return { card, plateCx, plateTop: card.y - card.h / 2, slot };
+    return { card, plateCx, plateTop, slot };
   })();
   const selScreen = selInfo && viewportRef.current ? (() => {
     const rect = viewportRef.current.getBoundingClientRect();
@@ -598,17 +615,16 @@ export default function ChartTree({ graph, activeId, viewerId, bloodlineOnly = f
 // ── One card ─────────────────────────────────────────────────────────────────
 
 function PedCard(props) {
-  const { card, horizontal } = props;
-  if (!horizontal) return <PortraitCard {...props} />;
-  return <StackedCard {...props} />;
+  return <PlateCard {...props} />;
 }
 
-// ── Portrait: horizontal-couple plates (Direction B) ──────────────────────────
-// Two flat plates side by side (one, if solo), joined across the seam by the
-// partner-link drawn in the SVG layer. Ancestry rises from each plate's top;
-// children descend from the union's centre. Editing chrome is deferred to the
-// on-select action bar — the resting card carries only navigation pips.
-function PortraitCard({ card, graph, isFocal, selectedId, onOpenPerson, onSelect, onActivate, onToggleUp, onAddRelative, onOpenChildren, onHoverEnter, onHoverLeave }) {
+// ── Flat-plate card (Direction B) — one renderer, both orientations ───────────
+// A couple is two flat plates joined across the LINK_GAP seam: side by side in
+// portrait, stacked in landscape. Ancestry leaves each member's own plate
+// (top in portrait, left in landscape); children leave the union's centre
+// (bottom / right). Editing chrome is deferred to the on-select action bar —
+// the resting card carries only navigation pips.
+function PlateCard({ card, graph, horizontal, isFocal, selectedId, onOpenPerson, onSelect, onActivate, onToggleUp, onOpenChildren, onHoverEnter, onHoverLeave }) {
   const isChild = card.kind === 'child';
   // Emphasis tiers — the eye follows the active family. Focal + immediate
   // (parents, children) at full strength; each generation further up recedes
@@ -617,11 +633,11 @@ function PortraitCard({ card, graph, isFocal, selectedId, onOpenPerson, onSelect
   const recede = depth <= 1 ? '' : depth === 2 ? ' pcard--recede1' : ' pcard--recede2';
   return (
     <div
-      className={'pcard' + (isFocal ? ' pcard--focal' : '') + (isChild ? ' pcard--child' : '') + recede}
+      className={'pcard' + (horizontal ? ' pcard--land' : '') + (isFocal ? ' pcard--focal' : '') + (isChild ? ' pcard--child' : '') + recede}
       style={{ left: card.x - card.w / 2, top: card.y - card.h / 2, width: card.w, height: card.h }}
     >
       <div className="pcard__row">
-        {card.members.map((personId, i) => {
+        {card.members.map((personId) => {
           const person = graph.byId.get(personId);
           if (!person) return null;
           const age = !person.is_minor || person.is_deceased ? ageOrAt(person) : null;
@@ -654,21 +670,25 @@ function PortraitCard({ card, graph, isFocal, selectedId, onOpenPerson, onSelect
       </div>
 
       {/* Navigation pips (viewing state): expand a member's ancestry, or drop
-          into this card's children. Editing actions live in the action bar. */}
+          into this card's children. Editing actions live in the action bar.
+          Portrait: ancestry up, children down. Landscape: ancestry left,
+          children right. */}
       {!isChild && card.slots.map((slot, i) => {
         if (!slot.hasMoreUp) return null;
         const person = graph.byId.get(slot.id);
-        const cx = card.members.length === 2 ? PLATE_W / 2 + i * (PLATE_W + LINK_GAP) : card.w / 2;
+        const style = horizontal
+          ? { left: -11, top: PLATE_H / 2 + i * (PLATE_H + LINK_GAP) - 11 }
+          : { left: (card.members.length === 2 ? PLATE_W / 2 + i * (PLATE_W + LINK_GAP) : card.w / 2) - 11, top: -11 };
         return (
           <button
             key={'up_' + slot.id}
             className={'pnav pnav--up' + (slot.expanded ? ' pnav--on' : '')}
-            style={{ left: cx - 11, top: -11 }}
+            style={style}
             onClick={(e) => { e.stopPropagation(); onToggleUp(slot.id); }}
             title={slot.expanded ? `Hide ${person?.display_name.split(' ')[0]}’s parents` : `Show ${person?.display_name.split(' ')[0]}’s parents`}
             aria-expanded={slot.expanded}
           >
-            <ChevronUpIcon />
+            {horizontal ? <ChevronLeftIcon /> : <ChevronUpIcon />}
           </button>
         );
       })}
@@ -676,139 +696,13 @@ function PortraitCard({ card, graph, isFocal, selectedId, onOpenPerson, onSelect
       {card.childrenCount > 0 && !isFocal && (
         <button
           className="pnav pnav--down"
-          style={{ left: card.w / 2 - 11, top: card.h - 11 }}
+          style={horizontal ? { left: card.w - 11, top: card.h / 2 - 11 } : { left: card.w / 2 - 11, top: card.h - 11 }}
           onClick={(e) => { e.stopPropagation(); isChild ? onActivate?.(card.members[0]) : onOpenChildren(card.id); }}
           title={isChild ? 'Focus the chart here' : `Show ${card.childrenCount} ${card.childrenCount === 1 ? 'child' : 'children'}`}
         >
-          {isChild ? <ArrowDownIcon /> : <ChevronDownIcon />}
+          {isChild ? (horizontal ? <ArrowRightIcon /> : <ArrowDownIcon />) : (horizontal ? <ChevronRightIcon /> : <ChevronDownIcon />)}
         </button>
       )}
-    </div>
-  );
-}
-
-// ── Landscape: the previous stacked-row union card, unchanged ─────────────────
-function StackedCard({ card, graph, activeId, horizontal, isFocal, switcherFor, partnerChoice, onOpenPerson, onActivate, onToggleUp, onAddRelative, onOpenChildren, onOpenSwitcher, onChooseSpouse }) {
-  const isChild = card.kind === 'child';
-  return (
-    <div
-      className={'ped-card' + (isFocal ? ' ped-card--focal' : '') + (isChild ? ' ped-card--child' : '')}
-      style={{ left: card.x - card.w / 2, top: card.y - card.h / 2, width: card.w, height: card.h }}
-    >
-      {card.members.map((personId, i) => {
-        const person = graph.byId.get(personId);
-        if (!person) return null;
-        const slot = card.slots.find((s) => s.id === personId);
-        const age = !person.is_minor || person.is_deceased ? ageOrAt(person) : null;
-        const dates = age ? `${lifespan(person)} · ${person.is_deceased ? age : `age ${age}`}` : lifespan(person);
-        const stepChip = isChild && (card.qualifiers?.a === 'step' || card.qualifiers?.b === 'step') ? 'Step'
-          : isChild && ['adopted', 'adoptive'].includes(card.qualifiers?.a) ? 'Adopted' : null;
-        return (
-          <div key={personId} className="ped-row-wrap">
-            {i === 1 && <MarriageStrip marriage={card.marriage} />}
-            <div className={'ped-row' + (person.is_deceased ? ' ped-row--passed' : '')}>
-              <button className="ped-row__main" onClick={() => onOpenPerson?.(personId)} title="Open profile">
-                <Avatar person={person} size={34} />
-                <span className="ped-row__text">
-                  <span className="ped-row__name">
-                    {person.display_name}
-                    {stepChip && <span className="ped-chip ped-chip--inline">{stepChip}</span>}
-                  </span>
-                  <span className="ped-row__dates">{dates}</span>
-                </span>
-              </button>
-              {!isChild && slot?.isLine && slot.altPartnerIds.length > 0 && (
-                <button
-                  className={'ped-switch' + (switcherFor === personId ? ' ped-switch--on' : '')}
-                  onClick={() => onOpenSwitcher(personId)}
-                  title="Show a different partner"
-                  aria-label={`Show a different partner of ${person.display_name}`}
-                  aria-expanded={switcherFor === personId}
-                >
-                  <SwapIcon />
-                </button>
-              )}
-              {switcherFor === personId && (
-                <SpouseMenu
-                  graph={graph}
-                  memberId={personId}
-                  card={card}
-                  partnerChoice={partnerChoice}
-                  onChoose={onChooseSpouse}
-                />
-              )}
-            </div>
-          </div>
-        );
-      })}
-
-      {/* Per-member up-lines: expand arrow when parents exist, a quiet
-          "add parent" affordance when the line simply hasn't been recorded
-          yet — placed exactly where the missing card would appear. */}
-      {!isChild && card.slots.map((slot, i) => {
-        const person = graph.byId.get(slot.id);
-        const pos = upButtonStyle(card, i, horizontal);
-        if (slot.hasMoreUp) {
-          return (
-            <button
-              key={'up_' + slot.id}
-              className={'ped-up' + (slot.expanded ? ' ped-up--open' : '')}
-              style={pos}
-              onClick={() => onToggleUp(slot.id)}
-              title={slot.expanded ? `Hide ${person?.display_name.split(' ')[0]}’s parents` : `Show ${person?.display_name.split(' ')[0]}’s parents`}
-              aria-expanded={slot.expanded}
-            >
-              <ChevronUpIcon />
-            </button>
-          );
-        }
-        return (
-          <button
-            key={'add_' + slot.id}
-            className="ped-up ped-up--add"
-            style={pos}
-            onClick={() => onAddRelative?.(slot.id)}
-            title={`Add ${person?.display_name.split(' ')[0]}’s parents`}
-          >
-            <PlusIcon />
-          </button>
-        );
-      })}
-
-      {card.childrenCount > 0 && !isFocal && (
-        <button
-          className="ped-footer"
-          onClick={() => (isChild ? onActivate?.(card.members[0]) : onOpenChildren(card.id))}
-          title={isChild ? 'Focus the chart here' : 'Show children'}
-        >
-          {card.childrenCount} {card.childrenCount === 1 ? 'child' : 'children'}
-          {isChild ? <ArrowRightIcon /> : <ChevronDownIcon />}
-        </button>
-      )}
-    </div>
-  );
-}
-
-// Two tiers, nothing in between. No marriage evidence: the plain
-// partner_status word (current → "Partners", former → "Former partners",
-// widowed → "Widowed") — this base wording is deliberately untouched by
-// marriage evidence at all. Evidence (the explicit is_married flag, or a
-// recorded date/place implying it): just "Married", full stop — no date, no
-// place, no "Formerly" variant. The date/place still lives in the profile's
-// marriage editor for anyone who wants it; the compact card only ever
-// needs to answer "were they married," not recite the wedding details.
-function MarriageStrip({ marriage }) {
-  let text = null;
-  if (marriage) {
-    const wed = marriage.isMarried || marriage.date || marriage.place;
-    if (wed) text = 'Married';
-    else if (marriage.status === 'former') text = 'Former partners';
-    else if (marriage.status === 'widowed') text = 'Widowed';
-    else text = 'Partners';
-  }
-  return (
-    <div className={'ped-marriage' + (text ? '' : ' ped-marriage--bare')}>
-      {text && <span className="ped-marriage__text">{text === 'Married' ? <RingsIcon /> : null} {text}</span>}
     </div>
   );
 }
@@ -842,22 +736,6 @@ function SpouseMenu({ graph, memberId, card, partnerChoice, onChoose }) {
       )}
     </div>
   );
-}
-
-// Mirrors upAnchor's geometry exactly (see the connector-drawing code
-// above) so a member's expand/add-parent control always sits right where
-// their own line actually meets the card — never floating somewhere else
-// on a shared edge where it's unclear whose arrow is whose.
-function upButtonStyle(card, slotIndex, horizontal) {
-  if (horizontal) {
-    const rowCenter = ROW_H / 2 + (slotIndex === 1 ? ROW_H + MARRIAGE_H : 0);
-    return { right: -13, top: rowCenter - 13 };
-  }
-  if (card.members.length === 2) {
-    const rowCenter = ROW_H / 2 + (slotIndex === 1 ? ROW_H + MARRIAGE_H : 0);
-    return slotIndex === 0 ? { left: -13, top: rowCenter - 13 } : { right: -13, top: rowCenter - 13 };
-  }
-  return { left: card.w / 2 - 13, top: -13 };
 }
 
 // The popover's grouped rows: children of both displayed members first
@@ -901,6 +779,12 @@ function ChevronUpIcon() {
 function ChevronDownIcon() {
   return <svg width="11" height="11" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 9l7 7 7-7" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" /></svg>;
 }
+function ChevronLeftIcon() {
+  return <svg width="11" height="11" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M15 5l-7 7 7 7" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" /></svg>;
+}
+function ChevronRightIcon() {
+  return <svg width="11" height="11" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9 5l7 7-7 7" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" /></svg>;
+}
 function ArrowRightIcon() {
   return <svg width="11" height="11" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" /></svg>;
 }
@@ -921,9 +805,6 @@ function MinusIcon() {
 }
 function SwapIcon() {
   return <svg width="11" height="11" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M7 16V5m0 0L3 9m4-4l4 4M17 8v11m0 0l4-4m-4 4l-4-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>;
-}
-function RingsIcon() {
-  return <svg width="10" height="10" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="9" cy="13" r="6" stroke="currentColor" strokeWidth="1.8" /><circle cx="15" cy="11" r="6" stroke="currentColor" strokeWidth="1.8" /></svg>;
 }
 function BackIcon() {
   return <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M19 12H5M11 6l-6 6 6 6" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" /></svg>;

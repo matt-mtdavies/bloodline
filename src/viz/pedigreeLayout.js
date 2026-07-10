@@ -28,7 +28,7 @@
  * conn: { id, kind: 'up'|'down', fromCardId, toCardId, fromAnchorX, ... }
  */
 
-import { CARD_W, ROW_H, MARRIAGE_H, FOOTER_H, CHILD_W, PLATE_W, PLATE_H, UNION_W, CHILD_PW } from './pedigreeMetrics.js';
+import { PLATE_W, PLATE_H, LINK_GAP, UNION_W, CHILD_PW } from './pedigreeMetrics.js';
 
 const GEN_GAP = 72;        // edge-to-edge between a card and its parents' row
 const PAIR_GAP = 40;       // between the two parent cards above one card
@@ -168,16 +168,9 @@ function marriageOf(graph, aId, bId) {
   };
 }
 
-function cardHeight(card) {
-  const rows = card.members.length;
-  const marriage = card.members.length === 2 ? MARRIAGE_H : 0;
-  const footer = card.childrenCount > 0 && card.kind !== 'focalUnion' ? FOOTER_H : 0;
-  return rows * ROW_H + marriage + footer;
-}
-
 // Orders a displayed pair for presentation: line members keep their given
 // order (child's parents in edge order); a switched-in partner sits second.
-function makeUnionCard(graph, lineMemberIds, displayed, kind, { expandedUp, partnerChoice, portrait, bloodlineOnly }) {
+function makeUnionCard(graph, lineMemberIds, displayed, kind, { expandedUp, partnerChoice, orientation, bloodlineOnly }) {
   const members = displayed.filter(Boolean);
   const kidRows = childrenOfUnion(graph, members[0], members[1] ?? null, bloodlineOnly);
   const slots = members.map((id) => {
@@ -202,16 +195,19 @@ function makeUnionCard(graph, lineMemberIds, displayed, kind, { expandedUp, part
     marriage: members.length === 2 ? marriageOf(graph, members[0], members[1]) : null,
     childrenCount: kidRows.length,
     childRows: kidRows,
-    x: 0, y: 0, w: CARD_W, h: 0,
+    x: 0, y: 0, w: PLATE_W, h: 0,
   };
-  if (portrait) {
-    // Horizontal couple: two plates side by side (or one, solo), a single
-    // row tall. Children navigation is a pip, not a footer row, so it adds
-    // no height.
+  // Direction B flat plates in BOTH orientations. Portrait: a couple is two
+  // plates side by side (union wide, one plate tall). Landscape: the same two
+  // plates STACKED (one plate wide, two plates tall), joined at the seam.
+  // Children navigation is a pip, not a footer row, so cards never grow to
+  // fit a footer.
+  if (orientation === 'horizontal') {
+    card.w = PLATE_W;
+    card.h = members.length === 2 ? PLATE_H * 2 + LINK_GAP : PLATE_H;
+  } else {
     card.w = members.length === 2 ? UNION_W : PLATE_W;
     card.h = PLATE_H;
-  } else {
-    card.h = cardHeight({ ...card, kind: kind === 'focal' ? 'focalUnion' : kind });
   }
   return card;
 }
@@ -240,7 +236,12 @@ export function computePedigree(graph, focusId, { expandedUp, partnerChoice, ori
   expandedUp = expandedUp ?? new Set();
   partnerChoice = partnerChoice ?? new Map();
   const portrait = orientation !== 'horizontal';
-  const opts = { expandedUp, partnerChoice, portrait, bloodlineOnly };
+  const opts = { expandedUp, partnerChoice, orientation, bloodlineOnly };
+  // Which card dimension runs along each axis. Portrait: generations stack
+  // vertically (main = height), siblings spread horizontally (cross = width).
+  // Landscape transposes both.
+  const mainSize = (card) => (portrait ? card.h : card.w);
+  const crossSize = (card) => (portrait ? card.w : card.h);
 
   const cards = [];
   const connectors = [];
@@ -286,7 +287,7 @@ export function computePedigree(graph, focusId, { expandedUp, partnerChoice, ori
   function span(card) {
     if (card._span != null) return card._span;
     const upIds = card.slots.map((s) => s._parentCardId).filter(Boolean);
-    let s = card.w;
+    let s = crossSize(card);
     if (upIds.length) {
       const upSpan = upIds.reduce((sum, id, i) => sum + span(byId.get(id)) + (i ? PAIR_GAP : 0), 0);
       s = Math.max(s, upSpan);
@@ -315,7 +316,7 @@ export function computePedigree(graph, focusId, { expandedUp, partnerChoice, ori
   const maxGen = Math.max(...cards.map((c) => c._gen));
   const rowHeight = [];
   for (let g = 0; g <= maxGen; g++) {
-    rowHeight[g] = Math.max(0, ...cards.filter((c) => c._gen === g).map((c) => c.h));
+    rowHeight[g] = Math.max(0, ...cards.filter((c) => c._gen === g).map((c) => mainSize(c)));
   }
   const genOffset = [0];
   for (let g = 1; g <= maxGen; g++) {
@@ -339,7 +340,7 @@ export function computePedigree(graph, focusId, { expandedUp, partnerChoice, ori
         ...rows.filter((r) => sideOf(r) === 'both'),
         ...rows.filter((r) => sideOf(r) === 'b'),
       ];
-      const childW = portrait ? CHILD_PW : CHILD_W;
+      const childW = CHILD_PW;
       const totalW = ordered.length * childW + (ordered.length - 1) * CHILD_GAP;
       let cursor = -totalW / 2;
       for (const row of ordered) {
@@ -355,7 +356,7 @@ export function computePedigree(graph, focusId, { expandedUp, partnerChoice, ori
           side: sideOf(row),
           qualifiers: { a: row.aQualifier, b: row.bQualifier },
           w: childW,
-          h: portrait ? PLATE_H : ROW_H + (grandkids > 0 ? FOOTER_H : 0),
+          h: PLATE_H,
           _cross: cursor + childW / 2,
           _gen: -1,
         };

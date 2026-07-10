@@ -8402,6 +8402,11 @@ button.health-notes {
 .pcard--recede2 { opacity: 0.76; }
 .pcard:hover, .pcard:has(.pplate--selected) { opacity: 1; }
 .pcard__row { display: flex; gap: 18px; height: 100%; align-items: stretch; }
+/* Landscape: the couple's plates stack vertically (member over member), joined
+   by the vertical partner-link at the seam. The 18px gap MUST equal LINK_GAP so
+   the drawn seam lands between them. */
+.pcard--land .pcard__row { flex-direction: column; }
+.pcard--land .pplate { height: auto; flex: 1 1 0; min-height: 0; }
 
 /* Appear motion (Direction B, Phase 2): on a structural change (expand,
    re-root) new cards ease in just after their connectors, so a branch looks
