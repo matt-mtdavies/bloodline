@@ -2568,11 +2568,12 @@ function DocViewer({
             <button className="doc-viewer__save" onClick={handleSave} disabled={saveState === 'saving'}>
               {saveState === 'saving' ? 'Saving…' : saveState === 'error' ? "Couldn't save" : 'Save'}
             </button>
-            {!summary && facts.length === 0 && (
-              <button className="doc-viewer__save" onClick={handleSummarize} disabled={summaryState === 'working'}>
-                {summaryState === 'working' ? 'Reading…' : summaryState === 'error' ? "Couldn't summarize" : 'Summarize with AI'}
-              </button>
-            )}
+            <button className="doc-viewer__save" onClick={handleSummarize} disabled={summaryState === 'working'}>
+              {summaryState === 'working' ? 'Reading…'
+                : summaryState === 'error' ? "Couldn't summarize"
+                : summary || facts.length ? 'Re-summarize'
+                : 'Summarize with AI'}
+            </button>
           </div>
         )}
       </div>
