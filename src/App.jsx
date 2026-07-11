@@ -1417,6 +1417,26 @@ export default function App() {
     [data.documents],
   );
 
+  // Fire-and-forget: summarize a freshly uploaded document in the background,
+  // so Enrich has facts to harvest without waiting on someone to open the
+  // document and press Summarize with AI. summarizeDocument never throws and
+  // is best-effort by design; DocViewer's manual button (which only shows
+  // while a document has no summary/facts yet) covers the case where this
+  // silently fails or the document is closed and reopened before it finishes.
+  const autoSummarizeDocument = useCallback(async (docId, src) => {
+    try {
+      const dataUrl = await srcToDataUrl(src);
+      const result = await summarizeDocument(dataUrl);
+      if (!result) return;
+      updateDocument(docId, {
+        summary: result.summary,
+        extracted: { facts: result.facts.map((f) => ({ ...f, status: 'pending' })) },
+      });
+    } catch {
+      /* background best-effort — manual Summarize with AI button is the fallback */
+    }
+  }, []);
+
   const handleAddMemory = useCallback(
     (fields) => {
       addMemory(memoryId, fields);
@@ -1883,7 +1903,11 @@ export default function App() {
         onUpdateMemory={updateMemory}
         onAddPhoto={(id, src) => addPhoto(id, { src })}
         onOpenLightbox={(personId, index) => setLightbox({ personId, index })}
-        onAddDocument={(personId, fields) => addDocument(personId, fields)}
+        onAddDocument={(personId, fields) => {
+          const docId = addDocument(personId, fields);
+          autoSummarizeDocument(docId, fields.src);
+          return docId;
+        }}
         onOpenDocument={(doc) => setDocViewer({ id: doc.id, title: doc.title, src: doc.src, mime: doc.mime, summary: doc.summary, extracted: doc.extracted })}
         onRemoveDocument={(id) => {
           const doc = data.documents?.find((d) => d.id === id);
