@@ -115,6 +115,7 @@ export default function BubbleTree({
   useEffect(() => {
     let alive = true;
     let hoverTimer = null; // shared with the cleanup below, which runs outside the async IIFE
+    let onVisibility = null; // ditto — assigned inside the IIFE, removed in the cleanup
     const host = hostRef.current;
     const app = new Application();
 
@@ -1057,6 +1058,27 @@ export default function BubbleTree({
       const pointers = new Map();
       const pinch = { active: false, dist0: 0, zoom0: 1 };
 
+      // iOS (and some Android WebViews) can suspend JS mid-touch when the app
+      // is backgrounded — a finger lifted while away never fires its
+      // pointerup/pointercancel, leaving a phantom entry in `pointers` that
+      // survives the trip. On return, that stale entry plus a real new touch
+      // reads as two fingers, silently forcing every single-finger drag into
+      // pinch-zoom; a second background/foreground cycle can wedge `drag` in
+      // a stuck state that swallows taps entirely. This is the same reset
+      // `recenter()` already applies for the user-visible symptom (tapping
+      // Browse "unsticks" it) — running it automatically the moment the page
+      // becomes visible again means it never gets stuck in the first place.
+      onVisibility = () => {
+        if (document.visibilityState !== 'visible') return;
+        pointers.clear();
+        pinch.active = false;
+        drag.type = 'none';
+        drag.node = null;
+        drag.moved = false;
+        vx = vy = 0;
+      };
+      document.addEventListener('visibilitychange', onVisibility);
+
       // ── Hover preview (desktop only) ──────────────────────────────────────
       // Fine-pointer devices only — never activates from touch. A short dwell
       // avoids firing a card for every bubble the cursor sweeps past while
@@ -1987,6 +2009,7 @@ export default function BubbleTree({
     return () => {
       alive = false;
       clearTimeout(hoverTimer);
+      if (onVisibility) document.removeEventListener('visibilitychange', onVisibility);
       api.current?.sim?.stop();
       try {
         app.destroy(true, { children: true });
