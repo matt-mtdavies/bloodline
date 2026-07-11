@@ -2301,6 +2301,12 @@ function DocViewer({ doc, onClose, onSummarized, onApplyDocumentFact, onDismissD
   const isImage = doc.mime?.startsWith('image/');
   const isPdf = doc.mime === 'application/pdf';
   const { xf, stageRef, handlers } = useImageZoom();
+  // A second, independent zoom instance for the fullscreen view below — once
+  // the AI summary and facts are showing, the inline preview above them is
+  // squeezed down to make room, so this is the "still crisp, still zoomable"
+  // escape hatch back to a full-viewport view of the original scan.
+  const full = useImageZoom();
+  const [fullscreen, setFullscreen] = useState(false);
   const [saveState, setSaveState] = useState('idle'); // idle | saving | error
   const [summaryState, setSummaryState] = useState('idle'); // idle | working | error
   const [summary, setSummary] = useState(doc.summary || null);
@@ -2308,10 +2314,20 @@ function DocViewer({ doc, onClose, onSummarized, onApplyDocumentFact, onDismissD
   const pendingFacts = facts.filter((f) => f.status === 'pending' && f.year);
 
   useEffect(() => {
-    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    const onKey = (e) => {
+      if (e.key !== 'Escape') return;
+      if (fullscreen) setFullscreen(false);
+      else onClose();
+    };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  }, [onClose, fullscreen]);
+
+  // Never carry over zoom/pan from a previous fullscreen visit.
+  useEffect(() => {
+    if (fullscreen) full.reset();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fullscreen]);
 
   async function handleSave() {
     if (saveState === 'saving') return;
@@ -2354,6 +2370,7 @@ function DocViewer({ doc, onClose, onSummarized, onApplyDocumentFact, onDismissD
   }
 
   return (
+    <>
     <div className="doc-viewer-scrim" onClick={onClose}>
       <div className="doc-viewer" onClick={(e) => e.stopPropagation()}>
         <div className="doc-viewer__bar">
@@ -2380,6 +2397,14 @@ function DocViewer({ doc, onClose, onSummarized, onApplyDocumentFact, onDismissD
               onWheel={(e) => { e.stopPropagation(); handlers.onWheel(e); }}
               onClick={(e) => e.stopPropagation()}
             />
+            <button
+              className="doc-viewer__expand"
+              onClick={(e) => { e.stopPropagation(); setFullscreen(true); }}
+              aria-label="View full size"
+              title="View full size"
+            >
+              <ExpandIcon />
+            </button>
           </div>
         ) : isPdf ? (
           <Suspense fallback={<div className="pdf-viewer__stage"><div className="mw__spinner" aria-label="Loading" /></div>}>
@@ -2435,6 +2460,44 @@ function DocViewer({ doc, onClose, onSummarized, onApplyDocumentFact, onDismissD
         )}
       </div>
     </div>
+    {fullscreen && isImage && (
+      <div className="doc-fullscreen" onClick={() => setFullscreen(false)}>
+        <button
+          className="doc-fullscreen__close"
+          onClick={(e) => { e.stopPropagation(); setFullscreen(false); }}
+          aria-label="Close full size view"
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+          </svg>
+        </button>
+        <div className="doc-fullscreen__stage" ref={full.stageRef}>
+          <img
+            className="doc-fullscreen__img"
+            src={doc.src}
+            alt={doc.title}
+            crossOrigin="anonymous"
+            draggable={false}
+            style={{ transform: `translate(${full.xf.x}px, ${full.xf.y}px) scale(${full.xf.scale})` }}
+            onPointerDown={(e) => { e.stopPropagation(); full.handlers.onPointerDown(e); }}
+            onPointerMove={(e) => { e.stopPropagation(); full.handlers.onPointerMove(e); }}
+            onPointerUp={(e) => { e.stopPropagation(); full.handlers.onPointerUp(e); }}
+            onPointerCancel={(e) => { e.stopPropagation(); full.handlers.onPointerCancel(e); }}
+            onWheel={(e) => { e.stopPropagation(); full.handlers.onWheel(e); }}
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      </div>
+    )}
+    </>
+  );
+}
+
+function ExpandIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M9 3H3v6M15 21h6v-6M21 3l-7 7M3 21l7-7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
   );
 }
 

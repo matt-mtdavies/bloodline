@@ -2123,6 +2123,76 @@
   touch-action: none;
   will-change: transform;
 }
+/* Overlaid on the (possibly squeezed, once AI summary/facts are showing
+   below) inline preview — the escape hatch back to a full-viewport, crisp,
+   zoomable view of the original scan. Mirrors .doc-viewer__close's circle
+   chrome so it reads as the same family of button. */
+.doc-viewer__expand {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--ink);
+  box-shadow: var(--shadow-soft);
+  transition: background 0.15s, transform 0.15s;
+}
+.doc-viewer__expand:hover { background: #fff; }
+.doc-viewer__expand:active { transform: scale(0.92); }
+
+/* Full-viewport zoomable view of the original document — same pinch/pan/
+   double-tap zoom as the inline preview (a second, independent useImageZoom
+   instance), just given the whole screen instead of whatever room is left
+   once the AI summary and facts panels are showing. */
+.doc-fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 85;
+  background: rgba(0, 0, 0, 0.92);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.doc-fullscreen__close {
+  position: absolute;
+  top: max(16px, var(--safe-top, 16px));
+  right: 16px;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  transition: background 0.15s;
+}
+.doc-fullscreen__close:hover { background: rgba(255, 255, 255, 0.24); }
+.doc-fullscreen__stage {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.doc-fullscreen__img {
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  touch-action: none;
+  will-change: transform;
+}
 .pdf-viewer__stage {
   position: relative;
   flex: 1;
