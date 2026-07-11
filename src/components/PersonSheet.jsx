@@ -85,6 +85,13 @@ export default function PersonSheet({
   const [editingMemoryId, setEditingMemoryId] = useState(null);
   const [editingMemoryText, setEditingMemoryText] = useState('');
   const [editingMemoryAuthorId, setEditingMemoryAuthorId] = useState('');
+  // Tap-to-arm confirm state for the three removals on this sheet that used
+  // to fire instantly on a single tap (memory / voice-video / health
+  // condition) — one id in flight at a time per kind, cleared on any other
+  // action so a stale "remove?" never lingers armed in the background.
+  const [confirmRemoveMemoryId, setConfirmRemoveMemoryId] = useState(null);
+  const [confirmRemoveMediaId, setConfirmRemoveMediaId] = useState(null);
+  const [confirmRemoveConditionId, setConfirmRemoveConditionId] = useState(null);
   const [healthPickerOpen, setHealthPickerOpen] = useState(false);
   const [healthCat, setHealthCat] = useState(HEALTH_CATEGORIES[0].id);
   const [statusPickId, setStatusPickId] = useState(null);
@@ -767,7 +774,7 @@ export default function PersonSheet({
                               </button>
                               <button
                                 className="memory__del"
-                                onClick={() => onRemoveMemory?.(mem.id)}
+                                onClick={() => setConfirmRemoveMemoryId(mem.id)}
                                 aria-label="Remove memory"
                               >
                                 Remove
@@ -785,6 +792,22 @@ export default function PersonSheet({
                           </button>
                         </span>
                       </div>
+                      {confirmRemoveMemoryId === mem.id && (
+                        <div className="inline-confirm">
+                          <span>Remove this memory? This can&apos;t be undone.</span>
+                          <div className="inline-confirm-btns">
+                            <button
+                              className="inline-confirm-remove"
+                              onClick={() => { onRemoveMemory?.(mem.id); setConfirmRemoveMemoryId(null); }}
+                            >
+                              Remove
+                            </button>
+                            <button className="inline-confirm-cancel" onClick={() => setConfirmRemoveMemoryId(null)}>
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </li>
                   ))}
                 </ul>
@@ -1045,13 +1068,30 @@ export default function PersonSheet({
                           preload="metadata"
                         />
                       )}
-                      <button
-                        className="media-item__del"
-                        onClick={() => onRemoveDocument?.(item.id)}
-                        aria-label={`Remove ${item.title}`}
-                      >
-                        <CloseIcon />
-                      </button>
+                      {confirmRemoveMediaId === item.id ? (
+                        <div className="inline-confirm">
+                          <span>Remove &ldquo;{item.title}&rdquo;? This can&apos;t be undone.</span>
+                          <div className="inline-confirm-btns">
+                            <button
+                              className="inline-confirm-remove"
+                              onClick={() => { onRemoveDocument?.(item.id); setConfirmRemoveMediaId(null); }}
+                            >
+                              Remove
+                            </button>
+                            <button className="inline-confirm-cancel" onClick={() => setConfirmRemoveMediaId(null)}>
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <button
+                          className="media-item__del"
+                          onClick={() => setConfirmRemoveMediaId(item.id)}
+                          aria-label={`Remove ${item.title}`}
+                        >
+                          <CloseIcon />
+                        </button>
+                      )}
                     </li>
                   ))}
                 </ul>
@@ -1116,13 +1156,30 @@ export default function PersonSheet({
                           </div>
                         )}
                         {canEdit && (
-                          <button
-                            className="health-chip__remove"
-                            onClick={() => { setStatusPickId(null); onRemoveCondition?.(person.id, c.id); }}
-                            aria-label={`Remove ${c.name}`}
-                          >
-                            <CloseIcon />
-                          </button>
+                          confirmRemoveConditionId === c.id ? (
+                            <div className="inline-confirm">
+                              <span>Remove {c.name}?</span>
+                              <div className="inline-confirm-btns">
+                                <button
+                                  className="inline-confirm-remove"
+                                  onClick={() => { onRemoveCondition?.(person.id, c.id); setConfirmRemoveConditionId(null); }}
+                                >
+                                  Remove
+                                </button>
+                                <button className="inline-confirm-cancel" onClick={() => setConfirmRemoveConditionId(null)}>
+                                  Cancel
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <button
+                              className="health-chip__remove"
+                              onClick={() => { setStatusPickId(null); setConfirmRemoveConditionId(c.id); }}
+                              aria-label={`Remove ${c.name}`}
+                            >
+                              <CloseIcon />
+                            </button>
+                          )
                         )}
                       </li>
                     );

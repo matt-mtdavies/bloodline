@@ -828,6 +828,28 @@
   background: var(--paper-deep, #f1ece4); color: var(--ink-soft);
 }
 
+/* Shared "are you sure?" inline confirm — one generic version of the
+   rel-menu__confirm / doc-card__confirm pattern above, for every OTHER
+   instant delete that used to fire on a single tap (memory, voice & video,
+   health condition). Same look everywhere a removal needs a second tap,
+   rather than a bespoke variant per section. */
+.inline-confirm {
+  display: flex; flex-direction: column; gap: 7px;
+  font-size: 13px; color: var(--ink);
+  padding: 8px 10px; margin-top: 6px;
+  background: #f7e9e4; border-radius: 10px;
+  animation: islide-in 0.2s var(--spring) both;
+}
+.inline-confirm-btns { display: flex; gap: 8px; }
+.inline-confirm-remove {
+  padding: 6px 13px; border-radius: 9px; font-size: 13px; font-weight: 600;
+  background: #c2603a; color: #fff;
+}
+.inline-confirm-cancel {
+  padding: 6px 13px; border-radius: 9px; font-size: 13px; font-weight: 500;
+  background: #ffffff; color: var(--ink-soft); border: 1px solid var(--hairline);
+}
+
 /* Inline qualifier picker — slides in below the card row */
 .qual-picker {
   width: 100%;
@@ -3642,6 +3664,11 @@ button.health-notes {
 }
 .lightbox__action:active { transform: scale(0.98); }
 .lightbox__action--danger { color: #ffb4a8; }
+.lightbox__confirm {
+  display: flex; flex-direction: column; gap: 10px;
+  font-size: 14px; color: #f2f3f5;
+  animation: islide-in 0.2s var(--spring) both;
+}
 
 /* ── AI Life Story section ──────────────────────────────────────────────── */
 .ai-generate {
