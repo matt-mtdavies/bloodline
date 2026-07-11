@@ -21,9 +21,9 @@ function parentRel(parentId, childId, qualifier = 'biological') {
 function partnerRel(a, b, status = 'current') {
   return { id: `r${rid++}`, type: 'partner', from_person: a, to_person: b, partner_status: status };
 }
-function findingsFor(id, people, rels, memoryCount = 0) {
+function findingsFor(id, people, rels, memoryCount = 0, documents = []) {
   const graph = buildGraph(people, rels);
-  return computeEnrichment(graph.byId.get(id), graph, memoryCount);
+  return computeEnrichment(graph.byId.get(id), graph, memoryCount, documents);
 }
 function byKeyPrefix(findings, prefix) {
   return findings.filter((f) => f.key.startsWith(prefix));
@@ -206,6 +206,59 @@ test('life-story pointer is withheld once a story already exists', () => {
 test('a null person returns no findings rather than throwing', () => {
   const graph = buildGraph([], []);
   assert.deepEqual(computeEnrichment(null, graph, 0), []);
+});
+
+test('a pending document fact with a year surfaces as a document-tier finding', () => {
+  const people = [{ id: 'a', display_name: 'Herbert Davies' }];
+  const documents = [{
+    id: 'doc1', person_id: 'a', title: 'Service record',
+    extracted: { facts: [{ year: '1942', title: 'Enlisted', detail: 'VX27390', quote: 'Enlisted 1942', tag: 'military', status: 'pending' }] },
+  }];
+  const findings = findingsFor('a', people, [], 0, documents);
+  const f = findings.find((f) => f.key === 'doc_fact_doc1_0');
+  assert.ok(f, 'expected a doc_fact finding');
+  assert.equal(f.tier, 'document');
+  assert.equal(f.icon, 'military');
+  assert.equal(f.action.type, 'document-fact');
+  assert.equal(f.action.docId, 'doc1');
+  assert.equal(f.action.factIndex, 0);
+  assert.match(f.detail, /Enlisted 1942/);
+});
+
+test('document facts without a year are withheld (no chronological slot to offer)', () => {
+  const people = [{ id: 'a', display_name: 'No Year' }];
+  const documents = [{
+    id: 'doc1', person_id: 'a', title: 'Letter',
+    extracted: { facts: [{ year: null, title: 'Mentioned a trip', detail: null, quote: 'went away', tag: null, status: 'pending' }] },
+  }];
+  const findings = findingsFor('a', people, [], 0, documents);
+  assert.equal(byKeyPrefix(findings, 'doc_fact_').length, 0);
+});
+
+test('already-accepted or dismissed document facts are not re-offered', () => {
+  const people = [{ id: 'a', display_name: 'Resolved' }];
+  const documents = [{
+    id: 'doc1', person_id: 'a', title: 'Doc',
+    extracted: { facts: [
+      { year: '1945', title: 'Discharged', detail: null, quote: 'Discharged 1945', tag: 'military', status: 'accepted' },
+      { year: '1946', title: 'Married', detail: null, quote: 'Married 1946', tag: null, status: 'dismissed' },
+    ] },
+  }];
+  const findings = findingsFor('a', people, [], 0, documents);
+  assert.equal(byKeyPrefix(findings, 'doc_fact_').length, 0);
+});
+
+test('document facts belonging to a different person are not surfaced', () => {
+  const people = [
+    { id: 'a', display_name: 'This Person' },
+    { id: 'b', display_name: 'Someone Else' },
+  ];
+  const documents = [{
+    id: 'doc1', person_id: 'b', title: 'Doc',
+    extracted: { facts: [{ year: '1940', title: 'Enlisted', detail: null, quote: 'q', tag: 'military', status: 'pending' }] },
+  }];
+  const findings = findingsFor('a', people, [], 0, documents);
+  assert.equal(byKeyPrefix(findings, 'doc_fact_').length, 0);
 });
 
 console.log(`\n  ${passed} passed, ${failed} failed`);

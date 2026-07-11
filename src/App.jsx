@@ -30,6 +30,7 @@ import {
   addCondition,
   removeCondition,
   updateCondition,
+  addLifeEvent,
   loadFromServer,
   saveToServer,
   enableServerSync,
@@ -1392,6 +1393,30 @@ export default function App() {
     [timelineId, graph],
   );
 
+  // Enrich's document-fact review — accept writes a real life event (via the
+  // same additive addLifeEvent as everywhere else) and marks the fact
+  // consumed; dismiss just marks it, so a re-summarize never re-offers it.
+  const applyDocumentFact = useCallback(
+    (docId, factIndex) => {
+      const doc = data.documents?.find((d) => d.id === docId);
+      const fact = doc?.extracted?.facts?.[factIndex];
+      if (!doc || !fact) return;
+      addLifeEvent(doc.person_id, { year: fact.year, title: fact.title, detail: fact.detail, tag: fact.tag });
+      const facts = doc.extracted.facts.map((f, i) => (i === factIndex ? { ...f, status: 'accepted' } : f));
+      updateDocument(docId, { extracted: { ...doc.extracted, facts } });
+    },
+    [data.documents],
+  );
+  const dismissDocumentFact = useCallback(
+    (docId, factIndex) => {
+      const doc = data.documents?.find((d) => d.id === docId);
+      if (!doc?.extracted?.facts) return;
+      const facts = doc.extracted.facts.map((f, i) => (i === factIndex ? { ...f, status: 'dismissed' } : f));
+      updateDocument(docId, { extracted: { ...doc.extracted, facts } });
+    },
+    [data.documents],
+  );
+
   const handleAddMemory = useCallback(
     (fields) => {
       addMemory(memoryId, fields);
@@ -1859,7 +1884,7 @@ export default function App() {
         onAddPhoto={(id, src) => addPhoto(id, { src })}
         onOpenLightbox={(personId, index) => setLightbox({ personId, index })}
         onAddDocument={(personId, fields) => addDocument(personId, fields)}
-        onOpenDocument={(doc) => setDocViewer({ id: doc.id, title: doc.title, src: doc.src, mime: doc.mime, summary: doc.summary })}
+        onOpenDocument={(doc) => setDocViewer({ id: doc.id, title: doc.title, src: doc.src, mime: doc.mime, summary: doc.summary, extracted: doc.extracted })}
         onRemoveDocument={(id) => {
           const doc = data.documents?.find((d) => d.id === id);
           if (doc?.src?.startsWith('/api/documents/')) {
@@ -1893,6 +1918,8 @@ export default function App() {
           const label = key === 'birth_place' ? 'birthplace' : 'residence';
           updatePerson(id, { [key]: value }, { type: 'person_updated', personId: id, personName: person?.display_name ?? '', detail: label });
         }}
+        onApplyDocumentFact={applyDocumentFact}
+        onDismissDocumentFact={dismissDocumentFact}
       />
 
       {searchOpen && (
@@ -2059,10 +2086,13 @@ export default function App() {
         <DocViewer
           doc={docViewer}
           onClose={() => setDocViewer(null)}
-          onSummarized={(summary) => {
-            setDocViewer((d) => (d ? { ...d, summary } : d));
-            if (docViewer.id) updateDocument(docViewer.id, { summary });
+          onSummarized={({ summary, facts }) => {
+            const extracted = { facts: facts.map((f) => ({ ...f, status: 'pending' })) };
+            setDocViewer((d) => (d ? { ...d, summary, extracted } : d));
+            if (docViewer.id) updateDocument(docViewer.id, { summary, extracted });
           }}
+          onApplyDocumentFact={applyDocumentFact}
+          onDismissDocumentFact={dismissDocumentFact}
         />
       )}
 
@@ -2243,13 +2273,15 @@ export default function App() {
 // ── Document viewer ───────────────────────────────────────────────────────────
 // Renders in-app so the session cookie is sent with the fetch — iOS PWA has a
 // separate cookie store from Safari, so window.open() loses auth entirely.
-function DocViewer({ doc, onClose, onSummarized }) {
+function DocViewer({ doc, onClose, onSummarized, onApplyDocumentFact, onDismissDocumentFact }) {
   const isImage = doc.mime?.startsWith('image/');
   const isPdf = doc.mime === 'application/pdf';
   const { xf, stageRef, handlers } = useImageZoom();
   const [saveState, setSaveState] = useState('idle'); // idle | saving | error
   const [summaryState, setSummaryState] = useState('idle'); // idle | working | error
   const [summary, setSummary] = useState(doc.summary || null);
+  const [facts, setFacts] = useState(doc.extracted?.facts || []);
+  const pendingFacts = facts.filter((f) => f.status === 'pending' && f.year);
 
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') onClose(); };
@@ -2278,7 +2310,8 @@ function DocViewer({ doc, onClose, onSummarized }) {
       const dataUrl = await srcToDataUrl(doc.src);
       const result = await summarizeDocument(dataUrl);
       if (result) {
-        setSummary(result);
+        setSummary(result.summary);
+        setFacts(result.facts.map((f) => ({ ...f, status: 'pending' })));
         onSummarized?.(result);
         setSummaryState('idle');
       } else {
@@ -2288,6 +2321,12 @@ function DocViewer({ doc, onClose, onSummarized }) {
       console.warn('[doc viewer] summarize failed:', e.message);
       setSummaryState('error');
     }
+  }
+
+  function resolveFact(index, status) {
+    setFacts((fs) => fs.map((f, i) => (i === index ? { ...f, status } : f)));
+    if (status === 'accepted') onApplyDocumentFact?.(doc.id, index);
+    else onDismissDocumentFact?.(doc.id, index);
   }
 
   return (
@@ -2336,12 +2375,34 @@ function DocViewer({ doc, onClose, onSummarized }) {
             <p>{summary}</p>
           </div>
         )}
+        {pendingFacts.length > 0 && (
+          <div className="doc-viewer__facts">
+            <span className="doc-viewer__summary-label">Life events found in this document</span>
+            {facts.map((f, i) => (f.status === 'pending' && f.year ? (
+              <div className="doc-fact" key={i}>
+                <div className="doc-fact__body">
+                  {f.tag === 'military' && (
+                    <span className="timeline__ribbon" title="Military service" aria-label="Military service">
+                      <RibbonIconSmall />
+                    </span>
+                  )}
+                  <span className="doc-fact__title">{f.title} — {f.year}</span>
+                  {f.detail && <span className="doc-fact__detail">{f.detail}</span>}
+                </div>
+                <div className="doc-fact__actions">
+                  <button className="enrich__row-action" onClick={() => resolveFact(i, 'accepted')}>Add</button>
+                  <button className="enrich__row-dismiss" onClick={() => resolveFact(i, 'dismissed')}>Dismiss</button>
+                </div>
+              </div>
+            ) : null))}
+          </div>
+        )}
         {(isImage || isPdf) && (
           <div className="doc-viewer__bar doc-viewer__bar--bottom">
             <button className="doc-viewer__save" onClick={handleSave} disabled={saveState === 'saving'}>
               {saveState === 'saving' ? 'Saving…' : saveState === 'error' ? "Couldn't save" : 'Save'}
             </button>
-            {!summary && (
+            {!summary && facts.length === 0 && (
               <button className="doc-viewer__save" onClick={handleSummarize} disabled={summaryState === 'working'}>
                 {summaryState === 'working' ? 'Reading…' : summaryState === 'error' ? "Couldn't summarize" : 'Summarize with AI'}
               </button>
@@ -2350,6 +2411,15 @@ function DocViewer({ doc, onClose, onSummarized }) {
         )}
       </div>
     </div>
+  );
+}
+
+function RibbonIconSmall() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="8" r="5.5" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M8.5 13l-2 8 5.5-3 5.5 3-2-8" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+    </svg>
   );
 }
 

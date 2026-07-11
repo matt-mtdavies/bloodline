@@ -36,7 +36,7 @@ export default function InsightModules({ modules, graph, onNavigate }) {
   if (!modules) return null;
   const {
     handshakes, giftOfYears, fullestYear, strata, brood, bridges,
-    names, heartlands, trades, birthdays, records, parenthood,
+    names, heartlands, trades, birthdays, records, parenthood, serviceRecords,
   } = modules;
   const chapters = [
     ['Deep time', [
@@ -60,6 +60,9 @@ export default function InsightModules({ modules, graph, onNavigate }) {
     ['Seasons & milestones', [
       birthdays && <BirthdaysModule key="bday" data={birthdays} graph={graph} onNavigate={onNavigate} />,
       records && <RecordsModule key="records" data={records} graph={graph} onNavigate={onNavigate} />,
+    ]],
+    ['Service', [
+      serviceRecords && <ServiceRecordsModule key="service" data={serviceRecords} graph={graph} onNavigate={onNavigate} />,
     ]],
   ]
     .map(([label, items]) => [label, items.filter(Boolean)])
@@ -1285,6 +1288,46 @@ function RecordIcon({ name }) {
     case 'hourglass': return (<svg {...p}><path d="M6 3h12M6 21h12M7 3c0 4 3.5 5.5 5 6.5V12c-1.5 1-5 2.5-5 6.5M17 3c0 4-3.5 5.5-5 6.5V12c1.5 1 5 2.5 5 6.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>);
     case 'heart': default: return (<svg {...p}><path d="M12 20s-7-4.5-9.2-9C1.3 8 3 4.5 6.3 4.5c2 0 3.2 1.3 3.7 2.2.5-.9 1.7-2.2 3.7-2.2C20 4.5 21.7 8 21.2 11 19 15.5 12 20 12 20z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" /></svg>);
   }
+}
+
+// Family members with a military-tagged life event, surfaced from documents
+// run through Summarize with AI (DocViewer → Enrich's accept flow). Every
+// event here traces back to a document a human chose to add — never a guess.
+function ServiceRecordsModule({ data, graph, onNavigate }) {
+  const { people, count } = data;
+  return (
+    <Module
+      icon={<RibbonModuleIcon />}
+      title={count === 1 ? '1 documented service record' : `${count} documented service records`}
+      sub="Military service surfaced from uploaded documents."
+      caption="Traced from documents a family member added and confirmed — nothing here is guessed."
+    >
+      <div className="tim-drawer" style={{ marginTop: 0 }}>
+        <div className="tim-drawer__list">
+          {people.map(({ id, events }) => {
+            const person = graph.byId.get(id);
+            if (!person) return null;
+            const first = events[0];
+            return (
+              <button key={id} className="tim-drawer__row" onClick={() => onNavigate?.(id)}>
+                <Avatar person={person} size={28} />
+                <span className="tim-drawer__name">{person.display_name}</span>
+                <span className="tim-drawer__detail">{first.title}{first.year ? ` · ${first.year}` : ''}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </Module>
+  );
+}
+function RibbonModuleIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="8" r="5.5" stroke="currentColor" strokeWidth="1.7" />
+      <path d="M8.5 13l-2 8 5.5-3 5.5 3-2-8" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
+    </svg>
+  );
 }
 
 /* ── Icons (same 18px outline family as the fact cards) ────────────────── */

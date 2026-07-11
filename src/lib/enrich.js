@@ -13,11 +13,14 @@
  *   'missing'   — a plain gap, no inference at all
  *   'estimated' — a bounded range computed from OTHER people's own recorded
  *                 dates (interval arithmetic, not a statistical guess)
+ *   'document'  — a candidate fact an AI document summary extracted, grounded
+ *                 in a verbatim quote, awaiting a human's accept or dismiss
  *   'story'     — a pointer at the existing AI biography generator
  *
- * computeEnrichment(person, graph, memoryCount) → finding[]
+ * computeEnrichment(person, graph, memoryCount, documents) → finding[]
  * finding: { key, tier, icon, title, detail, action }
  * action: { type: 'edit' } | { type: 'merge', pair } | { type: 'story' }
+ *   | { type: 'document-fact', docId, factIndex }
  */
 import { profileCompleteness } from './profile.js';
 import { findDuplicatePairs } from './duplicates.js';
@@ -26,7 +29,7 @@ import { yearOf, yearsBetween } from './dates.js';
 const isBioAdopt = (q) => !q || q === 'biological' || q === 'adoptive' || q === 'adopted';
 const firstNameOf = (p) => (p?.display_name || '').trim().split(/\s+/)[0] || p?.display_name || 'they';
 
-export function computeEnrichment(person, graph, memoryCount = 0) {
+export function computeEnrichment(person, graph, memoryCount = 0, documents = []) {
   const findings = [];
   if (!person) return findings;
 
@@ -171,6 +174,25 @@ export function computeEnrichment(person, graph, memoryCount = 0) {
         });
       }
     }
+  }
+
+  // ── Document-derived facts — candidates an AI document summary extracted,
+  //    each grounded in a verbatim quote from the document itself. Applying
+  //    one writes a real life event; nothing here is ever written on its own
+  //    (see DocViewer's Summarize action and App.jsx's applyDocumentFact). ──
+  for (const doc of documents.filter((d) => d.person_id === person.id)) {
+    (doc.extracted?.facts || []).forEach((fact, i) => {
+      // No year, no timeline slot — the app's life events are chronological.
+      if (fact.status !== 'pending' || !fact.year) return;
+      findings.push({
+        key: `doc_fact_${doc.id}_${i}`,
+        tier: 'document',
+        icon: fact.tag === 'military' ? 'military' : 'timeline',
+        title: fact.year ? `${fact.title} — ${fact.year}` : fact.title,
+        detail: `From "${doc.title}": "${fact.quote}"`,
+        action: { type: 'document-fact', docId: doc.id, factIndex: i },
+      });
+    });
   }
 
   // ── AI life story — a pointer at the existing generator (lib/ai.js /

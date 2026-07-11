@@ -62,6 +62,8 @@ export default function PersonSheet({
   onMarkJoined,
   onReviewDuplicate,
   onApplyEnrichedPlace,
+  onApplyDocumentFact,
+  onDismissDocumentFact,
   canEdit = true,        // editor+ : structural changes (people, relationships, edits)
   canContribute = true,  // contributor+ : add memories & photos
   isAdmin = true,        // owner/co-admin : manage anyone's memory, not just your own
@@ -673,7 +675,14 @@ export default function PersonSheet({
                       <span className="timeline__year">{e.year}</span>
                       <span className="timeline__dot" aria-hidden="true" />
                       <span className="timeline__body">
-                        <span className="timeline__title">{e.title}</span>
+                        <span className="timeline__title">
+                          {e.tag === 'military' && (
+                            <span className="timeline__ribbon" title="Military service" aria-label="Military service">
+                              <RibbonIcon />
+                            </span>
+                          )}
+                          {e.title}
+                        </span>
                         {e.detail && <span className="timeline__detail">{e.detail}</span>}
                       </span>
                     </li>
@@ -1504,12 +1513,15 @@ export default function PersonSheet({
           person={person}
           graph={graph}
           memoryCount={personMemories.length}
+          documents={documents}
           onClose={() => setEnrichOpen(false)}
           onEdit={() => { setEnrichOpen(false); onEdit?.(person.id); }}
           onAddRelative={() => { setEnrichOpen(false); onAddRelative?.(person.id); }}
           onReviewDuplicate={() => { setEnrichOpen(false); onReviewDuplicate?.(person.id); }}
           onGenerateStory={() => { setEnrichOpen(false); generateStory(); }}
           onApplyPlace={(key, value) => onApplyEnrichedPlace?.(person.id, key, value)}
+          onApplyDocumentFact={onApplyDocumentFact}
+          onDismissDocumentFact={onDismissDocumentFact}
         />
       )}
     </div>
@@ -1539,6 +1551,14 @@ function PlusIcon() {
   return (
     <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+function RibbonIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="8" r="5.5" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M8.5 13l-2 8 5.5-3 5.5 3-2-8" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
     </svg>
   );
 }

@@ -11,6 +11,7 @@ export default function TimelineEditor({ person, onClose, onSave }) {
       year: String(e.year ?? ''),
       title: e.title || '',
       detail: e.detail || '',
+      tag: e.tag || null, // carried through untouched — not user-editable here
     })),
   );
 
@@ -39,6 +40,7 @@ export default function TimelineEditor({ person, onClose, onSave }) {
       .map((r) => {
         const ev = { year: Number(r.year) || r.year.trim(), title: r.title.trim() };
         if (r.detail.trim()) ev.detail = r.detail.trim();
+        if (r.tag) ev.tag = r.tag;
         return ev;
       })
       .sort((a, b) => Number(a.year) - Number(b.year));

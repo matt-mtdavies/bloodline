@@ -1769,6 +1769,23 @@ export function addCondition(personId, { name, category, status = 'active', onse
   }, { type: 'health_updated', personId, personName: person?.display_name ?? '' }));
 }
 
+// Append one AI-suggested life event (from a document extraction) onto a
+// person's existing events, non-destructively — the accept side of the
+// document-fact review in Enrich. `tag` (e.g. 'military') carries through so
+// the timeline can render it distinctly; omitted when the fact isn't tagged.
+export function addLifeEvent(personId, { year, title, detail, tag } = {}) {
+  const person = state.people.find((p) => p.id === personId);
+  const event = { year, title };
+  if (detail) event.detail = detail;
+  if (tag) event.tag = tag;
+  commit(withActivity({
+    ...state,
+    people: state.people.map((p) =>
+      p.id === personId ? { ...p, events: [...(p.events || []), event] } : p,
+    ),
+  }, { type: 'person_updated', personId, personName: person?.display_name ?? '', detail: 'life events' }));
+}
+
 export function removeCondition(personId, conditionId) {
   const person = state.people.find((p) => p.id === personId);
   commit(withActivity({

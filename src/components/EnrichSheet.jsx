@@ -5,6 +5,7 @@ const TIER_LABEL = {
   detected: 'Worth a second look',
   missing: 'Missing',
   estimated: 'Estimated',
+  document: 'From a document',
   story: 'Story',
 };
 
@@ -27,17 +28,25 @@ export default function EnrichSheet({
   person,
   graph,
   memoryCount = 0,
+  documents = [],
   onClose,
   onEdit,
   onAddRelative,
   onReviewDuplicate,
   onGenerateStory,
   onApplyPlace,
+  onApplyDocumentFact,
+  onDismissDocumentFact,
 }) {
-  const findings = useMemo(
-    () => computeEnrichment(person, graph, memoryCount),
-    [person, graph, memoryCount],
+  const allFindings = useMemo(
+    () => computeEnrichment(person, graph, memoryCount, documents),
+    [person, graph, memoryCount, documents],
   );
+  // Document facts get their own two-button (accept/dismiss) treatment below,
+  // same UX as the place suggestions — everything else keeps the single
+  // generic action button.
+  const findings = allFindings.filter((f) => f.action?.type !== 'document-fact');
+  const documentFindings = allFindings.filter((f) => f.action?.type === 'document-fact');
 
   const places = useMemo(() => {
     const list = [];
@@ -96,7 +105,9 @@ export default function EnrichSheet({
   };
 
   const firstName = (person.display_name || 'They').trim().split(/\s+/)[0];
-  const nothingToShow = findings.length === 0 && placeState !== 'loading' && visiblePlaceSuggestions.length === 0;
+  const nothingToShow =
+    findings.length === 0 && documentFindings.length === 0 &&
+    placeState !== 'loading' && visiblePlaceSuggestions.length === 0;
 
   return (
     <div className="sheet-scrim" role="dialog" aria-modal="true" aria-label={`Enrich ${person.display_name}'s profile`} onClick={onClose}>
@@ -131,6 +142,31 @@ export default function EnrichSheet({
                     {ACTION_LABEL[f.action.type] || 'Open'}
                   </button>
                 )}
+              </li>
+            ))}
+
+            {documentFindings.map((f) => (
+              <li key={f.key} className="enrich__row enrich__row--document">
+                <span className="enrich__row-icon"><FindingIcon icon={f.icon} /></span>
+                <div className="enrich__row-body">
+                  <span className="enrich__row-tag">{TIER_LABEL.document}</span>
+                  <p className="enrich__row-title">{f.title}</p>
+                  <p className="enrich__row-detail">{f.detail}</p>
+                </div>
+                <div className="enrich__row-actions">
+                  <button
+                    className="enrich__row-action"
+                    onClick={() => onApplyDocumentFact?.(f.action.docId, f.action.factIndex)}
+                  >
+                    Add to timeline
+                  </button>
+                  <button
+                    className="enrich__row-dismiss"
+                    onClick={() => onDismissDocumentFact?.(f.action.docId, f.action.factIndex)}
+                  >
+                    Dismiss
+                  </button>
+                </div>
               </li>
             ))}
 
@@ -180,6 +216,8 @@ function FindingIcon({ icon }) {
       return (<svg {...p}><circle cx="8" cy="7" r="2.6" stroke="currentColor" strokeWidth="1.7"/><circle cx="16" cy="7" r="2.6" stroke="currentColor" strokeWidth="1.7" strokeDasharray="1.5 2.2"/><path d="M3.5 19c.6-3 2.2-4.6 4.5-4.6s3.9 1.6 4.5 4.6M11.5 19c.6-3 2.2-4.6 4.5-4.6s3.9 1.6 4.5 4.6" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/></svg>);
     case 'place':
       return (<svg {...p}><path d="M12 21s7-6.1 7-11.5A7 7 0 0 0 5 9.5C5 14.9 12 21 12 21z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round"/><circle cx="12" cy="9.5" r="2.3" stroke="currentColor" strokeWidth="1.7"/></svg>);
+    case 'military':
+      return (<svg {...p}><circle cx="12" cy="8" r="5.5" stroke="currentColor" strokeWidth="1.7"/><path d="M8.5 13l-2 8 5.5-3 5.5 3-2-8" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round"/></svg>);
     case 'sparkle':
     default:
       return (<svg {...p}><path d="M12 3l1.6 4.7L18.3 9.3l-4.7 1.6L12 15.6l-1.6-4.7L5.7 9.3l4.7-1.6L12 3z" fill="currentColor"/></svg>);

@@ -123,8 +123,10 @@ export async function srcToDataUrl(src) {
 // Ask the server to read and summarize a document — a faded letter, a
 // military record, a certificate — into a plain-English paragraph, for
 // documents that are hard to make out on-screen. Works on images and PDFs
-// alike. Best-effort: returns null (never throws) on any failure, a slow or
-// unconfigured server, or a genuine "nothing to summarize" reply.
+// alike. Also returns candidate life-event `facts` (each grounded in a
+// verbatim quote from the document) for the caller to offer as suggestions —
+// never applied automatically. Best-effort: returns null (never throws) on
+// any failure, a slow or unconfigured server, or nothing to summarize.
 export async function summarizeDocument(dataUrl, { timeoutMs = 25000 } = {}) {
   if (!dataUrl?.startsWith('data:image/') && !dataUrl?.startsWith('data:application/pdf')) return null;
   const ac = new AbortController();
@@ -137,8 +139,9 @@ export async function summarizeDocument(dataUrl, { timeoutMs = 25000 } = {}) {
       signal: ac.signal,
     });
     if (!res.ok) return null;
-    const { summary } = await res.json();
-    return summary || null;
+    const { summary, facts } = await res.json();
+    if (!summary && !facts?.length) return null;
+    return { summary: summary || null, facts: facts || [] };
   } catch {
     return null;
   } finally {

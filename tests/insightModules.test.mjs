@@ -695,5 +695,49 @@ test('personHighlight: null for a merely one-hop relative — true, but not a "f
   assert.equal(personHighlight(graph, 'g4_0', 'g4_1', mods), null);
 });
 
+// ── Service records ─────────────────────────────────────────────────────────
+// Small standalone trees — military-tagged life events, not richTree scale.
+
+test('serviceRecords: a single military-tagged event is enough to surface (provenance, not a pattern)', () => {
+  const people = [{
+    id: 'a', display_name: 'Herbert Davies',
+    events: [{ year: '1942', title: 'Enlisted', detail: 'VX27390', tag: 'military' }],
+  }];
+  const graph = buildGraph(people, []);
+  const { serviceRecords } = computeInsightModules(graph, 'a');
+  assert.ok(serviceRecords, 'expected a serviceRecords module with one documented record');
+  assert.equal(serviceRecords.count, 1);
+  assert.equal(serviceRecords.people[0].id, 'a');
+  assert.equal(serviceRecords.people[0].events[0].title, 'Enlisted');
+});
+
+test('serviceRecords: events are sorted chronologically within a person', () => {
+  const people = [{
+    id: 'a', display_name: 'Herbert Davies',
+    events: [
+      { year: '1945', title: 'Discharged', tag: 'military' },
+      { year: '1942', title: 'Enlisted', tag: 'military' },
+    ],
+  }];
+  const graph = buildGraph(people, []);
+  const { serviceRecords } = computeInsightModules(graph, 'a');
+  assert.deepEqual(serviceRecords.people[0].events.map((e) => e.title), ['Enlisted', 'Discharged']);
+});
+
+test('serviceRecords: non-military life events are excluded', () => {
+  const people = [{
+    id: 'a', display_name: 'Jane Doe',
+    events: [{ year: '1975', title: 'Married' }],
+  }];
+  const graph = buildGraph(people, []);
+  assert.equal(computeInsightModules(graph, 'a').serviceRecords, null);
+});
+
+test('serviceRecords: null when nobody in the tree has a military-tagged event', () => {
+  const people = [{ id: 'a', display_name: 'Jane Doe' }];
+  const graph = buildGraph(people, []);
+  assert.equal(computeInsightModules(graph, 'a').serviceRecords, null);
+});
+
 console.log(`\n  ${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);

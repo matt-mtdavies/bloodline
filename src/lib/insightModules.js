@@ -98,7 +98,23 @@ export function computeInsightModules(graph, viewerId, now = Date.now()) {
     birthdays: birthdays(graph, gen),
     records: records(graph, now),
     parenthood: parenthood(graph),
+    serviceRecords: serviceRecords(graph),
   };
+}
+
+// ── Service records: family members with a military-tagged life event —
+//    surfaced from documents run through Summarize with AI (see DocViewer /
+//    lib/enrich.js). Unlike the other modules, one documented record is
+//    already meaningful (this is provenance, not a statistical pattern), so
+//    there's no minimum-count gate beyond "at least one".
+function serviceRecords(graph) {
+  const people = [];
+  for (const p of graph.people) {
+    const events = (p.events || []).filter((e) => e.tag === 'military');
+    if (events.length) people.push({ id: p.id, events: events.sort((a, b) => Number(a.year) - Number(b.year)) });
+  }
+  if (!people.length) return null;
+  return { people, count: people.length };
 }
 
 // A person's decidable alive-window [birthYear, deathYear|thisYear], or null.
