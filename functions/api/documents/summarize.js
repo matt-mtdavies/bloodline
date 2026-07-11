@@ -84,7 +84,10 @@ export async function onRequestPost({ request, env }) {
     },
     body: JSON.stringify({
       model: 'claude-sonnet-5',
-      max_tokens: 900,
+      // Dense documents (a form with a dozen+ fields) can yield many facts,
+      // each carrying a verbatim quote — 900 was tight enough to truncate
+      // mid-JSON on busy documents, which silently fails to parse below.
+      max_tokens: 2048,
       output_config: { format: { type: 'json_schema', schema: RESPONSE_SCHEMA } },
       system: [
         'You read scanned family documents for a genealogy app — old letters, certificates,',

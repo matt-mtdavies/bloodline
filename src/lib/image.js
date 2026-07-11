@@ -127,7 +127,7 @@ export async function srcToDataUrl(src) {
 // verbatim quote from the document) for the caller to offer as suggestions —
 // never applied automatically. Best-effort: returns null (never throws) on
 // any failure, a slow or unconfigured server, or nothing to summarize.
-export async function summarizeDocument(dataUrl, { timeoutMs = 25000 } = {}) {
+export async function summarizeDocument(dataUrl, { timeoutMs = 45000 } = {}) {
   if (!dataUrl?.startsWith('data:image/') && !dataUrl?.startsWith('data:application/pdf')) return null;
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), timeoutMs);
