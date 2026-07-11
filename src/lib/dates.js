@@ -20,7 +20,14 @@ export function lifespan(person) {
   const b = yearOf(person.birth_date);
   if (person.is_deceased) {
     const d = yearOf(person.death_date);
-    return [b, d].filter(Boolean).join(' – ') || 'Dates unknown';
+    // A real range needs no prefix (the dash already reads as "born – died").
+    // Either end alone is ambiguous without one — "1912" alone doesn't say
+    // whether that's a birth or a death, so it gets the same b./d. treatment
+    // a living person's birth-only year already has.
+    if (b && d) return `${b} – ${d}`;
+    if (b) return `b. ${b}`;
+    if (d) return `d. ${d}`;
+    return 'Dates unknown';
   }
   return b ? `b. ${b}` : 'Dates unknown';
 }
