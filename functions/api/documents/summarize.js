@@ -1,4 +1,7 @@
 import { json } from '../../_lib/util.js';
+import { logAiUsage } from '../../_lib/aiUsage.js';
+
+const MODEL = 'claude-sonnet-5';
 
 // Structured-output schema: a plain-English summary, zero or more candidate
 // life-event facts, zero or more candidate profile-field values, and zero or
@@ -102,7 +105,7 @@ const RESPONSE_SCHEMA = {
  * a 503 (no API key configured) or an upstream error just means "no summary
  * available" — the document itself is unaffected either way.
  */
-export async function onRequestPost({ request, env }) {
+export async function onRequestPost({ request, env, data }) {
   if (!env.ANTHROPIC_API_KEY) {
     return json({ error: 'AI features not configured on this server.' }, { status: 503 });
   }
@@ -116,15 +119,15 @@ export async function onRequestPost({ request, env }) {
 
   const match = /^data:([^;]+);base64,(.+)$/s.exec(file || '');
   if (!match) return json({ error: 'Missing or malformed file.' }, { status: 400 });
-  const [, mediaType, data] = match;
+  const [, mediaType, fileData] = match;
   const isPdf = mediaType === 'application/pdf';
   if (!isPdf && !mediaType.startsWith('image/')) {
     return json({ error: 'Only image or PDF media types are supported.' }, { status: 400 });
   }
 
   const sourceBlock = isPdf
-    ? { type: 'document', source: { type: 'base64', media_type: mediaType, data } }
-    : { type: 'image', source: { type: 'base64', media_type: mediaType, data } };
+    ? { type: 'document', source: { type: 'base64', media_type: mediaType, data: fileData } }
+    : { type: 'image', source: { type: 'base64', media_type: mediaType, data: fileData } };
 
   const upstream = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -134,7 +137,7 @@ export async function onRequestPost({ request, env }) {
       'content-type': 'application/json',
     },
     body: JSON.stringify({
-      model: 'claude-sonnet-5',
+      model: MODEL,
       // Dense documents (a form with a dozen+ fields) can yield many facts,
       // each carrying a verbatim quote — 900 was tight enough to truncate
       // mid-JSON on busy documents, which silently fails to parse below.
@@ -195,10 +198,12 @@ export async function onRequestPost({ request, env }) {
 
   if (!upstream.ok) {
     const detail = await upstream.text().catch(() => '');
+    await logAiUsage(env, { endpoint: 'summarize', model: MODEL, usage: null, user: data.user, ok: false });
     return json({ error: `Upstream AI error ${upstream.status}.`, detail: detail.slice(0, 300) }, { status: 502 });
   }
 
   const body = await upstream.json().catch(() => null);
+  await logAiUsage(env, { endpoint: 'summarize', model: MODEL, usage: body?.usage, user: data.user, ok: !!body });
   const raw = body?.content?.map((b) => b.text || '').join('').trim();
   let parsed = null;
   try {

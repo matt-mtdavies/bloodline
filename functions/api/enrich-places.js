@@ -17,7 +17,11 @@
  *           the client never has to filter out no-op "suggestions".
  * 503 when ANTHROPIC_API_KEY is absent, matching every other AI endpoint.
  */
-export async function onRequestPost({ request, env }) {
+import { logAiUsage } from '../_lib/aiUsage.js';
+
+const MODEL = 'claude-haiku-4-5';
+
+export async function onRequestPost({ request, env, data }) {
   if (!env.ANTHROPIC_API_KEY) {
     return json({ error: 'AI features not configured on this server.' }, 503);
   }
@@ -44,7 +48,7 @@ export async function onRequestPost({ request, env }) {
       'content-type': 'application/json',
     },
     body: JSON.stringify({
-      model: 'claude-haiku-4-5',
+      model: MODEL,
       max_tokens: 400,
       system: [
         'You standardise place names for a family tree app. For each numbered place, decide whether it is already a full, unambiguous "City, State/Province, Country" (or "City, Country" where there is no state/province level) form.',
@@ -61,11 +65,13 @@ export async function onRequestPost({ request, env }) {
 
   if (!upstream.ok) {
     const detail = await upstream.text().catch(() => '');
+    await logAiUsage(env, { endpoint: 'enrich-places', model: MODEL, usage: null, user: data.user, ok: false });
     return json({ error: `Upstream AI error ${upstream.status}.`, detail: detail.slice(0, 300) }, 502);
   }
 
-  const data = await upstream.json().catch(() => null);
-  const text = data?.content?.map((b) => b.text || '').join('').trim() || '[]';
+  const respBody = await upstream.json().catch(() => null);
+  await logAiUsage(env, { endpoint: 'enrich-places', model: MODEL, usage: respBody?.usage, user: data.user, ok: !!respBody });
+  const text = respBody?.content?.map((b) => b.text || '').join('').trim() || '[]';
   let parsed;
   try {
     // The model sometimes wraps the array in a code fence despite the

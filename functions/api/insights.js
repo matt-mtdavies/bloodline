@@ -10,7 +10,11 @@
  * Returns { narrative }. 503 when ANTHROPIC_API_KEY is absent so the feature
  * can hide gracefully.
  */
-export async function onRequestPost({ request, env }) {
+import { logAiUsage } from '../_lib/aiUsage.js';
+
+const MODEL = 'claude-sonnet-4-6';
+
+export async function onRequestPost({ request, env, data }) {
   if (!env.ANTHROPIC_API_KEY) {
     return json({ error: 'AI features not configured on this server.' }, 503);
   }
@@ -88,7 +92,7 @@ export async function onRequestPost({ request, env }) {
       'content-type': 'application/json',
     },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-6',
+      model: MODEL,
       max_tokens: 320,
       system: [
         {
@@ -113,11 +117,13 @@ export async function onRequestPost({ request, env }) {
 
   if (!upstream.ok) {
     const detail = await upstream.text().catch(() => '');
+    await logAiUsage(env, { endpoint: 'insights', model: MODEL, usage: null, user: data.user, ok: false });
     return json({ error: `Upstream AI error ${upstream.status}.`, detail: detail.slice(0, 300) }, 502);
   }
 
-  const data = await upstream.json().catch(() => null);
-  const narrative = data?.content?.map((b) => b.text || '').join('').trim();
+  const body = await upstream.json().catch(() => null);
+  const narrative = body?.content?.map((b) => b.text || '').join('').trim();
+  await logAiUsage(env, { endpoint: 'insights', model: MODEL, usage: body?.usage, user: data.user, ok: !!narrative });
   if (!narrative) return json({ error: 'Empty AI response.' }, 502);
 
   return json({ narrative });

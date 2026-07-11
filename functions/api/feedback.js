@@ -1,4 +1,5 @@
 import { json, uid, sendEmail, recordEmailStatus } from '../_lib/util.js';
+import { adminEmailList } from '../_lib/adminAuth.js';
 
 /*
  * POST /api/feedback  { type, message, page? }
@@ -43,7 +44,9 @@ export async function onRequestPost({ request, env, data }) {
   // ever receives it (this was the bug: feedback saved every time, the
   // notification email sent essentially never). Outcome is recorded either
   // way so a failure is visible in the feedback table, not just server logs.
-  const adminEmail = env.ADMIN_EMAIL;
+  // Notify the primary (first-listed) admin — sendEmail only takes one
+  // recipient today; every admin can still see all feedback on the dashboard.
+  const adminEmail = adminEmailList(env)[0] || null;
   let emailStatus = null, emailError = null, emailSent = false;
   if (adminEmail) {
     const typeLabels = { idea: '💡 Idea', bug: '🐛 Bug report', praise: '🙌 Praise', other: '📬 Feedback' };

@@ -13,6 +13,16 @@ FROM_EMAIL = "hello@myfamilybloodline.com"
 # Register your app at https://developer.familysearch.org and add this redirect URI:
 #   https://myfamilybloodline.com/fs-callback.html
 # Also set VITE_FAMILYSEARCH_CLIENT_ID in Pages → Settings → Environment variables (build-time).
+#
+# ADMIN_EMAILS — comma-separated allowlist for /admin.html (Pages → Settings →
+# Environment variables, not committed here since these are personal emails).
+# The old singular ADMIN_EMAIL still works as a one-address fallback.
+#
+# CLOUDFLARE_API_TOKEN / CLOUDFLARE_ZONE_ID — optional, enable the Cloudflare
+# traffic section of the admin dashboard (requests/bandwidth/threats). Create
+# a token at dash.cloudflare.com/profile/api-tokens with the "Zone Analytics"
+# → Read permission scoped to this zone; the Zone ID is on the zone's
+# Overview page. Both secrets — set via wrangler pages secret put.
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Cloudflare D1 — already created and migrated (Western Europe).

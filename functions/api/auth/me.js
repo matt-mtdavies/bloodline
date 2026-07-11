@@ -1,4 +1,5 @@
 import { json } from '../../_lib/util.js';
+import { isAdminEmail } from '../../_lib/adminAuth.js';
 
 /*
  * GET /api/auth/me
@@ -24,10 +25,9 @@ export async function onRequestGet({ env, data }) {
     } catch { /* migration may not be applied yet — skip gracefully */ }
   }
 
-  // Surface admin status (compared server-side so ADMIN_EMAIL never leaves the
-  // server) — the client uses this to reveal the Admin Dashboard link.
-  const isAdmin = !!env.ADMIN_EMAIL
-    && data.user.email?.toLowerCase() === env.ADMIN_EMAIL.trim().toLowerCase();
+  // Surface admin status (compared server-side so the allowlist never leaves
+  // the server) — the client uses this to reveal the Admin Dashboard link.
+  const isAdmin = isAdminEmail(env, data.user.email);
 
   // Return any pending invites for this email address so the client can
   // auto-accept them (empty tree) or show a banner (non-empty tree).

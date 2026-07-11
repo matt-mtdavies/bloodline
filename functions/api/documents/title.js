@@ -1,4 +1,7 @@
 import { json } from '../../_lib/util.js';
+import { logAiUsage } from '../../_lib/aiUsage.js';
+
+const MODEL = 'claude-sonnet-4-6';
 
 /*
  * POST /api/documents/title  { image: "data:image/jpeg;base64,...." }
@@ -12,7 +15,7 @@ import { json } from '../../_lib/util.js';
  * as a fallback title, so a 503 (no API key configured), an upstream error,
  * or a NONE reply just means "keep the filename" — never blocks the upload.
  */
-export async function onRequestPost({ request, env }) {
+export async function onRequestPost({ request, env, data }) {
   if (!env.ANTHROPIC_API_KEY) {
     return json({ error: 'AI features not configured on this server.' }, { status: 503 });
   }
@@ -26,7 +29,7 @@ export async function onRequestPost({ request, env }) {
 
   const match = /^data:([^;]+);base64,(.+)$/s.exec(image || '');
   if (!match) return json({ error: 'Missing or malformed image.' }, { status: 400 });
-  const [, mediaType, data] = match;
+  const [, mediaType, imageData] = match;
   if (!mediaType.startsWith('image/')) {
     return json({ error: 'Only image media types are supported.' }, { status: 400 });
   }
@@ -39,7 +42,7 @@ export async function onRequestPost({ request, env }) {
       'content-type': 'application/json',
     },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-6',
+      model: MODEL,
       max_tokens: 30,
       system: [
         'You label scanned family documents and photos for a genealogy app.',
@@ -52,7 +55,7 @@ export async function onRequestPost({ request, env }) {
         {
           role: 'user',
           content: [
-            { type: 'image', source: { type: 'base64', media_type: mediaType, data } },
+            { type: 'image', source: { type: 'base64', media_type: mediaType, data: imageData } },
             { type: 'text', text: 'Suggest a title for this image.' },
           ],
         },
@@ -62,10 +65,12 @@ export async function onRequestPost({ request, env }) {
 
   if (!upstream.ok) {
     const detail = await upstream.text().catch(() => '');
+    await logAiUsage(env, { endpoint: 'title', model: MODEL, usage: null, user: data.user, ok: false });
     return json({ error: `Upstream AI error ${upstream.status}.`, detail: detail.slice(0, 300) }, { status: 502 });
   }
 
   const body = await upstream.json().catch(() => null);
+  await logAiUsage(env, { endpoint: 'title', model: MODEL, usage: body?.usage, user: data.user, ok: !!body });
   const raw = body?.content?.map((b) => b.text || '').join('').trim();
   const title = raw && raw.toUpperCase() !== 'NONE' ? raw.replace(/^["'\s]+|["'\s]+$/g, '') : null;
 

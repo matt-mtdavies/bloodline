@@ -7,7 +7,11 @@
  * Gracefully returns 503 when ANTHROPIC_API_KEY is absent (local dev without
  * wrangler, or before the secret is provisioned).
  */
-export async function onRequestPost({ request, env }) {
+import { logAiUsage } from '../_lib/aiUsage.js';
+
+const MODEL = 'claude-sonnet-4-6';
+
+export async function onRequestPost({ request, env, data, waitUntil }) {
   if (!env.ANTHROPIC_API_KEY) {
     return new Response(JSON.stringify({ error: 'AI features not configured on this server.' }), {
       status: 503,
@@ -107,7 +111,7 @@ export async function onRequestPost({ request, env }) {
       'content-type': 'application/json',
     },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-6',
+      model: MODEL,
       max_tokens: 700,
       stream: true,
       system: [
@@ -128,18 +132,60 @@ export async function onRequestPost({ request, env }) {
 
   if (!upstream.ok) {
     const detail = await upstream.text().catch(() => '');
+    await logAiUsage(env, { endpoint: 'biography', model: MODEL, usage: null, user: data.user, ok: false });
     return new Response(
       JSON.stringify({ error: `Upstream AI error ${upstream.status}.`, detail }),
       { status: 502, headers: { 'content-type': 'application/json' } },
     );
   }
 
-  // Pass the Anthropic SSE stream straight through to the client.
-  return new Response(upstream.body, {
+  // Tee the stream: one branch goes straight to the client unchanged (so the
+  // live-typing UX is untouched), the other is parsed in the background
+  // (waitUntil, after the response has already returned) purely to read the
+  // final token counts Anthropic reports mid-stream, for the usage log.
+  const [clientStream, usageStream] = upstream.body.tee();
+  waitUntil(logStreamUsage(env, usageStream, data.user));
+
+  return new Response(clientStream, {
     headers: {
       'content-type': 'text/event-stream',
       'cache-control': 'no-cache',
       'x-accel-buffering': 'no',
     },
   });
+}
+
+// Reads the tee'd SSE branch to extract token counts, without affecting what
+// the client sees. `message_start` carries input_tokens; `message_delta`
+// carries the running output_tokens — same shape streamBio already parses
+// client-side, just watching different fields.
+async function logStreamUsage(env, stream, user) {
+  let inputTokens = 0, outputTokens = 0;
+  try {
+    const reader = stream.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const blocks = buf.split('\n\n');
+      buf = blocks.pop() ?? '';
+      for (const block of blocks) {
+        const dataLine = block.split('\n').find((l) => l.startsWith('data: '));
+        if (!dataLine) continue;
+        try {
+          const evt = JSON.parse(dataLine.slice(6));
+          if (evt.message?.usage) {
+            inputTokens = evt.message.usage.input_tokens || inputTokens;
+            outputTokens = evt.message.usage.output_tokens || outputTokens;
+          }
+          if (evt.usage?.output_tokens != null) outputTokens = evt.usage.output_tokens;
+        } catch { /* malformed chunk — skip */ }
+      }
+    }
+  } catch (e) {
+    console.error('[biography] usage stream read failed:', e.message);
+  }
+  await logAiUsage(env, { endpoint: 'biography', model: MODEL, usage: { input_tokens: inputTokens, output_tokens: outputTokens }, user, ok: true });
 }
