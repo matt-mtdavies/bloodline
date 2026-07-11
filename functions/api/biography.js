@@ -25,7 +25,7 @@ export async function onRequestPost({ request, env }) {
     });
   }
 
-  const { person, memories = [], relationships = [] } = body;
+  const { person, memories = [], relationships = [], feedback, previousStory } = body;
   if (!person?.display_name) {
     return new Response(JSON.stringify({ error: 'Missing person data.' }), {
       status: 400,
@@ -73,6 +73,18 @@ export async function onRequestPost({ request, env }) {
 
   const personContext = lines.join('\n');
 
+  // A family member reviewed a previous draft and flagged something wrong
+  // with it — trust their correction over the source data above, since a
+  // human catching an AI mistake (or knowing a fact the records don't
+  // capture) is exactly the case this is for. Quote the flagged draft back
+  // so the model revises it rather than starting fresh and risking the same
+  // error again by coincidence.
+  const revisionNote = feedback?.trim()
+    ? `\n\nA previous draft was reviewed by the family and needs correcting. Treat their notes as the source of truth, even where they conflict with the details above — they know this person; the records above don't always.${
+        previousStory?.trim() ? `\n\nPrevious draft:\n${previousStory.trim()}` : ''
+      }\n\nFamily's corrections:\n${feedback.trim()}\n\nRewrite the biography incorporating these corrections.`
+    : '';
+
   const upstream = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -95,7 +107,7 @@ export async function onRequestPost({ request, env }) {
       messages: [
         {
           role: 'user',
-          content: `Write a life story for this person:\n\n${personContext}`,
+          content: `Write a life story for this person:\n\n${personContext}${revisionNote}`,
         },
       ],
     }),

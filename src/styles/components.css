@@ -3852,6 +3852,9 @@ button.health-notes {
 }
 .story-actions .btn { flex: 1; }
 
+.story-revise { margin-top: 14px; }
+.story-revise .story-actions { margin-top: 10px; }
+
 .story-note {
   margin-top: 10px;
   font-size: 12px;
