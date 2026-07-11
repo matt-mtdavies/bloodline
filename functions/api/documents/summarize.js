@@ -6,20 +6,27 @@ import { json } from '../../_lib/util.js';
 // service (enlistment, discharge, rank, unit, campaign) so the client can
 // surface them distinctly. Requires a model with structured-output support
 // (claude-sonnet-5) — see functions/api/documents/summarize.js model choice.
+//
+// Nullable fields use `anyOf: [{type:...}, {type:'null'}]`, NOT the JSON
+// Schema type-array shorthand (`type: ['string','null']`) — Claude's
+// structured-output validator only documents plain types, enum/const,
+// anyOf/allOf, and $ref/$def as supported keywords; the array-of-types
+// shorthand isn't among them and a schema using it is rejected outright
+// (every request fails the same way, regardless of the document).
 const RESPONSE_SCHEMA = {
   type: 'object',
   properties: {
-    summary: { type: ['string', 'null'] },
+    summary: { anyOf: [{ type: 'string' }, { type: 'null' }] },
     facts: {
       type: 'array',
       items: {
         type: 'object',
         properties: {
-          year: { type: ['string', 'null'] },
+          year: { anyOf: [{ type: 'string' }, { type: 'null' }] },
           title: { type: 'string' },
-          detail: { type: ['string', 'null'] },
+          detail: { anyOf: [{ type: 'string' }, { type: 'null' }] },
           quote: { type: 'string' },
-          tag: { type: ['string', 'null'], enum: ['military', null] },
+          tag: { enum: ['military', null] },
         },
         required: ['year', 'title', 'detail', 'quote', 'tag'],
         additionalProperties: false,
