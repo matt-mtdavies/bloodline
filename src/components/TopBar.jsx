@@ -70,7 +70,10 @@ export default function TopBar({ familyName, stats, view, layout, syncStatus, sy
             </button>
           )}
           {syncStatus === 'saving' && (
-            <span className="sync-status sync-status--saving" aria-live="polite">Saving…</span>
+            <span className="pill pill--saving" aria-live="polite" aria-label="Saving">
+              <SavingSpinner />
+              <span className="hover-tip hover-tip--down">Saving…</span>
+            </span>
           )}
           {syncStatus === 'saved' && (
             <span className="pill pill--saved" aria-live="polite" aria-label="Saved">
@@ -495,6 +498,10 @@ function SavedCheckIcon() {
       <path d="M5 13l4 4L19 7" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
     </svg>
   );
+}
+
+function SavingSpinner() {
+  return <span className="pill-spinner" aria-hidden="true" />;
 }
 
 function BellIcon() {

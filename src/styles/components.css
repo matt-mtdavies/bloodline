@@ -89,8 +89,23 @@
   border-radius: 20px;
   transition: opacity 0.4s ease;
 }
-.sync-status--saving { color: var(--ink-soft); }
 .sync-status--error  { color: #c2603a; background: #f5e8e4; }
+
+/* "Saving" shares .pill--saved's icon-only circle (same reasoning: it lives
+   in the same row as Search/Saved/Bloodline-only and reads as one more
+   considered button, not a stray floating text label) with a small spinner
+   in place of the checkmark, in the same muted ink-soft it always was. */
+.pill--saving { padding: 0; color: var(--ink-soft); }
+.pill-spinner {
+  width: 15px;
+  height: 15px;
+  border: 2px solid var(--hairline);
+  border-top-color: var(--ink-soft);
+  border-radius: 50%;
+  animation: pill-spinner-spin 0.8s linear infinite;
+}
+@keyframes pill-spinner-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .pill-spinner { animation: none; } }
 
 /* "Saved" is icon-only chrome living in the same row as Search/Bloodline-
    only/Activity — it shares their .pill shape and weight (white, hairline
