@@ -92,7 +92,7 @@ export default function Home({
         </div>
 
         {thisMonth && (
-          <ThisMonth data={thisMonth} onSelectPerson={onSelectPerson} onSeeAll={onOpenInsights} />
+          <ThisMonth data={thisMonth} onSelectPerson={onSelectPerson} />
         )}
 
         {insightTeaser && onOpenInsights && (
@@ -203,19 +203,20 @@ function firstName(name) {
 }
 
 // A practical, always-current digest — not a threshold-gated "insight" (see
-// lib/insightModules.js#computeThisMonth). Capped so a birthday-heavy family
-// doesn't turn the hub into a scrolling calendar; the rest are still there
-// next time the sheet's own record books/birthday wheel get opened.
+// lib/insightModules.js#computeThisMonth). Capped by default so a
+// birthday-heavy family doesn't turn the hub into a scrolling calendar —
+// "+N more" just expands the same list in place, no navigating away and
+// losing your spot on Home.
 const MONTH_CAP = 5;
-function ThisMonth({ data, onSelectPerson, onSeeAll }) {
-  const { month, monthIndex, birthdays, anniversaries } = data;
-  const items = [
+function ThisMonth({ data, onSelectPerson }) {
+  const { month, birthdays, anniversaries } = data;
+  const [expanded, setExpanded] = useState(false);
+  const all = [
     ...birthdays.map((b) => ({ kind: 'birthday', day: b.day, ...b })),
     ...anniversaries.map((a) => ({ kind: 'anniversary', day: a.day, ...a })),
-  ]
-    .sort((a, b) => a.day - b.day)
-    .slice(0, MONTH_CAP);
-  const overflow = birthdays.length + anniversaries.length - items.length;
+  ].sort((a, b) => a.day - b.day);
+  const items = expanded ? all : all.slice(0, MONTH_CAP);
+  const overflow = all.length - MONTH_CAP;
 
   return (
     <section className="home__section home__month" style={{ '--i': 0 }}>
@@ -249,9 +250,9 @@ function ThisMonth({ data, onSelectPerson, onSeeAll }) {
           </button>
         ))}
       </div>
-      {onSeeAll && (birthdays.length > 0 || overflow > 0) && (
-        <button className="home__month-more" onClick={() => onSeeAll(monthIndex)}>
-          {overflow > 0 ? `+${overflow} more this month — see all birthdays` : 'See all birthdays'}
+      {overflow > 0 && (
+        <button className="home__month-more" onClick={() => setExpanded((e) => !e)}>
+          {expanded ? 'Show less' : `+${overflow} more this month`}
         </button>
       )}
     </section>

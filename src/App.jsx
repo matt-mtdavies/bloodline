@@ -494,7 +494,6 @@ export default function App() {
   const [focusMode, setFocusMode] = useState(false);
   const [browse, setBrowse] = useState(false); // deselected free-look mode
   const [insightsOpen, setInsightsOpen] = useState(false);
-  const [insightsFocusMonth, setInsightsFocusMonth] = useState(null); // 0-11 | null — deep-link into the birthday wheel
   const [timelineOpen, setTimelineOpen] = useState(false);
   const [lifeJourneyId, setLifeJourneyId] = useState(null);
   const playRef = useRef(null);
@@ -1542,7 +1541,7 @@ export default function App() {
         onOpenProfile={user ? () => setProfileOpen(true) : null}
         onOpenHome={() => { setHomeOpen(true); if (showHomeNudge) dismissHomeNudge(); }}
         onSearch={openSearch}
-        onOpenInsights={() => { setInsightsFocusMonth(null); setInsightsOpen(true); }}
+        onOpenInsights={() => setInsightsOpen(true)}
         onOpenTimeline={() => setTimelineOpen(true)}
         duplicateCount={canManageTreeStructure ? duplicatePairs.length : 0}
         onOpenDuplicates={canManageTreeStructure && duplicatePairs.length ? () => setDuplicatesOpen(true) : null}
@@ -1900,9 +1899,8 @@ export default function App() {
         <TreeInsights
           graph={graph}
           viewerId={data.myPersonId || activeId}
-          focusMonth={insightsFocusMonth}
           onNavigate={(id) => { setInsightsOpen(false); activate(id); openPerson(id); }}
-          onClose={() => { setInsightsOpen(false); setInsightsFocusMonth(null); }}
+          onClose={() => setInsightsOpen(false)}
         />
       )}
 
@@ -2142,7 +2140,7 @@ export default function App() {
           onOpenHowItWorks={() => { setHomeOpen(false); setHowItWorksOpen(true); }}
           onOpenFamilyTrees={() => { setHomeOpen(false); setFamilyTreesOpen(true); }}
           onOpenFamilySettings={() => { setHomeOpen(false); setSettingsOpen(true); }}
-          onOpenInsights={(month) => { setHomeOpen(false); setInsightsFocusMonth(month ?? null); setInsightsOpen(true); }}
+          onOpenInsights={() => { setHomeOpen(false); setInsightsOpen(true); }}
           onOpenActivity={() => {
             setHomeOpen(false);
             setActivityOpen(true);

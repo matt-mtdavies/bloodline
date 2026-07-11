@@ -32,7 +32,7 @@ const WORDS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven',
 const asWord = (n) => (n >= 0 && n <= 12 ? WORDS[n] : String(n));
 const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 
-export default function InsightModules({ modules, graph, onNavigate, focusMonth = null }) {
+export default function InsightModules({ modules, graph, onNavigate }) {
   if (!modules) return null;
   const {
     handshakes, giftOfYears, fullestYear, strata, brood, bridges,
@@ -58,7 +58,7 @@ export default function InsightModules({ modules, graph, onNavigate, focusMonth 
       trades && <TradesModule key="trades" data={trades} graph={graph} onNavigate={onNavigate} />,
     ]],
     ['Seasons & milestones', [
-      birthdays && <BirthdaysModule key="bday" data={birthdays} graph={graph} onNavigate={onNavigate} initialMonth={focusMonth} />,
+      birthdays && <BirthdaysModule key="bday" data={birthdays} graph={graph} onNavigate={onNavigate} />,
       records && <RecordsModule key="records" data={records} graph={graph} onNavigate={onNavigate} />,
     ]],
   ]
@@ -78,10 +78,10 @@ export default function InsightModules({ modules, graph, onNavigate, focusMonth 
   );
 }
 
-function Module({ icon, title, sub, caption, children, id }) {
+function Module({ icon, title, sub, caption, children }) {
   const nodeRef = useRef(null);
   return (
-    <div className="tim" ref={nodeRef} id={id}>
+    <div className="tim" ref={nodeRef}>
       <div className="tim__top">
         <span className="tim__ico">{icon}</span>
         <div>
@@ -1049,10 +1049,10 @@ function TradesModule({ data, graph, onNavigate }) {
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December'];
 
-function BirthdaysModule({ data, graph, onNavigate, initialMonth = null }) {
+function BirthdaysModule({ data, graph, onNavigate }) {
   const { peakLabel, peakCount, twins, monthPeople, sharedDays, withMonth } = data;
   const twin = twins[0];
-  const [selMonth, setSelMonth] = useState(initialMonth); // 0-11 | null
+  const [selMonth, setSelMonth] = useState(null); // 0-11 | null
   const [showShared, setShowShared] = useState(false);
   const [showAll, setShowAll] = useState(false);
   const [q, setQ] = useState('');
@@ -1073,7 +1073,6 @@ function BirthdaysModule({ data, graph, onNavigate, initialMonth = null }) {
 
   return (
     <Module
-      id="tim-birthdays"
       icon={<WheelIcon />}
       title={`${peakLabel} is birthday season`}
       sub="Every family birthday, arranged around the year. Tap a month to see whose."
