@@ -2191,6 +2191,28 @@
 }
 .doc-viewer__save:hover { background: var(--hairline); }
 .doc-viewer__save:active { transform: scale(0.98); }
+.doc-viewer__summary {
+  flex: none;
+  padding: 14px 20px;
+  border-top: 1px solid var(--hairline);
+  background: var(--paper-deep);
+  max-height: 30%;
+  overflow-y: auto;
+}
+.doc-viewer__summary-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 6px;
+}
+.doc-viewer__summary p {
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--ink);
+}
 
 .legend__privacy {
   margin-top: 20px;

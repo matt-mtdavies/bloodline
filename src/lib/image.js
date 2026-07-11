@@ -104,6 +104,48 @@ export async function suggestDocumentTitle(previewDataUrl, { timeoutMs = 10000 }
   }
 }
 
+// Read an existing document src (an /api/documents/<key> URL, or an already-
+// data: URL) into a data URL, without the canvas downscale imageSrcToDataUrl
+// does — a PDF's bytes can't round-trip through a canvas, and a summary of a
+// faded scan wants the original resolution, not a lossy preview.
+export async function srcToDataUrl(src) {
+  if (src.startsWith('data:')) return src;
+  const res = await fetch(src);
+  const blob = await res.blob();
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
+// Ask the server to read and summarize a document — a faded letter, a
+// military record, a certificate — into a plain-English paragraph, for
+// documents that are hard to make out on-screen. Works on images and PDFs
+// alike. Best-effort: returns null (never throws) on any failure, a slow or
+// unconfigured server, or a genuine "nothing to summarize" reply.
+export async function summarizeDocument(dataUrl, { timeoutMs = 25000 } = {}) {
+  if (!dataUrl?.startsWith('data:image/') && !dataUrl?.startsWith('data:application/pdf')) return null;
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), timeoutMs);
+  try {
+    const res = await fetch('/api/documents/summarize', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ file: dataUrl }),
+      signal: ac.signal,
+    });
+    if (!res.ok) return null;
+    const { summary } = await res.json();
+    return summary || null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // Upload a photo data URL to R2. Returns the /api/photos/<key> URL on success,
 // or the original data URL as a fallback if the upload fails (e.g. offline).
 export async function uploadPhoto(dataUrl) {

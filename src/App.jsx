@@ -49,7 +49,7 @@ import {
   setRecapCutoff,
 } from './data/store.js';
 import { groupRecapUpdates, captionForRecapGroup } from './lib/recap.js';
-import { uploadPhoto, generateThumb, uploadDocument, savePhotoToDevice } from './lib/image.js';
+import { uploadPhoto, generateThumb, uploadDocument, savePhotoToDevice, srcToDataUrl, summarizeDocument } from './lib/image.js';
 import { useImageZoom } from './lib/useImageZoom.js';
 import { buildGraph, pathBetween, pathBetweenOrdered, bloodRelativesOf } from './data/graph.js';
 import { detectRegion, nearestWorldEvent } from './lib/worldEvents.js';
@@ -1859,7 +1859,7 @@ export default function App() {
         onAddPhoto={(id, src) => addPhoto(id, { src })}
         onOpenLightbox={(personId, index) => setLightbox({ personId, index })}
         onAddDocument={(personId, fields) => addDocument(personId, fields)}
-        onOpenDocument={(doc) => setDocViewer({ title: doc.title, src: doc.src, mime: doc.mime })}
+        onOpenDocument={(doc) => setDocViewer({ id: doc.id, title: doc.title, src: doc.src, mime: doc.mime, summary: doc.summary })}
         onRemoveDocument={(id) => {
           const doc = data.documents?.find((d) => d.id === id);
           if (doc?.src?.startsWith('/api/documents/')) {
@@ -2056,7 +2056,14 @@ export default function App() {
       )}
 
       {docViewer && (
-        <DocViewer doc={docViewer} onClose={() => setDocViewer(null)} />
+        <DocViewer
+          doc={docViewer}
+          onClose={() => setDocViewer(null)}
+          onSummarized={(summary) => {
+            setDocViewer((d) => (d ? { ...d, summary } : d));
+            if (docViewer.id) updateDocument(docViewer.id, { summary });
+          }}
+        />
       )}
 
       {crop && (
@@ -2236,11 +2243,13 @@ export default function App() {
 // ── Document viewer ───────────────────────────────────────────────────────────
 // Renders in-app so the session cookie is sent with the fetch — iOS PWA has a
 // separate cookie store from Safari, so window.open() loses auth entirely.
-function DocViewer({ doc, onClose }) {
+function DocViewer({ doc, onClose, onSummarized }) {
   const isImage = doc.mime?.startsWith('image/');
   const isPdf = doc.mime === 'application/pdf';
   const { xf, stageRef, handlers } = useImageZoom();
   const [saveState, setSaveState] = useState('idle'); // idle | saving | error
+  const [summaryState, setSummaryState] = useState('idle'); // idle | working | error
+  const [summary, setSummary] = useState(doc.summary || null);
 
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') onClose(); };
@@ -2259,6 +2268,25 @@ function DocViewer({ doc, onClose }) {
       console.warn('[doc viewer] save failed:', e.message);
       setSaveState('error');
       setTimeout(() => setSaveState('idle'), 2500);
+    }
+  }
+
+  async function handleSummarize() {
+    if (summaryState === 'working') return;
+    setSummaryState('working');
+    try {
+      const dataUrl = await srcToDataUrl(doc.src);
+      const result = await summarizeDocument(dataUrl);
+      if (result) {
+        setSummary(result);
+        onSummarized?.(result);
+        setSummaryState('idle');
+      } else {
+        setSummaryState('error');
+      }
+    } catch (e) {
+      console.warn('[doc viewer] summarize failed:', e.message);
+      setSummaryState('error');
     }
   }
 
@@ -2302,11 +2330,22 @@ function DocViewer({ doc, onClose }) {
             </a>
           </div>
         )}
+        {summary && (
+          <div className="doc-viewer__summary">
+            <span className="doc-viewer__summary-label">AI summary</span>
+            <p>{summary}</p>
+          </div>
+        )}
         {(isImage || isPdf) && (
           <div className="doc-viewer__bar doc-viewer__bar--bottom">
             <button className="doc-viewer__save" onClick={handleSave} disabled={saveState === 'saving'}>
               {saveState === 'saving' ? 'Saving…' : saveState === 'error' ? "Couldn't save" : 'Save'}
             </button>
+            {!summary && (
+              <button className="doc-viewer__save" onClick={handleSummarize} disabled={summaryState === 'working'}>
+                {summaryState === 'working' ? 'Reading…' : summaryState === 'error' ? "Couldn't summarize" : 'Summarize with AI'}
+              </button>
+            )}
           </div>
         )}
       </div>
