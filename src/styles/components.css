@@ -2553,10 +2553,11 @@
   text-align: center;
   transition: border-color 0.2s var(--ease), box-shadow 0.2s var(--ease);
 }
-.date-field__day { width: 46px; flex: none; padding: 0 4px; }
+.date-field__day,
+.date-field__month { width: 46px; flex: none; padding: 0 4px; }
 .date-field__year { width: 66px; flex: none; padding: 0 4px; }
-.date-field__month { flex: 1; min-width: 0; padding: 0 4px; text-align: center; text-align-last: center; }
 .date-field__day::placeholder,
+.date-field__month::placeholder,
 .date-field__year::placeholder { color: var(--ink-faint); }
 .date-field__day:focus,
 .date-field__month:focus,
