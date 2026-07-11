@@ -92,7 +92,7 @@ export default function Home({
         </div>
 
         {thisMonth && (
-          <ThisMonth data={thisMonth} onSelectPerson={onSelectPerson} />
+          <ThisMonth data={thisMonth} onSelectPerson={onSelectPerson} onSeeAll={onOpenInsights} />
         )}
 
         {insightTeaser && onOpenInsights && (
@@ -207,8 +207,8 @@ function firstName(name) {
 // doesn't turn the hub into a scrolling calendar; the rest are still there
 // next time the sheet's own record books/birthday wheel get opened.
 const MONTH_CAP = 5;
-function ThisMonth({ data, onSelectPerson }) {
-  const { month, birthdays, anniversaries } = data;
+function ThisMonth({ data, onSelectPerson, onSeeAll }) {
+  const { month, monthIndex, birthdays, anniversaries } = data;
   const items = [
     ...birthdays.map((b) => ({ kind: 'birthday', day: b.day, ...b })),
     ...anniversaries.map((a) => ({ kind: 'anniversary', day: a.day, ...a })),
@@ -249,7 +249,11 @@ function ThisMonth({ data, onSelectPerson }) {
           </button>
         ))}
       </div>
-      {overflow > 0 && <p className="home__month-more">+{overflow} more this month</p>}
+      {onSeeAll && (birthdays.length > 0 || overflow > 0) && (
+        <button className="home__month-more" onClick={() => onSeeAll(monthIndex)}>
+          {overflow > 0 ? `+${overflow} more this month — see all birthdays` : 'See all birthdays'}
+        </button>
+      )}
     </section>
   );
 }

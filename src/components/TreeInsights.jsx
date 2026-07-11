@@ -10,7 +10,7 @@ import InsightModules from './InsightModules.jsx';
  *   • Perspective fact cards that reveal in a gentle stagger.
  *   • Completeness nudges turned into tappable quests.
  */
-export default function TreeInsights({ graph, viewerId, onNavigate, onClose }) {
+export default function TreeInsights({ graph, viewerId, focusMonth = null, onNavigate, onClose }) {
   const insights = useMemo(() => computeInsights(graph, viewerId), [graph, viewerId]);
   const modules = useMemo(() => computeInsightModules(graph, viewerId), [graph, viewerId]);
   const { viewer, nudges, aggregates } = insights;
@@ -30,6 +30,19 @@ export default function TreeInsights({ graph, viewerId, onNavigate, onClose }) {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
+
+  // Deep-linked from the Home hub's "see all birthdays" — the birthday wheel
+  // sits several chapters down, so jump straight to it once the sheet's own
+  // open transition has settled instead of leaving the deep link stranded
+  // at the top of a long scroll.
+  useEffect(() => {
+    if (focusMonth == null) return;
+    const t = setTimeout(() => {
+      document.getElementById('tim-birthdays')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 300);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ── AI narrative: cached by a hash of the facts; auto-generate once per hash ──
   // The narrative draws on the same visual modules the sheet already shows —
@@ -125,7 +138,7 @@ export default function TreeInsights({ graph, viewerId, onNavigate, onClose }) {
         )}
 
         {/* The visual modules — the drawn comparisons, in chapters */}
-        <InsightModules modules={modules} graph={graph} onNavigate={onNavigate} />
+        <InsightModules modules={modules} graph={graph} onNavigate={onNavigate} focusMonth={focusMonth} />
 
         {/* Perspective facts */}
         {facts.length > 0 && (

@@ -32,7 +32,7 @@ const WORDS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven',
 const asWord = (n) => (n >= 0 && n <= 12 ? WORDS[n] : String(n));
 const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 
-export default function InsightModules({ modules, graph, onNavigate }) {
+export default function InsightModules({ modules, graph, onNavigate, focusMonth = null }) {
   if (!modules) return null;
   const {
     handshakes, giftOfYears, fullestYear, strata, brood, bridges,
@@ -58,7 +58,7 @@ export default function InsightModules({ modules, graph, onNavigate }) {
       trades && <TradesModule key="trades" data={trades} graph={graph} onNavigate={onNavigate} />,
     ]],
     ['Seasons & milestones', [
-      birthdays && <BirthdaysModule key="bday" data={birthdays} graph={graph} onNavigate={onNavigate} />,
+      birthdays && <BirthdaysModule key="bday" data={birthdays} graph={graph} onNavigate={onNavigate} initialMonth={focusMonth} />,
       records && <RecordsModule key="records" data={records} graph={graph} onNavigate={onNavigate} />,
     ]],
   ]
@@ -78,10 +78,10 @@ export default function InsightModules({ modules, graph, onNavigate }) {
   );
 }
 
-function Module({ icon, title, sub, caption, children }) {
+function Module({ icon, title, sub, caption, children, id }) {
   const nodeRef = useRef(null);
   return (
-    <div className="tim" ref={nodeRef}>
+    <div className="tim" ref={nodeRef} id={id}>
       <div className="tim__top">
         <span className="tim__ico">{icon}</span>
         <div>
@@ -1049,16 +1049,31 @@ function TradesModule({ data, graph, onNavigate }) {
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December'];
 
-function BirthdaysModule({ data, graph, onNavigate }) {
-  const { peakLabel, peakCount, twins, monthPeople, sharedDays } = data;
+function BirthdaysModule({ data, graph, onNavigate, initialMonth = null }) {
+  const { peakLabel, peakCount, twins, monthPeople, sharedDays, withMonth } = data;
   const twin = twins[0];
-  const [selMonth, setSelMonth] = useState(null); // 0-11 | null
+  const [selMonth, setSelMonth] = useState(initialMonth); // 0-11 | null
   const [showShared, setShowShared] = useState(false);
+  const [showAll, setShowAll] = useState(false);
+  const [q, setQ] = useState('');
   const monthRows = selMonth != null
     ? (monthPeople?.[selMonth] ?? []).map(({ id, day }) => ({ id, detail: day != null ? `the ${ordinal(day)}` : 'day unknown' }))
     : null;
+
+  // Every birthday in the family, flattened out of the wheel's per-month
+  // buckets and sorted by date — the "see all" list, and what the search
+  // box below filters by name.
+  const allRows = useMemo(() => monthPeople
+    .flatMap((list, m) => list.map(({ id, day }) => ({ id, month: m, day, detail: day != null ? `${day} ${MONTH_NAMES[m]}` : MONTH_NAMES[m] })))
+    .sort((a, b) => a.month - b.month || (a.day ?? 32) - (b.day ?? 32)), [monthPeople]);
+  const query = q.trim().toLowerCase();
+  const visibleRows = query
+    ? allRows.filter((r) => graph?.byId?.get(r.id)?.display_name?.toLowerCase().includes(query))
+    : allRows;
+
   return (
     <Module
+      id="tim-birthdays"
       icon={<WheelIcon />}
       title={`${peakLabel} is birthday season`}
       sub="Every family birthday, arranged around the year. Tap a month to see whose."
@@ -1072,20 +1087,27 @@ function BirthdaysModule({ data, graph, onNavigate }) {
         <BirthdayWheel
           data={data}
           selected={selMonth}
-          onPick={(i) => { setShowShared(false); setSelMonth((cur) => (cur === i ? null : i)); }}
+          onPick={(i) => { setShowShared(false); setShowAll(false); setSelMonth((cur) => (cur === i ? null : i)); }}
         />
       </div>
-      {sharedDays?.length > 0 && (
-        <div className="tim-chiprow tim-chiprow--center">
+      <div className="tim-chiprow tim-chiprow--center">
+        {sharedDays?.length > 0 && (
           <button
             className={'tim-chipbtn' + (showShared ? ' tim-chipbtn--on' : '')}
-            onClick={() => { setSelMonth(null); setShowShared((s) => !s); }}
+            onClick={() => { setSelMonth(null); setShowAll(false); setShowShared((s) => !s); }}
             aria-expanded={showShared}
           >
             {sharedDays.length} shared birthday{sharedDays.length === 1 ? '' : 's'}
           </button>
-        </div>
-      )}
+        )}
+        <button
+          className={'tim-chipbtn' + (showAll ? ' tim-chipbtn--on' : '')}
+          onClick={() => { setSelMonth(null); setShowShared(false); setShowAll((s) => !s); }}
+          aria-expanded={showAll}
+        >
+          {showAll ? 'Hide full list' : `See all ${withMonth} birthdays`}
+        </button>
+      </div>
       {monthRows && (
         <PeopleDrawer
           title={`${MONTH_NAMES[selMonth]} — ${monthRows.length} birthday${monthRows.length === 1 ? '' : 's'}`}
@@ -1094,6 +1116,32 @@ function BirthdaysModule({ data, graph, onNavigate }) {
           onNavigate={onNavigate}
           onClose={() => setSelMonth(null)}
         />
+      )}
+      {showAll && (
+        <>
+          <div className="tim-explore">
+            <input
+              type="search"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Search by name…"
+              aria-label="Search all birthdays by name"
+              autoFocus
+            />
+            {query && visibleRows.length === 0 && (
+              <p className="tim-explore__none">No one named “{q.trim()}” has a birthday on record.</p>
+            )}
+          </div>
+          {visibleRows.length > 0 && (
+            <PeopleDrawer
+              title={query ? `${visibleRows.length} match${visibleRows.length === 1 ? '' : 'es'}` : `All ${visibleRows.length} birthdays`}
+              rows={visibleRows}
+              graph={graph}
+              onNavigate={onNavigate}
+              onClose={() => { setShowAll(false); setQ(''); }}
+            />
+          )}
+        </>
       )}
       {showShared && (
         <div className="tim-drawer">
