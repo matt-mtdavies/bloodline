@@ -163,9 +163,18 @@
   stroke-width: 1.6;
   opacity: 0;
 }
-.logo--loading .logo__a { animation: logo-breathe-a 2.4s ease-in-out infinite; }
-.logo--loading .logo__b { animation: logo-breathe-b 2.4s ease-in-out infinite; animation-delay: 0.12s; }
-.logo--loading .logo__c { animation: logo-breathe-c 2.4s ease-in-out infinite; animation-delay: 0.24s; }
+/* The app-loading screen behind this mark starts on the OS/PWA launch
+   splash (manifest background_color + icon) before React ever paints — that
+   static icon shows the three bubbles bare, no white knockout ring. Popping
+   the ring on instantly the moment this component mounts reads as a jarring
+   flash. Instead the ring itself stays invisible through the cluster's first
+   outward stretch, then fades in over the return leg so it lands the same
+   moment the bubbles re-settle into the mark's resting pose — one continuous
+   reveal rather than an abrupt swap. `both` holds it at full opacity after,
+   so every loop after the first is the ordinary breathing ring. */
+.logo--loading .logo__a { animation: logo-breathe-a 2.4s ease-in-out infinite, logo-ring-reveal 2.4s ease-in-out both; }
+.logo--loading .logo__b { animation: logo-breathe-b 2.4s ease-in-out 0.12s infinite, logo-ring-reveal 2.4s ease-in-out 0.12s both; }
+.logo--loading .logo__c { animation: logo-breathe-c 2.4s ease-in-out 0.24s infinite, logo-ring-reveal 2.4s ease-in-out 0.24s both; }
 .logo--loading .logo__link { animation: logo-link-fade 2.4s ease-in-out infinite; }
 @keyframes logo-breathe-a {
   0%, 100% { transform: translate(0, 0) scale(1); }
@@ -182,6 +191,10 @@
 @keyframes logo-link-fade {
   0%, 100% { opacity: 0; }
   40%, 60% { opacity: 1; }
+}
+@keyframes logo-ring-reveal {
+  0%, 60% { stroke-opacity: 0; }
+  100% { stroke-opacity: 1; }
 }
 
 @media (prefers-reduced-motion: reduce) {
