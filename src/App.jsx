@@ -1103,6 +1103,14 @@ export default function App() {
   const openRecap = useCallback(() => {
     if (!recapGroups.length) return;
     setActivityOpen(false);
+    // The tour's whole promise is "the target bubble is always screen-
+    // centred" (see RecapTour.jsx) — but a card left pinned open (e.g. the
+    // user opened Activity from a profile without closing it first) biases
+    // the camera left the entire time to make room for it, so every stop
+    // lands off-centre. Same reason to drop any open profile sheet: it's a
+    // full-screen camera experience, nothing should be floating over it.
+    viewApi.current?.unpin();
+    setOpenId(null);
     markRecapSeen();
     const ids = recapGroups.map((g) => g.personId);
     setRecapQueue(
