@@ -15,6 +15,15 @@ import { Spring } from '../lib/spring.js';
 
 const TREE_FONT = 'Hanken Grotesk, system-ui, sans-serif';
 
+// Prefer the real family_name field; fall back to the last token of the
+// display name (the same rule store.js uses when it assigns a new
+// relative's family_name from an anchor person — see addRelative()).
+function surnameOf(person) {
+  if (person.family_name) return person.family_name.trim();
+  const parts = (person.display_name || '').trim().split(/\s+/);
+  return parts.length > 1 ? parts[parts.length - 1] : '';
+}
+
 /*
  * One person, rendered as a circular bubble.
  *
@@ -158,11 +167,46 @@ export class Bubble {
   }
 
   _buildNameLabel(person, baseRadius) {
-    const firstName = this.visibility === 'private'
-      ? 'Private'
-      : person.display_name.trim().split(/\s+/)[0];
-    // Estimate pill width: ~7.5 px per char at 13px/700 + horizontal padding
-    const pillW = Math.max(40, firstName.length * 7.5 + 20);
+    const isPrivate = this.visibility === 'private';
+    const firstName = isPrivate ? 'Private' : person.display_name.trim().split(/\s+/)[0];
+    // Same "prefer the real field, fall back to the last token of the
+    // display name" rule store.js already uses when it assigns a new
+    // relative's family_name — so the label agrees with the data even for
+    // the many people who only ever had a single "First Last" name field
+    // typed into Edit, never a separate surname field.
+    const lastName = isPrivate ? '' : surnameOf(person);
+    const showLast = !!lastName && lastName !== firstName;
+
+    const firstStyle = {
+      fontFamily: TREE_FONT,
+      fontSize: 13,
+      fontWeight: '700',
+      fill: '#241f1c',
+      letterSpacing: 0.3,
+    };
+    const lastStyle = {
+      fontFamily: TREE_FONT,
+      fontSize: 11,
+      fontWeight: '500',
+      fill: '#a4988b',
+      letterSpacing: 0.2,
+    };
+
+    const firstText = new Text({ text: firstName, style: firstStyle });
+    firstText.resolution = 2.5;
+    firstText.anchor.set(0, 0.5);
+
+    let lastText = null;
+    const GAP = 5;
+    let contentW = firstText.width;
+    if (showLast) {
+      lastText = new Text({ text: lastName, style: lastStyle });
+      lastText.resolution = 2.5;
+      lastText.anchor.set(0, 0.5);
+      contentW += GAP + lastText.width;
+    }
+
+    const pillW = Math.max(40, contentW + 20);
     const pillH = 20;
     const r = pillH / 2;
 
@@ -177,22 +221,16 @@ export class Bubble {
     bg.roundRect(-pillW / 2, -pillH / 2, pillW, pillH, r)
       .stroke({ width: 0.8, color: 0xddd8d2, alpha: 0.8 });
 
-    const label = new Text({
-      text: firstName,
-      style: {
-        fontFamily: TREE_FONT,
-        fontSize: 13,
-        fontWeight: '700',
-        fill: '#241f1c',
-        letterSpacing: 0.3,
-      },
-    });
-    label.anchor.set(0.5, 0.5);
-    label.resolution = 2.5;
+    const startX = -contentW / 2;
+    firstText.position.set(startX, 0);
 
     const group = new Container();
     group.addChild(bg);
-    group.addChild(label);
+    group.addChild(firstText);
+    if (lastText) {
+      lastText.position.set(startX + firstText.width + GAP, 0);
+      group.addChild(lastText);
+    }
     // Position below the ring, with a small gap
     group.position.set(0, baseRadius + 16);
     group.alpha = 0;
