@@ -1219,7 +1219,17 @@ export function setRelationshipKind(aId, bId, kind, qualifier = 'biological') {
   // Clear existing direct edges between the pair so we can re-set cleanly.
   const isPair = (r) =>
     (r.from_person === aId && r.to_person === bId) || (r.from_person === bId && r.to_person === aId);
-  const cleared = state.relationships.filter((r) => !((r.type === 'partner' || r.type === 'parent') && isPair(r)));
+  const isClearable = (r) => (r.type === 'partner' || r.type === 'parent') && isPair(r);
+  // The ids being replaced must be tombstoned, not just filtered out of this
+  // array — otherwise a sync merge that lands before this write reaches the
+  // server (background poll, or a 409-conflict retry) sees the old edge only
+  // on the server side, resurrects it via _mergeByRecency's id union, and
+  // normalizeRelationships' first-seen-wins dedup then keeps that resurrected
+  // edge over the new one — e.g. an "ex-partner" edit silently reverting back
+  // to "partner" a few seconds later (see removeRelationship, which already
+  // tombstones for exactly this reason).
+  const removedIds = state.relationships.filter(isClearable).map((r) => r.id);
+  const cleared = state.relationships.filter((r) => !isClearable(r));
   // Validate the new edge against the cleared set (e.g. cycle check).
   if (kind === 'parent_of' && isAncestorOf(bId, aId, cleared)) return { ok: false, reason: 'cycle' };
   if (kind === 'child_of' && isAncestorOf(aId, bId, cleared)) return { ok: false, reason: 'cycle' };
@@ -1234,7 +1244,7 @@ export function setRelationshipKind(aId, bId, kind, qualifier = 'biological') {
   const aPerson = state.people.find((p) => p.id === aId);
   const bPerson = state.people.find((p) => p.id === bId);
   const kindLabel = { partner: 'Partner', ex_partner: 'Ex-partner', parent_of: 'Parent', child_of: 'Child' }[kind];
-  commit(withActivity({ ...state, relationships: [...cleared, edge] }, {
+  commit(withActivity(withTombstones({ ...state, relationships: [...cleared, edge] }, 'relationships', removedIds), {
     type: 'relationship_changed',
     personId: aId,
     personName: aPerson?.display_name ?? '',
