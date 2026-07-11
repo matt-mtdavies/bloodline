@@ -56,6 +56,7 @@ import { detectRegion, nearestWorldEvent } from './lib/worldEvents.js';
 import { findDuplicatePairs } from './lib/duplicates.js';
 import { canManageTree } from './lib/visibility.js';
 import { profileCompleteness } from './lib/profile.js';
+import { computeInsightModules, personHighlight, pickDailyHighlight } from './lib/insightModules.js';
 import { useReducedMotion } from './hooks/useReducedMotion.js';
 import BubbleTree from './viz/BubbleTree.jsx';
 import ChartTree from './viz/ChartTree.jsx';
@@ -76,6 +77,7 @@ import PhotoCropper from './components/PhotoCropper.jsx';
 import AccessibleTree from './components/AccessibleTree.jsx';
 import Legend from './components/Legend.jsx';
 import IntroHint from './components/IntroHint.jsx';
+import IdleFactHint from './components/IdleFactHint.jsx';
 import Intro from './components/Intro.jsx';
 import Onboarding from './components/Onboarding.jsx';
 import LoginScreen from './components/LoginScreen.jsx';
@@ -1444,6 +1446,20 @@ export default function App() {
 
   const activePerson = graph.byId.get(activeId);
 
+  // Tree-screen insight surfacing (nav brief: "surface one real insight from
+  // the tree screen itself, not just Home"). Computed once per graph change;
+  // the per-focus and per-day lookups off it are cheap. Both are deliberately
+  // silent far more often than not — see personHighlight/pickDailyHighlight.
+  const insightModules = useMemo(
+    () => computeInsightModules(graph, data.myPersonId || DEFAULT_FOCUS),
+    [graph, data.myPersonId],
+  );
+  const activeFact = useMemo(
+    () => personHighlight(graph, data.myPersonId || DEFAULT_FOCUS, activeId, insightModules),
+    [graph, data.myPersonId, activeId, insightModules],
+  );
+  const dailyHighlight = useMemo(() => pickDailyHighlight(insightModules), [insightModules]);
+
   // Whether ANY sheet/modal/overlay is currently on screen — used to hide the
   // canvas-anchored overlays (hover card, focus nameplate, recentre button)
   // that would otherwise float on top of whatever just opened. Kept as one
@@ -1590,6 +1606,7 @@ export default function App() {
           />
           <FocusNameplate
             person={activePerson}
+            fact={activeFact}
             getPos={() => viewApi.current?.getScreenPos(activeId)}
             // Also hidden while the active person is themselves being hovered —
             // HoverCard takes over then, showing the same richer view everyone
@@ -1775,6 +1792,9 @@ export default function App() {
             </div>
           </div>
           {!lineageMode && !flightCaption && <IntroHint />}
+          {!lineageMode && !flightCaption && (
+            <IdleFactHint fact={dailyHighlight} active={browse && !anyOverlayOpen} />
+          )}
           {lineageMode && (
             <LineageBanner
               graph={graph}

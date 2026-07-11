@@ -6,7 +6,7 @@ import { lifespan, ageOrAt, yearOf } from '../lib/dates.js';
  * tracks the bubble live (the bubble drifts and the camera glides), so it always
  * sits with them. Everyone else stays a pure face — tap to bring them in.
  */
-export default function FocusNameplate({ person, getPos, hidden }) {
+export default function FocusNameplate({ person, fact, getPos, hidden }) {
   const ref = useRef(null);
 
   useEffect(() => {
@@ -35,6 +35,11 @@ export default function FocusNameplate({ person, getPos, hidden }) {
       <span className="nameplate__pill" key={person.id}>
         <span className="nameplate__name">{person.display_name}</span>
         <span className="nameplate__meta">{metaLine(person)}</span>
+        {fact && (
+          <span className="nameplate__fact">
+            <span aria-hidden="true">✨</span> {fact}
+          </span>
+        )}
       </span>
     </div>
   );

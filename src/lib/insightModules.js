@@ -576,7 +576,7 @@ function records(graph, now = Date.now()) {
     ? pool
     : Array.from({ length: 3 }, (_, i) => pool[(day + i * Math.max(1, Math.floor(pool.length / 3))) % pool.length])
       .filter((r, i, arr) => arr.findIndex((x) => x.key === r.key) === i);
-  return { records: shown, poolSize: pool.length };
+  return { records: shown, poolSize: pool.length, pool };
 }
 
 /* ── Parenthood: how old people were when they had children ──────────────── */
@@ -1113,6 +1113,36 @@ export function pickDailyHighlight(modules) {
   if (!candidates.length) return null;
   const day = Math.floor(Date.now() / 86400000);
   return candidates[day % candidates.length];
+}
+
+// A single fact about ONE person, for the moment they're front and centre —
+// the tree screen's "quiet" insight (see the nameplate), vs. pickDailyHighlight's
+// family-wide one for the idle stats pill. Deliberately silent (returns null)
+// far more often than not: most people don't hold a record or share a
+// birthday with anyone, and a generic filler line would cheapen the ones that
+// are real. Checked cheapest-first — twins and records are just a lookup in
+// data `modules` already computed once for the sheet; handshakesTo is the
+// only on-demand call, and only reached when the cheaper checks miss.
+export function personHighlight(graph, viewerId, personId, modules) {
+  if (!graph || !personId || personId === viewerId) return null;
+
+  const twin = modules?.birthdays?.twins?.find((t) => t.aId === personId || t.bId === personId);
+  if (twin) {
+    const otherName = twin.aId === personId ? twin.bName : twin.aName;
+    return `Shares a birthday with ${otherName} — both ${twin.dateLabel}.`;
+  }
+
+  const rec = modules?.records?.pool?.find((r) => r.personId === personId);
+  if (rec) return rec.title;
+
+  // Only worth surfacing once it's a real chain of a few hops — "1 handshake
+  // from your own parent" isn't a fact, it's a relationship you already know.
+  const hs = handshakesTo(graph, viewerId, personId);
+  if (hs && hs.hops >= 2) {
+    return `You're ${hs.hops} handshakes from ${firstNameOf(graph.byId.get(personId))} — back to ${hs.earliestBirth}.`;
+  }
+
+  return null;
 }
 
 /* ── The birthday wheel + birthday twins ─────────────────────────────────── */

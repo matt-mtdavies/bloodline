@@ -6,7 +6,7 @@
  */
 import assert from 'node:assert/strict';
 import { buildGraph } from '../src/data/graph.js';
-import { computeInsightModules, computeThisMonth, buildInsightHighlights, aliveInYear, handshakesTo } from '../src/lib/insightModules.js';
+import { computeInsightModules, computeThisMonth, buildInsightHighlights, aliveInYear, handshakesTo, personHighlight } from '../src/lib/insightModules.js';
 
 let passed = 0, failed = 0;
 function test(label, fn) {
@@ -649,6 +649,50 @@ test('records: a lone never-met pair (below the 3-instance floor) does not surfa
   const mods = computeInsightModules(graph, 'grandkid');
   const entry = mods.records?.records?.find((r) => r.key === 'neverMet');
   assert.equal(entry, undefined);
+});
+
+// ── personHighlight: the tree screen's per-person fact (nav brief: "surface
+//    one real insight from the tree screen itself") ────────────────────────
+test('personHighlight: null for the viewer themselves', () => {
+  assert.equal(personHighlight(graph, 'g4_0', 'g4_0', mods), null);
+});
+
+test('personHighlight: birthday twin — names the OTHER person, regardless of which side is asked about', () => {
+  const twin = mods.birthdays.twins[0];
+  assert.ok(twin, 'fixture sanity: the cross-generation birthday twin should exist');
+  for (const [targetId, otherName] of [[twin.aId, twin.bName], [twin.bId, twin.aName]]) {
+    const fact = personHighlight(graph, 'g3_0_0', targetId, mods);
+    assert.ok(fact?.startsWith('Shares a birthday with'), `expected a birthday-twin fact, got: ${fact}`);
+    assert.ok(fact.includes(otherName), `expected "${otherName}" in: ${fact}`);
+  }
+});
+
+test('personHighlight: record holder — returns that record\'s own headline, not a generic line', () => {
+  const rec = mods.records.pool.find((r) => r.key === 'life');
+  assert.ok(rec, 'fixture sanity: a "longest life" record should exist');
+  assert.equal(personHighlight(graph, 'g4_0', rec.personId, mods), rec.title);
+});
+
+test('personHighlight: falls back to a handshake fact once a target holds no twin/record fact', () => {
+  const excluded = new Set([
+    'g4_0',
+    ...mods.records.pool.map((r) => r.personId),
+    ...mods.birthdays.twins.flatMap((t) => [t.aId, t.bId]),
+  ]);
+  const candidate = graph.people.find(
+    (p) => !excluded.has(p.id) && (handshakesTo(graph, 'g4_0', p.id)?.hops ?? 0) >= 2,
+  );
+  assert.ok(candidate, 'fixture sanity: some non-record, non-twin person should be a multi-hop chain away');
+  const fact = personHighlight(graph, 'g4_0', candidate.id, mods);
+  assert.ok(fact?.startsWith("You're ") && fact.includes('handshakes from'), `expected a handshake fact, got: ${fact}`);
+});
+
+test('personHighlight: null for a merely one-hop relative — true, but not a "fact"', () => {
+  // Siblings, both living — a direct overlap edge, hops === 1. Not surprising
+  // enough to be worth a sentence, so this should stay quiet rather than say
+  // "you're 1 handshake from your own brother."
+  assert.equal(handshakesTo(graph, 'g4_0', 'g4_1')?.hops, 1);
+  assert.equal(personHighlight(graph, 'g4_0', 'g4_1', mods), null);
 });
 
 console.log(`\n  ${passed} passed, ${failed} failed`);
