@@ -1046,7 +1046,7 @@
   bottom: 0;
   left: 0;
   right: 0;
-  padding: 12px 16px calc(var(--safe-bottom) + 20px);
+  padding: 12px 16px calc(var(--safe-bottom) + 10px);
   display: flex;
   justify-content: center;
   align-items: flex-end;
