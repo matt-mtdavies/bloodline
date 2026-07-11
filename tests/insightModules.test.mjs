@@ -88,7 +88,12 @@ function richTree() {
 
 const { people, rels } = richTree();
 const graph = buildGraph(people, rels);
-const mods = computeInsightModules(graph, 'g4_0');
+// records()'s "which 3 of the pool today" rotation depends on the real
+// clock by default (see lib/insightModules.js) — pinning `now` to the epoch
+// (day 0, divisible by the pool's rotation step) makes the marriage/life/
+// grandchildren assertions below deterministic regardless of what day the
+// suite actually runs on.
+const mods = computeInsightModules(graph, 'g4_0', 0);
 
 // ── Rich tree: everything above threshold lights up ────────────────────────
 test('gift of years: 3+ cohorts, rising, gained > 0', () => {

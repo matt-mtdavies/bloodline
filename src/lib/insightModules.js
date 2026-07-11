@@ -80,7 +80,10 @@ const givenNamesOf = (p) => {
 };
 const isBioAdopt = (q) => !q || q === 'biological' || q === 'adoptive';
 
-export function computeInsightModules(graph, viewerId) {
+// `now` drives records()'s "which 3 of the pool today" rotation — injectable
+// so tests can pin a specific day rather than depending on the real clock
+// (see records() below).
+export function computeInsightModules(graph, viewerId, now = Date.now()) {
   const gen = computeGenerations(graph);
   return {
     handshakes: handshakes(graph, viewerId),
@@ -93,7 +96,7 @@ export function computeInsightModules(graph, viewerId) {
     heartlands: heartlands(graph, gen),
     trades: trades(graph),
     birthdays: birthdays(graph, gen),
-    records: records(graph),
+    records: records(graph, now),
     parenthood: parenthood(graph),
   };
 }
@@ -345,8 +348,8 @@ function bridges(graph) {
 
 /* ── Record books: the superlatives hiding in the dates. Rotates three per
       day so repeat visits keep finding something new. ────────────────────── */
-function records(graph) {
-  const thisYear = new Date().getFullYear();
+function records(graph, now = Date.now()) {
+  const thisYear = new Date(now).getFullYear();
   const pool = [];
   const first = (id) => firstNameOf(graph.byId.get(id));
 
@@ -568,7 +571,7 @@ function records(graph) {
   if (pool.length < 2) return null;
   // Rotate which three show, changing daily — stable within a session so the
   // sheet doesn't reshuffle on every re-render.
-  const day = Math.floor(Date.now() / 86400000);
+  const day = Math.floor(now / 86400000);
   const shown = pool.length <= 3
     ? pool
     : Array.from({ length: 3 }, (_, i) => pool[(day + i * Math.max(1, Math.floor(pool.length / 3))) % pool.length])
