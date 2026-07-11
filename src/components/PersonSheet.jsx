@@ -7,6 +7,7 @@ import { profileCompleteness, lifeEvents, fullName } from '../lib/profile.js';
 import { fileToDataUrl, uploadPhoto, suggestDocumentTitle, imageSrcToDataUrl } from '../lib/image.js';
 import { streamBio } from '../lib/ai.js';
 import EnrichSheet from './EnrichSheet.jsx';
+import DateField from './DateField.jsx';
 import { VISIBILITY_LABELS, VISIBILITY_DESCS } from '../lib/visibility.js';
 import { HEALTH_CATEGORIES, HEALTH_CONDITIONS, HEALTH_STATUSES, colorFor } from '../lib/health.js';
 import { formatPhone, isPhoneValid } from '../lib/phone.js';
@@ -1605,16 +1606,15 @@ function MarriageDetailsEditor({ item, onSave }) {
         </label>
         {married && (
           <>
-            {/* Same convention as the profile's Date of Birth field: a native
-                date picker, with a legacy year-only value (seed/GEDCOM data)
-                preserved and surfaced as a hint until a full date replaces it. */}
+            {/* Same convention as the profile's Date of Birth field: Day/Month/
+                Year entry rather than a native picker, with a legacy year-only
+                value (seed/GEDCOM data) preserved and surfaced as a hint until
+                a full date replaces it. */}
             <div className="input-wrap">
-              <input
-                className="marriage-edit__input marriage-edit__input--date"
-                type="date"
+              <DateField
+                value={date}
                 max={new Date().toISOString().slice(0, 10)}
-                value={date.includes('-') ? date : ''}
-                onChange={(e) => { if (e.target.value) { setDate(e.target.value); setSaved(false); } }}
+                onChange={(value) => { setDate(value); setSaved(false); }}
               />
               {date && (
                 <button type="button" className="input-clear" onClick={() => { setDate(''); setSaved(false); }} aria-label="Clear date" tabIndex={-1}>×</button>

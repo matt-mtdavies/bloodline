@@ -69,7 +69,7 @@ export function lifeEvents(person) {
     events.push({ year: String(e.year), title: e.title, detail: e.detail || null });
   }
   if (person.is_deceased && person.death_date) {
-    events.push({ year: yearOf(person.death_date), title: 'Passed away', detail: null });
+    events.push({ year: yearOf(person.death_date), title: 'Passed away', detail: person.cause_of_death || null });
   }
   return events
     .filter((e) => e.year)

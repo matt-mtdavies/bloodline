@@ -1300,7 +1300,7 @@ export function mergePeople(keepId, dropId) {
   // Field merge: keep wins; fall back to the duplicate for anything blank.
   const merged = { ...keep };
   const fillable = [
-    'photo', 'photo_thumb', 'birth_date', 'death_date', 'birth_place', 'residence',
+    'photo', 'photo_thumb', 'birth_date', 'death_date', 'cause_of_death', 'birth_place', 'residence',
     'occupation', 'bio', 'gender', 'given_names', 'middle_name', 'family_name',
     'birth_name', 'email', 'phone', 'story',
   ];

@@ -652,12 +652,9 @@
 .marriage-edit__check input { accent-color: var(--accent); width: 16px; height: 16px; }
 .marriage-edit .input-wrap { width: 100%; }
 .marriage-edit .input-wrap > .marriage-edit__input { flex: 1; padding-right: 38px; }
-.marriage-edit__input--date {
-  min-height: 38px;
-  -webkit-appearance: none;
-  appearance: none;
-  background: var(--paper);
-}
+.marriage-edit .date-field__day,
+.marriage-edit .date-field__month,
+.marriage-edit .date-field__year { height: 38px; }
 .marriage-edit__hint { font-size: 11.5px; color: var(--ink-soft); margin: -2px 0 0 2px; }
 
 /* ── Phone field: country selector + national input ─────────────────────── */
@@ -2537,6 +2534,37 @@
 /* DOB input wrapper: reserve space for the clear button */
 .dob-wrap { position: relative; }
 .dob-wrap .input-clear { pointer-events: auto; }
+
+/* Day / Month / Year date entry — see components/DateField.jsx for why this
+   replaces <input type="date">. Reserves the same right-hand clearance as a
+   plain .field__input so the existing Clear (×) button still sits over it. */
+.date-field { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; }
+.input-wrap > .date-field { padding-right: 42px; box-sizing: border-box; }
+.date-field__day,
+.date-field__month,
+.date-field__year {
+  height: 50px;
+  border-radius: 14px;
+  border: 1px solid var(--hairline);
+  background: #fff;
+  font-size: 15px;
+  font-family: var(--body);
+  color: var(--ink);
+  text-align: center;
+  transition: border-color 0.2s var(--ease), box-shadow 0.2s var(--ease);
+}
+.date-field__day { width: 46px; flex: none; padding: 0 4px; }
+.date-field__year { width: 66px; flex: none; padding: 0 4px; }
+.date-field__month { flex: 1; min-width: 0; padding: 0 4px; text-align: center; text-align-last: center; }
+.date-field__day::placeholder,
+.date-field__year::placeholder { color: var(--ink-faint); }
+.date-field__day:focus,
+.date-field__month:focus,
+.date-field__year:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(194, 96, 58, 0.14);
+}
 
 .toggle { display: inline-flex; align-items: center; gap: 10px; font-size: 15px; color: var(--ink); cursor: pointer; }
 .toggle input { width: 20px; height: 20px; accent-color: var(--accent); }

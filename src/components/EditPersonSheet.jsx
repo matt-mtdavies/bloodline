@@ -4,6 +4,7 @@ import { formatPhone } from '../lib/phone.js';
 import { formatDate } from '../lib/dates.js';
 import Avatar from './Avatar.jsx';
 import PhoneField from './PhoneField.jsx';
+import DateField from './DateField.jsx';
 
 const GENDER_OPTIONS = ['Male', 'Female', 'Non-binary', 'Other'];
 
@@ -62,6 +63,7 @@ export default function EditPersonSheet({ person, onClose, onSave, onRemove, sta
     bio:           person.bio           || '',
     is_deceased:   !!person.is_deceased,
     death_date:    person.death_date    || '',
+    cause_of_death: person.cause_of_death || '',
     visibility:        person.visibility        || 'full',
     sectionVisibility: person.sectionVisibility || {},
   });
@@ -87,9 +89,7 @@ export default function EditPersonSheet({ person, onClose, onSave, onRemove, sta
   const dobIsFullDate = f.birth_date.includes('-');
   const dobYearOnly   = f.birth_date && !dobIsFullDate;
 
-  const onDobChange = (e) => {
-    if (e.target.value) setF((s) => ({ ...s, birth_date: e.target.value }));
-  };
+  const onDobChange = (value) => setF((s) => ({ ...s, birth_date: value }));
 
   const save = () => {
     onSave({
@@ -110,6 +110,7 @@ export default function EditPersonSheet({ person, onClose, onSave, onRemove, sta
       is_deceased:   f.is_deceased,
       is_living:     !f.is_deceased,
       death_date:    f.is_deceased ? f.death_date.trim() || null : null,
+      cause_of_death: f.is_deceased ? f.cause_of_death.trim() || null : null,
       visibility:        f.visibility,
       sectionVisibility: f.sectionVisibility,
     });
@@ -130,7 +131,10 @@ export default function EditPersonSheet({ person, onClose, onSave, onRemove, sta
           ['Birth name', person.birth_name],
           ['Gender', person.gender],
           ['Date of birth', person.birth_date ? formatDate(person.birth_date) : null],
-          ...(person.is_deceased ? [['Date passed', person.death_date ? formatDate(person.death_date) : null]] : []),
+          ...(person.is_deceased ? [
+            ['Date passed', person.death_date ? formatDate(person.death_date) : null],
+            ['Cause of death', person.cause_of_death],
+          ] : []),
         ],
       },
       {
@@ -276,13 +280,7 @@ export default function EditPersonSheet({ person, onClose, onSave, onRemove, sta
             <label className="field">
               <span className="field__label">Date of Birth</span>
               <div className="input-wrap dob-wrap">
-                <input
-                  className="field__input field__input--date"
-                  type="date"
-                  value={dobIsFullDate ? f.birth_date : ''}
-                  max={TODAY}
-                  onChange={onDobChange}
-                />
+                <DateField value={f.birth_date} max={TODAY} onChange={onDobChange} />
                 {f.birth_date && (
                   <button type="button" className="input-clear" onClick={clear('birth_date')} aria-label="Clear" tabIndex={-1}>×</button>
                 )}
@@ -434,18 +432,25 @@ export default function EditPersonSheet({ person, onClose, onSave, onRemove, sta
             <label className="field">
               <span className="field__label">Date Passed</span>
               <div className="input-wrap dob-wrap">
-                <input
-                  className="field__input field__input--date"
-                  type="date"
-                  value={f.death_date.includes('-') ? f.death_date : ''}
+                <DateField
+                  value={f.death_date}
                   max={TODAY}
-                  onChange={(e) => { if (e.target.value) setF((s) => ({ ...s, death_date: e.target.value })); }}
+                  onChange={(value) => setF((s) => ({ ...s, death_date: value }))}
                 />
                 {f.death_date && <button type="button" className="input-clear" onClick={clear('death_date')} aria-label="Clear" tabIndex={-1}>×</button>}
               </div>
               {f.death_date && !f.death_date.includes('-') && (
                 <span className="field__hint">Year {f.death_date} — pick date for precision</span>
               )}
+            </label>
+          )}
+          {f.is_deceased && (
+            <label className="field">
+              <span className="field__label">Cause of death <span className="field__label-sub">optional</span></span>
+              <div className="input-wrap">
+                <input className="field__input" value={f.cause_of_death} onChange={set('cause_of_death')} placeholder="e.g. Heart disease" />
+                {f.cause_of_death && <button type="button" className="input-clear" onClick={clear('cause_of_death')} aria-label="Clear" tabIndex={-1}>×</button>}
+              </div>
             </label>
           )}
 

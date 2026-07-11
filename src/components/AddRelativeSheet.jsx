@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useMemo } from 'react';
 import { RELATIONSHIPS, QUALIFIER_KEYS, bioParentGendersFilled } from '../data/store.js';
+import DateField from './DateField.jsx';
 
 const QUALIFIERS = [
   { key: 'biological', label: 'Biological' },
@@ -452,13 +453,7 @@ export default function AddRelativeSheet({ anchor, people = [], relationships = 
                 <label className="field">
                   <span className="field__label">Date of birth</span>
                   <div className="input-wrap dob-wrap">
-                    <input
-                      className="field__input field__input--date"
-                      type="date"
-                      value={birthDate.includes('-') ? birthDate : ''}
-                      max={TODAY}
-                      onChange={(e) => e.target.value && setBirthDate(e.target.value)}
-                    />
+                    <DateField value={birthDate} max={TODAY} onChange={setBirthDate} />
                     {birthDate && <button type="button" className="input-clear" onClick={() => setBirthDate('')} aria-label="Clear" tabIndex={-1}>×</button>}
                   </div>
                 </label>
@@ -480,13 +475,7 @@ export default function AddRelativeSheet({ anchor, people = [], relationships = 
               <label className="field">
                 <span className="field__label">Date of birth</span>
                 <div className="input-wrap dob-wrap">
-                  <input
-                    className="field__input field__input--date"
-                    type="date"
-                    value={birthDate.includes('-') ? birthDate : ''}
-                    max={TODAY}
-                    onChange={(e) => e.target.value && setBirthDate(e.target.value)}
-                  />
+                  <DateField value={birthDate} max={TODAY} onChange={setBirthDate} />
                   {birthDate && <button type="button" className="input-clear" onClick={() => setBirthDate('')} aria-label="Clear" tabIndex={-1}>×</button>}
                 </div>
               </label>
@@ -533,13 +522,7 @@ export default function AddRelativeSheet({ anchor, people = [], relationships = 
               <label className="field">
                 <span className="field__label">Date passed</span>
                 <div className="input-wrap dob-wrap">
-                  <input
-                    className="field__input field__input--date"
-                    type="date"
-                    value={deathDate.includes('-') ? deathDate : ''}
-                    max={TODAY}
-                    onChange={(e) => e.target.value && setDeathDate(e.target.value)}
-                  />
+                  <DateField value={deathDate} max={TODAY} onChange={setDeathDate} />
                   {deathDate && <button type="button" className="input-clear" onClick={() => setDeathDate('')} aria-label="Clear" tabIndex={-1}>×</button>}
                 </div>
               </label>
