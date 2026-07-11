@@ -123,8 +123,10 @@ export async function srcToDataUrl(src) {
 // Ask the server to read and summarize a document — a faded letter, a
 // military record, a certificate — into a plain-English paragraph, for
 // documents that are hard to make out on-screen. Works on images and PDFs
-// alike. Also returns candidate life-event `facts` (each grounded in a
-// verbatim quote from the document) for the caller to offer as suggestions —
+// alike. Also returns candidate life-event `facts`, `profileFields`
+// (occupation/birth_place/residence), and `peopleMentioned` (other people
+// named in a direct family relationship to the subject) — each grounded in a
+// verbatim quote from the document — for the caller to offer as suggestions,
 // never applied automatically. Best-effort: returns null (never throws) on
 // any failure, a slow or unconfigured server, or nothing to summarize.
 export async function summarizeDocument(dataUrl, { timeoutMs = 45000 } = {}) {
@@ -139,9 +141,15 @@ export async function summarizeDocument(dataUrl, { timeoutMs = 45000 } = {}) {
       signal: ac.signal,
     });
     if (!res.ok) return null;
-    const { summary, facts } = await res.json();
-    if (!summary && !facts?.length) return null;
-    return { summary: summary || null, facts: facts || [] };
+    const { summary, facts, profileFields, peopleMentioned } = await res.json();
+    if (!summary && !facts?.length && !peopleMentioned?.length
+      && !profileFields?.occupation && !profileFields?.birth_place && !profileFields?.residence) return null;
+    return {
+      summary: summary || null,
+      facts: facts || [],
+      profileFields: profileFields || null,
+      peopleMentioned: peopleMentioned || [],
+    };
   } catch {
     return null;
   } finally {

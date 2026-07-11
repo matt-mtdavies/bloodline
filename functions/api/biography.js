@@ -25,7 +25,7 @@ export async function onRequestPost({ request, env }) {
     });
   }
 
-  const { person, memories = [], relationships = [], feedback, previousStory } = body;
+  const { person, memories = [], relationships = [], documents = [], feedback, previousStory } = body;
   if (!person?.display_name) {
     return new Response(JSON.stringify({ error: 'Missing person data.' }), {
       status: 400,
@@ -71,6 +71,19 @@ export async function onRequestPost({ request, env }) {
     lines.push(`Memories from the family:\n${mems}`);
   }
 
+  // Documents the family has scanned and summarized (see summarize.js) —
+  // often the richest source in the whole record: a discharge form's "quiet
+  // dignity" doesn't show up in a birth_date field. This is the AI summary
+  // text, not the raw scan, so it's already been through one grounding pass;
+  // still just background material for the story, same as a memory.
+  if (documents.length) {
+    const docs = documents
+      .slice(0, 6)
+      .map((d) => `  — "${d.title}": ${d.summary}`)
+      .join('\n');
+    lines.push(`Documents on file:\n${docs}`);
+  }
+
   const personContext = lines.join('\n');
 
   // A family member reviewed a previous draft and flagged something wrong
@@ -100,7 +113,7 @@ export async function onRequestPost({ request, env }) {
       system: [
         {
           type: 'text',
-          text: `You are a thoughtful family archivist writing intimate life story paragraphs for a family tree app. Your voice is warm, plain, and specific — like a letter from a relative who loved this person. Write in the third person. Two to three short paragraphs. No bullet points, no headers. Draw on the details given: timeline events, occupation, place, and above all the memories family members have shared. If the person is deceased, treat them with reverence. If living, write with warmth and a sense of an ongoing story. Write only the biography — nothing else.`,
+          text: `You are a thoughtful family archivist writing intimate life story paragraphs for a family tree app. Your voice is warm, plain, and specific — like a letter from a relative who loved this person. Write in the third person. Two to three short paragraphs. No bullet points, no headers. Draw on the details given: timeline events, occupation, place, the family's own documents on file, and above all the memories family members have shared. If the person is deceased, treat them with reverence. If living, write with warmth and a sense of an ongoing story. Write only the biography — nothing else.`,
           cache_control: { type: 'ephemeral' },
         },
       ],

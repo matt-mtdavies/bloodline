@@ -142,6 +142,28 @@ const _initialPersonParam = (() => {
 // real cutoff the second time through.
 const _initialRecapCutoff = typeof window === 'undefined' ? null : takeRecapCutoff();
 
+const DOC_FIELD_LABEL = { occupation: 'Occupation', birth_place: 'Birth place', residence: 'Residence' };
+
+// Shapes a raw summarizeDocument() result into the doc.extracted record the
+// store persists — every candidate (a fact, a profile field, a mentioned
+// person) starts 'pending' so Enrich and DocViewer both know it hasn't been
+// reviewed yet. Shared by the manual Summarize button and the background
+// auto-summarize-on-upload path so the two can never drift apart.
+function buildExtracted(result) {
+  const pf = result.profileFields;
+  return {
+    facts: result.facts.map((f) => ({ ...f, status: 'pending' })),
+    profileFields: pf
+      ? {
+          occupation: pf.occupation ? { ...pf.occupation, status: 'pending' } : null,
+          birth_place: pf.birth_place ? { ...pf.birth_place, status: 'pending' } : null,
+          residence: pf.residence ? { ...pf.residence, status: 'pending' } : null,
+        }
+      : null,
+    peopleMentioned: (result.peopleMentioned || []).map((p) => ({ ...p, status: 'pending' })),
+  };
+}
+
 export default function App() {
   const data = useSyncExternalStore(store.subscribe, store.getState);
   const syncStatus = useSyncExternalStore(syncStore.subscribe, syncStore.getState);
@@ -1417,6 +1439,66 @@ export default function App() {
     [data.documents],
   );
 
+  // Same accept/dismiss contract as document facts, for the profile-field
+  // candidates (occupation/birth_place/residence) a document summary
+  // extracted — accept writes the real field via the same updatePerson every
+  // manual edit uses, and marks the candidate consumed so it can't be
+  // re-offered by a later re-summarize.
+  const applyDocumentField = useCallback(
+    (docId, field) => {
+      const doc = data.documents?.find((d) => d.id === docId);
+      const candidate = doc?.extracted?.profileFields?.[field];
+      if (!doc || !candidate) return;
+      const person = graph.byId.get(doc.person_id);
+      updatePerson(doc.person_id, { [field]: candidate.value }, {
+        type: 'person_updated', personId: doc.person_id, personName: person?.display_name ?? '', detail: field.replace('_', ' '),
+      });
+      const profileFields = { ...doc.extracted.profileFields, [field]: { ...candidate, status: 'accepted' } };
+      updateDocument(docId, { extracted: { ...doc.extracted, profileFields } });
+    },
+    [data.documents, graph],
+  );
+  const dismissDocumentField = useCallback(
+    (docId, field) => {
+      const doc = data.documents?.find((d) => d.id === docId);
+      const candidate = doc?.extracted?.profileFields?.[field];
+      if (!doc || !candidate) return;
+      const profileFields = { ...doc.extracted.profileFields, [field]: { ...candidate, status: 'dismissed' } };
+      updateDocument(docId, { extracted: { ...doc.extracted, profileFields } });
+    },
+    [data.documents],
+  );
+
+  // Same pattern again for people a document names in a direct family
+  // relationship to its subject. The name-match against the tree lives in
+  // computeEnrichment (see lib/enrich.js), which is the only place with both
+  // the document data and the graph — matchedId comes from its finding, not
+  // from the stored document, so it's passed in rather than looked up here.
+  // Accept just writes the ordinary addRelationship edge the relation implies.
+  const applyDocumentPerson = useCallback(
+    (docId, personIndex, matchedId, relation) => {
+      const doc = data.documents?.find((d) => d.id === docId);
+      const pm = doc?.extracted?.peopleMentioned?.[personIndex];
+      if (!doc || !pm) return;
+      const subjectId = doc.person_id;
+      if (relation === 'parent') addRelationship(matchedId, subjectId, 'parent');
+      else if (relation === 'child') addRelationship(subjectId, matchedId, 'parent');
+      else if (relation === 'spouse') addRelationship(subjectId, matchedId, 'partner');
+      const peopleMentioned = doc.extracted.peopleMentioned.map((p, i) => (i === personIndex ? { ...p, status: 'accepted' } : p));
+      updateDocument(docId, { extracted: { ...doc.extracted, peopleMentioned } });
+    },
+    [data.documents],
+  );
+  const dismissDocumentPerson = useCallback(
+    (docId, personIndex) => {
+      const doc = data.documents?.find((d) => d.id === docId);
+      if (!doc?.extracted?.peopleMentioned) return;
+      const peopleMentioned = doc.extracted.peopleMentioned.map((p, i) => (i === personIndex ? { ...p, status: 'dismissed' } : p));
+      updateDocument(docId, { extracted: { ...doc.extracted, peopleMentioned } });
+    },
+    [data.documents],
+  );
+
   // Fire-and-forget: summarize a freshly uploaded document in the background,
   // so Enrich has facts to harvest without waiting on someone to open the
   // document and press Summarize with AI. summarizeDocument never throws and
@@ -1428,10 +1510,7 @@ export default function App() {
       const dataUrl = await srcToDataUrl(src);
       const result = await summarizeDocument(dataUrl);
       if (!result) return;
-      updateDocument(docId, {
-        summary: result.summary,
-        extracted: { facts: result.facts.map((f) => ({ ...f, status: 'pending' })) },
-      });
+      updateDocument(docId, { summary: result.summary, extracted: buildExtracted(result) });
     } catch {
       /* background best-effort — manual Summarize with AI button is the fallback */
     }
@@ -1944,6 +2023,10 @@ export default function App() {
         }}
         onApplyDocumentFact={applyDocumentFact}
         onDismissDocumentFact={dismissDocumentFact}
+        onApplyDocumentField={applyDocumentField}
+        onDismissDocumentField={dismissDocumentField}
+        onApplyDocumentPerson={applyDocumentPerson}
+        onDismissDocumentPerson={dismissDocumentPerson}
       />
 
       {searchOpen && (
@@ -2110,13 +2193,15 @@ export default function App() {
         <DocViewer
           doc={docViewer}
           onClose={() => setDocViewer(null)}
-          onSummarized={({ summary, facts }) => {
-            const extracted = { facts: facts.map((f) => ({ ...f, status: 'pending' })) };
-            setDocViewer((d) => (d ? { ...d, summary, extracted } : d));
-            if (docViewer.id) updateDocument(docViewer.id, { summary, extracted });
+          onSummarized={(result) => {
+            const extracted = buildExtracted(result);
+            setDocViewer((d) => (d ? { ...d, summary: result.summary, extracted } : d));
+            if (docViewer.id) updateDocument(docViewer.id, { summary: result.summary, extracted });
           }}
           onApplyDocumentFact={applyDocumentFact}
           onDismissDocumentFact={dismissDocumentFact}
+          onApplyDocumentField={applyDocumentField}
+          onDismissDocumentField={dismissDocumentField}
         />
       )}
 
@@ -2297,7 +2382,11 @@ export default function App() {
 // ── Document viewer ───────────────────────────────────────────────────────────
 // Renders in-app so the session cookie is sent with the fetch — iOS PWA has a
 // separate cookie store from Safari, so window.open() loses auth entirely.
-function DocViewer({ doc, onClose, onSummarized, onApplyDocumentFact, onDismissDocumentFact }) {
+function DocViewer({
+  doc, onClose, onSummarized,
+  onApplyDocumentFact, onDismissDocumentFact,
+  onApplyDocumentField, onDismissDocumentField,
+}) {
   const isImage = doc.mime?.startsWith('image/');
   const isPdf = doc.mime === 'application/pdf';
   const { xf, stageRef, handlers } = useImageZoom();
@@ -2311,7 +2400,10 @@ function DocViewer({ doc, onClose, onSummarized, onApplyDocumentFact, onDismissD
   const [summaryState, setSummaryState] = useState('idle'); // idle | working | error
   const [summary, setSummary] = useState(doc.summary || null);
   const [facts, setFacts] = useState(doc.extracted?.facts || []);
+  const [profileFields, setProfileFields] = useState(doc.extracted?.profileFields || null);
   const pendingFacts = facts.filter((f) => f.status === 'pending' && f.year);
+  const pendingFields = ['occupation', 'birth_place', 'residence']
+    .filter((field) => profileFields?.[field]?.status === 'pending');
 
   useEffect(() => {
     const onKey = (e) => {
@@ -2350,8 +2442,10 @@ function DocViewer({ doc, onClose, onSummarized, onApplyDocumentFact, onDismissD
       const dataUrl = await srcToDataUrl(doc.src);
       const result = await summarizeDocument(dataUrl);
       if (result) {
+        const extracted = buildExtracted(result);
         setSummary(result.summary);
-        setFacts(result.facts.map((f) => ({ ...f, status: 'pending' })));
+        setFacts(extracted.facts);
+        setProfileFields(extracted.profileFields);
         onSummarized?.(result);
         setSummaryState('idle');
       } else {
@@ -2367,6 +2461,12 @@ function DocViewer({ doc, onClose, onSummarized, onApplyDocumentFact, onDismissD
     setFacts((fs) => fs.map((f, i) => (i === index ? { ...f, status } : f)));
     if (status === 'accepted') onApplyDocumentFact?.(doc.id, index);
     else onDismissDocumentFact?.(doc.id, index);
+  }
+
+  function resolveField(field, status) {
+    setProfileFields((pf) => (pf ? { ...pf, [field]: { ...pf[field], status } } : pf));
+    if (status === 'accepted') onApplyDocumentField?.(doc.id, field);
+    else onDismissDocumentField?.(doc.id, field);
   }
 
   return (
@@ -2444,6 +2544,23 @@ function DocViewer({ doc, onClose, onSummarized, onApplyDocumentFact, onDismissD
                 </div>
               </div>
             ) : null))}
+          </div>
+        )}
+        {pendingFields.length > 0 && (
+          <div className="doc-viewer__facts">
+            <span className="doc-viewer__summary-label">Profile details found in this document</span>
+            {pendingFields.map((field) => (
+              <div className="doc-fact" key={field}>
+                <div className="doc-fact__body">
+                  <span className="doc-fact__title">{DOC_FIELD_LABEL[field]}</span>
+                  <span className="doc-fact__detail">{profileFields[field].value}</span>
+                </div>
+                <div className="doc-fact__actions">
+                  <button className="enrich__row-action" onClick={() => resolveField(field, 'accepted')}>Add</button>
+                  <button className="enrich__row-dismiss" onClick={() => resolveField(field, 'dismissed')}>Dismiss</button>
+                </div>
+              </div>
+            ))}
           </div>
         )}
         {(isImage || isPdf) && (

@@ -64,6 +64,10 @@ export default function PersonSheet({
   onApplyEnrichedPlace,
   onApplyDocumentFact,
   onDismissDocumentFact,
+  onApplyDocumentField,
+  onDismissDocumentField,
+  onApplyDocumentPerson,
+  onDismissDocumentPerson,
   canEdit = true,        // editor+ : structural changes (people, relationships, edits)
   canContribute = true,  // contributor+ : add memories & photos
   isAdmin = true,        // owner/co-admin : manage anyone's memory, not just your own
@@ -273,9 +277,19 @@ export default function PersonSheet({
       if (p) relSummary.push({ label: x.qualifier === 'biological' ? 'Child' : `${x.qualifier} child`, name: p.display_name });
     }
 
+    const documentSummaries = allPersonDocs
+      .filter((d) => d.summary)
+      .map((d) => ({ title: d.title, summary: d.summary }));
+
     await streamBio(
       person,
-      { memories: personMemories, relSummary, feedback: feedback?.trim() || undefined, previousStory: feedback?.trim() ? previousStory : undefined },
+      {
+        memories: personMemories,
+        relSummary,
+        documentSummaries,
+        feedback: feedback?.trim() || undefined,
+        previousStory: feedback?.trim() ? previousStory : undefined,
+      },
       {
         signal: ac.signal,
         onChunk: (text) => setStoryState((s) => ({ ...s, text: s.text + text })),
@@ -1569,6 +1583,10 @@ export default function PersonSheet({
           onApplyPlace={(key, value) => onApplyEnrichedPlace?.(person.id, key, value)}
           onApplyDocumentFact={onApplyDocumentFact}
           onDismissDocumentFact={onDismissDocumentFact}
+          onApplyDocumentField={onApplyDocumentField}
+          onDismissDocumentField={onDismissDocumentField}
+          onApplyDocumentPerson={onApplyDocumentPerson}
+          onDismissDocumentPerson={onDismissDocumentPerson}
         />
       )}
     </div>

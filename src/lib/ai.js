@@ -14,13 +14,13 @@
  *   onDone()       — called when the stream ends cleanly
  *   onError(err)   — called on network / server errors (null on abort)
  */
-export async function streamBio(person, { memories = [], relSummary = [], feedback, previousStory } = {}, { onChunk, onDone, onError, signal } = {}) {
+export async function streamBio(person, { memories = [], relSummary = [], documentSummaries = [], feedback, previousStory } = {}, { onChunk, onDone, onError, signal } = {}) {
   let res;
   try {
     res = await fetch('/api/biography', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ person, memories, relationships: relSummary, feedback, previousStory }),
+      body: JSON.stringify({ person, memories, relationships: relSummary, documents: documentSummaries, feedback, previousStory }),
       signal,
     });
   } catch (e) {

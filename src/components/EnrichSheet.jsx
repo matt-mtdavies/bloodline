@@ -16,6 +16,16 @@ const ACTION_LABEL = {
   story: 'Write it with AI',
 };
 
+// Document-derived findings all get the same two-button (accept/dismiss)
+// treatment below instead of the generic single-action button — one row
+// shape, three sources (a life event, a profile field, a named relative).
+const DOCUMENT_ACTION_TYPES = new Set(['document-fact', 'document-field', 'document-person']);
+const DOCUMENT_ACTION_LABEL = {
+  'document-fact': 'Add to timeline',
+  'document-field': 'Add to profile',
+  'document-person': 'Confirm relationship',
+};
+
 /*
  * "Enrich this profile" — one place that surfaces everything the tree already
  * knows (or can honestly bound) about a person's gaps. Every row is tiered —
@@ -37,16 +47,37 @@ export default function EnrichSheet({
   onApplyPlace,
   onApplyDocumentFact,
   onDismissDocumentFact,
+  onApplyDocumentField,
+  onDismissDocumentField,
+  onApplyDocumentPerson,
+  onDismissDocumentPerson,
 }) {
   const allFindings = useMemo(
     () => computeEnrichment(person, graph, memoryCount, documents),
     [person, graph, memoryCount, documents],
   );
-  // Document facts get their own two-button (accept/dismiss) treatment below,
-  // same UX as the place suggestions — everything else keeps the single
-  // generic action button.
-  const findings = allFindings.filter((f) => f.action?.type !== 'document-fact');
-  const documentFindings = allFindings.filter((f) => f.action?.type === 'document-fact');
+  // Document-derived findings get their own two-button (accept/dismiss)
+  // treatment below, same UX as the place suggestions — everything else
+  // keeps the single generic action button.
+  const findings = allFindings.filter((f) => !DOCUMENT_ACTION_TYPES.has(f.action?.type));
+  const documentFindings = allFindings.filter((f) => DOCUMENT_ACTION_TYPES.has(f.action?.type));
+
+  function acceptDocumentFinding(f) {
+    switch (f.action.type) {
+      case 'document-fact': onApplyDocumentFact?.(f.action.docId, f.action.factIndex); break;
+      case 'document-field': onApplyDocumentField?.(f.action.docId, f.action.field); break;
+      case 'document-person': onApplyDocumentPerson?.(f.action.docId, f.action.personIndex, f.action.matchedId, f.action.relation); break;
+      default: break;
+    }
+  }
+  function dismissDocumentFinding(f) {
+    switch (f.action.type) {
+      case 'document-fact': onDismissDocumentFact?.(f.action.docId, f.action.factIndex); break;
+      case 'document-field': onDismissDocumentField?.(f.action.docId, f.action.field); break;
+      case 'document-person': onDismissDocumentPerson?.(f.action.docId, f.action.personIndex); break;
+      default: break;
+    }
+  }
 
   const places = useMemo(() => {
     const list = [];
@@ -154,16 +185,10 @@ export default function EnrichSheet({
                   <p className="enrich__row-detail">{f.detail}</p>
                 </div>
                 <div className="enrich__row-actions">
-                  <button
-                    className="enrich__row-action"
-                    onClick={() => onApplyDocumentFact?.(f.action.docId, f.action.factIndex)}
-                  >
-                    Add to timeline
+                  <button className="enrich__row-action" onClick={() => acceptDocumentFinding(f)}>
+                    {DOCUMENT_ACTION_LABEL[f.action.type]}
                   </button>
-                  <button
-                    className="enrich__row-dismiss"
-                    onClick={() => onDismissDocumentFact?.(f.action.docId, f.action.factIndex)}
-                  >
+                  <button className="enrich__row-dismiss" onClick={() => dismissDocumentFinding(f)}>
                     Dismiss
                   </button>
                 </div>

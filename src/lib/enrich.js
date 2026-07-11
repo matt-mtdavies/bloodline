@@ -21,6 +21,8 @@
  * finding: { key, tier, icon, title, detail, action }
  * action: { type: 'edit' } | { type: 'merge', pair } | { type: 'story' }
  *   | { type: 'document-fact', docId, factIndex }
+ *   | { type: 'document-field', docId, field }
+ *   | { type: 'document-person', docId, personIndex, matchedId, relation }
  */
 import { profileCompleteness } from './profile.js';
 import { findDuplicatePairs } from './duplicates.js';
@@ -28,6 +30,46 @@ import { yearOf, yearsBetween } from './dates.js';
 
 const isBioAdopt = (q) => !q || q === 'biological' || q === 'adoptive' || q === 'adopted';
 const firstNameOf = (p) => (p?.display_name || '').trim().split(/\s+/)[0] || p?.display_name || 'they';
+
+const FIELD_LABEL = { occupation: 'Occupation', birth_place: 'Birth place', residence: 'Residence' };
+
+// Only relations the app can actually write as a direct edge — a sibling has
+// no direct edge (siblings are derived from shared parents, never stored),
+// and 'other' (a witness, registrar, attesting officer...) is never a family
+// relationship, so neither gets a suggestion here. See summarize.js.
+const REL_LABEL = { parent: 'parent', spouse: 'partner', child: 'child' };
+
+function normalizeNameTokens(raw) {
+  return (raw || '')
+    .replace(/\([^)]*\)/g, ' ')
+    .toLowerCase()
+    .replace(/[^a-z\s]/g, ' ')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+// A document often records a woman under a maiden name aside — "Laura
+// Angeline Turner (formerly Tuffnell)" — try the name as written first, then
+// swap the surname for the aside, so a tree that has her under either name
+// still matches.
+function nameCandidates(raw) {
+  const primary = normalizeNameTokens(raw);
+  const candidates = [primary];
+  const aside = (raw || '').match(/\(([^)]*)\)/);
+  if (aside) {
+    const altSurname = normalizeNameTokens(aside[1].replace(/^(formerly|n[ée]e)\s+/i, ''));
+    if (altSurname.length && primary.length) candidates.push([...primary.slice(0, -1), ...altSurname]);
+  }
+  return candidates;
+}
+
+// Tolerant of middle names and initials: match on first + last token only.
+function nameMatchesPerson(candidates, person) {
+  const target = normalizeNameTokens(person.display_name);
+  if (!target.length) return false;
+  return candidates.some((c) => c.length && c[0] === target[0] && c[c.length - 1] === target[target.length - 1]);
+}
 
 export function computeEnrichment(person, graph, memoryCount = 0, documents = []) {
   const findings = [];
@@ -176,11 +218,15 @@ export function computeEnrichment(person, graph, memoryCount = 0, documents = []
     }
   }
 
-  // ── Document-derived facts — candidates an AI document summary extracted,
-  //    each grounded in a verbatim quote from the document itself. Applying
-  //    one writes a real life event; nothing here is ever written on its own
-  //    (see DocViewer's Summarize action and App.jsx's applyDocumentFact). ──
-  for (const doc of documents.filter((d) => d.person_id === person.id)) {
+  // ── Document-derived facts, profile fields, and mentioned people —
+  //    everything an AI document summary extracted, each grounded in a
+  //    verbatim quote from the document itself. Applying one writes a real
+  //    life event / profile field / relationship; nothing here is ever
+  //    written on its own (see DocViewer's Summarize action and App.jsx's
+  //    applyDocument* handlers). ────────────────────────────────────────────
+  const personDocs = documents.filter((d) => d.person_id === person.id);
+
+  for (const doc of personDocs) {
     (doc.extracted?.facts || []).forEach((fact, i) => {
       // No year, no timeline slot — the app's life events are chronological.
       if (fact.status !== 'pending' || !fact.year) return;
@@ -191,6 +237,51 @@ export function computeEnrichment(person, graph, memoryCount = 0, documents = []
         title: fact.year ? `${fact.title} — ${fact.year}` : fact.title,
         detail: `From "${doc.title}": "${fact.quote}"`,
         action: { type: 'document-fact', docId: doc.id, factIndex: i },
+      });
+    });
+  }
+
+  // Profile fields — only offered where the person's own field is still
+  // empty, so a document can never overwrite something already on record.
+  for (const doc of personDocs) {
+    const pf = doc.extracted?.profileFields;
+    if (!pf) continue;
+    for (const field of ['occupation', 'birth_place', 'residence']) {
+      const candidate = pf[field];
+      if (!candidate || candidate.status !== 'pending' || person[field]) continue;
+      findings.push({
+        key: `doc_field_${doc.id}_${field}`,
+        tier: 'document',
+        icon: 'checklist',
+        title: `${FIELD_LABEL[field]}: ${candidate.value}`,
+        detail: `From "${doc.title}": "${candidate.quote}"`,
+        action: { type: 'document-field', docId: doc.id, field },
+      });
+    }
+  }
+
+  // People mentioned — cross-referenced against the tree by name. Only
+  // offered for a direct kinship the app can actually write, and only when a
+  // plausible name match already exists in the tree; never a prompt to
+  // create a brand-new person straight from a document.
+  for (const doc of personDocs) {
+    (doc.extracted?.peopleMentioned || []).forEach((pm, i) => {
+      if (pm.status !== 'pending' || !REL_LABEL[pm.relation]) return;
+      const candidates = nameCandidates(pm.name);
+      const matched = graph.people.find((p) => p.id !== person.id && nameMatchesPerson(candidates, p));
+      if (!matched) return;
+      const already =
+        (pm.relation === 'parent' && graph.parents(person.id).some((x) => x.id === matched.id)) ||
+        (pm.relation === 'child' && graph.children(person.id).some((x) => x.id === matched.id)) ||
+        (pm.relation === 'spouse' && graph.partners(person.id).some((x) => x.id === matched.id));
+      if (already) return;
+      findings.push({
+        key: `doc_person_${doc.id}_${i}`,
+        tier: 'document',
+        icon: 'family',
+        title: `${matched.display_name} — ${REL_LABEL[pm.relation]} named in this document`,
+        detail: `From "${doc.title}": "${pm.quote}"`,
+        action: { type: 'document-person', docId: doc.id, personIndex: i, matchedId: matched.id, relation: pm.relation },
       });
     });
   }

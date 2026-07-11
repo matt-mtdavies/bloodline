@@ -261,5 +261,143 @@ test('document facts belonging to a different person are not surfaced', () => {
   assert.equal(byKeyPrefix(findings, 'doc_fact_').length, 0);
 });
 
+test('a pending document profile field surfaces when the person field is empty', () => {
+  const people = [{ id: 'a', display_name: 'Allen Turner' }];
+  const documents = [{
+    id: 'doc1', person_id: 'a', title: 'Attestation form',
+    extracted: { profileFields: { occupation: { value: 'Sawmill hand', quote: 'Sawmill hand', status: 'pending' }, birth_place: null, residence: null } },
+  }];
+  const findings = findingsFor('a', people, [], 0, documents);
+  const f = findings.find((f) => f.key === 'doc_field_doc1_occupation');
+  assert.ok(f, 'expected a doc_field finding');
+  assert.equal(f.tier, 'document');
+  assert.equal(f.action.type, 'document-field');
+  assert.equal(f.action.docId, 'doc1');
+  assert.equal(f.action.field, 'occupation');
+  assert.match(f.title, /Sawmill hand/);
+});
+
+test('a document profile field is withheld once the person already has that field', () => {
+  const people = [{ id: 'a', display_name: 'Allen Turner', occupation: 'Gardener' }];
+  const documents = [{
+    id: 'doc1', person_id: 'a', title: 'Attestation form',
+    extracted: { profileFields: { occupation: { value: 'Sawmill hand', quote: 'q', status: 'pending' }, birth_place: null, residence: null } },
+  }];
+  const findings = findingsFor('a', people, [], 0, documents);
+  assert.equal(byKeyPrefix(findings, 'doc_field_').length, 0);
+});
+
+test('already-accepted or dismissed document profile fields are not re-offered', () => {
+  const people = [{ id: 'a', display_name: 'Allen Turner' }];
+  const documents = [{
+    id: 'doc1', person_id: 'a', title: 'Attestation form',
+    extracted: {
+      profileFields: {
+        occupation: { value: 'Sawmill hand', quote: 'q', status: 'accepted' },
+        birth_place: { value: 'Mount Gambier', quote: 'q', status: 'dismissed' },
+        residence: null,
+      },
+    },
+  }];
+  const findings = findingsFor('a', people, [], 0, documents);
+  assert.equal(byKeyPrefix(findings, 'doc_field_').length, 0);
+});
+
+test('a document-named parent is cross-referenced to an existing person by name', () => {
+  const people = [
+    { id: 'a', display_name: 'Allen Turner' },
+    { id: 'dad', display_name: 'Robert Turner' },
+  ];
+  const documents = [{
+    id: 'doc1', person_id: 'a', title: 'Birth certificate',
+    extracted: { peopleMentioned: [{ name: 'Robert George Turner', relation: 'parent', quote: 'Father: Robert George Turner', status: 'pending' }] },
+  }];
+  const findings = findingsFor('a', people, [], 0, documents);
+  const f = findings.find((f) => f.key === 'doc_person_doc1_0');
+  assert.ok(f, 'expected a doc_person finding');
+  assert.equal(f.action.type, 'document-person');
+  assert.equal(f.action.matchedId, 'dad');
+  assert.equal(f.action.relation, 'parent');
+  assert.match(f.title, /Robert Turner/);
+});
+
+test('a maiden-name aside still matches the person recorded under that surname', () => {
+  const people = [
+    { id: 'a', display_name: 'Allen Turner' },
+    { id: 'mum', display_name: 'Laura Tuffnell' },
+  ];
+  const documents = [{
+    id: 'doc1', person_id: 'a', title: 'Birth certificate',
+    extracted: { peopleMentioned: [{ name: 'Laura Angeline Turner (formerly Tuffnell)', relation: 'parent', quote: 'Mother: Laura Angeline Turner (formerly Tuffnell)', status: 'pending' }] },
+  }];
+  const findings = findingsFor('a', people, [], 0, documents);
+  const f = findings.find((f) => f.key === 'doc_person_doc1_0');
+  assert.ok(f, 'expected the maiden-name aside to resolve to Laura Tuffnell');
+  assert.equal(f.action.matchedId, 'mum');
+});
+
+test('a document-mentioned person with no name match in the tree is withheld', () => {
+  const people = [{ id: 'a', display_name: 'Allen Turner' }];
+  const documents = [{
+    id: 'doc1', person_id: 'a', title: 'Birth certificate',
+    extracted: { peopleMentioned: [{ name: 'Someone Nobody Has Added', relation: 'parent', quote: 'q', status: 'pending' }] },
+  }];
+  const findings = findingsFor('a', people, [], 0, documents);
+  assert.equal(byKeyPrefix(findings, 'doc_person_').length, 0);
+});
+
+test('a relation of "other" (a witness, registrar, attesting officer...) never surfaces, even with a name match', () => {
+  const people = [
+    { id: 'a', display_name: 'Allen Turner' },
+    { id: 'officer', display_name: 'J Stanford' },
+  ];
+  const documents = [{
+    id: 'doc1', person_id: 'a', title: 'Attestation form',
+    extracted: { peopleMentioned: [{ name: 'J Stanford', relation: 'other', quote: 'Attesting Officer: J Stanford', status: 'pending' }] },
+  }];
+  const findings = findingsFor('a', people, [], 0, documents);
+  assert.equal(byKeyPrefix(findings, 'doc_person_').length, 0);
+});
+
+test('a relation of "sibling" is withheld — siblings are derived, never a directly writable edge', () => {
+  const people = [
+    { id: 'a', display_name: 'Allen Turner' },
+    { id: 'sib', display_name: 'Marjorie Turner' },
+  ];
+  const documents = [{
+    id: 'doc1', person_id: 'a', title: 'Letter',
+    extracted: { peopleMentioned: [{ name: 'Marjorie Turner', relation: 'sibling', quote: 'q', status: 'pending' }] },
+  }];
+  const findings = findingsFor('a', people, [], 0, documents);
+  assert.equal(byKeyPrefix(findings, 'doc_person_').length, 0);
+});
+
+test('a document-named parent already recorded as the parent is not re-offered', () => {
+  const people = [
+    { id: 'a', display_name: 'Allen Turner' },
+    { id: 'dad', display_name: 'Robert Turner' },
+  ];
+  const rels = [parentRel('dad', 'a')];
+  const documents = [{
+    id: 'doc1', person_id: 'a', title: 'Birth certificate',
+    extracted: { peopleMentioned: [{ name: 'Robert Turner', relation: 'parent', quote: 'q', status: 'pending' }] },
+  }];
+  const findings = findingsFor('a', people, rels, 0, documents);
+  assert.equal(byKeyPrefix(findings, 'doc_person_').length, 0);
+});
+
+test('already-resolved document-mentioned people are not re-offered', () => {
+  const people = [
+    { id: 'a', display_name: 'Allen Turner' },
+    { id: 'dad', display_name: 'Robert Turner' },
+  ];
+  const documents = [{
+    id: 'doc1', person_id: 'a', title: 'Birth certificate',
+    extracted: { peopleMentioned: [{ name: 'Robert Turner', relation: 'parent', quote: 'q', status: 'dismissed' }] },
+  }];
+  const findings = findingsFor('a', people, [], 0, documents);
+  assert.equal(byKeyPrefix(findings, 'doc_person_').length, 0);
+});
+
 console.log(`\n  ${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);

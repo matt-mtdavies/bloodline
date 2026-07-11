@@ -1,11 +1,23 @@
 import { json } from '../../_lib/util.js';
 
-// Structured-output schema: a plain-English summary plus zero or more
-// candidate life-event facts, each grounded in a verbatim quote from the
-// document itself — never a guess. `tag: "military"` marks facts tied to
+// Structured-output schema: a plain-English summary, zero or more candidate
+// life-event facts, zero or more candidate profile-field values, and zero or
+// more people named in the document — every one of them grounded in a
+// verbatim quote, never a guess. `tag: "military"` marks facts tied to
 // service (enlistment, discharge, rank, unit, campaign) so the client can
 // surface them distinctly. Requires a model with structured-output support
 // (claude-sonnet-5) — see functions/api/documents/summarize.js model choice.
+//
+// `profile_fields` and `people_mentioned` are deliberately narrow — real
+// Person-record fields (occupation/birth_place/residence) and a small,
+// closed kinship vocabulary (parent/spouse/child/sibling/other). A military
+// service record is often the densest document type we see (regiment,
+// religion, next-of-kin, attesting officer, marital status...), so without
+// this the extraction would skew toward whatever a busy attestation form
+// happens to contain. Anything that isn't a real profile field or a direct
+// family relationship (a witness, a registrar, a doctor, an employer) has
+// nowhere to go in this schema and is classified 'other', which the client
+// simply doesn't act on — see lib/enrich.js.
 //
 // Nullable fields use `anyOf: [{type:...}, {type:'null'}]`, NOT the JSON
 // Schema type-array shorthand (`type: ['string','null']`) — Claude's
@@ -13,6 +25,17 @@ import { json } from '../../_lib/util.js';
 // anyOf/allOf, and $ref/$def as supported keywords; the array-of-types
 // shorthand isn't among them and a schema using it is rejected outright
 // (every request fails the same way, regardless of the document).
+const QUOTED_FIELD = {
+  anyOf: [
+    { type: 'null' },
+    {
+      type: 'object',
+      properties: { value: { type: 'string' }, quote: { type: 'string' } },
+      required: ['value', 'quote'],
+      additionalProperties: false,
+    },
+  ],
+};
 const RESPONSE_SCHEMA = {
   type: 'object',
   properties: {
@@ -32,8 +55,31 @@ const RESPONSE_SCHEMA = {
         additionalProperties: false,
       },
     },
+    profile_fields: {
+      type: 'object',
+      properties: {
+        occupation: QUOTED_FIELD,
+        birth_place: QUOTED_FIELD,
+        residence: QUOTED_FIELD,
+      },
+      required: ['occupation', 'birth_place', 'residence'],
+      additionalProperties: false,
+    },
+    people_mentioned: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          name: { type: 'string' },
+          relation: { enum: ['parent', 'spouse', 'child', 'sibling', 'other'] },
+          quote: { type: 'string' },
+        },
+        required: ['name', 'relation', 'quote'],
+        additionalProperties: false,
+      },
+    },
   },
-  required: ['summary', 'facts'],
+  required: ['summary', 'facts', 'profile_fields', 'people_mentioned'],
   additionalProperties: false,
 };
 
@@ -43,9 +89,14 @@ const RESPONSE_SCHEMA = {
  * Reads a scanned document — a faded letter, a military record, a certificate —
  * and writes a plain-English summary of what it says, for documents that are
  * hard to read on-screen (old handwriting, small type, worn paper). Also
- * extracts candidate life-event facts (a date, a place, a service record)
- * that the client can offer to add to the person's timeline — always with a
- * verbatim quote as provenance, never applied automatically.
+ * extracts, each always with a verbatim quote as provenance and never applied
+ * automatically:
+ *   - candidate life-event facts (a date, a place, a service record) for the
+ *     person's timeline
+ *   - candidate profile fields (occupation / birth place / residence)
+ *   - other people the document names in a direct family relationship to the
+ *     subject (parent/spouse/child/sibling), for cross-referencing against
+ *     the tree — see lib/enrich.js
  *
  * Best-effort and non-fatal by design, same contract as /api/documents/title:
  * a 503 (no API key configured) or an upstream error just means "no summary
@@ -110,13 +161,32 @@ export async function onRequestPost({ request, env }) {
         'fact tied to military service (enlistment, discharge, rank, unit, campaign, medal) and',
         'null otherwise. If nothing in the document supports a confident fact, return an empty array',
         '— an empty list is correct far more often than a guessed one.',
+        '',
+        '`profile_fields`: the document’s own subject’s occupation, birth place, and/or current',
+        'residence, ONLY if the document states them plainly. For each of `occupation`,',
+        '`birth_place`, `residence`: null if not stated, or `{value, quote}` with `value` a short',
+        'plain rendering (\"Sawmill hand\", not the full sentence) and `quote` the exact source text.',
+        'These three are the only profile fields that exist — do not invent others, and do not use',
+        'this for anything about a different person named in the document (their next-of-kin’s',
+        'occupation, for instance, does not belong here).',
+        '',
+        '`people_mentioned`: every OTHER person the document names in a direct family relationship',
+        'to its own subject — a parent, spouse, or child of the subject; also a sibling ONLY as',
+        '`relation: "sibling"` (nothing is written for a sibling automatically, it just needs',
+        'recognising). Set `relation` to \"other\" for anyone named who is NOT the subject’s direct',
+        'family — a witness, an attesting or enlisting officer, a registrar, a doctor, an employer,',
+        'a minister. A military or official form often names several such people; \"other\" is the',
+        'right answer for all of them, not a fallback to avoid. `name` is exactly as written',
+        '(including any \"formerly ___\" or maiden-name aside). `quote` is the verbatim source text',
+        'establishing the relationship. If the document names no one but its own subject, return an',
+        'empty array.',
       ].join(' '),
       messages: [
         {
           role: 'user',
           content: [
             sourceBlock,
-            { type: 'text', text: 'Summarize this document and extract any grounded life-event facts.' },
+            { type: 'text', text: 'Summarize this document and extract any grounded life-event facts, profile fields, and family relationships.' },
           ],
         },
       ],
@@ -137,5 +207,10 @@ export async function onRequestPost({ request, env }) {
     /* malformed structured output — fall through to the empty best-effort reply */
   }
 
-  return json({ summary: parsed?.summary ?? null, facts: parsed?.facts ?? [] });
+  return json({
+    summary: parsed?.summary ?? null,
+    facts: parsed?.facts ?? [],
+    profileFields: parsed?.profile_fields ?? null,
+    peopleMentioned: parsed?.people_mentioned ?? [],
+  });
 }
