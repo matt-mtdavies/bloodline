@@ -1851,8 +1851,18 @@ export default function BubbleTree({
             const t = (nowMs / 1000) * ((Math.PI * 2) / b._breathPeriod) + b._breathPhase;
             target = { ...target, scale: target.scale * (1 + Math.sin(t) * 0.018) };
           }
-          // Name labels: all visible bubbles, hidden when card open or lineage active
-          const labelAlpha = (!cardOpen && !lineage && effectiveVis.has(id)) ? 1 : 0;
+          // Name labels: all visible bubbles, hidden when card open or lineage
+          // active — and hidden for the active person specifically, since
+          // FocusNameplate already floats their name (plus lifespan/age)
+          // above the bubble; showing both was pure duplication. Mirrors the
+          // exact conditions App.jsx uses to decide whether the nameplate
+          // itself is showing (browse mode / chart layout / self-hover), so
+          // the two can never disagree about which one the person is seeing.
+          const nameplateShowing = id === activeRef.current
+            && !browseRef.current
+            && layoutRef.current !== 'chart'
+            && hoveredId !== activeRef.current;
+          const labelAlpha = (!cardOpen && !lineage && effectiveVis.has(id) && !nameplateShowing) ? 1 : 0;
           const birth = births.get(id);
           if (birth && !birth.bubbleSettled && effectiveVis.has(id)) {
             // The birth effect owns the pop: it scales the bubble up with an

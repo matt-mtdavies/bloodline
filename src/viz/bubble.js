@@ -15,13 +15,19 @@ import { Spring } from '../lib/spring.js';
 
 const TREE_FONT = 'Hanken Grotesk, system-ui, sans-serif';
 
-// Prefer the real family_name field; fall back to the last token of the
-// display name (the same rule store.js uses when it assigns a new
-// relative's family_name from an anchor person — see addRelative()).
+// The last token of display_name, not family_name: display_name is the one
+// field every rename actually keeps current (it's the single "Name" box in
+// Edit), so it's the only reliable source for someone's CURRENT surname.
+// family_name is often set once at creation and never revisited — for
+// someone added before a marriage and later renamed via Edit (e.g.
+// "Fiona Norris" -> "Fiona Kim Davies"), family_name can still read the old
+// "Norris", which would show a bubble label for the maiden name a profile
+// itself already labels "née" and no longer uses as the current name. Only
+// fall back to family_name when display_name is a single, surname-less token.
 function surnameOf(person) {
-  if (person.family_name) return person.family_name.trim();
   const parts = (person.display_name || '').trim().split(/\s+/);
-  return parts.length > 1 ? parts[parts.length - 1] : '';
+  if (parts.length > 1) return parts[parts.length - 1];
+  return (person.family_name || '').trim();
 }
 
 /*
@@ -169,11 +175,8 @@ export class Bubble {
   _buildNameLabel(person, baseRadius) {
     const isPrivate = this.visibility === 'private';
     const firstName = isPrivate ? 'Private' : person.display_name.trim().split(/\s+/)[0];
-    // Same "prefer the real field, fall back to the last token of the
-    // display name" rule store.js already uses when it assigns a new
-    // relative's family_name — so the label agrees with the data even for
-    // the many people who only ever had a single "First Last" name field
-    // typed into Edit, never a separate surname field.
+    // See surnameOf() — reads the current name, not a possibly-stale
+    // family_name.
     const lastName = isPrivate ? '' : surnameOf(person);
     const showLast = !!lastName && lastName !== firstName;
 
