@@ -73,7 +73,10 @@ export default function TopBar({ familyName, stats, view, layout, syncStatus, sy
             <span className="sync-status sync-status--saving" aria-live="polite">Saving…</span>
           )}
           {syncStatus === 'saved' && (
-            <span className="sync-status sync-status--saved" aria-live="polite"><SavedCheckIcon /> Saved</span>
+            <span className="pill pill--saved" aria-live="polite" aria-label="Saved">
+              <SavedCheckIcon />
+              <span className="hover-tip hover-tip--down">Saved</span>
+            </span>
           )}
           {syncStatus === 'error' && (
             <button
@@ -488,8 +491,8 @@ function DupIcon() {
 
 function SavedCheckIcon() {
   return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
-      <path d="M5 13l4 4L19 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
+      <path d="M5 13l4 4L19 7" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
     </svg>
   );
 }
