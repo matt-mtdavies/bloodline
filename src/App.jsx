@@ -56,7 +56,7 @@ import { buildGraph, pathBetween, pathBetweenOrdered, bloodRelativesOf } from '.
 import { detectRegion, nearestWorldEvent } from './lib/worldEvents.js';
 import { findDuplicatePairs } from './lib/duplicates.js';
 import { canManageTree } from './lib/visibility.js';
-import { profileCompleteness } from './lib/profile.js';
+import { profileCompleteness, isDuplicateLifeEvent } from './lib/profile.js';
 import { computeInsightModules, personHighlight, pickDailyHighlight } from './lib/insightModules.js';
 import { useReducedMotion } from './hooks/useReducedMotion.js';
 import BubbleTree from './viz/BubbleTree.jsx';
@@ -1402,9 +1402,9 @@ export default function App() {
   }, [editId, activeId, data.myPersonId, data.people]);
 
   const handleSaveTimeline = useCallback(
-    (events) => {
+    (events, corePatch = {}) => {
       const person = graph.byId.get(timelineId);
-      updatePerson(timelineId, { events }, {
+      updatePerson(timelineId, { events, ...corePatch }, {
         type: 'person_updated',
         personId: timelineId,
         personName: person?.display_name ?? '',
@@ -1418,16 +1418,33 @@ export default function App() {
   // Enrich's document-fact review — accept writes a real life event (via the
   // same additive addLifeEvent as everywhere else) and marks the fact
   // consumed; dismiss just marks it, so a re-summarize never re-offers it.
+  // A backstop against Enrich's own duplicate filter: if this exact fact is
+  // already an obvious duplicate (the Enrich list should have hidden it, but
+  // DocViewer's own inline list is filtered separately — see DocViewer's
+  // pendingFacts — and either can be stale on an older device), skip writing
+  // a second copy of the event and instead opportunistically fill the real
+  // profile field it's about (birth place, cause of death) if that field is
+  // still empty. Never overwrites something already recorded.
   const applyDocumentFact = useCallback(
     (docId, factIndex) => {
       const doc = data.documents?.find((d) => d.id === docId);
       const fact = doc?.extracted?.facts?.[factIndex];
       if (!doc || !fact) return;
-      addLifeEvent(doc.person_id, { year: fact.year, title: fact.title, detail: fact.detail, tag: fact.tag });
+      const person = graph.byId.get(doc.person_id);
+      if (person && isDuplicateLifeEvent(person, fact)) {
+        const titleLower = (fact.title || '').toLowerCase();
+        if (titleLower.includes('born') && !person.birth_place && fact.detail) {
+          updatePerson(doc.person_id, { birth_place: fact.detail });
+        } else if ((titleLower.includes('died') || titleLower.includes('passed')) && !person.cause_of_death && fact.detail) {
+          updatePerson(doc.person_id, { cause_of_death: fact.detail });
+        }
+      } else {
+        addLifeEvent(doc.person_id, { year: fact.year, title: fact.title, detail: fact.detail, tag: fact.tag });
+      }
       const facts = doc.extracted.facts.map((f, i) => (i === factIndex ? { ...f, status: 'accepted' } : f));
       updateDocument(docId, { extracted: { ...doc.extracted, facts } });
     },
-    [data.documents],
+    [data.documents, graph],
   );
   const dismissDocumentFact = useCallback(
     (docId, factIndex) => {
@@ -1987,7 +2004,7 @@ export default function App() {
           autoSummarizeDocument(docId, fields.src);
           return docId;
         }}
-        onOpenDocument={(doc) => setDocViewer({ id: doc.id, title: doc.title, src: doc.src, mime: doc.mime, summary: doc.summary, extracted: doc.extracted })}
+        onOpenDocument={(doc) => setDocViewer({ id: doc.id, personId: doc.person_id, title: doc.title, src: doc.src, mime: doc.mime, summary: doc.summary, extracted: doc.extracted })}
         onRemoveDocument={(id) => {
           const doc = data.documents?.find((d) => d.id === id);
           if (doc?.src?.startsWith('/api/documents/')) {
@@ -2192,6 +2209,7 @@ export default function App() {
       {docViewer && (
         <DocViewer
           doc={docViewer}
+          person={graph.byId.get(docViewer.personId)}
           onClose={() => setDocViewer(null)}
           onSummarized={(result) => {
             const extracted = buildExtracted(result);
@@ -2383,7 +2401,7 @@ export default function App() {
 // Renders in-app so the session cookie is sent with the fetch — iOS PWA has a
 // separate cookie store from Safari, so window.open() loses auth entirely.
 function DocViewer({
-  doc, onClose, onSummarized,
+  doc, person, onClose, onSummarized,
   onApplyDocumentFact, onDismissDocumentFact,
   onApplyDocumentField, onDismissDocumentField,
 }) {
@@ -2401,7 +2419,11 @@ function DocViewer({
   const [summary, setSummary] = useState(doc.summary || null);
   const [facts, setFacts] = useState(doc.extracted?.facts || []);
   const [profileFields, setProfileFields] = useState(doc.extracted?.profileFields || null);
-  const pendingFacts = facts.filter((f) => f.status === 'pending' && f.year);
+  // Never offer a fact that's already an obvious duplicate of something on
+  // the profile (the derived Born/Passed-away entry, or a stored event) —
+  // same check Enrich uses, so the two surfaces never disagree about what's
+  // still worth reviewing.
+  const pendingFacts = facts.filter((f) => f.status === 'pending' && f.year && !(person && isDuplicateLifeEvent(person, f)));
   const pendingFields = ['occupation', 'birth_place', 'residence']
     .filter((field) => profileFields?.[field]?.status === 'pending');
 

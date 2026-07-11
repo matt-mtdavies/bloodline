@@ -2373,6 +2373,14 @@
 .form__head .icon-btn { margin-left: auto; }
 .form__back { margin-left: 0; }
 .form__sub { margin: 6px 0 0; color: var(--ink-soft); font-size: 14.5px; }
+/* A subtitle long enough to wrap (TimelineEditor's) breaks the side-by-side
+   layout above — heading and subtitle end up squeezed to half-width each,
+   wrapping the heading itself across several short lines. Stack instead:
+   full-width heading, subtitle below. Scoped to this modifier rather than
+   changed globally since every other .form__head consumer has a short
+   enough h2 that the side-by-side layout still reads fine. */
+.form__head--stack { flex-direction: column; align-items: flex-start; gap: 4px; }
+.form__head--stack h2 { flex: none; }
 
 /* Read-only "Profile" view — shown before Edit is tapped */
 .profile-view__hero {
@@ -3614,12 +3622,61 @@ button.health-notes {
 .memory__vote:active { transform: scale(0.94); }
 .memory__vote--on { color: var(--accent); border-color: var(--accent-soft); background: var(--accent-soft); }
 
-/* Timeline editor rows */
+/* Timeline editor rows — each row is its own card (padding + hairline +
+   background) so a busy timeline (a dozen document-extracted facts) reads
+   as a clear stack of distinct entries rather than a dense edge-to-edge
+   grid. The year field dropped its old per-field clear button (×) — at
+   78px wide that button's own reserved padding was eating most of the box,
+   which is why a 4-digit year like "1924" was rendering clipped to "19".
+   Plain input, no clear button: a year is trivial to just retype. */
 .tl-edit { display: grid; gap: 12px; }
 .tl-edit__empty { margin: 0; font-size: 14px; color: var(--ink-soft); }
-.tl-row { display: flex; align-items: flex-start; gap: 8px; }
-.tl-row__year { width: 78px; flex: none; }
+.tl-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--hairline);
+  border-radius: 16px;
+  background: var(--paper-deep);
+}
+/* The two profile-derived rows (Born, Passed away) — tinted so it's visibly
+   clear that editing them touches the profile's own birth/death fields,
+   not just a timeline decoration. */
+.tl-row--synthetic {
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 22%, var(--hairline));
+}
+.tl-row__year { width: 88px; flex: none; }
+.tl-row__year .field__input { text-align: center; font-variant-numeric: tabular-nums; padding: 0 8px; }
 .tl-row__main { flex: 1; display: grid; gap: 8px; min-width: 0; }
+.tl-row__title-static {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  min-height: 50px;
+  padding: 8px 15px;
+  border-radius: 14px;
+  background: #fff;
+  border: 1px solid transparent;
+  font-size: 15.5px;
+  font-weight: 600;
+  color: var(--ink);
+  row-gap: 4px;
+}
+.tl-row__badge {
+  margin-left: 8px;
+  flex: none;
+  white-space: nowrap;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--accent-deep);
+  background: var(--accent-soft);
+  border-radius: 999px;
+  padding: 3px 8px;
+}
 .tl-row__del {
   flex: none;
   width: 38px;
@@ -3630,7 +3687,7 @@ button.health-notes {
   color: var(--ink-faint);
   transition: color 0.2s var(--ease), background 0.2s var(--ease);
 }
-.tl-row__del:hover { color: var(--memorial); background: var(--paper-deep); }
+.tl-row__del:hover { color: var(--memorial); background: var(--paper); }
 
 /* Photo gallery */
 .gallery {

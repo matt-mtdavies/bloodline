@@ -75,3 +75,37 @@ export function lifeEvents(person) {
     .filter((e) => e.year)
     .sort((a, b) => Number(a.year) - Number(b.year));
 }
+
+function normalizeEventTitle(t) {
+  return (t || '').trim().toLowerCase().replace(/[^a-z]/g, '');
+}
+
+function titlesLikelyMatch(a, b) {
+  if (!a || !b) return false;
+  if (a === b) return true;
+  // "Enlisted" vs "Enlisted/Began Service" — different documents often
+  // phrase the same milestone slightly differently. A same-year, one-title-
+  // contains-the-other match catches that without risking a false positive
+  // on two genuinely distinct short titles.
+  return (a.length >= 4 && b.includes(a)) || (b.length >= 4 && a.includes(b));
+}
+
+/*
+ * True when a candidate document-extracted fact ({ year, title }) is an
+ * obvious duplicate of something already on this profile — either the
+ * derived Born/Passed-away entry, or a stored event with a matching year and
+ * a clearly-the-same title. Deliberately conservative (exact year, near-
+ * identical title): a busy document can legitimately produce several real,
+ * distinct events that happen to share a year (admitted, diagnosed,
+ * discharged, all in 1945), and those must never be silently dropped.
+ */
+export function isDuplicateLifeEvent(person, fact) {
+  if (!fact?.year) return false;
+  const factYear = String(fact.year);
+  const factKey = normalizeEventTitle(fact.title);
+  if (factKey === 'born' && person.birth_date && yearOf(person.birth_date) === factYear) return true;
+  if ((factKey === 'passedaway' || factKey === 'died') && person.death_date && yearOf(person.death_date) === factYear) return true;
+  return (person.events || []).some(
+    (e) => String(e.year) === factYear && titlesLikelyMatch(normalizeEventTitle(e.title), factKey),
+  );
+}

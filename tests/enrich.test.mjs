@@ -248,6 +248,36 @@ test('already-accepted or dismissed document facts are not re-offered', () => {
   assert.equal(byKeyPrefix(findings, 'doc_fact_').length, 0);
 });
 
+test('a document fact matching the derived Born year is suppressed (avoids the obvious duplicate)', () => {
+  const people = [{ id: 'a', display_name: 'Allen Turner', birth_date: '1924-11-27', birth_place: 'Mount Gambier, South Australia' }];
+  const documents = [{
+    id: 'doc1', person_id: 'a', title: 'Birth certificate',
+    extracted: { facts: [{ year: '1924', title: 'Born', detail: "Mrs. Crafter's Nursing Home", quote: 'q', tag: null, status: 'pending' }] },
+  }];
+  const findings = findingsFor('a', people, [], 0, documents);
+  assert.equal(byKeyPrefix(findings, 'doc_fact_').length, 0);
+});
+
+test('a document fact matching an existing stored event (near-identical title, same year) is suppressed', () => {
+  const people = [{ id: 'a', display_name: 'Allen Turner', events: [{ year: 1945, title: 'Enlisted' }] }];
+  const documents = [{
+    id: 'doc1', person_id: 'a', title: 'Discharge certificate',
+    extracted: { facts: [{ year: '1945', title: 'Enlisted/Began Service', detail: null, quote: 'q', tag: 'military', status: 'pending' }] },
+  }];
+  const findings = findingsFor('a', people, [], 0, documents);
+  assert.equal(byKeyPrefix(findings, 'doc_fact_').length, 0);
+});
+
+test('genuinely distinct same-year document facts are still surfaced, not swept up by the duplicate guard', () => {
+  const people = [{ id: 'a', display_name: 'Allen Turner', events: [{ year: 1945, title: 'Placed dangerously ill' }] }];
+  const documents = [{
+    id: 'doc1', person_id: 'a', title: 'Medical record',
+    extracted: { facts: [{ year: '1945', title: 'Surgery - Appendicectomy', detail: null, quote: 'q', tag: null, status: 'pending' }] },
+  }];
+  const findings = findingsFor('a', people, [], 0, documents);
+  assert.equal(byKeyPrefix(findings, 'doc_fact_').length, 1);
+});
+
 test('document facts belonging to a different person are not surfaced', () => {
   const people = [
     { id: 'a', display_name: 'This Person' },

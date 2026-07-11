@@ -3,7 +3,7 @@
  * Run with: node tests/profile.test.mjs
  */
 import assert from 'node:assert/strict';
-import { lifeEvents } from '../src/lib/profile.js';
+import { lifeEvents, isDuplicateLifeEvent } from '../src/lib/profile.js';
 
 let passed = 0, failed = 0;
 function test(label, fn) {
@@ -48,6 +48,53 @@ test('lifeEvents sorts Born / custom events / Passed away chronologically', () =
   };
   const events = lifeEvents(person);
   assert.deepEqual(events.map((e) => e.title), ['Born', 'Married', 'Passed away']);
+});
+
+test('isDuplicateLifeEvent flags a "Born" fact matching the derived birth year', () => {
+  const person = { birth_date: '1924-11-27', birth_place: null };
+  assert.equal(isDuplicateLifeEvent(person, { year: '1924', title: 'Born' }), true);
+});
+
+test('isDuplicateLifeEvent does not flag a "Born" fact for a different year', () => {
+  const person = { birth_date: '1924-11-27' };
+  assert.equal(isDuplicateLifeEvent(person, { year: '1925', title: 'Born' }), false);
+});
+
+test('isDuplicateLifeEvent flags "Died"/"Passed away" facts matching the derived death year', () => {
+  const person = { is_deceased: true, death_date: '2007-03-31' };
+  assert.equal(isDuplicateLifeEvent(person, { year: '2007', title: 'Died' }), true);
+  assert.equal(isDuplicateLifeEvent(person, { year: '2007', title: 'Passed away' }), true);
+});
+
+test('isDuplicateLifeEvent flags an exact title+year match against a stored event', () => {
+  const person = { events: [{ year: 1945, title: 'Enlisted' }] };
+  assert.equal(isDuplicateLifeEvent(person, { year: '1945', title: 'Enlisted' }), true);
+});
+
+test('isDuplicateLifeEvent flags near-identical titles in the same year (substring match)', () => {
+  const person = { events: [{ year: 1945, title: 'Enlisted' }] };
+  assert.equal(isDuplicateLifeEvent(person, { year: '1945', title: 'Enlisted/Began Service' }), true);
+});
+
+test('isDuplicateLifeEvent never flags genuinely distinct same-year events', () => {
+  const person = {
+    events: [
+      { year: 1945, title: 'Placed dangerously ill' },
+      { year: 1945, title: 'Admitted for appendicitis' },
+    ],
+  };
+  assert.equal(isDuplicateLifeEvent(person, { year: '1945', title: 'Surgery - Appendicectomy' }), false);
+  assert.equal(isDuplicateLifeEvent(person, { year: '1945', title: 'Removed from dangerously ill list' }), false);
+});
+
+test('isDuplicateLifeEvent is case- and punctuation-insensitive', () => {
+  const person = { events: [{ year: 1913, title: 'Parents Married' }] };
+  assert.equal(isDuplicateLifeEvent(person, { year: '1913', title: 'parents married!' }), true);
+});
+
+test('isDuplicateLifeEvent returns false for a fact with no year', () => {
+  const person = { birth_date: '1924-11-27' };
+  assert.equal(isDuplicateLifeEvent(person, { year: null, title: 'Born' }), false);
 });
 
 console.log(`\n  ${passed} passed, ${failed} failed`);

@@ -24,7 +24,7 @@
  *   | { type: 'document-field', docId, field }
  *   | { type: 'document-person', docId, personIndex, matchedId, relation }
  */
-import { profileCompleteness } from './profile.js';
+import { profileCompleteness, isDuplicateLifeEvent } from './profile.js';
 import { findDuplicatePairs } from './duplicates.js';
 import { yearOf, yearsBetween } from './dates.js';
 
@@ -230,6 +230,11 @@ export function computeEnrichment(person, graph, memoryCount = 0, documents = []
     (doc.extracted?.facts || []).forEach((fact, i) => {
       // No year, no timeline slot — the app's life events are chronological.
       if (fact.status !== 'pending' || !fact.year) return;
+      // Already on record under this or a near-identical title (the derived
+      // Born/Passed-away entry, or a stored event) — offering it again would
+      // just be clutter toward the exact duplicate the accept path below
+      // already refuses to create.
+      if (isDuplicateLifeEvent(person, fact)) return;
       findings.push({
         key: `doc_fact_${doc.id}_${i}`,
         tier: 'document',
