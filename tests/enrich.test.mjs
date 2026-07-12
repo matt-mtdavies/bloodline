@@ -307,6 +307,30 @@ test('a pending document profile field surfaces when the person field is empty',
   assert.match(f.title, /Sawmill hand/);
 });
 
+test('a pending military profile field surfaces with a human-readable branch label', () => {
+  const people = [{ id: 'a', display_name: 'Thomas Davies' }];
+  const documents = [{
+    id: 'doc1', person_id: 'a', title: 'Attestation form',
+    extracted: { profileFields: { military_branch: { value: 'army', quote: 'A.I.F.', status: 'pending' } } },
+  }];
+  const findings = findingsFor('a', people, [], 0, documents);
+  const f = findings.find((f) => f.key === 'doc_field_doc1_military_branch');
+  assert.ok(f, 'expected a doc_field finding for military_branch');
+  assert.equal(f.title, 'Branch: Army');
+  assert.equal(f.icon, 'military');
+  assert.equal(f.action.field, 'military_branch');
+});
+
+test('a military profile field is withheld once the person already has that field', () => {
+  const people = [{ id: 'a', display_name: 'Thomas Davies', military_rank: 'Corporal' }];
+  const documents = [{
+    id: 'doc1', person_id: 'a', title: 'Attestation form',
+    extracted: { profileFields: { military_rank: { value: 'Acting Sergeant', quote: 'q', status: 'pending' } } },
+  }];
+  const findings = findingsFor('a', people, [], 0, documents);
+  assert.equal(findings.find((f) => f.key === 'doc_field_doc1_military_rank'), undefined);
+});
+
 test('a document profile field is withheld once the person already has that field', () => {
   const people = [{ id: 'a', display_name: 'Allen Turner', occupation: 'Gardener' }];
   const documents = [{

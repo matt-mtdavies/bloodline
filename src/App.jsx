@@ -150,17 +150,22 @@ const DOC_FIELD_LABEL = { occupation: 'Occupation', birth_place: 'Birth place', 
 // person) starts 'pending' so Enrich and DocViewer both know it hasn't been
 // reviewed yet. Shared by the manual Summarize button and the background
 // auto-summarize-on-upload path so the two can never drift apart.
+const PROFILE_FIELD_KEYS = [
+  'occupation', 'birth_place', 'residence',
+  'military_branch', 'military_nation', 'military_service_number', 'military_rank',
+];
+
 function buildExtracted(result) {
   const pf = result.profileFields;
+  const profileFields = {};
+  if (pf) {
+    for (const key of PROFILE_FIELD_KEYS) {
+      profileFields[key] = pf[key] ? { ...pf[key], status: 'pending' } : null;
+    }
+  }
   return {
     facts: result.facts.map((f) => ({ ...f, status: 'pending' })),
-    profileFields: pf
-      ? {
-          occupation: pf.occupation ? { ...pf.occupation, status: 'pending' } : null,
-          birth_place: pf.birth_place ? { ...pf.birth_place, status: 'pending' } : null,
-          residence: pf.residence ? { ...pf.residence, status: 'pending' } : null,
-        }
-      : null,
+    profileFields: pf ? profileFields : null,
     peopleMentioned: (result.peopleMentioned || []).map((p) => ({ ...p, status: 'pending' })),
   };
 }
@@ -1479,7 +1484,7 @@ export default function App() {
       if (!doc || !candidate) return;
       const person = graph.byId.get(doc.person_id);
       updatePerson(doc.person_id, { [field]: candidate.value }, {
-        type: 'person_updated', personId: doc.person_id, personName: person?.display_name ?? '', detail: field.replace('_', ' '),
+        type: 'person_updated', personId: doc.person_id, personName: person?.display_name ?? '', detail: field.replace(/_/g, ' '),
       });
       const profileFields = { ...doc.extracted.profileFields, [field]: { ...candidate, status: 'accepted' } };
       updateDocument(docId, { extracted: { ...doc.extracted, profileFields } });

@@ -54,8 +54,26 @@ export function serviceYears(events) {
   return lo === hi ? String(lo) : `${lo}–${hi}`;
 }
 
+// Branch/nation/service number/rank — real Person fields (written via the
+// same document-field accept flow as occupation/birth_place/residence, see
+// lib/enrich.js), not something derived from events or facts. `branch` is a
+// closed vocabulary ('army' | 'navy' | 'air_force') so it can key an icon
+// reliably; `nation` stays free text (see summarize.js's BRANCH_FIELD
+// comment) since constraining it up front would mean enumerating every
+// country before any of this ships.
+export function militaryProfile(person) {
+  return {
+    branch: person?.military_branch || null,
+    nation: person?.military_nation || null,
+    serviceNumber: person?.military_service_number || null,
+    rank: person?.military_rank || null,
+  };
+}
+
 export function hasMilitaryService(person, personDocs) {
-  return militaryEvents(person).length > 0 || militaryDocuments(personDocs).length > 0;
+  return militaryEvents(person).length > 0
+    || militaryDocuments(personDocs).length > 0
+    || !!person?.military_branch;
 }
 
 // The AI narrative is offered only once there's enough real material to

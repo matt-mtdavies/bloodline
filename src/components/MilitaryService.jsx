@@ -3,7 +3,7 @@ import SmartImg from './SmartImg.jsx';
 import { streamBio } from '../lib/ai.js';
 import {
   militaryEvents, militaryDocuments, militaryQuotes, serviceYears,
-  hasMilitaryService, canGenerateMilitaryStory,
+  hasMilitaryService, canGenerateMilitaryStory, militaryProfile,
 } from '../lib/military.js';
 
 const NO_CONTEXT = 'NO_HISTORICAL_CONTEXT_AVAILABLE';
@@ -42,6 +42,8 @@ export default function MilitaryService({ person, personDocs, onOpenDocument, on
   const years = serviceYears(events);
   const hasMaterial = events.length > 0 || allQuotes.length > 0;
   const canGenerateStory = canGenerateMilitaryStory(person, personDocs);
+  const profile = militaryProfile(person);
+  const showTag = !!(profile.branch || profile.serviceNumber || profile.rank);
 
   return (
     <section className="profile-section military">
@@ -58,6 +60,25 @@ export default function MilitaryService({ person, personDocs, onOpenDocument, on
           </span>
         )}
       </div>
+
+      {/* Dog tags — the section's hero moment, only once there's real
+          structured data (branch/service number/rank, from the same
+          document-field extraction as occupation/residence) to put on one.
+          Absent that, the plain header above still carries the essentials. */}
+      {showTag && (
+        <div className="military__dogtags" aria-hidden="true">
+          <div className="military__dogtag military__dogtag--back" />
+          <div className="military__dogtag military__dogtag--front">
+            <span className="military__dogtag-chain" />
+            <span className="military__dogtag-row">
+              <BranchIcon branch={profile.branch} nation={profile.nation} />
+              <span className="military__dogtag-name">{person.display_name}</span>
+            </span>
+            {profile.serviceNumber && <span className="military__dogtag-number">{profile.serviceNumber}</span>}
+            {profile.rank && <span className="military__dogtag-rank">{profile.rank}</span>}
+          </div>
+        </div>
+      )}
 
       {events.length > 0 && (
         <div className="military__route" role="list" aria-label="Service timeline">
@@ -327,6 +348,62 @@ function GeneratedBlock({
         </div>
       )}
     </>
+  );
+}
+
+// Picks the closest icon for a branch — a nation-specific icon when we
+// recognize both the branch and a nation known to have one (today: just the
+// Australian slouch hat for army), otherwise the generic branch icon, and
+// the plain ribbon when branch itself isn't known (a bare service number or
+// rank still earns a dog tag, just without a branch mark on it). Deliberately
+// starting with one nation rather than building a library up front — more
+// added later only as real family records call for them.
+function BranchIcon({ branch, nation }) {
+  if (branch === 'army' && (nation || '').toLowerCase().includes('australia')) return <SlouchHatIcon />;
+  if (branch === 'army') return <ArmyIcon />;
+  if (branch === 'navy') return <NavyIcon />;
+  if (branch === 'air_force') return <AirForceIcon />;
+  return <RibbonIcon />;
+}
+
+function ArmyIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M4 14.5l8-6.5 8 6.5M4 20l8-6.5 8 6.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function NavyIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="5.5" r="2" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M12 7.5v13M6.5 13H4a8 8 0 0 0 16 0h-2.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M8.5 10.8h7" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function AirForceIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="12" r="2.2" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M9.6 12.3c-2.6-.2-5.7-1.5-8.1-3.4 0 2.8 2.4 5.7 6.9 6.9M14.4 12.3c2.6-.2 5.7-1.5 8.1-3.4 0 2.8-2.4 5.7-6.9 6.9" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+// A simplified, abstracted silhouette — the wide brim, one side pinned up
+// against the crown, a small badge mark — not a literal or historically
+// precise rendering of any specific era's slouch hat.
+function SlouchHatIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M2 16.3c2.6-1.7 6.2-2.6 10-2.6s7.4.9 10 2.6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      <path d="M7.6 13.9c0-3.3 2-5.9 4.4-5.9s4.4 2.6 4.4 5.9" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      <path d="M16.4 14.1c1.5.5 3.1.1 4-1.1-.9-1.3-2.5-1.9-4-1.5" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
+      <circle cx="17.6" cy="12.1" r="0.9" fill="currentColor" />
+    </svg>
   );
 }
 

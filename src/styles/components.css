@@ -9462,6 +9462,84 @@ button.health-notes {
   flex: none;
 }
 
+/* Dog tags — the section's hero moment once real branch/service-number/rank
+   data exists. Deliberately cool-toned, stamped-metal (not the app's warm
+   terracotta palette elsewhere) so this reads as "an artifact", distinct
+   from the softer prose registers around it. Two overlapping tag shapes: a
+   plain rotated one behind purely for depth, the real content in front. */
+.military__dogtags {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  margin: 8px 0 22px;
+  padding-top: 10px;
+  height: 108px;
+}
+.military__dogtag {
+  position: absolute;
+  top: 10px;
+  width: 230px;
+  border-radius: 15px;
+  background: linear-gradient(155deg, #eaeaee 0%, #b9b9c0 55%, #d3d3d8 100%);
+  box-shadow:
+    inset 0 1px 1px rgba(255, 255, 255, 0.7),
+    inset 0 -2px 3px rgba(0, 0, 0, 0.16),
+    0 3px 10px rgba(20, 22, 28, 0.16);
+}
+.military__dogtag--back {
+  height: 84px;
+  transform: rotate(6deg) translate(14px, 10px);
+  opacity: 0.75;
+}
+.military__dogtag--front {
+  height: 96px;
+  transform: rotate(-3deg);
+  padding: 12px 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  color: #3c3c42;
+}
+.military__dogtag-chain {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2.5px solid #9d9da4;
+  background: #c7c7cd;
+}
+.military__dogtag-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #3c3c42;
+}
+.military__dogtag-name {
+  font-family: 'Courier New', ui-monospace, monospace;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 180px;
+}
+.military__dogtag-number,
+.military__dogtag-rank {
+  font-family: 'Courier New', ui-monospace, monospace;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #5c5c64;
+}
+
 /* The campaign route — a horizontally scrollable strip of waypoints on a
    dashed line, evoking a journey without needing a real map or geocoding. */
 .military__route {

@@ -35,7 +35,15 @@ import { yearOf, yearsBetween } from './dates.js';
 const isBioAdopt = (q) => !q || q === 'biological' || q === 'adoptive' || q === 'adopted';
 const firstNameOf = (p) => (p?.display_name || '').trim().split(/\s+/)[0] || p?.display_name || 'they';
 
-const FIELD_LABEL = { occupation: 'Occupation', birth_place: 'Birth place', residence: 'Residence' };
+const FIELD_LABEL = {
+  occupation: 'Occupation', birth_place: 'Birth place', residence: 'Residence',
+  military_branch: 'Branch', military_nation: 'Served with', military_service_number: 'Service number', military_rank: 'Rank',
+};
+const BRANCH_DISPLAY = { army: 'Army', navy: 'Navy', air_force: 'Air Force' };
+const PROFILE_FIELD_KEYS = [
+  'occupation', 'birth_place', 'residence',
+  'military_branch', 'military_nation', 'military_service_number', 'military_rank',
+];
 
 // Only relations the app can actually write as a direct edge — a sibling has
 // no direct edge (siblings are derived from shared parents, never stored),
@@ -357,14 +365,15 @@ export function computeEnrichment(person, graph, memoryCount = 0, documents = []
   for (const doc of personDocs) {
     const pf = doc.extracted?.profileFields;
     if (!pf) continue;
-    for (const field of ['occupation', 'birth_place', 'residence']) {
+    for (const field of PROFILE_FIELD_KEYS) {
       const candidate = pf[field];
       if (!candidate || candidate.status !== 'pending' || person[field]) continue;
+      const displayValue = field === 'military_branch' ? (BRANCH_DISPLAY[candidate.value] || candidate.value) : candidate.value;
       findings.push({
         key: `doc_field_${doc.id}_${field}`,
         tier: 'document',
-        icon: 'checklist',
-        title: `${FIELD_LABEL[field]}: ${candidate.value}`,
+        icon: field.startsWith('military_') ? 'military' : 'checklist',
+        title: `${FIELD_LABEL[field]}: ${displayValue}`,
         detail: `From "${doc.title}": "${candidate.quote}"`,
         action: { type: 'document-field', docId: doc.id, field },
       });

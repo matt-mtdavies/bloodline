@@ -8,6 +8,7 @@
 import assert from 'node:assert/strict';
 import {
   militaryEvents, militaryDocuments, militaryQuotes, serviceYears, hasMilitaryService, canGenerateMilitaryStory,
+  militaryProfile,
 } from '../src/lib/military.js';
 
 let passed = 0, failed = 0;
@@ -122,6 +123,18 @@ test('canGenerateMilitaryStory counts every quote on record, not just the 3 show
   const facts = Array.from({ length: 3 }, (_, i) => ({ tag: 'military', year: String(1940 + i), quote: `q${i}` }));
   const docs = [{ title: 'Doc', extracted: { facts } }];
   assert.equal(canGenerateMilitaryStory(person, docs), true);
+});
+
+test('militaryProfile reads the four structured fields, null for any unset', () => {
+  const person = { military_branch: 'army', military_nation: 'Australia', military_service_number: 'VX43065', military_rank: 'Acting Sergeant' };
+  assert.deepEqual(militaryProfile(person), { branch: 'army', nation: 'Australia', serviceNumber: 'VX43065', rank: 'Acting Sergeant' });
+  assert.deepEqual(militaryProfile({}), { branch: null, nation: null, serviceNumber: null, rank: null });
+  assert.deepEqual(militaryProfile(null), { branch: null, nation: null, serviceNumber: null, rank: null });
+});
+
+test('hasMilitaryService is true from a bare military_branch alone, even with no events or documents', () => {
+  const person = { events: [], military_branch: 'navy' };
+  assert.equal(hasMilitaryService(person, []), true);
 });
 
 console.log(`\n  ${passed} passed, ${failed} failed`);

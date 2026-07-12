@@ -39,6 +39,21 @@ const QUOTED_FIELD = {
     },
   ],
 };
+// Same shape as QUOTED_FIELD, but `value` is a closed vocabulary rather than
+// free text — reliable enough to key an icon off of client-side (see
+// lib/military.js), which free-text branch names ("2nd AIF", "RAAF",
+// "Royal Navy") never would be without constant expansion.
+const BRANCH_FIELD = {
+  anyOf: [
+    { type: 'null' },
+    {
+      type: 'object',
+      properties: { value: { enum: ['army', 'navy', 'air_force'] }, quote: { type: 'string' } },
+      required: ['value', 'quote'],
+      additionalProperties: false,
+    },
+  ],
+};
 const RESPONSE_SCHEMA = {
   type: 'object',
   properties: {
@@ -64,8 +79,15 @@ const RESPONSE_SCHEMA = {
         occupation: QUOTED_FIELD,
         birth_place: QUOTED_FIELD,
         residence: QUOTED_FIELD,
+        military_branch: BRANCH_FIELD,
+        military_nation: QUOTED_FIELD,
+        military_service_number: QUOTED_FIELD,
+        military_rank: QUOTED_FIELD,
       },
-      required: ['occupation', 'birth_place', 'residence'],
+      required: [
+        'occupation', 'birth_place', 'residence',
+        'military_branch', 'military_nation', 'military_service_number', 'military_rank',
+      ],
       additionalProperties: false,
     },
     people_mentioned: {
@@ -169,9 +191,21 @@ export async function onRequestPost({ request, env, data }) {
         'residence, ONLY if the document states them plainly. For each of `occupation`,',
         '`birth_place`, `residence`: null if not stated, or `{value, quote}` with `value` a short',
         'plain rendering (\"Sawmill hand\", not the full sentence) and `quote` the exact source text.',
-        'These three are the only profile fields that exist — do not invent others, and do not use',
-        'this for anything about a different person named in the document (their next-of-kin’s',
+        'These three are the only general-purpose profile fields — do not invent others, and do not',
+        'use this for anything about a different person named in the document (their next-of-kin’s',
         'occupation, for instance, does not belong here).',
+        '',
+        '`military_branch`, `military_nation`, `military_service_number`, `military_rank`: ONLY when',
+        'this document is itself a military record (enlistment paper, discharge certificate, service',
+        'record) and plainly states them — null for every other document type. `military_branch` is',
+        'whichever of "army", "navy", or "air_force" the force described is closest to; leave it null',
+        'if the document doesn’t make the branch clear. `military_nation` is the country whose forces',
+        'the person served in, in plain English (e.g. "Australia", "United Kingdom", "Canada") — null',
+        'if not stated or unclear. `military_service_number` is their service or regimental number',
+        'exactly as written. `military_rank` is the highest rank the document actually states (if it',
+        'records a promotion, use the later rank) as a short label ("Corporal", "Acting Sergeant"),',
+        'not a full sentence. Leave any of these null rather than guessing at what a partly-legible',
+        'form might mean.',
         '',
         '`people_mentioned`: every OTHER person the document names in a direct family relationship',
         'to its own subject — a parent, spouse, or child of the subject; also a sibling ONLY as',
