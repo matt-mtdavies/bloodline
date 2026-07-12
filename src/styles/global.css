@@ -13,6 +13,18 @@ body,
   padding: 0;
 }
 
+/* Mobile Safari silently boosts font-size on text blocks it judges need a
+   readability nudge — the heuristic is per-element (a lone single-line
+   block gets inflated, one with a sibling line doesn't), so identically-
+   styled text (e.g. two life-event titles, one with a detail line below it
+   and one without) can render at visibly different sizes with no CSS
+   change involved. Opting out here means every element's size is always
+   exactly what its own CSS says. */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
 body {
   font-family: var(--body);
   background: var(--paper);
