@@ -31,6 +31,7 @@ import {
   removeCondition,
   updateCondition,
   addLifeEvent,
+  dismissRelationshipFact,
   loadFromServer,
   saveToServer,
   enableServerSync,
@@ -1456,6 +1457,16 @@ export default function App() {
     [data.documents],
   );
 
+  // Relationship-derived findings (Married, Widowed, Became a parent/
+  // grandparent — see lib/enrich.js) carry their own complete { key, year,
+  // title, detail } right on the action, computed live from the tree each
+  // time — no docId/factIndex indirection needed. Accepting just writes the
+  // event; dismissing has to be remembered on the person since the
+  // underlying marriage/birth/death date never goes away on its own.
+  const applyRelationshipFact = useCallback((personId, fact) => {
+    addLifeEvent(personId, { year: fact.year, title: fact.title, detail: fact.detail });
+  }, []);
+
   // Same accept/dismiss contract as document facts, for the profile-field
   // candidates (occupation/birth_place/residence) a document summary
   // extracted — accept writes the real field via the same updatePerson every
@@ -2044,6 +2055,8 @@ export default function App() {
         onDismissDocumentField={dismissDocumentField}
         onApplyDocumentPerson={applyDocumentPerson}
         onDismissDocumentPerson={dismissDocumentPerson}
+        onApplyRelationshipFact={applyRelationshipFact}
+        onDismissRelationshipFact={dismissRelationshipFact}
       />
 
       {searchOpen && (

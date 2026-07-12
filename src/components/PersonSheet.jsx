@@ -68,6 +68,8 @@ export default function PersonSheet({
   onDismissDocumentField,
   onApplyDocumentPerson,
   onDismissDocumentPerson,
+  onApplyRelationshipFact,
+  onDismissRelationshipFact,
   canEdit = true,        // editor+ : structural changes (people, relationships, edits)
   canContribute = true,  // contributor+ : add memories & photos
   isAdmin = true,        // owner/co-admin : manage anyone's memory, not just your own
@@ -1587,6 +1589,8 @@ export default function PersonSheet({
           onDismissDocumentField={onDismissDocumentField}
           onApplyDocumentPerson={onApplyDocumentPerson}
           onDismissDocumentPerson={onDismissDocumentPerson}
+          onApplyRelationshipFact={(fact) => onApplyRelationshipFact?.(person.id, fact)}
+          onDismissRelationshipFact={(key) => onDismissRelationshipFact?.(person.id, key)}
         />
       )}
     </div>

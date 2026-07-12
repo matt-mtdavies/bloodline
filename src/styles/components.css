@@ -8672,6 +8672,7 @@ button.health-notes {
 .enrich__row--story .enrich__row-icon,
 .enrich__row--place .enrich__row-icon { background: #f1ecfb; color: #7a5cc7; }
 .enrich__row--document .enrich__row-icon { background: #e6f0ec; color: #3d8c66; }
+.enrich__row--relationship .enrich__row-icon { background: #eaf1fb; color: #3d6fa8; }
 .enrich__row-body { flex: 1; min-width: 0; }
 .enrich__row-tag {
   display: inline-block; font-size: 10.5px; font-weight: 700; text-transform: uppercase;
@@ -8681,6 +8682,7 @@ button.health-notes {
 .enrich__row--estimated .enrich__row-tag,
 .enrich__row--story .enrich__row-tag { color: #7a5cc7; }
 .enrich__row--document .enrich__row-tag { color: #3d8c66; }
+.enrich__row--relationship .enrich__row-tag { color: #3d6fa8; }
 .enrich__row-title { margin: 0; font-size: 14.5px; font-weight: 600; color: var(--ink, #241f1c); line-height: 1.3; }
 .enrich__row-detail { margin: 3px 0 0; font-size: 12.5px; line-height: 1.45; color: var(--ink-soft, #6b6260); }
 .enrich__row-action {

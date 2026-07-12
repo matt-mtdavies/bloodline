@@ -15,6 +15,9 @@
  *                 dates (interval arithmetic, not a statistical guess)
  *   'document'  — a candidate fact an AI document summary extracted, grounded
  *                 in a verbatim quote, awaiting a human's accept or dismiss
+ *   'relationship' — a life event computed from a fact already recorded elsewhere
+ *                 on the tree (a marriage date, a partner's death, a child's or
+ *                 grandchild's birth) — nothing invented, just not yet on the timeline
  *   'story'     — a pointer at the existing AI biography generator
  *
  * computeEnrichment(person, graph, memoryCount, documents) → finding[]
@@ -23,6 +26,7 @@
  *   | { type: 'document-fact', docId, factIndex }
  *   | { type: 'document-field', docId, field }
  *   | { type: 'document-person', docId, personIndex, matchedId, relation }
+ *   | { type: 'relationship-fact', key, year, title, detail, tag? }
  */
 import { profileCompleteness, isDuplicateLifeEvent } from './profile.js';
 import { findDuplicatePairs } from './duplicates.js';
@@ -216,6 +220,101 @@ export function computeEnrichment(person, graph, memoryCount = 0, documents = []
         });
       }
     }
+  }
+
+  // ── Relationship-derived life events — a marriage date, a partner's death,
+  //    a child's or grandchild's birth: facts already recorded elsewhere on
+  //    the tree, re-surfaced as a timeline entry. Same accept/dismiss shape
+  //    as a document fact (tier 'relationship', action 'relationship-fact'),
+  //    but there's no document behind it: accepting writes straight to
+  //    person.events via addLifeEvent, and since the underlying condition
+  //    (the marriage_date, the birth) never goes away on its own, a
+  //    dismissal has to be remembered explicitly, on the person itself. ────
+  const dismissedRelFacts = new Set(person.dismissed_relationship_facts || []);
+  function pushRelationshipFact(key, fact) {
+    if (dismissedRelFacts.has(key)) return false;
+    if (isDuplicateLifeEvent(person, fact)) return false;
+    findings.push({
+      key: `rel_${key}`,
+      tier: 'relationship',
+      icon: 'family',
+      title: fact.year ? `${fact.title} — ${fact.year}` : fact.title,
+      detail: fact.detail,
+      action: { type: 'relationship-fact', key, year: fact.year, title: fact.title, detail: fact.detail },
+    });
+    return true;
+  }
+
+  // Married — every partner relationship already carries its own
+  // marriage_date/place once set via the spouse editor. Offered regardless
+  // of current/former status: it happened, and belongs on the timeline
+  // either way.
+  for (const p of graph.partners(person.id)) {
+    if (!p.marriage_date) continue;
+    const partner = graph.byId.get(p.id);
+    if (!partner) continue;
+    pushRelationshipFact(`married_${p.id}`, {
+      year: yearOf(p.marriage_date),
+      title: `Married ${firstNameOf(partner)}`,
+      detail: p.marriage_place ? `In ${p.marriage_place}.` : undefined,
+    });
+  }
+
+  // Widowed — a still-"current" partner who has since died. Skipped if this
+  // person's own recorded death predates the partner's — they didn't live
+  // to be widowed by them.
+  for (const p of graph.partners(person.id)) {
+    if (p.status !== 'current') continue;
+    const partner = graph.byId.get(p.id);
+    if (!partner?.is_deceased || !partner.death_date) continue;
+    if (person.is_deceased && person.death_date) {
+      const order = yearsBetween(partner.death_date, person.death_date);
+      if (order != null && order < 0) continue;
+    }
+    pushRelationshipFact(`widowed_${p.id}`, {
+      year: yearOf(partner.death_date),
+      title: 'Widowed',
+      detail: `After the death of ${firstNameOf(partner)}.`,
+    });
+  }
+
+  // Became a parent — one candidate per child with a recorded birth date,
+  // oldest first. Capped so a large family doesn't flood the sheet; any
+  // left over are still just as addable by hand from the timeline editor.
+  const parentCandidates = graph.children(person.id)
+    .filter((c) => isBioAdopt(c.qualifier))
+    .map((c) => graph.byId.get(c.id))
+    .filter((child) => child?.birth_date)
+    .sort((a, b) => Number(yearOf(a.birth_date)) - Number(yearOf(b.birth_date)));
+  const MAX_PARENT_SUGGESTIONS = 3;
+  let shownParent = 0;
+  for (const child of parentCandidates) {
+    if (shownParent >= MAX_PARENT_SUGGESTIONS) break;
+    const pushed = pushRelationshipFact(`parent_${child.id}`, {
+      year: yearOf(child.birth_date),
+      title: `Welcomed ${firstNameOf(child)}`,
+      detail: child.birth_place ? `Born in ${child.birth_place}.` : undefined,
+    });
+    if (pushed) shownParent++;
+  }
+
+  // Became a grandparent — the earliest grandchild's birth only, one
+  // milestone rather than one row per grandchild.
+  const grandchildren = graph.children(person.id)
+    .filter((c) => isBioAdopt(c.qualifier))
+    .flatMap((c) => graph.children(c.id))
+    .filter((gc) => isBioAdopt(gc.qualifier))
+    .map((gc) => graph.byId.get(gc.id))
+    .filter((gc) => gc?.birth_date);
+  if (grandchildren.length) {
+    const earliest = grandchildren.sort(
+      (a, b) => Number(yearOf(a.birth_date)) - Number(yearOf(b.birth_date)),
+    )[0];
+    pushRelationshipFact('grandparent', {
+      year: yearOf(earliest.birth_date),
+      title: 'Became a grandparent',
+      detail: `${earliest.display_name} was born.`,
+    });
   }
 
   // ── Document-derived facts, profile fields, and mentioned people —

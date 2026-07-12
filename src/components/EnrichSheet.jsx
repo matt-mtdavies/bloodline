@@ -6,6 +6,7 @@ const TIER_LABEL = {
   missing: 'Missing',
   estimated: 'Estimated',
   document: 'From a document',
+  relationship: 'From your family tree',
   story: 'Story',
 };
 
@@ -25,6 +26,15 @@ const DOCUMENT_ACTION_LABEL = {
   'document-field': 'Add to profile',
   'document-person': 'Confirm relationship',
 };
+
+// Relationship-derived findings get the same two-button treatment, but
+// there's no document behind them (no docId/factIndex) — they carry their
+// own complete { key, year, title, detail } right on the action, computed
+// live from the tree each time. Handled as its own small bucket below
+// rather than folded into DOCUMENT_ACTION_TYPES, since "From a document"
+// would be a misleading label for a fact sourced from a marriage or birth
+// date already on record.
+const RELATIONSHIP_ACTION_TYPE = 'relationship-fact';
 
 /*
  * "Enrich this profile" — one place that surfaces everything the tree already
@@ -51,16 +61,21 @@ export default function EnrichSheet({
   onDismissDocumentField,
   onApplyDocumentPerson,
   onDismissDocumentPerson,
+  onApplyRelationshipFact,
+  onDismissRelationshipFact,
 }) {
   const allFindings = useMemo(
     () => computeEnrichment(person, graph, memoryCount, documents),
     [person, graph, memoryCount, documents],
   );
-  // Document-derived findings get their own two-button (accept/dismiss)
-  // treatment below, same UX as the place suggestions — everything else
-  // keeps the single generic action button.
-  const findings = allFindings.filter((f) => !DOCUMENT_ACTION_TYPES.has(f.action?.type));
+  // Document- and relationship-derived findings each get their own
+  // two-button (accept/dismiss) treatment below, same UX as the place
+  // suggestions — everything else keeps the single generic action button.
+  const findings = allFindings.filter(
+    (f) => !DOCUMENT_ACTION_TYPES.has(f.action?.type) && f.action?.type !== RELATIONSHIP_ACTION_TYPE,
+  );
   const documentFindings = allFindings.filter((f) => DOCUMENT_ACTION_TYPES.has(f.action?.type));
+  const relationshipFindings = allFindings.filter((f) => f.action?.type === RELATIONSHIP_ACTION_TYPE);
 
   function acceptDocumentFinding(f) {
     switch (f.action.type) {
@@ -137,7 +152,7 @@ export default function EnrichSheet({
 
   const firstName = (person.display_name || 'They').trim().split(/\s+/)[0];
   const nothingToShow =
-    findings.length === 0 && documentFindings.length === 0 &&
+    findings.length === 0 && documentFindings.length === 0 && relationshipFindings.length === 0 &&
     placeState !== 'loading' && visiblePlaceSuggestions.length === 0;
 
   return (
@@ -189,6 +204,25 @@ export default function EnrichSheet({
                     {DOCUMENT_ACTION_LABEL[f.action.type]}
                   </button>
                   <button className="enrich__row-dismiss" onClick={() => dismissDocumentFinding(f)}>
+                    Dismiss
+                  </button>
+                </div>
+              </li>
+            ))}
+
+            {relationshipFindings.map((f) => (
+              <li key={f.key} className="enrich__row enrich__row--relationship">
+                <span className="enrich__row-icon"><FindingIcon icon={f.icon} /></span>
+                <div className="enrich__row-body">
+                  <span className="enrich__row-tag">{TIER_LABEL.relationship}</span>
+                  <p className="enrich__row-title">{f.title}</p>
+                  <p className="enrich__row-detail">{f.detail}</p>
+                </div>
+                <div className="enrich__row-actions">
+                  <button className="enrich__row-action" onClick={() => onApplyRelationshipFact?.(f.action)}>
+                    Add to timeline
+                  </button>
+                  <button className="enrich__row-dismiss" onClick={() => onDismissRelationshipFact?.(f.action.key)}>
                     Dismiss
                   </button>
                 </div>

@@ -429,5 +429,127 @@ test('already-resolved document-mentioned people are not re-offered', () => {
   assert.equal(byKeyPrefix(findings, 'doc_person_').length, 0);
 });
 
+test('a marriage date on a partner relationship surfaces a Married finding', () => {
+  const people = [
+    { id: 'a', display_name: 'James Mercer' },
+    { id: 'b', display_name: 'Iris Mercer' },
+  ];
+  const rels = [{ id: 'r1', type: 'partner', from_person: 'a', to_person: 'b', partner_status: 'current', marriage_date: '1948-06-01', marriage_place: 'Adelaide' }];
+  const findings = findingsFor('a', people, rels);
+  const f = findings.find((f) => f.key === 'rel_married_b');
+  assert.ok(f, 'expected a rel_married_b finding');
+  assert.equal(f.tier, 'relationship');
+  assert.equal(f.action.type, 'relationship-fact');
+  assert.match(f.title, /Married Iris/);
+  assert.match(f.title, /1948/);
+  assert.match(f.detail, /Adelaide/);
+});
+
+test('a partner relationship with no marriage date raises no Married finding', () => {
+  const people = [
+    { id: 'a', display_name: 'James Mercer' },
+    { id: 'b', display_name: 'Iris Mercer' },
+  ];
+  const rels = [{ id: 'r1', type: 'partner', from_person: 'a', to_person: 'b', partner_status: 'current' }];
+  const findings = findingsFor('a', people, rels);
+  assert.equal(byKeyPrefix(findings, 'rel_married_').length, 0);
+});
+
+test('a Married finding is suppressed when a near-identical event is already stored', () => {
+  const people = [
+    { id: 'a', display_name: 'James Mercer', events: [{ year: 1948, title: 'Married Iris' }] },
+    { id: 'b', display_name: 'Iris Mercer' },
+  ];
+  const rels = [{ id: 'r1', type: 'partner', from_person: 'a', to_person: 'b', partner_status: 'current', marriage_date: '1948-06-01' }];
+  const findings = findingsFor('a', people, rels);
+  assert.equal(byKeyPrefix(findings, 'rel_married_').length, 0);
+});
+
+test('a dismissed relationship fact is not re-offered', () => {
+  const people = [
+    { id: 'a', display_name: 'James Mercer', dismissed_relationship_facts: ['married_b'] },
+    { id: 'b', display_name: 'Iris Mercer' },
+  ];
+  const rels = [{ id: 'r1', type: 'partner', from_person: 'a', to_person: 'b', partner_status: 'current', marriage_date: '1948-06-01' }];
+  const findings = findingsFor('a', people, rels);
+  assert.equal(byKeyPrefix(findings, 'rel_married_').length, 0);
+});
+
+test('a still-current partner who has died surfaces a Widowed finding', () => {
+  const people = [
+    { id: 'a', display_name: 'James Mercer' },
+    { id: 'b', display_name: 'Iris Mercer', is_deceased: true, death_date: '1990-03-01' },
+  ];
+  const rels = [{ id: 'r1', type: 'partner', from_person: 'a', to_person: 'b', partner_status: 'current' }];
+  const findings = findingsFor('a', people, rels);
+  const f = findings.find((f) => f.key === 'rel_widowed_b');
+  assert.ok(f, 'expected a rel_widowed_b finding');
+  assert.equal(f.title, 'Widowed — 1990');
+  assert.match(f.detail, /Iris/);
+});
+
+test('Widowed is withheld if this person died before their partner', () => {
+  const people = [
+    { id: 'a', display_name: 'James Mercer', is_deceased: true, death_date: '1985-01-01' },
+    { id: 'b', display_name: 'Iris Mercer', is_deceased: true, death_date: '1990-03-01' },
+  ];
+  const rels = [{ id: 'r1', type: 'partner', from_person: 'a', to_person: 'b', partner_status: 'current' }];
+  const findings = findingsFor('a', people, rels);
+  assert.equal(byKeyPrefix(findings, 'rel_widowed_').length, 0);
+});
+
+test('Widowed is withheld for a former (not current) partner', () => {
+  const people = [
+    { id: 'a', display_name: 'James Mercer' },
+    { id: 'b', display_name: 'Iris Mercer', is_deceased: true, death_date: '1990-03-01' },
+  ];
+  const rels = [{ id: 'r1', type: 'partner', from_person: 'a', to_person: 'b', partner_status: 'former' }];
+  const findings = findingsFor('a', people, rels);
+  assert.equal(byKeyPrefix(findings, 'rel_widowed_').length, 0);
+});
+
+test('became-a-parent findings are offered per child, oldest birth first, capped at 3', () => {
+  const people = [
+    { id: 'p', display_name: 'Parent' },
+    { id: 'c1', display_name: 'Alice', birth_date: '1950-01-01' },
+    { id: 'c2', display_name: 'Bob', birth_date: '1952-01-01' },
+    { id: 'c3', display_name: 'Carol', birth_date: '1954-01-01' },
+    { id: 'c4', display_name: 'Dave', birth_date: '1956-01-01' },
+  ];
+  const rels = [parentRel('p', 'c1'), parentRel('p', 'c2'), parentRel('p', 'c3'), parentRel('p', 'c4')];
+  const findings = findingsFor('p', people, rels);
+  const parentFindings = byKeyPrefix(findings, 'rel_parent_');
+  assert.equal(parentFindings.length, 3, 'expected the fourth child to be capped, not offered');
+  assert.ok(parentFindings.some((f) => f.key === 'rel_parent_c1'));
+  assert.ok(parentFindings.some((f) => f.key === 'rel_parent_c2'));
+  assert.ok(parentFindings.some((f) => f.key === 'rel_parent_c3'));
+  assert.ok(!parentFindings.some((f) => f.key === 'rel_parent_c4'));
+});
+
+test('became-a-parent is withheld for non-biological/adoptive children (e.g. step)', () => {
+  const people = [
+    { id: 'p', display_name: 'Stepparent' },
+    { id: 'c', display_name: 'Stepchild', birth_date: '1990-01-01' },
+  ];
+  const rels = [parentRel('p', 'c', 'step')];
+  const findings = findingsFor('p', people, rels);
+  assert.equal(byKeyPrefix(findings, 'rel_parent_').length, 0);
+});
+
+test('became-a-grandparent surfaces once, keyed to the earliest grandchild', () => {
+  const people = [
+    { id: 'gp', display_name: 'Grandparent' },
+    { id: 'p', display_name: 'Parent' },
+    { id: 'gc1', display_name: 'Grandkid One', birth_date: '2000-01-01' },
+    { id: 'gc2', display_name: 'Grandkid Two', birth_date: '2005-01-01' },
+  ];
+  const rels = [parentRel('gp', 'p'), parentRel('p', 'gc1'), parentRel('p', 'gc2')];
+  const findings = findingsFor('gp', people, rels);
+  const f = findings.find((f) => f.key === 'rel_grandparent');
+  assert.ok(f, 'expected a rel_grandparent finding');
+  assert.equal(f.title, 'Became a grandparent — 2000');
+  assert.match(f.detail, /Grandkid One/);
+});
+
 console.log(`\n  ${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);

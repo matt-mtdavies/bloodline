@@ -1786,6 +1786,25 @@ export function addLifeEvent(personId, { year, title, detail, tag } = {}) {
   }, { type: 'person_updated', personId, personName: person?.display_name ?? '', detail: 'life events' }));
 }
 
+// Dismiss one relationship-derived timeline suggestion (Married, Widowed, a
+// child's or grandchild's birth — see lib/enrich.js) so Enrich stops
+// re-offering it. There's nothing to delete: unlike a document fact, this
+// candidate isn't stored anywhere of its own — it's recomputed fresh each
+// time from the marriage/birth/death dates already on record — so dismissal
+// is just a per-person "don't ask again" key, not silent like a no-op.
+export function dismissRelationshipFact(personId, key) {
+  const person = state.people.find((p) => p.id === personId);
+  if (!person || (person.dismissed_relationship_facts || []).includes(key)) return;
+  commit({
+    ...state,
+    people: state.people.map((p) =>
+      p.id === personId
+        ? { ...p, dismissed_relationship_facts: [...(p.dismissed_relationship_facts || []), key] }
+        : p,
+    ),
+  });
+}
+
 export function removeCondition(personId, conditionId) {
   const person = state.people.find((p) => p.id === personId);
   commit(withActivity({
