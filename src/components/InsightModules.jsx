@@ -3,6 +3,9 @@ import { toBlob } from 'html-to-image';
 import Avatar from './Avatar.jsx';
 import { lifespan } from '../lib/dates.js';
 import { aliveInYear, handshakesTo } from '../lib/insightModules.js';
+import { BranchIcon } from './MilitaryIcons.jsx';
+
+const BRANCH_LABEL = { army: 'Army', navy: 'Navy', air_force: 'Air Force' };
 
 /*
  * Tree Insights — the Wave-1/2 visual modules. Each takes the precomputed data
@@ -1290,29 +1293,57 @@ function RecordIcon({ name }) {
   }
 }
 
-// Family members with a military-tagged life event, surfaced from documents
-// run through Summarize with AI (DocViewer → Enrich's accept flow). Every
-// event here traces back to a document a human chose to add — never a guess.
+// Family members with a documented military connection — an event, a
+// branch/rank field, or a medal — surfaced from documents run through
+// Summarize with AI (DocViewer → Enrich's accept flow). Every fact here
+// traces back to a document a human chose to add and confirm — never a
+// guess, so the module speaks in "documented", not "served".
 function ServiceRecordsModule({ data, graph, onNavigate }) {
-  const { people, count } = data;
+  const { people, count, branchCounts, medalTotal, generationsSpanned } = data;
+  const breakdown = Object.entries(branchCounts)
+    .filter(([key]) => key !== 'unspecified')
+    .sort((a, b) => b[1] - a[1]);
+  const spansGenerations = generationsSpanned >= 2;
+
   return (
     <Module
       icon={<RibbonModuleIcon />}
-      title={count === 1 ? '1 documented service record' : `${count} documented service records`}
-      sub="Military service surfaced from uploaded documents."
-      caption="Traced from documents a family member added and confirmed — nothing here is guessed."
+      title={spansGenerations
+        ? `Service across ${asWord(generationsSpanned)} generations`
+        : count === 1 ? '1 documented service record' : `${count} documented service records`}
+      sub="Military service surfaced from uploaded documents and profile records."
+      caption={<>
+        <b>{count} {count === 1 ? 'relative has' : 'relatives have'} a documented service record</b>
+        {spansGenerations ? <>, spanning {generationsSpanned} generations</> : null}.
+        {medalTotal > 0 && <> <b>{medalTotal} medal{medalTotal === 1 ? '' : 's'}</b> earned in total.</>}
+      </>}
     >
-      <div className="tim-drawer" style={{ marginTop: 0 }}>
+      {breakdown.length > 0 && (
+        <div className="tim-service-branches" aria-label="Service by branch">
+          {breakdown.map(([branch, n]) => (
+            <span className="tim-service-branch" key={branch}>
+              <BranchIcon branch={branch} size={12} /> {BRANCH_LABEL[branch] || branch} · {n}
+            </span>
+          ))}
+        </div>
+      )}
+      <div className="tim-drawer tim-service-list" style={{ marginTop: 0 }}>
         <div className="tim-drawer__list">
-          {people.map(({ id, events }) => {
+          {people.map(({ id, events, branch, rank, medals }) => {
             const person = graph.byId.get(id);
             if (!person) return null;
             const first = events[0];
+            const detail = [
+              rank,
+              first ? `${first.title}${first.year ? ` · ${first.year}` : ''}` : null,
+              medals > 0 ? `${medals} medal${medals === 1 ? '' : 's'}` : null,
+            ].filter(Boolean).join(' · ') || 'Documented service';
             return (
               <button key={id} className="tim-drawer__row" onClick={() => onNavigate?.(id)}>
                 <Avatar person={person} size={28} />
                 <span className="tim-drawer__name">{person.display_name}</span>
-                <span className="tim-drawer__detail">{first.title}{first.year ? ` · ${first.year}` : ''}</span>
+                {branch && <em className="tim-drawer__tag">{BRANCH_LABEL[branch] || branch}</em>}
+                <span className="tim-drawer__detail">{detail}</span>
               </button>
             );
           })}

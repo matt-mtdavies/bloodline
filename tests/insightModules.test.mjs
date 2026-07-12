@@ -739,5 +739,62 @@ test('serviceRecords: null when nobody in the tree has a military-tagged event',
   assert.equal(computeInsightModules(graph, 'a').serviceRecords, null);
 });
 
+test('serviceRecords: a person with only a branch (no events) still surfaces', () => {
+  const people = [{ id: 'a', display_name: 'James Mercer', military_branch: 'navy' }];
+  const graph = buildGraph(people, []);
+  const { serviceRecords } = computeInsightModules(graph, 'a');
+  assert.ok(serviceRecords);
+  assert.equal(serviceRecords.count, 1);
+  assert.equal(serviceRecords.people[0].events.length, 0);
+  assert.equal(serviceRecords.people[0].branch, 'navy');
+});
+
+test('serviceRecords: a person with only a medal (no events, no branch) still surfaces', () => {
+  const people = [{ id: 'a', display_name: 'James Mercer', military_medals: [{ name: 'Military Medal' }] }];
+  const graph = buildGraph(people, []);
+  const { serviceRecords } = computeInsightModules(graph, 'a');
+  assert.ok(serviceRecords);
+  assert.equal(serviceRecords.people[0].medals, 1);
+});
+
+test('serviceRecords: branchCounts tallies by branch, unspecified counted separately', () => {
+  const people = [
+    { id: 'a', display_name: 'A', military_branch: 'army' },
+    { id: 'b', display_name: 'B', military_branch: 'army' },
+    { id: 'c', display_name: 'C', military_branch: 'navy' },
+    { id: 'd', display_name: 'D', events: [{ year: '1940', title: 'Enlisted', tag: 'military' }] },
+  ];
+  const graph = buildGraph(people, []);
+  const { serviceRecords } = computeInsightModules(graph, 'a');
+  assert.deepEqual(serviceRecords.branchCounts, { army: 2, navy: 1, unspecified: 1 });
+});
+
+test('serviceRecords: medalTotal sums medals across every documented relative', () => {
+  const people = [
+    { id: 'a', display_name: 'A', military_medals: [{ name: 'Military Medal' }, { name: 'Star' }] },
+    { id: 'b', display_name: 'B', military_medals: [{ name: 'Long Service Medal' }] },
+    { id: 'c', display_name: 'C', military_branch: 'army' },
+  ];
+  const graph = buildGraph(people, []);
+  const { serviceRecords } = computeInsightModules(graph, 'a');
+  assert.equal(serviceRecords.medalTotal, 3);
+});
+
+test('serviceRecords: generationsSpanned counts distinct generations among documented relatives', () => {
+  const people = [
+    { id: 'gp', display_name: 'Grandparent', military_branch: 'army' },
+    { id: 'parent', display_name: 'Parent' },
+    { id: 'child', display_name: 'Child', military_branch: 'navy' },
+  ];
+  const rels = [
+    { id: 'r1', type: 'parent', from_person: 'gp', to_person: 'parent', qualifier: 'biological' },
+    { id: 'r2', type: 'parent', from_person: 'parent', to_person: 'child', qualifier: 'biological' },
+  ];
+  const graph = buildGraph(people, rels);
+  const { serviceRecords } = computeInsightModules(graph, 'gp');
+  assert.equal(serviceRecords.count, 2);
+  assert.equal(serviceRecords.generationsSpanned, 2);
+});
+
 console.log(`\n  ${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);

@@ -5,6 +5,7 @@ import {
   militaryEvents, militaryDocuments, militaryQuotes, serviceYears,
   hasMilitaryService, canGenerateMilitaryStory, militaryProfile, militaryMedals,
 } from '../lib/military.js';
+import { BranchIcon, MedalIcon, RibbonIcon } from './MilitaryIcons.jsx';
 
 const NO_CONTEXT = 'NO_HISTORICAL_CONTEXT_AVAILABLE';
 
@@ -366,85 +367,6 @@ function GeneratedBlock({
         </div>
       )}
     </>
-  );
-}
-
-// Picks the closest icon for a branch — a nation-specific icon when we
-// recognize both the branch and a nation known to have one (today: just the
-// Australian slouch hat for army), otherwise the generic branch icon, and
-// the plain ribbon when branch itself isn't known (a bare service number or
-// rank still earns a dog tag, just without a branch mark on it). Deliberately
-// starting with one nation rather than building a library up front — more
-// added later only as real family records call for them.
-function BranchIcon({ branch, nation }) {
-  if (branch === 'army' && (nation || '').toLowerCase().includes('australia')) return <SlouchHatIcon />;
-  if (branch === 'army') return <ArmyIcon />;
-  if (branch === 'navy') return <NavyIcon />;
-  if (branch === 'air_force') return <AirForceIcon />;
-  return <RibbonIcon />;
-}
-
-function ArmyIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path d="M4 14.5l8-6.5 8 6.5M4 20l8-6.5 8 6.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-function NavyIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <circle cx="12" cy="5.5" r="2" stroke="currentColor" strokeWidth="1.6" />
-      <path d="M12 7.5v13M6.5 13H4a8 8 0 0 0 16 0h-2.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M8.5 10.8h7" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function AirForceIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <circle cx="12" cy="12" r="2.2" stroke="currentColor" strokeWidth="1.6" />
-      <path d="M9.6 12.3c-2.6-.2-5.7-1.5-8.1-3.4 0 2.8 2.4 5.7 6.9 6.9M14.4 12.3c2.6-.2 5.7-1.5 8.1-3.4 0 2.8-2.4 5.7-6.9 6.9" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-// A simplified, abstracted silhouette — the wide brim, one side pinned up
-// against the crown, a small badge mark — not a literal or historically
-// precise rendering of any specific era's slouch hat.
-function SlouchHatIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path d="M2 16.3c2.6-1.7 6.2-2.6 10-2.6s7.4.9 10 2.6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-      <path d="M7.6 13.9c0-3.3 2-5.9 4.4-5.9s4.4 2.6 4.4 5.9" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-      <path d="M16.4 14.1c1.5.5 3.1.1 4-1.1-.9-1.3-2.5-1.9-4-1.5" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
-      <circle cx="17.6" cy="12.1" r="0.9" fill="currentColor" />
-    </svg>
-  );
-}
-
-// A medal disc on a ribbon — diverging ribbon tails at top, a star inside
-// the disc — distinct from RibbonIcon (used for the section itself) by
-// having a filled disc rather than an open circle, and its own gold tone
-// via CSS rather than sharing the section's terracotta accent.
-function MedalIcon() {
-  return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path d="M8.5 3.5l2 5M15.5 3.5l-2 5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-      <circle cx="12" cy="15" r="6" stroke="currentColor" strokeWidth="1.6" />
-      <path d="M12 11.8l1 2.1 2.3.33-1.65 1.6.4 2.28L12 17l-2.05 1.1.4-2.27-1.65-1.6 2.3-.33z" fill="currentColor" />
-    </svg>
-  );
-}
-
-function RibbonIcon() {
-  return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <circle cx="12" cy="8" r="5.5" stroke="currentColor" strokeWidth="1.8" />
-      <path d="M8.5 13l-2 8 5.5-3 5.5 3-2-8" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
-    </svg>
   );
 }
 

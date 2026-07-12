@@ -1,5 +1,12 @@
 import { useMemo, useEffect } from 'react';
 import Avatar from './Avatar.jsx';
+import { BranchIcon, MedalIcon } from './MilitaryIcons.jsx';
+
+// person_updated activity details that trace back to a military-only edit
+// (see App.jsx's applyDocumentField, which turns 'military_branch' etc. into
+// 'military branch', and store.js's addMedal, which always logs 'medals') —
+// the only detail strings we can badge without guessing what actually changed.
+const MILITARY_FIELD_DETAILS = new Set(['military branch', 'military nation', 'military service number', 'military rank']);
 
 export default function ActivityFeed({ activity = [], people = [], userEmail, onClose, onSelectPerson, recapCount = 0, onShowRecap }) {
   const byId = useMemo(() => new Map(people.map((p) => [p.id, p])), [people]);
@@ -92,7 +99,7 @@ export default function ActivityFeed({ activity = [], people = [], userEmail, on
 }
 
 export function ActivityRow({ event, person, userEmail, nameByEmail, onSelect }) {
-  const { color, Icon } = typeConfig(event.type);
+  const { color, Icon } = militaryTypeConfig(event, person) ?? typeConfig(event.type);
   const showDetail = (event.type === 'memory_added' || event.type === 'document_added') && event.detail;
   // For join events, there's no tree person — show the member's own avatar.
   const avatarPerson = event.type === 'member_joined'
@@ -199,6 +206,20 @@ function ActivityEmpty() {
       </p>
     </div>
   );
+}
+
+// A military-specific badge override for person_updated events whose detail
+// unambiguously traces to a military edit — a medal add, or one of the four
+// document-extracted service fields. Everything else (including the generic
+// 'life events' detail, which can't tell a military-tagged event from a
+// birthday) falls through to the plain edit icon rather than guess.
+function militaryTypeConfig(event, person) {
+  if (event.type !== 'person_updated') return null;
+  if (event.detail === 'medals') return { color: '#a8842f', Icon: () => <MedalIcon size={9} /> };
+  if (MILITARY_FIELD_DETAILS.has(event.detail)) {
+    return { color: '#5b6b7a', Icon: () => <BranchIcon branch={person?.military_branch} nation={person?.military_nation} size={9} /> };
+  }
+  return null;
 }
 
 function typeConfig(type) {

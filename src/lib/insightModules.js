@@ -98,23 +98,44 @@ export function computeInsightModules(graph, viewerId, now = Date.now()) {
     birthdays: birthdays(graph, gen),
     records: records(graph, now),
     parenthood: parenthood(graph),
-    serviceRecords: serviceRecords(graph),
+    serviceRecords: serviceRecords(graph, gen),
   };
 }
 
-// ── Service records: family members with a military-tagged life event —
-//    surfaced from documents run through Summarize with AI (see DocViewer /
-//    lib/enrich.js). Unlike the other modules, one documented record is
-//    already meaningful (this is provenance, not a statistical pattern), so
-//    there's no minimum-count gate beyond "at least one".
-function serviceRecords(graph) {
+// ── Service records: family members with a documented military connection —
+//    a military-tagged life event, a structured branch/rank/service-number
+//    field, or a medal, all surfaced from documents run through Summarize
+//    with AI (see DocViewer / lib/enrich.js). Unlike the other modules, one
+//    documented record is already meaningful (this is provenance, not a
+//    statistical pattern), so there's no minimum-count gate beyond "at least
+//    one" — the same threshold hasMilitaryService uses on the profile.
+function serviceRecords(graph, gen) {
   const people = [];
   for (const p of graph.people) {
-    const events = (p.events || []).filter((e) => e.tag === 'military');
-    if (events.length) people.push({ id: p.id, events: events.sort((a, b) => Number(a.year) - Number(b.year)) });
+    const events = (p.events || []).filter((e) => e.tag === 'military').sort((a, b) => Number(a.year) - Number(b.year));
+    const medals = p.military_medals || [];
+    if (!events.length && !p.military_branch && !medals.length) continue;
+    people.push({
+      id: p.id,
+      events,
+      branch: p.military_branch || null,
+      nation: p.military_nation || null,
+      rank: p.military_rank || null,
+      medals: medals.length,
+      gen: gen.get(p.id) ?? 0,
+    });
   }
   if (!people.length) return null;
-  return { people, count: people.length };
+
+  const branchCounts = {};
+  for (const person of people) {
+    const key = person.branch || 'unspecified';
+    branchCounts[key] = (branchCounts[key] || 0) + 1;
+  }
+  const medalTotal = people.reduce((sum, p) => sum + p.medals, 0);
+  const generationsSpanned = new Set(people.map((p) => p.gen)).size;
+
+  return { people, count: people.length, branchCounts, medalTotal, generationsSpanned };
 }
 
 // A person's decidable alive-window [birthYear, deathYear|thisYear], or null.

@@ -8238,6 +8238,24 @@ button.health-notes {
 .tim-ms__row--on { border-color: var(--accent, #c2603a); }
 .tim-ms .tim-drawer { margin-top: 6px; }
 
+/* Service Records module — branch breakdown chips above the person list */
+.tim-service-branches { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0 2px; }
+.tim-service-branch {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 11.5px; color: var(--ink-soft, #6b6260);
+  background: var(--paper-deep, #f4f5f7); border-radius: 999px; padding: 3px 10px 3px 8px;
+}
+.tim-service-branch svg { flex-shrink: 0; }
+/* Per-person rows here pack more onto one line than a plain drill-down
+   (branch tag, rank, event, medal count) — the name keeps its natural
+   (unsqueezed) width and only the detail column gives up space, absorbing
+   whatever's left over and ellipsizing once that's not enough. */
+.tim-service-list .tim-drawer__name { flex: 0 1 auto; }
+.tim-service-list .tim-drawer__detail {
+  flex: 1 1 0; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
 /* ── Wave 3: handshakes-to-anyone result panel ─────────────────────────────
    Same bordered-card frame as .tim-drawer (reuses its head/close), but holds
    a full HandshakeChain rather than a person list. */
