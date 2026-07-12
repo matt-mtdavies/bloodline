@@ -7,6 +7,7 @@ import { profileCompleteness, lifeEvents, fullName } from '../lib/profile.js';
 import { fileToDataUrl, uploadPhoto, suggestDocumentTitle, imageSrcToDataUrl } from '../lib/image.js';
 import { streamBio } from '../lib/ai.js';
 import EnrichSheet from './EnrichSheet.jsx';
+import MilitaryService from './MilitaryService.jsx';
 import DateField from './DateField.jsx';
 import { VISIBILITY_LABELS, VISIBILITY_DESCS } from '../lib/visibility.js';
 import { HEALTH_CATEGORIES, HEALTH_CONDITIONS, HEALTH_STATUSES, colorFor } from '../lib/health.js';
@@ -725,6 +726,8 @@ export default function PersonSheet({
                 <p className="profile-section__empty">No life events yet</p>
               )}
             </section>
+
+            <MilitaryService person={person} personDocs={personDocs} onOpenDocument={openDoc} />
 
             {/* Memories — the heart of the profile. */}
             <section className="profile-section">
