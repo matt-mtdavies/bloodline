@@ -731,15 +731,6 @@ export default function PersonSheet({
               )}
             </section>
 
-            <MilitaryService
-              person={person}
-              personDocs={personDocs}
-              onOpenDocument={openDoc}
-              onUpdateMilitaryStory={onUpdateMilitaryStory}
-              onUpdateMilitaryContext={onUpdateMilitaryContext}
-              canEdit={canEdit}
-            />
-
             {/* Memories — the heart of the profile. */}
             <section className="profile-section">
               <div className="profile-section__head">
@@ -915,6 +906,15 @@ export default function PersonSheet({
                 <p className="profile-section__empty">No photos yet</p>
               )}
             </section>
+
+            <MilitaryService
+              person={person}
+              personDocs={personDocs}
+              onOpenDocument={openDoc}
+              onUpdateMilitaryStory={onUpdateMilitaryStory}
+              onUpdateMilitaryContext={onUpdateMilitaryContext}
+              canEdit={canEdit}
+            />
 
             {/* Documents */}
             <section className="profile-section">
