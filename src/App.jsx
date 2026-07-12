@@ -2032,6 +2032,10 @@ export default function App() {
           const person = graph.byId.get(id);
           updatePerson(id, { story }, { type: 'person_updated', personId: id, personName: person?.display_name ?? '', detail: 'life story' });
         }}
+        onUpdateMilitaryStory={(id, military_story) => {
+          const person = graph.byId.get(id);
+          updatePerson(id, { military_story }, { type: 'person_updated', personId: id, personName: person?.display_name ?? '', detail: 'military service story' });
+        }}
         onAddCondition={addCondition}
         onRemoveCondition={removeCondition}
         onUpdateCondition={updateCondition}

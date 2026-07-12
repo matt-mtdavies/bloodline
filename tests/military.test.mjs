@@ -7,7 +7,7 @@
  */
 import assert from 'node:assert/strict';
 import {
-  militaryEvents, militaryDocuments, militaryQuotes, serviceYears, hasMilitaryService,
+  militaryEvents, militaryDocuments, militaryQuotes, serviceYears, hasMilitaryService, canGenerateMilitaryStory,
 } from '../src/lib/military.js';
 
 let passed = 0, failed = 0;
@@ -99,6 +99,29 @@ test('hasMilitaryService is false for a person with neither', () => {
   const person = { events: [{ year: 1942, title: 'Married', tag: null }] };
   const docs = [{ extracted: { facts: [{ tag: null, quote: 'q' }] } }];
   assert.equal(hasMilitaryService(person, docs), false);
+});
+
+test('canGenerateMilitaryStory is false below the material threshold (a bare single fact)', () => {
+  const person = { events: [{ year: 1942, title: 'Enlisted', tag: 'military' }] };
+  assert.equal(canGenerateMilitaryStory(person, []), false);
+});
+
+test('canGenerateMilitaryStory is true once events + quotes together reach the threshold', () => {
+  const person = {
+    events: [
+      { year: 1942, title: 'Enlisted', tag: 'military' },
+      { year: 1945, title: 'Discharged', tag: 'military' },
+    ],
+  };
+  const docs = [{ title: 'Doc', extracted: { facts: [{ tag: 'military', year: '1942', quote: 'q' }] } }];
+  assert.equal(canGenerateMilitaryStory(person, docs), true);
+});
+
+test('canGenerateMilitaryStory counts every quote on record, not just the 3 shown in the UI', () => {
+  const person = { events: [] };
+  const facts = Array.from({ length: 3 }, (_, i) => ({ tag: 'military', year: String(1940 + i), quote: `q${i}` }));
+  const docs = [{ title: 'Doc', extracted: { facts } }];
+  assert.equal(canGenerateMilitaryStory(person, docs), true);
 });
 
 console.log(`\n  ${passed} passed, ${failed} failed`);

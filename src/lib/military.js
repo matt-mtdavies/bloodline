@@ -57,3 +57,11 @@ export function serviceYears(events) {
 export function hasMilitaryService(person, personDocs) {
   return militaryEvents(person).length > 0 || militaryDocuments(personDocs).length > 0;
 }
+
+// The AI narrative is offered only once there's enough real material to
+// write from — otherwise a bare "Enlisted 1942" gets padded into paragraphs
+// of filler. No cap on militaryQuotes here (Infinity), since this counts
+// everything on record, not just the handful the pull-quotes UI displays.
+export function canGenerateMilitaryStory(person, personDocs) {
+  return militaryEvents(person).length + militaryQuotes(personDocs, Infinity).length >= 3;
+}

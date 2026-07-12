@@ -9525,6 +9525,18 @@ button.health-notes {
   line-height: 1.4;
 }
 
+/* The narrative — an optional AI-drafted account, reusing the general Life
+   Story's own classes (.story, .story-actions, .btn, .story-edit, etc.) for
+   the text and its Keep/Fix/Dismiss/Edit/Regenerate controls, so it reads
+   as visually identical to that feature rather than a new pattern. */
+.military__narrative { margin-top: 18px; }
+.military__narrative-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 10px;
+}
+
 /* The story — verbatim document quotes, the human register. */
 .military__quotes {
   display: grid;

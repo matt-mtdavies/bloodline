@@ -54,6 +54,7 @@ export default function PersonSheet({
   onChangeRelationship,
   onUpdatePartnerMeta,
   onUpdateStory,
+  onUpdateMilitaryStory,
   onAddCondition,
   onRemoveCondition,
   onUpdateCondition,
@@ -727,7 +728,13 @@ export default function PersonSheet({
               )}
             </section>
 
-            <MilitaryService person={person} personDocs={personDocs} onOpenDocument={openDoc} />
+            <MilitaryService
+              person={person}
+              personDocs={personDocs}
+              onOpenDocument={openDoc}
+              onUpdateMilitaryStory={onUpdateMilitaryStory}
+              canEdit={canEdit}
+            />
 
             {/* Memories — the heart of the profile. */}
             <section className="profile-section">

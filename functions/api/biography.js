@@ -29,66 +29,105 @@ export async function onRequestPost({ request, env, data, waitUntil }) {
     });
   }
 
-  const { person, memories = [], relationships = [], documents = [], feedback, previousStory } = body;
+  const {
+    person, memories = [], relationships = [], documents = [], feedback, previousStory,
+    focus, militaryEvents = [], militaryQuotes = [],
+  } = body;
   if (!person?.display_name) {
     return new Response(JSON.stringify({ error: 'Missing person data.' }), {
       status: 400,
       headers: { 'content-type': 'application/json' },
     });
   }
-
-  // Build a structured context string for the model.
-  const lines = [];
-  lines.push(`Name: ${person.display_name}`);
-  if (person.gender) lines.push(`Gender: ${person.gender}`);
-  if (person.birth_date) lines.push(`Born: ${person.birth_date}`);
-  if (person.birth_place) lines.push(`Birth place: ${person.birth_place}`);
-  if (person.death_date) lines.push(`Died: ${person.death_date}`);
-  if (person.is_deceased) lines.push('Status: Deceased');
-  if (person.occupation) lines.push(`Occupation: ${person.occupation}`);
-  if (person.residence) lines.push(`Residence: ${person.residence}`);
-  if (person.bio) lines.push(`Family note: ${person.bio}`);
-  if (person.tags?.length) lines.push(`Tags: ${person.tags.join(', ')}`);
-
-  if (person.events?.length) {
-    const evs = person.events
-      .slice()
-      .sort((a, b) => (a.year || 0) - (b.year || 0))
-      .map((e) => `  ${e.year}: ${e.title}${e.detail ? ` — ${e.detail}` : ''}`)
-      .join('\n');
-    lines.push(`Life events:\n${evs}`);
+  if (focus === 'military' && !militaryEvents.length && !militaryQuotes.length) {
+    return new Response(JSON.stringify({ error: 'No military service data to write from.' }), {
+      status: 400,
+      headers: { 'content-type': 'application/json' },
+    });
   }
 
-  if (relationships.length) {
-    const rels = relationships
-      .slice(0, 8)
-      .map((r) => `  ${r.label}: ${r.name}`)
-      .join('\n');
-    lines.push(`Family connections:\n${rels}`);
-  }
+  // Same endpoint, two prompts: the general life story draws on everything
+  // (timeline, memories, documents), but a military-focused account is
+  // deliberately fed ONLY the military-tagged material (see
+  // lib/military.js's militaryEvents/militaryQuotes, computed client-side
+  // and passed straight through) — narrower context means it can't reach
+  // for an unrelated life event or invent a posting the records never
+  // mentioned. logAiUsage tags the two separately so the admin dashboard's
+  // per-endpoint spend breakdown can tell them apart.
+  const endpointTag = focus === 'military' ? 'biography-military' : 'biography';
+  let personContext, systemText;
 
-  if (memories.length) {
-    const mems = memories
-      .slice(0, 6)
-      .map((m) => `  — "${m.text}" (shared by ${m.author})`)
-      .join('\n');
-    lines.push(`Memories from the family:\n${mems}`);
-  }
+  if (focus === 'military') {
+    const lines = [`Name: ${person.display_name}`];
+    if (militaryEvents.length) {
+      const evs = militaryEvents
+        .map((e) => `  ${e.year}: ${e.title}${e.detail ? ` — ${e.detail}` : ''}`)
+        .join('\n');
+      lines.push(`Military service timeline:\n${evs}`);
+    }
+    if (militaryQuotes.length) {
+      const qs = militaryQuotes
+        .map((q) => `  — "${q.quote}" (from "${q.docTitle}"${q.year ? `, ${q.year}` : ''})`)
+        .join('\n');
+      lines.push(`Verbatim quotes from service records:\n${qs}`);
+    }
+    personContext = lines.join('\n');
+    systemText = `You are a thoughtful family archivist writing a short, focused account of one person's military service, for a family tree app. Draw only on the service timeline and the verbatim document quotes given below — never invent a posting, battle, unit, rank, or date that isn't in them. If the source material is thin on a point, leave it out rather than guessing. Two short paragraphs, third person, warm but plain — like a passage from a family history book, not a Wikipedia article. No bullet points, no headers. Write only the account — nothing else.`;
+  } else {
+    // Build a structured context string for the model.
+    const lines = [];
+    lines.push(`Name: ${person.display_name}`);
+    if (person.gender) lines.push(`Gender: ${person.gender}`);
+    if (person.birth_date) lines.push(`Born: ${person.birth_date}`);
+    if (person.birth_place) lines.push(`Birth place: ${person.birth_place}`);
+    if (person.death_date) lines.push(`Died: ${person.death_date}`);
+    if (person.is_deceased) lines.push('Status: Deceased');
+    if (person.occupation) lines.push(`Occupation: ${person.occupation}`);
+    if (person.residence) lines.push(`Residence: ${person.residence}`);
+    if (person.bio) lines.push(`Family note: ${person.bio}`);
+    if (person.tags?.length) lines.push(`Tags: ${person.tags.join(', ')}`);
 
-  // Documents the family has scanned and summarized (see summarize.js) —
-  // often the richest source in the whole record: a discharge form's "quiet
-  // dignity" doesn't show up in a birth_date field. This is the AI summary
-  // text, not the raw scan, so it's already been through one grounding pass;
-  // still just background material for the story, same as a memory.
-  if (documents.length) {
-    const docs = documents
-      .slice(0, 6)
-      .map((d) => `  — "${d.title}": ${d.summary}`)
-      .join('\n');
-    lines.push(`Documents on file:\n${docs}`);
-  }
+    if (person.events?.length) {
+      const evs = person.events
+        .slice()
+        .sort((a, b) => (a.year || 0) - (b.year || 0))
+        .map((e) => `  ${e.year}: ${e.title}${e.detail ? ` — ${e.detail}` : ''}`)
+        .join('\n');
+      lines.push(`Life events:\n${evs}`);
+    }
 
-  const personContext = lines.join('\n');
+    if (relationships.length) {
+      const rels = relationships
+        .slice(0, 8)
+        .map((r) => `  ${r.label}: ${r.name}`)
+        .join('\n');
+      lines.push(`Family connections:\n${rels}`);
+    }
+
+    if (memories.length) {
+      const mems = memories
+        .slice(0, 6)
+        .map((m) => `  — "${m.text}" (shared by ${m.author})`)
+        .join('\n');
+      lines.push(`Memories from the family:\n${mems}`);
+    }
+
+    // Documents the family has scanned and summarized (see summarize.js) —
+    // often the richest source in the whole record: a discharge form's "quiet
+    // dignity" doesn't show up in a birth_date field. This is the AI summary
+    // text, not the raw scan, so it's already been through one grounding pass;
+    // still just background material for the story, same as a memory.
+    if (documents.length) {
+      const docs = documents
+        .slice(0, 6)
+        .map((d) => `  — "${d.title}": ${d.summary}`)
+        .join('\n');
+      lines.push(`Documents on file:\n${docs}`);
+    }
+
+    personContext = lines.join('\n');
+    systemText = `You are a thoughtful family archivist writing intimate life story paragraphs for a family tree app. Your voice is warm, plain, and specific — like a letter from a relative who loved this person. Write in the third person. Two to three short paragraphs. No bullet points, no headers. Draw on the details given: timeline events, occupation, place, the family's own documents on file, and above all the memories family members have shared. If the person is deceased, treat them with reverence. If living, write with warmth and a sense of an ongoing story. Write only the biography — nothing else.`;
+  }
 
   // A family member reviewed a previous draft and flagged something wrong
   // with it — trust their correction over the source data above, since a
@@ -99,8 +138,10 @@ export async function onRequestPost({ request, env, data, waitUntil }) {
   const revisionNote = feedback?.trim()
     ? `\n\nA previous draft was reviewed by the family and needs correcting. Treat their notes as the source of truth, even where they conflict with the details above — they know this person; the records above don't always.${
         previousStory?.trim() ? `\n\nPrevious draft:\n${previousStory.trim()}` : ''
-      }\n\nFamily's corrections:\n${feedback.trim()}\n\nRewrite the biography incorporating these corrections.`
+      }\n\nFamily's corrections:\n${feedback.trim()}\n\nRewrite it incorporating these corrections.`
     : '';
+
+  const writePrompt = focus === 'military' ? 'Write a short account of this person\'s military service' : 'Write a life story for this person';
 
   const upstream = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -117,14 +158,14 @@ export async function onRequestPost({ request, env, data, waitUntil }) {
       system: [
         {
           type: 'text',
-          text: `You are a thoughtful family archivist writing intimate life story paragraphs for a family tree app. Your voice is warm, plain, and specific — like a letter from a relative who loved this person. Write in the third person. Two to three short paragraphs. No bullet points, no headers. Draw on the details given: timeline events, occupation, place, the family's own documents on file, and above all the memories family members have shared. If the person is deceased, treat them with reverence. If living, write with warmth and a sense of an ongoing story. Write only the biography — nothing else.`,
+          text: systemText,
           cache_control: { type: 'ephemeral' },
         },
       ],
       messages: [
         {
           role: 'user',
-          content: `Write a life story for this person:\n\n${personContext}${revisionNote}`,
+          content: `${writePrompt}:\n\n${personContext}${revisionNote}`,
         },
       ],
     }),
@@ -132,7 +173,7 @@ export async function onRequestPost({ request, env, data, waitUntil }) {
 
   if (!upstream.ok) {
     const detail = await upstream.text().catch(() => '');
-    await logAiUsage(env, { endpoint: 'biography', model: MODEL, usage: null, user: data.user, ok: false });
+    await logAiUsage(env, { endpoint: endpointTag, model: MODEL, usage: null, user: data.user, ok: false });
     return new Response(
       JSON.stringify({ error: `Upstream AI error ${upstream.status}.`, detail }),
       { status: 502, headers: { 'content-type': 'application/json' } },
@@ -144,7 +185,7 @@ export async function onRequestPost({ request, env, data, waitUntil }) {
   // (waitUntil, after the response has already returned) purely to read the
   // final token counts Anthropic reports mid-stream, for the usage log.
   const [clientStream, usageStream] = upstream.body.tee();
-  waitUntil(logStreamUsage(env, usageStream, data.user));
+  waitUntil(logStreamUsage(env, usageStream, data.user, endpointTag));
 
   return new Response(clientStream, {
     headers: {
@@ -159,7 +200,7 @@ export async function onRequestPost({ request, env, data, waitUntil }) {
 // the client sees. `message_start` carries input_tokens; `message_delta`
 // carries the running output_tokens — same shape streamBio already parses
 // client-side, just watching different fields.
-async function logStreamUsage(env, stream, user) {
+async function logStreamUsage(env, stream, user, endpointTag) {
   let inputTokens = 0, outputTokens = 0;
   try {
     const reader = stream.getReader();
@@ -187,5 +228,5 @@ async function logStreamUsage(env, stream, user) {
   } catch (e) {
     console.error('[biography] usage stream read failed:', e.message);
   }
-  await logAiUsage(env, { endpoint: 'biography', model: MODEL, usage: { input_tokens: inputTokens, output_tokens: outputTokens }, user, ok: true });
+  await logAiUsage(env, { endpoint: endpointTag, model: MODEL, usage: { input_tokens: inputTokens, output_tokens: outputTokens }, user, ok: true });
 }
