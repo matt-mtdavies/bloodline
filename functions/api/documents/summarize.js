@@ -90,6 +90,22 @@ const RESPONSE_SCHEMA = {
       ],
       additionalProperties: false,
     },
+    // A growable list, unlike profile_fields — a person can have several
+    // medals, so this is sibling to `facts`/`people_mentioned`, not another
+    // single-value profile field.
+    medals: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          name: { type: 'string' },
+          detail: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+          quote: { type: 'string' },
+        },
+        required: ['name', 'detail', 'quote'],
+        additionalProperties: false,
+      },
+    },
     people_mentioned: {
       type: 'array',
       items: {
@@ -104,7 +120,7 @@ const RESPONSE_SCHEMA = {
       },
     },
   },
-  required: ['summary', 'facts', 'profile_fields', 'people_mentioned'],
+  required: ['summary', 'facts', 'profile_fields', 'people_mentioned', 'medals'],
   additionalProperties: false,
 };
 
@@ -118,7 +134,9 @@ const RESPONSE_SCHEMA = {
  * automatically:
  *   - candidate life-event facts (a date, a place, a service record) for the
  *     person's timeline
- *   - candidate profile fields (occupation / birth place / residence)
+ *   - candidate profile fields (occupation / birth place / residence / military
+ *     branch, nation, service number, rank)
+ *   - candidate medals or honours the document states were awarded
  *   - other people the document names in a direct family relationship to the
  *     subject (parent/spouse/child/sibling), for cross-referencing against
  *     the tree — see lib/enrich.js
@@ -207,6 +225,15 @@ export async function onRequestPost({ request, env, data }) {
         'not a full sentence. Leave any of these null rather than guessing at what a partly-legible',
         'form might mean.',
         '',
+        '`medals`: any medal, decoration, honour, or commendation the document plainly states this',
+        'person received or was awarded — e.g. "Military Medal", "Mentioned in Despatches",',
+        '"1939-45 Star". `name` is the medal or honour as written (expanding a well-known abbreviation',
+        'is fine — "MM" as "Military Medal" — but leave an unfamiliar acronym as written rather than',
+        'guessing what it stands for). `detail` is a short note if the document gives one (a citation,',
+        'a date, the campaign it was for) or null. `quote` is the verbatim source text. An empty array',
+        'is correct when nothing is stated — never infer a medal from a campaign, unit, or length of',
+        'service alone.',
+        '',
         '`people_mentioned`: every OTHER person the document names in a direct family relationship',
         'to its own subject — a parent, spouse, or child of the subject; also a sibling ONLY as',
         '`relation: "sibling"` (nothing is written for a sibling automatically, it just needs',
@@ -223,7 +250,7 @@ export async function onRequestPost({ request, env, data }) {
           role: 'user',
           content: [
             sourceBlock,
-            { type: 'text', text: 'Summarize this document and extract any grounded life-event facts, profile fields, and family relationships.' },
+            { type: 'text', text: 'Summarize this document and extract any grounded life-event facts, profile fields, medals, and family relationships.' },
           ],
         },
       ],
@@ -251,5 +278,6 @@ export async function onRequestPost({ request, env, data }) {
     facts: parsed?.facts ?? [],
     profileFields: parsed?.profile_fields ?? null,
     peopleMentioned: parsed?.people_mentioned ?? [],
+    medals: parsed?.medals ?? [],
   });
 }

@@ -67,6 +67,8 @@ export default function PersonSheet({
   onApplyEnrichedPlace,
   onApplyDocumentFact,
   onDismissDocumentFact,
+  onApplyDocumentMedal,
+  onDismissDocumentMedal,
   onApplyDocumentField,
   onDismissDocumentField,
   onApplyDocumentPerson,
@@ -1645,6 +1647,8 @@ export default function PersonSheet({
           onApplyPlace={(key, value) => onApplyEnrichedPlace?.(person.id, key, value)}
           onApplyDocumentFact={onApplyDocumentFact}
           onDismissDocumentFact={onDismissDocumentFact}
+          onApplyDocumentMedal={onApplyDocumentMedal}
+          onDismissDocumentMedal={onDismissDocumentMedal}
           onApplyDocumentField={onApplyDocumentField}
           onDismissDocumentField={onDismissDocumentField}
           onApplyDocumentPerson={onApplyDocumentPerson}

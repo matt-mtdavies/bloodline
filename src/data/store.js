@@ -1786,6 +1786,21 @@ export function addLifeEvent(personId, { year, title, detail, tag } = {}) {
   }, { type: 'person_updated', personId, personName: person?.display_name ?? '', detail: 'life events' }));
 }
 
+// Append one AI-suggested medal/honour (from a document extraction) onto a
+// person's existing military_medals, non-destructively — same shape as
+// addLifeEvent, the accept side of the medal review in Enrich.
+export function addMedal(personId, { name, detail } = {}) {
+  const person = state.people.find((p) => p.id === personId);
+  const medal = { name };
+  if (detail) medal.detail = detail;
+  commit(withActivity({
+    ...state,
+    people: state.people.map((p) =>
+      p.id === personId ? { ...p, military_medals: [...(p.military_medals || []), medal] } : p,
+    ),
+  }, { type: 'person_updated', personId, personName: person?.display_name ?? '', detail: 'medals' }));
+}
+
 // Dismiss one relationship-derived timeline suggestion (Married, Widowed, a
 // child's or grandchild's birth — see lib/enrich.js) so Enrich stops
 // re-offering it. There's nothing to delete: unlike a document fact, this

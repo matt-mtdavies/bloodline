@@ -31,6 +31,7 @@ import {
   removeCondition,
   updateCondition,
   addLifeEvent,
+  addMedal,
   dismissRelationshipFact,
   loadFromServer,
   saveToServer,
@@ -167,6 +168,7 @@ function buildExtracted(result) {
     facts: result.facts.map((f) => ({ ...f, status: 'pending' })),
     profileFields: pf ? profileFields : null,
     peopleMentioned: (result.peopleMentioned || []).map((p) => ({ ...p, status: 'pending' })),
+    medals: (result.medals || []).map((m) => ({ ...m, status: 'pending' })),
   };
 }
 
@@ -1462,6 +1464,31 @@ export default function App() {
     [data.documents],
   );
 
+  // Same accept/dismiss contract as document facts, for medals/honours a
+  // document summary extracted — accept appends to military_medals via the
+  // same additive addMedal used everywhere else, and marks the candidate
+  // consumed so a re-summarize never re-offers it.
+  const applyDocumentMedal = useCallback(
+    (docId, medalIndex) => {
+      const doc = data.documents?.find((d) => d.id === docId);
+      const medal = doc?.extracted?.medals?.[medalIndex];
+      if (!doc || !medal) return;
+      addMedal(doc.person_id, { name: medal.name, detail: medal.detail });
+      const medals = doc.extracted.medals.map((m, i) => (i === medalIndex ? { ...m, status: 'accepted' } : m));
+      updateDocument(docId, { extracted: { ...doc.extracted, medals } });
+    },
+    [data.documents],
+  );
+  const dismissDocumentMedal = useCallback(
+    (docId, medalIndex) => {
+      const doc = data.documents?.find((d) => d.id === docId);
+      if (!doc?.extracted?.medals) return;
+      const medals = doc.extracted.medals.map((m, i) => (i === medalIndex ? { ...m, status: 'dismissed' } : m));
+      updateDocument(docId, { extracted: { ...doc.extracted, medals } });
+    },
+    [data.documents],
+  );
+
   // Relationship-derived findings (Married, Widowed, Became a parent/
   // grandparent — see lib/enrich.js) carry their own complete { key, year,
   // title, detail } right on the action, computed live from the tree each
@@ -2064,6 +2091,8 @@ export default function App() {
         }}
         onApplyDocumentFact={applyDocumentFact}
         onDismissDocumentFact={dismissDocumentFact}
+        onApplyDocumentMedal={applyDocumentMedal}
+        onDismissDocumentMedal={dismissDocumentMedal}
         onApplyDocumentField={applyDocumentField}
         onDismissDocumentField={dismissDocumentField}
         onApplyDocumentPerson={applyDocumentPerson}

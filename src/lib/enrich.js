@@ -25,6 +25,7 @@
  * action: { type: 'edit' } | { type: 'merge', pair } | { type: 'story' }
  *   | { type: 'document-fact', docId, factIndex }
  *   | { type: 'document-field', docId, field }
+ *   | { type: 'document-medal', docId, medalIndex }
  *   | { type: 'document-person', docId, personIndex, matchedId, relation }
  *   | { type: 'relationship-fact', key, year, title, detail, tag? }
  */
@@ -378,6 +379,29 @@ export function computeEnrichment(person, graph, memoryCount = 0, documents = []
         action: { type: 'document-field', docId: doc.id, field },
       });
     }
+  }
+
+  // Medals — a growable list, unlike the single-value profile fields above,
+  // so "already on record" means matching an existing entry by name rather
+  // than the field just being non-empty. Case/whitespace-insensitive so a
+  // document phrasing the same honour slightly differently ("Military
+  // Medal" vs "military medal") doesn't get offered as if it were new.
+  for (const doc of personDocs) {
+    (doc.extracted?.medals || []).forEach((medal, i) => {
+      if (medal.status !== 'pending') return;
+      const already = (person.military_medals || []).some(
+        (m) => m.name.trim().toLowerCase() === medal.name.trim().toLowerCase(),
+      );
+      if (already) return;
+      findings.push({
+        key: `doc_medal_${doc.id}_${i}`,
+        tier: 'document',
+        icon: 'military',
+        title: medal.name,
+        detail: `From "${doc.title}": "${medal.quote}"`,
+        action: { type: 'document-medal', docId: doc.id, medalIndex: i },
+      });
+    });
   }
 
   // People mentioned — cross-referenced against the tree by name. Only

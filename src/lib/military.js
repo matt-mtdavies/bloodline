@@ -70,10 +70,18 @@ export function militaryProfile(person) {
   };
 }
 
+// Medals/honours — a growable list, appended one at a time via the same
+// document-medal accept flow as everything else here (see lib/enrich.js,
+// store.js's addMedal). Read-only display for now; no manual add/edit UI.
+export function militaryMedals(person) {
+  return person?.military_medals || [];
+}
+
 export function hasMilitaryService(person, personDocs) {
   return militaryEvents(person).length > 0
     || militaryDocuments(personDocs).length > 0
-    || !!person?.military_branch;
+    || !!person?.military_branch
+    || militaryMedals(person).length > 0;
 }
 
 // The AI narrative is offered only once there's enough real material to

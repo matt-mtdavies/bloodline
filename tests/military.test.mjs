@@ -8,7 +8,7 @@
 import assert from 'node:assert/strict';
 import {
   militaryEvents, militaryDocuments, militaryQuotes, serviceYears, hasMilitaryService, canGenerateMilitaryStory,
-  militaryProfile,
+  militaryProfile, militaryMedals,
 } from '../src/lib/military.js';
 
 let passed = 0, failed = 0;
@@ -134,6 +134,18 @@ test('militaryProfile reads the four structured fields, null for any unset', () 
 
 test('hasMilitaryService is true from a bare military_branch alone, even with no events or documents', () => {
   const person = { events: [], military_branch: 'navy' };
+  assert.equal(hasMilitaryService(person, []), true);
+});
+
+test('militaryMedals reads person.military_medals, empty array when unset', () => {
+  const medals = [{ name: 'Military Medal' }, { name: 'Mentioned in Despatches', detail: '1945' }];
+  assert.deepEqual(militaryMedals({ military_medals: medals }), medals);
+  assert.deepEqual(militaryMedals({}), []);
+  assert.deepEqual(militaryMedals(null), []);
+});
+
+test('hasMilitaryService is true from a medal alone, even with no events, documents, or branch', () => {
+  const person = { events: [], military_medals: [{ name: 'Military Medal' }] };
   assert.equal(hasMilitaryService(person, []), true);
 });
 

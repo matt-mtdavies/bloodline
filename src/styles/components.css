@@ -9540,6 +9540,31 @@ button.health-notes {
   color: #5c5c64;
 }
 
+/* Medals — a third distinct palette (warm gold/bronze) alongside the dog
+   tag's cool grey and the section's own terracotta elsewhere, so earned
+   honours get their own "precious metal" register rather than blending
+   into either. */
+.military__medals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 18px;
+}
+.military__medal {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px 7px 10px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #fbf1dc 0%, #f5e4bd 100%);
+  border: 1px solid #e5c988;
+  color: #8a6a1f;
+}
+.military__medal-name {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
 /* The campaign route — a horizontally scrollable strip of waypoints on a
    dashed line, evoking a journey without needing a real map or geocoding. */
 .military__route {

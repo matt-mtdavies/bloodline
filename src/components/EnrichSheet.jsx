@@ -20,10 +20,11 @@ const ACTION_LABEL = {
 // Document-derived findings all get the same two-button (accept/dismiss)
 // treatment below instead of the generic single-action button — one row
 // shape, three sources (a life event, a profile field, a named relative).
-const DOCUMENT_ACTION_TYPES = new Set(['document-fact', 'document-field', 'document-person']);
+const DOCUMENT_ACTION_TYPES = new Set(['document-fact', 'document-field', 'document-medal', 'document-person']);
 const DOCUMENT_ACTION_LABEL = {
   'document-fact': 'Add to timeline',
   'document-field': 'Add to profile',
+  'document-medal': 'Add to profile',
   'document-person': 'Confirm relationship',
 };
 
@@ -57,6 +58,8 @@ export default function EnrichSheet({
   onApplyPlace,
   onApplyDocumentFact,
   onDismissDocumentFact,
+  onApplyDocumentMedal,
+  onDismissDocumentMedal,
   onApplyDocumentField,
   onDismissDocumentField,
   onApplyDocumentPerson,
@@ -81,6 +84,7 @@ export default function EnrichSheet({
     switch (f.action.type) {
       case 'document-fact': onApplyDocumentFact?.(f.action.docId, f.action.factIndex); break;
       case 'document-field': onApplyDocumentField?.(f.action.docId, f.action.field); break;
+      case 'document-medal': onApplyDocumentMedal?.(f.action.docId, f.action.medalIndex); break;
       case 'document-person': onApplyDocumentPerson?.(f.action.docId, f.action.personIndex, f.action.matchedId, f.action.relation); break;
       default: break;
     }
@@ -89,6 +93,7 @@ export default function EnrichSheet({
     switch (f.action.type) {
       case 'document-fact': onDismissDocumentFact?.(f.action.docId, f.action.factIndex); break;
       case 'document-field': onDismissDocumentField?.(f.action.docId, f.action.field); break;
+      case 'document-medal': onDismissDocumentMedal?.(f.action.docId, f.action.medalIndex); break;
       case 'document-person': onDismissDocumentPerson?.(f.action.docId, f.action.personIndex); break;
       default: break;
     }

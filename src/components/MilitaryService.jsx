@@ -3,7 +3,7 @@ import SmartImg from './SmartImg.jsx';
 import { streamBio } from '../lib/ai.js';
 import {
   militaryEvents, militaryDocuments, militaryQuotes, serviceYears,
-  hasMilitaryService, canGenerateMilitaryStory, militaryProfile,
+  hasMilitaryService, canGenerateMilitaryStory, militaryProfile, militaryMedals,
 } from '../lib/military.js';
 
 const NO_CONTEXT = 'NO_HISTORICAL_CONTEXT_AVAILABLE';
@@ -44,6 +44,7 @@ export default function MilitaryService({ person, personDocs, onOpenDocument, on
   const canGenerateStory = canGenerateMilitaryStory(person, personDocs);
   const profile = militaryProfile(person);
   const showTag = !!(profile.branch || profile.serviceNumber || profile.rank);
+  const medals = militaryMedals(person);
 
   return (
     <section className="profile-section military">
@@ -77,6 +78,23 @@ export default function MilitaryService({ person, personDocs, onOpenDocument, on
             {profile.serviceNumber && <span className="military__dogtag-number">{profile.serviceNumber}</span>}
             {profile.rank && <span className="military__dogtag-rank">{profile.rank}</span>}
           </div>
+        </div>
+      )}
+
+      {/* Medals — a growable list appended one at a time via Enrich (see
+          store.js's addMedal), shown independent of the dog tag: a person
+          could have a medal on record with no known branch/rank/number.
+          Gold/bronze accent, a third distinct palette alongside the dog
+          tag's cool grey and the app's warm terracotta elsewhere — medals
+          get their own "precious metal" register. */}
+      {medals.length > 0 && (
+        <div className="military__medals" role="list" aria-label="Medals and honours">
+          {medals.map((m, i) => (
+            <div className="military__medal" role="listitem" key={i} title={m.detail || undefined}>
+              <MedalIcon />
+              <span className="military__medal-name">{m.name}</span>
+            </div>
+          ))}
         </div>
       )}
 
@@ -403,6 +421,20 @@ function SlouchHatIcon() {
       <path d="M7.6 13.9c0-3.3 2-5.9 4.4-5.9s4.4 2.6 4.4 5.9" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
       <path d="M16.4 14.1c1.5.5 3.1.1 4-1.1-.9-1.3-2.5-1.9-4-1.5" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
       <circle cx="17.6" cy="12.1" r="0.9" fill="currentColor" />
+    </svg>
+  );
+}
+
+// A medal disc on a ribbon — diverging ribbon tails at top, a star inside
+// the disc — distinct from RibbonIcon (used for the section itself) by
+// having a filled disc rather than an open circle, and its own gold tone
+// via CSS rather than sharing the section's terracotta accent.
+function MedalIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M8.5 3.5l2 5M15.5 3.5l-2 5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      <circle cx="12" cy="15" r="6" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M12 11.8l1 2.1 2.3.33-1.65 1.6.4 2.28L12 17l-2.05 1.1.4-2.27-1.65-1.6 2.3-.33z" fill="currentColor" />
     </svg>
   );
 }

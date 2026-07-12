@@ -331,6 +331,56 @@ test('a military profile field is withheld once the person already has that fiel
   assert.equal(findings.find((f) => f.key === 'doc_field_doc1_military_rank'), undefined);
 });
 
+test('a pending medal surfaces as a document finding, titled with its name', () => {
+  const people = [{ id: 'a', display_name: 'Thomas Davies' }];
+  const documents = [{
+    id: 'doc1', person_id: 'a', title: 'Discharge certificate',
+    extracted: { medals: [{ name: 'Military Medal', detail: null, quote: 'Awarded the Military Medal', status: 'pending' }] },
+  }];
+  const findings = findingsFor('a', people, [], 0, documents);
+  const f = findings.find((f) => f.key === 'doc_medal_doc1_0');
+  assert.ok(f, 'expected a doc_medal finding');
+  assert.equal(f.tier, 'document');
+  assert.equal(f.icon, 'military');
+  assert.equal(f.title, 'Military Medal');
+  assert.equal(f.action.type, 'document-medal');
+  assert.equal(f.action.docId, 'doc1');
+  assert.equal(f.action.medalIndex, 0);
+});
+
+test('a medal already on the person (case/whitespace-insensitive) is not re-offered', () => {
+  const people = [{ id: 'a', display_name: 'Thomas Davies', military_medals: [{ name: 'military medal' }] }];
+  const documents = [{
+    id: 'doc1', person_id: 'a', title: 'Discharge certificate',
+    extracted: { medals: [{ name: ' Military Medal ', detail: null, quote: 'q', status: 'pending' }] },
+  }];
+  const findings = findingsFor('a', people, [], 0, documents);
+  assert.equal(byKeyPrefix(findings, 'doc_medal_').length, 0);
+});
+
+test('a genuinely different medal is still offered even when the person already has one', () => {
+  const people = [{ id: 'a', display_name: 'Thomas Davies', military_medals: [{ name: 'Military Medal' }] }];
+  const documents = [{
+    id: 'doc1', person_id: 'a', title: 'Discharge certificate',
+    extracted: { medals: [{ name: 'Mentioned in Despatches', detail: null, quote: 'q', status: 'pending' }] },
+  }];
+  const findings = findingsFor('a', people, [], 0, documents);
+  assert.equal(byKeyPrefix(findings, 'doc_medal_').length, 1);
+});
+
+test('already-accepted or dismissed medals are not re-offered', () => {
+  const people = [{ id: 'a', display_name: 'Thomas Davies' }];
+  const documents = [{
+    id: 'doc1', person_id: 'a', title: 'Discharge certificate',
+    extracted: { medals: [
+      { name: 'Military Medal', detail: null, quote: 'q', status: 'accepted' },
+      { name: 'Mentioned in Despatches', detail: null, quote: 'q', status: 'dismissed' },
+    ] },
+  }];
+  const findings = findingsFor('a', people, [], 0, documents);
+  assert.equal(byKeyPrefix(findings, 'doc_medal_').length, 0);
+});
+
 test('a document profile field is withheld once the person already has that field', () => {
   const people = [{ id: 'a', display_name: 'Allen Turner', occupation: 'Gardener' }];
   const documents = [{
