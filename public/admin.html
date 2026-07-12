@@ -1005,7 +1005,7 @@
           : '';
       return `<tr>
         <td class="primary">${escHtml(u.email)} ${statusBadge}</td>
-        <td class="muted">${escHtml(u.family_name || '—')}</td>
+        <td class="muted">${escHtml(u.family_name || 'No tree yet')}</td>
         <td class="muted">${fmt(u.joined)}</td>
         <td class="muted">${fmt(u.last_seen)}</td>
       </tr>`;

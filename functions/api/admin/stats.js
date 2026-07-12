@@ -58,10 +58,11 @@ export async function onRequestGet({ env, data }) {
       `).bind(now - day * 84).all(), // 12 weeks
       env.DB.prepare(`
         SELECT u.email, u.created_at, u.last_seen,
-               f.name AS family_name
+               GROUP_CONCAT(DISTINCT f.name) AS family_names
         FROM user u
         LEFT JOIN family_member fm ON fm.user_id = u.id
-        LEFT JOIN family f ON f.id = fm.family_id AND fm.role = 'owner'
+        LEFT JOIN family f ON f.id = fm.family_id
+        GROUP BY u.id
         ORDER BY u.created_at DESC
         LIMIT 20
       `).all(),
@@ -265,9 +266,14 @@ export async function onRequestGet({ env, data }) {
         acceptance_rate: acceptanceRate,
       },
       signups_by_week: signupsByWeek,
+      // GROUP_CONCAT above already covers every family a user belongs to,
+      // not just one they own (a user with no membership at all — signed up
+      // via the plain site link, never created or joined a tree — is the
+      // only case this is genuinely null for) — join with ", " since
+      // SQLite's DISTINCT form of GROUP_CONCAT only supports a bare comma.
       recent_users: (recentUsers.results || []).map((u) => ({
         email: u.email,
-        family_name: u.family_name || null,
+        family_name: u.family_names ? u.family_names.split(',').join(', ') : null,
         joined: new Date(u.created_at * 1000).toISOString(),
         last_seen: u.last_seen ? new Date(u.last_seen * 1000).toISOString() : null,
       })),
