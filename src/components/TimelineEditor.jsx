@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { yearOf } from '../lib/dates.js';
 
 // Swaps just the leading year of a partial date ('YYYY' | 'YYYY-MM' |
@@ -175,19 +175,17 @@ export default function TimelineEditor({ person, onClose, onSave }) {
                   />
                 </div>
                 <div className="tl-row__main">
-                  <input
-                    className="field__input"
+                  <AutoGrowField
                     value={r.title}
                     onChange={update(i, 'title')}
                     placeholder="What happened — e.g. Married"
-                    aria-label="Event"
+                    ariaLabel="Event"
                   />
-                  <input
-                    className="field__input"
+                  <AutoGrowField
                     value={r.detail}
                     onChange={update(i, 'detail')}
                     placeholder="A detail (optional)"
-                    aria-label="Detail"
+                    ariaLabel="Detail"
                   />
                 </div>
                 <button
@@ -259,12 +257,11 @@ function SyntheticRow({ badge, title, year, onYear, detail, detailPlaceholder, o
             {title}
             <span className="tl-row__badge">{badge}</span>
           </div>
-          <input
-            className="field__input"
+          <AutoGrowField
             value={detail}
             onChange={(e) => onDetail(e.target.value)}
             placeholder={detailPlaceholder}
-            aria-label={`${title} detail`}
+            ariaLabel={`${title} detail`}
           />
         </div>
         <button className="tl-row__del" onClick={onArm} aria-label={`Remove ${title.toLowerCase()}`} title="Remove">
@@ -283,5 +280,32 @@ function SyntheticRow({ badge, title, year, onYear, detail, detailPlaceholder, o
         </div>
       )}
     </div>
+  );
+}
+
+// A single-line-by-default field that grows to fit its content instead of
+// clipping it. Titles and details here come from free text — a placename,
+// an AI-extracted phrase, a cause of death — that can easily run past what
+// a fixed-height input can show, and a plain input gives no hint there's
+// more to see. Grows on every keystroke and on mount (so pre-filled long
+// values are visible immediately, not just after the user touches them).
+function AutoGrowField({ value, onChange, placeholder, ariaLabel }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight}px`;
+  }, [value]);
+  return (
+    <textarea
+      ref={ref}
+      className="field__input field__input--area field__input--auto"
+      rows={1}
+      value={value}
+      onChange={onChange}
+      placeholder={placeholder}
+      aria-label={ariaLabel}
+    />
   );
 }

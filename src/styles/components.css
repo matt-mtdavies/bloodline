@@ -2357,6 +2357,14 @@
 .sheet--form {
   width: min(440px, 100%);
   max-height: 88vh;
+  /* 88vh locks to the largest possible viewport on iOS Safari (address bar
+     hidden), so with the bar visible the sticky footer "sticks" above the
+     true visible bottom, leaving later rows peeking out beneath it. dvh
+     tracks the viewport that's actually on screen — same fix already used
+     by .doc-viewer and other sheets in this file. Kept as a second
+     declaration (not a replacement) so browsers without dvh support just
+     keep the vh value. */
+  max-height: 88dvh;
   overflow-y: auto;
   border-radius: var(--radius-lg);
   border: 1px solid var(--hairline);
@@ -2700,6 +2708,9 @@
   box-shadow: 0 0 0 3px rgba(194, 96, 58, 0.14);
 }
 .field__input--area { height: auto; padding: 12px 15px; line-height: 1.5; resize: vertical; }
+/* Grows with its own content (see TimelineEditor's AutoGrowField) — no
+   manual resize handle, since the field already sizes itself. */
+.field__input--auto { min-height: 50px; overflow: hidden; resize: none; }
 .field__input--date {
   /* Ensure enough room for the native date picker chrome */
   min-width: 0;
