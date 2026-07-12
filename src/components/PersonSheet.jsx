@@ -86,6 +86,12 @@ export default function PersonSheet({
   // regenerate, e.g. "he was discharged in 1946, not 1947; there was no
   // appendectomy." Sent as feedback so the rewrite treats them as authoritative.
   const [storyNotes, setStoryNotes] = useState('');
+  // Direct manual editing of an already-kept story — separate from the AI
+  // revise flow above (storyState.phase === 'revising'), which sends
+  // feedback back to the model. This is just a plain textarea, for anyone
+  // who'd rather fix a word themselves than describe the fix to AI.
+  const [storyEditing, setStoryEditing] = useState(false);
+  const [storyEditDraft, setStoryEditDraft] = useState('');
   const [relMenuId, setRelMenuId] = useState(null);       // rel-chip whose ⋯ menu is open
   const [confirmUnlinkId, setConfirmUnlinkId] = useState(null); // rel-chip awaiting unlink confirm
   const [editingDocId, setEditingDocId] = useState(null);
@@ -1315,18 +1321,30 @@ export default function PersonSheet({
             <section className="profile-section">
               <div className="profile-section__head">
                 <h3 className="profile-section__title">Life Story</h3>
-                {canEdit && storyState.phase === 'idle' && person.story && !storyState.error && (
-                  <button className="story-regen" onClick={() => setStoryState((s) => ({ ...s, phase: 'revising' }))}>
-                    Regenerate
-                  </button>
-                )}
-                {canEdit && storyState.phase === 'idle' && storyState.error && (
-                  <button className="story-regen" onClick={() => generateStory()}>
-                    Try again
-                  </button>
-                )}
-                {storyState.phase === 'generating' && (
-                  <span style={{ fontSize: 12, color: 'var(--ink-faint)' }}>Writing…</span>
+                {!storyEditing && (
+                  <div className="story-head-actions">
+                    {canEdit && storyState.phase === 'idle' && person.story && !storyState.error && (
+                      <>
+                        <button
+                          className="story-regen"
+                          onClick={() => { setStoryEditDraft(person.story); setStoryEditing(true); }}
+                        >
+                          Edit
+                        </button>
+                        <button className="story-regen" onClick={() => setStoryState((s) => ({ ...s, phase: 'revising' }))}>
+                          Regenerate
+                        </button>
+                      </>
+                    )}
+                    {canEdit && storyState.phase === 'idle' && storyState.error && (
+                      <button className="story-regen" onClick={() => generateStory()}>
+                        Try again
+                      </button>
+                    )}
+                    {storyState.phase === 'generating' && (
+                      <span style={{ fontSize: 12, color: 'var(--ink-faint)' }}>Writing…</span>
+                    )}
+                  </div>
                 )}
               </div>
 
@@ -1341,8 +1359,38 @@ export default function PersonSheet({
                 </button>
               )}
 
-              {storyState.phase === 'idle' && person.story && (
-                <p className="story">{person.story}</p>
+              {/* Direct manual editing — a plain textarea, no AI round-trip.
+                  Saving writes straight through onUpdateStory, same as
+                  "Keep it" below does for a freshly-generated draft. */}
+              {storyEditing ? (
+                <div className="story-edit">
+                  <textarea
+                    className="field__input field__input--area story-edit__textarea"
+                    rows={12}
+                    autoFocus
+                    value={storyEditDraft}
+                    onChange={(e) => setStoryEditDraft(e.target.value)}
+                  />
+                  <div className="story-actions">
+                    <button
+                      className="btn btn--primary"
+                      onClick={() => {
+                        onUpdateStory?.(person.id, storyEditDraft.trim());
+                        setStoryEditing(false);
+                      }}
+                      disabled={!storyEditDraft.trim()}
+                    >
+                      Save
+                    </button>
+                    <button className="btn" onClick={() => setStoryEditing(false)}>
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                storyState.phase === 'idle' && person.story && (
+                  <p className="story">{person.story}</p>
+                )
               )}
 
               {(storyState.phase === 'generating' || storyState.phase === 'done' || storyState.phase === 'revising') && (
