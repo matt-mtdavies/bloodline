@@ -109,3 +109,34 @@ export function isDuplicateLifeEvent(person, fact) {
     (e) => String(e.year) === factYear && titlesLikelyMatch(normalizeEventTitle(e.title), factKey),
   );
 }
+
+function nameTokens(name) {
+  return (name || '')
+    .toLowerCase()
+    .replace(/[^a-z\s]/g, ' ')
+    .split(/\s+/)
+    .filter((t) => t.length >= 3); // skip initials and short particles ("de", "OJ")
+}
+
+/*
+ * True when this person already has a stored event, in the same year, whose
+ * title or detail mentions the given name — a wider, name-based signal for
+ * exactly the case isDuplicateLifeEvent's title-similarity check can miss: a
+ * relationship-derived suggestion ("Welcomed Oliver — 2012") re-offered
+ * because the user's own event for the same birth was phrased completely
+ * differently ("Our son arrived", "Birth of Oliver at Cardiff"). Biased
+ * toward suppressing rather than repeating — a rare false suppression just
+ * means the user adds the row by hand; a repeated "haven't I already added
+ * this?" suggestion erodes trust in the whole feature.
+ */
+export function hasEventMentioning(person, year, name) {
+  if (!year || !name) return false;
+  const yearStr = String(year);
+  const tokens = nameTokens(name);
+  if (!tokens.length) return false;
+  return (person.events || []).some((e) => {
+    if (String(e.year) !== yearStr) return false;
+    const haystack = `${e.title || ''} ${e.detail || ''}`.toLowerCase();
+    return tokens.some((t) => haystack.includes(t));
+  });
+}

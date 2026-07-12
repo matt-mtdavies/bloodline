@@ -28,7 +28,7 @@
  *   | { type: 'document-person', docId, personIndex, matchedId, relation }
  *   | { type: 'relationship-fact', key, year, title, detail, tag? }
  */
-import { profileCompleteness, isDuplicateLifeEvent } from './profile.js';
+import { profileCompleteness, isDuplicateLifeEvent, hasEventMentioning } from './profile.js';
 import { findDuplicatePairs } from './duplicates.js';
 import { yearOf, yearsBetween } from './dates.js';
 
@@ -231,9 +231,16 @@ export function computeEnrichment(person, graph, memoryCount = 0, documents = []
   //    (the marriage_date, the birth) never goes away on its own, a
   //    dismissal has to be remembered explicitly, on the person itself. ────
   const dismissedRelFacts = new Set(person.dismissed_relationship_facts || []);
-  function pushRelationshipFact(key, fact) {
+  // subjectName is who the fact is actually about (the partner, the child,
+  // the grandchild) — checked against hasEventMentioning in ADDITION to the
+  // title-similarity check above, since a user's own event for the same
+  // birth or marriage is very often phrased nothing like "Welcomed Oliver"
+  // ("Our son arrived", "Birth of Oliver at Cardiff") and would otherwise
+  // slip past isDuplicateLifeEvent and get re-offered.
+  function pushRelationshipFact(key, fact, subjectName) {
     if (dismissedRelFacts.has(key)) return false;
     if (isDuplicateLifeEvent(person, fact)) return false;
+    if (subjectName && hasEventMentioning(person, fact.year, subjectName)) return false;
     findings.push({
       key: `rel_${key}`,
       tier: 'relationship',
@@ -257,7 +264,7 @@ export function computeEnrichment(person, graph, memoryCount = 0, documents = []
       year: yearOf(p.marriage_date),
       title: `Married ${firstNameOf(partner)}`,
       detail: p.marriage_place ? `In ${p.marriage_place}.` : undefined,
-    });
+    }, partner.display_name);
   }
 
   // Widowed — a still-"current" partner who has since died. Skipped if this
@@ -275,7 +282,7 @@ export function computeEnrichment(person, graph, memoryCount = 0, documents = []
       year: yearOf(partner.death_date),
       title: 'Widowed',
       detail: `After the death of ${firstNameOf(partner)}.`,
-    });
+    }, partner.display_name);
   }
 
   // Became a parent — one candidate per child with a recorded birth date,
@@ -294,7 +301,7 @@ export function computeEnrichment(person, graph, memoryCount = 0, documents = []
       year: yearOf(child.birth_date),
       title: `Welcomed ${firstNameOf(child)}`,
       detail: child.birth_place ? `Born in ${child.birth_place}.` : undefined,
-    });
+    }, child.display_name);
     if (pushed) shownParent++;
   }
 
@@ -314,7 +321,7 @@ export function computeEnrichment(person, graph, memoryCount = 0, documents = []
       year: yearOf(earliest.birth_date),
       title: 'Became a grandparent',
       detail: `${earliest.display_name} was born.`,
-    });
+    }, earliest.display_name);
   }
 
   // ── Document-derived facts, profile fields, and mentioned people —

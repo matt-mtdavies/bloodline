@@ -551,5 +551,38 @@ test('became-a-grandparent surfaces once, keyed to the earliest grandchild', () 
   assert.match(f.detail, /Grandkid One/);
 });
 
+test('became-a-parent is withheld when the person already recorded the birth under a different phrasing', () => {
+  // The exact bug report: an existing event for a child's birth, worded
+  // nothing like "Welcomed Oliver", still needs to suppress the suggestion.
+  const people = [
+    { id: 'p', display_name: 'Parent', events: [{ year: 2012, title: 'Our son arrived', detail: 'Oliver, born in Cardiff on a Tuesday morning.' }] },
+    { id: 'c', display_name: 'Oliver Mercer', birth_date: '2012-01-01' },
+  ];
+  const rels = [parentRel('p', 'c')];
+  const findings = findingsFor('p', people, rels);
+  assert.equal(byKeyPrefix(findings, 'rel_parent_').length, 0);
+});
+
+test('a Married finding is withheld when an existing event mentions the partner by name, differently phrased', () => {
+  const people = [
+    { id: 'a', display_name: 'James Mercer', events: [{ year: 1948, title: 'Wedding day', detail: 'Married my Iris at last.' }] },
+    { id: 'b', display_name: 'Iris Mercer' },
+  ];
+  const rels = [{ id: 'r1', type: 'partner', from_person: 'a', to_person: 'b', partner_status: 'current', marriage_date: '1948-06-01' }];
+  const findings = findingsFor('a', people, rels);
+  assert.equal(byKeyPrefix(findings, 'rel_married_').length, 0);
+});
+
+test('became-a-grandparent is withheld when an existing event mentions the grandchild by name', () => {
+  const people = [
+    { id: 'gp', display_name: 'Grandparent', events: [{ year: 2000, title: 'A new arrival', detail: 'Little Grandkid One joined the family.' }] },
+    { id: 'p', display_name: 'Parent' },
+    { id: 'gc1', display_name: 'Grandkid One', birth_date: '2000-01-01' },
+  ];
+  const rels = [parentRel('gp', 'p'), parentRel('p', 'gc1')];
+  const findings = findingsFor('gp', people, rels);
+  assert.equal(findings.find((f) => f.key === 'rel_grandparent'), undefined);
+});
+
 console.log(`\n  ${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);

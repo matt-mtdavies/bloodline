@@ -3,7 +3,7 @@
  * Run with: node tests/profile.test.mjs
  */
 import assert from 'node:assert/strict';
-import { lifeEvents, isDuplicateLifeEvent } from '../src/lib/profile.js';
+import { lifeEvents, isDuplicateLifeEvent, hasEventMentioning } from '../src/lib/profile.js';
 
 let passed = 0, failed = 0;
 function test(label, fn) {
@@ -95,6 +95,39 @@ test('isDuplicateLifeEvent is case- and punctuation-insensitive', () => {
 test('isDuplicateLifeEvent returns false for a fact with no year', () => {
   const person = { birth_date: '1924-11-27' };
   assert.equal(isDuplicateLifeEvent(person, { year: null, title: 'Born' }), false);
+});
+
+test('hasEventMentioning matches a same-year event phrased completely differently', () => {
+  const person = { events: [{ year: 2012, title: 'Our son arrived', detail: 'Born in Cardiff, a Tuesday morning.' }] };
+  assert.equal(hasEventMentioning(person, 2012, 'Oliver Mercer'), false); // "Oliver" never appears
+  const person2 = { events: [{ year: 2012, title: 'Birth of Oliver', detail: 'At Cardiff.' }] };
+  assert.equal(hasEventMentioning(person2, 2012, 'Oliver Mercer'), true);
+});
+
+test('hasEventMentioning matches the name in the detail, not just the title', () => {
+  const person = { events: [{ year: 2012, title: 'A big year', detail: 'Welcomed our son Oliver.' }] };
+  assert.equal(hasEventMentioning(person, 2012, 'Oliver'), true);
+});
+
+test('hasEventMentioning is case-insensitive and ignores punctuation', () => {
+  const person = { events: [{ year: 1948, title: "Married Iris!" }] };
+  assert.equal(hasEventMentioning(person, 1948, 'iris'), true);
+});
+
+test('hasEventMentioning requires the same year', () => {
+  const person = { events: [{ year: 2011, title: 'Birth of Oliver' }] };
+  assert.equal(hasEventMentioning(person, 2012, 'Oliver'), false);
+});
+
+test('hasEventMentioning ignores initials and short tokens to avoid noise matches', () => {
+  const person = { events: [{ year: 1990, title: 'A trip to Oslo' }] };
+  assert.equal(hasEventMentioning(person, 1990, 'O J'), false);
+});
+
+test('hasEventMentioning returns false with no year, no name, or no events', () => {
+  assert.equal(hasEventMentioning({ events: [{ year: 2012, title: 'Birth of Oliver' }] }, null, 'Oliver'), false);
+  assert.equal(hasEventMentioning({ events: [{ year: 2012, title: 'Birth of Oliver' }] }, 2012, ''), false);
+  assert.equal(hasEventMentioning({ events: [] }, 2012, 'Oliver'), false);
 });
 
 console.log(`\n  ${passed} passed, ${failed} failed`);
