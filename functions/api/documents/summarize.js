@@ -164,24 +164,28 @@ export async function onRequestPost({ request, env, data }) {
   if (!isPdf && !mediaType.startsWith('image/')) {
     return json({ error: 'Only image or PDF media types are supported.' }, { status: 400 });
   }
+  // A conservative backstop against a request large enough to be flaky or to
+  // exceed Anthropic's own per-request ceiling — the client already
+  // downscales images before it gets here, so this mainly catches an
+  // oversized PDF (which can't be downscaled) and fails fast and clearly
+  // instead of hanging on a slow upstream call that was never going to work.
+  if (fileData.length > 20 * 1024 * 1024) {
+    return json({ error: 'File is too large to summarize.' }, { status: 413 });
+  }
 
   const sourceBlock = isPdf
     ? { type: 'document', source: { type: 'base64', media_type: mediaType, data: fileData } }
     : { type: 'image', source: { type: 'base64', media_type: mediaType, data: fileData } };
 
-  const upstream = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'x-api-key': env.ANTHROPIC_API_KEY,
-      'anthropic-version': '2023-06-01',
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify({
+  const requestBody = JSON.stringify({
       model: MODEL,
       // Dense documents (a form with a dozen+ fields) can yield many facts,
       // each carrying a verbatim quote — 900 was tight enough to truncate
       // mid-JSON on busy documents, which silently fails to parse below.
-      max_tokens: 2048,
+      // Bumped again once military fields + medals joined the schema, for
+      // the same reason: more structured output per document, more room
+      // needed before truncation risk creeps back in.
+      max_tokens: 3072,
       output_config: { format: { type: 'json_schema', schema: RESPONSE_SCHEMA } },
       system: [
         'You read scanned family documents for a genealogy app — old letters, certificates,',
@@ -254,11 +258,32 @@ export async function onRequestPost({ request, env, data }) {
           ],
         },
       ],
-    }),
   });
 
+  // Anthropic's own guidance is to retry 429 (rate limited) and 5xx/529
+  // (overloaded) with backoff — these are the errors most likely behind
+  // "it summarized fine before, now it fails," since nothing about the
+  // document itself changed between attempts. Capped at 3 tries total so a
+  // genuinely broken request still fails promptly rather than hanging.
+  const RETRYABLE = new Set([429, 500, 502, 503, 529]);
+  let upstream, lastDetail = '';
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    upstream = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-api-key': env.ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
+      },
+      body: requestBody,
+    });
+    if (upstream.ok || !RETRYABLE.has(upstream.status) || attempt === 3) break;
+    lastDetail = await upstream.text().catch(() => '');
+    await new Promise((resolve) => setTimeout(resolve, attempt * 800));
+  }
+
   if (!upstream.ok) {
-    const detail = await upstream.text().catch(() => '');
+    const detail = lastDetail || await upstream.text().catch(() => '');
     await logAiUsage(env, { endpoint: 'summarize', model: MODEL, usage: null, user: data.user, ok: false });
     return json({ error: `Upstream AI error ${upstream.status}.`, detail: detail.slice(0, 300) }, { status: 502 });
   }

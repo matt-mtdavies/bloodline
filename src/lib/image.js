@@ -120,37 +120,68 @@ export async function srcToDataUrl(src) {
   });
 }
 
+// A hard ceiling on what we'll even attempt to send, regardless of type —
+// catches an oversized PDF (which can't be downscaled below) before it ever
+// leaves the device, so the failure is immediate and silent-but-logged
+// rather than a slow timeout against the API.
+const MAX_SUMMARIZE_PAYLOAD = 16 * 1024 * 1024;
+
 // Ask the server to read and summarize a document — a faded letter, a
 // military record, a certificate — into a plain-English paragraph, for
 // documents that are hard to make out on-screen. Works on images and PDFs
 // alike. Also returns candidate life-event `facts`, `profileFields`
-// (occupation/birth_place/residence), and `peopleMentioned` (other people
-// named in a direct family relationship to the subject) — each grounded in a
-// verbatim quote from the document — for the caller to offer as suggestions,
-// never applied automatically. Best-effort: returns null (never throws) on
-// any failure, a slow or unconfigured server, or nothing to summarize.
-export async function summarizeDocument(dataUrl, { timeoutMs = 45000 } = {}) {
+// (occupation/birth_place/residence/military branch/nation/service number/
+// rank), `peopleMentioned` (other people named in a direct family
+// relationship to the subject), and `medals` — each grounded in a verbatim
+// quote from the document — for the caller to offer as suggestions, never
+// applied automatically. Best-effort: returns null (never throws) on any
+// failure, a slow or unconfigured server, or nothing to summarize.
+export async function summarizeDocument(dataUrl, { timeoutMs = 60000 } = {}) {
   if (!dataUrl?.startsWith('data:image/') && !dataUrl?.startsWith('data:application/pdf')) return null;
+
+  // Anthropic's vision pipeline already downsizes any image past ~1568px on
+  // its long edge before reading it — sending more than that just risks
+  // hitting the API's own per-image size ceiling for zero gain in what the
+  // model actually sees. A full-resolution phone photo (10+ MP, several MB)
+  // is the most likely reason the exact same document summarizes fine one
+  // time and times out or gets rejected the next — this removes that
+  // variable for every caller, without touching the original file stored in
+  // R2 (only the copy sent to the AI is affected). PDFs are sent as-is — a
+  // canvas can't safely resize one.
+  let payload = dataUrl;
+  if (dataUrl.startsWith('data:image/')) {
+    payload = await imageSrcToDataUrl(dataUrl, 1600).catch(() => dataUrl);
+  }
+  if (payload.length > MAX_SUMMARIZE_PAYLOAD) {
+    console.warn('[docs] summarize skipped: file too large even after downscaling');
+    return null;
+  }
+
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), timeoutMs);
   try {
     const res = await fetch('/api/documents/summarize', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ file: dataUrl }),
+      body: JSON.stringify({ file: payload }),
       signal: ac.signal,
     });
-    if (!res.ok) return null;
-    const { summary, facts, profileFields, peopleMentioned } = await res.json();
-    if (!summary && !facts?.length && !peopleMentioned?.length
+    if (!res.ok) {
+      console.warn('[docs] summarize failed:', res.status);
+      return null;
+    }
+    const { summary, facts, profileFields, peopleMentioned, medals } = await res.json();
+    if (!summary && !facts?.length && !peopleMentioned?.length && !medals?.length
       && !profileFields?.occupation && !profileFields?.birth_place && !profileFields?.residence) return null;
     return {
       summary: summary || null,
       facts: facts || [],
       profileFields: profileFields || null,
       peopleMentioned: peopleMentioned || [],
+      medals: medals || [],
     };
-  } catch {
+  } catch (e) {
+    console.warn('[docs] summarize error:', e.message);
     return null;
   } finally {
     clearTimeout(timer);
