@@ -693,13 +693,15 @@ function trades(graph) {
     if (inBand.length < 4) continue;
     const freq = new Map();
     for (const e of inBand) {
-      const key = e.occ.toLowerCase();
-      if (!freq.has(key)) freq.set(key, { name: e.occ, count: 0, ids: [] });
-      const f = freq.get(key);
+      const f = trackVariant(freq, normalizeTextKey(e.occ), e.occ, { count: 0, ids: [] });
       f.count++;
       f.ids.push(e.id);
     }
-    const top = [...freq.values()].sort((a, b) => b.count - a.count).slice(0, 3);
+    resolveDisplay(freq);
+    const top = [...freq.values()]
+      .map((f) => ({ name: f.display, count: f.count, ids: f.ids }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 3);
     bands.push({
       from,
       to: Math.min(to, new Date().getFullYear()),
@@ -712,9 +714,8 @@ function trades(graph) {
 
   const overall = new Map();
   for (const e of entries) {
-    const key = e.occ.toLowerCase();
-    if (!overall.has(key)) overall.set(key, { name: e.occ, count: 0 });
-    overall.get(key).count++;
+    const f = trackVariant(overall, normalizeTextKey(e.occ), e.occ, { count: 0 });
+    f.count++;
   }
   const distinct = overall.size;
   return {
@@ -953,25 +954,59 @@ function names(graph, gen) {
   };
 }
 
-/* ── Heartlands: where the family was born, and the migration breadcrumb ─── */
+// "Mt. Gambier" and "Mt Gambier" (or "Builder" and "Builder.") are the same
+// value typed two ways, not two different ones — a raw lowercase key treats
+// a stray period or double space as a whole new place/trade, silently
+// splitting one true count across two bars. Stripping punctuation and
+// collapsing whitespace before keying merges those back together; shared by
+// heartlands (places) and trades (occupations) below, the two spots that
+// group people by free-text strings someone typed in by hand.
+const normalizeTextKey = (display) => display.toLowerCase().replace(/\./g, '').replace(/\s+/g, ' ').trim();
+
+// Track one raw-spelling variant against a normalized-key bucket, so the
+// merged group can show whichever variant its members actually used most
+// (via resolveDisplay below) rather than an arbitrary "whichever was seen
+// first."
+function trackVariant(bucket, key, display, extra) {
+  if (!bucket.has(key)) bucket.set(key, { variants: new Map(), ...extra });
+  const e = bucket.get(key);
+  e.variants.set(display, (e.variants.get(display) || 0) + 1);
+  return e;
+}
+
+// Resolve every bucket's `display` to its most-common raw spelling (ties
+// keep whichever was seen first) and drop the now-unneeded variant tally.
+function resolveDisplay(bucket) {
+  for (const e of bucket.values()) {
+    let best = null;
+    for (const [display, n] of e.variants) {
+      if (!best || n > best.n) best = { display, n };
+    }
+    e.display = best.display;
+    delete e.variants;
+  }
+}
+
 function heartlands(graph, gen) {
-  const places = new Map(); // normalized key -> { display, count }
+  const places = new Map(); // normalized key -> { display, count, ids, variants }
   const placeOf = (p) => {
     const raw = (p.birth_place || '').trim();
     if (!raw) return null;
     const display = raw.split(',')[0].trim();
-    return display ? { key: display.toLowerCase(), display } : null;
+    if (!display) return null;
+    const key = normalizeTextKey(display);
+    return key ? { key, display } : null;
   };
   let placed = 0;
   for (const p of graph.people) {
     const pl = placeOf(p);
     if (!pl) continue;
     placed++;
-    if (!places.has(pl.key)) places.set(pl.key, { display: pl.display, count: 0, ids: [] });
-    const e = places.get(pl.key);
+    const e = trackVariant(places, pl.key, pl.display, { count: 0, ids: [] });
     e.count++;
     e.ids.push(p.id);
   }
+  resolveDisplay(places);
   const byBirth = (a, b) =>
     (year(graph.byId.get(a)?.birth_date) ?? 9999) - (year(graph.byId.get(b)?.birth_date) ?? 9999);
   const ranked = [...places.values()]
@@ -983,28 +1018,34 @@ function heartlands(graph, gen) {
 
   // Migration: each generation's most common birthplace, consecutive
   // duplicates collapsed. The era shown is that generation's earliest birth.
-  const byGen = new Map(); // gen -> Map(placeKey -> {display, count, minYear})
+  const byGen = new Map(); // gen -> Map(placeKey -> {display, count, minYear, variants})
   for (const p of graph.people) {
     const pl = placeOf(p);
     if (!pl) continue;
     const g = gen.get(p.id) ?? 0;
     if (!byGen.has(g)) byGen.set(g, new Map());
     const m = byGen.get(g);
-    if (!m.has(pl.key)) m.set(pl.key, { display: pl.display, count: 0, minYear: Infinity });
-    const e = m.get(pl.key);
+    const e = trackVariant(m, pl.key, pl.display, { count: 0, minYear: Infinity });
     e.count++;
     const y = year(p.birth_date);
     if (y != null && y < e.minYear) e.minYear = y;
   }
+  for (const m of byGen.values()) resolveDisplay(m);
   const steps = [];
+  let lastKey = null;
   for (const g of [...byGen.keys()].sort((a, b) => a - b)) {
-    let best = null;
-    for (const e of byGen.get(g).values()) {
+    let bestKey = null, best = null;
+    for (const [key, e] of byGen.get(g)) {
       if (e.count < 2) continue;
-      if (!best || e.count > best.count) best = e;
+      if (!best || e.count > best.count) { best = e; bestKey = key; }
     }
     if (!best) continue;
-    if (steps.length && steps[steps.length - 1].display === best.display) continue;
+    // Compare by normalized key, not display text — two generations can
+    // each independently pick a different spelling of the SAME merged place
+    // ("Mt Gambier" one generation, "Mt. Gambier" the next) as their own
+    // most-common variant; that isn't a move, and shouldn't read as one.
+    if (bestKey === lastKey) continue;
+    lastKey = bestKey;
     steps.push({
       display: best.display,
       era: best.minYear === Infinity ? null

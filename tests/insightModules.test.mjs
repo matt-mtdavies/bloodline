@@ -796,5 +796,41 @@ test('serviceRecords: generationsSpanned counts distinct generations among docum
   assert.equal(serviceRecords.generationsSpanned, 2);
 });
 
+// ── Data-quality: punctuation/whitespace-only duplicates merge ─────────────
+// "Mt. Gambier" and "Mt Gambier" are the same town typed two ways — a raw
+// lowercase key used to treat them as two different places, silently
+// splitting one true count across two bars (reported live: 14 + 10 shown
+// separately instead of 24 together).
+
+test('heartlands: "Mt. Gambier" and "Mt Gambier" merge into one place, showing the more common spelling', () => {
+  const people = [
+    ...Array.from({ length: 5 }, (_, i) => ({ id: `a${i}`, display_name: `A${i}`, birth_place: 'Mt. Gambier' })),
+    ...Array.from({ length: 3 }, (_, i) => ({ id: `b${i}`, display_name: `B${i}`, birth_place: 'Mt Gambier' })),
+    ...Array.from({ length: 6 }, (_, i) => ({ id: `c${i}`, display_name: `C${i}`, birth_place: 'Adelaide' })),
+  ];
+  const graph = buildGraph(people, []);
+  const { heartlands } = computeInsightModules(graph, 'a0');
+  assert.ok(heartlands, 'module should render');
+  const gambierEntries = heartlands.places.filter((p) => /gambier/i.test(p.display));
+  assert.equal(gambierEntries.length, 1, 'the two spellings should merge into a single place entry');
+  assert.equal(gambierEntries[0].display, 'Mt. Gambier', 'the more common spelling (5 vs 3) should be shown');
+  assert.equal(gambierEntries[0].count, 8);
+  assert.equal(gambierEntries[0].ids.length, 8);
+});
+
+test('trades: punctuation-only occupation variants merge into one tally, keyed by the more common spelling', () => {
+  const { people: p2, rels: r2 } = richTree();
+  const railwaymen = p2.filter((p) => p.occupation === 'Railwayman');
+  assert.ok(railwaymen.length >= 4, 'fixture should have enough railwaymen to test with');
+  railwaymen.slice(0, 2).forEach((p) => { p.occupation = 'Railwayman.'; }); // trailing period, same job
+  const g2 = buildGraph(p2, r2);
+  const trades = computeInsightModules(g2, 'g4_0', 0).trades;
+  assert.ok(trades, 'module should still render');
+  const firstBand = trades.bands[0];
+  const railwaymanEntries = firstBand.top.filter((t) => t.name.replace(/\.$/, '') === 'Railwayman');
+  assert.equal(railwaymanEntries.length, 1, 'the two spellings should merge into a single entry');
+  assert.equal(railwaymanEntries[0].count, railwaymen.length, 'the merged entry should carry the combined count');
+});
+
 console.log(`\n  ${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);
