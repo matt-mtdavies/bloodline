@@ -55,6 +55,7 @@ export default function PersonSheet({
   onUpdatePartnerMeta,
   onUpdateStory,
   onUpdateMilitaryStory,
+  onUpdateMilitaryContext,
   onAddCondition,
   onRemoveCondition,
   onUpdateCondition,
@@ -733,6 +734,7 @@ export default function PersonSheet({
               personDocs={personDocs}
               onOpenDocument={openDoc}
               onUpdateMilitaryStory={onUpdateMilitaryStory}
+              onUpdateMilitaryContext={onUpdateMilitaryContext}
               canEdit={canEdit}
             />
 

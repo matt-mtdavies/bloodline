@@ -9537,6 +9537,37 @@ button.health-notes {
   margin-bottom: 10px;
 }
 
+/* Historical context — the one part of this section that isn't drawn from
+   the family's own documents, so it gets a visually distinct treatment: a
+   bordered, cool-toned card rather than the plain warm prose of the
+   narrative above, to keep "outside knowledge" from ever reading as if it
+   were a family record. */
+.military__context {
+  margin-top: 16px;
+  padding: 14px 15px;
+  border-radius: 14px;
+  border: 1px solid var(--hairline);
+  background: var(--paper-deep);
+}
+.military__context-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 10px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+.military__context-label svg { flex: none; color: var(--ink-faint); }
+.military__context-empty {
+  margin: 0;
+  font-size: 13.5px;
+  font-style: italic;
+  color: var(--ink-faint);
+}
+
 /* The story — verbatim document quotes, the human register. */
 .military__quotes {
   display: grid;

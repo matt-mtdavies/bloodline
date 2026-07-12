@@ -6,6 +6,8 @@ import {
   hasMilitaryService, canGenerateMilitaryStory,
 } from '../lib/military.js';
 
+const NO_CONTEXT = 'NO_HISTORICAL_CONTEXT_AVAILABLE';
+
 /*
  * Military Service — conditional, only rendered when there's real
  * military-tagged data on this person (see hasMilitaryService). Four
@@ -17,69 +19,29 @@ import {
  *   - the narrative: an optional AI-drafted account, fed ONLY the
  *     military-tagged events and verbatim document quotes (never the
  *     person's general life data), so it can't reach for an unrelated
- *     fact or invent a posting the records never mentioned. Same review
- *     discipline as the general Life Story — Keep it / Fix it / Dismiss,
- *     Edit + Regenerate afterward — and stored separately
- *     (person.military_story), never overwriting the general story.
- *   - the record: bureaucratic fact, tabular and quiet.
+ *     fact or invent a posting the records never mentioned.
+ *   - historical context: a second, separate AI aside — general
+ *     historical background on a specific place/camp/campaign/unit
+ *     mentioned in the record, offered ONLY when the model has genuine,
+ *     well-established knowledge of it (see the NO_CONTEXT sentinel).
+ *     Visually and textually distinct from the narrative, since this is
+ *     the one part of the section that isn't drawn from the family's own
+ *     documents — it's outside knowledge, clearly labeled as such.
  *   - the story-in-fragments: verbatim quotes from the documents
- *     themselves — the human voice inside the paperwork, sitting
- *     alongside the narrative rather than being replaced by it.
+ *     themselves — the human voice inside the paperwork.
+ * The narrative and historical context share the same review discipline
+ * (Keep it / Fix it / Dismiss, Edit + Regenerate) via GeneratedBlock below.
  */
-export default function MilitaryService({ person, personDocs, onOpenDocument, onUpdateMilitaryStory, canEdit = true }) {
-  const storyAbort = useRef(null);
-  const [storyState, setStoryState] = useState({ phase: 'idle', text: '', error: null });
-  const [storyNotes, setStoryNotes] = useState('');
-  const [storyEditing, setStoryEditing] = useState(false);
-  const [storyEditDraft, setStoryEditDraft] = useState('');
-
-  // Same reset as PersonSheet's own story state: this component doesn't
-  // remount when the viewed person changes (PersonSheet swaps `person` in
-  // place), so without this a stream started for one person could still be
-  // "generating" on someone else's profile a moment later.
-  useEffect(() => {
-    storyAbort.current?.abort();
-    storyAbort.current = null;
-    setStoryState({ phase: 'idle', text: '', error: null });
-    setStoryEditing(false);
-  }, [person?.id]);
-
+export default function MilitaryService({ person, personDocs, onOpenDocument, onUpdateMilitaryStory, onUpdateMilitaryContext, canEdit = true }) {
   if (!hasMilitaryService(person, personDocs)) return null;
 
   const events = militaryEvents(person);
   const docs = militaryDocuments(personDocs);
   const quotes = militaryQuotes(personDocs);
+  const allQuotes = militaryQuotes(personDocs, Infinity);
   const years = serviceYears(events);
-  const canGenerate = canGenerateMilitaryStory(person, personDocs);
-
-  const generateMilitaryStory = async (feedback) => {
-    storyAbort.current?.abort();
-    const ac = new AbortController();
-    storyAbort.current = ac;
-    const previousStory = storyState.text || person.military_story || '';
-    setStoryState({ phase: 'generating', text: '', error: null });
-    setStoryNotes('');
-
-    await streamBio(
-      person,
-      {
-        focus: 'military',
-        militaryEvents: events,
-        militaryQuotes: militaryQuotes(personDocs, Infinity),
-        feedback: feedback?.trim() || undefined,
-        previousStory: feedback?.trim() ? previousStory : undefined,
-      },
-      {
-        signal: ac.signal,
-        onChunk: (text) => setStoryState((s) => ({ ...s, text: s.text + text })),
-        onDone: () => setStoryState((s) => ({ ...s, phase: 'done' })),
-        onError: (err) => {
-          if (!err) return; // aborted — no-op
-          setStoryState({ phase: 'idle', text: '', error: err.message });
-        },
-      },
-    );
-  };
+  const hasMaterial = events.length > 0 || allQuotes.length > 0;
+  const canGenerateStory = canGenerateMilitaryStory(person, personDocs);
 
   return (
     <section className="profile-section military">
@@ -110,127 +72,39 @@ export default function MilitaryService({ person, personDocs, onOpenDocument, on
         </div>
       )}
 
-      {/* The narrative — optional, AI-drafted, grounded only in the material
-          above. Same UX as the general Life Story, kept in its own field. */}
       {(canEdit || person.military_story) && (
         <div className="military__narrative">
-          {!storyEditing && person.military_story && storyState.phase === 'idle' && !storyState.error && canEdit && (
-            <div className="military__narrative-actions">
-              <button
-                className="story-regen"
-                onClick={() => { setStoryEditDraft(person.military_story); setStoryEditing(true); }}
-              >
-                Edit
-              </button>
-              <button className="story-regen" onClick={() => setStoryState((s) => ({ ...s, phase: 'revising' }))}>
-                Regenerate
-              </button>
-            </div>
-          )}
+          <GeneratedBlock
+            person={person}
+            canEdit={canEdit}
+            value={person.military_story}
+            onSave={(text) => onUpdateMilitaryStory?.(person.id, text)}
+            requestExtra={{ focus: 'military', militaryEvents: events, militaryQuotes: allQuotes }}
+            triggerLabel="Generate this chapter with AI"
+            canGenerate={canGenerateStory}
+            revisePlaceholder="What's not right? e.g. He was discharged in 1946, not 1947."
+          />
+        </div>
+      )}
 
-          {storyState.phase === 'idle' && storyState.error && (
-            <p className="story-error">{storyState.error}</p>
-          )}
-
-          {canEdit && storyState.phase === 'idle' && storyState.error && (
-            <button className="story-regen" onClick={() => generateMilitaryStory()}>
-              Try again
-            </button>
-          )}
-
-          {canEdit && canGenerate && storyState.phase === 'idle' && !person.military_story && !storyState.error && (
-            <button className="ai-generate" onClick={() => generateMilitaryStory()}>
-              <SparkleIcon />
-              Generate this chapter with AI
-            </button>
-          )}
-
-          {storyEditing ? (
-            <div className="story-edit">
-              <textarea
-                className="field__input field__input--area story-edit__textarea"
-                rows={10}
-                autoFocus
-                value={storyEditDraft}
-                onChange={(e) => setStoryEditDraft(e.target.value)}
-              />
-              <div className="story-actions">
-                <button
-                  className="btn btn--primary"
-                  onClick={() => {
-                    onUpdateMilitaryStory?.(person.id, storyEditDraft.trim());
-                    setStoryEditing(false);
-                  }}
-                  disabled={!storyEditDraft.trim()}
-                >
-                  Save
-                </button>
-                <button className="btn" onClick={() => setStoryEditing(false)}>
-                  Cancel
-                </button>
-              </div>
-            </div>
-          ) : (
-            storyState.phase === 'idle' && person.military_story && (
-              <p className="story">{person.military_story}</p>
-            )
-          )}
-
-          {(storyState.phase === 'generating' || storyState.phase === 'done' || storyState.phase === 'revising') && (
-            <p className={`story${storyState.phase === 'generating' ? ' story--generating' : ''}`}>
-              {storyState.text || person.military_story}
-            </p>
-          )}
-
-          {storyState.phase === 'done' && (
-            <>
-              <div className="story-actions">
-                <button
-                  className="btn btn--primary"
-                  onClick={() => {
-                    onUpdateMilitaryStory?.(person.id, storyState.text);
-                    setStoryState({ phase: 'idle', text: '', error: null });
-                  }}
-                >
-                  Keep it
-                </button>
-                <button className="btn" onClick={() => setStoryState((s) => ({ ...s, phase: 'revising' }))}>
-                  Fix it
-                </button>
-                <button className="btn" onClick={() => setStoryState({ phase: 'idle', text: '', error: null })}>
-                  Dismiss
-                </button>
-              </div>
-              <p className="story-note">Generated by AI · review before keeping</p>
-            </>
-          )}
-
-          {storyState.phase === 'revising' && (
-            <div className="story-revise">
-              <textarea
-                className="field__input field__input--area"
-                rows={3}
-                autoFocus
-                value={storyNotes}
-                onChange={(e) => setStoryNotes(e.target.value)}
-                placeholder="What's not right? e.g. He was discharged in 1946, not 1947."
-              />
-              <div className="story-actions">
-                <button className="btn btn--primary" onClick={() => generateMilitaryStory(storyNotes)}>
-                  Regenerate
-                </button>
-                <button
-                  className="btn"
-                  onClick={() => {
-                    setStoryNotes('');
-                    setStoryState((s) => ({ ...s, phase: s.text ? 'done' : 'idle' }));
-                  }}
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          )}
+      {((canEdit && hasMaterial) || person.military_context) && (
+        <div className="military__context">
+          <p className="military__context-label">
+            <InfoIcon /> Historical Context
+          </p>
+          <GeneratedBlock
+            person={person}
+            canEdit={canEdit}
+            value={person.military_context}
+            onSave={(text) => onUpdateMilitaryContext?.(person.id, text)}
+            requestExtra={{ focus: 'military-context', militaryEvents: events, militaryQuotes: allQuotes }}
+            triggerLabel="Add historical context"
+            canGenerate={hasMaterial}
+            emptySentinel={NO_CONTEXT}
+            emptyMessage="Nothing well-documented enough to add for this record."
+            revisePlaceholder="Point it at the right place — e.g. that's Stalag Luft III, not Stalag VIII-B."
+            note="General historical background — not from your family's records"
+          />
         </div>
       )}
 
@@ -272,6 +146,190 @@ export default function MilitaryService({ person, personDocs, onOpenDocument, on
   );
 }
 
+/*
+ * The shared AI-generation review UI behind both the narrative and the
+ * historical context block: idle -> generating -> done (Keep it / Fix it /
+ * Dismiss) -> revising, plus direct manual Edit, plus an optional 'empty'
+ * phase for a generation that came back as emptySentinel (nothing to add) —
+ * that phase skips Keep/Fix/Dismiss entirely, since there's nothing worth
+ * keeping, just a Dismiss to clear it. requestExtra is passed straight
+ * through to streamBio (focus + the military-only context); this component
+ * only cares about the generic stream lifecycle, not what's being generated.
+ */
+function GeneratedBlock({
+  person, canEdit, value, onSave, requestExtra,
+  triggerLabel, canGenerate = true, emptySentinel, emptyMessage,
+  revisePlaceholder, note = 'Generated by AI · review before keeping',
+}) {
+  const abortRef = useRef(null);
+  const [state, setState] = useState({ phase: 'idle', text: '', error: null });
+  const [notes, setNotes] = useState('');
+  const [editing, setEditing] = useState(false);
+  const [editDraft, setEditDraft] = useState('');
+
+  // This component doesn't remount when the viewed person changes
+  // (MilitaryService swaps `person` in place), so without this a stream
+  // started for one person could still be "generating" on someone else's
+  // profile a moment later.
+  useEffect(() => {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setState({ phase: 'idle', text: '', error: null });
+    setEditing(false);
+  }, [person?.id]);
+
+  const run = async (feedback) => {
+    abortRef.current?.abort();
+    const ac = new AbortController();
+    abortRef.current = ac;
+    const previousText = state.text || value || '';
+    setState({ phase: 'generating', text: '', error: null });
+    setNotes('');
+
+    await streamBio(
+      person,
+      {
+        ...requestExtra,
+        feedback: feedback?.trim() || undefined,
+        previousStory: feedback?.trim() ? previousText : undefined,
+      },
+      {
+        signal: ac.signal,
+        onChunk: (text) => setState((s) => ({ ...s, text: s.text + text })),
+        onDone: () => setState((s) => {
+          const trimmed = s.text.trim();
+          if (emptySentinel && trimmed === emptySentinel) return { phase: 'empty', text: '', error: null };
+          return { ...s, phase: 'done' };
+        }),
+        onError: (err) => {
+          if (!err) return; // aborted — no-op
+          setState({ phase: 'idle', text: '', error: err.message });
+        },
+      },
+    );
+  };
+
+  return (
+    <>
+      {!editing && value && state.phase === 'idle' && !state.error && canEdit && (
+        <div className="military__narrative-actions">
+          <button className="story-regen" onClick={() => { setEditDraft(value); setEditing(true); }}>
+            Edit
+          </button>
+          <button className="story-regen" onClick={() => setState((s) => ({ ...s, phase: 'revising' }))}>
+            Regenerate
+          </button>
+        </div>
+      )}
+
+      {state.phase === 'idle' && state.error && <p className="story-error">{state.error}</p>}
+
+      {canEdit && state.phase === 'idle' && state.error && (
+        <button className="story-regen" onClick={() => run()}>
+          Try again
+        </button>
+      )}
+
+      {canEdit && canGenerate && state.phase === 'idle' && !value && !state.error && (
+        <button className="ai-generate" onClick={() => run()}>
+          <SparkleIcon />
+          {triggerLabel}
+        </button>
+      )}
+
+      {editing ? (
+        <div className="story-edit">
+          <textarea
+            className="field__input field__input--area story-edit__textarea"
+            rows={8}
+            autoFocus
+            value={editDraft}
+            onChange={(e) => setEditDraft(e.target.value)}
+          />
+          <div className="story-actions">
+            <button
+              className="btn btn--primary"
+              disabled={!editDraft.trim()}
+              onClick={() => { onSave(editDraft.trim()); setEditing(false); }}
+            >
+              Save
+            </button>
+            <button className="btn" onClick={() => setEditing(false)}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : (
+        state.phase === 'idle' && value && <p className="story">{value}</p>
+      )}
+
+      {(state.phase === 'generating' || state.phase === 'done' || state.phase === 'revising') && (
+        <p className={`story${state.phase === 'generating' ? ' story--generating' : ''}`}>
+          {state.text || value}
+        </p>
+      )}
+
+      {state.phase === 'done' && (
+        <>
+          <div className="story-actions">
+            <button
+              className="btn btn--primary"
+              onClick={() => { onSave(state.text); setState({ phase: 'idle', text: '', error: null }); }}
+            >
+              Keep it
+            </button>
+            <button className="btn" onClick={() => setState((s) => ({ ...s, phase: 'revising' }))}>
+              Fix it
+            </button>
+            <button className="btn" onClick={() => setState({ phase: 'idle', text: '', error: null })}>
+              Dismiss
+            </button>
+          </div>
+          <p className="story-note">{note}</p>
+        </>
+      )}
+
+      {state.phase === 'empty' && (
+        <>
+          <p className="military__context-empty">{emptyMessage}</p>
+          <div className="story-actions">
+            <button className="btn" onClick={() => setState({ phase: 'idle', text: '', error: null })}>
+              Dismiss
+            </button>
+          </div>
+        </>
+      )}
+
+      {state.phase === 'revising' && (
+        <div className="story-revise">
+          <textarea
+            className="field__input field__input--area"
+            rows={3}
+            autoFocus
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            placeholder={revisePlaceholder}
+          />
+          <div className="story-actions">
+            <button className="btn btn--primary" onClick={() => run(notes)}>
+              Regenerate
+            </button>
+            <button
+              className="btn"
+              onClick={() => {
+                setNotes('');
+                setState((s) => ({ ...s, phase: s.text ? 'done' : 'idle' }));
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 function RibbonIcon() {
   return (
     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -285,6 +343,16 @@ function SparkleIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <path d="M12 3l1.6 4.7L18.3 9.3l-4.7 1.6L12 15.6l-1.6-4.7L5.7 9.3l4.7-1.6L12 3z" fill="currentColor" />
+    </svg>
+  );
+}
+
+function InfoIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.7" />
+      <path d="M12 11v6" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+      <circle cx="12" cy="7.5" r="1.1" fill="currentColor" />
     </svg>
   );
 }

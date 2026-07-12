@@ -39,25 +39,29 @@ export async function onRequestPost({ request, env, data, waitUntil }) {
       headers: { 'content-type': 'application/json' },
     });
   }
-  if (focus === 'military' && !militaryEvents.length && !militaryQuotes.length) {
+  const isMilitaryFocus = focus === 'military' || focus === 'military-context';
+  if (isMilitaryFocus && !militaryEvents.length && !militaryQuotes.length) {
     return new Response(JSON.stringify({ error: 'No military service data to write from.' }), {
       status: 400,
       headers: { 'content-type': 'application/json' },
     });
   }
 
-  // Same endpoint, two prompts: the general life story draws on everything
-  // (timeline, memories, documents), but a military-focused account is
-  // deliberately fed ONLY the military-tagged material (see
-  // lib/military.js's militaryEvents/militaryQuotes, computed client-side
-  // and passed straight through) — narrower context means it can't reach
-  // for an unrelated life event or invent a posting the records never
-  // mentioned. logAiUsage tags the two separately so the admin dashboard's
-  // per-endpoint spend breakdown can tell them apart.
-  const endpointTag = focus === 'military' ? 'biography-military' : 'biography';
+  // Same endpoint, three prompts: the general life story draws on everything
+  // (timeline, memories, documents); a military-focused account and a
+  // historical-context aside are both deliberately fed ONLY the
+  // military-tagged material (see lib/military.js's militaryEvents/
+  // militaryQuotes, computed client-side and passed straight through) —
+  // narrower context means neither can reach for an unrelated life event or
+  // invent a posting the records never mentioned. logAiUsage tags all three
+  // separately so the admin dashboard's per-endpoint spend breakdown can
+  // tell them apart.
+  const endpointTag = focus === 'military' ? 'biography-military'
+    : focus === 'military-context' ? 'biography-military-context'
+    : 'biography';
   let personContext, systemText;
 
-  if (focus === 'military') {
+  if (isMilitaryFocus) {
     const lines = [`Name: ${person.display_name}`];
     if (militaryEvents.length) {
       const evs = militaryEvents
@@ -72,7 +76,9 @@ export async function onRequestPost({ request, env, data, waitUntil }) {
       lines.push(`Verbatim quotes from service records:\n${qs}`);
     }
     personContext = lines.join('\n');
-    systemText = `You are a thoughtful family archivist writing a short, focused account of one person's military service, for a family tree app. Draw only on the service timeline and the verbatim document quotes given below — never invent a posting, battle, unit, rank, or date that isn't in them. If the source material is thin on a point, leave it out rather than guessing. Two short paragraphs, third person, warm but plain — like a passage from a family history book, not a Wikipedia article. No bullet points, no headers. Write only the account — nothing else.`;
+    systemText = focus === 'military-context'
+      ? `You are a historical researcher adding brief, well-documented background to a family's military record, for a family tree app. You'll be given a service timeline and verbatim quotes from military documents. If — and only if — one of the specific places, camps, campaigns, or units mentioned below is something you have genuine, well-established historical knowledge of, write a short informational aside about it (3-5 sentences, third person, plain factual tone). Write about the place, campaign, or event — not about the person. Do not guess at what a partly-legible or ambiguous name might refer to, and do not write generic filler about "wartime conditions in general" if you don't recognize the specific place — it's better to say nothing. If nothing below is something you're genuinely confident about, respond with EXACTLY this and nothing else, no punctuation, no quotation marks: NO_HISTORICAL_CONTEXT_AVAILABLE`
+      : `You are a thoughtful family archivist writing a short, focused account of one person's military service, for a family tree app. Draw only on the service timeline and the verbatim document quotes given below — never invent a posting, battle, unit, rank, or date that isn't in them. If the source material is thin on a point, leave it out rather than guessing. Two short paragraphs, third person, warm but plain — like a passage from a family history book, not a Wikipedia article. No bullet points, no headers. Write only the account — nothing else.`;
   } else {
     // Build a structured context string for the model.
     const lines = [];
@@ -141,7 +147,9 @@ export async function onRequestPost({ request, env, data, waitUntil }) {
       }\n\nFamily's corrections:\n${feedback.trim()}\n\nRewrite it incorporating these corrections.`
     : '';
 
-  const writePrompt = focus === 'military' ? 'Write a short account of this person\'s military service' : 'Write a life story for this person';
+  const writePrompt = focus === 'military' ? 'Write a short account of this person\'s military service'
+    : focus === 'military-context' ? 'Here is a military service record — add historical context if you genuinely have it'
+    : 'Write a life story for this person';
 
   const upstream = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -153,7 +161,7 @@ export async function onRequestPost({ request, env, data, waitUntil }) {
     },
     body: JSON.stringify({
       model: MODEL,
-      max_tokens: 700,
+      max_tokens: focus === 'military-context' ? 250 : 700,
       stream: true,
       system: [
         {
