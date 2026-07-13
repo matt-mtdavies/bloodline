@@ -9716,10 +9716,14 @@ button.health-notes {
   margin-top: 18px;
 }
 .military__quote {
+  position: relative;
   margin: 0;
   padding: 2px 0 2px 18px;
   border-left: 2px solid var(--accent-soft);
 }
+/* Room for the corner dismiss button — only reserved when it's actually
+   there, so a read-only quote (canEdit false) keeps using the full width. */
+.military__quote--editable { padding-right: 26px; }
 .military__quote p {
   margin: 0;
   font-family: var(--display);
@@ -9728,15 +9732,9 @@ button.health-notes {
   line-height: 1.55;
   color: var(--ink);
 }
-.military__quote-foot {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
-  margin-top: 7px;
-}
 .military__quote cite {
   display: block;
+  margin-top: 7px;
   font-style: normal;
   font-size: 11px;
   font-weight: 600;
@@ -9744,14 +9742,20 @@ button.health-notes {
   text-transform: uppercase;
   color: var(--ink-faint);
 }
+/* A fixed corner mark, not inline with the citation — a long citation
+   ("Australian Military Forces Military Board Adjutant-General") wraps to
+   two lines on a phone, and a button sharing that line looked stranded
+   next to the wrap rather than sitting with the rest of the quote. */
 .military__quote-dismiss {
-  flex-shrink: 0;
+  position: absolute;
+  top: 2px;
+  right: 0;
   border: 0;
   background: transparent;
   color: var(--ink-faint);
-  font-size: 15px;
+  font-size: 16px;
   line-height: 1;
-  padding: 2px 4px;
+  padding: 3px 5px;
   border-radius: 6px;
   cursor: pointer;
   transition: color 0.15s, background 0.15s;
@@ -9759,6 +9763,26 @@ button.health-notes {
 .military__quote-dismiss:hover {
   color: var(--ink-soft);
   background: var(--paper-deep, #f4f5f7);
+}
+/* Same "are you sure" shape as removing a document (doc-card__confirm) — a
+   shown quote is already live content, not a pending suggestion, so losing
+   one to a stray tap gets a confirm step rather than an instant delete. */
+.military__quote-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 7px;
+  font-size: 13px;
+  color: var(--ink);
+}
+.military__quote-confirm-btns { display: flex; gap: 8px; }
+.military__quote-confirm-remove {
+  padding: 6px 14px; border-radius: 10px; font-size: 12.5px; font-weight: 600;
+  background: #c2603a; color: #fff;
+}
+.military__quote-confirm-cancel {
+  padding: 6px 14px; border-radius: 10px; font-size: 12.5px; font-weight: 500;
+  background: var(--paper-deep); color: var(--ink-soft);
 }
 
 /* The archival document gallery — a distinct, slightly-aged treatment sets

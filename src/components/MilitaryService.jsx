@@ -34,6 +34,12 @@ const NO_CONTEXT = 'NO_HISTORICAL_CONTEXT_AVAILABLE';
  * (Keep it / Fix it / Dismiss, Edit + Regenerate) via GeneratedBlock below.
  */
 export default function MilitaryService({ person, personDocs, onOpenDocument, onUpdateMilitaryStory, onUpdateMilitaryContext, onDismissDocumentFact, canEdit = true }) {
+  // A quote is already live content on the profile, not a pending
+  // suggestion — unlike Enrich's own Dismiss, losing one to a stray tap has
+  // no way back, so it gets the same "are you sure" confirm as removing a
+  // document does, not a silent one-tap delete. Keyed by `docId:factIndex`
+  // so only the one quote being confirmed shows it.
+  const [confirmQuoteKey, setConfirmQuoteKey] = useState(null);
   if (!hasMilitaryService(person, personDocs)) return null;
 
   const events = militaryEvents(person);
@@ -150,24 +156,43 @@ export default function MilitaryService({ person, personDocs, onOpenDocument, on
 
       {quotes.length > 0 && (
         <div className="military__quotes">
-          {quotes.map((q, i) => (
-            <blockquote className="military__quote" key={i}>
-              <p>&ldquo;{q.quote}&rdquo;</p>
-              <div className="military__quote-foot">
-                <cite>— {q.docTitle}{q.year ? `, ${q.year}` : ''}</cite>
-                {canEdit && onDismissDocumentFact && (
+          {quotes.map((q, i) => {
+            const key = `${q.docId}:${q.factIndex}`;
+            const confirming = confirmQuoteKey === key;
+            return (
+              <blockquote className={`military__quote${canEdit && onDismissDocumentFact ? ' military__quote--editable' : ''}`} key={i}>
+                <p>&ldquo;{q.quote}&rdquo;</p>
+                {confirming ? (
+                  <div className="military__quote-confirm">
+                    <span>Remove this quote?</span>
+                    <div className="military__quote-confirm-btns">
+                      <button
+                        className="military__quote-confirm-remove"
+                        onClick={() => { onDismissDocumentFact(q.docId, q.factIndex); setConfirmQuoteKey(null); }}
+                      >
+                        Remove
+                      </button>
+                      <button className="military__quote-confirm-cancel" onClick={() => setConfirmQuoteKey(null)}>
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <cite>— {q.docTitle}{q.year ? `, ${q.year}` : ''}</cite>
+                )}
+                {canEdit && onDismissDocumentFact && !confirming && (
                   <button
                     className="military__quote-dismiss"
-                    onClick={() => onDismissDocumentFact(q.docId, q.factIndex)}
+                    onClick={() => setConfirmQuoteKey(key)}
                     aria-label="Remove this quote — e.g. if it's about someone else the document mentions, not this person"
                     title="Remove this quote"
                   >
                     ×
                   </button>
                 )}
-              </div>
-            </blockquote>
-          ))}
+              </blockquote>
+            );
+          })}
         </div>
       )}
 
