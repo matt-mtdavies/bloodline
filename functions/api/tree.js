@@ -135,22 +135,24 @@ export async function onRequestPut({ request, env, data }) {
       return json({ error: 'Forbidden' }, { status: 403 });
     }
 
+    // The optimistic-concurrency check and "what's there now" (used below for
+    // the snapshot, the contributor merge base, and the editor-can't-remove
+    // guard) read the exact same row — one SELECT for both instead of two
+    // saves a full D1 round trip on every single save, which matters most on
+    // a large tree over a slow connection (the most common way a save ends
+    // up racing whatever timeout produces a 503).
+    const existingTree = await env.DB.prepare(
+      'SELECT tree_json, updated_at FROM family_tree WHERE family_id = ?',
+    ).bind(membership.family_id).first();
+
     // Optimistic concurrency: if the client sent If-Match, check it against the
     // current updated_at. Reject with 409 if someone else saved since the client
     // last loaded, so they can merge before overwriting.
     const ifMatch = request.headers.get('If-Match');
-    if (ifMatch && ifMatch !== '*') {
-      const current = await env.DB.prepare(
-        'SELECT updated_at FROM family_tree WHERE family_id = ?',
-      ).bind(membership.family_id).first();
-      if (current && `"${current.updated_at}"` !== ifMatch) {
-        return json({ error: 'Conflict — tree was updated by another editor' }, { status: 409 });
-      }
+    if (ifMatch && ifMatch !== '*' && existingTree && `"${existingTree.updated_at}"` !== ifMatch) {
+      return json({ error: 'Conflict — tree was updated by another editor' }, { status: 409 });
     }
 
-    const existingTree = await env.DB.prepare(
-      'SELECT tree_json FROM family_tree WHERE family_id = ?',
-    ).bind(membership.family_id).first();
     let prev = null;
     if (existingTree) {
       try { prev = JSON.parse(existingTree.tree_json); } catch { /* unparseable — ignore */ }
@@ -217,36 +219,52 @@ export async function onRequestPut({ request, env, data }) {
     // tree — can be recovered. Wrapped defensively: this table is new
     // (migration 0009) and applying a migration is a separate manual step
     // from deploying this code, so a not-yet-migrated table must never
-    // block the actual save.
+    // block the actual save. The insert and its cleanup are batched into one
+    // round trip via D1's batch() — still just as defensive: batch() aborts
+    // the whole group on the first failure, exactly like the sequential
+    // calls did before (the insert already threw before the cleanup could
+    // ever run), so a missing table skips both the same way it always did.
     try {
       if (existingTree?.tree_json) {
-        await env.DB.prepare(
-          `INSERT INTO family_tree_snapshot (id, family_id, tree_json, created_at) VALUES (?, ?, ?, ?)`,
-        ).bind(uid('snap_'), membership.family_id, existingTree.tree_json, now).run();
-        // Keep only the most recent 30 snapshots per family.
-        await env.DB.prepare(
-          `DELETE FROM family_tree_snapshot WHERE family_id = ? AND id NOT IN (
-             SELECT id FROM family_tree_snapshot WHERE family_id = ? ORDER BY created_at DESC LIMIT 30
-           )`,
-        ).bind(membership.family_id, membership.family_id).run();
+        await env.DB.batch([
+          env.DB.prepare(
+            `INSERT INTO family_tree_snapshot (id, family_id, tree_json, created_at) VALUES (?, ?, ?, ?)`,
+          ).bind(uid('snap_'), membership.family_id, existingTree.tree_json, now),
+          // Keep only the most recent 30 snapshots per family.
+          env.DB.prepare(
+            `DELETE FROM family_tree_snapshot WHERE family_id = ? AND id NOT IN (
+               SELECT id FROM family_tree_snapshot WHERE family_id = ? ORDER BY created_at DESC LIMIT 30
+             )`,
+          ).bind(membership.family_id, membership.family_id),
+        ]);
       }
     } catch (e) {
       console.error('[tree] snapshot write skipped:', e.message);
     }
 
-    await env.DB.prepare(
-      `INSERT INTO family_tree (family_id, tree_json, updated_at)
-       VALUES (?, ?, ?)
-       ON CONFLICT (family_id) DO UPDATE
-         SET tree_json = excluded.tree_json,
-             updated_at = excluded.updated_at`,
-    ).bind(membership.family_id, JSON.stringify(toStore), now).run();
-
+    // The actual save and the family-name sync are batched into one round
+    // trip — neither was ever defensively wrapped (a failure here is a real
+    // error, same as before), so this is a pure latency win, plus a small
+    // correctness improvement: batch() runs both in one transaction, so a
+    // failed name update can no longer leave the tree_json write committed
+    // on its own while the client is told the whole save failed.
+    const writeStatements = [
+      env.DB.prepare(
+        `INSERT INTO family_tree (family_id, tree_json, updated_at)
+         VALUES (?, ?, ?)
+         ON CONFLICT (family_id) DO UPDATE
+           SET tree_json = excluded.tree_json,
+               updated_at = excluded.updated_at`,
+      ).bind(membership.family_id, JSON.stringify(toStore), now),
+    ];
     // Keep family.name in sync so invite emails always show the current name.
     if (canEditAll && toStore.familyName) {
-      await env.DB.prepare(`UPDATE family SET name = ? WHERE id = ?`)
-        .bind(toStore.familyName, membership.family_id).run();
+      writeStatements.push(
+        env.DB.prepare(`UPDATE family SET name = ? WHERE id = ?`)
+          .bind(toStore.familyName, membership.family_id),
+      );
     }
+    await env.DB.batch(writeStatements);
 
     // Durably log any activity events this save introduced. This is separate
     // from tree_json's own `activity` array (which is just a capped, fast
@@ -261,16 +279,22 @@ export async function onRequestPut({ request, env, data }) {
       if (Array.isArray(tree.activity) && tree.activity.length) {
         const priorIds = new Set((prev?.activity || []).map((e) => e?.id).filter(Boolean));
         const freshEvents = tree.activity.filter((e) => e?.id && !priorIds.has(e.id));
-        for (const e of freshEvents) {
-          await env.DB.prepare(
-            `INSERT OR IGNORE INTO activity_log
-               (id, family_id, author_name, author_email, type, person_id, person_name, detail, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          ).bind(
-            e.id, membership.family_id, e.authorName || null, e.authorEmail || null,
-            e.type || null, e.personId || null, e.personName || null, e.detail || null,
-            e.created_at || new Date().toISOString(),
-          ).run();
+        // One batched round trip for every new event in this save, rather
+        // than one round trip per event — a save introducing several events
+        // at once (a bulk import, a merge) used to pay for each one
+        // separately, and sequentially at that.
+        if (freshEvents.length) {
+          await env.DB.batch(freshEvents.map((e) =>
+            env.DB.prepare(
+              `INSERT OR IGNORE INTO activity_log
+                 (id, family_id, author_name, author_email, type, person_id, person_name, detail, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            ).bind(
+              e.id, membership.family_id, e.authorName || null, e.authorEmail || null,
+              e.type || null, e.personId || null, e.personName || null, e.detail || null,
+              e.created_at || new Date().toISOString(),
+            ),
+          ));
         }
       }
     } catch (e) {
