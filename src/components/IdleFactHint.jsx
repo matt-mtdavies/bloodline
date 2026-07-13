@@ -8,7 +8,8 @@ import { useEffect, useState } from 'react';
 // IntroHint: self-dismisses on the first touch or after a few seconds, once
 // per session so it never nags on every return to browse mode.
 const IDLE_MS = 8000;
-const VISIBLE_MS = 6000;
+// Feedback: 6s wasn't enough to read a full fact sentence before it vanished.
+const VISIBLE_MS = 11000;
 
 export default function IdleFactHint({ fact, active }) {
   const [visible, setVisible] = useState(false);
