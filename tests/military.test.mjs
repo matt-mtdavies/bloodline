@@ -149,5 +149,41 @@ test('hasMilitaryService is true from a medal alone, even with no events, docume
   assert.equal(hasMilitaryService(person, []), true);
 });
 
+test('militaryQuotes carries docId and factIndex, so a caller can dismiss the underlying fact', () => {
+  const docs = [
+    {
+      id: 'doc1',
+      title: 'Letter',
+      extracted: {
+        facts: [
+          { tag: null, year: '1943', quote: 'skipped — not military' },
+          { tag: 'military', year: '1944', quote: 'who died while a prisoner of war.' },
+        ],
+      },
+    },
+  ];
+  const quotes = militaryQuotes(docs);
+  assert.equal(quotes.length, 1);
+  assert.equal(quotes[0].docId, 'doc1');
+  assert.equal(quotes[0].factIndex, 1, 'should point at the fact\'s real index, not its position among quotes');
+});
+
+test('militaryQuotes skips a fact a human has dismissed — a misleading/misattributed quote can be permanently cleared', () => {
+  const docs = [
+    {
+      id: 'doc1',
+      title: 'Letter',
+      extracted: {
+        facts: [
+          { tag: 'military', year: '1944', quote: 'who died while a prisoner of war.', status: 'dismissed' },
+          { tag: 'military', year: '1945', quote: 'discharged with the rank of corporal.' },
+        ],
+      },
+    },
+  ];
+  const quotes = militaryQuotes(docs);
+  assert.deepEqual(quotes.map((q) => q.quote), ['discharged with the rank of corporal.']);
+});
+
 console.log(`\n  ${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);

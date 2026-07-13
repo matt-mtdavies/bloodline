@@ -33,7 +33,7 @@ const NO_CONTEXT = 'NO_HISTORICAL_CONTEXT_AVAILABLE';
  * The narrative and historical context share the same review discipline
  * (Keep it / Fix it / Dismiss, Edit + Regenerate) via GeneratedBlock below.
  */
-export default function MilitaryService({ person, personDocs, onOpenDocument, onUpdateMilitaryStory, onUpdateMilitaryContext, canEdit = true }) {
+export default function MilitaryService({ person, personDocs, onOpenDocument, onUpdateMilitaryStory, onUpdateMilitaryContext, onDismissDocumentFact, canEdit = true }) {
   if (!hasMilitaryService(person, personDocs)) return null;
 
   const events = militaryEvents(person);
@@ -153,7 +153,19 @@ export default function MilitaryService({ person, personDocs, onOpenDocument, on
           {quotes.map((q, i) => (
             <blockquote className="military__quote" key={i}>
               <p>&ldquo;{q.quote}&rdquo;</p>
-              <cite>— {q.docTitle}{q.year ? `, ${q.year}` : ''}</cite>
+              <div className="military__quote-foot">
+                <cite>— {q.docTitle}{q.year ? `, ${q.year}` : ''}</cite>
+                {canEdit && onDismissDocumentFact && (
+                  <button
+                    className="military__quote-dismiss"
+                    onClick={() => onDismissDocumentFact(q.docId, q.factIndex)}
+                    aria-label="Remove this quote — e.g. if it's about someone else the document mentions, not this person"
+                    title="Remove this quote"
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
             </blockquote>
           ))}
         </div>

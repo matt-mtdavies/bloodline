@@ -913,6 +913,7 @@ export default function PersonSheet({
               onOpenDocument={openDoc}
               onUpdateMilitaryStory={onUpdateMilitaryStory}
               onUpdateMilitaryContext={onUpdateMilitaryContext}
+              onDismissDocumentFact={onDismissDocumentFact}
               canEdit={canEdit}
             />
 

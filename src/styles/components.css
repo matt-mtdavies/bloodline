@@ -9708,15 +9708,37 @@ button.health-notes {
   line-height: 1.55;
   color: var(--ink);
 }
+.military__quote-foot {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 7px;
+}
 .military__quote cite {
   display: block;
-  margin-top: 7px;
   font-style: normal;
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.05em;
   text-transform: uppercase;
   color: var(--ink-faint);
+}
+.military__quote-dismiss {
+  flex-shrink: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink-faint);
+  font-size: 15px;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+}
+.military__quote-dismiss:hover {
+  color: var(--ink-soft);
+  background: var(--paper-deep, #f4f5f7);
 }
 
 /* The archival document gallery — a distinct, slightly-aged treatment sets

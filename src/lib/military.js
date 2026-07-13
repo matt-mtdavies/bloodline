@@ -31,14 +31,23 @@ export function militaryDocuments(personDocs) {
 
 // Verbatim quotes from military-tagged facts, oldest-dated first, capped —
 // "the story" register: the human/document voice, contrasted against the
-// tabular "record" register (years, titles) above it.
+// tabular "record" register (years, titles) above it. A quote's fact is
+// extracted against the DOCUMENT's own subject, but a letter or record can
+// still say something about someone else the writer mentions (a brother, a
+// mate) — out of context that reads as a fact about the profile it's shown
+// on, which is misleading. Skips any fact a human has dismissed (`status:
+// 'dismissed'`, set the same way as everywhere else document facts are
+// reviewed — see MilitaryService.jsx's per-quote remove button), so a
+// misattributed or unwanted quote can be permanently cleared; carries
+// `docId`/`factIndex` so the caller can do that dismissing.
 export function militaryQuotes(personDocs, max = 3) {
   const quotes = [];
   for (const doc of personDocs || []) {
-    for (const fact of doc.extracted?.facts || []) {
-      if (fact.tag !== 'military' || !fact.quote) continue;
-      quotes.push({ quote: fact.quote, docTitle: doc.title, year: fact.year || null });
-    }
+    const facts = doc.extracted?.facts || [];
+    facts.forEach((fact, factIndex) => {
+      if (fact.tag !== 'military' || !fact.quote || fact.status === 'dismissed') return;
+      quotes.push({ quote: fact.quote, docTitle: doc.title, year: fact.year || null, docId: doc.id, factIndex });
+    });
   }
   return quotes
     .sort((a, b) => (Number(a.year) || 0) - (Number(b.year) || 0))
