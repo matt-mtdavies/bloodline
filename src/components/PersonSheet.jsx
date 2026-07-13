@@ -1289,6 +1289,20 @@ export default function PersonSheet({
                       );
                     })}
                   </div>
+                  {/* Free-text notes lives inside this same expanded editor
+                      (not a second top-level "Add" pill) — one section, one
+                      entry point, matching every other profile section. */}
+                  {!person.health_notes && !healthNotesEditing && canEdit && (
+                    <div className="condition-picker__notes">
+                      <button
+                        className="empty-add"
+                        onClick={() => { setHealthNotesDraft(''); setHealthNotesEditing(true); }}
+                      >
+                        <PlusIcon />
+                        Add free-text notes
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
               {canEdit && (person.conditions?.length || 0) === 0 && !healthPickerOpen && (
@@ -1334,15 +1348,7 @@ export default function PersonSheet({
                 >
                   {person.health_notes}
                 </button>
-              ) : canEdit && (
-                <button
-                  className="empty-add"
-                  onClick={() => { setHealthNotesDraft(''); setHealthNotesEditing(true); }}
-                >
-                  <PlusIcon />
-                  Add free-text notes
-                </button>
-              )}
+              ) : null}
 
               <p className="health-privacy-note">
                 <LockIcon />

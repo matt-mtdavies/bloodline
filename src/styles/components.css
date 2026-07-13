@@ -3562,6 +3562,12 @@
 .condition-option:not(:disabled):hover { border-color: var(--accent); color: var(--accent); }
 .condition-option--added { opacity: 0.5; cursor: default; }
 
+.condition-picker__notes {
+  padding: 12px;
+  border-top: 1px solid var(--hairline);
+}
+.condition-picker__notes .empty-add { background: #fff; }
+
 .health-privacy-note {
   display: flex;
   align-items: center;
