@@ -63,12 +63,13 @@ export default function TopBar({ familyName, stats, view, layout, syncStatus, sy
           <span className="hover-tip hover-tip--down">Home</span>
         </button>
         <div className="topbar__actions">
-          {onSearch && (
-            <button className="pill" onClick={onSearch} aria-label="Search family members">
-              <TopBarSearchIcon />
-              <span className="hover-tip hover-tip--down">Search</span>
-            </button>
-          )}
+          {/* Sync status leads the cluster, right after the wordmark, on
+              purpose — it's the one element here whose width changes
+              (saving → saved → gone). Placed anywhere after a fixed-width
+              icon, its appearing/disappearing shoves that icon sideways to
+              close the gap. Placed first, the only thing that grows or
+              shrinks is the blank space between "Bloodline" and the icons —
+              search/bell/avatar never move. */}
           {syncStatus === 'saving' && (
             <span className="pill pill--saving" aria-live="polite" aria-label="Saving">
               <SavingSpinner />
@@ -103,6 +104,12 @@ export default function TopBar({ familyName, stats, view, layout, syncStatus, sy
             <span className="sync-status sync-status--error" aria-live="assertive">
               {syncError?.message || 'Tree too large to save'}
             </span>
+          )}
+          {onSearch && (
+            <button className="pill" onClick={onSearch} aria-label="Search family members">
+              <TopBarSearchIcon />
+              <span className="hover-tip hover-tip--down">Search</span>
+            </button>
           )}
           {/* Bloodline-only — a GLOBAL display filter (it affects every view,
               not just the chart), so it lives with the other global controls
