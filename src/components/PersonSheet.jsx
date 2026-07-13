@@ -12,6 +12,7 @@ import DateField from './DateField.jsx';
 import { VISIBILITY_LABELS, VISIBILITY_DESCS } from '../lib/visibility.js';
 import { HEALTH_CATEGORIES, HEALTH_CONDITIONS, HEALTH_STATUSES, colorFor } from '../lib/health.js';
 import { formatPhone, isPhoneValid } from '../lib/phone.js';
+import { militaryDocuments } from '../lib/military.js';
 
 const HAIR_DOTS = { Black: '#1a1a1a', Brown: '#6b4226', Blonde: '#d4b483', Auburn: '#9b3a1e', Red: '#c0392b', Grey: '#9e9e9e', White: '#ddd' };
 const EYE_DOTS  = { Brown: '#6b4226', Blue: '#4a7fbf', Green: '#3d8c55', Hazel: '#8b6914', Grey: '#8a9099', Amber: '#c8860a' };
@@ -103,6 +104,7 @@ export default function PersonSheet({
   const [editingDocTitle, setEditingDocTitle] = useState('');
   const [confirmDeleteDocId, setConfirmDeleteDocId] = useState(null); // awaiting "remove this document?" confirm
   const [suggestingDocId, setSuggestingDocId] = useState(null); // doc awaiting an AI title suggestion
+  const [showMilitaryDocs, setShowMilitaryDocs] = useState(false); // reveal docs already shown in Military Service
   const [editingMediaId, setEditingMediaId] = useState(null);
   const [editingMediaTitle, setEditingMediaTitle] = useState('');
   const [editingMemoryId, setEditingMemoryId] = useState(null);
@@ -249,6 +251,13 @@ export default function PersonSheet({
   const personMedia = allPersonDocs.filter(
     (d) => d.mime?.startsWith('audio/') || d.mime?.startsWith('video/'),
   );
+  // Documents already shown in the Military Service gallery above are
+  // collapsed out of this list by default — same document, no reason to
+  // list it twice — but stay one tap away (showMilitaryDocs) for anyone who
+  // needs to rename, delete, or re-suggest a title, since the gallery above
+  // is read-only.
+  const militaryDocIds = new Set(militaryDocuments(personDocs).map((d) => d.id));
+  const visibleDocs = personDocs.filter((d) => !militaryDocIds.has(d.id) || showMilitaryDocs);
   const completeness = restricted ? null : profileCompleteness(person, graph, personMemories.length);
 
   // Legacy memories (added before authorId existed) fall back to their old
@@ -939,7 +948,7 @@ export default function PersonSheet({
               />
               {personDocs.length > 0 ? (
                 <ul className="doc-list">
-                  {personDocs.map((doc) => (
+                  {visibleDocs.map((doc) => (
                     <li key={doc.id}>
                       <div className="doc-card">
                         <button
@@ -1039,6 +1048,16 @@ export default function PersonSheet({
                       </div>
                     </li>
                   ))}
+                  {militaryDocIds.size > 0 && (
+                    <li>
+                      <button className="doc-list__reveal" onClick={() => setShowMilitaryDocs((v) => !v)}>
+                        <RibbonIcon />
+                        {showMilitaryDocs
+                          ? 'Hide documents shown in Military Service'
+                          : `+ ${militaryDocIds.size} shown in Military Service`}
+                      </button>
+                    </li>
+                  )}
                 </ul>
               ) : canEdit ? (
                 <button className="empty-add" onClick={() => docRef.current?.click()}>
