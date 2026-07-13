@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, forwardRef } from 'react';
 import Logo from './Logo.jsx';
 
-export default function TopBar({ familyName, stats, view, layout, syncStatus, syncError, onRetrySync, onSetViewMode, onOpenLegend, bloodlineOnly = false, onToggleBloodlineOnly, onOpenActivity, activityCount = 0, user, userPhoto, onOpenProfile, onOpenHome, onSearch, onOpenInsights, onOpenTimeline, onOpenDuplicates, duplicateCount = 0, storageWarning, storageNearLimit, syncToast, onDismissSyncToast, recapNudgeCount = 0, onShowRecap, onDismissRecapNudge }) {
+export default function TopBar({ familyName, stats, view, layout, syncStatus, syncError, onRetrySync, onSetViewMode, onOpenLegend, bloodlineOnly = false, onToggleBloodlineOnly, onOpenActivity, activityCount = 0, user, userPhoto, onOpenProfile, onOpenHome, onSearch, onOpenInsights, onOpenTimeline, onOpenDuplicates, duplicateCount = 0, storageWarning, storageNearLimit, treeSizeWarning, syncToast, onDismissSyncToast, recapNudgeCount = 0, onShowRecap, onDismissRecapNudge }) {
   const [statsOpen, setStatsOpen] = useState(false);
   const [viewMenuOpen, setViewMenuOpen] = useState(false);
   const popoverRef = useRef(null);
@@ -97,6 +97,11 @@ export default function TopBar({ familyName, stats, view, layout, syncStatus, sy
           {syncStatus === 'error-forbidden' && (
             <span className="sync-status sync-status--error" aria-live="assertive">
               {syncError?.message || 'Not allowed — ask a co-admin'}
+            </span>
+          )}
+          {syncStatus === 'error-toolarge' && (
+            <span className="sync-status sync-status--error" aria-live="assertive">
+              {syncError?.message || 'Tree too large to save'}
             </span>
           )}
           {/* Bloodline-only — a GLOBAL display filter (it affects every view,
@@ -219,6 +224,11 @@ export default function TopBar({ familyName, stats, view, layout, syncStatus, sy
       {!storageWarning && storageNearLimit && (
         <div className="storage-toast" role="status">
           Your tree is getting large — free up space by removing some photos before storage runs out.
+        </div>
+      )}
+      {treeSizeWarning && (
+        <div className="storage-toast" role="status">
+          Your family archive is approaching the database size limit — removing some older documents or memories will free up room.
         </div>
       )}
       {syncToast && (

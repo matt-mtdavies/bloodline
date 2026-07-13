@@ -519,6 +519,7 @@ export default function App() {
   const [cameraFree, setCameraFree] = useState(false); // user has panned/zoomed away
   const [storageWarning, setStorageWarning] = useState(false);
   const [storageNearLimit, setStorageNearLimit] = useState(false);
+  const [treeSizeWarning, setTreeSizeWarning] = useState(null); // { bytes, limitBytes } | null
   const [syncToast, setSyncToast] = useState(null);
   const [layout, setLayout] = useState('organic'); // 'organic' | 'weighted' | 'hybrid'
   const [timeMode, setTimeMode] = useState(false);
@@ -583,6 +584,19 @@ export default function App() {
     };
     window.addEventListener('bloodline:storage-near-limit', handler);
     return () => window.removeEventListener('bloodline:storage-near-limit', handler);
+  }, []);
+
+  // Server-side counterpart: the whole tree lives in one D1 row, capped at
+  // 1 MiB. tree.js sends this alongside an otherwise-successful save once
+  // the payload crosses its soft warning threshold, well before the hard
+  // limit that would start rejecting saves outright.
+  useEffect(() => {
+    const handler = (e) => {
+      setTreeSizeWarning(e.detail || null);
+      setTimeout(() => setTreeSizeWarning(null), 10000);
+    };
+    window.addEventListener('bloodline:tree-size-warning', handler);
+    return () => window.removeEventListener('bloodline:tree-size-warning', handler);
   }, []);
 
   // Family stats for the header: people count, top surnames, year span, photos, memories.
@@ -1747,6 +1761,7 @@ export default function App() {
         onOpenDuplicates={canManageTreeStructure && duplicatePairs.length ? () => setDuplicatesOpen(true) : null}
         storageWarning={storageWarning}
         storageNearLimit={storageNearLimit}
+        treeSizeWarning={treeSizeWarning}
         syncToast={syncToast}
         onDismissSyncToast={() => setSyncToast(null)}
         recapNudgeCount={recapNudge ? recapGroups.length : 0}

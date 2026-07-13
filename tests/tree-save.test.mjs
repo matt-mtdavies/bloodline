@@ -226,6 +226,60 @@ await test('a contributor save is still limited to memories/photos, structure pr
   assert.deepEqual(stored.memories.map((m) => m.id), ['m1']);
 });
 
+// Builds a payload whose serialized JSON is at least `targetBytes` long, by
+// padding a single person's notes field with filler text — the exact shape
+// doesn't matter to the size guard, only the resulting byte count of the
+// final tree_json.
+function payloadOfSize(targetBytes) {
+  const base = { people: [{ id: 'p1', notes: '' }] };
+  const overhead = new TextEncoder().encode(JSON.stringify(base)).length;
+  const filler = 'x'.repeat(Math.max(0, targetBytes - overhead));
+  return { people: [{ id: 'p1', notes: filler }] };
+}
+
+await test('a save comfortably under both size thresholds has no sizeWarning', async () => {
+  const db = makeFakeDB({ membershipRow: OWNER_MEMBERSHIP, existingTreeRow: null });
+  const res = await onRequestPut({
+    request: makeRequest(payloadOfSize(1000)),
+    env: { DB: db },
+    data: { user: OWNER_USER },
+  });
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  assert.equal(body.ok, true);
+  assert.equal(body.sizeWarning, undefined);
+});
+
+await test('a save between the warn and hard-stop thresholds still succeeds, with a sizeWarning', async () => {
+  const db = makeFakeDB({ membershipRow: OWNER_MEMBERSHIP, existingTreeRow: null });
+  const res = await onRequestPut({
+    request: makeRequest(payloadOfSize(850_000)),
+    env: { DB: db },
+    data: { user: OWNER_USER },
+  });
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  assert.equal(body.ok, true);
+  assert.ok(body.sizeWarning, 'expected a sizeWarning on the success response');
+  assert.ok(body.sizeWarning.bytes > 800_000);
+  assert.equal(body.sizeWarning.limitBytes, 1_048_576);
+  assert.ok(db.calls.some((c) => c.type === 'batch' && c.group.some((g) => g.sql.includes('INSERT INTO family_tree '))),
+    'the save must still have actually written');
+});
+
+await test('a save at or above the hard-stop threshold is rejected with 413 and no writes attempted', async () => {
+  const db = makeFakeDB({ membershipRow: OWNER_MEMBERSHIP, existingTreeRow: null });
+  const res = await onRequestPut({
+    request: makeRequest(payloadOfSize(995_000)),
+    env: { DB: db },
+    data: { user: OWNER_USER },
+  });
+  assert.equal(res.status, 413);
+  const body = await res.json();
+  assert.ok(body.detail, 'expected a human-readable detail message');
+  assert.ok(!db.calls.some((c) => c.type === 'batch'), 'no writes should be attempted when the save is rejected for size');
+});
+
 await test('an editor cannot remove a person — 403, no write attempted', async () => {
   const existingTreeRow = {
     tree_json: JSON.stringify({ people: [{ id: 'p1' }, { id: 'p2' }] }),

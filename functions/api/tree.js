@@ -10,6 +10,19 @@ import { createFamily } from '../_lib/family.js';
  * When a user is invited, they share the inviting family's tree.
  */
 
+// D1 caps a single row at 1 MiB, and the whole tree — every person, memory,
+// document summary, activity entry — lives in ONE row's tree_json column.
+// That's not something a paid plan raises; it's the actual ceiling on how
+// much one family can store. Warn well before it (SIZE_WARN_BYTES, a
+// non-blocking heads-up on an otherwise-successful save) and refuse cleanly
+// once truly at risk (SIZE_HARD_STOP_BYTES, left with real headroom below
+// the actual 1 MiB limit) — a save rejected with a clear reason beats one
+// that dies with an opaque D1 error, and either way nothing is touched
+// until this check passes.
+const D1_ROW_LIMIT_BYTES = 1_048_576;
+const SIZE_WARN_BYTES = 800_000;
+const SIZE_HARD_STOP_BYTES = 990_000;
+
 export async function onRequestGet({ env, data }) {
   if (!data.user) return json({ error: 'Unauthorized' }, { status: 401 });
   if (!env.DB) return json({ error: 'Database not configured' }, { status: 503 });
@@ -214,6 +227,21 @@ export async function onRequestPut({ request, env, data }) {
     // everyone else's seat to themselves.
     if (prev && prev.myPersonId != null) toStore.myPersonId = prev.myPersonId;
 
+    // Measure what's actually about to be written, in bytes (not UTF-16 code
+    // units — the D1 limit is byte-based, and this data isn't all ASCII).
+    // Computed once here and reused for the actual write below.
+    const treeJsonString = JSON.stringify(toStore);
+    const treeJsonBytes = new TextEncoder().encode(treeJsonString).length;
+    if (treeJsonBytes > SIZE_HARD_STOP_BYTES) {
+      const mb = (n) => (n / (1024 * 1024)).toFixed(2);
+      return json({
+        error: 'Tree too large to save',
+        detail: `This family tree (${mb(treeJsonBytes)} MB) is at the database's 1 MB per-family storage limit. Nothing has been lost — this save was rejected before touching anything. Removing some older documents or memories will free up room.`,
+        bytes: treeJsonBytes,
+        limitBytes: D1_ROW_LIMIT_BYTES,
+      }, { status: 413 });
+    }
+
     // Archive the value we're about to overwrite, so any save — a mistake,
     // a bug, or a legitimate co-admin action like erasing/replacing the
     // tree — can be recovered. Wrapped defensively: this table is new
@@ -255,7 +283,7 @@ export async function onRequestPut({ request, env, data }) {
          ON CONFLICT (family_id) DO UPDATE
            SET tree_json = excluded.tree_json,
                updated_at = excluded.updated_at`,
-      ).bind(membership.family_id, JSON.stringify(toStore), now),
+      ).bind(membership.family_id, treeJsonString, now),
     ];
     // Keep family.name in sync so invite emails always show the current name.
     if (canEditAll && toStore.familyName) {
@@ -302,7 +330,13 @@ export async function onRequestPut({ request, env, data }) {
     }
 
     return json(
-      { ok: true, familyId: membership.family_id, role: membership.role },
+      {
+        ok: true,
+        familyId: membership.family_id,
+        role: membership.role,
+        // Non-blocking heads-up — the save above succeeded either way.
+        ...(treeJsonBytes > SIZE_WARN_BYTES ? { sizeWarning: { bytes: treeJsonBytes, limitBytes: D1_ROW_LIMIT_BYTES } } : {}),
+      },
       { headers: { 'ETag': `"${now}"` } },
     );
   } catch (e) {

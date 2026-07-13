@@ -236,6 +236,14 @@ function afterSave(ok, statusCode) {
     // "session expired" message that would be actively misleading here.
     setSyncStatus('error-forbidden');
     console.warn('[store] server sync: forbidden', statusCode);
+  } else if (statusCode === 413) {
+    // The tree is at D1's 1 MB per-family row limit (see tree.js). Retrying
+    // on a timer would just fail the exact same way every 30s forever —
+    // nothing about the payload size changes on its own — so this gets the
+    // same "stop and tell them clearly" treatment as 401/403 rather than
+    // the generic retry loop below.
+    setSyncStatus('error-toolarge');
+    console.warn('[store] server sync: tree too large', statusCode);
   } else {
     _lastSyncError = { code: statusCode || 0, message: statusCode === 409 ? 'Conflict' : statusCode ? `HTTP ${statusCode}` : 'Network error' };
     setSyncStatus('error');
@@ -290,6 +298,13 @@ async function putTree(s, attempt = 0) {
 
     if (r.ok) {
       _serverEtag = r.headers.get('ETag') || _serverEtag;
+      // Proactive, non-blocking heads-up — the save above already succeeded
+      // either way. Best-effort: a body-parse failure here should never
+      // turn a successful save into a reported failure.
+      const body = await r.json().catch(() => null);
+      if (body?.sizeWarning && typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('bloodline:tree-size-warning', { detail: body.sizeWarning }));
+      }
       afterSave(true);
       return;
     }
@@ -319,16 +334,17 @@ async function putTree(s, attempt = 0) {
       code: r.status,
       message: r.status === 409
         ? 'Conflict (retried)'
-        // 403s here always carry a clear, human-readable reason (a
-        // permission boundary, not a raw server fault) — show it as-is.
-        : r.status === 403 && errorBody?.detail
+        // 403s and 413s here always carry a clear, human-readable reason (a
+        // permission boundary or the storage limit, not a raw server
+        // fault) — show it as-is.
+        : (r.status === 403 || r.status === 413) && errorBody?.detail
         ? errorBody.detail
         : errorBody?.detail
         ? `HTTP ${r.status}: ${errorBody.detail}`
         : `HTTP ${r.status}`,
     };
 
-    if (r.status === 401 || r.status === 403) { afterSave(false, r.status); return; }
+    if (r.status === 401 || r.status === 403 || r.status === 413) { afterSave(false, r.status); return; }
     if (attempt < RETRY_DELAYS.length) {
       setTimeout(() => putTree(s, attempt + 1), RETRY_DELAYS[attempt]);
     } else {
