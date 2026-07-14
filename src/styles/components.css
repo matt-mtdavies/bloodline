@@ -8007,7 +8007,16 @@ button.health-notes {
   color: var(--accent, #c2603a); cursor: pointer; transition: background 0.15s, border-color 0.15s;
 }
 .ti__chip:hover { background: #fff; border-color: #d8d2c8; }
-.ti__chip--more { color: var(--ink-faint, #b0a9a5); cursor: default; background: transparent; border-color: transparent; }
+/* Muted relative to the named chips (it's a summary, not a specific
+   person) but still a real button — opens the full list behind the
+   preview, so it needs to read as tappable, not decorative. */
+.ti__chip--more {
+  color: var(--ink-soft, #6b6f76);
+  cursor: pointer;
+  background: transparent;
+  border-color: var(--hairline, #ebedf0);
+}
+.ti__chip--more:hover { background: var(--paper-deep, #f2f3f5); border-color: #d8d2c8; color: var(--ink, #241f1c); }
 
 .ti__foot {
   margin: 18px 0 4px; text-align: center;

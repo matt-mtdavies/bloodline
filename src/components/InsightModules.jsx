@@ -173,7 +173,7 @@ function ShareButton({ nodeRef, title }) {
    tap a chart element, see exactly who is behind the number, tap a person,
    land on their profile. rows: [{ id, detail?, tag?, label? }] — label
    overrides the display name where the entry is a couple/household. ─────── */
-function PeopleDrawer({ title, rows, graph, onNavigate, onClose }) {
+export function PeopleDrawer({ title, rows, graph, onNavigate, onClose }) {
   return (
     <div className="tim-drawer">
       <div className="tim-drawer__head">

@@ -7,7 +7,8 @@ import { distancesFrom, relationLabel } from '../data/graph.js';
  *   {
  *     viewer:   { id, name, firstName },
  *     facts:    [ { key, icon, title, detail, personId? } ],   // perspective insights
- *     nudges:   [ { key, label, total, people: [{id,name}] } ], // actionable gaps
+ *     nudges:   [ { key, label, total, people: [{id,name}], all: [{id,name}] } ], // actionable gaps —
+ *               people is the 4-wide chip preview, all is everyone (for the "+N more" drill-down)
  *     aggregates: { ... }                                       // privacy-safe, for the AI narrative
  *   }
  *
@@ -240,11 +241,13 @@ export function computeInsights(graph, viewerId) {
   const nudgeList = (predicate, label, key) => {
     const missing = people.filter((p) => p.id !== vid && predicate(p)).sort(byCloseness);
     if (!missing.length) return null;
+    const all = missing.map((p) => ({ id: p.id, name: p.display_name }));
     return {
       key,
       total: missing.length,
       label,
-      people: missing.slice(0, 4).map((p) => ({ id: p.id, name: p.display_name })),
+      people: all.slice(0, 4),
+      all,
     };
   };
   const nudges = [

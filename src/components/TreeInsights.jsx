@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { computeInsights, aggregatesHash } from '../lib/insights.js';
 import { computeInsightModules, buildInsightHighlights } from '../lib/insightModules.js';
-import InsightModules from './InsightModules.jsx';
+import InsightModules, { PeopleDrawer } from './InsightModules.jsx';
 
 /*
  * Tree Insights sheet — the family archive, felt from the viewer's seat.
@@ -76,6 +76,11 @@ export default function TreeInsights({ graph, viewerId, onNavigate, onClose }) {
   }, [hash]);
 
   const heroNum = useCountUp(aggregates?.totalPeople ?? 0);
+  // Which nudge's "+N more" drawer is open, if any — the full list behind
+  // the 4-wide chip preview, so "+497 more" is an actual way in rather than
+  // just a bigger number.
+  const [openNudgeKey, setOpenNudgeKey] = useState(null);
+  const openNudge = nudges.find((n) => n.key === openNudgeKey) || null;
 
   return (
     <div className="sheet-scrim" role="dialog" aria-modal="true" aria-label="Tree insights" onClick={onClose}>
@@ -165,12 +170,27 @@ export default function TreeInsights({ graph, viewerId, onNavigate, onClose }) {
                     </button>
                   ))}
                   {n.total > n.people.length && (
-                    <span className="ti__chip ti__chip--more">+{n.total - n.people.length} more</span>
+                    <button
+                      className="ti__chip ti__chip--more"
+                      onClick={() => setOpenNudgeKey(n.key)}
+                    >
+                      +{n.total - n.people.length} more
+                    </button>
                   )}
                 </div>
               </div>
             ))}
           </div>
+        )}
+
+        {openNudge && (
+          <PeopleDrawer
+            title={`${openNudge.total} ${openNudge.total === 1 ? 'person' : 'people'} ${openNudge.label}`}
+            rows={openNudge.all}
+            graph={graph}
+            onNavigate={onNavigate}
+            onClose={() => setOpenNudgeKey(null)}
+          />
         )}
 
         <p className="ti__foot">Insights are generated from your tree and stay private to your family.</p>
