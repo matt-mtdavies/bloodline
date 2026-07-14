@@ -35,7 +35,7 @@ const SPREADS = {
 };
 
 export default function KeepsakeView({
-  graph, personId, memories, photos, documents, activity, familyName, onClose,
+  graph, personId, memories, photos, documents, activity, familyName, onClose, onCompiled,
 }) {
   const keepsake = useMemo(
     () => buildKeepsake(graph, personId, { memories, photos, documents, activity, familyName }),
@@ -178,6 +178,7 @@ export default function KeepsakeView({
       const body = await r.json().catch(() => null);
       if (!r.ok || !body?.narrative) { setCompileError(true); return; }
       setEdition(body);
+      onCompiled?.(body);
     } catch {
       setCompileError(true);
     } finally {

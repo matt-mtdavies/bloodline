@@ -7263,6 +7263,13 @@ button.health-notes {
 }
 .home__insights-card:hover { box-shadow: 0 4px 18px rgba(36,31,28,0.1); }
 .home__insights-card:active { transform: scale(0.99); }
+/* The Keepsake card — same shape, its own quiet identity: the sage pairing
+   (the app's "second voice") against the insights card's terracotta. */
+.home__insights-card--keepsake {
+  background: linear-gradient(160deg, #fff 0%, #eef2ee 100%);
+}
+.home__insights-card--keepsake .home__insights-ico { color: var(--sage, #3f5e4e); background: var(--sage-soft, #d8e0d6); }
+.home__insights-card--keepsake .home__insights-label { color: var(--sage, #3f5e4e); }
 .home__insights-ico {
   flex-shrink: 0;
   width: 36px;

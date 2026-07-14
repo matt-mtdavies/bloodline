@@ -45,6 +45,15 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   errors surfaced as a toast; `addRelationship()` links existing people; bio-parent
   constraints (at most 1 bio mother + 1 bio father per person).
 
+- **The Keepsake ✅ Phases 0–5** (spec: `docs/KEEPSAKE.md`): the marquee endgame feature —
+  a regenerating magazine-style illustrated biography per person. Data layer
+  (`src/lib/keepsake.js`, 13 spreads, constellation layout, facts hash), full-screen reader
+  (`src/components/Keepsake/`), AI narrative engine (`functions/api/keepsake.js`, editions in
+  R2 `keepsake/{familyId}/{personId}/`, never tree_json), scroll-driven motion
+  (reduced-motion safe), browser-native print (`@page`, full-bleed cover, body.ks-has-print
+  scope), home-hub nudge card + `keepsake_generated` activity. Phase 6 (whole-family bound
+  edition, print-service handoff) deliberately later.
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);

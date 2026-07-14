@@ -33,6 +33,7 @@ import {
   addLifeEvent,
   addMedal,
   dismissRelationshipFact,
+  logActivity,
   loadFromServer,
   saveToServer,
   enableServerSync,
@@ -93,6 +94,7 @@ import MergeWizard from './components/MergeWizard.jsx';
 import InviteSheet from './components/InviteSheet.jsx';
 import TreeInsights from './components/TreeInsights.jsx';
 import KeepsakeView from './components/Keepsake/KeepsakeView.jsx';
+import { buildKeepsakeFacts, factsHash } from './lib/keepsake.js';
 import DuplicatesSheet from './components/DuplicatesSheet.jsx';
 import LineageBanner from './components/LineageBanner.jsx';
 import FlightCaption from './components/FlightCaption.jsx';
@@ -534,6 +536,10 @@ export default function App() {
   const playRef = useRef(null);
   const [docViewer, setDocViewer] = useState(null); // { title, src, mime }
   const [keepsakeId, setKeepsakeId] = useState(null); // personId whose Keepsake is open
+  // The home hub's Keepsake nudge — 'create' (no edition yet), 'stale' (tree
+  // grew since the last one), or 'open' (current). null while signed out,
+  // while the check is in flight, or when the viewer has no claimed person.
+  const [keepsakeNudge, setKeepsakeNudge] = useState(null);
   const [invitePersonId, setInvitePersonId] = useState(null);
   const [activityOpen, setActivityOpen] = useState(false);
   const [lastReadAt, setLastReadAt] = useState(() => getActivityReadAt()); // null = never opened = all unread
@@ -587,6 +593,31 @@ export default function App() {
     window.addEventListener('bloodline:storage-near-limit', handler);
     return () => window.removeEventListener('bloodline:storage-near-limit', handler);
   }, []);
+
+  // The engagement loop made visible (docs/KEEPSAKE.md Phase 5): when the
+  // hub opens, quietly check whether the viewer's own Keepsake exists and
+  // whether the tree has grown past it. Best-effort — any failure (signed
+  // out, demo, offline) just means no card.
+  useEffect(() => {
+    if (!homeOpen || !data.myPersonId) { setKeepsakeNudge(null); return; }
+    let alive = true;
+    (async () => {
+      try {
+        const r = await fetch(`/api/keepsake?personId=${encodeURIComponent(data.myPersonId)}`);
+        if (!r.ok) { if (alive) setKeepsakeNudge(null); return; }
+        const edition = await r.json().catch(() => null);
+        const facts = buildKeepsakeFacts(graph, data.myPersonId, {
+          memories: data.memories, documents: data.documents,
+        });
+        if (!facts) { if (alive) setKeepsakeNudge(null); return; }
+        const nudge = !edition ? 'create' : edition.hash !== factsHash(facts) ? 'stale' : 'open';
+        if (alive) setKeepsakeNudge(nudge);
+      } catch {
+        if (alive) setKeepsakeNudge(null);
+      }
+    })();
+    return () => { alive = false; };
+  }, [homeOpen, data.myPersonId, graph, data.memories, data.documents]);
 
   // Server-side counterpart: the whole tree lives in one D1 row, capped at
   // 1 MiB. tree.js sends this alongside an otherwise-successful save once
@@ -2158,6 +2189,17 @@ export default function App() {
           activity={data.activity}
           familyName={data.familyName}
           onClose={() => setKeepsakeId(null)}
+          onCompiled={(edition) => {
+            const person = graph.byId.get(keepsakeId);
+            const n = edition.editionNumber;
+            const ord = ['first', 'second', 'third', 'fourth', 'fifth', 'sixth', 'seventh', 'eighth', 'ninth', 'tenth'][n - 1] || `${n}th`;
+            logActivity({
+              type: 'keepsake_generated',
+              personId: keepsakeId,
+              personName: person?.display_name ?? '',
+              detail: `${ord} edition`,
+            });
+          }}
         />
       )}
 
@@ -2411,6 +2453,8 @@ export default function App() {
           onOpenFamilyTrees={() => { setHomeOpen(false); setFamilyTreesOpen(true); }}
           onOpenFamilySettings={() => { setHomeOpen(false); setSettingsOpen(true); }}
           onOpenInsights={() => { setHomeOpen(false); setInsightsOpen(true); }}
+          keepsakeNudge={keepsakeNudge}
+          onOpenKeepsake={data.myPersonId ? () => { setHomeOpen(false); setKeepsakeId(data.myPersonId); } : null}
           onOpenActivity={() => {
             setHomeOpen(false);
             setActivityOpen(true);

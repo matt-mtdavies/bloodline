@@ -1507,8 +1507,16 @@ export default function PersonSheet({
             {onOpenKeepsake && (person.visibility || 'full') !== 'private' && (
               <section className="profile-section">
                 <button className="ks-entry" onClick={() => onOpenKeepsake(person.id)}>
-                  <BookIcon />
-                  Open their Keepsake — the illustrated story of their life
+                  {/* A miniature of the book's own cover — portrait (or the
+                      bare-cover wash) with the name set small in serif. */}
+                  <span className="ks-entry__cover" aria-hidden="true">
+                    {person.photo && <img src={person.photo} alt="" />}
+                    <span className="ks-entry__cover-name">{person.display_name.split(/\s+/)[0]}</span>
+                  </span>
+                  <span className="ks-entry__text">
+                    <strong>Their Keepsake</strong>
+                    <span>The illustrated story of their life — read it, print it, keep it</span>
+                  </span>
                 </button>
               </section>
             )}
@@ -1937,15 +1945,6 @@ function EmailIcon() {
       <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"
         stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
       <path d="M22 6l-10 7L2 6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-    </svg>
-  );
-}
-function BookIcon() {
-  return (
-    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5v14z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
-      <path d="M4 19.5A2.5 2.5 0 0 0 6.5 22H20v-5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M9 8h6" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
     </svg>
   );
 }

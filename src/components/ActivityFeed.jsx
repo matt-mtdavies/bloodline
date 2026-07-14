@@ -189,6 +189,8 @@ function EventDescription({ event, userEmail, nameByEmail }) {
       return <>{author} removed {subject} from the tree</>;
     case 'health_updated':
       return <>{author} updated {subject}'s health information</>;
+    case 'keepsake_generated':
+      return <>{author} compiled the {event.detail || 'latest edition'} of {subject}'s Keepsake</>;
     default:
       return <>{author} updated {subject}</>;
   }
@@ -237,6 +239,7 @@ function typeConfig(type) {
     case 'person_removed':    return { color: '#8a6f52', Icon: PersonRemoveIcon };
     case 'health_updated':    return { color: '#5a8a72', Icon: HeartIcon };
     case 'member_joined':     return { color: '#2a7a6a', Icon: JoinIcon };
+    case 'keepsake_generated':return { color: '#a44d2c', Icon: KeepsakeIcon };
     default:                  return { color: '#6b6f76', Icon: EditIcon };
   }
 }
@@ -398,6 +401,15 @@ function JoinIcon() {
       <circle cx="9" cy="7" r="4" stroke="currentColor" strokeWidth="2.2" />
       <path d="M2 21c0-4 3.1-7 7-7" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
       <path d="M19 12l-5 5 5 5M14 17h7" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function KeepsakeIcon() {
+  return (
+    <svg width="9" height="9" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5v14z" stroke="currentColor" strokeWidth="2.2" strokeLinejoin="round" />
+      <path d="M4 19.5A2.5 2.5 0 0 0 6.5 22H20v-5" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }

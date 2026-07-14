@@ -1817,6 +1817,15 @@ export function addMedal(personId, { name, detail } = {}) {
   }, { type: 'person_updated', personId, personName: person?.display_name ?? '', detail: 'medals' }));
 }
 
+// Record a plain activity event with no tree mutation attached — for
+// features whose "something happened" lives outside tree_json (today: a
+// Keepsake edition being compiled, which is stored in R2). Goes through the
+// same withActivity/commit path as every store action, so it lands in the
+// feed, the recap, and the durable activity_log identically.
+export function logActivity(partial) {
+  commit(withActivity({ ...state }, partial));
+}
+
 // Dismiss one relationship-derived timeline suggestion (Married, Widowed, a
 // child's or grandchild's birth — see lib/enrich.js) so Enrich stops
 // re-offering it. There's nothing to delete: unlike a document fact, this
