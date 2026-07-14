@@ -29,14 +29,22 @@ export function CoverSpread({ spread }) {
   // illegibly on a white page.
   const [photoFailed, setPhotoFailed] = useState(false);
   const photo = photoFailed ? null : spread.photo;
+  // The section's className must stay STATIC: the reveal observer adds
+  // .ks-in imperatively, and a React re-render that changes the section's
+  // className attribute (e.g. this photo-failure fallback flipping a
+  // modifier) would rewrite the attribute and silently wipe it — freezing
+  // the cover at its hidden pre-intro state. The bare-cover treatment
+  // therefore lives on child elements only.
   return (
-    <section className={`ks-spread ks-cover${photo ? '' : ' ks-cover--bare'}`}>
-      {photo && (
-        <div className="ks-cover__photo" aria-hidden="true">
+    <section className="ks-spread ks-cover">
+      {photo ? (
+        <div className="ks-cover__photo ks-photo--burns" aria-hidden="true">
           <img src={photo} alt="" onError={() => setPhotoFailed(true)} />
         </div>
+      ) : (
+        <div className="ks-cover__wash" aria-hidden="true" />
       )}
-      <div className="ks-cover__body">
+      <div className={`ks-cover__body${photo ? '' : ' ks-cover__body--bare'}`}>
         <p className="ks-cover__kicker">A Bloodline Keepsake</p>
         <h1 className="ks-cover__name">{spread.name}</h1>
         <div className="ks-cover__meta">
@@ -99,7 +107,7 @@ export function OriginsSpread({ spread }) {
 
 export function ConstellationSpread({ spread }) {
   return (
-    <section className="ks-spread">
+    <section className="ks-spread ks-spread--const">
       <div className="ks-spread__inner ks-constellation">
         <p className="ks-label ks-label--accent" style={{ textAlign: 'center', marginBottom: 18 }}>
           The Family Constellation
@@ -115,8 +123,11 @@ export function ConstellationSpread({ spread }) {
 
 export function ChaptersSpread({ spread }) {
   return (
-    <section className="ks-spread" style={{ minHeight: 'auto' }}>
+    <section className="ks-spread ks-spread--chapters" style={{ minHeight: 'auto' }}>
       <div className="ks-spread__inner">
+        {/* The margin rail — fills with reading progress (KeepsakeView's
+            scroll handler drives --ks-read on the section). */}
+        <span className="ks-rail" aria-hidden="true" />
         <p className="ks-label ks-label--accent">Chapters of a Life</p>
         {spread.chapters.map((ch, i) => (
           <article className="ks-chapter" key={i}>
@@ -231,7 +242,7 @@ export function AlbumSpread({ spread }) {
         <p className="ks-label ks-label--accent">The Album</p>
         <div className="ks-album">
           {spread.photos.map((p, i) => (
-            <figure className={`ks-album__item${i === 0 ? ' ks-album__item--hero' : ''}`} key={i}>
+            <figure className={`ks-album__item${i === 0 ? ' ks-album__item--hero ks-photo--burns' : ''}`} key={i}>
               <img src={p.src} alt={p.caption || ''} loading="lazy" />
               {(p.caption || p.date) && (
                 <figcaption>{[p.caption, p.date].filter(Boolean).join(' · ')}</figcaption>

@@ -32,36 +32,47 @@ export default function Constellation({ nodes, links }) {
       aria-label="Family constellation diagram"
     >
       <g className="ks-const-links">
-        {links.map((l, i) => (
-          <line
-            key={i}
-            x1={l.x1 * UX}
-            y1={l.y1 * UY}
-            x2={l.x2 * UX}
-            y2={l.y2 * UY}
-            stroke={l.kind === 'partner' ? 'var(--accent, #c2603a)' : 'var(--bio, #8a7d6b)'}
-            strokeWidth={l.kind === 'partner' ? 1.6 : 1}
-            strokeDasharray={l.kind === 'partner' ? '1 5' : undefined}
-            strokeLinecap="round"
-            opacity="0.7"
-          />
-        ))}
+        {links.map((l, i) => {
+          const partner = l.kind === 'partner';
+          return (
+            <line
+              key={i}
+              // Solid parent lines draw themselves via a normalized dash
+              // (pathLength=1 makes one CSS dashoffset rule fit every
+              // length); the dotted partner bond can't use that trick — a
+              // dash pattern scales with pathLength and would turn solid —
+              // so it fades in with its partner's disc instead.
+              className={partner ? 'ks-const-link ks-const-link--fade' : 'ks-const-link ks-const-link--draw'}
+              style={{ '--d': `${Math.min(i * 0.045, 1.2)}s` }}
+              x1={l.x1 * UX}
+              y1={l.y1 * UY}
+              x2={l.x2 * UX}
+              y2={l.y2 * UY}
+              pathLength={partner ? undefined : 1}
+              stroke={partner ? 'var(--accent, #c2603a)' : 'var(--bio, #8a7d6b)'}
+              strokeWidth={partner ? 1.6 : 1}
+              strokeDasharray={partner ? '1 5' : undefined}
+              strokeLinecap="round"
+              opacity="0.7"
+            />
+          );
+        })}
       </g>
       <g className="ks-const-nodes">
-        {nodes.map((n) => <Disc key={n.id} node={n} />)}
+        {nodes.map((n, i) => <Disc key={n.id} node={n} delay={0.6 + Math.min(i * 0.04, 1.1)} />)}
       </g>
     </svg>
   );
 }
 
-function Disc({ node }) {
+function Disc({ node, delay = 0 }) {
   const cx = node.x * UX;
   const cy = node.y * UY;
   const r = node.band === 'subject' ? R_SUBJECT : R;
   const { base, light } = monogramColors(node.name || '');
   const clipId = `ksc_${node.id}`;
   return (
-    <g>
+    <g className="ks-const-node" style={{ '--d': `${delay}s` }}>
       {node.band === 'subject' && (
         <circle cx={cx} cy={cy} r={r + 5} fill="none" stroke="var(--accent, #c2603a)" strokeWidth="1.4" />
       )}

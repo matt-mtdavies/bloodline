@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { buildKeepsake, applyNarrative } from '../../lib/keepsake.js';
 import {
   CoverSpread, FrontispieceSpread, OriginsSpread, ConstellationSpread,
@@ -76,6 +76,57 @@ export default function KeepsakeView({
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
+  // ── Motion (Phase 3) ──────────────────────────────────────────────────────
+  // One observer marks each spread .ks-in the first time a quarter of it is
+  // on screen — every entrance animation keys off that class. Under
+  // prefers-reduced-motion the class is inert (all motion CSS lives inside
+  // a no-preference media block), so this can run unconditionally.
+  const containerRef = useRef(null);
+  const progressRef = useRef(null);
+  const spreadCount = keepsake?.spreads.length || 0;
+
+  useEffect(() => {
+    const root = containerRef.current;
+    if (!root) return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) {
+          if (e.isIntersecting) {
+            e.target.classList.add('ks-in');
+            io.unobserve(e.target);
+          }
+        }
+      },
+      { root, threshold: 0.25 },
+    );
+    root.querySelectorAll('.ks-spread').forEach((el) => io.observe(el));
+    return () => io.disconnect();
+  }, [spreadCount]);
+
+  // One rAF-throttled scroll listener drives both the reading-progress
+  // hairline and the chapters rail fill (--ks-read on the chapters spread).
+  useEffect(() => {
+    const root = containerRef.current;
+    if (!root) return;
+    let raf = 0;
+    const update = () => {
+      raf = 0;
+      const max = root.scrollHeight - root.clientHeight;
+      const p = max > 0 ? root.scrollTop / max : 0;
+      if (progressRef.current) progressRef.current.style.transform = `scaleX(${p})`;
+      const chapters = root.querySelector('.ks-spread--chapters');
+      if (chapters) {
+        const r = chapters.getBoundingClientRect();
+        const read = Math.max(0, Math.min(1, (root.clientHeight * 0.8 - r.top) / r.height));
+        chapters.style.setProperty('--ks-read', String(read));
+      }
+    };
+    const onScroll = () => { if (!raf) raf = requestAnimationFrame(update); };
+    root.addEventListener('scroll', onScroll, { passive: true });
+    update();
+    return () => { root.removeEventListener('scroll', onScroll); if (raf) cancelAnimationFrame(raf); };
+  }, [spreadCount]);
+
   if (!keepsake) return null;
 
   const stale = edition && edition.hash !== keepsake.factsHash;
@@ -111,7 +162,10 @@ export default function KeepsakeView({
   const spreads = applyNarrative(keepsake.spreads, edition?.narrative);
 
   return (
-    <div className="keepsake-view" role="dialog" aria-modal="true" aria-label={`${keepsake.subject.name} — Keepsake`}>
+    <div ref={containerRef} className="keepsake-view" role="dialog" aria-modal="true" aria-label={`${keepsake.subject.name} — Keepsake`}>
+      <div className="ks-progress" aria-hidden="true">
+        <div ref={progressRef} className="ks-progress__bar" />
+      </div>
       <div className="ks-chrome">
         <span className="ks-chrome__mark">A Bloodline Keepsake</span>
         <div className="ks-chrome__btns">

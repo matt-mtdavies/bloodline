@@ -151,8 +151,12 @@
   inset: 0;
   background: linear-gradient(to bottom, rgba(28, 29, 33, 0) 34%, rgba(28, 29, 33, 0.62) 78%, rgba(28, 29, 33, 0.78));
 }
-/* No portrait — a quiet paper texture built from the app's own tones. */
-.ks-cover--bare {
+/* No portrait — a quiet paper wash built from the app's own tones. A child
+   element rather than a section modifier, so the section's className stays
+   static for the reveal observer (see CoverSpread). */
+.ks-cover__wash {
+  position: absolute;
+  inset: 0;
   background:
     radial-gradient(1200px 700px at 80% -10%, var(--accent-soft, #f0d9cd) 0%, transparent 60%),
     radial-gradient(900px 600px at -10% 110%, var(--sage-soft, #d8e0d6) 0%, transparent 55%),
@@ -173,7 +177,7 @@
   color: rgba(255, 255, 255, 0.85);
   margin-bottom: 14px;
 }
-.ks-cover--bare .ks-cover__kicker { color: var(--accent, #c2603a); }
+.ks-cover__body--bare .ks-cover__kicker { color: var(--accent, #c2603a); }
 .ks-cover__name {
   font-family: var(--display, serif);
   font-weight: 500;
@@ -183,7 +187,7 @@
   color: #fff;
   margin: 0 0 16px;
 }
-.ks-cover--bare .ks-cover__name { color: var(--ink, #1c1d21); }
+.ks-cover__body--bare .ks-cover__name { color: var(--ink, #1c1d21); }
 .ks-cover__meta {
   display: flex;
   align-items: baseline;
@@ -201,8 +205,8 @@
   letter-spacing: 0.04em;
   color: rgba(255, 255, 255, 0.75);
 }
-.ks-cover--bare .ks-cover__lifespan { color: var(--ink-soft, #6b6f76); }
-.ks-cover--bare .ks-cover__epithet { color: var(--ink-faint, #a6abb3); }
+.ks-cover__body--bare .ks-cover__lifespan { color: var(--ink-soft, #6b6f76); }
+.ks-cover__body--bare .ks-cover__epithet { color: var(--ink-faint, #a6abb3); }
 
 /* ── Frontispiece ───────────────────────────────────────────────────────── */
 .ks-front { text-align: center; }
@@ -445,6 +449,136 @@
   padding: 14px 18px;
 }
 .ks-colophon__privacy { margin-top: 30px; font-size: 11.5px; color: var(--ink-faint, #a6abb3); }
+
+/* ── Reading progress — a hairline at the very top. Information, not
+   decoration, so it lives outside the motion gate. ─────────────────────── */
+.ks-progress {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  z-index: 21;
+  background: transparent;
+}
+.ks-progress__bar {
+  height: 100%;
+  background: var(--accent, #c2603a);
+  transform: scaleX(0);
+  transform-origin: 0 50%;
+}
+
+/* The chapters margin rail — base state is fully filled (reduced motion and
+   print read it as a simple ornament); the motion block below makes it fill
+   with reading progress instead. Hidden where the margin doesn't exist. */
+.ks-spread--chapters .ks-spread__inner { position: relative; }
+.ks-rail {
+  display: none;
+  position: absolute;
+  left: -26px;
+  top: 6px;
+  bottom: 6px;
+  width: 2px;
+  background: var(--accent-soft, #f0d9cd);
+}
+.ks-rail::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--accent, #c2603a);
+  transform-origin: 0 0;
+}
+@media (min-width: 760px) {
+  .ks-rail { display: block; }
+}
+
+/* ── Motion (Phase 3) — every rule lives inside this gate. The base styles
+   above are the fully-resolved book: reduced-motion users (and print) see
+   everything, drawn and legible, with zero animation. Only transform and
+   opacity ever animate. ─────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: no-preference) {
+  /* The film-title opening: kicker, name, meta rise in 120ms steps. */
+  .ks-cover .ks-cover__kicker,
+  .ks-cover .ks-cover__name,
+  .ks-cover .ks-cover__meta {
+    opacity: 0;
+    transform: translateY(14px);
+    transition: opacity 0.7s ease-out, transform 0.9s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .ks-cover.ks-in .ks-cover__kicker { opacity: 1; transform: none; transition-delay: 0.1s; }
+  .ks-cover.ks-in .ks-cover__name { opacity: 1; transform: none; transition-delay: 0.22s; }
+  .ks-cover.ks-in .ks-cover__meta { opacity: 1; transform: none; transition-delay: 0.34s; }
+  /* The portrait settles from a slight zoom as the title lands. */
+  .ks-cover .ks-cover__photo img {
+    transform: scale(1.06);
+    transition: transform 2.6s cubic-bezier(0.22, 0.61, 0.36, 1);
+  }
+  .ks-cover.ks-in .ks-cover__photo img { transform: scale(1); }
+
+  /* Ken Burns — a 14s drift on full-bleed/hero photos, paused off-screen. */
+  .ks-photo--burns { overflow: hidden; }
+  .ks-in .ks-photo--burns img,
+  .ks-cover.ks-in .ks-photo--burns img {
+    animation: ks-burns 14s ease-in-out 2.8s infinite alternate;
+  }
+  .ks-spread:not(.ks-in) .ks-photo--burns img { animation-play-state: paused; }
+
+  /* Every spread's inner column rises gently on entry (the cover has its
+     own opening; the constellation draws instead). */
+  .ks-spread:not(.ks-cover):not(.ks-spread--const) .ks-spread__inner {
+    opacity: 0;
+    transform: translateY(16px);
+    transition: opacity 0.6s ease-out, transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .ks-spread.ks-in:not(.ks-cover) .ks-spread__inner { opacity: 1; transform: none; }
+
+  /* The constellation draws itself: solid lines run their dash, the dotted
+     partner bond fades, discs pop with the app's spring — each on its own
+     --d stagger set inline by Constellation.jsx. */
+  .ks-const-link--draw {
+    stroke-dasharray: 1;
+    stroke-dashoffset: 1;
+    transition: stroke-dashoffset 0.7s ease;
+    transition-delay: var(--d, 0s);
+  }
+  .ks-in .ks-const-link--draw { stroke-dashoffset: 0; }
+  .ks-const-link--fade {
+    opacity: 0;
+    transition: opacity 0.6s ease;
+    transition-delay: calc(var(--d, 0s) + 0.5s);
+  }
+  .ks-in .ks-const-link--fade { opacity: 0.7; }
+  .ks-const-node {
+    opacity: 0;
+    transform: scale(0.5);
+    transform-box: fill-box;
+    transform-origin: center;
+    transition: opacity 0.4s ease, transform 0.6s var(--spring, cubic-bezier(0.34, 1.56, 0.64, 1));
+    transition-delay: var(--d, 0s);
+  }
+  .ks-in .ks-const-node { opacity: 1; transform: scale(1); }
+
+  /* Pull quotes and voices rise a beat after their spread. */
+  .ks-in .ks-voice,
+  .ks-in .ks-quote {
+    animation: ks-rise 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  .ks-in .ks-voice:nth-child(3) { animation-delay: 0.12s; }
+  .ks-in .ks-voice:nth-child(4) { animation-delay: 0.24s; }
+
+  /* The chapters rail fills with reading progress (KeepsakeView sets
+     --ks-read on the section from its scroll handler). */
+  .ks-rail::after { transform: scaleY(var(--ks-read, 0)); }
+}
+
+@keyframes ks-rise {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes ks-burns {
+  from { transform: scale(1) translate(0, 0); }
+  to { transform: scale(1.07) translate(-1.4%, -1%); }
+}
 
 /* Entry button on the profile (lives beside Life Story). */
 .ks-entry {
