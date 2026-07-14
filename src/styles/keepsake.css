@@ -598,3 +598,113 @@
 }
 .ks-entry:active { transform: scale(0.99); }
 .ks-entry svg { color: var(--accent, #c2603a); }
+
+/* ── Print (Phase 4) — the book on paper ────────────────────────────────────
+   Scoped to body.ks-has-print (set only while a Keepsake is open) so
+   printing the ordinary app is never hijacked. The visibility trick hides
+   the app behind the book without disturbing the overlay's own layout;
+   the overlay leaves fixed positioning so it paginates in normal flow. */
+@media print {
+  body.ks-has-print { height: auto; }
+  /* #root is the app's fixed, overflow-hidden viewport shell (global.css),
+     and the App component adds one wrapper div inside it — left alone they
+     clip the whole book to a single page. Both become ordinary flowing
+     blocks so the pages can fragment. */
+  body.ks-has-print #root,
+  body.ks-has-print #root > div {
+    position: static;
+    overflow: visible;
+    height: auto;
+  }
+  /* Hide the app around the book with display (not visibility): the book
+     itself must sit in NORMAL FLOW — break-before/break-inside do nothing
+     inside an absolutely-positioned box, which prints the whole book as one
+     clipped page. The keepsake is a direct child of the App wrapper, so its
+     siblings are exactly "the rest of the app". */
+  body.ks-has-print #root > div > *:not(.keepsake-view) { display: none !important; }
+
+  body.ks-has-print .keepsake-view {
+    position: static;
+    width: 100%;
+    overflow: visible;
+    scroll-snap-type: none;
+  }
+
+  /* Page geometry — a Crown-Quarto-ish magazine proportion that also prints
+     acceptably on A4/Letter with shrink-to-fit. The cover page bleeds. */
+  @page { size: 210mm 280mm; margin: 18mm 16mm 22mm; }
+  @page :first { margin: 0; }
+
+  /* Screen chrome never prints. */
+  body.ks-has-print .ks-chrome,
+  body.ks-has-print .ks-banner,
+  body.ks-has-print .ks-progress,
+  body.ks-has-print .ks-prose-pending { display: none !important; }
+
+  /* Every motion state resolves fully — a page can never print half-risen,
+     half-drawn, or paused mid-Ken-Burns. (prefers-reduced-motion is
+     independent of the print media type, so the motion gate can still match
+     while printing; these overrides win regardless.) */
+  body.ks-has-print .ks-spread__inner,
+  body.ks-has-print .ks-cover__kicker,
+  body.ks-has-print .ks-cover__name,
+  body.ks-has-print .ks-cover__meta,
+  body.ks-has-print .ks-const-node,
+  body.ks-has-print .ks-voice,
+  body.ks-has-print .ks-quote {
+    opacity: 1 !important;
+    transform: none !important;
+    transition: none !important;
+    animation: none !important;
+  }
+  body.ks-has-print .ks-const-link--draw { stroke-dashoffset: 0 !important; }
+  body.ks-has-print .ks-const-link--fade { opacity: 0.7 !important; }
+  body.ks-has-print .ks-photo--burns img { animation: none !important; transform: none !important; }
+  body.ks-has-print .ks-rail::after { transform: none !important; }
+
+  /* Pagination: one spread starts each page; content flows from the top
+     (viewport-centering makes no sense on paper). */
+  body.ks-has-print .ks-spread {
+    display: block;
+    min-height: 0 !important;
+    padding: 0;
+    break-before: page;
+    scroll-snap-align: none;
+  }
+  body.ks-has-print .ks-spread__inner { max-width: none; }
+
+  /* The cover: a full-bleed first page. */
+  body.ks-has-print .ks-cover {
+    break-before: auto;
+    position: relative;
+    height: 277mm; /* a hair under the page so nothing spills to page 2 */
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    overflow: hidden;
+  }
+  body.ks-has-print .ks-cover__body { padding: 0 18mm 20mm; }
+
+  /* Keep photos, quotes, documents and rows whole across page breaks. */
+  body.ks-has-print .ks-album__item,
+  body.ks-has-print .ks-doc,
+  body.ks-has-print .ks-voice,
+  body.ks-has-print .ks-quote,
+  body.ks-has-print .ks-chapter__event,
+  body.ks-has-print .ks-record tr,
+  body.ks-has-print .ks-parents { break-inside: avoid; }
+  body.ks-has-print .ks-prose p { orphans: 3; widows: 3; }
+  body.ks-has-print .ks-chapter { break-inside: auto; }
+
+  /* Colors are part of the design — ask the browser to keep them. */
+  body.ks-has-print .keepsake-view,
+  body.ks-has-print .keepsake-view * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+
+  /* The chapters rail is a screen affordance (reading progress). */
+  body.ks-has-print .ks-rail { display: none; }
+}
+

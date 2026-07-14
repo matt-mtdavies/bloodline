@@ -76,6 +76,32 @@ export default function KeepsakeView({
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
+  // Print scoping: the print stylesheet hides the app and reflows the book
+  // into pages, but it must only ever apply while a Keepsake is actually
+  // open — printing the tree view normally shouldn't be hijacked. A body
+  // class carries that scope.
+  useEffect(() => {
+    document.body.classList.add('ks-has-print');
+    return () => document.body.classList.remove('ks-has-print');
+  }, []);
+
+  // 'idle' | 'preparing' — the Print button decodes every image first so
+  // nothing prints as a grey box (lazy-loaded album photos especially).
+  const [printState, setPrintState] = useState('idle');
+  async function handlePrint() {
+    if (printState !== 'idle') return;
+    setPrintState('preparing');
+    try {
+      const imgs = [...(containerRef.current?.querySelectorAll('img') || [])];
+      imgs.forEach((img) => { img.loading = 'eager'; });
+      await Promise.all(imgs.map((img) => img.decode().catch(() => {})));
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      window.print();
+    } finally {
+      setPrintState('idle');
+    }
+  }
+
   // ── Motion (Phase 3) ──────────────────────────────────────────────────────
   // One observer marks each spread .ks-in the first time a quarter of it is
   // on screen — every entrance animation keys off that class. Under
@@ -169,11 +195,21 @@ export default function KeepsakeView({
       <div className="ks-chrome">
         <span className="ks-chrome__mark">A Bloodline Keepsake</span>
         <div className="ks-chrome__btns">
+          <button
+            className="ks-chrome__btn ks-chrome__btn--print"
+            onClick={handlePrint}
+            disabled={printState !== 'idle'}
+            aria-label={printState === 'preparing' ? 'Preparing pages…' : 'Print this Keepsake'}
+            title={printState === 'preparing' ? 'Preparing pages…' : 'Print — or save as PDF from the print dialog'}
+          >
+            <PrintIcon />
+          </button>
           <button className="ks-chrome__btn" onClick={onClose} aria-label="Close the Keepsake">
             <CloseIcon />
           </button>
         </div>
       </div>
+
 
       {/* The edition bar — compile / weave-in / error, never blocking the read. */}
       {canCompile && (compiling || compileError || !edition || stale) && (
@@ -211,6 +247,15 @@ function CloseIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function PrintIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M7 8V3h10v5M7 17H4a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1h16a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M7 14h10v7H7z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
     </svg>
   );
 }
