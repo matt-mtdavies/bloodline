@@ -1,5 +1,5 @@
-import { useEffect, useMemo } from 'react';
-import { buildKeepsake } from '../../lib/keepsake.js';
+import { useEffect, useMemo, useState } from 'react';
+import { buildKeepsake, applyNarrative } from '../../lib/keepsake.js';
 import {
   CoverSpread, FrontispieceSpread, OriginsSpread, ConstellationSpread,
   ChaptersSpread, ServiceSpread, PlacesSpread, VoicesSpread, AlbumSpread,
@@ -9,9 +9,13 @@ import '../../styles/keepsake.css';
 
 /*
  * The Keepsake reader — a full-screen book over the app (docs/KEEPSAKE.md).
- * Phase 1: the static magazine. Native vertical scroll, proximity snap,
- * one spread per viewport. The AI narrative (Phase 2), motion (Phase 3)
- * and print (Phase 4) all layer onto this exact structure.
+ * Phase 1 built the static magazine; Phase 2 wires the narrative engine:
+ * on open, fetch the latest compiled edition from /api/keepsake (stored in
+ * R2, shared by the whole family). If the tree has grown since it was
+ * compiled (facts hash differs), a quiet banner offers to weave the new
+ * records in; while recompiling, the previous edition stays readable.
+ * Signed-out / demo sessions simply read the Phase-1 book, placeholders
+ * and all — no banner, no errors.
  */
 
 const SPREADS = {
@@ -38,14 +42,73 @@ export default function KeepsakeView({
     [graph, personId, memories, photos, documents, activity, familyName],
   );
 
+  // 'loading' → 'ready' (authed, edition or null) | 'unavailable' (signed
+  // out, no server, storage unconfigured — the static book still reads fine).
+  const [editionState, setEditionState] = useState('loading');
+  const [edition, setEdition] = useState(null);
+  const [compiling, setCompiling] = useState(false);
+  const [compileError, setCompileError] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    setEditionState('loading');
+    setEdition(null);
+    setCompileError(false);
+    (async () => {
+      try {
+        const r = await fetch(`/api/keepsake?personId=${encodeURIComponent(personId)}`);
+        if (!alive) return;
+        if (!r.ok) { setEditionState('unavailable'); return; }
+        const body = await r.json().catch(() => null);
+        if (!alive) return;
+        setEdition(body || null);
+        setEditionState('ready');
+      } catch {
+        if (alive) setEditionState('unavailable');
+      }
+    })();
+    return () => { alive = false; };
+  }, [personId]);
+
   useEffect(() => {
     const onKey = (e) => e.key === 'Escape' && onClose();
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  // Private subject (or a person mid-removal) — nothing to show.
   if (!keepsake) return null;
+
+  const stale = edition && edition.hash !== keepsake.factsHash;
+  const canCompile = editionState === 'ready';
+
+  async function compile() {
+    if (compiling) return;
+    setCompiling(true);
+    setCompileError(false);
+    try {
+      const chaptersSpread = keepsake.spreads.find((s) => s.key === 'chapters');
+      const colophon = keepsake.spreads.find((s) => s.key === 'colophon');
+      const r = await fetch('/api/keepsake', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          personId,
+          facts: keepsake.facts,
+          chapterPlan: (chaptersSpread?.chapters || []).map((c) => c.label),
+          recordCount: colophon?.recordCount ?? null,
+        }),
+      });
+      const body = await r.json().catch(() => null);
+      if (!r.ok || !body?.narrative) { setCompileError(true); return; }
+      setEdition(body);
+    } catch {
+      setCompileError(true);
+    } finally {
+      setCompiling(false);
+    }
+  }
+
+  const spreads = applyNarrative(keepsake.spreads, edition?.narrative);
 
   return (
     <div className="keepsake-view" role="dialog" aria-modal="true" aria-label={`${keepsake.subject.name} — Keepsake`}>
@@ -57,9 +120,34 @@ export default function KeepsakeView({
           </button>
         </div>
       </div>
-      {keepsake.spreads.map((spread) => {
+
+      {/* The edition bar — compile / weave-in / error, never blocking the read. */}
+      {canCompile && (compiling || compileError || !edition || stale) && (
+        <div className="ks-banner" role="status">
+          {compiling ? (
+            <span className="ks-banner__note">Compiling this edition — the story is being written…</span>
+          ) : compileError ? (
+            <>
+              <span className="ks-banner__note">Couldn&apos;t compile this edition.</span>
+              <button className="ks-banner__btn" onClick={compile}>Try again</button>
+            </>
+          ) : !edition ? (
+            <>
+              <span className="ks-banner__note">This book hasn&apos;t been written yet.</span>
+              <button className="ks-banner__btn" onClick={compile}>Compile the first edition</button>
+            </>
+          ) : (
+            <>
+              <span className="ks-banner__note">The tree has grown since this edition was compiled.</span>
+              <button className="ks-banner__btn" onClick={compile}>Weave in the changes</button>
+            </>
+          )}
+        </div>
+      )}
+
+      {spreads.map((spread) => {
         const Spread = SPREADS[spread.key];
-        return Spread ? <Spread key={spread.key} spread={spread} /> : null;
+        return Spread ? <Spread key={spread.key} spread={spread} edition={edition} /> : null;
       })}
     </div>
   );

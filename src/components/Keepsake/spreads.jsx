@@ -120,7 +120,8 @@ export function ChaptersSpread({ spread }) {
         <p className="ks-label ks-label--accent">Chapters of a Life</p>
         {spread.chapters.map((ch, i) => (
           <article className="ks-chapter" key={i}>
-            <p className="ks-chapter__years">{ch.narrativeTitle || ch.label}</p>
+            <p className="ks-chapter__years">{ch.label}</p>
+            {ch.narrativeTitle && <h3 className="ks-chapter__title">{ch.narrativeTitle}</h3>}
             {ch.paragraphs
               ? <div className={`ks-prose${i === 0 ? ' ks-prose--dropcap' : ''}`}>{ch.paragraphs.map((p, j) => <p key={j}>{p}</p>)}</div>
               : <ProsePending>This chapter will be written when the edition is compiled.</ProsePending>}
@@ -291,6 +292,11 @@ export function LegacySpread({ spread }) {
       <div className="ks-spread__inner">
         <p className="ks-label ks-label--accent">Legacy</p>
         <h2 className="ks-title">Who follows</h2>
+        {spread.paragraphs && (
+          <div className="ks-prose" style={{ marginTop: 16 }}>
+            {spread.paragraphs.map((p, i) => <p key={i}>{p}</p>)}
+          </div>
+        )}
         <div className="ks-legacy__row">
           {[...spread.children, ...spread.grandchildren].map((p) => (
             <div className="ks-legacy__person" key={p.id}>

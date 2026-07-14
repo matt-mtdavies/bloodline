@@ -15,6 +15,7 @@ import {
   factsHash,
   constellationLayout,
   restrictionOf,
+  applyNarrative,
   CONSTELLATION_MAX_NODES,
 } from '../src/lib/keepsake.js';
 
@@ -271,6 +272,36 @@ test('constellation enforces the hard node cap on a huge family', () => {
   assert.equal(nodes.length, CONSTELLATION_MAX_NODES);
   const ids = new Set(nodes.map((n) => n.id));
   assert.ok(links.every((l) => ids.has(l.from) && ids.has(l.to)));
+});
+
+// ── applyNarrative ──────────────────────────────────────────────────────────
+
+test('applyNarrative flows the edition into cover, origins, chapters, and legacy', () => {
+  const spreads = keepsakeSpreads(davies(), 'percy', EXTRAS);
+  const narrative = {
+    epithet: 'Railwayman of Heidelberg',
+    origins: ['Percy was born in Melbourne.'],
+    chapters: [
+      { title: 'Royal Park', years: '1923–1940', paragraphs: ['Para one.'] },
+    ],
+    legacy: ['Two children carry the line.'],
+  };
+  const out = applyNarrative(spreads, narrative);
+  assert.equal(out.find((s) => s.key === 'cover').epithet, 'Railwayman of Heidelberg');
+  assert.deepEqual(out.find((s) => s.key === 'origins').narrative, ['Percy was born in Melbourne.']);
+  const chapters = out.find((s) => s.key === 'chapters').chapters;
+  assert.equal(chapters[0].narrativeTitle, 'Royal Park');
+  assert.deepEqual(chapters[0].paragraphs, ['Para one.']);
+  // Fewer narrative chapters than planned — the rest keep their pending state.
+  assert.equal(chapters[1].paragraphs ?? null, null);
+  assert.deepEqual(out.find((s) => s.key === 'legacy').paragraphs, ['Two children carry the line.']);
+  // Untouched spreads are passed through identically.
+  assert.equal(out.find((s) => s.key === 'record'), spreads.find((s) => s.key === 'record'));
+});
+
+test('applyNarrative with no narrative is the identity', () => {
+  const spreads = keepsakeSpreads(davies(), 'percy', EXTRAS);
+  assert.equal(applyNarrative(spreads, null), spreads);
 });
 
 // ── buildKeepsake top level ─────────────────────────────────────────────────

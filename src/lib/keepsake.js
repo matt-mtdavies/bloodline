@@ -511,6 +511,40 @@ export function keepsakeSpreads(graph, personId, extras = {}) {
   return spreads;
 }
 
+/*
+ * Fold a compiled edition's narrative (from /api/keepsake) into the spread
+ * descriptors. Pure and forgiving: chapters match by index, surplus AI
+ * chapters are ignored, and anything missing simply leaves that spread's
+ * Phase-1 pending state in place — a stale or partial narrative can never
+ * break the book.
+ */
+export function applyNarrative(spreads, narrative) {
+  if (!narrative) return spreads;
+  return spreads.map((s) => {
+    if (s.key === 'cover' && narrative.epithet) {
+      return { ...s, epithet: narrative.epithet };
+    }
+    if (s.key === 'origins' && narrative.origins?.length) {
+      return { ...s, narrative: narrative.origins };
+    }
+    if (s.key === 'chapters' && narrative.chapters?.length) {
+      return {
+        ...s,
+        chapters: s.chapters.map((ch, i) => {
+          const n = narrative.chapters[i];
+          return n
+            ? { ...ch, narrativeTitle: n.title || null, paragraphs: n.paragraphs?.length ? n.paragraphs : null }
+            : ch;
+        }),
+      };
+    }
+    if (s.key === 'legacy' && narrative.legacy?.length) {
+      return { ...s, paragraphs: narrative.legacy };
+    }
+    return s;
+  });
+}
+
 export function buildKeepsake(graph, personId, extras = {}) {
   const person = graph.byId.get(personId);
   if (!person || restrictionOf(person) === 'private') return null;
