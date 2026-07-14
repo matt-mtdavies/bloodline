@@ -1,0 +1,426 @@
+/* ── The Keepsake — the magazine (docs/KEEPSAKE.md) ─────────────────────────
+   All classes ks- prefixed. Screen styles here; motion arrives in Phase 3
+   and print styles in Phase 4, both appended to this file. Everything
+   derives from theme.css tokens with hardcoded fallbacks (iOS dark mode
+   rule) — no new hues: terracotta accents, memorial violet, paper + ink. */
+
+.keepsake-view {
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  background: var(--paper, #ffffff);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scroll-snap-type: y proximity;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Floating chrome — quiet, above the pages, never part of them. */
+.ks-chrome {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: calc(var(--safe-top, 0px) + 12px) 16px 10px;
+  pointer-events: none;
+  background: linear-gradient(to bottom, rgba(255, 255, 255, 0.92), rgba(255, 255, 255, 0));
+}
+.ks-chrome > * { pointer-events: auto; }
+.ks-chrome__mark {
+  font-family: var(--display, serif);
+  font-style: italic;
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  color: var(--ink-soft, #6b6f76);
+}
+.ks-chrome__btns { display: flex; gap: 8px; }
+.ks-chrome__btn {
+  width: 38px;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid var(--hairline, #ebedf0);
+  color: var(--ink, #1c1d21);
+  box-shadow: var(--shadow-soft, 0 1px 2px rgba(20, 22, 28, 0.04));
+}
+.ks-chrome__btn:active { transform: scale(0.96); }
+
+/* ── The spread — one full-viewport page ─────────────────────────────────── */
+.ks-spread {
+  min-height: 100dvh;
+  scroll-snap-align: start;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: calc(var(--safe-top, 0px) + 64px) 22px calc(var(--safe-bottom, 0px) + 56px);
+  position: relative;
+}
+.ks-spread__inner {
+  width: 100%;
+  max-width: 640px;
+}
+
+/* The single ornament: hairline + centered diamond. */
+.ks-orn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 26px 0;
+  color: var(--accent, #c2603a);
+}
+.ks-orn::before,
+.ks-orn::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--hairline, #ebedf0);
+}
+.ks-orn svg { flex: none; }
+
+/* Small-caps label used everywhere for captions/kickers. */
+.ks-label {
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-faint, #a6abb3);
+}
+.ks-label--accent { color: var(--accent, #c2603a); }
+
+/* ── Cover ──────────────────────────────────────────────────────────────── */
+.ks-cover {
+  padding: 0;
+  justify-content: flex-end;
+  min-height: 100dvh;
+  overflow: hidden;
+}
+.ks-cover__photo {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+.ks-cover__photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+/* Legibility scrim over the lower half of the portrait. */
+.ks-cover__photo::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to bottom, rgba(28, 29, 33, 0) 34%, rgba(28, 29, 33, 0.62) 78%, rgba(28, 29, 33, 0.78));
+}
+/* No portrait — a quiet paper texture built from the app's own tones. */
+.ks-cover--bare {
+  background:
+    radial-gradient(1200px 700px at 80% -10%, var(--accent-soft, #f0d9cd) 0%, transparent 60%),
+    radial-gradient(900px 600px at -10% 110%, var(--sage-soft, #d8e0d6) 0%, transparent 55%),
+    var(--paper, #ffffff);
+}
+.ks-cover__body {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 720px;
+  padding: 0 26px calc(var(--safe-bottom, 0px) + 64px);
+}
+.ks-cover__kicker {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.85);
+  margin-bottom: 14px;
+}
+.ks-cover--bare .ks-cover__kicker { color: var(--accent, #c2603a); }
+.ks-cover__name {
+  font-family: var(--display, serif);
+  font-weight: 500;
+  font-size: clamp(46px, 12vw, 120px);
+  line-height: 0.98;
+  letter-spacing: -0.02em;
+  color: #fff;
+  margin: 0 0 16px;
+}
+.ks-cover--bare .ks-cover__name { color: var(--ink, #1c1d21); }
+.ks-cover__meta {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.ks-cover__lifespan {
+  font-family: var(--display, serif);
+  font-style: italic;
+  font-size: 19px;
+  color: rgba(255, 255, 255, 0.92);
+}
+.ks-cover__epithet {
+  font-size: 14px;
+  letter-spacing: 0.04em;
+  color: rgba(255, 255, 255, 0.75);
+}
+.ks-cover--bare .ks-cover__lifespan { color: var(--ink-soft, #6b6f76); }
+.ks-cover--bare .ks-cover__epithet { color: var(--ink-faint, #a6abb3); }
+
+/* ── Frontispiece ───────────────────────────────────────────────────────── */
+.ks-front { text-align: center; }
+.ks-front__roles {
+  font-family: var(--display, serif);
+  font-style: italic;
+  font-size: clamp(24px, 5vw, 34px);
+  line-height: 1.35;
+  color: var(--ink, #1c1d21);
+  margin: 0;
+}
+.ks-front__family { margin-top: 26px; }
+.ks-front__records { margin-top: 8px; font-size: 13.5px; color: var(--ink-soft, #6b6f76); }
+
+/* ── Shared prose / typography ──────────────────────────────────────────── */
+.ks-title {
+  font-family: var(--display, serif);
+  font-weight: 500;
+  font-size: clamp(30px, 6.4vw, 44px);
+  letter-spacing: -0.015em;
+  line-height: 1.08;
+  color: var(--ink, #1c1d21);
+  margin: 0 0 6px;
+}
+.ks-prose {
+  font-size: 17.5px;
+  line-height: 1.68;
+  color: var(--ink, #1c1d21);
+  max-width: 38em;
+}
+.ks-prose p { margin: 0 0 1em; }
+/* Drop cap on the first paragraph of a chapter. */
+.ks-prose--dropcap > p:first-child::first-letter {
+  font-family: var(--display, serif);
+  font-size: 3.4em;
+  line-height: 0.82;
+  float: left;
+  padding: 6px 8px 0 0;
+  color: var(--accent, #c2603a);
+}
+/* Where the AI narrative will live once an edition is compiled (Phase 2). */
+.ks-prose-pending {
+  border-left: 2px solid var(--accent-soft, #f0d9cd);
+  padding: 4px 0 4px 16px;
+  font-style: italic;
+  font-size: 14.5px;
+  color: var(--ink-faint, #a6abb3);
+}
+
+/* ── Origins ────────────────────────────────────────────────────────────── */
+.ks-origins__place {
+  font-family: var(--display, serif);
+  font-size: clamp(26px, 5.6vw, 38px);
+  font-style: italic;
+  color: var(--ink, #1c1d21);
+  margin: 4px 0 0;
+}
+.ks-origins__date { margin-top: 6px; font-size: 15px; color: var(--ink-soft, #6b6f76); }
+.ks-parents { display: flex; gap: 22px; margin-top: 26px; flex-wrap: wrap; }
+.ks-parent { display: flex; align-items: center; gap: 12px; }
+.ks-parent__name { font-size: 15px; font-weight: 600; color: var(--ink, #1c1d21); }
+.ks-parent__role { display: block; font-size: 11.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-faint, #a6abb3); }
+
+/* ── Constellation ──────────────────────────────────────────────────────── */
+.ks-constellation { width: 100%; }
+.ks-constellation svg { width: 100%; height: auto; display: block; }
+.ks-constellation__caption { text-align: center; margin-top: 18px; }
+
+/* ── Chapters ───────────────────────────────────────────────────────────── */
+.ks-chapter { margin: 0 0 44px; position: relative; }
+.ks-chapter__years {
+  font-family: var(--display, serif);
+  font-style: italic;
+  font-size: 15px;
+  color: var(--accent, #c2603a);
+  margin-bottom: 4px;
+}
+.ks-chapter__events { list-style: none; margin: 14px 0 0; padding: 0; }
+.ks-chapter__event {
+  display: grid;
+  grid-template-columns: 52px 1fr;
+  gap: 14px;
+  padding: 9px 0;
+  border-top: 1px solid var(--hairline, #ebedf0);
+}
+.ks-chapter__event:first-child { border-top: 0; }
+.ks-chapter__event-year {
+  font-variant-numeric: tabular-nums;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--accent, #c2603a);
+}
+.ks-chapter__event-title { font-size: 15.5px; font-weight: 600; color: var(--ink, #1c1d21); }
+.ks-chapter__event-detail { display: block; font-size: 13.5px; font-weight: 400; color: var(--ink-soft, #6b6f76); margin-top: 2px; }
+
+/* ── Service ────────────────────────────────────────────────────────────── */
+.ks-service__id {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 0 18px;
+  font-size: 14px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-soft, #6b6f76);
+}
+.ks-service__id svg { color: var(--sage, #3f5e4e); }
+.ks-quote {
+  font-family: var(--display, serif);
+  font-style: italic;
+  font-size: clamp(19px, 4vw, 24px);
+  line-height: 1.5;
+  color: var(--ink, #1c1d21);
+  margin: 22px 0;
+  padding-left: 18px;
+  border-left: 2px solid var(--accent, #c2603a);
+}
+.ks-quote cite { display: block; font-style: normal; font-family: var(--body, sans-serif); font-size: 12.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-faint, #a6abb3); margin-top: 10px; }
+.ks-medals { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.ks-medal {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--ink, #1c1d21);
+  border: 1px solid var(--hairline, #ebedf0);
+  border-radius: 999px;
+  padding: 5px 12px;
+}
+.ks-medal svg { color: var(--accent, #c2603a); }
+
+/* ── Places ─────────────────────────────────────────────────────────────── */
+.ks-places { list-style: none; margin: 20px 0 0; padding: 0; }
+.ks-place { padding: 16px 0; border-top: 1px solid var(--hairline, #ebedf0); }
+.ks-place:first-child { border-top: 0; }
+.ks-place__name {
+  font-family: var(--display, serif);
+  font-size: clamp(22px, 4.6vw, 30px);
+  color: var(--ink, #1c1d21);
+}
+.ks-place__role { margin-top: 3px; }
+
+/* ── Voices ─────────────────────────────────────────────────────────────── */
+.ks-voice { margin: 0 0 30px; }
+.ks-voice blockquote {
+  font-family: var(--display, serif);
+  font-style: italic;
+  font-size: clamp(20px, 4.4vw, 26px);
+  line-height: 1.5;
+  color: var(--ink, #1c1d21);
+  margin: 0;
+}
+.ks-voice blockquote::before { content: '\201C'; color: var(--accent, #c2603a); }
+.ks-voice blockquote::after { content: '\201D'; color: var(--accent, #c2603a); }
+.ks-voice cite { display: block; font-style: normal; font-size: 12.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-faint, #a6abb3); margin-top: 10px; }
+
+/* ── Album ──────────────────────────────────────────────────────────────── */
+.ks-album { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 20px; }
+.ks-album__item { margin: 0; }
+.ks-album__item--hero { grid-column: 1 / -1; }
+.ks-album__item img {
+  width: 100%;
+  display: block;
+  border-radius: 4px;
+  border: 1px solid var(--hairline, #ebedf0);
+}
+.ks-album__item figcaption { margin-top: 7px; font-size: 12.5px; color: var(--ink-soft, #6b6f76); }
+/* Deliberate archival duotone for old/low-quality scans. */
+.ks-photo--archival img { filter: grayscale(1) sepia(0.14) contrast(1.05); }
+
+/* ── Documents ──────────────────────────────────────────────────────────── */
+.ks-docs { display: grid; gap: 18px; margin-top: 20px; }
+.ks-doc {
+  border: 1px solid var(--hairline, #ebedf0);
+  border-radius: 6px;
+  padding: 16px;
+  box-shadow: var(--shadow-soft, 0 1px 2px rgba(20, 22, 28, 0.04));
+  background: var(--card, #ffffff);
+}
+.ks-doc img { width: 100%; display: block; border-radius: 3px; margin-bottom: 12px; }
+.ks-doc__title { font-size: 15px; font-weight: 600; color: var(--ink, #1c1d21); }
+.ks-doc__fact { margin-top: 5px; font-size: 13.5px; color: var(--ink-soft, #6b6f76); line-height: 1.5; }
+
+/* ── The Record ─────────────────────────────────────────────────────────── */
+.ks-record { width: 100%; border-collapse: collapse; margin-top: 22px; }
+.ks-record th {
+  text-align: left;
+  vertical-align: top;
+  width: 110px;
+  padding: 11px 14px 11px 0;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-faint, #a6abb3);
+  border-top: 1px solid var(--hairline, #ebedf0);
+}
+.ks-record td {
+  padding: 11px 0;
+  font-size: 15.5px;
+  color: var(--ink, #1c1d21);
+  border-top: 1px solid var(--hairline, #ebedf0);
+}
+.ks-record tr:first-child th, .ks-record tr:first-child td { border-top: 0; }
+
+/* ── Legacy ─────────────────────────────────────────────────────────────── */
+.ks-legacy__row { display: flex; flex-wrap: wrap; gap: 18px; margin-top: 20px; }
+.ks-legacy__person { text-align: center; width: 74px; }
+.ks-legacy__person .avatar { margin: 0 auto; }
+.ks-legacy__name { display: block; margin-top: 7px; font-size: 12.5px; color: var(--ink, #1c1d21); }
+.ks-legacy--memorial .ks-title { color: var(--memorial, #6b5e7a); }
+.ks-legacy__line { margin-top: 22px; font-family: var(--display, serif); font-style: italic; font-size: 17px; color: var(--ink-soft, #6b6f76); }
+
+/* ── Colophon ───────────────────────────────────────────────────────────── */
+.ks-colophon { text-align: center; }
+.ks-colophon__edition {
+  font-family: var(--display, serif);
+  font-style: italic;
+  font-size: 18px;
+  color: var(--ink, #1c1d21);
+}
+.ks-colophon__meta { margin-top: 10px; font-size: 13.5px; color: var(--ink-soft, #6b6f76); line-height: 1.7; }
+.ks-colophon__invite {
+  margin: 26px auto 0;
+  max-width: 30em;
+  font-size: 14.5px;
+  line-height: 1.6;
+  color: var(--ink-soft, #6b6f76);
+  border: 1px dashed var(--hairline, #ebedf0);
+  border-radius: 14px;
+  padding: 14px 18px;
+}
+.ks-colophon__privacy { margin-top: 30px; font-size: 11.5px; color: var(--ink-faint, #a6abb3); }
+
+/* Entry button on the profile (lives beside Life Story). */
+.ks-entry {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  justify-content: center;
+  padding: 14px;
+  border-radius: 16px;
+  border: 1px solid var(--accent-soft, #f0d9cd);
+  background: linear-gradient(135deg, #fdf7f3, #fbf1ea);
+  color: var(--accent-deep, #a44d2c);
+  font-size: 14.5px;
+  font-weight: 600;
+  transition: transform 0.3s var(--spring, ease);
+}
+.ks-entry:active { transform: scale(0.99); }
+.ks-entry svg { color: var(--accent, #c2603a); }

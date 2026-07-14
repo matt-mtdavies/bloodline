@@ -92,6 +92,7 @@ import FamilyTrees from './components/FamilyTrees.jsx';
 import MergeWizard from './components/MergeWizard.jsx';
 import InviteSheet from './components/InviteSheet.jsx';
 import TreeInsights from './components/TreeInsights.jsx';
+import KeepsakeView from './components/Keepsake/KeepsakeView.jsx';
 import DuplicatesSheet from './components/DuplicatesSheet.jsx';
 import LineageBanner from './components/LineageBanner.jsx';
 import FlightCaption from './components/FlightCaption.jsx';
@@ -532,6 +533,7 @@ export default function App() {
   const [lifeJourneyId, setLifeJourneyId] = useState(null);
   const playRef = useRef(null);
   const [docViewer, setDocViewer] = useState(null); // { title, src, mime }
+  const [keepsakeId, setKeepsakeId] = useState(null); // personId whose Keepsake is open
   const [invitePersonId, setInvitePersonId] = useState(null);
   const [activityOpen, setActivityOpen] = useState(false);
   const [lastReadAt, setLastReadAt] = useState(() => getActivityReadAt()); // null = never opened = all unread
@@ -2037,7 +2039,7 @@ export default function App() {
         canEdit={canEditTree}
         canContribute={canContributeTree}
         isAdmin={canManageTreeStructure}
-        lockEscape={!!(addAnchorId || editId || timelineId || memoryId || lightbox || crop || invitePersonId || duplicatesOpen)}
+        lockEscape={!!(addAnchorId || editId || timelineId || memoryId || lightbox || crop || invitePersonId || duplicatesOpen || keepsakeId)}
         onClose={closePerson}
         onFocus={(id) => {
           closePersonForTreeAction();
@@ -2079,6 +2081,7 @@ export default function App() {
           const person = graph.byId.get(id);
           updatePerson(id, { story }, { type: 'person_updated', personId: id, personName: person?.display_name ?? '', detail: 'life story' });
         }}
+        onOpenKeepsake={(id) => setKeepsakeId(id)}
         onUpdateMilitaryStory={(id, military_story) => {
           const person = graph.byId.get(id);
           updatePerson(id, { military_story }, { type: 'person_updated', personId: id, personName: person?.display_name ?? '', detail: 'military service story' });
@@ -2142,6 +2145,19 @@ export default function App() {
           viewerId={data.myPersonId || activeId}
           onNavigate={(id) => { setInsightsOpen(false); activate(id); openPerson(id); }}
           onClose={() => setInsightsOpen(false)}
+        />
+      )}
+
+      {keepsakeId && (
+        <KeepsakeView
+          graph={graph}
+          personId={keepsakeId}
+          memories={data.memories}
+          photos={data.photos}
+          documents={data.documents}
+          activity={data.activity}
+          familyName={data.familyName}
+          onClose={() => setKeepsakeId(null)}
         />
       )}
 
