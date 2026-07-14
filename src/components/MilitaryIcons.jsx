@@ -6,14 +6,19 @@
  * surfaces draw the same marks rather than three near-identical SVG sets.
  */
 
-// Picks the closest icon for a branch — a nation-specific icon when we
-// recognize both the branch and a nation known to have one (today: just the
-// Australian slouch hat for army), otherwise the generic branch icon, and
-// the plain ribbon when branch itself isn't known. Deliberately starting
-// with one nation rather than building a library up front — more added
-// later only as real family records call for them.
+// Picks the closest icon for a record. Nation marks (the slouch hat, the
+// maple leaf) win outright, regardless of branch — they're national symbols
+// first, not army/navy/air-force specific, so a nation we recognize always
+// takes the more evocative icon over the generic branch shape. Only once
+// the nation isn't one we have a mark for do we fall back to the generic
+// branch icon, and then the plain ribbon when branch itself isn't known
+// either. Deliberately starting with two nations rather than building a
+// library up front — more added later only as real family records call
+// for them.
 export function BranchIcon({ branch, nation, size = 14 }) {
-  if (branch === 'army' && (nation || '').toLowerCase().includes('australia')) return <SlouchHatIcon size={size} />;
+  const n = (nation || '').toLowerCase();
+  if (n.includes('australia')) return <SlouchHatIcon size={size} />;
+  if (n.includes('canada')) return <MapleLeafIcon size={size} />;
   if (branch === 'army') return <ArmyIcon size={size} />;
   if (branch === 'navy') return <NavyIcon size={size} />;
   if (branch === 'air_force') return <AirForceIcon size={size} />;
@@ -57,6 +62,25 @@ export function SlouchHatIcon({ size = 14 }) {
       <path d="M7.6 13.9c0-3.3 2-5.9 4.4-5.9s4.4 2.6 4.4 5.9" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
       <path d="M16.4 14.1c1.5.5 3.1.1 4-1.1-.9-1.3-2.5-1.9-4-1.5" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
       <circle cx="17.6" cy="12.1" r="0.9" fill="currentColor" />
+    </svg>
+  );
+}
+
+// A simplified, symmetric maple leaf silhouette — reduced to three points a
+// side plus the stem rather than the flag's full eleven, which turns to mud
+// at icon size. Same stroke weight and open (unfilled) outline as the other
+// branch marks, so it reads as part of the same family rather than a
+// different icon set dropped in.
+export function MapleLeafIcon({ size = 14 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M12 2 L13.6 5.6 L17 4.4 L15.3 8 L19.6 7.3 L16.6 10.6 L20.6 13 L15.8 12.1 L13.6 15.6 L12.6 19.4 L12 21 L11.4 19.4 L10.4 15.6 L8.2 12.1 L3.4 13 L7.4 10.6 L4.4 7.3 L8.7 8 L7 4.4 L10.4 5.6 Z"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+        strokeLinecap="round"
+      />
     </svg>
   );
 }

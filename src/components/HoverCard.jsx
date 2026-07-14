@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import Avatar from './Avatar.jsx';
 import { relationLabel } from '../data/graph.js';
 import { lifespan, ageOrAt } from '../lib/dates.js';
+import { hasMilitaryService, militaryProfile } from '../lib/military.js';
+import { BranchIcon } from './MilitaryIcons.jsx';
 
 const CARD_WIDTH = 288;
 const MARGIN = 16;
@@ -153,10 +155,23 @@ export default function HoverCard({ graph, personId, viewerId, getPos, photos, d
   // certificate is a real find, however few a family has uploaded), and a
   // couple of gallery photos is enough too — just not a single lone one,
   // which is the common case and shouldn't light up on nearly every bubble.
+  const personDocs = documents?.filter((d) => d.person_id === person.id) || [];
   const hasRicherContent =
     !restricted &&
-    ((documents?.some((d) => d.person_id === person.id)) ||
+    (personDocs.length > 0 ||
       (photos?.filter((p) => p.person_id === person.id).length || 0) >= 2);
+
+  // Mirrors the "richer content" badge on the opposite corner — its own
+  // quiet signal, not a second copy of the same one. See the dog tag on the
+  // full profile for the same branch/nation icon logic (lib/military.js +
+  // MilitaryIcons.jsx) driving this at a glance before you ever open it.
+  const military = !restricted && hasMilitaryService(person, personDocs)
+    ? militaryProfile(person)
+    : null;
+  const militaryLabel = military
+    ? [military.rank, military.branch ? BRANCH_LABELS[military.branch] : null, military.nation]
+      .filter(Boolean).join(' · ') || 'Military service'
+    : '';
 
   return (
     <div className="hover-card-anchor" ref={anchorRef} style={{ width: CARD_WIDTH }} aria-hidden="true">
@@ -164,6 +179,11 @@ export default function HoverCard({ graph, personId, viewerId, getPos, photos, d
         {hasRicherContent && (
           <span className="hover-card__attach" aria-hidden="true">
             <StackIcon />
+          </span>
+        )}
+        {military && (
+          <span className="hover-card__military" title={militaryLabel} aria-hidden="true">
+            <BranchIcon branch={military.branch} nation={military.nation} size={12} />
           </span>
         )}
         <div className="hover-card__head">
@@ -213,6 +233,8 @@ export default function HoverCard({ graph, personId, viewerId, getPos, photos, d
     </div>
   );
 }
+
+const BRANCH_LABELS = { army: 'Army', navy: 'Navy', air_force: 'Air Force' };
 
 // Singular label for a sibling of the given kind + gender — "brother",
 // "half sister", "step sibling" — pluralized later by pluralize().

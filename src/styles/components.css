@@ -415,6 +415,31 @@
 .hover-card--show .hover-card__attach {
   opacity: 1;
 }
+/* Mirrors .hover-card__attach on the opposite corner — same corner-chip
+   language, but tinted with the sage green already used elsewhere for
+   "the other, quieter" signal (see --sage) rather than the accent colour,
+   so the two badges read as distinct signals at a glance, not one repeated
+   twice. */
+.hover-card__military {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--sage-soft);
+  border: 1px solid var(--hairline);
+  color: var(--sage);
+  opacity: 0;
+  transition: opacity 0.2s ease-out 0.12s;
+  pointer-events: none;
+}
+.hover-card--show .hover-card__military {
+  opacity: 1;
+}
 .hover-card--show {
   opacity: 1;
   transform: scale(1) translateY(0);
@@ -531,6 +556,7 @@
 @media (prefers-reduced-motion: reduce) {
   .hover-card { transition: none; }
   .hover-card__attach { transition: none; }
+  .hover-card__military { transition: none; }
 }
 
 /* ── Sheets (person card + legend) ───────────────────────────────────────── */
