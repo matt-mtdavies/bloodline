@@ -326,8 +326,14 @@ function placesOf(graph, person) {
   return out;
 }
 
-// Gendered role words for the frontispiece line — same gender vocabulary the
-// rest of the app uses (HoverCard's siblingWord etc.).
+// Gendered kin-role words for the frontispiece line — same gender vocabulary
+// the rest of the app uses (HoverCard's siblingWord etc.). Kin words ONLY:
+// the occupation already leads the cover as the epithet, and folding it in
+// here both duplicated it and mangled it — lowercasing user-entered text
+// breaks "HR", "RAAF", "McDonald", and a job title like "Partner, HR
+// Transformation" reads as a relationship right after "husband". It appears
+// (case untouched) only as a fallback when someone has no kin roles at all,
+// so the line is never empty.
 function roleWords(graph, person) {
   const g = (person.gender || '').toLowerCase();
   const masc = ['male', 'm', 'man'].includes(g);
@@ -338,7 +344,7 @@ function roleWords(graph, person) {
   if (dedupeGrandchildren(graph, person.id).length) words.push(masc ? 'grandfather' : fem ? 'grandmother' : 'grandparent');
   const married = graph.partners(person.id).some((p) => p.status === 'current' && p.is_married);
   if (married) words.push(masc ? 'husband' : fem ? 'wife' : 'partner');
-  if (person.occupation) words.push(person.occupation.toLowerCase());
+  if (!words.length && person.occupation) words.push(person.occupation);
   return words;
 }
 

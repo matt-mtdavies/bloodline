@@ -137,6 +137,19 @@ test('the record spread skips rows with nothing on record', () => {
   assert.deepEqual(record.rows, [{ label: 'Occupation', value: 'Baker' }]);
 });
 
+test('frontispiece roles are kin words only — occupation never mixed in or lowercased', () => {
+  // Percy is a father, grandfather, and husband with an occupation on
+  // record: the occupation must NOT join the kin line (it's already the
+  // cover epithet, and "husband · partner, hr transformation" reads as a
+  // relationship, not a job).
+  const front = keepsakeSpreads(davies(), 'percy', EXTRAS).find((s) => s.key === 'frontispiece');
+  assert.deepEqual(front.roles, ['father', 'grandfather', 'husband']);
+  // No kin roles at all → the occupation stands in, casing untouched.
+  const g = buildGraph([P('solo', { name: 'Solo', gender: 'male', occupation: 'Partner, HR Transformation' })], []);
+  const soloFront = keepsakeSpreads(g, 'solo', {}).find((s) => s.key === 'frontispiece');
+  assert.deepEqual(soloFront.roles, ['Partner, HR Transformation']);
+});
+
 test('colophon counts records and names distinct contributors', () => {
   const colophon = keepsakeSpreads(davies(), 'percy', EXTRAS).find((s) => s.key === 'colophon');
   assert.equal(colophon.recordCount, 10 + 3 + 2 + 1); // people + memories + photos + documents
