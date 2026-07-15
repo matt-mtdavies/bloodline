@@ -169,15 +169,25 @@
   max-width: 720px;
   padding: 0 26px calc(var(--safe-bottom, 0px) + 64px);
 }
-.ks-cover__kicker {
-  font-size: 12px;
+/* The masthead — a quiet, permanent brand mark at the top of the cover,
+   the way a real magazine's logotype sits above its own cover lines. */
+.ks-cover__masthead {
+  position: absolute;
+  top: calc(var(--safe-top, 0px) + 22px);
+  left: 0;
+  right: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.22em;
+  letter-spacing: 0.24em;
   text-transform: uppercase;
   color: rgba(255, 255, 255, 0.85);
-  margin-bottom: 14px;
 }
-.ks-cover__body--bare .ks-cover__kicker { color: var(--accent, #c2603a); }
+.ks-cover__masthead--bare { color: var(--accent, #c2603a); }
 .ks-cover__name {
   font-family: var(--display, serif);
   font-weight: 500;
@@ -555,15 +565,15 @@
    everything, drawn and legible, with zero animation. Only transform and
    opacity ever animate. ─────────────────────────────────────────────────── */
 @media (prefers-reduced-motion: no-preference) {
-  /* The film-title opening: kicker, name, meta rise in 120ms steps. */
-  .ks-cover .ks-cover__kicker,
+  /* The film-title opening: masthead, name, meta rise in 120ms steps. */
+  .ks-cover .ks-cover__masthead,
   .ks-cover .ks-cover__name,
   .ks-cover .ks-cover__meta {
     opacity: 0;
     transform: translateY(14px);
     transition: opacity 0.7s ease-out, transform 0.9s cubic-bezier(0.22, 1, 0.36, 1);
   }
-  .ks-cover.ks-in .ks-cover__kicker { opacity: 1; transform: none; transition-delay: 0.1s; }
+  .ks-cover.ks-in .ks-cover__masthead { opacity: 1; transform: none; transition-delay: 0.1s; }
   .ks-cover.ks-in .ks-cover__name { opacity: 1; transform: none; transition-delay: 0.22s; }
   .ks-cover.ks-in .ks-cover__meta { opacity: 1; transform: none; transition-delay: 0.34s; }
   /* The portrait settles from a slight zoom as the title lands. */
@@ -628,11 +638,12 @@
      --ks-read on the section from its scroll handler). */
   .ks-rail::after { transform: scaleY(var(--ks-read, 0)); }
 
-  /* Book mode: the sheet settles onto the table when the reader opens… */
-  .ks-mode-book .ks-sheet { animation: ks-settle 0.7s cubic-bezier(0.22, 1, 0.36, 1) both; }
-  /* …and until the first interaction, the cover peeks at its own turn.
-     (An animation outranks the leaf's inline resting transform.) */
-  .ks-leaf--hint { animation: ks-peek 2.8s ease-in-out 2; }
+  /* The book's arrival is now the coffee-table splash + corner-curl hint
+     (.ks-sheet--rest, .ks-corner-curl) and the grand-open transition —
+     the old generic "sheet fades/settles onto the table" + "leaf peeks"
+     treatment they replaced is gone (both were plain keyframe animations
+     on .ks-sheet/.ks-leaf, which would otherwise permanently outrank and
+     clobber the new rest transform the instant either one finished). */
 }
 
 @keyframes ks-rise {
@@ -642,15 +653,6 @@
 @keyframes ks-burns {
   from { transform: scale(1) translate(0, 0); }
   to { transform: scale(1.07) translate(-1.4%, -1%); }
-}
-@keyframes ks-settle {
-  from { opacity: 0; transform: translateY(16px) scale(0.985); }
-  to { opacity: 1; transform: none; }
-}
-@keyframes ks-peek {
-  0%, 100% { transform: rotateY(0deg); }
-  12% { transform: rotateY(-13deg); }
-  26% { transform: rotateY(0deg); }
 }
 
 /* Entry tile on the profile (lives beside Life Story): a miniature of the
@@ -795,6 +797,7 @@
   perspective: 2600px;
   border-radius: 8px;
   background: var(--paper, #ffffff);
+  transition: transform 1.3s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 1.3s cubic-bezier(0.22, 1, 0.36, 1), border-radius 1.3s cubic-bezier(0.22, 1, 0.36, 1);
   box-shadow:
     0 30px 60px rgba(28, 29, 33, 0.22),
     0 6px 16px rgba(28, 29, 33, 0.12);
@@ -1070,6 +1073,79 @@
   background: radial-gradient(70% 55% at 50% 42%, #fdfbf8 0%, #f6f1ea 100%);
 }
 
+/* ── The coffee-table splash ────────────────────────────────────────────────
+   Before the reader has ever opened the book (KeepsakeBook.jsx's
+   `everOpened`), present it as a physical object resting on a surface —
+   even on phones, where the rest of the reading experience is deliberately
+   full-bleed edge-to-edge. A pure transform:scale()+rotate() illusion
+   rather than animating width/height/aspect-ratio: those don't interpolate
+   reliably (especially the auto-height mobile full-bleed shape has no
+   fixed ratio to animate FROM), whereas transform is universally smooth —
+   the sheet's real box stays at its normal final size throughout, just
+   visually shrunk and tilted, so un-tilting it is exactly the "camera
+   pushes into the page" zoom the grand-open turn wants, for free. */
+.ks-sheet.ks-sheet--rest {
+  transform-origin: 50% 62%;
+  transform: perspective(1800px) scale(0.4) rotateX(6deg) rotateY(-11deg) rotateZ(-2.2deg);
+  border-radius: 16px;
+  box-shadow:
+    0 70px 100px -25px rgba(20, 14, 8, 0.5),
+    0 30px 55px -20px rgba(20, 14, 8, 0.35),
+    0 3px 0 rgba(255, 255, 255, 0.55) inset;
+}
+.ks-sheet--rest .ks-edges { display: block; }
+/* A glossy laminate sheen across the whole cover — the "high-end magazine"
+   finish. Sits above everything else in the sheet; never a tap target. */
+.ks-sheet__gloss {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  pointer-events: none;
+  border-radius: inherit;
+  background: linear-gradient(115deg,
+    rgba(255, 255, 255, 0) 32%,
+    rgba(255, 255, 255, 0.14) 44%,
+    rgba(255, 255, 255, 0.32) 50%,
+    rgba(255, 255, 255, 0.12) 56%,
+    rgba(255, 255, 255, 0) 68%);
+  background-size: 240% 240%;
+  background-position: 100% 0%;
+  animation: ks-gloss-shift 7s ease-in-out infinite;
+}
+@keyframes ks-gloss-shift {
+  0%, 100% { background-position: 115% -10%; }
+  50% { background-position: 40% 60%; }
+}
+/* The corner-curl hint — Kindle/Apple-Books style — a small page corner
+   lifting and settling, inviting the tap that starts the grand open. Only
+   rendered while resting AND after the same delay the old hint used. */
+.ks-corner-curl {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 30%;
+  max-width: 90px;
+  aspect-ratio: 1;
+  z-index: 9;
+  pointer-events: none;
+  transform-origin: 100% 100%;
+  clip-path: polygon(100% 100%, 0% 100%, 100% 0%);
+  border-radius: 0 0 16px 0;
+  background: linear-gradient(135deg, #ffffff 0%, #f4efe7 55%, #e2dbcf 100%);
+  box-shadow: -8px -8px 18px rgba(28, 29, 33, 0.2);
+  animation: ks-curl 3.6s ease-in-out infinite;
+}
+@keyframes ks-curl {
+  0%, 48%, 100% { transform: scale(0.001) rotate(0deg); opacity: 0; }
+  18% { transform: scale(1) rotate(-2deg); opacity: 1; }
+  32% { transform: scale(1.12) rotate(-8deg); opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ks-sheet { transition: none; }
+  .ks-sheet__gloss { animation: none; background-position: 100% 0%; }
+  .ks-corner-curl { display: none; }
+}
+
 /* Phones read full-bleed — the sheet IS the screen. */
 @media (max-width: 700px) {
   .ks-book { padding: 0; }
@@ -1097,6 +1173,15 @@
 }
 @media (min-width: 701px) {
   .ks-edges { display: block; }
+}
+/* The rest-splash card needs real breathing room for its tilt and ambient
+   shadow, even on phones where .ks-book otherwise pads to zero. Placed
+   after the phones media block so it wins the tie (same specificity). */
+.ks-book--rest {
+  padding:
+    max(40px, calc(var(--safe-top, 0px) + 40px))
+    28px
+    max(40px, calc(var(--safe-bottom, 0px) + 40px));
 }
 
 /* The print pipeline reads .ks-printflow (all spreads in normal flow);
@@ -1148,7 +1233,9 @@
   body.ks-has-print .ks-editbtn,
   body.ks-has-print .sheet-scrim,
   body.ks-has-print .ks-prose-pending,
-  body.ks-has-print .ks-page__more { display: none !important; }
+  body.ks-has-print .ks-page__more,
+  body.ks-has-print .ks-sheet__gloss,
+  body.ks-has-print .ks-corner-curl { display: none !important; }
 
   /* Book mode prints from its plain flow copy — the 3D pager only ever
      mounts a leaf and its neighbour, so it can't paginate on paper. */
@@ -1166,7 +1253,7 @@
      independent of the print media type, so the motion gate can still match
      while printing; these overrides win regardless.) */
   body.ks-has-print .ks-spread__inner,
-  body.ks-has-print .ks-cover__kicker,
+  body.ks-has-print .ks-cover__masthead,
   body.ks-has-print .ks-cover__name,
   body.ks-has-print .ks-cover__meta,
   body.ks-has-print .ks-const-node,

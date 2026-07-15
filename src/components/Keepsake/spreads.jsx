@@ -63,8 +63,12 @@ export function CoverSpread({ spread, onEditSection }) {
       ) : (
         <div className="ks-cover__wash" aria-hidden="true" />
       )}
+      <div className={`ks-cover__masthead${photo ? '' : ' ks-cover__masthead--bare'}`} aria-hidden="true">
+        <svg width="8" height="8" viewBox="0 0 10 10"><path d="M5 0l5 5-5 5-5-5z" fill="currentColor" /></svg>
+        <span>A Bloodline Keepsake</span>
+        <svg width="8" height="8" viewBox="0 0 10 10"><path d="M5 0l5 5-5 5-5-5z" fill="currentColor" /></svg>
+      </div>
       <div className={`ks-cover__body${photo ? '' : ' ks-cover__body--bare'}`}>
-        <p className="ks-cover__kicker">A Bloodline Keepsake</p>
         <h1 className="ks-cover__name">{spread.name}</h1>
         <div className="ks-cover__meta">
           {spread.lifespan && <span className="ks-cover__lifespan">{spread.lifespan}</span>}

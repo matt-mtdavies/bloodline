@@ -25,6 +25,11 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
  */
 
 const TURN_MS = 620;
+// The very first turn — leaving the resting cover splash — is a deliberate
+// set piece: much slower and paired with the sheet's own un-tilt/zoom (see
+// .ks-sheet--rest in keepsake.css), so it reads as the camera pushing into
+// the book rather than an ordinary page flip.
+const GRAND_OPEN_MS = 1500;
 const SPREAD_MQ = '(min-width: 1140px)';
 const easeInOutCubic = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
 const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
@@ -33,6 +38,10 @@ export default function KeepsakeBook({ pages, renderPage, onProgress }) {
   const [index, setIndex] = useState(0); // always a PAGE index, in both layouts
   const [turn, setTurn] = useState(null); // { dir: 1 | -1 } while a leaf is lifted
   const [hint, setHint] = useState(false);
+  // Once true, stays true for the life of this mount — even paging back to
+  // the cover later reads as an ordinary closed-book page, never the
+  // coffee-table splash again.
+  const [everOpened, setEverOpened] = useState(false);
   const [wide, setWide] = useState(() => window.matchMedia?.(SPREAD_MQ).matches ?? false);
   const stageRef = useRef(null);
   const leafRef = useRef(null);
@@ -127,12 +136,13 @@ export default function KeepsakeBook({ pages, renderPage, onProgress }) {
     const a = anim.current;
     anim.current = null;
     if (commit && a) setIndex(a.target);
+    if (commit && a?.grandOpen) setEverOpened(true);
     setTurn(null);
   }
 
-  function animateP(dir, from, to, ease, commit) {
+  function animateP(dir, from, to, ease, commit, durMs = TURN_MS) {
     const t0 = performance.now();
-    const dur = Math.max(1, TURN_MS * Math.abs(to - from));
+    const dur = Math.max(1, durMs * Math.abs(to - from));
     const step = (now) => {
       if (!anim.current) return;
       const k = Math.min(1, (now - t0) / dur);
@@ -143,23 +153,32 @@ export default function KeepsakeBook({ pages, renderPage, onProgress }) {
     rafRef.current = requestAnimationFrame(step);
   }
 
+  // Leaving the cover for the very first time — the grand-open set piece.
+  const isGrandOpen = (dir) => dir === 1 && i === 0 && !everOpened;
+
   function startTurn(dir) {
     if (anim.current || turn) return;
     if (dir === 1 ? !canFwd : !canBack) return;
     interacted.current = true;
     setHint(false);
-    if (reduced.current) { setIndex(targetIndexFor(dir)); return; }
-    anim.current = { dir, target: targetIndexFor(dir) };
+    const grandOpen = isGrandOpen(dir);
+    if (reduced.current) {
+      setIndex(targetIndexFor(dir));
+      if (grandOpen) setEverOpened(true);
+      return;
+    }
+    anim.current = { dir, target: targetIndexFor(dir), grandOpen };
     setTurn({ dir });
     // The layout effect poses the leaf at rest; animate from there.
-    requestAnimationFrame(() => animateP(dir, 0, 1, easeInOutCubic, true));
+    requestAnimationFrame(() => animateP(dir, 0, 1, easeInOutCubic, true, grandOpen ? GRAND_OPEN_MS : TURN_MS));
   }
 
   function settleDrag(dir, p, complete) {
-    anim.current = { dir, target: targetIndexFor(dir) };
+    const grandOpen = isGrandOpen(dir);
+    anim.current = { dir, target: targetIndexFor(dir), grandOpen };
     if (complete && p >= 0.999) { finish(true); return; }
     if (!complete && p <= 0.001) { finish(false); return; }
-    animateP(dir, p, complete ? 1 : 0, easeOutCubic, complete);
+    animateP(dir, p, complete ? 1 : 0, easeOutCubic, complete, grandOpen && complete ? GRAND_OPEN_MS : TURN_MS);
   }
 
   function onPointerDown(e) {
@@ -252,24 +271,33 @@ export default function KeepsakeBook({ pages, renderPage, onProgress }) {
 
   const firstVisible = wide ? (s === 0 ? 0 : 2 * s - 1) : i;
   const lastVisible = wide ? (rightOf(s) ? 2 * s : 2 * s - 1) : i;
-  const edgeL = Math.min(12, firstVisible * 1.5);
-  const edgeR = Math.min(12, (last - lastVisible) * 1.5);
+  // Resting on the cover, the edge stack reads as "a real, thick magazine"
+  // rather than the subtler depth cue it is once actually reading.
+  const edgeCap = i === 0 && !turn ? 20 : 12;
+  const edgeL = Math.min(edgeCap, firstVisible * 1.5);
+  const edgeR = Math.min(edgeCap, (last - lastVisible) * 1.5);
   const counter = wide && s > 0 && rightOf(s)
     ? `${2 * s}–${2 * s + 1} of ${pages.length}`
     : `${lastVisible + 1} of ${pages.length}`;
 
+  // The coffee-table splash: a physical object at rest, not yet opened —
+  // gone for good the instant the reader actually turns the cover.
+  const resting = !everOpened && i === 0 && !turn;
+
   return (
     <div
       ref={stageRef}
-      className="ks-book"
+      className={`ks-book${resting ? ' ks-book--rest' : ''}`}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerCancel}
     >
-      <div className={`ks-sheet${wide ? ' ks-sheet--spread' : ''}${wide && s === 0 && !turn ? ' ks-sheet--closed' : ''}`}>
+      <div className={`ks-sheet${wide ? ' ks-sheet--spread' : ''}${wide && s === 0 && !turn ? ' ks-sheet--closed' : ''}${resting ? ' ks-sheet--rest' : ''}`}>
         {edgeL > 0 && <div className="ks-edges ks-edges--left" style={{ width: edgeL }} aria-hidden="true" />}
         {edgeR > 0 && <div className="ks-edges ks-edges--right" style={{ width: edgeR }} aria-hidden="true" />}
+        {resting && <div className="ks-sheet__gloss" aria-hidden="true" />}
+        {resting && hint && <div className="ks-corner-curl" aria-hidden="true" />}
         {wide && (
           <div className="ks-page ks-page--left">
             {baseLeft
@@ -283,7 +311,7 @@ export default function KeepsakeBook({ pages, renderPage, onProgress }) {
             : wide ? <BlankPage /> : null}
         </div>
         {leafMounted && (
-          <div ref={leafRef} className={`ks-leaf${hint && !wide ? ' ks-leaf--hint' : ''}`}>
+          <div ref={leafRef} className="ks-leaf">
             <div className="ks-leaf__front">
               {leafFront && <PageContent key={leafFront.pageKey} page={leafFront} renderPage={renderPage} />}
               <div className="ks-leaf__shine" aria-hidden="true" />
