@@ -1018,6 +1018,17 @@
   .ks-book .ks-spread { padding: calc(var(--safe-top, 0px) + 64px) 22px calc(var(--safe-bottom, 0px) + 56px); }
   .ks-book .ks-cover { padding: 0; }
   .ks-bookcounter { display: none; }
+  /* The edition-bar note has no width limit of its own, so on a narrow
+     row it gets squeezed by the nowrap "Weave in the changes" button down
+     toward its min-content floor (the longest word) — wrapping one word
+     per line and ballooning the pill tall enough to bury the page title
+     beneath it. Stacking removes the squeeze: the note gets the full
+     width to wrap normally, the button sits under it on its own line. */
+  .ks-banner {
+    flex-direction: column;
+    align-items: flex-start;
+    max-width: min(88vw, 420px);
+  }
 }
 @media (min-width: 701px) {
   .ks-edges { display: block; }
