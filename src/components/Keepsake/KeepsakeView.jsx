@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { buildKeepsake, applyNarrative } from '../../lib/keepsake.js';
+import { buildKeepsake, applyNarrative, paginateSpreads } from '../../lib/keepsake.js';
 import {
   CoverSpread, FrontispieceSpread, OriginsSpread, ConstellationSpread,
   ChaptersSpread, ServiceSpread, PlacesSpread, VoicesSpread, AlbumSpread,
   DocumentsSpread, RecordSpread, LegacySpread, ColophonSpread,
 } from './spreads.jsx';
+import KeepsakeBook from './KeepsakeBook.jsx';
 import '../../styles/keepsake.css';
 
 /*
@@ -49,6 +50,24 @@ export default function KeepsakeView({
   const [edition, setEdition] = useState(null);
   const [compiling, setCompiling] = useState(false);
   const [compileError, setCompileError] = useState(false);
+
+  // 'book' (the page-turn magazine, the default) | 'scroll' (the long read).
+  const [readerMode, setReaderMode] = useState(() => {
+    try { return localStorage.getItem('ks_reader_mode') || 'book'; } catch { return 'book'; }
+  });
+  function toggleReaderMode() {
+    setReaderMode((m) => {
+      const next = m === 'book' ? 'scroll' : 'book';
+      try { localStorage.setItem('ks_reader_mode', next); } catch { /* remembered next visit or not */ }
+      return next;
+    });
+  }
+
+  const spreads = useMemo(
+    () => applyNarrative(keepsake?.spreads || [], edition?.narrative),
+    [keepsake, edition],
+  );
+  const pages = useMemo(() => paginateSpreads(spreads), [spreads]);
 
   useEffect(() => {
     let alive = true;
@@ -125,6 +144,7 @@ export default function KeepsakeView({
   const spreadCount = keepsake?.spreads.length || 0;
 
   useEffect(() => {
+    if (readerMode !== 'scroll') return;
     const root = containerRef.current;
     if (!root) return;
     const io = new IntersectionObserver(
@@ -140,11 +160,12 @@ export default function KeepsakeView({
     );
     root.querySelectorAll('.ks-spread').forEach((el) => io.observe(el));
     return () => io.disconnect();
-  }, [spreadCount]);
+  }, [spreadCount, readerMode]);
 
   // One rAF-throttled scroll listener drives both the reading-progress
   // hairline and the chapters rail fill (--ks-read on the chapters spread).
   useEffect(() => {
+    if (readerMode !== 'scroll') return;
     const root = containerRef.current;
     if (!root) return;
     let raf = 0;
@@ -164,7 +185,7 @@ export default function KeepsakeView({
     root.addEventListener('scroll', onScroll, { passive: true });
     update();
     return () => { root.removeEventListener('scroll', onScroll); if (raf) cancelAnimationFrame(raf); };
-  }, [spreadCount]);
+  }, [spreadCount, readerMode]);
 
   if (!keepsake) return null;
 
@@ -198,8 +219,6 @@ export default function KeepsakeView({
       setCompiling(false);
     }
   }
-
-  const spreads = applyNarrative(keepsake.spreads, edition?.narrative);
 
   // Which section a pencil opens, prefilled from the current narrative.
   // Paragraphs edit as one text block, blank line between paragraphs —
@@ -259,14 +278,35 @@ export default function KeepsakeView({
 
   const onEditSection = canEdit && edition?.narrative && editionState === 'ready' ? beginEdit : null;
 
+  const renderSpread = (spread, withPencils = true) => {
+    const Spread = SPREADS[spread.key];
+    return Spread
+      ? <Spread spread={spread} edition={edition} onEditSection={withPencils ? onEditSection : null} />
+      : null;
+  };
+
   return (
-    <div ref={containerRef} className="keepsake-view" role="dialog" aria-modal="true" aria-label={`${keepsake.subject.name} — Keepsake`}>
+    <div
+      ref={containerRef}
+      className={`keepsake-view${readerMode === 'book' ? ' ks-mode-book' : ''}`}
+      role="dialog"
+      aria-modal="true"
+      aria-label={`${keepsake.subject.name} — Keepsake`}
+    >
       <div className="ks-progress" aria-hidden="true">
         <div ref={progressRef} className="ks-progress__bar" />
       </div>
       <div className="ks-chrome">
         <span className="ks-chrome__mark">A Bloodline Keepsake</span>
         <div className="ks-chrome__btns">
+          <button
+            className="ks-chrome__btn"
+            onClick={toggleReaderMode}
+            aria-label={readerMode === 'book' ? 'Read as scrolling pages' : 'Read as a book'}
+            title={readerMode === 'book' ? 'Read as scrolling pages' : 'Read as a book — turn the pages'}
+          >
+            {readerMode === 'book' ? <ScrollModeIcon /> : <BookModeIcon />}
+          </button>
           <button
             className="ks-chrome__btn ks-chrome__btn--print"
             onClick={handlePrint}
@@ -307,12 +347,28 @@ export default function KeepsakeView({
         </div>
       )}
 
-      {spreads.map((spread) => {
-        const Spread = SPREADS[spread.key];
-        return Spread
-          ? <Spread key={spread.key} spread={spread} edition={edition} onEditSection={onEditSection} />
-          : null;
-      })}
+      {readerMode === 'book' ? (
+        <>
+          <KeepsakeBook
+            pages={pages}
+            renderPage={(page) => renderSpread(page)}
+            onProgress={(p) => {
+              if (progressRef.current) progressRef.current.style.transform = `scaleX(${p})`;
+            }}
+          />
+          {/* Print reads the whole book in normal flow; the 3D pager only
+              mounts a leaf and its neighbour, so a plain copy of every
+              spread lives here — hidden on screen, the print pipeline's
+              (Phase 4) input on paper. */}
+          <div className="ks-printflow" aria-hidden="true">
+            {spreads.map((spread) => (
+              <div key={spread.key}>{renderSpread(spread, false)}</div>
+            ))}
+          </div>
+        </>
+      ) : (
+        spreads.map((spread) => <div key={spread.key}>{renderSpread(spread)}</div>)
+      )}
 
       {/* The edit sheet — one implementation for every section. */}
       {editing && (
@@ -367,6 +423,24 @@ export default function KeepsakeView({
         </div>
       )}
     </div>
+  );
+}
+
+function BookModeIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M12 5.5C10.2 4 7.8 3.5 5 3.5c-.9 0-1.7.06-2.5.17V18.7c.8-.12 1.6-.17 2.5-.17 2.8 0 5.2.5 7 2 1.8-1.5 4.2-2 7-2 .9 0 1.7.05 2.5.17V3.67A17 17 0 0 0 19 3.5c-2.8 0-5.2.5-7 2z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
+      <path d="M12 5.5v15" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function ScrollModeIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M5 5h14M5 10h14M5 15h9" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <path d="M17.5 14v6m0 0l-2.4-2.4M17.5 20l2.4-2.4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
   );
 }
 

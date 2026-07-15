@@ -357,6 +357,47 @@ description; CLAUDE.md status section updated to mark the feature.*
 - Era-context paragraphs behind a confidence gate (the Historical Context
   pattern), and document-image inline reproduction rights prompts.
 
+## Phase 5.5 — The page-turn reader (book mode) ✅ built
+
+The Keepsake read as a physical magazine — the default reading experience,
+with the scroll reader one chrome-toggle away (persisted in
+`localStorage.ks_reader_mode`).
+
+**Pagination (`paginateSpreads`, lib/keepsake.js).** The 13 spreads become
+fixed pages at their natural seams: one chapter per page (the book
+convention; each carries its absolute `idx` so edit pencils keep addressing
+the right narrative slot), the album as a hero page of five then grids of
+six, voices four to a page. Every page keeps the spread's `key` (component
+router) and gains a unique `pageKey`; continuation pages are `continued`
+(no repeated hero, no repeated bio). Anything taller than its page scrolls
+quietly inside it — pagination can never truncate a record.
+
+**The turn (KeepsakeBook.jsx).** One `.ks-leaf` pivots in 3D on the sheet's
+left edge: front face = current page, back = bare stock with the house
+diamond, next page mounted beneath (which also preloads its images). Drag
+and the leaf follows the finger (release past 30% or a flick completes,
+else it settles back); tap the outer 26% margins, click the hover chevrons,
+or use ←/→. A shine sweeps the paper and the page beneath sits in the
+leaf's shadow, both driven per-frame (`--ks-shine`, `--ks-turnshadow`,
+sin-curve peaking mid-turn). Everything is imperative — inline transforms
+plus one rAF loop; React state only chooses which pages are mounted (a back
+turn swaps the previous page onto the leaf before it lifts).
+
+**The stage.** Desktop centres a 10/14 sheet over a deepened table wash,
+with unread/read page-edge stacks growing and shrinking at the sheet's
+sides and a small-caps "3 of 12" folio; phones read full-bleed. On open the
+sheet settles onto the table, and until the first interaction the cover
+peeks at its own turn (`ks-peek`, twice, then never again).
+
+**Guarantees.** Reduced motion: turns are instant page changes, drag-to-curl
+never engages, no shine/shadow. Print: book mode renders a hidden
+`.ks-printflow` copy of every spread in normal flow — the Phase 4 pipeline
+reads that (the pager only mounts a leaf and its neighbour), so the printed
+book is identical from either mode. Pages mark their spreads `.ks-in` on
+mount so a turn never uncovers a half-revealed page. Escape/edit-sheet
+layering unchanged; pencils work inside pages (interactive elements are
+excluded from drag/tap detection).
+
 ## Constraints & risks (read before building)
 
 1. **D1 1MB row**: never write Keepsake output into tree_json. R2 only.

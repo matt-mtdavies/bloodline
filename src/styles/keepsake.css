@@ -569,6 +569,12 @@
   /* The chapters rail fills with reading progress (KeepsakeView sets
      --ks-read on the section from its scroll handler). */
   .ks-rail::after { transform: scaleY(var(--ks-read, 0)); }
+
+  /* Book mode: the sheet settles onto the table when the reader opens… */
+  .ks-mode-book .ks-sheet { animation: ks-settle 0.7s cubic-bezier(0.22, 1, 0.36, 1) both; }
+  /* …and until the first interaction, the cover peeks at its own turn.
+     (An animation outranks the leaf's inline resting transform.) */
+  .ks-leaf--hint { animation: ks-peek 2.8s ease-in-out 2; }
 }
 
 @keyframes ks-rise {
@@ -578,6 +584,15 @@
 @keyframes ks-burns {
   from { transform: scale(1) translate(0, 0); }
   to { transform: scale(1.07) translate(-1.4%, -1%); }
+}
+@keyframes ks-settle {
+  from { opacity: 0; transform: translateY(16px) scale(0.985); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes ks-peek {
+  0%, 100% { transform: rotateY(0deg); }
+  12% { transform: rotateY(-13deg); }
+  26% { transform: rotateY(0deg); }
 }
 
 /* Entry tile on the profile (lives beside Life Story): a miniature of the
@@ -691,6 +706,190 @@
 }
 .ks-editsheet__actions .btn--primary { flex: 1; }
 
+/* ── The page-turn reader (book mode) ──────────────────────────────────────
+   The Keepsake as a physical magazine on a table. One .ks-leaf pivots in 3D
+   on the sheet's left edge (KeepsakeBook.jsx drives the transform); its
+   front is the current page, its back bare paper, and the next page waits
+   beneath. Desktop centres a magazine-proportioned sheet over a deepened
+   wash; phones read full-bleed. */
+.keepsake-view.ks-mode-book {
+  overflow: hidden;
+  scroll-snap-type: none;
+  background:
+    radial-gradient(120% 90% at 50% 0%, #f6f1ea 0%, #ece5db 68%, #e4dcd0 100%);
+}
+.ks-book {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: calc(var(--safe-top, 0px) + 66px) 24px calc(var(--safe-bottom, 0px) + 44px);
+  touch-action: pan-y;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.ks-sheet {
+  position: relative;
+  height: 100%;
+  max-width: 100%;
+  aspect-ratio: 10 / 14;
+  perspective: 2600px;
+  border-radius: 8px;
+  background: var(--paper, #ffffff);
+  box-shadow:
+    0 30px 60px rgba(28, 29, 33, 0.22),
+    0 6px 16px rgba(28, 29, 33, 0.12);
+}
+
+.ks-page--under,
+.ks-leaf {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+.ks-page--under {
+  z-index: 1;
+  overflow: hidden;
+  background: var(--paper, #ffffff);
+}
+/* The page beneath sits in the lifting leaf's shadow (deepest mid-turn). */
+.ks-page--under::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  background: linear-gradient(to right, rgba(28, 29, 33, 0.38), rgba(28, 29, 33, 0.05) 40%, transparent 62%);
+  opacity: var(--ks-turnshadow, 0);
+}
+.ks-leaf {
+  z-index: 2;
+  transform-style: preserve-3d;
+  transform-origin: left center;
+  will-change: transform;
+}
+.ks-leaf__front,
+.ks-leaf__back {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  overflow: hidden;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  background: var(--paper, #ffffff);
+}
+/* Paper catches the light as it curls — opacity driven per-frame. */
+.ks-leaf__shine {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  opacity: var(--ks-shine, 0);
+  background: linear-gradient(100deg,
+    rgba(255, 255, 255, 0) 22%,
+    rgba(255, 255, 255, 0.55) 45%,
+    rgba(28, 29, 33, 0.10) 60%,
+    rgba(255, 255, 255, 0) 76%);
+}
+/* The back of a turning page: bare stock with the house diamond. */
+.ks-leaf__back {
+  transform: rotateY(180deg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent-soft, #f0d9cd);
+  background:
+    linear-gradient(105deg, rgba(28, 29, 33, 0.05), transparent 30%),
+    radial-gradient(80% 60% at 50% 40%, #fdfbf8 0%, #f4efe7 100%);
+}
+
+/* Page content — the existing spreads, resized from viewport to sheet.
+   Anything taller than its page scrolls quietly inside it. */
+.ks-page__scroll {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+.ks-book .ks-spread {
+  min-height: 100%;
+  padding: 44px 26px 40px;
+  scroll-snap-align: none;
+}
+.ks-book .ks-cover { padding: 0; }
+.ks-book .ks-rail { display: none; }
+
+/* Margin chevrons — visible on hover-capable screens; fingers swipe. */
+.ks-booknav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 3;
+  width: 42px;
+  height: 42px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid var(--hairline, #ebedf0);
+  color: var(--ink, #1c1d21);
+  box-shadow: var(--shadow-soft, 0 1px 2px rgba(20, 22, 28, 0.04));
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.ks-booknav--prev { left: 22px; }
+.ks-booknav--next { right: 22px; }
+.ks-booknav:disabled { visibility: hidden; }
+@media (hover: hover) {
+  .ks-booknav { display: flex; }
+  .ks-book:hover .ks-booknav { opacity: 1; }
+}
+.ks-bookcounter {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(var(--safe-bottom, 0px) + 14px);
+  z-index: 3;
+  text-align: center;
+}
+
+/* The unread/read page edges peeking out of the sheet — a magazine detail,
+   wide enough to read as depth, never as UI. Desktop only. */
+.ks-edges {
+  display: none;
+  position: absolute;
+  top: 8px;
+  bottom: 8px;
+  background: repeating-linear-gradient(to right, #fdfbf8 0px, #fdfbf8 1px, #e5dfd5 1px, #e5dfd5 2px);
+}
+.ks-edges--right { left: 100%; border-radius: 0 3px 3px 0; }
+.ks-edges--left { right: 100%; border-radius: 3px 0 0 3px; }
+
+/* Phones read full-bleed — the sheet IS the screen. */
+@media (max-width: 700px) {
+  .ks-book { padding: 0; }
+  .ks-sheet {
+    width: 100%;
+    height: 100%;
+    aspect-ratio: auto;
+    border-radius: 0;
+    box-shadow: none;
+  }
+  .ks-book .ks-spread { padding: calc(var(--safe-top, 0px) + 64px) 22px calc(var(--safe-bottom, 0px) + 56px); }
+  .ks-book .ks-cover { padding: 0; }
+  .ks-bookcounter { display: none; }
+}
+@media (min-width: 701px) {
+  .ks-edges { display: block; }
+}
+
+/* The print pipeline reads .ks-printflow (all spreads in normal flow);
+   on screen it never exists visually. */
+.ks-printflow { display: none; }
+
 /* ── Print (Phase 4) — the book on paper ────────────────────────────────────
    Scoped to body.ks-has-print (set only while a Keepsake is open) so
    printing the ordinary app is never hijacked. The visibility trick hides
@@ -720,6 +919,8 @@
     width: 100%;
     overflow: visible;
     scroll-snap-type: none;
+    /* Book mode's table wash must never tint the paper. */
+    background: var(--paper, #ffffff) !important;
   }
 
   /* Page geometry — a Crown-Quarto-ish magazine proportion that also prints
@@ -734,6 +935,11 @@
   body.ks-has-print .ks-editbtn,
   body.ks-has-print .sheet-scrim,
   body.ks-has-print .ks-prose-pending { display: none !important; }
+
+  /* Book mode prints from its plain flow copy — the 3D pager only ever
+     mounts a leaf and its neighbour, so it can't paginate on paper. */
+  body.ks-has-print .ks-book { display: none !important; }
+  body.ks-has-print .ks-printflow { display: block !important; }
 
   /* Every motion state resolves fully — a page can never print half-risen,
      half-drawn, or paused mid-Ken-Burns. (prefers-reduced-motion is

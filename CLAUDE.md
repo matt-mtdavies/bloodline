@@ -51,8 +51,12 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   (`src/components/Keepsake/`), AI narrative engine (`functions/api/keepsake.js`, editions in
   R2 `keepsake/{familyId}/{personId}/`, never tree_json), scroll-driven motion
   (reduced-motion safe), browser-native print (`@page`, full-bleed cover, body.ks-has-print
-  scope), home-hub nudge card + `keepsake_generated` activity. Phase 6 (whole-family bound
-  edition, print-service handoff) deliberately later.
+  scope), home-hub nudge card + `keepsake_generated` activity. Per-section narrative
+  editing (PUT /api/keepsake, quiet pencils, one edit sheet). **Page-turn reader is the
+  default**: `paginateSpreads()` fixed pages, KeepsakeBook.jsx 3D leaf (drag/tap/chevrons/
+  arrow keys, shine + cast shadow, page-edge stacks, hint peek), scroll reader behind a
+  chrome toggle (`ks_reader_mode`), print served by hidden `.ks-printflow` copy. Phase 6
+  (whole-family bound edition, print-service handoff) deliberately later.
 
 ## Architecture / key files
 

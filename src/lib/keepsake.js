@@ -545,6 +545,42 @@ export function applyNarrative(spreads, narrative) {
   });
 }
 
+/*
+ * Repaginate the scroll-reader's spreads into fixed magazine pages for the
+ * page-turn reader. Long spreads split at their natural seams — one chapter
+ * per page (the book convention), the album into a hero page then grids of
+ * six, voices four to a page — everything else is already one page of
+ * content. Each page keeps the original spread `key` (the component router)
+ * and gains a unique `pageKey`; split chapters carry their absolute index
+ * (`idx`) so the edit pencils still address the right narrative slot, and
+ * continuation pages are flagged `continued` (no repeated hero/bio).
+ */
+export function paginateSpreads(spreads) {
+  const pages = [];
+  for (const s of spreads) {
+    if (s.key === 'chapters' && s.chapters.length > 1) {
+      s.chapters.forEach((ch, i) => pages.push({
+        ...s,
+        pageKey: `chapters#${i}`,
+        chapters: [{ ...ch, idx: i }],
+        bio: i === 0 ? s.bio : null,
+        continued: i > 0,
+      }));
+    } else if (s.key === 'album' && s.photos.length > 5) {
+      const chunks = [s.photos.slice(0, 5)];
+      for (let j = 5; j < s.photos.length; j += 6) chunks.push(s.photos.slice(j, j + 6));
+      chunks.forEach((photos, i) => pages.push({ ...s, pageKey: `album#${i}`, photos, continued: i > 0 }));
+    } else if (s.key === 'voices' && s.voices.length > 4) {
+      for (let j = 0, i = 0; j < s.voices.length; j += 4, i++) {
+        pages.push({ ...s, pageKey: `voices#${i}`, voices: s.voices.slice(j, j + 4), continued: i > 0 });
+      }
+    } else {
+      pages.push({ ...s, pageKey: s.key });
+    }
+  }
+  return pages;
+}
+
 export function buildKeepsake(graph, personId, extras = {}) {
   const person = graph.byId.get(personId);
   if (!person || restrictionOf(person) === 'private') return null;

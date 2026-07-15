@@ -151,7 +151,10 @@ export function ChaptersSpread({ spread, onEditSection }) {
         <p className="ks-label ks-label--accent">Chapters of a Life</p>
         {spread.chapters.map((ch, i) => (
           <article className="ks-chapter" key={i}>
-            <p className="ks-chapter__years">{ch.label}<EditPencil onEdit={onEditSection} section={`chapter:${i}`} /></p>
+            {/* ch.idx carries the chapter's absolute index when the book
+                mode's pagination puts one chapter per page — the pencil must
+                address the narrative slot, not the page-local position. */}
+            <p className="ks-chapter__years">{ch.label}<EditPencil onEdit={onEditSection} section={`chapter:${ch.idx ?? i}`} /></p>
             {ch.narrativeTitle && <h3 className="ks-chapter__title">{ch.narrativeTitle}</h3>}
             {ch.paragraphs
               ? <div className={`ks-prose${i === 0 ? ' ks-prose--dropcap' : ''}`}>{ch.paragraphs.map((p, j) => <p key={j}>{p}</p>)}</div>
@@ -262,7 +265,7 @@ export function AlbumSpread({ spread }) {
         <p className="ks-label ks-label--accent">The Album</p>
         <div className="ks-album">
           {spread.photos.map((p, i) => (
-            <figure className={`ks-album__item${i === 0 ? ' ks-album__item--hero ks-photo--burns' : ''}`} key={i}>
+            <figure className={`ks-album__item${i === 0 && !spread.continued ? ' ks-album__item--hero ks-photo--burns' : ''}`} key={i}>
               <img src={p.src} alt={p.caption || ''} loading="lazy" />
               {(p.caption || p.date) && (
                 <figcaption>{[p.caption, p.date].filter(Boolean).join(' · ')}</figcaption>

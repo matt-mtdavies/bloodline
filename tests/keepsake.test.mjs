@@ -16,6 +16,7 @@ import {
   constellationLayout,
   restrictionOf,
   applyNarrative,
+  paginateSpreads,
   CONSTELLATION_MAX_NODES,
 } from '../src/lib/keepsake.js';
 
@@ -314,6 +315,54 @@ test('buildKeepsake bundles subject, spreads, facts, and a hash', () => {
   assert.ok(ks.spreads.length >= 10);
   assert.equal(ks.facts.military.branch, 'army');
   assert.deepEqual(ks.facts.family.children, ['Ken', 'Joy']);
+});
+
+// ── paginateSpreads (the page-turn reader's fixed pages) ────────────────────
+
+test('paginateSpreads splits chapters one per page, carrying the absolute index', () => {
+  const spreads = keepsakeSpreads(davies(), 'percy', EXTRAS);
+  const chapterCount = spreads.find((s) => s.key === 'chapters').chapters.length;
+  assert.ok(chapterCount > 1, 'fixture should produce multiple chapters');
+  const pages = paginateSpreads(spreads);
+  const chapterPages = pages.filter((p) => p.key === 'chapters');
+  assert.equal(chapterPages.length, chapterCount);
+  chapterPages.forEach((p, i) => {
+    assert.equal(p.chapters.length, 1, 'one chapter per page');
+    assert.equal(p.chapters[0].idx, i, 'absolute index preserved for the edit pencil');
+    assert.equal(p.pageKey, `chapters#${i}`);
+    assert.equal(p.continued, i > 0);
+  });
+  // The bio blockquote fallback never repeats across chapter pages.
+  chapterPages.slice(1).forEach((p) => assert.equal(p.bio, null));
+});
+
+test('paginateSpreads chunks a big album (hero page of five, then sixes) and voices by four', () => {
+  const photos = Array.from({ length: 8 }, (_, n) => ({ src: `p${n}`, caption: '', date: '' }));
+  const voices = Array.from({ length: 6 }, (_, n) => ({ text: `m${n}`, author: 'Joy' }));
+  const pages = paginateSpreads([
+    { key: 'album', photos },
+    { key: 'voices', voices },
+  ]);
+  const albums = pages.filter((p) => p.key === 'album');
+  assert.deepEqual(albums.map((p) => p.photos.length), [5, 3]);
+  assert.equal(!!albums[0].continued, false, 'first album page is not continued');
+  assert.equal(albums[1].continued, true);
+  const voicePages = pages.filter((p) => p.key === 'voices');
+  assert.deepEqual(voicePages.map((p) => p.voices.length), [4, 2]);
+});
+
+test('paginateSpreads passes small spreads through with unique pageKeys', () => {
+  const spreads = keepsakeSpreads(davies(), 'percy', EXTRAS);
+  const pages = paginateSpreads(spreads);
+  assert.ok(pages.length >= spreads.length, 'never fewer pages than spreads');
+  const keys = pages.map((p) => p.pageKey);
+  assert.equal(new Set(keys).size, keys.length, 'pageKeys are unique');
+  // Cover, record, colophon are single pages with their own key.
+  for (const k of ['cover', 'record', 'colophon']) {
+    assert.ok(keys.includes(k), `${k} page present`);
+  }
+  // The router key is preserved on every page.
+  for (const p of pages) assert.ok(p.key, 'router key intact');
 });
 
 console.log(`\n  ${passed} passed, ${failed} failed`);
