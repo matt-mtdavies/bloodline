@@ -11,8 +11,9 @@ import { monogramColors, initials } from '../../lib/color.js';
 
 const UX = 128; // world-unit → px
 const UY = 168;
-const R = 26; // relative disc radius
-const R_SUBJECT = 34;
+const R = 30; // relative disc radius — sized for legibility at a book page's
+              // rendered width, not just a full-viewport scroll reader
+const R_SUBJECT = 40;
 
 export default function Constellation({ nodes, links }) {
   if (!nodes?.length) return null;
@@ -107,11 +108,11 @@ function Disc({ node, delay = 0 }) {
       )}
       <text
         x={cx}
-        y={cy + r + 16}
+        y={cy + r + 18}
         textAnchor="middle"
         fontFamily="var(--body, sans-serif)"
-        fontSize="10.5"
-        letterSpacing="0.08em"
+        fontSize="13"
+        letterSpacing="0.06em"
         style={{ textTransform: 'uppercase' }}
         fill="var(--ink-soft, #6b6f76)"
       >

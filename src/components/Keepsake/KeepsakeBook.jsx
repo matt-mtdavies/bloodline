@@ -267,7 +267,7 @@ export default function KeepsakeBook({ pages, renderPage, onProgress }) {
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerCancel}
     >
-      <div className={`ks-sheet${wide ? ' ks-sheet--spread' : ''}`}>
+      <div className={`ks-sheet${wide ? ' ks-sheet--spread' : ''}${wide && s === 0 && !turn ? ' ks-sheet--closed' : ''}`}>
         {edgeL > 0 && <div className="ks-edges ks-edges--left" style={{ width: edgeL }} aria-hidden="true" />}
         {edgeR > 0 && <div className="ks-edges ks-edges--right" style={{ width: edgeR }} aria-hidden="true" />}
         {wide && (

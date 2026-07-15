@@ -363,7 +363,10 @@
 .ks-voice blockquote {
   font-family: var(--display, serif);
   font-style: italic;
-  font-size: clamp(20px, 4.4vw, 26px);
+  /* The vw term scales against the full viewport, not this narrower book
+     page — on a wide desktop that clamp effectively pinned every quote to
+     its max, reading oversized/dominant against the page's own width. */
+  font-size: clamp(17px, 2.6vw, 20px);
   line-height: 1.5;
   color: var(--ink, #1c1d21);
   margin: 0;
@@ -381,7 +384,15 @@
   display: block;
   border-radius: 4px;
   border: 1px solid var(--hairline, #ebedf0);
+  /* Unconstrained width:100% let a portrait-oriented source photo render
+     taller than an entire book page by itself (no cap on height at all).
+     A fixed aspect ratio + object-fit:cover keeps every photo, regardless
+     of its own dimensions, to a sane, predictable footprint — the usual
+     magazine-grid treatment. */
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
 }
+.ks-album__item--hero img { aspect-ratio: 16 / 10; }
 .ks-album__item figcaption { margin-top: 7px; font-size: 12.5px; color: var(--ink-soft, #6b6f76); }
 /* Deliberate archival duotone for old/low-quality scans. */
 .ks-photo--archival img { filter: grayscale(1) sepia(0.14) contrast(1.05); }
@@ -395,7 +406,18 @@
   box-shadow: var(--shadow-soft, 0 1px 2px rgba(20, 22, 28, 0.04));
   background: var(--card, #ffffff);
 }
-.ks-doc img { width: 100%; display: block; border-radius: 3px; margin-bottom: 12px; }
+.ks-doc img {
+  width: 100%;
+  display: block;
+  border-radius: 3px;
+  margin-bottom: 12px;
+  /* Unlike Album photos, a scanned document shouldn't get cropped — the
+     text at the edges matters — so this bounds height without cutting
+     anything off, letterboxing on a paper-toned backdrop instead. */
+  max-height: 340px;
+  object-fit: contain;
+  background: var(--paper-soft, #f7f4ef);
+}
 .ks-doc__title { font-size: 15px; font-weight: 600; color: var(--ink, #1c1d21); }
 .ks-doc__fact { margin-top: 5px; font-size: 13.5px; color: var(--ink-soft, #6b6f76); line-height: 1.5; }
 
@@ -805,13 +827,31 @@
 }
 
 /* Page content — the existing spreads, resized from viewport to sheet.
-   Anything taller than its page scrolls quietly inside it. */
+   Anything taller than its page scrolls quietly inside it — but a plain
+   scrollbar is easy to miss (some OSes/browsers hide it until you actually
+   scroll), which reads as the text having simply been cut off. The
+   background here is the classic CSS-only "scroll shadow": two solid
+   covers that travel WITH the content (background-attachment: local) sit
+   on top of two shadow gradients fixed to the viewport (attachment:
+   scroll) — a cover only uncovers its shadow once there's actually more
+   content in that direction, so the cue appears exactly when needed and
+   never on a page short enough to need no scrolling at all. No JS.
+*/
 .ks-page__scroll {
   position: absolute;
   inset: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-width: thin;
+  background:
+    linear-gradient(var(--paper, #fff) 20%, rgba(255, 255, 255, 0)) 0 0,
+    linear-gradient(rgba(255, 255, 255, 0), var(--paper, #fff) 80%) 0 100%,
+    radial-gradient(farthest-side at 50% 0, rgba(28, 29, 33, 0.34), rgba(28, 29, 33, 0)) 0 0,
+    radial-gradient(farthest-side at 50% 100%, rgba(28, 29, 33, 0.34), rgba(28, 29, 33, 0)) 0 100%;
+  background-repeat: no-repeat;
+  background-color: var(--paper, #fff);
+  background-size: 100% 40px, 100% 40px, 100% 24px, 100% 24px;
+  background-attachment: local, local, scroll, scroll;
 }
 .ks-book .ks-spread {
   min-height: 100%;
@@ -935,6 +975,26 @@
     rgba(28, 29, 33, 0) 100%);
 }
 .ks-sheet--spread .ks-spread { padding: 44px 34px 40px; }
+
+/* At rest on the cover (wide mode, no turn in progress), present as a
+   genuinely closed book — single-page width, no visible inside cover —
+   rather than an already-open spread with an empty left page sitting
+   beside it. The instant a turn begins this class is removed
+   (KeepsakeBook only applies it while `!turn`) and the verso/recto
+   mechanics above (blank inside cover, spine, spread aspect ratio) take
+   over exactly as they already did before this change. Placed after
+   every `.ks-sheet--spread …` rule above so it wins the cascade despite
+   tying on specificity (both classes are present on the same element). */
+.ks-sheet--spread.ks-sheet--closed { aspect-ratio: 10 / 14; }
+.ks-sheet--closed .ks-page--left,
+.ks-sheet--closed .ks-spine { display: none; }
+.ks-sheet--closed .ks-page--under,
+.ks-sheet--closed .ks-leaf {
+  inset: 0;
+  left: 0;
+  width: 100%;
+  border-radius: 8px;
+}
 .ks-blank {
   position: absolute;
   inset: 0;
