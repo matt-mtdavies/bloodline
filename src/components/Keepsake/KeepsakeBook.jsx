@@ -297,7 +297,17 @@ export default function KeepsakeBook({ pages, renderPage, onProgress }) {
         {edgeL > 0 && <div className="ks-edges ks-edges--left" style={{ width: edgeL }} aria-hidden="true" />}
         {edgeR > 0 && <div className="ks-edges ks-edges--right" style={{ width: edgeR }} aria-hidden="true" />}
         {resting && <div className="ks-sheet__gloss" aria-hidden="true" />}
-        {resting && hint && <div className="ks-corner-curl" aria-hidden="true" />}
+        {resting && hint && <div className="ks-page-curl ks-page-curl--hero" aria-hidden="true" />}
+        {/* The same curl, quiet and small, on every ordinary page — an
+            always-available "there's more" cue. Purely visual (pointer-
+            events:none): it sits inside the right margin that already
+            turns the page forward on tap (see onPointerUp's fx>0.74), so
+            it doesn't need its own handler — just marks where to tap.
+            Hidden during rest (the hero curl covers that moment) and
+            mid-turn (the real leaf is already curling). */}
+        {!resting && !turn && canFwd && (
+          <div className="ks-page-curl ks-page-curl--page" aria-hidden="true" />
+        )}
         {wide && (
           <div className="ks-page ks-page--left">
             {baseLeft

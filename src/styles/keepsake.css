@@ -639,7 +639,7 @@
   .ks-rail::after { transform: scaleY(var(--ks-read, 0)); }
 
   /* The book's arrival is now the coffee-table splash + corner-curl hint
-     (.ks-sheet--rest, .ks-corner-curl) and the grand-open transition —
+     (.ks-sheet--rest, .ks-page-curl) and the grand-open transition —
      the old generic "sheet fades/settles onto the table" + "leaf peeks"
      treatment they replaced is gone (both were plain keyframe animations
      on .ks-sheet/.ks-leaf, which would otherwise permanently outrank and
@@ -1085,8 +1085,8 @@
    visually shrunk and tilted, so un-tilting it is exactly the "camera
    pushes into the page" zoom the grand-open turn wants, for free. */
 .ks-sheet.ks-sheet--rest {
-  transform-origin: 50% 62%;
-  transform: perspective(1800px) scale(0.4) rotateX(6deg) rotateY(-11deg) rotateZ(-2.2deg);
+  transform-origin: 50% 58%;
+  transform: perspective(1800px) scale(0.66) rotateX(6deg) rotateY(-11deg) rotateZ(-2.2deg);
   border-radius: 16px;
   box-shadow:
     0 70px 100px -25px rgba(20, 14, 8, 0.5),
@@ -1116,34 +1116,66 @@
   0%, 100% { background-position: 115% -10%; }
   50% { background-position: 40% 60%; }
 }
-/* The corner-curl hint — Kindle/Apple-Books style — a small page corner
-   lifting and settling, inviting the tap that starts the grand open. Only
-   rendered while resting AND after the same delay the old hint used. */
-.ks-corner-curl {
+/* The page-curl — a believable lifting paper corner (Kindle/Apple-Books
+   style), not a flat geometric wedge: the fold edge is a shallow multi-
+   point curve (a straight clip-path line reads as a cut, not a curl), the
+   fill is a gradient standing in for the paper catching the light along
+   the fold and shading back down toward the anchored corner, and the
+   cast shadow uses filter:drop-shadow (which follows the clipped
+   silhouette) rather than box-shadow (which is always rectangular and
+   would show as a shadow past the fold's straight edges).
+   Two sizes share this shape: the cover's inviting --hero curl, and a
+   small, quiet, always-tappable version on every ordinary page. */
+.ks-page-curl {
   position: absolute;
   right: 0;
   bottom: 0;
-  width: 30%;
-  max-width: 90px;
   aspect-ratio: 1;
   z-index: 9;
-  pointer-events: none;
-  transform-origin: 100% 100%;
-  clip-path: polygon(100% 100%, 0% 100%, 100% 0%);
-  border-radius: 0 0 16px 0;
-  background: linear-gradient(135deg, #ffffff 0%, #f4efe7 55%, #e2dbcf 100%);
-  box-shadow: -8px -8px 18px rgba(28, 29, 33, 0.2);
-  animation: ks-curl 3.6s ease-in-out infinite;
+  /* A straight cut reads as scissors, not paper — and a curve bowing
+     toward the anchor corner (100%,100%) pinches the flap in rather than
+     rolling it out. Real curling paper resists sharp bending and bulges
+     the OTHER way, toward the origin, making the lifted flap look rounder
+     and fuller. These points trace that outward bulge (a simple parabolic
+     arc away from the anchor along the fold's straight-line midpoints). */
+  clip-path: polygon(
+    100% 100%, 0% 100%,
+    3.5% 83.5%, 8.5% 68.5%, 14.9% 54.9%, 22.7% 42.7%, 32% 32%, 42.7% 22.7%, 54.9% 14.9%, 68.5% 8.5%, 83.5% 3.5%,
+    100% 0%
+  );
+  background: linear-gradient(135deg,
+    #ffffff 0%, #fdfaf4 20%, #f1e9d9 40%, #ece3d2 55%, #ddd2ba 76%, #c9bc9d 100%);
+  filter:
+    drop-shadow(-5px -5px 8px rgba(28, 29, 33, 0.2))
+    drop-shadow(-1px -1px 2px rgba(28, 29, 33, 0.16));
 }
-@keyframes ks-curl {
-  0%, 48%, 100% { transform: scale(0.001) rotate(0deg); opacity: 0; }
-  18% { transform: scale(1) rotate(-2deg); opacity: 1; }
-  32% { transform: scale(1.12) rotate(-8deg); opacity: 1; }
+.ks-page-curl--hero {
+  width: 34%;
+  max-width: 100px;
+  pointer-events: none;
+  animation: ks-curl-hero 3.6s ease-in-out infinite;
+}
+@keyframes ks-curl-hero {
+  0%, 46%, 100% { width: 4%; opacity: 0; }
+  20% { width: 34%; opacity: 1; }
+  33% { width: 40%; opacity: 1; }
+}
+.ks-page-curl--page {
+  width: 15%;
+  max-width: 46px;
+  min-width: 26px;
+  pointer-events: none;
+  animation: ks-curl-breathe 5s ease-in-out infinite;
+}
+@keyframes ks-curl-breathe {
+  0%, 100% { width: 12%; opacity: 0.75; }
+  50% { width: 17%; opacity: 1; }
 }
 @media (prefers-reduced-motion: reduce) {
   .ks-sheet { transition: none; }
   .ks-sheet__gloss { animation: none; background-position: 100% 0%; }
-  .ks-corner-curl { display: none; }
+  .ks-page-curl--hero { display: none; }
+  .ks-page-curl--page { animation: none; width: 14%; }
 }
 
 /* Phones read full-bleed — the sheet IS the screen. */
@@ -1235,7 +1267,7 @@
   body.ks-has-print .ks-prose-pending,
   body.ks-has-print .ks-page__more,
   body.ks-has-print .ks-sheet__gloss,
-  body.ks-has-print .ks-corner-curl { display: none !important; }
+  body.ks-has-print .ks-page-curl { display: none !important; }
 
   /* Book mode prints from its plain flow copy — the 3D pager only ever
      mounts a leaf and its neighbour, so it can't paginate on paper. */
