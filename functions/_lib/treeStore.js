@@ -237,8 +237,12 @@ export async function loadFullTree(env, familyId) {
   const parsedCore = JSON.parse(row.raw);
   const extraVersion = parsedCore._extraVersion;
 
+  // `raw` (the exact D1 row contents, in either mode) rides along so a
+  // single call here also covers what callers used loadTree's raw string
+  // for — prevBytes measurement, snapshot archival, the ETag — without a
+  // second SELECT against the same row.
   if (extraVersion == null) {
-    return { tree: parsedCore, updatedAt: row.updatedAt, migrated: false, extraError: null };
+    return { tree: parsedCore, raw: row.raw, updatedAt: row.updatedAt, migrated: false, extraError: null };
   }
 
   const { _extraVersion, ...core } = parsedCore;
@@ -252,16 +256,14 @@ export async function loadFullTree(env, familyId) {
     extraError = e.message || 'R2 read failed';
   }
 
-  return { tree: reassembleTree(core, extra), updatedAt: row.updatedAt, migrated: true, extraError };
+  return { tree: reassembleTree(core, extra), raw: row.raw, updatedAt: row.updatedAt, migrated: true, extraError };
 }
 
 /*
- * Writes a family's extra half to R2 and returns the JSON string core
- * should be stored as (with `_extraVersion` attached) — the caller still
- * owns batching/executing the actual D1 upsert via upsertTreeStatement,
- * exactly as before. `version` should be the same timestamp the caller
- * uses for the D1 row's `updated_at`, so the two are always written
- * together and never need reconciling after the fact.
+ * The R2-put half on its own, for a caller that already has `extra` in
+ * hand (tree.js's PUT calls splitTree itself once, to measure core's
+ * bytes before deciding whether to write anything at all — this avoids a
+ * second, redundant splitTree call just to get the R2 write done).
  *
  * Called BEFORE the D1 write, per §6.3's ordering: if this throws, the
  * caller must not touch D1 at all — the save fails cleanly with nothing
@@ -269,11 +271,21 @@ export async function loadFullTree(env, familyId) {
  * but the subsequent D1 write then fails, the R2 object written here is a
  * harmless, unreferenced orphan (nothing reads a version D1 never named).
  */
-export async function writeExtraToR2(env, familyId, fullTree, version) {
-  const { core, extra } = splitTree(fullTree);
+export async function putExtra(env, familyId, extra, version) {
   await env.DOCS.put(extraKey(familyId, version), JSON.stringify(extra), {
     httpMetadata: { contentType: 'application/json' },
   });
+}
+
+/*
+ * Convenience wrapper over splitTree + putExtra for callers that don't
+ * need the split result themselves — returns the JSON string core should
+ * be stored as (with `_extraVersion` attached). See putExtra for the
+ * write-ordering guarantee.
+ */
+export async function writeExtraToR2(env, familyId, fullTree, version) {
+  const { core, extra } = splitTree(fullTree);
+  await putExtra(env, familyId, extra, version);
   return JSON.stringify({ ...core, _extraVersion: version });
 }
 

@@ -1,6 +1,6 @@
 import { json, sendEmail } from '../_lib/util.js';
 import { createFamily } from '../_lib/family.js';
-import { loadTree, upsertTreeStatement, snapshotStatements } from '../_lib/treeStore.js';
+import { loadTree, loadFullTree, upsertTreeStatement, snapshotStatements, splitTree, putExtra } from '../_lib/treeStore.js';
 
 /*
  * GET /api/tree  — load the authenticated user's family tree.
@@ -48,11 +48,21 @@ export async function onRequestGet({ env, data }) {
 
     if (!membership) return json(null); // new user — client shows onboarding
 
-    const row = await loadTree(env, membership.family_id);
+    const loaded = await loadFullTree(env, membership.family_id);
 
-    if (!row) return json(null);
+    if (!loaded) return json(null);
 
-    const parsed = JSON.parse(row.raw);
+    // docs/TREE-STORAGE.md §6.3: a migrated family's extra genuinely
+    // unreadable (R2 hiccup, or D1 naming a version R2 doesn't have) must
+    // fail the request rather than quietly serve a tree that's missing its
+    // memories/photos/documents — that risk isn't in GET itself, it's that
+    // this same object would round-trip back out on the client's next PUT.
+    if (loaded.extraError) {
+      console.error('[tree] GET: extra unreadable, failing clean:', loaded.extraError);
+      return json({ error: 'Server error', detail: 'Tree data temporarily unavailable — please retry' }, { status: 503 });
+    }
+
+    const parsed = loaded.tree;
 
     // Self-heal the fast in-app activity feed on every read: tree_json.activity
     // is just a capped cache, and any code path that fails to keep it in sync
@@ -94,7 +104,7 @@ export async function onRequestGet({ env, data }) {
     // family.name. Prefer the real family.name over that empty string here.
     const familyName = parsed.familyName || membership.family_name || '';
 
-    const etag = `"${row.updatedAt}"`;
+    const etag = `"${loaded.updatedAt}"`;
     return json(
       { ...parsed, familyName, _meta: { familyId: membership.family_id, role: membership.role } },
       { headers: { 'cache-control': 'private, no-store', 'ETag': etag } },
@@ -152,21 +162,45 @@ export async function onRequestPut({ request, env, data }) {
     // guard) read the exact same row — one SELECT for both instead of two
     // saves a full D1 round trip on every single save, which matters most on
     // a large tree over a slow connection (the most common way a save ends
-    // up racing whatever timeout produces a 503).
-    const existingTree = await loadTree(env, membership.family_id);
+    // up racing whatever timeout produces a 503). loadFullTree also
+    // transparently reassembles a migrated family's R2 extra back onto core,
+    // so `prev` below is always the FULL logical tree regardless of storage
+    // mode — every existing business rule below (editor guard, contributor
+    // merge base, myPersonId pinning) needs the complete tree, not just core.
+    let existingFull;
+    try {
+      existingFull = await loadFullTree(env, membership.family_id);
+    } catch (e) {
+      // Corrupt core JSON on an already-stored row — same fallback as
+      // before this refactor: don't let a damaged row wedge every future
+      // save, but still keep the raw string/timestamp (needed below for
+      // prevBytes and snapshot archival) rather than losing them too.
+      console.warn('[tree] PUT: existing tree_json unparseable, treating as absent:', e.message);
+      const rawRow = await loadTree(env, membership.family_id).catch(() => null);
+      existingFull = rawRow
+        ? { tree: null, raw: rawRow.raw, updatedAt: rawRow.updatedAt, migrated: false, extraError: null }
+        : null;
+    }
+
+    // A migrated family's extra genuinely unreadable must fail the save
+    // outright, not proceed on a `prev` that's silently missing memories/
+    // photos/documents — see loadFullTree's own comment for why that risk
+    // is worse on a write than a read (a merge below could persist that
+    // emptiness right back over the family's real R2 data).
+    if (existingFull?.extraError) {
+      console.error('[tree] PUT: existing extra unreadable, failing clean:', existingFull.extraError);
+      return json({ error: 'Server error', detail: 'Tree data temporarily unavailable — please retry' }, { status: 503 });
+    }
 
     // Optimistic concurrency: if the client sent If-Match, check it against the
     // current updated_at. Reject with 409 if someone else saved since the client
     // last loaded, so they can merge before overwriting.
     const ifMatch = request.headers.get('If-Match');
-    if (ifMatch && ifMatch !== '*' && existingTree && `"${existingTree.updatedAt}"` !== ifMatch) {
+    if (ifMatch && ifMatch !== '*' && existingFull && `"${existingFull.updatedAt}"` !== ifMatch) {
       return json({ error: 'Conflict — tree was updated by another editor' }, { status: 409 });
     }
 
-    let prev = null;
-    if (existingTree) {
-      try { prev = JSON.parse(existingTree.raw); } catch { /* unparseable — ignore */ }
-    }
+    const prev = existingFull?.tree ?? null;
 
     // Hard-to-undo, whole-tree-shape changes — erasing the tree, a
     // replace-mode import, merging duplicate people, or removing a person
@@ -224,15 +258,33 @@ export async function onRequestPut({ request, env, data }) {
     // everyone else's seat to themselves.
     if (prev && prev.myPersonId != null) toStore.myPersonId = prev.myPersonId;
 
+    // Whether to write in legacy (whole tree in one D1 row, exactly as
+    // before this phase) or migrated (core in D1 + extra in R2) mode is a
+    // fact about THIS family, decided once by a prior, separate migration
+    // step — never here. A brand-new family (existingFull is null) or one
+    // that's never been migrated writes in legacy mode, unchanged.
+    const migratedMode = !!existingFull?.migrated;
+
     // Measure what's actually about to be written, in bytes (not UTF-16 code
     // units — the D1 limit is byte-based, and this data isn't all ASCII).
     // Computed once here and reused for the actual write below. prevBytes
     // (the row we're about to overwrite) lets the warning fire only on the
     // save that newly CROSSES the threshold, not on every save afterward.
-    const treeJsonString = JSON.stringify(toStore);
-    const treeJsonBytes = new TextEncoder().encode(treeJsonString).length;
-    const prevBytes = existingTree?.raw
-      ? new TextEncoder().encode(existingTree.raw).length
+    // In migrated mode this measures CORE alone — the whole point of the
+    // split — so `jsonToStore` (not `toStore`) is what's actually compared
+    // against the D1 ceiling and what's written to the row below.
+    let jsonToStore;
+    let extraToWrite = null;
+    if (migratedMode) {
+      const split = splitTree(toStore);
+      extraToWrite = split.extra;
+      jsonToStore = JSON.stringify({ ...split.core, _extraVersion: now });
+    } else {
+      jsonToStore = JSON.stringify(toStore);
+    }
+    const treeJsonBytes = new TextEncoder().encode(jsonToStore).length;
+    const prevBytes = existingFull?.raw
+      ? new TextEncoder().encode(existingFull.raw).length
       : 0;
     if (treeJsonBytes > SIZE_HARD_STOP_BYTES) {
       const mb = (n) => (n / (1024 * 1024)).toFixed(2);
@@ -265,7 +317,7 @@ export async function onRequestPut({ request, env, data }) {
     // none is worth a human learning about it.
     let snapshotIssue = null;
     try {
-      const snap = snapshotStatements(env, membership.family_id, existingTree?.raw, now);
+      const snap = snapshotStatements(env, membership.family_id, existingFull?.raw, now);
       if (snap) await env.DB.batch(snap);
     } catch (e) {
       if (/no such table/i.test(e.message || '')) {
@@ -276,6 +328,17 @@ export async function onRequestPut({ request, env, data }) {
       }
     }
 
+    // In migrated mode, extra goes to R2 BEFORE D1 is touched at all
+    // (docs/TREE-STORAGE.md §6.3): D1's write below is the single commit
+    // point for this save, so a failed R2 write here throws straight to the
+    // outer catch with nothing written anywhere, exactly like any other
+    // failed save today. A failed D1 write after this succeeds just leaves
+    // a harmless, unreferenced R2 object — nothing ever names a version D1
+    // didn't itself just write.
+    if (migratedMode) {
+      await putExtra(env, membership.family_id, extraToWrite, now);
+    }
+
     // The actual save and the family-name sync are batched into one round
     // trip — neither was ever defensively wrapped (a failure here is a real
     // error, same as before), so this is a pure latency win, plus a small
@@ -283,7 +346,7 @@ export async function onRequestPut({ request, env, data }) {
     // failed name update can no longer leave the tree_json write committed
     // on its own while the client is told the whole save failed.
     const writeStatements = [
-      upsertTreeStatement(env, membership.family_id, treeJsonString, now),
+      upsertTreeStatement(env, membership.family_id, jsonToStore, now),
     ];
     // Keep family.name in sync so invite emails always show the current name.
     if (canEditAll && toStore.familyName) {

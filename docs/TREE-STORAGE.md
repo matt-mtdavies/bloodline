@@ -344,12 +344,11 @@ activity-append path through the new module.
 ### Phase 2 — The real split: core stays in D1, extra moves to R2
 
 - Implement §6's target shape: the person-record split, the R2 key
-  scheme, the write-order-as-commit-point, the parallel-read reassembly,
-  the `extra_key` link on `family_tree_snapshot`.
-- **Dual-read compatibility, always:** a family with no R2 `current.json`
-  yet is treated as "everything is still in the legacy single blob."
-  Nothing is forced; a family can be skipped indefinitely and keep working
-  exactly as today.
+  scheme, the write-order-as-commit-point, the parallel-read reassembly.
+- **Dual-read compatibility, always:** a family with no `_extraVersion` on
+  its stored core JSON is treated as "everything is still in the legacy
+  single blob." Nothing is forced; a family can be skipped indefinitely
+  and keep working exactly as today.
 - **The migration script** (one-time, per-family, idempotent, resumable):
   snapshot first (both mechanisms in §7) → split → reassemble → **commit
   only if the reassembled result is deep-equal to the original** → on any
@@ -360,18 +359,60 @@ activity-append path through the new module.
   → migrate one disposable test family → migrate **this account
   specifically**, deliberately, with a snapshot in hand and someone
   watching → migrate everyone else in small batches, watching error rates.
-- **Bundled fixes:** `family_tree_snapshot` must snapshot the full
-  reassembled tree via `extra_key`, never a partial shard.
-  `admin/stats.js` needs the same reassembly, or an explicit temporary
-  caveat while rollout is in progress.
+- **Bundled fixes:** `admin/stats.js` needs its own reassembly awareness,
+  or an explicit temporary caveat while rollout is in progress.
+
+**Two refinements made during implementation, superseding this section's
+original wording:**
+- **No separate `current.json` pointer file, and no `family_tree_snapshot`
+  schema change.** The version pointer (`_extraVersion`) is embedded
+  directly in the same core JSON string D1 already stores — not a second
+  file that could drift out of sync with what D1 says is current. This
+  also means a snapshot of a migrated family's row (already just an
+  archival copy of that same core JSON) carries its own `_extraVersion`
+  for free, so `family_tree_snapshot` needs no new column — the
+  snapshot-restore endpoint derives which R2 version to fetch by parsing
+  the snapshot's own stored core JSON.
+- **Fail-clean, not graceful degradation, when a migrated family's extra
+  can't be read.** A genuine R2 read failure or a named version missing
+  from R2 surfaces as `extraError` (functions/_lib/treeStore.js
+  `loadFullTree`), which both GET and PUT in `tree.js` turn into a 503 —
+  never a tree silently missing its memories/photos/documents. The reason:
+  GET/PUT round-trip the whole logical tree, so an incomplete tree served
+  once could get written straight back over the family's real R2 data on
+  the client's next, unrelated save.
+
+**Progress:**
+- ✅ `splitTree`/`reassembleTree` — pure, I/O-free, round-trip-tested
+  (`tests/tree-split.test.mjs`).
+- ✅ `loadFullTree`/`putExtra`/`writeExtraToR2`/`pruneExtraVersions` — the
+  R2-backed read/write layer, dual-read and fail-clean as above
+  (`tests/tree-r2.test.mjs`).
+- ✅ `functions/api/tree.js`'s GET and PUT wired to the above: legacy
+  families are provably untouched (byte-for-byte, never touch R2); a
+  migrated family's GET reassembles transparently; its PUT re-splits once,
+  writes R2 before D1, and measures the size-limit check against core's
+  bytes alone (`tests/tree-r2-save.test.mjs`, plus the full pre-existing
+  `tests/tree-save.test.mjs` suite green unchanged). Crucially, **nothing
+  in this code path migrates a family itself** — `migratedMode` is read
+  purely from whether the stored core already carries `_extraVersion`.
+- ⬜ The snapshot-restore endpoint's `_extraVersion`-aware restore path.
+- ⬜ The actual migration script (snapshot → split → verify deep-equal →
+  commit-or-abort).
+- ⬜ `admin/stats.js` reassembly awareness.
+- ⬜ Staged rollout, ending with this account's tree migrated on purpose.
 
 **Acceptance:**
 - Round-trip unit tests (`reassemble(split(x))` deep-equals `x`) across a
   wide battery of fixtures: empty tree, large synthetic tree, a person
   missing every optional field (the stub records `user/profile.js`
-  creates), a tree with fields from before the current schema existed.
-- Fake-D1-and-R2 tests for all nine touch points, in both legacy and split
-  modes, extending the existing `tests/tree-save.test.mjs` pattern.
+  creates), a tree with fields from before the current schema existed. ✅
+- Fake-D1-and-R2 tests for the GET/PUT touch point, in both legacy and
+  split modes, extending the existing `tests/tree-save.test.mjs` pattern. ✅
+  (the remaining eight touch points — merge.js, invite.js, both calendar
+  endpoints, debug/tree.js, the snapshot-restore endpoint, admin/stats.js,
+  the migration script itself — still need the same treatment before
+  rollout.)
 - A full Playwright pass against a migrated *test* family covering every
   feature that touches the tree: memories, photos, documents, person
   edits, Keepsake, the Activity feed, the merge-wizard preview.
@@ -379,7 +420,7 @@ activity-append path through the new module.
   `wrangler d1 export` copy, reassembled locally, before this account's
   migration step runs against production.
 - `npm run build`, `node --test tests/*.test.mjs`, `tests/smoke.mjs` green
-  throughout, same bar as every other change in this codebase.
+  throughout, same bar as every other change in this codebase. ✅ so far.
 
 ## 10. Suggested order of work, if/when you say go
 

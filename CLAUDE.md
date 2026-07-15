@@ -75,8 +75,19 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   `snapshotStatements`) — a pure, zero-behavior-change refactor consolidating 7 of the 9
   places that touched `family_tree` directly (`tree.js`, `merge.js`, `_lib/invite.js`, both
   calendar endpoints, `debug/tree.js`, the snapshot-restore endpoint); `admin/stats.js` and
-  the snapshot list endpoint deliberately untouched (see doc §5). **Phase 2 (not started)**:
-  the actual core/R2 split, dual-read compatible, verify-or-abort per-family migration.
+  the snapshot list endpoint deliberately untouched (see doc §5). **Phase 2 🟡 in progress**:
+  `splitTree`/`reassembleTree` (pure, round-trip tested) + `loadFullTree`/`putExtra`/
+  `writeExtraToR2`/`pruneExtraVersions` (the R2-backed layer, dual-read via a `_extraVersion`
+  marker embedded in D1's own core JSON — no separate pointer file) are done and wired into
+  `functions/api/tree.js`'s GET/PUT: a legacy family is untouched (never touches R2); a
+  migrated family's GET reassembles core+R2 transparently, its PUT re-splits once and writes
+  R2-before-D1 with the size ceiling measured against core alone. A migrated family's extra
+  failing to read fails the request clean (503), never silently degrades. **Nothing in this
+  code auto-migrates a family** — that's a separate, not-yet-built migration script.
+  **Remaining:** the migration script itself (snapshot → split → verify deep-equal →
+  commit-or-abort), the snapshot-restore endpoint's `_extraVersion`-aware path, `admin/
+  stats.js` reassembly awareness, staged rollout ending with this account migrated on
+  purpose. Full design + progress tracked in `docs/TREE-STORAGE.md` §9.
 
 ## Architecture / key files
 
