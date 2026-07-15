@@ -213,36 +213,28 @@ export function reassembleTree(core, extra) {
 const extraKey = (familyId, version) => `tree-extra/${familyId}/${version}.json`;
 
 /*
- * Loads the full logical tree for a family, transparently reassembling
- * core + R2 extra when the family has been migrated. Returns null when
- * there's no family_tree row at all (a brand-new family — same as today).
+ * Given a raw JSON string as actually stored in a family_tree (or
+ * family_tree_snapshot) row, resolves it to the full logical tree —
+ * transparently fetching + reassembling R2 extra when the row carries
+ * `_extraVersion`. Shared by loadFullTree (the live row) and the
+ * snapshot-restore endpoint (an archived row), so both apply the exact
+ * same dual-read/fail-clean rules to what is otherwise the same shape of
+ * data. Does not itself read family_tree — callers supply `raw`.
  *
  * `extraError` is the one new thing every caller must decide how to react
- * to: null on success; a message when a MIGRATED family's extra genuinely
+ * to: null on success; a message when a MIGRATED row's extra genuinely
  * couldn't be read (R2 hiccup, or a version D1 names that isn't in R2 for
  * some reason). This is deliberately surfaced rather than silently
- * degraded to an empty extra, because the client's GET/PUT round-trips the
- * whole tree — silently serving a tree missing its memories/photos/
- * documents risks a *later, unrelated* save writing that emptiness back
- * over the family's real data. A caller that gets extraError back should
- * fail the request (503) rather than serve a tree that looks complete but
- * isn't. Corrupt/missing CORE JSON is not caught here and propagates like
- * any other JSON.parse failure — exactly today's behavior for a damaged
- * family_tree row.
+ * degraded to an empty extra — see loadFullTree's own callers for why.
+ * Corrupt/missing CORE JSON is not caught here and propagates like any
+ * other JSON.parse failure.
  */
-export async function loadFullTree(env, familyId) {
-  const row = await loadTree(env, familyId);
-  if (!row) return null;
-
-  const parsedCore = JSON.parse(row.raw);
+export async function resolveTreeFromRaw(env, familyId, raw) {
+  const parsedCore = JSON.parse(raw);
   const extraVersion = parsedCore._extraVersion;
 
-  // `raw` (the exact D1 row contents, in either mode) rides along so a
-  // single call here also covers what callers used loadTree's raw string
-  // for — prevBytes measurement, snapshot archival, the ETag — without a
-  // second SELECT against the same row.
   if (extraVersion == null) {
-    return { tree: parsedCore, raw: row.raw, updatedAt: row.updatedAt, migrated: false, extraError: null };
+    return { tree: parsedCore, migrated: false, extraError: null };
   }
 
   const { _extraVersion, ...core } = parsedCore;
@@ -256,7 +248,24 @@ export async function loadFullTree(env, familyId) {
     extraError = e.message || 'R2 read failed';
   }
 
-  return { tree: reassembleTree(core, extra), raw: row.raw, updatedAt: row.updatedAt, migrated: true, extraError };
+  return { tree: reassembleTree(core, extra), migrated: true, extraError };
+}
+
+/*
+ * Loads the full logical tree for a family, transparently reassembling
+ * core + R2 extra when the family has been migrated. Returns null when
+ * there's no family_tree row at all (a brand-new family — same as today).
+ */
+export async function loadFullTree(env, familyId) {
+  const row = await loadTree(env, familyId);
+  if (!row) return null;
+
+  // `raw` (the exact D1 row contents, in either mode) rides along so a
+  // single call here also covers what callers used loadTree's raw string
+  // for — prevBytes measurement, snapshot archival, the ETag — without a
+  // second SELECT against the same row.
+  const { tree, migrated, extraError } = await resolveTreeFromRaw(env, familyId, row.raw);
+  return { tree, raw: row.raw, updatedAt: row.updatedAt, migrated, extraError };
 }
 
 /*

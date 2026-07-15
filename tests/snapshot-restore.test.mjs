@@ -10,11 +10,30 @@
  */
 import assert from 'node:assert/strict';
 import { onRequestPost } from '../functions/api/tree/snapshots/[id].js';
+import { writeExtraToR2, splitTree } from '../functions/_lib/treeStore.js';
 
 let passed = 0, failed = 0;
 async function test(label, fn) {
   try { await fn(); passed++; console.log(`PASS  ${label}`); }
   catch (e) { failed++; console.log(`FAIL  ${label}\n      ${e.message}\n${e.stack?.split('\n').slice(1, 3).join('\n')}`); }
+}
+
+function fakeR2({ getShouldThrow = false } = {}) {
+  const store = new Map();
+  return {
+    store,
+    async get(key) {
+      if (getShouldThrow) throw new Error('simulated R2 outage');
+      if (!store.has(key)) return null;
+      const val = store.get(key);
+      return { json: async () => JSON.parse(val), text: async () => val };
+    },
+    async put(key, value) { store.set(key, value); },
+    async delete(key) { store.delete(key); },
+    async list({ prefix }) {
+      return { objects: [...store.keys()].filter((k) => k.startsWith(prefix)).map((key) => ({ key })) };
+    },
+  };
 }
 
 function makeFakeDB({ membershipRow, snapshotRow, currentTreeRow = null, activityRows = [] }) {
@@ -115,6 +134,70 @@ await test('restored.activity is repopulated from activity_log, not carried over
   const finalWrite = db.calls.find((c) => c.type === 'run' && /INSERT INTO family_tree \(/.test(c.sql));
   const restored = JSON.parse(finalWrite.args[1]);
   assert.deepEqual(restored.activity.map((a) => a.id), ['fresh1']);
+});
+
+// ── Migrated-family restore (docs/TREE-STORAGE.md Phase 2 step 4) ────────
+
+await test('restoring a snapshot taken while migrated reassembles its core+R2 extra before restoring', async () => {
+  const r2 = fakeR2();
+  const snapshotCoreJson = await writeExtraToR2({ DOCS: r2 }, 'fam1', {
+    people: [{ id: 'old_p', bio: 'Old bio.' }], memories: [{ id: 'm_old' }], _seq: 5,
+  }, 100);
+  const snapshotRow = { tree_json: snapshotCoreJson };
+  const currentCoreJson = await writeExtraToR2({ DOCS: r2 }, 'fam1', { people: [{ id: 'current_p' }], _seq: 7 }, 200);
+  const currentTreeRow = { tree_json: currentCoreJson, updated_at: 1000 };
+  const db = makeFakeDB({ membershipRow: OWNER, snapshotRow, currentTreeRow });
+
+  const res = await onRequestPost({ params: { id: 'snap1' }, env: { DB: db, DOCS: r2 }, data: { user: USER } });
+  assert.equal(res.status, 200);
+
+  const finalWrite = db.calls.find((c) => c.type === 'run' && /INSERT INTO family_tree \(/.test(c.sql));
+  const storedCore = JSON.parse(finalWrite.args[1]);
+  assert.ok(storedCore._extraVersion, 'a migrated family\'s restore must still write in migrated mode');
+  assert.ok(!('bio' in (storedCore.people?.[0] || {})), 'core must not carry rich person detail');
+
+  const newExtraObj = await r2.get(`tree-extra/fam1/${storedCore._extraVersion}.json`);
+  const newExtra = await newExtraObj.json();
+  assert.equal(newExtra.peopleDetail.old_p.bio, 'Old bio.', 'the snapshot\'s reassembled detail should be what gets restored');
+  assert.equal(newExtra.memories[0].id, 'm_old');
+  assert.ok(newExtra.memories[0].updated_at, 'restored memories are stamped fresh, same as before this phase');
+});
+
+await test('restoring a snapshot whose extra is unreadable fails clean with 503, touches neither D1 nor R2', async () => {
+  const r2 = fakeR2({ getShouldThrow: true });
+  const snapshotRow = { tree_json: JSON.stringify({ ...splitTree({ people: [{ id: 'p1' }] }).core, _extraVersion: 999 }) };
+  const db = makeFakeDB({ membershipRow: OWNER, snapshotRow, currentTreeRow: null });
+
+  const res = await onRequestPost({ params: { id: 'snap1' }, env: { DB: db, DOCS: r2 }, data: { user: USER } });
+  assert.equal(res.status, 503);
+  assert.ok(!db.calls.some((c) => c.type === 'run' && /INSERT INTO family_tree \(/.test(c.sql)),
+    'no D1 write should be attempted when the snapshot\'s extra is unreadable');
+});
+
+await test('restoring a legacy snapshot into a currently-migrated family still writes the restore in migrated mode', async () => {
+  const r2 = fakeR2();
+  const snapshotRow = { tree_json: JSON.stringify({ people: [{ id: 'old_p' }], _seq: 5 }) }; // no _extraVersion — a pre-migration snapshot
+  const currentCoreJson = await writeExtraToR2({ DOCS: r2 }, 'fam1', { people: [{ id: 'current_p' }], _seq: 7 }, 200);
+  const currentTreeRow = { tree_json: currentCoreJson, updated_at: 1000 };
+  const db = makeFakeDB({ membershipRow: OWNER, snapshotRow, currentTreeRow });
+
+  const res = await onRequestPost({ params: { id: 'snap1' }, env: { DB: db, DOCS: r2 }, data: { user: USER } });
+  assert.equal(res.status, 200);
+  const finalWrite = db.calls.find((c) => c.type === 'run' && /INSERT INTO family_tree \(/.test(c.sql));
+  const storedCore = JSON.parse(finalWrite.args[1]);
+  assert.ok(storedCore._extraVersion, 'mode follows the CURRENT family state, not the snapshot\'s own vintage');
+});
+
+await test('restoring into a never-migrated family stays in legacy mode, never touches R2', async () => {
+  const snapshotRow = { tree_json: JSON.stringify({ people: [{ id: 'old_p' }], _seq: 5 }) };
+  const currentTreeRow = { tree_json: JSON.stringify({ people: [{ id: 'current_p' }], _seq: 7 }), updated_at: 1000 };
+  const db = makeFakeDB({ membershipRow: OWNER, snapshotRow, currentTreeRow });
+  let r2Touched = false;
+  const r2 = { get: async () => { r2Touched = true; return null; }, put: async () => { r2Touched = true; } };
+
+  const res = await onRequestPost({ params: { id: 'snap1' }, env: { DB: db, DOCS: r2 }, data: { user: USER } });
+  assert.equal(res.status, 200);
+  assert.ok(!r2Touched, 'a family with no _extraVersion anywhere must never touch R2');
 });
 
 console.log(`\n  ${passed} passed, ${failed} failed`);

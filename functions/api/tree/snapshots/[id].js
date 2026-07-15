@@ -1,5 +1,8 @@
 import { json } from '../../../_lib/util.js';
-import { loadTree, upsertTreeStatement, snapshotStatements } from '../../../_lib/treeStore.js';
+import {
+  loadTree, upsertTreeStatement, snapshotStatements,
+  resolveTreeFromRaw, splitTree, putExtra,
+} from '../../../_lib/treeStore.js';
 
 /*
  * POST /api/tree/snapshots/:id  — restore this snapshot as the current tree.
@@ -50,20 +53,39 @@ export async function onRequestPost({ params, env, data }) {
     ).bind(snapshotId, userRow.family_id).first();
     if (!snapshot) return json({ error: 'Snapshot not found' }, { status: 404 });
 
-    let restored;
+    // A snapshot taken while this family was migrated is itself just the
+    // archived core JSON — it carries its own `_extraVersion` for free, so
+    // no separate schema column was ever needed to link a snapshot back to
+    // its R2 half (docs/TREE-STORAGE.md §9). resolveTreeFromRaw reassembles
+    // exactly like a live row's loadFullTree would.
+    let resolved;
     try {
-      restored = JSON.parse(snapshot.tree_json);
+      resolved = await resolveTreeFromRaw(env, userRow.family_id, snapshot.tree_json);
     } catch {
       return json({ error: 'Snapshot is corrupted' }, { status: 500 });
     }
+    if (resolved.extraError) {
+      console.error('[tree/snapshots restore] snapshot extra unreadable, failing clean:', resolved.extraError);
+      return json({ error: 'Server error', detail: 'Snapshot data temporarily unavailable — please retry' }, { status: 503 });
+    }
+    const restored = resolved.tree;
 
     const now = Math.floor(Date.now() / 1000);
     const current = await loadTree(env, userRow.family_id);
 
     let currentSeq = 0;
+    // Whether to write the restore back in legacy or migrated mode is a
+    // fact about what this family currently IS, not about the snapshot
+    // being restored — same rule functions/api/tree.js's PUT follows, and
+    // for the same reason: this phase's code never migrates a family on
+    // its own.
+    let migratedMode = false;
     if (current?.raw) {
-      currentSeq = 0;
-      try { currentSeq = JSON.parse(current.raw)._seq || 0; } catch { /* ignore */ }
+      try {
+        const parsedCurrentCore = JSON.parse(current.raw);
+        currentSeq = parsedCurrentCore._seq || 0;
+        migratedMode = parsedCurrentCore._extraVersion != null;
+      } catch { /* ignore */ }
 
       // Archive what's about to be replaced, same as a normal save would.
       // Two separate calls (not batched), matching this endpoint's existing
@@ -101,7 +123,18 @@ export async function onRequestPost({ params, env, data }) {
       console.error('[tree/snapshots restore] activity_log read skipped:', e.message);
     }
 
-    await upsertTreeStatement(env, userRow.family_id, JSON.stringify(restored), now).run();
+    // R2-before-D1, same ordering rule as tree.js's PUT: if the R2 write
+    // throws, nothing below it runs and D1 is never touched.
+    let jsonToStore;
+    if (migratedMode) {
+      const { core, extra } = splitTree(restored);
+      await putExtra(env, userRow.family_id, extra, now);
+      jsonToStore = JSON.stringify({ ...core, _extraVersion: now });
+    } else {
+      jsonToStore = JSON.stringify(restored);
+    }
+
+    await upsertTreeStatement(env, userRow.family_id, jsonToStore, now).run();
 
     return json({ ok: true }, { headers: { ETag: `"${now}"` } });
   } catch (e) {
