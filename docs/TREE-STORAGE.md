@@ -409,7 +409,19 @@ original wording:**
   restore.test.mjs`, plus the full pre-existing suite green unchanged).
 - ⬜ The actual migration script (snapshot → split → verify deep-equal →
   commit-or-abort).
-- ⬜ `admin/stats.js` reassembly awareness.
+- ✅ `admin/stats.js` reassembly awareness: the platform-wide content
+  totals (people/photos/memories/documents) split into a bulk SQL SUM over
+  non-migrated rows plus per-row R2 reassembly for migrated ones (expected
+  to be rare during the staged rollout, so the per-row cost is cheap),
+  never silently undercounting once families start migrating. The
+  `largest_trees` diagnostic now reports a migrated family's TRUE total
+  (core bytes + a cheap `R2 head()` for its extra's size), flagged
+  `migrated: true`, rather than just its D1 core alone. One honest,
+  documented gap remains: the top-10 *ranking* itself is still by core
+  bytes only, so a family with a small core but a huge R2 extra could rank
+  below the cutoff and not appear at all — not fixable without scanning
+  every family's R2 size, out of scope until enough families are migrated
+  for it to matter (`tests/admin-stats.test.mjs`).
 - ⬜ Staged rollout, ending with this account's tree migrated on purpose.
 
 **Acceptance:**
@@ -417,11 +429,11 @@ original wording:**
   wide battery of fixtures: empty tree, large synthetic tree, a person
   missing every optional field (the stub records `user/profile.js`
   creates), a tree with fields from before the current schema existed. ✅
-- Fake-D1-and-R2 tests for the GET/PUT and snapshot-restore touch points,
-  in both legacy and split modes, extending the existing `tests/tree-
-  save.test.mjs` pattern. ✅ (the remaining six touch points — merge.js,
-  invite.js, both calendar endpoints, debug/tree.js, admin/stats.js, the
-  migration script itself — still need the same treatment before
+- Fake-D1-and-R2 tests for the GET/PUT, snapshot-restore, and admin/
+  stats.js touch points, in both legacy and split modes, extending the
+  existing `tests/tree-save.test.mjs` pattern. ✅ (the remaining five touch
+  points — merge.js, invite.js, both calendar endpoints, debug/tree.js,
+  the migration script itself — still need the same treatment before
   rollout.)
 - A full Playwright pass against a migrated *test* family covering every
   feature that touches the tree: memories, photos, documents, person

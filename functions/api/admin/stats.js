@@ -1,6 +1,7 @@
 import { json } from '../../_lib/util.js';
 import { adminEmailList, isAdminEmail } from '../../_lib/adminAuth.js';
 import { estimateCostUsd } from '../../_lib/aiUsage.js';
+import { resolveTreeFromRaw, extraKey } from '../../_lib/treeStore.js';
 
 /*
  * GET /api/admin/stats
@@ -68,13 +69,33 @@ export async function onRequestGet({ env, data }) {
       `).all(),
       env.DB.prepare(`
         SELECT ft.family_id, f.name AS family_name,
-               LENGTH(ft.tree_json) AS bytes
+               LENGTH(ft.tree_json) AS bytes,
+               json_extract(ft.tree_json, '$._extraVersion') AS extra_version
         FROM family_tree ft
         LEFT JOIN family f ON f.id = ft.family_id
         ORDER BY bytes DESC
         LIMIT 10
       `).all(),
     ]);
+
+    // A migrated family's tree_json column only holds "core" (docs/TREE-
+    // STORAGE.md §6) — LENGTH() above measures just that half. Add each
+    // migrated row's R2 extra size (a cheap metadata-only head(), no body
+    // download) so the reported figure is the family's true total. This
+    // doesn't fix the top-10 RANKING itself — a family with a tiny core but
+    // a huge extra could rank below the cutoff and never show up here — an
+    // accepted, documented gap (docs/TREE-STORAGE.md §9) until enough
+    // families are migrated for that to matter.
+    const treeSizeRows = await Promise.all((treeSizes.results || []).map(async (t) => {
+      if (t.extra_version == null) return { ...t, totalBytes: t.bytes, migrated: false };
+      try {
+        const head = await env.DOCS.head(extraKey(t.family_id, t.extra_version));
+        return { ...t, totalBytes: t.bytes + (head?.size || 0), migrated: true };
+      } catch (e) {
+        console.error('[admin/stats] largest_trees: extra size lookup failed for', t.family_id, e.message);
+        return { ...t, totalBytes: t.bytes, migrated: true };
+      }
+    }));
 
     // Shape the invite funnel into a plain object
     const invites = { pending: 0, accepted: 0, expired: 0 };
@@ -218,22 +239,48 @@ export async function onRequestGet({ env, data }) {
 
     // Platform-wide content totals — the tree itself is a JSON blob per
     // family, so these come from D1's JSON1 functions rather than a table.
+    // A migrated family's tree_json is core-only: photos/memories/documents
+    // live in R2 (people stays present, just per-person-detail-trimmed, so
+    // its count is unaffected). The bulk SQL SUM below only counts
+    // non-migrated rows; each migrated row (expected to be few during the
+    // staged rollout, docs/TREE-STORAGE.md §9) is reassembled individually
+    // and its real counts added back in, so this total stays exact
+    // regardless of how many families have been migrated.
     let content = { total_people: 0, total_photos: 0, total_memories: 0, total_documents: 0 };
     try {
-      const row = await env.DB.prepare(
+      const bulkRow = await env.DB.prepare(
         `SELECT
-           SUM(json_array_length(tree_json, '$.people')) AS people,
-           SUM(json_array_length(tree_json, '$.photos')) AS photos,
-           SUM(json_array_length(tree_json, '$.memories')) AS memories,
-           SUM(json_array_length(tree_json, '$.documents')) AS documents
+           SUM(CASE WHEN json_extract(tree_json, '$._extraVersion') IS NULL THEN json_array_length(tree_json, '$.people') ELSE 0 END) AS people,
+           SUM(CASE WHEN json_extract(tree_json, '$._extraVersion') IS NULL THEN json_array_length(tree_json, '$.photos') ELSE 0 END) AS photos,
+           SUM(CASE WHEN json_extract(tree_json, '$._extraVersion') IS NULL THEN json_array_length(tree_json, '$.memories') ELSE 0 END) AS memories,
+           SUM(CASE WHEN json_extract(tree_json, '$._extraVersion') IS NULL THEN json_array_length(tree_json, '$.documents') ELSE 0 END) AS documents,
+           SUM(CASE WHEN json_extract(tree_json, '$._extraVersion') IS NOT NULL THEN json_array_length(tree_json, '$.people') ELSE 0 END) AS migrated_people
          FROM family_tree`,
       ).first();
       content = {
-        total_people: row?.people ?? 0,
-        total_photos: row?.photos ?? 0,
-        total_memories: row?.memories ?? 0,
-        total_documents: row?.documents ?? 0,
+        total_people: (bulkRow?.people ?? 0) + (bulkRow?.migrated_people ?? 0),
+        total_photos: bulkRow?.photos ?? 0,
+        total_memories: bulkRow?.memories ?? 0,
+        total_documents: bulkRow?.documents ?? 0,
       };
+
+      const { results: migratedRows } = await env.DB.prepare(
+        `SELECT family_id, tree_json FROM family_tree WHERE json_extract(tree_json, '$._extraVersion') IS NOT NULL`,
+      ).all();
+      for (const row of (migratedRows || [])) {
+        try {
+          const resolved = await resolveTreeFromRaw(env, row.family_id, row.tree_json);
+          if (resolved.extraError) {
+            console.error('[admin/stats] content totals: extra unreadable for', row.family_id, resolved.extraError);
+            continue;
+          }
+          content.total_photos += resolved.tree.photos?.length || 0;
+          content.total_memories += resolved.tree.memories?.length || 0;
+          content.total_documents += resolved.tree.documents?.length || 0;
+        } catch (e) {
+          console.error('[admin/stats] content totals: corrupt migrated family', row.family_id, e.message);
+        }
+      }
     } catch (e) { console.error('[admin/stats] content totals skipped:', e.message); }
 
     const totalInviteCount = totalInvites?.n ?? 0;
@@ -277,10 +324,11 @@ export async function onRequestGet({ env, data }) {
         joined: new Date(u.created_at * 1000).toISOString(),
         last_seen: u.last_seen ? new Date(u.last_seen * 1000).toISOString() : null,
       })),
-      largest_trees: (treeSizes.results || []).map((t) => ({
+      largest_trees: treeSizeRows.map((t) => ({
         family_id: t.family_id,
         family_name: t.family_name || t.family_id,
-        size_kb: Math.round(t.bytes / 1024),
+        size_kb: Math.round(t.totalBytes / 1024),
+        migrated: t.migrated,
       })),
       ai,
       engagement,

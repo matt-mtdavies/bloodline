@@ -210,7 +210,10 @@ export function reassembleTree(core, extra) {
 // from, the logical tree object the client sends and receives. Stripped
 // before reassembly; added fresh on every write.
 
-const extraKey = (familyId, version) => `tree-extra/${familyId}/${version}.json`;
+// Exported so other code that needs to name an extra object directly (the
+// admin dashboard's true-size lookup, e.g.) never hand-builds this path
+// itself — one string template, one place it could ever be wrong.
+export const extraKey = (familyId, version) => `tree-extra/${familyId}/${version}.json`;
 
 /*
  * Given a raw JSON string as actually stored in a family_tree (or

@@ -86,10 +86,13 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   endpoint (`tree/snapshots/[id].js`) shares that same fail-clean rule via a new
   `resolveTreeFromRaw` helper (extracted from `loadFullTree`), and writes the restore back in
   whichever mode the family *currently* is — never decided by the snapshot's own vintage.
-  **Nothing in this code auto-migrates a family** — that's a separate, not-yet-built migration
-  script. **Remaining:** the migration script itself (snapshot → split → verify deep-equal →
-  commit-or-abort), `admin/stats.js` reassembly awareness, staged rollout ending with this
-  account migrated on purpose. Full design + progress tracked in `docs/TREE-STORAGE.md` §9.
+  `admin/stats.js`'s content totals and largest-trees size report are now reassembly-aware too
+  (a migrated family's photos/memories/documents are summed via R2, its true size via a cheap
+  `head()` call) — one documented gap remains, the largest-trees *ranking* is still by D1 core
+  bytes only. **Nothing in this code auto-migrates a family** — that's a separate, not-yet-built
+  migration script. **Remaining:** the migration script itself (snapshot → split → verify
+  deep-equal → commit-or-abort), staged rollout ending with this account migrated on purpose.
+  Full design + progress tracked in `docs/TREE-STORAGE.md` §9.
 
 ## Architecture / key files
 
