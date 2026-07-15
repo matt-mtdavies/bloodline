@@ -99,8 +99,12 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   exists: `POST /api/admin/migrate-tree` (admin-gated, one `familyId` per call, idempotent,
   verifies `reassembleTree(splitTree(tree))` deep-equals the original **before any write**,
   archives a snapshot, R2-before-D1). **Nothing auto-migrates a family** — this endpoint is the
-  only place that happens, and only when a human calls it. **Remaining:** the staged rollout
-  itself (a disposable test family → this account, deliberately → everyone else in batches).
+  only place that happens, and only when a human calls it. **All Phase 2 code is done, tested,
+  and pushed.** The only thing left is the staged rollout itself, and it needs real Cloudflare
+  credentials (`wrangler login`, a deployed build, an authenticated admin session) that don't
+  exist in an agent sandbox — a step-by-step runbook for a human to follow lives in
+  `docs/TREE-STORAGE.md` §11 (backup → deploy → one disposable test family → this account,
+  deliberately → everyone else in small batches).
   Full design + progress tracked in `docs/TREE-STORAGE.md` §9.
 
 ## Architecture / key files

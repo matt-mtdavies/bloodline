@@ -482,3 +482,78 @@ original wording:**
    the actual project, done once, with this account migrated on purpose
    rather than swept in with everyone else. This is the phase that removes
    the ceiling for good; there is no Phase 3 to come back for.
+
+## 11. Rollout runbook — for a human to run
+
+All Phase 2 code is done, tested, and pushed (`claude/continue-build-y05lyu`).
+Everything below needs real Cloudflare credentials — `wrangler login`, a
+deployed build, an authenticated admin session — none of which exist in an
+agent sandbox. This is the one part of Phase 2 you run yourself.
+
+**Step 0 — the one-time whole-database backup (§7 mechanism 2).**
+Do this once, before touching *any* family, not per-family:
+```
+wrangler d1 export bloodline --remote --output=bloodline-pre-migration-$(date +%Y%m%d).sql
+```
+Keep this file somewhere safe for at least 90 days (§7). This is the nuclear
+rollback — restorable via `wrangler d1 execute bloodline --remote --file=...`
+if something goes catastrophically wrong at the database level (as opposed
+to a single bad family, which the per-family snapshot in step 2 covers).
+
+**Step 1 — deploy this branch.**
+Merge `claude/continue-build-y05lyu` to whatever branch Cloudflare Pages
+builds from (or use the branch's own preview deployment URL to test steps
+2–4 against a disposable family before merging to production at all — Pages
+auto-builds a preview for every branch/PR). Confirm the deploy is live and
+`node --test tests/*.test.mjs` / `npm run build` were green before merging
+(they were, as of the last commit on this branch).
+
+**Step 2 — pick a disposable test family and migrate it.**
+Find a `family_id` you don't mind losing (a throwaway signup, or one you
+create fresh for this purpose) — via the admin dashboard (`/admin.html`) or:
+```
+wrangler d1 execute bloodline --remote --command="SELECT id, name FROM family LIMIT 20"
+```
+While logged into the app as an ADMIN_EMAILS-listed user, open the browser
+console and run:
+```js
+fetch('/api/admin/migrate-tree', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  credentials: 'include',
+  body: JSON.stringify({ familyId: 'PASTE_FAMILY_ID_HERE' }),
+}).then((r) => r.json()).then(console.log)
+```
+A successful response looks like
+`{ ok: true, familyId, alreadyMigrated: false, extraVersion, coreBytes, extraBytes, snapshotIssue: null }`.
+`ok: false` with a "Verification failed" message means **nothing was
+written** — the family is untouched, safe to leave and investigate.
+
+**Step 3 — verify that family, thoroughly, before trusting the script on
+anything real.** Load the app as a member of that family and check every
+surface that touches tree data: the tree/chart/list views render correctly,
+Memories/Photos/Documents all load, the Activity feed has history, Keepsake
+still generates/reads correctly, the merge wizard preview (if you have a
+second test family to invite into it) shows full data. Also worth a glance:
+`/api/debug/tree` for this family will now report a mostly-empty-looking
+core-only breakdown — that diagnostic's own R2 reassembly awareness is a
+known, accepted gap (§9), not a sign anything's wrong with the migration.
+
+**Step 4 — migrate your own real account's family, deliberately, watching.**
+Same `fetch(...)` call, this family's id, with you present to verify
+immediately afterward exactly as in Step 3. This is the family the whole
+project was scoped around protecting (see this doc's opening).
+
+**Step 5 — everyone else, in small batches.**
+Call the same endpoint per family, watching error rates between batches
+(`ok:false` responses, or `snapshotIssue` non-null in the response). There is
+no bulk/batch mode by design (§9) — each call is one family, one deliberate
+action. If you want a batch *helper* later (a loop that calls this endpoint
+across many family ids and reports a summary), that's a small, separate,
+easy addition on top of what already exists — the endpoint itself is the
+one piece of new surface area, and it's already built.
+
+**If something looks wrong with a specific family after migrating it:**
+its pre-migration state is sitting in `family_tree_snapshot` (archived by
+this same migration call, per §7 mechanism 1) — restorable via the existing
+snapshot-restore UI/endpoint, no different from undoing any other save.
