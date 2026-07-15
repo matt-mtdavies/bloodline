@@ -193,6 +193,113 @@ export function reassembleTree(core, extra) {
   return tree;
 }
 
+// ── R2-backed "extra" (docs/TREE-STORAGE.md §6.3) ──────────────────────────
+//
+// Whether a family has been migrated is a fact D1 answers on its own, with
+// no R2 read needed to find out: a migrated family's core JSON carries one
+// extra plumbing field, `_extraVersion`, naming exactly which R2 object
+// holds its other half. Absent → unmigrated, and `row.raw` IS the full
+// legacy tree already (today's shape, untouched). This is a deliberate
+// refinement over a separate "current.json" pointer file: with the pointer
+// living inside the SAME D1 write that's already the single commit point,
+// there's no second file whose contents could ever drift out of sync with
+// what D1 says is current, and "is this family migrated" costs zero extra
+// network round trips to answer.
+//
+// `_extraVersion` is pure storage plumbing — it never appears in, or came
+// from, the logical tree object the client sends and receives. Stripped
+// before reassembly; added fresh on every write.
+
+const extraKey = (familyId, version) => `tree-extra/${familyId}/${version}.json`;
+
+/*
+ * Loads the full logical tree for a family, transparently reassembling
+ * core + R2 extra when the family has been migrated. Returns null when
+ * there's no family_tree row at all (a brand-new family — same as today).
+ *
+ * `extraError` is the one new thing every caller must decide how to react
+ * to: null on success; a message when a MIGRATED family's extra genuinely
+ * couldn't be read (R2 hiccup, or a version D1 names that isn't in R2 for
+ * some reason). This is deliberately surfaced rather than silently
+ * degraded to an empty extra, because the client's GET/PUT round-trips the
+ * whole tree — silently serving a tree missing its memories/photos/
+ * documents risks a *later, unrelated* save writing that emptiness back
+ * over the family's real data. A caller that gets extraError back should
+ * fail the request (503) rather than serve a tree that looks complete but
+ * isn't. Corrupt/missing CORE JSON is not caught here and propagates like
+ * any other JSON.parse failure — exactly today's behavior for a damaged
+ * family_tree row.
+ */
+export async function loadFullTree(env, familyId) {
+  const row = await loadTree(env, familyId);
+  if (!row) return null;
+
+  const parsedCore = JSON.parse(row.raw);
+  const extraVersion = parsedCore._extraVersion;
+
+  if (extraVersion == null) {
+    return { tree: parsedCore, updatedAt: row.updatedAt, migrated: false, extraError: null };
+  }
+
+  const { _extraVersion, ...core } = parsedCore;
+  let extra = null;
+  let extraError = null;
+  try {
+    const obj = await env.DOCS.get(extraKey(familyId, extraVersion));
+    if (obj) extra = await obj.json();
+    else extraError = `extra version ${extraVersion} not found in R2`;
+  } catch (e) {
+    extraError = e.message || 'R2 read failed';
+  }
+
+  return { tree: reassembleTree(core, extra), updatedAt: row.updatedAt, migrated: true, extraError };
+}
+
+/*
+ * Writes a family's extra half to R2 and returns the JSON string core
+ * should be stored as (with `_extraVersion` attached) — the caller still
+ * owns batching/executing the actual D1 upsert via upsertTreeStatement,
+ * exactly as before. `version` should be the same timestamp the caller
+ * uses for the D1 row's `updated_at`, so the two are always written
+ * together and never need reconciling after the fact.
+ *
+ * Called BEFORE the D1 write, per §6.3's ordering: if this throws, the
+ * caller must not touch D1 at all — the save fails cleanly with nothing
+ * committed, exactly like any other failed save today. If this succeeds
+ * but the subsequent D1 write then fails, the R2 object written here is a
+ * harmless, unreferenced orphan (nothing reads a version D1 never named).
+ */
+export async function writeExtraToR2(env, familyId, fullTree, version) {
+  const { core, extra } = splitTree(fullTree);
+  await env.DOCS.put(extraKey(familyId, version), JSON.stringify(extra), {
+    httpMetadata: { contentType: 'application/json' },
+  });
+  return JSON.stringify({ ...core, _extraVersion: version });
+}
+
+/*
+ * Best-effort cleanup of old extra versions beyond the most recent `keep`
+ * — mirrors family_tree_snapshot's own 30-kept retention (§6.3) so this
+ * doesn't trade one unbounded-growth problem for another. Never awaited by
+ * the save path itself (failure here must never affect a save that already
+ * succeeded); callers fire it and ignore the result, the same spirit as
+ * every other defensive cleanup in this codebase.
+ */
+export async function pruneExtraVersions(env, familyId, keep = 30) {
+  const prefix = `tree-extra/${familyId}/`;
+  const listed = await env.DOCS.list({ prefix });
+  const versions = (listed.objects || [])
+    .map((o) => {
+      const m = o.key.slice(prefix.length).match(/^(\d+)\.json$/);
+      return m ? { key: o.key, version: Number(m[1]) } : null;
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.version - a.version);
+  const stale = versions.slice(keep);
+  await Promise.all(stale.map((v) => env.DOCS.delete(v.key)));
+  return { keptCount: Math.min(versions.length, keep), deletedCount: stale.length };
+}
+
 // The pre-write archive both tree.js's PUT and the snapshot-restore
 // endpoint need before overwriting the live row. Returns the two
 // statements to batch (the insert, and pruning to the most recent 30 per
