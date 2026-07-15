@@ -280,6 +280,18 @@
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
 }
+/* A circle hard-clipped at the screen edge with no cue reads as broken, not
+   as an invitation to swipe. The .ks-page__scroll background-attachment
+   trick doesn't apply here — that relies on a real padding gap the content
+   never reaches, but the diagram deliberately fills its scroll container
+   edge-to-edge. A CSS grid stack (not the scroll container's own
+   background) puts a plain fade overlay on top instead, pinned to the
+   frame rather than the scrolled content. */
+.ks-constellation__frame { position: relative; display: grid; }
+.ks-constellation__frame > * { grid-area: 1 / 1; }
+.ks-constellation__fade { width: 28px; height: 100%; pointer-events: none; }
+.ks-constellation__fade--l { justify-self: start; background: linear-gradient(to right, var(--paper, #fff), rgba(255, 255, 255, 0)); }
+.ks-constellation__fade--r { justify-self: end; background: linear-gradient(to left, var(--paper, #fff), rgba(255, 255, 255, 0)); }
 .ks-constellation svg { display: block; margin: 0 auto; max-width: none; }
 .ks-constellation__caption { text-align: center; margin-top: 18px; }
 
@@ -409,7 +421,10 @@
 .ks-album__item--hero img {
   aspect-ratio: 16 / 10;
   object-fit: contain;
-  background: var(--paper-soft, #f7f4ef);
+  /* Matches the page background exactly (not --paper-soft) — a visibly
+     different tone read as an unintentional shaded box behind the photo
+     rather than an invisible letterbox. */
+  background: var(--paper, #ffffff);
 }
 .ks-album__item figcaption { margin-top: 7px; font-size: 12.5px; color: var(--ink-soft, #6b6f76); }
 /* Deliberate archival duotone for old/low-quality scans. */
@@ -434,7 +449,10 @@
      anything off, letterboxing on a paper-toned backdrop instead. */
   max-height: 340px;
   object-fit: contain;
-  background: var(--paper-soft, #f7f4ef);
+  /* Matches the enclosing .ks-doc card's own background (there is no
+     --paper-soft token — it was silently falling back to a hardcoded
+     cream that mismatched the card, same bug as the album hero above). */
+  background: var(--card, #ffffff);
 }
 .ks-doc__title { font-size: 15px; font-weight: 600; color: var(--ink, #1c1d21); }
 .ks-doc__fact { margin-top: 5px; font-size: 13.5px; color: var(--ink-soft, #6b6f76); line-height: 1.5; }
@@ -832,6 +850,28 @@
     rgba(28, 29, 33, 0.10) 60%,
     rgba(255, 255, 255, 0) 76%);
 }
+/* An unmissable second cue that a page scrolls (see KeepsakeBook.jsx's
+   PageContent) — the background-shadow alone went unnoticed too often. */
+.ks-page__more {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 10px;
+  z-index: 5;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+  color: var(--ink-faint, #a6abb3);
+  animation: ks-more-bounce 1.6s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ks-page__more { animation: none; opacity: 0.7; }
+}
+@keyframes ks-more-bounce {
+  0%, 100% { transform: translateY(0); opacity: 0.5; }
+  50% { transform: translateY(5px); opacity: 1; }
+}
+
 /* The back of a turning page: bare stock with the house diamond. */
 .ks-leaf__back {
   transform: rotateY(180deg);
@@ -1107,7 +1147,8 @@
   body.ks-has-print .ks-progress,
   body.ks-has-print .ks-editbtn,
   body.ks-has-print .sheet-scrim,
-  body.ks-has-print .ks-prose-pending { display: none !important; }
+  body.ks-has-print .ks-prose-pending,
+  body.ks-has-print .ks-page__more { display: none !important; }
 
   /* Book mode prints from its plain flow copy — the 3D pager only ever
      mounts a leaf and its neighbour, so it can't paginate on paper. */
@@ -1118,6 +1159,7 @@
      treatment so the whole diagram always scales down to fit the page. */
   body.ks-has-print .ks-constellation__scroll { overflow: visible; }
   body.ks-has-print .ks-constellation svg { width: 100%; height: auto; max-width: 100%; }
+  body.ks-has-print .ks-constellation__fade { display: none !important; }
 
   /* Every motion state resolves fully — a page can never print half-risen,
      half-drawn, or paused mid-Ken-Burns. (prefers-reduced-motion is

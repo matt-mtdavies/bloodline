@@ -348,13 +348,52 @@ function BlankPage() {
 // still hidden beneath the leaf, so a turn never uncovers a blank page. The
 // classList write is imperative on purpose: spread section classNames must
 // stay static (see CoverSpread's note) so React never wipes it.
+//
+// A page taller than the leaf scrolls internally, with a background-shadow
+// cue at the cut edge — too subtle for readers to notice on a first pass
+// (confirmed by repeated reports of "the text is cut off" that were really
+// just an unscrolled page). This adds an unmissable second cue: a bouncing
+// chevron pinned to the bottom of the page, showing only while there's
+// unread content below and hiding once scrolled near the end. It renders as
+// a sibling of .ks-page__scroll (not a child) so it stays fixed to the
+// page's own frame instead of scrolling away with the content — every
+// mount site (.ks-page--left, .ks-page--under, .ks-leaf__front/back) is
+// already position:absolute, so this positions correctly in all of them.
 function PageContent({ page, renderPage }) {
+  const scrollRef = useRef(null);
+  const [showMore, setShowMore] = useState(false);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const update = () => {
+      const overflowing = el.scrollHeight > el.clientHeight + 4;
+      const nearEnd = el.scrollTop + el.clientHeight >= el.scrollHeight - 32;
+      setShowMore(overflowing && !nearEnd);
+    };
+    update();
+    el.addEventListener('scroll', update, { passive: true });
+    return () => el.removeEventListener('scroll', update);
+  }, []);
+
   return (
-    <div
-      className="ks-page__scroll"
-      ref={(el) => el?.querySelectorAll('.ks-spread').forEach((sp) => sp.classList.add('ks-in'))}
-    >
-      {renderPage(page)}
-    </div>
+    <>
+      <div
+        className="ks-page__scroll"
+        ref={(el) => {
+          scrollRef.current = el;
+          el?.querySelectorAll('.ks-spread').forEach((sp) => sp.classList.add('ks-in'));
+        }}
+      >
+        {renderPage(page)}
+      </div>
+      {showMore && (
+        <div className="ks-page__more" aria-hidden="true">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+            <path d="M6 9l6 6 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </div>
+      )}
+    </>
   );
 }

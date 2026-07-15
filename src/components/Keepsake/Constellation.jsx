@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { monogramColors, initials } from '../../lib/color.js';
 
 /*
@@ -22,6 +22,7 @@ const R_SUBJECT = 40;
 
 export default function Constellation({ nodes, links }) {
   const wrapRef = useRef(null);
+  const [scrollable, setScrollable] = useState(false);
   if (!nodes?.length) return null;
 
   const xs = nodes.map((n) => n.x * UX);
@@ -41,11 +42,13 @@ export default function Constellation({ nodes, links }) {
     const el = wrapRef.current;
     if (!el) return;
     el.scrollLeft = Math.max(0, Math.min(subjectX - el.clientWidth / 2, el.scrollWidth - el.clientWidth));
+    setScrollable(el.scrollWidth > el.clientWidth + 2);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
-    <div className="ks-constellation__scroll" ref={wrapRef}>
+    <div className="ks-constellation__frame">
+      <div className="ks-constellation__scroll" ref={wrapRef}>
       <svg
         viewBox={`${minX} ${minY} ${w} ${h}`}
         width={w}
@@ -84,6 +87,13 @@ export default function Constellation({ nodes, links }) {
         {nodes.map((n, i) => <Disc key={n.id} node={n} delay={0.6 + Math.min(i * 0.04, 1.1)} />)}
       </g>
       </svg>
+      </div>
+      {scrollable && (
+        <>
+          <div className="ks-constellation__fade ks-constellation__fade--l" aria-hidden="true" />
+          <div className="ks-constellation__fade ks-constellation__fade--r" aria-hidden="true" />
+        </>
+      )}
     </div>
   );
 }
