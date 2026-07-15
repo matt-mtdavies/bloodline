@@ -291,7 +291,7 @@ plainly since it was the more urgent complaint a few weeks ago.
 
 ## 9. Phased implementation order — each phase independently shippable and revertible
 
-### Phase 0 — Measure, and take the free win
+### Phase 0 — Measure, and take the free win ✅ done
 
 - Extend `/api/debug/tree` with a byte breakdown per top-level key, and
   per-person-field sampling, to calibrate §6.1's core allowlist against
@@ -305,17 +305,37 @@ plainly since it was the more urgent complaint a few weeks ago.
 **Acceptance:** no schema change, no client change. Rollback = revert the
 deploy.
 
-### Phase 1 — Extract `functions/_lib/treeStore.js` (pure refactor, zero behavior change)
+### Phase 1 — Extract `functions/_lib/treeStore.js` (pure refactor, zero behavior change) ✅ done
 
-- One module: `loadTree(env, familyId)` → the full logical tree object,
-  `saveTree(env, familyId, tree, { expectedVersion })`, plus
-  `snapshotBeforeWrite(...)`. Defined to be **byte-for-byte identical** to
-  today's behavior — still one D1 column, nothing new stored anywhere.
-- Every one of the nine touch points in §5 is rewritten to call this
-  module instead of hand-rolled SQL.
+- One module: `loadTree(env, familyId)` → `{ raw, updatedAt } | null` (the
+  raw row, deliberately unparsed — every caller keeps its own parse/
+  fallback behavior, which genuinely differs from caller to caller today),
+  `upsertTreeStatement`/`casUpdateTree`/`insertOnlyTree`/`updateTree` (the
+  four distinct write shapes the nine call sites actually use), and
+  `snapshotStatements` (the pre-write archive, shared by tree.js's PUT and
+  the snapshot-restore endpoint, which no longer duplicate that SQL).
+- Seven of the nine touch points in §5 now go through this module:
+  `tree.js` (GET+PUT), `merge.js` (GET+POST, its own CAS preserved exactly),
+  `_lib/invite.js` (both the merge-wizard gate read and the activity-append
+  write — its signature changed from taking a raw `db` to the full `env`,
+  updated at its 3 call sites), both calendar endpoints, `debug/tree.js`,
+  and the snapshot-restore endpoint (which keeps its pre-existing
+  un-batched two-call archive, deliberately not "improved" to match
+  tree.js's batched version — that's a real behavior difference, not a
+  refactor). `admin/stats.js` (a cross-family aggregate query, a
+  fundamentally different shape of access) and the snapshot list endpoint
+  (reads only `family_tree_snapshot`, no duplicated logic anywhere) were
+  deliberately left untouched — see §5.
 - This is the derisking step: once it's landed and proven stable, the
   actual split in Phase 2 becomes an internal change to this one module's
   guts, not a simultaneous nine-file change.
+
+**Verified:** 21 new fake-D1 tests (merge.js's CAS/insert-only paths and
+the TOCTOU race its own comments describe; invite.js's merge-wizard gate
+and activity-append, including a non-fatal write failure; the snapshot-
+restore endpoint's un-batched archive and `_seq`/`updated_at` stamping),
+all existing tests still green with zero behavior differences, build and
+smoke green.
 
 **Acceptance:** full existing test suite green, zero behavior differences;
 new fake-D1 tests covering `merge.js`'s CAS path and `invite.js`'s

@@ -1,4 +1,5 @@
 import { uid } from './util.js';
+import { loadTree, updateTree } from './treeStore.js';
 
 /*
  * Shared invite-processing logic used by both the OTP verify flow and the
@@ -12,7 +13,8 @@ import { uid } from './util.js';
  * this field existed). Existing callers that only ever checked
  * `result?.needsMerge` keep working unchanged either way.
  */
-export async function processInvite(db, inviteToken, userId, now) {
+export async function processInvite(env, inviteToken, userId, now) {
+  const db = env.DB;
   const invite = await db.prepare(
     `SELECT id, family_id, from_user, role, status, expires_at, person_id FROM invite WHERE token = ?`,
   ).bind(inviteToken).first();
@@ -27,12 +29,10 @@ export async function processInvite(db, inviteToken, userId, now) {
   ).bind(userId, invite.family_id).first();
 
   if (otherFamily) {
-    const treeRow = await db.prepare(
-      `SELECT tree_json FROM family_tree WHERE family_id = ?`,
-    ).bind(otherFamily.family_id).first();
+    const treeRow = await loadTree(env, otherFamily.family_id);
     if (treeRow) {
       try {
-        const tree = JSON.parse(treeRow.tree_json);
+        const tree = JSON.parse(treeRow.raw);
         if ((tree.people?.length ?? 0) > 0) return { needsMerge: true, token: inviteToken };
       } catch { /* corrupt JSON — fall through to normal join */ }
     }
@@ -58,11 +58,9 @@ export async function processInvite(db, inviteToken, userId, now) {
       const joiner = await db.prepare(
         `SELECT email, display_name FROM user WHERE id = ?`,
       ).bind(userId).first();
-      const treeRow = await db.prepare(
-        `SELECT tree_json FROM family_tree WHERE family_id = ?`,
-      ).bind(invite.family_id).first();
+      const treeRow = await loadTree(env, invite.family_id);
       if (treeRow && joiner) {
-        const tree = JSON.parse(treeRow.tree_json);
+        const tree = JSON.parse(treeRow.raw);
         const authorName = joiner.display_name
           || (joiner.email ? joiner.email.split('@')[0] : 'Someone');
         const event = {
@@ -76,9 +74,7 @@ export async function processInvite(db, inviteToken, userId, now) {
           created_at: new Date(now * 1000).toISOString(),
         };
         tree.activity = [event, ...(tree.activity ?? [])].slice(0, 100);
-        await db.prepare(
-          `UPDATE family_tree SET tree_json = ?, updated_at = ? WHERE family_id = ?`,
-        ).bind(JSON.stringify(tree), now, invite.family_id).run();
+        await updateTree(env, invite.family_id, JSON.stringify(tree), now);
       }
     } catch { /* non-fatal — join still succeeds without the activity event */ }
   }

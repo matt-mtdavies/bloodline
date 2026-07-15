@@ -45,7 +45,7 @@ export async function onRequestGet({ request, env }) {
 
   // Process the invite; if the user already has a tree, signal merge wizard.
   if (inviteToken) {
-    const merge = await processInvite(env.DB, inviteToken, user.id, now);
+    const merge = await processInvite(env, inviteToken, user.id, now);
     if (merge?.needsMerge) {
       return new Response(null, {
         status: 302,
@@ -139,7 +139,7 @@ export async function onRequestPost({ request, env }) {
 
   let personId = null;
   if (invite) {
-    const merge = await processInvite(env.DB, invite, user.id, now);
+    const merge = await processInvite(env, invite, user.id, now);
     if (merge?.needsMerge) {
       return json(
         { ok: true, pendingInvite: merge.token },

@@ -9,6 +9,8 @@
  * anyone marked 'private', and skip a living minor entirely (a 'summary'
  * person still gets a line — dates are visible at that level in-app too).
  */
+import { loadTree } from '../../_lib/treeStore.js';
+
 export async function onRequestGet({ env, params }) {
   const token = String(params.token || '').replace(/\.ics$/i, '');
   if (!token || !env.DB) return new Response('Not found', { status: 404 });
@@ -23,9 +25,8 @@ export async function onRequestGet({ env, params }) {
     // never fall back to "everyone", see the migration/settings comments for why.
     const selectedIds = family.calendar_person_ids ? new Set(JSON.parse(family.calendar_person_ids)) : new Set();
 
-    const row = await env.DB.prepare(`SELECT tree_json FROM family_tree WHERE family_id = ?`)
-      .bind(family.id).first();
-    const people = row ? (JSON.parse(row.tree_json).people || []) : [];
+    const row = await loadTree(env, family.id);
+    const people = row ? (JSON.parse(row.raw).people || []) : [];
 
     const events = people
       .filter((p) => {

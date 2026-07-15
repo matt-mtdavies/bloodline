@@ -60,6 +60,24 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   carries the next left page, gutter shading, "2–3 of 12" counter. Phase 6
   (whole-family bound edition, print-service handoff) deliberately later.
 
+- **Tree storage rewrite** (plan: `docs/TREE-STORAGE.md`) — fixing the D1 1MiB-per-row
+  ceiling for good, not just buying headroom. Target: core (people/relationships, a
+  deliberately narrow per-person allowlist) stays in D1; everything rich or growing
+  per-item (bios/tags/life-events/military fields, memories, photos, documents, activity)
+  moves to R2, which has no comparable ceiling — chosen over a second D1 row because that
+  only doubles the wall, and this account's own growth (1000+ people, heavy documents)
+  would likely hit it again on a similar timescale. **Phase 0 ✅**: `/api/debug/tree` byte
+  breakdown + core/extra person-field split; `documents[].thumb` (a permanent inline
+  base64 preview, unlike `src`) now uploads to R2 at creation and via `migrateDocThumbsToR2`;
+  snapshot-write failures now distinguish benign "not migrated yet" from genuine failures,
+  folded into the admin size-warning email. **Phase 1 ✅**: `functions/_lib/treeStore.js`
+  (`loadTree`/`upsertTreeStatement`/`casUpdateTree`/`insertOnlyTree`/`updateTree`/
+  `snapshotStatements`) — a pure, zero-behavior-change refactor consolidating 7 of the 9
+  places that touched `family_tree` directly (`tree.js`, `merge.js`, `_lib/invite.js`, both
+  calendar endpoints, `debug/tree.js`, the snapshot-restore endpoint); `admin/stats.js` and
+  the snapshot list endpoint deliberately untouched (see doc §5). **Phase 2 (not started)**:
+  the actual core/R2 split, dual-read compatible, verify-or-abort per-family migration.
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);

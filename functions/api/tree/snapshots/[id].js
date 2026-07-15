@@ -1,4 +1,5 @@
-import { json, uid } from '../../../_lib/util.js';
+import { json } from '../../../_lib/util.js';
+import { loadTree, upsertTreeStatement, snapshotStatements } from '../../../_lib/treeStore.js';
 
 /*
  * POST /api/tree/snapshots/:id  — restore this snapshot as the current tree.
@@ -57,24 +58,20 @@ export async function onRequestPost({ params, env, data }) {
     }
 
     const now = Math.floor(Date.now() / 1000);
-    const current = await env.DB.prepare(
-      `SELECT tree_json FROM family_tree WHERE family_id = ?`,
-    ).bind(userRow.family_id).first();
+    const current = await loadTree(env, userRow.family_id);
 
     let currentSeq = 0;
-    if (current?.tree_json) {
+    if (current?.raw) {
       currentSeq = 0;
-      try { currentSeq = JSON.parse(current.tree_json)._seq || 0; } catch { /* ignore */ }
+      try { currentSeq = JSON.parse(current.raw)._seq || 0; } catch { /* ignore */ }
 
       // Archive what's about to be replaced, same as a normal save would.
-      await env.DB.prepare(
-        `INSERT INTO family_tree_snapshot (id, family_id, tree_json, created_at) VALUES (?, ?, ?, ?)`,
-      ).bind(uid('snap_'), userRow.family_id, current.tree_json, now).run();
-      await env.DB.prepare(
-        `DELETE FROM family_tree_snapshot WHERE family_id = ? AND id NOT IN (
-           SELECT id FROM family_tree_snapshot WHERE family_id = ? ORDER BY created_at DESC LIMIT 30
-         )`,
-      ).bind(userRow.family_id, userRow.family_id).run();
+      // Two separate calls (not batched), matching this endpoint's existing
+      // behavior exactly — see functions/api/tree.js's PUT for the batched
+      // version used there.
+      const [insertStmt, pruneStmt] = snapshotStatements(env, userRow.family_id, current.raw, now);
+      await insertStmt.run();
+      await pruneStmt.run();
     }
 
     const restoredAtMs = Date.now();
@@ -104,13 +101,7 @@ export async function onRequestPost({ params, env, data }) {
       console.error('[tree/snapshots restore] activity_log read skipped:', e.message);
     }
 
-    await env.DB.prepare(
-      `INSERT INTO family_tree (family_id, tree_json, updated_at)
-       VALUES (?, ?, ?)
-       ON CONFLICT (family_id) DO UPDATE
-         SET tree_json = excluded.tree_json,
-             updated_at = excluded.updated_at`,
-    ).bind(userRow.family_id, JSON.stringify(restored), now).run();
+    await upsertTreeStatement(env, userRow.family_id, JSON.stringify(restored), now).run();
 
     return json({ ok: true }, { headers: { ETag: `"${now}"` } });
   } catch (e) {

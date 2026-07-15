@@ -1,5 +1,6 @@
-import { json, uid, sendEmail } from '../_lib/util.js';
+import { json, sendEmail } from '../_lib/util.js';
 import { createFamily } from '../_lib/family.js';
+import { loadTree, upsertTreeStatement, snapshotStatements } from '../_lib/treeStore.js';
 
 /*
  * GET /api/tree  — load the authenticated user's family tree.
@@ -47,13 +48,11 @@ export async function onRequestGet({ env, data }) {
 
     if (!membership) return json(null); // new user — client shows onboarding
 
-    const row = await env.DB.prepare(
-      'SELECT tree_json, updated_at FROM family_tree WHERE family_id = ?',
-    ).bind(membership.family_id).first();
+    const row = await loadTree(env, membership.family_id);
 
     if (!row) return json(null);
 
-    const parsed = JSON.parse(row.tree_json);
+    const parsed = JSON.parse(row.raw);
 
     // Self-heal the fast in-app activity feed on every read: tree_json.activity
     // is just a capped cache, and any code path that fails to keep it in sync
@@ -95,7 +94,7 @@ export async function onRequestGet({ env, data }) {
     // family.name. Prefer the real family.name over that empty string here.
     const familyName = parsed.familyName || membership.family_name || '';
 
-    const etag = `"${row.updated_at}"`;
+    const etag = `"${row.updatedAt}"`;
     return json(
       { ...parsed, familyName, _meta: { familyId: membership.family_id, role: membership.role } },
       { headers: { 'cache-control': 'private, no-store', 'ETag': etag } },
@@ -154,21 +153,19 @@ export async function onRequestPut({ request, env, data }) {
     // saves a full D1 round trip on every single save, which matters most on
     // a large tree over a slow connection (the most common way a save ends
     // up racing whatever timeout produces a 503).
-    const existingTree = await env.DB.prepare(
-      'SELECT tree_json, updated_at FROM family_tree WHERE family_id = ?',
-    ).bind(membership.family_id).first();
+    const existingTree = await loadTree(env, membership.family_id);
 
     // Optimistic concurrency: if the client sent If-Match, check it against the
     // current updated_at. Reject with 409 if someone else saved since the client
     // last loaded, so they can merge before overwriting.
     const ifMatch = request.headers.get('If-Match');
-    if (ifMatch && ifMatch !== '*' && existingTree && `"${existingTree.updated_at}"` !== ifMatch) {
+    if (ifMatch && ifMatch !== '*' && existingTree && `"${existingTree.updatedAt}"` !== ifMatch) {
       return json({ error: 'Conflict — tree was updated by another editor' }, { status: 409 });
     }
 
     let prev = null;
     if (existingTree) {
-      try { prev = JSON.parse(existingTree.tree_json); } catch { /* unparseable — ignore */ }
+      try { prev = JSON.parse(existingTree.raw); } catch { /* unparseable — ignore */ }
     }
 
     // Hard-to-undo, whole-tree-shape changes — erasing the tree, a
@@ -234,8 +231,8 @@ export async function onRequestPut({ request, env, data }) {
     // save that newly CROSSES the threshold, not on every save afterward.
     const treeJsonString = JSON.stringify(toStore);
     const treeJsonBytes = new TextEncoder().encode(treeJsonString).length;
-    const prevBytes = existingTree?.tree_json
-      ? new TextEncoder().encode(existingTree.tree_json).length
+    const prevBytes = existingTree?.raw
+      ? new TextEncoder().encode(existingTree.raw).length
       : 0;
     if (treeJsonBytes > SIZE_HARD_STOP_BYTES) {
       const mb = (n) => (n / (1024 * 1024)).toFixed(2);
@@ -268,19 +265,8 @@ export async function onRequestPut({ request, env, data }) {
     // none is worth a human learning about it.
     let snapshotIssue = null;
     try {
-      if (existingTree?.tree_json) {
-        await env.DB.batch([
-          env.DB.prepare(
-            `INSERT INTO family_tree_snapshot (id, family_id, tree_json, created_at) VALUES (?, ?, ?, ?)`,
-          ).bind(uid('snap_'), membership.family_id, existingTree.tree_json, now),
-          // Keep only the most recent 30 snapshots per family.
-          env.DB.prepare(
-            `DELETE FROM family_tree_snapshot WHERE family_id = ? AND id NOT IN (
-               SELECT id FROM family_tree_snapshot WHERE family_id = ? ORDER BY created_at DESC LIMIT 30
-             )`,
-          ).bind(membership.family_id, membership.family_id),
-        ]);
-      }
+      const snap = snapshotStatements(env, membership.family_id, existingTree?.raw, now);
+      if (snap) await env.DB.batch(snap);
     } catch (e) {
       if (/no such table/i.test(e.message || '')) {
         console.warn('[tree] snapshot skipped — family_tree_snapshot not migrated yet:', e.message);
@@ -297,13 +283,7 @@ export async function onRequestPut({ request, env, data }) {
     // failed name update can no longer leave the tree_json write committed
     // on its own while the client is told the whole save failed.
     const writeStatements = [
-      env.DB.prepare(
-        `INSERT INTO family_tree (family_id, tree_json, updated_at)
-         VALUES (?, ?, ?)
-         ON CONFLICT (family_id) DO UPDATE
-           SET tree_json = excluded.tree_json,
-               updated_at = excluded.updated_at`,
-      ).bind(membership.family_id, treeJsonString, now),
+      upsertTreeStatement(env, membership.family_id, treeJsonString, now),
     ];
     // Keep family.name in sync so invite emails always show the current name.
     if (canEditAll && toStore.familyName) {

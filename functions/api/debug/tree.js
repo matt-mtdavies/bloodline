@@ -1,4 +1,5 @@
 import { json } from '../../_lib/util.js';
+import { loadTree } from '../../_lib/treeStore.js';
 
 /*
  * GET /api/debug/tree
@@ -130,16 +131,14 @@ export async function onRequestGet({ env, data }) {
     // own SIZE_WARN_BYTES/SIZE_HARD_STOP_BYTES check measures a save — this
     // diagnostic should never be able to report a different number than the
     // logic that actually enforces the limit.
-    const treeRow = await env.DB.prepare(
-      'SELECT updated_at, tree_json FROM family_tree WHERE family_id = ?',
-    ).bind(membership.family_id).first();
+    const treeRow = await loadTree(env, membership.family_id);
 
     let bytes = null;
     let breakdown = null;
-    if (treeRow?.tree_json) {
-      bytes = new TextEncoder().encode(treeRow.tree_json).length;
+    if (treeRow?.raw) {
+      bytes = new TextEncoder().encode(treeRow.raw).length;
       try {
-        breakdown = breakdownOf(JSON.parse(treeRow.tree_json));
+        breakdown = breakdownOf(JSON.parse(treeRow.raw));
       } catch (e) {
         console.error('[debug/tree] tree_json unparseable, breakdown skipped:', e.message);
       }
@@ -160,7 +159,7 @@ export async function onRequestGet({ env, data }) {
       tree_exists: !!treeRow,
       tree_size_bytes: bytes,
       tree_size_kb: bytes != null ? Math.round(bytes / 1024) : null,
-      etag: treeRow ? `"${treeRow.updated_at}"` : null,
+      etag: treeRow ? `"${treeRow.updatedAt}"` : null,
       breakdown,
     });
   } catch (e) {
