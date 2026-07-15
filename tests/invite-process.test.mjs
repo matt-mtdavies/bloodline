@@ -9,11 +9,30 @@
  */
 import assert from 'node:assert/strict';
 import { processInvite } from '../functions/_lib/invite.js';
+import { writeExtraToR2 } from '../functions/_lib/treeStore.js';
 
 let passed = 0, failed = 0;
 async function test(label, fn) {
   try { await fn(); passed++; console.log(`PASS  ${label}`); }
   catch (e) { failed++; console.log(`FAIL  ${label}\n      ${e.message}\n${e.stack?.split('\n').slice(1, 3).join('\n')}`); }
+}
+
+function fakeR2({ getShouldThrow = false } = {}) {
+  const store = new Map();
+  return {
+    store,
+    async get(key) {
+      if (getShouldThrow) throw new Error('simulated R2 outage');
+      if (!store.has(key)) return null;
+      const val = store.get(key);
+      return { json: async () => JSON.parse(val), text: async () => val };
+    },
+    async put(key, value) { store.set(key, value); },
+    async delete(key) { store.delete(key); },
+    async list({ prefix }) {
+      return { objects: [...store.keys()].filter((k) => k.startsWith(prefix)).map((key) => ({ key })) };
+    },
+  };
 }
 
 function makeFakeDB({ inviteRow, otherFamilyId = null, existingMember = false, familyTrees = {}, joinerRow = { email: 'j@example.com', display_name: 'Jo' }, updateThrows = false }) {
@@ -133,6 +152,48 @@ await test('a failure writing the activity event is non-fatal — the join still
   assert.deepEqual(result, { personId: 'p_target' });
   assert.ok(db.calls.some((c) => c.type === 'run' && /UPDATE invite SET status = 'accepted'/.test(c.sql)),
     'the join must complete even though the activity event failed to write');
+});
+
+// ── Migrated-family join (docs/TREE-STORAGE.md Phase 2 — the member_joined
+// activity-append must not silently orphan a migrated family's R2 extra) ──
+
+await test('joining a migrated family re-splits and writes R2 before D1, preserving the extra-owned activity history', async () => {
+  const r2 = fakeR2();
+  const migratedCoreJson = await writeExtraToR2({ DOCS: r2 }, 'fam1', {
+    people: [{ id: 'p1', bio: 'Existing bio.' }], relationships: [],
+    activity: [{ id: 'old1' }], memories: [{ id: 'm1' }],
+  }, 42);
+  const db = makeFakeDB({ inviteRow: PENDING, familyTrees: { fam1: migratedCoreJson } });
+
+  const result = await processInvite({ DB: db, DOCS: r2 }, 'tok', 'u1', now);
+  assert.deepEqual(result, { personId: 'p_target' });
+
+  const treeUpdate = db.calls.find((c) => c.type === 'run' && /UPDATE family_tree SET tree_json/.test(c.sql));
+  assert.ok(treeUpdate, 'the migrated family\'s core row should still be updated');
+  const storedCore = JSON.parse(treeUpdate.args[0]);
+  assert.ok(!('bio' in (storedCore.people?.[0] || {})), 'core must not carry rich person detail');
+  assert.ok(!('memories' in storedCore), 'core must not carry extra-owned collections');
+  assert.ok(storedCore._extraVersion, 'a migrated family must stay migrated after this write');
+
+  const newExtraObj = await r2.get(`tree-extra/fam1/${storedCore._extraVersion}.json`);
+  const newExtra = await newExtraObj.json();
+  assert.equal(newExtra.peopleDetail.p1.bio, 'Existing bio.', 'existing rich detail must survive the round trip, not be dropped');
+  assert.equal(newExtra.activity[0].type, 'member_joined');
+  assert.deepEqual(newExtra.activity.slice(1), [{ id: 'old1' }], 'prior activity is preserved, new event prepended');
+  assert.deepEqual(newExtra.memories, [{ id: 'm1' }], 'other extra-owned collections must survive untouched');
+});
+
+await test('a migrated family whose extra is unreadable skips the activity event, but the join still succeeds (non-fatal, same as any other activity-write failure)', async () => {
+  const r2 = fakeR2();
+  const migratedCoreJson = await writeExtraToR2({ DOCS: r2 }, 'fam1', { people: [], relationships: [] }, 99);
+  r2.store.delete('tree-extra/fam1/99.json'); // simulate the object having vanished
+  const db = makeFakeDB({ inviteRow: PENDING, familyTrees: { fam1: migratedCoreJson } });
+
+  const result = await processInvite({ DB: db, DOCS: r2 }, 'tok', 'u1', now);
+  assert.deepEqual(result, { personId: 'p_target' }, 'the join itself must still succeed');
+  assert.ok(!db.calls.some((c) => c.type === 'run' && /UPDATE family_tree SET tree_json/.test(c.sql)),
+    'must not write a core-only blob missing _extraVersion over a migrated family\'s row when its extra can\'t be verified complete');
+  assert.ok(db.calls.some((c) => c.type === 'run' && /UPDATE invite SET status = 'accepted'/.test(c.sql)));
 });
 
 console.log(`\n  ${passed} passed, ${failed} failed`);

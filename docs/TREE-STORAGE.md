@@ -407,8 +407,18 @@ original wording:**
   writes core+R2, and vice versa), with the same R2-before-D1 ordering and
   `extraError` → 503 fail-clean as `tree.js` (`tests/snapshot-
   restore.test.mjs`, plus the full pre-existing suite green unchanged).
-- ⬜ The actual migration script (snapshot → split → verify deep-equal →
-  commit-or-abort).
+- ✅ The actual migration script: `POST /api/admin/migrate-tree`
+  (`functions/api/admin/migrate-tree.js`), admin-gated, one `familyId` per
+  call — deliberately not automatic, not batched, not wired into any
+  request path a normal save goes through. Idempotent (an already-migrated
+  family returns immediately, untouched); verifies `reassembleTree(...
+  splitTree(tree))` deep-equals the original **before any write at all**
+  (pure, in-memory — a verification failure touches nothing, not even
+  R2); on success, archives a fresh pre-migration snapshot, then writes R2
+  before D1, same ordering as every other Phase 2 write path
+  (`tests/migrate-tree.test.mjs`, including a real verification-failure
+  case: two people sharing an `id` collide in `extra.peopleDetail`, which
+  the deep-equal check genuinely catches).
 - ✅ `admin/stats.js` reassembly awareness: the platform-wide content
   totals (people/photos/memories/documents) split into a bulk SQL SUM over
   non-migrated rows plus per-row R2 reassembly for migrated ones (expected
@@ -422,6 +432,25 @@ original wording:**
   below the cutoff and not appear at all — not fixable without scanning
   every family's R2 size, out of scope until enough families are migrated
   for it to matter (`tests/admin-stats.test.mjs`).
+- ✅ **The remaining two of the original nine touch points that needed
+  fixing** — a real gap found *while* building the migration script, not a
+  hypothetical one: `merge.js` (the duplicate-family merge wizard's GET
+  preview and POST finalize) and `_lib/invite.js` (the member_joined
+  activity-append on a normal invite accept) both read/wrote
+  `family_tree.tree_json` directly, assuming it was always the full
+  legacy tree. For a migrated family this would have silently overwritten
+  the core row with a legacy-shaped blob missing `_extraVersion` —
+  orphaning that family's memories/photos/documents/rich person fields in
+  R2 with nothing left pointing to them, the very first time anyone
+  accepted an invite or ran the merge wizard against a migrated family.
+  Both now go through `loadFullTree`/`resolveTreeFromRaw` for reads and
+  `splitTree` + `putExtra` (R2-before-D1) for writes, exactly mirroring
+  `tree.js`'s pattern, with the same `extraError` fail-clean rule
+  (`tests/merge.test.mjs`, `tests/invite-process.test.mjs`). The other two
+  named touch points — both calendar endpoints and `debug/tree.js` — were
+  audited and found already safe as-is: read-only, and every field they
+  touch (`display_name`, `birth_date`, `visibility`, `is_minor`,
+  `is_deceased`) is core, never extra.
 - ⬜ Staged rollout, ending with this account's tree migrated on purpose.
 
 **Acceptance:**
@@ -429,12 +458,12 @@ original wording:**
   wide battery of fixtures: empty tree, large synthetic tree, a person
   missing every optional field (the stub records `user/profile.js`
   creates), a tree with fields from before the current schema existed. ✅
-- Fake-D1-and-R2 tests for the GET/PUT, snapshot-restore, and admin/
-  stats.js touch points, in both legacy and split modes, extending the
-  existing `tests/tree-save.test.mjs` pattern. ✅ (the remaining five touch
-  points — merge.js, invite.js, both calendar endpoints, debug/tree.js,
-  the migration script itself — still need the same treatment before
-  rollout.)
+- Fake-D1-and-R2 tests for every touch point that needed changing (GET/PUT
+  in `tree.js`, the snapshot-restore endpoint, `admin/stats.js`,
+  `merge.js`, `_lib/invite.js`, and the migration script itself), in both
+  legacy and split modes, extending the existing `tests/tree-
+  save.test.mjs` pattern. ✅ All nine of the original touch points are now
+  either migration-aware or confirmed safe without changes.
 - A full Playwright pass against a migrated *test* family covering every
   feature that touches the tree: memories, photos, documents, person
   edits, Keepsake, the Activity feed, the merge-wizard preview.

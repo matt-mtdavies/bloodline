@@ -10,11 +10,30 @@
  */
 import assert from 'node:assert/strict';
 import { onRequestGet, onRequestPost } from '../functions/api/merge.js';
+import { writeExtraToR2 } from '../functions/_lib/treeStore.js';
 
 let passed = 0, failed = 0;
 async function test(label, fn) {
   try { await fn(); passed++; console.log(`PASS  ${label}`); }
   catch (e) { failed++; console.log(`FAIL  ${label}\n      ${e.message}\n${e.stack?.split('\n').slice(1, 3).join('\n')}`); }
+}
+
+function fakeR2({ getShouldThrow = false } = {}) {
+  const store = new Map();
+  return {
+    store,
+    async get(key) {
+      if (getShouldThrow) throw new Error('simulated R2 outage');
+      if (!store.has(key)) return null;
+      const val = store.get(key);
+      return { json: async () => JSON.parse(val), text: async () => val };
+    },
+    async put(key, value) { store.set(key, value); },
+    async delete(key) { store.delete(key); },
+    async list({ prefix }) {
+      return { objects: [...store.keys()].filter((k) => k.startsWith(prefix)).map((key) => ({ key })) };
+    },
+  };
 }
 
 // A stateful fake: family_tree is real mutable state (not just recorded
@@ -166,6 +185,68 @@ await test('POST: the row changes between the early check and the CAS write (the
     'the invite must stay pending after a genuine CAS miss, so a client retry with a fresh baseUpdatedAt still works');
   assert.ok(db.calls.some((c) => c.type === 'run' && /INSERT INTO family_member|UPDATE family_member SET role/.test(c.sql)),
     'the membership writes are documented as harmless to repeat, so they still happen even though the tree write itself was rejected');
+});
+
+// ── Migrated-family merge (docs/TREE-STORAGE.md Phase 2) ──────────────────
+
+await test('GET on a migrated family reassembles core + R2 extra for the merge preview', async () => {
+  const r2 = fakeR2();
+  const coreJson = await writeExtraToR2({ DOCS: r2 }, 'fam1', {
+    people: [{ id: 'p1', bio: 'A long bio.' }], relationships: [], memories: [{ id: 'm1' }],
+  }, 2000);
+  const db = makeFakeDB({ inviteRow: PENDING_INVITE, familyTreeRow: { tree_json: coreJson, updated_at: 2000 } });
+  const res = await onRequestGet({ request: { url: 'https://x.example/api/merge?invite=tok' }, env: { DB: db, DOCS: r2 }, data: { user: USER } });
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  assert.equal(body.tree.people[0].bio, 'A long bio.', 'the preview must include extra-owned rich detail, not just core');
+  assert.deepEqual(body.tree.memories, [{ id: 'm1' }]);
+});
+
+await test('GET on a migrated family whose extra is unreadable fails clean with 503, not an incomplete preview', async () => {
+  const r2 = fakeR2();
+  const coreJson = await writeExtraToR2({ DOCS: r2 }, 'fam1', { people: [], relationships: [] }, 3000);
+  r2.store.delete('tree-extra/fam1/3000.json');
+  const db = makeFakeDB({ inviteRow: PENDING_INVITE, familyTreeRow: { tree_json: coreJson, updated_at: 3000 } });
+  const res = await onRequestGet({ request: { url: 'https://x.example/api/merge?invite=tok' }, env: { DB: db, DOCS: r2 }, data: { user: USER } });
+  assert.equal(res.status, 503);
+});
+
+await test('POST on a migrated family re-splits and writes R2 before D1, preserving rich detail through the CAS write', async () => {
+  const r2 = fakeR2();
+  const coreJson = await writeExtraToR2({ DOCS: r2 }, 'fam1', { people: [], relationships: [] }, 4000);
+  const db = makeFakeDB({ inviteRow: PENDING_INVITE, familyTreeRow: { tree_json: coreJson, updated_at: 4000 } });
+  const mergedTree = { people: [{ id: 'p1', bio: 'Merged-in bio.' }], relationships: [], memories: [{ id: 'm_new' }] };
+  const res = await onRequestPost({
+    request: req({ invite: 'tok', tree: mergedTree, baseUpdatedAt: 4000 }),
+    env: { DB: db, DOCS: r2 }, data: { user: USER },
+  });
+  assert.equal(res.status, 200);
+
+  const casWrite = db.calls.find((c) => c.type === 'run' && /^\s*UPDATE family_tree SET tree_json = \?, updated_at = \?/i.test(c.sql));
+  assert.ok(casWrite);
+  const storedCore = JSON.parse(casWrite.args[0]);
+  assert.ok(!('bio' in (storedCore.people?.[0] || {})), 'core must not carry rich person detail');
+  assert.ok(storedCore._extraVersion, 'the family must remain migrated after this write');
+
+  const newExtraObj = await r2.get(`tree-extra/fam1/${storedCore._extraVersion}.json`);
+  const newExtra = await newExtraObj.json();
+  assert.equal(newExtra.peopleDetail.p1.bio, 'Merged-in bio.');
+  assert.deepEqual(newExtra.memories, [{ id: 'm_new' }]);
+});
+
+await test('POST conflict on a migrated family returns the fully reassembled fresh tree, not core alone', async () => {
+  const r2 = fakeR2();
+  const coreJson = await writeExtraToR2({ DOCS: r2 }, 'fam1', {
+    people: [{ id: 'existing', bio: 'Untouched bio.' }], relationships: [],
+  }, 5000);
+  const db = makeFakeDB({ inviteRow: PENDING_INVITE, familyTreeRow: { tree_json: coreJson, updated_at: 5000 } });
+  const res = await onRequestPost({
+    request: req({ invite: 'tok', tree: { people: [{ id: 'p2' }], relationships: [] }, baseUpdatedAt: 1000 }), // stale
+    env: { DB: db, DOCS: r2 }, data: { user: USER },
+  });
+  assert.equal(res.status, 409);
+  const body = await res.json();
+  assert.equal(body.tree.people[0].bio, 'Untouched bio.', 'the conflict response\'s fresh tree must be fully reassembled, not core-only');
 });
 
 console.log(`\n  ${passed} passed, ${failed} failed`);

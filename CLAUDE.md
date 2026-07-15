@@ -89,9 +89,18 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   `admin/stats.js`'s content totals and largest-trees size report are now reassembly-aware too
   (a migrated family's photos/memories/documents are summed via R2, its true size via a cheap
   `head()` call) — one documented gap remains, the largest-trees *ranking* is still by D1 core
-  bytes only. **Nothing in this code auto-migrates a family** — that's a separate, not-yet-built
-  migration script. **Remaining:** the migration script itself (snapshot → split → verify
-  deep-equal → commit-or-abort), staged rollout ending with this account migrated on purpose.
+  bytes only. `merge.js` (duplicate-family merge wizard) and `_lib/invite.js` (member_joined
+  activity-append) — the last two of the original 9 touch points — turned out to have a REAL
+  bug once audited: both wrote raw `tree_json` directly, which for a migrated family would have
+  silently orphaned its R2 extra (data loss) the first time anyone accepted an invite or ran the
+  merge wizard against one. Fixed to the same loadFullTree-read / splitTree+putExtra-write
+  pattern as everywhere else. Both calendar endpoints and `debug/tree.js` were audited too and
+  are safe as-is (read-only, core-fields-only). The one-time per-family migration script now
+  exists: `POST /api/admin/migrate-tree` (admin-gated, one `familyId` per call, idempotent,
+  verifies `reassembleTree(splitTree(tree))` deep-equals the original **before any write**,
+  archives a snapshot, R2-before-D1). **Nothing auto-migrates a family** — this endpoint is the
+  only place that happens, and only when a human calls it. **Remaining:** the staged rollout
+  itself (a disposable test family → this account, deliberately → everyone else in batches).
   Full design + progress tracked in `docs/TREE-STORAGE.md` §9.
 
 ## Architecture / key files
