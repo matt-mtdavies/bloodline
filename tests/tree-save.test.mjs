@@ -25,7 +25,7 @@ async function test(label, fn) {
 // effect in order, so a `batchShouldThrow` substring can simulate exactly
 // the "table doesn't exist yet" failure mode the real defensive try/catch
 // blocks are written against.
-function makeFakeDB({ userRow = null, membershipRow, existingTreeRow = null, batchShouldThrow = null } = {}) {
+function makeFakeDB({ userRow = null, membershipRow, existingTreeRow = null, batchShouldThrow = null, adminRows = [] } = {}) {
   const calls = [];
   function makeStatement(sql) {
     let boundArgs = [];
@@ -46,6 +46,7 @@ function makeFakeDB({ userRow = null, membershipRow, existingTreeRow = null, bat
       },
       async all() {
         calls.push({ type: 'all', sql, args: boundArgs });
+        if (/family_member fm JOIN user u/.test(sql)) return { results: adminRows };
         return { results: [] };
       },
       __sql: sql,
@@ -265,6 +266,56 @@ await test('a save between the warn and hard-stop thresholds still succeeds, wit
   assert.equal(body.sizeWarning.limitBytes, 1_048_576);
   assert.ok(db.calls.some((c) => c.type === 'batch' && c.group.some((g) => g.sql.includes('INSERT INTO family_tree '))),
     'the save must still have actually written');
+});
+
+await test('a non-admin save crossing the warn threshold has no sizeWarning on screen (only owner/coadmin see it)', async () => {
+  const db = makeFakeDB({ membershipRow: { family_id: 'fam1', role: 'editor' }, existingTreeRow: null });
+  const res = await onRequestPut({
+    request: makeRequest(payloadOfSize(850_000)),
+    env: { DB: db },
+    data: { user: { uid: 'u4', family_id: null } },
+  });
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  assert.equal(body.sizeWarning, undefined, 'a non-admin saver should not get the on-screen toast');
+});
+
+await test('a save that newly crosses the warn threshold looks up owner/coadmin to email, regardless of who saved', async () => {
+  const db = makeFakeDB({
+    membershipRow: { family_id: 'fam1', role: 'editor' }, // the saver isn't an admin…
+    existingTreeRow: null, // …but the crossing must still be reported to whoever IS.
+    adminRows: [{ email: 'owner@example.com' }, { email: 'coadmin@example.com' }],
+  });
+  const res = await onRequestPut({
+    request: makeRequest(payloadOfSize(850_000)),
+    env: { DB: db },
+    data: { user: { uid: 'u5', family_id: null } },
+  });
+  assert.equal(res.status, 200);
+  const adminLookup = db.calls.find((c) => c.type === 'all' && /family_member fm JOIN user u/.test(c.sql));
+  assert.ok(adminLookup, 'expected the admin-email lookup to run on a newly-crossing save');
+  assert.match(adminLookup.sql, /role IN \('owner', 'coadmin'\)/);
+});
+
+await test('a save that was ALREADY above the warn threshold does not re-trigger the admin email lookup', async () => {
+  const existingTreeRow = { tree_json: JSON.stringify(payloadOfSize(850_000)), updated_at: 1000 };
+  const db = makeFakeDB({ membershipRow: OWNER_MEMBERSHIP, existingTreeRow });
+  const res = await onRequestPut({
+    request: makeRequest(payloadOfSize(860_000)),
+    env: { DB: db },
+    data: { user: OWNER_USER },
+  });
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  assert.ok(body.sizeWarning, 'the on-screen toast still shows for an admin saver while still above the threshold');
+  assert.ok(!db.calls.some((c) => c.type === 'all' && /family_member fm JOIN user u/.test(c.sql)),
+    'no repeat email lookup once the tree is already known to be over the threshold');
+});
+
+await test('a save that stays comfortably under the warn threshold never triggers the admin email lookup', async () => {
+  const db = makeFakeDB({ membershipRow: OWNER_MEMBERSHIP, existingTreeRow: null });
+  await onRequestPut({ request: makeRequest(payloadOfSize(1000)), env: { DB: db }, data: { user: OWNER_USER } });
+  assert.ok(!db.calls.some((c) => c.type === 'all' && /family_member fm JOIN user u/.test(c.sql)));
 });
 
 await test('a save at or above the hard-stop threshold is rejected with 413 and no writes attempted', async () => {

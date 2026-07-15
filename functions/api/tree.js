@@ -1,4 +1,4 @@
-import { json, uid } from '../_lib/util.js';
+import { json, uid, sendEmail } from '../_lib/util.js';
 import { createFamily } from '../_lib/family.js';
 
 /*
@@ -229,9 +229,14 @@ export async function onRequestPut({ request, env, data }) {
 
     // Measure what's actually about to be written, in bytes (not UTF-16 code
     // units — the D1 limit is byte-based, and this data isn't all ASCII).
-    // Computed once here and reused for the actual write below.
+    // Computed once here and reused for the actual write below. prevBytes
+    // (the row we're about to overwrite) lets the warning fire only on the
+    // save that newly CROSSES the threshold, not on every save afterward.
     const treeJsonString = JSON.stringify(toStore);
     const treeJsonBytes = new TextEncoder().encode(treeJsonString).length;
+    const prevBytes = existingTree?.tree_json
+      ? new TextEncoder().encode(existingTree.tree_json).length
+      : 0;
     if (treeJsonBytes > SIZE_HARD_STOP_BYTES) {
       const mb = (n) => (n / (1024 * 1024)).toFixed(2);
       return json({
@@ -329,13 +334,48 @@ export async function onRequestPut({ request, env, data }) {
       console.error('[tree] activity_log write skipped:', e.message);
     }
 
+    // This is an admin-actionable warning (only an owner/coadmin can decide
+    // to prune content or otherwise deal with storage), so:
+    //   • the on-screen toast is only handed back when the SAVING member is
+    //     themselves owner/coadmin — anyone else's save can still be the one
+    //     that crosses the line, so this alone won't reach every admin;
+    //   • the moment a save newly crosses the threshold (prevBytes didn't,
+    //     this one does), email every owner/coadmin directly — regardless of
+    //     who made the save that tipped it over.
+    const isAdmin = ['owner', 'coadmin'].includes(membership.role);
+    if (prevBytes <= SIZE_WARN_BYTES && treeJsonBytes > SIZE_WARN_BYTES) {
+      try {
+        const admins = await env.DB.prepare(
+          `SELECT u.email FROM family_member fm JOIN user u ON u.id = fm.user_id
+            WHERE fm.family_id = ? AND fm.role IN ('owner', 'coadmin')`,
+        ).bind(membership.family_id).all();
+        const familyName = toStore.familyName || 'your family tree';
+        const mb = (n) => (n / (1024 * 1024)).toFixed(2);
+        for (const { email } of admins.results || []) {
+          if (!email) continue;
+          await sendEmail(env, {
+            to: email,
+            subject: `${familyName} is approaching its storage limit on Bloodline`,
+            html: sizeWarningEmail({ familyName, usedMb: mb(treeJsonBytes), limitMb: mb(D1_ROW_LIMIT_BYTES) }),
+            text: sizeWarningEmailText({ familyName, usedMb: mb(treeJsonBytes), limitMb: mb(D1_ROW_LIMIT_BYTES) }),
+            tag: 'tree-size-warning',
+          });
+        }
+      } catch (e) {
+        // Best-effort — the save above already succeeded either way.
+        console.error('[tree] size-warning email skipped:', e.message);
+      }
+    }
+
     return json(
       {
         ok: true,
         familyId: membership.family_id,
         role: membership.role,
         // Non-blocking heads-up — the save above succeeded either way.
-        ...(treeJsonBytes > SIZE_WARN_BYTES ? { sizeWarning: { bytes: treeJsonBytes, limitBytes: D1_ROW_LIMIT_BYTES } } : {}),
+        ...(isAdmin && treeJsonBytes > SIZE_WARN_BYTES
+          ? { sizeWarning: { bytes: treeJsonBytes, limitBytes: D1_ROW_LIMIT_BYTES } }
+          : {}),
       },
       { headers: { 'ETag': `"${now}"` } },
     );
@@ -343,4 +383,57 @@ export async function onRequestPut({ request, env, data }) {
     console.error('[tree] PUT error:', e.message, e.stack);
     return json({ error: 'Server error', detail: e.message }, { status: 500 });
   }
+}
+
+function sizeWarningEmailText({ familyName, usedMb, limitMb }) {
+  return [
+    `${familyName} is approaching its storage limit on Bloodline`,
+    '',
+    `This family tree is now using ${usedMb} MB of its ${limitMb} MB storage limit.`,
+    '',
+    'Removing some older documents or memories will free up room. You\'re receiving this because you\'re an owner or co-admin of this tree.',
+    '',
+    'Open Bloodline: https://myfamilybloodline.com',
+  ].join('\n');
+}
+
+function sizeWarningEmail({ familyName, usedMb, limitMb }) {
+  const appUrl = 'https://myfamilybloodline.com';
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${familyName} is approaching its storage limit</title>
+</head>
+<body style="margin:0;padding:0;background:#f5f0ea;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+<div style="max-width:520px;margin:0 auto;padding:48px 24px 64px;">
+
+  <div style="text-align:center;margin-bottom:36px;">
+    <div style="font-size:24px;font-weight:700;color:#c2603a;letter-spacing:-0.02em;">Bloodline</div>
+    <div style="margin-top:4px;font-size:13px;color:#a09590;letter-spacing:0.08em;text-transform:uppercase;">Your family, preserved forever</div>
+  </div>
+
+  <div style="background:#ffffff;border-radius:24px;padding:44px 40px;box-shadow:0 4px 32px rgba(0,0,0,0.07);">
+    <p style="margin:0 0 6px;font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:0.1em;color:#a09590;">Storage notice</p>
+    <h1 style="margin:0 0 8px;font-size:26px;font-weight:700;color:#241f1c;line-height:1.25;">${familyName} is approaching its storage limit</h1>
+    <p style="margin:0 0 28px;font-size:15px;color:#6b6260;line-height:1.5;">
+      This family tree is now using <strong style="color:#241f1c;">${usedMb} MB</strong> of its
+      <strong style="color:#241f1c;">${limitMb} MB</strong> storage limit. Removing some older
+      documents or memories will free up room.
+    </p>
+
+    <a href="${appUrl}"
+       style="display:block;text-align:center;background:#c2603a;color:#ffffff;font-size:17px;font-weight:600;padding:18px 24px;border-radius:14px;text-decoration:none;letter-spacing:0.01em;box-shadow:0 4px 20px rgba(194,96,58,0.3);">
+      Open Bloodline &rarr;
+    </a>
+
+    <p style="margin:16px 0 0;text-align:center;font-size:13px;color:#b0a9a5;">
+      You're receiving this because you're an owner or co-admin of this tree.
+    </p>
+  </div>
+
+</div>
+</body>
+</html>`;
 }
