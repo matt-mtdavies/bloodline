@@ -1,12 +1,17 @@
+import { useEffect, useRef } from 'react';
 import { monogramColors, initials } from '../../lib/color.js';
 
 /*
  * The Family Constellation — the Keepsake's signature graphic. Renders the
  * pure layout from lib/keepsake.js's constellationLayout() as a fine-line
  * SVG: thin links, portrait discs, names in small caps, the subject ringed
- * in the accent. ViewBox-scaled so one drawing serves phone, desktop and
- * print. Phase 3 adds the draw-itself-on-scroll animation on top of these
- * same elements; nothing here may depend on being animated.
+ * in the accent. Rendered at a fixed pixel scale (never shrunk to fit a
+ * container) so legibility never degrades as a family grows — a wrapper
+ * scrolls horizontally instead, opening centred on the subject. Print gets
+ * its own width:100% override (keepsake.css) since a printed page can't
+ * scroll and must show the whole diagram scaled to fit. Phase 3 adds the
+ * draw-itself-on-scroll animation on top of these same elements; nothing
+ * here may depend on being animated.
  */
 
 const UX = 128; // world-unit → px
@@ -16,6 +21,7 @@ const R = 30; // relative disc radius — sized for legibility at a book page's
 const R_SUBJECT = 40;
 
 export default function Constellation({ nodes, links }) {
+  const wrapRef = useRef(null);
   if (!nodes?.length) return null;
 
   const xs = nodes.map((n) => n.x * UX);
@@ -25,13 +31,28 @@ export default function Constellation({ nodes, links }) {
   const maxX = Math.max(...xs) + pad;
   const minY = Math.min(...ys) - pad;
   const maxY = Math.max(...ys) + pad + 16; // room for the name under the lowest disc
+  const w = maxX - minX;
+  const h = maxY - minY;
+  const subjectX = -minX; // the subject always sits at world x=0
+
+  // Open scrolled to the subject, centred — a family wide enough to need
+  // the scroll would otherwise open on its leftmost, least relevant edge.
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    el.scrollLeft = Math.max(0, Math.min(subjectX - el.clientWidth / 2, el.scrollWidth - el.clientWidth));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
-    <svg
-      viewBox={`${minX} ${minY} ${maxX - minX} ${maxY - minY}`}
-      role="img"
-      aria-label="Family constellation diagram"
-    >
+    <div className="ks-constellation__scroll" ref={wrapRef}>
+      <svg
+        viewBox={`${minX} ${minY} ${w} ${h}`}
+        width={w}
+        height={h}
+        role="img"
+        aria-label="Family constellation diagram"
+      >
       <g className="ks-const-links">
         {links.map((l, i) => {
           const partner = l.kind === 'partner';
@@ -62,7 +83,8 @@ export default function Constellation({ nodes, links }) {
       <g className="ks-const-nodes">
         {nodes.map((n, i) => <Disc key={n.id} node={n} delay={0.6 + Math.min(i * 0.04, 1.1)} />)}
       </g>
-    </svg>
+      </svg>
+    </div>
   );
 }
 

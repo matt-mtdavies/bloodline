@@ -271,8 +271,16 @@
 .ks-parent__role { display: block; font-size: 11.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-faint, #a6abb3); }
 
 /* ── Constellation ──────────────────────────────────────────────────────── */
+/* Rendered at its natural fixed pixel size (Constellation.jsx sets width/
+   height to match the viewBox 1:1) so legibility holds regardless of family
+   size — a large family scrolls horizontally instead of shrinking to fit. */
 .ks-constellation { width: 100%; }
-.ks-constellation svg { width: 100%; height: auto; display: block; }
+.ks-constellation__scroll {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.ks-constellation svg { display: block; margin: 0 auto; max-width: none; }
 .ks-constellation__caption { text-align: center; margin-top: 18px; }
 
 /* ── Chapters ───────────────────────────────────────────────────────────── */
@@ -392,7 +400,17 @@
   aspect-ratio: 4 / 3;
   object-fit: cover;
 }
-.ks-album__item--hero img { aspect-ratio: 16 / 10; }
+/* The hero gets contain, not cover: a portrait-oriented source (a military
+   ID photo mounted on cardboard, say) can have most of its actual subject
+   in the top half — a center-cropped cover would as often cut into the
+   subject's head as into the blank border. It's the one large photo on
+   the page, so showing the whole thing (letterboxed on the paper tone if
+   need be) beats a confident but wrong crop. */
+.ks-album__item--hero img {
+  aspect-ratio: 16 / 10;
+  object-fit: contain;
+  background: var(--paper-soft, #f7f4ef);
+}
 .ks-album__item figcaption { margin-top: 7px; font-size: 12.5px; color: var(--ink-soft, #6b6f76); }
 /* Deliberate archival duotone for old/low-quality scans. */
 .ks-photo--archival img { filter: grayscale(1) sepia(0.14) contrast(1.05); }
@@ -843,6 +861,13 @@
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-width: thin;
+  /* This wrapper always sits inside .ks-leaf (transform-style:preserve-3d,
+     backface-visibility:hidden — the page-turn flip needs both, on every
+     page, not just mid-turn). Nesting a scrollable element inside that 3D
+     compositing context is a known iOS Safari trap: native touch-scroll
+     can silently stop working even though the element still measures as
+     overflowing. Explicit touch-scrolling opts back in. */
+  -webkit-overflow-scrolling: touch;
   background:
     linear-gradient(var(--paper, #fff) 20%, rgba(255, 255, 255, 0)) 0 0,
     linear-gradient(rgba(255, 255, 255, 0), var(--paper, #fff) 80%) 0 100%,
@@ -1088,6 +1113,11 @@
      mounts a leaf and its neighbour, so it can't paginate on paper. */
   body.ks-has-print .ks-book { display: none !important; }
   body.ks-has-print .ks-printflow { display: block !important; }
+
+  /* A printed page can't scroll — undo the screen-only fixed-scale/scroll
+     treatment so the whole diagram always scales down to fit the page. */
+  body.ks-has-print .ks-constellation__scroll { overflow: visible; }
+  body.ks-has-print .ks-constellation svg { width: 100%; height: auto; max-width: 100%; }
 
   /* Every motion state resolves fully — a page can never print half-risen,
      half-drawn, or paused mid-Ken-Burns. (prefers-reduced-motion is
