@@ -4,7 +4,7 @@ import SmartImg from './SmartImg.jsx';
 import { lifespan, formatDate, ageOrAt } from '../lib/dates.js';
 import { relationLabel } from '../data/graph.js';
 import { profileCompleteness, lifeEvents, fullName } from '../lib/profile.js';
-import { fileToDataUrl, uploadPhoto, suggestDocumentTitle, imageSrcToDataUrl } from '../lib/image.js';
+import { fileToDataUrl, uploadPhoto, uploadDocument, suggestDocumentTitle, imageSrcToDataUrl } from '../lib/image.js';
 import { streamBio } from '../lib/ai.js';
 import EnrichSheet from './EnrichSheet.jsx';
 import MilitaryService from './MilitaryService.jsx';
@@ -377,6 +377,13 @@ export default function PersonSheet({
           const suggested = await suggestDocumentTitle(preview);
           if (suggested) title = suggested;
         }
+        // Upload the PDF preview to R2 immediately, the same as `src` above,
+        // rather than storing it inline forever — thumb was the one field
+        // that never got this treatment (docs/TREE-STORAGE.md §3, Phase 0),
+        // and it's permanent per-document, so fixing it at the source means
+        // no NEW document ever adds to the problem, even before existing
+        // ones are migrated by migrateDocThumbsToR2 on next login.
+        if (thumb) thumb = await uploadDocument(thumb, { title: `${title}-thumb`, mime: 'image/jpeg' });
         onAddDocument?.(person.id, { title, mime: file.type, src, thumb });
       } catch {
         /* skip unreadable file */

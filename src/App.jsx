@@ -42,6 +42,7 @@ import {
   importFromGedcom,
   migratePhotosToR2,
   migrateDocsToR2,
+  migrateDocThumbsToR2,
   setCurrentUser,
   setMyPerson,
   bindIdentity,
@@ -324,6 +325,10 @@ export default function App() {
     Promise.all([
       migratePhotosToR2(uploadPhoto).catch(() => ({ total: 0, uploaded: 0, failed: 0 })),
       migrateDocsToR2(uploadDocument).catch(() => ({ total: 0, uploaded: 0, failed: 0 })),
+      // Thumbnails are an invisible storage optimization, not user content —
+      // run it alongside the other two migrations, but never mention it in
+      // the sync toast below (nothing the user did or would recognize).
+      migrateDocThumbsToR2(uploadDocument).catch(() => ({ total: 0, uploaded: 0, failed: 0 })),
     ]).then(([photos, docs]) => {
       const total = (photos.uploaded || 0) + (docs.uploaded || 0);
       if (!total) return;

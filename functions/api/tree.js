@@ -257,6 +257,16 @@ export async function onRequestPut({ request, env, data }) {
     // the whole group on the first failure, exactly like the sequential
     // calls did before (the insert already threw before the cleanup could
     // ever run), so a missing table skips both the same way it always did.
+    // snapshotIssue distinguishes an expected, harmless case (the table
+    // hasn't been migrated in this environment yet) from a genuine failure —
+    // most plausibly this exact row being too large for D1 to also store a
+    // full copy of alongside the live one (docs/TREE-STORAGE.md §4: this
+    // safety net shares the live tree's 1MB-per-row ceiling). A genuine
+    // failure is surfaced in the size-warning email below rather than left
+    // as a console.error nobody is looking at — the whole point of a
+    // backup is that it's there when someone needs it, so silently having
+    // none is worth a human learning about it.
+    let snapshotIssue = null;
     try {
       if (existingTree?.tree_json) {
         await env.DB.batch([
@@ -272,7 +282,12 @@ export async function onRequestPut({ request, env, data }) {
         ]);
       }
     } catch (e) {
-      console.error('[tree] snapshot write skipped:', e.message);
+      if (/no such table/i.test(e.message || '')) {
+        console.warn('[tree] snapshot skipped — family_tree_snapshot not migrated yet:', e.message);
+      } else {
+        snapshotIssue = e.message || 'unknown error';
+        console.error('[tree] CRITICAL: snapshot backup failed — this save has no rollback point:', snapshotIssue);
+      }
     }
 
     // The actual save and the family-name sync are batched into one round
@@ -342,25 +357,23 @@ export async function onRequestPut({ request, env, data }) {
     //   • the moment a save newly crosses the threshold (prevBytes didn't,
     //     this one does), email every owner/coadmin directly — regardless of
     //     who made the save that tipped it over.
+    // A snapshot failure observed on THIS save (see above) rides along in
+    // the same email rather than getting its own — both share one root
+    // cause (the tree is too large) and one already-deduped trigger, so a
+    // second notification path would just be a second way to spam the
+    // same admins for the same reason.
     const isAdmin = ['owner', 'coadmin'].includes(membership.role);
     if (prevBytes <= SIZE_WARN_BYTES && treeJsonBytes > SIZE_WARN_BYTES) {
       try {
-        const admins = await env.DB.prepare(
-          `SELECT u.email FROM family_member fm JOIN user u ON u.id = fm.user_id
-            WHERE fm.family_id = ? AND fm.role IN ('owner', 'coadmin')`,
-        ).bind(membership.family_id).all();
         const familyName = toStore.familyName || 'your family tree';
         const mb = (n) => (n / (1024 * 1024)).toFixed(2);
-        for (const { email } of admins.results || []) {
-          if (!email) continue;
-          await sendEmail(env, {
-            to: email,
-            subject: `${familyName} is approaching its storage limit on Bloodline`,
-            html: sizeWarningEmail({ familyName, usedMb: mb(treeJsonBytes), limitMb: mb(D1_ROW_LIMIT_BYTES) }),
-            text: sizeWarningEmailText({ familyName, usedMb: mb(treeJsonBytes), limitMb: mb(D1_ROW_LIMIT_BYTES) }),
-            tag: 'tree-size-warning',
-          });
-        }
+        const vars = { familyName, usedMb: mb(treeJsonBytes), limitMb: mb(D1_ROW_LIMIT_BYTES), snapshotIssue };
+        await emailAdmins(env, membership.family_id, {
+          subject: `${familyName} is approaching its storage limit on Bloodline`,
+          html: sizeWarningEmail(vars),
+          text: sizeWarningEmailText(vars),
+          tag: 'tree-size-warning',
+        });
       } catch (e) {
         // Best-effort — the save above already succeeded either way.
         console.error('[tree] size-warning email skipped:', e.message);
@@ -385,19 +398,33 @@ export async function onRequestPut({ request, env, data }) {
   }
 }
 
-function sizeWarningEmailText({ familyName, usedMb, limitMb }) {
+// Every owner/coadmin of a family, one email each — shared by every admin
+// notification this endpoint sends (storage warnings, backup failures).
+async function emailAdmins(env, familyId, { subject, html, text, tag }) {
+  const admins = await env.DB.prepare(
+    `SELECT u.email FROM family_member fm JOIN user u ON u.id = fm.user_id
+      WHERE fm.family_id = ? AND fm.role IN ('owner', 'coadmin')`,
+  ).bind(familyId).all();
+  for (const { email } of admins.results || []) {
+    if (!email) continue;
+    await sendEmail(env, { to: email, subject, html, text, tag });
+  }
+}
+
+function sizeWarningEmailText({ familyName, usedMb, limitMb, snapshotIssue }) {
   return [
     `${familyName} is approaching its storage limit on Bloodline`,
     '',
     `This family tree is now using ${usedMb} MB of its ${limitMb} MB storage limit.`,
     '',
     'Removing some older documents or memories will free up room. You\'re receiving this because you\'re an owner or co-admin of this tree.',
+    ...(snapshotIssue ? ['', 'One more thing: the automatic backup taken before this save did not succeed, so this particular change has no rollback point yet. Freeing up room will also restore that protection.'] : []),
     '',
     'Open Bloodline: https://myfamilybloodline.com',
   ].join('\n');
 }
 
-function sizeWarningEmail({ familyName, usedMb, limitMb }) {
+function sizeWarningEmail({ familyName, usedMb, limitMb, snapshotIssue }) {
   const appUrl = 'https://myfamilybloodline.com';
   return `<!DOCTYPE html>
 <html lang="en">
@@ -422,6 +449,11 @@ function sizeWarningEmail({ familyName, usedMb, limitMb }) {
       <strong style="color:#241f1c;">${limitMb} MB</strong> storage limit. Removing some older
       documents or memories will free up room.
     </p>
+    ${snapshotIssue ? `<p style="margin:0 0 28px;font-size:14px;color:#a44d2c;line-height:1.5;background:#fdf1ea;border-radius:12px;padding:14px 18px;">
+      One more thing: the automatic backup taken before this save did not succeed, so this
+      particular change has no rollback point yet. Freeing up room will also restore that
+      protection.
+    </p>` : ''}
 
     <a href="${appUrl}"
        style="display:block;text-align:center;background:#c2603a;color:#ffffff;font-size:17px;font-weight:600;padding:18px 24px;border-radius:14px;text-decoration:none;letter-spacing:0.01em;box-shadow:0 4px 20px rgba(194,96,58,0.3);">

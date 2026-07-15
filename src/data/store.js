@@ -1738,6 +1738,34 @@ export async function migrateDocsToR2(uploadFn) {
   return { total: docs.length, uploaded, failed };
 }
 
+// Upload any inline base64 document thumbnails to R2, the same way
+// migrateDocsToR2 already does for `src` — `thumb` (the PDF page-1 preview
+// generated at upload time) was never given the same treatment, and being
+// permanent and per-document, it's the single biggest identified
+// contributor to tree_json's size (docs/TREE-STORAGE.md §3, Phase 0).
+// uploadFn is image.js#uploadDocument — thumb is just another small JPEG
+// data URL, so the same upload path that already handles `src` fits as-is.
+export async function migrateDocThumbsToR2(uploadFn) {
+  const docs = (state.documents || []).filter((d) => d.thumb?.startsWith('data:'));
+  if (!docs.length) return { total: 0, uploaded: 0, failed: 0 };
+  let uploaded = 0, failed = 0;
+  const thumbUpdates = new Map();
+  await Promise.allSettled(
+    docs.map(async (doc) => {
+      const url = await uploadFn(doc.thumb, { title: `${doc.title}-thumb`, mime: 'image/jpeg' });
+      if (url !== doc.thumb) { thumbUpdates.set(doc.id, url); uploaded++; }
+      else failed++;
+    }),
+  );
+  if (thumbUpdates.size) {
+    commit({
+      ...state,
+      documents: state.documents.map((d) => (thumbUpdates.has(d.id) ? { ...d, thumb: thumbUpdates.get(d.id) } : d)),
+    });
+  }
+  return { total: docs.length, uploaded, failed };
+}
+
 export function updateFamilyName(name) {
   commit({ ...state, familyName: name.trim() || state.familyName });
 }

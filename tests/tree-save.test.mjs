@@ -25,7 +25,7 @@ async function test(label, fn) {
 // effect in order, so a `batchShouldThrow` substring can simulate exactly
 // the "table doesn't exist yet" failure mode the real defensive try/catch
 // blocks are written against.
-function makeFakeDB({ userRow = null, membershipRow, existingTreeRow = null, batchShouldThrow = null, adminRows = [] } = {}) {
+function makeFakeDB({ userRow = null, membershipRow, existingTreeRow = null, batchShouldThrow = null, batchThrowMessage = null, adminRows = [] } = {}) {
   const calls = [];
   function makeStatement(sql) {
     let boundArgs = [];
@@ -61,11 +61,28 @@ function makeFakeDB({ userRow = null, membershipRow, existingTreeRow = null, bat
       const group = stmts.map((s) => ({ sql: s.__sql, args: s.__args() }));
       calls.push({ type: 'batch', group });
       if (batchShouldThrow && group.some((g) => g.sql.includes(batchShouldThrow))) {
-        throw new Error('simulated batch failure containing: ' + batchShouldThrow);
+        throw new Error(batchThrowMessage || ('simulated batch failure containing: ' + batchShouldThrow));
       }
       return group.map(() => ({ success: true }));
     },
   };
+}
+
+// Captures console.warn/error calls made during fn() without leaking to
+// stdout, so the benign-vs-genuine snapshot-failure classification (which
+// otherwise only shows up as a log line) is actually assertable.
+async function captureConsole(fn) {
+  const warn = [], error = [];
+  const origWarn = console.warn, origError = console.error;
+  console.warn = (...a) => warn.push(a.join(' '));
+  console.error = (...a) => error.push(a.join(' '));
+  try {
+    await fn();
+  } finally {
+    console.warn = origWarn;
+    console.error = origError;
+  }
+  return { warn, error };
 }
 
 function makeRequest(body, headers = {}) {
@@ -189,6 +206,32 @@ await test('a snapshot batch failure (e.g. table not yet migrated) does not bloc
   assert.equal(body.ok, true);
   assert.ok(db.calls.some((c) => c.type === 'batch' && c.group.some((g) => g.sql.includes('INSERT INTO family_tree '))),
     'the main tree write should still have been attempted after the snapshot batch failed');
+});
+
+await test('a "no such table" snapshot failure is classified benign — a warning, not a CRITICAL alert', async () => {
+  const existingTreeRow = { tree_json: JSON.stringify({ people: [] }), updated_at: 1000 };
+  const db = makeFakeDB({
+    membershipRow: OWNER_MEMBERSHIP, existingTreeRow,
+    batchShouldThrow: 'family_tree_snapshot',
+    batchThrowMessage: 'D1_ERROR: no such table: family_tree_snapshot',
+  });
+  const { warn, error } = await captureConsole(() =>
+    onRequestPut({ request: makeRequest({ people: [] }), env: { DB: db }, data: { user: OWNER_USER } }));
+  assert.ok(warn.some((l) => l.includes('not migrated yet')), 'expected a benign warning');
+  assert.ok(!error.some((l) => l.includes('CRITICAL')), 'a missing table must never be logged as CRITICAL');
+});
+
+await test('a genuine snapshot failure (not "no such table") is logged CRITICAL, and still does not block the save', async () => {
+  const existingTreeRow = { tree_json: JSON.stringify({ people: [] }), updated_at: 1000 };
+  const db = makeFakeDB({
+    membershipRow: OWNER_MEMBERSHIP, existingTreeRow,
+    batchShouldThrow: 'family_tree_snapshot',
+    batchThrowMessage: 'D1_ERROR: string or blob too big',
+  });
+  const { error } = await captureConsole(() =>
+    onRequestPut({ request: makeRequest({ people: [] }), env: { DB: db }, data: { user: OWNER_USER } }));
+  assert.ok(error.some((l) => l.includes('CRITICAL') && l.includes('no rollback point')),
+    'a genuine failure (e.g. the row being too large) must be logged loudly, not silently skipped');
 });
 
 await test('an activity_log batch failure does not block the actual save', async () => {
