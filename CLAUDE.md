@@ -55,7 +55,9 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   editing (PUT /api/keepsake, quiet pencils, one edit sheet). **Page-turn reader is the
   default**: `paginateSpreads()` fixed pages, KeepsakeBook.jsx 3D leaf (drag/tap/chevrons/
   arrow keys, shine + cast shadow, page-edge stacks, hint peek), scroll reader behind a
-  chrome toggle (`ks_reader_mode`), print served by hidden `.ks-printflow` copy. Phase 6
+  chrome toggle (`ks_reader_mode`), print served by hidden `.ks-printflow` copy. Wide
+  desktop (≥1140px) reads as a true verso/recto spread — spine-pivot leaf whose back face
+  carries the next left page, gutter shading, "2–3 of 12" counter. Phase 6
   (whole-family bound edition, print-service handoff) deliberately later.
 
 ## Architecture / key files

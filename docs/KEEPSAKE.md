@@ -383,6 +383,19 @@ sin-curve peaking mid-turn). Everything is imperative — inline transforms
 plus one rAF loop; React state only chooses which pages are mounted (a back
 turn swaps the previous page onto the leaf before it lifts).
 
+**The two-page opening (wide desktop, ≥1140px).** A true verso/recto
+spread: the cover sits alone on the recto beside a blank inside cover, then
+pages pair 2–3, 4–5… The leaf becomes the right half of the sheet pivoting
+on the centre spine, and its BACK face carries the next left page — paper
+printed on both sides, so a forward turn delivers the new verso exactly
+where it lands. Turning back lifts the left page over to the right the same
+way. A gutter gradient dips the paper into the binding; the side being
+uncovered sits in the leaf's shadow (`--ks-turnshadow` right,
+`--ks-turnshadow-l` left). The layout is a matchMedia flag in
+KeepsakeBook.jsx (`ks-sheet--spread`); `index` stays a page index in both
+layouts, so resizing across the breakpoint keeps the reading position
+(a mid-turn resize lands the turn instantly). Counter reads "2–3 of 12".
+
 **The stage.** Desktop centres a 10/14 sheet over a deepened table wash,
 with unread/read page-edge stacks growing and shrinking at the sheet's
 sides and a small-caps "3 of 12" folio; phones read full-bleed. On open the

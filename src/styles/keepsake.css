@@ -868,6 +868,83 @@
 .ks-edges--right { left: 100%; border-radius: 0 3px 3px 0; }
 .ks-edges--left { right: 100%; border-radius: 3px 0 0 3px; }
 
+/* ── The two-page opening (wide desktop) ───────────────────────────────────
+   A true verso/recto spread: the cover alone on the recto beside a blank
+   inside cover, then pages paired 2–3, 4–5… The leaf is the right half of
+   the sheet pivoting on the centre spine; its back face carries the next
+   left page (paper printed on both sides). KeepsakeBook toggles
+   .ks-sheet--spread from a matchMedia listener at 1140px. */
+.ks-sheet--spread { aspect-ratio: 20 / 14; }
+.ks-page--left {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 50%;
+  z-index: 1;
+  overflow: hidden;
+  border-radius: 8px 0 0 8px;
+  background: var(--paper, #ffffff);
+}
+/* The verso being uncovered by a back turn sits in the leaf's shadow. */
+.ks-page--left::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  background: linear-gradient(to left, rgba(28, 29, 33, 0.38), rgba(28, 29, 33, 0.05) 40%, transparent 62%);
+  opacity: var(--ks-turnshadow-l, 0);
+}
+.ks-sheet--spread .ks-page--under {
+  inset: auto;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 50%;
+  border-radius: 0 8px 8px 0;
+}
+.ks-sheet--spread .ks-leaf {
+  inset: auto;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 50%;
+  z-index: 3;
+  border-radius: 0 8px 8px 0;
+  /* The leaf only exists mid-turn here — never a tap target. */
+  pointer-events: none;
+}
+/* A back face carrying a real page keeps paper white behind its content. */
+.ks-leaf__back--page { background: var(--paper, #ffffff); }
+/* The gutter — paper dips into the binding at the spine. */
+.ks-spine {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 90px;
+  transform: translateX(-50%);
+  z-index: 2;
+  pointer-events: none;
+  background: linear-gradient(to right,
+    rgba(28, 29, 33, 0) 0%,
+    rgba(28, 29, 33, 0.05) 42%,
+    rgba(28, 29, 33, 0.13) 50%,
+    rgba(28, 29, 33, 0.05) 58%,
+    rgba(28, 29, 33, 0) 100%);
+}
+.ks-sheet--spread .ks-spread { padding: 44px 34px 40px; }
+.ks-blank {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent-soft, #f0d9cd);
+  background: radial-gradient(70% 55% at 50% 42%, #fdfbf8 0%, #f6f1ea 100%);
+}
+
 /* Phones read full-bleed — the sheet IS the screen. */
 @media (max-width: 700px) {
   .ks-book { padding: 0; }
