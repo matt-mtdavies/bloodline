@@ -199,16 +199,8 @@ async function generateNarrative(env, user, facts, chapterPlan) {
 
 // Validate hard: a malformed narrative must fail here, never leak a
 // half-shaped object into stored editions the client then chokes on.
-function parseNarrative(text) {
-  let raw = text.trim();
-  const fence = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (fence) raw = fence[1].trim();
-  let obj;
-  try {
-    obj = JSON.parse(raw);
-  } catch {
-    return null;
-  }
+// Shared by the AI path (parseNarrative) and the human-edit path (PUT).
+function validateNarrative(obj) {
   if (!obj || typeof obj !== 'object') return null;
   const strings = (a) => Array.isArray(a) && a.every((s) => typeof s === 'string');
   if (typeof obj.epithet !== 'string' || !obj.epithet.trim()) return null;
@@ -224,4 +216,62 @@ function parseNarrative(text) {
     chapters: obj.chapters.map((ch) => ({ title: ch.title.trim(), years: ch.years.trim(), paragraphs: ch.paragraphs })),
     legacy: obj.legacy,
   };
+}
+
+function parseNarrative(text) {
+  let raw = text.trim();
+  const fence = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fence) raw = fence[1].trim();
+  try {
+    return validateNarrative(JSON.parse(raw));
+  } catch {
+    return null;
+  }
+}
+
+/*
+ * PUT /api/keepsake  { personId, narrative } — a family member's manual
+ * revision of the compiled prose (fixing a fact the AI shaded wrong, or
+ * writing a chapter themselves). Trusted over the machine, same as the Life
+ * Story's edit flow — but validated to exactly the same shape as an AI
+ * edition, and only ever a revision OF one: no edition, nothing to revise.
+ * editionNumber and hash stay put (the underlying facts didn't change);
+ * revisedAt marks it.
+ */
+export async function onRequestPut({ request, env, data }) {
+  if (!data.user) return json({ error: 'Unauthorized' }, { status: 401 });
+  if (!env.DB) return json({ error: 'Database not configured' }, { status: 503 });
+  if (!env.DOCS) return json({ error: 'Storage not configured' }, { status: 503 });
+
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: 'Invalid JSON body' }, { status: 400 });
+  }
+  const { personId } = body;
+  const narrative = validateNarrative(body.narrative);
+  if (!personId || !narrative) {
+    return json({ error: 'Missing personId or malformed narrative' }, { status: 400 });
+  }
+
+  try {
+    const familyId = await familyIdFor(env, data.user.uid);
+    if (!familyId) return json({ error: 'No family' }, { status: 403 });
+
+    const prefix = prefixFor(familyId, personId);
+    const prevObj = await env.DOCS.get(`${prefix}/latest.json`);
+    if (!prevObj) return json({ error: 'No edition to revise' }, { status: 404 });
+    const previous = await prevObj.json();
+
+    const edition = { ...previous, narrative, revisedAt: new Date().toISOString() };
+    const bodyStr = JSON.stringify(edition);
+    const opts = { httpMetadata: { contentType: 'application/json' } };
+    await env.DOCS.put(`${prefix}/${edition.hash}.json`, bodyStr, opts);
+    await env.DOCS.put(`${prefix}/latest.json`, bodyStr, opts);
+    return json(edition);
+  } catch (e) {
+    console.error('[keepsake] PUT error:', e.message);
+    return json({ error: 'Server error', detail: e.message }, { status: 500 });
+  }
 }

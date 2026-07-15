@@ -2188,6 +2188,7 @@ export default function App() {
           documents={data.documents}
           activity={data.activity}
           familyName={data.familyName}
+          canEdit={canEditTree}
           onClose={() => setKeepsakeId(null)}
           onCompiled={(edition) => {
             const person = graph.byId.get(keepsakeId);

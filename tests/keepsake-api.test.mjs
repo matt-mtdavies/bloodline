@@ -9,7 +9,7 @@
  * Run with: node tests/keepsake-api.test.mjs
  */
 import assert from 'node:assert/strict';
-import { onRequestGet, onRequestPost } from '../functions/api/keepsake.js';
+import { onRequestGet, onRequestPost, onRequestPut } from '../functions/api/keepsake.js';
 import { factsHash as clientFactsHash } from '../src/lib/keepsake.js';
 
 let passed = 0, failed = 0;
@@ -177,6 +177,62 @@ await test('unauthed → 401; no DOCS → 503; no API key → 503; bad body → 
   assert.equal((await onRequestPost({ request: postReq({ personId: 'p', facts: FACTS }), env: { DB: fakeDB(), ANTHROPIC_API_KEY: 'k' }, data: { user } })).status, 503);
   assert.equal((await onRequestPost({ request: postReq({ personId: 'p', facts: FACTS }), env: { DB: fakeDB(), DOCS: docs }, data: { user } })).status, 503);
   assert.equal((await onRequestPost({ request: postReq({ facts: FACTS }), env: env(docs), data: { user } })).status, 400);
+});
+
+await test('PUT revises the narrative in place: same edition number + hash, revisedAt set, both keys rewritten', async () => {
+  const docs = fakeR2();
+  fetchQueue = [{ ok: true, text: JSON.stringify(NARRATIVE) }];
+  await onRequestPost({ request: postReq({ personId: 'p', facts: FACTS }), env: env(docs), data: { user } });
+  const revised = { ...NARRATIVE, epithet: 'The one who kept the trains on time' };
+  const res = await onRequestPut({
+    request: postReq({ personId: 'p', narrative: revised }),
+    env: env(docs),
+    data: { user },
+  });
+  assert.equal(res.status, 200);
+  const body = JSON.parse(await res.text());
+  assert.equal(body.editionNumber, 1, 'edition number unchanged — the facts did not change');
+  assert.equal(body.hash, clientFactsHash(FACTS), 'hash unchanged');
+  assert.equal(body.narrative.epithet, revised.epithet);
+  assert.ok(body.revisedAt, 'revisedAt stamped');
+  const latest = JSON.parse(docs.store.get('keepsake/fam1/p/latest.json'));
+  assert.equal(latest.narrative.epithet, revised.epithet, 'latest.json rewritten');
+  const hashKeyed = JSON.parse(docs.store.get(`keepsake/fam1/p/${body.hash}.json`));
+  assert.equal(hashKeyed.narrative.epithet, revised.epithet, 'hash-keyed edition rewritten');
+});
+
+await test('PUT with no compiled edition → 404, nothing stored', async () => {
+  const docs = fakeR2();
+  const res = await onRequestPut({
+    request: postReq({ personId: 'p', narrative: NARRATIVE }),
+    env: env(docs),
+    data: { user },
+  });
+  assert.equal(res.status, 404);
+  assert.equal(docs.store.size, 0);
+});
+
+await test('PUT validates the narrative shape exactly like an AI edition', async () => {
+  const docs = fakeR2();
+  fetchQueue = [{ ok: true, text: JSON.stringify(NARRATIVE) }];
+  await onRequestPost({ request: postReq({ personId: 'p', facts: FACTS }), env: env(docs), data: { user } });
+  const cases = [
+    { personId: 'p', narrative: { ...NARRATIVE, epithet: '' } },              // empty epithet
+    { personId: 'p', narrative: { ...NARRATIVE, origins: 'not an array' } },  // wrong type
+    { personId: 'p', narrative: { ...NARRATIVE, chapters: [{ title: 'X' }] } }, // half chapter
+    { narrative: NARRATIVE },                                                  // no personId
+    { personId: 'p' },                                                         // no narrative
+  ];
+  for (const body of cases) {
+    const res = await onRequestPut({ request: postReq(body), env: env(docs), data: { user } });
+    assert.equal(res.status, 400, `expected 400 for ${JSON.stringify(body).slice(0, 60)}`);
+  }
+});
+
+await test('PUT unauthed → 401; no DOCS → 503', async () => {
+  const docs = fakeR2();
+  assert.equal((await onRequestPut({ request: postReq({ personId: 'p', narrative: NARRATIVE }), env: env(docs), data: {} })).status, 401);
+  assert.equal((await onRequestPut({ request: postReq({ personId: 'p', narrative: NARRATIVE }), env: { DB: fakeDB() }, data: { user } })).status, 503);
 });
 
 console.log(`\n  ${passed} passed, ${failed} failed`);

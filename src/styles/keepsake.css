@@ -595,6 +595,9 @@
   transition: transform 0.3s var(--spring, ease);
 }
 .ks-entry:active { transform: scale(0.99); }
+/* Inside the profile's flex action row the tile takes its own full row,
+   sitting above "Watch their life story". */
+.profile__actions .ks-entry { flex: 0 0 100%; }
 .ks-entry__cover {
   position: relative;
   flex: none;
@@ -634,6 +637,59 @@
 .ks-entry__text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .ks-entry__text strong { font-size: 14.5px; font-weight: 700; color: var(--accent-deep, #a44d2c); }
 .ks-entry__text span { font-size: 12.5px; line-height: 1.45; color: var(--ink-soft, #6b6f76); }
+
+/* ── Narrative editing — the quiet pencil + its sheet ──────────────────────
+   The pencil sits inline after a section label (or the cover epithet),
+   deliberately faint: the book stays a book first, editable second. */
+.ks-editbtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  margin-left: 8px;
+  vertical-align: middle;
+  border: 1px solid var(--hairline, #ebedf0);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ink-faint, #a6abb3);
+  cursor: pointer;
+  opacity: 0.75;
+  transition: opacity 0.15s ease, color 0.15s ease;
+}
+.ks-editbtn:hover { opacity: 1; color: var(--accent, #c2603a); }
+.ks-editbtn:active { transform: scale(0.94); }
+.ks-editbtn--light {
+  border-color: rgba(255, 255, 255, 0.4);
+  color: rgba(255, 255, 255, 0.85);
+}
+.ks-editbtn--light:hover { color: #fff; }
+
+.ks-editsheet__head {
+  margin: 6px 0 12px;
+  font-family: var(--display, serif);
+  font-size: 19px;
+  font-weight: 600;
+  color: var(--ink, #1c1d21);
+}
+.ks-editsheet .field__input { margin-bottom: 10px; }
+.ks-editsheet__hint {
+  margin: 2px 0 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--ink-soft, #6b6f76);
+}
+.ks-editsheet__error {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--danger, #c0392b);
+}
+.ks-editsheet__actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 16px;
+}
+.ks-editsheet__actions .btn--primary { flex: 1; }
 
 /* ── Print (Phase 4) — the book on paper ────────────────────────────────────
    Scoped to body.ks-has-print (set only while a Keepsake is open) so
@@ -675,6 +731,8 @@
   body.ks-has-print .ks-chrome,
   body.ks-has-print .ks-banner,
   body.ks-has-print .ks-progress,
+  body.ks-has-print .ks-editbtn,
+  body.ks-has-print .sheet-scrim,
   body.ks-has-print .ks-prose-pending { display: none !important; }
 
   /* Every motion state resolves fully — a page can never print half-risen,

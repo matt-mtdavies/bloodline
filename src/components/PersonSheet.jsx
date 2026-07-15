@@ -569,6 +569,20 @@ export default function PersonSheet({
               Invite
             </button>
           )}
+          {onOpenKeepsake && (person.visibility || 'full') !== 'private' && (
+            <button className="ks-entry" onClick={() => onOpenKeepsake(person.id)}>
+              {/* A miniature of the book's own cover — portrait (or the
+                  bare-cover wash) with the name set small in serif. */}
+              <span className="ks-entry__cover" aria-hidden="true">
+                {person.photo && <img src={person.photo} alt="" />}
+                <span className="ks-entry__cover-name">{person.display_name.split(/\s+/)[0]}</span>
+              </span>
+              <span className="ks-entry__text">
+                <strong>Their Keepsake</strong>
+                <span>The illustrated story of their life — read it, print it, keep it</span>
+              </span>
+            </button>
+          )}
           {person.birth_date && !restricted && (
             <button className="action action--journey" onClick={() => onLifeJourney?.(person.id)} aria-label={`Watch ${person.display_name.split(' ')[0]}'s life story`}>
               <FilmIcon />
@@ -1499,26 +1513,6 @@ export default function PersonSheet({
                 </div>
               )}
             </section>
-            )}
-
-            {/* The Keepsake — the finished good everything above feeds
-                (docs/KEEPSAKE.md). Hidden for private profiles, which can
-                never be compiled. */}
-            {onOpenKeepsake && (person.visibility || 'full') !== 'private' && (
-              <section className="profile-section">
-                <button className="ks-entry" onClick={() => onOpenKeepsake(person.id)}>
-                  {/* A miniature of the book's own cover — portrait (or the
-                      bare-cover wash) with the name set small in serif. */}
-                  <span className="ks-entry__cover" aria-hidden="true">
-                    {person.photo && <img src={person.photo} alt="" />}
-                    <span className="ks-entry__cover-name">{person.display_name.split(/\s+/)[0]}</span>
-                  </span>
-                  <span className="ks-entry__text">
-                    <strong>Their Keepsake</strong>
-                    <span>The illustrated story of their life — read it, print it, keep it</span>
-                  </span>
-                </button>
-              </section>
             )}
 
             {/* Relationships */}

@@ -23,7 +23,26 @@ function ProsePending({ children }) {
   return <p className="ks-prose-pending">{children}</p>;
 }
 
-export function CoverSpread({ spread }) {
+// The quiet pencil beside an editable narrative block. Rendered only when
+// KeepsakeView passes onEditSection (edit-capable member + a compiled
+// edition to revise); never prints.
+function EditPencil({ onEdit, section, light = false }) {
+  if (!onEdit) return null;
+  return (
+    <button
+      className={`ks-editbtn${light ? ' ks-editbtn--light' : ''}`}
+      onClick={() => onEdit(section)}
+      aria-label="Edit this section"
+      title="Edit this section"
+    >
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path d="M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    </button>
+  );
+}
+
+export function CoverSpread({ spread, onEditSection }) {
   // A portrait that fails to load (removed from R2, offline) must fall back
   // to the bare-cover treatment — otherwise the white cover type sits
   // illegibly on a white page.
@@ -50,6 +69,7 @@ export function CoverSpread({ spread }) {
         <div className="ks-cover__meta">
           {spread.lifespan && <span className="ks-cover__lifespan">{spread.lifespan}</span>}
           {spread.epithet && <span className="ks-cover__epithet">{spread.epithet}</span>}
+          <EditPencil onEdit={onEditSection} section="epithet" light={!!photo} />
         </div>
       </div>
     </section>
@@ -74,11 +94,11 @@ export function FrontispieceSpread({ spread }) {
   );
 }
 
-export function OriginsSpread({ spread }) {
+export function OriginsSpread({ spread, onEditSection }) {
   return (
     <section className="ks-spread">
       <div className="ks-spread__inner">
-        <p className="ks-label ks-label--accent">Origins</p>
+        <p className="ks-label ks-label--accent">Origins<EditPencil onEdit={onEditSection} section="origins" /></p>
         {spread.born.place && <h2 className="ks-origins__place">{spread.born.place}</h2>}
         {spread.born.date && <p className="ks-origins__date">Born {spread.born.date}</p>}
         {spread.narrative
@@ -121,7 +141,7 @@ export function ConstellationSpread({ spread }) {
   );
 }
 
-export function ChaptersSpread({ spread }) {
+export function ChaptersSpread({ spread, onEditSection }) {
   return (
     <section className="ks-spread ks-spread--chapters" style={{ minHeight: 'auto' }}>
       <div className="ks-spread__inner">
@@ -131,7 +151,7 @@ export function ChaptersSpread({ spread }) {
         <p className="ks-label ks-label--accent">Chapters of a Life</p>
         {spread.chapters.map((ch, i) => (
           <article className="ks-chapter" key={i}>
-            <p className="ks-chapter__years">{ch.label}</p>
+            <p className="ks-chapter__years">{ch.label}<EditPencil onEdit={onEditSection} section={`chapter:${i}`} /></p>
             {ch.narrativeTitle && <h3 className="ks-chapter__title">{ch.narrativeTitle}</h3>}
             {ch.paragraphs
               ? <div className={`ks-prose${i === 0 ? ' ks-prose--dropcap' : ''}`}>{ch.paragraphs.map((p, j) => <p key={j}>{p}</p>)}</div>
@@ -297,11 +317,11 @@ export function RecordSpread({ spread }) {
   );
 }
 
-export function LegacySpread({ spread }) {
+export function LegacySpread({ spread, onEditSection }) {
   return (
     <section className={`ks-spread${spread.memorial ? ' ks-legacy--memorial' : ''}`}>
       <div className="ks-spread__inner">
-        <p className="ks-label ks-label--accent">Legacy</p>
+        <p className="ks-label ks-label--accent">Legacy<EditPencil onEdit={onEditSection} section="legacy" /></p>
         <h2 className="ks-title">Who follows</h2>
         {spread.paragraphs && (
           <div className="ks-prose" style={{ marginTop: 16 }}>

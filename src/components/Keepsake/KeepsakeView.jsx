@@ -36,6 +36,7 @@ const SPREADS = {
 
 export default function KeepsakeView({
   graph, personId, memories, photos, documents, activity, familyName, onClose, onCompiled,
+  canEdit = false,
 }) {
   const keepsake = useMemo(
     () => buildKeepsake(graph, personId, { memories, photos, documents, activity, familyName }),
@@ -70,8 +71,20 @@ export default function KeepsakeView({
     return () => { alive = false; };
   }, [personId]);
 
+  // ── Narrative editing (the human is trusted over the machine) ────────────
+  // { id: 'epithet' | 'origins' | 'legacy' | 'chapter:N', title, text }.
+  const [editing, setEditing] = useState(null);
+  const [saveState, setSaveState] = useState('idle'); // idle | saving | error
+  const editingRef = useRef(null);
+  editingRef.current = editing;
+
   useEffect(() => {
-    const onKey = (e) => e.key === 'Escape' && onClose();
+    const onKey = (e) => {
+      if (e.key !== 'Escape') return;
+      // Escape closes the topmost layer only: the edit sheet before the book.
+      if (editingRef.current) setEditing(null);
+      else onClose();
+    };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
@@ -188,6 +201,64 @@ export default function KeepsakeView({
 
   const spreads = applyNarrative(keepsake.spreads, edition?.narrative);
 
+  // Which section a pencil opens, prefilled from the current narrative.
+  // Paragraphs edit as one text block, blank line between paragraphs —
+  // the same convention as every multi-paragraph field in the app.
+  function beginEdit(id) {
+    const n = edition?.narrative;
+    if (!n) return;
+    if (id === 'epithet') setEditing({ id, title: null, text: n.epithet || '' });
+    else if (id === 'origins') setEditing({ id, title: null, text: (n.origins || []).join('\n\n') });
+    else if (id === 'legacy') setEditing({ id, title: null, text: (n.legacy || []).join('\n\n') });
+    else if (id.startsWith('chapter:')) {
+      const i = Number(id.slice(8));
+      const ch = n.chapters?.[i];
+      setEditing({ id, title: ch?.title || '', text: (ch?.paragraphs || []).join('\n\n') });
+    }
+    setSaveState('idle');
+  }
+
+  async function saveEdit() {
+    if (!editing || !edition?.narrative || saveState === 'saving') return;
+    const paragraphs = editing.text.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
+    const n = structuredClone(edition.narrative);
+    if (editing.id === 'epithet') {
+      if (!editing.text.trim()) { setSaveState('error'); return; }
+      n.epithet = editing.text.trim();
+    } else if (editing.id === 'origins') {
+      n.origins = paragraphs;
+    } else if (editing.id === 'legacy') {
+      n.legacy = paragraphs;
+    } else if (editing.id.startsWith('chapter:')) {
+      const i = Number(editing.id.slice(8));
+      const plan = keepsake.spreads.find((s) => s.key === 'chapters')?.chapters || [];
+      // Editing a chapter the AI never wrote (still pending) creates its
+      // narrative slot; earlier missing slots are padded so indexes align.
+      while (n.chapters.length <= i) {
+        const j = n.chapters.length;
+        n.chapters.push({ title: '', years: plan[j]?.label || '', paragraphs: [] });
+      }
+      n.chapters[i] = { ...n.chapters[i], title: (editing.title || '').trim(), paragraphs };
+    }
+    setSaveState('saving');
+    try {
+      const r = await fetch('/api/keepsake', {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ personId, narrative: n }),
+      });
+      const body = await r.json().catch(() => null);
+      if (!r.ok || !body?.narrative) { setSaveState('error'); return; }
+      setEdition(body);
+      setEditing(null);
+      setSaveState('idle');
+    } catch {
+      setSaveState('error');
+    }
+  }
+
+  const onEditSection = canEdit && edition?.narrative && editionState === 'ready' ? beginEdit : null;
+
   return (
     <div ref={containerRef} className="keepsake-view" role="dialog" aria-modal="true" aria-label={`${keepsake.subject.name} — Keepsake`}>
       <div className="ks-progress" aria-hidden="true">
@@ -238,8 +309,63 @@ export default function KeepsakeView({
 
       {spreads.map((spread) => {
         const Spread = SPREADS[spread.key];
-        return Spread ? <Spread key={spread.key} spread={spread} edition={edition} /> : null;
+        return Spread
+          ? <Spread key={spread.key} spread={spread} edition={edition} onEditSection={onEditSection} />
+          : null;
       })}
+
+      {/* The edit sheet — one implementation for every section. */}
+      {editing && (
+        <div className="sheet-scrim sheet-scrim--modal" onClick={() => setEditing(null)}>
+          <div className="sheet sheet--form ks-editsheet" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Edit this section">
+            <div className="sheet__grip" />
+            <h2 className="ks-editsheet__head">
+              {editing.id === 'epithet' ? 'The cover line'
+                : editing.id === 'origins' ? 'Origins'
+                : editing.id === 'legacy' ? 'Legacy'
+                : 'This chapter'}
+            </h2>
+            {editing.title !== null && (
+              <input
+                className="field__input"
+                value={editing.title}
+                placeholder="Chapter title"
+                onChange={(e) => setEditing((s) => ({ ...s, title: e.target.value }))}
+              />
+            )}
+            {editing.id === 'epithet' ? (
+              <input
+                className="field__input"
+                autoFocus
+                value={editing.text}
+                onChange={(e) => setEditing((s) => ({ ...s, text: e.target.value }))}
+              />
+            ) : (
+              <textarea
+                className="field__input field__input--area"
+                rows={10}
+                autoFocus={editing.title === null}
+                value={editing.text}
+                onChange={(e) => setEditing((s) => ({ ...s, text: e.target.value }))}
+                placeholder="Leave a blank line between paragraphs."
+              />
+            )}
+            <p className="ks-editsheet__hint">
+              Your words replace the compiled prose for the whole family — recompiling a
+              new edition will write over them again.
+            </p>
+            {saveState === 'error' && (
+              <p className="ks-editsheet__error">Couldn&apos;t save — check the text and try again.</p>
+            )}
+            <div className="ks-editsheet__actions">
+              <button className="btn btn--primary" onClick={saveEdit} disabled={saveState === 'saving'}>
+                {saveState === 'saving' ? 'Saving…' : 'Save'}
+              </button>
+              <button className="btn" onClick={() => setEditing(null)}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
