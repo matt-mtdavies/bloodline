@@ -71,6 +71,128 @@ export async function updateTree(env, familyId, treeJsonString, updatedAt) {
   ).bind(treeJsonString, updatedAt, familyId).run();
 }
 
+// ── The core/extra split (docs/TREE-STORAGE.md §6) ─────────────────────────
+//
+// splitTree/reassembleTree are pure, I/O-free functions: the actual target
+// shape Phase 2 stores (core in D1, extra in R2), built and proven correct
+// here BEFORE any storage plumbing is wired to them. The load-bearing
+// property every test in tests/tree-split.test.mjs checks is:
+//
+//   reassembleTree(...Object.values(splitTree(tree))) deep-equals tree
+//
+// for any tree shape the real client ever produces — not merely a shape
+// that happens to be convenient.
+
+// The exact allowlist for D1-resident "core" per §6.1 — everything else on
+// a person object is "extra". Deliberately an allowlist, not a denylist: an
+// unrecognized future field falls into extra (no ceiling) by default,
+// never silently swelling core (which has one). Shared verbatim with
+// functions/api/debug/tree.js's byte-breakdown diagnostic — both must
+// agree on the same boundary, or the diagnostic could report a split that
+// the real one wouldn't actually make.
+export const CORE_PERSON_FIELDS = new Set([
+  'id', 'display_name', 'photo', 'gender', 'is_living', 'is_deceased',
+  'is_minor', 'birth_date', 'death_date', 'visibility', 'confidence',
+  'claimed_by_user_id',
+]);
+
+// Top-level scalars small enough, and needed synchronously enough (graph
+// topology, family identity), to stay in core. `people` and `_deleted` are
+// handled separately below since both need decomposing, not a straight
+// copy. Everything else present on the tree — memories, photos, documents,
+// activity, and any future top-level key nobody's added yet — defaults to
+// extra, the same "unknown things aren't core" principle as the person
+// allowlist above.
+const CORE_TOP_LEVEL_KEYS = new Set(['relationships', 'myPersonId', 'familyName', 'hasCompletedOnboarding', '_seq']);
+
+// _deleted's tombstone kinds correspond 1:1 with the top-level collection
+// they tombstone — people/relationships stay with core, everything else
+// (memories/photos/documents, and any future kind) follows its collection
+// into extra.
+const CORE_DELETED_KINDS = new Set(['people', 'relationships']);
+
+/*
+ * Splits one full logical tree object into { core, extra } — core is what
+ * D1 stores (small, forever); extra is what R2 stores (unbounded). Only
+ * copies keys that are ACTUALLY PRESENT on the input — a legacy tree
+ * missing a field that didn't exist when it was created stays missing on
+ * both sides, rather than this function inventing a default value nothing
+ * ever asked for. (memories/photos/documents/activity/people are always
+ * present on any tree that has been through src/data/store.js's `EMPTY`
+ * shape, so this precision matters most for older/optional scalars and
+ * per-person fields, not for those six collections.)
+ */
+export function splitTree(tree) {
+  const core = {};
+  const extra = {};
+
+  for (const [key, value] of Object.entries(tree)) {
+    if (key === 'people' || key === '_deleted') continue;
+    (CORE_TOP_LEVEL_KEYS.has(key) ? core : extra)[key] = value;
+  }
+
+  if ('people' in tree) {
+    const peopleDetail = {};
+    core.people = tree.people.map((person) => {
+      const corePerson = {};
+      const detail = {};
+      for (const [k, v] of Object.entries(person)) {
+        (CORE_PERSON_FIELDS.has(k) ? corePerson : detail)[k] = v;
+      }
+      if (Object.keys(detail).length) peopleDetail[person.id] = detail;
+      return corePerson;
+    });
+    if (Object.keys(peopleDetail).length) extra.peopleDetail = peopleDetail;
+  }
+
+  if ('_deleted' in tree) {
+    const coreDeleted = {};
+    const extraDeleted = {};
+    for (const [kind, map] of Object.entries(tree._deleted || {})) {
+      (CORE_DELETED_KINDS.has(kind) ? coreDeleted : extraDeleted)[kind] = map;
+    }
+    // _deleted is always attached to core when present on the source tree
+    // (even empty — `_deleted: {}` is the fresh-tree default in store.js's
+    // EMPTY shape), so that presence round-trips faithfully; extra only
+    // carries its half when there's actually something in it.
+    core._deleted = coreDeleted;
+    if (Object.keys(extraDeleted).length) extra._deleted = extraDeleted;
+  }
+
+  return { core, extra };
+}
+
+/*
+ * The exact inverse of splitTree — reassembles core + extra into the one
+ * logical tree object every existing caller already expects, unchanged
+ * from what it receives today. `extra` may be `null`/`undefined` (an
+ * unmigrated family, or an R2 read that came back empty) — every one of
+ * its collections then degrades to absent, never to a thrown error.
+ */
+export function reassembleTree(core, extra) {
+  const tree = {};
+
+  for (const [k, v] of Object.entries(core || {})) {
+    if (k === 'people' || k === '_deleted') continue;
+    tree[k] = v;
+  }
+  for (const [k, v] of Object.entries(extra || {})) {
+    if (k === 'peopleDetail' || k === '_deleted') continue;
+    tree[k] = v;
+  }
+
+  if (core?.people) {
+    const detail = extra?.peopleDetail || {};
+    tree.people = core.people.map((p) => (detail[p.id] ? { ...p, ...detail[p.id] } : p));
+  }
+
+  if (core && '_deleted' in core) {
+    tree._deleted = { ...core._deleted, ...(extra?._deleted || {}) };
+  }
+
+  return tree;
+}
+
 // The pre-write archive both tree.js's PUT and the snapshot-restore
 // endpoint need before overwriting the live row. Returns the two
 // statements to batch (the insert, and pruning to the most recent 30 per

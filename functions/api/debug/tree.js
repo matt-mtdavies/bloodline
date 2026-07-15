@@ -1,5 +1,5 @@
 import { json } from '../../_lib/util.js';
-import { loadTree } from '../../_lib/treeStore.js';
+import { loadTree, CORE_PERSON_FIELDS } from '../../_lib/treeStore.js';
 
 /*
  * GET /api/debug/tree
@@ -16,16 +16,9 @@ import { loadTree } from '../../_lib/treeStore.js';
  * Safe to expose to any logged-in user — same bar as the rest of this file.
  */
 
-// The exact allowlist proposed for D1-resident "core" in docs/TREE-STORAGE.md
-// §6.1 — everything else on a person object counts as "extra" for this
-// measurement. Deliberately an allowlist, not a denylist: an unrecognized
-// future field falls into "extra" (no ceiling) by default, never silently
-// swelling "core" (which has one).
-const CORE_PERSON_FIELDS = new Set([
-  'id', 'display_name', 'photo', 'gender', 'is_living', 'is_deceased',
-  'is_minor', 'birth_date', 'death_date', 'visibility', 'confidence',
-  'claimed_by_user_id',
-]);
+// CORE_PERSON_FIELDS now lives in treeStore.js — imported above — so this
+// diagnostic and the real Phase 2 split (treeStore.js#splitTree) can never
+// silently disagree about where the boundary is.
 
 const enc = new TextEncoder();
 function bytesOf(v) {
