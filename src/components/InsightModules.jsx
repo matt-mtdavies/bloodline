@@ -202,11 +202,14 @@ const ordinal = (n) => `${n}${['th', 'st', 'nd', 'rd'][(n % 100 > 10 && n % 100 
 
 /* ── Deep time ─────────────────────────────────────────────────────────── */
 
-// The chain, told from the near end toward the past: "You knew Gwen, who
-// knew William, who knew John." Capped at the three oldest links so a long
-// chain doesn't run the caption off the card. Shared by the deep-time
-// default and any "handshakes to ___" result — the wording holds regardless
-// of which direction chronology runs, since it's just walking the array.
+// The chain, told from the near end toward the past: "You overlapped with
+// Gwen, who overlapped with William, who overlapped with John." Deliberately
+// not "knew" — overlapping lifespans doesn't mean two people ever met, and
+// "knew" reads as a claim about their actual relationship that the data
+// can't back up. Capped at the three oldest links so a long chain doesn't
+// run the caption off the card. Shared by the deep-time default and any
+// "handshakes to ___" result — the wording holds regardless of which
+// direction chronology runs, since it's just walking the array.
 function chainSentence(people, links, thisYear, earliestBirth) {
   const last = people.length - 1;
   const nameOf = (i) => (i === last ? 'You' : people[i].firstName);
@@ -216,7 +219,7 @@ function chainSentence(people, links, thisYear, earliestBirth) {
   const start = Math.min(2, last);
   const parts = [];
   for (let i = start; i >= 1; i--) parts.push(nameOf(i));
-  return <><b>{parts[0]} knew {parts.slice(1).concat(people[0].firstName).join(', who knew ')}</b> — hand to hand across {thisYear - earliestBirth} years.</>;
+  return <><b>{parts[0]} overlapped with {parts.slice(1).concat(people[0].firstName).join(', who overlapped with ')}</b> — hand to hand across {thisYear - earliestBirth} years.</>;
 }
 
 // The lifespan-bar chain itself — shared by the deep-time default and any

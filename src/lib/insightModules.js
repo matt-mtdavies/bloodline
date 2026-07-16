@@ -152,16 +152,26 @@ function windowOf(p, thisYear) {
   return [b, thisYear];
 }
 
-/* ── Handshakes: the shortest chain of overlapping lives to the earliest-
-      born ancestor. Each consecutive pair was genuinely alive at the same
-      time — "someone you hugged once hugged someone born in 1809". ──────── */
+/* ── Handshakes: the fewest-hop chain of overlapping lives back to the
+      earliest-born ancestor reachable this way — but only along ONE real,
+      unbroken line of ancestors (parent, grandparent, great-grandparent...).
+      Earlier versions connected any two ancestors whose lives simply
+      happened to overlap, even across unrelated branches — your maternal
+      grandfather and paternal grandmother, say, who were never related to
+      each other and may never have set foot in the same country. That's a
+      coincidence of timing, not a chain of real relationships, and reads as
+      false once you notice it. Every hop here is a genuine ancestor of the
+      person before it; "reachable" is scoped to lineageLine() below. ────── */
 function handshakes(graph, viewerId) {
   const thisYear = new Date().getFullYear();
   const viewer = graph.byId.get(viewerId);
   const vWin = windowOf(viewer, thisYear);
   if (!vWin) return null;
 
-  // Every ancestor of the viewer (any parent qualifier) with a decidable window.
+  // Every ancestor of the viewer (any parent qualifier), plus the one step
+  // back toward the viewer that reached them — a real lineage tree, not a
+  // free-for-all "everyone alive at once" graph.
+  const towardViewer = new Map(); // ancestorId -> the closer relative one step toward viewer
   const winById = new Map([[viewerId, vWin]]);
   const stack = [viewerId];
   const seen = new Set([viewerId]);
@@ -171,60 +181,81 @@ function handshakes(graph, viewerId) {
       if (seen.has(par.id)) continue;
       seen.add(par.id);
       stack.push(par.id);
+      towardViewer.set(par.id, id);
       const w = windowOf(graph.byId.get(par.id), thisYear);
       if (w) winById.set(par.id, w);
     }
   }
   if (winById.size < 2) return null;
 
-  // BFS across the overlap graph: an edge wherever two lives shared ≥ 1 year.
   const overlap = (a, b) => Math.min(a[1], b[1]) - Math.max(a[0], b[0]);
-  const prev = new Map([[viewerId, null]]);
-  let frontier = [viewerId];
-  while (frontier.length) {
-    const next = [];
-    for (const id of frontier) {
-      const w = winById.get(id);
-      for (const [oid, ow] of winById) {
-        if (prev.has(oid)) continue;
-        if (overlap(w, ow) >= 1) { prev.set(oid, id); next.push(oid); }
+
+  // The windowed ancestors on the single real lineage line from the viewer
+  // up to `ancestorId`, nearest first (index 0 is always the viewer).
+  function lineageLine(ancestorId) {
+    const ids = [];
+    for (let id = ancestorId; id != null; id = towardViewer.get(id)) ids.push(id);
+    ids.reverse();
+    return ids.filter((id) => winById.has(id));
+  }
+
+  // Try the earliest-born ancestor first — that's the one worth gasping at
+  // — and fall back to the next-earliest whenever the deepest ones turn out
+  // not to be reachable via an unbroken overlap chain on their own line.
+  const candidates = [...winById.keys()]
+    .filter((id) => id !== viewerId)
+    .sort((a, b) => winById.get(a)[0] - winById.get(b)[0]);
+
+  for (const target of candidates) {
+    const earliestBirth = winById.get(target)[0];
+    // Ancestors only get shallower from here on — if even this one isn't
+    // deep enough to gasp at, none of the rest will be either.
+    if (thisYear - earliestBirth < 90) return null;
+
+    const line = lineageLine(target);
+    if (line.length < 2 || line[line.length - 1] !== target) continue;
+
+    // Greedy farthest-reachable-overlap walk along this one real line: at
+    // each stop, jump to the farthest-back relative whose life still
+    // overlapped — fewest hops, same "shortest chain" spirit as before, but
+    // every hop is now a genuine ancestor of the person right before it.
+    const chainIds = [line[0]];
+    let cur = 0;
+    let stuck = false;
+    while (chainIds[chainIds.length - 1] !== target) {
+      let next = -1;
+      for (let j = line.length - 1; j > cur; j--) {
+        if (overlap(winById.get(line[cur]), winById.get(line[j])) >= 1) { next = j; break; }
       }
+      if (next === -1) { stuck = true; break; }
+      chainIds.push(line[next]);
+      cur = next;
     }
-    frontier = next;
-  }
+    if (stuck) continue; // this ancestor isn't reachable via a real, unbroken line of overlaps
 
-  // Aim for the earliest-born reachable ancestor.
-  let target = null;
-  for (const [id] of winById) {
-    if (id === viewerId || !prev.has(id)) continue;
-    if (!target || winById.get(id)[0] < winById.get(target)[0]) target = id;
+    // Reconstruct, earliest ancestor first (the order the story is told in).
+    chainIds.reverse();
+    const people = chainIds.map((id) => {
+      const p = graph.byId.get(id);
+      const [b, d] = winById.get(id);
+      return { id, name: p.display_name, firstName: firstNameOf(p), birth: b, death: p.is_deceased ? d : null };
+    });
+    const links = [];
+    for (let i = 0; i < people.length - 1; i++) {
+      const a = winById.get(people[i].id), b = winById.get(people[i + 1].id);
+      links.push({ years: overlap(a, b), from: Math.max(a[0], b[0]), to: Math.min(a[1], b[1]) });
+    }
+    const anchor = nearestWorldEvent(earliestBirth, detectRegion(graph), 8);
+    return {
+      people, // earliest first, viewer last
+      links,  // links[i] joins people[i] and people[i+1]
+      hops: people.length - 1,
+      earliestBirth,
+      thisYear,
+      anchor: anchor ? { year: anchor.year, title: anchor.title } : null,
+    };
   }
-  if (!target) return null;
-  const earliestBirth = winById.get(target)[0];
-  if (thisYear - earliestBirth < 90) return null; // not deep enough to gasp at
-
-  // Reconstruct, earliest ancestor first (the order the story is told in).
-  const path = [];
-  for (let id = target; id != null; id = prev.get(id)) path.push(id);
-  const people = path.map((id) => {
-    const p = graph.byId.get(id);
-    const [b, d] = winById.get(id);
-    return { id, name: p.display_name, firstName: firstNameOf(p), birth: b, death: p.is_deceased ? d : null };
-  });
-  const links = [];
-  for (let i = 0; i < people.length - 1; i++) {
-    const a = winById.get(people[i].id), b = winById.get(people[i + 1].id);
-    links.push({ years: overlap(a, b), from: Math.max(a[0], b[0]), to: Math.min(a[1], b[1]) });
-  }
-  const anchor = nearestWorldEvent(earliestBirth, detectRegion(graph), 8);
-  return {
-    people, // earliest first, viewer last
-    links,  // links[i] joins people[i] and people[i+1]
-    hops: people.length - 1,
-    earliestBirth,
-    thisYear,
-    anchor: anchor ? { year: anchor.year, title: anchor.title } : null,
-  };
+  return null;
 }
 
 // Handshakes to ANY chosen person — the same "who overlapped whose life"

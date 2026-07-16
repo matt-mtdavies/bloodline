@@ -344,6 +344,34 @@ test('handshakes: 3-hop chain from g4_0 back to an 1820 founder', () => {
   for (const link of h.links) assert.ok(link.years >= 1, 'every link is a real overlap');
 });
 
+test('handshakes: never links two ancestors from different branches, even if their lifespans overlap', () => {
+  // v's paternal line: ff (1700-1750) is old enough and deep enough to be a
+  // tempting target. v's maternal line: mm (1745-1795) overlaps ff's window
+  // by 5 years — but mm is not ff's relative; they share no ancestor of each
+  // other, only a common descendant (v) several generations later. The old
+  // algorithm treated any two overlapping ancestors as linkable and would
+  // have chained v -> m -> mm -> ff straight across branches. Neither real
+  // line (v-f-ff, v-m-mm) has an unbroken overlap on its own — f (b.1960)
+  // never overlaps ff (d.1750), and m (b.1962) never overlaps mm (d.1795) —
+  // so the fix must return null rather than smuggle the cross-branch link in.
+  const people = [
+    { id: 'v', display_name: 'Vera', birth_date: '1990-01-01', is_deceased: false },
+    { id: 'f', display_name: 'Fred', birth_date: '1960-01-01', is_deceased: false },
+    { id: 'm', display_name: 'Mary', birth_date: '1962-01-01', is_deceased: false },
+    { id: 'ff', display_name: 'Fred Sr', birth_date: '1700-01-01', death_date: '1750-01-01', is_deceased: true },
+    { id: 'mm', display_name: 'Martha', birth_date: '1745-01-01', death_date: '1795-01-01', is_deceased: true },
+  ];
+  const rels = [
+    { id: 'r1', type: 'parent', from_person: 'f', to_person: 'v', qualifier: 'biological' },
+    { id: 'r2', type: 'parent', from_person: 'm', to_person: 'v', qualifier: 'biological' },
+    { id: 'r3', type: 'parent', from_person: 'ff', to_person: 'f', qualifier: 'biological' },
+    { id: 'r4', type: 'parent', from_person: 'mm', to_person: 'm', qualifier: 'biological' },
+  ];
+  const g = buildGraph(people, rels);
+  const r = computeInsightModules(g, 'v').handshakes;
+  assert.equal(r, null, 'no unbroken single-line chain exists — a cross-branch shortcut would wrongly return one');
+});
+
 // ── Wave 3: handshakes to anyone ─────────────────────────────────────────────
 test('handshakesTo: direct parent/child overlap is a single hop, target first, viewer last', () => {
   const r = handshakesTo(graph, 'g4_0', 'g3_0_0');
