@@ -470,6 +470,8 @@ test('this month: birthdays + anniversaries filtered to the given month, sorted 
   assert.equal(r.month, 'June');
   assert.deepEqual(r.birthdays.map((b) => b.id), ['a', 'b']); // deceased excluded, wrong-month excluded, sorted by day
   assert.equal(r.birthdays[0].isToday, false); // Ann's the 5th; "today" is the 15th
+  assert.equal(r.birthdays[0].isPast, true); // her birthday already happened this month
+  assert.equal(r.birthdays[1].isPast, false); // Bo's the 20th — still upcoming
   assert.equal(r.anniversaries.length, 1);
   assert.equal(r.anniversaries[0].years, 2026 - 1975);
   assert.equal(r.anniversaries[0].isToday, true);

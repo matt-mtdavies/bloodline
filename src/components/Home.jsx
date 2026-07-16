@@ -255,7 +255,7 @@ function ThisMonth({ data, onSelectPerson }) {
                   <span className="home__month-t">{item.name}</span>
                   <span className="home__month-d">
                     {item.isToday ? 'Birthday today' : 'Birthday'}
-                    {item.turning != null ? ` · turning ${item.turning}` : ''}
+                    {item.turning != null ? ` · ${item.isPast ? 'turned' : 'turning'} ${item.turning}` : ''}
                   </span>
                 </>
               ) : (

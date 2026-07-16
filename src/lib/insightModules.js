@@ -1072,7 +1072,10 @@ export function computeThisMonth(graph, now = new Date()) {
     const d = birthDayOf(p.birth_date);
     if (d == null) continue;
     const b = year(p.birth_date);
-    birthdays.push({ id: p.id, name: p.display_name, day: d, isToday: d === today, turning: b != null ? thisYear - b : null });
+    birthdays.push({
+      id: p.id, name: p.display_name, day: d, isToday: d === today, isPast: d < today,
+      turning: b != null ? thisYear - b : null,
+    });
   }
   birthdays.sort((a, b) => a.day - b.day);
 
