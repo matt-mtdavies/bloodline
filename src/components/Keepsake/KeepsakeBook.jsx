@@ -1,72 +1,121 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { createCurlRenderer } from './pageCurl/curlRenderer.js';
-import { captureElementToImage } from './pageCurl/snapshot.js';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import {
+  blocksOf, paginate, contentWidth, PRINT_FOLIO, PHONE_FOLIO,
+} from '../../lib/typeset.js';
+import BookPage, { TypesetBlock } from './BookPage.jsx';
 
 /*
  * The page-turn reader (book mode) — the Keepsake read as a physical
- * magazine. Drag a page and it follows your finger; tap a margin, click a
- * chevron, or press an arrow key and it turns itself.
+ * magazine. Pages are TYPESET (lib/typeset.js): fixed canvases, measured
+ * offscreen, packed so that no page ever scrolls — content that doesn't fit
+ * becomes the next page, like paper. The stage scales the whole sheet down
+ * to fit the viewport (never up), so the book is identical at any window
+ * size within a mode.
  *
- * Two layouts share one turn engine:
+ * Three modes off one engine:
+ *   phone  (<700px)  — the pocket folio, one page, near-1:1 scale.
+ *   single (<1140px) — the print folio, one page, scaled to fit.
+ *   spread (≥1140px) — a true verso/recto opening of two print-folio pages;
+ *     the cover sits alone on the recto (blank inside cover beside it), then
+ *     pages pair 2–3, 4–5… The turning leaf is the right half of the sheet
+ *     pivoting on the centre spine, its back face carrying the next verso.
  *
- * SINGLE (phones, narrow windows): one leaf pivots on the sheet's left
- * edge. Front face = current page, back = bare stock, next page mounted
- * beneath.
- *
- * SPREAD (wide desktop, ≥1140px): a true verso/recto opening. The cover
- * sits alone on the recto (a blank verso beside it, like an inside cover),
- * then pages pair 2–3, 4–5… The leaf is the right half of the sheet and
- * pivots on the centre spine; its BACK face carries the next left page —
- * real paper, printed on both sides. Turning back lifts the left page over
- * to the right the same way.
+ * Every turn — both directions, all modes — is the same live-DOM leaf
+ * rotating in 3D with shine and a cast shadow. (An earlier build drove
+ * forward turns on phones through a canvas "page curl" fed by SVG
+ * foreignObject snapshots; an SVG data-URI document can't fetch external
+ * resources, so photos went blank and webfonts fell back mid-curl — it
+ * looked broken because it was. The leaf uses the real DOM: always correct.)
  *
  * All motion is imperative (inline transforms driven by pointer events and
  * one rAF loop); React state only decides WHICH pages are mounted. Under
- * prefers-reduced-motion a turn is an instant page change, and the shine /
+ * prefers-reduced-motion a turn is an instant page change and the shine /
  * cast-shadows never appear.
  */
 
-const TURN_MS = 620;
+const TURN_MS = 560;
 // The very first turn — leaving the resting cover splash — is a deliberate
-// set piece: much slower and paired with the sheet's own un-tilt/zoom (see
-// .ks-sheet--rest in keepsake.css), so it reads as the camera pushing into
+// set piece: much slower, paired with the sheet's own un-tilt/zoom (see
+// .ks-sheet--rest in keepsake.css) so it reads as the camera pushing into
 // the book rather than an ordinary page flip.
 const GRAND_OPEN_MS = 1500;
-// A safety valve, not an expected path: if a curl gesture's state is ever
-// still around this long without resolving (a capture that hung instead of
-// rejecting, a dropped pointerup on a real touch device, the tab having been
-// backgrounded mid-rAF), the reader force-recovers on the next attempt
-// rather than staying locked out forever.
-const CURL_STALE_MS = 4000;
-// How long to let the curl visual's capture race a completed gesture before
-// giving up on it and just landing the turn plainly. A user who has already
-// dragged past the commit threshold, or tapped the margin, has committed to
-// turning the page — the fancy curl is a bonus, never a precondition. This
-// must never be confused with CURL_STALE_MS above: that one guards against
-// a gesture that never resolves at all; this one is the ordinary, expected
-// "capture is still racing the release" case and stays short so a slow
-// capture never reads as an unresponsive tap.
-const CAPTURE_FALLBACK_MS = 900;
 const SPREAD_MQ = '(min-width: 1140px)';
+const PHONE_MQ = '(max-width: 699px)';
 const easeInOutCubic = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
 const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
 
-export default function KeepsakeBook({ pages, renderPage, onProgress }) {
-  const [index, setIndex] = useState(0); // always a PAGE index, in both layouts
+function modeOf() {
+  if (typeof window.matchMedia !== 'function') return 'single';
+  if (window.matchMedia(SPREAD_MQ).matches) return 'spread';
+  if (window.matchMedia(PHONE_MQ).matches) return 'phone';
+  return 'single';
+}
+
+/*
+ * The galley proof: render every flow block once, offscreen, at the active
+ * canvas's content width; measure; pack. Re-typesets when the edition
+ * changes, the canvas changes (crossing a breakpoint), or the webfonts
+ * finish loading (metrics shift).
+ */
+function useTypeset(spreads, canvas, onEditSection) {
+  const blocks = useMemo(() => blocksOf(spreads), [spreads]);
+  const [pages, setPages] = useState(null);
+  const [fontsReady, setFontsReady] = useState(false);
+  const measureRef = useRef(null);
+
+  useEffect(() => {
+    let alive = true;
+    document.fonts?.ready?.then(() => { if (alive) setFontsReady(true); });
+    return () => { alive = false; };
+  }, []);
+
+  useLayoutEffect(() => {
+    const el = measureRef.current;
+    if (!el) return;
+    const heights = {};
+    el.querySelectorAll('[data-mid]').forEach((n) => {
+      heights[n.dataset.mid] = n.getBoundingClientRect().height;
+    });
+    setPages(paginate(blocks, heights, canvas));
+  }, [blocks, canvas, fontsReady]);
+
+  // The measurer must live under the same style scope as real pages so the
+  // measured metrics ARE the layout metrics.
+  const measurer = (
+    <div
+      ref={measureRef}
+      className={`ks-measure ks-pgs ks-pgs--${canvas.id}`}
+      style={{ width: contentWidth(canvas) }}
+      aria-hidden="true"
+    >
+      {blocks.filter((b) => !b.fixed).map((b) => (
+        <div key={b.id} data-mid={b.id}>
+          <TypesetBlock block={b} onEditSection={onEditSection} />
+        </div>
+      ))}
+    </div>
+  );
+
+  return { pages, measurer };
+}
+
+export default function KeepsakeBook({ spreads, subjectName, edition, onEditSection, onProgress }) {
+  const [mode, setMode] = useState(modeOf);
+  const canvas = mode === 'phone' ? PHONE_FOLIO : PRINT_FOLIO;
+  const wide = mode === 'spread';
+  const { pages, measurer } = useTypeset(spreads, canvas, onEditSection);
+
+  const [index, setIndex] = useState(0); // always a PAGE index, in all modes
   const [turn, setTurn] = useState(null); // { dir: 1 | -1 } while a leaf is lifted
   const [hint, setHint] = useState(false);
   // Once true, stays true for the life of this mount — even paging back to
   // the cover later reads as an ordinary closed-book page, never the
   // coffee-table splash again.
   const [everOpened, setEverOpened] = useState(false);
-  const [wide, setWide] = useState(() => window.matchMedia?.(SPREAD_MQ).matches ?? false);
+  const [scale, setScale] = useState(1);
   const stageRef = useRef(null);
-  const sheetRef = useRef(null);
+  const fitRef = useRef(null); // the unpadded box the sheet must fit inside
   const leafRef = useRef(null);
-  const leafFrontRef = useRef(null);
-  const underRef = useRef(null);
-  const curlCanvasRef = useRef(null);
-  const curlRendererRef = useRef(null); // { corner, pending, renderer, width, height } while a forward curl drag/settle is live
   const drag = useRef(null); // live pointer-drag state
   const anim = useRef(null); // { dir, target } while the rAF loop is turning
   const rafRef = useRef(0);
@@ -75,15 +124,24 @@ export default function KeepsakeBook({ pages, renderPage, onProgress }) {
     typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches,
   );
 
-  const last = pages.length - 1;
-  const i = Math.min(index, last);
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return;
+    const mqs = [window.matchMedia(SPREAD_MQ), window.matchMedia(PHONE_MQ)];
+    const on = () => setMode(modeOf());
+    mqs.forEach((m) => m.addEventListener('change', on));
+    return () => mqs.forEach((m) => m.removeEventListener('change', on));
+  }, []);
 
-  // ── Spread bookkeeping (wide only) ─────────────────────────────────────────
+  const pageList = pages || [];
+  const last = pageList.length - 1;
+  const i = Math.min(index, Math.max(0, last));
+
+  // ── Spread bookkeeping (wide only) ────────────────────────────────────────
   // Spread 0 = the cover alone on the recto; spread s pairs pages 2s-1 | 2s.
   const s = Math.ceil(i / 2);
-  const sLast = Math.ceil(last / 2);
-  const leftOf = (sp) => (sp <= 0 ? null : pages[2 * sp - 1] || null);
-  const rightOf = (sp) => pages[2 * sp] || null;
+  const sLast = Math.ceil(Math.max(0, last) / 2);
+  const leftOf = (sp) => (sp <= 0 ? null : pageList[2 * sp - 1] || null);
+  const rightOf = (sp) => pageList[2 * sp] || null;
   const canFwd = wide ? s < sLast : i < last;
   const canBack = wide ? s > 0 : i > 0;
   const targetIndexFor = (dir) => {
@@ -92,20 +150,35 @@ export default function KeepsakeBook({ pages, renderPage, onProgress }) {
     return ns <= 0 ? 0 : Math.min(last, 2 * ns - 1);
   };
 
-  useEffect(() => {
-    const mq = window.matchMedia?.(SPREAD_MQ);
-    if (!mq) return;
-    const on = () => setWide(mq.matches);
-    mq.addEventListener('change', on);
-    return () => mq.removeEventListener('change', on);
-  }, []);
+  // The coffee-table splash: a physical object at rest, not yet opened.
+  const resting = !everOpened && i === 0 && !turn;
+  const closedSpread = wide && s === 0 && !turn;
+  // The sheet's logical (pre-scale) size — the spread shows two trims side
+  // by side except while closed on the cover.
+  const logicalW = wide && !closedSpread ? canvas.w * 2 : canvas.w;
+  const logicalH = canvas.h;
+
+  // ── Scale-to-fit (never above 1) ──────────────────────────────────────────
+  useLayoutEffect(() => {
+    const el = fitRef.current;
+    if (!el) return;
+    const fit = () => {
+      const r = el.getBoundingClientRect();
+      setScale(Math.min(r.width / logicalW, r.height / logicalH, 1));
+    };
+    fit();
+    const ro = new ResizeObserver(fit);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [logicalW, logicalH]);
 
   // A recompiled or revised edition can shrink the page list — stay in range.
-  useEffect(() => { if (index > last) setIndex(Math.max(0, last)); }, [index, last]);
+  useEffect(() => { if (pages && index > last) setIndex(Math.max(0, last)); }, [pages, index, last]);
 
   useEffect(() => {
+    if (!pageList.length) return;
     const visible = wide ? (rightOf(s) ? 2 * s : 2 * s - 1) : i;
-    onProgress?.((Math.max(0, visible) + 1) / pages.length);
+    onProgress?.((Math.max(0, visible) + 1) / pageList.length);
   });
 
   useEffect(() => () => cancelAnimationFrame(rafRef.current), []);
@@ -147,16 +220,12 @@ export default function KeepsakeBook({ pages, renderPage, onProgress }) {
     stageRef.current?.style.setProperty('--ks-turnshadow-l', '0');
   }, [turn, i, wide]);
 
-  // A mid-turn layout flip (window resized past the breakpoint): land the
+  // A mid-turn layout flip (window resized past a breakpoint): land the
   // book instantly wherever it was headed rather than tearing the leaf.
   useEffect(() => {
     if (anim.current) { cancelAnimationFrame(rafRef.current); finish(true); }
     else if (drag.current?.active) { drag.current = null; setTurn(null); }
-    if (curlRendererRef.current) {
-      curlRendererRef.current = null;
-      if (curlCanvasRef.current) curlCanvasRef.current.style.opacity = '0';
-    }
-  }, [wide]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [mode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function finish(commit) {
     const a = anim.current;
@@ -166,9 +235,13 @@ export default function KeepsakeBook({ pages, renderPage, onProgress }) {
     setTurn(null);
   }
 
-  function animateP(dir, from, to, ease, commit, durMs = TURN_MS) {
+  // durMs is the FULL-turn duration; a settle from p covers the remainder.
+  // A flick hands its release velocity in as extra urgency — the leaf keeps
+  // the finger's energy instead of easing off politely (inertia).
+  function animateP(dir, from, to, ease, commit, durMs = TURN_MS, velocity = 0) {
     const t0 = performance.now();
-    const dur = Math.max(1, durMs * Math.abs(to - from));
+    const urgency = Math.min(Math.abs(velocity) / 1.5, 0.65);
+    const dur = Math.max(140, durMs * Math.abs(to - from) * (1 - urgency));
     const step = (now) => {
       if (!anim.current) return;
       const k = Math.min(1, (now - t0) / dur);
@@ -183,8 +256,7 @@ export default function KeepsakeBook({ pages, renderPage, onProgress }) {
   const isGrandOpen = (dir) => dir === 1 && i === 0 && !everOpened;
 
   function startTurn(dir) {
-    recoverStaleCurl();
-    if (anim.current || turn || curlRendererRef.current) return;
+    if (anim.current || turn) return;
     if (dir === 1 ? !canFwd : !canBack) return;
     interacted.current = true;
     setHint(false);
@@ -194,158 +266,18 @@ export default function KeepsakeBook({ pages, renderPage, onProgress }) {
       if (grandOpen) setEverOpened(true);
       return;
     }
-    if (!wide && dir === 1 && !grandOpen) {
-      programmaticForwardCurl();
-      return;
-    }
     anim.current = { dir, target: targetIndexFor(dir), grandOpen };
     setTurn({ dir });
     // The layout effect poses the leaf at rest; animate from there.
     requestAnimationFrame(() => animateP(dir, 0, 1, easeInOutCubic, true, grandOpen ? GRAND_OPEN_MS : TURN_MS));
   }
 
-  function settleDrag(dir, p, complete) {
+  function settleDrag(dir, p, complete, velocity = 0) {
     const grandOpen = isGrandOpen(dir);
     anim.current = { dir, target: targetIndexFor(dir), grandOpen };
     if (complete && p >= 0.999) { finish(true); return; }
     if (!complete && p <= 0.001) { finish(false); return; }
-    animateP(dir, p, complete ? 1 : 0, easeOutCubic, complete, grandOpen && complete ? GRAND_OPEN_MS : TURN_MS);
-  }
-
-  // ── The finger-driven curl engine (single-mode forward turns only) ─────────
-  // Snapshots the live front page and the page beneath it to images, then
-  // drives a canvas overlay directly from touch coordinates every frame —
-  // no easing, no state, just "wherever your finger is, that's the fold."
-  // touchX/touchY are already local to the sheet's own box (0,0 top-left).
-  function startForwardCurl(touchX, touchY) {
-    const sheetEl = sheetRef.current;
-    const frontEl = leafFrontRef.current;
-    const underEl = underRef.current;
-    const canvasEl = curlCanvasRef.current;
-    if (!sheetEl || !frontEl || !canvasEl) return null;
-    const rect = sheetEl.getBoundingClientRect();
-    const state = {
-      width: rect.width,
-      height: rect.height,
-      corner: { x: rect.width, y: rect.height },
-      renderer: null,
-      pending: { x: touchX, y: touchY },
-      startedAt: performance.now(),
-    };
-    curlRendererRef.current = state;
-    Promise.all([
-      captureElementToImage(frontEl),
-      underEl ? captureElementToImage(underEl) : Promise.resolve(null),
-    ]).then(([frontImg, backImg]) => {
-      // Superseded (released, cancelled, or a new gesture began) while capturing.
-      if (curlRendererRef.current !== state) return;
-      const renderer = createCurlRenderer(canvasEl, state.width, state.height);
-      renderer.setPages(frontImg, backImg);
-      state.renderer = renderer;
-      renderer.render(state.corner.x, state.corner.y, state.pending.x, state.pending.y);
-      canvasEl.style.opacity = '1';
-    }).catch(() => {
-      // A page with content the capture can't rasterize (broken image, odd
-      // markup) — leave state.renderer null. onPointerUp/onPointerCancel
-      // already treat that as "nothing to settle" and clean up normally;
-      // this only silences the unhandled-rejection warning.
-      if (curlRendererRef.current === state) curlRendererRef.current = null;
-    });
-    return state;
-  }
-
-  // Forcibly clears a curl session that's been sitting unresolved far
-  // longer than any real capture or settle animation should take — see
-  // CURL_STALE_MS. Called defensively before any new turn attempt so a
-  // stuck gesture (dropped pointerup, backgrounded tab) can never
-  // permanently lock the reader; the user just has to try again once.
-  function recoverStaleCurl() {
-    const state = curlRendererRef.current;
-    if (!state) return;
-    if (performance.now() - state.startedAt < CURL_STALE_MS) return;
-    curlRendererRef.current = null;
-    if (curlCanvasRef.current) curlCanvasRef.current.style.opacity = '0';
-  }
-
-  function updateForwardCurl(touchX, touchY) {
-    const state = curlRendererRef.current;
-    if (!state) return;
-    state.pending = { x: touchX, y: touchY };
-    if (state.renderer) state.renderer.render(state.corner.x, state.corner.y, touchX, touchY);
-  }
-
-  // Freezes the pull direction at the moment of release and animates the
-  // 1D distance along that same line from wherever the finger left off to
-  // either back to the corner (cancel) or fully past the fold (commit,
-  // guaranteeing every strip reaches theta >= pi) — the one place this
-  // engine eases anything, because a released finger no longer exists to
-  // drive the next frame.
-  function releaseForwardCurl(complete) {
-    const state = curlRendererRef.current;
-    const canvasEl = curlCanvasRef.current;
-    if (!state) return;
-    if (!state.renderer) {
-      // The capture hadn't finished by the time the gesture ended (slow
-      // network, a large photo, anything). A completed drag or tap is a
-      // committed intent to turn the page — it must never just silently
-      // do nothing, even without the curl visual to show for it.
-      curlRendererRef.current = null;
-      if (canvasEl) canvasEl.style.opacity = '0';
-      if (complete) setIndex(targetIndexFor(1));
-      return;
-    }
-    const { corner, renderer, pending, width, height } = state;
-    const dx = (pending.x - corner.x) || -1;
-    const dy = (pending.y - corner.y) || -1;
-    const dist0 = Math.hypot(dx, dy) || 1;
-    const ux = dx / dist0;
-    const uy = dy / dist0;
-    const pageDiagonal = Math.hypot(width, height);
-    const distTarget = complete ? pageDiagonal * 1.2 : 0;
-    const t0 = performance.now();
-    const dur = 260;
-    const step = (now) => {
-      if (curlRendererRef.current !== state) return;
-      const k = Math.min(1, (now - t0) / dur);
-      const dist = dist0 + (distTarget - dist0) * easeOutCubic(k);
-      renderer.render(corner.x, corner.y, corner.x + ux * dist, corner.y + uy * dist);
-      if (k < 1) { requestAnimationFrame(step); return; }
-      curlRendererRef.current = null;
-      if (complete) {
-        setIndex(targetIndexFor(1));
-        // Give React one paint to land the new page underneath before the
-        // opaque canvas — sitting at a full, matching wrap — steps aside.
-        requestAnimationFrame(() => requestAnimationFrame(() => {
-          if (canvasEl) canvasEl.style.opacity = '0';
-        }));
-      } else if (canvasEl) {
-        canvasEl.style.opacity = '0';
-      }
-    };
-    requestAnimationFrame(step);
-  }
-
-  // Tap / chevron button / arrow key forward turns in single mode route
-  // through the same curl visual for consistency, pulling from the bottom
-  // corner along a fixed diagonal (there's no finger position to follow).
-  function programmaticForwardCurl() {
-    const sheetEl = sheetRef.current;
-    if (!sheetEl) { setIndex(targetIndexFor(1)); return; }
-    const rect = sheetEl.getBoundingClientRect();
-    const state = startForwardCurl(rect.width - 1, rect.height - 1);
-    if (!state) { setIndex(targetIndexFor(1)); return; }
-    // Give the capture a short window to win the race; releaseForwardCurl
-    // itself guarantees the turn lands either way (see its "not ready"
-    // branch), so there's nothing to fall back to here beyond calling it.
-    const waitAndRelease = () => {
-      if (curlRendererRef.current !== state) return; // superseded
-      if (state.renderer || performance.now() - state.startedAt > CAPTURE_FALLBACK_MS) {
-        releaseForwardCurl(true);
-        return;
-      }
-      requestAnimationFrame(waitAndRelease);
-    };
-    requestAnimationFrame(waitAndRelease);
+    animateP(dir, p, complete ? 1 : 0, easeOutCubic, complete, grandOpen && complete ? GRAND_OPEN_MS : TURN_MS, velocity);
   }
 
   function onPointerDown(e) {
@@ -353,8 +285,7 @@ export default function KeepsakeBook({ pages, renderPage, onProgress }) {
     if (e.target.closest('button, a, input, textarea')) return;
     interacted.current = true;
     setHint(false);
-    recoverStaleCurl();
-    if (anim.current || curlRendererRef.current) return;
+    if (anim.current) return;
     drag.current = {
       id: e.pointerId, x0: e.clientX, y0: e.clientY,
       active: false, dir: 0, p: 0, lastX: e.clientX, lastT: e.timeStamp, v: 0,
@@ -367,31 +298,14 @@ export default function KeepsakeBook({ pages, renderPage, onProgress }) {
     const dx = e.clientX - d.x0;
     const dy = e.clientY - d.y0;
     if (!d.active) {
-      // Horizontal intent only — vertical stays native page scroll.
       if (reduced.current) return;
       if (Math.abs(dx) < 10 || Math.abs(dx) < Math.abs(dy) * 1.2) return;
       const dir = dx < 0 ? 1 : -1;
       if (dir === 1 ? !canFwd : !canBack) { drag.current = null; return; }
       d.active = true;
       d.dir = dir;
-      d.useCurl = !wide && dir === 1 && !isGrandOpen(dir);
-      if (d.useCurl) {
-        const rect = sheetRef.current?.getBoundingClientRect();
-        d.rect = rect;
-        stageRef.current?.setPointerCapture?.(e.pointerId);
-        if (rect) startForwardCurl(e.clientX - rect.left, e.clientY - rect.top);
-      } else {
-        stageRef.current?.setPointerCapture?.(e.pointerId);
-        setTurn({ dir });
-      }
-    }
-    if (d.useCurl) {
-      const rect = d.rect || sheetRef.current?.getBoundingClientRect();
-      if (rect) updateForwardCurl(e.clientX - rect.left, e.clientY - rect.top);
-      d.v = (e.clientX - d.lastX) / Math.max(1, e.timeStamp - d.lastT);
-      d.lastX = e.clientX;
-      d.lastT = e.timeStamp;
-      return;
+      stageRef.current?.setPointerCapture?.(e.pointerId);
+      setTurn({ dir });
     }
     const w = stageRef.current?.clientWidth || window.innerWidth;
     d.p = Math.max(0, Math.min(1, (d.dir === 1 ? -dx : dx) / (w * (wide ? 0.5 : 0.7))));
@@ -406,20 +320,8 @@ export default function KeepsakeBook({ pages, renderPage, onProgress }) {
     drag.current = null;
     if (!d || e.pointerId !== d.id) return;
     if (d.active) {
-      if (d.useCurl) {
-        const rect = d.rect || sheetRef.current?.getBoundingClientRect();
-        const flick = d.v < -0.5;
-        let complete = flick;
-        if (rect) {
-          const dist = Math.hypot((e.clientX - rect.left) - rect.width, (e.clientY - rect.top) - rect.height);
-          const pageDiagonal = Math.hypot(rect.width, rect.height);
-          complete = complete || dist / pageDiagonal > 0.35;
-        }
-        releaseForwardCurl(complete);
-        return;
-      }
       const flick = d.dir === 1 ? d.v < -0.5 : d.v > 0.5;
-      settleDrag(d.dir, d.p, d.p > 0.3 || flick);
+      settleDrag(d.dir, d.p, d.p > 0.3 || flick, d.v);
       return;
     }
     // A clean tap in the margins turns the page.
@@ -435,8 +337,7 @@ export default function KeepsakeBook({ pages, renderPage, onProgress }) {
     const d = drag.current;
     drag.current = null;
     if (!d?.active) return;
-    if (d.useCurl) releaseForwardCurl(false);
-    else settleDrag(d.dir, d.p, false);
+    settleDrag(d.dir, d.p, false);
   }
 
   useEffect(() => {
@@ -451,7 +352,12 @@ export default function KeepsakeBook({ pages, renderPage, onProgress }) {
     return () => window.removeEventListener('keydown', onKey);
   });
 
-  // ── What sits where ─────────────────────────────────────────────────────────
+  if (!pages) {
+    // The galley proof measures on the first layout pass — one blank beat.
+    return <div ref={stageRef} className="ks-book">{measurer}</div>;
+  }
+
+  // ── What sits where ─────────────────────────────────────────────────────
   let baseLeft = null, baseRight, leafFront, leafBack = null, leafMounted;
   if (wide) {
     // Beneath the leaf: forward reveals the next recto; back reveals the
@@ -462,10 +368,23 @@ export default function KeepsakeBook({ pages, renderPage, onProgress }) {
     leafBack = turn ? (turn.dir === 1 ? leftOf(s + 1) : leftOf(s)) : null;
     leafMounted = !!turn;
   } else {
-    leafFront = turn?.dir === -1 ? pages[i - 1] : pages[i];
-    baseRight = turn?.dir === -1 ? pages[i] : pages[i + 1];
+    leafFront = turn?.dir === -1 ? pageList[i - 1] : pageList[i];
+    baseRight = turn?.dir === -1 ? pageList[i] : pageList[i + 1];
     leafMounted = true;
   }
+
+  const pageNoOf = (page) => pageList.indexOf(page) + 1;
+  const renderFace = (page) => page && (
+    <BookPage
+      key={page.pageKey}
+      page={page}
+      pageNo={pageNoOf(page)}
+      canvas={canvas}
+      subjectName={subjectName}
+      edition={edition}
+      onEditSection={onEditSection}
+    />
+  );
 
   const firstVisible = wide ? (s === 0 ? 0 : 2 * s - 1) : i;
   const lastVisible = wide ? (rightOf(s) ? 2 * s : 2 * s - 1) : i;
@@ -475,12 +394,8 @@ export default function KeepsakeBook({ pages, renderPage, onProgress }) {
   const edgeL = Math.min(edgeCap, firstVisible * 1.5);
   const edgeR = Math.min(edgeCap, (last - lastVisible) * 1.5);
   const counter = wide && s > 0 && rightOf(s)
-    ? `${2 * s}–${2 * s + 1} of ${pages.length}`
-    : `${lastVisible + 1} of ${pages.length}`;
-
-  // The coffee-table splash: a physical object at rest, not yet opened —
-  // gone for good the instant the reader actually turns the cover.
-  const resting = !everOpened && i === 0 && !turn;
+    ? `${2 * s}–${2 * s + 1} of ${pageList.length}`
+    : `${lastVisible + 1} of ${pageList.length}`;
 
   return (
     <div
@@ -491,56 +406,53 @@ export default function KeepsakeBook({ pages, renderPage, onProgress }) {
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerCancel}
     >
+      <div className="ks-stage" ref={fitRef}>
       <div
-        ref={sheetRef}
-        className={`ks-sheet${wide ? ' ks-sheet--spread' : ''}${wide && s === 0 && !turn ? ' ks-sheet--closed' : ''}${resting ? ' ks-sheet--rest' : ''}`}
+        className="ks-scale"
+        style={{ width: logicalW, height: logicalH, transform: `translate(-50%, -50%) scale(${scale})` }}
       >
-        {edgeL > 0 && <div className="ks-edges ks-edges--left" style={{ width: edgeL }} aria-hidden="true" />}
-        {edgeR > 0 && <div className="ks-edges ks-edges--right" style={{ width: edgeR }} aria-hidden="true" />}
-        {resting && <div className="ks-sheet__gloss" aria-hidden="true" />}
-        {resting && hint && <div className="ks-page-curl ks-page-curl--hero" aria-hidden="true" />}
-        {/* The same curl, quiet and small, on every ordinary page — an
-            always-available "there's more" cue. Purely visual (pointer-
-            events:none): it sits inside the right margin that already
-            turns the page forward on tap (see onPointerUp's fx>0.74), so
-            it doesn't need its own handler — just marks where to tap.
-            Hidden during rest (the hero curl covers that moment) and
-            mid-turn (the real leaf is already curling). */}
-        {!resting && !turn && canFwd && (
-          <div className="ks-page-curl ks-page-curl--page" aria-hidden="true" />
-        )}
-        {wide && (
-          <div className="ks-page ks-page--left">
-            {baseLeft
-              ? <PageContent key={baseLeft.pageKey} page={baseLeft} renderPage={renderPage} />
-              : <BlankPage />}
+        <div
+          className={`ks-sheet${wide ? ' ks-sheet--spread' : ''}${closedSpread ? ' ks-sheet--closed' : ''}${resting ? ' ks-sheet--rest' : ''}`}
+        >
+          {edgeL > 0 && <div className="ks-edges ks-edges--left" style={{ width: edgeL }} aria-hidden="true" />}
+          {edgeR > 0 && <div className="ks-edges ks-edges--right" style={{ width: edgeR }} aria-hidden="true" />}
+          {resting && <div className="ks-sheet__gloss" aria-hidden="true" />}
+          {resting && hint && <div className="ks-page-curl ks-page-curl--hero" aria-hidden="true" />}
+          {/* The same curl, quiet and small, on every ordinary page — an
+              always-available "there's more" cue marking the tap-forward
+              margin (see onPointerUp's fx > 0.74). Purely visual. */}
+          {!resting && !turn && canFwd && (
+            <div className="ks-page-curl ks-page-curl--page" aria-hidden="true" />
+          )}
+          {wide && !closedSpread && (
+            <div className="ks-page ks-page--left">
+              {baseLeft ? renderFace(baseLeft) : <BlankPage />}
+            </div>
+          )}
+          <div className="ks-page ks-page--under" aria-hidden={turn || wide ? undefined : 'true'}>
+            {baseRight ? renderFace(baseRight) : wide ? <BlankPage /> : null}
           </div>
-        )}
-        <div ref={underRef} className="ks-page ks-page--under" aria-hidden={turn || wide ? undefined : 'true'}>
-          {baseRight
-            ? <PageContent key={baseRight.pageKey} page={baseRight} renderPage={renderPage} />
-            : wide ? <BlankPage /> : null}
+          {leafMounted && (
+            <div ref={leafRef} className="ks-leaf">
+              <div className="ks-leaf__front">
+                {renderFace(leafFront)}
+                <div className="ks-leaf__shine" aria-hidden="true" />
+              </div>
+              <div className={`ks-leaf__back${leafBack ? ' ks-leaf__back--page' : ''}`} aria-hidden="true">
+                {leafBack
+                  ? (
+                    <>
+                      {renderFace(leafBack)}
+                      <div className="ks-leaf__shine" aria-hidden="true" />
+                    </>
+                  )
+                  : <Diamond />}
+              </div>
+            </div>
+          )}
+          {wide && !closedSpread && <div className="ks-spine" aria-hidden="true" />}
         </div>
-        {leafMounted && (
-          <div ref={leafRef} className="ks-leaf">
-            <div ref={leafFrontRef} className="ks-leaf__front">
-              {leafFront && <PageContent key={leafFront.pageKey} page={leafFront} renderPage={renderPage} />}
-              <div className="ks-leaf__shine" aria-hidden="true" />
-            </div>
-            <div className={`ks-leaf__back${leafBack ? ' ks-leaf__back--page' : ''}`} aria-hidden="true">
-              {leafBack
-                ? (
-                  <>
-                    <PageContent key={leafBack.pageKey} page={leafBack} renderPage={renderPage} />
-                    <div className="ks-leaf__shine" aria-hidden="true" />
-                  </>
-                )
-                : <Diamond />}
-            </div>
-          </div>
-        )}
-        {!wide && <canvas ref={curlCanvasRef} className="ks-curl-canvas" aria-hidden="true" />}
-        {wide && <div className="ks-spine" aria-hidden="true" />}
+      </div>
       </div>
       <button
         className="ks-booknav ks-booknav--prev"
@@ -563,6 +475,7 @@ export default function KeepsakeBook({ pages, renderPage, onProgress }) {
         </svg>
       </button>
       <p className="ks-label ks-bookcounter" aria-live="polite">{counter}</p>
+      {measurer}
     </div>
   );
 }
@@ -580,60 +493,5 @@ function BlankPage() {
     <div className="ks-blank" aria-hidden="true">
       <Diamond />
     </div>
-  );
-}
-
-// The reveal choreography keys off .ks-in (motion CSS gate). In book mode
-// each page marks its spreads the moment it mounts — content settles while
-// still hidden beneath the leaf, so a turn never uncovers a blank page. The
-// classList write is imperative on purpose: spread section classNames must
-// stay static (see CoverSpread's note) so React never wipes it.
-//
-// A page taller than the leaf scrolls internally, with a background-shadow
-// cue at the cut edge — too subtle for readers to notice on a first pass
-// (confirmed by repeated reports of "the text is cut off" that were really
-// just an unscrolled page). This adds an unmissable second cue: a bouncing
-// chevron pinned to the bottom of the page, showing only while there's
-// unread content below and hiding once scrolled near the end. It renders as
-// a sibling of .ks-page__scroll (not a child) so it stays fixed to the
-// page's own frame instead of scrolling away with the content — every
-// mount site (.ks-page--left, .ks-page--under, .ks-leaf__front/back) is
-// already position:absolute, so this positions correctly in all of them.
-function PageContent({ page, renderPage }) {
-  const scrollRef = useRef(null);
-  const [showMore, setShowMore] = useState(false);
-
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const update = () => {
-      const overflowing = el.scrollHeight > el.clientHeight + 4;
-      const nearEnd = el.scrollTop + el.clientHeight >= el.scrollHeight - 32;
-      setShowMore(overflowing && !nearEnd);
-    };
-    update();
-    el.addEventListener('scroll', update, { passive: true });
-    return () => el.removeEventListener('scroll', update);
-  }, []);
-
-  return (
-    <>
-      <div
-        className="ks-page__scroll"
-        ref={(el) => {
-          scrollRef.current = el;
-          el?.querySelectorAll('.ks-spread').forEach((sp) => sp.classList.add('ks-in'));
-        }}
-      >
-        {renderPage(page)}
-      </div>
-      {showMore && (
-        <div className="ks-page__more" aria-hidden="true">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-            <path d="M6 9l6 6 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </div>
-      )}
-    </>
   );
 }

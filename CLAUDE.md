@@ -53,12 +53,20 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   (reduced-motion safe), browser-native print (`@page`, full-bleed cover, body.ks-has-print
   scope), home-hub nudge card + `keepsake_generated` activity. Per-section narrative
   editing (PUT /api/keepsake, quiet pencils, one edit sheet). **Page-turn reader is the
-  default**: `paginateSpreads()` fixed pages, KeepsakeBook.jsx 3D leaf (drag/tap/chevrons/
-  arrow keys, shine + cast shadow, page-edge stacks, hint peek), scroll reader behind a
-  chrome toggle (`ks_reader_mode`), print served by hidden `.ks-printflow` copy. Wide
-  desktop (≥1140px) reads as a true verso/recto spread — spine-pivot leaf whose back face
-  carries the next left page, gutter shading, "2–3 of 12" counter. Phase 6
-  (whole-family bound edition, print-service handoff) deliberately later.
+  default** and is now a TYPESET magazine: `lib/typeset.js` (blocksOf → offscreen measure →
+  paginate; pure, unit-tested) composes fixed canonical pages — print folio 780×1040
+  (desktop/tablet), pocket folio 360×640 (phones) — **no page ever scrolls**; overflow
+  becomes the next page. KeepsakeBook scales the sheet down to fit (never up) via
+  `.ks-scale`; BookPage.jsx renders the `.ks-pg` design system (running heads, folios,
+  Fraunces serif body, drop caps, ghost roman chapter numerals, quote wells, full-bleed
+  album hero, DARK constellation night page, magazine cover: fitted stacked name +
+  masthead + credit block + cover line + grain). The strip-canvas page curl + SVG
+  foreignObject snapshot pipeline (pageCurl/) was DELETED — an SVG data-URI document
+  can't fetch external resources, so photos blanked and fonts fell back mid-curl; both
+  layouts now share the live-DOM leaf turn (shine, cast shadow, velocity-scaled inertia).
+  Scroll reader (`ks_reader_mode` toggle) and the print pipeline still use the old
+  spreads.jsx components — untouched. Wide desktop (≥1140px) reads as a true verso/recto
+  spread. Phase 6 (whole-family bound edition, print-service handoff) deliberately later.
 
 - **Tree storage rewrite** (plan: `docs/TREE-STORAGE.md`) — fixing the D1 1MiB-per-row
   ceiling for good, not just buying headroom. Target: core (people/relationships, a

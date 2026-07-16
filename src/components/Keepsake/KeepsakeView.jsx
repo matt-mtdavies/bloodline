@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { buildKeepsake, applyNarrative, paginateSpreads } from '../../lib/keepsake.js';
+import { buildKeepsake, applyNarrative } from '../../lib/keepsake.js';
 import {
   CoverSpread, FrontispieceSpread, OriginsSpread, ConstellationSpread,
   ChaptersSpread, ServiceSpread, PlacesSpread, VoicesSpread, AlbumSpread,
@@ -67,7 +67,6 @@ export default function KeepsakeView({
     () => applyNarrative(keepsake?.spreads || [], edition?.narrative),
     [keepsake, edition],
   );
-  const pages = useMemo(() => paginateSpreads(spreads), [spreads]);
 
   useEffect(() => {
     let alive = true;
@@ -350,8 +349,10 @@ export default function KeepsakeView({
       {readerMode === 'book' ? (
         <>
           <KeepsakeBook
-            pages={pages}
-            renderPage={(page) => renderSpread(page)}
+            spreads={spreads}
+            subjectName={keepsake.subject.name}
+            edition={edition}
+            onEditSection={onEditSection}
             onProgress={(p) => {
               if (progressRef.current) progressRef.current.style.transform = `scaleX(${p})`;
             }}

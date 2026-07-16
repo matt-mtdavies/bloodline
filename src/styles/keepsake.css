@@ -781,19 +781,30 @@
 .ks-book {
   position: absolute;
   inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   padding: calc(var(--safe-top, 0px) + 66px) 24px calc(var(--safe-bottom, 0px) + 44px);
   touch-action: pan-y;
   user-select: none;
   -webkit-user-select: none;
 }
+/* The press bed: the sheet is laid out at the canvas's LOGICAL size (set
+   inline by KeepsakeBook) and this wrapper scales the whole thing down to
+   fit the stage — never up. Pages are therefore identical at every window
+   size; only the magnification changes. */
+.ks-stage {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+.ks-scale {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  will-change: transform;
+}
 .ks-sheet {
   position: relative;
+  width: 100%;
   height: 100%;
-  max-width: 100%;
-  aspect-ratio: 10 / 14;
   perspective: 2600px;
   border-radius: 8px;
   background: var(--paper, #ffffff);
@@ -840,20 +851,7 @@
   -webkit-backface-visibility: hidden;
   background: var(--paper, #ffffff);
 }
-/* The finger-driven curl engine's canvas — occupies the same box as the
-   leaf, opaque only once the first frame is drawn (see KeepsakeBook.jsx's
-   startForwardCurl), so it fully covers the live DOM beneath while a
-   forward drag is in progress. pointer-events:none keeps every hit-test
-   (button/link guards, the tap-margin turn) landing on the real DOM. */
-.ks-curl-canvas {
-  position: absolute;
-  inset: 0;
-  z-index: 6;
-  pointer-events: none;
-  opacity: 0;
-  border-radius: inherit;
-}
-/* Paper catches the light as it curls — opacity driven per-frame. */
+/* Paper catches the light as it turns — opacity driven per-frame. */
 .ks-leaf__shine {
   position: absolute;
   inset: 0;
@@ -866,28 +864,6 @@
     rgba(28, 29, 33, 0.10) 60%,
     rgba(255, 255, 255, 0) 76%);
 }
-/* An unmissable second cue that a page scrolls (see KeepsakeBook.jsx's
-   PageContent) — the background-shadow alone went unnoticed too often. */
-.ks-page__more {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 10px;
-  z-index: 5;
-  display: flex;
-  justify-content: center;
-  pointer-events: none;
-  color: var(--ink-faint, #a6abb3);
-  animation: ks-more-bounce 1.6s ease-in-out infinite;
-}
-@media (prefers-reduced-motion: reduce) {
-  .ks-page__more { animation: none; opacity: 0.7; }
-}
-@keyframes ks-more-bounce {
-  0%, 100% { transform: translateY(0); opacity: 0.5; }
-  50% { transform: translateY(5px); opacity: 1; }
-}
-
 /* The back of a turning page: bare stock with the house diamond. */
 .ks-leaf__back {
   transform: rotateY(180deg);
@@ -899,48 +875,6 @@
     linear-gradient(105deg, rgba(28, 29, 33, 0.05), transparent 30%),
     radial-gradient(80% 60% at 50% 40%, #fdfbf8 0%, #f4efe7 100%);
 }
-
-/* Page content — the existing spreads, resized from viewport to sheet.
-   Anything taller than its page scrolls quietly inside it — but a plain
-   scrollbar is easy to miss (some OSes/browsers hide it until you actually
-   scroll), which reads as the text having simply been cut off. The
-   background here is the classic CSS-only "scroll shadow": two solid
-   covers that travel WITH the content (background-attachment: local) sit
-   on top of two shadow gradients fixed to the viewport (attachment:
-   scroll) — a cover only uncovers its shadow once there's actually more
-   content in that direction, so the cue appears exactly when needed and
-   never on a page short enough to need no scrolling at all. No JS.
-*/
-.ks-page__scroll {
-  position: absolute;
-  inset: 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  scrollbar-width: thin;
-  /* This wrapper always sits inside .ks-leaf (transform-style:preserve-3d,
-     backface-visibility:hidden — the page-turn flip needs both, on every
-     page, not just mid-turn). Nesting a scrollable element inside that 3D
-     compositing context is a known iOS Safari trap: native touch-scroll
-     can silently stop working even though the element still measures as
-     overflowing. Explicit touch-scrolling opts back in. */
-  -webkit-overflow-scrolling: touch;
-  background:
-    linear-gradient(var(--paper, #fff) 20%, rgba(255, 255, 255, 0)) 0 0,
-    linear-gradient(rgba(255, 255, 255, 0), var(--paper, #fff) 80%) 0 100%,
-    radial-gradient(farthest-side at 50% 0, rgba(28, 29, 33, 0.34), rgba(28, 29, 33, 0)) 0 0,
-    radial-gradient(farthest-side at 50% 100%, rgba(28, 29, 33, 0.34), rgba(28, 29, 33, 0)) 0 100%;
-  background-repeat: no-repeat;
-  background-color: var(--paper, #fff);
-  background-size: 100% 40px, 100% 40px, 100% 24px, 100% 24px;
-  background-attachment: local, local, scroll, scroll;
-}
-.ks-book .ks-spread {
-  min-height: 100%;
-  padding: 44px 26px 40px;
-  scroll-snap-align: none;
-}
-.ks-book .ks-cover { padding: 0; }
-.ks-book .ks-rail { display: none; }
 
 /* Margin chevrons — visible on hover-capable screens; fingers swipe. */
 .ks-booknav {
@@ -995,7 +929,6 @@
    the sheet pivoting on the centre spine; its back face carries the next
    left page (paper printed on both sides). KeepsakeBook toggles
    .ks-sheet--spread from a matchMedia listener at 1140px. */
-.ks-sheet--spread { aspect-ratio: 20 / 14; }
 .ks-page--left {
   position: absolute;
   top: 0;
@@ -1055,7 +988,6 @@
     rgba(28, 29, 33, 0.05) 58%,
     rgba(28, 29, 33, 0) 100%);
 }
-.ks-sheet--spread .ks-spread { padding: 44px 34px 40px; }
 
 /* At rest on the cover (wide mode, no turn in progress), present as a
    genuinely closed book — single-page width, no visible inside cover —
@@ -1066,7 +998,6 @@
    over exactly as they already did before this change. Placed after
    every `.ks-sheet--spread …` rule above so it wins the cascade despite
    tying on specificity (both classes are present on the same element). */
-.ks-sheet--spread.ks-sheet--closed { aspect-ratio: 10 / 14; }
 .ks-sheet--closed .ks-page--left,
 .ks-sheet--closed .ks-spine { display: none; }
 .ks-sheet--closed .ks-page--under,
@@ -1193,16 +1124,10 @@
 
 /* Phones read full-bleed — the sheet IS the screen. */
 @media (max-width: 700px) {
-  .ks-book { padding: 0; }
-  .ks-sheet {
-    width: 100%;
-    height: 100%;
-    aspect-ratio: auto;
-    border-radius: 0;
-    box-shadow: none;
-  }
-  .ks-book .ks-spread { padding: calc(var(--safe-top, 0px) + 64px) 22px calc(var(--safe-bottom, 0px) + 56px); }
-  .ks-book .ks-cover { padding: 0; }
+  /* The pocket folio nearly fills the screen (scale ~1); a slim frame of
+     the table wash around it keeps it reading as a bound object. */
+  .ks-book { padding: calc(var(--safe-top, 0px) + 60px) 10px calc(var(--safe-bottom, 0px) + 14px); }
+  .ks-sheet { border-radius: 10px; }
   .ks-bookcounter { display: none; }
   /* The edition-bar note has no width limit of its own, so on a narrow
      row it gets squeezed by the nowrap "Weave in the changes" button down
@@ -1360,3 +1285,611 @@
   body.ks-has-print .ks-rail { display: none; }
 }
 
+
+/* ═══ The typeset book (v2) ═══════════════════════════════════════════════
+   The .ks-pg design system — pages composed by lib/typeset.js at a fixed
+   canvas size and rendered by BookPage.jsx. Print furniture and all:
+   running heads, folios, drop caps, quote wells, full-bleed photo pages.
+   Two scopes share every rule that matters: .ks-pgs--print (the 780×1040
+   trim) and .ks-pgs--phone (the 360×640 pocket folio). The offscreen
+   measurer (.ks-measure) wears the same scope as the real pages so the
+   measured metrics ARE the layout metrics. */
+
+.ks-measure {
+  position: fixed;
+  left: -10000px;
+  top: 0;
+  visibility: hidden;
+  pointer-events: none;
+  z-index: -1;
+}
+
+/* ── The page frame ── */
+.ks-pg {
+  position: relative;
+  background: var(--paper, #ffffff);
+  color: var(--ink, #1c1d21);
+  overflow: hidden;
+  font-family: var(--body, sans-serif);
+}
+.ks-pg img { -webkit-user-drag: none; user-select: none; }
+.ks-pg__body {
+  position: absolute;
+  left: var(--ks-padx, 84px);
+  right: var(--ks-padx, 84px);
+  top: var(--ks-padtop, 92px);
+  bottom: var(--ks-padbot, 84px);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+.ks-pg--bleed .ks-pg__body { position: absolute; inset: 0; left: 0; right: 0; top: 0; bottom: 0; }
+/* The running head — the subject across the crown of every interior page,
+   held between hairlines the way a feature well runs its title. */
+.ks-pg__head {
+  position: absolute;
+  top: 34px;
+  left: var(--ks-padx, 84px);
+  right: var(--ks-padx, 84px);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+  color: var(--ink-faint, #a6abb3);
+  white-space: nowrap;
+}
+.ks-pg__head span { overflow: hidden; text-overflow: ellipsis; }
+.ks-pg__head::before,
+.ks-pg__head::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--hairline, #ebedf0);
+}
+.ks-pg__folio {
+  position: absolute;
+  bottom: 26px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-family: var(--display, serif);
+  font-size: 12.5px;
+  font-variant-numeric: oldstyle-nums;
+  color: var(--ink-faint, #a6abb3);
+}
+/* One dark leaf in a light book — the night page. */
+.ks-pg--night {
+  background:
+    radial-gradient(120% 90% at 50% 0%, #1d212c 0%, #14171f 70%, #101319 100%);
+  color: #e9e7e0;
+  --hairline: rgba(255, 255, 255, 0.13);
+  --ink: #e9e7e0;
+  --ink-soft: #a9adba;
+  --ink-faint: #7c8190;
+  --paper: transparent;
+}
+.ks-pg--night .ks-pg__head { color: #7c8190; }
+.ks-pg--night .ks-pg__folio { color: #7c8190; }
+
+/* The label — small caps kicker shared by openers and fixed pages. */
+.ks-pg-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--ink-faint, #a6abb3);
+}
+.ks-pg-label--accent { color: var(--accent, #c2603a); }
+.ks-pg-label--night { color: #8b90a0; text-align: center; }
+.ks-pg-orn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 22px 0;
+  color: var(--accent, #c2603a);
+}
+.ks-pg-orn::before,
+.ks-pg-orn::after { content: ''; flex: 1; height: 1px; background: var(--hairline, #ebedf0); }
+
+/* ── The cover — a real masthead ── */
+.ks-pg-cover { position: absolute; inset: 0; }
+.ks-pg-cover__photo,
+.ks-pg-cover__wash { position: absolute; inset: 0; overflow: hidden; }
+.ks-pg-cover__photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  /* A filmic grade: a touch of contrast and warmth, like printed stock. */
+  filter: contrast(1.05) saturate(1.05) sepia(0.04);
+}
+.ks-pg-cover__photo::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(to bottom, rgba(16, 14, 12, 0.34) 0%, rgba(16, 14, 12, 0) 22%),
+    linear-gradient(to bottom, rgba(16, 14, 12, 0) 38%, rgba(16, 14, 12, 0.56) 74%, rgba(16, 14, 12, 0.82) 100%);
+}
+.ks-pg-cover__wash {
+  background:
+    radial-gradient(1200px 700px at 80% -10%, var(--accent-soft, #f0d9cd) 0%, transparent 60%),
+    radial-gradient(900px 600px at -10% 110%, var(--sage-soft, #d8e0d6) 0%, transparent 55%),
+    var(--paper, #ffffff);
+}
+/* Paper grain over the whole cover — the print artifact that reads as
+   stock, not screen. */
+.ks-pg-cover__grain {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.16;
+  mix-blend-mode: soft-light;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+.ks-pg-cover__masthead {
+  position: absolute;
+  top: 30px;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.88);
+}
+.ks-pg-cover--bare .ks-pg-cover__masthead { color: var(--accent, #c2603a); }
+.ks-pg-cover__well {
+  position: absolute;
+  left: 40px;
+  right: 40px;
+  bottom: 44px;
+}
+.ks-pg-cover__name {
+  margin: 0;
+  font-family: var(--display, serif);
+  font-weight: 500;
+  font-optical-sizing: auto;
+  line-height: 0.92;
+  letter-spacing: -0.018em;
+  color: #fff;
+  text-wrap: balance;
+}
+.ks-pg-cover__name span { display: block; }
+.ks-pg-cover--bare .ks-pg-cover__name { color: var(--ink, #1c1d21); }
+.ks-pg-cover__credit {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-top: 20px;
+}
+.ks-pg-cover__lifespan {
+  font-family: var(--display, serif);
+  font-style: italic;
+  font-size: 20px;
+  color: rgba(255, 255, 255, 0.94);
+}
+.ks-pg-cover__epithet {
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.72);
+}
+.ks-pg-cover--bare .ks-pg-cover__lifespan { color: var(--ink-soft, #6b6f76); }
+.ks-pg-cover--bare .ks-pg-cover__epithet { color: var(--ink-faint, #a6abb3); }
+/* The cover line — one quiet strip of small caps along the foot, above a
+   hairline: the single strongest "this is a magazine" cue there is. */
+.ks-pg-cover__line {
+  margin-top: 22px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.36);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.66);
+}
+.ks-pg-cover--bare .ks-pg-cover__line {
+  border-top-color: var(--hairline, #ebedf0);
+  color: var(--ink-faint, #a6abb3);
+}
+
+/* ── Fixed pages ── */
+.ks-pg-front,
+.ks-pg-colophon {
+  margin: auto 0;
+  text-align: center;
+}
+.ks-pg-front__roles {
+  font-family: var(--display, serif);
+  font-style: italic;
+  font-size: 30px;
+  line-height: 1.35;
+  margin: 0;
+}
+.ks-pg-front__records { margin-top: 8px; font-size: 13px; color: var(--ink-soft, #6b6f76); }
+.ks-pg-front .ks-pg-label { margin-top: 4px; }
+
+.ks-pg-const {
+  margin: auto 0;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.ks-pg-const__caption { margin-top: 4px; }
+/* A fixed page can't scroll — the whole star chart scales to fit the trim
+   (same rule the print pipeline uses), drawn bright against the night. */
+.ks-pg-const .ks-constellation__scroll { overflow: visible; }
+.ks-pg-const .ks-constellation__scroll svg { width: 100%; height: auto; max-height: 100%; }
+.ks-pg-const .ks-constellation__fade { display: none; }
+.ks-pg--night .ks-const-link { opacity: 0.85; }
+/* The scroll reader's draw-on-scroll choreography keys off .ks-in, which a
+   typeset page never sets — inside .ks-pg the chart is simply always drawn. */
+.ks-pg .ks-const-node { opacity: 1 !important; transform: none !important; transition: none !important; }
+.ks-pg .ks-const-link--draw { stroke-dashoffset: 0 !important; transition: none !important; }
+.ks-pg .ks-const-link--fade { opacity: 0.7 !important; transition: none !important; }
+
+.ks-pg-hero { position: absolute; inset: 0; margin: 0; }
+.ks-pg-hero img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.ks-pg-hero::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to bottom, rgba(16, 14, 12, 0.3) 0%, rgba(16, 14, 12, 0) 18%, rgba(16, 14, 12, 0) 55%, rgba(16, 14, 12, 0.62) 100%);
+}
+.ks-pg-hero__label {
+  position: absolute;
+  top: 32px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  z-index: 1;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.85);
+}
+.ks-pg-hero figcaption {
+  position: absolute;
+  left: 36px;
+  right: 36px;
+  bottom: 30px;
+  z-index: 1;
+  font-family: var(--display, serif);
+  font-style: italic;
+  font-size: 16px;
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.ks-pg-albumgrid {
+  margin: auto 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+}
+.ks-pg-albumgrid[data-count='1'] { grid-template-columns: 1fr; }
+.ks-pg-albumgrid__item { margin: 0; }
+.ks-pg-albumgrid__item img {
+  width: 100%;
+  aspect-ratio: 4 / 5;
+  object-fit: cover;
+  display: block;
+}
+.ks-pg-albumgrid[data-count='1'] .ks-pg-albumgrid__item img { aspect-ratio: 4 / 3.4; }
+.ks-pg-albumgrid__item figcaption {
+  margin-top: 7px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--ink-soft, #6b6f76);
+}
+
+.ks-pg-docs { margin: auto 0; }
+.ks-pg-docs__grid {
+  margin-top: 20px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+.ks-pg-doc img {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  display: block;
+  border: 1px solid var(--hairline, #ebedf0);
+}
+.ks-pg-doc__title { margin: 8px 0 0; font-weight: 600; font-size: 13px; }
+.ks-pg-doc__fact { margin: 2px 0 0; font-size: 12px; color: var(--ink-soft, #6b6f76); }
+
+.ks-pg-record { margin: auto 0; }
+.ks-pg-record table {
+  margin-top: 18px;
+  width: 100%;
+  border-collapse: collapse;
+}
+.ks-pg-record th {
+  text-align: left;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-faint, #a6abb3);
+  padding: 11px 12px 11px 0;
+  border-bottom: 1px solid var(--hairline, #ebedf0);
+  width: 42%;
+  vertical-align: baseline;
+}
+.ks-pg-record td {
+  font-family: var(--display, serif);
+  font-size: 16px;
+  padding: 11px 0;
+  border-bottom: 1px solid var(--hairline, #ebedf0);
+  vertical-align: baseline;
+}
+
+.ks-pg-colophon__edition {
+  font-family: var(--display, serif);
+  font-style: italic;
+  font-size: 17px;
+  margin: 0 0 12px;
+}
+.ks-pg-colophon__meta { font-size: 13px; line-height: 1.8; color: var(--ink-soft, #6b6f76); margin: 0; }
+.ks-pg-colophon__invite {
+  margin: 18px auto 0;
+  max-width: 30em;
+  font-family: var(--display, serif);
+  font-style: italic;
+  font-size: 14.5px;
+  color: var(--ink-soft, #6b6f76);
+}
+.ks-pg-colophon__privacy { margin: 22px 0 0; font-size: 11px; letter-spacing: 0.06em; color: var(--ink-faint, #a6abb3); }
+
+/* ── Flow blocks ──
+   Spacing lives INSIDE each block (padding, never margins) so the
+   measurer's numbers are exactly what the page lays out. */
+.ks-pgb { min-width: 0; }
+
+.ks-pgb--open { padding-top: 6px; padding-bottom: 10px; }
+.ks-pgb-open__title {
+  margin: 10px 0 0;
+  font-family: var(--display, serif);
+  font-weight: 500;
+  font-size: 40px;
+  line-height: 1.06;
+  letter-spacing: -0.015em;
+  text-wrap: balance;
+}
+.ks-pgb-open__sub {
+  margin: 8px 0 0;
+  font-family: var(--display, serif);
+  font-style: italic;
+  font-size: 16px;
+  color: var(--ink-soft, #6b6f76);
+}
+.ks-pgb--memorial .ks-pg-label--accent { color: var(--memorial, #7a6b8f); }
+
+.ks-pgb--chapter { padding-top: 18px; padding-bottom: 8px; }
+.ks-pgb-chapter__num {
+  display: block;
+  font-family: var(--display, serif);
+  font-style: italic;
+  font-weight: 500;
+  font-size: 74px;
+  line-height: 0.9;
+  color: color-mix(in srgb, var(--accent, #c2603a) 26%, transparent);
+  margin-bottom: 10px;
+}
+
+/* Body prose — serif, like the feature well of a printed magazine. */
+.ks-pgb--prose {
+  margin: 0;
+  padding-top: 15px;
+  font-family: var(--display, serif);
+  font-size: 17px;
+  line-height: 1.66;
+  font-variant-numeric: oldstyle-nums;
+  text-wrap: pretty;
+}
+.ks-pgb--dropcap::first-letter {
+  font-size: 3.6em;
+  line-height: 0.8;
+  float: left;
+  padding: 7px 9px 0 0;
+  font-style: normal;
+  color: var(--accent, #c2603a);
+}
+.ks-pgb--pending {
+  margin: 0;
+  padding-top: 15px;
+  padding-left: 14px;
+  border-left: 2px solid var(--accent-soft, #f0d9cd);
+  font-family: var(--display, serif);
+  font-style: italic;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--ink-faint, #a6abb3);
+}
+
+.ks-pgb--parents { padding-top: 26px; display: flex; gap: 28px; flex-wrap: wrap; }
+.ks-pgb-parent { display: flex; align-items: center; gap: 12px; }
+.ks-pgb-parent__name { display: block; font-weight: 600; font-size: 14.5px; }
+.ks-pgb-parent__role {
+  display: block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-faint, #a6abb3);
+}
+
+.ks-pgb--event { padding-top: 13px; display: flex; gap: 16px; align-items: baseline; }
+.ks-pgb-event__year {
+  flex: none;
+  width: 52px;
+  font-family: var(--display, serif);
+  font-size: 15px;
+  font-variant-numeric: oldstyle-nums;
+  color: var(--accent, #c2603a);
+}
+.ks-pgb-event__title { font-size: 14.5px; line-height: 1.45; }
+.ks-pgb-event__detail { display: block; font-size: 13px; color: var(--ink-soft, #6b6f76); margin-top: 1px; }
+
+.ks-pgb--quote {
+  margin: 0;
+  padding-top: 24px;
+  padding-left: 18px;
+  border-left: 2px solid var(--accent-soft, #f0d9cd);
+  font-family: var(--display, serif);
+  font-style: italic;
+  font-size: 18px;
+  line-height: 1.55;
+}
+.ks-pgb--quote cite {
+  display: block;
+  margin-top: 10px;
+  font-style: normal;
+  font-family: var(--body, sans-serif);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-faint, #a6abb3);
+}
+
+/* The quote well — one voice given the space a printed pull quote gets. */
+.ks-pgb--voice { position: relative; padding-top: 40px; padding-left: 6px; min-height: 150px; }
+.ks-pgb-voice__mark {
+  position: absolute;
+  top: 26px;
+  left: -8px;
+  font-family: var(--display, serif);
+  font-size: 84px;
+  line-height: 1;
+  color: var(--accent-soft, #f0d9cd);
+  pointer-events: none;
+}
+.ks-pgb--voice blockquote {
+  position: relative;
+  margin: 0;
+  padding-left: 26px;
+  font-family: var(--display, serif);
+  font-style: italic;
+  font-size: 20px;
+  line-height: 1.5;
+}
+.ks-pgb--voice cite {
+  position: relative;
+  display: block;
+  margin-top: 10px;
+  padding-left: 26px;
+  font-style: normal;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-faint, #a6abb3);
+}
+
+.ks-pgb--serviceid {
+  padding-top: 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-soft, #6b6f76);
+}
+.ks-pgb--medals { padding-top: 20px; display: flex; flex-wrap: wrap; gap: 8px; }
+.ks-pgb-medal {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px;
+  border: 1px solid var(--hairline, #ebedf0);
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-soft, #6b6f76);
+}
+
+.ks-pgb--place { padding-top: 22px; }
+.ks-pgb-place__name {
+  display: block;
+  font-family: var(--display, serif);
+  font-weight: 500;
+  font-size: 24px;
+  letter-spacing: -0.01em;
+}
+.ks-pgb-place__role { display: block; margin-top: 3px; }
+
+.ks-pgb--legacyrow { padding-top: 24px; display: flex; flex-wrap: wrap; gap: 18px 22px; }
+.ks-pgb-legacy__person {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.ks-pgb--legacyline {
+  margin: 0;
+  padding-top: 20px;
+  font-family: var(--display, serif);
+  font-style: italic;
+  font-size: 16px;
+  color: var(--ink-soft, #6b6f76);
+}
+
+/* ── The pocket folio (phone) — same system, smaller press ── */
+.ks-pgs--phone .ks-pg__head { top: 20px; font-size: 8px; letter-spacing: 0.22em; }
+.ks-pgs--phone .ks-pg__folio { bottom: 14px; font-size: 11px; }
+.ks-pgs--phone .ks-pg-cover__masthead { top: 18px; font-size: 8.5px; letter-spacing: 0.26em; }
+.ks-pgs--phone .ks-pg-cover__well { left: 22px; right: 22px; bottom: 24px; }
+.ks-pgs--phone .ks-pg-cover__lifespan { font-size: 16px; }
+.ks-pgs--phone .ks-pg-cover__epithet { font-size: 10px; }
+.ks-pgs--phone .ks-pg-cover__credit { margin-top: 12px; gap: 10px; }
+.ks-pgs--phone .ks-pg-cover__line { margin-top: 14px; padding-top: 10px; font-size: 8.5px; letter-spacing: 0.24em; }
+.ks-pgs--phone .ks-pg-front__roles { font-size: 22px; }
+.ks-pgs--phone .ks-pgb-open__title { font-size: 28px; }
+.ks-pgs--phone .ks-pgb-open__sub { font-size: 14px; }
+.ks-pgs--phone .ks-pgb-chapter__num { font-size: 52px; }
+.ks-pgs--phone .ks-pgb--prose { font-size: 15.5px; line-height: 1.6; padding-top: 12px; }
+.ks-pgs--phone .ks-pgb--pending { font-size: 13.5px; }
+.ks-pgs--phone .ks-pgb--event { padding-top: 10px; }
+.ks-pgs--phone .ks-pgb-event__year { width: 42px; font-size: 13.5px; }
+.ks-pgs--phone .ks-pgb-event__title { font-size: 13px; }
+.ks-pgs--phone .ks-pgb-event__detail { font-size: 12px; }
+.ks-pgs--phone .ks-pgb--quote { font-size: 16px; padding-top: 18px; }
+.ks-pgs--phone .ks-pgb--voice { min-height: 120px; padding-top: 30px; }
+.ks-pgs--phone .ks-pgb--voice blockquote { font-size: 17px; padding-left: 20px; }
+.ks-pgs--phone .ks-pgb--voice cite { padding-left: 20px; }
+.ks-pgs--phone .ks-pgb-voice__mark { font-size: 62px; top: 20px; }
+.ks-pgs--phone .ks-pgb-place__name { font-size: 20px; }
+.ks-pgs--phone .ks-pg-hero figcaption { left: 20px; right: 20px; bottom: 18px; font-size: 13.5px; }
+.ks-pgs--phone .ks-pg-hero__label { top: 18px; font-size: 8.5px; }
+.ks-pgs--phone .ks-pg-albumgrid { gap: 12px; }
+.ks-pgs--phone .ks-pg-docs__grid { gap: 14px; }
+.ks-pgs--phone .ks-pg-record td { font-size: 14px; }
+.ks-pgs--phone .ks-pg-record th,
+.ks-pgs--phone .ks-pg-record td { padding-top: 8px; padding-bottom: 8px; }
+.ks-pgs--phone .ks-pgb--parents { padding-top: 18px; gap: 16px; }
+.ks-pgs--phone .ks-pg-colophon__meta { font-size: 12px; }
+
+/* Print-flow copy and scroll reader never see .ks-pg pages; the print
+   pipeline keeps reading the old spreads (.ks-printflow). */
