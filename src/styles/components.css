@@ -3694,6 +3694,7 @@ button.health-notes {
    Plain input, no clear button: a year is trivial to just retype. */
 .tl-edit { display: grid; gap: 12px; }
 .tl-edit__empty { margin: 0; font-size: 14px; color: var(--ink-soft); }
+.tl-edit__hint { margin: -4px 0 0; font-size: 12.5px; color: var(--ink-faint); }
 .tl-row {
   display: flex;
   align-items: flex-start;
@@ -3702,7 +3703,33 @@ button.health-notes {
   border: 1px solid var(--hairline);
   border-radius: 16px;
   background: var(--paper-deep);
+  transition: box-shadow 0.15s var(--ease), transform 0.15s var(--ease), opacity 0.15s var(--ease);
 }
+/* The row mid-drag: lifted off the page, everything else keeps its plain
+   instant reflow around it — no FLIP-style slide animation on the siblings,
+   a reasonable v1 trade for how rarely this list is more than a handful of
+   rows. */
+.tl-row--dragging {
+  position: relative;
+  z-index: 5;
+  box-shadow: 0 10px 24px rgba(28, 29, 33, 0.16);
+  transform: scale(1.015);
+  opacity: 0.96;
+}
+.tl-row__handle {
+  flex: none;
+  width: 28px;
+  height: 50px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  color: var(--ink-faint);
+  cursor: grab;
+  touch-action: none; /* the handle drives reordering, not page scroll */
+  transition: color 0.2s var(--ease), background 0.2s var(--ease);
+}
+.tl-row__handle:hover, .tl-row__handle:focus-visible { color: var(--ink-soft); background: var(--paper); }
+.tl-row--dragging .tl-row__handle { cursor: grabbing; color: var(--accent-deep); }
 /* The two profile-derived rows (Born, Passed away) — tinted so it's visibly
    clear that editing them touches the profile's own birth/death fields,
    not just a timeline decoration. */

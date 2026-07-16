@@ -10,6 +10,20 @@ function withYear(dateStr, newYear) {
   return rest ? `${y}-${rest}` : (y || null);
 }
 
+// A row identity that only ever lives for the life of this editing session —
+// never persisted (see save() below) — so dragging can reorder the array
+// without React losing track of which textarea is which (index-as-key would
+// otherwise hand a reordered row's DOM node, cursor position and all, to
+// whatever data now sits at that index).
+const rowKey = () => 'r_' + Math.random().toString(36).slice(2, 9);
+
+function arrayMove(arr, from, to) {
+  const copy = arr.slice();
+  const [item] = copy.splice(from, 1);
+  copy.splice(to, 0, item);
+  return copy;
+}
+
 /*
  * Edit the key life events on the timeline. Two rows are special: Born and
  * Passed away aren't stored in person.events — they're derived from the
@@ -19,16 +33,33 @@ function withYear(dateStr, newYear) {
  * too, not just the stored events below them. Everything else behaves as
  * before: a year, a title, an optional detail; empty rows are dropped on
  * save; the rest are sorted by year so the timeline always reads in order.
+ *
+ * Same-year events (a dense military record with six things happening in
+ * 1917, say) have no natural order once reduced to a bare year — sorting
+ * alone can't tell them apart, so ties fall back to array order. Both this
+ * editor's initial load AND lib/profile.js's lifeEvents() use a stable sort,
+ * so whatever relative order the rows end up in here — including drag
+ * reordering — is exactly what the read-only timeline will show for ties.
+ * Loading already-sorted (instead of raw storage order, which is usually
+ * document-extraction order) is itself half the fix: it's what made the
+ * editor look scrambled even when the profile read fine.
  */
 export default function TimelineEditor({ person, onClose, onSave }) {
   const [rows, setRows] = useState(() =>
-    (person.events || []).map((e) => ({
-      year: String(e.year ?? ''),
-      title: e.title || '',
-      detail: e.detail || '',
-      tag: e.tag || null, // carried through untouched — not user-editable here
-    })),
+    (person.events || [])
+      .map((e) => ({
+        _key: rowKey(),
+        year: String(e.year ?? ''),
+        title: e.title || '',
+        detail: e.detail || '',
+        tag: e.tag || null, // carried through untouched — not user-editable here
+      }))
+      .sort((a, b) => Number(a.year) - Number(b.year)),
   );
+  const [draggingKey, setDraggingKey] = useState(null);
+  const dragRef = useRef(null); // { key, pointerId } while a handle drag is live
+  const rowElsRef = useRef(new Map()); // _key -> row DOM node, for live midpoint checks
+  const listRef = useRef(null); // the never-reordered .tl-edit container — see onHandleDown
 
   const hasBorn = !!person.birth_date;
   const [born, setBorn] = useState(() => ({
@@ -63,7 +94,65 @@ export default function TimelineEditor({ person, onClose, onSave }) {
     setRows((rs) => rs.filter((_, j) => j !== i));
     setConfirmRemoveIdx(null);
   };
-  const add = () => setRows((rs) => [...rs, { year: '', title: '', detail: '' }]);
+  const add = () => setRows((rs) => [...rs, { _key: rowKey(), year: '', title: '', detail: '' }]);
+
+  function moveRow(fromKey, delta) {
+    setRows((rs) => {
+      const from = rs.findIndex((r) => r._key === fromKey);
+      if (from === -1) return rs;
+      const to = Math.max(0, Math.min(rs.length - 1, from + delta));
+      return to === from ? rs : arrayMove(rs, from, to);
+    });
+  }
+
+  // Reordering is driven entirely by the dragged row's live position against
+  // the others' CURRENT midpoints (re-measured every move, not cached at
+  // drag start) — simple to reason about and plenty fast for a list this
+  // small, with no transform math or reflow-animation bookkeeping to get
+  // wrong.
+  //
+  // Pointer capture is set on the OUTER LIST CONTAINER (listRef), not on the
+  // handle button itself, and move/up/cancel are listened for there too —
+  // deliberately, after finding that capturing on the handle silently drops
+  // (hasPointerCapture flips to false mid-gesture, confirmed with the node
+  // still attached to the document) the moment a drag reorders the array:
+  // React's reconciliation touching the handle's own subtree during that
+  // re-render is enough to revoke it, even with a stable key preserving the
+  // DOM node itself. The container is never reordered, so it never loses
+  // capture — the same reason KeepsakeBook.jsx captures on its outer stage
+  // rather than the moving leaf.
+  function onHandleDown(e, key) {
+    listRef.current?.setPointerCapture(e.pointerId);
+    dragRef.current = { key, pointerId: e.pointerId };
+    setDraggingKey(key);
+    setConfirmRemoveIdx(null);
+  }
+  function onListMove(e) {
+    const drag = dragRef.current;
+    if (!drag || e.pointerId !== drag.pointerId) return;
+    const y = e.clientY;
+    let targetIndex = rows.length - 1;
+    for (let idx = 0; idx < rows.length; idx++) {
+      const el = rowElsRef.current.get(rows[idx]._key);
+      if (!el) continue;
+      const rect = el.getBoundingClientRect();
+      if (y < rect.top + rect.height / 2) { targetIndex = idx; break; }
+    }
+    const currentIndex = rows.findIndex((r) => r._key === drag.key);
+    if (currentIndex !== -1 && targetIndex !== currentIndex) {
+      setRows((rs) => arrayMove(rs, currentIndex, targetIndex));
+    }
+  }
+  function onListUp(e) {
+    const drag = dragRef.current;
+    if (!drag || e.pointerId !== drag.pointerId) return;
+    dragRef.current = null;
+    setDraggingKey(null);
+  }
+  function onHandleKeyDown(e, key) {
+    if (e.key === 'ArrowUp') { e.preventDefault(); moveRow(key, -1); }
+    else if (e.key === 'ArrowDown') { e.preventDefault(); moveRow(key, 1); }
+  }
 
   const save = () => {
     const events = rows
@@ -122,7 +211,13 @@ export default function TimelineEditor({ person, onClose, onSave }) {
           <p className="form__sub">The milestones worth remembering, in {person.display_name}’s life.</p>
         </header>
 
-        <div className="tl-edit">
+        <div
+          className="tl-edit"
+          ref={listRef}
+          onPointerMove={onListMove}
+          onPointerUp={onListUp}
+          onPointerCancel={onListUp}
+        >
           {showEmpty && (
             <p className="tl-edit__empty">No events yet. Add the first one below.</p>
           )}
@@ -161,9 +256,35 @@ export default function TimelineEditor({ person, onClose, onSave }) {
             />
           )}
 
+          {rows.length > 1 && (
+            <p className="tl-edit__hint">Drag the handle to reorder — useful when a few events share a year.</p>
+          )}
           {rows.map((r, i) => (
-            <div key={i}>
-              <div className="tl-row">
+            <div
+              key={r._key}
+              ref={(el) => {
+                if (el) rowElsRef.current.set(r._key, el);
+                else rowElsRef.current.delete(r._key);
+              }}
+            >
+              <div className={`tl-row${draggingKey === r._key ? ' tl-row--dragging' : ''}`}>
+                <button
+                  type="button"
+                  className="tl-row__handle"
+                  onPointerDown={(e) => onHandleDown(e, r._key)}
+                  onKeyDown={(e) => onHandleKeyDown(e, r._key)}
+                  aria-label={`Reorder "${r.title || 'this event'}" — drag, or use arrow keys`}
+                  title="Drag to reorder"
+                >
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                    <circle cx="5" cy="3" r="1.3" />
+                    <circle cx="11" cy="3" r="1.3" />
+                    <circle cx="5" cy="8" r="1.3" />
+                    <circle cx="11" cy="8" r="1.3" />
+                    <circle cx="5" cy="13" r="1.3" />
+                    <circle cx="11" cy="13" r="1.3" />
+                  </svg>
+                </button>
                 <div className="tl-row__year">
                   <input
                     className="field__input"
