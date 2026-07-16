@@ -32,6 +32,21 @@ const TURN_MS = 620;
 // .ks-sheet--rest in keepsake.css), so it reads as the camera pushing into
 // the book rather than an ordinary page flip.
 const GRAND_OPEN_MS = 1500;
+// A safety valve, not an expected path: if a curl gesture's state is ever
+// still around this long without resolving (a capture that hung instead of
+// rejecting, a dropped pointerup on a real touch device, the tab having been
+// backgrounded mid-rAF), the reader force-recovers on the next attempt
+// rather than staying locked out forever.
+const CURL_STALE_MS = 4000;
+// How long to let the curl visual's capture race a completed gesture before
+// giving up on it and just landing the turn plainly. A user who has already
+// dragged past the commit threshold, or tapped the margin, has committed to
+// turning the page — the fancy curl is a bonus, never a precondition. This
+// must never be confused with CURL_STALE_MS above: that one guards against
+// a gesture that never resolves at all; this one is the ordinary, expected
+// "capture is still racing the release" case and stays short so a slow
+// capture never reads as an unresponsive tap.
+const CAPTURE_FALLBACK_MS = 900;
 const SPREAD_MQ = '(min-width: 1140px)';
 const easeInOutCubic = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
 const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
@@ -168,6 +183,7 @@ export default function KeepsakeBook({ pages, renderPage, onProgress }) {
   const isGrandOpen = (dir) => dir === 1 && i === 0 && !everOpened;
 
   function startTurn(dir) {
+    recoverStaleCurl();
     if (anim.current || turn || curlRendererRef.current) return;
     if (dir === 1 ? !canFwd : !canBack) return;
     interacted.current = true;
@@ -214,6 +230,7 @@ export default function KeepsakeBook({ pages, renderPage, onProgress }) {
       corner: { x: rect.width, y: rect.height },
       renderer: null,
       pending: { x: touchX, y: touchY },
+      startedAt: performance.now(),
     };
     curlRendererRef.current = state;
     Promise.all([
@@ -227,8 +244,27 @@ export default function KeepsakeBook({ pages, renderPage, onProgress }) {
       state.renderer = renderer;
       renderer.render(state.corner.x, state.corner.y, state.pending.x, state.pending.y);
       canvasEl.style.opacity = '1';
+    }).catch(() => {
+      // A page with content the capture can't rasterize (broken image, odd
+      // markup) — leave state.renderer null. onPointerUp/onPointerCancel
+      // already treat that as "nothing to settle" and clean up normally;
+      // this only silences the unhandled-rejection warning.
+      if (curlRendererRef.current === state) curlRendererRef.current = null;
     });
     return state;
+  }
+
+  // Forcibly clears a curl session that's been sitting unresolved far
+  // longer than any real capture or settle animation should take — see
+  // CURL_STALE_MS. Called defensively before any new turn attempt so a
+  // stuck gesture (dropped pointerup, backgrounded tab) can never
+  // permanently lock the reader; the user just has to try again once.
+  function recoverStaleCurl() {
+    const state = curlRendererRef.current;
+    if (!state) return;
+    if (performance.now() - state.startedAt < CURL_STALE_MS) return;
+    curlRendererRef.current = null;
+    if (curlCanvasRef.current) curlCanvasRef.current.style.opacity = '0';
   }
 
   function updateForwardCurl(touchX, touchY) {
@@ -248,7 +284,16 @@ export default function KeepsakeBook({ pages, renderPage, onProgress }) {
     const state = curlRendererRef.current;
     const canvasEl = curlCanvasRef.current;
     if (!state) return;
-    if (!state.renderer) { curlRendererRef.current = null; return; } // capture never finished — nothing was drawn
+    if (!state.renderer) {
+      // The capture hadn't finished by the time the gesture ended (slow
+      // network, a large photo, anything). A completed drag or tap is a
+      // committed intent to turn the page — it must never just silently
+      // do nothing, even without the curl visual to show for it.
+      curlRendererRef.current = null;
+      if (canvasEl) canvasEl.style.opacity = '0';
+      if (complete) setIndex(targetIndexFor(1));
+      return;
+    }
     const { corner, renderer, pending, width, height } = state;
     const dx = (pending.x - corner.x) || -1;
     const dy = (pending.y - corner.y) || -1;
@@ -289,10 +334,16 @@ export default function KeepsakeBook({ pages, renderPage, onProgress }) {
     const rect = sheetEl.getBoundingClientRect();
     const state = startForwardCurl(rect.width - 1, rect.height - 1);
     if (!state) { setIndex(targetIndexFor(1)); return; }
+    // Give the capture a short window to win the race; releaseForwardCurl
+    // itself guarantees the turn lands either way (see its "not ready"
+    // branch), so there's nothing to fall back to here beyond calling it.
     const waitAndRelease = () => {
-      if (curlRendererRef.current !== state) return;
-      if (state.renderer) releaseForwardCurl(true);
-      else requestAnimationFrame(waitAndRelease);
+      if (curlRendererRef.current !== state) return; // superseded
+      if (state.renderer || performance.now() - state.startedAt > CAPTURE_FALLBACK_MS) {
+        releaseForwardCurl(true);
+        return;
+      }
+      requestAnimationFrame(waitAndRelease);
     };
     requestAnimationFrame(waitAndRelease);
   }
@@ -302,6 +353,7 @@ export default function KeepsakeBook({ pages, renderPage, onProgress }) {
     if (e.target.closest('button, a, input, textarea')) return;
     interacted.current = true;
     setHint(false);
+    recoverStaleCurl();
     if (anim.current || curlRendererRef.current) return;
     drag.current = {
       id: e.pointerId, x0: e.clientX, y0: e.clientY,
