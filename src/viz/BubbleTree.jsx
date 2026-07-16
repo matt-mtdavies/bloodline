@@ -25,7 +25,8 @@ const GEN_GAP = 280; // shorter bands so wide screens use horizontal space too
 const ORGANIC_CHARGE = -1800; // stronger repulsion spreads generations sideways
 const SPREAD_X = 0.004; // weaker centring lets nodes fan out naturally
 const MAX_ZOOM = 2.0; // auto-fit (follow mode) — higher cap so small focus families fill the screen
-const MIN_ZOOM = 0.32; // free zoom-out: take in a huge tree at a glance
+const MIN_ZOOM = 0.16; // free zoom-out: take in a huge tree at a glance (double the old 0.32 floor's field of view)
+const FIT_FLOOR = 0.2; // how far "Show all"/auto-fit will pull back before giving up and re-centring instead
 const MAX_ZOOM_FREE = 2.8; // free zoom-in: lean right into a single face
 const RECAP_ZOOM = 2.2; // the recap tour's "hero" close-up — big and dramatic, but under MAX_ZOOM_FREE
 const PAN_FRICTION = 0.92; // inertial glide decay (per 1/60 s)
@@ -1601,7 +1602,7 @@ export default function BubbleTree({
           // compensate, so when that happens, re-centre fully on the active
           // person and re-fit from there: keeping them actually on screen
           // matters more than fitting every revealed relative.
-          if (fit < 0.4) {
+          if (fit < FIT_FLOOR) {
             camTX = f.x;
             camTY = f.y;
             halfX = Math.max(camTX - minX, maxX - camTX, rr);
@@ -1611,7 +1612,7 @@ export default function BubbleTree({
 
           camX.setTarget(camTX);
           camY.setTarget(camTY);
-          zoom.setTarget(clamp(fit, 0.4, MAX_ZOOM));
+          zoom.setTarget(clamp(fit, FIT_FLOOR, MAX_ZOOM));
           camX.step(dt);
           camY.step(dt);
           zoom.step(dt);
