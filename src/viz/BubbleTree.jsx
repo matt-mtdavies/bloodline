@@ -26,7 +26,15 @@ const ORGANIC_CHARGE = -1800; // stronger repulsion spreads generations sideways
 const SPREAD_X = 0.004; // weaker centring lets nodes fan out naturally
 const MAX_ZOOM = 2.0; // auto-fit (follow mode) — higher cap so small focus families fill the screen
 const MIN_ZOOM = 0.16; // free zoom-out: take in a huge tree at a glance (double the old 0.32 floor's field of view)
-const FIT_FLOOR = 0.2; // how far "Show all"/auto-fit will pull back before giving up and re-centring instead
+// Two different floors for the same follow-mode fit, on purpose: an ordinary
+// tap-to-reveal should keep behaving exactly as it always did (a modest
+// pull-back to frame whoever's newly visible, floor 0.4) — it should never
+// borrow the deep zoom-out meant for the deliberate "show everyone" moment.
+// That one (WHOLE_TREE_FIT_FLOOR, 0.2) only applies once every person in the
+// tree is actually expanded (see wholeTreeActive below), which is otherwise
+// only reachable via the explicit "Show all" toggle.
+const FIT_FLOOR = 0.4;
+const WHOLE_TREE_FIT_FLOOR = 0.2;
 const MAX_ZOOM_FREE = 2.8; // free zoom-in: lean right into a single face
 const RECAP_ZOOM = 2.2; // the recap tour's "hero" close-up — big and dramatic, but under MAX_ZOOM_FREE
 const PAN_FRICTION = 0.92; // inertial glide decay (per 1/60 s)
@@ -1595,6 +1603,14 @@ export default function BubbleTree({
           let halfY = Math.max(camTY - minY, maxY - camTY, rr);
           let fit = Math.min(MAX_ZOOM, (W / 2 - PAD) / halfX, ((H - topInset) / 2 - PAD) / halfY);
 
+          // Only the deliberate "every person expanded" moment gets the deeper
+          // floor — an ordinary tap that reveals a handful of relatives keeps
+          // the original, tighter one (see the two constants' comment above).
+          const g = graphRef.current;
+          const wholeTreeActive = !!expandedRef.current && g.people.length > 0
+            && expandedRef.current.size >= g.people.length;
+          const fitFloor = wholeTreeActive ? WHOLE_TREE_FIT_FLOOR : FIT_FLOOR;
+
           // The revealed family can be wide enough that fitting everyone would
           // need to zoom out further than the follow-mode floor allows — most
           // likely right after a search flyover reveals a long path's full
@@ -1602,7 +1618,7 @@ export default function BubbleTree({
           // compensate, so when that happens, re-centre fully on the active
           // person and re-fit from there: keeping them actually on screen
           // matters more than fitting every revealed relative.
-          if (fit < FIT_FLOOR) {
+          if (fit < fitFloor) {
             camTX = f.x;
             camTY = f.y;
             halfX = Math.max(camTX - minX, maxX - camTX, rr);
@@ -1612,7 +1628,7 @@ export default function BubbleTree({
 
           camX.setTarget(camTX);
           camY.setTarget(camTY);
-          zoom.setTarget(clamp(fit, FIT_FLOOR, MAX_ZOOM));
+          zoom.setTarget(clamp(fit, fitFloor, MAX_ZOOM));
           camX.step(dt);
           camY.step(dt);
           zoom.step(dt);
