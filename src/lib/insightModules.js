@@ -161,16 +161,19 @@ function windowOf(p, thisYear) {
       each other and may never have set foot in the same country. That's a
       coincidence of timing, not a chain of real relationships, and reads as
       false once you notice it. Every hop here is a genuine ancestor of the
-      person before it; "reachable" is scoped to lineageLine() below. ────── */
+      person before it; "reachable" is scoped to lineageLine() below. Step
+      parents are excluded from the walk entirely — same "step doesn't count"
+      rule bloodRelativesOf() uses elsewhere — since a step-grandparent isn't
+      an ancestor at all, blood or adopted. ─────────────────────────────── */
 function handshakes(graph, viewerId) {
   const thisYear = new Date().getFullYear();
   const viewer = graph.byId.get(viewerId);
   const vWin = windowOf(viewer, thisYear);
   if (!vWin) return null;
 
-  // Every ancestor of the viewer (any parent qualifier), plus the one step
-  // back toward the viewer that reached them — a real lineage tree, not a
-  // free-for-all "everyone alive at once" graph.
+  // Every real ancestor of the viewer (biological or adoptive — step
+  // excluded), plus the one step back toward the viewer that reached them —
+  // a real lineage tree, not a free-for-all "everyone alive at once" graph.
   const towardViewer = new Map(); // ancestorId -> the closer relative one step toward viewer
   const winById = new Map([[viewerId, vWin]]);
   const stack = [viewerId];
@@ -178,7 +181,7 @@ function handshakes(graph, viewerId) {
   while (stack.length) {
     const id = stack.pop();
     for (const par of graph.parents(id)) {
-      if (seen.has(par.id)) continue;
+      if (par.qualifier === 'step' || seen.has(par.id)) continue;
       seen.add(par.id);
       stack.push(par.id);
       towardViewer.set(par.id, id);

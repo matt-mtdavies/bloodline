@@ -372,6 +372,31 @@ test('handshakes: never links two ancestors from different branches, even if the
   assert.equal(r, null, 'no unbroken single-line chain exists — a cross-branch shortcut would wrongly return one');
 });
 
+test('handshakes: a step-parent\'s own ancestors are never treated as bloodline', () => {
+  // v's only bio parent (f, b.1960) is too shallow to clear the 90-year bar
+  // on its own. v also has a step-parent (s, b.1780) whose own bio parent
+  // (ss, b.1700-1800) overlaps s by 20 years, and s in turn overlaps v — a
+  // fully unbroken chain v -> s -> ss that would satisfy every check *if*
+  // step edges counted as ancestry. graph.parents() returns step edges
+  // alongside biological ones (it's qualifier-agnostic), so the walk must
+  // explicitly skip qualifier 'step' or it would wrongly crown ss the
+  // viewer's "three handshakes from 1700" ancestor.
+  const people = [
+    { id: 'v', display_name: 'Vera', birth_date: '1990-01-01', is_deceased: false },
+    { id: 'f', display_name: 'Fred', birth_date: '1960-01-01', is_deceased: false },
+    { id: 's', display_name: 'Steve', birth_date: '1780-01-01', is_deceased: false },
+    { id: 'ss', display_name: 'Steve Sr', birth_date: '1700-01-01', death_date: '1800-01-01', is_deceased: true },
+  ];
+  const rels = [
+    { id: 'r1', type: 'parent', from_person: 'f', to_person: 'v', qualifier: 'biological' },
+    { id: 'r2', type: 'parent', from_person: 's', to_person: 'v', qualifier: 'step' },
+    { id: 'r3', type: 'parent', from_person: 'ss', to_person: 's', qualifier: 'biological' },
+  ];
+  const g = buildGraph(people, rels);
+  const r = computeInsightModules(g, 'v').handshakes;
+  assert.equal(r, null, 'the only real ancestor line (f, b.1960) is too shallow — a step-line chain to ss must not substitute');
+});
+
 // ── Wave 3: handshakes to anyone ─────────────────────────────────────────────
 test('handshakesTo: direct parent/child overlap is a single hop, target first, viewer last', () => {
   const r = handshakesTo(graph, 'g4_0', 'g3_0_0');
