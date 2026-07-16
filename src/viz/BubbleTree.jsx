@@ -35,6 +35,12 @@ const MIN_ZOOM = 0.16; // free zoom-out: take in a huge tree at a glance (double
 // only reachable via the explicit "Show all" toggle.
 const FIT_FLOOR = 0.4;
 const WHOLE_TREE_FIT_FLOOR = 0.2;
+// Below this zoom, bubbles are too small and packed together to grab on
+// purpose — a finger meant for panning the canvas keeps landing on one
+// instead, dragging it out of place. A tap still selects (see
+// drag.tapCandidateId below); only the drag-to-reposition behaviour is
+// disabled, and only this far out.
+const BUBBLE_DRAG_MIN_ZOOM = 0.3;
 const MAX_ZOOM_FREE = 2.8; // free zoom-in: lean right into a single face
 const RECAP_ZOOM = 2.2; // the recap tour's "hero" close-up — big and dramatic, but under MAX_ZOOM_FREE
 const PAN_FRICTION = 0.92; // inertial glide decay (per 1/60 s)
@@ -1060,7 +1066,10 @@ export default function BubbleTree({
       app.stage.eventMode = 'static';
       app.stage.hitArea = { contains: () => true };
       const TAP_SLOP = 8; // px of movement still considered a tap
-      const drag = { type: 'none', node: null, id: null, start: null, moved: false, onPip: false };
+      const drag = {
+        type: 'none', node: null, id: null, start: null, moved: false, onPip: false,
+        tapCandidateId: null, // a bubble tapped while too zoomed-out to drag (see BUBBLE_DRAG_MIN_ZOOM)
+      };
       let last = null;
       let lastT = 0;
       let lastTap = { t: 0, x: 0, y: 0 };
@@ -1187,8 +1196,9 @@ export default function BubbleTree({
         lastT = performance.now();
         drag.start = { x: g.x, y: g.y };
         drag.moved = false;
+        drag.tapCandidateId = null;
         const id = bubbleIdFromTarget(e.target);
-        if (id) {
+        if (id && zoom.value >= BUBBLE_DRAG_MIN_ZOOM) {
           drag.type = 'bubble';
           drag.id = id;
           drag.node = nodeById.get(id);
@@ -1196,6 +1206,7 @@ export default function BubbleTree({
         } else {
           drag.type = 'pan';
           drag.node = null;
+          drag.tapCandidateId = id || null; // too zoomed out to drag it — a clean tap still selects
           vx = vy = 0; // catch the moving tree the instant you touch it
           // Double-tap empty space → recentre on the active family.
           const now = performance.now();
@@ -1318,12 +1329,22 @@ export default function BubbleTree({
           }
           if (!reducedMotion) sim.alphaTarget(0.012); // settle back to idle drift
         } else if (drag.type === 'pan' && !drag.moved) {
-          // A clean tap on empty canvas → deselect into browse mode (every bubble
-          // back to full brightness). Only in the free-flowing views: chart,
-          // lineage and focus-family all rely on a selection, so skip them.
-          const mode = layoutRef.current;
-          if (mode !== 'chart' && !lineageRef.current && !focusRef.current) {
-            onDeselectRef.current?.();
+          if (drag.tapCandidateId) {
+            // Too zoomed out to drag this bubble (see BUBBLE_DRAG_MIN_ZOOM), but
+            // a clean tap still selects it exactly like the 'bubble' path would.
+            if (!browseRef.current && activeRef.current === drag.tapCandidateId) {
+              onOpenPersonRef.current?.(drag.tapCandidateId);
+            } else {
+              onActivateRef.current?.(drag.tapCandidateId);
+            }
+          } else {
+            // A clean tap on empty canvas → deselect into browse mode (every
+            // bubble back to full brightness). Only in the free-flowing views:
+            // chart, lineage and focus-family all rely on a selection, so skip.
+            const mode = layoutRef.current;
+            if (mode !== 'chart' && !lineageRef.current && !focusRef.current) {
+              onDeselectRef.current?.();
+            }
           }
         }
         // A flick that's barely moving shouldn't drift; reduced-motion never coasts.
