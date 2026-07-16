@@ -223,58 +223,55 @@ function firstName(name) {
 }
 
 // A practical, always-current digest — not a threshold-gated "insight" (see
-// lib/insightModules.js#computeThisMonth). Capped by default so a
-// birthday-heavy family doesn't turn the hub into a scrolling calendar —
-// "+N more" just expands the same list in place, no navigating away and
-// losing your spot on Home.
+// lib/insightModules.js#computeThisMonth). Capped by default (MONTH_CAP,
+// matched by the CSS max-height on .home__month-list) so a birthday-heavy
+// family doesn't turn the hub into a wall of rows — the rest is a plain
+// scroll inside the card, not a click-to-expand, with a bottom fade hinting
+// there's more (same technique as Keepsake's constellation scroll-fade).
 const MONTH_CAP = 5;
 function ThisMonth({ data, onSelectPerson }) {
   const { month, birthdays, anniversaries } = data;
-  const [expanded, setExpanded] = useState(false);
   const all = [
     ...birthdays.map((b) => ({ kind: 'birthday', day: b.day, ...b })),
     ...anniversaries.map((a) => ({ kind: 'anniversary', day: a.day, ...a })),
   ].sort((a, b) => a.day - b.day);
-  const items = expanded ? all : all.slice(0, MONTH_CAP);
-  const overflow = all.length - MONTH_CAP;
+  const overflows = all.length > MONTH_CAP;
 
   return (
     <section className="home__section home__month" style={{ '--i': 0 }}>
       <h2 className="home__section-title">{month} in your family</h2>
-      <div className="home__month-list">
-        {items.map((item) => (
-          <button
-            key={`${item.kind}-${item.kind === 'birthday' ? item.id : item.aId + item.bId}`}
-            className={`home__month-row${item.isToday ? ' home__month-row--today' : ''}`}
-            onClick={() => onSelectPerson?.(item.kind === 'birthday' ? item.id : item.aId)}
-          >
-            <span className="home__month-day">{item.day}</span>
-            <span className="home__month-body">
-              {item.kind === 'birthday' ? (
-                <>
-                  <span className="home__month-t">{item.name}</span>
-                  <span className="home__month-d">
-                    {item.isToday ? 'Birthday today' : 'Birthday'}
-                    {item.turning != null ? ` · ${item.isPast ? 'turned' : 'turning'} ${item.turning}` : ''}
-                  </span>
-                </>
-              ) : (
-                <>
-                  <span className="home__month-t">{item.aName} &amp; {item.bName}</span>
-                  <span className="home__month-d">
-                    {item.isToday ? 'Anniversary today' : 'Anniversary'} · {item.years} {item.years === 1 ? 'year' : 'years'}
-                  </span>
-                </>
-              )}
-            </span>
-          </button>
-        ))}
+      <div className="home__month-frame">
+        <div className="home__month-list">
+          {all.map((item) => (
+            <button
+              key={`${item.kind}-${item.kind === 'birthday' ? item.id : item.aId + item.bId}`}
+              className={`home__month-row${item.isToday ? ' home__month-row--today' : ''}`}
+              onClick={() => onSelectPerson?.(item.kind === 'birthday' ? item.id : item.aId)}
+            >
+              <span className="home__month-day">{item.day}</span>
+              <span className="home__month-body">
+                {item.kind === 'birthday' ? (
+                  <>
+                    <span className="home__month-t">{item.name}</span>
+                    <span className="home__month-d">
+                      {item.isToday ? 'Birthday today' : 'Birthday'}
+                      {item.turning != null ? ` · ${item.isPast ? 'turned' : 'turning'} ${item.turning}` : ''}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <span className="home__month-t">{item.aName} &amp; {item.bName}</span>
+                    <span className="home__month-d">
+                      {item.isToday ? 'Anniversary today' : 'Anniversary'} · {item.years} {item.years === 1 ? 'year' : 'years'}
+                    </span>
+                  </>
+                )}
+              </span>
+            </button>
+          ))}
+        </div>
+        {overflows && <div className="home__month-fade" aria-hidden="true" />}
       </div>
-      {overflow > 0 && (
-        <button className="home__month-more" onClick={() => setExpanded((e) => !e)}>
-          {expanded ? 'Show less' : `+${overflow} more this month`}
-        </button>
-      )}
     </section>
   );
 }
