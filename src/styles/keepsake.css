@@ -840,6 +840,19 @@
   -webkit-backface-visibility: hidden;
   background: var(--paper, #ffffff);
 }
+/* The finger-driven curl engine's canvas — occupies the same box as the
+   leaf, opaque only once the first frame is drawn (see KeepsakeBook.jsx's
+   startForwardCurl), so it fully covers the live DOM beneath while a
+   forward drag is in progress. pointer-events:none keeps every hit-test
+   (button/link guards, the tap-margin turn) landing on the real DOM. */
+.ks-curl-canvas {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  pointer-events: none;
+  opacity: 0;
+  border-radius: inherit;
+}
 /* Paper catches the light as it curls — opacity driven per-frame. */
 .ks-leaf__shine {
   position: absolute;
