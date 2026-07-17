@@ -33,6 +33,7 @@ import {
   addLifeEvent,
   addMedal,
   removeMedal,
+  retractDocumentContributions,
   dismissRelationshipFact,
   logActivity,
   loadFromServer,
@@ -161,6 +162,16 @@ const PROFILE_FIELD_KEYS = [
   'occupation', 'birth_place', 'residence',
   'military_branch', 'military_nation', 'military_service_number', 'military_rank',
 ];
+
+// Every scalar profile field a document can ever write (see PROFILE_FIELD_KEYS
+// above, plus cause_of_death — filled opportunistically by applyDocumentFact,
+// never offered as its own Enrich candidate). Used two ways: tagging
+// person.field_sources[field] with the accepting document's id when a
+// document writes one, and clearing that tag the moment handleSave sees a
+// human change the same field through the ordinary edit form — so a document
+// deleted later can only ever retract what it actually still owns, never a
+// real correction typed in by hand afterward.
+const DOC_TRACKABLE_FIELDS = [...PROFILE_FIELD_KEYS, 'cause_of_death'];
 
 function buildExtracted(result) {
   const pf = result.profileFields;
@@ -1445,6 +1456,18 @@ export default function App() {
       const actEvent = detail
         ? { type: 'person_updated', personId: editId, personName: person?.display_name ?? '', detail }
         : null;
+      // A human just retyped this field through the ordinary edit form — it's
+      // no longer attributable to whichever document (if any) filled it in
+      // originally, so a later document deletion must never touch it. See
+      // retractDocumentContributions in store.js.
+      if (person?.field_sources) {
+        let sourcesChanged = false;
+        const nextSources = { ...person.field_sources };
+        for (const key of DOC_TRACKABLE_FIELDS) {
+          if (changed(key) && nextSources[key]) { delete nextSources[key]; sourcesChanged = true; }
+        }
+        if (sourcesChanged) fields = { ...fields, field_sources: nextSources };
+      }
       updatePerson(editId, fields, actEvent);
       setEditId(null);
     },
@@ -1498,12 +1521,12 @@ export default function App() {
       if (person && isDuplicateLifeEvent(person, fact)) {
         const titleLower = (fact.title || '').toLowerCase();
         if (titleLower.includes('born') && !person.birth_place && fact.detail) {
-          updatePerson(doc.person_id, { birth_place: fact.detail });
+          updatePerson(doc.person_id, { birth_place: fact.detail, field_sources: { ...person.field_sources, birth_place: docId } });
         } else if ((titleLower.includes('died') || titleLower.includes('passed')) && !person.cause_of_death && fact.detail) {
-          updatePerson(doc.person_id, { cause_of_death: fact.detail });
+          updatePerson(doc.person_id, { cause_of_death: fact.detail, field_sources: { ...person.field_sources, cause_of_death: docId } });
         }
       } else {
-        addLifeEvent(doc.person_id, { year: fact.year, title: fact.title, detail: fact.detail, tag: fact.tag });
+        addLifeEvent(doc.person_id, { year: fact.year, title: fact.title, detail: fact.detail, tag: fact.tag, sourceDocId: docId });
       }
       const facts = doc.extracted.facts.map((f, i) => (i === factIndex ? { ...f, status: 'accepted' } : f));
       updateDocument(docId, { extracted: { ...doc.extracted, facts } });
@@ -1529,7 +1552,7 @@ export default function App() {
       const doc = data.documents?.find((d) => d.id === docId);
       const medal = doc?.extracted?.medals?.[medalIndex];
       if (!doc || !medal) return;
-      addMedal(doc.person_id, { name: medal.name, detail: medal.detail });
+      addMedal(doc.person_id, { name: medal.name, detail: medal.detail, sourceDocId: docId });
       const medals = doc.extracted.medals.map((m, i) => (i === medalIndex ? { ...m, status: 'accepted' } : m));
       updateDocument(docId, { extracted: { ...doc.extracted, medals } });
     },
@@ -1574,7 +1597,10 @@ export default function App() {
       const candidate = doc?.extracted?.profileFields?.[field];
       if (!doc || !candidate) return;
       const person = graph.byId.get(doc.person_id);
-      updatePerson(doc.person_id, { [field]: candidate.value }, {
+      updatePerson(doc.person_id, {
+        [field]: candidate.value,
+        field_sources: { ...person?.field_sources, [field]: docId },
+      }, {
         type: 'person_updated', personId: doc.person_id, personName: person?.display_name ?? '', detail: field.replace(/_/g, ' '),
       });
       const profileFields = { ...doc.extracted.profileFields, [field]: { ...candidate, status: 'accepted' } };
@@ -2140,6 +2166,13 @@ export default function App() {
           if (doc?.src?.startsWith('/api/documents/')) {
             fetch(doc.src, { method: 'DELETE' }).catch(() => {});
           }
+          // Undo whatever this document actually wrote before removing it —
+          // the root-cause fix for a document accepted onto the wrong
+          // person: deleting it now retracts its own events/medals/fields
+          // instead of leaving them behind forever. See
+          // retractDocumentContributions in store.js for what it does and
+          // deliberately does NOT touch (relationships).
+          if (doc) retractDocumentContributions(doc.person_id, id);
           removeDocument(id);
         }}
         onUpdateDocument={(id, patch) => updateDocument(id, patch)}
@@ -2588,6 +2621,12 @@ function DocViewer({
   const [saveState, setSaveState] = useState('idle'); // idle | saving | error
   const [summaryState, setSummaryState] = useState('idle'); // idle | working | error
   const [summary, setSummary] = useState(doc.summary || null);
+  // Dismissing a fact/field marks it consumed on the document (never
+  // re-offered), the same one-way step as accepting — so it gets the same
+  // "are you sure" confirm every other dismiss surface in the app uses.
+  // Keyed by 'fact:<index>' / 'field:<name>' so only the one row being
+  // confirmed shows it.
+  const [confirmDismiss, setConfirmDismiss] = useState(null);
   const [facts, setFacts] = useState(doc.extracted?.facts || []);
   const [profileFields, setProfileFields] = useState(doc.extracted?.profileFields || null);
   // Never offer a fact that's already an obvious duplicate of something on
@@ -2720,40 +2759,69 @@ function DocViewer({
         {pendingFacts.length > 0 && (
           <div className="doc-viewer__facts">
             <span className="doc-viewer__summary-label">Life events found in this document</span>
-            {facts.map((f, i) => (f.status === 'pending' && f.year ? (
-              <div className="doc-fact" key={i}>
-                <div className="doc-fact__body">
-                  {f.tag === 'military' && (
-                    <span className="timeline__ribbon" title="Military service" aria-label="Military service">
-                      <RibbonIconSmall />
-                    </span>
+            {facts.map((f, i) => {
+              if (f.status !== 'pending' || !f.year) return null;
+              const key = `fact:${i}`;
+              const confirming = confirmDismiss === key;
+              return (
+                <div className="doc-fact" key={i}>
+                  <div className="doc-fact__body">
+                    {f.tag === 'military' && (
+                      <span className="timeline__ribbon" title="Military service" aria-label="Military service">
+                        <RibbonIconSmall />
+                      </span>
+                    )}
+                    <span className="doc-fact__title">{f.title} — {f.year}</span>
+                    {f.detail && <span className="doc-fact__detail">{f.detail}</span>}
+                  </div>
+                  {confirming ? (
+                    <div className="doc-fact__confirm">
+                      <span>Dismiss this suggestion?</span>
+                      <div className="doc-fact__confirm-btns">
+                        <button className="doc-card__confirm-remove" onClick={() => { resolveFact(i, 'dismissed'); setConfirmDismiss(null); }}>Dismiss</button>
+                        <button className="doc-card__confirm-cancel" onClick={() => setConfirmDismiss(null)}>Cancel</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="doc-fact__actions">
+                      <button className="enrich__row-action" onClick={() => resolveFact(i, 'accepted')}>Add</button>
+                      <button className="enrich__row-dismiss" onClick={() => setConfirmDismiss(key)}>Dismiss</button>
+                    </div>
                   )}
-                  <span className="doc-fact__title">{f.title} — {f.year}</span>
-                  {f.detail && <span className="doc-fact__detail">{f.detail}</span>}
                 </div>
-                <div className="doc-fact__actions">
-                  <button className="enrich__row-action" onClick={() => resolveFact(i, 'accepted')}>Add</button>
-                  <button className="enrich__row-dismiss" onClick={() => resolveFact(i, 'dismissed')}>Dismiss</button>
-                </div>
-              </div>
-            ) : null))}
+              );
+            })}
           </div>
         )}
         {pendingFields.length > 0 && (
           <div className="doc-viewer__facts">
             <span className="doc-viewer__summary-label">Profile details found in this document</span>
-            {pendingFields.map((field) => (
-              <div className="doc-fact" key={field}>
-                <div className="doc-fact__body">
-                  <span className="doc-fact__title">{DOC_FIELD_LABEL[field]}</span>
-                  <span className="doc-fact__detail">{profileFields[field].value}</span>
+            {pendingFields.map((field) => {
+              const key = `field:${field}`;
+              const confirming = confirmDismiss === key;
+              return (
+                <div className="doc-fact" key={field}>
+                  <div className="doc-fact__body">
+                    <span className="doc-fact__title">{DOC_FIELD_LABEL[field]}</span>
+                    <span className="doc-fact__detail">{profileFields[field].value}</span>
+                  </div>
+                  {confirming ? (
+                    <div className="doc-fact__confirm">
+                      <span>Dismiss this suggestion?</span>
+                      <div className="doc-fact__confirm-btns">
+                        <button className="doc-card__confirm-remove" onClick={() => { resolveField(field, 'dismissed'); setConfirmDismiss(null); }}>Dismiss</button>
+                        <button className="doc-card__confirm-cancel" onClick={() => setConfirmDismiss(null)}>Cancel</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="doc-fact__actions">
+                      <button className="enrich__row-action" onClick={() => resolveField(field, 'accepted')}>Add</button>
+                      <button className="enrich__row-dismiss" onClick={() => setConfirmDismiss(key)}>Dismiss</button>
+                    </div>
+                  )}
                 </div>
-                <div className="doc-fact__actions">
-                  <button className="enrich__row-action" onClick={() => resolveField(field, 'accepted')}>Add</button>
-                  <button className="enrich__row-dismiss" onClick={() => resolveField(field, 'dismissed')}>Dismiss</button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
         {(isImage || isPdf) && (

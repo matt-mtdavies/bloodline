@@ -53,10 +53,31 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   `updatePerson` pass-through everything else in that form already uses, no new plumbing.
   `store.js` gained `removeMedal(personId, index)` (medals carry no id, so this is index-based
   like the timeline editor's own row removal); `MilitaryService.jsx` shows a per-medal "×" with
-  the same are-you-sure confirm the document-quote dismiss already used. This is a manual fix,
-  not automatic retraction — accepting a document fact still writes plain data with no
-  `sourceDocId`, so a future real fix would tag accepted facts with their source document and
-  let deleting that document offer to clean up what it produced.
+  the same are-you-sure confirm the document-quote dismiss already used.
+- **Document-fact provenance + cascade retraction (the root-cause fix for the above)**: every
+  document-derived write is now tagged with the document that produced it, so deleting the
+  document retracts exactly what it wrote instead of leaving it stuck forever. `addLifeEvent`/
+  `addMedal` (`store.js`) accept an optional `sourceDocId` stamped onto the event/medal item;
+  a separate `person.field_sources` map (`{ fieldName: docId }`) tracks scalar profile fields
+  a document last wrote (occupation, birth_place, residence, the military_* fields,
+  cause_of_death — see `DOC_TRACKABLE_FIELDS` in `App.jsx`). `App.jsx`'s `applyDocumentFact`/
+  `applyDocumentMedal`/`applyDocumentField` all tag provenance on accept; `handleSave` (the
+  ordinary manual edit form) clears a field's `field_sources` entry the instant a human retypes
+  it by hand, so a later document deletion can never clobber a real correction. `store.js`
+  gained `retractDocumentContributions(personId, docId)` — filters out tagged events/medals and
+  clears any fields still attributed to that document — wired into `onRemoveDocument` in
+  `App.jsx` so deleting a document now cleans up after itself. Deliberately scoped to one
+  person and deliberately does NOT cascade into relationships a document confirmed (those have
+  their own separate confirm step; auto-severing a family link as a side effect of a document
+  delete is a bigger, cross-person consequence than clearing a field). `PersonSheet.jsx`'s
+  document-delete confirm now previews the blast radius ("Remove this document — and the 3
+  facts it added to this profile?") via `documentContributionCount`. Also closed 3 confirm-step
+  gaps found auditing "every deletion needs a confirm step": `EnrichSheet.jsx`'s document- and
+  relationship-finding dismiss, and `DocViewer`'s fact/field dismiss, all previously fired
+  immediately — now use the same inline confirm-swap pattern as everywhere else. Covered by
+  4 new unit tests in `tests/store.test.mjs` and verified live against a seeded document via a
+  temporary debug hook (confirm copy + resulting store state + Military section correctly
+  disappearing once its last field/medal is retracted).
 
 - **The Keepsake ✅ Phases 0–5** (spec: `docs/KEEPSAKE.md`): the marquee endgame feature —
   a regenerating magazine-style illustrated biography per person. Data layer

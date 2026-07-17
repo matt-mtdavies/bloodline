@@ -1817,11 +1817,16 @@ export function addCondition(personId, { name, category, status = 'active', onse
 // person's existing events, non-destructively — the accept side of the
 // document-fact review in Enrich. `tag` (e.g. 'military') carries through so
 // the timeline can render it distinctly; omitted when the fact isn't tagged.
-export function addLifeEvent(personId, { year, title, detail, tag } = {}) {
+export function addLifeEvent(personId, { year, title, detail, tag, sourceDocId } = {}) {
   const person = state.people.find((p) => p.id === personId);
   const event = { year, title };
   if (detail) event.detail = detail;
   if (tag) event.tag = tag;
+  // Recorded so a later document deletion can retract exactly the events it
+  // produced — see retractDocumentContributions below. Absent for events
+  // written by any other path (manual entry, relationship-derived facts),
+  // which a document deletion must never touch.
+  if (sourceDocId) event.sourceDocId = sourceDocId;
   commit(withActivity({
     ...state,
     people: state.people.map((p) =>
@@ -1833,10 +1838,11 @@ export function addLifeEvent(personId, { year, title, detail, tag } = {}) {
 // Append one AI-suggested medal/honour (from a document extraction) onto a
 // person's existing military_medals, non-destructively — same shape as
 // addLifeEvent, the accept side of the medal review in Enrich.
-export function addMedal(personId, { name, detail } = {}) {
+export function addMedal(personId, { name, detail, sourceDocId } = {}) {
   const person = state.people.find((p) => p.id === personId);
   const medal = { name };
   if (detail) medal.detail = detail;
+  if (sourceDocId) medal.sourceDocId = sourceDocId;
   commit(withActivity({
     ...state,
     people: state.people.map((p) =>
@@ -1848,10 +1854,9 @@ export function addMedal(personId, { name, detail } = {}) {
 // Remove one medal/honour by its position in the list. Medals (appended one
 // at a time, either by hand or via document acceptance) carry no id of their
 // own, so this is index-based — the same convention the timeline editor's
-// own per-row remove already uses. The one correction path for a medal that
-// was accepted from the wrong person's document: there is no live link back
-// to the source document to retract automatically (see docs/ discussion of
-// the Edward Turner report), so removing it here is deliberate and manual.
+// own per-row remove already uses. This is the manual correction path for a
+// single wrong medal; retractDocumentContributions below handles the
+// automatic case (the whole source document turns out to be wrong).
 export function removeMedal(personId, index) {
   const person = state.people.find((p) => p.id === personId);
   commit(withActivity({
@@ -1862,6 +1867,55 @@ export function removeMedal(personId, index) {
         : p,
     ),
   }, { type: 'person_updated', personId, personName: person?.display_name ?? '', detail: 'medals' }));
+}
+
+// The root-cause fix behind the Edward Turner report: a document accepted
+// onto the wrong person used to leave permanent, untraceable data behind,
+// because nothing recorded which document a fact came from. Now it does —
+// addLifeEvent/addMedal tag the item with sourceDocId, and applyDocumentField
+// (App.jsx) tags the person's field_sources map — so deleting the document
+// can retract exactly what it produced instead of leaving orphaned facts.
+//
+// Scoped to one person because a document only ever belongs to one
+// (doc.person_id) — nothing else in the tree can carry its sourceDocId.
+// Deliberately does NOT touch relationships a document's "people mentioned"
+// section confirmed (see applyDocumentPerson): that writes a real family
+// edge shared with another person, and removing a relationship already has
+// its own explicit, deliberate confirm step elsewhere — auto-cascading a
+// document deletion into severing a family link is a bigger, cross-person
+// consequence than clearing a field or an item off one profile, and
+// deserves its own review, not a side effect.
+//
+// A field is only cleared if it's STILL attributed to this document —
+// field_sources is deleted the moment a human corrects that field by hand
+// through any other path (see App.jsx's handleSave), so a stale document
+// can never clobber a real, later, hand-typed correction.
+export function retractDocumentContributions(personId, docId) {
+  const person = state.people.find((p) => p.id === personId);
+  if (!person) return;
+  const events = (person.events || []).filter((e) => e.sourceDocId !== docId);
+  const military_medals = (person.military_medals || []).filter((m) => m.sourceDocId !== docId);
+  const fieldSources = person.field_sources || {};
+  const clearedFields = {};
+  const nextFieldSources = { ...fieldSources };
+  for (const [field, sourceId] of Object.entries(fieldSources)) {
+    if (sourceId === docId) {
+      clearedFields[field] = null;
+      delete nextFieldSources[field];
+    }
+  }
+  const changed = events.length !== (person.events || []).length
+    || military_medals.length !== (person.military_medals || []).length
+    || Object.keys(clearedFields).length > 0;
+  if (!changed) return;
+  commit(withActivity({
+    ...state,
+    people: state.people.map((p) =>
+      p.id === personId
+        ? { ...p, ...clearedFields, events, military_medals, field_sources: nextFieldSources }
+        : p,
+    ),
+  }, { type: 'person_updated', personId, personName: person.display_name ?? '', detail: 'facts from a removed document' }));
 }
 
 // Record a plain activity event with no tree mutation attached — for

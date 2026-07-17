@@ -111,6 +111,10 @@ export default function EnrichSheet({
   const [placeSuggestions, setPlaceSuggestions] = useState([]);
   const [resolvedKeys, setResolvedKeys] = useState(() => new Set());
   const triedRef = useRef(null);
+  // Dismissing a document- or relationship-derived finding marks it consumed
+  // (never re-offered) — the same one-way step as accepting, so it gets the
+  // same confirm every other dismiss surface in the app uses.
+  const [confirmDismissKey, setConfirmDismissKey] = useState(null);
 
   useEffect(() => {
     if (!places.length || triedRef.current === person.id) return;
@@ -196,43 +200,71 @@ export default function EnrichSheet({
               </li>
             ))}
 
-            {documentFindings.map((f) => (
-              <li key={f.key} className="enrich__row enrich__row--document">
-                <span className="enrich__row-icon"><FindingIcon icon={f.icon} /></span>
-                <div className="enrich__row-body">
-                  <span className="enrich__row-tag">{TIER_LABEL.document}</span>
-                  <p className="enrich__row-title">{f.title}</p>
-                  <p className="enrich__row-detail">{f.detail}</p>
-                </div>
-                <div className="enrich__row-actions">
-                  <button className="enrich__row-action" onClick={() => acceptDocumentFinding(f)}>
-                    {DOCUMENT_ACTION_LABEL[f.action.type]}
-                  </button>
-                  <button className="enrich__row-dismiss" onClick={() => dismissDocumentFinding(f)}>
-                    Dismiss
-                  </button>
-                </div>
-              </li>
-            ))}
+            {documentFindings.map((f) => {
+              const confirming = confirmDismissKey === f.key;
+              return (
+                <li key={f.key} className="enrich__row enrich__row--document">
+                  <span className="enrich__row-icon"><FindingIcon icon={f.icon} /></span>
+                  <div className="enrich__row-body">
+                    <span className="enrich__row-tag">{TIER_LABEL.document}</span>
+                    <p className="enrich__row-title">{f.title}</p>
+                    <p className="enrich__row-detail">{f.detail}</p>
+                    {confirming && (
+                      <div className="enrich__row-confirm">
+                        <span>Dismiss this suggestion?</span>
+                        <div className="enrich__row-confirm-btns">
+                          <button className="doc-card__confirm-remove" onClick={() => { dismissDocumentFinding(f); setConfirmDismissKey(null); }}>Dismiss</button>
+                          <button className="doc-card__confirm-cancel" onClick={() => setConfirmDismissKey(null)}>Cancel</button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  {!confirming && (
+                    <div className="enrich__row-actions">
+                      <button className="enrich__row-action" onClick={() => acceptDocumentFinding(f)}>
+                        {DOCUMENT_ACTION_LABEL[f.action.type]}
+                      </button>
+                      <button className="enrich__row-dismiss" onClick={() => setConfirmDismissKey(f.key)}>
+                        Dismiss
+                      </button>
+                    </div>
+                  )}
+                </li>
+              );
+            })}
 
-            {relationshipFindings.map((f) => (
-              <li key={f.key} className="enrich__row enrich__row--relationship">
-                <span className="enrich__row-icon"><FindingIcon icon={f.icon} /></span>
-                <div className="enrich__row-body">
-                  <span className="enrich__row-tag">{TIER_LABEL.relationship}</span>
-                  <p className="enrich__row-title">{f.title}</p>
-                  <p className="enrich__row-detail">{f.detail}</p>
-                </div>
-                <div className="enrich__row-actions">
-                  <button className="enrich__row-action" onClick={() => onApplyRelationshipFact?.(f.action)}>
-                    Add to timeline
-                  </button>
-                  <button className="enrich__row-dismiss" onClick={() => onDismissRelationshipFact?.(f.action.key)}>
-                    Dismiss
-                  </button>
-                </div>
-              </li>
-            ))}
+            {relationshipFindings.map((f) => {
+              const confirming = confirmDismissKey === f.key;
+              return (
+                <li key={f.key} className="enrich__row enrich__row--relationship">
+                  <span className="enrich__row-icon"><FindingIcon icon={f.icon} /></span>
+                  <div className="enrich__row-body">
+                    <span className="enrich__row-tag">{TIER_LABEL.relationship}</span>
+                    <p className="enrich__row-title">{f.title}</p>
+                    <p className="enrich__row-detail">{f.detail}</p>
+                    {confirming && (
+                      <div className="enrich__row-confirm">
+                        <span>Dismiss this suggestion?</span>
+                        <div className="enrich__row-confirm-btns">
+                          <button className="doc-card__confirm-remove" onClick={() => { onDismissRelationshipFact?.(f.action.key); setConfirmDismissKey(null); }}>Dismiss</button>
+                          <button className="doc-card__confirm-cancel" onClick={() => setConfirmDismissKey(null)}>Cancel</button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  {!confirming && (
+                    <div className="enrich__row-actions">
+                      <button className="enrich__row-action" onClick={() => onApplyRelationshipFact?.(f.action)}>
+                        Add to timeline
+                      </button>
+                      <button className="enrich__row-dismiss" onClick={() => setConfirmDismissKey(f.key)}>
+                        Dismiss
+                      </button>
+                    </div>
+                  )}
+                </li>
+              );
+            })}
 
             {placeState === 'loading' && (
               <li className="enrich__row enrich__row--loading">

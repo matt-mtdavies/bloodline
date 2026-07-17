@@ -14,6 +14,20 @@ import { HEALTH_CATEGORIES, HEALTH_CONDITIONS, HEALTH_STATUSES, colorFor } from 
 import { formatPhone, isPhoneValid } from '../lib/phone.js';
 import { militaryDocuments } from '../lib/military.js';
 
+// How many facts (events, medals, profile fields) a document still owns on
+// this person — see store.js's retractDocumentContributions, which this
+// count previews before the user commits to deleting the document. Zero for
+// the common case (a document nobody's accepted anything from yet, or one
+// whose accepted facts were later hand-corrected and lost their field_sources
+// tag), in which case the confirm below stays the plain, unqualified prompt.
+function documentContributionCount(person, docId) {
+  if (!person) return 0;
+  const events = (person.events || []).filter((e) => e.sourceDocId === docId).length;
+  const medals = (person.military_medals || []).filter((m) => m.sourceDocId === docId).length;
+  const fields = Object.values(person.field_sources || {}).filter((id) => id === docId).length;
+  return events + medals + fields;
+}
+
 const HAIR_DOTS = { Black: '#1a1a1a', Brown: '#6b4226', Blonde: '#d4b483', Auburn: '#9b3a1e', Red: '#c0392b', Grey: '#9e9e9e', White: '#ddd' };
 const EYE_DOTS  = { Brown: '#6b4226', Blue: '#4a7fbf', Green: '#3d8c55', Hazel: '#8b6914', Grey: '#8a9099', Amber: '#c8860a' };
 
@@ -1022,7 +1036,14 @@ export default function PersonSheet({
                           </span>
                           {confirmDeleteDocId === doc.id ? (
                             <div className="doc-card__confirm">
-                              <span>Remove this document?</span>
+                              <span>
+                                {(() => {
+                                  const n = documentContributionCount(person, doc.id);
+                                  return n > 0
+                                    ? `Remove this document — and the ${n} ${n === 1 ? 'fact it added' : 'facts it added'} to this profile?`
+                                    : 'Remove this document?';
+                                })()}
+                              </span>
                               <div className="doc-card__confirm-btns">
                                 <button
                                   className="doc-card__confirm-remove"

@@ -9,7 +9,10 @@
  * Run with: node tests/store.test.mjs
  */
 import assert from 'node:assert/strict';
-import { store, importFromGedcom, setRelationshipKind, addMedal, removeMedal } from '../src/data/store.js';
+import {
+  store, importFromGedcom, setRelationshipKind, addMedal, removeMedal,
+  addLifeEvent, updatePerson, retractDocumentContributions,
+} from '../src/data/store.js';
 
 let passed = 0, failed = 0;
 function test(label, fn) {
@@ -104,6 +107,60 @@ test('removeMedal on an out-of-range index is a harmless no-op', () => {
   removeMedal('sam', 5);
 
   assert.equal(store.getState().people.find((p) => p.id === 'sam').military_medals.length, 1);
+});
+
+// ── retractDocumentContributions: the root-cause fix ───────────────────────
+// (a document accepted onto the wrong person used to leave permanent,
+// untraceable data behind — nothing recorded which document a fact came
+// from. Now every additive write is tagged, so deleting the document can
+// retract exactly what it produced.)
+test('retractDocumentContributions removes only the events/medals tagged with that document', () => {
+  importFromGedcom([{ id: 'ed', display_name: 'Edward Turner' }], [], { merge: false });
+  addLifeEvent('ed', { year: 1943, title: 'Enlisted', sourceDocId: 'docA' });
+  addLifeEvent('ed', { year: 1985, title: 'Married' }); // no source — manual entry
+  addMedal('ed', { name: "Wrong Person's Medal", sourceDocId: 'docA' });
+  addMedal('ed', { name: 'Own Medal', sourceDocId: 'docB' });
+
+  retractDocumentContributions('ed', 'docA');
+
+  const p = store.getState().people.find((x) => x.id === 'ed');
+  assert.deepEqual(p.events.map((e) => e.title), ['Married']);
+  assert.deepEqual(p.military_medals.map((m) => m.name), ['Own Medal']);
+});
+
+test('retractDocumentContributions clears a profile field only while still attributed to that document', () => {
+  importFromGedcom([{ id: 'jt', display_name: 'James Turner' }], [], { merge: false });
+  updatePerson('jt', { military_branch: 'army', field_sources: { military_branch: 'docA' } });
+
+  retractDocumentContributions('jt', 'docA');
+
+  const p = store.getState().people.find((x) => x.id === 'jt');
+  assert.equal(p.military_branch, null);
+  assert.equal(p.field_sources.military_branch, undefined);
+});
+
+test('retractDocumentContributions never clobbers a field a human corrected by hand afterward', () => {
+  importFromGedcom([{ id: 'al', display_name: 'Allen' }], [], { merge: false });
+  updatePerson('al', { military_rank: 'Private', field_sources: { military_rank: 'docA' } });
+  // The human edit form (App.jsx's handleSave) clears field_sources for any
+  // field it changes — simulated here directly, since that's App-layer glue,
+  // not something store.js itself does.
+  updatePerson('al', { military_rank: 'Corporal', field_sources: {} });
+
+  retractDocumentContributions('al', 'docA');
+
+  const p = store.getState().people.find((x) => x.id === 'al');
+  assert.equal(p.military_rank, 'Corporal', 'a later hand-typed correction must survive the old document being deleted');
+});
+
+test('retractDocumentContributions is a harmless no-op when the document produced nothing tracked', () => {
+  importFromGedcom([{ id: 'nn', display_name: 'No Notes' }], [], { merge: false });
+  addLifeEvent('nn', { year: 2000, title: 'Something', sourceDocId: 'docX' });
+  const before = store.getState();
+
+  retractDocumentContributions('nn', 'docZ'); // a different, unrelated document id
+
+  assert.equal(store.getState(), before, 'no matching contributions -> no commit at all');
 });
 
 console.log(`\n  ${passed} passed, ${failed} failed`);

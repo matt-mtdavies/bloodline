@@ -2050,6 +2050,12 @@
   background: var(--paper-deep); color: var(--ink-soft);
 }
 
+/* Same shape as .doc-card__confirm above, for dismissing a pending fact/
+   field suggestion in the document viewer — reuses that confirm's own
+   Dismiss/Cancel button styling (.doc-card__confirm-remove/-cancel). */
+.doc-fact__confirm { display: flex; flex-direction: column; gap: 8px; font-size: 13.5px; color: var(--ink); }
+.doc-fact__confirm-btns { display: flex; gap: 8px; }
+
 /* ── Voice & Video ───────────────────────────────────────────────────────── */
 .media-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
 .media-item {
@@ -8912,6 +8918,10 @@ button.health-notes {
   background: transparent; border: 1px solid var(--hairline, #ebedf0);
   color: var(--ink-soft, #6b6260); font-size: 12.5px; font-weight: 500;
 }
+/* Dismissing a document/relationship finding swaps its actions for this
+   confirm, same shape as .doc-fact__confirm elsewhere. */
+.enrich__row-confirm { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; font-size: 13px; color: var(--ink, #241f1c); }
+.enrich__row-confirm-btns { display: flex; gap: 8px; }
 .enrich__row--loading .enrich__row-detail { padding: 0; }
 .enrich__shimmer {
   display: block; height: 10px; width: 70%; border-radius: 6px; margin-top: 4px;
