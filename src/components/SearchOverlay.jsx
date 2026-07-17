@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import Avatar from './Avatar.jsx';
 import { relationshipCategories } from '../data/graph.js';
+import { rankPeopleByName } from '../lib/search.js';
 
 // Coarser than PersonSheet's extended-family groups (which fold in
 // great-grandparents/great-grandchildren and split grandchildren from
@@ -69,38 +70,7 @@ export default function SearchOverlay({ people, graph, viewerId, onSelect, onClo
     });
   }, [people, category, status, categoryMap]);
 
-  const results = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return [];
-    // Score a single field; higher = better match.
-    const scoreText = (text) => {
-      const name = (text || '').toLowerCase();
-      if (!name) return 0;
-      const parts = name.split(/\s+/);
-      if (name === q)                        return 10;
-      if (name.startsWith(q))                return 6;
-      if (parts.some((w) => w.startsWith(q))) return 4;
-      if (name.includes(q))                  return 2;
-      if (parts[0]?.includes(q))             return 1; // "mat" → "Matthew"
-      return 0;
-    };
-    return basePool
-      .map((p) => {
-        // birth_name is the canonical field; maiden_name is legacy seed data.
-        const birthName = p.birth_name || p.maiden_name || '';
-        const nameScore = scoreText(p.display_name);
-        const birthScore = scoreText(birthName);
-        const score = Math.max(nameScore, birthScore);
-        // Flag when the birth name is why this person matched, so we can surface it.
-        const matchedBirth = birthScore > 0 && birthScore >= nameScore;
-        return score > 0
-          ? { ...p, _score: score, _birthName: birthName, _matchedBirth: matchedBirth }
-          : null;
-      })
-      .filter(Boolean)
-      .sort((a, b) => b._score - a._score || a.display_name.localeCompare(b.display_name))
-      .slice(0, 10);
-  }, [query, basePool]);
+  const results = useMemo(() => rankPeopleByName(basePool, query), [query, basePool]);
 
   // No text typed, but a chip or status filter narrowed the pool — browse it
   // in full (alphabetical, uncapped) rather than showing the "start typing"
@@ -223,6 +193,9 @@ export default function SearchOverlay({ people, graph, viewerId, onSelect, onClo
                     {highlight(p.display_name, query)}
                     {p._birthName && !p.display_name.toLowerCase().includes(p._birthName.toLowerCase()) && (
                       <span className="search-result__nee"> née {highlight(p._birthName, query)}</span>
+                    )}
+                    {p._middleName && !p.display_name.toLowerCase().includes(p._middleName.toLowerCase()) && (
+                      <span className="search-result__nee"> · middle name {highlight(p._middleName, query)}</span>
                     )}
                   </span>
                   <span className="search-result__meta">

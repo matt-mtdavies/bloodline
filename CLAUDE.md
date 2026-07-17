@@ -189,6 +189,22 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   the real PersonSheet's "Grandparents" group to "Paternal Nonno / Paternal Nonna / Maternal
   Opa / Maternal Oma".
 
+- **Search now matches middle names** (user report: "old names commonly use the middle as
+  the preferred name"). `middle_name` was already a real, separately-edited person field
+  (`EditPersonSheet.jsx`, woven into `lib/profile.js`'s `fullName()` for the profile heading)
+  but had never been wired into `SearchOverlay.jsx`'s matching at all — searching "James" for
+  someone whose `display_name` is "Robert Mercer" and `middle_name` is "James" found nothing.
+  Extracted the whole scoring/ranking pass out of the component into `src/lib/search.js`
+  (`scoreText`, `rankPeopleByName`) — pure and unit-tested (`tests/search.test.mjs`), same
+  refactor motivation as the rest of the codebase's `lib/*.js` split. `rankPeopleByName` now
+  scores `display_name`, `birth_name`/`maiden_name`, AND `middle_name` and takes the max, so a
+  middle-name match ranks exactly like any other name match (an exact display-name match still
+  outranks a middle-name substring hit). Matched people carry `_middleName` back to the
+  component, which shows a "· middle name {name}" hint under the result — same
+  `search-result__nee` styling and same "show it whenever present and not already visible in
+  display_name, regardless of which field actually matched" convention the existing birth-name
+  "née" hint already used, so the fix reads as consistent rather than a bolted-on special case.
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);
