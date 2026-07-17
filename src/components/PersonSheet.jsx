@@ -3,6 +3,7 @@ import Avatar from './Avatar.jsx';
 import SmartImg from './SmartImg.jsx';
 import { lifespan, formatDate, ageOrAt } from '../lib/dates.js';
 import { relationLabel } from '../data/graph.js';
+import { useKinTerms } from '../lib/kinTerms.js';
 import { profileCompleteness, lifeEvents, fullName } from '../lib/profile.js';
 import { fileToDataUrl, uploadPhoto, uploadDocument, suggestDocumentTitle, imageSrcToDataUrl } from '../lib/image.js';
 import { streamBio } from '../lib/ai.js';
@@ -97,6 +98,7 @@ export default function PersonSheet({
   isAdmin = true,        // owner/co-admin : manage anyone's memory, not just your own
 }) {
   const person = personId ? graph.byId.get(personId) : null;
+  const kinTerms = useKinTerms();
   const profileRef = useRef(null);
   const fileRef = useRef(null);
   const galleryRef = useRef(null);
@@ -250,7 +252,7 @@ export default function PersonSheet({
   ].filter((g) => g.items.length);
 
   const relToViewer =
-    viewerId && viewerId !== person.id ? relationLabel(graph, viewerId, person.id) : null;
+    viewerId && viewerId !== person.id ? relationLabel(graph, viewerId, person.id, kinTerms) : null;
   const location = person.residence || person.birth_place;
   const age = ageOrAt(person);
   const events = restricted ? [] : lifeEvents(person);
@@ -1587,7 +1589,7 @@ export default function PersonSheet({
                               <span className="rel-chip__text">
                                 <span className="rel-chip__name">{rel.display_name}</span>
                                 <span className="rel-chip__kind">
-                                  {relationLabel(graph, person.id, item.id)}
+                                  {relationLabel(graph, person.id, item.id, kinTerms)}
                                 </span>
                               </span>
                               <RelChevronIcon />
@@ -1686,7 +1688,7 @@ export default function PersonSheet({
                               <span className="rel-chip__text">
                                 <span className="rel-chip__name">{rel.display_name}</span>
                                 <span className="rel-chip__kind">
-                                  {relationLabel(graph, person.id, item.id)}
+                                  {relationLabel(graph, person.id, item.id, kinTerms)}
                                 </span>
                               </span>
                               <RelChevronIcon />

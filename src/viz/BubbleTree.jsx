@@ -17,6 +17,7 @@ import { drawLinks, drawLinksChart } from './links.js';
 import { computeChartLayout } from './chartLayout.js';
 import { distancesFrom, relationLabel, computeGenerations } from '../data/graph.js';
 import { Spring } from '../lib/spring.js';
+import { kinTermsStore } from '../lib/kinTerms.js';
 
 const BASE_RADIUS = 46;
 const COLLIDE = 70;
@@ -131,6 +132,7 @@ export default function BubbleTree({
     let alive = true;
     let hoverTimer = null; // shared with the cleanup below, which runs outside the async IIFE
     let onVisibility = null; // ditto — assigned inside the IIFE, removed in the cleanup
+    let unsubKinTerms = null; // ditto — assigned inside the IIFE, called in the cleanup
     const host = hostRef.current;
     const app = new Application();
 
@@ -181,8 +183,11 @@ export default function BubbleTree({
       let fxSeeded = false;          // first frame seeds wasVisible without celebrating
       // Focus-mode relationship captions (e.g. "Father", "Niece"), cached by id
       // and rebuilt when the active person or graph changes (relationships are
-      // relative to the active person).
+      // relative to the active person), or when the viewer changes their
+      // grandparent term preference (kinTerms.js) — a plain subscribe rather
+      // than a React prop, since this whole closure is imperative/mount-once.
       const relCache = new Map();
+      unsubKinTerms = kinTermsStore.subscribe(() => relCache.clear());
 
       const graph = graphRef.current; // initial build snapshot
 
@@ -1957,7 +1962,7 @@ export default function BubbleTree({
           if (showRel && effectiveVis.has(id) && id !== activeRef.current) {
             relText = relCache.get(id);
             if (relText === undefined) {
-              relText = relationLabel(graphRef.current, activeRef.current, id);
+              relText = relationLabel(graphRef.current, activeRef.current, id, kinTermsStore.getState());
               relCache.set(id, relText);
             }
           }
@@ -2047,6 +2052,7 @@ export default function BubbleTree({
     return () => {
       alive = false;
       clearTimeout(hoverTimer);
+      if (unsubKinTerms) unsubKinTerms();
       if (onVisibility) document.removeEventListener('visibilitychange', onVisibility);
       api.current?.sim?.stop();
       try {

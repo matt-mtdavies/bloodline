@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import Avatar from './Avatar.jsx';
 import { relationLabel, buildRelationCrumbs } from '../data/graph.js';
+import { useKinTerms } from '../lib/kinTerms.js';
 
 /*
  * The search flyover's payoff — one card that builds itself progressively
@@ -29,6 +30,7 @@ export default function FlightCaption({ graph, order, upTo, landed, onDone, onPe
   // people actually connect.
   const [chainOpen, setChainOpen] = useState(true);
   const [badgeTapped, setBadgeTapped] = useState(false);
+  const kinTerms = useKinTerms();
 
   useEffect(() => {
     if (!landed || chainOpen) return;
@@ -47,7 +49,7 @@ export default function FlightCaption({ graph, order, upTo, landed, onDone, onPe
   // shared with Lineage mode's banner; see buildRelationCrumbs in graph.js
   // for the turn-by-turn labeling and the sibling/nephew-aunt collapses.
   const hops = order.length - 1;
-  const crumbs = buildRelationCrumbs(graph, order);
+  const crumbs = buildRelationCrumbs(graph, order, kinTerms);
   // revealedUpTo: how far the camera has actually travelled (an order-index,
   // real hops — unaffected by wording collapse), used to decide which crumbs
   // have been passed. shownCrumbs: the badge's own number — how many of the
@@ -60,7 +62,7 @@ export default function FlightCaption({ graph, order, upTo, landed, onDone, onPe
   const revealedUpTo = landed ? hops : Math.min(upTo, hops);
   const shownCrumbs = landed ? crumbs.length : crumbs.filter((c) => c.toIndex <= revealedUpTo).length;
 
-  const relation = landed ? relationLabel(graph, originId, order[order.length - 1]) : null;
+  const relation = landed ? relationLabel(graph, originId, order[order.length - 1], kinTerms) : null;
   const avatarSize = landed ? 30 : 20;
   // Visible & building while in transit; once landed, collapsed behind the
   // badge by default (chainOpen starts false) until tapped back open.

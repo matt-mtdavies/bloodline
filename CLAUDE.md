@@ -158,6 +158,37 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   deliberately → everyone else in small batches).
   Full design + progress tracked in `docs/TREE-STORAGE.md` §9.
 
+- **Custom grandparent names** (user feedback: "can I change Grandmother/Grandfather to
+  Nonno/Nonna, Oma/Opa, etc?"). `src/lib/kinTerms.js` — a small `useSyncExternalStore` pref
+  store (same convention as `store.js`) holding `{ paternalPackId, maternalPackId,
+  customPaternal, customMaternal }`, localStorage-backed and **per-viewer, not tree data** —
+  two people in the same family can each see their own term for the same grandparent, and
+  it's never synced to the server. Six built-in packs (English formal/informal, Italian,
+  German, Spanish, French) plus a Custom pack with free-text male/female terms.
+  Side-aware, not just a single swap: `resolveGrandparentTerm(kinTerms, side, gender)` picks
+  the paternal or maternal pack independently, so a paternal-Italian/maternal-German family
+  can run both at once — `side` is exactly `graph.js`'s existing `parentSide()` output
+  ('Paternal'/'Maternal'/null), already computed for the "Paternal Grandmother" style labels.
+  `relationLabel`/`buildRelationCrumbs` (`graph.js`) take an optional trailing `kinTerms` arg,
+  applied ONLY at the direct-grandparent branch — deliberately not threaded into Step-/
+  Adoptive-/Great-/cousin-degree wording, which doesn't have a clean cultural-pack equivalent
+  and isn't the emotionally-loaded part; omitted, every label is byte-identical to before, so
+  no existing call site or test needed to change. The side prefix still shows with a custom
+  term ("Paternal Nonna") since it's genuinely useful and swapping the noun shouldn't silently
+  drop it. Wired into every relation-label call site (PersonSheet's kin-to-viewer badge and
+  its Grandparents/Grandchildren extended groups, HoverCard, AccessibleTree, FlightCaption,
+  LineageBanner) via the `useKinTerms()` hook; BubbleTree's Focus-mode canvas captions read it
+  imperatively via `kinTermsStore.getState()` since that whole render loop is mount-once/
+  non-React, with a store subscription clearing its relationship-label cache on change.
+  Settings UI lives in `UserProfile.jsx` (a new "Grandparent names" section, two side pickers
+  + custom text fields) — deliberately NOT gated behind the `/api/user/profile` round trip
+  the rest of that sheet uses, since this is pure localStorage. Covered by 10 unit tests
+  (`tests/kinTerms.test.mjs`) and verified live via a temporary debug hook that fakes a
+  logged-in session (UserProfile is login-gated and this sandbox has no backend) — confirmed
+  the settings UI renders and saves correctly, and that switching packs immediately updates
+  the real PersonSheet's "Grandparents" group to "Paternal Nonno / Paternal Nonna / Maternal
+  Opa / Maternal Oma".
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);

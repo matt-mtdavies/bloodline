@@ -1,5 +1,6 @@
 import Avatar from './Avatar.jsx';
 import { relationLabel, buildRelationCrumbs } from '../data/graph.js';
+import { useKinTerms } from '../lib/kinTerms.js';
 
 /*
  * Lineage Mode banner — floats below the masthead while you trace a family
@@ -16,13 +17,14 @@ import { relationLabel, buildRelationCrumbs } from '../data/graph.js';
  * tappable, same as in search, to pulse that person's bubble.
  */
 export default function LineageBanner({ graph, anchorId, order, onClear, onExit, onPeek, onSearch }) {
+  const kinTerms = useKinTerms();
   const anchor = graph.byId.get(anchorId);
   const first = (p) => (p?.display_name || '').trim().split(/\s+/)[0] || '';
   const hasPath = order && order.length >= 2;
   const start = hasPath ? graph.byId.get(order[0]) : null;
   const end = hasPath ? graph.byId.get(order[order.length - 1]) : null;
-  const relation = hasPath ? relationLabel(graph, order[0], order[order.length - 1]) : null;
-  const crumbs = hasPath ? buildRelationCrumbs(graph, order) : [];
+  const relation = hasPath ? relationLabel(graph, order[0], order[order.length - 1], kinTerms) : null;
+  const crumbs = hasPath ? buildRelationCrumbs(graph, order, kinTerms) : [];
 
   return (
     <div className="lineage-banner" role="status" aria-live="polite">

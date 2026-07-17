@@ -3,6 +3,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import Avatar from './Avatar.jsx';
 import { lifespan } from '../lib/dates.js';
 import { relationLabel } from '../data/graph.js';
+import { useKinTerms } from '../lib/kinTerms.js';
 
 // Measured from a live render (390px viewport): a person-row is 62px tall,
 // the directory <ul> has a 6px row gap — 68px is the fixed stride the
@@ -19,6 +20,7 @@ const DIRECTORY_ROW_HEIGHT = 68;
 export default function AccessibleTree({ graph, focusId, onFocus, onOpenPerson, onShowOnMap }) {
   const [q, setQ] = useState('');
   const [filter, setFilter] = useState('all');
+  const kinTerms = useKinTerms();
   const focus = graph.byId.get(focusId);
   const listRef = useRef(null);
   const focusSectionRef = useRef(null);
@@ -178,7 +180,7 @@ export default function AccessibleTree({ graph, focusId, onFocus, onOpenPerson, 
                         <span className="person-row__text">
                           <span className="person-row__name">{p.display_name}</span>
                           <span className="person-row__meta">
-                            {relationLabel(graph, focusId, item.id)} · {lifespan(p)}
+                            {relationLabel(graph, focusId, item.id, kinTerms)} · {lifespan(p)}
                           </span>
                         </span>
                       </button>

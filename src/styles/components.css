@@ -6963,6 +6963,29 @@ button.health-notes {
 }
 .up__claim-select:focus { outline: none; border-color: var(--accent); }
 
+/* Grandparent-name preference (lib/kinTerms.js) — two side-by-side pickers,
+   one per side of the family, each optionally expanding into a pair of
+   custom-term text fields. */
+.up__kinterms {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 10px;
+}
+.up__kinterms-side-label {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink-soft);
+  margin-bottom: 4px;
+}
+.up__kinterms-custom {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+.up__kinterms-custom .fs__input { margin-top: 0; }
+
 .up__family-list {
   display: flex;
   flex-direction: column;

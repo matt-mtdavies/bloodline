@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Avatar from './Avatar.jsx';
 import { relationLabel } from '../data/graph.js';
+import { useKinTerms } from '../lib/kinTerms.js';
 import { lifespan, ageOrAt } from '../lib/dates.js';
 import { hasMilitaryService, militaryProfile } from '../lib/military.js';
 import { BranchIcon } from './MilitaryIcons.jsx';
@@ -23,6 +24,7 @@ export default function HoverCard({ graph, personId, viewerId, getPos, photos, d
   const [displayId, setDisplayId] = useState(null);
   const [show, setShow] = useState(false);
   const hideTimer = useRef(null);
+  const kinTerms = useKinTerms();
 
   useEffect(() => {
     clearTimeout(hideTimer.current);
@@ -76,7 +78,7 @@ export default function HoverCard({ graph, personId, viewerId, getPos, photos, d
   const summaryOnly = vis === 'summary';
   const restricted = minor || sealed || summaryOnly;
 
-  const relToViewer = viewerId && viewerId !== person.id ? relationLabel(graph, viewerId, person.id) : null;
+  const relToViewer = viewerId && viewerId !== person.id ? relationLabel(graph, viewerId, person.id, kinTerms) : null;
   const location = !restricted && (person.residence || person.birth_place);
   const age = ageOrAt(person);
 

@@ -1,7 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useKinTerms, setKinTermsPref, GRANDPARENT_TERM_PACKS, CUSTOM_PACK_ID } from '../lib/kinTerms.js';
 
 export default function UserProfile({ user, people = [], onClose, onLogout, onSaved, onPhoto }) {
   const [profile, setProfile] = useState(null);
+  // Grandparent-term preference: a personal display setting, not tree data —
+  // lives in this browser's localStorage (see lib/kinTerms.js), so it's read
+  // and written directly, no /api/user/profile round-trip needed.
+  const kinTerms = useKinTerms();
   const [loading, setLoading] = useState(true);
   const [nameEdit, setNameEdit] = useState('');
   const [saving, setSaving] = useState(false);
@@ -69,6 +74,15 @@ export default function UserProfile({ user, people = [], onClose, onLogout, onSa
     const prefs = { ...(profile?.notification_prefs ?? { activity: true, invites: true }) };
     prefs[key] = !prefs[key];
     patch({ notification_prefs: prefs });
+  }
+
+  function handleKinPackChange(side, packId) {
+    setKinTermsPref({ [side === 'maternal' ? 'maternalPackId' : 'paternalPackId']: packId });
+  }
+
+  function handleKinCustomChange(side, genderKey, value) {
+    const key = side === 'maternal' ? 'customMaternal' : 'customPaternal';
+    setKinTermsPref({ [key]: { ...kinTerms[key], [genderKey]: value } });
   }
 
   function claimBubble(person_id) {
@@ -164,6 +178,33 @@ export default function UserProfile({ user, people = [], onClose, onLogout, onSa
           )}
         </div>
 
+        {/* Grandparent names — personal display preference, see lib/kinTerms.js */}
+        <div className="fs__section">
+          <p className="fs__label">Grandparent names</p>
+          <p className="up__hint">
+            Use a name from your heritage instead of "Grandmother"/"Grandfather" —
+            pick one for each side of the family, or write your own. Only you see this.
+          </p>
+          <div className="up__kinterms">
+            <KinTermSidePicker
+              idPrefix="up-kin-paternal"
+              label="Your father's side"
+              packId={kinTerms.paternalPackId}
+              customTerms={kinTerms.customPaternal}
+              onPackChange={(id) => handleKinPackChange('paternal', id)}
+              onCustomChange={(g, v) => handleKinCustomChange('paternal', g, v)}
+            />
+            <KinTermSidePicker
+              idPrefix="up-kin-maternal"
+              label="Your mother's side"
+              packId={kinTerms.maternalPackId}
+              customTerms={kinTerms.customMaternal}
+              onPackChange={(id) => handleKinPackChange('maternal', id)}
+              onCustomChange={(g, v) => handleKinCustomChange('maternal', g, v)}
+            />
+          </div>
+        </div>
+
         {/* Notifications */}
         {profile && (
           <div className="fs__section">
@@ -226,6 +267,44 @@ export default function UserProfile({ user, people = [], onClose, onLogout, onSa
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+function KinTermSidePicker({ idPrefix, label, packId, customTerms, onPackChange, onCustomChange }) {
+  const isCustom = packId === CUSTOM_PACK_ID;
+  return (
+    <div className="up__kinterms-side">
+      <label className="up__kinterms-side-label" htmlFor={idPrefix}>{label}</label>
+      <select
+        id={idPrefix}
+        className="up__claim-select"
+        value={packId}
+        onChange={(e) => onPackChange(e.target.value)}
+      >
+        {GRANDPARENT_TERM_PACKS.map((p) => (
+          <option key={p.id} value={p.id}>{p.label}</option>
+        ))}
+        <option value={CUSTOM_PACK_ID}>Custom…</option>
+      </select>
+      {isCustom && (
+        <div className="up__kinterms-custom">
+          <input
+            className="fs__input"
+            value={customTerms?.male || ''}
+            onChange={(e) => onCustomChange('male', e.target.value)}
+            placeholder="Grandfather term (e.g. Pop)"
+            maxLength={24}
+          />
+          <input
+            className="fs__input"
+            value={customTerms?.female || ''}
+            onChange={(e) => onCustomChange('female', e.target.value)}
+            placeholder="Grandmother term (e.g. Gigi)"
+            maxLength={24}
+          />
+        </div>
+      )}
     </div>
   );
 }

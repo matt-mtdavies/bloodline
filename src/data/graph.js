@@ -5,6 +5,7 @@
  *
  * Siblings are DERIVED (people sharing at least one parent), never stored.
  */
+import { resolveGrandparentTerm } from '../lib/kinTerms.js';
 
 export function buildGraph(people, relationships) {
   const byId = new Map(people.map((p) => [p.id, p]));
@@ -405,7 +406,13 @@ function ordinal(n) {
 
 // Human-readable relationship of `otherId` relative to `focusId`, for the
 // accessible view and the person sheet. Best-effort, kept warm and plain.
-export function relationLabel(graph, focusId, otherId) {
+//
+// kinTerms (optional): a resolved lib/kinTerms.js preference object, applied
+// only to the direct-grandparent case below — see that file for why the
+// scope stops there. Omitted (the default), every label is exactly the
+// plain English this function has always returned, so every existing call
+// site and test is unaffected until it opts in.
+export function relationLabel(graph, focusId, otherId, kinTerms) {
   if (focusId === otherId) return 'You';
   const masc = ['male', 'm', 'man'];
   const fem = ['female', 'f', 'woman'];
@@ -465,7 +472,15 @@ export function relationLabel(graph, focusId, otherId) {
       // Step/adoptive on either link in the chain makes it a step/adoptive grandparent
       if (s === 'Step' || gpEntry.qualifier === 'step') return 'Step Grandparent';
       if (s === 'Adoptive' || gpEntry.qualifier === 'adoptive') return 'Adoptive Grandparent';
-      return `${s ? s + ' ' : ''}${g('Grandfather', 'Grandmother', 'Grandparent')}`;
+      // s is 'Paternal' | 'Maternal' | null here (Step/Adoptive already
+      // returned above) — exactly what resolveGrandparentTerm expects. The
+      // side prefix still shows even with a custom term ("Paternal Nonna")
+      // since it's genuinely useful (disambiguates two grandmothers) and
+      // customizing the noun shouldn't silently drop it.
+      const term = kinTerms
+        ? resolveGrandparentTerm(kinTerms, s, other?.gender)
+        : g('Grandfather', 'Grandmother', 'Grandparent');
+      return `${s ? s + ' ' : ''}${term}`;
     }
   }
 
@@ -633,8 +648,11 @@ export function relationLabel(graph, focusId, otherId) {
 //     merge into that single word wherever the two crumbs' own endpoints
 //     genuinely form that pattern in the graph.
 //
-// Returns [{ label, fromIndex, toIndex }], indices into `order`.
-export function buildRelationCrumbs(graph, order) {
+// Returns [{ label, fromIndex, toIndex }], indices into `order`. kinTerms is
+// forwarded to every inner relationLabel call for consistency (the sibling/
+// aunt-uncle collapses above never actually land on the grandparent branch
+// today, but there's no reason a future path shape couldn't).
+export function buildRelationCrumbs(graph, order, kinTerms) {
   const rawCrumbs = [];
   for (let i = 1; i < order.length; ) {
     const mid = order[i];
@@ -644,12 +662,12 @@ export function buildRelationCrumbs(graph, order) {
       const midIsSharedParent =
         graph.parents(a).some((p) => p.id === mid) && graph.parents(b).some((p) => p.id === mid);
       if (midIsSharedParent) {
-        rawCrumbs.push({ label: relationLabel(graph, a, b), fromIndex: i - 1, toIndex: i + 1 });
+        rawCrumbs.push({ label: relationLabel(graph, a, b, kinTerms), fromIndex: i - 1, toIndex: i + 1 });
         i += 2;
         continue;
       }
     }
-    rawCrumbs.push({ label: relationLabel(graph, order[i - 1], mid), fromIndex: i - 1, toIndex: i });
+    rawCrumbs.push({ label: relationLabel(graph, order[i - 1], mid, kinTerms), fromIndex: i - 1, toIndex: i });
     i += 1;
   }
 
@@ -666,7 +684,7 @@ export function buildRelationCrumbs(graph, order) {
       const parentThenSibling =
         graph.parents(a).some((p) => p.id === mid) && graph.siblings(mid).some((s) => s.id === c);
       if (siblingThenChild || parentThenSibling) {
-        crumbs.push({ label: relationLabel(graph, a, c), fromIndex: cur.fromIndex, toIndex: nxt.toIndex });
+        crumbs.push({ label: relationLabel(graph, a, c, kinTerms), fromIndex: cur.fromIndex, toIndex: nxt.toIndex });
         i += 1;
         continue;
       }
