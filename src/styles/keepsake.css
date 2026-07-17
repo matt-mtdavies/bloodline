@@ -1035,11 +1035,13 @@
    pushes into the page" zoom the grand-open turn wants, for free. */
 .ks-sheet.ks-sheet--rest {
   transform-origin: 50% 58%;
-  transform: perspective(1800px) scale(0.66) rotateX(6deg) rotateY(-11deg) rotateZ(-2.2deg);
+  transform: perspective(1800px) scale(0.71) rotateX(6.5deg) rotateY(-12.5deg) rotateZ(-2.6deg);
   border-radius: 6px;
+  /* The key light sits upper-left, so the cast shadow falls low-right —
+     visible against the darker table, like the reference photograph. */
   box-shadow:
-    0 70px 100px -25px rgba(20, 14, 8, 0.5),
-    0 30px 55px -20px rgba(20, 14, 8, 0.35),
+    36px 84px 96px -22px rgba(52, 37, 20, 0.55),
+    16px 38px 48px -16px rgba(52, 37, 20, 0.4),
     0 3px 0 rgba(255, 255, 255, 0.55) inset;
 }
 .ks-sheet--rest .ks-edges { display: block; }
@@ -1832,9 +1834,9 @@
   right: 4%;
   bottom: -3.5%;
   height: 14%;
-  background: radial-gradient(50% 62% at 48% 45%, rgba(56, 40, 24, 0.4), rgba(56, 40, 24, 0) 74%);
-  filter: blur(12px);
-  transform: rotate(-2.4deg) translateX(-2.5%);
+  background: radial-gradient(50% 62% at 48% 45%, rgba(48, 33, 17, 0.55), rgba(48, 33, 17, 0) 76%);
+  filter: blur(13px);
+  transform: rotate(-2.6deg) translateX(3%);
   pointer-events: none;
 }
 .ks-sheet { z-index: 1; }
@@ -1849,14 +1851,17 @@
   pointer-events: none;
   mix-blend-mode: soft-light;
   background:
-    radial-gradient(32% 24% at 20% 16%, rgba(255, 250, 238, 0.95), transparent 68%),
-    radial-gradient(38% 28% at 74% 26%, rgba(255, 248, 232, 0.75), transparent 70%),
-    radial-gradient(28% 22% at 38% 74%, rgba(255, 250, 238, 0.65), transparent 70%),
-    radial-gradient(24% 18% at 62% 58%, rgba(54, 40, 24, 0.6), transparent 70%),
-    radial-gradient(20% 16% at 10% 52%, rgba(54, 40, 24, 0.5), transparent 70%),
-    radial-gradient(30% 22% at 88% 78%, rgba(54, 40, 24, 0.55), transparent 72%);
+    radial-gradient(38% 28% at 20% 14%, rgba(255, 250, 238, 1), transparent 70%),
+    radial-gradient(44% 32% at 76% 24%, rgba(255, 248, 232, 0.9), transparent 72%),
+    radial-gradient(32% 26% at 36% 76%, rgba(255, 250, 238, 0.8), transparent 70%),
+    radial-gradient(28% 20% at 62% 56%, rgba(44, 31, 16, 0.75), transparent 70%),
+    radial-gradient(24% 18% at 8% 50%, rgba(44, 31, 16, 0.65), transparent 70%),
+    radial-gradient(34% 24% at 90% 80%, rgba(44, 31, 16, 0.7), transparent 72%);
+  opacity: 0;
+  transition: opacity 1.3s ease;
   animation: ks-dapple-drift 44s ease-in-out infinite alternate;
 }
+.ks-book--rest .ks-dapple { opacity: 1; }
 @keyframes ks-dapple-drift {
   from { transform: translate3d(-1.6%, -1%, 0) rotate(-0.5deg); }
   to { transform: translate3d(1.6%, 1.2%, 0) rotate(0.5deg); }
@@ -1869,8 +1874,8 @@
    hint is showing; any interaction removes it. */
 .ks-sheet--breathe { animation: ks-breathe 5.6s ease-in-out infinite; }
 @keyframes ks-breathe {
-  0%, 100% { transform: perspective(1800px) scale(0.66) rotateX(6deg) rotateY(-11deg) rotateZ(-2.2deg); }
-  50% { transform: perspective(1800px) scale(0.668) rotateX(5.1deg) rotateY(-14.8deg) rotateZ(-2deg); }
+  0%, 100% { transform: perspective(1800px) scale(0.71) rotateX(6.5deg) rotateY(-12.5deg) rotateZ(-2.6deg); }
+  50% { transform: perspective(1800px) scale(0.718) rotateX(5.6deg) rotateY(-16.2deg) rotateZ(-2.4deg); }
 }
 
 /* Edit pencils are working chrome, not cover art: gone entirely on the
@@ -1924,4 +1929,62 @@
   transform-origin: top left;
   border-radius: 4px;
   overflow: hidden;
+}
+
+/* ── The tabletop scene v2 — value contrast per the reference photograph.
+   The table is genuinely darker than the page (the magazine is the
+   brightest object in frame), lit by ONE key from the upper-left with the
+   corners falling away; travertine mottling at two scales; a blurred stone
+   dish cropped at the corner as depth-of-field set dressing. Fades to a
+   whisper while actually reading. ─────────────────────────────────────── */
+.ks-scene {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 1.3s ease;
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E"),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='700' height='700'%3E%3Cfilter id='m'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.011' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23m)' opacity='0.55'/%3E%3C/svg%3E"),
+    radial-gradient(95% 75% at 30% 20%, rgba(255, 245, 226, 0.9) 0%, rgba(238, 219, 188, 0.3) 46%, rgba(0, 0, 0, 0) 72%),
+    radial-gradient(150% 120% at 74% 94%, rgba(0, 0, 0, 0) 38%, rgba(62, 45, 26, 0.45) 100%),
+    linear-gradient(158deg, #d7c19e 0%, #c5ab82 52%, #ab8d61 100%);
+  background-blend-mode: soft-light, soft-light, normal, normal, normal;
+}
+.ks-book--rest .ks-scene { opacity: 1; }
+.ks-stage { z-index: 1; }
+/* The out-of-focus stone dish, cropped by the frame like a photograph's
+   foreground — rim caught by the key light, underside falling to shadow. */
+.ks-scene__prop {
+  position: absolute;
+  top: -12%;
+  left: -14%;
+  width: min(52vmin, 460px);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(62% 62% at 44% 38%, #f2e6d0 0%, #ddc9a6 56%, #c0a67c 100%);
+  box-shadow:
+    inset 0 -16px 44px rgba(84, 62, 36, 0.4),
+    inset 0 12px 26px rgba(255, 250, 238, 0.75),
+    26px 44px 70px rgba(62, 45, 26, 0.3);
+  filter: blur(10px);
+}
+/* Now that the field is dark enough to take it: one broad, faint sheen
+   across the resting cover — laminate catching the key, nothing like the
+   old hard glass band (peak 14% white across half the trim). */
+.ks-sheet--rest::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(118deg,
+    rgba(255, 255, 255, 0) 28%,
+    rgba(255, 255, 255, 0.08) 44%,
+    rgba(255, 255, 255, 0.14) 52%,
+    rgba(255, 255, 255, 0.05) 63%,
+    rgba(255, 255, 255, 0) 78%);
 }

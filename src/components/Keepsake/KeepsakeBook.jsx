@@ -406,6 +406,15 @@ export default function KeepsakeBook({ spreads, subjectName, edition, onEditSect
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerCancel}
     >
+      {/* The tabletop scene — a genuinely darker travertine field with one
+          directional key light, so the white magazine is the brightest
+          object in frame (the reference-photo rule). Fades back to the calm
+          reading wash as the grand-open pushes in. The prop is the blurred,
+          out-of-focus stone dish cropped at the corner — depth-of-field set
+          dressing, never a literal object. */}
+      <div className="ks-scene" aria-hidden="true">
+        <div className="ks-scene__prop" />
+      </div>
       <div className="ks-stage" ref={fitRef}>
       <div
         className="ks-scale"
@@ -451,8 +460,9 @@ export default function KeepsakeBook({ spreads, subjectName, edition, onEditSect
       </div>
       {/* Dappled foliage light drifting across the whole scene — the table
           AND the object, the way the light in a real photograph belongs to
-          the room, not the magazine. Rest splash only. */}
-      {resting && <div className="ks-dapple" aria-hidden="true" />}
+          the room, not the magazine. Always mounted so it can crossfade out
+          with the scene as the book opens (.ks-book--rest gates opacity). */}
+      <div className="ks-dapple" aria-hidden="true" />
       <button
         className="ks-booknav ks-booknav--prev"
         onClick={() => startTurn(-1)}
