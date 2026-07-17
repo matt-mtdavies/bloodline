@@ -68,6 +68,7 @@ import ChartTree from './viz/ChartTree.jsx';
 import TopBar from './components/TopBar.jsx';
 import FocusNameplate from './components/FocusNameplate.jsx';
 import HoverCard from './components/HoverCard.jsx';
+import HomeToMe from './components/HomeToMe.jsx';
 import PersonSheet from './components/PersonSheet.jsx';
 import AddRelativeSheet from './components/AddRelativeSheet.jsx';
 import EditPersonSheet from './components/EditPersonSheet.jsx';
@@ -1682,6 +1683,16 @@ export default function App() {
 
   const activePerson = graph.byId.get(activeId);
 
+  // "Back to you" — the map-style recenter control. mePerson is the viewer's
+  // own bubble (null in demo / before a user claims a person, in which case
+  // the pill simply never renders). goHome reuses the same flight search's
+  // "show on map" uses; from me-to-me it's a single-node path, so it lands
+  // as a clean activate + camera settle, no flight caption.
+  const mePerson = data.myPersonId ? graph.byId.get(data.myPersonId) : null;
+  const goHome = useCallback(() => {
+    if (data.myPersonId) flyToPersonFromAnywhere(data.myPersonId);
+  }, [data.myPersonId, flyToPersonFromAnywhere]);
+
   // Tree-screen insight surfacing (nav brief: "surface one real insight from
   // the tree screen itself, not just Home"). Computed once per graph change;
   // the per-focus and per-day lookups off it are cheap. Both are deliberately
@@ -2028,6 +2039,18 @@ export default function App() {
               </button>
             </div>
           </div>
+          {/* "Back to you" — contextual, only when the tree isn't already
+              framed on the viewer and no full-screen mode is running. */}
+          <HomeToMe
+            person={mePerson}
+            visible={
+              !!mePerson &&
+              activeId !== data.myPersonId &&
+              !lineageMode && !timeMode && !flightCaption &&
+              !anyOverlayOpen && recapQueue.length === 0
+            }
+            onGoHome={goHome}
+          />
           {!lineageMode && !flightCaption && <IntroHint />}
           {!lineageMode && !flightCaption && (
             <IdleFactHint fact={dailyHighlight} active={browse && !anyOverlayOpen} />

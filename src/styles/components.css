@@ -1268,6 +1268,86 @@
 .bottom-dock .time-toggle--on:hover { background: #1a1310; }
 .bottom-dock .lineage-btn--on:hover { background: color-mix(in srgb, var(--accent-soft) 80%, transparent); }
 
+/* ── "Back to you" — the map-style recenter pill ─────────────────────────────
+   The viewer's own portrait, floating in the bottom-right thumb zone above
+   the dock. Contextual: HomeToMe mounts it only when the tree isn't already
+   framed on the viewer, so it's simply absent the rest of the time. */
+.hometome {
+  position: fixed;
+  right: 14px;
+  bottom: calc(var(--safe-bottom) + 92px);
+  z-index: 41;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(10px) scale(0.9);
+  transition: opacity 0.24s ease, transform 0.24s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.hometome--in { opacity: 1; transform: none; }
+.hometome__btn {
+  position: relative;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--paper, #fff);
+  box-shadow: 0 6px 18px rgba(28, 22, 16, 0.22), 0 2px 5px rgba(28, 22, 16, 0.12);
+  pointer-events: auto;
+  -webkit-tap-highlight-color: transparent;
+}
+.hometome__btn:active { transform: scale(0.95); }
+.hometome__btn .avatar { width: 48px; height: 48px; }
+/* The accent ring — reads as "a control", not a stray bubble. */
+.hometome__ring {
+  position: absolute;
+  inset: 3px;
+  border-radius: 50%;
+  border: 2px solid var(--accent, #c2603a);
+  pointer-events: none;
+}
+/* The locate glyph badge — the universal "recenter on me" cue, tucked at
+   the corner so the face still leads. */
+.hometome__pin {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 21px;
+  height: 21px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent, #c2603a);
+  color: #fff;
+  box-shadow: 0 1px 3px rgba(28, 22, 16, 0.3);
+}
+.hometome__hint {
+  pointer-events: none;
+  padding: 7px 13px;
+  border-radius: 999px;
+  background: var(--ink, #241f1c);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  box-shadow: 0 4px 12px rgba(28, 22, 16, 0.24);
+  animation: hometome-hint-in 0.3s ease both;
+}
+@keyframes hometome-hint-in {
+  from { opacity: 0; transform: translateX(6px); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hometome { transition: opacity 0.2s ease; transform: none; }
+  .hometome--in { transform: none; }
+  .hometome__hint { animation: none; }
+}
+
 /* ── Search overlay ──────────────────────────────────────────────────────────── */
 .search-scrim {
   position: fixed;
