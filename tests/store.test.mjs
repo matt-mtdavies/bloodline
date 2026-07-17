@@ -9,7 +9,7 @@
  * Run with: node tests/store.test.mjs
  */
 import assert from 'node:assert/strict';
-import { store, importFromGedcom, setRelationshipKind } from '../src/data/store.js';
+import { store, importFromGedcom, setRelationshipKind, addMedal, removeMedal } from '../src/data/store.js';
 
 let passed = 0, failed = 0;
 function test(label, fn) {
@@ -77,6 +77,33 @@ test('setRelationshipKind on a brand-new pair (no prior edge) tombstones nothing
   const after = store.getState();
   assert.equal(Object.keys(after._deleted?.relationships || {}).length, beforeCount);
   assert.equal(after.relationships.filter((r) => r.type === 'partner').length, 1);
+});
+
+// ── Medals: the one manual undo for a wrongly-accepted document medal ──────
+// (see the Edward Turner report: a document accepted onto the wrong
+// person's profile leaves no live link back to itself, so removing a
+// mis-attributed medal is a plain, permanent, index-based edit.)
+test('removeMedal deletes exactly the targeted medal, leaving the rest untouched', () => {
+  importFromGedcom([{ id: 'ed', display_name: 'Edward Turner' }], [], { merge: false });
+  addMedal('ed', { name: 'Military Medal' });
+  addMedal('ed', { name: "His Brother's Medal", detail: 'wrongly attributed' });
+  addMedal('ed', { name: 'Long Service Medal' });
+  assert.equal(store.getState().people.find((p) => p.id === 'ed').military_medals.length, 3);
+
+  removeMedal('ed', 1);
+
+  const medals = store.getState().people.find((p) => p.id === 'ed').military_medals;
+  assert.equal(medals.length, 2);
+  assert.deepEqual(medals.map((m) => m.name), ['Military Medal', 'Long Service Medal']);
+});
+
+test('removeMedal on an out-of-range index is a harmless no-op', () => {
+  importFromGedcom([{ id: 'sam', display_name: 'Sam' }], [], { merge: false });
+  addMedal('sam', { name: 'Star' });
+
+  removeMedal('sam', 5);
+
+  assert.equal(store.getState().people.find((p) => p.id === 'sam').military_medals.length, 1);
 });
 
 console.log(`\n  ${passed} passed, ${failed} failed`);

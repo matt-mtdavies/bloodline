@@ -8,6 +8,16 @@ import DateField from './DateField.jsx';
 
 const GENDER_OPTIONS = ['Male', 'Female', 'Non-binary', 'Other'];
 
+// Same three values MilitaryIcons.jsx's BranchIcon recognizes — kept as a
+// closed set (a pill-pick, not free text) so a saved value always resolves
+// to a real branch mark on the dog tag, never a typo the icon can't match.
+const BRANCH_OPTIONS = [
+  { value: 'army', label: 'Army' },
+  { value: 'navy', label: 'Navy' },
+  { value: 'air_force', label: 'Air Force' },
+];
+const BRANCH_LABELS = Object.fromEntries(BRANCH_OPTIONS.map((o) => [o.value, o.label]));
+
 const EYE_OPTIONS = [
   { value: 'Brown',  dot: '#6b4226' },
   { value: 'Blue',   dot: '#4a7fbf' },
@@ -55,6 +65,10 @@ export default function EditPersonSheet({ person, onClose, onSave, onRemove, sta
     birth_place:   person.birth_place   || '',
     residence:     person.residence     || '',
     occupation:    person.occupation    || '',
+    military_branch:         person.military_branch         || '',
+    military_nation:         person.military_nation         || '',
+    military_rank:           person.military_rank           || '',
+    military_service_number: person.military_service_number || '',
     eye_color:     person.eye_color     || '',
     hair_color:    person.hair_color    || '',
     email:         person.email         || '',
@@ -101,6 +115,10 @@ export default function EditPersonSheet({ person, onClose, onSave, onRemove, sta
       birth_place:   f.birth_place.trim()   || null,
       residence:     f.residence.trim()     || null,
       occupation:    f.occupation.trim()    || null,
+      military_branch:         f.military_branch                 || null,
+      military_nation:         f.military_nation.trim()          || null,
+      military_rank:           f.military_rank.trim()            || null,
+      military_service_number: f.military_service_number.trim()  || null,
       eye_color:     f.eye_color            || null,
       hair_color:    f.hair_color           || null,
       email:         f.email.trim()         || null,
@@ -143,6 +161,15 @@ export default function EditPersonSheet({ person, onClose, onSave, onRemove, sta
           ['Birthplace', person.birth_place],
           ['Lives in', person.residence],
           ['Occupation', person.occupation],
+        ],
+      },
+      {
+        title: 'Military',
+        rows: [
+          ['Branch', BRANCH_LABELS[person.military_branch] || person.military_branch],
+          ['Served with', person.military_nation],
+          ['Rank', person.military_rank],
+          ['Service number', person.military_service_number],
         ],
       },
       {
@@ -373,6 +400,49 @@ export default function EditPersonSheet({ person, onClose, onSave, onRemove, sta
             <div className="input-wrap">
               <input className="field__input" value={f.occupation} onChange={set('occupation')} placeholder="e.g. Architect" />
               {f.occupation && <button type="button" className="input-clear" onClick={clear('occupation')} aria-label="Clear" tabIndex={-1}>×</button>}
+            </div>
+          </label>
+
+          {/* ── Military service — branch/rank/service number/nation. Usually
+              filled in automatically by accepting a document suggestion
+              (see Enrich), but that's a one-time write with no live link
+              back to the source document — if a document ever gets
+              reassigned to a different person after the fact, correcting
+              or clearing what it wrote here is manual, right in this form. ── */}
+          <div className="field">
+            <span className="field__label">Military branch</span>
+            <div className="pill-pick">
+              {BRANCH_OPTIONS.map((o) => (
+                <button
+                  key={o.value}
+                  type="button"
+                  className={`pill-pick__opt${f.military_branch === o.value ? ' pill-pick__opt--on' : ''}`}
+                  onClick={() => pick('military_branch')(o.value)}
+                >
+                  {o.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <label className="field">
+            <span className="field__label">Served with</span>
+            <div className="input-wrap">
+              <input className="field__input" value={f.military_nation} onChange={set('military_nation')} placeholder="e.g. Australia" />
+              {f.military_nation && <button type="button" className="input-clear" onClick={clear('military_nation')} aria-label="Clear" tabIndex={-1}>×</button>}
+            </div>
+          </label>
+          <label className="field">
+            <span className="field__label">Rank</span>
+            <div className="input-wrap">
+              <input className="field__input" value={f.military_rank} onChange={set('military_rank')} placeholder="e.g. Corporal" />
+              {f.military_rank && <button type="button" className="input-clear" onClick={clear('military_rank')} aria-label="Clear" tabIndex={-1}>×</button>}
+            </div>
+          </label>
+          <label className="field">
+            <span className="field__label">Service number</span>
+            <div className="input-wrap">
+              <input className="field__input" value={f.military_service_number} onChange={set('military_service_number')} placeholder="e.g. NX12345" />
+              {f.military_service_number && <button type="button" className="input-clear" onClick={clear('military_service_number')} aria-label="Clear" tabIndex={-1}>×</button>}
             </div>
           </label>
 

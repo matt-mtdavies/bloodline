@@ -32,6 +32,7 @@ import {
   updateCondition,
   addLifeEvent,
   addMedal,
+  removeMedal,
   dismissRelationshipFact,
   logActivity,
   loadFromServer,
@@ -1423,6 +1424,8 @@ export default function App() {
       if (changed('birth_place')) parts.push('birthplace');
       if (changed('residence')) parts.push('location');
       if (changed('occupation')) parts.push('occupation');
+      if (changed('military_branch') || changed('military_nation') ||
+          changed('military_rank') || changed('military_service_number')) parts.push('military details');
       if (changed('eye_color')) parts.push('eye colour');
       if (changed('hair_color')) parts.push('hair colour');
       if (('email' in fields && fields.email !== (person?.email ?? null)) ||
@@ -1541,6 +1544,14 @@ export default function App() {
     },
     [data.documents],
   );
+  // Removing a medal already ON the profile — distinct from dismissing an
+  // unaccepted candidate above. There's no live link back to whichever
+  // document (if any) produced it, so this is a plain, permanent removal by
+  // its position in the list; MilitaryService gates it behind its own
+  // "remove this medal?" confirm the same way it does for quotes.
+  const handleRemoveMedal = useCallback((personId, index) => {
+    removeMedal(personId, index);
+  }, []);
 
   // Relationship-derived findings (Married, Widowed, Became a parent/
   // grandparent — see lib/enrich.js) carry their own complete { key, year,
@@ -2170,6 +2181,7 @@ export default function App() {
         onDismissDocumentFact={dismissDocumentFact}
         onApplyDocumentMedal={applyDocumentMedal}
         onDismissDocumentMedal={dismissDocumentMedal}
+        onRemoveMedal={handleRemoveMedal}
         onApplyDocumentField={applyDocumentField}
         onDismissDocumentField={dismissDocumentField}
         onApplyDocumentPerson={applyDocumentPerson}

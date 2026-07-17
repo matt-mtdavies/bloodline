@@ -33,13 +33,16 @@ const NO_CONTEXT = 'NO_HISTORICAL_CONTEXT_AVAILABLE';
  * The narrative and historical context share the same review discipline
  * (Keep it / Fix it / Dismiss, Edit + Regenerate) via GeneratedBlock below.
  */
-export default function MilitaryService({ person, personDocs, onOpenDocument, onUpdateMilitaryStory, onUpdateMilitaryContext, onDismissDocumentFact, canEdit = true }) {
+export default function MilitaryService({ person, personDocs, onOpenDocument, onUpdateMilitaryStory, onUpdateMilitaryContext, onDismissDocumentFact, onRemoveMedal, canEdit = true }) {
   // A quote is already live content on the profile, not a pending
   // suggestion — unlike Enrich's own Dismiss, losing one to a stray tap has
   // no way back, so it gets the same "are you sure" confirm as removing a
   // document does, not a silent one-tap delete. Keyed by `docId:factIndex`
   // so only the one quote being confirmed shows it.
   const [confirmQuoteKey, setConfirmQuoteKey] = useState(null);
+  // Same discipline for medals — index-based since a medal (see
+  // store.js's addMedal/removeMedal) carries no id of its own.
+  const [confirmMedalIndex, setConfirmMedalIndex] = useState(null);
   if (!hasMilitaryService(person, personDocs)) return null;
 
   const events = militaryEvents(person);
@@ -96,12 +99,44 @@ export default function MilitaryService({ person, personDocs, onOpenDocument, on
           get their own "precious metal" register. */}
       {medals.length > 0 && (
         <div className="military__medals" role="list" aria-label="Medals and honours">
-          {medals.map((m, i) => (
-            <div className="military__medal" role="listitem" key={i} title={m.detail || undefined}>
-              <MedalIcon />
-              <span className="military__medal-name">{m.name}</span>
-            </div>
-          ))}
+          {medals.map((m, i) => {
+            const confirming = confirmMedalIndex === i;
+            return (
+              <div className={`military__medal${confirming ? ' military__medal--confirming' : ''}`} role="listitem" key={i} title={!confirming ? m.detail || undefined : undefined}>
+                {confirming ? (
+                  <div className="military__medal-confirm">
+                    <span>Remove this medal?</span>
+                    <div className="military__medal-confirm-btns">
+                      <button
+                        className="military__quote-confirm-remove"
+                        onClick={() => { onRemoveMedal?.(person.id, i); setConfirmMedalIndex(null); }}
+                      >
+                        Remove
+                      </button>
+                      <button className="military__quote-confirm-cancel" onClick={() => setConfirmMedalIndex(null)}>
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <MedalIcon />
+                    <span className="military__medal-name">{m.name}</span>
+                    {canEdit && onRemoveMedal && (
+                      <button
+                        className="military__medal-dismiss"
+                        onClick={() => setConfirmMedalIndex(i)}
+                        aria-label={`Remove ${m.name} — e.g. if this was from a document that actually belongs to someone else`}
+                        title="Remove this medal"
+                      >
+                        ×
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
 

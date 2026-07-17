@@ -1845,6 +1845,25 @@ export function addMedal(personId, { name, detail } = {}) {
   }, { type: 'person_updated', personId, personName: person?.display_name ?? '', detail: 'medals' }));
 }
 
+// Remove one medal/honour by its position in the list. Medals (appended one
+// at a time, either by hand or via document acceptance) carry no id of their
+// own, so this is index-based — the same convention the timeline editor's
+// own per-row remove already uses. The one correction path for a medal that
+// was accepted from the wrong person's document: there is no live link back
+// to the source document to retract automatically (see docs/ discussion of
+// the Edward Turner report), so removing it here is deliberate and manual.
+export function removeMedal(personId, index) {
+  const person = state.people.find((p) => p.id === personId);
+  commit(withActivity({
+    ...state,
+    people: state.people.map((p) =>
+      p.id === personId
+        ? { ...p, military_medals: (p.military_medals || []).filter((_, i) => i !== index) }
+        : p,
+    ),
+  }, { type: 'person_updated', personId, personName: person?.display_name ?? '', detail: 'medals' }));
+}
+
 // Record a plain activity event with no tree mutation attached — for
 // features whose "something happened" lives outside tree_json (today: a
 // Keepsake edition being compiled, which is stored in R2). Goes through the

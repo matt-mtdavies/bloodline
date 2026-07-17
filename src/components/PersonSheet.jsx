@@ -71,6 +71,7 @@ export default function PersonSheet({
   onDismissDocumentFact,
   onApplyDocumentMedal,
   onDismissDocumentMedal,
+  onRemoveMedal,
   onApplyDocumentField,
   onDismissDocumentField,
   onApplyDocumentPerson,
@@ -945,6 +946,7 @@ export default function PersonSheet({
               onUpdateMilitaryStory={onUpdateMilitaryStory}
               onUpdateMilitaryContext={onUpdateMilitaryContext}
               onDismissDocumentFact={onDismissDocumentFact}
+              onRemoveMedal={onRemoveMedal}
               canEdit={canEdit}
             />
 

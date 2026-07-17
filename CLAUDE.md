@@ -44,6 +44,19 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
 - **Store fixes:** portrait photos preserved across server-sync reloads; localStorage quota
   errors surfaced as a toast; `addRelationship()` links existing people; bio-parent
   constraints (at most 1 bio mother + 1 bio father per person).
+- **Military profile fields + medals are now manually editable/removable** (real user report:
+  a document accepted onto the wrong person left branch/rank/service-number/medals stuck —
+  there's no live link from an accepted fact back to its source document, so reassigning or
+  deleting the document afterward does nothing to what it already wrote). `EditPersonSheet`
+  gained a Military section (branch pill-pick, served-with/rank/service-number text fields,
+  clear buttons, a read-only "Military" row group in the profile view) — the same generic
+  `updatePerson` pass-through everything else in that form already uses, no new plumbing.
+  `store.js` gained `removeMedal(personId, index)` (medals carry no id, so this is index-based
+  like the timeline editor's own row removal); `MilitaryService.jsx` shows a per-medal "×" with
+  the same are-you-sure confirm the document-quote dismiss already used. This is a manual fix,
+  not automatic retraction — accepting a document fact still writes plain data with no
+  `sourceDocId`, so a future real fix would tag accepted facts with their source document and
+  let deleting that document offer to clean up what it produced.
 
 - **The Keepsake ✅ Phases 0–5** (spec: `docs/KEEPSAKE.md`): the marquee endgame feature —
   a regenerating magazine-style illustrated biography per person. Data layer

@@ -9775,6 +9775,39 @@ button.health-notes {
   font-size: 12.5px;
   font-weight: 600;
 }
+/* The remove control — quiet until hovered, same "×" language as the
+   quote dismiss above; a medal is live, accepted data, so it gets the same
+   confirm-before-delete treatment, not a silent one-tap removal. */
+.military__medal-dismiss {
+  border: 0;
+  background: transparent;
+  color: #8a6a1f;
+  opacity: 0.55;
+  font-size: 14px;
+  line-height: 1;
+  padding: 2px 2px 2px 4px;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+.military__medal-dismiss:hover { opacity: 1; }
+/* The confirm step swaps the pill's content in place rather than opening a
+   separate modal — the pill just grows to fit "Remove this medal?" and
+   two buttons, still reading as the same object being asked about. */
+.military__medal--confirming {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 14px;
+}
+.military__medal-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--ink);
+}
+.military__medal-confirm-btns { display: flex; gap: 8px; }
 
 /* The campaign route — a horizontally scrollable strip of waypoints on a
    dashed line, evoking a journey without needing a real map or geocoding. */
