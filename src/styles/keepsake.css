@@ -775,8 +775,13 @@
 .keepsake-view.ks-mode-book {
   overflow: hidden;
   scroll-snap-type: none;
+  /* A warm stone tabletop, not an app wash: travertine tones, a whisper of
+     grain, and a vignette pulling the eye to the object. */
   background:
-    radial-gradient(120% 90% at 50% 0%, #f6f1ea 0%, #ece5db 68%, #e4dcd0 100%);
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.55'/%3E%3C/svg%3E"),
+    radial-gradient(130% 100% at 50% 42%, rgba(96, 74, 52, 0) 52%, rgba(84, 62, 42, 0.18) 100%),
+    radial-gradient(120% 90% at 50% 0%, #f4ecdf 0%, #eae0cf 62%, #decfba 100%);
+  background-blend-mode: soft-light, normal, normal;
 }
 .ks-book {
   position: absolute;
@@ -806,7 +811,7 @@
   width: 100%;
   height: 100%;
   perspective: 2600px;
-  border-radius: 8px;
+  border-radius: 4px;
   background: var(--paper, #ffffff);
   transition: transform 1.3s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 1.3s cubic-bezier(0.22, 1, 0.36, 1), border-radius 1.3s cubic-bezier(0.22, 1, 0.36, 1);
   box-shadow:
@@ -937,7 +942,7 @@
   width: 50%;
   z-index: 1;
   overflow: hidden;
-  border-radius: 8px 0 0 8px;
+  border-radius: 4px 0 0 4px;
   background: var(--paper, #ffffff);
 }
 /* The verso being uncovered by a back turn sits in the leaf's shadow. */
@@ -956,7 +961,7 @@
   bottom: 0;
   left: 50%;
   width: 50%;
-  border-radius: 0 8px 8px 0;
+  border-radius: 0 4px 4px 0;
 }
 .ks-sheet--spread .ks-leaf {
   inset: auto;
@@ -965,7 +970,7 @@
   left: 50%;
   width: 50%;
   z-index: 3;
-  border-radius: 0 8px 8px 0;
+  border-radius: 0 4px 4px 0;
   /* The leaf only exists mid-turn here — never a tap target. */
   pointer-events: none;
 }
@@ -1005,7 +1010,7 @@
   inset: 0;
   left: 0;
   width: 100%;
-  border-radius: 8px;
+  border-radius: 4px;
 }
 .ks-blank {
   position: absolute;
@@ -1031,95 +1036,17 @@
 .ks-sheet.ks-sheet--rest {
   transform-origin: 50% 58%;
   transform: perspective(1800px) scale(0.66) rotateX(6deg) rotateY(-11deg) rotateZ(-2.2deg);
-  border-radius: 16px;
+  border-radius: 6px;
   box-shadow:
     0 70px 100px -25px rgba(20, 14, 8, 0.5),
     0 30px 55px -20px rgba(20, 14, 8, 0.35),
     0 3px 0 rgba(255, 255, 255, 0.55) inset;
 }
 .ks-sheet--rest .ks-edges { display: block; }
-/* A glossy laminate sheen across the whole cover — the "high-end magazine"
-   finish. Sits above everything else in the sheet; never a tap target. */
-.ks-sheet__gloss {
-  position: absolute;
-  inset: 0;
-  z-index: 8;
-  pointer-events: none;
-  border-radius: inherit;
-  background: linear-gradient(115deg,
-    rgba(255, 255, 255, 0) 32%,
-    rgba(255, 255, 255, 0.14) 44%,
-    rgba(255, 255, 255, 0.32) 50%,
-    rgba(255, 255, 255, 0.12) 56%,
-    rgba(255, 255, 255, 0) 68%);
-  background-size: 240% 240%;
-  background-position: 100% 0%;
-  animation: ks-gloss-shift 7s ease-in-out infinite;
-}
-@keyframes ks-gloss-shift {
-  0%, 100% { background-position: 115% -10%; }
-  50% { background-position: 40% 60%; }
-}
-/* The page-curl — a believable lifting paper corner (Kindle/Apple-Books
-   style), not a flat geometric wedge: the fold edge is a shallow multi-
-   point curve (a straight clip-path line reads as a cut, not a curl), the
-   fill is a gradient standing in for the paper catching the light along
-   the fold and shading back down toward the anchored corner, and the
-   cast shadow uses filter:drop-shadow (which follows the clipped
-   silhouette) rather than box-shadow (which is always rectangular and
-   would show as a shadow past the fold's straight edges).
-   Two sizes share this shape: the cover's inviting --hero curl, and a
-   small, quiet, always-tappable version on every ordinary page. */
-.ks-page-curl {
-  position: absolute;
-  right: 0;
-  bottom: 0;
-  aspect-ratio: 1;
-  z-index: 9;
-  /* A straight cut reads as scissors, not paper — and a curve bowing
-     toward the anchor corner (100%,100%) pinches the flap in rather than
-     rolling it out. Real curling paper resists sharp bending and bulges
-     the OTHER way, toward the origin, making the lifted flap look rounder
-     and fuller. These points trace that outward bulge (a simple parabolic
-     arc away from the anchor along the fold's straight-line midpoints). */
-  clip-path: polygon(
-    100% 100%, 0% 100%,
-    3.5% 83.5%, 8.5% 68.5%, 14.9% 54.9%, 22.7% 42.7%, 32% 32%, 42.7% 22.7%, 54.9% 14.9%, 68.5% 8.5%, 83.5% 3.5%,
-    100% 0%
-  );
-  background: linear-gradient(135deg,
-    #ffffff 0%, #fdfaf4 20%, #f1e9d9 40%, #ece3d2 55%, #ddd2ba 76%, #c9bc9d 100%);
-  filter:
-    drop-shadow(-5px -5px 8px rgba(28, 29, 33, 0.2))
-    drop-shadow(-1px -1px 2px rgba(28, 29, 33, 0.16));
-}
-.ks-page-curl--hero {
-  width: 34%;
-  max-width: 100px;
-  pointer-events: none;
-  animation: ks-curl-hero 3.6s ease-in-out infinite;
-}
-@keyframes ks-curl-hero {
-  0%, 46%, 100% { width: 4%; opacity: 0; }
-  20% { width: 34%; opacity: 1; }
-  33% { width: 40%; opacity: 1; }
-}
-.ks-page-curl--page {
-  width: 15%;
-  max-width: 46px;
-  min-width: 26px;
-  pointer-events: none;
-  animation: ks-curl-breathe 5s ease-in-out infinite;
-}
-@keyframes ks-curl-breathe {
-  0%, 100% { width: 12%; opacity: 0.75; }
-  50% { width: 17%; opacity: 1; }
-}
 @media (prefers-reduced-motion: reduce) {
-  .ks-sheet { transition: none; }
-  .ks-sheet__gloss { animation: none; background-position: 100% 0%; }
-  .ks-page-curl--hero { display: none; }
-  .ks-page-curl--page { animation: none; width: 14%; }
+  .ks-sheet { transition: none; animation: none; }
+  .ks-dapple { animation: none; }
+  .ks-pager__slot .ks-pager__fit { opacity: 1 !important; transform: none !important; transition: none !important; }
 }
 
 /* Phones read full-bleed — the sheet IS the screen. */
@@ -1127,7 +1054,7 @@
   /* The pocket folio nearly fills the screen (scale ~1); a slim frame of
      the table wash around it keeps it reading as a bound object. */
   .ks-book { padding: calc(var(--safe-top, 0px) + 60px) 10px calc(var(--safe-bottom, 0px) + 14px); }
-  .ks-sheet { border-radius: 10px; }
+  .ks-sheet { border-radius: 6px; }
   .ks-bookcounter { display: none; }
   /* The edition-bar note has no width limit of its own, so on a narrow
      row it gets squeezed by the nowrap "Weave in the changes" button down
@@ -1202,14 +1129,12 @@
   body.ks-has-print .ks-progress,
   body.ks-has-print .ks-editbtn,
   body.ks-has-print .sheet-scrim,
-  body.ks-has-print .ks-prose-pending,
-  body.ks-has-print .ks-page__more,
-  body.ks-has-print .ks-sheet__gloss,
-  body.ks-has-print .ks-page-curl { display: none !important; }
+  body.ks-has-print .ks-prose-pending { display: none !important; }
 
-  /* Book mode prints from its plain flow copy — the 3D pager only ever
-     mounts a leaf and its neighbour, so it can't paginate on paper. */
-  body.ks-has-print .ks-book { display: none !important; }
+  /* Both screen readers print from the plain flow copy — neither the 3D
+     book nor the snapped pager can paginate on paper. */
+  body.ks-has-print .ks-book,
+  body.ks-has-print .ks-pager { display: none !important; }
   body.ks-has-print .ks-printflow { display: block !important; }
 
   /* A printed page can't scroll — undo the screen-only fixed-scale/scroll
@@ -1893,3 +1818,110 @@
 
 /* Print-flow copy and scroll reader never see .ks-pg pages; the print
    pipeline keeps reading the old spreads (.ks-printflow). */
+
+/* ═══ The finish pass ═════════════════════════════════════════════════════
+   The rest splash as a photographed object (contact shadow, dappled light,
+   a breathing invitation instead of a fake curl), and the scroll reader as
+   a snapped vertical pager over the same typeset pages. */
+
+/* The tight, directional shadow that anchors the magazine to the table —
+   the ambient drop shadow alone leaves the object floating. */
+.ks-contact {
+  position: absolute;
+  left: 4%;
+  right: 4%;
+  bottom: -3.5%;
+  height: 14%;
+  background: radial-gradient(50% 62% at 48% 45%, rgba(56, 40, 24, 0.4), rgba(56, 40, 24, 0) 74%);
+  filter: blur(12px);
+  transform: rotate(-2.4deg) translateX(-2.5%);
+  pointer-events: none;
+}
+.ks-sheet { z-index: 1; }
+
+/* Dappled foliage light drifting over the whole scene — the light belongs
+   to the room, not the object, which is what makes it read as photography
+   instead of a gradient pasted on the cover. */
+.ks-dapple {
+  position: absolute;
+  inset: -12%;
+  z-index: 5;
+  pointer-events: none;
+  mix-blend-mode: soft-light;
+  background:
+    radial-gradient(32% 24% at 20% 16%, rgba(255, 250, 238, 0.95), transparent 68%),
+    radial-gradient(38% 28% at 74% 26%, rgba(255, 248, 232, 0.75), transparent 70%),
+    radial-gradient(28% 22% at 38% 74%, rgba(255, 250, 238, 0.65), transparent 70%),
+    radial-gradient(24% 18% at 62% 58%, rgba(54, 40, 24, 0.6), transparent 70%),
+    radial-gradient(20% 16% at 10% 52%, rgba(54, 40, 24, 0.5), transparent 70%),
+    radial-gradient(30% 22% at 88% 78%, rgba(54, 40, 24, 0.55), transparent 72%);
+  animation: ks-dapple-drift 44s ease-in-out infinite alternate;
+}
+@keyframes ks-dapple-drift {
+  from { transform: translate3d(-1.6%, -1%, 0) rotate(-0.5deg); }
+  to { transform: translate3d(1.6%, 1.2%, 0) rotate(0.5deg); }
+}
+
+/* The invitation: instead of a fake curled corner pasted over the photo,
+   the resting magazine itself breathes — a gentle rock at the spine, like
+   a cover that's been opened once and wants opening again. Replaces the
+   static rest pose (same values at the loop's ends) while the first-open
+   hint is showing; any interaction removes it. */
+.ks-sheet--breathe { animation: ks-breathe 5.6s ease-in-out infinite; }
+@keyframes ks-breathe {
+  0%, 100% { transform: perspective(1800px) scale(0.66) rotateX(6deg) rotateY(-11deg) rotateZ(-2.2deg); }
+  50% { transform: perspective(1800px) scale(0.668) rotateX(5.1deg) rotateY(-14.8deg) rotateZ(-2deg); }
+}
+
+/* Edit pencils are working chrome, not cover art: gone entirely on the
+   rest splash, hover-revealed wherever a pointer can hover. */
+.ks-sheet--rest .ks-editbtn { opacity: 0; pointer-events: none; }
+@media (hover: hover) {
+  .ks-pg .ks-editbtn { opacity: 0; transition: opacity 0.18s ease; }
+  .ks-pg:hover .ks-editbtn,
+  .ks-pg .ks-editbtn:focus-visible { opacity: 1; }
+}
+
+/* ── The snapped vertical pager (scroll mode) ── */
+.ks-pager {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  scroll-snap-type: y mandatory;
+  scrollbar-width: none;
+  background:
+    radial-gradient(130% 100% at 50% 42%, rgba(96, 74, 52, 0) 55%, rgba(84, 62, 42, 0.12) 100%),
+    radial-gradient(120% 90% at 50% 0%, #f6f0e6 0%, #eee5d6 62%, #e5d9c7 100%);
+}
+.ks-pager::-webkit-scrollbar { display: none; }
+.ks-pager__slot {
+  height: 100dvh;
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.ks-pager__fit {
+  position: relative;
+  border-radius: 4px;
+  box-shadow:
+    0 22px 48px rgba(28, 29, 33, 0.18),
+    0 5px 12px rgba(28, 29, 33, 0.1);
+  /* Each page rises and settles as it arrives (IntersectionObserver adds
+     --in); reduced-motion overrides this above. */
+  opacity: 0;
+  transform: translateY(26px) scale(0.985);
+  transition: opacity 0.65s ease, transform 0.65s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.ks-pager__slot--in .ks-pager__fit {
+  opacity: 1;
+  transform: none;
+}
+.ks-pager__zoom {
+  transform-origin: top left;
+  border-radius: 4px;
+  overflow: hidden;
+}

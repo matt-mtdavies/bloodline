@@ -57,7 +57,7 @@ function modeOf() {
  * changes, the canvas changes (crossing a breakpoint), or the webfonts
  * finish loading (metrics shift).
  */
-function useTypeset(spreads, canvas, onEditSection) {
+export function useTypeset(spreads, canvas, onEditSection) {
   const blocks = useMemo(() => blocksOf(spreads), [spreads]);
   const [pages, setPages] = useState(null);
   const [fontsReady, setFontsReady] = useState(false);
@@ -411,19 +411,14 @@ export default function KeepsakeBook({ spreads, subjectName, edition, onEditSect
         className="ks-scale"
         style={{ width: logicalW, height: logicalH, transform: `translate(-50%, -50%) scale(${scale})` }}
       >
+        {/* The contact shadow anchoring the resting magazine to its table —
+            separate from the ambient drop shadow, tight and directional. */}
+        {resting && <div className="ks-contact" aria-hidden="true" />}
         <div
-          className={`ks-sheet${wide ? ' ks-sheet--spread' : ''}${closedSpread ? ' ks-sheet--closed' : ''}${resting ? ' ks-sheet--rest' : ''}`}
+          className={`ks-sheet${wide ? ' ks-sheet--spread' : ''}${closedSpread ? ' ks-sheet--closed' : ''}${resting ? ' ks-sheet--rest' : ''}${resting && hint ? ' ks-sheet--breathe' : ''}`}
         >
           {edgeL > 0 && <div className="ks-edges ks-edges--left" style={{ width: edgeL }} aria-hidden="true" />}
           {edgeR > 0 && <div className="ks-edges ks-edges--right" style={{ width: edgeR }} aria-hidden="true" />}
-          {resting && <div className="ks-sheet__gloss" aria-hidden="true" />}
-          {resting && hint && <div className="ks-page-curl ks-page-curl--hero" aria-hidden="true" />}
-          {/* The same curl, quiet and small, on every ordinary page — an
-              always-available "there's more" cue marking the tap-forward
-              margin (see onPointerUp's fx > 0.74). Purely visual. */}
-          {!resting && !turn && canFwd && (
-            <div className="ks-page-curl ks-page-curl--page" aria-hidden="true" />
-          )}
           {wide && !closedSpread && (
             <div className="ks-page ks-page--left">
               {baseLeft ? renderFace(baseLeft) : <BlankPage />}
@@ -454,6 +449,10 @@ export default function KeepsakeBook({ spreads, subjectName, edition, onEditSect
         </div>
       </div>
       </div>
+      {/* Dappled foliage light drifting across the whole scene — the table
+          AND the object, the way the light in a real photograph belongs to
+          the room, not the magazine. Rest splash only. */}
+      {resting && <div className="ks-dapple" aria-hidden="true" />}
       <button
         className="ks-booknav ks-booknav--prev"
         onClick={() => startTurn(-1)}

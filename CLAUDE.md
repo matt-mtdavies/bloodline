@@ -64,9 +64,18 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   foreignObject snapshot pipeline (pageCurl/) was DELETED — an SVG data-URI document
   can't fetch external resources, so photos blanked and fonts fell back mid-curl; both
   layouts now share the live-DOM leaf turn (shine, cast shadow, velocity-scaled inertia).
-  Scroll reader (`ks_reader_mode` toggle) and the print pipeline still use the old
-  spreads.jsx components — untouched. Wide desktop (≥1140px) reads as a true verso/recto
-  spread. Phase 6 (whole-family bound edition, print-service handoff) deliberately later.
+  The scroll reader (`ks_reader_mode` toggle) is now KeepsakePager.jsx — the SAME typeset
+  pages as a vertical pager, one page per screen, `scroll-snap mandatory` + `snap-stop
+  always` (a swipe always lands exactly one page), soft rise-and-settle on arrival; only
+  the print pipeline still uses the old spreads.jsx components. Finish pass: fake CSS
+  page-curl overlays + hard gloss band DELETED (a fake fold pasted over a photo always
+  reads as a sticker); rest splash is now a photographed object — warm-stone backdrop
+  (noise grain + vignette), drifting dappled foliage light (.ks-dapple, soft-light,
+  scene-wide), tight contact shadow (.ks-contact) under the sheet, near-square 4-6px
+  print corners, and the open-me invitation is the sheet itself gently breathing at the
+  spine (.ks-sheet--breathe). Edit pencils hide on the rest splash and are hover-revealed
+  on pointer devices. Wide desktop (≥1140px) reads as a true verso/recto spread. Phase 6
+  (whole-family bound edition, print-service handoff) deliberately later.
 
 - **Tree storage rewrite** (plan: `docs/TREE-STORAGE.md`) — fixing the D1 1MiB-per-row
   ceiling for good, not just buying headroom. Target: core (people/relationships, a

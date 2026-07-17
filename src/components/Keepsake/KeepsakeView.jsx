@@ -6,6 +6,7 @@ import {
   DocumentsSpread, RecordSpread, LegacySpread, ColophonSpread,
 } from './spreads.jsx';
 import KeepsakeBook from './KeepsakeBook.jsx';
+import KeepsakePager from './KeepsakePager.jsx';
 import '../../styles/keepsake.css';
 
 /*
@@ -133,58 +134,11 @@ export default function KeepsakeView({
     }
   }
 
-  // ── Motion (Phase 3) ──────────────────────────────────────────────────────
-  // One observer marks each spread .ks-in the first time a quarter of it is
-  // on screen — every entrance animation keys off that class. Under
-  // prefers-reduced-motion the class is inert (all motion CSS lives inside
-  // a no-preference media block), so this can run unconditionally.
+  // Both reader modes now run on the typeset pages (KeepsakeBook /
+  // KeepsakePager) and report their own progress; the old scroll-spread
+  // observers are gone with the free-scrolling reader they served.
   const containerRef = useRef(null);
   const progressRef = useRef(null);
-  const spreadCount = keepsake?.spreads.length || 0;
-
-  useEffect(() => {
-    if (readerMode !== 'scroll') return;
-    const root = containerRef.current;
-    if (!root) return;
-    const io = new IntersectionObserver(
-      (entries) => {
-        for (const e of entries) {
-          if (e.isIntersecting) {
-            e.target.classList.add('ks-in');
-            io.unobserve(e.target);
-          }
-        }
-      },
-      { root, threshold: 0.25 },
-    );
-    root.querySelectorAll('.ks-spread').forEach((el) => io.observe(el));
-    return () => io.disconnect();
-  }, [spreadCount, readerMode]);
-
-  // One rAF-throttled scroll listener drives both the reading-progress
-  // hairline and the chapters rail fill (--ks-read on the chapters spread).
-  useEffect(() => {
-    if (readerMode !== 'scroll') return;
-    const root = containerRef.current;
-    if (!root) return;
-    let raf = 0;
-    const update = () => {
-      raf = 0;
-      const max = root.scrollHeight - root.clientHeight;
-      const p = max > 0 ? root.scrollTop / max : 0;
-      if (progressRef.current) progressRef.current.style.transform = `scaleX(${p})`;
-      const chapters = root.querySelector('.ks-spread--chapters');
-      if (chapters) {
-        const r = chapters.getBoundingClientRect();
-        const read = Math.max(0, Math.min(1, (root.clientHeight * 0.8 - r.top) / r.height));
-        chapters.style.setProperty('--ks-read', String(read));
-      }
-    };
-    const onScroll = () => { if (!raf) raf = requestAnimationFrame(update); };
-    root.addEventListener('scroll', onScroll, { passive: true });
-    update();
-    return () => { root.removeEventListener('scroll', onScroll); if (raf) cancelAnimationFrame(raf); };
-  }, [spreadCount, readerMode]);
 
   if (!keepsake) return null;
 
@@ -347,29 +301,35 @@ export default function KeepsakeView({
       )}
 
       {readerMode === 'book' ? (
-        <>
-          <KeepsakeBook
-            spreads={spreads}
-            subjectName={keepsake.subject.name}
-            edition={edition}
-            onEditSection={onEditSection}
-            onProgress={(p) => {
-              if (progressRef.current) progressRef.current.style.transform = `scaleX(${p})`;
-            }}
-          />
-          {/* Print reads the whole book in normal flow; the 3D pager only
-              mounts a leaf and its neighbour, so a plain copy of every
-              spread lives here — hidden on screen, the print pipeline's
-              (Phase 4) input on paper. */}
-          <div className="ks-printflow" aria-hidden="true">
-            {spreads.map((spread) => (
-              <div key={spread.key}>{renderSpread(spread, false)}</div>
-            ))}
-          </div>
-        </>
+        <KeepsakeBook
+          spreads={spreads}
+          subjectName={keepsake.subject.name}
+          edition={edition}
+          onEditSection={onEditSection}
+          onProgress={(p) => {
+            if (progressRef.current) progressRef.current.style.transform = `scaleX(${p})`;
+          }}
+        />
       ) : (
-        spreads.map((spread) => <div key={spread.key}>{renderSpread(spread)}</div>)
+        <KeepsakePager
+          spreads={spreads}
+          subjectName={keepsake.subject.name}
+          edition={edition}
+          onEditSection={onEditSection}
+          onProgress={(p) => {
+            if (progressRef.current) progressRef.current.style.transform = `scaleX(${p})`;
+          }}
+        />
       )}
+      {/* Print reads the whole book in normal flow; both screen readers only
+          mount a page or two at a time, so a plain copy of every spread
+          lives here — hidden on screen, the print pipeline's input on
+          paper. */}
+      <div className="ks-printflow" aria-hidden="true">
+        {spreads.map((spread) => (
+          <div key={spread.key}>{renderSpread(spread, false)}</div>
+        ))}
+      </div>
 
       {/* The edit sheet — one implementation for every section. */}
       {editing && (
