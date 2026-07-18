@@ -2678,7 +2678,9 @@
 }
 .link-existing__list li:last-child .link-existing__item { border-bottom: none; }
 .link-existing__item:hover, .link-existing__item:focus-visible { background: var(--paper-deep); }
-.link-existing__name { font-size: 14px; font-weight: 500; color: var(--ink); }
+.link-existing__namewrap { display: flex; align-items: baseline; overflow: hidden; }
+.link-existing__name { font-size: 14px; font-weight: 500; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.link-existing__middle { font-size: 12.5px; font-style: italic; color: var(--ink-faint, #b0a9a5); white-space: nowrap; }
 .link-existing__current {
   margin-right: auto;
   font-size: 11px;

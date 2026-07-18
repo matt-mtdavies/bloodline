@@ -167,7 +167,7 @@ export default function AddRelativeSheet({ anchor, people = [], relationships = 
     return people.filter((p) => {
       if (p.id === anchor.id) return false;
       if (!q) return true;
-      const hay = `${p.display_name} ${p.birth_name || ''} ${p.given_names || ''} ${p.family_name || ''}`.toLowerCase();
+      const hay = `${p.display_name} ${p.birth_name || ''} ${p.middle_name || ''} ${p.given_names || ''} ${p.family_name || ''}`.toLowerCase();
       return hay.includes(q);
     });
   }, [people, search, anchor.id]);
@@ -606,7 +606,12 @@ export default function AddRelativeSheet({ anchor, people = [], relationships = 
                       disabled={!canLink}
                       onClick={() => linkToExisting(p.id)}
                     >
-                      <span className="link-existing__name">{p.display_name}</span>
+                      <span className="link-existing__namewrap">
+                        <span className="link-existing__name">{p.display_name}</span>
+                        {p.middle_name && !p.display_name.toLowerCase().includes(p.middle_name.toLowerCase()) && (
+                          <span className="link-existing__middle"> · {p.middle_name}</span>
+                        )}
+                      </span>
                       {current && <span className="link-existing__current">currently {current}</span>}
                       {p.birth_date && <span className="link-existing__date">b. {p.birth_date}</span>}
                     </button>

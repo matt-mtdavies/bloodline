@@ -715,6 +715,46 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   tapped, and clicking it both hides the pill and turns Time mode off via the same dock button
   state. Full unit suite, `npm run build`, and the standard smoke test all passed clean.
 
+- **Fixed: no way to undo marking a partner as "ex" + the existing-person picker never showed
+  middle names** (real user report: "Cant change relationship back to partners from ex partners.
+  i made a mistake and couldnt go back. had to remove relationship and re add. also, while
+  re adding, already in tree does not show middle names. it should. sooooo many sampson
+  chynoweth's. impossible to know which is which"). Two independent, unrelated bugs in the same
+  report.
+  1. **Ex-partner → partner reversal**: `setRelationshipKind` (`store.js`) and `partnerEdge`
+     were already fully bidirectional — `kind: 'partner'` writes `partner_status: 'current'` and
+     `kind: 'ex_partner'` writes `'former'`, symmetrically, with `graph.js`'s `partners()`
+     projection passing either straight through. The bug was purely a missing menu option:
+     `PersonSheet.jsx`'s `changeOptions` (the "⋮" manage-relationship menu's "Change to" list)
+     had one hardcoded array for every `relType === 'partner'` chip, and it never included
+     `{ kind: 'partner', label: 'Partner' }` — so a relationship already marked "ex" had no way
+     back except the delete-and-re-add workaround the report describes. Fixed by branching on
+     the item's current `status`: `item.status === 'former'` now offers `Partner`/`Parent`/`Child`
+     (the reversal, plus the two kind-changes every partner-type chip already offered); a current
+     partner still offers `Ex-partner`/`Parent`/`Child` exactly as before. No store/graph changes
+     needed — this was always a one-directional UI omission on top of a fully bidirectional data
+     layer.
+  2. **Middle names in the "already in tree" picker**: `AddRelativeSheet.jsx`'s existing-person
+     search built its own `hay` string from `display_name`/`birth_name`/`given_names`/
+     `family_name` — `middle_name` (a real, separately-edited field, and already wired into
+     `SearchOverlay.jsx`'s main search via `lib/search.js`'s `rankPeopleByName` in an earlier
+     fix this session) was never part of it, so two same-named people were indistinguishable
+     here specifically, and searching by a middle name alone (the exact "so many Sampson
+     Chynoweths" scenario) found nothing. Added `p.middle_name` to the filter `hay`, and each
+     candidate row now shows a " · {middle name}" hint next to the name (new `.link-existing__
+     namewrap`/`.link-existing__middle` CSS, styled after `SearchOverlay.jsx`'s own `.search-
+     result__nee` convention) whenever the middle name isn't already visible in `display_name` —
+     same "show it as a disambiguating hint, not a duplicate" rule as the main search overlay.
+  Verified live via Playwright against the real dev server (not mocked): opened James's profile,
+  confirmed his ex-partner Rachel Carter's manage-relationship menu offered "Partner" (not
+  offered before the fix), clicked it, reopened the menu and confirmed it now offered
+  "Ex-partner" instead (the flip actually took, both directions); separately, created a new
+  sibling "Sampson · Alpha · Chynoweth", reopened Add Relative from James for an unrelated
+  relationship type, switched to "Already in tree", searched the bare middle name "Alpha" (which
+  appears nowhere in the display name), and confirmed the picker both found him and rendered
+  " · Alpha" next to his name. Full unit suite (the pre-existing, unrelated step-niece failure
+  in `relations.test.mjs` aside), `npm run build`, and the standard smoke test all passed clean.
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);

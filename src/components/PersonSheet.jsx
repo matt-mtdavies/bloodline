@@ -1598,8 +1598,17 @@ export default function PersonSheet({
                             : null;
                         // What this relationship can be changed *to* (from this
                         // person's perspective). kind is passed to onChangeRelationship.
+                        // Partner branch depends on the CURRENT status — a former
+                        // partner needs "Partner" offered to undo the mistake (real
+                        // report: marked someone an ex-partner by accident and had
+                        // no way back short of deleting and re-adding the whole
+                        // relationship); a current partner needs "Ex-partner" as
+                        // before. setRelationshipKind already writes both directions
+                        // symmetrically — this was only ever a missing menu option.
                         const changeOptions = g.relType === 'partner'
-                          ? [{ kind: 'ex_partner', label: 'Ex-partner' }, { kind: 'child_of', label: 'Parent' }, { kind: 'parent_of', label: 'Child' }]
+                          ? item.status === 'former'
+                            ? [{ kind: 'partner', label: 'Partner' }, { kind: 'child_of', label: 'Parent' }, { kind: 'parent_of', label: 'Child' }]
+                            : [{ kind: 'ex_partner', label: 'Ex-partner' }, { kind: 'child_of', label: 'Parent' }, { kind: 'parent_of', label: 'Child' }]
                           : g.relType === 'parent_from_item'  // item is this person's parent
                             ? [{ kind: 'partner', label: 'Partner' }, { kind: 'parent_of', label: 'Child' }]
                             : g.relType === 'parent_from_self' // item is this person's child
