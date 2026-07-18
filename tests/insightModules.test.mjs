@@ -6,7 +6,7 @@
  */
 import assert from 'node:assert/strict';
 import { buildGraph } from '../src/data/graph.js';
-import { computeInsightModules, computeThisMonth, buildInsightHighlights, aliveInYear, handshakesTo, personHighlight } from '../src/lib/insightModules.js';
+import { computeInsightModules, computeThisMonth, buildInsightHighlights, aliveInYear, handshakesTo, personHighlight, highlightCandidates, pickDailyHighlight } from '../src/lib/insightModules.js';
 
 let passed = 0, failed = 0;
 function test(label, fn) {
@@ -885,6 +885,83 @@ test('trades: punctuation-only occupation variants merge into one tally, keyed b
   const railwaymanEntries = firstBand.top.filter((t) => t.name.replace(/\.$/, '') === 'Railwayman');
   assert.equal(railwaymanEntries.length, 1, 'the two spellings should merge into a single entry');
   assert.equal(railwaymanEntries[0].count, railwaymen.length, 'the merged entry should carry the combined count');
+});
+
+// ── highlightCandidates / pickDailyHighlight: the "insight spotlight" pool ─
+// (IdleFactHint on the tree screen, the home hub's "did you know" teaser)
+
+test('highlightCandidates: null/empty modules produce an empty pool, never throw', () => {
+  assert.deepEqual(highlightCandidates(null), []);
+  assert.deepEqual(highlightCandidates({}), []);
+});
+
+test('highlightCandidates: every populated module in the rich fixture contributes exactly one sentence', () => {
+  const candidates = highlightCandidates(mods);
+  // The rich fixture lights up every module except serviceRecords (no
+  // military data) — 12 of the 13 possible candidates.
+  assert.equal(candidates.length, 12);
+  assert.ok(candidates.every((c) => typeof c === 'string' && c.length > 0));
+});
+
+test('highlightCandidates: handshakes phrases as "N handshakes from {firstName}, born in {year}"', () => {
+  const candidates = highlightCandidates(mods);
+  const h = mods.handshakes;
+  const expected = `You're only ${h.hops} handshakes from ${h.people[0].firstName}, born in ${h.people[0].birth}.`;
+  assert.ok(candidates.includes(expected), `expected to find: ${expected}`);
+});
+
+test('highlightCandidates: strata phrases as "N generations — X living, Y remembered"', () => {
+  const candidates = highlightCandidates(mods);
+  const s = mods.strata;
+  const expected = `The family tree spans ${s.rows.length} generations — ${s.living} living, ${s.remembered} remembered.`;
+  assert.ok(candidates.includes(expected));
+});
+
+test('highlightCandidates: fullestYear phrases as "N members alive at once in YEAR"', () => {
+  const candidates = highlightCandidates(mods);
+  const p = mods.fullestYear.peak;
+  const expected = `${p.count} family members were alive at the same time in ${p.year} — the fullest year on record.`;
+  assert.ok(candidates.includes(expected));
+});
+
+test('highlightCandidates: brood phrases the record household with its span', () => {
+  const candidates = highlightCandidates(mods);
+  const r = mods.brood.record;
+  const expected = `${r.parentNames.join(' & ')} raised the family's biggest household — ${r.count} children${r.span ? ` between ${r.span}` : ''}.`;
+  assert.ok(candidates.includes(expected));
+});
+
+test('highlightCandidates: brood contributes nothing when there is no record household', () => {
+  const candidates = highlightCandidates({ brood: { record: null, trend: [{}] } });
+  assert.ok(!candidates.some((c) => c.includes('biggest household')));
+});
+
+test('highlightCandidates: serviceRecords phrases count + generations, singular/plural correctly', () => {
+  const one = highlightCandidates({ serviceRecords: { count: 1, generationsSpanned: 1 } });
+  assert.deepEqual(one, ['1 family member has a documented military service record, spanning 1 generation.']);
+  const many = highlightCandidates({ serviceRecords: { count: 3, generationsSpanned: 2 } });
+  assert.deepEqual(many, ['3 family members have a documented military service record, spanning 2 generations.']);
+});
+
+test('highlightCandidates: handshakes is absent (not crashing) when computed without a viewer, but strata still renders', () => {
+  // Mirrors the home hub's own call site: computeInsightModules(graph, null).
+  const homeHubMods = computeInsightModules(graph, null);
+  assert.equal(homeHubMods.handshakes, null, 'handshakes has no meaning without a viewer');
+  assert.ok(homeHubMods.strata, 'strata is tree-wide, not viewer-specific — should still render');
+  const candidates = highlightCandidates(homeHubMods);
+  assert.ok(!candidates.some((c) => c.includes('handshake')));
+  assert.ok(candidates.some((c) => c.includes('generations —')), 'strata\'s candidate should still be offered');
+});
+
+test('pickDailyHighlight: always returns one of highlightCandidates\' own sentences', () => {
+  const candidates = highlightCandidates(mods);
+  const picked = pickDailyHighlight(mods);
+  assert.ok(candidates.includes(picked));
+});
+
+test('pickDailyHighlight: null when nothing qualifies', () => {
+  assert.equal(pickDailyHighlight({}), null);
+  assert.equal(pickDailyHighlight(null), null);
 });
 
 console.log(`\n  ${passed} passed, ${failed} failed`);

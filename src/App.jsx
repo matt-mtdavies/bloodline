@@ -63,7 +63,7 @@ import { detectRegion, nearestWorldEvent } from './lib/worldEvents.js';
 import { findDuplicatePairs } from './lib/duplicates.js';
 import { canManageTree } from './lib/visibility.js';
 import { profileCompleteness, isDuplicateLifeEvent } from './lib/profile.js';
-import { computeInsightModules, personHighlight, pickDailyHighlight } from './lib/insightModules.js';
+import { computeInsightModules, personHighlight, highlightCandidates } from './lib/insightModules.js';
 import { useReducedMotion } from './hooks/useReducedMotion.js';
 import BubbleTree from './viz/BubbleTree.jsx';
 import ChartTree from './viz/ChartTree.jsx';
@@ -1727,8 +1727,8 @@ export default function App() {
 
   // Tree-screen insight surfacing (nav brief: "surface one real insight from
   // the tree screen itself, not just Home"). Computed once per graph change;
-  // the per-focus and per-day lookups off it are cheap. Both are deliberately
-  // silent far more often than not — see personHighlight/pickDailyHighlight.
+  // the per-focus lookup off it is cheap. Deliberately silent far more often
+  // than not — see personHighlight.
   const insightModules = useMemo(
     () => computeInsightModules(graph, data.myPersonId || DEFAULT_FOCUS),
     [graph, data.myPersonId],
@@ -1737,7 +1737,10 @@ export default function App() {
     () => personHighlight(graph, data.myPersonId || DEFAULT_FOCUS, activeId, insightModules),
     [graph, data.myPersonId, activeId, insightModules],
   );
-  const dailyHighlight = useMemo(() => pickDailyHighlight(insightModules), [insightModules]);
+  // The tree screen's ambient hint cycles through several facts per browsing
+  // session (see IdleFactHint) rather than the home hub's single fixed daily
+  // pick, so it needs the whole pool, not pickDailyHighlight's one string.
+  const highlightPool = useMemo(() => highlightCandidates(insightModules), [insightModules]);
 
   // Whether ANY sheet/modal/overlay is currently on screen — used to hide the
   // canvas-anchored overlays (hover card, focus nameplate, recentre button)
@@ -2086,7 +2089,7 @@ export default function App() {
           />
           {!lineageMode && !flightCaption && <IntroHint />}
           {!lineageMode && !flightCaption && (
-            <IdleFactHint fact={dailyHighlight} active={browse && !anyOverlayOpen} />
+            <IdleFactHint facts={highlightPool} active={browse && !anyOverlayOpen} />
           )}
           {lineageMode && (
             <LineageBanner

@@ -1189,12 +1189,20 @@ export function buildInsightHighlights(modules) {
   return Object.keys(h).length ? h : null;
 }
 
-/* ── The home hub's "did you know" teaser: one fact, rotated daily, that taps
-      through to the full Insights sheet. Deep-time/strata are left out — they
-      lean on a specific viewer's position in the tree, which the hub doesn't
-      carry — so only the modules that stand on their own are candidates. ──── */
-export function pickDailyHighlight(modules) {
-  if (!modules) return null;
+/* ── Every "did you know" sentence the current tree data supports — shared by
+      pickDailyHighlight (the home hub's one fixed pick per day, below) and
+      IdleFactHint (the tree screen's ambient hint, which cycles through
+      several per browsing session without repeats — see that component).
+      handshakes needs a real viewerId to mean anything ("you're only 4
+      handshakes from..."); computeInsightModules returns it null when
+      called without one (the home hub's own call site passes null, so it
+      simply never contributes a candidate there — no special-casing needed
+      here). strata computes fine either way — its candidate sentence below
+      deliberately sticks to tree-wide counts (generations/living/remembered),
+      not the viewer-specific fields (viewerLabel etc.), so it works in both
+      contexts. ────────────────────────────────────────────────────────── */
+export function highlightCandidates(modules) {
+  if (!modules) return [];
   const candidates = [];
   if (modules.giftOfYears) {
     const g = modules.giftOfYears;
@@ -1225,6 +1233,37 @@ export function pickDailyHighlight(modules) {
   if (modules.parenthood) {
     candidates.push(`On average, people in the family became parents at ${modules.parenthood.avg}.`);
   }
+  if (modules.handshakes) {
+    const h = modules.handshakes;
+    const earliest = h.people[0];
+    candidates.push(`You're only ${h.hops} handshake${h.hops === 1 ? '' : 's'} from ${earliest.firstName}, born in ${earliest.birth}.`);
+  }
+  if (modules.strata) {
+    const s = modules.strata;
+    candidates.push(`The family tree spans ${s.rows.length} generations — ${s.living} living, ${s.remembered} remembered.`);
+  }
+  if (modules.fullestYear) {
+    const p = modules.fullestYear.peak;
+    candidates.push(`${p.count} family members were alive at the same time in ${p.year} — the fullest year on record.`);
+  }
+  if (modules.brood?.record) {
+    const r = modules.brood.record;
+    candidates.push(`${r.parentNames.join(' & ')} raised the family's biggest household — ${r.count} children${r.span ? ` between ${r.span}` : ''}.`);
+  }
+  if (modules.serviceRecords) {
+    const sr = modules.serviceRecords;
+    candidates.push(`${sr.count} family member${sr.count === 1 ? ' has' : 's have'} a documented military service record, spanning ${sr.generationsSpanned} generation${sr.generationsSpanned === 1 ? '' : 's'}.`);
+  }
+  return candidates;
+}
+
+/* ── The home hub's "did you know" teaser: one fact, rotated daily, that taps
+      through to the full Insights sheet. Deliberately stable within a day
+      (and across the hub's own re-renders, which happen on every tree edit)
+      rather than random — see IdleFactHint for the browsing-session variant
+      that DOES want a fresh pick each time. ─────────────────────────────── */
+export function pickDailyHighlight(modules) {
+  const candidates = highlightCandidates(modules);
   if (!candidates.length) return null;
   const day = Math.floor(Date.now() / 86400000);
   return candidates[day % candidates.length];

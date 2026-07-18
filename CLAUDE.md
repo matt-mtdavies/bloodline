@@ -234,6 +234,35 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   spinner" — just never reused here) — so on the rare occasion it does show, it reads as the
   app quietly doing something, not a system loading cue asking you to wait.
 
+- **Insight spotlight (`IdleFactHint`, the ambient "did you know" hint while idle-browsing the
+  tree): more variety, and panning no longer dismisses it** (user feedback: "they are great and
+  we need more of them with lots of variety" + "if you scroll when [it] is showing, it removes
+  [it] — it should keep it there for the required X secs"). Two independent fixes:
+  1. **Variety**: `computeInsightModules` (`lib/insightModules.js`) always computed 13 modules,
+     but the candidate-sentence builder only ever turned 8 of them into "did you know" text —
+     `handshakes`, `strata`, `fullestYear`, `brood`, and `serviceRecords` were computed and then
+     silently discarded. That builder is now `highlightCandidates(modules)`, exported and shared
+     by both consumers, with all 13 wired up (`pickDailyHighlight` — the home hub's one stable
+     pick per day — is now a thin wrapper around it, unchanged in behavior). `IdleFactHint` no
+     longer takes one pre-picked string; it takes the whole pool and — backed by a
+     `sessionStorage` set of already-shown sentences (generalizing the old single boolean flag)
+     — cycles through a different, not-yet-seen fact each time it re-arms, for the rest of the
+     browsing session, rather than showing exactly one fact ever.
+  2. **Scroll/pan dismiss bug**: the dismiss listener was a bare `window.addEventListener
+     ('pointerdown', hide, { once: true })` — the same pointerdown that *starts* a pan/drag/pinch
+     gesture on the canvas bubbles up to window before Pixi's own gesture code ever determines
+     it's not a tap, so the very first touch of any interaction (not just a deliberate dismiss)
+     hid the hint mid-sentence. Now tracks pointerdown position and only dismisses on pointerup
+     if the movement was under `TAP_SLOP_PX` (8px) — a real tap-to-dismiss still works instantly,
+     but panning/zooming past the hint no longer cuts short the `VISIBLE_MS` (11s) it's owed.
+     `IntroHint.jsx` (the separate, one-shot "tap a face" onboarding nudge) was deliberately left
+     alone — the report was specifically about the fact-based spotlights, and dismissing the
+     moment you touch the tree at all is arguably correct for that one.
+  Verified live end-to-end (idle → fact appears → simulated pan gesture → still showing the same
+  fact → auto-hides at the full 11s → re-arms with a genuinely different second fact → a real
+  no-movement tap dismisses instantly) and with 10 new unit tests covering every new candidate
+  template plus the with/without-viewer split (`tests/insightModules.test.mjs`).
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);
