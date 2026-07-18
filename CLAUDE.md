@@ -755,6 +755,36 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   " · Alpha" next to his name. Full unit suite (the pre-existing, unrelated step-niece failure
   in `relations.test.mjs` aside), `npm run build`, and the standard smoke test all passed clean.
 
+- **Fixed: the "back to you" pill never reappeared after the recap tour finished** (real user
+  report: "After the 'XX no. of updates since last visit' sequence has finished, the back to me
+  icon is not displayed. It should be because it lands you on the latest updated profile.").
+  `HomeToMe.jsx`'s pill is gated visible on `!lineageMode && !timeMode && !flightCaption &&
+  !anyOverlayOpen && recapQueue.length === 0` (`App.jsx`) — the `recapQueue.length === 0` half is
+  meant only to keep the pill off the screen *while the recap tour overlay is up*. But
+  `onDone` (fired when the tour's camera lands on its last stop) only ever maps every queue item's
+  `status` to `'done'` — `setRecapQueue((q) => q.map((item) => ({ ...item, status: 'done' })))` —
+  it never empties the array itself, and `closeRecapAll` (wired as both `RecapTour`'s `onClose`,
+  the 3.4s auto-close once the tour finishes, and `onCloseAll`, the manual "stop the tour" X) only
+  ever reset `recapOpen` to `false`, never the queue either. So the very first recap tour played
+  in a session left `recapQueue` permanently non-empty (all `'done'`, but still N items) for the
+  rest of that session — silently disabling the `=== 0` check forever after, exactly matching the
+  report: the tour correctly lands `activeId` on the last-updated profile (`onDone`'s
+  `setActiveId(lastId)`, already working), but the pill that should then offer a way back to your
+  own profile never appears, no matter how many more times you open and finish the tour. Fixed by
+  adding `setRecapQueue([])` to `closeRecapAll`, so the queue is actually cleared the moment the
+  tour's own UI closes, not just marked internally done. Verified live via Playwright against the
+  real dev server: seeded `localStorage`'s `bloodline:recapCutoffAt` key (read directly by
+  `takeRecapCutoff()`, independent of the demo tree's own in-memory-only state) to 40 days ago so
+  the seed family's activity log counted as unseen, opened the Activity feed, tapped "Show me" to
+  start the tour, and let it play out to natural completion (`.recap-tour` fully detaching from
+  the DOM, not manually stopped mid-way — the bug is specifically about the tour *finishing*, and
+  a manual stop never reaches `onDone` at all) — confirmed the `.hometome` pill was present,
+  animated in, and correctly labelled "Back to James" afterward; reverted the fix via `git stash`
+  and reran the identical script to confirm the pill count was 0 beforehand, reproducing the
+  exact reported bug before restoring the fix. Full unit suite (the pre-existing, unrelated
+  step-niece failure in `relations.test.mjs` aside), `npm run build`, and the standard smoke test
+  all passed clean.
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);

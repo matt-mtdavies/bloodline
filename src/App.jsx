@@ -1366,6 +1366,15 @@ export default function App() {
   const closeRecapAll = useCallback(() => {
     viewApi.current?.spotlightEnd();
     setRecapOpen(false);
+    // Clear the queue itself, not just the overlay — onDone (above) only ever
+    // flips every item's status to 'done', it never empties the array, and
+    // HomeToMe's "back to you" pill (below) is gated on recapQueue.length===0
+    // to stay hidden while the tour overlay is up. Left unset, that length
+    // check never returns true again for the rest of the session once a
+    // single recap tour has run, permanently hiding the pill even though the
+    // tour landed you away from your own profile — exactly the case it
+    // exists for.
+    setRecapQueue([]);
     // The lit constellation lingers a moment after the panel closes — the
     // payoff of the whole tour — rather than vanishing the instant you tap
     // away.
