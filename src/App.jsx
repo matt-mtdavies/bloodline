@@ -1215,6 +1215,41 @@ export default function App() {
     }
   }, [view, flyToSearchResult]);
 
+  // The duplicate-review sheet's "Show both in tree" — reveal both
+  // candidate bubbles (plus their neighbours) and let the camera's own
+  // bounding-box framing (refocus, already used by Focus Family/Life
+  // Journey) pull them into view together, so whose kids belong to whom is
+  // visible before deciding to merge (real report: "I couldn't tell whose
+  // kids belonged to who easily" after a bad merge). Same view-switch-and-
+  // poll as flyToPersonFromAnywhere, since BubbleTree isn't mounted (and
+  // viewApi isn't populated) while browsing another view.
+  const showDuplicatePairInTree = useCallback((aId, bId) => {
+    setDuplicatesOpen(false);
+    setDuplicatesFocusId(null);
+    setOpenId(null);
+    setExpanded((prev) => {
+      if (prev.has(aId) && prev.has(bId)) return prev;
+      const next = new Set(prev);
+      next.add(aId);
+      next.add(bId);
+      return next;
+    });
+    activateNormal(aId);
+    const doRefocus = () => viewApi.current?.refocus(0.6);
+    if (view !== 'bubbles') {
+      setView('bubbles');
+      let tries = 0;
+      const tryRefocus = () => {
+        if (viewApi.current) { doRefocus(); return; }
+        if (tries++ > 90) return;
+        requestAnimationFrame(tryRefocus);
+      };
+      requestAnimationFrame(tryRefocus);
+    } else {
+      setTimeout(doRefocus, 100);
+    }
+  }, [view, activateNormal]);
+
   // The activity recap's cinematic tour — see BubbleTree's spotlightTour and
   // RecapTour.jsx. Builds the queue from recapGroups, reveals every stop
   // (they may be scattered anywhere in the tree, not connected by a path —
@@ -2190,6 +2225,7 @@ export default function App() {
         memories={data.memories}
         photos={data.photos}
         documents={data.documents}
+        activity={data.activity}
         canEdit={canEditTree}
         canContribute={canContributeTree}
         isAdmin={canManageTreeStructure}
@@ -2344,6 +2380,7 @@ export default function App() {
           graph={graph}
           onMerge={(keepId, dropId) => { mergePeople(keepId, dropId); if (activeId === dropId) activate(keepId); }}
           onDismiss={dismissDuplicatePair}
+          onShowInTree={showDuplicatePairInTree}
           onClose={() => { setDuplicatesOpen(false); setDuplicatesFocusId(null); }}
         />
       )}

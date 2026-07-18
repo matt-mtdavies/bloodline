@@ -18,13 +18,31 @@ function richness(p) {
   return n;
 }
 
+// Compact "who's connected to whom" for a candidate — the actual gap that
+// caused real confusion after a bad merge (report: "I couldn't tell whose
+// kids belonged to who easily"). First names only, capped, so two full
+// families don't blow out the card at typical widths.
+function relNames(graph, list, cap = 3) {
+  const names = list
+    .map((x) => graph.byId.get(x.id)?.display_name?.split(/\s+/)[0])
+    .filter(Boolean);
+  if (names.length === 0) return null;
+  const shown = names.slice(0, cap).join(', ');
+  return names.length > cap ? `${shown} +${names.length - cap}` : shown;
+}
+
 /*
  * Review possible duplicate people and merge them. Each card pair lets you pick
  * which record to keep (the fuller one is preselected) and merges the other into
  * it, or dismiss the suggestion if they're actually different people.
  */
-export default function DuplicatesSheet({ pairs, graph, onMerge, onDismiss, onClose }) {
+export default function DuplicatesSheet({ pairs, graph, onMerge, onDismiss, onClose, onShowInTree }) {
   const [keepChoice, setKeepChoice] = useState({}); // pairKey → chosen keepId
+  // A pair awaiting the "are you sure" confirm before its merge actually
+  // commits — a merge used to fire on the very first tap with no way back
+  // (real report: "I accidentally merged Ashley last week and it caused
+  // some confusion... I couldn't tell whose kids belonged to who").
+  const [confirmKey, setConfirmKey] = useState(null);
 
   useEffect(() => {
     const onKey = (e) => e.key === 'Escape' && onClose();
@@ -43,12 +61,13 @@ export default function DuplicatesSheet({ pairs, graph, onMerge, onDismiss, onCl
     [pairs, graph],
   );
 
-  const merge = (pair) => {
+  const commitMerge = (pair) => {
     const chosen = keepChoice[pair.key] || (richness(pair.a) >= richness(pair.b) ? pair.aId : pair.bId);
     const dropId = chosen === pair.aId ? pair.bId : pair.aId;
     onMerge(chosen, dropId);
     // The dropped id is gone; remember so the (now-stale) pair never re-shows.
     onDismiss(pair.key);
+    setConfirmKey(null);
   };
 
   return (
@@ -74,17 +93,31 @@ export default function DuplicatesSheet({ pairs, graph, onMerge, onDismiss, onCl
             <ul className="dups__list">
               {visible.map((pair) => {
                 const keepId = keepChoice[pair.key] || (richness(pair.a) >= richness(pair.b) ? pair.aId : pair.bId);
+                const keepPerson = keepId === pair.a.id ? pair.a : pair.b;
+                const dropPerson = keepId === pair.a.id ? pair.b : pair.a;
+                const dropRelCount = graph.parents(dropPerson.id).length
+                  + graph.children(dropPerson.id).length
+                  + graph.partners(dropPerson.id).length;
+                const isConfirming = confirmKey === pair.key;
                 return (
                   <li key={pair.key} className={`dups__pair${pair.confidence === 'high' ? ' dups__pair--high' : ''}`}>
                     <div className="dups__cards">
                       {[pair.a, pair.b].map((person) => {
                         const isKeep = person.id === keepId;
+                        // Whose kids belong to whom, at a glance — the actual
+                        // gap that caused real confusion after a bad merge
+                        // (report: "I couldn't tell whose kids belonged to
+                        // who easily"), visible before committing rather than
+                        // discovered after.
+                        const parentNames = relNames(graph, graph.parents(person.id));
+                        const childNames = relNames(graph, graph.children(person.id));
+                        const partnerNames = relNames(graph, graph.partners(person.id));
                         return (
                           <button
                             key={person.id}
                             type="button"
                             className={`dups__card${isKeep ? ' dups__card--keep' : ''}`}
-                            onClick={() => setKeepChoice((s) => ({ ...s, [pair.key]: person.id }))}
+                            onClick={() => { setKeepChoice((s) => ({ ...s, [pair.key]: person.id })); setConfirmKey(null); }}
                             aria-pressed={isKeep}
                           >
                             <Avatar person={person} size={48} />
@@ -92,6 +125,13 @@ export default function DuplicatesSheet({ pairs, graph, onMerge, onDismiss, onCl
                             <span className="dups__card-meta">
                               {person.birth_date ? `b. ${person.birth_date}` : 'no birth date'}
                             </span>
+                            {(parentNames || childNames || partnerNames) && (
+                              <span className="dups__card-rels">
+                                {parentNames && <span className="dups__card-rel"><b>Parents</b> {parentNames}</span>}
+                                {childNames && <span className="dups__card-rel"><b>Children</b> {childNames}</span>}
+                                {partnerNames && <span className="dups__card-rel"><b>Partner</b> {partnerNames}</span>}
+                              </span>
+                            )}
                             <span className="dups__card-tag">{isKeep ? 'Keep' : 'Merge in'}</span>
                           </button>
                         );
@@ -100,14 +140,33 @@ export default function DuplicatesSheet({ pairs, graph, onMerge, onDismiss, onCl
                     <div className="dups__reasons">
                       {pair.reasons.map((r) => <span key={r} className="dups__reason">{r}</span>)}
                     </div>
-                    <div className="dups__actions">
-                      <button className="dups__merge" onClick={() => merge(pair)}>
-                        Merge into {graph.byId.get(keepId)?.display_name?.split(/\s+/)[0]}
-                      </button>
-                      <button className="dups__dismiss" onClick={() => onDismiss(pair.key)}>
-                        Not a duplicate
-                      </button>
-                    </div>
+                    {isConfirming ? (
+                      <div className="dups__confirm">
+                        <span>
+                          This moves {dropPerson.display_name.split(/\s+/)[0]}'s
+                          {dropRelCount > 0 ? ` ${dropRelCount} relationship${dropRelCount === 1 ? '' : 's'} (parents, children, partners) ` : ' record '}
+                          onto {keepPerson.display_name.split(/\s+/)[0]}'s and can't be easily undone.
+                        </span>
+                        <div className="dups__confirm-btns">
+                          <button className="dups__merge" onClick={() => commitMerge(pair)}>Merge</button>
+                          <button className="dups__cancel" onClick={() => setConfirmKey(null)}>Cancel</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="dups__actions">
+                        <button className="dups__merge" onClick={() => setConfirmKey(pair.key)}>
+                          Merge into {keepPerson.display_name.split(/\s+/)[0]}
+                        </button>
+                        {onShowInTree && (
+                          <button className="dups__show-tree" onClick={() => onShowInTree(pair.aId, pair.bId)}>
+                            Show both in tree
+                          </button>
+                        )}
+                        <button className="dups__dismiss" onClick={() => onDismiss(pair.key)}>
+                          Not a duplicate
+                        </button>
+                      </div>
+                    )}
                   </li>
                 );
               })}

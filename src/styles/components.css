@@ -3212,6 +3212,7 @@
   color: var(--ink-soft);
 }
 .profile__where svg { color: var(--ink-faint); }
+.profile__added-by { margin: 4px 0 0; font-size: 12px; color: var(--ink-faint); }
 .profile__badges { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin-top: 12px; }
 
 .tags { list-style: none; margin: 14px 0 0; padding: 0; display: flex; flex-wrap: wrap; justify-content: center; gap: 7px; }
@@ -8840,6 +8841,11 @@ button.health-notes {
 .dups__card--keep { border-color: var(--accent, #c2603a); background: #fff; }
 .dups__card-name { font-size: 14px; font-weight: 600; color: var(--ink, #241f1c); line-height: 1.2; }
 .dups__card-meta { font-size: 12px; color: var(--ink-soft, #6b6260); }
+/* Compact "whose kids belong to whom" — visible before merging, not
+   discovered after (real report: a bad merge left no way to tell). */
+.dups__card-rels { display: flex; flex-direction: column; gap: 1px; margin-top: 2px; }
+.dups__card-rel { font-size: 10.5px; line-height: 1.35; color: var(--ink-soft, #6b6260); }
+.dups__card-rel b { font-weight: 600; color: var(--ink-faint, #a09590); margin-right: 3px; }
 .dups__card-tag {
   margin-top: 2px; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
   color: var(--ink-faint, #a09590);
@@ -8850,17 +8856,32 @@ button.health-notes {
   font-size: 11px; font-weight: 600; color: var(--ink-soft, #6b6260);
   background: var(--ground, #f1ece4); padding: 3px 9px; border-radius: 999px;
 }
-.dups__actions { display: flex; gap: 10px; }
+.dups__actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.dups__actions .dups__merge { flex: 1 1 100%; }
+.dups__actions .dups__show-tree,
+.dups__actions .dups__dismiss { flex: 1 1 auto; }
 .dups__merge {
-  flex: 1; padding: 11px 14px; border-radius: 12px; border: none; cursor: pointer;
+  padding: 11px 14px; border-radius: 12px; border: none; cursor: pointer;
   background: var(--accent, #c2603a); color: #fff; font-size: 14px; font-weight: 600;
 }
 .dups__merge:active { transform: scale(0.98); }
-.dups__dismiss {
+.dups__dismiss,
+.dups__show-tree,
+.dups__cancel {
   padding: 11px 14px; border-radius: 12px; cursor: pointer;
   background: transparent; border: 1px solid var(--hairline, #ebedf0);
   color: var(--ink-soft, #6b6260); font-size: 14px; font-weight: 500;
 }
+/* The "are you sure" step before a merge commits — a merge used to fire
+   on the first tap with no way back. */
+.dups__confirm {
+  display: flex; flex-direction: column; gap: 10px;
+  font-size: 13px; line-height: 1.45; color: var(--ink, #241f1c);
+  background: var(--ground, #f7f3ec); border-radius: 12px; padding: 12px;
+}
+.dups__confirm-btns { display: flex; gap: 8px; }
+.dups__confirm-btns .dups__merge { flex: 1; }
+.dups__confirm-btns .dups__cancel { flex: 1; }
 .dups__empty {
   display: flex; flex-direction: column; align-items: center; gap: 12px;
   padding: 36px 20px; text-align: center; color: var(--ink-soft, #6b6260);

@@ -14,6 +14,7 @@ import { VISIBILITY_LABELS, VISIBILITY_DESCS } from '../lib/visibility.js';
 import { HEALTH_CATEGORIES, HEALTH_CONDITIONS, HEALTH_STATUSES, colorFor } from '../lib/health.js';
 import { formatPhone, isPhoneValid } from '../lib/phone.js';
 import { militaryDocuments } from '../lib/military.js';
+import { dayLabel } from './ActivityFeed.jsx';
 
 // How many facts (events, medals, profile fields) a document still owns on
 // this person — see store.js's retractDocumentContributions, which this
@@ -46,6 +47,7 @@ export default function PersonSheet({
   memories = [],
   photos = [],
   documents = [],
+  activity = [],
   lockEscape = false,
   onClose,
   onFocus,
@@ -464,6 +466,27 @@ export default function PersonSheet({
   metaBits.push(lifespan(person));
   if (age) metaBits.push(person.is_deceased ? age : `age ${age}`);
 
+  // Who added this record, and when — real user report: "if there has been
+  // a mistake made, it would be good to know who added them and why."
+  // person.created_by is unreliable dead data (always the literal 'me'), but
+  // the activity log's person_added event already carries a real author —
+  // just not surfaced here until now. Re-resolves the author's CURRENT
+  // display name from their email (same convention as ActivityFeed's own
+  // nameByEmail) rather than trusting the name string frozen at add-time,
+  // so a later name correction is reflected here too.
+  const creatorEvent = activity.find((e) => e.type === 'person_added' && e.personId === person.id) || null;
+  let creatorName = null;
+  if (creatorEvent) {
+    const email = (creatorEvent.authorEmail || '').toLowerCase();
+    for (const p of graph.people) {
+      if ((p.email && p.email.toLowerCase() === email) || (p.invited_email && p.invited_email.toLowerCase() === email)) {
+        creatorName = p.display_name;
+        break;
+      }
+    }
+    if (!creatorName) creatorName = creatorEvent.authorName;
+  }
+
   // "2026-06-22" → "Jun 2026"
   function fmtDocDate(iso) {
     try {
@@ -532,6 +555,9 @@ export default function PersonSheet({
               <PinIcon />
               {location}
             </p>
+          )}
+          {creatorEvent && creatorName && (
+            <p className="profile__added-by">Added by {creatorName} · {dayLabel(creatorEvent.created_at)}</p>
           )}
 
           <div className="profile__badges">

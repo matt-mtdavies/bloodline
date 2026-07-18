@@ -468,6 +468,54 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   normally regardless of the low score). Full unit suite, `npm run build`, and the standard
   smoke test all passed clean.
 
+- **Creator attribution + duplicate-merge safety** (real user report: "Is there a way to trace
+  who created which profile? ... there are currently 2 Peter Johnstons, possible duplicates. If
+  there has been a mistake made, it would be good to know who added them and why... I accidently
+  merged Ashley last week and it caused some confusion — because it merged, I couldn't tell whos
+  kids belonged to who easily. Maybe in the review duplicates, there be a pill for 'show both in
+  tree' before you can merge?"). Investigated first: `person.created_by` turned out to be dead
+  data — always a hardcoded literal (`'me'`/`'familysearch'`/`'import'`), never read back
+  anywhere — but the activity log's `person_added` event already carries a REAL author
+  (`authorEmail`/`authorName`), it just wasn't surfaced on the profile itself. `DuplicatesSheet`
+  separately had zero relationship context on its candidate cards and zero confirm step —
+  Merge fired on the very first tap, exactly matching the accidental-merge report. Four fixes:
+  1. **Added-by line**: `PersonSheet.jsx` finds that person's `person_added` activity event and
+     renders "Added by {name} · {when}" under the hero location line, reusing `ActivityFeed.jsx`'s
+     `dayLabel` and its `nameByEmail` re-resolution convention — the author's CURRENT
+     `display_name` is looked up fresh from `graph.people` by matching the event's stored
+     `authorEmail`, rather than trusting the name string frozen at add-time, so a later name
+     correction (or the stale-guessed name a first-touch account sometimes gets) is reflected
+     correctly here too.
+  2. **Relationship preview on duplicate cards**: `DuplicatesSheet.jsx`'s `relNames()` helper
+     lists first names (capped at 3) of each candidate's parents/children/partners directly on
+     the card — the actual gap that caused the reported confusion ("couldn't tell whose kids
+     belonged to who"); a bare count wouldn't have prevented that, seeing "Children: Alice" vs
+     "Children: Bob" on the two cards would have.
+  3. **Confirm step before merge commits**: a new `confirmKey` state swaps the action row for a
+     `.dups__confirm` block stating exactly what moves ("This moves {dropped}'s N relationships
+     (parents, children, partners) onto {kept}'s and can't be easily undone") with Merge/Cancel —
+     mirrors the existing `confirmUnlinkId` remove-relationship pattern already used elsewhere in
+     `PersonSheet.jsx` rather than inventing new interaction UI.
+  4. **"Show both in tree"**: a new button on each pair calls `App.jsx`'s
+     `showDuplicatePairInTree(aId, bId)` — closes the duplicates sheet, adds both candidate ids to
+     the `expanded` set (guaranteeing both bubbles render even if unconnected, which is often
+     exactly why true duplicates go undetected), activates the first, switches to bubble view if
+     needed (same view-switch-and-poll-for-`viewApi`-readiness pattern as the existing
+     `flyToPersonFromAnywhere`), then calls `viewApi.current.refocus(0.6)` — re-clustering every
+     currently-visible node into a tight circle around the active node at a fixed zoom, so both
+     candidates end up visually adjacent regardless of their real tree position. Chosen over
+     `spotlightTour` (built for RecapTour's slower sequential narrative, not simultaneous
+     comparison) and a path-based flight (duplicate candidates are frequently NOT connected by any
+     path — that disconnection is often exactly why they were never merged or noticed as the same
+     person). Verified live via Playwright against a seeded family with two duplicate pairs (one
+     with divergent children per candidate, one left unmerged): the added-by line correctly
+     re-resolved a deliberately stale stored author name to the current one; the relationship
+     preview correctly distinguished the two candidates' children; clicking Merge showed the
+     confirm block without merging, Cancel reverted cleanly, and confirming actually committed the
+     merge (pair count dropped by exactly one); "Show both in tree" on the remaining pair closed
+     the sheet and navigated the camera to the candidates. Full unit suite, `npm run build`, and
+     the standard smoke test all passed clean.
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);
