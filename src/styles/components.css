@@ -91,32 +91,6 @@
 }
 .sync-status--error  { color: #c2603a; background: #f5e8e4; }
 
-/* "Saving" shares .pill--saved's icon-only circle (same reasoning: it lives
-   in the same row as Search/Saved/Bloodline-only and reads as one more
-   considered button, not a stray floating text label) — the icon is the
-   Logo mark itself in its `loading` variant (breathing, connecting), not a
-   generic spinner. See Logo.jsx for why: the same "family, connected" idea
-   the mark always carries, rather than a system "please wait" cue. */
-.pill--saving { padding: 0; }
-
-/* "Saved" is icon-only chrome living in the same row as Search/Bloodline-
-   only/Activity — it shares their .pill shape and weight (white, hairline
-   border, soft shadow) rather than the mismatched flat mint-green box this
-   replaced, so it reads as one more considered button in the row instead of
-   a stray success toast. Tints with the app's own --sage (already the
-   family's companion green elsewhere) instead of a generic UI-kit green,
-   and pops in on its own spring rather than just appearing. */
-.pill--saved {
-  padding: 0;
-  color: var(--sage);
-  background: var(--sage-soft);
-  border-color: color-mix(in srgb, var(--sage) 28%, var(--hairline));
-  animation: saved-pop 0.45s var(--spring) both;
-}
-@keyframes saved-pop {
-  from { transform: scale(0.5); opacity: 0; }
-  to { transform: scale(1); opacity: 1; }
-}
 .sync-status--retry  { cursor: pointer; border: none; font: inherit; letter-spacing: inherit; border-radius: 20px; padding: inherit; }
 .sync-status--retry:hover { background: #edd8d2; }
 

@@ -631,6 +631,41 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   existing `relations.test.mjs` regression suite, unaffected), `npm run build`, and the standard
   smoke test all passed clean.
 
+- **Redesigned the topbar "Saving" indicator: the logo IS the indicator now, not a second icon
+  beside it** (real user feedback on a screenshot: "it still looks odd having the two" — the
+  earlier fix had swapped the saving pill's generic spinner for the Logo mark's own `loading`
+  breathe, but that left TWO instances of the same three-bubble mark sitting side by side in the
+  topbar, the real brand logo and the pill's copy of it). Discussed the fix first: rather than
+  overlaying a ring on the real logo (the user's own suggestion) or keeping a separate pill at
+  all, `Logo.jsx` already had exactly the two states this needed built in — `idle` (the
+  permanent barely-there topbar drift) and `loading` (the more pronounced breathe, previously
+  only used on the splash screen and the now-removed pill) — so the fix is to make the ONE
+  persistent brand-mark instance in `.topbar__brand` switch between them live:
+  `loading={syncStatus === 'saving'}` / `idle={syncStatus !== 'saving'}`, `animate={false}` (a
+  persistent header logo never needs its one-shot entrance pop replayed — the app's own splash
+  screen already played that moment; `Home.jsx`'s equivalent small logo already sets `animate=
+  {false}` for the same reason). `TopBar.jsx`'s separate `.pill--saving` and `.pill--saved`
+  blocks (and the now-unused `SavedCheckIcon`) were deleted outright — no second icon ever
+  appears, and per the user's own "perhaps no tick" instinct, there's deliberately no checkmark
+  on completion either: the logo just eases from the loading breathe back to the quiet idle
+  drift the instant `syncStatus` leaves `'saving'`, since a fresh burst of motion right as things
+  go quiet would undercut the whole point of going quiet. Their matching dead CSS (`.pill--saving`,
+  `.pill--saved`, `@keyframes saved-pop`) was removed too. Accessibility is preserved without a
+  visible element: a new `.visually-hidden` `aria-live="polite"` span (reusing the existing
+  utility class from `global.css`) announces "Saving…"/"Saved" to screen readers on the same
+  transitions, decoupled from anything being visibly on screen. The error states
+  (`error`/`error-auth`/`error-forbidden`/`error-toolarge`) were deliberately left exactly as
+  they were — a real save failure needs its own noticeable, tappable retry control, not folded
+  into a passive breathing logo where it could go unnoticed. Verified live via Playwright: since
+  `?demo` mode never calls `enableServerSync()` (no real login, so there's no way to trigger a
+  genuine save to test against), used a temporary `__debugSetSyncStatus` export on `store.js` to
+  drive the transition directly, confirmed exactly one `.logo` element in the brand button at
+  every stage, confirmed its classes correctly switch `logo--idle` → `logo--loading` → back to
+  `logo--idle` (no checkmark pill ever appearing), confirmed the live region text tracks
+  Saving…/Saved/empty, and confirmed zero `.pill--saving`/`.pill--saved` elements ever render —
+  then reverted the temporary export before committing (confirmed via a clean `git diff` on
+  `store.js`). Full unit suite, `npm run build`, and the standard smoke test all passed clean.
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);

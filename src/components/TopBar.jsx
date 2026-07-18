@@ -58,34 +58,26 @@ export default function TopBar({ familyName, stats, view, layout, syncStatus, sy
       {/* Row 1: app brand left, actions right */}
       <div className="topbar__bar">
         <button className="topbar__brand" onClick={onOpenHome} aria-label="Home">
-          <Logo size={26} idle />
+          {/* The brand mark IS the save indicator now — no second icon pops
+              up beside it (real feedback: two breathing family-marks
+              side by side "looks odd"). Saving just breathes harder, the
+              same `loading` pulse already used on the splash screen,
+              swapped in on the exact same element rather than a pill
+              appearing next to it; the instant syncStatus leaves 'saving'
+              it eases straight back to the quiet `idle` drift — no
+              checkmark tick, since a fresh burst of motion right as
+              things go quiet would undercut the point of going quiet. */}
+          <Logo size={26} loading={syncStatus === 'saving'} idle={syncStatus !== 'saving'} animate={false} />
           <span className="topbar__word">Bloodline</span>
           <span className="hover-tip hover-tip--down">Home</span>
         </button>
+        {/* Screen readers still get the saving/saved transition — just from
+            an invisible live region instead of a visible pill, since the
+            visible cue moved onto the brand mark above. */}
+        <span className="visually-hidden" aria-live="polite">
+          {syncStatus === 'saving' ? 'Saving…' : syncStatus === 'saved' ? 'Saved' : ''}
+        </span>
         <div className="topbar__actions">
-          {/* Sync status leads the cluster, right after the wordmark, on
-              purpose — it's the one element here whose width changes
-              (saving → saved → gone). Placed anywhere after a fixed-width
-              icon, its appearing/disappearing shoves that icon sideways to
-              close the gap. Placed first, the only thing that grows or
-              shrinks is the blank space between "Bloodline" and the icons —
-              search/bell/avatar never move. */}
-          {syncStatus === 'saving' && (
-            <span className="pill pill--saving" aria-live="polite" aria-label="Saving">
-              {/* The family mark itself, breathing — "Bloodline is quietly
-                  keeping your family connected", not a generic spinner
-                  asking you to wait. Same asset already used on the app's
-                  own loading screen (Logo.jsx's `loading` variant). */}
-              <Logo size={18} loading animate={false} />
-              <span className="hover-tip hover-tip--down">Saving…</span>
-            </span>
-          )}
-          {syncStatus === 'saved' && (
-            <span className="pill pill--saved" aria-live="polite" aria-label="Saved">
-              <SavedCheckIcon />
-              <span className="hover-tip hover-tip--down">Saved</span>
-            </span>
-          )}
           {syncStatus === 'error' && (
             <button
               className="sync-status sync-status--error sync-status--retry"
@@ -509,14 +501,6 @@ function DupIcon() {
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <circle cx="9" cy="9" r="5" stroke="currentColor" strokeWidth="1.7"/>
       <circle cx="15" cy="15" r="5" stroke="currentColor" strokeWidth="1.7"/>
-    </svg>
-  );
-}
-
-function SavedCheckIcon() {
-  return (
-    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
-      <path d="M5 13l4 4L19 7" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
     </svg>
   );
 }
