@@ -276,26 +276,39 @@ export default function KeepsakeView({
       </div>
 
 
-      {/* The edition bar — compile / weave-in / error, never blocking the read. */}
+      {/* The edition bar — compile / weave-in / error, never blocking the read.
+          Styled as a small mastheaded card (badge + kicker + note), matching
+          the cover's own typographic language, rather than a generic system
+          notification pill — this is the one moment before the book exists
+          where the reader needs to feel this is still a Bloodline object. */}
       {canCompile && (compiling || compileError || !edition || stale) && (
-        <div className="ks-banner" role="status">
-          {compiling ? (
-            <span className="ks-banner__note">Compiling this edition — the story is being written…</span>
-          ) : compileError ? (
-            <>
-              <span className="ks-banner__note">Couldn&apos;t compile this edition.</span>
-              <button className="ks-banner__btn" onClick={compile}>Try again</button>
-            </>
-          ) : !edition ? (
-            <>
-              <span className="ks-banner__note">This book hasn&apos;t been written yet.</span>
-              <button className="ks-banner__btn" onClick={compile}>Compile the first edition</button>
-            </>
-          ) : (
-            <>
-              <span className="ks-banner__note">The tree has grown since this edition was compiled.</span>
-              <button className="ks-banner__btn" onClick={compile}>Weave in the changes</button>
-            </>
+        <div className={`ks-banner${compileError ? ' ks-banner--error' : ''}`} role="status">
+          <div className="ks-banner__grain" aria-hidden="true" />
+          <div className="ks-banner__top">
+            <span className={`ks-banner__badge${compiling ? ' ks-banner__badge--busy' : ''}`} aria-hidden="true">
+              {compiling ? <SpinnerIcon /> : compileError ? <AlertIcon /> : !edition ? <QuillIcon /> : <SparkleIcon />}
+            </span>
+            <span className="ks-banner__text">
+              <span className="ks-banner__kicker">
+                <DiamondIcon />
+                {compiling ? 'Compiling' : compileError ? 'Trouble compiling' : !edition ? 'First edition' : 'New chapters'}
+                <DiamondIcon />
+              </span>
+              <span className="ks-banner__note">
+                {compiling
+                  ? 'The story is being written…'
+                  : compileError
+                  ? "Couldn't compile this edition."
+                  : !edition
+                  ? "This book hasn't been written yet."
+                  : 'The tree has grown since this edition was compiled.'}
+              </span>
+            </span>
+          </div>
+          {!compiling && (
+            <button className="ks-banner__btn" onClick={compile}>
+              {compileError ? 'Try again' : !edition ? 'Compile the first edition' : 'Weave in the changes'}
+            </button>
           )}
         </div>
       )}
@@ -418,6 +431,50 @@ function PrintIcon() {
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <path d="M7 8V3h10v5M7 17H4a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1h16a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
       <path d="M7 14h10v7H7z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+// The edition banner's badge/kicker icons — a quill for the not-yet-written
+// state, a sparkle for weaving in new chapters, an alert for a failed
+// compile, and a spinner while one is in flight.
+function QuillIcon() {
+  return (
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M20 4c-4.5 0-11 2.5-13.5 9C5 16.5 4 19 3 20c1-.3 4-1.2 6.5-2.7 5-3 8.5-8.8 8.5-11.7 0-.6-.2-1.1-.5-1.4-.3-.3-.8-.5-1.4-.5z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+      <path d="M9.5 14.5c1.2-2.5 3.3-5.7 6-8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+function SparkleIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3z" fill="currentColor" />
+      <path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15z" fill="currentColor" />
+    </svg>
+  );
+}
+function AlertIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M12 4l9 16H3l9-16z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
+      <path d="M12 10.5v3.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <circle cx="12" cy="17" r="0.9" fill="currentColor" />
+    </svg>
+  );
+}
+function SpinnerIcon() {
+  return (
+    <svg className="ks-banner__spin" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeOpacity="0.22" strokeWidth="2.4" />
+      <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
+    </svg>
+  );
+}
+function DiamondIcon() {
+  return (
+    <svg className="ks-banner__diamond" width="6" height="6" viewBox="0 0 10 10" aria-hidden="true">
+      <path d="M5 0l5 5-5 5-5-5z" fill="currentColor" />
     </svg>
   );
 }

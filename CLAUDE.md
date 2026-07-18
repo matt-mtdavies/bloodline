@@ -330,6 +330,37 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   genuinely persisted, not just changed in-memory. Full unit suite and `npm run build` passed
   clean; the standard smoke test passed with zero console errors.
 
+- **Redesigned the Keepsake edition banner** (real user reaction to a screenshot: "That
+  notification button is disgraceful. Design and make that button gorgeous and on brand" — the
+  small compile/weave-in/error bar at the top of the reader, previously a flat white pill with
+  plain sans-serif text and a bare bold-orange text link, reading as a generic OS toast rather
+  than part of the Keepsake object). `KeepsakeView.jsx`'s `.ks-banner` is now a small mastheaded
+  card that borrows the cover's own typographic language (`docs/KEEPSAKE.md`'s "constellation of
+  Bloodline design decisions" — Fraunces serif italic, uppercase letter-spaced kicker flanked by
+  the cover masthead's ◆ diamond glyphs, terracotta accents, subtle paper grain) instead of
+  looking like a system notification: a circular icon badge (quill / sparkle / alert / spinner,
+  one new small inline SVG per state, matching the existing `BookModeIcon`/`PrintIcon` style
+  already in the file) sits beside an uppercase kicker ("First edition" / "New chapters" /
+  "Trouble compiling" / "Compiling") and the original note sentence set in serif italic below
+  it; the CTA is now a genuine full-width terracotta-gradient pill button with a warm drop shadow
+  (`Compile the first edition` / `Weave in the changes` / `Try again`) rather than a bare text
+  link — no copy changed beyond the new kicker labels, only the visual treatment. The error state
+  deliberately desaturates the badge/kicker to a muted ink-gray rather than reaching for a red
+  the rest of the palette doesn't have (see `theme.css` — deliberately no error/red token, only
+  terracotta/sage/memorial-violet) — restrained rather than alarming, and the CTA button stays the
+  same terracotta as every other state so "try again" doesn't read as a different, scarier action.
+  A narrow-viewport CSS override that used to fight the old row layout (stacking the note above
+  the button once it got squeezed on phones) is gone — the new layout is column-stacked by
+  default, so the override was dead weight once the redesign made it unconditional. Verified live
+  via Playwright against all four states (mocking `/api/keepsake`'s GET/POST responses, since
+  plain `npm run dev` has no Cloudflare Pages Functions to actually compile against): screenshots
+  of "First edition" (quill badge, terracotta), "New chapters" (sparkle badge), "Trouble
+  compiling" (alert badge, desaturated kicker, CTA still terracotta), and "Compiling…" (spinning
+  ring badge, no button) all confirmed against `docs/KEEPSAKE.md`'s stated design language.
+  `prefers-reduced-motion: reduce` freezes the new spinner alongside the file's other motion
+  overrides. Keepsake unit + API test suites and `npm run build` passed clean; the standard smoke
+  test passed with zero console errors.
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);
