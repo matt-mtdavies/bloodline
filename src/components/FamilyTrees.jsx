@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import Logo from './Logo.jsx';
+import ReturnMark from './ReturnMark.jsx';
 import { clearLocalData } from '../data/store.js';
 
 /*
@@ -81,9 +82,7 @@ export default function FamilyTrees({ user, onClose, onGoToTree }) {
   return (
     <div className="subpage" role="dialog" aria-modal="true" aria-label="Family trees">
       <div className="subpage__top">
-        <button className="subpage__close" onClick={onClose} aria-label="Back">
-          <BackIcon />
-        </button>
+        <ReturnMark onClick={onClose} label="Back to home" />
         <span className="subpage__top-title">Family trees</span>
         <span className="subpage__top-spacer" aria-hidden="true" />
       </div>
@@ -163,13 +162,6 @@ function roleLabel(role) {
   return labels[role] || role;
 }
 
-function BackIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path d="M15 18l-6-6 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
 
 function PlusIcon() {
   return (

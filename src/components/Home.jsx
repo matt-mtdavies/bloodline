@@ -43,12 +43,12 @@ export default function Home({
   return (
     <div className="home" role="dialog" aria-modal="true" aria-label="Bloodline home">
       <div className="home__top">
-        <div className="home__brand">
-          <Logo size={22} animate={false} />
+        {/* The mark itself is the way back to the tree now — the same
+            breathing family mark the topbar uses, doing the same job,
+            rather than a second, separate close button beside it. */}
+        <button className="home__brand" onClick={onClose} aria-label="Back to the tree">
+          <Logo size={22} idle animate={false} />
           <span className="home__brand-word">Bloodline</span>
-        </div>
-        <button className="home__close" onClick={onClose} aria-label="Back to your tree">
-          <CloseIcon />
         </button>
       </div>
 
@@ -314,13 +314,6 @@ function TreeConstellation() {
   );
 }
 
-function CloseIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
-    </svg>
-  );
-}
 
 function ArrowIcon() {
   return (

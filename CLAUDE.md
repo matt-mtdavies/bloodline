@@ -666,6 +666,55 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   then reverted the temporary export before committing (confirmed via a clean `git diff` on
   `store.js`). Full unit suite, `npm run build`, and the standard smoke test all passed clean.
 
+- **Unified "back to the tree" across every full-screen subpage, plus a new Time-mode exit
+  pill** (design discussion: "do we need a way to quickly get back to the tree? What ideas do
+  you have that look amazing?" — I pitched a concept board reusing the topbar's own breathing
+  Logo mark everywhere instead of the ~15 bespoke close-button treatments scattered across the
+  app; user: "Yes. Go for it."). Audited every full-screen destination first (a background
+  research pass) and found a real constraint the pitch had to respect: `HowItWorks`/
+  `FamilyTrees` deliberately close back to the **Home hub**, not the bare tree (they're nested
+  one level under it — see the existing `App.jsx` comment "reached only from the hub, so their
+  back button always returns there"), while `TreeInsights`/`FamilySettings`/`UserProfile`/
+  `ActivityFeed`/`FamilyTimeline` (a bottom sheet, not to be confused with the unrelated inline
+  Time-mode slider) all close straight to the tree. Scoped this to a **visual and interaction**
+  unification, not a navigation change: every file's `onClose` still fires exactly whatever it
+  already fired — only what the button looks like changed. New shared `ReturnMark.jsx` (a small
+  button wrapping `Logo` with `idle` breathing, icon-only, no wordmark — every one of these
+  pages already has its own title text beside it) replaces `.subpage__close` (a back-chevron
+  circle), `.icon-btn` (a rounded-square close, used by three different sheets), and
+  `.activity-panel__close` (a third circle variant) — three different existing visual languages,
+  now one. `Home.jsx` itself needed no new component: its already-present but non-interactive
+  `.home__brand` (Logo + "Bloodline" wordmark) became the actual clickable control, and the
+  separate `.home__close` X beside it was deleted outright — "the mark is already here, it just
+  needed to be tappable," exactly as pitched. Four sheet-style headers (`ti__head`/`fs__head`/
+  `tl__head`/`activity-panel__header`) had their title+close order reversed (mark now leads,
+  title follows) and `justify-content: space-between` swapped for a plain `gap`, since the old
+  layout assumed the close button sat on the right. One disclosed simplification from the
+  original pitch: the concept board's mockup described the Time-mode pill "fading in only after
+  real wandering" (a few slider drags) before appearing — built as a fixed heuristic like that,
+  it would have been unproven complexity for uncertain benefit; shipped instead as simply
+  always-visible whenever `timeMode` is on, matching `LineageBanner`'s own existing behavior
+  (which has no such delay either) rather than inventing a new standard just for this one pill.
+  New `ReturnToTreePill.jsx` (mirroring `HomeToMe.jsx`'s two-phase mount/animate mechanics)
+  fills a real, asymmetric gap the audit turned up: Lineage mode already had a working
+  contextual exit (`LineageBanner`'s own "Done" button, wired through the existing
+  `toggleLineage`), but Time mode had *only* the dock's clock icon — no equivalent banner at
+  all. The pill sits at the same top-centre position `LineageBanner` already uses, carries the
+  same breathing mark, and calls a new shared `exitTimeMode` callback (extracted so the dock
+  button's own "tap a second time to leave" path and the new pill both leave Time mode
+  identically, rather than duplicating the same three state-resets in two places). Deliberately
+  did **not** touch `PersonSheet.jsx`, `Lightbox.jsx`, or any of the small in-context edit/confirm
+  sheets (`EditPersonSheet`, `EnrichSheet`, `InviteSheet`, `GedcomImport`, `DuplicatesSheet`,
+  `Legend`, ...) — those are contextual dialogs and forms bound to specific content, not
+  full-screen destinations you navigate away to, and folding a generic brand mark into "Cancel"
+  or "Done" on a form would blur what those controls actually do. Verified live via Playwright
+  across all eight touched surfaces plus the new pill (each opened, confirmed exactly one
+  `.return-mark`/no orphaned old close-button class, clicked, confirmed the correct destination —
+  Home for the two nested subpages, the bare tree for the rest — landed); Time mode specifically
+  confirmed the pill is absent before entering, appears the instant the dock's clock icon is
+  tapped, and clicking it both hides the pill and turns Time mode off via the same dock button
+  state. Full unit suite, `npm run build`, and the standard smoke test all passed clean.
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);

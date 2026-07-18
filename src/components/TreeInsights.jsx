@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import { computeInsights, aggregatesHash } from '../lib/insights.js';
 import { computeInsightModules, buildInsightHighlights } from '../lib/insightModules.js';
 import InsightModules, { PeopleDrawer } from './InsightModules.jsx';
+import ReturnMark from './ReturnMark.jsx';
 
 /*
  * Tree Insights sheet — the family archive, felt from the viewer's seat.
@@ -88,8 +89,8 @@ export default function TreeInsights({ graph, viewerId, onNavigate, onClose }) {
         <div className="sheet__grip" />
 
         <div className="ti__head">
+          <ReturnMark onClick={onClose} />
           <h2 className="ti__title"><SparkIcon /> Tree insights</h2>
-          <button className="icon-btn" onClick={onClose} aria-label="Close"><CloseIcon /></button>
         </div>
 
         {/* Hero */}
@@ -238,9 +239,6 @@ function SparkIcon() {
 }
 function ChevronRightIcon() {
   return (<svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9 18l6-6-6-6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>);
-}
-function CloseIcon() {
-  return (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/></svg>);
 }
 function RefreshIcon() {
   return (<svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M21 12a9 9 0 11-2.6-6.4M21 4v4h-4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>);

@@ -4,6 +4,7 @@ import {
 } from '../lib/visibility.js';
 import ShareLink from './ShareLink.jsx';
 import { ActivityRow, dayLabel } from './ActivityFeed.jsx';
+import ReturnMark from './ReturnMark.jsx';
 
 const INVITE_ROLES = ['coadmin', 'editor', 'contributor', 'viewer'];
 
@@ -438,10 +439,10 @@ export default function FamilySettings({
       <div className="sheet" onClick={(e) => e.stopPropagation()}>
         <div className="sheet__grip" />
         <div className="fs__head">
+          <ReturnMark onClick={onClose} />
           <div>
             <h2 className="fs__title">Family settings</h2>
           </div>
-          <button className="icon-btn" onClick={onClose} aria-label="Close"><CloseIcon /></button>
         </div>
 
         {/* Family name */}

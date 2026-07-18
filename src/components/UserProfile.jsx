@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useKinTerms, setKinTermsPref, GRANDPARENT_TERM_PACKS, CUSTOM_PACK_ID } from '../lib/kinTerms.js';
+import ReturnMark from './ReturnMark.jsx';
 
 export default function UserProfile({ user, people = [], onClose, onLogout, onSaved, onPhoto }) {
   const [profile, setProfile] = useState(null);
@@ -109,8 +110,8 @@ export default function UserProfile({ user, people = [], onClose, onLogout, onSa
         <div className="sheet__grip" />
 
         <div className="fs__head">
+          <ReturnMark onClick={onClose} />
           <h2 className="fs__title">Your profile</h2>
-          <button className="icon-btn" onClick={onClose} aria-label="Close"><CloseIcon /></button>
         </div>
 
         {/* Avatar + identity */}
@@ -316,13 +317,6 @@ function getInitials(str) {
   return (parts[0]?.slice(0, 2) ?? '?').toUpperCase();
 }
 
-function CloseIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
-    </svg>
-  );
-}
 
 function CameraIcon() {
   return (

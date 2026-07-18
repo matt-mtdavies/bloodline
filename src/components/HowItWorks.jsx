@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import ReturnMark from './ReturnMark.jsx';
 
 /*
  * A quick tour — the four feature clips that used to live inline on Home,
@@ -16,9 +17,7 @@ export default function HowItWorks({ onClose }) {
   return (
     <div className="subpage" role="dialog" aria-modal="true" aria-label="How it works">
       <div className="subpage__top">
-        <button className="subpage__close" onClick={onClose} aria-label="Back">
-          <BackIcon />
-        </button>
+        <ReturnMark onClick={onClose} label="Back to home" />
         <span className="subpage__top-title">How it works</span>
         <span className="subpage__top-spacer" aria-hidden="true" />
       </div>
@@ -74,13 +73,5 @@ function FeatureClip({ src, poster, title, desc }) {
         <span className="home__feature-desc">{desc}</span>
       </div>
     </div>
-  );
-}
-
-function BackIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path d="M15 18l-6-6 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
   );
 }

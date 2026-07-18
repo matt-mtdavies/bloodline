@@ -1,6 +1,7 @@
 import { useMemo, useEffect } from 'react';
 import Avatar from './Avatar.jsx';
 import { BranchIcon, MedalIcon } from './MilitaryIcons.jsx';
+import ReturnMark from './ReturnMark.jsx';
 
 // person_updated activity details that trace back to a military-only edit
 // (see App.jsx's applyDocumentField, which turns 'military_branch' etc. into
@@ -53,10 +54,8 @@ export default function ActivityFeed({ activity = [], people = [], userEmail, on
       <div className="activity-scrim" onClick={onClose} aria-hidden="true" />
       <div className="activity-panel" role="dialog" aria-label="Family activity" aria-modal="true">
         <div className="activity-panel__header">
+          <ReturnMark onClick={onClose} />
           <h2 className="activity-panel__title">Family Activity</h2>
-          <button className="activity-panel__close" onClick={onClose} aria-label="Close activity panel">
-            <CloseIcon />
-          </button>
         </div>
 
         {recapCount > 0 && onShowRecap && (
@@ -273,13 +272,6 @@ export function dayLabel(iso) {
 
 /* ── Icons ─────────────────────────────────────────────────────────────────── */
 
-function CloseIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-    </svg>
-  );
-}
 
 function PersonAddIcon() {
   return (

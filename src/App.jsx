@@ -71,6 +71,7 @@ import TopBar from './components/TopBar.jsx';
 import FocusNameplate from './components/FocusNameplate.jsx';
 import HoverCard from './components/HoverCard.jsx';
 import HomeToMe from './components/HomeToMe.jsx';
+import ReturnToTreePill from './components/ReturnToTreePill.jsx';
 import PersonSheet from './components/PersonSheet.jsx';
 import AddRelativeSheet from './components/AddRelativeSheet.jsx';
 import EditPersonSheet from './components/EditPersonSheet.jsx';
@@ -1057,6 +1058,15 @@ export default function App() {
       if (on) { setLineagePath(null); setLineageOrder(null); }
       return !on;
     });
+  }, []);
+
+  // Shared exit for Time mode — the dock's own time-toggle button (tapped a
+  // second time) and the ReturnToTreePill below both need to leave Time mode
+  // exactly the same way, so there's one place that does it.
+  const exitTimeMode = useCallback(() => {
+    setTimePlaying(false);
+    setLifeJourneyId(null);
+    setTimeMode(false);
   }, []);
 
   // Shared by the top bar's search pill and the lineage banner's own search
@@ -2138,9 +2148,10 @@ export default function App() {
                 <button
                   className={`dock-btn time-toggle${timeMode ? ' time-toggle--on' : ''}`}
                   onClick={() => {
-                    if (!timeMode) { setTimeYear(new Date().getFullYear()); setTimePlaying(false); }
-                    else { setTimePlaying(false); setLifeJourneyId(null); }
-                    setTimeMode((m) => !m);
+                    if (timeMode) { exitTimeMode(); return; }
+                    setTimeYear(new Date().getFullYear());
+                    setTimePlaying(false);
+                    setTimeMode(true);
                   }}
                   aria-pressed={timeMode}
                   aria-label={timeMode ? `Time view: ${timeYear}` : 'View family over time'}
@@ -2201,6 +2212,12 @@ export default function App() {
               !anyOverlayOpen && recapQueue.length === 0
             }
             onGoHome={goHome}
+          />
+          {/* Time mode's own contextual exit — Lineage mode already has one
+              on its banner ("Done"); Time mode had only the dock icon. */}
+          <ReturnToTreePill
+            visible={timeMode && !anyOverlayOpen}
+            onReturn={exitTimeMode}
           />
           {!lineageMode && !flightCaption && <IntroHint />}
           {!lineageMode && !flightCaption && (
