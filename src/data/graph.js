@@ -5,7 +5,7 @@
  *
  * Siblings are DERIVED (people sharing at least one parent), never stored.
  */
-import { resolveGrandparentTerm } from '../lib/kinTerms.js';
+import { resolveGrandparentTerm, resolveAncestorTerm } from '../lib/kinTerms.js';
 
 export function buildGraph(people, relationships) {
   const byId = new Map(people.map((p) => [p.id, p]));
@@ -505,7 +505,13 @@ export function relationLabel(graph, focusId, otherId, kinTerms) {
         const isAdopt = !isStep && (p.qualifier === 'adoptive' || gp.qualifier === 'adoptive' || ggpEntry.qualifier === 'adoptive');
         if (isStep) return 'Step Great-grandparent';
         if (isAdopt) return 'Adoptive Great-grandparent';
-        return g('Great-grandfather', 'Great-grandmother', 'Great-grandparent');
+        // Same side/gender resolution as the direct-grandparent branch above,
+        // just one generation further back — a family's chosen term now
+        // reaches "Great-Oma" too, not just "Oma" (real report: the custom
+        // pack "has not changed the Great-Oma?? still says great-grandma").
+        return kinTerms
+          ? resolveAncestorTerm(kinTerms, parentSide(p), other?.gender, 1)
+          : g('Great-grandfather', 'Great-grandmother', 'Great-grandparent');
       }
     }
   }
@@ -595,7 +601,16 @@ export function relationLabel(graph, focusId, otherId, kinTerms) {
     const { ancId, upDist, downDist, firstHopParent } = nearest;
     const side = firstHopParent ? parentSide(firstHopParent) : null;
     const sidePrefix = side ? `${side} ` : '';
-    if (downDist === 0) return `${sidePrefix}${ascendingTerm(upDist, other?.gender)}`;
+    if (downDist === 0) {
+      // A pure ancestor, no descending leg — the same shape as the direct-
+      // grandparent/great-grandparent branches above, just further back
+      // (great-great-grandparent and beyond, since 1/2/3 generations up
+      // already returned earlier). Extends the chosen term the same way.
+      if (kinTerms && upDist >= 3) {
+        return `${sidePrefix}${resolveAncestorTerm(kinTerms, side, other?.gender, upDist - 2)}`;
+      }
+      return `${sidePrefix}${ascendingTerm(upDist, other?.gender)}`;
+    }
     if (upDist === 0) return descendingTerm(downDist, other?.gender);
 
     // Cousin-shaped: both focus and other are at least two generations down

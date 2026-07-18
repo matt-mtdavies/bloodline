@@ -597,6 +597,40 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   spec-conformant, standard fix for the documented bug class rather than a locally-reproduced
   regression test. Full unit suite, `npm run build`, and the standard smoke test all passed clean.
 
+- **Custom grandparent names extended to Great-grandparents and beyond** (real user report: "it
+  has not changed the Great-Oma?? still says great-grandma"). The original feature deliberately
+  scoped the custom-term swap to the direct-grandparent branch only (see `kinTerms.js`'s own
+  header comment at the time) — in hindsight too conservative, since "Great-" is just a prefix on
+  the same term, not a different cultural concept the packs don't cover. `kinTerms.js` gained
+  `resolveAncestorTerm(kinTerms, side, gender, greats)` — reuses `resolveGrandparentTerm` under
+  the hood and prepends `'Great-' + 'great-'.repeat(greats - 1)`, the same stacking convention
+  `graph.js`'s own plain-English `ascendingTerm()` already used for "Great-great-grandparent" —
+  but, unlike that plain-English path, never lowercases the resolved term before appending it:
+  these packs store proper address terms ("Oma", "Nonna"), not common nouns continuing an English
+  compound word, and the direct-grandparent branch already treated them the same way ("Paternal
+  Nonna" — the noun is never touched). Wired into two places in `relationLabel`: the specific
+  great-grandparent block (now calls `resolveAncestorTerm(kinTerms, parentSide(p), gender, 1)`,
+  preserving that block's existing no-side-prefix shape) and the general N-generations-up fallback
+  used for great-great-grandparent and beyond (preserving ITS existing side-prefix shape) — each
+  path keeps its own pre-existing structure, only the terminal word changes. Deliberately still
+  NOT threaded into descendant-direction terms (great-grandchildren aren't addressed BY a
+  grandparent-style term, so there's nothing to swap) or step/adoptive great-grandparents (no
+  gender split to swap, same as step/adoptive direct grandparents already). One disclosed,
+  deliberate side effect: for anyone still on the untouched default English pack, a
+  great-grandparent's label capitalization shifts slightly, from "Great-grandmother" (lowercase
+  compound tail) to "Great-Grandmother" (the pack's own always-capitalized term) — the same
+  trade-off already accepted for the direct-grandparent branch, now applied one level further
+  back for internal consistency, rather than adding special-case logic to preserve an arguably
+  arbitrary capitalization quirk. Covered by 7 new unit tests in `tests/kinTerms.test.mjs`
+  (`resolveAncestorTerm`'s greats=0/1/2/3 stacking, a real `relationLabel` great-grandparent case
+  swapping to "Great-Opa"/"Great-Oma", a great-great-grandparent case confirming the side prefix
+  and further stacking, the no-kinTerms-passed byte-identical case, and step/adoptive
+  great-grandparents staying untouched) and verified live via Playwright against the real seed
+  data (`florence`, james's actual paternal great-grandmother) with a German pack set — confirmed
+  the profile's kin-to-viewer badge resolves to "Great-Oma". Full unit suite (including the
+  existing `relations.test.mjs` regression suite, unaffected), `npm run build`, and the standard
+  smoke test all passed clean.
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);

@@ -106,3 +106,19 @@ export function resolveGrandparentTerm(kinTerms, side, gender) {
   if (FEM_TERMS.includes(gl)) return terms.female;
   return terms.neutral;
 }
+
+// Same resolution, for a further-back ancestor — "Great-Oma", "Great-great-
+// Nonno", etc. `greats` is generations beyond a direct grandparent (1 for a
+// great-grandparent, 2 for a great-great-grandparent, ...) — mirrors
+// graph.js's own plain-English ascendingTerm()'s "Great-" + repeated
+// lowercase "great-" convention. Unlike that plain-English case, the
+// resolved term itself is never lowercased before appending: these packs
+// store proper address terms ("Oma", "Nonna"), not common nouns continuing
+// a compound English word, and the direct-grandparent branch already
+// treats them the same way ("Paternal Nonna" — the noun is never touched).
+export function resolveAncestorTerm(kinTerms, side, gender, greats) {
+  const term = resolveGrandparentTerm(kinTerms, side, gender);
+  if (greats < 1) return term;
+  const prefix = 'Great-' + 'great-'.repeat(greats - 1);
+  return `${prefix}${term}`;
+}
