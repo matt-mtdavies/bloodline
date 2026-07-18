@@ -361,6 +361,41 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   overrides. Keepsake unit + API test suites and `npm run build` passed clean; the standard smoke
   test passed with zero console errors.
 
+- **Desktop "just start typing" search** (feature request, discussed and agreed before building:
+  "on PC, in the tree view, if you just start typing on the keyboard, it should automatically
+  open the search bar and search" — a Gmail/Linear/Notion-style shortcut). A global `keydown`
+  listener in `App.jsx`, placed right after `anyOverlayOpen`'s own declaration (the file's one
+  consolidated "is anything already showing" flag — the same one gating the hover card and
+  `IdleFactHint`), opens `SearchOverlay` the instant a bare printable key is pressed with nothing
+  else open and nothing already focused: `e.ctrlKey || e.metaKey || e.altKey` bails out (every
+  browser/OS shortcut — copy, reload, tab-switch — passes through completely untouched), a
+  non-printable or multi-char `e.key` (arrows, Enter, Escape, function keys) bails out, and
+  `document.activeElement` must be the plain body or the canvas itself (typing into any real
+  input/textarea elsewhere, in any sheet, is never hijacked). `SearchOverlay.jsx` gained an
+  `initialQuery` prop — seeded once into its `query` state on the mount this shortcut triggers
+  (every other open path, the search icon and the lineage banner's search button, passes nothing
+  and starts blank as before), with the caret explicitly placed after the seeded text so the very
+  next keystroke extends it rather than landing at position 0. **Found and fixed one real bug
+  along the way**: the same triggering keydown's native default action (inserting the character)
+  was firing a SECOND time into the just-focused search input once it existed in the DOM — every
+  typed-to-open search opened seeded with the letter doubled ("r" → "rr") — fixed with a single
+  `e.preventDefault()` once the shortcut decides to act. **Also fixed a related latent gap**
+  spotted while reading `anyOverlayOpen`'s own definition: `keepsakeId` (the full-screen Keepsake
+  reader) was missing from that consolidated flag — exactly the class of bug its own comment
+  warns about ("every new sheet added over time needs to be remembered... it only takes missing
+  one") — added it, which also correctly quiets the hover card/idle-fact-hint/recap-nudge/
+  home-nudge that flag already gates whenever a Keepsake is open, not just this new shortcut.
+  Deliberately reuses the existing, already-polished `SearchOverlay` sheet rather than building
+  new UI — the ask was for this to feel "beautiful and elegant," and the most elegant answer was
+  one more door into a component that already animates in cleanly and needed no visual changes at
+  all. Verified live via Playwright: typing with nothing focused opens the sheet pre-seeded with
+  the typed letter (and confirmed NOT doubled, post-fix); continuing to type extends the query
+  and returns live results; Escape closes it; Ctrl+A does NOT open search (confirmed the native
+  select-all still fires untouched); typing while a person's profile sheet is open does NOT
+  hijack; and a direct DOM-level probe (a real focused `<input>`) confirms a focused field always
+  wins regardless of which sheet it lives in. Full unit suite, `npm run build`, and the standard
+  smoke test all passed clean.
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);

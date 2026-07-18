@@ -592,6 +592,10 @@ export default function App() {
   const [howItWorksOpen, setHowItWorksOpen] = useState(false);
   const [familyTreesOpen, setFamilyTreesOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  // Seeds SearchOverlay's query on the one frame it mounts from a keystroke
+  // (see the type-to-search effect below) — null for every other open path
+  // (the search icon, the lineage banner), which start blank as always.
+  const [searchInitialQuery, setSearchInitialQuery] = useState(null);
   // Search's flyover caption — { order: [fromId,…,toId], upTo: number } while a
   // flight is in progress, else null. upTo advances via the flight's onSegment
   // callback so the relationship chain fills in hop by hop as the camera flies.
@@ -1775,8 +1779,41 @@ export default function App() {
     openId || addAnchorId || editId || timelineId || memoryId || lightbox || crop ||
     legendOpen || settingsOpen || insightsOpen || timelineOpen || docViewer ||
     invitePersonId || activityOpen || gedcomOpen || fsImportOpen || profileOpen ||
-    homeOpen || howItWorksOpen || familyTreesOpen || searchOpen || duplicatesOpen || promptClaim || showInstall
+    homeOpen || howItWorksOpen || familyTreesOpen || searchOpen || duplicatesOpen || promptClaim || showInstall ||
+    keepsakeId
   );
+
+  // Desktop "just start typing" search (feature request: a keyboard-first
+  // shortcut like Gmail/Linear/Notion's — press a letter with nothing else
+  // going on and the search sheet opens already carrying what you typed,
+  // rather than requiring a click on the search icon first). Deliberately
+  // narrow: only a bare printable key (no Ctrl/Cmd/Alt, so every browser and
+  // OS shortcut still works untouched), only while nothing else is already
+  // open (anyOverlayOpen, above — the same consolidated flag every other "is
+  // something already showing" check in this file uses) and only while
+  // nothing already has focus (typing into a bio text field, a name input
+  // inside some other sheet, etc. must never be hijacked — activeElement is
+  // the canvas or plain body whenever the tree itself has "focus"). Mobile
+  // has no physical keyboard to fire this from, so it's inherently
+  // desktop-only without needing its own device check.
+  useEffect(() => {
+    function onGlobalKeydown(e) {
+      if (anyOverlayOpen) return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.key.length !== 1 || e.key === ' ') return;
+      const el = document.activeElement;
+      if (el && el !== document.body && el.tagName !== 'CANVAS') return;
+      // Without this, the same keydown's native default action (inserting a
+      // character) fires a second time into the search input once it's
+      // synchronously focused below — doubling the very first letter typed.
+      e.preventDefault();
+      flushSync(() => { setSearchInitialQuery(e.key); setSearchOpen(true); });
+      const input = document.querySelector('.search-input');
+      if (input) { input.focus(); input.setSelectionRange(input.value.length, input.value.length); }
+    }
+    window.addEventListener('keydown', onGlobalKeydown);
+    return () => window.removeEventListener('keydown', onGlobalKeydown);
+  }, [anyOverlayOpen]);
 
   // Photo of the person the logged-in user has claimed as their own bubble.
   const userPhoto = useMemo(() => {
@@ -2250,8 +2287,9 @@ export default function App() {
           graph={graph}
           viewerId={data.myPersonId || DEFAULT_FOCUS}
           onSelect={selectFromSearch}
-          onClose={() => setSearchOpen(false)}
+          onClose={() => { setSearchOpen(false); setSearchInitialQuery(null); }}
           hint={lineageMode ? `Tracing from ${(activePerson?.display_name || 'this person').split(' ')[0]} — pick who to connect to` : null}
+          initialQuery={searchInitialQuery}
         />
       )}
 

@@ -22,8 +22,13 @@ const STATUSES = [
   { key: 'deceased', label: 'Deceased' },
 ];
 
-export default function SearchOverlay({ people, graph, viewerId, onSelect, onClose, hint = null }) {
-  const [query, setQuery] = useState('');
+export default function SearchOverlay({ people, graph, viewerId, onSelect, onClose, hint = null, initialQuery = null }) {
+  // Seeded once from the mount that opened this sheet — either blank (the
+  // search icon, the lineage banner) or the character that triggered
+  // desktop's "just start typing" shortcut (see App.jsx). A fresh mount
+  // every open (the caller unmounts this on close) means this only ever
+  // runs once per open, never clobbering what the visitor types next.
+  const [query, setQuery] = useState(initialQuery || '');
   const [cursor, setCursor] = useState(0);
   const [category, setCategory] = useState(null); // one of CATEGORIES[].key, or null
   const [status, setStatus] = useState('all');
@@ -36,8 +41,15 @@ export default function SearchOverlay({ people, graph, viewerId, onSelect, onClo
   // the window browsers (notably iOS Safari) honour for showing the
   // keyboard off the tap that opened the sheet, since the sheet's own mount
   // happens on the next render after that tap, not synchronously within it.
+  // Caret lands after any seeded text rather than selecting it, so the next
+  // keystroke extends what was already typed instead of replacing it.
   useEffect(() => {
-    const t = setTimeout(() => inputRef.current?.focus(), 60);
+    const t = setTimeout(() => {
+      const el = inputRef.current;
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(el.value.length, el.value.length);
+    }, 60);
     return () => clearTimeout(t);
   }, []);
 
