@@ -550,6 +550,53 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   `.chart-tree` — this assertion caught the latent bug above before the fix, and passed clean
   after). Full unit suite, `npm run build`, and the standard smoke test all passed clean.
 
+- **`IdleFactHint` rewrite: fixed a real double-schedule bug, made "idle" genuine, added a
+  cooldown** (real user report: "the insight pops up... are too much... popping up every 3-4
+  seconds and scrolling through mid pop up. it looks odd"). Two real bugs, not a perception issue.
+  1. The old arm effect's dependency array included `visible` but never guarded against
+     rescheduling while a fact was already showing — and since `IDLE_MS` (8s) was shorter than
+     `VISIBLE_MS` (11s), every single hint silently swapped its own text for a different fact
+     partway through its own display window, with no re-entrance animation (same DOM node) — this
+     is what "scrolling through mid pop-up" actually was.
+  2. Despite the name and the file's own comment ("waits out a long settled pause"), the idle
+     timer was armed the instant browse mode was entered and never reset on real activity —
+     panning/zooming/dragging never touched it — so it fired on a fixed clock regardless of
+     whether the user was actively mid-scroll, not only once they'd genuinely stopped.
+  `IdleFactHint.jsx` was rewritten: the arm effect now bails out early if a fact is already
+  `visible` (kills bug 1 outright); the countdown is rearmed from scratch on every real
+  `pointerdown`/`pointermove`/`wheel` (kills bug 2 — a continuously-panning session now never
+  triggers it, only a genuine pause does); `IDLE_MS` raised to 14s of true stillness; and a new
+  `COOLDOWN_MS` (20s), tracked in a ref (not state — it's only ever read inside the timer
+  scheduling, so a render would be wasted) rather than a rescheduled fact, so one hint hiding can't
+  immediately re-arm the next. Verified live via Playwright at the real timer scale (no mocked
+  clock): 16s of continuous simulated pointer movement never showed a hint; stopping the movement
+  produced one after ~13.5s (matching the new 14s wait); the SAME fact text was confirmed
+  byte-identical 9s into its display (proving the swap bug is gone); it auto-hid at ~12s; and it
+  stayed hidden through a further 15s (inside the 20s cooldown, confirming no immediate re-arm).
+  Full unit suite (`insightModules.test.mjs` unaffected — the fix is purely in the consuming
+  component's timing logic, not the underlying fact-selection code), `npm run build`, and the
+  standard smoke test all passed clean.
+
+- **Fixed List view row overflow on mobile Safari** (real user report, with a screenshot: some
+  rows' right edge bled flush off the screen with no rounded corner or margin, right after the
+  "view in chart" row action shipped — while other rows in the very same list looked fine). Could
+  not reproduce in this sandbox's Chromium (every row measured well within the 390px viewport), but
+  the screenshot was a real iPhone — WebKit is strict about a well-known flex/grid quirk that
+  Chromium is more forgiving of: a flex or grid item's own minimum size defaults to `auto`, not
+  `0`, at EVERY level of nesting, so a container's content can force it past its parent's box
+  unless every level in the chain explicitly opts out with `min-width: 0`. `.person-row` (the
+  card itself, a flex container for the avatar/text/two action circles) gained `min-width: 0` and
+  a defensive `overflow: hidden` (a safety clamp so a row visually can never bleed past its own
+  rounded rectangle regardless of any remaining shrink miscalculation — box-shadow is unaffected,
+  since `overflow: hidden` only clips a box's content, not its own shadow). The `<li>` grid items
+  in both `.listview__group` and `.listview__directory`'s `<ul>` (themselves `display: grid`)
+  gained the same `min-width: 0`, since grid items have the identical default-`auto` behavior as
+  flex items. Verified the fix doesn't regress the demo tree (row bounding boxes measured
+  identically before and after, all comfortably inside the viewport) via Playwright; the real
+  WebKit-only failure mode isn't reproducible in this sandbox's Chromium, so this is a
+  spec-conformant, standard fix for the documented bug class rather than a locally-reproduced
+  regression test. Full unit suite, `npm run build`, and the standard smoke test all passed clean.
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);

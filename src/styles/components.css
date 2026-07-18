@@ -1003,6 +1003,17 @@
   display: grid;
   gap: 6px;
 }
+/* Grid items (and flex items) default their own minimum size to `auto`, not
+   `0` — WebKit follows this strictly, so a row's two action circles plus its
+   avatar could force the row past its own track width on real iOS Safari
+   even though Chromium quietly shrank it fine (real report: rows bleeding
+   off the right edge of the screen on an iPhone, only after the second
+   action circle was added). min-width: 0 here, paired with the same on
+   .person-row itself, closes that off at every level of the chain. */
+.listview__group ul > li,
+.listview__directory ul > li {
+  min-width: 0;
+}
 .listview__directory { max-width: 620px; margin: 30px auto 0; }
 .filter-pills { display: flex; gap: 6px; margin: 10px 0; }
 .filter-pill {
@@ -1034,11 +1045,13 @@
   align-items: center;
   gap: 13px;
   width: 100%;
+  min-width: 0;
   padding: 9px 12px;
   border-radius: 16px;
   text-align: left;
   background: var(--card);
   box-shadow: var(--shadow-soft);
+  overflow: hidden;
   transition: transform 0.4s var(--spring), box-shadow 0.25s var(--ease);
 }
 .person-row:hover { box-shadow: var(--shadow-lift); }
