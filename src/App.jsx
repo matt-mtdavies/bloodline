@@ -60,7 +60,7 @@ import { uploadPhoto, generateThumb, uploadDocument, savePhotoToDevice, srcToDat
 import { useImageZoom } from './lib/useImageZoom.js';
 import { buildGraph, pathBetween, pathBetweenOrdered, bloodRelativesOf } from './data/graph.js';
 import { detectRegion, nearestWorldEvent } from './lib/worldEvents.js';
-import { findDuplicatePairs } from './lib/duplicates.js';
+import { findDuplicatePairs, pairKey, loadDismissedDuplicates, saveDismissedDuplicates } from './lib/duplicates.js';
 import { canManageTree } from './lib/visibility.js';
 import { profileCompleteness, isDuplicateLifeEvent } from './lib/profile.js';
 import { computeInsightModules, personHighlight, highlightCandidates } from './lib/insightModules.js';
@@ -210,9 +210,25 @@ export default function App() {
 
   // Possible duplicate people (same name + corroborating evidence) to offer for
   // merging. The cleanup entry point is gated to editors (see canEditTree below).
+  // Dismissed pairs live in one shared place (lib/duplicates.js, localStorage-
+  // backed) rather than inside DuplicatesSheet's own state — the topbar's count
+  // pill and the review sheet's list used to each track "what's left" separately,
+  // so a dismiss in the sheet never reached the pill (stuck showing a stale,
+  // too-high count) and a pair dismissed in an earlier session was still counted
+  // here even though the sheet correctly hid it (pill said N, sheet said "tidy").
+  const [dismissedDuplicates, setDismissedDuplicates] = useState(loadDismissedDuplicates);
+  const dismissDuplicatePair = (key) => {
+    setDismissedDuplicates((prev) => {
+      if (prev.has(key)) return prev;
+      const next = new Set(prev); next.add(key);
+      saveDismissedDuplicates(next);
+      return next;
+    });
+  };
   const duplicatePairs = useMemo(
-    () => findDuplicatePairs(data.people, data.relationships),
-    [data.people, data.relationships],
+    () => findDuplicatePairs(data.people, data.relationships)
+      .filter((p) => !dismissedDuplicates.has(pairKey(p.aId, p.bId))),
+    [data.people, data.relationships, dismissedDuplicates],
   );
 
   // 'loading' → 'open' (no auth / bypass) | 'login' (needs sign-in) | 'authed'
@@ -2289,6 +2305,7 @@ export default function App() {
             : duplicatePairs}
           graph={graph}
           onMerge={(keepId, dropId) => { mergePeople(keepId, dropId); if (activeId === dropId) activate(keepId); }}
+          onDismiss={dismissDuplicatePair}
           onClose={() => { setDuplicatesOpen(false); setDuplicatesFocusId(null); }}
         />
       )}

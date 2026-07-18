@@ -295,6 +295,41 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   clears instead of sticking. Both scripts, plus the full unit suite, `npm run build`, and the
   standard smoke test, passed clean before shipping.
 
+- **Fixed: the "possible duplicates" count pill and the review sheet disagreed, and dismissing
+  a pair never updated the pill** (real user report: "the 'review 1 possible duplicate' pill is
+  seen, though when i click on it, there are none... I also just saw three to review. there were
+  only 2. i dismissed them but now it still says three to review"). Root cause: two completely
+  separate computations of "how many duplicates exist," with no shared source of truth. The
+  topbar's pill (`TopBar.jsx`'s `StatsPopover`) read `duplicatePairs.length` from `App.jsx`,
+  which called `findDuplicatePairs(data.people, data.relationships)` raw — every candidate the
+  heuristic still detects, with zero awareness of anything ever dismissed. `DuplicatesSheet.jsx`,
+  meanwhile, kept its OWN dismissed-pairs set (`bl_dup_dismissed` in localStorage, loaded into its
+  own local `useState`) and filtered its displayed list through that — correctly hiding dismissed
+  pairs, and correctly showing "tree looks tidy" once none were left, but never telling `App.jsx`
+  it had done so. That explains both halves of the report: pairs dismissed in an earlier session
+  were still counted by the pill (App's memo never consulted `bl_dup_dismissed` at all) while the
+  sheet correctly hid them ("pill says 1, sheet says none"); and dismissing in the sheet only
+  mutated the sheet's own local state + localStorage, never `data.people`/`data.relationships` —
+  the pill's only memo dependencies — so it never recomputed ("dismissed 2 of 3, pill still says
+  3"). Fixed by making dismissal-tracking the one shared thing both sides read: the
+  `bl_dup_dismissed` load/save helpers moved from `DuplicatesSheet.jsx` into `lib/duplicates.js`
+  (`loadDismissedDuplicates`/`saveDismissedDuplicates`, alongside the existing `pairKey`) so
+  there's exactly one implementation. `App.jsx` now owns the dismissed set as real state
+  (`dismissedDuplicates`, seeded from localStorage on mount) and filters `duplicatePairs` through
+  it before `.length` is computed for the pill — the same filter the sheet used to apply alone —
+  and exposes `dismissDuplicatePair(key)`, which updates that state (triggering an immediate
+  pill recompute) and persists to localStorage. `DuplicatesSheet.jsx` no longer tracks dismissal
+  at all: it receives `pairs` already filtered by the caller and an `onDismiss` callback, so the
+  "Not a duplicate" button and the post-merge auto-dismiss (the dropped id would otherwise leave
+  a stale pair) both just call the prop — one list, one count, always in agreement, in both
+  directions. Verified live via a dedicated Playwright script (seeded two synthetic duplicate
+  pairs via `addInitScript`, since demo mode seeds fresh in-memory state and never touches
+  localStorage until a mutation commits): pill and sheet agreed on count before touching anything
+  (2 and 2), dismissing one via "Not a duplicate" dropped the sheet to 1 AND the pill to 1 in the
+  same render pass, and a full page reload (a fresh "session") still showed 1 — the dismissal had
+  genuinely persisted, not just changed in-memory. Full unit suite and `npm run build` passed
+  clean; the standard smoke test passed with zero console errors.
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);

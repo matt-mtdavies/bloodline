@@ -2,16 +2,6 @@ import { useState, useMemo, useEffect } from 'react';
 import Avatar from './Avatar.jsx';
 import { pairKey } from '../lib/duplicates.js';
 
-const DISMISS_KEY = 'bl_dup_dismissed';
-
-function loadDismissed() {
-  try { return new Set(JSON.parse(localStorage.getItem(DISMISS_KEY) || '[]')); }
-  catch { return new Set(); }
-}
-function saveDismissed(set) {
-  try { localStorage.setItem(DISMISS_KEY, JSON.stringify([...set])); } catch { /* ignore */ }
-}
-
 // A rough "how complete is this record" score, to default the keep choice to the
 // richer entry (so a merge loses as little as possible).
 function richness(p) {
@@ -33,8 +23,7 @@ function richness(p) {
  * which record to keep (the fuller one is preselected) and merges the other into
  * it, or dismiss the suggestion if they're actually different people.
  */
-export default function DuplicatesSheet({ pairs, graph, onMerge, onClose }) {
-  const [dismissed, setDismissed] = useState(loadDismissed);
+export default function DuplicatesSheet({ pairs, graph, onMerge, onDismiss, onClose }) {
   const [keepChoice, setKeepChoice] = useState({}); // pairKey → chosen keepId
 
   useEffect(() => {
@@ -43,23 +32,23 @@ export default function DuplicatesSheet({ pairs, graph, onMerge, onClose }) {
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
+  // `pairs` arrives already filtered to un-dismissed candidates (the caller
+  // owns dismissal — see lib/duplicates.js — so the topbar's count pill and
+  // this list always agree). Just resolve the person records and drop any
+  // pair whose person no longer exists (e.g. removed since this list rendered).
   const visible = useMemo(
     () => pairs
       .map((p) => ({ ...p, key: pairKey(p.aId, p.bId), a: graph.byId.get(p.aId), b: graph.byId.get(p.bId) }))
-      .filter((p) => p.a && p.b && !dismissed.has(p.key)),
-    [pairs, graph, dismissed],
+      .filter((p) => p.a && p.b),
+    [pairs, graph],
   );
-
-  const dismiss = (key) => {
-    const next = new Set(dismissed); next.add(key); setDismissed(next); saveDismissed(next);
-  };
 
   const merge = (pair) => {
     const chosen = keepChoice[pair.key] || (richness(pair.a) >= richness(pair.b) ? pair.aId : pair.bId);
     const dropId = chosen === pair.aId ? pair.bId : pair.aId;
     onMerge(chosen, dropId);
     // The dropped id is gone; remember so the (now-stale) pair never re-shows.
-    dismiss(pair.key);
+    onDismiss(pair.key);
   };
 
   return (
@@ -115,7 +104,7 @@ export default function DuplicatesSheet({ pairs, graph, onMerge, onClose }) {
                       <button className="dups__merge" onClick={() => merge(pair)}>
                         Merge into {graph.byId.get(keepId)?.display_name?.split(/\s+/)[0]}
                       </button>
-                      <button className="dups__dismiss" onClick={() => dismiss(pair.key)}>
+                      <button className="dups__dismiss" onClick={() => onDismiss(pair.key)}>
                         Not a duplicate
                       </button>
                     </div>

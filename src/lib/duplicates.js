@@ -106,3 +106,18 @@ export function findDuplicatePairs(people = [], relationships = []) {
 export function pairKey(aId, bId) {
   return [aId, bId].sort().join('~');
 }
+
+// Dismissed-pair tracking lives here (not inside DuplicatesSheet) so the
+// review sheet and the topbar's count pill — two separate call sites — read
+// the exact same set. It's a viewer-local "don't ask again", not family
+// data, so plain localStorage rather than the synced tree store is enough.
+const DISMISS_KEY = 'bl_dup_dismissed';
+
+export function loadDismissedDuplicates() {
+  try { return new Set(JSON.parse(localStorage.getItem(DISMISS_KEY) || '[]')); }
+  catch { return new Set(); }
+}
+
+export function saveDismissedDuplicates(set) {
+  try { localStorage.setItem(DISMISS_KEY, JSON.stringify([...set])); } catch { /* ignore */ }
+}
