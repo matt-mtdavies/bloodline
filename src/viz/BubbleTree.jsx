@@ -1044,6 +1044,17 @@ export default function BubbleTree({
           const list = ids || [...bubbles.keys()];
           for (const id of list) { bubbles.get(id)?.setRecapGlow(false); recapVisited.delete(id); }
         },
+        // Light the same lingering ring for an arbitrary set of ids straight
+        // away, with no camera choreography — used to mark BOTH candidates in
+        // the duplicate-review sheet's "Show both in tree" (only one of them
+        // can be the single ego-camera `active` bubble, but any number can
+        // wear this ring, exactly as the recap tour already proves). ensures
+        // the ids are tracked first, same as spotlightTour, since a fresh
+        // reveal may not have spawned their bubbles yet.
+        spotlightSetGlow(ids) {
+          state.ensureVisible(ids);
+          for (const id of ids ?? []) { bubbles.get(id)?.setRecapGlow(true); recapVisited.add(id); }
+        },
         // A landed FlightCaption's reopened chain calls this when a hop is
         // tapped — brief "there it is" bump on that bubble, no camera move
         // (the whole path is already on screen, per flyToSearchResult

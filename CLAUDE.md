@@ -785,6 +785,34 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   step-niece failure in `relations.test.mjs` aside), `npm run build`, and the standard smoke test
   all passed clean.
 
+- **"Show both in tree" now highlights BOTH duplicate candidates, not just one** (real user
+  feedback on the feature above: "only one is selected/highlighted... the second one does not
+  stand out at all"). Discussed first — I opined that the single glowing/scaled "active" bubble
+  is baked into the ego-camera system (it needs exactly one center) and can't itself go dual, but
+  the recap tour's separate lingering gold ring (`setRecapGlow`) is a non-exclusive primitive
+  already proven to mark an arbitrary SET of bubbles at once — reusing it was the natural fix
+  rather than inventing new visual language. User agreed to reuse the existing gold ring for
+  both. `BubbleTree.jsx` gained `spotlightSetGlow(ids)`, a `viewApi` method mirroring the existing
+  `spotlightClearGlow(ids)` — calls `ensureVisible(ids)` first (same as `spotlightTour`, since a
+  same-render reveal may not have spawned the bubbles yet) then lights `setRecapGlow(true)` on
+  each id directly, no camera choreography. `showDuplicatePairInTree` (`App.jsx`) now calls it
+  with `[aId, bId]` right alongside the existing `refocus()` call — `activateNormal(aId)` still
+  makes only `aId` the single ego-camera "active" bubble (scaled/lifted, and the one the camera
+  centres on), but both now wear the same gold ring, so the second candidate no longer disappears
+  next to it. A new `compareGlowIdsRef` tracks whichever pair is currently lit so a later "Show
+  both in tree" tap on a DIFFERENT pair clears the previous ring first, rather than old rings
+  piling up across repeated uses. Confirmed the reused ring is safe outside its original context:
+  the recap tour's own `recapVisited`-based dimming/legibility logic in the render loop is gated
+  behind `camMode === 'recap' && recap`, so lighting bubbles via `spotlightSetGlow` during normal
+  browsing has no effect on unrelated rendering paths. Verified live via Playwright against the
+  real dev server: created two same-named synthetic siblings ("Duplicate Testerson" ×2, which
+  `findDuplicatePairs`' name-key grouping picks up same as any real duplicate), opened the
+  duplicates sheet, tapped "Show both in tree", and confirmed via a high-resolution screenshot
+  that both bubbles — the larger centred/active one and the smaller one off to the side — carry
+  the identical warm gold ring, clearly distinguishing both from every other (unringed) bubble on
+  screen. Full unit suite (the pre-existing, unrelated step-niece failure in `relations.test.mjs`
+  aside), `npm run build`, and the standard smoke test all passed clean.
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);

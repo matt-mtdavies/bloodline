@@ -605,6 +605,10 @@ export default function App() {
   // (BubbleTree debounces this itself; see onHover).
   const [hoveredId, setHoveredId] = useState(null);
   const viewApi = useRef(null);
+  // Tracks which pair, if any, is currently wearing the duplicate-compare
+  // gold ring (see showDuplicatePairInTree below) so a later call for a
+  // different pair can clear the previous one instead of leaving it lit.
+  const compareGlowIdsRef = useRef(null);
 
   // Notify the user if a commit couldn't persist (localStorage full).
   useEffect(() => {
@@ -1266,7 +1270,20 @@ export default function App() {
       return next;
     });
     activateNormal(aId);
-    const doRefocus = () => viewApi.current?.refocus(0.6);
+    // Only ONE bubble can be the ego-camera's "active" node (bId just rode
+    // along above so both get revealed and pulled into frame) — but the
+    // recap tour's lingering gold ring is a separate, non-exclusive
+    // primitive, so it can mark BOTH candidates at once. Without this, the
+    // second person "doesn't stand out at all" next to the actually-active
+    // one (real report). Clears whichever pair was lit by a previous
+    // "Show both in tree" first, so old rings don't pile up across repeated
+    // uses on different pairs.
+    if (compareGlowIdsRef.current) viewApi.current?.spotlightClearGlow(compareGlowIdsRef.current);
+    compareGlowIdsRef.current = [aId, bId];
+    const doRefocus = () => {
+      viewApi.current?.refocus(0.6);
+      viewApi.current?.spotlightSetGlow([aId, bId]);
+    };
     if (view !== 'bubbles') {
       setView('bubbles');
       let tries = 0;
