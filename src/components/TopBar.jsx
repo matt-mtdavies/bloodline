@@ -72,7 +72,11 @@ export default function TopBar({ familyName, stats, view, layout, syncStatus, sy
               search/bell/avatar never move. */}
           {syncStatus === 'saving' && (
             <span className="pill pill--saving" aria-live="polite" aria-label="Saving">
-              <SavingSpinner />
+              {/* The family mark itself, breathing — "Bloodline is quietly
+                  keeping your family connected", not a generic spinner
+                  asking you to wait. Same asset already used on the app's
+                  own loading screen (Logo.jsx's `loading` variant). */}
+              <Logo size={18} loading animate={false} />
               <span className="hover-tip hover-tip--down">Saving…</span>
             </span>
           )}
@@ -515,10 +519,6 @@ function SavedCheckIcon() {
       <path d="M5 13l4 4L19 7" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
     </svg>
   );
-}
-
-function SavingSpinner() {
-  return <span className="pill-spinner" aria-hidden="true" />;
 }
 
 function BellIcon() {

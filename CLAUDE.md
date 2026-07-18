@@ -205,6 +205,35 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   display_name, regardless of which field actually matched" convention the existing birth-name
   "née" hint already used, so the fix reads as consistent rather than a bolted-on special case.
 
+- **"Saving…" no longer flashes on every single app open** (real user feedback: "do we actually
+  need to see the spinning wheel every time you open Bloodline... it looks like a loading icon
+  so I wait till it's done before doing anything"). Root cause: `loadFromServer()`'s merge step
+  unconditionally re-PUT the reconciled tree back to the server after every load —
+  `if (state.people?.length > 0) scheduleServerSave(merged)` — regardless of whether the merge
+  actually produced anything the server didn't already have. For an actively multi-edited
+  family that's nearly always a no-op round trip that still flashes the pill. `store.js` gained
+  `hasUnsyncedContent(merged, serverData)` — compares every field capable of carrying genuine
+  local-only content (people, relationships, memories, photos, documents, activity, tombstones,
+  familyName, hasCompletedOnboarding) and only reports "needs saving" on a proven difference;
+  any doubt (an unexpected shape, a thrown comparison) fails safe to "save it", matching the old
+  behaviour — this only ever SKIPS a save on an exact, verified match, never the reverse.
+  Deliberately excludes two fields that would otherwise defeat the whole check: `_seq` (bumped
+  independently by the server on every save — carries no user content, would never match) and
+  `myPersonId` (NOT shared content — re-resolved fresh, identically, per viewer on every load
+  from their own login identity; two different family members always resolve it to two
+  different values by design, so comparing it would make the check pass to nearly nothing in a
+  multi-editor family while losing no real data by skipping it). Given the data-integrity
+  stakes, covered unusually thoroughly: 14 unit tests on `hasUnsyncedContent` itself (one per
+  content field, both exclusions, and a fail-safe-on-malformed-input case) plus 2 true
+  integration tests that mock the network and count real PUT calls through the actual
+  `loadFromServer` merge pipeline (`tests/sync-nosave.test.mjs`), on top of the full existing
+  suite passing unchanged. Paired with a visual fix for when a save genuinely does happen: the
+  topbar's "Saving" pill swapped its generic `.pill-spinner` CSS ring for `Logo.jsx`'s existing
+  `loading` variant (the three-bubble family mark breathing, already built for the splash screen
+  "so the wait has a bit of the same 'family, connected' idea... rather than a generic
+  spinner" — just never reused here) — so on the rare occasion it does show, it reads as the
+  app quietly doing something, not a system loading cue asking you to wait.
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);

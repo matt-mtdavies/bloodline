@@ -649,6 +649,43 @@ export function saveToServer() {
   return putTree(state);
 }
 
+// Every field loadFromServer's merge can carry genuinely local-only content
+// in — used by loadFromServer to decide whether the merged result is worth
+// pushing back to the server at all, or whether it's byte-identical to what
+// the server already has (the common case: nothing local pending, this
+// device is just catching up).
+//
+// Deliberately excludes two fields from `EMPTY`'s shape:
+//   - _seq: bumped independently by the server on every save (see
+//     functions/api/tree.js), so comparing it would never match even when
+//     nothing else changed — it carries no user content, just a counter.
+//   - myPersonId: NOT shared content. It's re-resolved fresh, identically,
+//     on every load from resolveViewerPersonId() using only the viewer's own
+//     login identity and the (already-compared) people list — two different
+//     family members always resolve it to two different values by design
+//     ("each family member sees relationship labels from their own seat").
+//     Comparing it would make this check pass to nearly nothing in a
+//     multi-editor family, defeating the whole point, while skipping it
+//     loses no real data: every claimed/matched viewer bypasses the stored
+//     value entirely, and even an unclaimed viewer recomputes their own
+//     default fresh next load regardless of what's stored server-side.
+const SYNC_CONTENT_KEYS = [
+  'people', 'relationships', 'memories', 'photos', 'documents',
+  'activity', '_deleted', 'familyName', 'hasCompletedOnboarding',
+];
+export function hasUnsyncedContent(merged, serverData) {
+  try {
+    const server = { ...EMPTY, ...serverData };
+    return SYNC_CONTENT_KEYS.some(
+      (k) => JSON.stringify(merged[k] ?? null) !== JSON.stringify(server[k] ?? null),
+    );
+  } catch {
+    // Any doubt (e.g. an unexpected shape) falls back to "yes, save it" —
+    // this check only ever skips a save on a proven exact match.
+    return true;
+  }
+}
+
 // Load the user's tree from the server.
 // If local state (_seq) is ahead of the server, local wins and we push it up.
 // Otherwise server wins and we apply it. Returns true if a tree was found.
@@ -770,13 +807,16 @@ export async function loadFromServer({ forceServerWins = false } = {}) {
 
     commit(merged, { fromServer: true });
 
-    // If this device had any local content, the merge above may include
-    // genuinely-unsaved local edits (or a newer photo the server's stripped
-    // payload didn't carry) that the server doesn't have yet — push the
-    // reconciled result back up rather than assuming a fetch alone caught
-    // it up. This is the only place that used to push raw, unmerged local
-    // state; now it always pushes the merged (safe) result instead.
-    if (state.people?.length > 0) scheduleServerSave(merged);
+    // The merge above may include genuinely-unsaved local edits (or a newer
+    // photo the server's stripped payload didn't carry) that the server
+    // doesn't have yet — push the reconciled result back up rather than
+    // assuming a fetch alone caught it up. But in the common case (this
+    // device is simply catching up to what the server already knows, no
+    // local edit pending) `merged` is content-identical to what the server
+    // just returned, and re-PUTting it is pure noise: a real network
+    // round-trip and a "Saving…" flash in the topbar on every single app
+    // open, for nothing. hasUnsyncedContent skips exactly that no-op case.
+    if (state.people?.length > 0 && hasUnsyncedContent(merged, data)) scheduleServerSave(merged);
 
     return true;
   } catch {
