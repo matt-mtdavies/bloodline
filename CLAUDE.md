@@ -263,6 +263,38 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   no-movement tap dismisses instantly) and with 10 new unit tests covering every new candidate
   template plus the with/without-viewer split (`tests/insightModules.test.mjs`).
 
+- **Fixed: clicking during the search flyover animation locked up the whole canvas** (real user
+  report: "if someone clicks while it is in progress, the screen pauses and locks up... to get
+  out of it, you need to search again and let it play out"). Root cause was an asymmetric guard
+  in `BubbleTree.jsx`'s `endGesture` tap router: the `'bubble'`-tap branch already checked `if
+  (!drag.moved && flight)` and ignored the tap mid-flyover, but the sibling `'pan' && !drag.moved`
+  branch — which handles every tap that lands on empty canvas, or on a bubble too zoomed-out to
+  drag (see `BUBBLE_DRAG_MIN_ZOOM`; the flyover deliberately zooms out to a wide "drone" travel
+  view, so this is the likely path for almost any mid-flight tap) — had no such guard, and fell
+  through to `deselect()`/`activate()`/`openPerson()`. Those call `state.enterFree()`/
+  `enterFollow()`, which flip `camMode` away from `'flight'` without ever clearing the `flight`
+  variable itself — freezing the camera mid-glide (the ticker's flight-driving block only runs
+  under `camMode === 'flight'`), permanently blocking all further bubble taps (the `'bubble'`
+  branch's own guard now saw a stale, undying `flight`), and skipping `onLand()` forever (so
+  `flightCaption.landed` never flips true and the Done button never renders) — exactly the
+  reported "screen pauses, can't click anybody, no Done pill" lockup, escapable only by starting
+  a fresh search (which unconditionally resets both `flightCaption` and `flight`/`camMode`).
+  Fixed by adding the identical `flight` guard to the `'pan'` branch, so a tap during a flyover
+  is ignored everywhere, not just on bubbles, letting the flight land naturally. Also fixed a
+  related, non-locking gap: a genuine drag/pinch that interrupts a flyover already correctly
+  cleared `flight` and handed the camera back (no freeze), but never called `onLand()`, leaving
+  the `FlightCaption` card stuck showing an in-progress crumb-trail with no Done button. Added a
+  new `onAbort` callback on the `flight` object (parallel to `onSegment`/`onLand`), fired at
+  every place `flight` is discarded without a natural landing — the pinch-start interrupt, the
+  real-pan-drag interrupt, and the render ticker's own try/catch error-recovery block — wired in
+  `App.jsx`'s `flyToSearchResult` to `setFlightCaption(null)`, so an abandoned journey clears the
+  caption instead of being left in limbo. Verified live via two dedicated Playwright
+  reproductions against the real dev server: one taps empty canvas mid-flyover and confirms the
+  flight still lands (Done button appears) and the canvas stays responsive afterward (a second
+  tap opens a profile); the other performs a real drag mid-flyover and confirms the caption
+  clears instead of sticking. Both scripts, plus the full unit suite, `npm run build`, and the
+  standard smoke test, passed clean before shipping.
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);

@@ -1126,6 +1126,12 @@ export default function App() {
         // flips the flag rather than scheduling a fixed hide.
         setFlightCaption((c) => (c ? { ...c, landed: true } : c));
       },
+      // The user took the camera back mid-flight (a real drag/pinch, or the
+      // ticker's own error-recovery abandoning it) — the journey was never
+      // finished, so there's no "landed" state to show. Clear the caption
+      // rather than leaving it stuck displaying an in-progress crumb-trail
+      // with no Done button and no way to dismiss it short of searching again.
+      onAbort: () => setFlightCaption(null),
     });
   }, [graph, data.myPersonId, reducedMotion, activateNormal, layout]);
 

@@ -920,6 +920,12 @@ export default function BubbleTree({
             camStartY: camY.value,
             onSegment: opts.onSegment || null,
             onLand: opts.onLand || null,
+            // Fired when a manual drag/pinch takes the camera back mid-flight
+            // (see endGesture/pointermove below) — never on a natural landing,
+            // that's onLand's job. Lets the caller (the search flyover's
+            // caption card) know the journey was abandoned rather than being
+            // left showing a "still flying" state with no way to land it.
+            onAbort: opts.onAbort || null,
           };
           lightHop(0); // origin lights immediately, no ignite flourish for itself
           flightComet?.destroy();
@@ -1188,7 +1194,7 @@ export default function BubbleTree({
           pinch.active = true;
           pinch.dist0 = twoFingerDist();
           pinch.zoom0 = screenAnchor().z;
-          if (flight) { flight = null; landingFx?.destroy(); landingFx = null; flightComet?.destroy(); flightComet = null; }
+          if (flight) { flight.onAbort?.(); flight = null; landingFx?.destroy(); landingFx = null; flightComet?.destroy(); flightComet = null; }
           postFlightIds = null; // the user's taken control — stop lingering on the old route
           postFlightEdges = null;
           postFlightLandedAt = 0;
@@ -1273,7 +1279,7 @@ export default function BubbleTree({
         } else if (drag.type === 'pan' && drag.moved) {
           // A real drag interrupts the flyover — hand control back to the user
           // right where the camera is, no jump.
-          if (flight) { flight = null; landingFx?.destroy(); landingFx = null; flightComet?.destroy(); flightComet = null; }
+          if (flight) { flight.onAbort?.(); flight = null; landingFx?.destroy(); landingFx = null; flightComet?.destroy(); flightComet = null; }
           postFlightIds = null; // the user's taken control — stop lingering on the old route
           postFlightEdges = null;
           postFlightLandedAt = 0;
@@ -1334,7 +1340,18 @@ export default function BubbleTree({
           }
           if (!reducedMotion) sim.alphaTarget(0.012); // settle back to idle drift
         } else if (drag.type === 'pan' && !drag.moved) {
-          if (drag.tapCandidateId) {
+          if (flight) {
+            // Same guard as the 'bubble' branch above — a tap on empty canvas,
+            // or on a bubble too zoomed-out to drag (see BUBBLE_DRAG_MIN_ZOOM,
+            // very likely mid-flyover, which deliberately zooms out to a wide
+            // "drone" view), used to reach deselect()/activate()/openPerson()
+            // below. Those flip the camera out of 'flight' mode without ever
+            // clearing the flight itself — freezing the camera mid-glide and,
+            // since the bubble-tap guard above checks the same still-truthy
+            // `flight`, silently swallowing every tap from then on. Ignoring
+            // the tap here instead lets the flyover land cleanly, exactly
+            // like a mid-flight bubble tap already does.
+          } else if (drag.tapCandidateId) {
             // Too zoomed out to drag this bubble (see BUBBLE_DRAG_MIN_ZOOM), but
             // a clean tap still selects it exactly like the 'bubble' path would.
             if (!browseRef.current && activeRef.current === drag.tapCandidateId) {
@@ -1393,6 +1410,7 @@ export default function BubbleTree({
           frameBody(ticker);
         } catch (err) {
           console.error('[BubbleTree] frame error — recovering to a safe state:', err);
+          flight?.onAbort?.();
           flight = null;
           landingFx?.destroy();
           landingFx = null;
