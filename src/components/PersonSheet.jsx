@@ -602,7 +602,7 @@ export default function PersonSheet({
                 <span className="ks-entry__cover-name">{person.display_name.split(/\s+/)[0]}</span>
               </span>
               <span className="ks-entry__text">
-                <strong>Their Keepsake</strong>
+                <strong>Keepsake</strong>
                 <span>The illustrated story of their life — read it, print it, keep it</span>
               </span>
             </button>

@@ -442,6 +442,32 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   correctly, with no migration needed since the fields were always additive. Full unit suite,
   `npm run build`, and the standard smoke test all passed clean.
 
+- **Keepsake pill retitled, and the first compile now needs a minimally-filled profile**
+  (feedback, agreed before building: rename the entry pill "Their Keepsake" → "Keepsake" — it
+  reads oddly on your own profile, since you're not "they" to yourself — and gate "Compile the
+  first edition" behind a completeness threshold, since a book compiled from a bare name and
+  birth year undersells the whole feature). `PersonSheet.jsx`'s `.ks-entry` pill is the one-word
+  fix. The gate reuses infrastructure rather than inventing new: `lib/profile.js`'s existing
+  `profileCompleteness()` score (the same one driving the profile's own completeness meter) is
+  computed for the Keepsake's subject in `KeepsakeView.jsx`, gated at a forgiving
+  `MIN_COMPLETENESS_FOR_FIRST_EDITION = 40` — enough to rule out a stub, not so strict it blocks
+  a decent profile missing a couple of minor fields — mirroring `lib/military.js`'s
+  `canGenerateMilitaryStory()`, an existing "is there enough raw material" gate on that other
+  AI-narrative feature. Deliberately scoped to the FIRST compile only: `!edition &&
+  !readyForFirstEdition` is a new, distinct banner state ("Almost there", desaturated like the
+  error state, no CTA button) that sits alongside — and never touches — the existing `stale`
+  branch, so an edition that already exists stays freely updatable via "Weave in the changes"
+  regardless of the current score; nobody's existing book gets locked mid-edit by a score dip.
+  The not-ready note reuses the completeness meter's own copy convention verbatim ("Add
+  {missing.slice(0,2).join(', ').toLowerCase()}…") instead of inventing new phrasing, so it reads
+  as a nudge with a concrete next step, not an unexplained wall. Verified live via Playwright
+  against three seeded profiles: a richly-filled person (89% — "First edition" state, CTA
+  present), a bare-stub person with only a name and one relationship (11% — "Almost there", no
+  CTA, correct missing-fields note), and that same stub person WITH an existing edition already
+  compiled (confirmed the gate does not apply — "New chapters" / "Weave in the changes" renders
+  normally regardless of the low score). Full unit suite, `npm run build`, and the standard
+  smoke test all passed clean.
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);

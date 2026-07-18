@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { buildKeepsake, applyNarrative } from '../../lib/keepsake.js';
+import { profileCompleteness } from '../../lib/profile.js';
 import {
   CoverSpread, FrontispieceSpread, OriginsSpread, ConstellationSpread,
   ChaptersSpread, ServiceSpread, PlacesSpread, VoicesSpread, AlbumSpread,
@@ -35,6 +36,10 @@ const SPREADS = {
   legacy: LegacySpread,
   colophon: ColophonSpread,
 };
+
+// A modest bar — enough raw material to write something, not "profile is
+// finished." See the completeness gate below, where this is used.
+const MIN_COMPLETENESS_FOR_FIRST_EDITION = 40;
 
 export default function KeepsakeView({
   graph, personId, memories, photos, documents, activity, familyName, onClose, onCompiled,
@@ -144,6 +149,18 @@ export default function KeepsakeView({
 
   const stale = edition && edition.hash !== keepsake.factsHash;
   const canCompile = editionState === 'ready';
+
+  // A first edition compiled from a near-empty profile (a bare name and
+  // birth year) reads as a thin, disappointing "book" and undersells the
+  // whole feature — gate it the same way Military Service's AI narrative
+  // already gates itself (see lib/military.js's canGenerateMilitaryStory).
+  // Deliberately only gates the FIRST compile: an edition that already
+  // exists stays freely updatable via "Weave in the changes" regardless of
+  // the current score, so nobody's existing book gets locked mid-edit.
+  const person = graph.byId.get(personId);
+  const personMemoryCount = memories.filter((m) => m.person_id === personId).length;
+  const completeness = person ? profileCompleteness(person, graph, personMemoryCount) : null;
+  const readyForFirstEdition = !completeness || completeness.score >= MIN_COMPLETENESS_FOR_FIRST_EDITION;
 
   async function compile() {
     if (compiling) return;
@@ -281,37 +298,42 @@ export default function KeepsakeView({
           the cover's own typographic language, rather than a generic system
           notification pill — this is the one moment before the book exists
           where the reader needs to feel this is still a Bloodline object. */}
-      {canCompile && (compiling || compileError || !edition || stale) && (
-        <div className={`ks-banner${compileError ? ' ks-banner--error' : ''}`} role="status">
-          <div className="ks-banner__grain" aria-hidden="true" />
-          <div className="ks-banner__top">
-            <span className={`ks-banner__badge${compiling ? ' ks-banner__badge--busy' : ''}`} aria-hidden="true">
-              {compiling ? <SpinnerIcon /> : compileError ? <AlertIcon /> : !edition ? <QuillIcon /> : <SparkleIcon />}
-            </span>
-            <span className="ks-banner__text">
-              <span className="ks-banner__kicker">
-                <DiamondIcon />
-                {compiling ? 'Compiling' : compileError ? 'Trouble compiling' : !edition ? 'First edition' : 'New chapters'}
-                <DiamondIcon />
+      {canCompile && (compiling || compileError || !edition || stale) && (() => {
+        const notReadyYet = !edition && !readyForFirstEdition;
+        return (
+          <div className={`ks-banner${compileError || notReadyYet ? ' ks-banner--error' : ''}`} role="status">
+            <div className="ks-banner__grain" aria-hidden="true" />
+            <div className="ks-banner__top">
+              <span className={`ks-banner__badge${compiling ? ' ks-banner__badge--busy' : ''}`} aria-hidden="true">
+                {compiling ? <SpinnerIcon /> : compileError || notReadyYet ? <AlertIcon /> : !edition ? <QuillIcon /> : <SparkleIcon />}
               </span>
-              <span className="ks-banner__note">
-                {compiling
-                  ? 'The story is being written…'
-                  : compileError
-                  ? "Couldn't compile this edition."
-                  : !edition
-                  ? "This book hasn't been written yet."
-                  : 'The tree has grown since this edition was compiled.'}
+              <span className="ks-banner__text">
+                <span className="ks-banner__kicker">
+                  <DiamondIcon />
+                  {compiling ? 'Compiling' : compileError ? 'Trouble compiling' : notReadyYet ? 'Almost there' : !edition ? 'First edition' : 'New chapters'}
+                  <DiamondIcon />
+                </span>
+                <span className="ks-banner__note">
+                  {compiling
+                    ? 'The story is being written…'
+                    : compileError
+                    ? "Couldn't compile this edition."
+                    : notReadyYet
+                    ? `${completeness.score}% complete — add ${completeness.missing.slice(0, 2).join(', ').toLowerCase()}${completeness.missing.length > 2 ? '…' : ''} to compile a Keepsake.`
+                    : !edition
+                    ? "This book hasn't been written yet."
+                    : 'The tree has grown since this edition was compiled.'}
+                </span>
               </span>
-            </span>
+            </div>
+            {!compiling && !notReadyYet && (
+              <button className="ks-banner__btn" onClick={compile}>
+                {compileError ? 'Try again' : !edition ? 'Compile the first edition' : 'Weave in the changes'}
+              </button>
+            )}
           </div>
-          {!compiling && (
-            <button className="ks-banner__btn" onClick={compile}>
-              {compileError ? 'Try again' : !edition ? 'Compile the first edition' : 'Weave in the changes'}
-            </button>
-          )}
-        </div>
-      )}
+        );
+      })()}
 
       {readerMode === 'book' ? (
         <KeepsakeBook
