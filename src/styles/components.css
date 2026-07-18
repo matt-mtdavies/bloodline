@@ -1082,7 +1082,8 @@
    marks it as a discrete control even before touch, since :hover alone
    never fires on a phone; warms to a filled accent circle on hover/press
    like every other icon-only affordance in the app. */
-.person-row__map {
+.person-row__map,
+.person-row__chart {
   flex: none;
   display: grid;
   place-items: center;
@@ -1094,8 +1095,10 @@
   border: 1px solid var(--hairline);
   transition: color 0.15s ease, background 0.15s ease, border-color 0.15s ease, transform 0.2s var(--spring);
 }
-.person-row__map:hover { color: var(--accent); background: var(--accent-soft); border-color: transparent; }
-.person-row__map:active { transform: scale(0.9); }
+.person-row__map:hover,
+.person-row__chart:hover { color: var(--accent); background: var(--accent-soft); border-color: transparent; }
+.person-row__map:active,
+.person-row__chart:active { transform: scale(0.9); }
 
 .search-wrap { position: relative; display: flex; align-items: center; margin-bottom: 12px; }
 .search-wrap .input-clear { right: 10px; }

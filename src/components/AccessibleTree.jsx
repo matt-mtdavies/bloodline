@@ -17,7 +17,7 @@ const DIRECTORY_ROW_HEIGHT = 68;
  * pixel of canvas. It mirrors the ego model: the focused person, then the people
  * immediately around them, then a searchable directory of everyone.
  */
-export default function AccessibleTree({ graph, focusId, onFocus, onOpenPerson, onShowOnMap }) {
+export default function AccessibleTree({ graph, focusId, onFocus, onOpenPerson, onShowOnMap, onShowInChart }) {
   const [q, setQ] = useState('');
   const [filter, setFilter] = useState('all');
   const kinTerms = useKinTerms();
@@ -191,6 +191,13 @@ export default function AccessibleTree({ graph, focusId, onFocus, onOpenPerson, 
                       >
                         <TreeIcon />
                       </button>
+                      <button
+                        className="person-row__chart"
+                        onClick={() => onShowInChart?.(item.id)}
+                        aria-label={`Show ${p.display_name} in the chart`}
+                      >
+                        <ChartIcon />
+                      </button>
                     </div>
                   </li>
                 );
@@ -284,6 +291,13 @@ export default function AccessibleTree({ graph, focusId, onFocus, onOpenPerson, 
                     >
                       <TreeIcon />
                     </button>
+                    <button
+                      className="person-row__chart"
+                      onClick={() => onShowInChart?.(p.id)}
+                      aria-label={`Show ${p.display_name} in the chart`}
+                    >
+                      <ChartIcon />
+                    </button>
                   </div>
                 </li>
               );
@@ -308,6 +322,21 @@ function TreeIcon() {
       <circle cx="5" cy="19" r="2.2" stroke="currentColor" strokeWidth="1.6" />
       <circle cx="19" cy="19" r="2.2" stroke="currentColor" strokeWidth="1.6" />
       <path d="M12 6.2v5.3M12 11.5l-5 4.8M12 11.5l5 4.8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+// Same glyph as the topbar's Tree/Chart/List switcher (ChartModeIcon) — the
+// deliberate rectangular-cards-on-rows cue that pairs with TreeIcon's
+// circles-and-branches, so the two row actions read as "same family,
+// different destination" rather than mismatched icons.
+function ChartIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <rect x="8" y="3" width="8" height="5" rx="1.2" stroke="currentColor" strokeWidth="1.6" />
+      <rect x="2" y="16" width="8" height="5" rx="1.2" stroke="currentColor" strokeWidth="1.6" />
+      <rect x="14" y="16" width="8" height="5" rx="1.2" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M12 8v4M12 12H6v4M12 12h6v4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
     </svg>
   );
 }

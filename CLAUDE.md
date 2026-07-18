@@ -516,6 +516,40 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
      the sheet and navigated the camera to the candidates. Full unit suite, `npm run build`, and
      the standard smoke test all passed clean.
 
+- **List view row action: "view in chart" next to "view in tree"** (feature request: "next to
+  [the circle to view in tree], should be a chart option?"). Discussed first — the user's
+  follow-up idea was to collapse both into one icon behind a popover menu to reduce clutter; I
+  recommended against it (two destinations don't justify a menu's extra tap, worse discoverability,
+  and real added complexity positioning a popover inside `AccessibleTree.jsx`'s virtualized
+  directory rows) and suggested hover-reveal on desktop instead if density was the actual concern.
+  User asked for the original two-icon version, unchanged on both mobile and desktop (no
+  hover-reveal). `AccessibleTree.jsx` gained a second per-row circle, `.person-row__chart`, next to
+  the existing `.person-row__map` tree circle, in both places that circle already appeared (the
+  focused person's immediate-family group rows and the virtualized full directory rows) — its icon
+  is the same `ChartModeIcon` glyph as the topbar's own Tree/Chart/List switcher (rectangular cards
+  on rows, not TreeIcon's circles-and-branches), so the pair reads as "same family of action,
+  different destination." Wired through a new `onShowInChart` prop to a new `App.jsx` callback,
+  `showPersonInChart` — deliberately simpler than the existing `flyToPersonFromAnywhere` (the tree
+  circle's handler): `ChartTree` re-roots itself off `activeId` via its own effect, so there's no
+  canvas-mount polling needed, just `setView('bubbles')` + `setLayout('chart')` +
+  `setBloodlineOnly(true)` (matching the topbar's own chart-switch default) + `activateNormal`.
+  **Found and fixed a related, pre-existing latent bug while verifying**: `flyToPersonFromAnywhere`
+  never reset `layout` back to `'organic'` — if `layout` was left on `'chart'` from an earlier
+  switch, clicking the ORIGINAL "view in tree" circle silently did nothing (it polled for
+  `viewApi.current`, which never populates because `BubbleTree` doesn't mount under chart layout,
+  so the poll just timed out after ~1.5s with no visible failure). This bug already existed before
+  this feature — reachable via topbar Chart → List → tree circle — but the new chart circle makes
+  it trivial to trigger (list → chart circle → back to list → tree circle), so it would have made
+  the just-shipped feature look broken. Fixed by also forcing `setLayout('organic')` whenever
+  `flyToPersonFromAnywhere` needs to switch canvases; every call site (this row action, the
+  profile's own "Show in tree", the "back to me" locate pill) already means "fly to them in the
+  organic tree," so the fix is correct for all of them, not just this one. Verified live via
+  Playwright: clicking the new chart circle switches to the pedigree chart re-rooted on exactly the
+  clicked person (confirmed via the focal card's own name); clicking the tree circle afterward
+  correctly lands back on the organic canvas (confirmed via `canvas` presence and the absence of
+  `.chart-tree` — this assertion caught the latent bug above before the fix, and passed clean
+  after). Full unit suite, `npm run build`, and the standard smoke test all passed clean.
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);

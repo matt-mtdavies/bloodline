@@ -1195,10 +1195,17 @@ export default function App() {
   // profile page's "Show in tree" and the list view's per-row action, not
   // just a search result. Switches back to the bubble canvas first if
   // needed, since the flight animates it and it isn't even mounted while
-  // browsing the list view.
+  // browsing the list view. Also forces layout back to 'organic': every
+  // caller of this means "fly to them in the organic tree" (it's the literal
+  // TreeIcon action, paired with the list view's separate "view in chart"
+  // circle) — without this, a layout left on 'chart' from an earlier switch
+  // (topbar Chart mode, or the list view's own chart circle) silently
+  // stranded the flight, since BubbleTree never mounts under chart layout
+  // and viewApi.current would just never populate.
   const flyToPersonFromAnywhere = useCallback((targetId) => {
-    if (view !== 'bubbles') {
+    if (view !== 'bubbles' || layout === 'chart') {
       setView('bubbles');
+      setLayout('organic');
       // BubbleTree mounts fresh here (a real PIXI/WebGL setup, not just a
       // re-render) and only populates viewApi once that effect has run —
       // poll a few frames rather than guessing a fixed delay that could be
@@ -1213,7 +1220,21 @@ export default function App() {
     } else {
       flyToSearchResult(targetId);
     }
-  }, [view, flyToSearchResult]);
+  }, [view, layout, flyToSearchResult]);
+
+  // The list view's per-row "view in chart" action, paired with the tree
+  // circle above. Chart re-roots itself off activeId (see ChartTree's own
+  // re-root effect keyed on that prop), so — unlike flyToPersonFromAnywhere —
+  // there's no canvas mount to poll for: just switch to the chart layout and
+  // activate the target person. bloodlineOnly follows the topbar's own
+  // Tree/Chart/List switcher default (chart is a pedigree; bloodline-only is
+  // its natural reading).
+  const showPersonInChart = useCallback((targetId) => {
+    setView('bubbles');
+    setLayout('chart');
+    setBloodlineOnly(true);
+    activateNormal(targetId);
+  }, [activateNormal]);
 
   // The duplicate-review sheet's "Show both in tree" — reveal both
   // candidate bubbles (plus their neighbours) and let the camera's own
@@ -2215,6 +2236,7 @@ export default function App() {
           onFocus={activate}
           onOpenPerson={openPerson}
           onShowOnMap={flyToPersonFromAnywhere}
+          onShowInChart={showPersonInChart}
         />
       )}
 
