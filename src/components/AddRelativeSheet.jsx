@@ -43,6 +43,14 @@ export default function AddRelativeSheet({ anchor, people = [], relationships = 
   const [residence, setResidence] = useState('');
   const [isDeceased, setIsDeceased] = useState(false);
   const [deathDate, setDeathDate] = useState('');
+  // Marriage details for a new partner/ex-partner, captured here rather than
+  // left for the buried per-relationship "manage" menu on the profile
+  // (feedback: "there is a married component... but it's not obvious").
+  // Separation date is independent of isMarried — an ex-partner relationship
+  // can have ended whether or not they were ever married.
+  const [isMarried, setIsMarried] = useState(false);
+  const [marriageDate, setMarriageDate] = useState('');
+  const [separationDate, setSeparationDate] = useState('');
   // A biological child's other parent: silent when the anchor has exactly one
   // partner on record (today's frictionless case, unchanged); an explicit
   // chip choice the moment there's more than one, so a new child is never
@@ -75,6 +83,9 @@ export default function AddRelativeSheet({ anchor, people = [], relationships = 
     setResidence('');
     setIsDeceased(false);
     setDeathDate('');
+    setIsMarried(false);
+    setMarriageDate('');
+    setSeparationDate('');
     setChildCoParentMode(null);
     setChildCoParentId(null);
     setChildCoParentGiven('');
@@ -180,6 +191,9 @@ export default function AddRelativeSheet({ anchor, people = [], relationships = 
       residence: residence.trim(),
       is_deceased: isDeceased,
       death_date: isDeceased ? deathDate.trim() : '',
+      is_married: (relKey === 'partner' || relKey === 'ex_partner') ? isMarried : false,
+      marriage_date: (relKey === 'partner' || relKey === 'ex_partner') && isMarried ? marriageDate.trim() : '',
+      separation_date: relKey === 'ex_partner' ? separationDate.trim() : '',
       coParentId: coParent?.id || null,
       coParentStatus: coParent ? coParentStatus : null,
       childCoParentMode,
@@ -526,6 +540,41 @@ export default function AddRelativeSheet({ anchor, people = [], relationships = 
                   {deathDate && <button type="button" className="input-clear" onClick={() => setDeathDate('')} aria-label="Clear" tabIndex={-1}>×</button>}
                 </div>
               </label>
+            )}
+
+            {/* Marriage details, captured here rather than left for the
+                per-relationship "manage" menu on the profile — same
+                deliberate exception to "everything else lives in the edit
+                form" as birthplace/residence/deceased above. */}
+            {(relKey === 'partner' || relKey === 'ex_partner') && (
+              <>
+                <label className="toggle">
+                  <input
+                    type="checkbox"
+                    checked={isMarried}
+                    onChange={(e) => setIsMarried(e.target.checked)}
+                  />
+                  <span>{relKey === 'ex_partner' ? 'They were married' : 'They married'}</span>
+                </label>
+                {isMarried && (
+                  <label className="field">
+                    <span className="field__label">Marriage date</span>
+                    <div className="input-wrap dob-wrap">
+                      <DateField value={marriageDate} max={TODAY} onChange={setMarriageDate} />
+                      {marriageDate && <button type="button" className="input-clear" onClick={() => setMarriageDate('')} aria-label="Clear" tabIndex={-1}>×</button>}
+                    </div>
+                  </label>
+                )}
+                {relKey === 'ex_partner' && (
+                  <label className="field">
+                    <span className="field__label">Year separated <span className="field__label-sub">optional</span></span>
+                    <div className="input-wrap dob-wrap">
+                      <DateField value={separationDate} max={TODAY} onChange={setSeparationDate} />
+                      {separationDate && <button type="button" className="input-clear" onClick={() => setSeparationDate('')} aria-label="Clear" tabIndex={-1}>×</button>}
+                    </div>
+                  </label>
+                )}
+              </>
             )}
           </div>
         )}

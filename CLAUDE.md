@@ -396,6 +396,52 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   wins regardless of which sheet it lives in. Full unit suite, `npm run build`, and the standard
   smoke test all passed clean.
 
+- **Marriage/separation captured at creation time, plus a visible chip label** (feature request,
+  discussed and agreed before building: "adding this info on creation of partner profile —
+  'Married?' tick box, date... on creation of an ex-partner, 'were you married?', date, and year
+  separated... there is a married component of the partner piece in relationships, but it's not
+  obvious"). Confirmed the complaint against the actual code first: `is_married`/`marriage_date`/
+  `marriage_place` already existed, but only reachable by opening a profile → finding the
+  partner's relationship chip → tapping the "⋮" manage-relationship button — three taps into a
+  menu most people would never discover, and the chip itself gave no visible hint the fields
+  existed or were already filled in. Three changes, agreed incrementally:
+  1. **Creation-time capture**: `AddRelativeSheet.jsx` gained the same "They married" checkbox +
+     date field already used there for birthplace/residence/deceased (a deliberate exception —
+     see the file's own header comment — to the "everything else lives in the edit form"
+     philosophy, extended to marriage for the same reason). For a new ex-partner specifically, an
+     independent "Year separated" field is offered too — independent of the married checkbox,
+     since a relationship can end whether or not it was ever a marriage. Deliberately scoped to
+     the "new person" flow only, not "link an existing person as a partner" (a fundamentally
+     different picker UI where cramming in marriage fields would be a bigger change than asked).
+  2. **A new `separation_date` field**, which didn't exist before at all (only marriage fields
+     did) — threaded through `store.js` end to end: `partnerEdge()` now takes an optional
+     marriage-meta object stamped straight onto the edge at creation (`addRelative` builds it from
+     the new `is_married`/`marriage_date`/`marriage_place`/`separation_date` params and passes it
+     through `edgesFor`), and `updatePartnerMeta()` (the existing later-edit path) now persists
+     `separation_date` too, independent of `is_married` exactly as at creation. `graph.js`'s
+     `partners()` projection carries the new field through alongside the existing three so
+     nothing downstream needs a separate store lookup.
+  3. **The buried edit menu is now visible, not moved** — deliberately kept the actual editing UI
+     in the existing "⋮" manage-relationship menu (already the one place relationship metadata
+     gets edited, alongside the Biological/Step/Adopted qualifier for parent-child edges) rather
+     than fragmenting it across three locations, but the relationship chip itself now shows a
+     " · Married {year}" / " · Separated {year}" sub-label whenever those fields are set — visible
+     at a glance without opening anything, reusing `lib/dates.js`'s existing `yearOf` helper.
+     `MarriageDetailsEditor` (the menu's own editor) gained the matching "Separated" field for
+     ex-partners, save-in-one-click alongside the existing marriage fields.
+  Covered by 6 new unit tests in `tests/store.test.mjs` (creation-time stamping for a married
+  partner, a married-and-separated ex-partner, a never-married-but-separated ex-partner, a plain
+  partner with no marriage fields at all, and `updatePartnerMeta` persisting/clearing a
+  separation date). Verified live end-to-end via Playwright: added a new married partner and
+  confirmed "Married 2010" on the chip; added a new ex-partner with both a marriage and
+  separation year and confirmed both appeared on the chip; opened the "⋮" menu and confirmed it
+  correctly reflected the just-created state (checkbox checked, both dates populated, the new
+  "Separated" field present only for the ex-partner); edited the separation year through the menu
+  and confirmed the chip updated to match. Also incidentally confirmed against the seed data
+  itself — an existing partner (Megan Mercer, married 2016) already showed the new chip label
+  correctly, with no migration needed since the fields were always additive. Full unit suite,
+  `npm run build`, and the standard smoke test all passed clean.
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);

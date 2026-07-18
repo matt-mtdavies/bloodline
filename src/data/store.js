@@ -1014,12 +1014,25 @@ export const QUALIFIER_KEYS = new Set(['mother', 'father', 'son', 'daughter']);
 function parentEdge(from, to, qualifier = 'biological') {
   return { id: rid(), from_person: from, to_person: to, type: 'parent', qualifier, partner_status: null };
 }
-function partnerEdge(a, b, status = 'current') {
-  return { id: rid(), from_person: a, to_person: b, type: 'partner', qualifier: 'biological', partner_status: status };
+// `marriageMeta` is the same optional shape updatePartnerMeta persists later
+// (is_married/marriage_date/marriage_place/separation_date) — captured up
+// front when the sheet already asked, rather than left for a separate edit.
+function partnerEdge(a, b, status = 'current', marriageMeta = null) {
+  const edge = { id: rid(), from_person: a, to_person: b, type: 'partner', qualifier: 'biological', partner_status: status };
+  if (marriageMeta) {
+    const { is_married, marriage_date, marriage_place, separation_date } = marriageMeta;
+    if (is_married || marriage_date || marriage_place) {
+      edge.is_married = true;
+      edge.marriage_date = marriage_date || null;
+      edge.marriage_place = marriage_place || null;
+    }
+    if (separation_date) edge.separation_date = separation_date;
+  }
+  return edge;
 }
 
 // Build the edges that connect a new person to the person they were added from.
-function edgesFor(relKey, anchorId, newId, current, qualifier = 'biological', childCoParentId = null) {
+function edgesFor(relKey, anchorId, newId, current, qualifier = 'biological', childCoParentId = null, marriageMeta = null) {
   const parentsOf = (id) =>
     current.relationships.filter((r) => r.type === 'parent' && r.to_person === id).map((r) => r.from_person);
 
@@ -1028,9 +1041,9 @@ function edgesFor(relKey, anchorId, newId, current, qualifier = 'biological', ch
     case 'father':
       return [parentEdge(newId, anchorId, qualifier)]; // new is a parent of the anchor
     case 'partner':
-      return [partnerEdge(anchorId, newId, 'current')];
+      return [partnerEdge(anchorId, newId, 'current', marriageMeta)];
     case 'ex_partner':
-      return [partnerEdge(anchorId, newId, 'former')];
+      return [partnerEdge(anchorId, newId, 'former', marriageMeta)];
     case 'son':
     case 'daughter': {
       const edges = [parentEdge(anchorId, newId, qualifier)];
@@ -1066,7 +1079,7 @@ export function bioParentGendersFilled(personId) {
   return genders; // Set of 'male'|'female' already occupied
 }
 
-export function addRelative({ anchorId, relKey, name, given, middle, family, birth_name, gender, birth_date, birth_place, residence, is_deceased, death_date, qualifier = 'biological', childCoParentId = null }) {
+export function addRelative({ anchorId, relKey, name, given, middle, family, birth_name, gender, birth_date, birth_place, residence, is_deceased, death_date, qualifier = 'biological', childCoParentId = null, is_married, marriage_date, marriage_place, separation_date }) {
   const id = uid();
   const meta = RELATIONSHIPS.find((r) => r.key === relKey);
 
@@ -1112,7 +1125,10 @@ export function addRelative({ anchorId, relKey, name, given, middle, family, bir
     created_by: 'me',
     visibility: defaultVisibility,
   };
-  const edges = edgesFor(relKey, anchorId, id, state, qualifier, childCoParentId);
+  const marriageMeta = (relKey === 'partner' || relKey === 'ex_partner')
+    ? { is_married, marriage_date, marriage_place, separation_date }
+    : null;
+  const edges = edgesFor(relKey, anchorId, id, state, qualifier, childCoParentId, marriageMeta);
 
   // When adding a sibling to someone with no parents in the tree, the new person
   // would have zero link-force connections and float free in d3. Fix: auto-create
@@ -1243,7 +1259,7 @@ export function addRelationship(fromId, toId, type, qualifier = 'biological') {
 // additive metadata the pedigree chart's marriage strip renders; absent
 // fields never block anything. Accepts partial dates ('1979' or
 // '1979-06-14'), same as birth/death dates everywhere else.
-export function updatePartnerMeta(aId, bId, { is_married, marriage_date, marriage_place } = {}) {
+export function updatePartnerMeta(aId, bId, { is_married, marriage_date, marriage_place, separation_date } = {}) {
   const isPair = (r) =>
     (r.from_person === aId && r.to_person === bId) || (r.from_person === bId && r.to_person === aId);
   const idx = state.relationships.findIndex((r) => r.type === 'partner' && isPair(r));
@@ -1255,6 +1271,10 @@ export function updatePartnerMeta(aId, bId, { is_married, marriage_date, marriag
     is_married: !!is_married || !!marriage_date || !!marriage_place,
     marriage_date: marriage_date || null,
     marriage_place: marriage_place || null,
+    // Independent of is_married — an ex-partner's relationship can have ended
+    // whether or not they were ever married, and it's only ever asked for a
+    // 'former' partner edge (see MarriageDetailsEditor).
+    separation_date: separation_date || null,
   };
   const aPerson = state.people.find((p) => p.id === aId);
   commit(withActivity({ ...state, relationships: next }, {

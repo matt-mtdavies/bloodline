@@ -12,6 +12,7 @@ import assert from 'node:assert/strict';
 import {
   store, importFromGedcom, setRelationshipKind, addMedal, removeMedal,
   addLifeEvent, updatePerson, retractDocumentContributions,
+  addRelative, updatePartnerMeta,
 } from '../src/data/store.js';
 
 let passed = 0, failed = 0;
@@ -161,6 +162,85 @@ test('retractDocumentContributions is a harmless no-op when the document produce
   retractDocumentContributions('nn', 'docZ'); // a different, unrelated document id
 
   assert.equal(store.getState(), before, 'no matching contributions -> no commit at all');
+});
+
+// ── Marriage/separation captured at creation time ──────────────────────────
+// (feedback: "there is a married component of the partner piece... but it's
+// not obvious" — surfacing the same is_married/marriage_date/separation_date
+// fields at the point a new partner/ex-partner is added, not just later via
+// the buried per-relationship "manage" menu.)
+test('addRelative for a new partner stamps is_married/marriage_date on the partner edge', () => {
+  importFromGedcom([{ id: 'anchor', display_name: 'Anchor' }], [], { merge: false });
+
+  addRelative({
+    anchorId: 'anchor', relKey: 'partner', given: 'Robin', family: 'Doe',
+    is_married: true, marriage_date: '2010-06-01',
+  });
+
+  const edge = store.getState().relationships.find((r) => r.type === 'partner');
+  assert.equal(edge.partner_status, 'current');
+  assert.equal(edge.is_married, true);
+  assert.equal(edge.marriage_date, '2010-06-01');
+});
+
+test('addRelative for a new ex-partner stamps marriage AND separation on the edge', () => {
+  importFromGedcom([{ id: 'anchor2', display_name: 'Anchor Two' }], [], { merge: false });
+
+  addRelative({
+    anchorId: 'anchor2', relKey: 'ex_partner', given: 'Sam', family: 'Doe',
+    is_married: true, marriage_date: '1998-03-14', separation_date: '2005',
+  });
+
+  const edge = store.getState().relationships.find((r) => r.type === 'partner' && r.from_person === 'anchor2');
+  assert.equal(edge.partner_status, 'former');
+  assert.equal(edge.is_married, true);
+  assert.equal(edge.marriage_date, '1998-03-14');
+  assert.equal(edge.separation_date, '2005');
+});
+
+test('addRelative for a new ex-partner who was never married still records the separation date', () => {
+  importFromGedcom([{ id: 'anchor3', display_name: 'Anchor Three' }], [], { merge: false });
+
+  addRelative({
+    anchorId: 'anchor3', relKey: 'ex_partner', given: 'Jo', family: 'Doe',
+    is_married: false, separation_date: '2012',
+  });
+
+  const edge = store.getState().relationships.find((r) => r.type === 'partner' && r.from_person === 'anchor3');
+  assert.equal(edge.is_married, undefined, 'no marriage evidence -> field left unset, not falsely true');
+  assert.equal(edge.separation_date, '2012');
+});
+
+test('addRelative for a plain new partner (no marriage fields passed) leaves the edge unmarried', () => {
+  importFromGedcom([{ id: 'anchor4', display_name: 'Anchor Four' }], [], { merge: false });
+
+  addRelative({ anchorId: 'anchor4', relKey: 'partner', given: 'Lee', family: 'Doe' });
+
+  const edge = store.getState().relationships.find((r) => r.type === 'partner');
+  assert.equal(edge.is_married, undefined);
+  assert.equal(edge.separation_date, undefined);
+});
+
+test('updatePartnerMeta persists a separation date independent of is_married', () => {
+  seedPartners('former');
+  const [a, b] = ['tina', 'randy'];
+
+  updatePartnerMeta(a, b, { is_married: false, separation_date: '2018-09' });
+
+  const edge = store.getState().relationships.find((r) => r.type === 'partner');
+  assert.equal(edge.is_married, false);
+  assert.equal(edge.separation_date, '2018-09');
+});
+
+test('updatePartnerMeta clears a separation date back to null when omitted', () => {
+  seedPartners('former');
+  const [a, b] = ['tina', 'randy'];
+  updatePartnerMeta(a, b, { separation_date: '2018' });
+  assert.equal(store.getState().relationships.find((r) => r.type === 'partner').separation_date, '2018');
+
+  updatePartnerMeta(a, b, {}); // save with the field cleared in the editor
+
+  assert.equal(store.getState().relationships.find((r) => r.type === 'partner').separation_date, null);
 });
 
 console.log(`\n  ${passed} passed, ${failed} failed`);

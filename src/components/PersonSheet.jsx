@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Avatar from './Avatar.jsx';
 import SmartImg from './SmartImg.jsx';
-import { lifespan, formatDate, ageOrAt } from '../lib/dates.js';
+import { lifespan, formatDate, ageOrAt, yearOf } from '../lib/dates.js';
 import { relationLabel } from '../data/graph.js';
 import { useKinTerms } from '../lib/kinTerms.js';
 import { profileCompleteness, lifeEvents, fullName } from '../lib/profile.js';
@@ -1590,6 +1590,17 @@ export default function PersonSheet({
                                 <span className="rel-chip__name">{rel.display_name}</span>
                                 <span className="rel-chip__kind">
                                   {relationLabel(graph, person.id, item.id, kinTerms)}
+                                  {/* Visible at a glance rather than only inside the "⋮"
+                                      manage menu — same is_married/marriage_date/
+                                      separation_date the menu edits (real feedback:
+                                      "there is a married component... but it's not
+                                      obvious"). */}
+                                  {g.relType === 'partner' && item.is_married && item.marriage_date && (
+                                    <span className="rel-chip__marriage"> · Married {yearOf(item.marriage_date)}</span>
+                                  )}
+                                  {g.relType === 'partner' && item.status === 'former' && item.separation_date && (
+                                    <span className="rel-chip__marriage"> · Separated {yearOf(item.separation_date)}</span>
+                                  )}
                                 </span>
                               </span>
                               <RelChevronIcon />
@@ -1869,12 +1880,17 @@ function DotsIcon() {
 // once (see store.updatePartnerMeta). `item` is the graph's partner entry,
 // which carries the current values.
 function MarriageDetailsEditor({ item, onSave }) {
+  const isFormer = item.status === 'former';
   const [married, setMarried] = useState(!!item.is_married || !!item.marriage_date || !!item.marriage_place);
   const [date, setDate] = useState(item.marriage_date || '');
   const [place, setPlace] = useState(item.marriage_place || '');
+  // Independent of `married` — a relationship can have ended whether or not
+  // it was ever a marriage — and only asked at all for an ex-partner.
+  const [separation, setSeparation] = useState(item.separation_date || '');
   const [saved, setSaved] = useState(false);
   const dirty = married !== (!!item.is_married || !!item.marriage_date || !!item.marriage_place)
-    || date !== (item.marriage_date || '') || place !== (item.marriage_place || '');
+    || date !== (item.marriage_date || '') || place !== (item.marriage_place || '')
+    || (isFormer && separation !== (item.separation_date || ''));
   return (
     <div className="rel-menu__group">
       <span className="rel-menu__label">Marriage</span>
@@ -1885,7 +1901,7 @@ function MarriageDetailsEditor({ item, onSave }) {
             checked={married}
             onChange={(e) => { setMarried(e.target.checked); setSaved(false); }}
           />
-          They married
+          {isFormer ? 'They were married' : 'They married'}
         </label>
         {married && (
           <>
@@ -1915,13 +1931,31 @@ function MarriageDetailsEditor({ item, onSave }) {
             />
           </>
         )}
+        {isFormer && (
+          <>
+            <span className="marriage-edit__sublabel">Separated</span>
+            <div className="input-wrap">
+              <DateField
+                value={separation}
+                max={new Date().toISOString().slice(0, 10)}
+                onChange={(value) => { setSeparation(value); setSaved(false); }}
+              />
+              {separation && (
+                <button type="button" className="input-clear" onClick={() => { setSeparation(''); setSaved(false); }} aria-label="Clear separation date" tabIndex={-1}>×</button>
+              )}
+            </div>
+          </>
+        )}
         <button
           className="marriage-edit__save"
           disabled={!dirty}
           onClick={() => {
-            onSave(married
-              ? { is_married: true, marriage_date: date.trim() || null, marriage_place: place.trim() || null }
-              : { is_married: false, marriage_date: null, marriage_place: null });
+            onSave({
+              ...(married
+                ? { is_married: true, marriage_date: date.trim() || null, marriage_place: place.trim() || null }
+                : { is_married: false, marriage_date: null, marriage_place: null }),
+              separation_date: isFormer ? (separation.trim() || null) : null,
+            });
             setSaved(true);
           }}
         >
