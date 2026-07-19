@@ -609,6 +609,15 @@ export default function App() {
   // gold ring (see showDuplicatePairInTree below) so a later call for a
   // different pair can clear the previous one instead of leaving it lit.
   const compareGlowIdsRef = useRef(null);
+  // Same pair, but as real state (not just a ref) — needed to render a
+  // SECOND FocusNameplate for the non-active duplicate candidate (see the
+  // extra <FocusNameplate> below): only one person can ever be the literal
+  // ego-camera `active` id and get the ordinary nameplate, but "Show both in
+  // tree" needs both candidates to carry the full name+dates plate, not just
+  // the bare in-canvas label (real follow-up feedback: "we need it to force
+  // both the name plates on"). Persists until a later "Show both in tree"
+  // replaces it, same lifecycle as the ring/dim treatment above.
+  const [comparePairIds, setComparePairIds] = useState(null);
 
   // Notify the user if a commit couldn't persist (localStorage full).
   useEffect(() => {
@@ -1289,6 +1298,7 @@ export default function App() {
       viewApi.current?.clearCompareFocus();
     }
     compareGlowIdsRef.current = [aId, bId];
+    setComparePairIds([aId, bId]);
     const doRefocus = () => {
       viewApi.current?.refocus(0.6);
       viewApi.current?.spotlightSetGlow([aId, bId]);
@@ -2058,6 +2068,25 @@ export default function App() {
             // else gets on hover instead of the plain name+dates nameplate.
             hidden={anyOverlayOpen || browse || layout === 'chart' || hoveredId === activeId}
           />
+          {/* Second nameplate for "Show both in tree" — comparePairIds[0] is
+              always activeId itself (already covered above), so this one is
+              strictly the OTHER candidate, who can never be the literal
+              ego-camera active id and so would otherwise never get a plate at
+              all. Hidden the moment activeId drifts away from the pair this
+              was triggered for (the user's moved on to browsing something
+              else), so a stale plate can't linger over an unrelated bubble. */}
+          {comparePairIds && (
+            <FocusNameplate
+              person={graph.byId.get(comparePairIds[1])}
+              fact={null}
+              getPos={() => viewApi.current?.getScreenPos(comparePairIds[1])}
+              hidden={
+                anyOverlayOpen || browse || layout === 'chart'
+                || hoveredId === comparePairIds[1]
+                || activeId !== comparePairIds[0]
+              }
+            />
+          )}
           <HoverCard
             graph={graph}
             personId={!anyOverlayOpen && layout !== 'chart' ? hoveredId : null}

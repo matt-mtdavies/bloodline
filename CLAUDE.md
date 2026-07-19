@@ -1072,6 +1072,30 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   the previously-unlabeled second candidate. Full unit suite (the pre-existing, unrelated
   step-niece failure in `relations.test.mjs` aside) and `npm run build` passed clean.
 
+- **"Show both in tree" gets a real floating nameplate on both, not just the in-canvas label**
+  (immediate follow-up: "its treating the label as the little name underneath. not the name
+  plate. we need it to force both the name plates on" — the fix above forced on the small
+  per-bubble text label, but the user meant the richer floating `FocusNameplate` pill — name,
+  lifespan/age, and any fact — that already floats above the literal active person). Only one
+  person can ever be the ego-camera's `active` id, and `FocusNameplate` was a single instance in
+  `App.jsx` tracking only that one id via `getScreenPos(activeId)` — the second duplicate
+  candidate had no way to get one at all. `App.jsx` gained `comparePairIds` state (set alongside
+  the existing `compareGlowIdsRef` in `showDuplicatePairInTree`, same lifecycle — persists until a
+  later "Show both in tree" replaces it) and a SECOND `<FocusNameplate>` instance, tracking
+  `comparePairIds[1]` (the non-active candidate — `comparePairIds[0]` is always `activeId` itself,
+  already covered by the existing instance) via the same generic `viewApi.current.getScreenPos(id)`
+  the first one already uses. Hidden under the same conditions as the first (overlay open, browse
+  mode, chart layout, self-hover) plus one more specific to this one: `activeId !==
+  comparePairIds[0]` — the moment the user taps away to browse something unrelated, the second
+  plate hides rather than floating orphaned over a bubble the "show both" context no longer
+  applies to. No `fact` passed for the second plate (facts are a separate, unrelated feature).
+  Verified live via Playwright: after merging a duplicate stub into the seed family and triggering
+  "Show both in tree," confirmed exactly 2 `.nameplate` elements render, both at full opacity, both
+  correctly reading "William Mercer" — and via screenshot that the richer info card (dates/age/
+  marriage fact) on the active one and the plain name pill on the stub (which has no dates to show)
+  both float correctly above their own bubble at the same time. Full unit suite (the pre-existing,
+  unrelated step-niece failure in `relations.test.mjs` aside) and `npm run build` passed clean.
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);
