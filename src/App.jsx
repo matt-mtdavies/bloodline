@@ -1273,16 +1273,26 @@ export default function App() {
     // Only ONE bubble can be the ego-camera's "active" node (bId just rode
     // along above so both get revealed and pulled into frame) — but the
     // recap tour's lingering gold ring is a separate, non-exclusive
-    // primitive, so it can mark BOTH candidates at once. Without this, the
-    // second person "doesn't stand out at all" next to the actually-active
-    // one (real report). Clears whichever pair was lit by a previous
-    // "Show both in tree" first, so old rings don't pile up across repeated
-    // uses on different pairs.
-    if (compareGlowIdsRef.current) viewApi.current?.spotlightClearGlow(compareGlowIdsRef.current);
+    // primitive, so it can mark BOTH candidates at once. The ring alone
+    // still left the second candidate visibly faded/small next to the
+    // genuinely active one (real follow-up report, with screenshot: "you
+    // can see its immediate family [for the active one]... both of the
+    // duplicates should be shown this way... all the other bubbles faded"),
+    // so setCompareFocus additionally folds bId into the per-frame distance
+    // used for fade/scale, exactly matching what being "active" already does
+    // for aId. Always kept in lockstep with the ring (set/cleared together)
+    // so there's never a lit-but-dim or dim-but-unlit mismatch. Clears
+    // whichever pair was lit by a previous "Show both in tree" first, so old
+    // rings/focus don't pile up across repeated uses on different pairs.
+    if (compareGlowIdsRef.current) {
+      viewApi.current?.spotlightClearGlow(compareGlowIdsRef.current);
+      viewApi.current?.clearCompareFocus();
+    }
     compareGlowIdsRef.current = [aId, bId];
     const doRefocus = () => {
       viewApi.current?.refocus(0.6);
       viewApi.current?.spotlightSetGlow([aId, bId]);
+      viewApi.current?.setCompareFocus([aId, bId]);
     };
     if (view !== 'bubbles') {
       setView('bubbles');

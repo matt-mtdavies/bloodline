@@ -380,6 +380,13 @@ export default function BubbleTree({
       let onModeChange = null;
 
       let dist = distancesFrom(graph, activeRef.current);
+      // Duplicate-review "Show both in tree": while set, this is folded into
+      // the per-frame `d` below (min of the normal single-source `dist` and
+      // this one) so a SECOND person — who the single ego-camera `active` id
+      // can never itself be — still reads as vivid/full-size/immediate-family-
+      // visible instead of fading into the background like an unrelated
+      // stranger. See setCompareFocus/clearCompareFocus in the returned API.
+      let compareDist = null;
 
       let reorgTimer = null; // tracks the forceY strength-restore after a tap
       const manualPins = new Set(); // nodes the user has manually repositioned
@@ -1054,6 +1061,30 @@ export default function BubbleTree({
         spotlightSetGlow(ids) {
           state.ensureVisible(ids);
           for (const id of ids ?? []) { bubbles.get(id)?.setRecapGlow(true); recapVisited.add(id); }
+        },
+        // Companion to spotlightSetGlow above, for the SAME "Show both in
+        // tree" feature but a different concern: the ring alone still left
+        // the second candidate visibly faded/small next to the genuinely
+        // active one (real report, with screenshot — "you can see its
+        // immediate family [for the active one]... both of the duplicates
+        // should be shown this way... all the other bubbles faded"). Sets
+        // compareDist to the per-person MINIMUM hop-distance to either id in
+        // the pair, independent of whichever one is literally `active` —
+        // folded into the shared `d` used by the per-frame fade/scale below,
+        // so both candidates (and each one's own immediate family) read as
+        // d≤1 while everyone unrelated to either still recedes normally.
+        setCompareFocus(ids) {
+          if (!ids || ids.length < 2) { compareDist = null; return; }
+          state.ensureVisible(ids);
+          const merged = new Map();
+          for (const id of ids) {
+            const m = distancesFrom(graphRef.current, id);
+            for (const [k, v] of m) merged.set(k, Math.min(merged.get(k) ?? Infinity, v));
+          }
+          compareDist = merged;
+        },
+        clearCompareFocus() {
+          compareDist = null;
         },
         // A landed FlightCaption's reopened chain calls this when a hop is
         // tapped — brief "there it is" bump on that bubble, no camera move
@@ -1823,7 +1854,14 @@ export default function BubbleTree({
         for (const [id, b] of bubbles) {
           const n = nodeById.get(id);
           b.root.position.set(n.x, n.y);
-          const d = dmap.has(id) ? dmap.get(id) : 6;
+          const rawD = dmap.has(id) ? dmap.get(id) : 6;
+          // Fold in the duplicate-compare distance (if any) — see
+          // setCompareFocus above — so a second focal person (who can never
+          // be the literal ego-camera `active` id) still reads at d=0/1
+          // exactly like the active person's own immediate family does,
+          // instead of fading into the background at whatever distance they
+          // happen to sit from the one person the camera is actually centred on.
+          const d = compareDist ? Math.min(rawD, compareDist.has(id) ? compareDist.get(id) : 6) : rawD;
           let target;
           if (!effectiveVis.has(id)) {
             target = { scale: 0.5, alpha: 0, lift: 1, blur: 0 }; // collapsed

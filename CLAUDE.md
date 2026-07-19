@@ -813,6 +813,47 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   screen. Full unit suite (the pre-existing, unrelated step-niece failure in `relations.test.mjs`
   aside), `npm run build`, and the standard smoke test all passed clean.
 
+- **"Show both in tree" now highlights BOTH duplicate candidates the SAME way the single active
+  person already is** (real user follow-up, with a screenshot: the ring fix above wasn't enough —
+  "the selected profile is not faded, it is vivid, larger, with a gold ring... you can see its
+  immediate family... both of the duplicates should be shown this way... all the other bubbles
+  faded. I should not need to unselect and manually search to locate the other one."). Root cause:
+  the ring was never the whole story — the per-frame distance-based fade/scale (`visualForDistance`
+  + `focusAlpha` in `BubbleTree.jsx`'s render loop) is computed from a single-source BFS,
+  `distancesFrom(graph, activeId)`, so only ONE person (and THEIR immediate family) ever reads as
+  `d≤1` and gets the full-size/undimmed treatment — the second duplicate, wherever it happened to
+  sit relative to the literal active person, faded like any unrelated stranger, exactly as
+  reported. Fixed with a second, independent distance map: `setCompareFocus(ids)` (new `viewApi`
+  method) runs its own `distancesFrom` from EACH id in the pair and merges them by per-person
+  MINIMUM, stored in a new `compareDist` closure variable — completely decoupled from `dist`/
+  `activeRef.current`, so it works regardless of whether the two candidates are connected by any
+  path at all (real report from the earlier duplicate-safety feature: "duplicate candidates are
+  frequently NOT connected by any path"). The per-frame `d` used for rendering folds in
+  `Math.min(rawD, compareDist)` right where it's computed, BEFORE the branch dispatch — so it
+  flows through to the existing `visualForDistance(d)` unchanged (scale 1.38/alpha 1 at d=0, same
+  as "active" already gets) and `focusAlpha` unchanged, with zero new fade logic to maintain.
+  Deliberately does NOT touch the separate `computeRadialTargets` layout function (has its own
+  independent local `dist` computation) or anything keyed on the literal `id === activeRef.current`
+  check (nameplate-hiding, the terracotta "active" ring, chart-mode sizing, camera centring) — only
+  ONE bubble is still the literal ego-camera active node; the fix is purely "which bubbles get to
+  look prominent," not "which bubble the camera centres on" or "which one owns the floating
+  nameplate." `showDuplicatePairInTree` (`App.jsx`) calls `setCompareFocus([aId, bId])` right
+  alongside the existing `spotlightSetGlow` ring call, and `clearCompareFocus()` alongside
+  `spotlightClearGlow` when a later "Show both in tree" replaces the pair — always kept in
+  lockstep with the ring so there's never a lit-but-dim or dim-but-unlit mismatch. Verified live
+  via Playwright against the real dev server with two different scenarios: (1) both duplicates
+  sharing the same parents (both read identically vivid/full-size/ringed, immediate family visible
+  for both — matching the screenshot); (2) a genuinely DISCONNECTED pair — one duplicate added as
+  James's own sibling, the other added as a child of Rachel Carter (James's ex-partner, not a blood
+  relative at all) via her relationship-chip nav (`.rel-chip__nav`, a reliable DOM navigation path
+  discovered along the way — clicking a person's chip on an open profile opens THEIRS directly,
+  sidestepping the canvas/camera coordinate-guessing multi-hop search flights otherwise require) —
+  confirmed Rachel herself rendered vivid/undimmed (she's the second duplicate's own parent, d=1
+  via `compareDist`, despite being outside James's blood line entirely) while James's actual
+  children Oliver and Chloe, unrelated to either duplicate, correctly faded. Full unit suite (the
+  pre-existing, unrelated step-niece failure in `relations.test.mjs` aside), `npm run build`, and
+  the standard smoke test all passed clean.
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);
