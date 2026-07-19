@@ -2059,14 +2059,26 @@ export default function App() {
             onHover={setHoveredId}
             apiRef={viewApi}
           />
+          {/* "Show both in tree" is a button click (see showDuplicatePairInTree),
+              so whichever bubble the camera's refocus() happens to reframe
+              under the cursor's now-stale screen position can spuriously
+              satisfy a hoveredId match with nobody actually pointing at
+              anything — not a rare edge case, it hit a different one of the
+              two nameplates on almost every review in testing. Real report:
+              "this only seems to work on the first duplicate reviewed" —
+              root cause was this incidental hover, not review order. Neither
+              nameplate hides on hover while a compare pair is genuinely
+              active for the current activeId; the ordinary self-hover
+              handoff to HoverCard (for anyone NOT mid-comparison) is
+              untouched. */}
           <FocusNameplate
             person={activePerson}
             fact={activeFact}
             getPos={() => viewApi.current?.getScreenPos(activeId)}
-            // Also hidden while the active person is themselves being hovered —
-            // HoverCard takes over then, showing the same richer view everyone
-            // else gets on hover instead of the plain name+dates nameplate.
-            hidden={anyOverlayOpen || browse || layout === 'chart' || hoveredId === activeId}
+            hidden={
+              anyOverlayOpen || browse || layout === 'chart'
+              || (hoveredId === activeId && !(comparePairIds && comparePairIds[0] === activeId))
+            }
           />
           {/* Second nameplate for "Show both in tree" — comparePairIds[0] is
               always activeId itself (already covered above), so this one is
@@ -2074,7 +2086,8 @@ export default function App() {
               ego-camera active id and so would otherwise never get a plate at
               all. Hidden the moment activeId drifts away from the pair this
               was triggered for (the user's moved on to browsing something
-              else), so a stale plate can't linger over an unrelated bubble. */}
+              else), so a stale plate can't linger over an unrelated bubble.
+              No hover-based hide here either, for the same reason as above. */}
           {comparePairIds && (
             <FocusNameplate
               person={graph.byId.get(comparePairIds[1])}
@@ -2082,7 +2095,6 @@ export default function App() {
               getPos={() => viewApi.current?.getScreenPos(comparePairIds[1])}
               hidden={
                 anyOverlayOpen || browse || layout === 'chart'
-                || hoveredId === comparePairIds[1]
                 || activeId !== comparePairIds[0]
               }
             />

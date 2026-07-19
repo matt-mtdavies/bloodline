@@ -1131,6 +1131,30 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   render size. Full unit suite (the pre-existing, unrelated step-niece failure in
   `relations.test.mjs` aside) and `npm run build` passed clean.
 
+- **Fixed for good: "Show both in tree" nameplate randomly missing on some reviews** (real user
+  report, after two earlier attempts at this same feature: "This only seems to have worked on the
+  first duplicate reviewed. All subsequent reviews don't show name plate... too many back and
+  forth"). Root-caused this time via a live repro instead of guessing: reviewed 3+ synthetic
+  duplicate pairs back-to-back with a debug trace on `comparePairIds`/`activeId`, and found the
+  actual mechanism — "Show both in tree" is a button click inside `DuplicatesSheet`, so the mouse
+  cursor is left wherever that button was; the very next `refocus()` reframes the camera and can
+  coincidentally land either bubble right under that stale cursor position, satisfying a
+  `hoveredId === activeId` (or `=== comparePairIds[1]`) match with nobody actually pointing at
+  anything. That's a real Pixi hit-test side effect of content moving under a stationary pointer,
+  not a deliberate hover — and it explains the "random" quality of the report: it hit a
+  *different* one of the two nameplates almost every single review in testing, never twice in
+  a predictable pattern, which is exactly what "sometimes the first works, sometimes it doesn't"
+  reads like from the outside. Fixed by having BOTH `FocusNameplate` instances ignore
+  `hoveredId` entirely while a compare pair is genuinely active for the current person
+  (`comparePairIds && comparePairIds[0] === activeId`) — the ordinary self-hover→`HoverCard`
+  handoff for everyday single-person browsing is provably untouched, since with `comparePairIds`
+  null the guard clause collapses back to exactly `hoveredId === activeId`, byte-identical to the
+  pre-existing behavior. Verified live with the actual failure condition reproduced (cursor
+  deliberately left in place after each click, never moved away) across 3 full runs of 3
+  sequential reviews each (9 total) — every single one now shows both nameplates. Full unit suite
+  (the pre-existing, unrelated step-niece failure in `relations.test.mjs` aside) and
+  `npm run build` passed clean.
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);
