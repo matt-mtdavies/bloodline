@@ -1244,6 +1244,33 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   pre-existing, unrelated step-niece failure in `relations.test.mjs` aside), `npm run build`, and
   the standard smoke test all passed clean.
 
+- **The Children group now sorts too, extending the Siblings ordering fix** (real user report,
+  with a screenshot of Nancy Turner's profile: "Heather is not the oldest?"). Investigated first
+  rather than assuming a regression — the screenshot was of the **Children** group, not Siblings;
+  `sortSiblings` was always scoped to Siblings only, and `graph.children()` has never had any
+  sort applied at all, just whatever order the parent-child relationships were originally added
+  in. Confirmed with the user this should be fixed by extending the same ordering rather than
+  leaving Children unsorted. `graph.js`'s `sortSiblings` was refactored into a shared
+  `sortByTierThenAge(items, byId, tierOf, tierOrder)` helper (byte-identical behavior, covered by
+  the existing sibling tests) and a new `sortChildren(children, byId)` reuses it with a
+  two-tier `CHILD_QUALIFIER_ORDER` (`biological`/`adoptive` ahead of `step` — a child doesn't
+  have Siblings' "half" concept, so there's no three-way split here), keyed off the qualifier
+  parent-child relationships actually carry, with a missing qualifier defaulting to biological
+  (matching the existing `isBioAdopt()` convention used elsewhere in the same file). Wired into
+  the same two call sites `sortSiblings` already reached: `PersonSheet.jsx` and
+  `AccessibleTree.jsx`. Deliberately scoped to the direct Children group only — the extended
+  (read-only) Grandchildren/Great-grandchildren/Nieces-and-Nephews lists derived from it were
+  outside what was reported and asked for, so they're untouched, same boundary the original
+  Siblings-only fix drew. Verified live against the seed data via Playwright: James Mercer's
+  three children (Oliver b.2012 biological, Chloe b.2014 biological, Noah b.2013 **step**) now
+  render as Oliver, Chloe, Noah — tier correctly outranks raw birth year, so the step-child sorts
+  last despite being chronologically between the other two, exactly mirroring how a step-sibling
+  already sorts after full/half siblings regardless of age. Covered by 4 new unit tests in
+  `relations.test.mjs` (tier-before-age with a same-tier tie, a missing qualifier defaulting to
+  biological ahead of an older step child, the known-vs-unknown-birth-date tiebreak, and a
+  non-mutation check). Full unit suite (the pre-existing, unrelated step-niece failure aside) and
+  `npm run build` passed clean.
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);

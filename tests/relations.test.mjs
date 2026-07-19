@@ -3,7 +3,7 @@
  * family propagation, and edge cases. Run with: node tests/relations.test.mjs
  */
 import assert from 'node:assert/strict';
-import { buildGraph, relationLabel, distancesFrom, pathBetween, sortSiblings } from '../src/data/graph.js';
+import { buildGraph, relationLabel, distancesFrom, pathBetween, sortSiblings, sortChildren } from '../src/data/graph.js';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -936,6 +936,68 @@ test('sortSiblings does not mutate the input array', () => {
   const originalOrder = original.map((s) => s.id);
   sortSiblings(original, g.byId);
   assert.deepEqual(original.map((s) => s.id), originalOrder);
+});
+
+// ── sortChildren: Biological/Adoptive (age, name) → Step (age, name) ───────────
+// Real user report: Nancy Turner's Children group showed Heather first even
+// though she isn't the oldest — Children had never been sorted at all, only
+// Siblings. sortChildren extends the same tier-then-age-then-name convention,
+// with a two-tier split (no "half" concept for a parent's own children).
+
+test('sortChildren: biological/adoptive children before step, oldest-to-youngest within each, alphabetical tiebreak', () => {
+  const people = [
+    person('parent'),
+    person('b1', null, { birth_date: '1970-01-01', display_name: 'Zack' }), // biological
+    person('b2', null, { birth_date: '1975-01-01', display_name: 'Amy' }),  // adoptive, same tier as biological
+    person('s1', null, { birth_date: '1980-01-01', display_name: 'Wendy' }), // step
+    person('s2', null, { birth_date: '1980-01-01', display_name: 'Anna' }),  // step, tied birth date
+  ];
+  const rels = [
+    parentEdge('parent', 'b1', 'biological'),
+    parentEdge('parent', 'b2', 'adoptive'),
+    parentEdge('parent', 's1', 'step'),
+    parentEdge('parent', 's2', 'step'),
+  ];
+  const g = buildGraph([...people, person('parent')], rels);
+  const ordered = sortChildren(g.children('parent'), g.byId).map((c) => c.id);
+  assert.deepEqual(ordered, ['b1', 'b2', 's2', 's1']);
+});
+
+test('sortChildren: a missing qualifier is treated as biological (sorts with adoptive, ahead of step)', () => {
+  const people = [
+    person('parent'),
+    person('u1', null, { birth_date: '1970-01-01', display_name: 'Undocumented' }),
+    person('s1', null, { birth_date: '1965-01-01', display_name: 'Older Step' }), // earlier birth, still sorts after
+  ];
+  const rels = [
+    { type: 'parent', from_person: 'parent', to_person: 'u1' }, // no qualifier at all
+    parentEdge('parent', 's1', 'step'),
+  ];
+  const g = buildGraph([...people, person('parent')], rels);
+  const ordered = sortChildren(g.children('parent'), g.byId).map((c) => c.id);
+  assert.deepEqual(ordered, ['u1', 's1'], 'a missing qualifier defaults to biological, ahead of the step child despite being younger');
+});
+
+test('sortChildren: within the same tier, a known birth date sorts before an unknown one', () => {
+  const people = [
+    person('parent'),
+    person('a', null, { display_name: 'Zed' }), // no birth_date
+    person('b', null, { birth_date: '2000-01-01', display_name: 'Ann' }),
+  ];
+  const rels = [parentEdge('parent', 'a'), parentEdge('parent', 'b')];
+  const g = buildGraph([...people, person('parent')], rels);
+  const ordered = sortChildren(g.children('parent'), g.byId).map((c) => c.id);
+  assert.deepEqual(ordered, ['b', 'a'], 'the child with a known birth date should come first even though "Ann" < "Zed" alphabetically');
+});
+
+test('sortChildren does not mutate the input array', () => {
+  const people = [person('parent'), person('a', null, { display_name: 'A' }), person('b', null, { display_name: 'B' })];
+  const rels = [parentEdge('parent', 'a'), parentEdge('parent', 'b')];
+  const g = buildGraph([...people, person('parent')], rels);
+  const original = g.children('parent');
+  const originalOrder = original.map((c) => c.id);
+  sortChildren(original, g.byId);
+  assert.deepEqual(original.map((c) => c.id), originalOrder);
 });
 
 // ── Report ────────────────────────────────────────────────────────────────────

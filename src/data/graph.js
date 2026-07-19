@@ -7,16 +7,15 @@
  */
 import { resolveGrandparentTerm, resolveAncestorTerm } from '../lib/kinTerms.js';
 
-// Siblings list display order: full (biological) siblings first, then half,
-// then step — each tier internally oldest-to-youngest by birth date, with
-// alphabetical-by-name as the final tiebreak (also how two siblings with no
-// known birth date, or the same one, settle their order). Exported so any
-// view rendering a Siblings group (PersonSheet today) sorts identically.
-const SIBLING_KIND_ORDER = { full: 0, half: 1, step: 2 };
-export function sortSiblings(siblings, byId) {
-  return [...siblings].sort((a, b) => {
-    const kindDiff = (SIBLING_KIND_ORDER[a.kind] ?? 3) - (SIBLING_KIND_ORDER[b.kind] ?? 3);
-    if (kindDiff) return kindDiff;
+// Shared by sortSiblings and sortChildren below: sort by a tier lookup first
+// (full/half/step for siblings, biological/adoptive/step for children), then
+// oldest-to-youngest by birth date within each tier, with alphabetical-by-name
+// as the final tiebreak (also how two same-tier people with no known birth
+// date, or the same one, settle their order).
+function sortByTierThenAge(items, byId, tierOf, tierOrder) {
+  return [...items].sort((a, b) => {
+    const tierDiff = (tierOrder[tierOf(a)] ?? 99) - (tierOrder[tierOf(b)] ?? 99);
+    if (tierDiff) return tierDiff;
     const pa = byId.get(a.id);
     const pb = byId.get(b.id);
     const ba = pa?.birth_date;
@@ -26,6 +25,28 @@ export function sortSiblings(siblings, byId) {
     if (!ba && bb) return 1;
     return (pa?.display_name || '').localeCompare(pb?.display_name || '');
   });
+}
+
+// Siblings list display order: full (biological) siblings first, then half,
+// then step. Exported so any view rendering a Siblings group (PersonSheet
+// today) sorts identically.
+const SIBLING_KIND_ORDER = { full: 0, half: 1, step: 2 };
+export function sortSiblings(siblings, byId) {
+  return sortByTierThenAge(siblings, byId, (s) => s.kind, SIBLING_KIND_ORDER);
+}
+
+// Children list display order — the same convention extended to the
+// Children group (real user report: Nancy Turner's children showed Heather
+// first despite her not being the oldest — Children had never been sorted
+// at all, only Siblings). Children don't have a "half" concept (a child is
+// fully yours or not — no partial-blood equivalent), so the tiers are
+// biological/adoptive (both a full, direct bond) ahead of step, mirroring
+// the qualifier values parent-child relationships actually carry
+// ('biological'/'adoptive'/'step', with a missing qualifier meaning
+// biological — the same default `isBioAdopt()` above already assumes).
+const CHILD_QUALIFIER_ORDER = { biological: 0, adoptive: 1, step: 2 };
+export function sortChildren(children, byId) {
+  return sortByTierThenAge(children, byId, (c) => c.qualifier || 'biological', CHILD_QUALIFIER_ORDER);
 }
 
 export function buildGraph(people, relationships) {
