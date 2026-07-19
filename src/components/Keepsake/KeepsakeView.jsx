@@ -37,9 +37,12 @@ const SPREADS = {
   colophon: ColophonSpread,
 };
 
-// A modest bar — enough raw material to write something, not "profile is
-// finished." See the completeness gate below, where this is used.
-const MIN_COMPLETENESS_FOR_FIRST_EDITION = 40;
+// A real bar — most of the profile filled in, not "profile is finished."
+// See the completeness gate below, where this is used. 67 (not 70) because
+// profileCompleteness's 9-check score can only round to {0,11,22,...,100} —
+// 70 wouldn't be reachable and would silently demand 7/9 instead of the
+// intended 6/9.
+const MIN_COMPLETENESS_FOR_FIRST_EDITION = 67;
 
 export default function KeepsakeView({
   graph, personId, memories, photos, documents, activity, familyName, onClose, onCompiled,
@@ -160,7 +163,20 @@ export default function KeepsakeView({
   const person = graph.byId.get(personId);
   const personMemoryCount = memories.filter((m) => m.person_id === personId).length;
   const completeness = person ? profileCompleteness(person, graph, personMemoryCount) : null;
-  const readyForFirstEdition = !completeness || completeness.score >= MIN_COMPLETENESS_FOR_FIRST_EDITION;
+  // The 9-field score alone let a profile with birth date + birthplace +
+  // occupation + relationships (and nothing else — no photo, bio, story,
+  // memories, tags, or events) clear a 40% bar (real report: "John Davies
+  // has next to no info but meets the requirement"). A life story is the
+  // one signal the score never checked at all — it's the actual narrative
+  // material a Keepsake is built from, not a proxy for it — so it's a
+  // second, independent requirement rather than folded into the score
+  // (profileCompleteness is shared with the profile's own completeness
+  // meter and lib/military.js's gate; changing what it means there wasn't
+  // the ask).
+  const hasStory = !!person?.story;
+  const scoreBlocking = !!completeness && completeness.score < MIN_COMPLETENESS_FOR_FIRST_EDITION;
+  const storyBlocking = !hasStory;
+  const readyForFirstEdition = !completeness || (!scoreBlocking && !storyBlocking);
 
   async function compile() {
     if (compiling) return;
@@ -300,6 +316,13 @@ export default function KeepsakeView({
           where the reader needs to feel this is still a Bloodline object. */}
       {canCompile && (compiling || compileError || !edition || stale) && (() => {
         const notReadyYet = !edition && !readyForFirstEdition;
+        // Only surface a blocker if it's actually still blocking — a profile
+        // that's already past the score threshold but missing a life story
+        // shouldn't be told to add memories/tags/etc. it doesn't actually
+        // need, and vice versa.
+        const notReadyReasons = notReadyYet
+          ? [...(scoreBlocking ? completeness.missing : []), ...(storyBlocking ? ['Life story'] : [])]
+          : [];
         return (
           <div className={`ks-banner${compileError || notReadyYet ? ' ks-banner--error' : ''}`} role="status">
             <div className="ks-banner__grain" aria-hidden="true" />
@@ -319,7 +342,7 @@ export default function KeepsakeView({
                     : compileError
                     ? "Couldn't compile this edition."
                     : notReadyYet
-                    ? `${completeness.score}% complete — add ${completeness.missing.slice(0, 2).join(', ').toLowerCase()}${completeness.missing.length > 2 ? '…' : ''} to compile a Keepsake.`
+                    ? `${completeness.score}% complete — add ${notReadyReasons.slice(0, 2).join(', ').toLowerCase()}${notReadyReasons.length > 2 ? '…' : ''} to compile a Keepsake.`
                     : !edition
                     ? "This book hasn't been written yet."
                     : 'The tree has grown since this edition was compiled.'}

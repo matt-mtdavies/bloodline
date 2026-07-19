@@ -892,6 +892,39 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
      mostly-empty seed profile. Full unit suite (the pre-existing, unrelated step-niece failure in
      `relations.test.mjs` aside), `npm run build`, and the standard smoke test all passed clean.
 
+- **Keepsake first-edition gate tightened: a real life story is now required too, and the bar
+  went from 40% to 67%** (real user follow-up on the completeness-gate feature above: "I think a
+  life story is a minimum requirement as well. Also, 40% is very lean, was thinking at least 70%.
+  John Davies has next to no info but meets the 40% requirement."). Discussed first — confirmed
+  both complaints were real: `profileCompleteness()`'s 9-check score never checks for a life story
+  at all (`person.story`, the separate AI-generated narrative field — distinct from the plain `bio`
+  field the score's "Biography" check already covers), so a profile with just birth date +
+  birthplace + occupation + relationships and nothing else (no photo, bio, story, memories, tags,
+  or events) cleared the old 40% bar at 44%, exactly the John Davies complaint. On the number: with
+  9 checks the rounded score can only land on {0,11,22,...,100} — 70 isn't reachable, and would
+  silently demand 7/9 instead of the intended ~6/9 — agreed on 67 (the true 6/9 value) instead.
+  `KeepsakeView.jsx`: `MIN_COMPLETENESS_FOR_FIRST_EDITION` raised to 67; a life story is now a
+  second, independent requirement (`hasStory = !!person?.story`) rather than folded into the score
+  itself — `profileCompleteness()` is shared with the profile's own completeness meter and
+  `lib/military.js`'s narrative gate, and changing what IT means wasn't the ask, just what Keepsake
+  additionally requires. `scoreBlocking`/`storyBlocking` are tracked separately so the "Almost
+  there" banner only names what's actually still missing: a profile that's already past the score
+  threshold but has no story now correctly says "add life story" alone (not a stale list of
+  completeness fields that aren't really blocking anything anymore), and a genuinely sparse profile
+  still gets the original missing-fields message, with "Life story" folded into that same list
+  (subject to the existing two-item-plus-ellipsis truncation) when both are blocking at once.
+  Verified live via Playwright against the real dev server (mocking `/api/keepsake`'s GET, since
+  plain `npm run dev` has no Cloudflare Pages Functions): James — a fully-filled seed profile
+  (photo, bio, birth date/place, occupation, tags, life events, memories, relationships; 100% on
+  the 9-check score) but with no `person.story`, since nothing in the seed ever pre-generates one —
+  correctly showed "Almost there — 100% complete — add life story to compile a Keepsake." with no
+  compile button, proving the story requirement bites independently of a maxed-out score, and that
+  the banner copy doesn't regress into the old "add " + empty-string bug. The score-blocking path
+  was confirmed via `profileCompleteness()` directly (a bare-stub profile — birth date, birthplace,
+  bio only — scores 44%, still well under the new 67% bar), preserving the original message shape.
+  Full unit suite (the pre-existing, unrelated step-niece failure in `relations.test.mjs` aside),
+  `npm run build`, and the standard smoke test all passed clean.
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);
