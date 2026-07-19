@@ -6,7 +6,7 @@
  */
 import assert from 'node:assert/strict';
 import { buildGraph } from '../src/data/graph.js';
-import { computeInsightModules, computeThisMonth, buildInsightHighlights, aliveInYear, handshakesTo, personHighlight, highlightCandidates, pickDailyHighlight } from '../src/lib/insightModules.js';
+import { computeInsightModules, computeThisMonth, buildInsightHighlights, aliveInYear, handshakesTo, personHighlight, highlightCandidates, pickDailyHighlight, dayIndex, seededShuffle } from '../src/lib/insightModules.js';
 
 let passed = 0, failed = 0;
 function test(label, fn) {
@@ -898,8 +898,15 @@ test('highlightCandidates: null/empty modules produce an empty pool, never throw
 test('highlightCandidates: every populated module in the rich fixture contributes exactly one sentence', () => {
   const candidates = highlightCandidates(mods);
   // The rich fixture lights up every module except serviceRecords (no
-  // military data) — 12 of the 13 possible candidates.
-  assert.equal(candidates.length, 12);
+  // military data), livingGenerations (only G4 is alive — one generation,
+  // not three), twinBirths/milestoneAnniversaries (need 2+ sets/couples,
+  // the fixture only ever produces one) and tradeLineage/newArrivals/
+  // blendedFamily (no matching data at all) — but surnames DOES qualify:
+  // "Alpha"/"Beta"/"Delta" each appear 10+ times across the fixture's
+  // generations, an incidental side effect of richTree()'s naming scheme,
+  // not something deliberately engineered in — 13 of the 20 possible
+  // candidates.
+  assert.equal(candidates.length, 13);
   assert.ok(candidates.every((c) => typeof c === 'string' && c.length > 0));
 });
 
@@ -962,6 +969,209 @@ test('pickDailyHighlight: always returns one of highlightCandidates\' own senten
 test('pickDailyHighlight: null when nothing qualifies', () => {
   assert.equal(pickDailyHighlight({}), null);
   assert.equal(pickDailyHighlight(null), null);
+});
+
+// ── dayIndex / seededShuffle — the Insights sheet's per-day reorder ─────────
+
+test('dayIndex: same calendar day always gives the same index', () => {
+  const morning = new Date('2026-03-14T02:00:00Z').getTime();
+  const evening = new Date('2026-03-14T23:00:00Z').getTime();
+  assert.equal(dayIndex(morning), dayIndex(evening));
+});
+
+test('dayIndex: a different day gives a different index', () => {
+  const day1 = new Date('2026-03-14T12:00:00Z').getTime();
+  const day2 = new Date('2026-03-15T12:00:00Z').getTime();
+  assert.notEqual(dayIndex(day1), dayIndex(day2));
+});
+
+test('seededShuffle: same seed always produces the same order', () => {
+  const arr = ['a', 'b', 'c', 'd', 'e', 'f'];
+  assert.deepEqual(seededShuffle(arr, 42), seededShuffle(arr, 42));
+});
+
+test('seededShuffle: different seeds usually produce different orders', () => {
+  const arr = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
+  const orders = new Set([1, 2, 3, 4, 5].map((seed) => seededShuffle(arr, seed).join('')));
+  assert.ok(orders.size > 1, 'five different seeds should not all collapse to one order');
+});
+
+test('seededShuffle: never drops, duplicates, or invents an element', () => {
+  const arr = ['a', 'b', 'c', 'd', 'e'];
+  const shuffled = seededShuffle(arr, 7);
+  assert.deepEqual([...shuffled].sort(), [...arr].sort());
+});
+
+test('seededShuffle: does not mutate the input array', () => {
+  const arr = ['a', 'b', 'c', 'd', 'e'];
+  const copy = [...arr];
+  seededShuffle(arr, 99);
+  assert.deepEqual(arr, copy);
+});
+
+// ── The 20-module catalogue expansion: surnames, livingGenerations,
+//    twinBirths, milestoneAnniversaries, newArrivals, blendedFamily,
+//    tradeLineage. ────────────────────────────────────────────────────────
+
+test('surnames: ranks families by size and hides below the 2-surname threshold', () => {
+  const people = [];
+  const rels = [];
+  for (let i = 0; i < 5; i++) people.push({ id: `d${i}`, display_name: `Person${i} Davies`, birth_date: `${1950 + i}-01-01` });
+  for (let i = 0; i < 3; i++) people.push({ id: `s${i}`, display_name: `Person${i} Smith`, birth_date: `${1950 + i}-01-01` });
+  people.push({ id: 'x0', display_name: 'Person Xu', birth_date: '1950-01-01' }); // only 1 — below threshold, excluded from top
+  const graph = buildGraph(people, rels);
+  const mods = computeInsightModules(graph, 'd0');
+  assert.ok(mods.surnames, 'module should render with 2 qualifying surnames');
+  assert.equal(mods.surnames.top[0].name, 'Davies');
+  assert.equal(mods.surnames.top[0].count, 5);
+  assert.equal(mods.surnames.top[1].name, 'Smith');
+  assert.ok(!mods.surnames.top.find((e) => e.name === 'Xu'), 'a lone surname stays below the count-3 floor');
+
+  const thin = buildGraph([{ id: 'a', display_name: 'Solo Alpha', birth_date: '1950-01-01' }], []);
+  assert.equal(computeInsightModules(thin, 'a').surnames, null);
+});
+
+test('livingGenerations: counts only the living, across 3+ generations', () => {
+  const people = [
+    { id: 'g1', display_name: 'Grandparent', birth_date: '1930-01-01' }, // living
+    { id: 'p1', display_name: 'Parent', birth_date: '1955-01-01' }, // living
+    { id: 'c1', display_name: 'Child', birth_date: '1980-01-01' }, // living
+    { id: 'd1', display_name: 'Deceased Great', birth_date: '1900-01-01', death_date: '1960-01-01', is_deceased: true },
+  ];
+  const rels = [pRel('d1', 'g1'), pRel('g1', 'p1'), pRel('p1', 'c1')];
+  const graph = buildGraph(people, rels);
+  const mods = computeInsightModules(graph, 'c1');
+  assert.ok(mods.livingGenerations, 'module should render across 3 living generations');
+  assert.equal(mods.livingGenerations.count, 3);
+  assert.equal(mods.livingGenerations.total, 3);
+  assert.ok(!mods.livingGenerations.rows.flatMap((r) => r.ids).includes('d1'), 'the deceased great-grandparent is excluded');
+});
+
+test('livingGenerations: hides below the 3-living-generation threshold', () => {
+  const people = [
+    { id: 'p1', display_name: 'Parent', birth_date: '1955-01-01' },
+    { id: 'c1', display_name: 'Child', birth_date: '1980-01-01' },
+  ];
+  const graph = buildGraph(people, [pRel('p1', 'c1')]);
+  assert.equal(computeInsightModules(graph, 'c1').livingGenerations, null);
+});
+
+test('twinBirths: siblings sharing an exact birth date form a set; the Jan-1 placeholder never matches', () => {
+  const people = [
+    { id: 'p1', display_name: 'Mum', birth_date: '1950-01-01' },
+    { id: 'a', display_name: 'Twin A', birth_date: '1975-06-15' },
+    { id: 'b', display_name: 'Twin B', birth_date: '1975-06-15' },
+    { id: 'c', display_name: 'Sibling C', birth_date: '1977-01-01' }, // year-only placeholder
+    { id: 'd', display_name: 'Sibling D', birth_date: '1977-01-01' }, // same placeholder — must NOT count as twins
+  ];
+  const rels = [pRel('p1', 'a'), pRel('p1', 'b'), pRel('p1', 'c'), pRel('p1', 'd')];
+  const graph = buildGraph(people, rels);
+  const mods = computeInsightModules(graph, 'a');
+  assert.ok(mods.twinBirths, 'module should render for the real June 15th twins');
+  assert.equal(mods.twinBirths.count, 1);
+  assert.deepEqual(mods.twinBirths.sets[0].ids.sort(), ['a', 'b']);
+  assert.equal(mods.twinBirths.sets[0].dateLabel, '15 June');
+});
+
+test('twinBirths: null when no siblings share an exact date', () => {
+  const people = [
+    { id: 'p1', display_name: 'Mum', birth_date: '1950-01-01' },
+    { id: 'a', display_name: 'Kid A', birth_date: '1975-06-15' },
+    { id: 'b', display_name: 'Kid B', birth_date: '1977-03-02' },
+  ];
+  const graph = buildGraph(people, [pRel('p1', 'a'), pRel('p1', 'b')]);
+  assert.equal(computeInsightModules(graph, 'a').twinBirths, null);
+});
+
+test('milestoneAnniversaries: needs 2+ couples past a 25-year mark, ranked longest first', () => {
+  const people = [
+    { id: 'a1', display_name: 'Long A', birth_date: '1930-01-01' },
+    { id: 'a2', display_name: 'Long B', birth_date: '1932-01-01' },
+    { id: 'b1', display_name: 'Mid A', birth_date: '1940-01-01' },
+    { id: 'b2', display_name: 'Mid B', birth_date: '1942-01-01' },
+  ];
+  const rels = [uRel('a1', 'a2', '1955-01-01'), uRel('b1', 'b2', '1970-01-01')]; // ongoing today: ~70 and ~55 years
+  const graph = buildGraph(people, rels);
+  const mods = computeInsightModules(graph, 'a1');
+  assert.ok(mods.milestoneAnniversaries, 'module should render with 2 milestone couples');
+  assert.equal(mods.milestoneAnniversaries.count, 2);
+  assert.equal(mods.milestoneAnniversaries.list[0].aId, 'a1', 'the longer marriage leads');
+});
+
+test('milestoneAnniversaries: a single milestone couple stays below the 2-couple threshold', () => {
+  const people = [
+    { id: 'a1', display_name: 'Only A', birth_date: '1940-01-01' },
+    { id: 'a2', display_name: 'Only B', birth_date: '1942-01-01' },
+  ];
+  const graph = buildGraph(people, [uRel('a1', 'a2', '1970-01-01')]);
+  assert.equal(computeInsightModules(graph, 'a1').milestoneAnniversaries, null);
+});
+
+test('newArrivals: living people born within the last 5 years of `now`, future-relative-to-now excluded', () => {
+  const people = [
+    { id: 'a', display_name: 'Baby A', birth_date: '2023-01-01' },
+    { id: 'b', display_name: 'Baby B', birth_date: '2024-01-01' },
+    { id: 'c', display_name: 'Older C', birth_date: '2010-01-01' }, // outside the 5-year window
+    { id: 'd', display_name: 'Future D', birth_date: '2030-01-01' }, // born after `now` — must be excluded
+  ];
+  const now = new Date('2025-06-01').getTime();
+  const graph = buildGraph(people, []);
+  const mods = computeInsightModules(graph, 'a', now);
+  assert.ok(mods.newArrivals, 'module should render with 2 recent arrivals');
+  assert.equal(mods.newArrivals.count, 2);
+  assert.deepEqual(mods.newArrivals.list.map((x) => x.id).sort(), ['a', 'b']);
+});
+
+test('newArrivals: a single recent birth stays below the 2-person threshold', () => {
+  const people = [{ id: 'a', display_name: 'Baby A', birth_date: '2023-01-01' }];
+  const graph = buildGraph(people, []);
+  assert.equal(computeInsightModules(graph, 'a', new Date('2025-06-01').getTime()).newArrivals, null);
+});
+
+test('blendedFamily: counts step and adoptive bonds, hides below the 3-person threshold', () => {
+  const people = [
+    { id: 'p1', display_name: 'Parent', birth_date: '1960-01-01' },
+    { id: 's1', display_name: 'Step Kid', birth_date: '1985-01-01' },
+    { id: 'ad1', display_name: 'Adopted Kid', birth_date: '1986-01-01' },
+    { id: 'ad2', display_name: 'Adopted Kid Two', birth_date: '1987-01-01' },
+  ];
+  const rels = [pRel('p1', 's1', 'step'), pRel('p1', 'ad1', 'adoptive'), pRel('p1', 'ad2', 'adoptive')];
+  const graph = buildGraph(people, rels);
+  const mods = computeInsightModules(graph, 'p1');
+  assert.ok(mods.blendedFamily, 'module should render with 3 people touched');
+  assert.equal(mods.blendedFamily.stepCount, 1);
+  assert.equal(mods.blendedFamily.adoptCount, 2);
+  assert.equal(mods.blendedFamily.total, 3);
+
+  const thin = buildGraph(
+    [{ id: 'p2', display_name: 'Parent Two', birth_date: '1960-01-01' }, { id: 's2', display_name: 'Step Kid Two', birth_date: '1985-01-01' }],
+    [pRel('p2', 's2', 'step')],
+  );
+  assert.equal(computeInsightModules(thin, 'p2').blendedFamily, null);
+});
+
+test('tradeLineage: an occupation shared 3+ generations down a direct parent line qualifies', () => {
+  const people = [
+    { id: 'g1', display_name: 'Grandparent', birth_date: '1900-01-01', occupation: 'Farmer' },
+    { id: 'p1', display_name: 'Parent', birth_date: '1930-01-01', occupation: 'Farmer' },
+    { id: 'c1', display_name: 'Child', birth_date: '1960-01-01', occupation: 'Farmer.' }, // punctuation variant — still merges
+    { id: 'x1', display_name: 'Unrelated', birth_date: '1960-01-01', occupation: 'Teacher' },
+  ];
+  const rels = [pRel('g1', 'p1'), pRel('p1', 'c1')];
+  const graph = buildGraph(people, rels);
+  const mods = computeInsightModules(graph, 'c1');
+  assert.ok(mods.tradeLineage, 'module should render for a 3-generation direct trade line');
+  assert.equal(mods.tradeLineage.best.people.length, 3);
+  assert.equal(mods.tradeLineage.best.occ, 'Farmer');
+});
+
+test('tradeLineage: a 2-generation match stays below the 3-generation threshold', () => {
+  const people = [
+    { id: 'p1', display_name: 'Parent', birth_date: '1930-01-01', occupation: 'Farmer' },
+    { id: 'c1', display_name: 'Child', birth_date: '1960-01-01', occupation: 'Farmer' },
+  ];
+  const graph = buildGraph(people, [pRel('p1', 'c1')]);
+  assert.equal(computeInsightModules(graph, 'c1').tradeLineage, null);
 });
 
 console.log(`\n  ${passed} passed, ${failed} failed`);

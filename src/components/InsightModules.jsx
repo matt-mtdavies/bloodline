@@ -2,7 +2,7 @@ import { useRef, useState, useMemo } from 'react';
 import { toBlob } from 'html-to-image';
 import Avatar from './Avatar.jsx';
 import { lifespan } from '../lib/dates.js';
-import { aliveInYear, handshakesTo } from '../lib/insightModules.js';
+import { aliveInYear, handshakesTo, dayIndex, seededShuffle } from '../lib/insightModules.js';
 import { BranchIcon } from './MilitaryIcons.jsx';
 
 const BRANCH_LABEL = { army: 'Army', navy: 'Navy', air_force: 'Air Force' };
@@ -40,8 +40,18 @@ export default function InsightModules({ modules, graph, onNavigate }) {
   const {
     handshakes, giftOfYears, fullestYear, strata, brood, bridges,
     names, heartlands, trades, birthdays, records, parenthood, serviceRecords,
+    surnames, livingGenerations, twinBirths, milestoneAnniversaries, newArrivals, blendedFamily, tradeLineage,
   } = modules;
-  const chapters = [
+
+  // Records leads every time it qualifies, unconditionally — the highest-
+  // signal, most immediately engaging cards in the sheet (real feedback:
+  // "those facts are awesome, get the viewer engaged... records the family
+  // holds should be at the top"). RecordsModule already carries its own
+  // "Records the family holds" title via Module below, so it needs no
+  // chapter heading of its own here.
+  const recordsCard = records && <RecordsModule key="records" data={records} graph={graph} onNavigate={onNavigate} />;
+
+  let restChapters = [
     ['Deep time', [
       handshakes && <HandshakesModule key="hands" data={handshakes} graph={graph} onNavigate={onNavigate} />,
       giftOfYears && <GiftModule key="gift" data={giftOfYears} graph={graph} onNavigate={onNavigate} />,
@@ -49,20 +59,26 @@ export default function InsightModules({ modules, graph, onNavigate }) {
     ]],
     ['The shape of us', [
       strata && <StrataModule key="strata" data={strata} graph={graph} onNavigate={onNavigate} />,
+      livingGenerations && <LivingGenerationsModule key="living" data={livingGenerations} graph={graph} onNavigate={onNavigate} />,
       brood && <BroodModule key="brood" data={brood} graph={graph} onNavigate={onNavigate} />,
       parenthood && <ParenthoodModule key="parenthood" data={parenthood} graph={graph} onNavigate={onNavigate} />,
       bridges && <BridgesModule key="bridge" data={bridges} onNavigate={onNavigate} />,
+      blendedFamily && <BlendedFamilyModule key="blended" data={blendedFamily} graph={graph} onNavigate={onNavigate} />,
     ]],
     ['Names', [
       names && <NamesModule key="names" data={names} graph={graph} onNavigate={onNavigate} />,
+      surnames && <SurnamesModule key="surnames" data={surnames} graph={graph} onNavigate={onNavigate} />,
     ]],
     ['Places & work', [
       heartlands && <HeartlandsModule key="heart" data={heartlands} graph={graph} onNavigate={onNavigate} />,
       trades && <TradesModule key="trades" data={trades} graph={graph} onNavigate={onNavigate} />,
+      tradeLineage && <TradeLineageModule key="tradeline" data={tradeLineage} graph={graph} onNavigate={onNavigate} />,
     ]],
     ['Seasons & milestones', [
       birthdays && <BirthdaysModule key="bday" data={birthdays} graph={graph} onNavigate={onNavigate} />,
-      records && <RecordsModule key="records" data={records} graph={graph} onNavigate={onNavigate} />,
+      twinBirths && <TwinBirthsModule key="twins" data={twinBirths} graph={graph} onNavigate={onNavigate} />,
+      milestoneAnniversaries && <MilestoneAnniversariesModule key="milestones" data={milestoneAnniversaries} onNavigate={onNavigate} />,
+      newArrivals && <NewArrivalsModule key="newarrivals" data={newArrivals} graph={graph} onNavigate={onNavigate} />,
     ]],
     ['Service', [
       serviceRecords && <ServiceRecordsModule key="service" data={serviceRecords} graph={graph} onNavigate={onNavigate} />,
@@ -71,10 +87,21 @@ export default function InsightModules({ modules, graph, onNavigate }) {
     .map(([label, items]) => [label, items.filter(Boolean)])
     .filter(([, items]) => items.length);
 
-  if (!chapters.length) return null;
+  // Everything after Records reorders once per day — which chapter leads,
+  // and which card leads within it — so the sheet feels different on a
+  // later visit without ever reshuffling mid-session (real feedback:
+  // "alternate the insight boxes... to maintain freshness and variety").
+  // Deterministic (mulberry32, not Math.random()): same day, same order.
+  const seed = dayIndex();
+  restChapters = seededShuffle(restChapters, seed).map(
+    ([label, items], i) => [label, seededShuffle(items, seed + i + 1)],
+  );
+
+  if (!recordsCard && !restChapters.length) return null;
   return (
     <div className="tim-wrap">
-      {chapters.map(([label, items]) => (
+      {recordsCard && <section className="tim-chapter">{recordsCard}</section>}
+      {restChapters.map(([label, items]) => (
         <section key={label} className="tim-chapter">
           <h3 className="tim-chapter__label">{label}</h3>
           {items}
@@ -1364,6 +1391,315 @@ function RibbonModuleIcon() {
   );
 }
 
+/* ── Surnames: the given-name hall of fame (NamesModule above), mirrored
+   onto surnames. No generational "thread" — a surname is continuous down a
+   bloodline by definition, so it wouldn't say anything a plain rank doesn't
+   already say. ────────────────────────────────────────────────────────── */
+function SurnamesModule({ data, graph, onNavigate }) {
+  const { top, all } = data;
+  const max = top[0].count;
+  const plural = /(?:s|x|z|ch|sh)$/i.test(top[0].name) ? 'es' : 's';
+  const [sel, setSel] = useState(null);
+  const [q, setQ] = useState('');
+  const query = q.trim().toLowerCase();
+  const matches = query
+    ? (() => {
+        const pre = all.filter((e) => e.name.toLowerCase().startsWith(query));
+        return pre.length ? pre : all.filter((e) => e.name.toLowerCase().includes(query));
+      })().slice(0, 6)
+    : [];
+  const selEntry = sel ? all.find((e) => e.name === sel) : null;
+  return (
+    <Module
+      icon={<RootsIcon />}
+      title={`${cap(asWord(top[0].count))} ${top[0].name}${plural} and counting`}
+      sub="The family names carried forward. Tap a bar — or look any surname up."
+      caption={<><b>{top[0].name}</b> is the family's largest line — {top[0].count} people carry it.</>}
+    >
+      <div className="tim-names">
+        {top.map((n) => (
+          <button
+            className={'tim-names__row tim-tap' + (n.name === sel ? ' tim-tap--on' : '')}
+            key={n.name}
+            onClick={() => setSel((cur) => (cur === n.name ? null : n.name))}
+            aria-expanded={n.name === sel}
+          >
+            <span className="tim-names__name">{n.name}</span>
+            <div className="tim-names__track">
+              <div className="tim-names__fill" style={{ width: `${(n.count / max) * 100}%` }} />
+            </div>
+            <span className="tim-names__count">{n.count}</span>
+          </button>
+        ))}
+      </div>
+      <div className="tim-explore">
+        <input
+          type="search"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Wonder about a surname? Try “Davies”…"
+          aria-label="Look up any surname in the family"
+        />
+        {query && matches.length === 0 && (
+          <p className="tim-explore__none">No {cap(q.trim())}s in the tree yet.</p>
+        )}
+        {matches.length > 0 && (
+          <div className="tim-chiprow">
+            {matches.map((e) => (
+              <button
+                key={e.name}
+                className={'tim-chipbtn' + (e.name === sel ? ' tim-chipbtn--on' : '')}
+                onClick={() => setSel((cur) => (cur === e.name ? null : e.name))}
+              >
+                {e.name} · {e.count}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      {selEntry && (
+        <PeopleDrawer
+          title={`${selEntry.count} ${selEntry.name}${/(?:s|x|z|ch|sh)$/i.test(selEntry.name) ? 'es' : 's'}`}
+          rows={selEntry.people.map(({ id }) => ({ id }))}
+          graph={graph}
+          onNavigate={onNavigate}
+          onClose={() => setSel(null)}
+        />
+      )}
+    </Module>
+  );
+}
+
+/* ── Living generations: strata's all-time totals, narrowed to a cross-
+   section of just who's alive together right now. ───────────────────────── */
+function LivingGenerationsModule({ data, graph, onNavigate }) {
+  const { rows, count, total } = data;
+  const max = Math.max(...rows.map((r) => r.count));
+  const [sel, setSel] = useState(null);
+  const selRow = sel != null ? rows.find((r) => r.gen === sel) : null;
+  return (
+    <Module
+      icon={<PulseIcon />}
+      title={`${cap(asWord(count))} generations, alive together`}
+      sub="Everyone currently living, grouped by generation. Tap a row to meet it."
+      caption={<><b>{total} living relatives span {count} generations</b> at the same time — the family, all at once, right now.</>}
+    >
+      <div className="tim-strata">
+        {rows.map((r) => (
+          <button
+            className={'tim-strata__row tim-tap' + (r.gen === sel ? ' tim-tap--on' : '')}
+            key={r.gen}
+            onClick={() => setSel((cur) => (cur === r.gen ? null : r.gen))}
+            aria-expanded={r.gen === sel}
+          >
+            <span className="tim-strata__g">{r.label}</span>
+            <div className="tim-strata__track">
+              <span className="tim-strata__seg tim-strata__seg--liv" style={{ width: `${(r.count / max) * 100}%` }} />
+            </div>
+            <span className="tim-strata__n">{r.count}</span>
+          </button>
+        ))}
+      </div>
+      {selRow && (
+        <PeopleDrawer
+          title={`${selRow.label} — ${selRow.count} ${selRow.count === 1 ? 'person' : 'people'}`}
+          rows={selRow.ids.map((id) => ({ id }))}
+          graph={graph}
+          onNavigate={onNavigate}
+          onClose={() => setSel(null)}
+        />
+      )}
+    </Module>
+  );
+}
+
+/* ── Twin births: siblings sharing the exact recorded birth date — real
+   multiples, distinct from BirthdaysModule's "same day, different year"
+   birthday twins above. ──────────────────────────────────────────────────── */
+function TwinBirthsModule({ data, graph, onNavigate }) {
+  const { sets, count, peopleCount } = data;
+  return (
+    <Module
+      icon={<TwinIcon />}
+      title={count === 1 ? 'The family has twins' : `${count} sets of twins in the family`}
+      sub="Siblings sharing the very same birth date."
+      caption={<>{peopleCount} people across {count} {count === 1 ? 'birth' : 'births'} share a birthday with a sibling.</>}
+    >
+      <div className="tim-drawer" style={{ marginTop: 0 }}>
+        <div className="tim-drawer__list">
+          {sets.map((s) => (
+            <div key={s.date} className="tim-shared">
+              <span className="tim-shared__date">{s.dateLabel} {s.year}</span>
+              <span className="tim-shared__names">
+                {s.ids.map((id) => {
+                  const person = graph?.byId?.get(id);
+                  if (!person) return null;
+                  return (
+                    <button key={id} className="tim-linky" onClick={() => onNavigate?.(id)}>
+                      {person.display_name}
+                    </button>
+                  );
+                })}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </Module>
+  );
+}
+
+/* ── Milestone anniversaries: every couple past a 25/40/50/60/70-year mark —
+   the whole set, distinct from records()'s single longest-marriage holder. ── */
+function MilestoneAnniversariesModule({ data, onNavigate }) {
+  const { list, count } = data;
+  const headline = list[0];
+  return (
+    <Module
+      icon={<RecordIcon name="rings" />}
+      title={`${count} milestone anniversar${count === 1 ? 'y' : 'ies'} in the family`}
+      sub="Every couple who has reached a 25-year mark or beyond."
+      caption={<><b>{headline.aName} & {headline.bName}</b> lead the way at <b>{headline.years} years</b>{headline.ongoing ? ', and still counting' : ''}.</>}
+    >
+      <div className="tim-ms">
+        {list.map((a) => (
+          <button
+            key={`${a.aId}_${a.bId}`}
+            className="tim-ms__row"
+            onClick={() => onNavigate?.(a.aId)}
+          >
+            <span className="tim-ms__ico"><RecordIcon name="rings" /></span>
+            <span className="tim-ms__body">
+              <span className="tim-ms__t">{a.aName} & {a.bName} — {a.years} years</span>
+              <span className="tim-ms__d">Married {a.start}{a.ongoing ? ', still together' : ''} · {a.milestone}th+ anniversary</span>
+            </span>
+          </button>
+        ))}
+      </div>
+    </Module>
+  );
+}
+
+/* ── The newest arrivals: births in the last five years — the family's
+   growing edge, not just its deep past. ──────────────────────────────────── */
+function NewArrivalsModule({ data, graph, onNavigate }) {
+  const { list, count, sinceYear } = data;
+  return (
+    <Module
+      icon={<RecordIcon name="seedling" />}
+      title={count === 1 ? 'A new arrival' : `${count} new arrivals since ${sinceYear}`}
+      sub={`Everyone born in the family since ${sinceYear}.`}
+      caption={<>The family has welcomed <b>{count} new {count === 1 ? 'member' : 'members'}</b> in the last five years.</>}
+    >
+      <div className="tim-drawer" style={{ marginTop: 0 }}>
+        <div className="tim-drawer__list">
+          {list.map(({ id, year: y }) => {
+            const person = graph?.byId?.get(id);
+            if (!person) return null;
+            return (
+              <button key={id} className="tim-drawer__row" onClick={() => onNavigate?.(id)}>
+                <Avatar person={person} size={28} />
+                <span className="tim-drawer__name">{person.display_name}</span>
+                <span className="tim-drawer__detail">born {y}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </Module>
+  );
+}
+
+/* ── The shapes of the family: step and adoptive bonds — celebrating the
+   family held together by more than blood, not just counting it. ────────── */
+function BlendedFamilyModule({ data, graph, onNavigate }) {
+  const { stepIds, adoptIds, total } = data;
+  const [sel, setSel] = useState(null); // 'step' | 'adopt' | null
+  const rows = [
+    stepIds.length > 0 && { key: 'step', title: `${stepIds.length} step relationship${stepIds.length === 1 ? '' : 's'}`, detail: 'Joined the family through marriage or partnership.', ids: stepIds },
+    adoptIds.length > 0 && { key: 'adopt', title: `${adoptIds.length} adoptive relationship${adoptIds.length === 1 ? '' : 's'}`, detail: 'Chosen, not born, into the family.', ids: adoptIds },
+  ].filter(Boolean);
+  const selRow = sel ? rows.find((r) => r.key === sel) : null;
+  return (
+    <Module
+      icon={<PuzzleIcon />}
+      title={`${total} bonds beyond blood`}
+      sub="The family held together by more than biology."
+      caption={<>Step and adoptive bonds connect <b>{total} people</b> in the tree — family, not just bloodline.</>}
+    >
+      <div className="tim-ms">
+        {rows.map((r) => (
+          <div key={r.key}>
+            <button
+              className={'tim-ms__row' + (sel === r.key ? ' tim-ms__row--on' : '')}
+              onClick={() => setSel((cur) => (cur === r.key ? null : r.key))}
+              aria-expanded={sel === r.key}
+            >
+              <span className="tim-ms__ico"><RecordIcon name="heart" /></span>
+              <span className="tim-ms__body">
+                <span className="tim-ms__t">{r.title}</span>
+                <span className="tim-ms__d">{r.detail}</span>
+              </span>
+            </button>
+            {sel === r.key && (
+              <PeopleDrawer
+                title={r.title}
+                rows={r.ids.map((id) => ({ id }))}
+                graph={graph}
+                onNavigate={onNavigate}
+                onClose={() => setSel(null)}
+              />
+            )}
+          </div>
+        ))}
+      </div>
+    </Module>
+  );
+}
+
+/* ── Trade lineage: an occupation passed straight down a real parent→child
+   line for three generations or more — continuity of work, distinct from
+   TradesModule's "most common job of the era" bands above. ──────────────── */
+function TradeLineageModule({ data, graph, onNavigate }) {
+  const { chains, best } = data;
+  const [selIdx, setSelIdx] = useState(0);
+  const sel = chains[selIdx] || best;
+  const oldToNew = sel.people.slice().reverse(); // people[] is child-first; tell it eldest-first
+  const lc = (s) => (/^[A-Z][a-z]/.test(s) ? s.charAt(0).toLowerCase() + s.slice(1) : s);
+  return (
+    <Module
+      icon={<ToolsIcon />}
+      title={`${sel.occ} runs in the family`}
+      sub={`Passed straight down, parent to child, for ${sel.people.length} generations.`}
+      caption={<>A direct line of {lc(sel.occ)}s, one generation after another.</>}
+    >
+      {chains.length > 1 && (
+        <div className="tim-chiprow">
+          {chains.map((c, i) => (
+            <button
+              key={c.key}
+              className={'tim-chipbtn' + (i === selIdx ? ' tim-chipbtn--on' : '')}
+              onClick={() => setSelIdx(i)}
+            >
+              {c.occ} · {c.people.length}
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="tim-mig" aria-label={`${sel.occ}, passed down through ${sel.people.length} generations`}>
+        {oldToNew.map((person, i) => (
+          <span className="tim-mig__step" key={person.id}>
+            {i > 0 && <ArrowIcon />}
+            <button className="tim-linky" onClick={() => onNavigate?.(person.id)}>
+              {firstNameOfDisplay(graph?.byId?.get(person.id))}
+            </button>
+          </span>
+        ))}
+      </div>
+    </Module>
+  );
+}
+
 /* ── Icons (same 18px outline family as the fact cards) ────────────────── */
 const ip = { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none', 'aria-hidden': true };
 function TrendIcon() {
@@ -1401,6 +1737,18 @@ function ToolsIcon() {
 }
 function TrophyIcon() {
   return (<svg {...ip}><path d="M8 4h8v6a4 4 0 01-8 0V4z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" /><path d="M8 6H4.5c0 3 1.5 4.5 3.5 4.5M16 6h3.5c0 3-1.5 4.5-3.5 4.5M12 14v3m-3.5 3h7M10 20l.5-3h3l.5 3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>);
+}
+function RootsIcon() {
+  return (<svg {...ip}><path d="M12 3v9M12 12l-5 8M12 12l5 8M12 12l-2.5 8.5M12 12l2.5 8.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>);
+}
+function PulseIcon() {
+  return (<svg {...ip}><path d="M3 12h4l2-6 4 12 2-6h6" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" /></svg>);
+}
+function TwinIcon() {
+  return (<svg {...ip}><circle cx="9" cy="12" r="5.2" stroke="currentColor" strokeWidth="1.6" /><circle cx="15" cy="12" r="5.2" stroke="currentColor" strokeWidth="1.6" /></svg>);
+}
+function PuzzleIcon() {
+  return (<svg {...ip}><path d="M4 8h4.5a1.7 1.7 0 013 0H16v4.5a1.7 1.7 0 010 3V20H4v-4.5a1.7 1.7 0 000-3V8z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" /></svg>);
 }
 
 function ShareIcon() {

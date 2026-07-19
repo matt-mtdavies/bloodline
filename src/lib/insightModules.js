@@ -80,6 +80,36 @@ const givenNamesOf = (p) => {
 };
 const isBioAdopt = (q) => !q || q === 'biological' || q === 'adoptive';
 
+// Deterministic per-day index — the same "which day is it" seed every
+// rotation in this file uses (records()'s pool rotation, and
+// InsightModules.jsx's chapter/card shuffle), so nothing reshuffles
+// mid-session but everything looks different tomorrow. Exported so the
+// renderer can seed its own shuffle off the identical clock.
+export function dayIndex(now = Date.now()) {
+  return Math.floor(now / 86400000);
+}
+
+// Deterministic shuffle (mulberry32 PRNG + Fisher-Yates) — never
+// Math.random(), so the same seed always produces the same order. Used to
+// vary the Insights sheet's chapter/card order once per day without ever
+// reshuffling mid-render, and kept here so it's tested alongside the other
+// per-day rotation logic (records()) rather than duplicated in a component.
+export function seededShuffle(arr, seed) {
+  const out = [...arr];
+  let s = seed >>> 0;
+  const next = () => {
+    s = (s + 0x6d2b79f5) | 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(next() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
+
 // `now` drives records()'s "which 3 of the pool today" rotation — injectable
 // so tests can pin a specific day rather than depending on the real clock
 // (see records() below).
@@ -99,6 +129,13 @@ export function computeInsightModules(graph, viewerId, now = Date.now()) {
     records: records(graph, now),
     parenthood: parenthood(graph),
     serviceRecords: serviceRecords(graph, gen),
+    surnames: surnames(graph),
+    livingGenerations: livingGenerations(graph, gen),
+    twinBirths: twinBirths(graph),
+    milestoneAnniversaries: milestoneAnniversaries(graph),
+    newArrivals: newArrivals(graph, now),
+    blendedFamily: blendedFamily(graph),
+    tradeLineage: tradeLineage(graph),
   };
 }
 
@@ -642,7 +679,7 @@ function records(graph, now = Date.now()) {
   if (pool.length < 2) return null;
   // Rotate which three show, changing daily — stable within a session so the
   // sheet doesn't reshuffle on every re-render.
-  const day = Math.floor(now / 86400000);
+  const day = dayIndex(now);
   const shown = pool.length <= 3
     ? pool
     : Array.from({ length: 3 }, (_, i) => pool[(day + i * Math.max(1, Math.floor(pool.length / 3))) % pool.length])
@@ -1186,6 +1223,27 @@ export function buildInsightHighlights(modules) {
   if (modules.parenthood) {
     h.parenthood = { avg: modules.parenthood.avg, n: modules.parenthood.n };
   }
+  if (modules.surnames) {
+    h.topSurname = { name: modules.surnames.top[0].name, count: modules.surnames.top[0].count };
+  }
+  if (modules.livingGenerations) {
+    h.livingGenerations = { count: modules.livingGenerations.count };
+  }
+  if (modules.twinBirths) {
+    h.twinBirths = { count: modules.twinBirths.count };
+  }
+  if (modules.milestoneAnniversaries) {
+    h.milestoneAnniversaries = { count: modules.milestoneAnniversaries.count };
+  }
+  if (modules.newArrivals) {
+    h.newArrivals = { count: modules.newArrivals.count, sinceYear: modules.newArrivals.sinceYear };
+  }
+  if (modules.blendedFamily) {
+    h.blendedFamily = { total: modules.blendedFamily.total };
+  }
+  if (modules.tradeLineage) {
+    h.tradeLineage = { occ: modules.tradeLineage.best.occ, generations: modules.tradeLineage.best.people.length };
+  }
   return Object.keys(h).length ? h : null;
 }
 
@@ -1253,6 +1311,31 @@ export function highlightCandidates(modules) {
   if (modules.serviceRecords) {
     const sr = modules.serviceRecords;
     candidates.push(`${sr.count} family member${sr.count === 1 ? ' has' : 's have'} a documented military service record, spanning ${sr.generationsSpanned} generation${sr.generationsSpanned === 1 ? '' : 's'}.`);
+  }
+  if (modules.surnames) {
+    const s = modules.surnames.top[0];
+    candidates.push(`${s.count} people in the family carry the ${s.name} name.`);
+  }
+  if (modules.livingGenerations) {
+    candidates.push(`${modules.livingGenerations.count} generations of the family are alive together right now.`);
+  }
+  if (modules.twinBirths?.sets?.length) {
+    const t = modules.twinBirths.sets[0];
+    candidates.push(`The family has twins — born ${t.dateLabel} ${t.year}.`);
+  }
+  if (modules.milestoneAnniversaries) {
+    const m = modules.milestoneAnniversaries;
+    candidates.push(`${m.count} couples in the family have reached a milestone anniversary.`);
+  }
+  if (modules.newArrivals) {
+    candidates.push(`${modules.newArrivals.count} new arrivals have joined the family since ${modules.newArrivals.sinceYear}.`);
+  }
+  if (modules.blendedFamily) {
+    candidates.push(`${modules.blendedFamily.total} people in the family are connected by a step or adoptive bond.`);
+  }
+  if (modules.tradeLineage) {
+    const c = modules.tradeLineage.best;
+    candidates.push(`${c.occ} has been passed down through ${c.people.length} generations of the family.`);
   }
   return candidates;
 }
@@ -1373,4 +1456,197 @@ function birthdays(graph, gen) {
     twins: twins.slice(0, 2),
     withMonth,
   };
+}
+
+/* ── Surnames: the family names carried forward — the given-name hall of
+      fame above, mirrored onto surnames. No generational "thread" (unlike
+      names() a surname is continuous by definition down a bloodline, so it
+      wouldn't say anything new) — just who carries which name, ranked. ──── */
+function surnames(graph) {
+  const freq = new Map(); // lowercased surname -> { name, count, people: [{id}] }
+  for (const p of graph.people) {
+    const s = surnameOf(p);
+    if (!s) continue;
+    const key = s.toLowerCase();
+    if (!freq.has(key)) freq.set(key, { name: s, count: 0, people: [] });
+    const e = freq.get(key);
+    e.count++;
+    e.people.push({ id: p.id });
+  }
+  const byBirth = (a, b) =>
+    (year(graph.byId.get(a.id)?.birth_date) ?? 9999) - (year(graph.byId.get(b.id)?.birth_date) ?? 9999);
+  const all = [...freq.values()]
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
+    .map((e) => ({ name: e.name, count: e.count, people: e.people.slice().sort(byBirth) }));
+  const top = all.filter((e) => e.count >= 3).slice(0, 5);
+  if (top.length < 2) return null;
+  return { top, all };
+}
+
+/* ── Living generations: how many generations of the family are alive
+      together RIGHT NOW — a cross-section of strata's all-time totals,
+      narrowed to just who's here today. ─────────────────────────────────── */
+function livingGenerations(graph, gen) {
+  const byGen = new Map();
+  for (const p of graph.people) {
+    if (p.is_deceased) continue;
+    const g = gen.get(p.id) ?? 0;
+    if (!byGen.has(g)) byGen.set(g, []);
+    byGen.get(g).push(p.id);
+  }
+  if (byGen.size < 3) return null;
+  const byBirth = (a, b) =>
+    (year(graph.byId.get(a)?.birth_date) ?? 9999) - (year(graph.byId.get(b)?.birth_date) ?? 9999);
+  const rows = [...byGen.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([g, ids], i) => ({ gen: g, label: `G${i + 1}`, ids: ids.slice().sort(byBirth), count: ids.length }));
+  return { rows, count: rows.length, total: rows.reduce((s, r) => s + r.count, 0) };
+}
+
+/* ── Twin births: siblings sharing the exact same recorded birth date — real
+      multiples, not birthdays()'s "same day, different year" birthday twins.
+      Goes through birthMonthOf/birthDayOf so the January-1st "year only
+      known" placeholder never counts as a shared date. ────────────────────── */
+function twinBirths(graph) {
+  const households = new Map(); // parent-set key -> [people]
+  for (const p of graph.people) {
+    const parents = graph.parents(p.id).filter((x) => isBioAdopt(x.qualifier));
+    if (!parents.length) continue;
+    const key = parents.map((x) => x.id).sort().join('|');
+    if (!households.has(key)) households.set(key, []);
+    households.get(key).push(p);
+  }
+  const sets = [];
+  for (const kids of households.values()) {
+    const byDate = new Map();
+    for (const k of kids) {
+      if (birthMonthOf(k.birth_date) == null || birthDayOf(k.birth_date) == null) continue;
+      if (!byDate.has(k.birth_date)) byDate.set(k.birth_date, []);
+      byDate.get(k.birth_date).push(k);
+    }
+    for (const [d, group] of byDate) {
+      if (group.length < 2) continue;
+      sets.push({
+        date: d,
+        year: year(d),
+        dateLabel: `${birthDayOf(d)} ${MONTHS[birthMonthOf(d) - 1]}`,
+        ids: group.map((p) => p.id),
+      });
+    }
+  }
+  if (!sets.length) return null;
+  sets.sort((a, b) => b.ids.length - a.ids.length || b.year - a.year);
+  return { sets, count: sets.length, peopleCount: sets.reduce((s, x) => s + x.ids.length, 0) };
+}
+
+/* ── Milestone anniversaries: every couple who has reached (or, for an
+      ongoing marriage, would already have reached) a 25/40/50/60/70-year
+      mark — the whole SET of milestone couples, distinct from records()'s
+      single longest-marriage record holder. ───────────────────────────────── */
+function milestoneAnniversaries(graph) {
+  const thisYear = new Date().getFullYear();
+  const seen = new Set();
+  const list = [];
+  for (const r of graph.relationships) {
+    if (r.type !== 'partner' || !r.marriage_date) continue;
+    const key = [r.from_person, r.to_person].sort().join('|');
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const start = year(r.marriage_date);
+    if (start == null) continue;
+    const a = graph.byId.get(r.from_person), b = graph.byId.get(r.to_person);
+    if (!a || !b) continue;
+    const ends = [a, b].filter((p) => p.is_deceased).map((p) => year(p.death_date)).filter((y) => y != null);
+    const ongoing = !ends.length && r.partner_status !== 'former';
+    if (!ends.length && !ongoing) continue;
+    const end = ongoing ? thisYear : Math.min(...ends);
+    const yrs = end - start;
+    if (yrs >= 100) continue;
+    const milestone = [70, 60, 50, 40, 25].find((m) => yrs >= m);
+    if (!milestone) continue;
+    list.push({ aId: a.id, bId: b.id, aName: firstNameOf(a), bName: firstNameOf(b), years: yrs, milestone, start, ongoing });
+  }
+  if (list.length < 2) return null;
+  list.sort((x, y) => y.years - x.years);
+  return { list, count: list.length };
+}
+
+/* ── The newest arrivals: family members born in the last five years — the
+      family's own growing edge, not just its deep past. ────────────────────── */
+function newArrivals(graph, now = Date.now()) {
+  const thisYear = new Date(now).getFullYear();
+  const cutoff = thisYear - 5;
+  const list = [];
+  for (const p of graph.people) {
+    if (p.is_deceased) continue;
+    const b = year(p.birth_date);
+    if (b == null || b < cutoff || b > thisYear) continue;
+    list.push({ id: p.id, year: b });
+  }
+  if (list.length < 2) return null;
+  list.sort((a, b) => b.year - a.year);
+  return { list, count: list.length, sinceYear: cutoff, thisYear };
+}
+
+/* ── The shapes of the family: how many step and adoptive bonds hold it
+      together — celebrating the family beyond blood, not just counting it. ── */
+function blendedFamily(graph) {
+  let stepCount = 0, adoptCount = 0;
+  const stepPeople = new Set(), adoptPeople = new Set();
+  for (const r of graph.relationships) {
+    if (r.type !== 'parent') continue;
+    if (r.qualifier === 'step') { stepCount++; stepPeople.add(r.to_person); }
+    else if (r.qualifier === 'adoptive') { adoptCount++; adoptPeople.add(r.to_person); }
+  }
+  const allIds = new Set([...stepPeople, ...adoptPeople]);
+  if (allIds.size < 3) return null;
+  return { stepCount, adoptCount, stepIds: [...stepPeople], adoptIds: [...adoptPeople], total: allIds.size };
+}
+
+/* ── Trade lineage: an occupation passed straight down a real parent→child
+      line for three generations or more — continuity of work, distinct from
+      trades()'s "most common job of the era" bands above. ─────────────────── */
+function tradeLineage(graph) {
+  const chains = [];
+  for (const p of graph.people) {
+    const occ = (p.occupation || '').trim();
+    if (!occ) continue;
+    const key = normalizeTextKey(occ);
+    if (!key) continue;
+    const chain = [{ id: p.id, occ }];
+    let cur = p;
+    while (true) {
+      const parents = graph.parents(cur.id).filter((x) => isBioAdopt(x.qualifier));
+      let matched = null;
+      for (const par of parents) {
+        const pp = graph.byId.get(par.id);
+        if (pp && normalizeTextKey((pp.occupation || '').trim()) === key) { matched = pp; break; }
+      }
+      if (!matched) break;
+      chain.push({ id: matched.id, occ: matched.occupation });
+      cur = matched;
+    }
+    if (chain.length >= 3) {
+      // The chain's own most-common raw spelling, not whichever variant the
+      // starting (youngest) person happened to type — same "merge punctuation
+      // variants, show the common form" convention as trades()/heartlands().
+      const variants = new Map();
+      for (const person of chain) variants.set(person.occ, (variants.get(person.occ) || 0) + 1);
+      let display = occ, best = -1;
+      for (const [v, n] of variants) if (n > best) { display = v; best = n; }
+      chains.push({ occ: display, key, people: chain });
+    }
+  }
+  if (!chains.length) return null;
+  chains.sort((a, b) => b.people.length - a.people.length);
+  const seenTop = new Set();
+  const uniq = [];
+  for (const c of chains) {
+    const topId = c.people[c.people.length - 1].id;
+    const dupKey = `${c.key}|${topId}`;
+    if (seenTop.has(dupKey)) continue;
+    seenTop.add(dupKey);
+    uniq.push(c);
+  }
+  return { chains: uniq.slice(0, 5), best: uniq[0] };
 }

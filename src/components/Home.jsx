@@ -1,7 +1,28 @@
 import { useState, useMemo } from 'react';
 import Logo from './Logo.jsx';
 import { ActivityRow } from './ActivityFeed.jsx';
-import { computeThisMonth, computeInsightModules, pickDailyHighlight } from '../lib/insightModules.js';
+import { computeThisMonth, computeInsightModules, highlightCandidates } from '../lib/insightModules.js';
+
+// The "Did you know?" card rotates a step further through the candidate
+// pool every time Home is opened, so returning visits see something new
+// instead of the same fact locked for the rest of the day (real feedback:
+// "they should alternate and change positions to maintain freshness and
+// variety"). Persisted in localStorage (not component state) so the
+// rotation survives across visits, not just re-renders of one mount.
+const INSIGHT_ROTATE_KEY = 'bl_home_insight_idx';
+function nextInsightIndex(poolLen) {
+  if (!poolLen) return 0;
+  let idx;
+  try {
+    idx = parseInt(localStorage.getItem(INSIGHT_ROTATE_KEY) || '-1', 10) + 1;
+    if (!Number.isFinite(idx) || idx < 0) idx = 0;
+  } catch {
+    idx = Math.floor(Math.random() * poolLen);
+  }
+  idx = idx % poolLen;
+  try { localStorage.setItem(INSIGHT_ROTATE_KEY, String(idx)); } catch { /* private mode / quota */ }
+  return idx;
+}
 
 /*
  * The home hub — reached by tapping the logo. A launch point, not the whole
@@ -26,11 +47,12 @@ export default function Home({
   const tiles = buildStatTiles(stats);
   const thisMonth = useMemo(() => (graph ? computeThisMonth(graph) : null), [graph]);
   // No specific viewer stands behind the hub, so only the modules that don't
-  // lean on "your" position in the tree (see pickDailyHighlight) contribute.
-  const insightTeaser = useMemo(
-    () => (graph ? pickDailyHighlight(computeInsightModules(graph, null)) : null),
-    [graph],
-  );
+  // lean on "your" position in the tree (see highlightCandidates) contribute.
+  const insightTeaser = useMemo(() => {
+    if (!graph) return null;
+    const candidates = highlightCandidates(computeInsightModules(graph, null));
+    return candidates.length ? candidates[nextInsightIndex(candidates.length)] : null;
+  }, [graph]);
   const recent = activity.slice(0, 3);
   const byId = new Map(people.map((p) => [p.id, p]));
   const nameByEmail = new Map();

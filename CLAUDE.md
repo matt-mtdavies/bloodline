@@ -1174,6 +1174,76 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   in that exact oldest-first order. Full unit suite (the pre-existing, unrelated step-niece
   failure aside) and `npm run build` passed clean.
 
+- **Insights: catalogue grown from 13 to 20 modules, Records pinned to the top, the rest
+  reshuffled daily, and the home hub's "Did you know?" pill now rotates on every visit**
+  (real user feedback: "Suggesting we try for a bigger catalogue of interesting insights to
+  scroll through. 11 is not enough in my opinion. 20 minimum if possible. The insights in the
+  family pill are great, but they should alternate and change positions to maintain freshness
+  and variety. Also, 'records the family holds' should be at the top... then alternate the
+  insight boxes below"). Four pieces:
+  1. **Records leads, unconditionally**: `InsightModules.jsx`'s render pass now pulls `records`
+     out of its old spot (second card in "Seasons & milestones") and renders it first, standalone,
+     with no chapter wrapper — `RecordsModule`'s own `Module` title already reads "Records the
+     family holds", so it needs no heading of its own. Matches the feedback's own reasoning
+     verbatim ("those facts are awesome, get the viewer engaged").
+  2. **Everything else reshuffles once a day**: `lib/insightModules.js` gained `dayIndex(now)`
+     (generalizing `records()`'s own pre-existing "which 3 of the pool today" day math, now
+     shared rather than duplicated) and `seededShuffle(arr, seed)` — mulberry32 PRNG + Fisher-
+     Yates, deliberately never `Math.random()`, so the order is stable within a calendar day (no
+     mid-session reshuffling) but different the next day. `InsightModules.jsx` shuffles both which
+     chapter leads and which card leads within each chapter, seeded off `dayIndex()` with a
+     distinct per-chapter offset so chapters don't all reorder identically.
+  3. **Seven new module types, reaching 20**: `surnames` (the given-name hall of fame, mirrored
+     onto family surnames), `livingGenerations` (a living-only cross-section of `strata`'s
+     all-time totals — "4 generations of the family, alive together right now"), `twinBirths`
+     (siblings sharing an exact recorded birth date — real multiples, distinct from the birthday
+     wheel's "same day, different year" twins), `milestoneAnniversaries` (every couple past a
+     25/40/50/60/70-year mark — the whole SET, distinct from `records()`'s single longest-marriage
+     holder), `newArrivals` (living people born in the last 5 years — the family's growing edge),
+     `blendedFamily` (step/adoptive relationship counts — celebrating the family held together by
+     more than blood, matching this app's own "deliberately messy" seed philosophy), and
+     `tradeLineage` (an occupation passed straight down a real parent→child line for 3+
+     generations, distinct from `trades()`'s "most common job of the era" bands). Each gated by
+     its own data-sufficiency threshold, same convention as the original 13 — a module never
+     guesses or half-renders. Deliberately reuses existing, already-styled UI primitives instead
+     of inventing seven new chart types: `SurnamesModule` is a near-copy of `NamesModule`'s bar
+     rows, `LivingGenerationsModule` reuses `StrataModule`'s row/track markup, `TwinBirthsModule`
+     reuses `BirthdaysModule`'s "shared birthday" list rows, `MilestoneAnniversariesModule` and
+     `BlendedFamilyModule` reuse `RecordsModule`'s row pattern, `NewArrivalsModule` reuses
+     `ServiceRecordsModule`'s plain drawer-list pattern, and `TradeLineageModule` reuses
+     `HeartlandsModule`'s migration-arrow chain — zero new CSS needed, four small new icons
+     (`RootsIcon`, `PulseIcon`, `TwinIcon`, `PuzzleIcon`) in the same 18px outline family as
+     the rest. `highlightCandidates` and `buildInsightHighlights` (the "did you know" sentence
+     pool and the privacy-safe AI-narrative digest) gained an entry for all seven, so the new
+     modules feed both the home hub's teaser and the AI biography narrative like every existing
+     module already does. Found and fixed one real bug while wiring `newArrivals` up to a unit
+     test with a pinned `now`: it filtered `birth_year >= cutoff` but never bounded the upper
+     end, so a person born AFTER the pinned "now" (a genuinely future birth relative to the
+     clock being tested) would still incorrectly count as a "recent arrival" — fixed with a
+     `b > thisYear` bound alongside the existing cutoff check.
+  4. **The home hub's "Did you know?" card now rotates on every visit, not once a day**: the
+     card previously called `pickDailyHighlight`, which is deliberately fixed for a whole
+     calendar day (correct for its OTHER purpose — see its own doc comment — but exactly what
+     the feedback asked to change here: "they should alternate... to maintain freshness and
+     variety"). `Home.jsx` now calls the underlying `highlightCandidates` pool directly and
+     steps to the next candidate via a small `nextInsightIndex()` helper backed by a
+     localStorage counter (`bl_home_insight_idx`) — persisted across visits (not component
+     state, which would reset on every Home mount), so returning to the hub always shows a
+     different fact from last time, cycling through the whole pool before repeating.
+     `pickDailyHighlight` itself is untouched and stays exported/tested — it's still exactly
+     right for `IdleFactHint`'s per-person tree hints, which have their own separate
+     session-based variety mechanism.
+  Covered by 21 new unit tests in `tests/insightModules.test.mjs` (`dayIndex`/`seededShuffle`
+  determinism, and threshold-boundary tests for each of the 7 new modules — a qualifying case
+  and a just-below-threshold case for each). Verified live via Playwright against the real dev
+  server: confirmed DOM order inside the Insights sheet (Records first, unconditionally, followed
+  by a genuinely shuffled remainder), drilled into three of the new module cards (Surnames,
+  Living Generations, Milestone Anniversaries) confirming their tap-to-drill-down interactions
+  work with zero console errors, and confirmed the home hub's teaser text differs across 4
+  consecutive visits in the same session (previously identical all day). Full unit suite (the
+  pre-existing, unrelated step-niece failure in `relations.test.mjs` aside), `npm run build`, and
+  the standard smoke test all passed clean.
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);
