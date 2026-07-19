@@ -5,6 +5,7 @@ import { formatDate } from '../lib/dates.js';
 import Avatar from './Avatar.jsx';
 import PhoneField from './PhoneField.jsx';
 import DateField from './DateField.jsx';
+import { MedalIcon } from './MilitaryIcons.jsx';
 
 const GENDER_OPTIONS = ['Male', 'Female', 'Non-binary', 'Other'];
 
@@ -84,6 +85,15 @@ export default function EditPersonSheet({ person, onClose, onSave, onRemove, sta
 
   const [emailError,   setEmailError]   = useState(false);
   const [privacyOpen,  setPrivacyOpen]  = useState(false);
+  // Collapsed by default — four fields nobody but a small minority of
+  // profiles ever use (real feedback: "not sure I like having the military
+  // data fields... 98% of people won't have that"). Starts OPEN only when
+  // there's already something in there (a document-accepted fact, or an
+  // earlier manual entry) so an existing record is never hidden behind an
+  // extra tap the first time this form opens.
+  const [militaryOpen, setMilitaryOpen] = useState(
+    !!(person.military_branch || person.military_nation || person.military_rank || person.military_service_number),
+  );
   const [confirmRemove, setConfirmRemove] = useState(false);
 
   useEffect(() => {
@@ -408,43 +418,66 @@ export default function EditPersonSheet({ person, onClose, onSave, onRemove, sta
               (see Enrich), but that's a one-time write with no live link
               back to the source document — if a document ever gets
               reassigned to a different person after the fact, correcting
-              or clearing what it wrote here is manual, right in this form. ── */}
-          <div className="field">
-            <span className="field__label">Military branch</span>
-            <div className="pill-pick">
-              {BRANCH_OPTIONS.map((o) => (
-                <button
-                  key={o.value}
-                  type="button"
-                  className={`pill-pick__opt${f.military_branch === o.value ? ' pill-pick__opt--on' : ''}`}
-                  onClick={() => pick('military_branch')(o.value)}
-                >
-                  {o.label}
-                </button>
-              ))}
-            </div>
+              or clearing what it wrote here is manual, right in this form.
+              Collapsed by default (same disclosure pattern as Privacy below)
+              since the vast majority of profiles have nothing to put here —
+              real feedback was that four always-visible fields for a small
+              minority felt like clutter on every single edit. ── */}
+          <div className="field privacy-section">
+            <button
+              type="button"
+              className="privacy-section__toggle"
+              onClick={() => setMilitaryOpen((o) => !o)}
+              aria-expanded={militaryOpen}
+            >
+              <span className="privacy-section__label"><MedalIcon /> Military service</span>
+              <span className="privacy-section__cur">
+                {f.military_branch ? BRANCH_LABELS[f.military_branch] : ''}
+              </span>
+              <span className="privacy-section__caret"><ChevronIcon open={militaryOpen} /></span>
+            </button>
+
+            {militaryOpen && (
+              <div className="privacy-section__body">
+                <div className="field">
+                  <span className="field__label">Military branch</span>
+                  <div className="pill-pick">
+                    {BRANCH_OPTIONS.map((o) => (
+                      <button
+                        key={o.value}
+                        type="button"
+                        className={`pill-pick__opt${f.military_branch === o.value ? ' pill-pick__opt--on' : ''}`}
+                        onClick={() => pick('military_branch')(o.value)}
+                      >
+                        {o.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <label className="field">
+                  <span className="field__label">Served with</span>
+                  <div className="input-wrap">
+                    <input className="field__input" value={f.military_nation} onChange={set('military_nation')} placeholder="e.g. Australia" />
+                    {f.military_nation && <button type="button" className="input-clear" onClick={clear('military_nation')} aria-label="Clear" tabIndex={-1}>×</button>}
+                  </div>
+                </label>
+                <label className="field">
+                  <span className="field__label">Rank</span>
+                  <div className="input-wrap">
+                    <input className="field__input" value={f.military_rank} onChange={set('military_rank')} placeholder="e.g. Corporal" />
+                    {f.military_rank && <button type="button" className="input-clear" onClick={clear('military_rank')} aria-label="Clear" tabIndex={-1}>×</button>}
+                  </div>
+                </label>
+                <label className="field">
+                  <span className="field__label">Service number</span>
+                  <div className="input-wrap">
+                    <input className="field__input" value={f.military_service_number} onChange={set('military_service_number')} placeholder="e.g. NX12345" />
+                    {f.military_service_number && <button type="button" className="input-clear" onClick={clear('military_service_number')} aria-label="Clear" tabIndex={-1}>×</button>}
+                  </div>
+                </label>
+              </div>
+            )}
           </div>
-          <label className="field">
-            <span className="field__label">Served with</span>
-            <div className="input-wrap">
-              <input className="field__input" value={f.military_nation} onChange={set('military_nation')} placeholder="e.g. Australia" />
-              {f.military_nation && <button type="button" className="input-clear" onClick={clear('military_nation')} aria-label="Clear" tabIndex={-1}>×</button>}
-            </div>
-          </label>
-          <label className="field">
-            <span className="field__label">Rank</span>
-            <div className="input-wrap">
-              <input className="field__input" value={f.military_rank} onChange={set('military_rank')} placeholder="e.g. Corporal" />
-              {f.military_rank && <button type="button" className="input-clear" onClick={clear('military_rank')} aria-label="Clear" tabIndex={-1}>×</button>}
-            </div>
-          </label>
-          <label className="field">
-            <span className="field__label">Service number</span>
-            <div className="input-wrap">
-              <input className="field__input" value={f.military_service_number} onChange={set('military_service_number')} placeholder="e.g. NX12345" />
-              {f.military_service_number && <button type="button" className="input-clear" onClick={clear('military_service_number')} aria-label="Clear" tabIndex={-1}>×</button>}
-            </div>
-          </label>
 
           {/* ── Email ── */}
           {!f.is_deceased && (

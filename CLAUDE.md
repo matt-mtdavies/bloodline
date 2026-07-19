@@ -854,6 +854,44 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   pre-existing, unrelated step-niece failure in `relations.test.mjs` aside), `npm run build`, and
   the standard smoke test all passed clean.
 
+- **Marriage/separation discoverability + military fields collapsed by default** (real user
+  feedback on the marriage/separation feature above: "not sure where this feature lives now? Only
+  on creation? So when you go into edit profile, there's nothing there for it? It's not all that
+  clear yet to add marriage or separation?" — plus, while looking, "not sure I like having the
+  military data fields. Maybe a drop down? The 98% of people won't have that."). Discussed both
+  first; agreed on the fixes below rather than a full relocation of either feature.
+  1. **Marriage/separation stays in the "⋮" manage-relationship menu** (it's a fact about the
+     *couple*, not one person, so it doesn't belong in the single-person Edit Profile form — that
+     part was deliberate, not a gap), but the entry point itself was too quiet: a bare "⋮" icon
+     gave no hint that marriage info lived behind it. Partner-type relationship chips now show a
+     new "+ Add marriage details" link (`.rel-chip__add-marriage`, `PersonSheet.jsx`) whenever
+     neither marriage nor separation info is set — `hasMarriageInfo` checks the exact same
+     `is_married`/`marriage_date`/`separation_date` fields the existing "· Married {year}" sub-label
+     already reads, so the two are mutually exclusive (a chip shows one or the other, never both,
+     never neither with no way in). Tapping it opens the identical "⋮" menu (`relMenuId` state) —
+     no new UI surface, just a second, louder door into the one that already existed. Rendered as
+     its own row below the nav+menu-button row (`.rel-chip`'s existing `flex-wrap` already puts
+     `.rel-menu` on its own line the same way), since it can't nest inside the `.rel-chip__nav`
+     button itself (that's already a full-row interactive element navigating to the person).
+  2. **Military fields collapsed by default in `EditPersonSheet.jsx`** — the four fields (branch,
+     served-with, rank, service number) sat always-visible in the main form for every profile
+     regardless of relevance. Wrapped in the exact same disclosure pattern the Privacy section
+     already uses (`privacy-section`/`privacy-section__toggle`/`__cur`/`__caret`/`__body` — fully
+     generic CSS, no lock-specific styling to fight), swapping the lock icon for `MilitaryIcons.jsx`'s
+     existing `MedalIcon` and the "current visibility" summary for the branch label when set.
+     `militaryOpen` starts **open** only when the person already has something in at least one of
+     the four fields (a document-accepted fact, or an earlier manual entry) — an existing record is
+     never hidden behind an extra tap the first time the form opens; it only collapses for the
+     blank case the feedback was actually about. Verified live via Playwright against the real dev
+     server: confirmed exactly one "+ Add marriage details" hint on James's profile (his former
+     partner Rachel Carter, who has `is_married: true` in the seed but no `marriage_date` — a real
+     married-but-incomplete case, correctly surfaced) and zero for his current partner Megan
+     (already showing "· Married 2016"); clicking the hint opened the Marriage editor directly;
+     separately confirmed the Rank input has zero matches before expanding the new Military
+     disclosure and exactly one after, with the toggle correctly closed by default on James's
+     mostly-empty seed profile. Full unit suite (the pre-existing, unrelated step-niece failure in
+     `relations.test.mjs` aside), `npm run build`, and the standard smoke test all passed clean.
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);

@@ -1617,6 +1617,15 @@ export default function PersonSheet({
                         const isMenuOpen = relMenuId === item.id;
                         const isConfirming = confirmUnlinkId === item.id;
                         const closeMenu = () => { setRelMenuId(null); setConfirmUnlinkId(null); };
+                        // Same fields the "· Married {year}" / "· Separated {year}"
+                        // sub-label above checks — when NEITHER is set, the only
+                        // way in is the plain "⋮" icon, which gives no hint that
+                        // marriage/separation info lives behind it at all (real
+                        // feedback: "not all that clear yet to add marriage or
+                        // separation"). hasMarriageInfo gates a louder, explicit
+                        // entry point instead of only a passive sub-label.
+                        const hasMarriageInfo = (item.is_married && item.marriage_date)
+                          || (item.status === 'former' && item.separation_date);
                         return (
                           <li key={item.id} className={'rel-chip' + (isMenuOpen ? ' rel-chip--editing' : '')}>
                             <button className="rel-chip__nav" onClick={() => { closeMenu(); onOpenPerson(item.id); }}>
@@ -1648,6 +1657,14 @@ export default function PersonSheet({
                                 aria-expanded={isMenuOpen}
                               >
                                 <DotsIcon />
+                              </button>
+                            )}
+                            {canEdit && g.relType === 'partner' && !hasMarriageInfo && !isMenuOpen && (
+                              <button
+                                className="rel-chip__add-marriage"
+                                onClick={() => { setConfirmUnlinkId(null); setRelMenuId(item.id); }}
+                              >
+                                + Add marriage details
                               </button>
                             )}
                             {canEdit && isMenuOpen && (
