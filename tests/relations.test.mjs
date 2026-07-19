@@ -3,7 +3,7 @@
  * family propagation, and edge cases. Run with: node tests/relations.test.mjs
  */
 import assert from 'node:assert/strict';
-import { buildGraph, relationLabel, distancesFrom, pathBetween } from '../src/data/graph.js';
+import { buildGraph, relationLabel, distancesFrom, pathBetween, sortSiblings } from '../src/data/graph.js';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -880,6 +880,62 @@ test('truly unrelated people (no common ancestor within range) still → Relativ
     [parentEdge('a', 'b')],
   );
   assert.equal(relationLabel(g, 'a', 'unrelated'), 'Relative');
+});
+
+// ── sortSiblings: Biological (age, name) → Half (age, name) → Step (age, name) ──
+
+test('sortSiblings: full siblings before half before step, oldest-to-youngest within each, alphabetical tiebreak', () => {
+  const people = [
+    person('x'),
+    person('f1', null, { birth_date: '1990-01-01', display_name: 'Zack' }),
+    person('f2', null, { birth_date: '1995-01-01', display_name: 'Amy' }),
+    person('h1', null, { birth_date: '1998-01-01', display_name: 'Wendy' }),
+    person('h2', null, { birth_date: '1998-01-01', display_name: 'Anna' }),
+    person('s1', null, { display_name: 'Chris' }), // no birth_date
+    person('s2', null, { display_name: 'Abby' }),  // no birth_date
+  ];
+  const rels = [
+    parentEdge('p1', 'x'), parentEdge('p2', 'x'),
+    parentEdge('p1', 'f1'), parentEdge('p2', 'f1'),
+    parentEdge('p1', 'f2'), parentEdge('p2', 'f2'),
+    parentEdge('p1', 'h1'), parentEdge('p3', 'h1'),
+    parentEdge('p1', 'h2'), parentEdge('p4', 'h2'),
+    { type: 'parent', from_person: 'p6', to_person: 'x', qualifier: 'step', partner_status: null },
+    parentEdge('p6', 's1'), parentEdge('p7', 's1'),
+    parentEdge('p6', 's2'), parentEdge('p7', 's2'),
+  ];
+  const g = buildGraph(
+    [...people, person('p1'), person('p2'), person('p3'), person('p4'), person('p6'), person('p7')],
+    rels,
+  );
+  const ordered = sortSiblings(g.siblings('x'), g.byId).map((s) => s.id);
+  assert.deepEqual(ordered, ['f1', 'f2', 'h2', 'h1', 's2', 's1']);
+});
+
+test('sortSiblings: within the same tier, a known birth date sorts before an unknown one', () => {
+  const people = [
+    person('x'),
+    person('a', null, { display_name: 'Zed' }), // no birth_date
+    person('b', null, { birth_date: '2000-01-01', display_name: 'Ann' }),
+  ];
+  const rels = [
+    parentEdge('p1', 'x'), parentEdge('p2', 'x'),
+    parentEdge('p1', 'a'), parentEdge('p2', 'a'),
+    parentEdge('p1', 'b'), parentEdge('p2', 'b'),
+  ];
+  const g = buildGraph([...people, person('p1'), person('p2')], rels);
+  const ordered = sortSiblings(g.siblings('x'), g.byId).map((s) => s.id);
+  assert.deepEqual(ordered, ['b', 'a'], 'the sibling with a known birth date should come first even though "Ann" < "Zed" alphabetically');
+});
+
+test('sortSiblings does not mutate the input array', () => {
+  const people = [person('x'), person('a', null, { display_name: 'A' }), person('b', null, { display_name: 'B' }), person('p1'), person('p2')];
+  const rels = [parentEdge('p1', 'x'), parentEdge('p1', 'a'), parentEdge('p1', 'b')];
+  const g = buildGraph(people, rels);
+  const original = g.siblings('x');
+  const originalOrder = original.map((s) => s.id);
+  sortSiblings(original, g.byId);
+  assert.deepEqual(original.map((s) => s.id), originalOrder);
 });
 
 // ── Report ────────────────────────────────────────────────────────────────────

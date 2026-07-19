@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import Avatar from './Avatar.jsx';
 import SmartImg from './SmartImg.jsx';
 import { lifespan, formatDate, ageOrAt, yearOf } from '../lib/dates.js';
-import { relationLabel } from '../data/graph.js';
+import { relationLabel, sortSiblings } from '../data/graph.js';
 import { useKinTerms } from '../lib/kinTerms.js';
 import { profileCompleteness, lifeEvents, fullName } from '../lib/profile.js';
 import { fileToDataUrl, uploadPhoto, uploadDocument, suggestDocumentTitle, imageSrcToDataUrl } from '../lib/image.js';
@@ -180,7 +180,9 @@ export default function PersonSheet({
   const partners = graph.partners(person.id);
   const parents = graph.parents(person.id);
   const children = graph.children(person.id);
-  const siblings = graph.siblings(person.id);
+  // Full (biological) siblings first, then half, then step — each tier
+  // oldest-to-youngest, alphabetical as the final tiebreak.
+  const siblings = sortSiblings(graph.siblings(person.id), graph.byId);
 
   const groups = [
     { title: partners.length > 1 ? 'Partners' : 'Partner', items: partners, relType: 'partner' },

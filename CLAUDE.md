@@ -1155,6 +1155,25 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   (the pre-existing, unrelated step-niece failure in `relations.test.mjs` aside) and
   `npm run build` passed clean.
 
+- **Siblings list gets a real, specified sort order** (explicit request: "Biological / Age /
+  Alphabetical / Half siblings / Age / Alphabetical / Steps / Age / Alphabetical" — a 3-tier sort
+  by kind, then oldest-to-youngest, then alphabetical). The Siblings group previously rendered in
+  whatever order `graph.siblings()` derived them (insertion order from relationship iteration —
+  effectively arbitrary). New `sortSiblings(siblings, byId)` in `graph.js` sorts by the existing
+  `kind` field (`'full'` → what the request calls "Biological" → `'half'` → `'step'`, already
+  computed by the sibling-derivation loop right above it), then by `birth_date` ascending within
+  each tier (a known birth date always sorts before an unknown one, rather than unknowns
+  interleaving unpredictably), then `display_name.localeCompare` as the final tiebreak. Wired into
+  both places a Siblings group is rendered as an ordered list: `PersonSheet.jsx` (the profile) and
+  `AccessibleTree.jsx` (List view's focused-person group) — the two other `graph.siblings()` call
+  sites (`App.jsx`, `HoverCard.jsx`) only ever use it for Set membership or aggregate kind counts,
+  where order is a no-op, so they're untouched. Covered by 3 new unit tests in
+  `relations.test.mjs` (a full family exercising all three tiers at once with an age tie and an
+  all-unknown-dates tie, a known-vs-unknown-date tiebreak, and a non-mutation check) and verified
+  live against the seed data — James's own two full siblings (Sarah b. 1988, Tom b. 1990) render
+  in that exact oldest-first order. Full unit suite (the pre-existing, unrelated step-niece
+  failure aside) and `npm run build` passed clean.
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);

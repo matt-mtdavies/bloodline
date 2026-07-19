@@ -7,6 +7,27 @@
  */
 import { resolveGrandparentTerm, resolveAncestorTerm } from '../lib/kinTerms.js';
 
+// Siblings list display order: full (biological) siblings first, then half,
+// then step — each tier internally oldest-to-youngest by birth date, with
+// alphabetical-by-name as the final tiebreak (also how two siblings with no
+// known birth date, or the same one, settle their order). Exported so any
+// view rendering a Siblings group (PersonSheet today) sorts identically.
+const SIBLING_KIND_ORDER = { full: 0, half: 1, step: 2 };
+export function sortSiblings(siblings, byId) {
+  return [...siblings].sort((a, b) => {
+    const kindDiff = (SIBLING_KIND_ORDER[a.kind] ?? 3) - (SIBLING_KIND_ORDER[b.kind] ?? 3);
+    if (kindDiff) return kindDiff;
+    const pa = byId.get(a.id);
+    const pb = byId.get(b.id);
+    const ba = pa?.birth_date;
+    const bb = pb?.birth_date;
+    if (ba && bb && ba !== bb) return ba < bb ? -1 : 1;
+    if (ba && !bb) return -1; // known birth date sorts before unknown
+    if (!ba && bb) return 1;
+    return (pa?.display_name || '').localeCompare(pb?.display_name || '');
+  });
+}
+
 export function buildGraph(people, relationships) {
   const byId = new Map(people.map((p) => [p.id, p]));
 

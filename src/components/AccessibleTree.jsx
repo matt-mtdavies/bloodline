@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, useLayoutEffect, useRef } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import Avatar from './Avatar.jsx';
 import { lifespan } from '../lib/dates.js';
-import { relationLabel } from '../data/graph.js';
+import { relationLabel, sortSiblings } from '../data/graph.js';
 import { useKinTerms } from '../lib/kinTerms.js';
 
 // Measured from a live render (390px viewport): a person-row is 62px tall,
@@ -40,7 +40,10 @@ export default function AccessibleTree({ graph, focusId, onFocus, onOpenPerson, 
     const partners = graph.partners(focusId);
     const parents = graph.parents(focusId);
     const children = graph.children(focusId);
-    const siblings = graph.siblings(focusId);
+    // Full (biological) siblings first, then half, then step — each tier
+    // oldest-to-youngest, alphabetical as the final tiebreak. Same helper
+    // PersonSheet uses, so the two views never disagree on order.
+    const siblings = sortSiblings(graph.siblings(focusId), graph.byId);
 
     const immediate = [
       { title: partners.length > 1 ? 'Partners' : 'Partner', items: partners },
