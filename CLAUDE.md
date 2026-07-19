@@ -1037,6 +1037,41 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   pre-existing, unrelated step-niece failure in `relations.test.mjs` aside), `npm run build`, and
   the standard smoke test all passed clean.
 
+- **"Show both in tree" polish pass** (real follow-up feedback on a screenshot of that feature:
+  "fade all bubbles other than the two immediate families of the duplicates in question... have
+  the gold ring more noticable and the name tag displayed on both"). Three changes in
+  `BubbleTree.jsx`/`bubble.js`, all scoped to when `compareDist` is active (i.e. only during a
+  duplicate-pair comparison, never ordinary browsing):
+  1. **Harder fade for everyone else** — the normal focus-fade floor (0.2 alpha for anything
+     beyond 3 hops) is deliberately gentle for everyday browsing, so extended relatives stay
+     lightly visible for context. While `compareDist` is set, the same tiers instead floor out at
+     0.05 (d≤1 still reads at full alpha 1 for both families) — isolating just the two families
+     being compared, per the feedback, without touching the gentler default used the rest of the
+     time.
+  2. **A more noticeable gold ring** — `setRecapGlow` (shared with the recap tour's own "who
+     changed" lingering ring) went from a single thin 2.2px stroke to a soft outer halo (7px,
+     faint) plus a thicker 3.4px crisp inner ring, so it reads as clearly "lit" at a glance rather
+     than needing a close look — this matters more here than in the recap tour, since two separate
+     (often distant) bubbles both need to announce themselves without the ego-camera's own
+     active-ring/scale/lift treatment to lean on.
+  3. **Name label on both, unconditionally** — the per-bubble label was already suppressed for
+     whichever person is the literal ego-camera `active` id (that one's name shows via the floating
+     `FocusNameplate` instead, to avoid duplication) — correct for ordinary single-focus browsing,
+     but the nameplate can only ever hover near ONE bubble, so the second duplicate candidate (who
+     can be anywhere else on the canvas, disconnected or not) had no label at all. New
+     `compareIds` (a `Set` of the two ids, set/cleared alongside `compareDist` in
+     `setCompareFocus`/`clearCompareFocus`) forces `labelAlpha = 1` for both members of an active
+     comparison pair regardless of the ordinary active-person/hover rules, guaranteeing both always
+     carry a visible name — the one genuine gap the screenshot showed (one candidate had a label,
+     the other didn't).
+  Verified live via Playwright against the real dev server: merged a duplicate stub "William
+  Mercer" into the seed family (unconnected, matching the real "William Mercer" by name), opened
+  Possible Duplicates, and confirmed via screenshot after "Show both in tree" that (a) the
+  surrounding 24-person tree faded to near-invisible outside the two families, (b) both bubbles
+  carry a clearly thicker layered gold ring, and (c) both show a "William Mercer" label — including
+  the previously-unlabeled second candidate. Full unit suite (the pre-existing, unrelated
+  step-niece failure in `relations.test.mjs` aside) and `npm run build` passed clean.
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);

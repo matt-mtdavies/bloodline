@@ -387,6 +387,15 @@ export default function BubbleTree({
       // visible instead of fading into the background like an unrelated
       // stranger. See setCompareFocus/clearCompareFocus in the returned API.
       let compareDist = null;
+      // The raw pair of ids compareDist was built from — kept alongside it so
+      // the name-label rule below can force BOTH candidates' labels on
+      // unconditionally (see labelAlpha), rather than relying on the ordinary
+      // per-bubble label rules (which suppress the literal `active` person's
+      // label in favour of the floating FocusNameplate — fine when there's
+      // one focal person, but the nameplate can only ever hover near ONE
+      // bubble, so the other candidate needs its label guaranteed some other
+      // way regardless of hover/active state).
+      let compareIds = null;
 
       let reorgTimer = null; // tracks the forceY strength-restore after a tap
       const manualPins = new Set(); // nodes the user has manually repositioned
@@ -1074,7 +1083,7 @@ export default function BubbleTree({
         // so both candidates (and each one's own immediate family) read as
         // d≤1 while everyone unrelated to either still recedes normally.
         setCompareFocus(ids) {
-          if (!ids || ids.length < 2) { compareDist = null; return; }
+          if (!ids || ids.length < 2) { compareDist = null; compareIds = null; return; }
           state.ensureVisible(ids);
           const merged = new Map();
           for (const id of ids) {
@@ -1082,9 +1091,11 @@ export default function BubbleTree({
             for (const [k, v] of m) merged.set(k, Math.min(merged.get(k) ?? Infinity, v));
           }
           compareDist = merged;
+          compareIds = new Set(ids);
         },
         clearCompareFocus() {
           compareDist = null;
+          compareIds = null;
         },
         // A landed FlightCaption's reopened chain calls this when a hop is
         // tapped — brief "there it is" bump on that bubble, no camera move
@@ -1945,7 +1956,16 @@ export default function BubbleTree({
             // Focus fading: immediate family pops; extended family recedes softly.
             // This gives the graph visible hierarchy without a card being open.
             const base = visualForDistance(d);
-            const focusAlpha = d <= 1 ? 1 : d === 2 ? 0.62 : d === 3 ? 0.38 : 0.2;
+            // While comparing two duplicate candidates (compareDist set), fade
+            // everything outside their two immediate families much harder than
+            // ordinary single-focus browsing does — the whole point of "Show
+            // both in tree" is isolating just the two families being compared
+            // (real feedback: "fade all bubbles other than the two immediate
+            // families"), whereas normal browsing's gentler 0.2 floor is tuned
+            // to keep extended relatives lightly visible for context.
+            const focusAlpha = compareDist
+              ? (d <= 1 ? 1 : d === 2 ? 0.22 : d === 3 ? 0.1 : 0.05)
+              : (d <= 1 ? 1 : d === 2 ? 0.62 : d === 3 ? 0.38 : 0.2);
             // Once the post-flight lingering (above) finally clears, hand off
             // at the same elevated size rather than dropping back to the
             // ordinary active-person baseline — see searchSpotlightId.
@@ -1994,7 +2014,16 @@ export default function BubbleTree({
             && !browseRef.current
             && layoutRef.current !== 'chart'
             && hoveredId !== activeRef.current;
-          const labelAlpha = (!cardOpen && !lineage && effectiveVis.has(id) && !nameplateShowing) ? 1 : 0;
+          // While comparing two duplicate candidates, force BOTH of their
+          // labels on regardless of the rules above — the floating
+          // FocusNameplate can only ever hover near the one literal `active`
+          // bubble, so it's not a substitute for a label on the second
+          // candidate, which can be anywhere else on the canvas (real
+          // feedback: "have... the name tag displayed on both").
+          const forcedCompareLabel = !!(compareIds && compareIds.has(id) && effectiveVis.has(id));
+          const labelAlpha = forcedCompareLabel
+            ? 1
+            : (!cardOpen && !lineage && effectiveVis.has(id) && !nameplateShowing) ? 1 : 0;
           const birth = births.get(id);
           if (birth && !birth.bubbleSettled && effectiveVis.has(id)) {
             // The birth effect owns the pop: it scales the bubble up with an

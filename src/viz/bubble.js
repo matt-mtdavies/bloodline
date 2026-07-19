@@ -542,7 +542,14 @@ export class Bubble {
   // Warm gold ring left behind after the "what's changed" recap tour visits
   // this bubble — stays lit for the rest of the tour (and a little after) so
   // by the time it ends you can see the whole constellation of who changed,
-  // at a glance, without re-reading the queue list.
+  // at a glance, without re-reading the queue list. Also reused by the
+  // duplicate-review sheet's "Show both in tree" to mark BOTH candidates at
+  // once (see BubbleTree.jsx's spotlightSetGlow) — a soft outer halo plus a
+  // crisp inner ring reads as noticeably more "lit" than a single thin stroke
+  // did (real feedback on that feature: "have the gold ring more noticable"),
+  // which matters more there since two separate, often distant bubbles both
+  // need to announce themselves at a glance rather than one bubble already
+  // anchored by the ego-camera's own active-ring/scale/lift treatment.
   setRecapGlow(on) {
     if (on === this._recapGlow) return;
     this._recapGlow = on;
@@ -553,7 +560,9 @@ export class Bubble {
     }
     this._recapRing.clear();
     if (on) {
-      this._recapRing.circle(0, 0, this.r + 5.5).stroke({ width: 2.2, color: hex('#e8a53d'), alpha: 0.85 });
+      const r = this.r;
+      this._recapRing.circle(0, 0, r + 10).stroke({ width: 7, color: hex('#e8a53d'), alpha: 0.22 });
+      this._recapRing.circle(0, 0, r + 5.5).stroke({ width: 3.4, color: hex('#e8a53d'), alpha: 0.95 });
     }
   }
 
