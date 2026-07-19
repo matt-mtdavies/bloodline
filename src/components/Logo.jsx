@@ -30,14 +30,14 @@ export default function Logo({ size = 30, animate = true, loading = false, idle 
     >
       {loading && (
         <g className="logo__links">
-          <line className="logo__link" x1="15" y1="17" x2="27" y2="17" />
-          <line className="logo__link" x1="15" y1="17" x2="21" y2="29" />
-          <line className="logo__link" x1="27" y1="17" x2="21" y2="29" />
+          <line className="logo__link" x1="13.9" y1="16.5" x2="28.1" y2="16.5" />
+          <line className="logo__link" x1="13.9" y1="16.5" x2="21" y2="30.6" />
+          <line className="logo__link" x1="28.1" y1="16.5" x2="21" y2="30.6" />
         </g>
       )}
-      <circle className="logo__a" cx="15" cy="17" r="10" fill="#c2603a" stroke="#fff" strokeWidth="2.4" />
-      <circle className="logo__b" cx="27" cy="17" r="10" fill="#3f5e4e" stroke="#fff" strokeWidth="2.4" />
-      <circle className="logo__c" cx="21" cy="29" r="6.6" fill="#b08642" stroke="#fff" strokeWidth="2.4" />
+      <circle className="logo__a" cx="13.9" cy="16.5" r="11.8" fill="#c2603a" stroke="#fff" strokeWidth="2.8" />
+      <circle className="logo__b" cx="28.1" cy="16.5" r="11.8" fill="#3f5e4e" stroke="#fff" strokeWidth="2.8" />
+      <circle className="logo__c" cx="21" cy="30.6" r="7.8" fill="#c4913f" stroke="#fff" strokeWidth="2.8" />
     </svg>
   );
 }

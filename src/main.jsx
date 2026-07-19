@@ -12,9 +12,9 @@ class ErrorBoundary extends React.Component {
       return (
         <div style={{ position:'fixed', inset:0, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', background:'#faf7f4', gap:16, padding:32, textAlign:'center' }}>
           <svg width="42" height="40" viewBox="0 0 42 40" fill="none" aria-hidden="true">
-            <circle cx="15" cy="17" r="10" fill="#c2603a"/>
-            <circle cx="27" cy="17" r="10" fill="#3f5e4e"/>
-            <circle cx="21" cy="29" r="6.6" fill="#b08642"/>
+            <circle cx="13.9" cy="16.5" r="11.8" fill="#c2603a"/>
+            <circle cx="28.1" cy="16.5" r="11.8" fill="#3f5e4e"/>
+            <circle cx="21" cy="30.6" r="7.8" fill="#c4913f"/>
           </svg>
           <p style={{ color:'#6b5a4e', fontSize:15, margin:0 }}>Something went wrong — please reload.</p>
           <button onClick={() => location.reload()} style={{ padding:'10px 24px', background:'#c2603a', color:'#fff', borderRadius:999, border:'none', fontSize:15, cursor:'pointer' }}>

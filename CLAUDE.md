@@ -1096,6 +1096,41 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   both float correctly above their own bubble at the same time. Full unit suite (the pre-existing,
   unrelated step-niece failure in `relations.test.mjs` aside) and `npm run build` passed clean.
 
+- **Icon refresh: bolder circle scale + a refined gold** (design review, prompted by the user
+  sharing an AI-generated rebrand pitch — dark leather, glossy emboss, a serif wordmark — and
+  asking for a design opinion). Reviewed it against the *actual* shipped icon (`public/favicon.svg`
+  + `favicon-maskable.svg`, not just `Logo.jsx`) rather than in the abstract, built a Playwright-
+  verified comparison artifact showing four real variants of the shipped mark at true pixel sizes
+  (96/60/40/29px) plus a light/dark home-screen simulation, and recommended against the leather
+  direction (it's a different visual language from everything else in the app — matte paper, not
+  glossy skeuomorphism) but FOR the one legitimate critique underneath it: the mark sat with too
+  much padding, reading a little timid at small size. Landed on two changes, agreed by the user:
+  1. **Circles enlarged ~18% about the icon's centre** (same relative composition, same flat
+     treatment, no gradient/bevel added) — more confident fill of the frame, which reads faster at
+     the sizes an icon actually lives at (29–40px on a real home screen).
+  2. **The third circle's gold formalized AND re-tuned** — `#b08642` was never a deliberate token,
+     just a hex copy-pasted seven times across `components.css` (one spot even already referenced
+     `var(--gold, #b08642)`, anticipating a token that didn't exist). Promoted to a real `--gold`
+     token in `theme.css`, then nudged warmer/more saturated to `#c4913f` so it reads as a chosen
+     third colour between terracotta and sage rather than a slightly muddy leftover.
+  Applied everywhere this exact mark is duplicated in the codebase, not just the app icon, since
+  leaving some copies stale would have recreated the inconsistency the review was fixing:
+  `public/favicon.svg` + `favicon-maskable.svg` (source SVGs — the maskable variant's own dark
+  `#1c1108` background is untouched; that's a real, deliberate, pre-existing Android-adaptive-icon
+  safe-zone fill, not something this pass touched), the four PNG exports regenerated via the
+  existing `tests/_geniconpng.mjs` Playwright rasterizer, `Logo.jsx` (the in-app topbar/splash
+  mark, its own `viewBox 0 0 42 40` coordinate system scaled by the equivalent factor), the
+  `main.jsx` ErrorBoundary's fallback-screen copy of that same mark, `public/admin.html`'s embedded
+  mark + its own separate `--gold`/`COLOR.gold` (that file keeps a parallel, non-shared token set
+  from the main app's `theme.css`), `public/privacy.html` + `terms.html`'s embedded mark (a THIRD
+  independent coordinate system, `viewBox 0 0 56 56` — also scaled by the equivalent factor), and
+  `Home.jsx`'s unrelated 5-node "family constellation" hero graphic, whose third node happened to
+  reuse the same gold and is now wired to the `--gold` token like everywhere else. Verified live:
+  the regenerated PNGs visually confirmed (fuller, more confident circle fill; noticeably richer
+  gold) and the in-app topbar mark screenshotted clean with no clipping or overflow at its real
+  render size. Full unit suite (the pre-existing, unrelated step-niece failure in
+  `relations.test.mjs` aside) and `npm run build` passed clean.
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);

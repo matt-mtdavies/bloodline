@@ -307,7 +307,7 @@ function TreeConstellation() {
       <line x1="54" y1="96" x2="74" y2="132" stroke="var(--hairline)" strokeWidth="1.6" />
       <circle className="home__const-node home__const-node--1" cx="100" cy="18" r="16" fill="#c2603a" />
       <circle className="home__const-node home__const-node--2" cx="54" cy="88" r="14.5" fill="#3f5e4e" />
-      <circle className="home__const-node home__const-node--3" cx="146" cy="88" r="14.5" fill="#b08642" />
+      <circle className="home__const-node home__const-node--3" cx="146" cy="88" r="14.5" fill="var(--gold)" />
       <circle className="home__const-node home__const-node--4" cx="34" cy="138" r="11" fill="#6b5e7a" />
       <circle className="home__const-node home__const-node--5" cx="74" cy="138" r="11" fill="#a44d2c" />
     </svg>
