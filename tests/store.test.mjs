@@ -300,5 +300,49 @@ test('resetTree tombstones survive a simulated server merge (the actual bug scen
   assert.equal(survivingPeople.length, 0, 'a tombstoned person must not survive a merge with a stale server copy');
 });
 
+// Regression test for the sibling bug found while reviewing the import
+// pipeline (real report: a 600-person import "cited many duplicates
+// created"): importFromGedcom's merge:false ("Replace") branch had the
+// exact same un-tombstoned-wipe pattern resetTree() had — it swapped in
+// {...EMPTY, people: newPeople, ...} with no record that the OLD tree was
+// deliberately erased, so a later sync merge could silently resurrect it
+// underneath the freshly-imported data.
+test('importFromGedcom (replace mode) tombstones the old tree before swapping in the import', () => {
+  importFromGedcom(
+    [
+      { id: 'old_a', display_name: 'Old Person A' },
+      { id: 'old_b', display_name: 'Old Person B' },
+    ],
+    [{ id: 'r_old', type: 'partner', from_person: 'old_a', to_person: 'old_b', partner_status: 'current' }],
+    { merge: false },
+  );
+  const memId = addMemory('old_a', { text: 'An old memory.' });
+  const photoId = addPhoto('old_a', { src: 'data:image/png;base64,abc', caption: 'An old photo' });
+  const docId = addDocument('old_a', { title: 'An old document', mime: 'application/pdf', src: 'data:application/pdf;base64,abc' });
+
+  importFromGedcom(
+    [{ id: 'new_a', display_name: 'New Person A' }],
+    [],
+    { merge: false },
+  );
+
+  const after = store.getState();
+  assert.deepEqual(after.people.map((p) => p.id), ['new_a'], 'only the newly imported person should remain');
+  assert.equal(after.relationships.length, 0, 'the old relationship should be gone');
+
+  assert.ok(after._deleted?.people?.old_a, 'old_a must be tombstoned');
+  assert.ok(after._deleted?.people?.old_b, 'old_b must be tombstoned');
+  assert.ok(after._deleted?.relationships?.r_old, 'the old partner edge must be tombstoned');
+  assert.ok(after._deleted?.memories?.[memId], 'the old memory must be tombstoned');
+  assert.ok(after._deleted?.photos?.[photoId], 'the old photo must be tombstoned');
+  assert.ok(after._deleted?.documents?.[docId], 'the old document must be tombstoned');
+
+  // Same merge-survival check as resetTree's own regression test — a stale
+  // server copy of the old tree must not resurrect through the tombstones.
+  const staleServerPeople = [{ id: 'old_a', display_name: 'Old Person A' }];
+  const survivingPeople = staleServerPeople.filter((p) => !after._deleted?.people?.[p.id]);
+  assert.equal(survivingPeople.length, 0, 'a tombstoned old person must not survive a merge with a stale server copy');
+});
+
 console.log(`\n  ${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);

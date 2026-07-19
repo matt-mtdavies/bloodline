@@ -6355,6 +6355,17 @@ button.health-notes {
   padding: 10px 14px;
 }
 
+.gedcom__dup-note {
+  font-size: 13px;
+  line-height: 1.45;
+  color: #8a5a1f;
+  margin: 0;
+  background: #fff6e8;
+  border: 1px solid #f0dcc0;
+  border-radius: 10px;
+  padding: 10px 14px;
+}
+
 /* Merge options */
 .gedcom__merge-section {
   display: flex;
@@ -8908,7 +8919,30 @@ button.health-notes {
 }
 .dups__title > svg { color: var(--accent, #c2603a); }
 .dups__intro { margin: 2px 2px 16px; font-size: 13.5px; line-height: 1.5; color: var(--ink-soft, #6b6260); }
+/* Bulk "dismiss all" — for a large post-import backlog. Never a bulk merge:
+   see the component's own comment on why that stays per-pair only. */
+.dups__bulk { margin: 0 2px 14px; }
+.dups__bulk-dismiss {
+  width: 100%; padding: 10px 14px; border-radius: 12px; cursor: pointer;
+  background: transparent; border: 1px dashed var(--hairline, #ebedf0);
+  color: var(--ink-soft, #6b6260); font-size: 13px; font-weight: 500;
+}
+.dups__bulk-dismiss:hover { border-color: var(--ink-faint, #a09590); }
+.dups__bulk-confirm {
+  display: flex; flex-direction: column; gap: 10px;
+  font-size: 13px; line-height: 1.45; color: var(--ink, #241f1c);
+  background: var(--ground, #f7f3ec); border-radius: 12px; padding: 12px;
+}
+.dups__bulk-confirm-btns { display: flex; gap: 8px; }
+.dups__bulk-confirm-btns .dups__merge { flex: 1; }
+.dups__bulk-confirm-btns .dups__cancel { flex: 1; }
 .dups__list { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; }
+.dups__more {
+  width: 100%; margin-top: 14px; padding: 11px 14px; border-radius: 12px; cursor: pointer;
+  background: var(--ground, #f7f3ec); border: 1px solid var(--hairline, #ebedf0);
+  color: var(--ink, #241f1c); font-size: 13.5px; font-weight: 600;
+}
+.dups__more:hover { background: var(--paper-deep, #efe9df); }
 .dups__pair {
   border: 1px solid var(--hairline, #ebedf0); border-radius: 16px; padding: 14px;
   background: var(--card, #fff);

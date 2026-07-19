@@ -1869,22 +1869,41 @@ export function resetTree() {
 // merge=false: wipes everything and starts fresh with the imported data.
 // merge=true: appends to the existing tree (duplicates possible).
 export function importFromGedcom(newPeople, newRelationships, { merge = false } = {}) {
-  const next = merge
-    ? {
-        ...state,
-        people: [...state.people, ...newPeople],
-        relationships: [...state.relationships, ...newRelationships],
-      }
-    : {
-        ...EMPTY,
-        people: newPeople,
-        relationships: newRelationships,
-        hasCompletedOnboarding: true,
-        familyName: state.familyName || 'My Family',
-        myPersonId: newPeople[0]?.id ?? null,
-        activity: state.activity ?? [],
-      };
+  if (merge) {
+    commit({
+      ...state,
+      people: [...state.people, ...newPeople],
+      relationships: [...state.relationships, ...newRelationships],
+    });
+    return;
+  }
+  // Replace mode wipes the whole existing tree — this used to just spread
+  // ...EMPTY over the old state with no tombstones, the exact same bug fixed
+  // in resetTree() above: a later sync merge (a conflict retry on this save,
+  // a background poll, the next login on another device) would see "no
+  // local record for this id" and silently keep whatever the server still
+  // had, resurrecting the erased tree underneath the freshly-imported one.
+  // Apply the identical tombstone treatment, and force this to become the
+  // authoritative server copy immediately rather than the normal debounced
+  // save (see resetTree()'s own comment for why If-Match: '*' is needed).
+  let next = { ...EMPTY, _deleted: state._deleted };
+  next = withTombstones(next, 'people', state.people.map((p) => p.id));
+  next = withTombstones(next, 'relationships', state.relationships.map((r) => r.id));
+  next = withTombstones(next, 'memories', (state.memories || []).map((m) => m.id));
+  next = withTombstones(next, 'photos', (state.photos || []).map((ph) => ph.id));
+  next = withTombstones(next, 'documents', (state.documents || []).map((d) => d.id));
+  next = {
+    ...next,
+    people: newPeople,
+    relationships: newRelationships,
+    hasCompletedOnboarding: true,
+    familyName: state.familyName || 'My Family',
+    myPersonId: newPeople[0]?.id ?? null,
+    activity: state.activity ?? [],
+  };
   commit(next);
+  _serverEtag = '*';
+  flushPendingSave();
 }
 
 // ── Health conditions ──────────────────────────────────────────────────────────

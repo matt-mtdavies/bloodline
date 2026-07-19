@@ -2,6 +2,11 @@ import { useState, useMemo, useEffect } from 'react';
 import Avatar from './Avatar.jsx';
 import { pairKey } from '../lib/duplicates.js';
 
+// A big import (real report: 600 people, "cited many duplicates created")
+// can turn up far more candidate pairs than a one-screen list can show
+// comfortably — page it rather than rendering every card at once.
+const PAGE_SIZE = 20;
+
 // A rough "how complete is this record" score, to default the keep choice to the
 // richer entry (so a merge loses as little as possible).
 function richness(p) {
@@ -43,6 +48,15 @@ export default function DuplicatesSheet({ pairs, graph, onMerge, onDismiss, onCl
   // (real report: "I accidentally merged Ashley last week and it caused
   // some confusion... I couldn't tell whose kids belonged to who").
   const [confirmKey, setConfirmKey] = useState(null);
+  // A big backlog is tractable to page through, but not to bulk-merge — a
+  // merge is destructive (see the per-pair confirm step above, added after a
+  // real accidental-merge report) and auto-picking which record "wins" across
+  // dozens of pairs unsupervised is a worse mistake than the one this sheet
+  // exists to prevent. Bulk-dismissing (marking pairs as "not duplicates") is
+  // safe by comparison — it never touches tree data — so that's the one bulk
+  // action offered, still behind its own confirm step.
+  const [bulkConfirming, setBulkConfirming] = useState(false);
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
   useEffect(() => {
     const onKey = (e) => e.key === 'Escape' && onClose();
@@ -60,6 +74,8 @@ export default function DuplicatesSheet({ pairs, graph, onMerge, onDismiss, onCl
       .filter((p) => p.a && p.b),
     [pairs, graph],
   );
+
+  const paged = visible.slice(0, visibleCount);
 
   const commitMerge = (pair) => {
     const chosen = keepChoice[pair.key] || (richness(pair.a) >= richness(pair.b) ? pair.aId : pair.bId);
@@ -90,8 +106,30 @@ export default function DuplicatesSheet({ pairs, graph, onMerge, onDismiss, onCl
               These people share a name and look like they might be the same person.
               Pick the record to keep, then merge — or dismiss if they're different people.
             </p>
+            {visible.length > 1 && (
+              <div className="dups__bulk">
+                {bulkConfirming ? (
+                  <div className="dups__bulk-confirm">
+                    <span>Dismiss all {visible.length} pairs shown as not duplicates?</span>
+                    <div className="dups__bulk-confirm-btns">
+                      <button
+                        className="dups__merge"
+                        onClick={() => { visible.forEach((p) => onDismiss(p.key)); setBulkConfirming(false); }}
+                      >
+                        Yes, dismiss all
+                      </button>
+                      <button className="dups__cancel" onClick={() => setBulkConfirming(false)}>Cancel</button>
+                    </div>
+                  </div>
+                ) : (
+                  <button className="dups__bulk-dismiss" onClick={() => setBulkConfirming(true)}>
+                    Dismiss all {visible.length} as not duplicates
+                  </button>
+                )}
+              </div>
+            )}
             <ul className="dups__list">
-              {visible.map((pair) => {
+              {paged.map((pair) => {
                 const keepId = keepChoice[pair.key] || (richness(pair.a) >= richness(pair.b) ? pair.aId : pair.bId);
                 const keepPerson = keepId === pair.a.id ? pair.a : pair.b;
                 const dropPerson = keepId === pair.a.id ? pair.b : pair.a;
@@ -171,6 +209,14 @@ export default function DuplicatesSheet({ pairs, graph, onMerge, onDismiss, onCl
                 );
               })}
             </ul>
+            {visible.length > visibleCount && (
+              <button
+                className="dups__more"
+                onClick={() => setVisibleCount((n) => n + PAGE_SIZE)}
+              >
+                Show {Math.min(PAGE_SIZE, visible.length - visibleCount)} more (of {visible.length})
+              </button>
+            )}
           </>
         )}
       </div>

@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { openFamilySearchOAuth, fetchTree } from '../lib/familysearch.js';
+import { findDuplicatePairs } from '../lib/duplicates.js';
 
 const GENERATION_OPTIONS = [
   { value: 3, label: '3 generations', sub: 'Up to 15 ancestors' },
@@ -7,7 +8,7 @@ const GENERATION_OPTIONS = [
   { value: 5, label: '5 generations', sub: 'Up to 63 ancestors' },
 ];
 
-export default function FamilySearchImport({ onImport, onClose, canReplace = true }) {
+export default function FamilySearchImport({ onImport, onClose, canReplace = true, existingPeople = [], existingRelationships = [] }) {
   const [step, setStep] = useState('connect'); // connect | fetching | preview | importing | done
   const [generations, setGenerations] = useState(4);
   const [token, setToken] = useState(null);
@@ -16,6 +17,20 @@ export default function FamilySearchImport({ onImport, onClose, canReplace = tru
   // canManageTree) — default and restrict accordingly for anyone below that.
   const [mergeMode, setMergeMode] = useState(canReplace ? 'replace' : 'merge');
   const [error, setError] = useState(null);
+
+  // Same proactive duplicate check as GedcomImport.jsx — see its comment.
+  const duplicateCount = useMemo(() => {
+    if (!result) return 0;
+    if (mergeMode === 'merge') {
+      const newIds = new Set(result.people.map((p) => p.id));
+      const pairs = findDuplicatePairs(
+        [...existingPeople, ...result.people],
+        [...existingRelationships, ...result.relationships],
+      );
+      return pairs.filter((pr) => newIds.has(pr.aId) || newIds.has(pr.bId)).length;
+    }
+    return findDuplicatePairs(result.people, result.relationships).length;
+  }, [result, mergeMode, existingPeople, existingRelationships]);
 
   async function handleConnect() {
     setError(null);
@@ -94,6 +109,7 @@ export default function FamilySearchImport({ onImport, onClose, canReplace = tru
             onImport={handleImport}
             onBack={() => setStep('connect')}
             canReplace={canReplace}
+            duplicateCount={duplicateCount}
           />
         )}
 
@@ -169,7 +185,7 @@ function FetchingStep({ generations }) {
   );
 }
 
-function PreviewStep({ result, generations, onGenerations, mergeMode, onMergeMode, error, onFetch, onImport, onBack, canReplace }) {
+function PreviewStep({ result, generations, onGenerations, mergeMode, onMergeMode, error, onFetch, onImport, onBack, canReplace, duplicateCount = 0 }) {
   const { people, relationships } = result;
   const partnerCount = relationships.filter((r) => r.type === 'partner').length;
   const parentCount = relationships.filter((r) => r.type === 'parent').length;
@@ -220,6 +236,14 @@ function PreviewStep({ result, generations, onGenerations, mergeMode, onMergeMod
       </div>
 
       {error && <p className="gedcom__error" role="alert">{error}</p>}
+
+      {duplicateCount > 0 && (
+        <p className="gedcom__dup-note" role="status">
+          <DupIcon /> {duplicateCount} possible duplicate {duplicateCount === 1 ? 'person' : 'people'}
+          {mergeMode === 'merge' ? ' against your existing tree' : ' within this import'} —
+          you'll be able to review and merge them from "Possible duplicates" after importing.
+        </p>
+      )}
 
       <div className="gedcom__merge-section">
         <p className="gedcom__merge-title">How should we handle your existing tree?</p>
@@ -309,6 +333,15 @@ function CheckIcon() {
   return (
     <svg width="28" height="28" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <path d="M5 13l4 4L19 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  );
+}
+
+function DupIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{display:'inline',verticalAlign:'middle',marginRight:4}}>
+      <path d="M12 9v4M12 16.5h.01" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+      <path d="M10.3 3.9 1.8 18.3a1.6 1.6 0 0 0 1.4 2.4h17.6a1.6 1.6 0 0 0 1.4-2.4L13.7 3.9a1.6 1.6 0 0 0-2.8 0Z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round"/>
     </svg>
   );
 }

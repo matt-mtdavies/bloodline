@@ -2743,6 +2743,8 @@ export default function App() {
             setFsImportOpen(false);
           }}
           canReplace={canManageTreeStructure}
+          existingPeople={data.people}
+          existingRelationships={data.relationships}
         />
       )}
 
@@ -2760,6 +2762,8 @@ export default function App() {
             setGedcomOpen(false);
           }}
           canReplace={canManageTreeStructure}
+          existingPeople={data.people}
+          existingRelationships={data.relationships}
         />
       )}
 

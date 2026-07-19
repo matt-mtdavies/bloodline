@@ -969,6 +969,74 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   Full unit suite (the pre-existing, unrelated step-niece failure in `relations.test.mjs` aside),
   `npm run build`, and the standard smoke test all passed clean.
 
+- **Import pipeline review + fixes** (real user report: "Someone used the import function to
+  create [a] tree of 600 people. They cited many duplicates created."). Full code review of the
+  GEDCOM (`lib/gedcom.js`) and FamilySearch (`lib/familysearch.js`) import pipelines turned up
+  two real duplication bugs plus three gaps, all fixed:
+  1. **FamilySearch subject-duplication bug** (`lib/familysearch.js`) — `fetchTree()` fetches the
+     logged-in user's ancestry and their spouses/children in parallel, both starting from the same
+     FamilySearch person id. `ancestryToStore` and `spousesToStore` each built their OWN
+     independent `idMap` keyed by a fresh `uid()` per FS person id, so the subject person — present
+     in both responses — got two different internal ids: one copy ended up with parents attached,
+     the other with the spouse/children, on every single FamilySearch import. Fixed by sharing one
+     `idMap` (threaded through `fetchAncestry`/`fetchSpousesAndChildren` as an optional param,
+     built once in `fetchTree` and passed to both) — safe across the `Promise.all` concurrency
+     since neither store-conversion function awaits internally, so their synchronous id-building
+     never actually interleaves.
+  2. **FamilySearch pedigree-collapse bug** (`lib/familysearch.js`, same file) — `ancestryToStore`
+     assigned `idMap[p.id] = uid()` unconditionally per entry in `data.persons`, so an ancestor
+     occupying more than one Ahnentafel position (pedigree collapse — e.g. cousins who married)
+     had its id silently overwritten on the second occurrence; the final `people` array (built via
+     a late `idMap` lookup AFTER the loop) picked up the LAST-written id for every occurrence,
+     while relationships built from the earlier, now-stale `ahnMap` snapshot pointed at an id that
+     no longer existed anywhere — a dangling, silently-dropped relationship. New shared
+     `internalIdFor(idMap, fsId)` helper resolves and stably caches one id per FS id, never
+     overwriting; `people` is now deduplicated by FS id in the same pass.
+  3. **`importFromGedcom`'s un-tombstoned "Replace" wipe** (`store.js`) — the exact same bug just
+     fixed in `resetTree()` (see above): the `merge:false` branch swapped in `{...EMPTY, people:
+     newPeople, ...}` with no tombstones, so a later sync merge (a conflict retry, a background
+     poll, the next login) could silently resurrect the pre-import tree underneath the freshly
+     imported one. Now tombstones every old person/relationship/memory/photo/document before
+     swapping in the import, and forces the result to become the authoritative server copy
+     immediately (`_serverEtag = '*'` + `flushPendingSave()`) — identical reasoning to `resetTree`.
+  4. **Proactive duplicate detection at import preview** (design gap — merge mode previously just
+     said "Duplicate people may appear" with no way to know how many before committing).
+     `GedcomImport.jsx` and `FamilySearchImport.jsx` now compute a `duplicateCount` via
+     `findDuplicatePairs` (`lib/duplicates.js`) at the Preview step: merge mode compares the
+     union of the existing tree + the parsed batch, filtered to pairs touching at least one NEW
+     person (pre-existing duplicates already have their own review path, so they're not re-
+     surfaced here); replace mode compares the imported batch against itself. `App.jsx` now passes
+     `existingPeople`/`existingRelationships` (`data.people`/`data.relationships`) into both import
+     components for this. Shown as an amber `.gedcom__dup-note` right below the existing bio-note,
+     naming which review sheet ("Possible duplicates") to use afterward.
+  5. **`nameKey` suffix-handling bug** (`lib/duplicates.js`, minor) — `nameKey()` took the LAST
+     whitespace token as the surname, so "John Smith Jr." keyed as `first=john, last=jr.` and never
+     grouped with a duplicate stub "John Smith" (`last=smith`) — missing a real duplicate rather
+     than causing a false one. Generational suffixes (Jr./Sr./II/III/IV/V) are now stripped before
+     the surname is taken.
+  6. **Pagination + bulk dismiss in `DuplicatesSheet.jsx`** (a big backlog like the reported
+     600-person import needed to be tractable to review) — the pairs list now pages 20 at a time
+     with a "Show N more" button, and a confirm-gated "Dismiss all N as not duplicates" bulk
+     action was added. Deliberately NOT a bulk merge: a merge is destructive (the whole reason the
+     per-pair confirm step exists — see the earlier duplicate-merge-safety work above), and
+     auto-picking which record "wins" across dozens of pairs unsupervised would be a worse mistake
+     than the one this sheet exists to prevent; dismissal is safe by comparison since it never
+     touches tree data.
+  Covered by new unit tests: `tests/familysearch.test.mjs` (2 tests, mocking `fetch` — one proves
+  the subject person appears exactly once across a combined ancestry+spouses fetch with the couple
+  edge correctly wired to the single surviving id, the other proves a pedigree-collapsed ancestor
+  present at two Ahnentafel positions collapses to one internal id with no dangling relationship);
+  `tests/duplicates.test.mjs` (4 tests for the suffix fix, including a regression guard that
+  conflicting birth years still correctly rule out a false match); a new test in
+  `tests/store.test.mjs` mirroring `resetTree`'s own two regression tests, applied to
+  `importFromGedcom`'s replace path. Verified live via Playwright against the real dev server: a
+  synthetic 3-person GEDCOM with a deliberate "John Smith" duplicate (one stub, one with a birth
+  date) correctly showed the duplicate note in both merge mode ("...against your existing tree")
+  and replace mode ("...within this file"); the import committed cleanly; and the resulting
+  Possible Duplicates sheet correctly surfaced the John Smith pair. Full unit suite (the
+  pre-existing, unrelated step-niece failure in `relations.test.mjs` aside), `npm run build`, and
+  the standard smoke test all passed clean.
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);

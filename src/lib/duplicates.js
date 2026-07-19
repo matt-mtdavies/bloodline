@@ -18,8 +18,16 @@
 
 const norm = (s) => (s || '').toLowerCase().replace(/\s+/g, ' ').trim();
 
+// Generational suffixes — stripped before taking the last token as the
+// surname, or "John Smith Jr." (last token "jr.") never groups with a
+// duplicate stub "John Smith" (last token "smith").
+const SUFFIXES = new Set(['jr', 'sr', 'ii', 'iii', 'iv', 'v']);
+
 function nameKey(p) {
   const parts = norm(p.display_name).split(' ').filter(Boolean);
+  while (parts.length > 2 && SUFFIXES.has(parts[parts.length - 1].replace(/\.+$/, ''))) {
+    parts.pop();
+  }
   if (!parts.length) return null;
   const first = parts[0];
   const last = parts.length > 1 ? parts[parts.length - 1] : '';
