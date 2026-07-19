@@ -1831,7 +1831,38 @@ export function updateFamilyName(name) {
 }
 
 export function resetTree() {
-  commit({ ...EMPTY });
+  // "Erase tree" used to just commit({ ...EMPTY }) — that clears LOCAL state
+  // (and localStorage) fine, but leaves no record that everything was
+  // DELIBERATELY deleted. removePerson already tombstones what it removes so
+  // a later sync merge can't resurrect it (see withTombstones/dropTombstoned)
+  // — a full reset needs the exact same treatment for every person,
+  // relationship, memory, photo, and document at once, or the very next
+  // merge (a conflict retry on this save, a background poll, the next
+  // login) sees "no local record for this id" and just keeps whatever the
+  // server still has, silently undoing the erase (real report: "it looks
+  // as though it's started again... but hasn't actually wiped the family
+  // tree").
+  let next = { ...EMPTY, _deleted: state._deleted };
+  next = withTombstones(next, 'people', state.people.map((p) => p.id));
+  next = withTombstones(next, 'relationships', state.relationships.map((r) => r.id));
+  next = withTombstones(next, 'memories', (state.memories || []).map((m) => m.id));
+  next = withTombstones(next, 'photos', (state.photos || []).map((ph) => ph.id));
+  next = withTombstones(next, 'documents', (state.documents || []).map((d) => d.id));
+  commit(next);
+  // Force this erase to become the authoritative server copy immediately,
+  // rather than the normal 1.5s-debounced save. Without this, a stale ETag
+  // here would 409 and trigger the usual merge-and-retry — which, even with
+  // the tombstones above correctly stripping every resurrected record back
+  // out, would still ratchet hasCompletedOnboarding back to true from the
+  // still-unerased server copy (see _fetchAndMerge's one-way ratchet, which
+  // exists for the opposite case: a genuinely fresh device joining a real
+  // family shouldn't clobber it). If-Match: '*' bypasses that conflict
+  // check server-side entirely, so this save can't 409 and never enters
+  // the merge path at all. A no-op when server sync isn't enabled (demo
+  // mode) — flushPendingSave() only acts if scheduleServerSave (called by
+  // commit(), above) actually armed a save.
+  _serverEtag = '*';
+  flushPendingSave();
 }
 
 // Replace or merge the tree with people + relationships from a GEDCOM import.

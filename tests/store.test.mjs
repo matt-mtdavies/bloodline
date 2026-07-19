@@ -12,7 +12,7 @@ import assert from 'node:assert/strict';
 import {
   store, importFromGedcom, setRelationshipKind, addMedal, removeMedal,
   addLifeEvent, updatePerson, retractDocumentContributions,
-  addRelative, updatePartnerMeta,
+  addRelative, updatePartnerMeta, resetTree, addMemory, addPhoto, addDocument,
 } from '../src/data/store.js';
 
 let passed = 0, failed = 0;
@@ -241,6 +241,63 @@ test('updatePartnerMeta clears a separation date back to null when omitted', () 
   updatePartnerMeta(a, b, {}); // save with the field cleared in the editor
 
   assert.equal(store.getState().relationships.find((r) => r.type === 'partner').separation_date, null);
+});
+
+// Regression test for the "erase tree looks like it started over, but the
+// tree comes back" bug: resetTree() used to just commit({ ...EMPTY }),
+// clearing local state but never tombstoning anything — a later sync merge
+// (a conflict retry, a background poll, the next login) would see "no local
+// record for this id" and just keep whatever the server still had, silently
+// undoing the erase. It now tombstones every person/relationship/memory/
+// photo/document that existed, the same mechanism removePerson already
+// uses for a single person.
+test('resetTree tombstones every existing person/relationship/memory/photo/document', () => {
+  importFromGedcom(
+    [
+      { id: 'nora', display_name: 'Nora Fitzgerald' },
+      { id: 'evan', display_name: 'Evan Whitfield' },
+    ],
+    [{ id: 'r_reset', type: 'partner', from_person: 'nora', to_person: 'evan', partner_status: 'current' }],
+    { merge: false },
+  );
+  const memId = addMemory('nora', { text: 'A memory worth keeping.' });
+  const photoId = addPhoto('nora', { src: 'data:image/png;base64,abc', caption: 'A photo' });
+  const docId = addDocument('nora', { title: 'A document', mime: 'application/pdf', src: 'data:application/pdf;base64,abc' });
+
+  resetTree();
+
+  const after = store.getState();
+  assert.equal(after.people.length, 0, 'people should be cleared');
+  assert.equal(after.relationships.length, 0, 'relationships should be cleared');
+  assert.equal(after.memories.length, 0, 'memories should be cleared');
+  assert.equal(after.photos.length, 0, 'photos should be cleared');
+  assert.equal(after.documents.length, 0, 'documents should be cleared');
+  assert.equal(after.hasCompletedOnboarding, false, 'onboarding should re-trigger');
+
+  assert.ok(after._deleted?.people?.nora, 'nora must be tombstoned');
+  assert.ok(after._deleted?.people?.evan, 'evan must be tombstoned');
+  assert.ok(after._deleted?.relationships?.r_reset, 'the partner edge must be tombstoned');
+  assert.ok(after._deleted?.memories?.[memId], 'the memory must be tombstoned');
+  assert.ok(after._deleted?.photos?.[photoId], 'the photo must be tombstoned');
+  assert.ok(after._deleted?.documents?.[docId], 'the document must be tombstoned');
+});
+
+test('resetTree tombstones survive a simulated server merge (the actual bug scenario)', () => {
+  importFromGedcom(
+    [{ id: 'iris', display_name: 'Iris Delacroix' }],
+    [],
+    { merge: false },
+  );
+  resetTree();
+  const erased = store.getState();
+
+  // Simulate what _fetchAndMerge does on a conflict/poll: union deletions,
+  // drop anything tombstoned, union whatever the "server" still has. If the
+  // erase's tombstones are missing, this resurrects iris; with them, she
+  // must stay gone regardless of what the stale server copy still holds.
+  const staleServerPeople = [{ id: 'iris', display_name: 'Iris Delacroix' }];
+  const survivingPeople = staleServerPeople.filter((p) => !erased._deleted?.people?.[p.id]);
+  assert.equal(survivingPeople.length, 0, 'a tombstoned person must not survive a merge with a stale server copy');
 });
 
 console.log(`\n  ${passed} passed, ${failed} failed`);

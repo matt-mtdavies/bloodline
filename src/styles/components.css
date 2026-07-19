@@ -5115,7 +5115,50 @@ button.health-notes {
   transition: background 0.15s;
 }
 .fs__danger-btn:hover { background: #fef2f2; }
+.fs__danger-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.fs__danger-btn:disabled:hover { background: transparent; }
 .fs__danger-note { font-size: 12.5px; color: var(--ink-faint, #a09590); text-align: center; }
+
+/* Type-the-family-name confirm for "Start over — erase tree" — a plainer
+   Yes/No like the member-remove confirm above would be too easy to clear
+   for an action this destructive (whole shared tree, every member, no
+   undo). */
+.fs__reset-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 12px;
+  border: 1.5px solid #e57373;
+  background: #fef2f2;
+}
+.fs__reset-warning { font-size: 13px; line-height: 1.5; color: var(--ink); margin: 0; }
+.fs__reset-label { font-size: 12.5px; color: var(--ink-soft); }
+.fs__reset-input {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1.5px solid var(--hairline);
+  background: #fff;
+  font-size: 14px;
+  color: var(--ink);
+}
+.fs__reset-input:focus { outline: none; border-color: #e57373; }
+.fs__reset-btns { display: flex; gap: 8px; }
+.fs__reset-btns .fs__danger-btn { flex: 1; }
+.fs__reset-cancel {
+  flex: 1;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1.5px solid var(--hairline);
+  background: transparent;
+  color: var(--ink-soft);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.fs__reset-cancel:hover { background: var(--ground); }
 
 /* ── Privacy / visibility controls in EditPersonSheet ─────────────────────── */
 .privacy-section { border-top: 1px solid var(--hairline); margin-top: 8px; padding-top: 12px; }

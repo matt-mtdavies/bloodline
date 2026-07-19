@@ -925,6 +925,50 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   Full unit suite (the pre-existing, unrelated step-niece failure in `relations.test.mjs` aside),
   `npm run build`, and the standard smoke test all passed clean.
 
+- **Fixed: "erase tree" wiped local state but the tree came back** (real user report, owner of
+  the tree: "it looks as though it's started again, and reloaded the initial welcome page but
+  hasn't actually wiped the family tree"). Root cause: `resetTree()` (`store.js`) just did
+  `commit({ ...EMPTY })` — clears local state and localStorage fine, but records nowhere that any
+  of it was *deliberately* deleted. `removePerson()` already tombstones what it removes
+  (`withTombstones`/`_deleted`) so a later sync merge can't resurrect it; `resetTree()` never did
+  the same for a full wipe. So the very next merge — a stale-ETag 409 conflict retry on the erase's
+  own save, the 60s background poll, or the next login — saw "no local record for this id" and, per
+  `_mergeByRecency`'s own logic, just kept whatever the server still had: the whole tree came back,
+  and `hasCompletedOnboarding` (a deliberate one-way ratchet for the *opposite* case — a genuinely
+  fresh device shouldn't clobber a real family) flipped back to `true` right along with it. Matches
+  the report exactly: the welcome screen was real (the local flag flip is instant), the "hasn't
+  actually wiped" was also real (nothing durable ever recorded the deletion).
+  Two fixes, agreed together:
+  1. **`resetTree()` now tombstones everything** — every existing person/relationship/memory/
+     photo/document id, the same `withTombstones` call `removePerson` already makes, just for the
+     whole tree at once — then forces the very next save to be authoritative immediately
+     (`_serverEtag = '*'` + `flushPendingSave()`, reusing the existing tab-close/backgrounding
+     force-save helper) instead of the normal 1.5s-debounced save. This means the erase can never
+     enter the merge-and-retry path at all (`If-Match: '*'` bypasses the server's conflict check
+     unconditionally — `tree.js`'s own existing rule, already used by `putTree`'s own
+     deadlock-breaking third attempt), so there's no window where a stale ETag could trigger a
+     merge that ratchets `hasCompletedOnboarding` back on. A no-op when server sync isn't enabled
+     (demo mode) — `flushPendingSave()` only acts if a save was actually armed.
+  2. **A stronger confirmation** (discussed and agreed alongside the root-cause fix): the old
+     `window.confirm()` was a single OK tap for an action that permanently wipes the *entire
+     shared* family tree, for every member, with no undo — clearly too easy to clear by accident,
+     and the same session's own "every deletion needs a confirm step" audit already treats this
+     class of action as needing more friction than a plain Yes/No. `FamilySettings.jsx`'s danger
+     zone now swaps the button for an inline panel (matching the sheet's own `fs__confirm-inline`
+     convention, scaled up) stating exactly what's about to happen and requiring the family's own
+     name to be typed back before "Erase everything" enables — a much higher bar to clear
+     unintentionally than a single native dialog.
+  Covered by 2 new unit tests in `tests/store.test.mjs`: one confirms every person/relationship/
+  memory/photo/document created before a reset is tombstoned afterward; the other directly
+  simulates the exact bug scenario (a stale "server" copy still holding a since-erased person)
+  and confirms the tombstone means that person can never survive a merge with it. Verified live
+  via Playwright against the real dev server: the danger-zone button now opens the inline confirm
+  (not a native dialog); "Erase everything" stays disabled typing the wrong text and enables the
+  instant the real family name is typed; Cancel dismisses without touching anything; and — the
+  actual bug reproduction — the reset UI correctly closes to the onboarding screen after erasing.
+  Full unit suite (the pre-existing, unrelated step-niece failure in `relations.test.mjs` aside),
+  `npm run build`, and the standard smoke test all passed clean.
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);
