@@ -1520,6 +1520,13 @@ function LivingGenerationsModule({ data, graph, onNavigate }) {
    birthday twins above. ──────────────────────────────────────────────────── */
 function TwinBirthsModule({ data, graph, onNavigate }) {
   const { sets, count, peopleCount } = data;
+  // Same tap-a-row-to-reveal-a-PeopleDrawer pattern RecordsModule and
+  // BlendedFamilyModule already use — the flat inline-link list this
+  // originally borrowed from BirthdaysModule's nested drill-down (built for
+  // a secondary "N shared birthdays" toggle, not primary card content) read
+  // noticeably plainer than every other card on review.
+  const [sel, setSel] = useState(null); // set.date | null
+  const selSet = sel ? sets.find((s) => s.date === sel) : null;
   return (
     <Module
       icon={<TwinIcon />}
@@ -1527,25 +1534,34 @@ function TwinBirthsModule({ data, graph, onNavigate }) {
       sub="Siblings sharing the very same birth date."
       caption={<>{peopleCount} people across {count} {count === 1 ? 'birth' : 'births'} share a birthday with a sibling.</>}
     >
-      <div className="tim-drawer" style={{ marginTop: 0 }}>
-        <div className="tim-drawer__list">
-          {sets.map((s) => (
-            <div key={s.date} className="tim-shared">
-              <span className="tim-shared__date">{s.dateLabel} {s.year}</span>
-              <span className="tim-shared__names">
-                {s.ids.map((id) => {
-                  const person = graph?.byId?.get(id);
-                  if (!person) return null;
-                  return (
-                    <button key={id} className="tim-linky" onClick={() => onNavigate?.(id)}>
-                      {person.display_name}
-                    </button>
-                  );
-                })}
-              </span>
+      <div className="tim-ms">
+        {sets.map((s) => {
+          const names = s.ids.map((id) => graph?.byId?.get(id)?.display_name).filter(Boolean);
+          return (
+            <div key={s.date}>
+              <button
+                className={'tim-ms__row' + (sel === s.date ? ' tim-ms__row--on' : '')}
+                onClick={() => setSel((cur) => (cur === s.date ? null : s.date))}
+                aria-expanded={sel === s.date}
+              >
+                <span className="tim-ms__ico"><TwinIcon /></span>
+                <span className="tim-ms__body">
+                  <span className="tim-ms__t">{names.join(' & ')}</span>
+                  <span className="tim-ms__d">{s.dateLabel} {s.year}</span>
+                </span>
+              </button>
+              {sel === s.date && selSet && (
+                <PeopleDrawer
+                  title={`${selSet.dateLabel} ${selSet.year}`}
+                  rows={selSet.ids.map((id) => ({ id }))}
+                  graph={graph}
+                  onNavigate={onNavigate}
+                  onClose={() => setSel(null)}
+                />
+              )}
             </div>
-          ))}
-        </div>
+          );
+        })}
       </div>
     </Module>
   );

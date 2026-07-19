@@ -1311,6 +1311,29 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   not. Full unit suite (the pre-existing, unrelated step-niece failure aside) and `npm run build`
   passed clean.
 
+- **Design polish pass: the twins card didn't meet the same bar as the rest of the day's new
+  modules** (real feedback with a screenshot: "That two sets of twins design needs more polish.
+  Review all the new ones that were added today's and make sure the meet the high design bar
+  that's expected"). `TwinBirthsModule` was the one genuine miss on review: it borrowed
+  `BirthdaysModule`'s `.tim-shared` markup — bare underlined text links with no avatars, no card
+  chrome, no hover state — which exists in that file only as a secondary, occasionally-toggled
+  drill-down (behind a "N shared birthdays" chip), never as a card's primary content. Sitting
+  directly above the "New Arrivals" card's Avatar-and-name rows in the same sheet, the contrast
+  was obvious. Rebuilt to match `RecordsModule`/`BlendedFamilyModule`'s own tappable-row-plus-
+  `PeopleDrawer` pattern instead: each shared date is now a `.tim-ms__row` (icon badge, bold
+  paired names, date as the subtitle, hover translateX like every other `.tim-ms` row in the
+  file) that expands into the same avatar drawer every other drill-down uses. Audited the other
+  six modules shipped earlier today against the same bar — `SurnamesModule` mirrors `NamesModule`
+  exactly, `LivingGenerationsModule` mirrors `StrataModule`, `BlendedFamilyModule`/
+  `CentenarianModule`/`EarlyLossModule` already used the `.tim-ms`/`.tim-drawer__row` patterns
+  correctly, and `TradeLineageModule` mirrors `HeartlandsModule`'s migration-chain markup — all
+  five held up on a live re-screenshot and needed no changes; only the twins card had drifted.
+  Verified by temporarily wiring three synthetic relationships into `seed.js` (a twin pair, a
+  step/adoptive trio, and a three-generation trade chain — none occur naturally in the real seed
+  data) to force all three previously-unverified cards to render, screenshotting each, then
+  reverting the seed change before committing. Full unit suite (the pre-existing, unrelated
+  step-niece failure aside) and `npm run build` passed clean.
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);
