@@ -40,7 +40,8 @@ export default function InsightModules({ modules, graph, onNavigate }) {
   const {
     handshakes, giftOfYears, fullestYear, strata, brood, bridges,
     names, heartlands, trades, birthdays, records, parenthood, serviceRecords,
-    surnames, livingGenerations, twinBirths, milestoneAnniversaries, newArrivals, blendedFamily, tradeLineage,
+    surnames, livingGenerations, twinBirths, newArrivals, blendedFamily, tradeLineage,
+    earlyLoss, centenarians,
   } = modules;
 
   // Records leads every time it qualifies, unconditionally — the highest-
@@ -56,6 +57,8 @@ export default function InsightModules({ modules, graph, onNavigate }) {
       handshakes && <HandshakesModule key="hands" data={handshakes} graph={graph} onNavigate={onNavigate} />,
       giftOfYears && <GiftModule key="gift" data={giftOfYears} graph={graph} onNavigate={onNavigate} />,
       fullestYear && <FullestModule key="fullest" data={fullestYear} graph={graph} onNavigate={onNavigate} />,
+      centenarians && <CentenarianModule key="centenarians" data={centenarians} graph={graph} onNavigate={onNavigate} />,
+      earlyLoss && <EarlyLossModule key="earlyloss" data={earlyLoss} graph={graph} onNavigate={onNavigate} />,
     ]],
     ['The shape of us', [
       strata && <StrataModule key="strata" data={strata} graph={graph} onNavigate={onNavigate} />,
@@ -77,7 +80,6 @@ export default function InsightModules({ modules, graph, onNavigate }) {
     ['Seasons & milestones', [
       birthdays && <BirthdaysModule key="bday" data={birthdays} graph={graph} onNavigate={onNavigate} />,
       twinBirths && <TwinBirthsModule key="twins" data={twinBirths} graph={graph} onNavigate={onNavigate} />,
-      milestoneAnniversaries && <MilestoneAnniversariesModule key="milestones" data={milestoneAnniversaries} onNavigate={onNavigate} />,
       newArrivals && <NewArrivalsModule key="newarrivals" data={newArrivals} graph={graph} onNavigate={onNavigate} />,
     ]],
     ['Service', [
@@ -1549,32 +1551,69 @@ function TwinBirthsModule({ data, graph, onNavigate }) {
   );
 }
 
-/* ── Milestone anniversaries: every couple past a 25/40/50/60/70-year mark —
-   the whole set, distinct from records()'s single longest-marriage holder. ── */
-function MilestoneAnniversariesModule({ data, onNavigate }) {
-  const { list, count } = data;
-  const headline = list[0];
+/* ── Centenarians: family members who reached, or are living past, 100 —
+   a rare, wholly celebratory milestone, so even a single instance carries
+   the whole card (see centenarians()'s own "at least one" gate). ────────── */
+function CentenarianModule({ data, graph, onNavigate }) {
+  const { list, count, oldest } = data;
+  const o = graph?.byId?.get(oldest.id);
   return (
     <Module
-      icon={<RecordIcon name="rings" />}
-      title={`${count} milestone anniversar${count === 1 ? 'y' : 'ies'} in the family`}
-      sub="Every couple who has reached a 25-year mark or beyond."
-      caption={<><b>{headline.aName} & {headline.bName}</b> lead the way at <b>{headline.years} years</b>{headline.ongoing ? ', and still counting' : ''}.</>}
+      icon={<CenturyIcon />}
+      title={count === 1 ? '1 centenarian in the family' : `${count} centenarians in the family`}
+      sub="Family members who reached — or are living past — 100."
+      caption={<><b>{o?.display_name ?? 'One relative'}</b> leads at <b>{oldest.age}</b>{oldest.living ? ', and still going.' : ` — ${oldest.birth}–${oldest.death}.`}</>}
     >
-      <div className="tim-ms">
-        {list.map((a) => (
-          <button
-            key={`${a.aId}_${a.bId}`}
-            className="tim-ms__row"
-            onClick={() => onNavigate?.(a.aId)}
-          >
-            <span className="tim-ms__ico"><RecordIcon name="rings" /></span>
-            <span className="tim-ms__body">
-              <span className="tim-ms__t">{a.aName} & {a.bName} — {a.years} years</span>
-              <span className="tim-ms__d">Married {a.start}{a.ongoing ? ', still together' : ''} · {a.milestone}th+ anniversary</span>
-            </span>
-          </button>
-        ))}
+      <div className="tim-drawer" style={{ marginTop: 0 }}>
+        <div className="tim-drawer__list">
+          {list.map(({ id, age, birth, death, living }) => {
+            const person = graph?.byId?.get(id);
+            if (!person) return null;
+            const range = living ? `b. ${birth}` : birth && death ? `${birth} – ${death}` : null;
+            return (
+              <button key={id} className="tim-drawer__row" onClick={() => onNavigate?.(id)}>
+                <Avatar person={person} size={28} />
+                <span className="tim-drawer__name">{person.display_name}</span>
+                <span className="tim-drawer__detail">{age} {age === 1 ? 'yr' : 'yrs'}{living ? ' · living' : ''}{range ? ` · ${range}` : ''}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </Module>
+  );
+}
+
+/* ── Young lives remembered: family members who didn't live to see their
+   twentieth year. Framed as remembrance, not a statistic — quiet, warm
+   typography, the same restrained treatment the rest of the sheet gives
+   any deceased relative, no starker color or iconography than that. ────── */
+function EarlyLossModule({ data, graph, onNavigate }) {
+  const { list, count, youngest } = data;
+  const y = graph?.byId?.get(youngest.id);
+  const youngestSpan = youngest.age === 0 ? 'less than a year' : `${youngest.age} year${youngest.age === 1 ? '' : 's'}`;
+  return (
+    <Module
+      icon={<CandleIcon />}
+      title={count === 1 ? '1 young life remembered' : `${count} young lives remembered`}
+      sub="Family members who didn't live to see their twentieth year."
+      caption={<><b>{y?.display_name ?? 'One life'}</b> lived {youngestSpan}{youngest.birth ? ` — born ${youngest.birth}` : ''}.</>}
+    >
+      <div className="tim-drawer" style={{ marginTop: 0 }}>
+        <div className="tim-drawer__list">
+          {list.map(({ id, age, birth, death }) => {
+            const person = graph?.byId?.get(id);
+            if (!person) return null;
+            const range = birth && death ? `${birth} – ${death}` : birth ? `b. ${birth}` : null;
+            return (
+              <button key={id} className="tim-drawer__row" onClick={() => onNavigate?.(id)}>
+                <Avatar person={person} size={28} />
+                <span className="tim-drawer__name">{person.display_name}</span>
+                <span className="tim-drawer__detail">{age === 0 ? '< 1 year' : `${age} ${age === 1 ? 'yr' : 'yrs'}`}{range ? ` · ${range}` : ''}</span>
+              </button>
+            );
+          })}
+        </div>
       </div>
     </Module>
   );
@@ -1749,6 +1788,26 @@ function TwinIcon() {
 }
 function PuzzleIcon() {
   return (<svg {...ip}><path d="M4 8h4.5a1.7 1.7 0 013 0H16v4.5a1.7 1.7 0 010 3V20H4v-4.5a1.7 1.7 0 000-3V8z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" /></svg>);
+}
+// A sunburst — bold and unambiguous at 18px (a laurel wreath's fine detail
+// blurred into a pin/lock shape at this size on review; a small icon needs
+// restraint over literalism). Reads as "a long, still-shining life" — the
+// same milestone-achievement family as the records trophy/star, distinct
+// from both.
+function CenturyIcon() {
+  return (<svg {...ip}>
+    <circle cx="12" cy="12" r="3.4" stroke="currentColor" strokeWidth="1.6" />
+    <path d="M12 3v3M12 18v3M21 12h-3M6 12H3M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1M18.4 18.4l-2.1-2.1M7.7 7.7L5.6 5.6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+  </svg>);
+}
+// A single small flame — the quiet, restrained mark of remembrance used for
+// the early-loss card. Deliberately plain, not ornate.
+function CandleIcon() {
+  return (<svg {...ip}>
+    <path d="M12 3.2c1 1.4 1.5 2.4 1.5 3.1a1.5 1.5 0 01-3 0c0-.7.5-1.7 1.5-3.1z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" fill="none" />
+    <rect x="9.7" y="8.6" width="4.6" height="11" rx="1" stroke="currentColor" strokeWidth="1.5" />
+    <path d="M9.7 12.6h4.6" stroke="currentColor" strokeWidth="1.2" />
+  </svg>);
 }
 
 function ShareIcon() {

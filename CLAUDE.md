@@ -1271,6 +1271,46 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   non-mutation check). Full unit suite (the pre-existing, unrelated step-niece failure aside) and
   `npm run build` passed clean.
 
+- **Removed the milestone-anniversaries insight; added centenarians + young-lives-remembered**
+  (real feedback: "Please remove this new insight. The marriage data is not yet fully up to
+  date. Some insight ideas: Could we have an insight for people who didn't live beyond age 20
+  and any centennials?"). `milestoneAnniversaries` (couples past a 25/40/50/60/70-year mark) is
+  removed outright — `lib/insightModules.js`'s compute function, its `highlightCandidates`/
+  `buildInsightHighlights` entries, and `InsightModules.jsx`'s `MilestoneAnniversariesModule` are
+  all deleted rather than hidden behind a flag, since the underlying marriage-date data quality
+  problem isn't something a toggle would fix. Two new modules replace it, both deliberately gated
+  at "at least one" rather than the usual 2+ pool — reaching 100, or not reaching 20, are each
+  individually meaningful, not a statistical pattern that needs a second data point to be worth
+  showing (same reasoning `serviceRecords` already used for documented military records).
+  `centenarians(graph, now)` covers both a deceased person's final age and a living person's
+  current age (measured to `now`, not frozen at their last birthday), plausibility-capped at 130
+  the same way other age-derived modules guard against bad data. `earlyLoss(graph)` covers
+  deceased people who died before 20, sorted youngest-first so the most poignant fact leads.
+  Given explicit "premium design" instructions and the sensitivity of `earlyLoss`'s subject
+  matter, both got real design attention rather than the usual copy-an-existing-pattern pass:
+  `CentenarianModule`/`EarlyLossModule` reuse the same `.tim`/`.tim-drawer__list` card chrome
+  every other module already uses (a bespoke violet "memorial" badge was considered and rejected
+  — it would have broken the grid's consistent terracotta icon treatment, and the copy already
+  carries the tone without needing a color change) with two new hand-drawn 18px icons — a single
+  candle for early loss (deliberately plain, not ornate) and, after a first attempt at a laurel
+  wreath read as an ambiguous pin/lock shape at actual render size on live review, a bolder
+  sunburst for centenarians instead (a small icon needs restraint over literalism at 18px).
+  `earlyLoss` is deliberately excluded from `highlightCandidates` (the home hub's rotating "did
+  you know" pill) and `buildInsightHighlights` (the AI-narrative digest) — a family member's early
+  death belongs in the considered, dedicated Insights card a viewer has to deliberately open, not
+  a casual rotating teaser or an unscripted AI aside; `centenarians` is included in both, since
+  reaching 100 is unambiguously something to celebrate anywhere. Covered by 5 new unit tests in
+  `tests/insightModules.test.mjs` (single-occurrence rendering for both, the living-vs-deceased
+  centenarian ranking, the >130 bad-data guard, and null-when-nothing-qualifies for both). Verified
+  live via Playwright against the real dev server (temporarily adding two synthetic people to
+  `seed.js` to force both cards to render, since neither qualifies against the real seed data,
+  then reverting the seed change before shipping): confirmed the milestone-anniversary card no
+  longer appears anywhere in the sheet, both new cards render with correct copy/pluralization
+  (caught and fixed a "1 yrs" singular bug along the way), and a zoomed-in capture of each icon at
+  4x device scale confirmed the final sunburst reads clearly while the original wreath attempt did
+  not. Full unit suite (the pre-existing, unrelated step-niece failure aside) and `npm run build`
+  passed clean.
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);

@@ -899,14 +899,16 @@ test('highlightCandidates: every populated module in the rich fixture contribute
   const candidates = highlightCandidates(mods);
   // The rich fixture lights up every module except serviceRecords (no
   // military data), livingGenerations (only G4 is alive — one generation,
-  // not three), twinBirths/milestoneAnniversaries (need 2+ sets/couples,
-  // the fixture only ever produces one) and tradeLineage/newArrivals/
-  // blendedFamily (no matching data at all) — but surnames DOES qualify:
-  // "Alpha"/"Beta"/"Delta" each appear 10+ times across the fixture's
-  // generations, an incidental side effect of richTree()'s naming scheme,
-  // not something deliberately engineered in — 13 of the 20 possible
-  // candidates.
-  assert.equal(candidates.length, 13);
+  // not three), twinBirths (needs 2+ sets, the fixture only ever produces
+  // one) and tradeLineage/newArrivals/blendedFamily/earlyLoss (no matching
+  // data at all) — but surnames DOES qualify: "Alpha"/"Beta"/"Delta" each
+  // appear 10+ times across the fixture's generations, an incidental side
+  // effect of richTree()'s naming scheme, not something deliberately
+  // engineered in. centenarians ALSO incidentally qualifies: g3_0_0's own
+  // 1890 birth to a deliberately-set 1992 death (see richTree()'s own
+  // comment on that date, planted for the handshake-chain test) happens to
+  // land at age 102 — 14 of the 21 possible candidates.
+  assert.equal(candidates.length, 14);
   assert.ok(candidates.every((c) => typeof c === 'string' && c.length > 0));
 });
 
@@ -1009,9 +1011,9 @@ test('seededShuffle: does not mutate the input array', () => {
   assert.deepEqual(arr, copy);
 });
 
-// ── The 20-module catalogue expansion: surnames, livingGenerations,
-//    twinBirths, milestoneAnniversaries, newArrivals, blendedFamily,
-//    tradeLineage. ────────────────────────────────────────────────────────
+// ── The module catalogue expansion: surnames, livingGenerations,
+//    twinBirths, newArrivals, blendedFamily, tradeLineage, earlyLoss,
+//    centenarians. ──────────────────────────────────────────────────────
 
 test('surnames: ranks families by size and hides below the 2-surname threshold', () => {
   const people = [];
@@ -1083,28 +1085,66 @@ test('twinBirths: null when no siblings share an exact date', () => {
   assert.equal(computeInsightModules(graph, 'a').twinBirths, null);
 });
 
-test('milestoneAnniversaries: needs 2+ couples past a 25-year mark, ranked longest first', () => {
+test('earlyLoss: a single early death is already enough to render, sorted youngest first', () => {
   const people = [
-    { id: 'a1', display_name: 'Long A', birth_date: '1930-01-01' },
-    { id: 'a2', display_name: 'Long B', birth_date: '1932-01-01' },
-    { id: 'b1', display_name: 'Mid A', birth_date: '1940-01-01' },
-    { id: 'b2', display_name: 'Mid B', birth_date: '1942-01-01' },
+    { id: 'a', display_name: 'Infant A', birth_date: '1900-01-01', death_date: '1900-06-01', is_deceased: true }, // < 1 yr
+    { id: 'b', display_name: 'Child B', birth_date: '1910-01-01', death_date: '1925-01-01', is_deceased: true }, // 15
+    { id: 'c', display_name: 'Adult C', birth_date: '1920-01-01', death_date: '1990-01-01', is_deceased: true }, // 70 — excluded
+    { id: 'd', display_name: 'Living D', birth_date: '1990-01-01', is_deceased: false }, // living — excluded regardless of age
   ];
-  const rels = [uRel('a1', 'a2', '1955-01-01'), uRel('b1', 'b2', '1970-01-01')]; // ongoing today: ~70 and ~55 years
-  const graph = buildGraph(people, rels);
-  const mods = computeInsightModules(graph, 'a1');
-  assert.ok(mods.milestoneAnniversaries, 'module should render with 2 milestone couples');
-  assert.equal(mods.milestoneAnniversaries.count, 2);
-  assert.equal(mods.milestoneAnniversaries.list[0].aId, 'a1', 'the longer marriage leads');
+  const graph = buildGraph(people, []);
+  const mods = computeInsightModules(graph, 'a');
+  assert.ok(mods.earlyLoss, 'module should render even for a single early death');
+  assert.equal(mods.earlyLoss.count, 2);
+  assert.equal(mods.earlyLoss.youngest.id, 'a', 'the infant death leads — youngest first');
+  assert.equal(mods.earlyLoss.youngest.age, 0);
+  assert.deepEqual(mods.earlyLoss.list.map((x) => x.id), ['a', 'b']);
 });
 
-test('milestoneAnniversaries: a single milestone couple stays below the 2-couple threshold', () => {
+test('earlyLoss: null when no one in the tree died before 20', () => {
   const people = [
-    { id: 'a1', display_name: 'Only A', birth_date: '1940-01-01' },
-    { id: 'a2', display_name: 'Only B', birth_date: '1942-01-01' },
+    { id: 'a', display_name: 'Adult A', birth_date: '1900-01-01', death_date: '1970-01-01', is_deceased: true },
   ];
-  const graph = buildGraph(people, [uRel('a1', 'a2', '1970-01-01')]);
-  assert.equal(computeInsightModules(graph, 'a1').milestoneAnniversaries, null);
+  const graph = buildGraph(people, []);
+  assert.equal(computeInsightModules(graph, 'a').earlyLoss, null);
+});
+
+test('centenarians: a single living centenarian is enough to render, age measured to `now`', () => {
+  const now = new Date('2025-06-01').getTime();
+  const people = [
+    { id: 'a', display_name: 'Living Elder', birth_date: '1920-01-01', is_deceased: false }, // 105 as of `now`
+    { id: 'b', display_name: 'Not Quite', birth_date: '1930-01-01', is_deceased: false }, // 95 — excluded
+  ];
+  const graph = buildGraph(people, []);
+  const mods = computeInsightModules(graph, 'a', now);
+  assert.ok(mods.centenarians, 'module should render for a single living centenarian');
+  assert.equal(mods.centenarians.count, 1);
+  assert.equal(mods.centenarians.oldest.id, 'a');
+  assert.equal(mods.centenarians.oldest.age, 105);
+  assert.equal(mods.centenarians.oldest.living, true);
+});
+
+test('centenarians: a deceased centenarian counts too, ranked oldest first alongside a living one', () => {
+  const now = new Date('2025-06-01').getTime();
+  const people = [
+    { id: 'a', display_name: 'Deceased Elder', birth_date: '1900-01-01', death_date: '2005-01-01', is_deceased: true }, // 105
+    { id: 'b', display_name: 'Living Elder', birth_date: '1922-01-01', is_deceased: false }, // 103
+  ];
+  const graph = buildGraph(people, []);
+  const mods = computeInsightModules(graph, 'a', now);
+  assert.equal(mods.centenarians.count, 2);
+  assert.equal(mods.centenarians.oldest.id, 'a', 'the deceased 105-year-old outranks the living 103-year-old');
+  assert.equal(mods.centenarians.list[1].id, 'b');
+});
+
+test('centenarians: null when no one has reached 100, and implausible ages (>130) are excluded as bad data', () => {
+  const now = new Date('2025-06-01').getTime();
+  const people = [
+    { id: 'a', display_name: 'Not Quite', birth_date: '1930-01-01', is_deceased: false }, // 95
+    { id: 'b', display_name: 'Bad Data', birth_date: '1800-01-01', is_deceased: false }, // 225 — implausible
+  ];
+  const graph = buildGraph(people, []);
+  assert.equal(computeInsightModules(graph, 'a', now).centenarians, null);
 });
 
 test('newArrivals: living people born within the last 5 years of `now`, future-relative-to-now excluded', () => {

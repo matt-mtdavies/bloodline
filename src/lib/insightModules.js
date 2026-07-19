@@ -132,10 +132,11 @@ export function computeInsightModules(graph, viewerId, now = Date.now()) {
     surnames: surnames(graph),
     livingGenerations: livingGenerations(graph, gen),
     twinBirths: twinBirths(graph),
-    milestoneAnniversaries: milestoneAnniversaries(graph),
     newArrivals: newArrivals(graph, now),
     blendedFamily: blendedFamily(graph),
     tradeLineage: tradeLineage(graph),
+    earlyLoss: earlyLoss(graph),
+    centenarians: centenarians(graph, now),
   };
 }
 
@@ -1232,9 +1233,6 @@ export function buildInsightHighlights(modules) {
   if (modules.twinBirths) {
     h.twinBirths = { count: modules.twinBirths.count };
   }
-  if (modules.milestoneAnniversaries) {
-    h.milestoneAnniversaries = { count: modules.milestoneAnniversaries.count };
-  }
   if (modules.newArrivals) {
     h.newArrivals = { count: modules.newArrivals.count, sinceYear: modules.newArrivals.sinceYear };
   }
@@ -1244,6 +1242,13 @@ export function buildInsightHighlights(modules) {
   if (modules.tradeLineage) {
     h.tradeLineage = { occ: modules.tradeLineage.best.occ, generations: modules.tradeLineage.best.people.length };
   }
+  if (modules.centenarians) {
+    h.centenarians = { count: modules.centenarians.count };
+  }
+  // earlyLoss is deliberately excluded here (and from highlightCandidates
+  // above) — a family member's early death is a fact for the considered,
+  // dedicated Insights card, not something that should surface as a casual
+  // rotating "did you know" teaser or an AI-narrative aside.
   return Object.keys(h).length ? h : null;
 }
 
@@ -1323,10 +1328,6 @@ export function highlightCandidates(modules) {
     const t = modules.twinBirths.sets[0];
     candidates.push(`The family has twins — born ${t.dateLabel} ${t.year}.`);
   }
-  if (modules.milestoneAnniversaries) {
-    const m = modules.milestoneAnniversaries;
-    candidates.push(`${m.count} couples in the family have reached a milestone anniversary.`);
-  }
   if (modules.newArrivals) {
     candidates.push(`${modules.newArrivals.count} new arrivals have joined the family since ${modules.newArrivals.sinceYear}.`);
   }
@@ -1336,6 +1337,9 @@ export function highlightCandidates(modules) {
   if (modules.tradeLineage) {
     const c = modules.tradeLineage.best;
     candidates.push(`${c.occ} has been passed down through ${c.people.length} generations of the family.`);
+  }
+  if (modules.centenarians) {
+    candidates.push(`${modules.centenarians.count} family member${modules.centenarians.count === 1 ? ' has' : 's have'} lived to see 100.`);
   }
   return candidates;
 }
@@ -1539,36 +1543,41 @@ function twinBirths(graph) {
   return { sets, count: sets.length, peopleCount: sets.reduce((s, x) => s + x.ids.length, 0) };
 }
 
-/* ── Milestone anniversaries: every couple who has reached (or, for an
-      ongoing marriage, would already have reached) a 25/40/50/60/70-year
-      mark — the whole SET of milestone couples, distinct from records()'s
-      single longest-marriage record holder. ───────────────────────────────── */
-function milestoneAnniversaries(graph) {
-  const thisYear = new Date().getFullYear();
-  const seen = new Set();
+/* ── Young lives remembered: family members who didn't live to see their
+      twentieth year. Deliberately no minimum-count gate beyond "at least
+      one" — like serviceRecords above, this is remembrance, not a
+      statistical pattern, and a single life is already meaningful. Sorted
+      youngest first: the most poignant fact leads, not an arbitrary one. ─── */
+function earlyLoss(graph) {
   const list = [];
-  for (const r of graph.relationships) {
-    if (r.type !== 'partner' || !r.marriage_date) continue;
-    const key = [r.from_person, r.to_person].sort().join('|');
-    if (seen.has(key)) continue;
-    seen.add(key);
-    const start = year(r.marriage_date);
-    if (start == null) continue;
-    const a = graph.byId.get(r.from_person), b = graph.byId.get(r.to_person);
-    if (!a || !b) continue;
-    const ends = [a, b].filter((p) => p.is_deceased).map((p) => year(p.death_date)).filter((y) => y != null);
-    const ongoing = !ends.length && r.partner_status !== 'former';
-    if (!ends.length && !ongoing) continue;
-    const end = ongoing ? thisYear : Math.min(...ends);
-    const yrs = end - start;
-    if (yrs >= 100) continue;
-    const milestone = [70, 60, 50, 40, 25].find((m) => yrs >= m);
-    if (!milestone) continue;
-    list.push({ aId: a.id, bId: b.id, aName: firstNameOf(a), bName: firstNameOf(b), years: yrs, milestone, start, ongoing });
+  for (const p of graph.people) {
+    if (!p.is_deceased) continue;
+    const age = yearsBetween(p.birth_date, p.death_date);
+    if (age == null || age < 0 || age >= 20) continue;
+    list.push({ id: p.id, age, birth: year(p.birth_date), death: year(p.death_date) });
   }
-  if (list.length < 2) return null;
-  list.sort((x, y) => y.years - x.years);
-  return { list, count: list.length };
+  if (!list.length) return null;
+  list.sort((a, b) => a.age - b.age || (a.death ?? 9999) - (b.death ?? 9999));
+  return { list, count: list.length, youngest: list[0] };
+}
+
+/* ── Centenarians: family members who reached (or, still living, are past)
+      100 years old. Also gated at "at least one" — reaching 100 is rare
+      enough that a single instance is already the whole story, same
+      reasoning as earlyLoss above. A living centenarian's age is measured
+      to `now` (injectable for tests), not frozen at whatever their last
+      recorded birthday was. ─────────────────────────────────────────────── */
+function centenarians(graph, now = Date.now()) {
+  const todayStr = new Date(now).toISOString().slice(0, 10);
+  const list = [];
+  for (const p of graph.people) {
+    const age = p.is_deceased ? yearsBetween(p.birth_date, p.death_date) : yearsBetween(p.birth_date, todayStr);
+    if (age == null || age < 100 || age > 130) continue; // >130 is bad data, not a supercentenarian
+    list.push({ id: p.id, age, birth: year(p.birth_date), death: p.is_deceased ? year(p.death_date) : null, living: !p.is_deceased });
+  }
+  if (!list.length) return null;
+  list.sort((a, b) => b.age - a.age);
+  return { list, count: list.length, oldest: list[0] };
 }
 
 /* ── The newest arrivals: family members born in the last five years — the
