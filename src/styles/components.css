@@ -5742,8 +5742,8 @@ button.health-notes {
   animation: invite-pop 0.4s var(--spring) both;
 }
 .invite-sheet__success-ring--warn {
-  background: color-mix(in srgb, #b08642 12%, transparent);
-  color: #b08642;
+  background: color-mix(in srgb, var(--gold) 12%, transparent);
+  color: var(--gold);
 }
 @keyframes invite-pop {
   from { transform: scale(0.5); opacity: 0; }
@@ -6997,7 +6997,7 @@ button.health-notes {
   margin-bottom: 4px;
   animation: invite-pop 0.4s var(--spring, cubic-bezier(.34,1.56,.64,1)) both;
 }
-.fs__invite-ring--warn { background: color-mix(in srgb, #b08642 12%, transparent); color: #b08642; }
+.fs__invite-ring--warn { background: color-mix(in srgb, var(--gold) 12%, transparent); color: var(--gold); }
 .fs__invite-title { font-size: 17px; font-weight: 700; color: var(--ink); margin: 0; }
 .fs__invite-body { font-size: 13.5px; color: var(--ink-soft); line-height: 1.5; margin: 0; max-width: 280px; }
 .fs__invite-again {
@@ -7352,7 +7352,7 @@ button.health-notes {
   border-top: 2.5px solid var(--accent);
 }
 .home__stat-tile:nth-child(4n+2) { border-top-color: var(--sage); }
-.home__stat-tile:nth-child(4n+3) { border-top-color: #b08642; }
+.home__stat-tile:nth-child(4n+3) { border-top-color: var(--gold); }
 .home__stat-tile:nth-child(4n+4) { border-top-color: #6b5e7a; }
 .home__stat-value {
   font-family: var(--display);
@@ -8132,7 +8132,7 @@ button.health-notes {
   font-size: 14px;
   font-weight: 600;
   letter-spacing: 0.01em;
-  background: linear-gradient(120deg, #c2603a 0%, #d2814f 50%, #b08642 100%);
+  background: linear-gradient(120deg, var(--accent) 0%, #d2814f 50%, var(--gold) 100%);
   background-size: 180% 180%;
   box-shadow: 0 4px 18px rgba(194, 96, 58, 0.28);
   animation: ti-aurora 8s ease infinite;
@@ -9163,7 +9163,7 @@ button.health-notes {
 }
 .tl-entry--birth .tl-entry__dot { background: #3f5e4e; }
 .tl-entry--death .tl-entry__dot { background: #7a6a9e; }
-.tl-entry--photo .tl-entry__dot { background: #b08642; }
+.tl-entry--photo .tl-entry__dot { background: var(--gold); }
 
 .tl-entry__card {
   flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px;
@@ -9560,7 +9560,7 @@ button.health-notes {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.ped-marriage__text svg { color: var(--gold, #b08642); flex-shrink: 0; }
+.ped-marriage__text svg { color: var(--gold); flex-shrink: 0; }
 
 /* Children footer — count + affordance. Height = FOOTER_H. */
 .ped-footer {
