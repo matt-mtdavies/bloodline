@@ -139,6 +139,56 @@ test('occupation is not flagged as the match reason when a name match already ex
   assert.equal(results[0]._matchedOccupation, false, 'the name is why this matched, not the occupation');
 });
 
+// ── Order-independent, cross-field multi-word matching ──────────────────────
+// Real report: "if i search for robert turner, his name appears. if i search
+// turner robert, it does not. same applies for middle names... robert george
+// turner - found if i search robert turner, not found if i search robert
+// george, or george robert." Older records are often better known by a
+// swapped preferred name, so the search must return a match regardless of
+// which order the words were typed in, or which field (name vs middle name)
+// each word actually lives in.
+
+test('word order does not matter for a two-word name match', () => {
+  const people = [person('r', { display_name: 'Robert Turner' })];
+  const forward = rankPeopleByName(people, 'robert turner');
+  const reversed = rankPeopleByName(people, 'turner robert');
+  assert.equal(forward.length, 1);
+  assert.equal(reversed.length, 1);
+  assert.equal(forward[0]._score, reversed[0]._score, 'reordering the same two words should score identically');
+});
+
+test('a query split across the first name and the middle name matches, in either order', () => {
+  const people = [person('r', { display_name: 'Robert Turner', middle_name: 'George' })];
+  assert.equal(rankPeopleByName(people, 'robert george').length, 1);
+  assert.equal(rankPeopleByName(people, 'george robert').length, 1);
+});
+
+test('a real first+last name match still outranks a same-query match that needed the middle name', () => {
+  const people = [
+    person('george', { display_name: 'Robert George' }),
+    person('turner', { display_name: 'Robert Turner', middle_name: 'George' }),
+  ];
+  const results = rankPeopleByName(people, 'robert george');
+  assert.equal(results[0].id, 'george', 'a real "Robert George" should lead over a middle-name-derived match');
+});
+
+test('a query word that matches nothing at all excludes the person entirely', () => {
+  const people = [person('r', { display_name: 'Robert Turner' })];
+  assert.deepEqual(rankPeopleByName(people, 'robert xyzzy'), []);
+});
+
+test('three-word queries are still order-independent across name and middle name', () => {
+  const people = [person('r', { display_name: 'Robert Turner', middle_name: 'George' })];
+  const a = rankPeopleByName(people, 'robert george turner');
+  const b = rankPeopleByName(people, 'george turner robert');
+  const c = rankPeopleByName(people, 'turner robert george');
+  assert.equal(a.length, 1);
+  assert.equal(b.length, 1);
+  assert.equal(c.length, 1);
+  assert.equal(a[0]._score, b[0]._score);
+  assert.equal(b[0]._score, c[0]._score);
+});
+
 // ── Result limit ─────────────────────────────────────────────────────────────
 
 test('no limit by default — every match is returned, not just the first 10', () => {

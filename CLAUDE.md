@@ -1419,6 +1419,47 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   drawer; reverted the seed change before committing. Full unit suite (the pre-existing, unrelated
   step-niece failure aside) and `npm run build` passed clean.
 
+- **Search: order-independent, cross-field multi-word matching** (real report: "if i search for
+  robert turner, his name appears. if i search turner robert, it does not. same applies for
+  middle names. example, robert george turner- found if i search, robert turner. not found if i
+  search robert george. or george robert. this is an annoyance with all the older names, as they
+  often swapped their preferred name... so the search needs to return any possibility with the
+  names entered, no matter the order. obviously, being mindful of the display sequence not
+  showing middle names first if there is a better match"). Root cause: `rankPeopleByName` scored
+  each whole name field against the whole, un-split query string via `scoreText` — so a reordered
+  query never matched (nothing about "turner robert" is a substring/prefix of "Robert Turner" in
+  either direction), and a query split across two fields (a first name plus a middle name) never
+  matched at all, since each field was tested independently against the full query string with no
+  word-level decomposition. `lib/search.js` gained `tokenize`/`scoreWordAgainst`/`scoreNameTokens`:
+  the query is split into words, and every query word must find a match — exact, prefix, or
+  substring, mirroring `scoreText`'s own tiers but per-word — in EITHER a person's "primary" word
+  bag (`display_name` + `birth_name`/`maiden_name`) or, only as a fallback, their "secondary" bag
+  (`middle_name`); strict AND across query words, not OR, so a query with one truly unmatched word
+  (e.g. "robert xyzzy") correctly excludes the person rather than the search silently broadening.
+  Because each query word is scored independently of position, "robert turner" and "turner robert"
+  score identically — order never matters. Because a word can be satisfied from either field
+  regardless of which field the OTHER query words came from, "robert george" and "george robert"
+  both now match someone named "Robert Turner" with `middle_name: 'George'`. The existing
+  band-priority principle (a real-name match always outranks a middle-name match) is preserved at
+  the level of the WHOLE match, not per-word: if satisfying every query word requires reaching
+  into the middle name for even one of them, the entire match drops to the secondary band below
+  any match satisfiable from primary fields alone — so a person genuinely named "Robert George"
+  still outranks "Robert Turner" (middle name George) for the query "robert george", exactly the
+  "mindful of the display sequence" requirement. Occupation/place matching is untouched — still
+  whole-string `scoreText` against the full query, since a job title or place name is a phrase,
+  not name tokens people reorder. Covered by 5 new unit tests in `tests/search.test.mjs` (order
+  independence for a two-word name; a query split across name and middle name matching in either
+  order; a real first+last name match outranking a same-query middle-name-derived match; an
+  unmatchable query word excluding the person entirely; three-word order independence spanning
+  name and middle name) — all 14 pre-existing tests continued to pass unchanged, confirming the
+  original middle-name-ranking fix's own regression tests still hold under the new tokenized
+  design. Verified live via Playwright against the real dev server: temporarily added
+  `middle_name: 'George'` to the seed data's Robert Mercer (no `middle_name` field exists in the
+  real seed otherwise) and confirmed "robert mercer"/"mercer robert" return the identical result,
+  and "robert george"/"george robert" both correctly surface him via his middle name with zero
+  console errors; reverted the seed change before committing. Full unit suite (the pre-existing,
+  unrelated step-niece failure aside) and `npm run build` passed clean.
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);
