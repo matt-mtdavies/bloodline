@@ -58,7 +58,7 @@ import {
 import { groupRecapUpdates, captionForRecapGroup } from './lib/recap.js';
 import { uploadPhoto, generateThumb, uploadDocument, savePhotoToDevice, srcToDataUrl, summarizeDocument } from './lib/image.js';
 import { useImageZoom } from './lib/useImageZoom.js';
-import { buildGraph, pathBetween, pathBetweenOrdered, bloodRelativesOf } from './data/graph.js';
+import { buildGraph, pathBetween, pathBetweenOrdered, bloodRelativesOf, distancesFrom } from './data/graph.js';
 import { detectRegion, nearestWorldEvent } from './lib/worldEvents.js';
 import { findDuplicatePairs, pairKey, loadDismissedDuplicates, saveDismissedDuplicates } from './lib/duplicates.js';
 import { canManageTree } from './lib/visibility.js';
@@ -173,6 +173,12 @@ const PROFILE_FIELD_KEYS = [
 // deleted later can only ever retract what it actually still owns, never a
 // real correction typed in by hand afterward.
 const DOC_TRACKABLE_FIELDS = [...PROFILE_FIELD_KEYS, 'cause_of_death'];
+
+// See toggleExpandAll's own comment: above this many people, "All" reveals
+// only the nearest ones to whoever's active instead of the whole tree.
+const MAX_BUBBLE_REVEAL = 250;
+const REVEAL_BATCH = 40;
+const REVEAL_INTERVAL_MS = 90;
 
 function buildExtracted(result) {
   const pf = result.profileFields;
@@ -564,6 +570,7 @@ export default function App() {
   const [timelineOpen, setTimelineOpen] = useState(false);
   const [lifeJourneyId, setLifeJourneyId] = useState(null);
   const playRef = useRef(null);
+  const revealTimerRef = useRef(null);
   const [docViewer, setDocViewer] = useState(null); // { title, src, mime }
   const [keepsakeId, setKeepsakeId] = useState(null); // personId whose Keepsake is open
   // The home hub's Keepsake nudge — 'create' (no edition yet), 'stale' (tree
@@ -950,13 +957,65 @@ export default function App() {
   const allExpanded = expanded.size >= graph.people.length && graph.people.length > 0;
   // Show the collapse button whenever MORE than one person is expanded (not just all-or-nothing).
   const canCollapse = expanded.size > 1;
+  // A real reported crash: revealing every person at once forces BubbleTree's
+  // d3-force simulation and PixiJS bubble sprites (with photo textures) to
+  // all spin up in a single synchronous frame — fine for the ~23-person demo
+  // seed, but a large real tree (this app's own accounts run 1000+ people)
+  // spikes CPU/GPU/memory hard enough to crash the tab. Above this cap, "All"
+  // reveals only the nearest people to whoever's active (a force-directed
+  // canvas isn't a useful way to look at everyone in a tree this size anyway)
+  // and points to List view, which is already virtualized and handles any
+  // tree size today.
   const toggleExpandAll = useCallback(() => {
+    if (revealTimerRef.current) {
+      clearInterval(revealTimerRef.current);
+      revealTimerRef.current = null;
+    }
     if (canCollapse) {
       setExpanded(new Set([activeId]));
+      return;
+    }
+    const total = graph.people.length;
+    let targetIds;
+    if (total <= MAX_BUBBLE_REVEAL) {
+      targetIds = graph.people.map((p) => p.id);
     } else {
-      setExpanded(new Set(graph.people.map((p) => p.id)));
+      const dist = distancesFrom(graph, activeId);
+      targetIds = graph.people
+        .map((p) => ({ id: p.id, d: dist.get(p.id) ?? Infinity }))
+        .sort((a, b) => a.d - b.d)
+        .slice(0, MAX_BUBBLE_REVEAL)
+        .map((x) => x.id);
+      setSyncToast(`Showing the ${MAX_BUBBLE_REVEAL} people closest to you — switch to List view to see everyone in a family this size.`);
+      setTimeout(() => setSyncToast(null), 6000);
+    }
+    // Stagger the reveal in batches rather than one giant Set update, so the
+    // force simulation and texture loads ramp up smoothly instead of all at
+    // once. The first batch lands immediately (no interval delay) so a small
+    // tree still feels instant, same as before this fix.
+    let i = 0;
+    const revealNextBatch = () => {
+      const batch = targetIds.slice(i, i + REVEAL_BATCH);
+      i += REVEAL_BATCH;
+      setExpanded((prev) => {
+        const next = new Set(prev);
+        for (const id of batch) next.add(id);
+        return next;
+      });
+      if (i >= targetIds.length && revealTimerRef.current) {
+        clearInterval(revealTimerRef.current);
+        revealTimerRef.current = null;
+      }
+    };
+    revealNextBatch();
+    if (i < targetIds.length) {
+      revealTimerRef.current = setInterval(revealNextBatch, REVEAL_INTERVAL_MS);
     }
   }, [canCollapse, activeId, graph]);
+
+  useEffect(() => () => {
+    if (revealTimerRef.current) clearInterval(revealTimerRef.current);
+  }, []);
 
   const activateNormal = useCallback((id) => {
     setActiveId(id);

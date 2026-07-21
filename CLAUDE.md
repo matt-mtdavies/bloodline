@@ -1460,6 +1460,43 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   console errors; reverted the seed change before committing. Full unit suite (the pre-existing,
   unrelated step-niece failure aside) and `npm run build` passed clean.
 
+- **Fixed: the "All" dock button crashed the tab on a large family** (real user report: pressing
+  "All" started to display everyone, then the page rebooted/refreshed; on retry it crashed with
+  "a problem repeatedly occurred on myfamilybloodline.com" — reproducible every time). Root cause:
+  `toggleExpandAll` (`App.jsx`) set `expanded = new Set(graph.people.map(p => p.id))` in one
+  synchronous update with no size guard anywhere on that path — for this account's real tree
+  (CLAUDE.md's own tree-storage doc already notes "1000+ people, heavy documents") that forces
+  `BubbleTree.jsx`'s `d3-force` simulation (`forceManyBody`, recomputed every animation-frame tick)
+  and a PixiJS `Bubble` sprite (with a photo texture, rings, a label) for every single person to
+  all spin up in the same frame — fine for the ~23-person demo seed this was built against, a
+  guaranteed CPU/GPU/memory spike at real-world scale. The "problem repeatedly occurred" wording is
+  literally the browser's own GPU-process-crash dialog, and it reproduced every time because it's
+  deterministic on tree size, not a flaky glitch. Two changes, agreed with the user before
+  building: (1) **staggered reveal** — `toggleExpandAll` now adds ids to `expanded` in batches of
+  `REVEAL_BATCH` (40) every `REVEAL_INTERVAL_MS` (90ms) via a `setInterval` tracked in
+  `revealTimerRef` (cleared on the next toggle, a page unmount, or a mid-reveal "Collapse" tap),
+  with the first batch landing synchronously/immediately so a small tree still feels instant,
+  exactly as before this fix; (2) **a cap for large trees** — above `MAX_BUBBLE_REVEAL` (250, a
+  size threshold, not a redesign), "All" reveals only the `MAX_BUBBLE_REVEAL` people nearest to
+  whoever's currently active (via `graph.js`'s existing `distancesFrom` BFS, imported fresh into
+  `App.jsx`) rather than the whole tree, and shows a toast — reusing the existing generic
+  `syncToast`/`setSyncToast` mechanism already used for save-status and duplicate-relationship
+  messages, no new UI — pointing to List view ("switch to List view to see everyone in a family
+  this size"), since List view's directory is already properly virtualized (`useVirtualizer`,
+  AccessibleTree.jsx) and already handles any tree size today; a force-directed bubble canvas
+  packed with 1000+ nodes wouldn't be a usable view even if it didn't crash, so the honest fix
+  above the cap is pointing at the view built for that scale, not pretending the bubble canvas can
+  do it too. Verified live via Playwright against the real dev server: the demo's ~23-person tree
+  still reveals everyone and flips to the "Collapse" button with zero delay and zero toast, byte-
+  identical to the pre-fix behavior; a temporarily-added synthetic 523-person tree (500 extra
+  people chained off James, reverted before committing) confirmed the toast fires with the correct
+  cap wording, the page stays fully responsive and interactive throughout and after the staggered
+  reveal (confirmed via `document.readyState` and zero console/page errors, screenshotted to
+  visually confirm a readable, camera-framed subset rather than the whole synthetic tree dumped on
+  screen), and no crash — reproducing the fix rather than just the absence of a crash. Full unit
+  suite (the pre-existing, unrelated step-niece failure aside), `npm run build`, and the standard
+  smoke test all passed clean.
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);
