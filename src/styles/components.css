@@ -1495,14 +1495,16 @@
 }
 .search-clear:hover { color: var(--ink-soft, #6b6260); }
 
-/* ── Relationship filter chips + status pills ─────────────────────────────────
+/* ── Relationship filter chips ────────────────────────────────────────────────
    Quick shortcuts to a shortlist when you don't remember a name — not a
    replacement for List View's fuller grouping, so kept to a handful of
    coarse buckets. Reuses .filter-pill/.filter-pill--active (same look as
-   the list view's own status filter) for both rows; only the wrapper
-   differs — the relationship row scrolls horizontally (same pattern as
-   .fs__tabs) since a family with every category present won't fit seven
-   chips on a phone width, while the 3-item status row always fits. */
+   the list view's own status filter). Scrolls horizontally (same pattern
+   as .fs__tabs) since a family with every category present won't fit seven
+   chips on a phone width.
+   (The quick search previously also had its own All/Living/Deceased status
+   pills here, redundant with List View's own — removed per feedback that
+   they added clutter without adding capability.) */
 .search-chips {
   display: flex;
   gap: 6px;
@@ -1513,7 +1515,6 @@
 }
 .search-chips::-webkit-scrollbar { display: none; }
 .search-chips .filter-pill { flex: none; white-space: nowrap; }
-.filter-pills--search { padding: 0 20px; margin: 10px 0 0; flex-shrink: 0; }
 
 /* ── Results list ────────────────────────────────────────────────────────────── */
 .search-results {

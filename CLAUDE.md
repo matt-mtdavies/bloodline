@@ -1372,6 +1372,23 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   searching "mercer" returns all 14 matches uncapped. Full unit suite (the pre-existing, unrelated
   step-niece failure aside) and `npm run build` passed clean.
 
+- **Removed the quick search's All/Living/Deceased status pills** (follow-up to the search fix
+  above — real feedback: "i dont think there is any point having 'deceased, living and all'
+  pills"). Confirmed before removing anything: those pills were fully redundant with the ones
+  List View's own "Everyone" directory already has, so nothing was actually lost — just clutter
+  above the input. Deliberately left the relationship chips (Immediate Family/Grandparents/Aunts &
+  Uncles/Cousins/etc.) alone — a different, earlier feedback thread ("Add relationship + status
+  filter chips to search") added both rows together, but only the status row was ever called out
+  as low-value; the relationship chips solve a distinct problem (browsing when you don't remember
+  a name) that wasn't in question. `SearchOverlay.jsx`: removed the `STATUSES` array, the `status`
+  state and its pill row, and the `status` branches from `basePool`'s filter and the `browsing`
+  check (now driven by the relationship chip alone). Removed the now-dead `.filter-pills--search`
+  CSS rule and updated the block comment above `.search-chips` that had described both rows.
+  Verified live via Playwright: the status pill group is gone, the relationship chips still render
+  and still work for chip-only browsing (tapping "Immediate Family" with no text typed still lists
+  the full, uncapped, alphabetical result set). Full unit suite (the pre-existing, unrelated
+  step-niece failure aside) and `npm run build` passed clean.
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);

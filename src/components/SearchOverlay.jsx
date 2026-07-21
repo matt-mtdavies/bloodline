@@ -16,12 +16,6 @@ const CATEGORIES = [
   { key: 'everyone_else', label: 'Everyone Else' },
 ];
 
-const STATUSES = [
-  { key: 'all', label: 'All' },
-  { key: 'living', label: 'Living' },
-  { key: 'deceased', label: 'Deceased' },
-];
-
 export default function SearchOverlay({ people, graph, viewerId, onSelect, onClose, hint = null, initialQuery = null }) {
   // Seeded once from the mount that opened this sheet — either blank (the
   // search icon, the lineage banner) or the character that triggered
@@ -31,7 +25,6 @@ export default function SearchOverlay({ people, graph, viewerId, onSelect, onClo
   const [query, setQuery] = useState(initialQuery || '');
   const [cursor, setCursor] = useState(0);
   const [category, setCategory] = useState(null); // one of CATEGORIES[].key, or null
-  const [status, setStatus] = useState('all');
   const inputRef = useRef(null);
   const listRef = useRef(null);
 
@@ -71,23 +64,19 @@ export default function SearchOverlay({ people, graph, viewerId, onSelect, onClo
     return CATEGORIES.filter((c) => counts.get(c.key) > 0);
   }, [categoryMap]);
 
-  // Everyone matching the active chip + status filter — the pool a text
-  // query further narrows, and what a chip-only browse (no query) lists in full.
+  // Everyone matching the active chip — the pool a text query further
+  // narrows, and what a chip-only browse (no query) lists in full.
   const basePool = useMemo(() => {
-    return people.filter((p) => {
-      if (category && categoryMap.get(p.id) !== category) return false;
-      if (status === 'living' && p.is_deceased) return false;
-      if (status === 'deceased' && !p.is_deceased) return false;
-      return true;
-    });
-  }, [people, category, status, categoryMap]);
+    if (!category) return people;
+    return people.filter((p) => categoryMap.get(p.id) === category);
+  }, [people, category, categoryMap]);
 
   const results = useMemo(() => rankPeopleByName(basePool, query), [query, basePool]);
 
-  // No text typed, but a chip or status filter narrowed the pool — browse it
-  // in full (alphabetical, uncapped) rather than showing the "start typing"
-  // hint over an already-deliberate choice to filter.
-  const browsing = !query.trim() && (category || status !== 'all');
+  // No text typed, but a chip narrowed the pool — browse it in full
+  // (alphabetical, uncapped) rather than showing the "start typing" hint
+  // over an already-deliberate choice to filter.
+  const browsing = !query.trim() && !!category;
   const browseList = useMemo(() => {
     if (!browsing) return [];
     return [...basePool].sort((a, b) => a.display_name.localeCompare(b.display_name));
@@ -165,21 +154,6 @@ export default function SearchOverlay({ people, graph, viewerId, onSelect, onClo
                 aria-pressed={category === c.key}
               >
                 {c.label}
-              </button>
-            ))}
-          </div>
-        )}
-
-        {availableCategories.length > 0 && (
-          <div className="filter-pills filter-pills--search" role="group" aria-label="Filter by status">
-            {STATUSES.map(({ key, label }) => (
-              <button
-                key={key}
-                className={`filter-pill${status === key ? ' filter-pill--active' : ''}`}
-                onClick={() => setStatus(key)}
-                aria-pressed={status === key}
-              >
-                {label}
               </button>
             ))}
           </div>
