@@ -212,8 +212,9 @@ export default function SearchOverlay({ people, graph, viewerId, onSelect, onClo
                   </span>
                   <span className="search-result__meta">
                     {birthYear(p) && <>b. {birthYear(p)}{p.is_deceased ? ' – ' + (p.death_date?.slice(0, 4) || '†') : ''}</>}
-                    {p.occupation && <>{birthYear(p) ? ' · ' : ''}{p.occupation}</>}
-                    {!birthYear(p) && !p.occupation && (p.is_deceased ? 'Deceased' : 'Living')}
+                    {p.occupation && <>{birthYear(p) ? ' · ' : ''}{p._matchedOccupation ? highlight(p.occupation, query) : p.occupation}</>}
+                    {p._matchedPlace && <>{(birthYear(p) || p.occupation) ? ' · ' : ''}{highlight(p._place, query)}</>}
+                    {!birthYear(p) && !p.occupation && !p._matchedPlace && (p.is_deceased ? 'Deceased' : 'Living')}
                   </span>
                 </div>
                 <ChevronIcon />

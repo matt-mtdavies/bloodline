@@ -1334,6 +1334,44 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   reverting the seed change before committing. Full unit suite (the pre-existing, unrelated
   step-niece failure aside) and `npm run build` passed clean.
 
+- **Search: fixed middle names outranking real names, uncapped results, added occupation/place
+  search** (real report: "if i were to search for mary... i get 10 names that have 'mar' in the
+  middle name... this should not be the case. It should prioritise first and surnames then middle
+  names... having the ability to search jobs and places would be a great addition"). Investigated
+  before touching anything — my first pass at an answer was wrong (I was working from a stale
+  local checkout that hadn't synced a large chunk of this branch's prior history, including the
+  relationship/status filter chips already in `SearchOverlay.jsx`; caught and corrected once
+  re-synced). The real bug, confirmed in the actual code: `rankPeopleByName` picked
+  `Math.max(nameScore, birthScore, middleScore)` across fields with no notion that a match on the
+  person's actual name should categorically outrank a match on their middle name. Because
+  `middle_name` is stored as its own short, standalone field, a full-word query hits it as an
+  EXACT match (score 10 from `scoreText`) while that same query can only ever hit a real
+  "First Last" `display_name` as a starts-with match (score 6 — the whole string is never
+  literally equal to just the first name) — so a middle name could win a tie it shouldn't have
+  been in at all. Fixed with additive priority BANDS instead of a flat max: any name/birth-name
+  match now scores `nameBand + 40`, any middle-name-only match scores `middleBand + 20`, and
+  occupation/place-only matches keep their raw 0–10 score — so every band is strictly ordered
+  regardless of how the within-band scores compare, and middle-name search (a real, deliberately
+  recent feature — some records are better known by a middle name) still works, just correctly as
+  a fallback rather than a competitor. Also, per the second half of the report: `rankPeopleByName`
+  now also scores `occupation` and `birth_place` + `residence` (joined), tagged with
+  `_matchedOccupation`/`_matchedPlace` so `SearchOverlay.jsx`'s result row only surfaces (and
+  highlights) whichever field actually explains the match, exactly mirroring the existing
+  `_birthName`/`_middleName` "née …" hint pattern rather than inventing a new convention. Fixed
+  the same `residence`-field gap in `AccessibleTree.jsx`'s List-view directory search, which
+  already searched name/occupation/birth_place/tags but had never checked residence either. The
+  hard 10-result cap is gone (`limit` is now optional, defaulting to no cap) — the same
+  `.search-results` list already renders arbitrarily long uncapped lists today for the "browse a
+  relationship chip with no text typed" path, so this needed no new CSS, just removing the
+  artificial `.slice()`. Covered by 16 tests in `tests/search.test.mjs` (the exact regression this
+  was reported for — a real, non-exact first-name match still beats an exact middle-name match —
+  plus occupation/place matching, band-priority ordering, and the uncapped-by-default behavior
+  with an explicit-limit escape hatch). Verified live via Playwright against the real dev server:
+  searching "cardiff" surfaces everyone born or living there with the place highlighted in the
+  row, searching "gp" surfaces Robert Mercer with "GP" highlighted in his occupation, and
+  searching "mercer" returns all 14 matches uncapped. Full unit suite (the pre-existing, unrelated
+  step-niece failure aside) and `npm run build` passed clean.
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);

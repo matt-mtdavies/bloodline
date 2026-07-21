@@ -138,6 +138,7 @@ export default function AccessibleTree({ graph, focusId, onFocus, onOpenPerson, 
           p.display_name.toLowerCase().includes(term) ||
           (p.occupation || '').toLowerCase().includes(term) ||
           (p.birth_place || '').toLowerCase().includes(term) ||
+          (p.residence || '').toLowerCase().includes(term) ||
           (p.tags || []).some((t) => t.toLowerCase().includes(term))
         );
       })
