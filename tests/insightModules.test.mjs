@@ -887,6 +887,35 @@ test('trades: punctuation-only occupation variants merge into one tally, keyed b
   assert.equal(railwaymanEntries[0].count, railwaymen.length, 'the merged entry should carry the combined count');
 });
 
+// ── trades: the explorer's `all` list (search any trade, not just an era's top 3) ─
+
+test("trades: `all` lists every distinct trade in the family, not just each era's top 3", () => {
+  const trades = mods.trades;
+  assert.ok(trades, 'module should render for the rich fixture');
+  const names = trades.all.map((e) => e.name).sort();
+  assert.deepEqual(names, ['Collier', 'Nurse', 'Railwayman', 'Software engineer', 'Teacher']);
+  assert.equal(trades.all.length, trades.distinct, '`all` should have exactly one entry per distinct trade');
+  const railwayman = trades.all.find((e) => e.name === 'Railwayman');
+  assert.equal(railwayman.count, 30);
+  assert.equal(railwayman.ids.length, 30);
+});
+
+test('trades: `all` is sorted by count descending, alphabetical tiebreak', () => {
+  const counts = mods.trades.all.map((e) => e.count);
+  assert.deepEqual(counts, [...counts].sort((a, b) => b - a), 'entries should already be sorted by count descending');
+});
+
+test('trades: `all` merges punctuation-only variants, same fix as the per-band top list', () => {
+  const { people: p2, rels: r2 } = richTree();
+  const railwaymen = p2.filter((p) => p.occupation === 'Railwayman');
+  railwaymen.slice(0, 2).forEach((p) => { p.occupation = 'Railwayman.'; });
+  const g2 = buildGraph(p2, r2);
+  const trades = computeInsightModules(g2, 'g4_0', 0).trades;
+  const railwaymanEntries = trades.all.filter((e) => e.name.replace(/\.$/, '') === 'Railwayman');
+  assert.equal(railwaymanEntries.length, 1, 'the two spellings should merge into a single entry');
+  assert.equal(railwaymanEntries[0].count, railwaymen.length);
+});
+
 // ── highlightCandidates / pickDailyHighlight: the "insight spotlight" pool ─
 // (IdleFactHint on the tree screen, the home hub's "did you know" teaser)
 

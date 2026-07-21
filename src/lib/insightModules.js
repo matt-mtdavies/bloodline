@@ -786,16 +786,26 @@ function trades(graph) {
 
   const overall = new Map();
   for (const e of entries) {
-    const f = trackVariant(overall, normalizeTextKey(e.occ), e.occ, { count: 0 });
+    const f = trackVariant(overall, normalizeTextKey(e.occ), e.occ, { count: 0, ids: [] });
     f.count++;
+    f.ids.push(e.id);
   }
+  resolveDisplay(overall);
   const distinct = overall.size;
+  // Every distinct trade in the family, not just each era's top 3 — the
+  // explorer's lookup pool (mirrors names()'s `all`/`top` split: `top`
+  // stays curated for the always-visible bars, `all` backs "did we have
+  // any carpet layers?" even when the answer is a single person).
+  const all = [...overall.values()]
+    .map((f) => ({ name: f.display, count: f.count, ids: f.ids }))
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
   return {
     bands,
     firstTop: bands[0].top[0].name,
     lastTop: bands[bands.length - 1].top[0].name,
     distinct,
     total: entries.length,
+    all,
   };
 }
 

@@ -1389,6 +1389,36 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   the full, uncapped, alphabetical result set). Full unit suite (the pre-existing, unrelated
   step-niece failure aside) and `npm run build` passed clean.
 
+- **Added a trade explorer to the Trades insight card** (real feedback: "there is a section that
+  says 'from farmer to teacher'... There should be a search function within, similar to... 'names
+  section, there are 28 John's etc'... Do we have any carpet layers in the family? How many
+  electricians are there"). Reused the exact explorer pattern already proven in `NamesModule` and
+  `SurnamesModule` rather than inventing a new one — same "Wonder about a ___? Try ___…" input,
+  prefix-match-then-substring-fallback, chip row with counts, tap to open the same `PeopleDrawer`
+  every other card uses. `trades()` in `lib/insightModules.js` already built a per-era-band
+  top-3-with-ids tally for the bars; it now *also* builds one unscoped `all` tally across every
+  working life in the family (not capped to the top 3, not scoped to a band — mirrors `names()`'s
+  own `top`/`all` split), reusing the same `trackVariant`/`resolveDisplay` punctuation-merging
+  already used for the per-band tally, so "Carpet Layer" and "Carpet Layer." still count as one
+  trade. `TradesModule` in `InsightModules.jsx` gained a second, independent selection state
+  (`selName`, for the explorer) alongside the existing band-tag selection (`sel`) — picking one
+  clears the other, so only one drawer is ever open at a time, matching how every other module
+  with a single `sel` already behaves. Deliberately did NOT force-capitalize the "no matches"
+  message the way `NamesModule` does ("No {cap(q)}s…") — that capitalization only reads right for
+  proper nouns (names), not common nouns (trades): "No electricians in the tree yet" reads
+  correctly lowercase, "No Electricians" would look like mis-applied Title Case. Covered by 3 new
+  unit tests in `tests/insightModules.test.mjs` (the `all` list covers every distinct trade, not
+  just the per-band top 3; it's sorted count-descending with an alphabetical tiebreak; and the
+  punctuation-merge fix applies to `all` the same way it already did to the per-band tally).
+  Verified live via Playwright: temporarily added 6 synthetic people spanning 1905–1955 with
+  varied trades (including a literal "Carpet layer", the user's own example) to `seed.js` to force
+  the card to qualify — it doesn't naturally in the real seed data (too few people with both an
+  occupation and a birth date spanning 50+ years) — confirmed searching "carpet" surfaces exactly
+  the one match with its count, tapping the chip opens the drawer with the right person, and an
+  unmatched query ("astronaut") shows the empty-state message without disturbing an already-open
+  drawer; reverted the seed change before committing. Full unit suite (the pre-existing, unrelated
+  step-niece failure aside) and `npm run build` passed clean.
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);

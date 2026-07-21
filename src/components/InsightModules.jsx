@@ -1036,18 +1036,34 @@ function HeartlandsModule({ data, graph, onNavigate }) {
 }
 
 function TradesModule({ data, graph, onNavigate }) {
-  const { bands, firstTop, lastTop, distinct, total } = data;
-  const [sel, setSel] = useState(null); // { from, name } | null
+  const { bands, firstTop, lastTop, distinct, total, all } = data;
+  const [sel, setSel] = useState(null); // { from, name } | null — a band's tag
+  const [selName, setSelName] = useState(null); // occupation name | null — the explorer
+  const [q, setQ] = useState('');
   const selTag = sel ? bands.find((b) => b.from === sel.from)?.top.find((t) => t.name === sel.name) : null;
   const selBand = sel ? bands.find((b) => b.from === sel.from) : null;
+  const selEntry = selName ? all.find((e) => e.name === selName) : null;
   // Lowercase a normally-cased occupation for mid-sentence use, leaving
   // all-caps forms ("IT consultant") alone.
   const lc = (s) => (/^[A-Z][a-z]/.test(s) ? s.charAt(0).toLowerCase() + s.slice(1) : s);
+
+  // The explorer: any trade recorded anywhere in the family, not just an
+  // era's top 3 — "did we have any carpet layers?" needs to work even when
+  // the answer is a single person. Prefix match first, substring as
+  // fallback, same convention as the Names/Surnames explorers.
+  const query = q.trim().toLowerCase();
+  const matches = query
+    ? (() => {
+        const pre = all.filter((e) => e.name.toLowerCase().startsWith(query));
+        return pre.length ? pre : all.filter((e) => e.name.toLowerCase().includes(query));
+      })().slice(0, 6)
+    : [];
+
   return (
     <Module
       icon={<ToolsIcon />}
       title={`From ${lc(firstTop)} to ${lc(lastTop)}`}
-      sub="What the family did for a living, era by era. Tap a trade to see who."
+      sub="What the family did for a living, era by era. Tap a trade to see who — or look any trade up."
       caption={<><b>{distinct} different trades</b> across {total} working lives recorded so far.</>}
     >
       <div className="tim-eras">
@@ -1059,7 +1075,7 @@ function TradesModule({ data, graph, onNavigate }) {
                 <button
                   key={t.name}
                   className={'tim-eratag' + (sel && sel.from === b.from && sel.name === t.name ? ' tim-eratag--on' : '')}
-                  onClick={() => setSel((cur) => (cur && cur.from === b.from && cur.name === t.name ? null : { from: b.from, name: t.name }))}
+                  onClick={() => { setSelName(null); setSel((cur) => (cur && cur.from === b.from && cur.name === t.name ? null : { from: b.from, name: t.name })); }}
                   aria-expanded={!!(sel && sel.from === b.from && sel.name === t.name)}
                 >
                   {t.name}{t.count > 1 ? ` ×${t.count}` : ''}
@@ -1069,6 +1085,31 @@ function TradesModule({ data, graph, onNavigate }) {
           </div>
         ))}
       </div>
+      <div className="tim-explore">
+        <input
+          type="search"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Wonder about a trade? Try “Electrician”…"
+          aria-label="Look up any occupation in the family"
+        />
+        {query && matches.length === 0 && (
+          <p className="tim-explore__none">No {q.trim()}s in the tree yet.</p>
+        )}
+        {matches.length > 0 && (
+          <div className="tim-chiprow">
+            {matches.map((e) => (
+              <button
+                key={e.name}
+                className={'tim-chipbtn' + (e.name === selName ? ' tim-chipbtn--on' : '')}
+                onClick={() => { setSel(null); setSelName((cur) => (cur === e.name ? null : e.name)); }}
+              >
+                {e.name} · {e.count}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
       {selTag && selBand && (
         <PeopleDrawer
           title={`${selTag.name} — ${selTag.count}, ${selBand.from}–${selBand.isNow ? 'today' : selBand.to}`}
@@ -1076,6 +1117,15 @@ function TradesModule({ data, graph, onNavigate }) {
           graph={graph}
           onNavigate={onNavigate}
           onClose={() => setSel(null)}
+        />
+      )}
+      {selEntry && (
+        <PeopleDrawer
+          title={`${selEntry.count} ${selEntry.name}${/(?:s|x|z|ch|sh)$/i.test(selEntry.name) ? 'es' : 's'}`}
+          rows={selEntry.ids.map((id) => ({ id }))}
+          graph={graph}
+          onNavigate={onNavigate}
+          onClose={() => setSelName(null)}
         />
       )}
     </Module>
