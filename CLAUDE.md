@@ -1497,6 +1497,46 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   suite (the pre-existing, unrelated step-niece failure aside), `npm run build`, and the standard
   smoke test all passed clean.
 
+- **Cinematic Timeline — Phase 0 director (spine only; NOT wired into the app yet)** (user shared
+  a "Cinematic Timeline Animation Specification" doc — a directed, emotional "travel through a
+  life" experience where the timeline is a "River of Time" and the camera "tells the story"
+  rather than following a bubble). Opined it's the right ambition but essentially "The Keepsake as
+  a film" and huge, so recommended (and the user approved) a de-risking prototype first rather than
+  committing to the whole engine. Built `src/lib/cinematicTimeline.js` — `buildCinematicScript(
+  graph, personId)`, a **pure, renderer-agnostic** compiler turning a person into an ordered SCRIPT
+  of beats (opening on the parents before birth → birth → each sibling → marriage → each child →
+  milestones → parent deaths → quiet-stretch world-context → death+legacy, or a living "present"
+  ending). Deliberately the same shape of work `keepsake.js` already does (compile a person → an
+  ordered, inclusion-filtered list of narrative units) so the printed Keepsake and the film could
+  one day share the compiler. Handles messy/sparse real data as a first-class concern: never
+  invents a wedding or a birth year (an unknown-year marriage/child simply produces no dated beat,
+  though the child still appears in the legacy frame), estimates ONLY the subject's own anchor
+  birth year when missing and flags it (`estimated`), and never returns an empty script even for a
+  bare name-only stub. Reuses the existing `lib/profile.js#lifeEvents`, `lib/worldEvents.js`
+  (`detectRegion`/`nearestWorldEvent`/`sameYearWorldEvent`) and `lib/dates.js#yearOf`. Each beat
+  carries `{ kind, year, estimated, focus (NOT always the subject), cast, camera:{move,tightness},
+  pacing, dwellMs, setPiece, title, detail, world }` — camera INTENT, never pixels; a renderer
+  interprets it. Covered by 15 unit tests (`tests/cinematicTimeline.test.mjs`): chronological
+  ordering, opening-on-parents-before-birth, marriage/child/sibling beats, "became a father"
+  milestone folded into the child's own beat, living→present vs deceased→death+legacy endings,
+  parent-death within the subject's lifetime, and the sparse-data guards. **Phase 1 prototype
+  (throwaway, gitignored `tests/_cinematic_proto.mjs`)** baked the real director output for James
+  into an animated canvas "River of Time" and was verified live via Playwright across all 13 of
+  his beats — confirmed the cross-section model reads as cinematic (birth forms James as a glowing
+  point between his parents' merging currents; marriage brings the partner's current alongside;
+  the ending settles on the living family) with the warm-dark era palette + typeset captions. Three
+  real findings surfaced for the next phase: (1) a full living family stacks into a tall column and
+  labels collide — crowding/lane-compression/label-declutter is THE thing to solve for big
+  families, not the camera; (2) real data contradicts itself (the seed's James↔Megan marriage year
+  is 2016 on the partner edge but 2019 in an event, so both a marriage beat and a milestone were
+  emitted — degraded gracefully but confirms the director needs a conflicting-date reconciliation
+  pass); (3) the "everyone alive travels the river together at the current time, on lanes" model is
+  correct (a first attempt parking bubbles at their birth-year x left the parents off-screen at the
+  opening). **Deliberately still Phase 0** — the tested compiler is dead code until a real canvas
+  renderer (Phase 2) and a design doc (`docs/CINEMATIC-TIMELINE.md`) are built; next-step direction
+  (commit-and-build Phase 2 / write the doc first / iterate the prototype feel) is an open decision
+  with the user.
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);
