@@ -1537,6 +1537,24 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   (commit-and-build Phase 2 / write the doc first / iterate the prototype feel) is an open decision
   with the user.
 
+- **GEDCOM import now reads MARR (marriage date + place)** (found while checking whether the
+  importer handles Ancestry.ca exports — Ancestry.ca is just Ancestry.com's Canadian domain, same
+  GEDCOM 5.5.1 export; verified the parser against a realistic Ancestry-flavoured file with its
+  custom `_APID`/`_MTTAG` tags + `OBJE` media refs, which parse and are safely ignored). The gap:
+  `lib/gedcom.js`'s FAM handler read `DIV` (→ former partner) but never `MARR`, so imported couples
+  linked correctly yet lost their wedding date/place — a real miss given the marriage/separation
+  capture feature already in the app. Added `MARR` parsing to the FAM loop: a `MARR` tag marks the
+  couple `is_married: true` and its `DATE`/`PLAC` populate the same `marriage_date`/`marriage_place`
+  the manual add-partner flow already stamps on the partner edge (year-only, via the existing
+  `extractYear`, matching how birth/death dates are reduced; place kept as the full PLAC string like
+  birth_place). A FAM with no MARR is still a valid partnership with the marriage fields left unset;
+  a divorced couple keeps its marriage date but stays a `former` partner (DIV still wins). Photos
+  still don't import (Ancestry's GEDCOM only references media by URL; the images live on Ancestry,
+  and the parser doesn't process `OBJE`). Covered by a new `tests/gedcom.test.mjs` (5 tests: MARR
+  with date+place, MARR with neither, no-MARR-leaves-fields-unset, divorced-but-married, and a full
+  Ancestry-style export with custom tags + OBJE). Full unit suite (the pre-existing, unrelated
+  step-niece failure aside) and `npm run build` passed clean.
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);

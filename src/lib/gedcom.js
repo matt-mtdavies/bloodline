@@ -3,7 +3,8 @@
  * store-compatible people[] and relationships[] arrays.
  *
  * Supports: INDI, FAM, NAME (with /surname/ notation), GIVN/SURN sub-tags,
- * BIRT/DEAT events, OCCU, RESI, NOTE (bio), PEDI adoption qualifier, DIV.
+ * BIRT/DEAT events, OCCU, RESI, NOTE (bio), PEDI adoption qualifier, DIV,
+ * MARR (marriage date + place onto the partner edge).
  * Date parsing: extracts the 4-digit year from any DATE value.
  */
 
@@ -172,6 +173,15 @@ export function gedcomToStore(text) {
     const wifeXref = child(node, 'WIFE')?.value;
     const isFormer = !!children(node, 'DIV')[0];
 
+    // Marriage event — a MARR tag means the couple was married; its DATE/PLAC
+    // populate the same marriage_date/marriage_place the manual add-partner
+    // flow captures. Year-only, matching how birth/death dates are reduced
+    // above (extractYear). A FAM with no MARR is still a valid partnership,
+    // just without a recorded marriage (is_married left unset).
+    const marrNode = children(node, 'MARR')[0];
+    const marriageDate = marrNode ? extractYear(child(marrNode, 'DATE')?.value) : null;
+    const marriagePlace = marrNode ? (child(marrNode, 'PLAC')?.value?.trim() || null) : null;
+
     const husbId = husbXref ? idMap[husbXref] : null;
     const wifeId = wifeXref ? idMap[wifeXref] : null;
 
@@ -184,6 +194,7 @@ export function gedcomToStore(text) {
         type: 'partner',
         qualifier: 'biological',
         partner_status: isFormer ? 'former' : 'current',
+        ...(marrNode ? { is_married: true, marriage_date: marriageDate, marriage_place: marriagePlace } : {}),
       });
     }
 
