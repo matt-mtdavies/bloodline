@@ -1589,6 +1589,33 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
      unrelated step-niece failure aside) and `npm run build` passed clean. (Photos still don't
      import — Ancestry's GEDCOM only references media by URL; the images live on Ancestry.)
 
+- **GEDCOM export (take your tree anywhere)** (agreed direction: standard-format export first as the
+  self-contained quick win, a full lossless photos+docs archive as a later doc-first effort). New
+  `storeToGedcom(people, relationships)` in `lib/gedcom.js` — the inverse of the parser — writes
+  standard **GEDCOM 5.5.1**: groups co-parents + their children into FAM records (HUSB/WIFE by
+  gender), emits NAME/GIVN/SURN, SEX, BIRT/DEAT with dates + places, OCCU, RESI, NOTE (bio, with
+  CONT), MARR (date+place) and DIV from the partner edge, and PEDI on adoptive/step children's FAMC.
+  Round-trips every field GEDCOM can carry — proven by tests that export a controlled tree and
+  re-parse it (marriage/divorce/adoption/childless-couple/isolated-person all survive) plus a real
+  seed round-trip (23 people, 28 parent + 8 partner edges, byte-identical edge counts both ways).
+  Deliberately lossy for what GEDCOM can't express (photos, memories, tags, events, the Keepsake) —
+  that's what the separate full-archive export will be for. One parser change came with it: display_
+  name now derives from **first given + surname** (not every given name), matching the app's own
+  convention ("James Robert /Mercer/" → "James Mercer" in the tree, full name kept in given_names and
+  shown in the profile) — this also makes an Ancestry import's display names app-consistent and is
+  what makes the round-trip faithful. One documented model limitation: two people who co-parent a
+  child but were never partners still become a HUSB/WIFE couple in the FAM (GEDCOM has no "shared a
+  child, never a couple" concept), so a re-import gains a partner edge between them. Wired into the UI
+  as a client-side download (nothing leaves the device): a new "Export data" section in
+  `FamilySettings.jsx` (beside Import, same `canEdit` gate) → `App.jsx`'s `handleExportGedcom` builds
+  the file via `storeToGedcom` and triggers a `.ged` download named `{family}_bloodline_{date}.ged`.
+  Verified live via Playwright end-to-end (Home → Family settings → Export GEDCOM → a valid 5.5.1
+  file downloads with all 23 seed people + 8 families, James as "James Robert /Mercer/"). Full unit
+  suite (the pre-existing, unrelated step-niece failure aside), `npm run build`, and the live check
+  all passed clean. **Next:** the full lossless archive (`.zip` of tree JSON + photos + docs from R2,
+  owner-gated, async job for large trees, and eventually a self-contained offline viewer) — a bigger,
+  design-doc-first effort.
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);

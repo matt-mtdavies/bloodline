@@ -10,7 +10,7 @@ const INVITE_ROLES = ['coadmin', 'editor', 'contributor', 'viewer'];
 
 export default function FamilySettings({
   myRole, familyName, onUpdateFamilyName, onReset, onLogout, onClose, onImportGedcom, onImportFamilySearch,
-  people = [], userEmail, onSelectPerson,
+  onExportGedcom, people = [], userEmail, onSelectPerson,
 }) {
   const [tab, setTab] = useState('members'); // 'members' | 'invite' | 'activity' | 'restore' | 'calendar'
   const [data, setData] = useState(null);
@@ -887,6 +887,22 @@ export default function FamilySettings({
             </button>
             <p className="fs__import-hint">
               From Ancestry, MyHeritage, 23andMe, MacFamilyTree, and more.
+            </p>
+          </div>
+        )}
+
+        {/* Export — reading your own tree out to a portable file. It's your
+            family, not ours; you can take it anywhere, anytime. */}
+        {onExportGedcom && (
+          <div className="fs__section">
+            <label className="fs__label">Export data</label>
+            <button className="fs__import-btn" onClick={onExportGedcom}>
+              <GedcomIcon />
+              Export GEDCOM file
+            </button>
+            <p className="fs__import-hint">
+              A standard family-tree file you can open in Ancestry, MyHeritage, FamilySearch and more.
+              Photos, memories and stories aren&apos;t included — a full backup with those is coming.
             </p>
           </div>
         )}

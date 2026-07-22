@@ -1,6 +1,6 @@
 /*
- * GEDCOM 5.5 / 5.5.1 parser — converts a GEDCOM export into bloodline
- * store-compatible people[] and relationships[] arrays.
+ * GEDCOM 5.5 / 5.5.1 parser AND writer — converts between a GEDCOM export and
+ * bloodline store-compatible people[] and relationships[] arrays.
  *
  * Supports: INDI, FAM, NAME (with /surname/ notation), GIVN/SURN sub-tags,
  * BIRT/DEAT events, OCCU, RESI, NOTE (bio), PEDI adoption qualifier, DIV,
@@ -8,6 +8,12 @@
  * Date parsing: exact "D MMM YYYY" dates become full ISO (YYYY-MM-DD) so
  * imported people get real birthdays; partial/approximate dates degrade to
  * month+year or year, never faking a day.
+ *
+ * `gedcomToStore(text)` reads; `storeToGedcom(people, relationships)` writes
+ * standard GEDCOM 5.5.1 for portability (take your tree to Ancestry/MyHeritage/
+ * FamilySearch). The pair round-trips the fields GEDCOM can carry — see
+ * tests/gedcom.test.mjs. Photos, memories, tags, life events and the Keepsake
+ * are NOT expressible in GEDCOM; a full, lossless archive is a separate feature.
  */
 
 const uid = () => 'p_' + Math.random().toString(36).slice(2, 9);
@@ -140,7 +146,12 @@ export function gedcomToStore(text) {
     const surnSub = child(nameNode, 'SURN');
     const given = givenSub?.value?.trim() || nGiven;
     const family = surnSub?.value?.trim() || nFamily;
-    const displayName = [given, family].filter(Boolean).join(' ').trim() || nDisplay || 'Unknown';
+    // display_name follows the app's own convention — first given + surname,
+    // NOT every given name — so "James Robert /Mercer/" shows as "James Mercer"
+    // in the tree (the full "James Robert" is kept in given_names and surfaces
+    // in the profile). This also makes a Bloodline export round-trip faithfully.
+    const firstGiven = given.split(/\s+/)[0] || '';
+    const displayName = [firstGiven, family].filter(Boolean).join(' ').trim() || nDisplay || 'Unknown';
 
     // Sex
     const sex = child(node, 'SEX')?.value?.toUpperCase();
@@ -269,4 +280,173 @@ export function gedcomToStore(text) {
   }
 
   return { people, relationships };
+}
+
+// ── Writing: store → GEDCOM 5.5.1 ───────────────────────────────────────────
+
+const MONTH_ABBR = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+
+// ISO 'YYYY[-MM[-DD]]' → GEDCOM 'D MMM YYYY' / 'MMM YYYY' / 'YYYY'. The exact
+// inverse of parseGedcomDate for the precisions it produces.
+function formatGedcomDate(iso) {
+  if (!iso) return null;
+  const s = String(iso).trim();
+  const m = s.match(/^(\d{4})(?:-(\d{2}))(?:-(\d{2}))?$/);
+  if (!m) { const y = s.match(/\d{4}/); return y ? y[0] : null; }
+  const [, y, mo, d] = m;
+  const month = MONTH_ABBR[Number(mo) - 1];
+  if (d) return `${Number(d)} ${month} ${y}`;
+  return `${month} ${y}`;
+}
+
+// Reconstruct "Given /Surname/" from the person's name fields.
+function gedcomName(p) {
+  const family = (p.family_name || '').trim();
+  let given = (p.given_names || '').trim();
+  if (!given && p.display_name) {
+    given = family
+      ? p.display_name.replace(new RegExp('\\s*' + family.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*$'), '').trim()
+      : p.display_name.trim();
+  }
+  return { given, family, nameLine: `${given} /${family}/`.trim() };
+}
+
+/**
+ * Convert store { people, relationships } into a GEDCOM 5.5.1 string.
+ *
+ * Groups co-parents + their children into FAM records (the GEDCOM family
+ * unit), assigning HUSB/WIFE by gender. Marriage date/place and divorce come
+ * from the partner edge; adoptive/step children carry a PEDI on their FAMC.
+ * Round-trips every field GEDCOM can express (see tests). Deliberately lossy
+ * for what GEDCOM can't hold — photos, memories, tags, events, the Keepsake —
+ * which is what the separate full archive export is for.
+ *
+ * One documented model limitation: two people who co-parent a child but were
+ * never partners still become a HUSB/WIFE couple in the FAM (GEDCOM has no
+ * "shared a child, never a couple" concept), so a re-import gains a partner
+ * edge between them.
+ */
+export function storeToGedcom(people = [], relationships = []) {
+  const indiX = new Map();
+  people.forEach((p, i) => indiX.set(p.id, `@I${i + 1}@`));
+  const byId = new Map(people.map((p) => [p.id, p]));
+  const keyOf = (ids) => [...ids].sort().join('~');
+
+  // Parent edges: child → Map(parentId → qualifier).
+  const parentsOfChild = new Map();
+  for (const r of relationships) {
+    if (r.type !== 'parent' || !byId.has(r.from_person) || !byId.has(r.to_person)) continue;
+    if (!parentsOfChild.has(r.to_person)) parentsOfChild.set(r.to_person, new Map());
+    parentsOfChild.get(r.to_person).set(r.from_person, r.qualifier || 'biological');
+  }
+  // Couples from partner edges.
+  const couples = new Map();
+  for (const r of relationships) {
+    if (r.type !== 'partner' || !byId.has(r.from_person) || !byId.has(r.to_person)) continue;
+    const ids = [r.from_person, r.to_person].sort();
+    couples.set(keyOf(ids), { ids, status: r.partner_status, is_married: r.is_married, marriage_date: r.marriage_date, marriage_place: r.marriage_place });
+  }
+
+  // FAM units keyed by parent-set; couples with no children still get one.
+  const fams = new Map();
+  for (const [childId, pmap] of parentsOfChild) {
+    const parents = [...pmap.keys()];
+    const key = keyOf(parents);
+    if (!fams.has(key)) fams.set(key, { parents, children: [], couple: null });
+    const qualifier = [...pmap.values()].find((q) => q && q !== 'biological') || 'biological';
+    fams.get(key).children.push({ id: childId, qualifier });
+  }
+  for (const c of couples.values()) {
+    const key = keyOf(c.ids);
+    if (!fams.has(key)) fams.set(key, { parents: c.ids, children: [], couple: null });
+    fams.get(key).couple = c;
+  }
+
+  // Assign FAM xrefs + HUSB/WIFE roles (by gender, then fill remaining slots).
+  const famList = [];
+  let fi = 0;
+  for (const fam of fams.values()) {
+    const xref = `@F${++fi}@`;
+    let husb = null, wife = null;
+    for (const pid of fam.parents) {
+      const g = byId.get(pid)?.gender;
+      if (g === 'male' && !husb) husb = pid;
+      else if (g === 'female' && !wife) wife = pid;
+    }
+    for (const pid of fam.parents) {
+      if (pid === husb || pid === wife) continue;
+      if (!husb) husb = pid; else if (!wife) wife = pid;
+    }
+    famList.push({ xref, husb, wife, children: fam.children, couple: fam.couple });
+  }
+
+  // Per-person FAMS (spouse) / FAMC (child, with qualifier).
+  const famsOf = new Map(), famcOf = new Map();
+  const addTo = (m, k, v) => { if (!m.has(k)) m.set(k, []); m.get(k).push(v); };
+  for (const f of famList) {
+    if (f.husb) addTo(famsOf, f.husb, f.xref);
+    if (f.wife) addTo(famsOf, f.wife, f.xref);
+    for (const ch of f.children) addTo(famcOf, ch.id, { xref: f.xref, qualifier: ch.qualifier });
+  }
+
+  const lines = [];
+  const put = (s) => lines.push(s);
+  put('0 HEAD');
+  put('1 SOUR Bloodline');
+  put('2 NAME Bloodline — myfamilybloodline.com');
+  put('1 GEDC');
+  put('2 VERS 5.5.1');
+  put('2 FORM LINEAGE-LINKED');
+  put('1 CHAR UTF-8');
+
+  for (const p of people) {
+    put(`0 ${indiX.get(p.id)} INDI`);
+    const { given, family, nameLine } = gedcomName(p);
+    put(`1 NAME ${nameLine}`);
+    if (given) put(`2 GIVN ${given}`);
+    if (family) put(`2 SURN ${family}`);
+    if (p.gender === 'male') put('1 SEX M');
+    else if (p.gender === 'female') put('1 SEX F');
+    const bd = formatGedcomDate(p.birth_date);
+    if (bd || p.birth_place) {
+      put('1 BIRT');
+      if (bd) put(`2 DATE ${bd}`);
+      if (p.birth_place) put(`2 PLAC ${p.birth_place}`);
+    }
+    if (p.is_deceased) {
+      const dd = formatGedcomDate(p.death_date);
+      if (dd) { put('1 DEAT'); put(`2 DATE ${dd}`); } else put('1 DEAT Y');
+    }
+    if (p.occupation) put(`1 OCCU ${p.occupation}`);
+    if (p.residence) { put('1 RESI'); put(`2 PLAC ${p.residence}`); }
+    if (p.bio) {
+      const bioLines = String(p.bio).split('\n');
+      put(`1 NOTE ${bioLines[0]}`);
+      for (let i = 1; i < bioLines.length; i++) put(`2 CONT ${bioLines[i]}`);
+    }
+    for (const x of (famsOf.get(p.id) || [])) put(`1 FAMS ${x}`);
+    for (const fc of (famcOf.get(p.id) || [])) {
+      put(`1 FAMC ${fc.xref}`);
+      const pedi = fc.qualifier === 'adoptive' ? 'adopted' : fc.qualifier === 'step' ? 'step' : null;
+      if (pedi) put(`2 PEDI ${pedi}`);
+    }
+  }
+
+  for (const f of famList) {
+    put(`0 ${f.xref} FAM`);
+    if (f.husb) put(`1 HUSB ${indiX.get(f.husb)}`);
+    if (f.wife) put(`1 WIFE ${indiX.get(f.wife)}`);
+    for (const ch of f.children) put(`1 CHIL ${indiX.get(ch.id)}`);
+    const c = f.couple;
+    if (c && (c.is_married || c.marriage_date || c.marriage_place)) {
+      put('1 MARR');
+      const md = formatGedcomDate(c.marriage_date);
+      if (md) put(`2 DATE ${md}`);
+      if (c.marriage_place) put(`2 PLAC ${c.marriage_place}`);
+    }
+    if (c && c.status === 'former') put('1 DIV');
+  }
+
+  put('0 TRLR');
+  return lines.join('\n') + '\n';
 }

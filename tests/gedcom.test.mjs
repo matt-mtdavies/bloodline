@@ -4,7 +4,7 @@
  * marriage date/place were dropped. Run with: node tests/gedcom.test.mjs
  */
 import assert from 'node:assert/strict';
-import { gedcomToStore } from '../src/lib/gedcom.js';
+import { gedcomToStore, storeToGedcom } from '../src/lib/gedcom.js';
 
 let passed = 0, failed = 0;
 function test(label, fn) {
@@ -127,6 +127,96 @@ test('an Ancestry-style export (custom _APID/_MTTAG tags, OBJE media) parses and
   const edge = partnerEdge(store);
   assert.equal(edge.marriage_date, '1975');
   assert.equal(edge.marriage_place, 'Ottawa, Ontario, Canada');
+});
+
+// ── Writer: storeToGedcom, and round-trip through the parser ────────────────
+
+// A controlled tree exercising the fields GEDCOM can carry: a married couple
+// with a place, a deceased grandparent with a full date + occupation + bio, a
+// divorced couple, a single-parent child, and an adopted child.
+const tree = {
+  people: [
+    { id: 'gpa', display_name: 'Arthur Vale', given_names: 'Arthur', family_name: 'Vale', gender: 'male', birth_date: '1928', death_date: '2009-05-14', is_deceased: true, occupation: 'Railwayman', bio: 'Loved the trains.', birth_place: 'Cardiff, Wales' },
+    { id: 'dad', display_name: 'Robert Vale', given_names: 'Robert', family_name: 'Vale', gender: 'male', birth_date: '1958-03-12' },
+    { id: 'mum', display_name: 'Linda Vale', given_names: 'Linda', family_name: 'Vale', gender: 'female', birth_date: '1960' },
+    { id: 'kid', display_name: 'James Vale', given_names: 'James', family_name: 'Vale', gender: 'male', birth_date: '1985-04-12', birth_place: 'Bristol, England' },
+    { id: 'ada', display_name: 'Ada Vale', given_names: 'Ada', family_name: 'Vale', gender: 'female', birth_date: '1988' }, // adopted
+    { id: 'exw', display_name: 'Carol Vale', given_names: 'Carol', family_name: 'Vale', gender: 'female', birth_date: '1959' }, // divorced from gpa's line
+  ],
+  relationships: [
+    { id: 'r1', type: 'parent', from_person: 'gpa', to_person: 'dad', qualifier: 'biological', partner_status: null },
+    { id: 'r2', type: 'partner', from_person: 'dad', to_person: 'mum', qualifier: 'biological', partner_status: 'current', is_married: true, marriage_date: '1983-06-04', marriage_place: 'Canterbury' },
+    { id: 'r3', type: 'parent', from_person: 'dad', to_person: 'kid', qualifier: 'biological', partner_status: null },
+    { id: 'r4', type: 'parent', from_person: 'mum', to_person: 'kid', qualifier: 'biological', partner_status: null },
+    { id: 'r5', type: 'parent', from_person: 'dad', to_person: 'ada', qualifier: 'adoptive', partner_status: null },
+    { id: 'r6', type: 'parent', from_person: 'mum', to_person: 'ada', qualifier: 'adoptive', partner_status: null },
+    { id: 'r7', type: 'partner', from_person: 'gpa', to_person: 'exw', qualifier: 'biological', partner_status: 'former' },
+    { id: 'r8', type: 'parent', from_person: 'exw', to_person: 'dad', qualifier: 'biological', partner_status: null }, // single-parent path already covered by gpa; exw co-parents dad
+  ],
+};
+
+const findBy = (people, name) => people.find((p) => p.display_name === name);
+
+test('storeToGedcom emits valid records the parser reads back', () => {
+  const ged = storeToGedcom(tree.people, tree.relationships);
+  assert.match(ged, /^0 HEAD/);
+  assert.match(ged, /2 VERS 5\.5\.1/);
+  assert.match(ged, /0 @I\d+@ INDI/);
+  assert.match(ged, /1 NAME Arthur \/Vale\//);
+  assert.match(ged, /0 TRLR\n$/);
+});
+
+test('round-trip preserves people and their GEDCOM-expressible fields', () => {
+  const back = gedcomToStore(storeToGedcom(tree.people, tree.relationships));
+  assert.equal(back.people.length, tree.people.length, 'same number of people');
+
+  const gpa = findBy(back.people, 'Arthur Vale');
+  assert.equal(gpa.birth_date, '1928');
+  assert.equal(gpa.death_date, '2009-05-14', 'full death date survives');
+  assert.equal(gpa.is_deceased, true);
+  assert.equal(gpa.occupation, 'Railwayman');
+  assert.equal(gpa.bio, 'Loved the trains.');
+  assert.equal(gpa.birth_place, 'Cardiff, Wales');
+
+  const kid = findBy(back.people, 'James Vale');
+  assert.equal(kid.birth_date, '1985-04-12', 'full birth date survives (so birthdays still work)');
+  assert.equal(kid.gender, 'male');
+});
+
+test('round-trip preserves marriage (date + place), divorce, and adoption', () => {
+  const back = gedcomToStore(storeToGedcom(tree.people, tree.relationships));
+  const id = (name) => findBy(back.people, name).id;
+
+  const partnerEdges = back.relationships.filter((r) => r.type === 'partner');
+  const married = partnerEdges.find((r) => (r.from_person === id('Robert Vale') && r.to_person === id('Linda Vale')) || (r.from_person === id('Linda Vale') && r.to_person === id('Robert Vale')));
+  assert.ok(married, 'the married couple round-trips');
+  assert.equal(married.is_married, true);
+  assert.equal(married.marriage_date, '1983-06-04', 'full marriage date survives');
+  assert.equal(married.marriage_place, 'Canterbury');
+  assert.equal(married.partner_status, 'current');
+
+  const divorced = partnerEdges.find((r) => [r.from_person, r.to_person].sort().join() === [id('Arthur Vale'), id('Carol Vale')].sort().join());
+  assert.ok(divorced, 'the divorced couple round-trips');
+  assert.equal(divorced.partner_status, 'former', 'DIV survives as a former partner');
+
+  // Ada is adopted by both parents — the qualifier survives on her parent edges.
+  const adaParentEdges = back.relationships.filter((r) => r.type === 'parent' && r.to_person === id('Ada Vale'));
+  assert.equal(adaParentEdges.length, 2);
+  assert.ok(adaParentEdges.every((r) => r.qualifier === 'adoptive'), 'adoption (PEDI) survives on both parent edges');
+});
+
+test('a childless couple and an isolated person both round-trip', () => {
+  const people = [
+    { id: 'a', display_name: 'Sam Real', given_names: 'Sam', family_name: 'Real', gender: 'male', birth_date: '1970' },
+    { id: 'b', display_name: 'Pat Real', given_names: 'Pat', family_name: 'Real', gender: 'female', birth_date: '1972' },
+    { id: 'c', display_name: 'Lone Soul', given_names: 'Lone', family_name: 'Soul', gender: null, birth_date: '1900' },
+  ];
+  const rels = [{ id: 'p', type: 'partner', from_person: 'a', to_person: 'b', qualifier: 'biological', partner_status: 'current', is_married: true, marriage_date: '1995' }];
+  const back = gedcomToStore(storeToGedcom(people, rels));
+  assert.equal(back.people.length, 3, 'the isolated person survives');
+  const partners = back.relationships.filter((r) => r.type === 'partner');
+  assert.equal(partners.length, 1, 'the childless couple still links');
+  assert.equal(partners[0].marriage_date, '1995');
 });
 
 console.log(`\n  ${passed} passed, ${failed} failed`);

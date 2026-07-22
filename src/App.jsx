@@ -59,6 +59,7 @@ import { groupRecapUpdates, captionForRecapGroup } from './lib/recap.js';
 import { uploadPhoto, generateThumb, uploadDocument, savePhotoToDevice, srcToDataUrl, summarizeDocument } from './lib/image.js';
 import { useImageZoom } from './lib/useImageZoom.js';
 import { buildGraph, pathBetween, pathBetweenOrdered, bloodRelativesOf, distancesFrom } from './data/graph.js';
+import { storeToGedcom } from './lib/gedcom.js';
 import { detectRegion, nearestWorldEvent } from './lib/worldEvents.js';
 import { findDuplicatePairs, pairKey, loadDismissedDuplicates, saveDismissedDuplicates } from './lib/duplicates.js';
 import { canManageTree } from './lib/visibility.js';
@@ -1012,6 +1013,24 @@ export default function App() {
       revealTimerRef.current = setInterval(revealNextBatch, REVEAL_INTERVAL_MS);
     }
   }, [canCollapse, activeId, graph]);
+
+  // Export the tree as a standard GEDCOM 5.5.1 file (portable to Ancestry,
+  // MyHeritage, FamilySearch, …). Lossy by nature — photos, memories, tags,
+  // events and the Keepsake aren't expressible in GEDCOM; the full archive
+  // export is the lossless path. Client-side, so nothing leaves the device.
+  const handleExportGedcom = useCallback(() => {
+    const ged = storeToGedcom(data.people, data.relationships);
+    const safe = (data.familyName || 'family').replace(/[^\w-]+/g, '_').replace(/^_+|_+$/g, '') || 'family';
+    const blob = new Blob([ged], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${safe}_bloodline_${new Date().toISOString().slice(0, 10)}.ged`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }, [data.people, data.relationships, data.familyName]);
 
   useEffect(() => () => {
     if (revealTimerRef.current) clearInterval(revealTimerRef.current);
@@ -2758,6 +2777,7 @@ export default function App() {
           onClose={() => setSettingsOpen(false)}
           onImportGedcom={() => setGedcomOpen(true)}
           onImportFamilySearch={() => setFsImportOpen(true)}
+          onExportGedcom={handleExportGedcom}
           people={data.people}
           userEmail={user?.email}
           onSelectPerson={(id) => {
