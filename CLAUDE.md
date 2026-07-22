@@ -13,6 +13,15 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   `Claude-Session:` line. Do NOT put the model id anywhere in the repo.
 - **Don't open a PR unless asked.** Commit + push to the branch.
 - **Model identity:** this agent is `claude-opus-4-8` (chat only — never in artifacts).
+- **ClickUp logging (standing convention, user-requested):** after shipping a **fix** (commit +
+  push), auto-create a ClickUp task in the **"Issues found"** list (`901615914251`, in the
+  "Project Optimisation" space) via the ClickUp MCP tools — `name` = concise issue title,
+  `markdown_description` = an **Issue** section + a **Fix** section + the commit hash, `status` =
+  `resolved`. Feature/polish work goes in the **"Tweaks & ATT: to Detail"** list (`901615911602`)
+  instead. If the ClickUp connector is disconnected at that moment (it has flapped mid-session),
+  queue the content and create it the instant it reconnects — never drop it. This is a convention
+  I follow each turn, not a harness hook (settings.json hooks run shell, not MCP calls, so they
+  can't create ClickUp tasks).
 
 ### Run / verify (no human can see the screen — self-verify with screenshots)
 - Dev server: `npm run dev` (run in background; picks the first free port, usually 5173).
