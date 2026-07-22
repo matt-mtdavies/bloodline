@@ -1,4 +1,5 @@
 import { json } from '../_lib/util.js';
+import { loadTree, casUpdateTree, insertOnlyTree, resolveTreeFromRaw, splitTree, putExtra } from '../_lib/treeStore.js';
 
 /*
  * GET /api/merge?invite=TOKEN
@@ -33,13 +34,25 @@ export async function onRequestGet({ request, env, data }) {
     return json({ error: 'Invite expired' }, { status: 410 });
   }
 
-  const treeRow = await env.DB.prepare(
-    `SELECT tree_json, updated_at FROM family_tree WHERE family_id = ?`,
-  ).bind(invite.family_id).first();
+  const treeRow = await loadTree(env, invite.family_id);
 
+  // The merge wizard computes its whole preview against this response, so
+  // a migrated family's row must be reassembled (core + R2 extra), not read
+  // as raw JSON — otherwise the preview (and the merge computed from it)
+  // would silently be missing memories/photos/documents/rich person fields.
+  // Unlike the "corrupt JSON -> empty" fallback below, a genuinely unreadable
+  // extra fails the request outright: a client that merges against an
+  // incomplete tree could write that incompleteness right back on submit.
   let tree = { people: [], relationships: [] };
   if (treeRow) {
-    try { tree = JSON.parse(treeRow.tree_json); } catch { /* corrupt — return empty */ }
+    try {
+      const resolved = await resolveTreeFromRaw(env, invite.family_id, treeRow.raw);
+      if (resolved.extraError) {
+        console.error('[merge] GET: extra unreadable, failing clean:', resolved.extraError);
+        return json({ error: 'Server error', detail: 'Tree data temporarily unavailable — please retry' }, { status: 503 });
+      }
+      tree = resolved.tree;
+    } catch { /* corrupt — return empty */ }
   }
 
   return json({
@@ -50,7 +63,7 @@ export async function onRequestGet({ request, env, data }) {
     tree,
     // Lets the client detect, on submit, whether this family's tree changed
     // while the merge wizard was open — see the check in onRequestPost below.
-    treeUpdatedAt: treeRow?.updated_at ?? null,
+    treeUpdatedAt: treeRow?.updatedAt ?? null,
   });
 }
 
@@ -90,14 +103,15 @@ export async function onRequestPost({ request, env, data }) {
   // leaves nothing mutated and the whole request is safely retryable — doing
   // this check only right before the tree write would leave the invite
   // already marked accepted, breaking a retry with a spurious 410.
-  const currentTree = await env.DB.prepare(
-    `SELECT tree_json, updated_at FROM family_tree WHERE family_id = ?`,
-  ).bind(invite.family_id).first();
-  if (currentTree && currentTree.updated_at !== baseUpdatedAt) {
+  const currentTree = await loadTree(env, invite.family_id);
+  if (currentTree && currentTree.updatedAt !== baseUpdatedAt) {
     let freshTree = { people: [], relationships: [] };
-    try { freshTree = JSON.parse(currentTree.tree_json); } catch { /* corrupt — fall through to empty */ }
+    try {
+      const resolved = await resolveTreeFromRaw(env, invite.family_id, currentTree.raw);
+      if (!resolved.extraError) freshTree = resolved.tree;
+    } catch { /* corrupt — fall through to empty */ }
     return json(
-      { error: 'conflict', detail: 'The family tree changed while merging.', tree: freshTree, treeUpdatedAt: currentTree.updated_at },
+      { error: 'conflict', detail: 'The family tree changed while merging.', tree: freshTree, treeUpdatedAt: currentTree.updatedAt },
       { status: 409 },
     );
   }
@@ -127,6 +141,27 @@ export async function onRequestPost({ request, env, data }) {
   await env.DB.prepare(`UPDATE user SET family_id = ? WHERE id = ?`)
     .bind(invite.family_id, data.user.uid).run();
 
+  // Whether to write in legacy or migrated (core+R2) mode is a fact read
+  // off the CURRENT row, never decided by mergedTree (the client's
+  // computed payload) — same rule as every other Phase 2 write path. No
+  // currentTree at all means this family's very first save, which always
+  // starts legacy (migration is a separate, deliberate step, never
+  // automatic here).
+  let migratedMode = false;
+  if (currentTree?.raw) {
+    try { migratedMode = JSON.parse(currentTree.raw)._extraVersion != null; } catch { /* corrupt -> treat as legacy */ }
+  }
+
+  let jsonToStore;
+  let extraToWrite = null;
+  if (migratedMode) {
+    const split = splitTree(mergedTree);
+    extraToWrite = split.extra;
+    jsonToStore = JSON.stringify({ ...split.core, _extraVersion: now });
+  } else {
+    jsonToStore = JSON.stringify(mergedTree);
+  }
+
   // Persist the merged tree with a real compare-and-swap, not the earlier
   // read-then-write check above (which still leaves a gap between that read
   // and this write — small, but real, since several awaited queries run in
@@ -137,15 +172,15 @@ export async function onRequestPost({ request, env, data }) {
   // this function. The membership writes above are harmless to repeat.
   let persisted;
   if (currentTree) {
-    persisted = await env.DB.prepare(
-      `UPDATE family_tree SET tree_json = ?, updated_at = ?
-        WHERE family_id = ? AND updated_at = ?`,
-    ).bind(JSON.stringify(mergedTree), now, invite.family_id, currentTree.updated_at).run();
+    // R2-before-D1 (docs/TREE-STORAGE.md §6.3): if this throws, the CAS
+    // below never runs and D1 is untouched, exactly like any other failed
+    // save. A CAS that then loses the race just leaves a harmless,
+    // unreferenced R2 object.
+    if (migratedMode) await putExtra(env, invite.family_id, extraToWrite, now);
+    persisted = await casUpdateTree(env, invite.family_id, jsonToStore, now, currentTree.updatedAt);
   } else {
     try {
-      await env.DB.prepare(
-        `INSERT INTO family_tree (family_id, tree_json, updated_at) VALUES (?, ?, ?)`,
-      ).bind(invite.family_id, JSON.stringify(mergedTree), now).run();
+      await insertOnlyTree(env, invite.family_id, jsonToStore, now);
       persisted = { meta: { changes: 1 } };
     } catch {
       // A row appeared between the early check and here (e.g. this family's
@@ -155,13 +190,16 @@ export async function onRequestPost({ request, env, data }) {
   }
 
   if (!persisted?.meta?.changes) {
-    const freshRow = await env.DB.prepare(
-      `SELECT tree_json, updated_at FROM family_tree WHERE family_id = ?`,
-    ).bind(invite.family_id).first();
+    const freshRow = await loadTree(env, invite.family_id);
     let freshTree = { people: [], relationships: [] };
-    try { freshTree = freshRow ? JSON.parse(freshRow.tree_json) : freshTree; } catch { /* corrupt — fall through to empty */ }
+    try {
+      if (freshRow) {
+        const resolved = await resolveTreeFromRaw(env, invite.family_id, freshRow.raw);
+        if (!resolved.extraError) freshTree = resolved.tree;
+      }
+    } catch { /* corrupt — fall through to empty */ }
     return json(
-      { error: 'conflict', detail: 'The family tree changed while merging.', tree: freshTree, treeUpdatedAt: freshRow?.updated_at ?? null },
+      { error: 'conflict', detail: 'The family tree changed while merging.', tree: freshTree, treeUpdatedAt: freshRow?.updatedAt ?? null },
       { status: 409 },
     );
   }

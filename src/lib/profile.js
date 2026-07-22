@@ -66,12 +66,77 @@ export function lifeEvents(person) {
     });
   }
   for (const e of person.events || []) {
-    events.push({ year: String(e.year), title: e.title, detail: e.detail || null });
+    events.push({ year: String(e.year), title: e.title, detail: e.detail || null, tag: e.tag || null });
   }
   if (person.is_deceased && person.death_date) {
-    events.push({ year: yearOf(person.death_date), title: 'Passed away', detail: null });
+    events.push({ year: yearOf(person.death_date), title: 'Passed away', detail: person.cause_of_death || null });
   }
   return events
     .filter((e) => e.year)
     .sort((a, b) => Number(a.year) - Number(b.year));
+}
+
+function normalizeEventTitle(t) {
+  return (t || '').trim().toLowerCase().replace(/[^a-z]/g, '');
+}
+
+function titlesLikelyMatch(a, b) {
+  if (!a || !b) return false;
+  if (a === b) return true;
+  // "Enlisted" vs "Enlisted/Began Service" — different documents often
+  // phrase the same milestone slightly differently. A same-year, one-title-
+  // contains-the-other match catches that without risking a false positive
+  // on two genuinely distinct short titles.
+  return (a.length >= 4 && b.includes(a)) || (b.length >= 4 && a.includes(b));
+}
+
+/*
+ * True when a candidate document-extracted fact ({ year, title }) is an
+ * obvious duplicate of something already on this profile — either the
+ * derived Born/Passed-away entry, or a stored event with a matching year and
+ * a clearly-the-same title. Deliberately conservative (exact year, near-
+ * identical title): a busy document can legitimately produce several real,
+ * distinct events that happen to share a year (admitted, diagnosed,
+ * discharged, all in 1945), and those must never be silently dropped.
+ */
+export function isDuplicateLifeEvent(person, fact) {
+  if (!fact?.year) return false;
+  const factYear = String(fact.year);
+  const factKey = normalizeEventTitle(fact.title);
+  if (factKey === 'born' && person.birth_date && yearOf(person.birth_date) === factYear) return true;
+  if ((factKey === 'passedaway' || factKey === 'died') && person.death_date && yearOf(person.death_date) === factYear) return true;
+  return (person.events || []).some(
+    (e) => String(e.year) === factYear && titlesLikelyMatch(normalizeEventTitle(e.title), factKey),
+  );
+}
+
+function nameTokens(name) {
+  return (name || '')
+    .toLowerCase()
+    .replace(/[^a-z\s]/g, ' ')
+    .split(/\s+/)
+    .filter((t) => t.length >= 3); // skip initials and short particles ("de", "OJ")
+}
+
+/*
+ * True when this person already has a stored event, in the same year, whose
+ * title or detail mentions the given name — a wider, name-based signal for
+ * exactly the case isDuplicateLifeEvent's title-similarity check can miss: a
+ * relationship-derived suggestion ("Welcomed Oliver — 2012") re-offered
+ * because the user's own event for the same birth was phrased completely
+ * differently ("Our son arrived", "Birth of Oliver at Cardiff"). Biased
+ * toward suppressing rather than repeating — a rare false suppression just
+ * means the user adds the row by hand; a repeated "haven't I already added
+ * this?" suggestion erodes trust in the whole feature.
+ */
+export function hasEventMentioning(person, year, name) {
+  if (!year || !name) return false;
+  const yearStr = String(year);
+  const tokens = nameTokens(name);
+  if (!tokens.length) return false;
+  return (person.events || []).some((e) => {
+    if (String(e.year) !== yearStr) return false;
+    const haystack = `${e.title || ''} ${e.detail || ''}`.toLowerCase();
+    return tokens.some((t) => haystack.includes(t));
+  });
 }

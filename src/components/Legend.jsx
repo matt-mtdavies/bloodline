@@ -1,12 +1,9 @@
 import { useEffect } from 'react';
 
 // A quiet key to what the bubbles and bonds mean. Opened from the top bar.
-const LAYOUTS = [
-  { id: 'organic', label: 'Organic', desc: 'Free-flowing network' },
-  { id: 'chart', label: 'Chart', desc: 'Traditional family tree chart' },
-];
-
-export default function Legend({ open, onClose, layout = 'organic', onSetLayout }) {
+// Switching how the family is DISPLAYED (tree/chart/list) lives in its own
+// menu next to the thing it controls, not here — this stays a pure reference.
+export default function Legend({ open, onClose }) {
   useEffect(() => {
     if (!open) return;
     const onKey = (e) => e.key === 'Escape' && onClose();
@@ -60,25 +57,6 @@ export default function Legend({ open, onClose, layout = 'organic', onSetLayout 
             <span><b>A dotted ring</b> marks a detail the family hasn't confirmed yet.</span>
           </li>
         </ul>
-
-        <div className="legend__setting legend__setting--layout">
-          <span className="legend__setting-text">
-            <b>Layout algorithm</b>
-            <span>How the network arranges itself.</span>
-          </span>
-          <div className="layout-seg" role="group" aria-label="Layout algorithm">
-            {LAYOUTS.map((m) => (
-              <button
-                key={m.id}
-                className={`layout-seg__btn${layout === m.id ? ' layout-seg__btn--on' : ''}`}
-                onClick={() => onSetLayout?.(m.id)}
-                title={m.desc}
-              >
-                {m.label}
-              </button>
-            ))}
-          </div>
-        </div>
 
         <p className="legend__privacy">
           We never sell your family's data and there is no ad tracking. Details about

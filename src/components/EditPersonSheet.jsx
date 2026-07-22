@@ -1,10 +1,23 @@
 import { useEffect, useState } from 'react';
 import { VISIBILITY_LABELS, VISIBILITY_DESCS, SECTIONS } from '../lib/visibility.js';
-import { formatPhone, toE164 } from '../lib/phone.js';
+import { formatPhone } from '../lib/phone.js';
 import { formatDate } from '../lib/dates.js';
 import Avatar from './Avatar.jsx';
+import PhoneField from './PhoneField.jsx';
+import DateField from './DateField.jsx';
+import { MedalIcon } from './MilitaryIcons.jsx';
 
 const GENDER_OPTIONS = ['Male', 'Female', 'Non-binary', 'Other'];
+
+// Same three values MilitaryIcons.jsx's BranchIcon recognizes — kept as a
+// closed set (a pill-pick, not free text) so a saved value always resolves
+// to a real branch mark on the dog tag, never a typo the icon can't match.
+const BRANCH_OPTIONS = [
+  { value: 'army', label: 'Army' },
+  { value: 'navy', label: 'Navy' },
+  { value: 'air_force', label: 'Air Force' },
+];
+const BRANCH_LABELS = Object.fromEntries(BRANCH_OPTIONS.map((o) => [o.value, o.label]));
 
 const EYE_OPTIONS = [
   { value: 'Brown',  dot: '#6b4226' },
@@ -30,25 +43,20 @@ const HAIR_OPTIONS = [
 const TODAY = new Date().toISOString().slice(0, 10);
 
 /*
- * Allow digits, +, spaces, dashes, parens while typing.
- */
-function normalisePhone(raw) {
-  return raw.replace(/[^\d+\s\-().]/g, '');
-}
-
-/*
  * Validate email loosely — only flag on blur if it looks wrong.
  */
 function isValidEmail(v) {
   return !v || /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v);
 }
 
-export default function EditPersonSheet({ person, onClose, onSave, onRemove }) {
+export default function EditPersonSheet({ person, onClose, onSave, onRemove, startInEdit = false }) {
   // Opens on a read-only "Profile" view — birthday, birthplace, contact info,
   // etc. are all visible without entering edit mode. "Edit profile" switches
   // to the actual form below; cancelling the form returns to the view rather
-  // than closing outright.
-  const [mode, setMode] = useState('view'); // 'view' | 'edit'
+  // than closing outright. startInEdit skips straight to the form — used
+  // right after creating a person via "Add & edit details", where a view of
+  // an almost-empty profile isn't the point, filling it in is.
+  const [mode, setMode] = useState(startInEdit ? 'edit' : 'view'); // 'view' | 'edit'
   const [f, setF] = useState({
     display_name:  person.display_name  || '',
     middle_name:   person.middle_name   || '',
@@ -58,20 +66,34 @@ export default function EditPersonSheet({ person, onClose, onSave, onRemove }) {
     birth_place:   person.birth_place   || '',
     residence:     person.residence     || '',
     occupation:    person.occupation    || '',
+    military_branch:         person.military_branch         || '',
+    military_nation:         person.military_nation         || '',
+    military_rank:           person.military_rank           || '',
+    military_service_number: person.military_service_number || '',
     eye_color:     person.eye_color     || '',
     hair_color:    person.hair_color    || '',
     email:         person.email         || '',
-    phone:         formatPhone(person.phone || ''),
+    phone:         person.phone         || '',
     tags:          (person.tags || []).join(', '),
     bio:           person.bio           || '',
     is_deceased:   !!person.is_deceased,
     death_date:    person.death_date    || '',
+    cause_of_death: person.cause_of_death || '',
     visibility:        person.visibility        || 'full',
     sectionVisibility: person.sectionVisibility || {},
   });
 
   const [emailError,   setEmailError]   = useState(false);
   const [privacyOpen,  setPrivacyOpen]  = useState(false);
+  // Collapsed by default — four fields nobody but a small minority of
+  // profiles ever use (real feedback: "not sure I like having the military
+  // data fields... 98% of people won't have that"). Starts OPEN only when
+  // there's already something in there (a document-accepted fact, or an
+  // earlier manual entry) so an existing record is never hidden behind an
+  // extra tap the first time this form opens.
+  const [militaryOpen, setMilitaryOpen] = useState(
+    !!(person.military_branch || person.military_nation || person.military_rank || person.military_service_number),
+  );
   const [confirmRemove, setConfirmRemove] = useState(false);
 
   useEffect(() => {
@@ -88,15 +110,10 @@ export default function EditPersonSheet({ person, onClose, onSave, onRemove }) {
   const clear = (k) => () => setF((s) => ({ ...s, [k]: '' }));
   const pick  = (k) => (v) => setF((s) => ({ ...s, [k]: s[k] === v ? '' : v }));
 
-  const setPhone   = (e) => setF((s) => ({ ...s, phone: normalisePhone(e.target.value) }));
-  const blurPhone  = ()  => setF((s) => ({ ...s, phone: formatPhone(s.phone) }));
-
   const dobIsFullDate = f.birth_date.includes('-');
   const dobYearOnly   = f.birth_date && !dobIsFullDate;
 
-  const onDobChange = (e) => {
-    if (e.target.value) setF((s) => ({ ...s, birth_date: e.target.value }));
-  };
+  const onDobChange = (value) => setF((s) => ({ ...s, birth_date: value }));
 
   const save = () => {
     onSave({
@@ -108,15 +125,20 @@ export default function EditPersonSheet({ person, onClose, onSave, onRemove }) {
       birth_place:   f.birth_place.trim()   || null,
       residence:     f.residence.trim()     || null,
       occupation:    f.occupation.trim()    || null,
+      military_branch:         f.military_branch                 || null,
+      military_nation:         f.military_nation.trim()          || null,
+      military_rank:           f.military_rank.trim()            || null,
+      military_service_number: f.military_service_number.trim()  || null,
       eye_color:     f.eye_color            || null,
       hair_color:    f.hair_color           || null,
       email:         f.email.trim()         || null,
-      phone:         toE164(f.phone)          || null,
+      phone:         f.phone                || null,
       tags:          f.tags.split(',').map((t) => t.trim()).filter(Boolean),
       bio:           f.bio.trim()           || null,
       is_deceased:   f.is_deceased,
       is_living:     !f.is_deceased,
       death_date:    f.is_deceased ? f.death_date.trim() || null : null,
+      cause_of_death: f.is_deceased ? f.cause_of_death.trim() || null : null,
       visibility:        f.visibility,
       sectionVisibility: f.sectionVisibility,
     });
@@ -137,7 +159,10 @@ export default function EditPersonSheet({ person, onClose, onSave, onRemove }) {
           ['Birth name', person.birth_name],
           ['Gender', person.gender],
           ['Date of birth', person.birth_date ? formatDate(person.birth_date) : null],
-          ...(person.is_deceased ? [['Date passed', person.death_date ? formatDate(person.death_date) : null]] : []),
+          ...(person.is_deceased ? [
+            ['Date passed', person.death_date ? formatDate(person.death_date) : null],
+            ['Cause of death', person.cause_of_death],
+          ] : []),
         ],
       },
       {
@@ -146,6 +171,15 @@ export default function EditPersonSheet({ person, onClose, onSave, onRemove }) {
           ['Birthplace', person.birth_place],
           ['Lives in', person.residence],
           ['Occupation', person.occupation],
+        ],
+      },
+      {
+        title: 'Military',
+        rows: [
+          ['Branch', BRANCH_LABELS[person.military_branch] || person.military_branch],
+          ['Served with', person.military_nation],
+          ['Rank', person.military_rank],
+          ['Service number', person.military_service_number],
         ],
       },
       {
@@ -283,13 +317,7 @@ export default function EditPersonSheet({ person, onClose, onSave, onRemove }) {
             <label className="field">
               <span className="field__label">Date of Birth</span>
               <div className="input-wrap dob-wrap">
-                <input
-                  className="field__input field__input--date"
-                  type="date"
-                  value={dobIsFullDate ? f.birth_date : ''}
-                  max={TODAY}
-                  onChange={onDobChange}
-                />
+                <DateField value={f.birth_date} max={TODAY} onChange={onDobChange} />
                 {f.birth_date && (
                   <button type="button" className="input-clear" onClick={clear('birth_date')} aria-label="Clear" tabIndex={-1}>×</button>
                 )}
@@ -385,44 +413,103 @@ export default function EditPersonSheet({ person, onClose, onSave, onRemove }) {
             </div>
           </label>
 
-          {/* ── Email + Phone ── */}
+          {/* ── Military service — branch/rank/service number/nation. Usually
+              filled in automatically by accepting a document suggestion
+              (see Enrich), but that's a one-time write with no live link
+              back to the source document — if a document ever gets
+              reassigned to a different person after the fact, correcting
+              or clearing what it wrote here is manual, right in this form.
+              Collapsed by default (same disclosure pattern as Privacy below)
+              since the vast majority of profiles have nothing to put here —
+              real feedback was that four always-visible fields for a small
+              minority felt like clutter on every single edit. ── */}
+          <div className="field privacy-section">
+            <button
+              type="button"
+              className="privacy-section__toggle"
+              onClick={() => setMilitaryOpen((o) => !o)}
+              aria-expanded={militaryOpen}
+            >
+              <span className="privacy-section__label"><MedalIcon /> Military service</span>
+              <span className="privacy-section__cur">
+                {f.military_branch ? BRANCH_LABELS[f.military_branch] : ''}
+              </span>
+              <span className="privacy-section__caret"><ChevronIcon open={militaryOpen} /></span>
+            </button>
+
+            {militaryOpen && (
+              <div className="privacy-section__body">
+                <div className="field">
+                  <span className="field__label">Military branch</span>
+                  <div className="pill-pick">
+                    {BRANCH_OPTIONS.map((o) => (
+                      <button
+                        key={o.value}
+                        type="button"
+                        className={`pill-pick__opt${f.military_branch === o.value ? ' pill-pick__opt--on' : ''}`}
+                        onClick={() => pick('military_branch')(o.value)}
+                      >
+                        {o.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <label className="field">
+                  <span className="field__label">Served with</span>
+                  <div className="input-wrap">
+                    <input className="field__input" value={f.military_nation} onChange={set('military_nation')} placeholder="e.g. Australia" />
+                    {f.military_nation && <button type="button" className="input-clear" onClick={clear('military_nation')} aria-label="Clear" tabIndex={-1}>×</button>}
+                  </div>
+                </label>
+                <label className="field">
+                  <span className="field__label">Rank</span>
+                  <div className="input-wrap">
+                    <input className="field__input" value={f.military_rank} onChange={set('military_rank')} placeholder="e.g. Corporal" />
+                    {f.military_rank && <button type="button" className="input-clear" onClick={clear('military_rank')} aria-label="Clear" tabIndex={-1}>×</button>}
+                  </div>
+                </label>
+                <label className="field">
+                  <span className="field__label">Service number</span>
+                  <div className="input-wrap">
+                    <input className="field__input" value={f.military_service_number} onChange={set('military_service_number')} placeholder="e.g. NX12345" />
+                    {f.military_service_number && <button type="button" className="input-clear" onClick={clear('military_service_number')} aria-label="Clear" tabIndex={-1}>×</button>}
+                  </div>
+                </label>
+              </div>
+            )}
+          </div>
+
+          {/* ── Email ── */}
           {!f.is_deceased && (
-            <div className="field-row">
-              <label className="field">
-                <span className="field__label">Email</span>
-                <div className={`input-wrap${emailError ? ' input-wrap--err' : ''}`}>
-                  <input
-                    className="field__input"
-                    type="email"
-                    inputMode="email"
-                    value={f.email}
-                    onChange={(e) => { setEmailError(false); set('email')(e); }}
-                    onBlur={() => setEmailError(!isValidEmail(f.email))}
-                    placeholder="their@email.com"
-                    autoComplete="off"
-                  />
-                  {f.email && <button type="button" className="input-clear" onClick={() => { clear('email')(); setEmailError(false); }} aria-label="Clear" tabIndex={-1}>×</button>}
-                </div>
-                {emailError && <span className="field__err">Enter a valid email address</span>}
-              </label>
-              <label className="field">
-                <span className="field__label">Phone</span>
-                <div className="input-wrap">
-                  <input
-                    className="field__input"
-                    type="tel"
-                    inputMode="tel"
-                    value={f.phone}
-                    onChange={setPhone}
-                    onBlur={blurPhone}
-                    placeholder="+61 4xx xxx xxx"
-                    autoComplete="off"
-                  />
-                  {f.phone && <button type="button" className="input-clear" onClick={clear('phone')} aria-label="Clear" tabIndex={-1}>×</button>}
-                </div>
-                <span className="field__hint">Include country code e.g. +61, +1, +44</span>
-              </label>
-            </div>
+            <label className="field">
+              <span className="field__label">Email</span>
+              <div className={`input-wrap${emailError ? ' input-wrap--err' : ''}`}>
+                <input
+                  className="field__input"
+                  type="email"
+                  inputMode="email"
+                  value={f.email}
+                  onChange={(e) => { setEmailError(false); set('email')(e); }}
+                  onBlur={() => setEmailError(!isValidEmail(f.email))}
+                  placeholder="their@email.com"
+                  autoComplete="off"
+                />
+                {f.email && <button type="button" className="input-clear" onClick={() => { clear('email')(); setEmailError(false); }} aria-label="Clear" tabIndex={-1}>×</button>}
+              </div>
+              {emailError && <span className="field__err">Enter a valid email address</span>}
+            </label>
+          )}
+
+          {/* ── Phone (full width — a country selector + national number needs the room) ── */}
+          {!f.is_deceased && (
+            <label className="field">
+              <span className="field__label">Phone</span>
+              <PhoneField
+                value={f.phone}
+                residence={f.residence}
+                onChange={(e164) => setF((s) => ({ ...s, phone: e164 }))}
+              />
+            </label>
           )}
 
           {/* ── Tags ── */}
@@ -448,18 +535,25 @@ export default function EditPersonSheet({ person, onClose, onSave, onRemove }) {
             <label className="field">
               <span className="field__label">Date Passed</span>
               <div className="input-wrap dob-wrap">
-                <input
-                  className="field__input field__input--date"
-                  type="date"
-                  value={f.death_date.includes('-') ? f.death_date : ''}
+                <DateField
+                  value={f.death_date}
                   max={TODAY}
-                  onChange={(e) => { if (e.target.value) setF((s) => ({ ...s, death_date: e.target.value })); }}
+                  onChange={(value) => setF((s) => ({ ...s, death_date: value }))}
                 />
                 {f.death_date && <button type="button" className="input-clear" onClick={clear('death_date')} aria-label="Clear" tabIndex={-1}>×</button>}
               </div>
               {f.death_date && !f.death_date.includes('-') && (
                 <span className="field__hint">Year {f.death_date} — pick date for precision</span>
               )}
+            </label>
+          )}
+          {f.is_deceased && (
+            <label className="field">
+              <span className="field__label">Cause of death <span className="field__label-sub">optional</span></span>
+              <div className="input-wrap">
+                <input className="field__input" value={f.cause_of_death} onChange={set('cause_of_death')} placeholder="e.g. Heart disease" />
+                {f.cause_of_death && <button type="button" className="input-clear" onClick={clear('cause_of_death')} aria-label="Clear" tabIndex={-1}>×</button>}
+              </div>
             </label>
           )}
 

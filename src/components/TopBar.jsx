@@ -1,10 +1,19 @@
 import { useState, useRef, useEffect, forwardRef } from 'react';
 import Logo from './Logo.jsx';
 
-export default function TopBar({ familyName, stats, view, syncStatus, syncError, onRetrySync, onToggleView, onOpenLegend, bloodlineOnly = false, onToggleBloodlineOnly, onOpenSettings, onOpenActivity, activityCount = 0, user, userPhoto, onOpenProfile, onSearch, onOpenInsights, onOpenTimeline, onOpenDuplicates, duplicateCount = 0, storageWarning, syncToast, onDismissSyncToast, recapNudgeCount = 0, onShowRecap, onDismissRecapNudge }) {
+export default function TopBar({ familyName, stats, view, layout, syncStatus, syncError, onRetrySync, onSetViewMode, onOpenLegend, bloodlineOnly = false, onToggleBloodlineOnly, onOpenActivity, activityCount = 0, user, userPhoto, onOpenProfile, onOpenHome, onSearch, onOpenInsights, onOpenTimeline, onOpenDuplicates, duplicateCount = 0, storageWarning, storageNearLimit, treeSizeWarning, syncToast, onDismissSyncToast, recapNudgeCount = 0, onShowRecap, onDismissRecapNudge }) {
   const [statsOpen, setStatsOpen] = useState(false);
+  const [viewMenuOpen, setViewMenuOpen] = useState(false);
   const popoverRef = useRef(null);
   const statsRef = useRef(null);
+  const viewMenuRef = useRef(null);
+  const viewMenuBtnRef = useRef(null);
+
+  // The three ways of seeing the family — tree is the default, chart trades
+  // the organic camera for a traditional static chart, list drops canvas
+  // entirely for a screen-reader-friendly directory. Layout (organic/chart)
+  // only means anything while view === 'bubbles', hence the nesting here.
+  const viewMode = view !== 'bubbles' ? 'list' : layout === 'chart' ? 'chart' : 'tree';
 
   useEffect(() => {
     if (!statsOpen) return;
@@ -25,27 +34,50 @@ export default function TopBar({ familyName, stats, view, syncStatus, syncError,
     };
   }, [statsOpen]);
 
+  useEffect(() => {
+    if (!viewMenuOpen) return;
+    const onDown = (e) => {
+      if (
+        viewMenuRef.current && !viewMenuRef.current.contains(e.target) &&
+        viewMenuBtnRef.current && !viewMenuBtnRef.current.contains(e.target)
+      ) {
+        setViewMenuOpen(false);
+      }
+    };
+    const onKey = (e) => { if (e.key === 'Escape') setViewMenuOpen(false); };
+    document.addEventListener('pointerdown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('pointerdown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [viewMenuOpen]);
+
   return (
     <header className="topbar">
       {/* Row 1: app brand left, actions right */}
       <div className="topbar__bar">
-        <div className="topbar__brand">
-          <Logo size={26} />
+        <button className="topbar__brand" onClick={onOpenHome} aria-label="Home">
+          {/* The brand mark IS the save indicator now — no second icon pops
+              up beside it (real feedback: two breathing family-marks
+              side by side "looks odd"). Saving just breathes harder, the
+              same `loading` pulse already used on the splash screen,
+              swapped in on the exact same element rather than a pill
+              appearing next to it; the instant syncStatus leaves 'saving'
+              it eases straight back to the quiet `idle` drift — no
+              checkmark tick, since a fresh burst of motion right as
+              things go quiet would undercut the point of going quiet. */}
+          <Logo size={26} loading={syncStatus === 'saving'} idle={syncStatus !== 'saving'} animate={false} />
           <span className="topbar__word">Bloodline</span>
-        </div>
+          <span className="hover-tip hover-tip--down">Home</span>
+        </button>
+        {/* Screen readers still get the saving/saved transition — just from
+            an invisible live region instead of a visible pill, since the
+            visible cue moved onto the brand mark above. */}
+        <span className="visually-hidden" aria-live="polite">
+          {syncStatus === 'saving' ? 'Saving…' : syncStatus === 'saved' ? 'Saved' : ''}
+        </span>
         <div className="topbar__actions">
-          {onSearch && (
-            <button className="pill" onClick={onSearch} aria-label="Search family members">
-              <TopBarSearchIcon />
-              <span className="hover-tip hover-tip--down">Search</span>
-            </button>
-          )}
-          {syncStatus === 'saving' && (
-            <span className="sync-status sync-status--saving" aria-live="polite">Saving…</span>
-          )}
-          {syncStatus === 'saved' && (
-            <span className="sync-status sync-status--saved" aria-live="polite"><SavedCheckIcon /> Saved</span>
-          )}
           {syncStatus === 'error' && (
             <button
               className="sync-status sync-status--error sync-status--retry"
@@ -64,6 +96,32 @@ export default function TopBar({ familyName, stats, view, syncStatus, syncError,
               {syncError?.message || 'Not allowed — ask a co-admin'}
             </span>
           )}
+          {syncStatus === 'error-toolarge' && (
+            <span className="sync-status sync-status--error" aria-live="assertive">
+              {syncError?.message || 'Tree too large to save'}
+            </span>
+          )}
+          {onSearch && (
+            <button className="pill" onClick={onSearch} aria-label="Search family members">
+              <TopBarSearchIcon />
+              <span className="hover-tip hover-tip--down">Search</span>
+            </button>
+          )}
+          {/* Bloodline-only — a GLOBAL display filter (it affects every view,
+              not just the chart), so it lives with the other global controls
+              up here rather than paired with the chart-specific view switcher.
+              Circular like its neighbours; its "on" state is a soft accent
+              tint, not a solid slab — the stats pill already spells out
+              "Bloodline only", so this need only whisper. */}
+          <button
+            className={`pill${bloodlineOnly ? ' pill--on' : ''}`}
+            onClick={onToggleBloodlineOnly}
+            aria-label="Bloodline only — show only biological and adoptive connections"
+            aria-pressed={bloodlineOnly}
+          >
+            <BloodlineIcon />
+            <span className="hover-tip hover-tip--down">Bloodline only</span>
+          </button>
           <button
             className="pill pill--bell"
             onClick={onOpenActivity}
@@ -76,10 +134,6 @@ export default function TopBar({ familyName, stats, view, syncStatus, syncError,
               </span>
             )}
             <span className="hover-tip hover-tip--down">Activity</span>
-          </button>
-          <button className="pill" onClick={onOpenSettings} aria-label="Family settings">
-            <SettingsIcon />
-            <span className="hover-tip hover-tip--down">Settings</span>
           </button>
           {user && onOpenProfile && (
             <button
@@ -134,22 +188,29 @@ export default function TopBar({ familyName, stats, view, syncStatus, syncError,
         </div>
         <div className="topbar__row2-stack topbar__row2-stack--right">
           <button
-            className="topbar__row2-btn"
-            onClick={onToggleView}
-            aria-label={view === 'bubbles' ? 'Switch to list view' : 'Switch to tree view'}
+            ref={viewMenuBtnRef}
+            className={`topbar__row2-btn${viewMenuOpen ? ' topbar__row2-btn--active' : ''}`}
+            onClick={() => setViewMenuOpen((o) => !o)}
+            aria-label="Change how the family is shown"
+            aria-expanded={viewMenuOpen}
           >
-            {view === 'bubbles' ? <ListIcon /> : <TreeIcon />}
-            <span className="hover-tip hover-tip--left">{view === 'bubbles' ? 'List view' : 'Tree view'}</span>
+            <span className="viewmode-trigger__icon">
+              <ViewSwitcherIcon />
+              <ChevronDownMiniIcon />
+            </span>
+            {/* Names the CONTROL, not the current state — a click here opens
+                a picker between three modes now, it doesn't just toggle to
+                the other one, so "Tree view" read as a stale, inaccurate
+                label once this stopped being a direct switch. */}
+            <span className="hover-tip hover-tip--left">Change view</span>
           </button>
-          <button
-            className={`topbar__row2-btn${bloodlineOnly ? ' topbar__row2-btn--active' : ''}`}
-            onClick={onToggleBloodlineOnly}
-            aria-label="Bloodline only — show only biological and adoptive connections"
-            aria-pressed={bloodlineOnly}
-          >
-            <BloodlineIcon />
-            <span className="hover-tip hover-tip--left">Bloodline only</span>
-          </button>
+          {viewMenuOpen && (
+            <ViewModeMenu
+              ref={viewMenuRef}
+              mode={viewMode}
+              onSelect={(m) => { onSetViewMode(m); setViewMenuOpen(false); }}
+            />
+          )}
         </div>
       </div>
 
@@ -161,6 +222,16 @@ export default function TopBar({ familyName, stats, view, syncStatus, syncError,
       {storageWarning && (
         <div className="storage-toast" role="alert">
           Storage full — this change won&apos;t survive a reload. Try removing some photos.
+        </div>
+      )}
+      {!storageWarning && storageNearLimit && (
+        <div className="storage-toast" role="status">
+          Your tree is getting large — free up space by removing some photos before storage runs out.
+        </div>
+      )}
+      {treeSizeWarning && (
+        <div className="storage-toast" role="status">
+          Your family archive is approaching the database size limit — removing some older documents or memories will free up room.
         </div>
       )}
       {syncToast && (
@@ -318,6 +389,61 @@ function CompRow({ label, value, total }) {
   );
 }
 
+const VIEW_MODES = [
+  { id: 'tree', label: 'Tree', desc: 'Free-flowing network' },
+  { id: 'chart', label: 'Chart', desc: 'Traditional family tree chart' },
+  { id: 'list', label: 'List', desc: 'Accessible, searchable directory' },
+];
+
+function viewModeIcon(mode) {
+  if (mode === 'chart') return <ChartModeIcon />;
+  if (mode === 'list') return <ListIcon />;
+  return <TreeIcon />;
+}
+
+// The trigger button's own icon — deliberately NOT viewModeIcon(viewMode).
+// That would make the button's icon change every time you switch modes,
+// which reads as "what does this button even do" rather than "tap to
+// switch view" — a control should look the same regardless of the state
+// it's currently in. A generic stacked-layers glyph (distinct from all
+// three per-mode icons below) reads as "there are several ways to see
+// this" independent of which one happens to be active.
+function ViewSwitcherIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{flexShrink:0}}>
+      <rect x="4" y="4" width="13" height="13" rx="3" stroke="currentColor" strokeWidth="1.7"/>
+      <rect x="8" y="9" width="13" height="13" rx="3" stroke="currentColor" strokeWidth="1.7"/>
+    </svg>
+  );
+}
+
+// The three ways of seeing the family, moved here from what used to be a
+// segmented control buried in the Legend sheet — a primary navigation choice
+// belongs in the header next to the thing it switches, not inside a
+// reference sheet for what the colours and lines mean.
+const ViewModeMenu = forwardRef(function ViewModeMenu({ mode, onSelect }, ref) {
+  return (
+    <div ref={ref} className="viewmode-popover" role="menu" aria-label="Change how the family is shown">
+      {VIEW_MODES.map((m) => (
+        <button
+          key={m.id}
+          className={`viewmode-popover__option${mode === m.id ? ' viewmode-popover__option--active' : ''}`}
+          onClick={() => onSelect(m.id)}
+          role="menuitemradio"
+          aria-checked={mode === m.id}
+        >
+          <span className="viewmode-popover__icon">{viewModeIcon(m.id)}</span>
+          <span className="viewmode-popover__text">
+            <span className="viewmode-popover__label">{m.label}</span>
+            <span className="viewmode-popover__desc">{m.desc}</span>
+          </span>
+          {mode === m.id && <CheckIcon />}
+        </button>
+      ))}
+    </div>
+  );
+});
+
 function userInitials(user) {
   const src = user.display_name || user.email || '';
   const parts = src.trim().split(/[\s@._]+/).filter(Boolean);
@@ -379,14 +505,6 @@ function DupIcon() {
   );
 }
 
-function SavedCheckIcon() {
-  return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
-      <path d="M5 13l4 4L19 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-    </svg>
-  );
-}
-
 function BellIcon() {
   return (
     <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -396,14 +514,6 @@ function BellIcon() {
   );
 }
 
-function SettingsIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="1.6"/>
-      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
-    </svg>
-  );
-}
 
 function LegendIcon() {
   return (
@@ -451,13 +561,51 @@ function ListIcon() {
   );
 }
 
+// Overlapping bubbles at varying size — echoes the organic canvas itself
+// (and the brand mark) rather than Lineage's straight branching path, which
+// this used to be a near-duplicate of (both a root node forking to two
+// others). Lineage genuinely is a point-to-point route, so it keeps that
+// glyph; Tree mode is the free-flowing bubble network, so its icon should
+// look like one.
 function TreeIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{flexShrink:0}}>
-      <circle cx="12" cy="4" r="2.2" stroke="currentColor" strokeWidth="1.6"/>
-      <circle cx="5" cy="19" r="2.2" stroke="currentColor" strokeWidth="1.6"/>
-      <circle cx="19" cy="19" r="2.2" stroke="currentColor" strokeWidth="1.6"/>
-      <path d="M12 6.2v5.3M12 11.5l-5 4.8M12 11.5l5 4.8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
+      <circle cx="10" cy="9" r="5.5" fill="currentColor" opacity="0.85"/>
+      <circle cx="16" cy="14" r="4.6" fill="currentColor" opacity="0.55"/>
+      <circle cx="7" cy="17" r="3.2" fill="currentColor" opacity="0.7"/>
+    </svg>
+  );
+}
+
+// Rectangular boxes on tidy rows, not TreeIcon's circles-and-branches — the
+// deliberate visual cue that this is the static, card-based chart, not the
+// organic network.
+function ChartModeIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{flexShrink:0}}>
+      <rect x="8" y="3" width="8" height="5" rx="1.2" stroke="currentColor" strokeWidth="1.6"/>
+      <rect x="2" y="16" width="8" height="5" rx="1.2" stroke="currentColor" strokeWidth="1.6"/>
+      <rect x="14" y="16" width="8" height="5" rx="1.2" stroke="currentColor" strokeWidth="1.6"/>
+      <path d="M12 8v4M12 12H6v4M12 12h6v4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+    </svg>
+  );
+}
+
+// A tiny affordance chevron, not a standalone control — signals "tap opens a
+// menu" the same way a native <select> does, since a single click here no
+// longer just toggles between two states now that there are three.
+function ChevronDownMiniIcon() {
+  return (
+    <svg width="8" height="8" viewBox="0 0 24 24" fill="none" aria-hidden="true" className="viewmode-trigger__chevron">
+      <path d="M5 9l7 7 7-7" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  );
+}
+
+function CheckIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{flexShrink:0}}>
+      <path d="M5 13l4 4L19 7" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
     </svg>
   );
 }

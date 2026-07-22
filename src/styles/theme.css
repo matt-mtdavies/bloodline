@@ -21,6 +21,7 @@
   --accent-soft: #f0d9cd;
   --sage: #3f5e4e;         /* companion green for the second partner / biology */
   --sage-soft: #d8e0d6;
+  --gold: #b08642;         /* the mark's third bubble + odd-one-out accents */
 
   /* Relationship semantics */
   --bond-current: #c2603a; /* current partnership membrane */

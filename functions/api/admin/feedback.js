@@ -1,17 +1,17 @@
 import { json } from '../../_lib/util.js';
+import { adminEmailList, isAdminEmail } from '../../_lib/adminAuth.js';
 
 /*
  * GET /api/admin/feedback
  * Returns recent feedback rows for the admin dashboard.
- * Restricted to ADMIN_EMAIL, same as /api/admin/stats.
+ * Restricted to the ADMIN_EMAILS allowlist, same as /api/admin/stats.
  */
 export async function onRequestGet({ env, data }) {
   if (!data.user) return json({ error: 'Unauthorized' }, { status: 401 });
   if (!env.DB)    return json({ error: 'Database not configured' }, { status: 503 });
 
-  const adminEmail = env.ADMIN_EMAIL;
-  if (!adminEmail) return json({ error: 'ADMIN_EMAIL not configured' }, { status: 503 });
-  if (data.user.email.toLowerCase() !== adminEmail.trim().toLowerCase()) {
+  if (!adminEmailList(env).length) return json({ error: 'ADMIN_EMAILS not configured' }, { status: 503 });
+  if (!isAdminEmail(env, data.user.email)) {
     return json({ error: 'Forbidden' }, { status: 403 });
   }
 

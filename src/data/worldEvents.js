@@ -11,6 +11,50 @@
  * category: 'conflict' | 'invention' | 'culture' | 'politics' | 'science' | 'exploration'
  */
 export const WORLD_EVENTS = [
+  // ── 1750s ──────────────────────────────────────────────────────────────
+  { year: 1752, title: 'Britain and its colonies adopt the Gregorian calendar', category: 'science', region: 'UK' },
+  { year: 1755, title: 'The Great Lisbon earthquake devastates Portugal', category: 'science', region: 'global' },
+  { year: 1756, title: 'The Seven Years’ War begins, drawing in Europe’s major powers', category: 'conflict', region: 'global' },
+  { year: 1759, title: 'British forces capture Quebec at the Battle of the Plains of Abraham', category: 'conflict', region: 'CA' },
+
+  // ── 1760s ──────────────────────────────────────────────────────────────
+  { year: 1760, title: 'George III becomes King', category: 'politics', region: 'UK' },
+  { year: 1764, title: 'James Hargreaves invents the spinning jenny, accelerating the textile industry', category: 'invention', region: 'global' },
+  { year: 1768, title: 'Captain Cook departs on his first Pacific voyage', category: 'exploration', region: 'global' },
+  { year: 1769, title: 'James Watt patents his improved steam engine', category: 'invention', region: 'global' },
+
+  // ── 1770s ──────────────────────────────────────────────────────────────
+  { year: 1770, title: 'Captain Cook charts Australia’s east coast and claims it for Britain', category: 'exploration', region: 'AU' },
+  { year: 1773, title: 'The Boston Tea Party', category: 'politics', region: 'US' },
+  { year: 1776, title: 'The American Declaration of Independence', category: 'politics', region: 'US' },
+  { year: 1778, title: 'Captain Cook becomes the first European to reach Hawaii', category: 'exploration', region: 'global' },
+
+  // ── 1780s ──────────────────────────────────────────────────────────────
+  { year: 1783, title: 'The Treaty of Paris ends the American Revolutionary War', category: 'politics', region: 'US' },
+  { year: 1788, title: 'The First Fleet arrives at Sydney Cove, beginning British settlement of Australia', category: 'politics', region: 'AU' },
+  { year: 1789, title: 'The French Revolution begins', category: 'politics', region: 'global' },
+
+  // ── 1790s ──────────────────────────────────────────────────────────────
+  { year: 1791, title: 'The Constitutional Act divides Canada into Upper and Lower Canada', category: 'politics', region: 'CA' },
+  { year: 1796, title: 'Edward Jenner develops the first vaccine, against smallpox', category: 'science', region: 'global' },
+  { year: 1798, title: 'The Irish Rebellion of 1798', category: 'conflict', region: 'IE' },
+
+  // ── 1800s ──────────────────────────────────────────────────────────────
+  { year: 1803, title: 'The Louisiana Purchase doubles the size of the United States', category: 'politics', region: 'US' },
+  { year: 1805, title: 'The Battle of Trafalgar', category: 'conflict', region: 'UK' },
+  { year: 1807, title: 'Britain abolishes the slave trade', category: 'politics', region: 'UK' },
+
+  // ── 1810s ──────────────────────────────────────────────────────────────
+  { year: 1812, title: 'The War of 1812 begins between Britain/Canada and the United States', category: 'conflict', region: 'CA' },
+  { year: 1814, title: 'The Treaty of Ghent ends the War of 1812', category: 'politics', region: 'CA' },
+  { year: 1815, title: 'Napoleon is defeated at the Battle of Waterloo', category: 'conflict', region: 'global' },
+  { year: 1819, title: 'Singapore is founded as a British trading post', category: 'politics', region: 'global' },
+
+  // ── 1820s ──────────────────────────────────────────────────────────────
+  { year: 1825, title: 'The Stockton and Darlington Railway opens, the first public railway to use steam locomotives', category: 'invention', region: 'UK' },
+  { year: 1826, title: 'Western Australia’s first British settlement is founded at King George Sound', detail: 'Present-day Albany', category: 'politics', region: 'AU' },
+  { year: 1829, title: 'The Metropolitan Police Service is established in London', category: 'politics', region: 'UK' },
+
   // ── 1830s ──────────────────────────────────────────────────────────────
   { year: 1830, title: 'The first inter-city passenger railway opens', detail: 'Liverpool and Manchester Railway', category: 'invention', region: 'global' },
   { year: 1833, title: 'Slavery abolished throughout the British Empire', category: 'politics', region: 'UK' },

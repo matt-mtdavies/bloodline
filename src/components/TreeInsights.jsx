@@ -1,5 +1,8 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { computeInsights, aggregatesHash } from '../lib/insights.js';
+import { computeInsightModules, buildInsightHighlights } from '../lib/insightModules.js';
+import InsightModules, { PeopleDrawer } from './InsightModules.jsx';
+import ReturnMark from './ReturnMark.jsx';
 
 /*
  * Tree Insights sheet — the family archive, felt from the viewer's seat.
@@ -10,7 +13,18 @@ import { computeInsights, aggregatesHash } from '../lib/insights.js';
  */
 export default function TreeInsights({ graph, viewerId, onNavigate, onClose }) {
   const insights = useMemo(() => computeInsights(graph, viewerId), [graph, viewerId]);
-  const { viewer, facts, nudges, aggregates } = insights;
+  const modules = useMemo(() => computeInsightModules(graph, viewerId), [graph, viewerId]);
+  const { viewer, nudges, aggregates } = insights;
+  // Some text facts are the same number a module now draws — drop the text
+  // version when its module renders so nothing appears twice in one sheet:
+  // strata replaces "N generations around you"; record books' pool always
+  // contains the longest life when one exists.
+  const facts = useMemo(() => {
+    const drop = new Set();
+    if (modules.strata) drop.add('generations');
+    if (modules.records) drop.add('longest');
+    return drop.size ? insights.facts.filter((f) => !drop.has(f.key)) : insights.facts;
+  }, [insights.facts, modules.strata, modules.records]);
 
   useEffect(() => {
     const onKey = (e) => e.key === 'Escape' && onClose();
@@ -19,7 +33,15 @@ export default function TreeInsights({ graph, viewerId, onNavigate, onClose }) {
   }, [onClose]);
 
   // ── AI narrative: cached by a hash of the facts; auto-generate once per hash ──
-  const hash = useMemo(() => aggregatesHash(aggregates), [aggregates]);
+  // The narrative draws on the same visual modules the sheet already shows —
+  // one richer paragraph from a single call, not a separate AI round-trip per
+  // module (11x the cost/latency for a garnish, not the point).
+  const highlights = useMemo(() => buildInsightHighlights(modules), [modules]);
+  const enrichedAggregates = useMemo(
+    () => (highlights ? { ...aggregates, highlights } : aggregates),
+    [aggregates, highlights],
+  );
+  const hash = useMemo(() => aggregatesHash(enrichedAggregates), [enrichedAggregates]);
   const cacheKey = `bl_insight_${hash}`;
   const [narrative, setNarrative] = useState(() => {
     try { return localStorage.getItem(cacheKey) || ''; } catch { return ''; }
@@ -33,7 +55,7 @@ export default function TreeInsights({ graph, viewerId, onNavigate, onClose }) {
       const res = await fetch('/api/insights', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ aggregates }),
+        body: JSON.stringify({ aggregates: enrichedAggregates }),
       });
       if (res.status === 503) { setAiState('unavailable'); return; }
       const body = await res.json().catch(() => ({}));
@@ -55,6 +77,11 @@ export default function TreeInsights({ graph, viewerId, onNavigate, onClose }) {
   }, [hash]);
 
   const heroNum = useCountUp(aggregates?.totalPeople ?? 0);
+  // Which nudge's "+N more" drawer is open, if any — the full list behind
+  // the 4-wide chip preview, so "+497 more" is an actual way in rather than
+  // just a bigger number.
+  const [openNudgeKey, setOpenNudgeKey] = useState(null);
+  const openNudge = nudges.find((n) => n.key === openNudgeKey) || null;
 
   return (
     <div className="sheet-scrim" role="dialog" aria-modal="true" aria-label="Tree insights" onClick={onClose}>
@@ -62,8 +89,8 @@ export default function TreeInsights({ graph, viewerId, onNavigate, onClose }) {
         <div className="sheet__grip" />
 
         <div className="ti__head">
+          <ReturnMark onClick={onClose} />
           <h2 className="ti__title"><SparkIcon /> Tree insights</h2>
-          <button className="icon-btn" onClick={onClose} aria-label="Close"><CloseIcon /></button>
         </div>
 
         {/* Hero */}
@@ -103,6 +130,9 @@ export default function TreeInsights({ graph, viewerId, onNavigate, onClose }) {
           </div>
         )}
 
+        {/* The visual modules — the drawn comparisons, in chapters */}
+        <InsightModules modules={modules} graph={graph} onNavigate={onNavigate} />
+
         {/* Perspective facts */}
         {facts.length > 0 && (
           <div className="ti__facts">
@@ -141,12 +171,27 @@ export default function TreeInsights({ graph, viewerId, onNavigate, onClose }) {
                     </button>
                   ))}
                   {n.total > n.people.length && (
-                    <span className="ti__chip ti__chip--more">+{n.total - n.people.length} more</span>
+                    <button
+                      className="ti__chip ti__chip--more"
+                      onClick={() => setOpenNudgeKey(n.key)}
+                    >
+                      +{n.total - n.people.length} more
+                    </button>
                   )}
                 </div>
               </div>
             ))}
           </div>
+        )}
+
+        {openNudge && (
+          <PeopleDrawer
+            title={`${openNudge.total} ${openNudge.total === 1 ? 'person' : 'people'} ${openNudge.label}`}
+            rows={openNudge.all}
+            graph={graph}
+            onNavigate={onNavigate}
+            onClose={() => setOpenNudgeKey(null)}
+          />
         )}
 
         <p className="ti__foot">Insights are generated from your tree and stay private to your family.</p>
@@ -194,9 +239,6 @@ function SparkIcon() {
 }
 function ChevronRightIcon() {
   return (<svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9 18l6-6-6-6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>);
-}
-function CloseIcon() {
-  return (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/></svg>);
 }
 function RefreshIcon() {
   return (<svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M21 12a9 9 0 11-2.6-6.4M21 4v4h-4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>);

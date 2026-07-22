@@ -5,6 +5,49 @@
  *
  * Siblings are DERIVED (people sharing at least one parent), never stored.
  */
+import { resolveGrandparentTerm, resolveAncestorTerm } from '../lib/kinTerms.js';
+
+// Shared by sortSiblings and sortChildren below: sort by a tier lookup first
+// (full/half/step for siblings, biological/adoptive/step for children), then
+// oldest-to-youngest by birth date within each tier, with alphabetical-by-name
+// as the final tiebreak (also how two same-tier people with no known birth
+// date, or the same one, settle their order).
+function sortByTierThenAge(items, byId, tierOf, tierOrder) {
+  return [...items].sort((a, b) => {
+    const tierDiff = (tierOrder[tierOf(a)] ?? 99) - (tierOrder[tierOf(b)] ?? 99);
+    if (tierDiff) return tierDiff;
+    const pa = byId.get(a.id);
+    const pb = byId.get(b.id);
+    const ba = pa?.birth_date;
+    const bb = pb?.birth_date;
+    if (ba && bb && ba !== bb) return ba < bb ? -1 : 1;
+    if (ba && !bb) return -1; // known birth date sorts before unknown
+    if (!ba && bb) return 1;
+    return (pa?.display_name || '').localeCompare(pb?.display_name || '');
+  });
+}
+
+// Siblings list display order: full (biological) siblings first, then half,
+// then step. Exported so any view rendering a Siblings group (PersonSheet
+// today) sorts identically.
+const SIBLING_KIND_ORDER = { full: 0, half: 1, step: 2 };
+export function sortSiblings(siblings, byId) {
+  return sortByTierThenAge(siblings, byId, (s) => s.kind, SIBLING_KIND_ORDER);
+}
+
+// Children list display order — the same convention extended to the
+// Children group (real user report: Nancy Turner's children showed Heather
+// first despite her not being the oldest — Children had never been sorted
+// at all, only Siblings). Children don't have a "half" concept (a child is
+// fully yours or not — no partial-blood equivalent), so the tiers are
+// biological/adoptive (both a full, direct bond) ahead of step, mirroring
+// the qualifier values parent-child relationships actually carry
+// ('biological'/'adoptive'/'step', with a missing qualifier meaning
+// biological — the same default `isBioAdopt()` above already assumes).
+const CHILD_QUALIFIER_ORDER = { biological: 0, adoptive: 1, step: 2 };
+export function sortChildren(children, byId) {
+  return sortByTierThenAge(children, byId, (c) => c.qualifier || 'biological', CHILD_QUALIFIER_ORDER);
+}
 
 export function buildGraph(people, relationships) {
   const byId = new Map(people.map((p) => [p.id, p]));
@@ -23,8 +66,11 @@ export function buildGraph(people, relationships) {
       ensure(childrenOf, r.from_person).push({ id: r.to_person, qualifier: r.qualifier });
       ensure(parentsOf, r.to_person).push({ id: r.from_person, qualifier: r.qualifier });
     } else if (r.type === 'partner') {
-      ensure(partnersOf, r.from_person).push({ id: r.to_person, status: r.partner_status });
-      ensure(partnersOf, r.to_person).push({ id: r.from_person, status: r.partner_status });
+      // marriage_date/place are optional, additive edge metadata (see
+      // store.js updatePartnerMeta) — carried through so the pedigree
+      // chart's marriage strip can render them without a store lookup.
+      ensure(partnersOf, r.from_person).push({ id: r.to_person, status: r.partner_status, is_married: r.is_married ?? false, marriage_date: r.marriage_date ?? null, marriage_place: r.marriage_place ?? null, separation_date: r.separation_date ?? null });
+      ensure(partnersOf, r.to_person).push({ id: r.from_person, status: r.partner_status, is_married: r.is_married ?? false, marriage_date: r.marriage_date ?? null, marriage_place: r.marriage_place ?? null, separation_date: r.separation_date ?? null });
     }
   }
 
@@ -65,6 +111,85 @@ export function buildGraph(people, relationships) {
     partners: (id) => partnersOf.get(id) || [],
     siblings: (id) => siblingsOf.get(id) || [],
   };
+}
+
+// Longest-path generation index from the eldest ancestors (no parents = 0).
+// Shared by the canvas layout (BubbleTree's vertical bands) and the insights
+// strata — both need in-law partners levelled onto their spouse's row and
+// parents guaranteed strictly above their children, so the logic lives here
+// rather than in either consumer.
+export function computeGenerations(graph) {
+  const gen = new Map();
+  const visit = (id, guard) => {
+    if (gen.has(id)) return gen.get(id);
+    if (guard.has(id)) return 0;
+    guard.add(id);
+    const parents = graph.parents(id);
+    let g = 0;
+    for (const p of parents) g = Math.max(g, visit(p.id, guard) + 1);
+    guard.delete(id);
+    gen.set(id, g);
+    return g;
+  };
+  for (const p of graph.people) visit(p.id, new Set());
+
+  // Level active partners onto the same generation band using MAX — the deeper
+  // partner's row wins, pulling the shallower one down to meet them.
+  //
+  // Former/ex partners are deliberately EXCLUDED: an ex from a different family
+  // branch may have deeper ancestry, and dragging the current family member
+  // down to match would cascade incorrectly (e.g. Jason getting pulled to
+  // Kate's row instead of staying with Matthew).
+  //
+  // Multi-pass until stable so any chains converge (A=B, B=C → A=B=C).
+  let changed = true;
+  while (changed) {
+    changed = false;
+    const seen = new Set();
+    for (const p of graph.people) {
+      for (const partner of graph.partners(p.id)) {
+        if (partner.status === 'former') continue;
+        const key = [p.id, partner.id].sort().join('|');
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const a = gen.get(p.id) ?? 0;
+        const b = gen.get(partner.id) ?? 0;
+        if (a === b) continue;
+        const lvl = Math.max(a, b);
+        if (a !== lvl) { gen.set(p.id, lvl);           changed = true; }
+        if (b !== lvl) { gen.set(partner.id, lvl);     changed = true; }
+      }
+    }
+  }
+
+  // The levelling above can pull a parent DOWN past their own child's row —
+  // a child's generation was fixed in the first pass, before their parent
+  // got dragged deeper to match a partner's separate, deeper ancestry (e.g.
+  // Ray gets levelled to Flo's row, which happens to be at or past a row
+  // Ray's own child from an earlier relationship already occupies). Cascade
+  // children forward until every parent sits strictly above their children,
+  // never the reverse — repeated to convergence so it propagates down
+  // multiple generations if needed.
+  // Bounded defensively: a valid family tree converges in well under
+  // people.length passes, but corrupted/cyclic relationship data shouldn't
+  // be able to hang the tab.
+  let cascading = true;
+  let guard = graph.people.length + 1;
+  while (cascading && guard-- > 0) {
+    cascading = false;
+    for (const child of graph.people) {
+      const childGen = gen.get(child.id) ?? 0;
+      for (const parent of graph.parents(child.id)) {
+        const parentGen = gen.get(parent.id) ?? 0;
+        if (parentGen >= childGen) {
+          gen.set(child.id, parentGen + 1);
+          cascading = true;
+        }
+      }
+    }
+  }
+
+  return gen;
 }
 
 // BFS hop-distance from a focus node across all relationship edges.
@@ -138,6 +263,64 @@ export function bloodRelativesOf(graph, focusId) {
   return blood;
 }
 
+// Buckets every person in the tree into one relationship category relative
+// to viewerId, for the search overlay's filter chips — a person's SEARCH
+// shortlist, not a replacement for the full relationship breakdown a
+// profile shows. Same derivation PersonSheet/AccessibleTree already use for
+// their extended-family groups (grandparents, aunts/uncles, cousins, ...),
+// just computed once from the viewer's own seat instead of per-profile, and
+// collapsed to fewer, coarser buckets — great-grandparents fold into
+// "grandparents", grandchildren/nieces/nephews fold into one "descendants"
+// bucket. Earlier/closer categories win on the rare overlap (e.g. a
+// half-sibling who's also a step-cousin some other way stays "immediate").
+export function relationshipCategories(graph, viewerId) {
+  const cat = new Map();
+  if (!viewerId || !graph.byId.has(viewerId)) return cat;
+
+  const partners = graph.partners(viewerId);
+  const parents = graph.parents(viewerId);
+  const children = graph.children(viewerId);
+  const siblings = graph.siblings(viewerId);
+  for (const id of [viewerId, ...partners.map((x) => x.id), ...parents.map((x) => x.id),
+    ...children.map((x) => x.id), ...siblings.map((x) => x.id)]) {
+    cat.set(id, 'immediate');
+  }
+
+  // Only bio/adoptive lines propagate outward — step lines stop at the
+  // immediate tier, same convention used for grandparents/aunts elsewhere.
+  const upwardParents = parents.filter(
+    (p) => !p.qualifier || p.qualifier === 'biological' || p.qualifier === 'adoptive',
+  );
+  const grandparentIds = upwardParents.flatMap((p) => graph.parents(p.id).map((gp) => gp.id));
+  const greatGrandparentIds = grandparentIds.flatMap((id) => graph.parents(id).map((gp) => gp.id));
+  for (const id of [...grandparentIds, ...greatGrandparentIds]) if (!cat.has(id)) cat.set(id, 'grandparents');
+
+  const auntUncleIds = upwardParents.flatMap((p) => graph.siblings(p.id).map((s) => s.id));
+  for (const id of auntUncleIds) if (!cat.has(id)) cat.set(id, 'aunts_uncles');
+
+  const cousinIds = upwardParents.flatMap((p) =>
+    graph.siblings(p.id).flatMap((s) => graph.children(s.id).map((c) => c.id)));
+  for (const id of cousinIds) if (!cat.has(id)) cat.set(id, 'cousins');
+
+  const grandchildIds = children.flatMap((c) => graph.children(c.id).map((gc) => gc.id));
+  const greatGrandchildIds = grandchildIds.flatMap((id) => graph.children(id).map((gc) => gc.id));
+  const nieceNephewIds = siblings.flatMap((s) => graph.children(s.id).map((c) => c.id));
+  for (const id of [...grandchildIds, ...greatGrandchildIds, ...nieceNephewIds]) {
+    if (!cat.has(id)) cat.set(id, 'descendants');
+  }
+
+  // Everyone left: blood relatives further out than the named buckets above
+  // (2nd cousins, great-great-grandparents, ...) vs. everyone only
+  // connected through a partnership — the graph only has parent/partner
+  // edges, so "not blood" already means "in-law", no separate walk needed.
+  const blood = bloodRelativesOf(graph, viewerId);
+  for (const p of graph.people) {
+    if (cat.has(p.id) || p.id === viewerId) continue;
+    cat.set(p.id, blood.has(p.id) ? 'everyone_else' : 'in_laws');
+  }
+  return cat;
+}
+
 // Like pathBetween, but returns the ordered array [fromId, …, toId] (or null),
 // so callers can render the chain start → end. pathBetween wraps this in a Set.
 export function pathBetweenOrdered(graph, fromId, toId) {
@@ -194,9 +377,84 @@ export function pathBetween(graph, fromId, toId) {
   return null;
 }
 
+const MASC_TERMS = ['male', 'm', 'man'];
+const FEM_TERMS = ['female', 'f', 'woman'];
+function byGender(gender, m, f, n) {
+  const gl = (gender || '').toLowerCase();
+  return MASC_TERMS.includes(gl) ? m : FEM_TERMS.includes(gl) ? f : n;
+}
+
+// Walks upward from `id` via biological/adoptive parent links only — step
+// lines stop at the immediate tier, same convention used elsewhere for
+// grandparents/aunts (see the `upwardParents` filter in PersonSheet). Records
+// each ancestor's distance and the very FIRST hop's parent entry, since the
+// paternal/maternal side of a relationship is always determined by that
+// first step, never recomputed at each level up.
+function ancestorsWithDistance(graph, id, maxDepth = 8) {
+  const map = new Map();
+  let frontier = [{ id, distance: 0, firstHopParent: null }];
+  // The starting person counts as their own distance-0 "ancestor" — without
+  // this, a case where the common ancestor IS focus or IS other (a pure
+  // ascending/descending chain, e.g. a 4x-great-grandparent with no named
+  // pattern) could never be found: looking up the other side's map by that
+  // id would come back empty even though the relationship is real.
+  map.set(id, frontier[0]);
+  const visited = new Set([id]);
+  for (let d = 0; d < maxDepth && frontier.length; d++) {
+    const next = [];
+    for (const node of frontier) {
+      const upwardParents = graph.parents(node.id).filter(
+        (p) => !p.qualifier || p.qualifier === 'biological' || p.qualifier === 'adoptive',
+      );
+      for (const p of upwardParents) {
+        if (visited.has(p.id)) continue;
+        visited.add(p.id);
+        const n = { id: p.id, distance: node.distance + 1, firstHopParent: node.firstHopParent || p };
+        next.push(n);
+        map.set(n.id, n);
+      }
+    }
+    frontier = next;
+  }
+  return map;
+}
+
+// "N generations up" — Parent/Grandparent/Great-grandparent/Great-great-.../etc.
+function ascendingTerm(n, gender) {
+  if (n === 1) return byGender(gender, 'Father', 'Mother', 'Parent');
+  if (n === 2) return byGender(gender, 'Grandfather', 'Grandmother', 'Grandparent');
+  // Spelled out (great-great-grandfather), not "2x Great-" shorthand — only
+  // the leading "Great-" is capitalised, matching normal usage.
+  const greats = n - 2;
+  const prefix = 'Great-' + 'great-'.repeat(greats - 1);
+  return `${prefix}${byGender(gender, 'grandfather', 'grandmother', 'grandparent')}`;
+}
+
+// "N generations down" — Child/Grandchild/Great-grandchild/Great-great-.../etc.
+function descendingTerm(n, gender) {
+  if (n === 1) return byGender(gender, 'Son', 'Daughter', 'Child');
+  if (n === 2) return byGender(gender, 'Grandson', 'Granddaughter', 'Grandchild');
+  const greats = n - 2;
+  const prefix = 'Great-' + 'great-'.repeat(greats - 1);
+  return `${prefix}${byGender(gender, 'grandson', 'granddaughter', 'grandchild')}`;
+}
+
+// 2 -> "2nd", 3 -> "3rd", 11 -> "11th", 21 -> "21st"... for "2nd Cousin" etc.
+function ordinal(n) {
+  const v = n % 100;
+  if (v >= 11 && v <= 13) return `${n}th`;
+  return `${n}${['th', 'st', 'nd', 'rd'][n % 10] || 'th'}`;
+}
+
 // Human-readable relationship of `otherId` relative to `focusId`, for the
 // accessible view and the person sheet. Best-effort, kept warm and plain.
-export function relationLabel(graph, focusId, otherId) {
+//
+// kinTerms (optional): a resolved lib/kinTerms.js preference object, applied
+// only to the direct-grandparent case below — see that file for why the
+// scope stops there. Omitted (the default), every label is exactly the
+// plain English this function has always returned, so every existing call
+// site and test is unaffected until it opts in.
+export function relationLabel(graph, focusId, otherId, kinTerms) {
   if (focusId === otherId) return 'You';
   const masc = ['male', 'm', 'man'];
   const fem = ['female', 'f', 'woman'];
@@ -256,7 +514,15 @@ export function relationLabel(graph, focusId, otherId) {
       // Step/adoptive on either link in the chain makes it a step/adoptive grandparent
       if (s === 'Step' || gpEntry.qualifier === 'step') return 'Step Grandparent';
       if (s === 'Adoptive' || gpEntry.qualifier === 'adoptive') return 'Adoptive Grandparent';
-      return `${s ? s + ' ' : ''}${g('Grandfather', 'Grandmother', 'Grandparent')}`;
+      // s is 'Paternal' | 'Maternal' | null here (Step/Adoptive already
+      // returned above) — exactly what resolveGrandparentTerm expects. The
+      // side prefix still shows even with a custom term ("Paternal Nonna")
+      // since it's genuinely useful (disambiguates two grandmothers) and
+      // customizing the noun shouldn't silently drop it.
+      const term = kinTerms
+        ? resolveGrandparentTerm(kinTerms, s, other?.gender)
+        : g('Grandfather', 'Grandmother', 'Grandparent');
+      return `${s ? s + ' ' : ''}${term}`;
     }
   }
 
@@ -281,7 +547,13 @@ export function relationLabel(graph, focusId, otherId) {
         const isAdopt = !isStep && (p.qualifier === 'adoptive' || gp.qualifier === 'adoptive' || ggpEntry.qualifier === 'adoptive');
         if (isStep) return 'Step Great-grandparent';
         if (isAdopt) return 'Adoptive Great-grandparent';
-        return g('Great-grandfather', 'Great-grandmother', 'Great-grandparent');
+        // Same side/gender resolution as the direct-grandparent branch above,
+        // just one generation further back — a family's chosen term now
+        // reaches "Great-Oma" too, not just "Oma" (real report: the custom
+        // pack "has not changed the Great-Oma?? still says great-grandma").
+        return kinTerms
+          ? resolveAncestorTerm(kinTerms, parentSide(p), other?.gender, 1)
+          : g('Great-grandfather', 'Great-grandmother', 'Great-grandparent');
       }
     }
   }
@@ -349,5 +621,132 @@ export function relationLabel(graph, focusId, otherId) {
     }
   }
 
+  // General fallback for anything more distant than the named patterns
+  // above — reduces the relationship to "up N generations (from focus) to
+  // a shared ancestor, down M generations (to other)" and describes it
+  // as "[side] [ascending term]'s [descending term]" — e.g. what a
+  // genealogist would call "1st cousin once removed" instead reads as
+  // "Maternal Great-grandfather's Grandson". Only ever reached here, since
+  // every closer/named relationship already returned above.
+  const upFromFocus = ancestorsWithDistance(graph, focusId);
+  const upFromOther = ancestorsWithDistance(graph, otherId);
+  let nearest = null;
+  for (const [ancId, focusNode] of upFromFocus) {
+    const otherNode = upFromOther.get(ancId);
+    if (!otherNode) continue;
+    const total = focusNode.distance + otherNode.distance;
+    if (!nearest || total < nearest.total) {
+      nearest = { ancId, upDist: focusNode.distance, downDist: otherNode.distance, total, firstHopParent: focusNode.firstHopParent };
+    }
+  }
+  if (nearest && nearest.total > 0) {
+    const { ancId, upDist, downDist, firstHopParent } = nearest;
+    const side = firstHopParent ? parentSide(firstHopParent) : null;
+    const sidePrefix = side ? `${side} ` : '';
+    if (downDist === 0) {
+      // A pure ancestor, no descending leg — the same shape as the direct-
+      // grandparent/great-grandparent branches above, just further back
+      // (great-great-grandparent and beyond, since 1/2/3 generations up
+      // already returned earlier). Extends the chosen term the same way.
+      if (kinTerms && upDist >= 3) {
+        return `${sidePrefix}${resolveAncestorTerm(kinTerms, side, other?.gender, upDist - 2)}`;
+      }
+      return `${sidePrefix}${ascendingTerm(upDist, other?.gender)}`;
+    }
+    if (upDist === 0) return descendingTerm(downDist, other?.gender);
+
+    // Cousin-shaped: both focus and other are at least two generations down
+    // from the shared ancestor (neither is the ancestor's direct child) —
+    // "cousin's daughter" reads far more naturally here than continuing to
+    // describe the shared ancestor itself ("paternal grandfather's
+    // great-granddaughter" for the exact same person). No side prefix on
+    // this branch — "paternal cousin" isn't how anyone actually says it.
+    if (upDist >= 2 && downDist >= 2) {
+      const degree = Math.min(upDist, downDist) - 1; // 1 = cousin, 2 = 2nd cousin, ...
+      const cousinWord = degree === 1 ? 'Cousin' : `${ordinal(degree)} Cousin`;
+      const removed = downDist - upDist;
+      if (removed === 0) return cousinWord;
+      if (removed > 0) return `${cousinWord}'s ${descendingTerm(removed, other?.gender)}`;
+      // Other is closer to the shared ancestor than focus is — exactly 1
+      // hop up from focus, `firstHopParent`'s gender is known precisely;
+      // further than that, there's no per-hop gender tracked, so it reads
+      // as the neutral "Parent"/"Grandparent" rather than guessing wrong.
+      const upGender = -removed === 1 ? graph.byId.get(firstHopParent?.id)?.gender : null;
+      return `${ascendingTerm(-removed, upGender)}'s ${cousinWord}`;
+    }
+
+    const ancestorGender = graph.byId.get(ancId)?.gender;
+    return `${sidePrefix}${ascendingTerm(upDist, ancestorGender)}'s ${descendingTerm(downDist, other?.gender)}`;
+  }
+
   return 'Relative';
+}
+
+// Turn an ordered path (as returned by pathBetweenOrdered) into the
+// possessive relationship chain shown by both the search flyover
+// (FlightCaption) and Lineage mode (LineageBanner) — "Father's Brother's
+// Daughter" rather than a relation-to-viewer for every hop, which degrades
+// to a generic "Relative" for anyone reached via an in-law or sideways
+// branch. Each crumb is the hop's relation to the person immediately
+// before it in the chain, which is always resolvable since adjacent path
+// nodes are always directly connected by exactly one real edge (parent/
+// child/partner/sibling).
+//
+// Two collapses on top of that turn-by-turn base:
+//  1. Siblings have no direct edge of their own (derived, never stored) —
+//     the path still runs through their shared parent, but narrating that
+//     stop as its own word reads as "Father's Father's Son" for what is
+//     actually just "Father's Brother", so two hops that go up to a shared
+//     parent and immediately back down to their other child collapse into
+//     one sibling crumb.
+//  2. "Sister's Son" / "Mother's Sister" are correctly-worded but not how
+//     anyone would actually say it — those adjacent-crumb pairs read as one
+//     relationship (Nephew/Niece, Aunt/Uncle) once said together, so they
+//     merge into that single word wherever the two crumbs' own endpoints
+//     genuinely form that pattern in the graph.
+//
+// Returns [{ label, fromIndex, toIndex }], indices into `order`. kinTerms is
+// forwarded to every inner relationLabel call for consistency (the sibling/
+// aunt-uncle collapses above never actually land on the grandparent branch
+// today, but there's no reason a future path shape couldn't).
+export function buildRelationCrumbs(graph, order, kinTerms) {
+  const rawCrumbs = [];
+  for (let i = 1; i < order.length; ) {
+    const mid = order[i];
+    if (i + 1 < order.length) {
+      const a = order[i - 1];
+      const b = order[i + 1];
+      const midIsSharedParent =
+        graph.parents(a).some((p) => p.id === mid) && graph.parents(b).some((p) => p.id === mid);
+      if (midIsSharedParent) {
+        rawCrumbs.push({ label: relationLabel(graph, a, b, kinTerms), fromIndex: i - 1, toIndex: i + 1 });
+        i += 2;
+        continue;
+      }
+    }
+    rawCrumbs.push({ label: relationLabel(graph, order[i - 1], mid, kinTerms), fromIndex: i - 1, toIndex: i });
+    i += 1;
+  }
+
+  const crumbs = [];
+  for (let i = 0; i < rawCrumbs.length; i++) {
+    const cur = rawCrumbs[i];
+    const nxt = rawCrumbs[i + 1];
+    if (nxt) {
+      const a = order[cur.fromIndex];
+      const mid = order[cur.toIndex];
+      const c = order[nxt.toIndex];
+      const siblingThenChild =
+        graph.siblings(a).some((s) => s.id === mid) && graph.children(mid).some((ch) => ch.id === c);
+      const parentThenSibling =
+        graph.parents(a).some((p) => p.id === mid) && graph.siblings(mid).some((s) => s.id === c);
+      if (siblingThenChild || parentThenSibling) {
+        crumbs.push({ label: relationLabel(graph, a, c, kinTerms), fromIndex: cur.fromIndex, toIndex: nxt.toIndex });
+        i += 1;
+        continue;
+      }
+    }
+    crumbs.push(cur);
+  }
+  return crumbs;
 }

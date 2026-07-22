@@ -1,7 +1,8 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useMemo } from 'react';
 import { gedcomToStore } from '../lib/gedcom.js';
+import { findDuplicatePairs } from '../lib/duplicates.js';
 
-export default function GedcomImport({ onImport, onClose, canReplace = true }) {
+export default function GedcomImport({ onImport, onClose, canReplace = true, existingPeople = [], existingRelationships = [] }) {
   const [step, setStep] = useState('upload'); // upload | preview | importing | done
   const [parsed, setParsed] = useState(null);
   // Replacing the whole tree is a co-admin+ action (src/lib/visibility.js
@@ -10,6 +11,25 @@ export default function GedcomImport({ onImport, onClose, canReplace = true }) {
   const [error, setError] = useState(null);
   const [dragging, setDragging] = useState(false);
   const inputRef = useRef();
+
+  // How many likely-duplicate people would this import create? A real report
+  // (600-person import, "cited many duplicates created") had no way to know
+  // this before committing — merge mode compares the imported batch against
+  // the existing tree (only pairs touching a NEW person, since pre-existing
+  // duplicates already have their own review path); replace mode compares
+  // the imported batch against itself, since the old tree won't exist after.
+  const duplicateCount = useMemo(() => {
+    if (!parsed) return 0;
+    if (mergeMode === 'merge') {
+      const newIds = new Set(parsed.people.map((p) => p.id));
+      const pairs = findDuplicatePairs(
+        [...existingPeople, ...parsed.people],
+        [...existingRelationships, ...parsed.relationships],
+      );
+      return pairs.filter((pr) => newIds.has(pr.aId) || newIds.has(pr.bId)).length;
+    }
+    return findDuplicatePairs(parsed.people, parsed.relationships).length;
+  }, [parsed, mergeMode, existingPeople, existingRelationships]);
 
   const processFile = useCallback((file) => {
     if (!file) return;
@@ -83,6 +103,7 @@ export default function GedcomImport({ onImport, onClose, canReplace = true }) {
             onImport={handleImport}
             onBack={() => { setStep('upload'); setParsed(null); }}
             canReplace={canReplace}
+            duplicateCount={duplicateCount}
           />
         )}
 
@@ -156,7 +177,7 @@ function UploadStep({ dragging, error, inputRef, onDragOver, onDragLeave, onDrop
 
 const SOURCES = ['Ancestry', 'FamilySearch', 'MyHeritage', '23andMe', 'Findmypast', 'MacFamilyTree', 'Gramps'];
 
-function PreviewStep({ parsed, mergeMode, onMergeMode, onImport, onBack, canReplace }) {
+function PreviewStep({ parsed, mergeMode, onMergeMode, onImport, onBack, canReplace, duplicateCount = 0 }) {
   const { people, relationships } = parsed;
   const partnerCount = relationships.filter((r) => r.type === 'partner').length;
   const parentCount = relationships.filter((r) => r.type === 'parent').length;
@@ -198,6 +219,14 @@ function PreviewStep({ parsed, mergeMode, onMergeMode, onImport, onBack, canRepl
       {withBio > 0 && (
         <p className="gedcom__bio-note">
           <NoteIcon /> {withBio} {withBio === 1 ? 'person has' : 'people have'} biography notes that will be imported.
+        </p>
+      )}
+
+      {duplicateCount > 0 && (
+        <p className="gedcom__dup-note" role="status">
+          <DupIcon /> {duplicateCount} possible duplicate {duplicateCount === 1 ? 'person' : 'people'}
+          {mergeMode === 'merge' ? ' against your existing tree' : ' within this file'} —
+          you'll be able to review and merge them from "Possible duplicates" after importing.
         </p>
       )}
 
@@ -282,6 +311,15 @@ function CheckIcon() {
   return (
     <svg width="28" height="28" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <path d="M5 13l4 4L19 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  );
+}
+
+function DupIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{display:'inline',verticalAlign:'middle',marginRight:4}}>
+      <path d="M12 9v4M12 16.5h.01" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+      <path d="M10.3 3.9 1.8 18.3a1.6 1.6 0 0 0 1.4 2.4h17.6a1.6 1.6 0 0 0 1.4-2.4L13.7 3.9a1.6 1.6 0 0 0-2.8 0Z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round"/>
     </svg>
   );
 }

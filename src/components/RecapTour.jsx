@@ -1,19 +1,25 @@
 import { useEffect } from 'react';
-import Avatar from './Avatar.jsx';
+import { relativeTime } from './ActivityFeed.jsx';
 
 /*
  * The activity recap's cinematic tour — a slow, deliberate flythrough of
  * everyone who's changed since you were last here, one person at a time
  * (see App.jsx's openRecap() and BubbleTree's spotlightTour). This component
  * owns none of the camera choreography; it just renders the scrim, the
- * per-stop caption, and the queue list, and reports taps back up as
- * onSkipTo/onDismiss/onCloseAll/onClose.
+ * per-stop caption, and a small progress pill, and reports "stop the tour"
+ * back up as onCloseAll/onClose.
  *
- * The queue panel doubles as a bottom drawer on narrow phones and a side
- * panel on wider screens — same markup, repositioned by CSS — since a fixed
- * side panel has no room next to a live canvas at phone width.
+ * There is deliberately NO queue-list panel here any more, on any screen
+ * size. The camera's target bubble is always screen-CENTRED (see
+ * BubbleTree's world.position.set), and the old right-hand drawer reached
+ * well past that centre even on an iPad — a panel narrating the reveal was
+ * covering the reveal. The caption at the bubble already names every
+ * distinct change (plus who made them and when, below), and the Activity
+ * tab remains the place to browse or revisit updates at leisure — this
+ * overlay is for sitting back and watching, so the only chrome it keeps is
+ * a count of what's left and a way out.
  */
-export default function RecapTour({ graph, queue, reducedMotion, allDone, onDismiss, onSkipTo, onCloseAll, onClose }) {
+export default function RecapTour({ queue, reducedMotion, allDone, onCloseAll, onClose }) {
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') onCloseAll(); };
     window.addEventListener('keydown', onKey);
@@ -40,6 +46,13 @@ export default function RecapTour({ graph, queue, reducedMotion, allDone, onDism
         <div className="recap-caption" role="status" aria-live="polite">
           <span className="recap-caption__name">{active.personName}</span>
           <span className="recap-caption__what">{active.caption}</span>
+          {(active.authorName || active.at) && (
+            <span className="recap-caption__meta">
+              {active.authorName ? `by ${active.authorName}` : ''}
+              {active.authorName && active.at ? ' · ' : ''}
+              {active.at ? relativeTime(active.at) : ''}
+            </span>
+          )}
         </div>
       )}
 
@@ -49,51 +62,15 @@ export default function RecapTour({ graph, queue, reducedMotion, allDone, onDism
         </div>
       )}
 
-      <div className="recap-queue">
-        <div className="recap-queue__header">
-          <div>
-            <p className="recap-queue__title">What&apos;s changed</p>
-            {!allDone && <p className="recap-queue__sub">{remaining} to go</p>}
-          </div>
-          <button className="recap-queue__close" onClick={allDone ? onClose : onCloseAll} aria-label="Close">
+      {!allDone && (
+        <div className="recap-progress">
+          <span className="recap-progress__count">{remaining}</span>
+          <span>to go</span>
+          <button className="recap-progress__close" onClick={onCloseAll} aria-label="Stop the tour">
             <CloseIcon />
           </button>
         </div>
-        <ul className="recap-queue__list">
-          {queue.map((item) => {
-            const person = graph.byId.get(item.personId) ?? { display_name: item.personName };
-            return (
-              <li key={item.personId}>
-                <div className={`recap-row recap-row--${item.status}`}>
-                  <button
-                    className="recap-row__main"
-                    onClick={() => onSkipTo(item.personId)}
-                    disabled={item.status === 'done'}
-                  >
-                    <Avatar person={person} size={38} />
-                    <span className="recap-row__text">
-                      <span className="recap-row__name">{item.personName}</span>
-                      <span className="recap-row__caption">{item.caption}</span>
-                    </span>
-                  </button>
-                  {item.status !== 'done' && (
-                    <button
-                      className="recap-row__dismiss"
-                      onClick={() => onDismiss(item.personId)}
-                      aria-label={`Skip ${item.personName}`}
-                    >
-                      <CloseIcon />
-                    </button>
-                  )}
-                </div>
-              </li>
-            );
-          })}
-        </ul>
-        {!allDone && (
-          <button className="recap-queue__closeall" onClick={onCloseAll}>Close all</button>
-        )}
-      </div>
+      )}
     </div>
   );
 }

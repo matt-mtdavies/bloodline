@@ -6,19 +6,27 @@
 export async function fileToDataUrl(file, max = 640) {
   const url = URL.createObjectURL(file);
   try {
-    const img = await loadImage(url);
-    const scale = Math.min(1, max / Math.max(img.width, img.height));
-    const w = Math.round(img.width * scale);
-    const h = Math.round(img.height * scale);
-    const canvas = document.createElement('canvas');
-    canvas.width = w;
-    canvas.height = h;
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(img, 0, 0, w, h);
-    return canvas.toDataURL('image/jpeg', 0.85);
+    return await imageSrcToDataUrl(url, max);
   } finally {
     URL.revokeObjectURL(url);
   }
+}
+
+// Same downscale as fileToDataUrl, but from an existing src (a same-origin
+// /api/documents/<key> URL, or an already-data: URL) rather than a freshly
+// picked File — used to re-run the AI title suggestion against a document
+// that's already been uploaded (see suggestDocumentTitle in PersonSheet).
+export async function imageSrcToDataUrl(src, max = 640) {
+  const img = await loadImage(src);
+  const scale = Math.min(1, max / Math.max(img.width, img.height));
+  const w = Math.round(img.width * scale);
+  const h = Math.round(img.height * scale);
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(img, 0, 0, w, h);
+  return canvas.toDataURL('image/jpeg', 0.85);
 }
 
 export function dataUrlToBlob(dataUrl) {
@@ -68,6 +76,116 @@ export async function uploadDocument(dataUrl, { title = 'document', mime = 'appl
     console.warn('[docs] upload error:', e.message);
   }
   return dataUrl;
+}
+
+// Ask the server to read a heading/letterhead/document-type out of a preview
+// image and suggest a title for it — "Certificate of Discharge" instead of
+// whatever the camera app named the file. Best-effort: returns null (never
+// throws) on any failure, a slow/unconfigured server, or a genuine "nothing
+// to suggest" reply, so the caller can just keep its filename-derived title.
+export async function suggestDocumentTitle(previewDataUrl, { timeoutMs = 10000 } = {}) {
+  if (!previewDataUrl?.startsWith('data:image/')) return null;
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), timeoutMs);
+  try {
+    const res = await fetch('/api/documents/title', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ image: previewDataUrl }),
+      signal: ac.signal,
+    });
+    if (!res.ok) return null;
+    const { title } = await res.json();
+    return title || null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// Read an existing document src (an /api/documents/<key> URL, or an already-
+// data: URL) into a data URL, without the canvas downscale imageSrcToDataUrl
+// does — a PDF's bytes can't round-trip through a canvas, and a summary of a
+// faded scan wants the original resolution, not a lossy preview.
+export async function srcToDataUrl(src) {
+  if (src.startsWith('data:')) return src;
+  const res = await fetch(src);
+  const blob = await res.blob();
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
+// A hard ceiling on what we'll even attempt to send, regardless of type —
+// catches an oversized PDF (which can't be downscaled below) before it ever
+// leaves the device, so the failure is immediate and silent-but-logged
+// rather than a slow timeout against the API.
+const MAX_SUMMARIZE_PAYLOAD = 16 * 1024 * 1024;
+
+// Ask the server to read and summarize a document — a faded letter, a
+// military record, a certificate — into a plain-English paragraph, for
+// documents that are hard to make out on-screen. Works on images and PDFs
+// alike. Also returns candidate life-event `facts`, `profileFields`
+// (occupation/birth_place/residence/military branch/nation/service number/
+// rank), `peopleMentioned` (other people named in a direct family
+// relationship to the subject), and `medals` — each grounded in a verbatim
+// quote from the document — for the caller to offer as suggestions, never
+// applied automatically. Best-effort: returns null (never throws) on any
+// failure, a slow or unconfigured server, or nothing to summarize.
+export async function summarizeDocument(dataUrl, { timeoutMs = 60000 } = {}) {
+  if (!dataUrl?.startsWith('data:image/') && !dataUrl?.startsWith('data:application/pdf')) return null;
+
+  // Anthropic's vision pipeline already downsizes any image past ~1568px on
+  // its long edge before reading it — sending more than that just risks
+  // hitting the API's own per-image size ceiling for zero gain in what the
+  // model actually sees. A full-resolution phone photo (10+ MP, several MB)
+  // is the most likely reason the exact same document summarizes fine one
+  // time and times out or gets rejected the next — this removes that
+  // variable for every caller, without touching the original file stored in
+  // R2 (only the copy sent to the AI is affected). PDFs are sent as-is — a
+  // canvas can't safely resize one.
+  let payload = dataUrl;
+  if (dataUrl.startsWith('data:image/')) {
+    payload = await imageSrcToDataUrl(dataUrl, 1600).catch(() => dataUrl);
+  }
+  if (payload.length > MAX_SUMMARIZE_PAYLOAD) {
+    console.warn('[docs] summarize skipped: file too large even after downscaling');
+    return null;
+  }
+
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), timeoutMs);
+  try {
+    const res = await fetch('/api/documents/summarize', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ file: payload }),
+      signal: ac.signal,
+    });
+    if (!res.ok) {
+      console.warn('[docs] summarize failed:', res.status);
+      return null;
+    }
+    const { summary, facts, profileFields, peopleMentioned, medals } = await res.json();
+    if (!summary && !facts?.length && !peopleMentioned?.length && !medals?.length
+      && !profileFields?.occupation && !profileFields?.birth_place && !profileFields?.residence) return null;
+    return {
+      summary: summary || null,
+      facts: facts || [],
+      profileFields: profileFields || null,
+      peopleMentioned: peopleMentioned || [],
+      medals: medals || [],
+    };
+  } catch (e) {
+    console.warn('[docs] summarize error:', e.message);
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 // Upload a photo data URL to R2. Returns the /api/photos/<key> URL on success,

@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useRef } from 'react';
 import { buildTimeline, bucketOf, groupByDecade } from '../lib/timeline.js';
 import { detectRegion, worldEventsInDecade, sameYearWorldEvent, eraTint } from '../lib/worldEvents.js';
 import { CATEGORY_LABELS } from '../data/worldEvents.js';
+import ReturnMark from './ReturnMark.jsx';
 
 /*
  * Family Timeline — the whole family's history as one chronological feed:
@@ -94,11 +95,11 @@ export default function TimelineView({ graph, photos = [], onNavigate, onClose }
         <div className="sheet__grip" />
 
         <div className="tl__head">
+          <ReturnMark onClick={onClose} />
           <div>
             <h2 className="tl__title"><ClockIcon /> Family timeline</h2>
             {span && <p className="tl__span">{all.length} moments · {span}</p>}
           </div>
-          <button className="icon-btn" onClick={onClose} aria-label="Close"><CloseIcon /></button>
         </div>
 
         <div className="tl__filters">
@@ -191,7 +192,4 @@ function GlobeIcon() {
 
 function ClockIcon() {
   return (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.8"/><path d="M12 7v5l3.5 2" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>);
-}
-function CloseIcon() {
-  return (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/></svg>);
 }

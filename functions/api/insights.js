@@ -10,7 +10,11 @@
  * Returns { narrative }. 503 when ANTHROPIC_API_KEY is absent so the feature
  * can hide gracefully.
  */
-export async function onRequestPost({ request, env }) {
+import { logAiUsage } from '../_lib/aiUsage.js';
+
+const MODEL = 'claude-sonnet-4-6';
+
+export async function onRequestPost({ request, env, data }) {
   if (!env.ANTHROPIC_API_KEY) {
     return json({ error: 'AI features not configured on this server.' }, 503);
   }
@@ -45,6 +49,38 @@ export async function onRequestPost({ request, env }) {
     const c = agg.completeness;
     lines.push(`Archive completeness: ${c.portraits}/${c.total} portraits, ${c.biographies}/${c.total} life stories, ${c.birthDates}/${c.total} birth dates.`);
   }
+  // Highlights from the sheet's own visual modules (Tree Insights Wave 1/2) —
+  // same grounding rule applies: specific, computed facts, not embellishment
+  // prompts. Not every tree will have all of these.
+  const h = agg.highlights;
+  if (h?.handshake) {
+    lines.push(`Chain of overlapping lifespans back to the earliest reachable ancestor: ${h.handshake.hops} hop(s) to ${h.handshake.earliestName}, born ${h.handshake.earliestBirth}.`);
+    if (h.handshake.anchor) lines.push(`A world event near that ancestor's birth year: ${h.handshake.anchor}`);
+  }
+  if (h?.lifespanGain) {
+    lines.push(`Average lifespan rose from ${h.lifespanGain.firstAvg} years (born ${h.lifespanGain.firstDecade}s) to ${h.lifespanGain.lastAvg} years (born ${h.lifespanGain.lastDecade}s).`);
+  }
+  if (h?.fullestYear) {
+    lines.push(`Living relatives at once peaked at ${h.fullestYear.peakCount}${h.fullestYear.peakYear === 'now' ? ', right now' : ` in ${h.fullestYear.peakYear}`}.`);
+  }
+  if (h?.bridge) {
+    lines.push(`${h.bridge.name} is the sole connection between two branches of the family (one side roughly ${h.bridge.sideACount} people${h.bridge.sideASurname ? `, mostly surnamed ${h.bridge.sideASurname}` : ''}; the other roughly ${h.bridge.sideBCount}${h.bridge.sideBSurname ? `, mostly surnamed ${h.bridge.sideBSurname}` : ''}).`);
+  }
+  if (h?.topName) {
+    lines.push(`Most repeated first name: ${h.topName.name} (${h.topName.count} people, across ${h.topName.generationsPresent} generations).`);
+  }
+  if (h?.heartland) {
+    lines.push(`Most common birthplace: ${h.heartland.place}${h.heartland.migration ? `. Birthplace has moved across generations: ${h.heartland.migration.join(' → ')}` : ''}.`);
+  }
+  if (h?.trades) {
+    lines.push(`Occupations shifted from ${h.trades.from} in the earliest era to ${h.trades.to} in the most recent (${h.trades.distinct} distinct trades recorded).`);
+  }
+  if (h?.birthdayPeak) {
+    lines.push(`Most common birth month: ${h.birthdayPeak.month} (${h.birthdayPeak.count} people).`);
+  }
+  if (h?.longestMarriage) {
+    lines.push(`Longest recorded marriage: ${h.longestMarriage}`);
+  }
   const factBlock = lines.join('\n');
 
   const upstream = await fetch('https://api.anthropic.com/v1/messages', {
@@ -56,7 +92,7 @@ export async function onRequestPost({ request, env }) {
       'content-type': 'application/json',
     },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-6',
+      model: MODEL,
       max_tokens: 320,
       system: [
         {
@@ -66,6 +102,7 @@ export async function onRequestPost({ request, env }) {
             'Write ONE short paragraph (3–4 sentences), addressed to the reader in second person ("your family", "you").',
             'Voice: warm, plain, a little wondrous — never salesy, no clichés like "tapestry" or "journey".',
             'Ground every statement strictly in the facts provided. Do NOT invent names, dates, places, relationships, or numbers that are not in the facts.',
+            'The facts may include several extra highlights (a chain of overlapping lifespans, a lifespan trend, a bridging relative, a repeated name, a birthplace, occupations, a marriage record). Pick ONLY the one or two most striking for this paragraph — never list them all, that reads like a report, not a story.',
             'If the archive is sparse (few life stories or birth dates), you may gently note there is more to discover — but never fabricate it.',
             'Write only the paragraph — no title, no preamble, no bullet points.',
           ].join(' '),
@@ -80,11 +117,13 @@ export async function onRequestPost({ request, env }) {
 
   if (!upstream.ok) {
     const detail = await upstream.text().catch(() => '');
+    await logAiUsage(env, { endpoint: 'insights', model: MODEL, usage: null, user: data.user, ok: false });
     return json({ error: `Upstream AI error ${upstream.status}.`, detail: detail.slice(0, 300) }, 502);
   }
 
-  const data = await upstream.json().catch(() => null);
-  const narrative = data?.content?.map((b) => b.text || '').join('').trim();
+  const body = await upstream.json().catch(() => null);
+  const narrative = body?.content?.map((b) => b.text || '').join('').trim();
+  await logAiUsage(env, { endpoint: 'insights', model: MODEL, usage: body?.usage, user: data.user, ok: !!narrative });
   if (!narrative) return json({ error: 'Empty AI response.' }, 502);
 
   return json({ narrative });

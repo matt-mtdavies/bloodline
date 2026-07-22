@@ -12,6 +12,7 @@ export default function Lightbox({ photos, startIndex = 0, onClose, onSetCaption
   const [i, setI] = useState(startIndex);
   const photo = photos[Math.min(i, photos.length - 1)];
   const [saveState, setSaveState] = useState('idle'); // idle | saving | error
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const { xf, stageRef, draggedRef, reset, handlers } = useImageZoom();
 
@@ -34,10 +35,13 @@ export default function Lightbox({ photos, startIndex = 0, onClose, onSetCaption
     else if (i > photos.length - 1) setI(photos.length - 1);
   }, [photos.length, i, onClose]);
 
-  // Never carry zoom/pan across photos, and drop any stale save status.
+  // Never carry zoom/pan across photos, and drop any stale save/delete-
+  // confirm status — a "remove this?" armed on one photo must not silently
+  // apply to whichever photo you swipe to next.
   useEffect(() => {
     reset();
     setSaveState('idle');
+    setConfirmDelete(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [i]);
 
@@ -81,6 +85,7 @@ export default function Lightbox({ photos, startIndex = 0, onClose, onSetCaption
           onPointerMove={(e) => { e.stopPropagation(); handlers.onPointerMove(e); }}
           onPointerUp={(e) => { e.stopPropagation(); handlers.onPointerUp(e); }}
           onPointerCancel={(e) => { e.stopPropagation(); handlers.onPointerCancel(e); }}
+          onWheel={(e) => { e.stopPropagation(); handlers.onWheel(e); }}
           onClick={(e) => e.stopPropagation()}
         />
         {photos.length > 1 && xf.scale === 1 && (
@@ -114,20 +119,37 @@ export default function Lightbox({ photos, startIndex = 0, onClose, onSetCaption
           />
           {photo.date && <span className="lightbox__date">{photo.date}</span>}
         </div>
-        <div className="lightbox__actions">
-          <button className="lightbox__action" onClick={handleSave} disabled={saveState === 'saving'}>
-            {saveState === 'saving' ? 'Saving…' : saveState === 'error' ? "Couldn't save" : 'Save'}
-          </button>
-          <button className="lightbox__action" onClick={() => onSetPortrait?.(photo.src)}>
-            Set as portrait
-          </button>
-          <button
-            className="lightbox__action lightbox__action--danger"
-            onClick={() => onDelete?.(photo.id)}
-          >
-            Remove
-          </button>
-        </div>
+        {confirmDelete ? (
+          <div className="lightbox__confirm">
+            <span>Remove this photo? This can&apos;t be undone.</span>
+            <div className="lightbox__actions">
+              <button
+                className="lightbox__action lightbox__action--danger"
+                onClick={() => { onDelete?.(photo.id); setConfirmDelete(false); }}
+              >
+                Remove
+              </button>
+              <button className="lightbox__action" onClick={() => setConfirmDelete(false)}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="lightbox__actions">
+            <button className="lightbox__action" onClick={handleSave} disabled={saveState === 'saving'}>
+              {saveState === 'saving' ? 'Saving…' : saveState === 'error' ? "Couldn't save" : 'Save'}
+            </button>
+            <button className="lightbox__action" onClick={() => onSetPortrait?.(photo.src)}>
+              Set as portrait
+            </button>
+            <button
+              className="lightbox__action lightbox__action--danger"
+              onClick={() => setConfirmDelete(true)}
+            >
+              Remove
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

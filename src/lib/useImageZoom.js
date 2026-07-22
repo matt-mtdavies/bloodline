@@ -57,6 +57,19 @@ export function useImageZoom() {
     });
   }
 
+  // Desktop has no pinch gesture to speak of — a mouse has none at all, and
+  // a trackpad's pinch arrives as a wheel event with ctrlKey set (that's the
+  // browser's own translation, not something we opt into). Scroll-to-zoom
+  // over the image covers both: a plain mouse wheel and a trackpad pinch
+  // read identically here, zooming under the cursor exactly like the pinch
+  // gesture zooms under the fingers.
+  function onWheel(e) {
+    e.preventDefault();
+    const factor = Math.exp(-e.deltaY * 0.0018);
+    const target = Math.min(MAX_ZOOM, Math.max(1, xf.scale * factor));
+    zoomAt(e.clientX, e.clientY, target);
+  }
+
   function handleTap(e) {
     const now = Date.now();
     const last = lastTapRef.current;
@@ -133,6 +146,7 @@ export function useImageZoom() {
       onPointerMove,
       onPointerUp: endPointer,
       onPointerCancel: endPointer,
+      onWheel,
     },
   };
 }

@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import Avatar from './Avatar.jsx';
 import { relationLabel } from '../data/graph.js';
+import { useKinTerms } from '../lib/kinTerms.js';
 import { lifespan, ageOrAt } from '../lib/dates.js';
+import { hasMilitaryService, militaryProfile } from '../lib/military.js';
+import { BranchIcon } from './MilitaryIcons.jsx';
 
 const CARD_WIDTH = 288;
 const MARGIN = 16;
@@ -15,12 +18,13 @@ const EXIT_MS = 150; // keep mounted this long after hover ends, to let the fade
  * FocusNameplate); the reveal/dismiss transition runs on a separate inner
  * element so the per-frame position writes never fight the CSS transition.
  */
-export default function HoverCard({ graph, personId, viewerId, getPos }) {
+export default function HoverCard({ graph, personId, viewerId, getPos, photos, documents }) {
   const anchorRef = useRef(null);
   const lastPos = useRef(null);
   const [displayId, setDisplayId] = useState(null);
   const [show, setShow] = useState(false);
   const hideTimer = useRef(null);
+  const kinTerms = useKinTerms();
 
   useEffect(() => {
     clearTimeout(hideTimer.current);
@@ -74,7 +78,7 @@ export default function HoverCard({ graph, personId, viewerId, getPos }) {
   const summaryOnly = vis === 'summary';
   const restricted = minor || sealed || summaryOnly;
 
-  const relToViewer = viewerId && viewerId !== person.id ? relationLabel(graph, viewerId, person.id) : null;
+  const relToViewer = viewerId && viewerId !== person.id ? relationLabel(graph, viewerId, person.id, kinTerms) : null;
   const location = !restricted && (person.residence || person.birth_place);
   const age = ageOrAt(person);
 
@@ -148,9 +152,42 @@ export default function HoverCard({ graph, personId, viewerId, getPos }) {
   }
   const relSummary = familyRelBits.join(' · ');
 
+  // Quiet "there's more here" signal — not clickable, not counted anywhere
+  // else on the card. Any document at all counts (a scanned letter or
+  // certificate is a real find, however few a family has uploaded), and a
+  // couple of gallery photos is enough too — just not a single lone one,
+  // which is the common case and shouldn't light up on nearly every bubble.
+  const personDocs = documents?.filter((d) => d.person_id === person.id) || [];
+  const hasRicherContent =
+    !restricted &&
+    (personDocs.length > 0 ||
+      (photos?.filter((p) => p.person_id === person.id).length || 0) >= 2);
+
+  // Mirrors the "richer content" badge on the opposite corner — its own
+  // quiet signal, not a second copy of the same one. See the dog tag on the
+  // full profile for the same branch/nation icon logic (lib/military.js +
+  // MilitaryIcons.jsx) driving this at a glance before you ever open it.
+  const military = !restricted && hasMilitaryService(person, personDocs)
+    ? militaryProfile(person)
+    : null;
+  const militaryLabel = military
+    ? [military.rank, military.branch ? BRANCH_LABELS[military.branch] : null, military.nation]
+      .filter(Boolean).join(' · ') || 'Military service'
+    : '';
+
   return (
     <div className="hover-card-anchor" ref={anchorRef} style={{ width: CARD_WIDTH }} aria-hidden="true">
       <div className={`hover-card${show ? ' hover-card--show' : ''}`}>
+        {hasRicherContent && (
+          <span className="hover-card__attach" aria-hidden="true">
+            <StackIcon />
+          </span>
+        )}
+        {military && (
+          <span className="hover-card__military" title={militaryLabel} aria-hidden="true">
+            <BranchIcon branch={military.branch} nation={military.nation} size={12} />
+          </span>
+        )}
         <div className="hover-card__head">
           <Avatar person={person} size={56} />
           <div className="hover-card__id">
@@ -199,6 +236,8 @@ export default function HoverCard({ graph, personId, viewerId, getPos }) {
   );
 }
 
+const BRANCH_LABELS = { army: 'Army', navy: 'Navy', air_force: 'Air Force' };
+
 // Singular label for a sibling of the given kind + gender — "brother",
 // "half sister", "step sibling" — pluralized later by pluralize().
 function siblingWord(kind, gender) {
@@ -244,6 +283,19 @@ function FamilyIcon() {
       <circle cx="17" cy="9" r="2.6" stroke="currentColor" strokeWidth="1.7" />
       <path d="M3 20v-1.5A4.5 4.5 0 0 1 7.5 14h1A4.5 4.5 0 0 1 13 18.5V20" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
       <path d="M14.5 14.3A3.6 3.6 0 0 1 21 16.6V17.6" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+// The "richer profile" badge — two overlapping squares, the same shorthand
+// carousel apps use for "more than one item here." Deliberately not a
+// paperclip: it reads as media in general (photos or documents) rather than
+// committing to "there's a file attached."
+function StackIcon() {
+  return (
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <rect x="3" y="7" width="14" height="14" rx="3" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M8 5.5V5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
     </svg>
   );
 }

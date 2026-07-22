@@ -7,7 +7,11 @@
  * Gracefully returns 503 when ANTHROPIC_API_KEY is absent (local dev without
  * wrangler, or before the secret is provisioned).
  */
-export async function onRequestPost({ request, env }) {
+import { logAiUsage } from '../_lib/aiUsage.js';
+
+const MODEL = 'claude-sonnet-4-6';
+
+export async function onRequestPost({ request, env, data, waitUntil }) {
   if (!env.ANTHROPIC_API_KEY) {
     return new Response(JSON.stringify({ error: 'AI features not configured on this server.' }), {
       status: 503,
@@ -25,53 +29,127 @@ export async function onRequestPost({ request, env }) {
     });
   }
 
-  const { person, memories = [], relationships = [] } = body;
+  const {
+    person, memories = [], relationships = [], documents = [], feedback, previousStory,
+    focus, militaryEvents = [], militaryQuotes = [],
+  } = body;
   if (!person?.display_name) {
     return new Response(JSON.stringify({ error: 'Missing person data.' }), {
       status: 400,
       headers: { 'content-type': 'application/json' },
     });
   }
-
-  // Build a structured context string for the model.
-  const lines = [];
-  lines.push(`Name: ${person.display_name}`);
-  if (person.gender) lines.push(`Gender: ${person.gender}`);
-  if (person.birth_date) lines.push(`Born: ${person.birth_date}`);
-  if (person.birth_place) lines.push(`Birth place: ${person.birth_place}`);
-  if (person.death_date) lines.push(`Died: ${person.death_date}`);
-  if (person.is_deceased) lines.push('Status: Deceased');
-  if (person.occupation) lines.push(`Occupation: ${person.occupation}`);
-  if (person.residence) lines.push(`Residence: ${person.residence}`);
-  if (person.bio) lines.push(`Family note: ${person.bio}`);
-  if (person.tags?.length) lines.push(`Tags: ${person.tags.join(', ')}`);
-
-  if (person.events?.length) {
-    const evs = person.events
-      .slice()
-      .sort((a, b) => (a.year || 0) - (b.year || 0))
-      .map((e) => `  ${e.year}: ${e.title}${e.detail ? ` — ${e.detail}` : ''}`)
-      .join('\n');
-    lines.push(`Life events:\n${evs}`);
+  const isMilitaryFocus = focus === 'military' || focus === 'military-context';
+  if (isMilitaryFocus && !militaryEvents.length && !militaryQuotes.length) {
+    return new Response(JSON.stringify({ error: 'No military service data to write from.' }), {
+      status: 400,
+      headers: { 'content-type': 'application/json' },
+    });
   }
 
-  if (relationships.length) {
-    const rels = relationships
-      .slice(0, 8)
-      .map((r) => `  ${r.label}: ${r.name}`)
-      .join('\n');
-    lines.push(`Family connections:\n${rels}`);
+  // Same endpoint, three prompts: the general life story draws on everything
+  // (timeline, memories, documents); a military-focused account and a
+  // historical-context aside are both deliberately fed ONLY the
+  // military-tagged material (see lib/military.js's militaryEvents/
+  // militaryQuotes, computed client-side and passed straight through) —
+  // narrower context means neither can reach for an unrelated life event or
+  // invent a posting the records never mentioned. logAiUsage tags all three
+  // separately so the admin dashboard's per-endpoint spend breakdown can
+  // tell them apart.
+  const endpointTag = focus === 'military' ? 'biography-military'
+    : focus === 'military-context' ? 'biography-military-context'
+    : 'biography';
+  let personContext, systemText;
+
+  if (isMilitaryFocus) {
+    const lines = [`Name: ${person.display_name}`];
+    if (militaryEvents.length) {
+      const evs = militaryEvents
+        .map((e) => `  ${e.year}: ${e.title}${e.detail ? ` — ${e.detail}` : ''}`)
+        .join('\n');
+      lines.push(`Military service timeline:\n${evs}`);
+    }
+    if (militaryQuotes.length) {
+      const qs = militaryQuotes
+        .map((q) => `  — "${q.quote}" (from "${q.docTitle}"${q.year ? `, ${q.year}` : ''})`)
+        .join('\n');
+      lines.push(`Verbatim quotes from service records:\n${qs}`);
+    }
+    personContext = lines.join('\n');
+    systemText = focus === 'military-context'
+      ? `You are a historical researcher adding brief, well-documented background to a family's military record, for a family tree app. You'll be given a service timeline and verbatim quotes from military documents. If — and only if — one of the specific places, camps, campaigns, or units mentioned below is something you have genuine, well-established historical knowledge of, write a short informational aside about it (3-5 sentences, third person, plain factual tone). Write about the place, campaign, or event — not about the person. Do not guess at what a partly-legible or ambiguous name might refer to, and do not write generic filler about "wartime conditions in general" if you don't recognize the specific place — it's better to say nothing. If nothing below is something you're genuinely confident about, respond with EXACTLY this and nothing else, no punctuation, no quotation marks: NO_HISTORICAL_CONTEXT_AVAILABLE`
+      : `You are a thoughtful family archivist writing a short, focused account of one person's military service, for a family tree app. Draw only on the service timeline and the verbatim document quotes given below — never invent a posting, battle, unit, rank, or date that isn't in them. If the source material is thin on a point, leave it out rather than guessing. Two short paragraphs, third person, warm but plain — like a passage from a family history book, not a Wikipedia article. No bullet points, no headers. Write only the account — nothing else.`;
+  } else {
+    // Build a structured context string for the model.
+    const lines = [];
+    lines.push(`Name: ${person.display_name}`);
+    if (person.gender) lines.push(`Gender: ${person.gender}`);
+    if (person.birth_date) lines.push(`Born: ${person.birth_date}`);
+    if (person.birth_place) lines.push(`Birth place: ${person.birth_place}`);
+    if (person.death_date) lines.push(`Died: ${person.death_date}`);
+    if (person.is_deceased) lines.push('Status: Deceased');
+    if (person.occupation) lines.push(`Occupation: ${person.occupation}`);
+    if (person.residence) lines.push(`Residence: ${person.residence}`);
+    if (person.bio) lines.push(`Family note: ${person.bio}`);
+    if (person.tags?.length) lines.push(`Tags: ${person.tags.join(', ')}`);
+
+    if (person.events?.length) {
+      const evs = person.events
+        .slice()
+        .sort((a, b) => (a.year || 0) - (b.year || 0))
+        .map((e) => `  ${e.year}: ${e.title}${e.detail ? ` — ${e.detail}` : ''}`)
+        .join('\n');
+      lines.push(`Life events:\n${evs}`);
+    }
+
+    if (relationships.length) {
+      const rels = relationships
+        .slice(0, 8)
+        .map((r) => `  ${r.label}: ${r.name}`)
+        .join('\n');
+      lines.push(`Family connections:\n${rels}`);
+    }
+
+    if (memories.length) {
+      const mems = memories
+        .slice(0, 6)
+        .map((m) => `  — "${m.text}" (shared by ${m.author})`)
+        .join('\n');
+      lines.push(`Memories from the family:\n${mems}`);
+    }
+
+    // Documents the family has scanned and summarized (see summarize.js) —
+    // often the richest source in the whole record: a discharge form's "quiet
+    // dignity" doesn't show up in a birth_date field. This is the AI summary
+    // text, not the raw scan, so it's already been through one grounding pass;
+    // still just background material for the story, same as a memory.
+    if (documents.length) {
+      const docs = documents
+        .slice(0, 6)
+        .map((d) => `  — "${d.title}": ${d.summary}`)
+        .join('\n');
+      lines.push(`Documents on file:\n${docs}`);
+    }
+
+    personContext = lines.join('\n');
+    systemText = `You are a thoughtful family archivist writing intimate life story paragraphs for a family tree app. Your voice is warm, plain, and specific — like a letter from a relative who loved this person. Write in the third person. Two to three short paragraphs. No bullet points, no headers. Draw on the details given: timeline events, occupation, place, the family's own documents on file, and above all the memories family members have shared. If the person is deceased, treat them with reverence. If living, write with warmth and a sense of an ongoing story. Write only the biography — nothing else.`;
   }
 
-  if (memories.length) {
-    const mems = memories
-      .slice(0, 6)
-      .map((m) => `  — "${m.text}" (shared by ${m.author})`)
-      .join('\n');
-    lines.push(`Memories from the family:\n${mems}`);
-  }
+  // A family member reviewed a previous draft and flagged something wrong
+  // with it — trust their correction over the source data above, since a
+  // human catching an AI mistake (or knowing a fact the records don't
+  // capture) is exactly the case this is for. Quote the flagged draft back
+  // so the model revises it rather than starting fresh and risking the same
+  // error again by coincidence.
+  const revisionNote = feedback?.trim()
+    ? `\n\nA previous draft was reviewed by the family and needs correcting. Treat their notes as the source of truth, even where they conflict with the details above — they know this person; the records above don't always.${
+        previousStory?.trim() ? `\n\nPrevious draft:\n${previousStory.trim()}` : ''
+      }\n\nFamily's corrections:\n${feedback.trim()}\n\nRewrite it incorporating these corrections.`
+    : '';
 
-  const personContext = lines.join('\n');
+  const writePrompt = focus === 'military' ? 'Write a short account of this person\'s military service'
+    : focus === 'military-context' ? 'Here is a military service record — add historical context if you genuinely have it'
+    : 'Write a life story for this person';
 
   const upstream = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -82,20 +160,20 @@ export async function onRequestPost({ request, env }) {
       'content-type': 'application/json',
     },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 700,
+      model: MODEL,
+      max_tokens: focus === 'military-context' ? 250 : 700,
       stream: true,
       system: [
         {
           type: 'text',
-          text: `You are a thoughtful family archivist writing intimate life story paragraphs for a family tree app. Your voice is warm, plain, and specific — like a letter from a relative who loved this person. Write in the third person. Two to three short paragraphs. No bullet points, no headers. Draw on the details given: timeline events, occupation, place, and above all the memories family members have shared. If the person is deceased, treat them with reverence. If living, write with warmth and a sense of an ongoing story. Write only the biography — nothing else.`,
+          text: systemText,
           cache_control: { type: 'ephemeral' },
         },
       ],
       messages: [
         {
           role: 'user',
-          content: `Write a life story for this person:\n\n${personContext}`,
+          content: `${writePrompt}:\n\n${personContext}${revisionNote}`,
         },
       ],
     }),
@@ -103,18 +181,60 @@ export async function onRequestPost({ request, env }) {
 
   if (!upstream.ok) {
     const detail = await upstream.text().catch(() => '');
+    await logAiUsage(env, { endpoint: endpointTag, model: MODEL, usage: null, user: data.user, ok: false });
     return new Response(
       JSON.stringify({ error: `Upstream AI error ${upstream.status}.`, detail }),
       { status: 502, headers: { 'content-type': 'application/json' } },
     );
   }
 
-  // Pass the Anthropic SSE stream straight through to the client.
-  return new Response(upstream.body, {
+  // Tee the stream: one branch goes straight to the client unchanged (so the
+  // live-typing UX is untouched), the other is parsed in the background
+  // (waitUntil, after the response has already returned) purely to read the
+  // final token counts Anthropic reports mid-stream, for the usage log.
+  const [clientStream, usageStream] = upstream.body.tee();
+  waitUntil(logStreamUsage(env, usageStream, data.user, endpointTag));
+
+  return new Response(clientStream, {
     headers: {
       'content-type': 'text/event-stream',
       'cache-control': 'no-cache',
       'x-accel-buffering': 'no',
     },
   });
+}
+
+// Reads the tee'd SSE branch to extract token counts, without affecting what
+// the client sees. `message_start` carries input_tokens; `message_delta`
+// carries the running output_tokens — same shape streamBio already parses
+// client-side, just watching different fields.
+async function logStreamUsage(env, stream, user, endpointTag) {
+  let inputTokens = 0, outputTokens = 0;
+  try {
+    const reader = stream.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const blocks = buf.split('\n\n');
+      buf = blocks.pop() ?? '';
+      for (const block of blocks) {
+        const dataLine = block.split('\n').find((l) => l.startsWith('data: '));
+        if (!dataLine) continue;
+        try {
+          const evt = JSON.parse(dataLine.slice(6));
+          if (evt.message?.usage) {
+            inputTokens = evt.message.usage.input_tokens || inputTokens;
+            outputTokens = evt.message.usage.output_tokens || outputTokens;
+          }
+          if (evt.usage?.output_tokens != null) outputTokens = evt.usage.output_tokens;
+        } catch { /* malformed chunk — skip */ }
+      }
+    }
+  } catch (e) {
+    console.error('[biography] usage stream read failed:', e.message);
+  }
+  await logAiUsage(env, { endpoint: endpointTag, model: MODEL, usage: { input_tokens: inputTokens, output_tokens: outputTokens }, user, ok: true });
 }

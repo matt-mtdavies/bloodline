@@ -491,14 +491,14 @@ export const relationships = [
   p('mark', 'liam'),
 
   // partnerships
-  partner('william', 'florence', 'widowed'),
-  partner('arthur', 'margaret', 'widowed'),
-  partner('thomas', 'eleanor', 'widowed'),
-  partner('robert', 'linda', 'current'),
-  partner('susan', 'david', 'current'),
-  partner('james', 'rachel', 'former'), // divorced
-  partner('james', 'megan', 'current'), // remarried
-  partner('sarah', 'mark', 'current'),
+  partner('william', 'florence', 'widowed', { marriage_date: '1927', marriage_place: 'Rochester, Kent' }),
+  partner('arthur', 'margaret', 'widowed', { marriage_date: '1951-06-09', marriage_place: 'Maidstone' }),
+  partner('thomas', 'eleanor', 'widowed', { marriage_date: '1957' }),
+  partner('robert', 'linda', 'current', { marriage_date: '1983-04-16', marriage_place: 'Canterbury' }),
+  partner('susan', 'david', 'current', { marriage_date: '1984' }),
+  partner('james', 'rachel', 'former', { is_married: true }), // divorced
+  partner('james', 'megan', 'current', { marriage_date: '2016-09-03', marriage_place: 'Whitstable' }), // remarried
+  partner('sarah', 'mark', 'current', { marriage_date: '2011' }),
 ];
 
 function p(from, to, qualifier = 'biological') {
@@ -512,7 +512,7 @@ function p(from, to, qualifier = 'biological') {
   };
 }
 
-function partner(a, b, status) {
+function partner(a, b, status, meta = {}) {
   return {
     id: `r_${a}_${b}`,
     from_person: a,
@@ -520,6 +520,9 @@ function partner(a, b, status) {
     type: 'partner',
     qualifier: 'biological',
     partner_status: status,
+    is_married: !!meta.is_married || !!meta.marriage_date || !!meta.marriage_place,
+    marriage_date: meta.marriage_date ?? null,
+    marriage_place: meta.marriage_place ?? null,
   };
 }
 

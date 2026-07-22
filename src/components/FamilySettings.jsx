@@ -4,12 +4,13 @@ import {
 } from '../lib/visibility.js';
 import ShareLink from './ShareLink.jsx';
 import { ActivityRow, dayLabel } from './ActivityFeed.jsx';
+import ReturnMark from './ReturnMark.jsx';
 
 const INVITE_ROLES = ['coadmin', 'editor', 'contributor', 'viewer'];
 
 export default function FamilySettings({
   myRole, familyName, onUpdateFamilyName, onReset, onLogout, onClose, onImportGedcom, onImportFamilySearch,
-  people = [], userEmail, onSelectPerson,
+  onExportGedcom, people = [], userEmail, onSelectPerson,
 }) {
   const [tab, setTab] = useState('members'); // 'members' | 'invite' | 'activity' | 'restore' | 'calendar'
   const [data, setData] = useState(null);
@@ -18,6 +19,15 @@ export default function FamilySettings({
   const [fbMsg, setFbMsg]       = useState('');
   const [fbStatus, setFbStatus] = useState('idle'); // idle | sending | sent | error
   const [pendingConfirm, setPendingConfirm] = useState(null); // { type:'member'|'invite', id }
+  // "Start over — erase tree" used to be a single window.confirm() for an
+  // action that permanently wipes every person/relationship/memory/photo/
+  // document for the WHOLE shared family, not just the person clicking it.
+  // Typing the family name back is a much higher bar to clear by accident
+  // than a single OK tap — matches the destructive-confirm convention this
+  // sheet already uses elsewhere (fs__confirm-inline), just scaled up for
+  // the one action here with real, unrecoverable, family-wide blast radius.
+  const [resetConfirming, setResetConfirming] = useState(false);
+  const [resetTypedName, setResetTypedName] = useState('');
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState('editor');
   const [inviteStatus, setInviteStatus] = useState('idle'); // idle | linking | link | sending | sent | sent-no-email | error
@@ -427,8 +437,9 @@ export default function FamilySettings({
     }
   }
 
+  const resetNameMatches = resetTypedName.trim().toLowerCase() === (familyName || '').trim().toLowerCase();
   function handleReset() {
-    if (!confirm('This will erase your entire family tree and start fresh. Are you sure?')) return;
+    if (!resetNameMatches) return;
     onReset();
     onClose();
   }
@@ -438,10 +449,10 @@ export default function FamilySettings({
       <div className="sheet" onClick={(e) => e.stopPropagation()}>
         <div className="sheet__grip" />
         <div className="fs__head">
+          <ReturnMark onClick={onClose} />
           <div>
             <h2 className="fs__title">Family settings</h2>
           </div>
-          <button className="icon-btn" onClick={onClose} aria-label="Close"><CloseIcon /></button>
         </div>
 
         {/* Family name */}
@@ -880,6 +891,22 @@ export default function FamilySettings({
           </div>
         )}
 
+        {/* Export — reading your own tree out to a portable file. It's your
+            family, not ours; you can take it anywhere, anytime. */}
+        {onExportGedcom && (
+          <div className="fs__section">
+            <label className="fs__label">Export data</label>
+            <button className="fs__import-btn" onClick={onExportGedcom}>
+              <GedcomIcon />
+              Export GEDCOM file
+            </button>
+            <p className="fs__import-hint">
+              A standard family-tree file you can open in Ancestry, MyHeritage, FamilySearch and more.
+              Photos, memories and stories aren&apos;t included — a full backup with those is coming.
+            </p>
+          </div>
+        )}
+
         {/* Feedback */}
         <div className="fs__section">
           <label className="fs__label">Send feedback</label>
@@ -932,9 +959,40 @@ export default function FamilySettings({
             </button>
           )}
           {isOwnerOrCoadmin ? (
-            <button className="fs__danger-btn" onClick={handleReset}>
-              Start over — erase tree
-            </button>
+            resetConfirming ? (
+              <div className="fs__reset-confirm">
+                <p className="fs__reset-warning">
+                  This permanently erases every person, relationship, memory, photo, and document in
+                  {' '}<strong>{familyName}</strong> — for every family member, not just you. It can't be undone.
+                </p>
+                <label className="fs__reset-label">
+                  Type <strong>{familyName}</strong> to confirm
+                </label>
+                <input
+                  className="fs__reset-input"
+                  value={resetTypedName}
+                  onChange={(e) => setResetTypedName(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && resetNameMatches) handleReset(); }}
+                  placeholder={familyName}
+                  autoFocus
+                />
+                <div className="fs__reset-btns">
+                  <button className="fs__danger-btn" disabled={!resetNameMatches} onClick={handleReset}>
+                    Erase everything
+                  </button>
+                  <button
+                    className="fs__reset-cancel"
+                    onClick={() => { setResetConfirming(false); setResetTypedName(''); }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button className="fs__danger-btn" onClick={() => setResetConfirming(true)}>
+                Start over — erase tree
+              </button>
+            )
           ) : (
             <p className="fs__danger-note">Only a co-admin or owner can erase this tree.</p>
           )}

@@ -13,6 +13,18 @@ body,
   padding: 0;
 }
 
+/* Mobile Safari silently boosts font-size on text blocks it judges need a
+   readability nudge — the heuristic is per-element (a lone single-line
+   block gets inflated, one with a sibling line doesn't), so identically-
+   styled text (e.g. two life-event titles, one with a detail line below it
+   and one without) can render at visibly different sizes with no CSS
+   change involved. Opting out here means every element's size is always
+   exactly what its own CSS says. */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
 body {
   font-family: var(--body);
   background: var(--paper);
@@ -71,6 +83,33 @@ h3 {
 }
 .stage canvas {
   display: block;
+}
+.stage-error {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 24px;
+  text-align: center;
+}
+.stage-error__text {
+  font-family: var(--body);
+  font-size: 15px;
+  color: var(--ink-soft, #6b6260);
+}
+.stage-error__btn {
+  padding: 10px 22px;
+  border: none;
+  border-radius: 999px;
+  background: var(--accent, #c1602f);
+  color: #fff;
+  font-family: var(--body);
+  font-size: 14.5px;
+  font-weight: 600;
+  cursor: pointer;
 }
 
 @media (prefers-reduced-motion: reduce) {

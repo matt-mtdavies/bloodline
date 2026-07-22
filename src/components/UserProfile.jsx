@@ -1,15 +1,17 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { clearLocalData } from '../data/store.js';
+import { useKinTerms, setKinTermsPref, GRANDPARENT_TERM_PACKS, CUSTOM_PACK_ID } from '../lib/kinTerms.js';
+import ReturnMark from './ReturnMark.jsx';
 
 export default function UserProfile({ user, people = [], onClose, onLogout, onSaved, onPhoto }) {
   const [profile, setProfile] = useState(null);
+  // Grandparent-term preference: a personal display setting, not tree data —
+  // lives in this browser's localStorage (see lib/kinTerms.js), so it's read
+  // and written directly, no /api/user/profile round-trip needed.
+  const kinTerms = useKinTerms();
   const [loading, setLoading] = useState(true);
   const [nameEdit, setNameEdit] = useState('');
   const [saving, setSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState(null); // null | 'saved' | string (error)
-  const [families, setFamilies] = useState(null); // null = loading, [] = single/none
-  const [switchingId, setSwitchingId] = useState(null);
-  const [switchError, setSwitchError] = useState('');
   const saveTimer = useRef(null);
   const fileRef = useRef(null);
 
@@ -28,37 +30,6 @@ export default function UserProfile({ user, people = [], onClose, onLogout, onSa
   }, []);
 
   useEffect(() => { load(); }, [load]);
-
-  useEffect(() => {
-    fetch('/api/families')
-      .then((r) => (r.ok ? r.json() : { families: [] }))
-      .then((d) => setFamilies(d.families || []))
-      .catch(() => setFamilies([]));
-  }, []);
-
-  async function switchFamily(familyId) {
-    if (switchingId) return;
-    setSwitchingId(familyId);
-    setSwitchError('');
-    try {
-      const res = await fetch('/api/families/switch', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ family_id: familyId }),
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || `HTTP ${res.status}`);
-      }
-      // Wipe the cached tree so the reload can't push this family's data over
-      // the one we're switching to — the fresh load will pull the right tree.
-      clearLocalData();
-      window.location.reload();
-    } catch (e) {
-      setSwitchError(e.message || 'Could not switch families');
-      setSwitchingId(null);
-    }
-  }
 
   useEffect(() => {
     const onKey = (e) => e.key === 'Escape' && onClose();
@@ -106,6 +77,15 @@ export default function UserProfile({ user, people = [], onClose, onLogout, onSa
     patch({ notification_prefs: prefs });
   }
 
+  function handleKinPackChange(side, packId) {
+    setKinTermsPref({ [side === 'maternal' ? 'maternalPackId' : 'paternalPackId']: packId });
+  }
+
+  function handleKinCustomChange(side, genderKey, value) {
+    const key = side === 'maternal' ? 'customMaternal' : 'customPaternal';
+    setKinTermsPref({ [key]: { ...kinTerms[key], [genderKey]: value } });
+  }
+
   function claimBubble(person_id) {
     if (!person_id) { patch({ person_id: null }); return; }
     const person = people.find((p) => p.id === person_id);
@@ -130,8 +110,8 @@ export default function UserProfile({ user, people = [], onClose, onLogout, onSa
         <div className="sheet__grip" />
 
         <div className="fs__head">
+          <ReturnMark onClick={onClose} />
           <h2 className="fs__title">Your profile</h2>
-          <button className="icon-btn" onClick={onClose} aria-label="Close"><CloseIcon /></button>
         </div>
 
         {/* Avatar + identity */}
@@ -199,37 +179,32 @@ export default function UserProfile({ user, people = [], onClose, onLogout, onSa
           )}
         </div>
 
-        {/* Family trees — switcher for anyone who belongs to more than one */}
-        {families && families.length > 1 && (
-          <div className="fs__section">
-            <p className="fs__label">Family trees</p>
-            <div className="up__family-list">
-              {families.map((f) => (
-                <div key={f.family_id} className={`up__family-row${f.is_current ? ' up__family-row--current' : ''}`}>
-                  <div className="up__family-text">
-                    <span className="up__family-name">{f.name || 'Untitled family'}</span>
-                    <span className="up__family-meta">
-                      {roleLabel(f.role)} · {f.member_count} member{f.member_count === 1 ? '' : 's'}
-                    </span>
-                  </div>
-                  {f.is_current ? (
-                    <span className="up__family-current">Viewing</span>
-                  ) : (
-                    <button
-                      className="up__family-switch"
-                      onClick={() => switchFamily(f.family_id)}
-                      disabled={!!switchingId}
-                    >
-                      {switchingId === f.family_id ? 'Switching…' : 'Switch'}
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
-            {switchError && <p className="up__save-status up__save-status--err">{switchError}</p>}
-            <p className="up__hint">Switching reloads the app on that family's tree.</p>
+        {/* Grandparent names — personal display preference, see lib/kinTerms.js */}
+        <div className="fs__section">
+          <p className="fs__label">Grandparent names</p>
+          <p className="up__hint">
+            Use a name from your heritage instead of "Grandmother"/"Grandfather" —
+            pick one for each side of the family, or write your own. Only you see this.
+          </p>
+          <div className="up__kinterms">
+            <KinTermSidePicker
+              idPrefix="up-kin-paternal"
+              label="Your father's side"
+              packId={kinTerms.paternalPackId}
+              customTerms={kinTerms.customPaternal}
+              onPackChange={(id) => handleKinPackChange('paternal', id)}
+              onCustomChange={(g, v) => handleKinCustomChange('paternal', g, v)}
+            />
+            <KinTermSidePicker
+              idPrefix="up-kin-maternal"
+              label="Your mother's side"
+              packId={kinTerms.maternalPackId}
+              customTerms={kinTerms.customMaternal}
+              onPackChange={(id) => handleKinPackChange('maternal', id)}
+              onCustomChange={(g, v) => handleKinCustomChange('maternal', g, v)}
+            />
           </div>
-        )}
+        </div>
 
         {/* Notifications */}
         {profile && (
@@ -297,9 +272,42 @@ export default function UserProfile({ user, people = [], onClose, onLogout, onSa
   );
 }
 
-function roleLabel(role) {
-  const labels = { owner: 'Owner', coadmin: 'Co-Admin', editor: 'Editor', contributor: 'Contributor', viewer: 'Viewer' };
-  return labels[role] || role;
+function KinTermSidePicker({ idPrefix, label, packId, customTerms, onPackChange, onCustomChange }) {
+  const isCustom = packId === CUSTOM_PACK_ID;
+  return (
+    <div className="up__kinterms-side">
+      <label className="up__kinterms-side-label" htmlFor={idPrefix}>{label}</label>
+      <select
+        id={idPrefix}
+        className="up__claim-select"
+        value={packId}
+        onChange={(e) => onPackChange(e.target.value)}
+      >
+        {GRANDPARENT_TERM_PACKS.map((p) => (
+          <option key={p.id} value={p.id}>{p.label}</option>
+        ))}
+        <option value={CUSTOM_PACK_ID}>Custom…</option>
+      </select>
+      {isCustom && (
+        <div className="up__kinterms-custom">
+          <input
+            className="fs__input"
+            value={customTerms?.male || ''}
+            onChange={(e) => onCustomChange('male', e.target.value)}
+            placeholder="Grandfather term (e.g. Pop)"
+            maxLength={24}
+          />
+          <input
+            className="fs__input"
+            value={customTerms?.female || ''}
+            onChange={(e) => onCustomChange('female', e.target.value)}
+            placeholder="Grandmother term (e.g. Gigi)"
+            maxLength={24}
+          />
+        </div>
+      )}
+    </div>
+  );
 }
 
 function getInitials(str) {
@@ -309,13 +317,6 @@ function getInitials(str) {
   return (parts[0]?.slice(0, 2) ?? '?').toUpperCase();
 }
 
-function CloseIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
-    </svg>
-  );
-}
 
 function CameraIcon() {
   return (

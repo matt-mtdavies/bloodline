@@ -1,14 +1,34 @@
 import { useEffect, useRef, useState } from 'react';
 import Avatar from './Avatar.jsx';
 import SmartImg from './SmartImg.jsx';
-import { lifespan, formatDate, ageOrAt } from '../lib/dates.js';
-import { relationLabel } from '../data/graph.js';
+import { lifespan, formatDate, ageOrAt, yearOf } from '../lib/dates.js';
+import { relationLabel, sortSiblings, sortChildren } from '../data/graph.js';
+import { useKinTerms } from '../lib/kinTerms.js';
 import { profileCompleteness, lifeEvents, fullName } from '../lib/profile.js';
-import { fileToDataUrl, uploadPhoto } from '../lib/image.js';
+import { fileToDataUrl, uploadPhoto, uploadDocument, suggestDocumentTitle, imageSrcToDataUrl } from '../lib/image.js';
 import { streamBio } from '../lib/ai.js';
+import EnrichSheet from './EnrichSheet.jsx';
+import MilitaryService from './MilitaryService.jsx';
+import DateField from './DateField.jsx';
 import { VISIBILITY_LABELS, VISIBILITY_DESCS } from '../lib/visibility.js';
 import { HEALTH_CATEGORIES, HEALTH_CONDITIONS, HEALTH_STATUSES, colorFor } from '../lib/health.js';
-import { formatPhone } from '../lib/phone.js';
+import { formatPhone, isPhoneValid } from '../lib/phone.js';
+import { militaryDocuments } from '../lib/military.js';
+import { dayLabel } from './ActivityFeed.jsx';
+
+// How many facts (events, medals, profile fields) a document still owns on
+// this person — see store.js's retractDocumentContributions, which this
+// count previews before the user commits to deleting the document. Zero for
+// the common case (a document nobody's accepted anything from yet, or one
+// whose accepted facts were later hand-corrected and lost their field_sources
+// tag), in which case the confirm below stays the plain, unqualified prompt.
+function documentContributionCount(person, docId) {
+  if (!person) return 0;
+  const events = (person.events || []).filter((e) => e.sourceDocId === docId).length;
+  const medals = (person.military_medals || []).filter((m) => m.sourceDocId === docId).length;
+  const fields = Object.values(person.field_sources || {}).filter((id) => id === docId).length;
+  return events + medals + fields;
+}
 
 const HAIR_DOTS = { Black: '#1a1a1a', Brown: '#6b4226', Blonde: '#d4b483', Auburn: '#9b3a1e', Red: '#c0392b', Grey: '#9e9e9e', White: '#ddd' };
 const EYE_DOTS  = { Brown: '#6b4226', Blue: '#4a7fbf', Green: '#3d8c55', Hazel: '#8b6914', Grey: '#8a9099', Amber: '#c8860a' };
@@ -27,6 +47,7 @@ export default function PersonSheet({
   memories = [],
   photos = [],
   documents = [],
+  activity = [],
   lockEscape = false,
   onClose,
   onFocus,
@@ -49,7 +70,11 @@ export default function PersonSheet({
   onRemoveRelationship,
   onUpdateRelationshipQualifier,
   onChangeRelationship,
+  onUpdatePartnerMeta,
   onUpdateStory,
+  onOpenKeepsake,
+  onUpdateMilitaryStory,
+  onUpdateMilitaryContext,
   onAddCondition,
   onRemoveCondition,
   onUpdateCondition,
@@ -57,41 +82,80 @@ export default function PersonSheet({
   onPhoto,
   onLifeJourney,
   onMarkJoined,
+  onReviewDuplicate,
+  onApplyEnrichedPlace,
+  onApplyDocumentFact,
+  onDismissDocumentFact,
+  onApplyDocumentMedal,
+  onDismissDocumentMedal,
+  onRemoveMedal,
+  onApplyDocumentField,
+  onDismissDocumentField,
+  onApplyDocumentPerson,
+  onDismissDocumentPerson,
+  onApplyRelationshipFact,
+  onDismissRelationshipFact,
   canEdit = true,        // editor+ : structural changes (people, relationships, edits)
   canContribute = true,  // contributor+ : add memories & photos
   isAdmin = true,        // owner/co-admin : manage anyone's memory, not just your own
 }) {
   const person = personId ? graph.byId.get(personId) : null;
+  const kinTerms = useKinTerms();
+  const profileRef = useRef(null);
   const fileRef = useRef(null);
   const galleryRef = useRef(null);
   const docRef = useRef(null);
   const mediaRef = useRef(null);
   const storyAbort = useRef(null);
   const [storyState, setStoryState] = useState({ phase: 'idle', text: '', error: null });
+  // Notes for the 'revising' phase — corrections the family gives before a
+  // regenerate, e.g. "he was discharged in 1946, not 1947; there was no
+  // appendectomy." Sent as feedback so the rewrite treats them as authoritative.
+  const [storyNotes, setStoryNotes] = useState('');
+  // Direct manual editing of an already-kept story — separate from the AI
+  // revise flow above (storyState.phase === 'revising'), which sends
+  // feedback back to the model. This is just a plain textarea, for anyone
+  // who'd rather fix a word themselves than describe the fix to AI.
+  const [storyEditing, setStoryEditing] = useState(false);
+  const [storyEditDraft, setStoryEditDraft] = useState('');
   const [relMenuId, setRelMenuId] = useState(null);       // rel-chip whose ⋯ menu is open
   const [confirmUnlinkId, setConfirmUnlinkId] = useState(null); // rel-chip awaiting unlink confirm
   const [editingDocId, setEditingDocId] = useState(null);
   const [editingDocTitle, setEditingDocTitle] = useState('');
   const [confirmDeleteDocId, setConfirmDeleteDocId] = useState(null); // awaiting "remove this document?" confirm
+  const [suggestingDocId, setSuggestingDocId] = useState(null); // doc awaiting an AI title suggestion
+  const [showMilitaryDocs, setShowMilitaryDocs] = useState(false); // reveal docs already shown in Military Service
   const [editingMediaId, setEditingMediaId] = useState(null);
   const [editingMediaTitle, setEditingMediaTitle] = useState('');
   const [editingMemoryId, setEditingMemoryId] = useState(null);
   const [editingMemoryText, setEditingMemoryText] = useState('');
   const [editingMemoryAuthorId, setEditingMemoryAuthorId] = useState('');
+  // Tap-to-arm confirm state for the three removals on this sheet that used
+  // to fire instantly on a single tap (memory / voice-video / health
+  // condition) — one id in flight at a time per kind, cleared on any other
+  // action so a stale "remove?" never lingers armed in the background.
+  const [confirmRemoveMemoryId, setConfirmRemoveMemoryId] = useState(null);
+  const [confirmRemoveMediaId, setConfirmRemoveMediaId] = useState(null);
+  const [confirmRemoveConditionId, setConfirmRemoveConditionId] = useState(null);
   const [healthPickerOpen, setHealthPickerOpen] = useState(false);
   const [healthCat, setHealthCat] = useState(HEALTH_CATEGORIES[0].id);
   const [statusPickId, setStatusPickId] = useState(null);
   const [healthNotesEditing, setHealthNotesEditing] = useState(false);
   const [healthNotesDraft, setHealthNotesDraft] = useState('');
+  const [enrichOpen, setEnrichOpen] = useState(false);
 
   useEffect(() => {
-    if (!person || lockEscape) return; // a stacked overlay owns Escape
+    if (!person || lockEscape || enrichOpen) return; // a stacked overlay owns Escape
     const onKey = (e) => e.key === 'Escape' && onClose();
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [person, onClose, lockEscape]);
+  }, [person, onClose, lockEscape, enrichOpen]);
 
   // Reset generation + health state whenever the viewed person changes.
+  // Switching from a relationship chip swaps `person` in place (this sheet
+  // stays mounted — see App.jsx's <PersonSheet personId={openId}>, no key
+  // prop), so the scroll position was otherwise carried over from whoever
+  // you were previously reading, landing you mid-page on someone new.
   useEffect(() => {
     storyAbort.current?.abort();
     storyAbort.current = null;
@@ -99,6 +163,7 @@ export default function PersonSheet({
     setHealthPickerOpen(false);
     setStatusPickId(null);
     setHealthNotesEditing(false);
+    if (profileRef.current) profileRef.current.scrollTop = 0;
   }, [personId]);
 
   if (!person) return null;
@@ -114,8 +179,12 @@ export default function PersonSheet({
 
   const partners = graph.partners(person.id);
   const parents = graph.parents(person.id);
-  const children = graph.children(person.id);
-  const siblings = graph.siblings(person.id);
+  // Biological/adoptive children first, then step, then oldest-to-youngest,
+  // alphabetical as the final tiebreak.
+  const children = sortChildren(graph.children(person.id), graph.byId);
+  // Full (biological) siblings first, then half, then step — each tier
+  // oldest-to-youngest, alphabetical as the final tiebreak.
+  const siblings = sortSiblings(graph.siblings(person.id), graph.byId);
 
   const groups = [
     { title: partners.length > 1 ? 'Partners' : 'Partner', items: partners, relType: 'partner' },
@@ -150,9 +219,12 @@ export default function PersonSheet({
   const upwardParents = parents.filter(
     (p) => !p.qualifier || p.qualifier === 'biological' || p.qualifier === 'adoptive',
   );
-  const grandparents = extDedup(
-    upwardParents.flatMap((p) => graph.parents(p.id).map((gp) => ({ id: gp.id }))),
-  );
+  // Keep raw grandparent IDs (before dedup) so great-grandparents can be
+  // derived from the full set even if some grandparents were deduped into
+  // another group — same pattern as rawGrandchildIds below, going up
+  // instead of down.
+  const rawGrandparentIds = upwardParents.flatMap((p) => graph.parents(p.id).map((gp) => gp.id));
+  const grandparents = extDedup(rawGrandparentIds.map((id) => ({ id })));
   const auntsUncles = extDedup(
     upwardParents.flatMap((p) => graph.siblings(p.id).map((s) => ({ id: s.id }))),
   );
@@ -169,10 +241,14 @@ export default function PersonSheet({
       graph.siblings(p.id).flatMap((s) => graph.children(s.id).map((c) => ({ id: c.id }))),
     ),
   );
+  const greatGrandparents = extDedup(
+    rawGrandparentIds.flatMap((gpId) => graph.parents(gpId).map((ggp) => ({ id: ggp.id }))),
+  );
   const greatGrandchildren = extDedup(
     rawGrandchildIds.flatMap((gcId) => graph.children(gcId).map((ggc) => ({ id: ggc.id }))),
   );
   const extendedGroups = [
+    { title: 'Great Grandparents', items: greatGrandparents },
     { title: 'Grandparents', items: grandparents },
     { title: 'Aunts & Uncles', items: auntsUncles },
     { title: 'Cousins', items: cousins },
@@ -182,7 +258,7 @@ export default function PersonSheet({
   ].filter((g) => g.items.length);
 
   const relToViewer =
-    viewerId && viewerId !== person.id ? relationLabel(graph, viewerId, person.id) : null;
+    viewerId && viewerId !== person.id ? relationLabel(graph, viewerId, person.id, kinTerms) : null;
   const location = person.residence || person.birth_place;
   const age = ageOrAt(person);
   const events = restricted ? [] : lifeEvents(person);
@@ -199,6 +275,13 @@ export default function PersonSheet({
   const personMedia = allPersonDocs.filter(
     (d) => d.mime?.startsWith('audio/') || d.mime?.startsWith('video/'),
   );
+  // Documents already shown in the Military Service gallery above are
+  // collapsed out of this list by default — same document, no reason to
+  // list it twice — but stay one tap away (showMilitaryDocs) for anyone who
+  // needs to rename, delete, or re-suggest a title, since the gallery above
+  // is read-only.
+  const militaryDocIds = new Set(militaryDocuments(personDocs).map((d) => d.id));
+  const visibleDocs = personDocs.filter((d) => !militaryDocIds.has(d.id) || showMilitaryDocs);
   const completeness = restricted ? null : profileCompleteness(person, graph, personMemories.length);
 
   // Legacy memories (added before authorId existed) fall back to their old
@@ -218,11 +301,13 @@ export default function PersonSheet({
   };
   const canManageMemory = (mem) => isAdmin || (!!mem.authorId && mem.authorId === viewerId);
 
-  const generateStory = async () => {
+  const generateStory = async (feedback) => {
     storyAbort.current?.abort();
     const ac = new AbortController();
     storyAbort.current = ac;
+    const previousStory = storyState.text || person.story || '';
     setStoryState({ phase: 'generating', text: '', error: null });
+    setStoryNotes('');
 
     const relSummary = [];
     for (const x of partners) {
@@ -238,9 +323,19 @@ export default function PersonSheet({
       if (p) relSummary.push({ label: x.qualifier === 'biological' ? 'Child' : `${x.qualifier} child`, name: p.display_name });
     }
 
+    const documentSummaries = allPersonDocs
+      .filter((d) => d.summary)
+      .map((d) => ({ title: d.title, summary: d.summary }));
+
     await streamBio(
       person,
-      { memories: personMemories, relSummary },
+      {
+        memories: personMemories,
+        relSummary,
+        documentSummaries,
+        feedback: feedback?.trim() || undefined,
+        previousStory: feedback?.trim() ? previousStory : undefined,
+      },
       {
         signal: ac.signal,
         onChunk: (text) => setStoryState((s) => ({ ...s, text: s.text + text })),
@@ -284,19 +379,59 @@ export default function PersonSheet({
     for (const file of files) {
       try {
         if (file.size > 20 * 1024 * 1024) continue;
-        const title = file.name.replace(/\.[^.]+$/, '');
+        let title = file.name.replace(/\.[^.]+$/, '');
         const src = await uploadDoc(file);
         let thumb = null;
+        let preview = null; // small image handed to the title suggester below
         if (file.type === 'application/pdf') {
           // Lazy-loaded — pdf.js is a large dependency only worth paying for
           // when someone actually uploads a PDF (see PdfViewer.jsx).
           const { generatePdfThumbnail } = await import('../lib/pdf.js');
           thumb = await generatePdfThumbnail(src);
+          preview = thumb;
+        } else if (file.type.startsWith('image/')) {
+          preview = await fileToDataUrl(file, 1000).catch(() => null);
         }
+        // Read any heading/letterhead/document type off the page itself —
+        // "Certificate of Discharge" beats whatever the camera named the
+        // file. Best-effort: falls straight back to the filename above if
+        // AI isn't configured, the request fails, or there's nothing to read.
+        if (preview) {
+          const suggested = await suggestDocumentTitle(preview);
+          if (suggested) title = suggested;
+        }
+        // Upload the PDF preview to R2 immediately, the same as `src` above,
+        // rather than storing it inline forever — thumb was the one field
+        // that never got this treatment (docs/TREE-STORAGE.md §3, Phase 0),
+        // and it's permanent per-document, so fixing it at the source means
+        // no NEW document ever adds to the problem, even before existing
+        // ones are migrated by migrateDocThumbsToR2 on next login.
+        if (thumb) thumb = await uploadDocument(thumb, { title: `${title}-thumb`, mime: 'image/jpeg' });
         onAddDocument?.(person.id, { title, mime: file.type, src, thumb });
       } catch {
         /* skip unreadable file */
       }
+    }
+  };
+
+  // Re-run the same title suggestion against a document that's already been
+  // uploaded — fixes the legacy "IMG_0166"/"image" titles that predate this
+  // feature, without needing to re-upload anything. Reads the doc's own
+  // image (downscaled fresh from its src) or, for a PDF, its existing
+  // first-page thumbnail — same best-effort contract as onDocPick: any
+  // failure just leaves the current title untouched.
+  const suggestTitleForExistingDoc = async (doc) => {
+    if (suggestingDocId) return;
+    setSuggestingDocId(doc.id);
+    try {
+      const preview = doc.mime?.startsWith('image/')
+        ? await imageSrcToDataUrl(doc.src, 1000).catch(() => null)
+        : doc.thumb || null;
+      if (!preview) return;
+      const suggested = await suggestDocumentTitle(preview);
+      if (suggested) onUpdateDocument?.(doc.id, { title: suggested });
+    } finally {
+      setSuggestingDocId(null);
     }
   };
 
@@ -335,6 +470,27 @@ export default function PersonSheet({
   metaBits.push(lifespan(person));
   if (age) metaBits.push(person.is_deceased ? age : `age ${age}`);
 
+  // Who added this record, and when — real user report: "if there has been
+  // a mistake made, it would be good to know who added them and why."
+  // person.created_by is unreliable dead data (always the literal 'me'), but
+  // the activity log's person_added event already carries a real author —
+  // just not surfaced here until now. Re-resolves the author's CURRENT
+  // display name from their email (same convention as ActivityFeed's own
+  // nameByEmail) rather than trusting the name string frozen at add-time,
+  // so a later name correction is reflected here too.
+  const creatorEvent = activity.find((e) => e.type === 'person_added' && e.personId === person.id) || null;
+  let creatorName = null;
+  if (creatorEvent) {
+    const email = (creatorEvent.authorEmail || '').toLowerCase();
+    for (const p of graph.people) {
+      if ((p.email && p.email.toLowerCase() === email) || (p.invited_email && p.invited_email.toLowerCase() === email)) {
+        creatorName = p.display_name;
+        break;
+      }
+    }
+    if (!creatorName) creatorName = creatorEvent.authorName;
+  }
+
   // "2026-06-22" → "Jun 2026"
   function fmtDocDate(iso) {
     try {
@@ -347,6 +503,7 @@ export default function PersonSheet({
   return (
     <div className="profile-scrim" onClick={onClose}>
       <article
+        ref={profileRef}
         className="profile"
         role="dialog"
         aria-modal="true"
@@ -402,6 +559,9 @@ export default function PersonSheet({
               <PinIcon />
               {location}
             </p>
+          )}
+          {creatorEvent && creatorName && (
+            <p className="profile__added-by">Added by {creatorName} · {dayLabel(creatorEvent.created_at)}</p>
           )}
 
           <div className="profile__badges">
@@ -461,6 +621,20 @@ export default function PersonSheet({
             <button className="action action--invite" onClick={() => onInvite?.(person.id)} aria-label={`Invite ${person.display_name.split(' ')[0]}`}>
               <EnvelopeIcon />
               Invite
+            </button>
+          )}
+          {onOpenKeepsake && (person.visibility || 'full') !== 'private' && (
+            <button className="ks-entry" onClick={() => onOpenKeepsake(person.id)}>
+              {/* A miniature of the book's own cover — portrait (or the
+                  bare-cover wash) with the name set small in serif. */}
+              <span className="ks-entry__cover" aria-hidden="true">
+                {person.photo && <img src={person.photo} alt="" />}
+                <span className="ks-entry__cover-name">{person.display_name.split(/\s+/)[0]}</span>
+              </span>
+              <span className="ks-entry__text">
+                <strong>Keepsake</strong>
+                <span>The illustrated story of their life — read it, print it, keep it</span>
+              </span>
             </button>
           )}
           {person.birth_date && !restricted && (
@@ -541,6 +715,12 @@ export default function PersonSheet({
               </div>
             )}
 
+            {canEdit && (
+              <button className="enrich-trigger" onClick={() => setEnrichOpen(true)}>
+                <SparkleIcon /> Enrich this profile
+              </button>
+            )}
+
             {/* Contact — living people only */}
             {!person.is_deceased && (
               <section className="profile-section">
@@ -560,7 +740,14 @@ export default function PersonSheet({
                     {person.phone && (
                       <a href={`tel:${person.phone}`} className="contact-row">
                         <span className="contact-row__icon"><PhoneIcon /></span>
-                        <span className="contact-row__value">{formatPhone(person.phone)}</span>
+                        <span className="contact-row__valuewrap">
+                          <span className="contact-row__value">{formatPhone(person.phone)}</span>
+                          {!isPhoneValid(person.phone) && (
+                            <span className="contact-row__flag" title="Missing a recognised country code — open Edit to fix">
+                              Needs a country code
+                            </span>
+                          )}
+                        </span>
                         <span className="contact-row__action">Call</span>
                       </a>
                     )}
@@ -599,7 +786,14 @@ export default function PersonSheet({
                       <span className="timeline__year">{e.year}</span>
                       <span className="timeline__dot" aria-hidden="true" />
                       <span className="timeline__body">
-                        <span className="timeline__title">{e.title}</span>
+                        <span className="timeline__title">
+                          {e.tag === 'military' && (
+                            <span className="timeline__ribbon" title="Military service" aria-label="Military service">
+                              <RibbonIcon />
+                            </span>
+                          )}
+                          {e.title}
+                        </span>
                         {e.detail && <span className="timeline__detail">{e.detail}</span>}
                       </span>
                     </li>
@@ -700,7 +894,7 @@ export default function PersonSheet({
                               </button>
                               <button
                                 className="memory__del"
-                                onClick={() => onRemoveMemory?.(mem.id)}
+                                onClick={() => setConfirmRemoveMemoryId(mem.id)}
                                 aria-label="Remove memory"
                               >
                                 Remove
@@ -718,6 +912,22 @@ export default function PersonSheet({
                           </button>
                         </span>
                       </div>
+                      {confirmRemoveMemoryId === mem.id && (
+                        <div className="inline-confirm">
+                          <span>Remove this memory? This can&apos;t be undone.</span>
+                          <div className="inline-confirm-btns">
+                            <button
+                              className="inline-confirm-remove"
+                              onClick={() => { onRemoveMemory?.(mem.id); setConfirmRemoveMemoryId(null); }}
+                            >
+                              Remove
+                            </button>
+                            <button className="inline-confirm-cancel" onClick={() => setConfirmRemoveMemoryId(null)}>
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </li>
                   ))}
                 </ul>
@@ -775,6 +985,17 @@ export default function PersonSheet({
               )}
             </section>
 
+            <MilitaryService
+              person={person}
+              personDocs={personDocs}
+              onOpenDocument={openDoc}
+              onUpdateMilitaryStory={onUpdateMilitaryStory}
+              onUpdateMilitaryContext={onUpdateMilitaryContext}
+              onDismissDocumentFact={onDismissDocumentFact}
+              onRemoveMedal={onRemoveMedal}
+              canEdit={canEdit}
+            />
+
             {/* Documents */}
             <section className="profile-section">
               <div className="profile-section__head">
@@ -797,7 +1018,7 @@ export default function PersonSheet({
               />
               {personDocs.length > 0 ? (
                 <ul className="doc-list">
-                  {personDocs.map((doc) => (
+                  {visibleDocs.map((doc) => (
                     <li key={doc.id}>
                       <div className="doc-card">
                         <button
@@ -839,6 +1060,7 @@ export default function PersonSheet({
                               title="Tap to rename"
                             >
                               {doc.title}
+                              <span className="doc-card__title-pencil" aria-hidden="true"><PencilIcon /></span>
                             </button>
                           )}
                           <span className="doc-card__meta">
@@ -846,7 +1068,14 @@ export default function PersonSheet({
                           </span>
                           {confirmDeleteDocId === doc.id ? (
                             <div className="doc-card__confirm">
-                              <span>Remove this document?</span>
+                              <span>
+                                {(() => {
+                                  const n = documentContributionCount(person, doc.id);
+                                  return n > 0
+                                    ? `Remove this document — and the ${n} ${n === 1 ? 'fact it added' : 'facts it added'} to this profile?`
+                                    : 'Remove this document?';
+                                })()}
+                              </span>
                               <div className="doc-card__confirm-btns">
                                 <button
                                   className="doc-card__confirm-remove"
@@ -867,6 +1096,22 @@ export default function PersonSheet({
                               <button className="doc-card__open" onClick={() => openDoc(doc)}>
                                 Open
                               </button>
+                              {(doc.mime?.startsWith('image/') || doc.thumb) && (
+                                <button
+                                  className="doc-card__suggest"
+                                  onClick={() => suggestTitleForExistingDoc(doc)}
+                                  disabled={suggestingDocId === doc.id}
+                                  aria-label={`Suggest a title for ${doc.title}`}
+                                  title="Reads the document and suggests a title from it"
+                                >
+                                  {suggestingDocId === doc.id ? (
+                                    <span className="mw__spinner mw__spinner--sm" aria-hidden="true" />
+                                  ) : (
+                                    <SparkleIcon />
+                                  )}
+                                  {suggestingDocId === doc.id ? 'Suggesting…' : 'Suggest title'}
+                                </button>
+                              )}
                               <button
                                 className="doc-card__del"
                                 onClick={() => setConfirmDeleteDocId(doc.id)}
@@ -880,6 +1125,16 @@ export default function PersonSheet({
                       </div>
                     </li>
                   ))}
+                  {militaryDocIds.size > 0 && (
+                    <li>
+                      <button className="doc-list__reveal" onClick={() => setShowMilitaryDocs((v) => !v)}>
+                        <RibbonIcon />
+                        {showMilitaryDocs
+                          ? 'Hide documents shown in Military Service'
+                          : `+ ${militaryDocIds.size} shown in Military Service`}
+                      </button>
+                    </li>
+                  )}
                 </ul>
               ) : canEdit ? (
                 <button className="empty-add" onClick={() => docRef.current?.click()}>
@@ -961,13 +1216,30 @@ export default function PersonSheet({
                           preload="metadata"
                         />
                       )}
-                      <button
-                        className="media-item__del"
-                        onClick={() => onRemoveDocument?.(item.id)}
-                        aria-label={`Remove ${item.title}`}
-                      >
-                        <CloseIcon />
-                      </button>
+                      {confirmRemoveMediaId === item.id ? (
+                        <div className="inline-confirm">
+                          <span>Remove &ldquo;{item.title}&rdquo;? This can&apos;t be undone.</span>
+                          <div className="inline-confirm-btns">
+                            <button
+                              className="inline-confirm-remove"
+                              onClick={() => { onRemoveDocument?.(item.id); setConfirmRemoveMediaId(null); }}
+                            >
+                              Remove
+                            </button>
+                            <button className="inline-confirm-cancel" onClick={() => setConfirmRemoveMediaId(null)}>
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <button
+                          className="media-item__del"
+                          onClick={() => setConfirmRemoveMediaId(item.id)}
+                          aria-label={`Remove ${item.title}`}
+                        >
+                          <CloseIcon />
+                        </button>
+                      )}
                     </li>
                   ))}
                 </ul>
@@ -1032,13 +1304,30 @@ export default function PersonSheet({
                           </div>
                         )}
                         {canEdit && (
-                          <button
-                            className="health-chip__remove"
-                            onClick={() => { setStatusPickId(null); onRemoveCondition?.(person.id, c.id); }}
-                            aria-label={`Remove ${c.name}`}
-                          >
-                            <CloseIcon />
-                          </button>
+                          confirmRemoveConditionId === c.id ? (
+                            <div className="inline-confirm">
+                              <span>Remove {c.name}?</span>
+                              <div className="inline-confirm-btns">
+                                <button
+                                  className="inline-confirm-remove"
+                                  onClick={() => { onRemoveCondition?.(person.id, c.id); setConfirmRemoveConditionId(null); }}
+                                >
+                                  Remove
+                                </button>
+                                <button className="inline-confirm-cancel" onClick={() => setConfirmRemoveConditionId(null)}>
+                                  Cancel
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <button
+                              className="health-chip__remove"
+                              onClick={() => { setStatusPickId(null); setConfirmRemoveConditionId(c.id); }}
+                              aria-label={`Remove ${c.name}`}
+                            >
+                              <CloseIcon />
+                            </button>
+                          )
                         )}
                       </li>
                     );
@@ -1077,6 +1366,20 @@ export default function PersonSheet({
                       );
                     })}
                   </div>
+                  {/* Free-text notes lives inside this same expanded editor
+                      (not a second top-level "Add" pill) — one section, one
+                      entry point, matching every other profile section. */}
+                  {!person.health_notes && !healthNotesEditing && canEdit && (
+                    <div className="condition-picker__notes">
+                      <button
+                        className="empty-add"
+                        onClick={() => { setHealthNotesDraft(''); setHealthNotesEditing(true); }}
+                      >
+                        <PlusIcon />
+                        Add free-text notes
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
               {canEdit && (person.conditions?.length || 0) === 0 && !healthPickerOpen && (
@@ -1122,15 +1425,7 @@ export default function PersonSheet({
                 >
                   {person.health_notes}
                 </button>
-              ) : canEdit && (
-                <button
-                  className="empty-add"
-                  onClick={() => { setHealthNotesDraft(''); setHealthNotesEditing(true); }}
-                >
-                  <PlusIcon />
-                  Add free-text notes
-                </button>
-              )}
+              ) : null}
 
               <p className="health-privacy-note">
                 <LockIcon />
@@ -1143,13 +1438,30 @@ export default function PersonSheet({
             <section className="profile-section">
               <div className="profile-section__head">
                 <h3 className="profile-section__title">Life Story</h3>
-                {canEdit && storyState.phase === 'idle' && (person.story || storyState.error) && (
-                  <button className="story-regen" onClick={generateStory}>
-                    {storyState.error ? 'Try again' : 'Regenerate'}
-                  </button>
-                )}
-                {storyState.phase === 'generating' && (
-                  <span style={{ fontSize: 12, color: 'var(--ink-faint)' }}>Writing…</span>
+                {!storyEditing && (
+                  <div className="story-head-actions">
+                    {canEdit && storyState.phase === 'idle' && person.story && !storyState.error && (
+                      <>
+                        <button
+                          className="story-regen"
+                          onClick={() => { setStoryEditDraft(person.story); setStoryEditing(true); }}
+                        >
+                          Edit
+                        </button>
+                        <button className="story-regen" onClick={() => setStoryState((s) => ({ ...s, phase: 'revising' }))}>
+                          Regenerate
+                        </button>
+                      </>
+                    )}
+                    {canEdit && storyState.phase === 'idle' && storyState.error && (
+                      <button className="story-regen" onClick={() => generateStory()}>
+                        Try again
+                      </button>
+                    )}
+                    {storyState.phase === 'generating' && (
+                      <span style={{ fontSize: 12, color: 'var(--ink-faint)' }}>Writing…</span>
+                    )}
+                  </div>
                 )}
               </div>
 
@@ -1158,19 +1470,49 @@ export default function PersonSheet({
               )}
 
               {canEdit && storyState.phase === 'idle' && !person.story && !storyState.error && (
-                <button className="ai-generate" onClick={generateStory}>
+                <button className="ai-generate" onClick={() => generateStory()}>
                   <SparkleIcon />
                   Generate life story with AI
                 </button>
               )}
 
-              {storyState.phase === 'idle' && person.story && (
-                <p className="story">{person.story}</p>
+              {/* Direct manual editing — a plain textarea, no AI round-trip.
+                  Saving writes straight through onUpdateStory, same as
+                  "Keep it" below does for a freshly-generated draft. */}
+              {storyEditing ? (
+                <div className="story-edit">
+                  <textarea
+                    className="field__input field__input--area story-edit__textarea"
+                    rows={12}
+                    autoFocus
+                    value={storyEditDraft}
+                    onChange={(e) => setStoryEditDraft(e.target.value)}
+                  />
+                  <div className="story-actions">
+                    <button
+                      className="btn btn--primary"
+                      onClick={() => {
+                        onUpdateStory?.(person.id, storyEditDraft.trim());
+                        setStoryEditing(false);
+                      }}
+                      disabled={!storyEditDraft.trim()}
+                    >
+                      Save
+                    </button>
+                    <button className="btn" onClick={() => setStoryEditing(false)}>
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                storyState.phase === 'idle' && person.story && (
+                  <p className="story">{person.story}</p>
+                )
               )}
 
-              {(storyState.phase === 'generating' || storyState.phase === 'done') && (
+              {(storyState.phase === 'generating' || storyState.phase === 'done' || storyState.phase === 'revising') && (
                 <p className={`story${storyState.phase === 'generating' ? ' story--generating' : ''}`}>
-                  {storyState.text}
+                  {storyState.text || person.story}
                 </p>
               )}
 
@@ -1188,6 +1530,12 @@ export default function PersonSheet({
                     </button>
                     <button
                       className="btn"
+                      onClick={() => setStoryState((s) => ({ ...s, phase: 'revising' }))}
+                    >
+                      Fix it
+                    </button>
+                    <button
+                      className="btn"
                       onClick={() => setStoryState({ phase: 'idle', text: '', error: null })}
                     >
                       Dismiss
@@ -1195,6 +1543,36 @@ export default function PersonSheet({
                   </div>
                   <p className="story-note">Generated by AI · review before keeping</p>
                 </>
+              )}
+
+              {/* Correct it and regenerate — the family's note is sent as
+                  authoritative feedback (see functions/api/biography.js),
+                  so a flagged mistake doesn't just re-roll the dice. */}
+              {storyState.phase === 'revising' && (
+                <div className="story-revise">
+                  <textarea
+                    className="field__input field__input--area"
+                    rows={3}
+                    autoFocus
+                    value={storyNotes}
+                    onChange={(e) => setStoryNotes(e.target.value)}
+                    placeholder="What's not right? e.g. He was discharged in 1946, not 1947 — and there was no appendectomy."
+                  />
+                  <div className="story-actions">
+                    <button className="btn btn--primary" onClick={() => generateStory(storyNotes)}>
+                      Regenerate
+                    </button>
+                    <button
+                      className="btn"
+                      onClick={() => {
+                        setStoryNotes('');
+                        setStoryState((s) => ({ ...s, phase: s.text ? 'done' : 'idle' }));
+                      }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
               )}
             </section>
             )}
@@ -1224,8 +1602,17 @@ export default function PersonSheet({
                             : null;
                         // What this relationship can be changed *to* (from this
                         // person's perspective). kind is passed to onChangeRelationship.
+                        // Partner branch depends on the CURRENT status — a former
+                        // partner needs "Partner" offered to undo the mistake (real
+                        // report: marked someone an ex-partner by accident and had
+                        // no way back short of deleting and re-adding the whole
+                        // relationship); a current partner needs "Ex-partner" as
+                        // before. setRelationshipKind already writes both directions
+                        // symmetrically — this was only ever a missing menu option.
                         const changeOptions = g.relType === 'partner'
-                          ? [{ kind: 'ex_partner', label: 'Ex-partner' }, { kind: 'child_of', label: 'Parent' }, { kind: 'parent_of', label: 'Child' }]
+                          ? item.status === 'former'
+                            ? [{ kind: 'partner', label: 'Partner' }, { kind: 'child_of', label: 'Parent' }, { kind: 'parent_of', label: 'Child' }]
+                            : [{ kind: 'ex_partner', label: 'Ex-partner' }, { kind: 'child_of', label: 'Parent' }, { kind: 'parent_of', label: 'Child' }]
                           : g.relType === 'parent_from_item'  // item is this person's parent
                             ? [{ kind: 'partner', label: 'Partner' }, { kind: 'parent_of', label: 'Child' }]
                             : g.relType === 'parent_from_self' // item is this person's child
@@ -1234,6 +1621,15 @@ export default function PersonSheet({
                         const isMenuOpen = relMenuId === item.id;
                         const isConfirming = confirmUnlinkId === item.id;
                         const closeMenu = () => { setRelMenuId(null); setConfirmUnlinkId(null); };
+                        // Same fields the "· Married {year}" / "· Separated {year}"
+                        // sub-label above checks — when NEITHER is set, the only
+                        // way in is the plain "⋮" icon, which gives no hint that
+                        // marriage/separation info lives behind it at all (real
+                        // feedback: "not all that clear yet to add marriage or
+                        // separation"). hasMarriageInfo gates a louder, explicit
+                        // entry point instead of only a passive sub-label.
+                        const hasMarriageInfo = (item.is_married && item.marriage_date)
+                          || (item.status === 'former' && item.separation_date);
                         return (
                           <li key={item.id} className={'rel-chip' + (isMenuOpen ? ' rel-chip--editing' : '')}>
                             <button className="rel-chip__nav" onClick={() => { closeMenu(); onOpenPerson(item.id); }}>
@@ -1241,7 +1637,18 @@ export default function PersonSheet({
                               <span className="rel-chip__text">
                                 <span className="rel-chip__name">{rel.display_name}</span>
                                 <span className="rel-chip__kind">
-                                  {relationLabel(graph, person.id, item.id)}
+                                  {relationLabel(graph, person.id, item.id, kinTerms)}
+                                  {/* Visible at a glance rather than only inside the "⋮"
+                                      manage menu — same is_married/marriage_date/
+                                      separation_date the menu edits (real feedback:
+                                      "there is a married component... but it's not
+                                      obvious"). */}
+                                  {g.relType === 'partner' && item.is_married && item.marriage_date && (
+                                    <span className="rel-chip__marriage"> · Married {yearOf(item.marriage_date)}</span>
+                                  )}
+                                  {g.relType === 'partner' && item.status === 'former' && item.separation_date && (
+                                    <span className="rel-chip__marriage"> · Separated {yearOf(item.separation_date)}</span>
+                                  )}
                                 </span>
                               </span>
                               <RelChevronIcon />
@@ -1254,6 +1661,14 @@ export default function PersonSheet({
                                 aria-expanded={isMenuOpen}
                               >
                                 <DotsIcon />
+                              </button>
+                            )}
+                            {canEdit && g.relType === 'partner' && !hasMarriageInfo && !isMenuOpen && (
+                              <button
+                                className="rel-chip__add-marriage"
+                                onClick={() => { setConfirmUnlinkId(null); setRelMenuId(item.id); }}
+                              >
+                                + Add marriage details
                               </button>
                             )}
                             {canEdit && isMenuOpen && (
@@ -1277,6 +1692,13 @@ export default function PersonSheet({
                                       ))}
                                     </div>
                                   </div>
+                                )}
+                                {g.relType === 'partner' && (
+                                  <MarriageDetailsEditor
+                                    key={item.id}
+                                    item={item}
+                                    onSave={(meta) => onUpdatePartnerMeta?.(person.id, item.id, meta)}
+                                  />
                                 )}
                                 {changeOptions.length > 0 && (
                                   <div className="rel-menu__group">
@@ -1333,7 +1755,7 @@ export default function PersonSheet({
                               <span className="rel-chip__text">
                                 <span className="rel-chip__name">{rel.display_name}</span>
                                 <span className="rel-chip__kind">
-                                  {relationLabel(graph, person.id, item.id)}
+                                  {relationLabel(graph, person.id, item.id, kinTerms)}
                                 </span>
                               </span>
                               <RelChevronIcon />
@@ -1350,6 +1772,31 @@ export default function PersonSheet({
         )}
 
       </article>
+
+      {enrichOpen && (
+        <EnrichSheet
+          person={person}
+          graph={graph}
+          memoryCount={personMemories.length}
+          documents={documents}
+          onClose={() => setEnrichOpen(false)}
+          onEdit={() => { setEnrichOpen(false); onEdit?.(person.id); }}
+          onAddRelative={() => { setEnrichOpen(false); onAddRelative?.(person.id); }}
+          onReviewDuplicate={() => { setEnrichOpen(false); onReviewDuplicate?.(person.id); }}
+          onGenerateStory={() => { setEnrichOpen(false); generateStory(); }}
+          onApplyPlace={(key, value) => onApplyEnrichedPlace?.(person.id, key, value)}
+          onApplyDocumentFact={onApplyDocumentFact}
+          onDismissDocumentFact={onDismissDocumentFact}
+          onApplyDocumentMedal={onApplyDocumentMedal}
+          onDismissDocumentMedal={onDismissDocumentMedal}
+          onApplyDocumentField={onApplyDocumentField}
+          onDismissDocumentField={onDismissDocumentField}
+          onApplyDocumentPerson={onApplyDocumentPerson}
+          onDismissDocumentPerson={onDismissDocumentPerson}
+          onApplyRelationshipFact={(fact) => onApplyRelationshipFact?.(person.id, fact)}
+          onDismissRelationshipFact={(key) => onDismissRelationshipFact?.(person.id, key)}
+        />
+      )}
     </div>
   );
 }
@@ -1377,6 +1824,14 @@ function PlusIcon() {
   return (
     <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+function RibbonIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="8" r="5.5" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M8.5 13l-2 8 5.5-3 5.5 3-2-8" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
     </svg>
   );
 }
@@ -1473,6 +1928,97 @@ function DotsIcon() {
       <circle cx="12" cy="12" r="1.8" />
       <circle cx="19" cy="12" r="1.8" />
     </svg>
+  );
+}
+
+// Marriage date/place on the partner edge — the pedigree chart's marriage
+// strip renders these. Draft state is local; Save writes both fields at
+// once (see store.updatePartnerMeta). `item` is the graph's partner entry,
+// which carries the current values.
+function MarriageDetailsEditor({ item, onSave }) {
+  const isFormer = item.status === 'former';
+  const [married, setMarried] = useState(!!item.is_married || !!item.marriage_date || !!item.marriage_place);
+  const [date, setDate] = useState(item.marriage_date || '');
+  const [place, setPlace] = useState(item.marriage_place || '');
+  // Independent of `married` — a relationship can have ended whether or not
+  // it was ever a marriage — and only asked at all for an ex-partner.
+  const [separation, setSeparation] = useState(item.separation_date || '');
+  const [saved, setSaved] = useState(false);
+  const dirty = married !== (!!item.is_married || !!item.marriage_date || !!item.marriage_place)
+    || date !== (item.marriage_date || '') || place !== (item.marriage_place || '')
+    || (isFormer && separation !== (item.separation_date || ''));
+  return (
+    <div className="rel-menu__group">
+      <span className="rel-menu__label">Marriage</span>
+      <div className="marriage-edit">
+        <label className="marriage-edit__check">
+          <input
+            type="checkbox"
+            checked={married}
+            onChange={(e) => { setMarried(e.target.checked); setSaved(false); }}
+          />
+          {isFormer ? 'They were married' : 'They married'}
+        </label>
+        {married && (
+          <>
+            {/* Same convention as the profile's Date of Birth field: Day/Month/
+                Year entry rather than a native picker, with a legacy year-only
+                value (seed/GEDCOM data) preserved and surfaced as a hint until
+                a full date replaces it. */}
+            <div className="input-wrap">
+              <DateField
+                value={date}
+                max={new Date().toISOString().slice(0, 10)}
+                onChange={(value) => { setDate(value); setSaved(false); }}
+              />
+              {date && (
+                <button type="button" className="input-clear" onClick={() => { setDate(''); setSaved(false); }} aria-label="Clear date" tabIndex={-1}>×</button>
+              )}
+            </div>
+            {date && !date.includes('-') && (
+              <span className="marriage-edit__hint">Year {date} — pick a full date to refine</span>
+            )}
+            <input
+              className="marriage-edit__input"
+              type="text"
+              placeholder="Place (optional)"
+              value={place}
+              onChange={(e) => { setPlace(e.target.value); setSaved(false); }}
+            />
+          </>
+        )}
+        {isFormer && (
+          <>
+            <span className="marriage-edit__sublabel">Separated</span>
+            <div className="input-wrap">
+              <DateField
+                value={separation}
+                max={new Date().toISOString().slice(0, 10)}
+                onChange={(value) => { setSeparation(value); setSaved(false); }}
+              />
+              {separation && (
+                <button type="button" className="input-clear" onClick={() => { setSeparation(''); setSaved(false); }} aria-label="Clear separation date" tabIndex={-1}>×</button>
+              )}
+            </div>
+          </>
+        )}
+        <button
+          className="marriage-edit__save"
+          disabled={!dirty}
+          onClick={() => {
+            onSave({
+              ...(married
+                ? { is_married: true, marriage_date: date.trim() || null, marriage_place: place.trim() || null }
+                : { is_married: false, marriage_date: null, marriage_place: null }),
+              separation_date: isFormer ? (separation.trim() || null) : null,
+            });
+            setSaved(true);
+          }}
+        >
+          {saved && !dirty ? 'Saved' : 'Save'}
+        </button>
+      </div>
+    </div>
   );
 }
 function UnlinkIcon() {

@@ -144,19 +144,23 @@ export async function getCurrentPersonId(token) {
 /**
  * Fetch ancestry (pedigree) for `personId` up to `generations` levels.
  * Returns { people, relationships } in bloodline store format.
+ *
+ * `idMap` (FS person id → internal id) is optional and shared with a
+ * sibling fetch (see fetchTree) so the same real person always resolves to
+ * the same internal id, however many times they're returned by the API.
  */
-export async function fetchAncestry(token, personId, generations = 4) {
+export async function fetchAncestry(token, personId, generations = 4, idMap = {}) {
   const data = await fsGet(token, `/platform/tree/persons/${personId}/ancestry`, `generations=${generations}`);
-  return ancestryToStore(data);
+  return ancestryToStore(data, idMap);
 }
 
 /**
  * Fetch spouses + shared children of `personId`.
  * Returns { people, relationships }.
  */
-export async function fetchSpousesAndChildren(token, personId) {
+export async function fetchSpousesAndChildren(token, personId, idMap = {}) {
   const data = await fsGet(token, `/platform/tree/persons/${personId}/spouses`);
-  return spousesToStore(data, personId);
+  return spousesToStore(data, personId, idMap);
 }
 
 /**
@@ -167,12 +171,23 @@ export async function fetchTree(token, generations = 4) {
   const personId = await getCurrentPersonId(token);
   if (!personId) throw new Error('Could not find your person record in FamilySearch.');
 
+  // Shared FS-id → internal-id map across BOTH fetches. Without this, the
+  // subject person (returned by both the ancestry and spouses calls, since
+  // both start from the same personId) got assigned two independent
+  // internal ids — every import silently created a duplicate of the logged-
+  // in user, with parents attached to one copy and spouse/children to the
+  // other. Safe to share a plain object across the concurrent fetches below:
+  // neither ancestryToStore nor spousesToStore awaits anything internally,
+  // so their synchronous id-building never actually interleaves.
+  const idMap = {};
   const [ancestry, spouses] = await Promise.all([
-    fetchAncestry(token, personId, generations),
-    fetchSpousesAndChildren(token, personId).catch(() => ({ people: [], relationships: [] })),
+    fetchAncestry(token, personId, generations, idMap),
+    fetchSpousesAndChildren(token, personId, idMap).catch(() => ({ people: [], relationships: [] })),
   ]);
 
-  // Merge and deduplicate (ancestry and spouses share the subject person).
+  // Merge and deduplicate (ancestry and spouses share the subject person —
+  // now genuinely deduplicated via the shared idMap above; this is a
+  // defensive second pass, not the actual fix).
   const seenIds = new Set();
   const people = [];
   for (const p of [...ancestry.people, ...spouses.people]) {
@@ -255,28 +270,47 @@ function convertPerson(p, internalId) {
   };
 }
 
+// Resolve (and stably cache) the internal id for a FamilySearch person id.
+// Sharing one `idMap` across every call site means a person who shows up
+// more than once — the same subject across two fetches, or an ancestor who
+// occupies more than one Ahnentafel position because of pedigree collapse
+// (e.g. cousins who married) — always gets exactly ONE internal id, never a
+// fresh uid() per occurrence.
+function internalIdFor(idMap, fsId) {
+  if (!idMap[fsId]) idMap[fsId] = uid();
+  return idMap[fsId];
+}
+
 /**
  * Convert an ancestry (pedigree) GEDCOM-X response to store format.
  * Uses Ahnentafel numbering to reconstruct parent-child and couple edges:
  *   - Person N's parents are at positions 2N (father) and 2N+1 (mother)
  *   - Person N's child is at position floor(N/2)
  */
-function ancestryToStore(data) {
+function ancestryToStore(data, idMap = {}) {
   const persons = data.persons || [];
 
-  // Build Ahnentafel map and assign internal IDs
+  // Build Ahnentafel map and assign internal IDs. `people` is built in the
+  // same pass and deduplicated by FS id — under pedigree collapse the same
+  // FS person can appear more than once in `persons` (at different
+  // ascendancy numbers), and previously that produced duplicate-id entries
+  // in the final people array plus dangling relationships (a stale, earlier
+  // ahnMap entry pointing at an internal id a later loop iteration had
+  // already overwritten in idMap).
   const ahnMap = {}; // ascendancyNumber -> FS person object
-  const idMap = {};  // FS person id -> internal id
+  const seenFsIds = new Set();
+  const people = [];
 
   for (const p of persons) {
-    const id = uid();
-    idMap[p.id] = id;
+    const internalId = internalIdFor(idMap, p.id);
     if (p.ascendancyNumber != null) {
-      ahnMap[p.ascendancyNumber] = { ...p, _internalId: id };
+      ahnMap[p.ascendancyNumber] = { ...p, _internalId: internalId };
+    }
+    if (!seenFsIds.has(p.id)) {
+      seenFsIds.add(p.id);
+      people.push(convertPerson(p, internalId));
     }
   }
-
-  const people = persons.map((p) => convertPerson(p, idMap[p.id]));
 
   const relationships = [];
 
@@ -323,12 +357,14 @@ function ancestryToStore(data) {
  * Convert a spouses-and-children GEDCOM-X response to store format.
  * Includes the subject's partners and their shared children.
  */
-function spousesToStore(data, subjectFsId) {
+function spousesToStore(data, subjectFsId, idMap = {}) {
   const persons = data.persons || [];
-  const idMap = {};
-  for (const p of persons) idMap[p.id] = uid();
-
-  const people = persons.map((p) => convertPerson(p, idMap[p.id]));
+  const seenFsIds = new Set();
+  const people = [];
+  for (const p of persons) {
+    const internalId = internalIdFor(idMap, p.id);
+    if (!seenFsIds.has(p.id)) { seenFsIds.add(p.id); people.push(convertPerson(p, internalId)); }
+  }
   const relationships = [];
 
   // Couple relationships

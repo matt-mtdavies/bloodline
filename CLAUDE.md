@@ -13,6 +13,15 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   `Claude-Session:` line. Do NOT put the model id anywhere in the repo.
 - **Don't open a PR unless asked.** Commit + push to the branch.
 - **Model identity:** this agent is `claude-opus-4-8` (chat only — never in artifacts).
+- **ClickUp logging (standing convention, user-requested):** after shipping a **fix** (commit +
+  push), auto-create a ClickUp task in the **"Issues found"** list (`901615914251`, in the
+  "Project Optimisation" space) via the ClickUp MCP tools — `name` = concise issue title,
+  `markdown_description` = an **Issue** section + a **Fix** section + the commit hash, `status` =
+  `resolved`. Feature/polish work goes in the **"Tweaks & ATT: to Detail"** list (`901615911602`)
+  instead. If the ClickUp connector is disconnected at that moment (it has flapped mid-session),
+  queue the content and create it the instant it reconnects — never drop it. This is a convention
+  I follow each turn, not a harness hook (settings.json hooks run shell, not MCP calls, so they
+  can't create ClickUp tasks).
 
 ### Run / verify (no human can see the screen — self-verify with screenshots)
 - Dev server: `npm run dev` (run in background; picks the first free port, usually 5173).
@@ -44,6 +53,1568 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
 - **Store fixes:** portrait photos preserved across server-sync reloads; localStorage quota
   errors surfaced as a toast; `addRelationship()` links existing people; bio-parent
   constraints (at most 1 bio mother + 1 bio father per person).
+- **Military profile fields + medals are now manually editable/removable** (real user report:
+  a document accepted onto the wrong person left branch/rank/service-number/medals stuck —
+  there's no live link from an accepted fact back to its source document, so reassigning or
+  deleting the document afterward does nothing to what it already wrote). `EditPersonSheet`
+  gained a Military section (branch pill-pick, served-with/rank/service-number text fields,
+  clear buttons, a read-only "Military" row group in the profile view) — the same generic
+  `updatePerson` pass-through everything else in that form already uses, no new plumbing.
+  `store.js` gained `removeMedal(personId, index)` (medals carry no id, so this is index-based
+  like the timeline editor's own row removal); `MilitaryService.jsx` shows a per-medal "×" with
+  the same are-you-sure confirm the document-quote dismiss already used.
+- **Document-fact provenance + cascade retraction (the root-cause fix for the above)**: every
+  document-derived write is now tagged with the document that produced it, so deleting the
+  document retracts exactly what it wrote instead of leaving it stuck forever. `addLifeEvent`/
+  `addMedal` (`store.js`) accept an optional `sourceDocId` stamped onto the event/medal item;
+  a separate `person.field_sources` map (`{ fieldName: docId }`) tracks scalar profile fields
+  a document last wrote (occupation, birth_place, residence, the military_* fields,
+  cause_of_death — see `DOC_TRACKABLE_FIELDS` in `App.jsx`). `App.jsx`'s `applyDocumentFact`/
+  `applyDocumentMedal`/`applyDocumentField` all tag provenance on accept; `handleSave` (the
+  ordinary manual edit form) clears a field's `field_sources` entry the instant a human retypes
+  it by hand, so a later document deletion can never clobber a real correction. `store.js`
+  gained `retractDocumentContributions(personId, docId)` — filters out tagged events/medals and
+  clears any fields still attributed to that document — wired into `onRemoveDocument` in
+  `App.jsx` so deleting a document now cleans up after itself. Deliberately scoped to one
+  person and deliberately does NOT cascade into relationships a document confirmed (those have
+  their own separate confirm step; auto-severing a family link as a side effect of a document
+  delete is a bigger, cross-person consequence than clearing a field). `PersonSheet.jsx`'s
+  document-delete confirm now previews the blast radius ("Remove this document — and the 3
+  facts it added to this profile?") via `documentContributionCount`. Also closed 3 confirm-step
+  gaps found auditing "every deletion needs a confirm step": `EnrichSheet.jsx`'s document- and
+  relationship-finding dismiss, and `DocViewer`'s fact/field dismiss, all previously fired
+  immediately — now use the same inline confirm-swap pattern as everywhere else. Covered by
+  4 new unit tests in `tests/store.test.mjs` and verified live against a seeded document via a
+  temporary debug hook (confirm copy + resulting store state + Military section correctly
+  disappearing once its last field/medal is retracted).
+
+- **The Keepsake ✅ Phases 0–5** (spec: `docs/KEEPSAKE.md`): the marquee endgame feature —
+  a regenerating magazine-style illustrated biography per person. Data layer
+  (`src/lib/keepsake.js`, 13 spreads, constellation layout, facts hash), full-screen reader
+  (`src/components/Keepsake/`), AI narrative engine (`functions/api/keepsake.js`, editions in
+  R2 `keepsake/{familyId}/{personId}/`, never tree_json), scroll-driven motion
+  (reduced-motion safe), browser-native print (`@page`, full-bleed cover, body.ks-has-print
+  scope), home-hub nudge card + `keepsake_generated` activity. Per-section narrative
+  editing (PUT /api/keepsake, quiet pencils, one edit sheet). **Page-turn reader is the
+  default** and is now a TYPESET magazine: `lib/typeset.js` (blocksOf → offscreen measure →
+  paginate; pure, unit-tested) composes fixed canonical pages — print folio 780×1040
+  (desktop/tablet), pocket folio 360×640 (phones) — **no page ever scrolls**; overflow
+  becomes the next page. KeepsakeBook scales the sheet down to fit (never up) via
+  `.ks-scale`; BookPage.jsx renders the `.ks-pg` design system (running heads, folios,
+  Fraunces serif body, drop caps, ghost roman chapter numerals, quote wells, full-bleed
+  album hero, DARK constellation night page, magazine cover: fitted stacked name +
+  masthead + credit block + cover line + grain). The strip-canvas page curl + SVG
+  foreignObject snapshot pipeline (pageCurl/) was DELETED — an SVG data-URI document
+  can't fetch external resources, so photos blanked and fonts fell back mid-curl; both
+  layouts now share the live-DOM leaf turn (shine, cast shadow, velocity-scaled inertia).
+  The scroll reader (`ks_reader_mode` toggle) is now KeepsakePager.jsx — the SAME typeset
+  pages as a vertical pager, one page per screen, `scroll-snap mandatory` + `snap-stop
+  always` (a swipe always lands exactly one page), soft rise-and-settle on arrival; only
+  the print pipeline still uses the old spreads.jsx components. Finish pass: fake CSS
+  page-curl overlays + hard gloss band DELETED (a fake fold pasted over a photo always
+  reads as a sticker); rest splash is now a photographed object — warm-stone backdrop
+  (noise grain + vignette), drifting dappled foliage light (.ks-dapple, soft-light,
+  scene-wide), tight contact shadow (.ks-contact) under the sheet, near-square 4-6px
+  print corners, and the open-me invitation is the sheet itself gently breathing at the
+  spine (.ks-sheet--breathe). Edit pencils hide on the rest splash and are hover-revealed
+  on pointer devices. Wide desktop (≥1140px) reads as a true verso/recto spread. Phase 6
+  (whole-family bound edition, print-service handoff) deliberately later.
+
+- **Tree storage rewrite** (plan: `docs/TREE-STORAGE.md`) — fixing the D1 1MiB-per-row
+  ceiling for good, not just buying headroom. Target: core (people/relationships, a
+  deliberately narrow per-person allowlist) stays in D1; everything rich or growing
+  per-item (bios/tags/life-events/military fields, memories, photos, documents, activity)
+  moves to R2, which has no comparable ceiling — chosen over a second D1 row because that
+  only doubles the wall, and this account's own growth (1000+ people, heavy documents)
+  would likely hit it again on a similar timescale. **Phase 0 ✅**: `/api/debug/tree` byte
+  breakdown + core/extra person-field split; `documents[].thumb` (a permanent inline
+  base64 preview, unlike `src`) now uploads to R2 at creation and via `migrateDocThumbsToR2`;
+  snapshot-write failures now distinguish benign "not migrated yet" from genuine failures,
+  folded into the admin size-warning email. **Phase 1 ✅**: `functions/_lib/treeStore.js`
+  (`loadTree`/`upsertTreeStatement`/`casUpdateTree`/`insertOnlyTree`/`updateTree`/
+  `snapshotStatements`) — a pure, zero-behavior-change refactor consolidating 7 of the 9
+  places that touched `family_tree` directly (`tree.js`, `merge.js`, `_lib/invite.js`, both
+  calendar endpoints, `debug/tree.js`, the snapshot-restore endpoint); `admin/stats.js` and
+  the snapshot list endpoint deliberately untouched (see doc §5). **Phase 2 🟡 in progress**:
+  `splitTree`/`reassembleTree` (pure, round-trip tested) + `loadFullTree`/`putExtra`/
+  `writeExtraToR2`/`pruneExtraVersions` (the R2-backed layer, dual-read via a `_extraVersion`
+  marker embedded in D1's own core JSON — no separate pointer file) are done and wired into
+  `functions/api/tree.js`'s GET/PUT: a legacy family is untouched (never touches R2); a
+  migrated family's GET reassembles core+R2 transparently, its PUT re-splits once and writes
+  R2-before-D1 with the size ceiling measured against core alone. A migrated family's extra
+  failing to read fails the request clean (503), never silently degrades. The snapshot-restore
+  endpoint (`tree/snapshots/[id].js`) shares that same fail-clean rule via a new
+  `resolveTreeFromRaw` helper (extracted from `loadFullTree`), and writes the restore back in
+  whichever mode the family *currently* is — never decided by the snapshot's own vintage.
+  `admin/stats.js`'s content totals and largest-trees size report are now reassembly-aware too
+  (a migrated family's photos/memories/documents are summed via R2, its true size via a cheap
+  `head()` call) — one documented gap remains, the largest-trees *ranking* is still by D1 core
+  bytes only. `merge.js` (duplicate-family merge wizard) and `_lib/invite.js` (member_joined
+  activity-append) — the last two of the original 9 touch points — turned out to have a REAL
+  bug once audited: both wrote raw `tree_json` directly, which for a migrated family would have
+  silently orphaned its R2 extra (data loss) the first time anyone accepted an invite or ran the
+  merge wizard against one. Fixed to the same loadFullTree-read / splitTree+putExtra-write
+  pattern as everywhere else. Both calendar endpoints and `debug/tree.js` were audited too and
+  are safe as-is (read-only, core-fields-only). The one-time per-family migration script now
+  exists: `POST /api/admin/migrate-tree` (admin-gated, one `familyId` per call, idempotent,
+  verifies `reassembleTree(splitTree(tree))` deep-equals the original **before any write**,
+  archives a snapshot, R2-before-D1). **Nothing auto-migrates a family** — this endpoint is the
+  only place that happens, and only when a human calls it. **All Phase 2 code is done, tested,
+  and pushed.** The only thing left is the staged rollout itself, and it needs real Cloudflare
+  credentials (`wrangler login`, a deployed build, an authenticated admin session) that don't
+  exist in an agent sandbox — a step-by-step runbook for a human to follow lives in
+  `docs/TREE-STORAGE.md` §11 (backup → deploy → one disposable test family → this account,
+  deliberately → everyone else in small batches).
+  Full design + progress tracked in `docs/TREE-STORAGE.md` §9.
+
+- **Custom grandparent names** (user feedback: "can I change Grandmother/Grandfather to
+  Nonno/Nonna, Oma/Opa, etc?"). `src/lib/kinTerms.js` — a small `useSyncExternalStore` pref
+  store (same convention as `store.js`) holding `{ paternalPackId, maternalPackId,
+  customPaternal, customMaternal }`, localStorage-backed and **per-viewer, not tree data** —
+  two people in the same family can each see their own term for the same grandparent, and
+  it's never synced to the server. Six built-in packs (English formal/informal, Italian,
+  German, Spanish, French) plus a Custom pack with free-text male/female terms.
+  Side-aware, not just a single swap: `resolveGrandparentTerm(kinTerms, side, gender)` picks
+  the paternal or maternal pack independently, so a paternal-Italian/maternal-German family
+  can run both at once — `side` is exactly `graph.js`'s existing `parentSide()` output
+  ('Paternal'/'Maternal'/null), already computed for the "Paternal Grandmother" style labels.
+  `relationLabel`/`buildRelationCrumbs` (`graph.js`) take an optional trailing `kinTerms` arg,
+  applied ONLY at the direct-grandparent branch — deliberately not threaded into Step-/
+  Adoptive-/Great-/cousin-degree wording, which doesn't have a clean cultural-pack equivalent
+  and isn't the emotionally-loaded part; omitted, every label is byte-identical to before, so
+  no existing call site or test needed to change. The side prefix still shows with a custom
+  term ("Paternal Nonna") since it's genuinely useful and swapping the noun shouldn't silently
+  drop it. Wired into every relation-label call site (PersonSheet's kin-to-viewer badge and
+  its Grandparents/Grandchildren extended groups, HoverCard, AccessibleTree, FlightCaption,
+  LineageBanner) via the `useKinTerms()` hook; BubbleTree's Focus-mode canvas captions read it
+  imperatively via `kinTermsStore.getState()` since that whole render loop is mount-once/
+  non-React, with a store subscription clearing its relationship-label cache on change.
+  Settings UI lives in `UserProfile.jsx` (a new "Grandparent names" section, two side pickers
+  + custom text fields) — deliberately NOT gated behind the `/api/user/profile` round trip
+  the rest of that sheet uses, since this is pure localStorage. Covered by 10 unit tests
+  (`tests/kinTerms.test.mjs`) and verified live via a temporary debug hook that fakes a
+  logged-in session (UserProfile is login-gated and this sandbox has no backend) — confirmed
+  the settings UI renders and saves correctly, and that switching packs immediately updates
+  the real PersonSheet's "Grandparents" group to "Paternal Nonno / Paternal Nonna / Maternal
+  Opa / Maternal Oma".
+
+- **Search now matches middle names** (user report: "old names commonly use the middle as
+  the preferred name"). `middle_name` was already a real, separately-edited person field
+  (`EditPersonSheet.jsx`, woven into `lib/profile.js`'s `fullName()` for the profile heading)
+  but had never been wired into `SearchOverlay.jsx`'s matching at all — searching "James" for
+  someone whose `display_name` is "Robert Mercer" and `middle_name` is "James" found nothing.
+  Extracted the whole scoring/ranking pass out of the component into `src/lib/search.js`
+  (`scoreText`, `rankPeopleByName`) — pure and unit-tested (`tests/search.test.mjs`), same
+  refactor motivation as the rest of the codebase's `lib/*.js` split. `rankPeopleByName` now
+  scores `display_name`, `birth_name`/`maiden_name`, AND `middle_name` and takes the max, so a
+  middle-name match ranks exactly like any other name match (an exact display-name match still
+  outranks a middle-name substring hit). Matched people carry `_middleName` back to the
+  component, which shows a "· middle name {name}" hint under the result — same
+  `search-result__nee` styling and same "show it whenever present and not already visible in
+  display_name, regardless of which field actually matched" convention the existing birth-name
+  "née" hint already used, so the fix reads as consistent rather than a bolted-on special case.
+
+- **"Saving…" no longer flashes on every single app open** (real user feedback: "do we actually
+  need to see the spinning wheel every time you open Bloodline... it looks like a loading icon
+  so I wait till it's done before doing anything"). Root cause: `loadFromServer()`'s merge step
+  unconditionally re-PUT the reconciled tree back to the server after every load —
+  `if (state.people?.length > 0) scheduleServerSave(merged)` — regardless of whether the merge
+  actually produced anything the server didn't already have. For an actively multi-edited
+  family that's nearly always a no-op round trip that still flashes the pill. `store.js` gained
+  `hasUnsyncedContent(merged, serverData)` — compares every field capable of carrying genuine
+  local-only content (people, relationships, memories, photos, documents, activity, tombstones,
+  familyName, hasCompletedOnboarding) and only reports "needs saving" on a proven difference;
+  any doubt (an unexpected shape, a thrown comparison) fails safe to "save it", matching the old
+  behaviour — this only ever SKIPS a save on an exact, verified match, never the reverse.
+  Deliberately excludes two fields that would otherwise defeat the whole check: `_seq` (bumped
+  independently by the server on every save — carries no user content, would never match) and
+  `myPersonId` (NOT shared content — re-resolved fresh, identically, per viewer on every load
+  from their own login identity; two different family members always resolve it to two
+  different values by design, so comparing it would make the check pass to nearly nothing in a
+  multi-editor family while losing no real data by skipping it). Given the data-integrity
+  stakes, covered unusually thoroughly: 14 unit tests on `hasUnsyncedContent` itself (one per
+  content field, both exclusions, and a fail-safe-on-malformed-input case) plus 2 true
+  integration tests that mock the network and count real PUT calls through the actual
+  `loadFromServer` merge pipeline (`tests/sync-nosave.test.mjs`), on top of the full existing
+  suite passing unchanged. Paired with a visual fix for when a save genuinely does happen: the
+  topbar's "Saving" pill swapped its generic `.pill-spinner` CSS ring for `Logo.jsx`'s existing
+  `loading` variant (the three-bubble family mark breathing, already built for the splash screen
+  "so the wait has a bit of the same 'family, connected' idea... rather than a generic
+  spinner" — just never reused here) — so on the rare occasion it does show, it reads as the
+  app quietly doing something, not a system loading cue asking you to wait.
+
+- **Insight spotlight (`IdleFactHint`, the ambient "did you know" hint while idle-browsing the
+  tree): more variety, and panning no longer dismisses it** (user feedback: "they are great and
+  we need more of them with lots of variety" + "if you scroll when [it] is showing, it removes
+  [it] — it should keep it there for the required X secs"). Two independent fixes:
+  1. **Variety**: `computeInsightModules` (`lib/insightModules.js`) always computed 13 modules,
+     but the candidate-sentence builder only ever turned 8 of them into "did you know" text —
+     `handshakes`, `strata`, `fullestYear`, `brood`, and `serviceRecords` were computed and then
+     silently discarded. That builder is now `highlightCandidates(modules)`, exported and shared
+     by both consumers, with all 13 wired up (`pickDailyHighlight` — the home hub's one stable
+     pick per day — is now a thin wrapper around it, unchanged in behavior). `IdleFactHint` no
+     longer takes one pre-picked string; it takes the whole pool and — backed by a
+     `sessionStorage` set of already-shown sentences (generalizing the old single boolean flag)
+     — cycles through a different, not-yet-seen fact each time it re-arms, for the rest of the
+     browsing session, rather than showing exactly one fact ever.
+  2. **Scroll/pan dismiss bug**: the dismiss listener was a bare `window.addEventListener
+     ('pointerdown', hide, { once: true })` — the same pointerdown that *starts* a pan/drag/pinch
+     gesture on the canvas bubbles up to window before Pixi's own gesture code ever determines
+     it's not a tap, so the very first touch of any interaction (not just a deliberate dismiss)
+     hid the hint mid-sentence. Now tracks pointerdown position and only dismisses on pointerup
+     if the movement was under `TAP_SLOP_PX` (8px) — a real tap-to-dismiss still works instantly,
+     but panning/zooming past the hint no longer cuts short the `VISIBLE_MS` (11s) it's owed.
+     `IntroHint.jsx` (the separate, one-shot "tap a face" onboarding nudge) was deliberately left
+     alone — the report was specifically about the fact-based spotlights, and dismissing the
+     moment you touch the tree at all is arguably correct for that one.
+  Verified live end-to-end (idle → fact appears → simulated pan gesture → still showing the same
+  fact → auto-hides at the full 11s → re-arms with a genuinely different second fact → a real
+  no-movement tap dismisses instantly) and with 10 new unit tests covering every new candidate
+  template plus the with/without-viewer split (`tests/insightModules.test.mjs`).
+
+- **Fixed: clicking during the search flyover animation locked up the whole canvas** (real user
+  report: "if someone clicks while it is in progress, the screen pauses and locks up... to get
+  out of it, you need to search again and let it play out"). Root cause was an asymmetric guard
+  in `BubbleTree.jsx`'s `endGesture` tap router: the `'bubble'`-tap branch already checked `if
+  (!drag.moved && flight)` and ignored the tap mid-flyover, but the sibling `'pan' && !drag.moved`
+  branch — which handles every tap that lands on empty canvas, or on a bubble too zoomed-out to
+  drag (see `BUBBLE_DRAG_MIN_ZOOM`; the flyover deliberately zooms out to a wide "drone" travel
+  view, so this is the likely path for almost any mid-flight tap) — had no such guard, and fell
+  through to `deselect()`/`activate()`/`openPerson()`. Those call `state.enterFree()`/
+  `enterFollow()`, which flip `camMode` away from `'flight'` without ever clearing the `flight`
+  variable itself — freezing the camera mid-glide (the ticker's flight-driving block only runs
+  under `camMode === 'flight'`), permanently blocking all further bubble taps (the `'bubble'`
+  branch's own guard now saw a stale, undying `flight`), and skipping `onLand()` forever (so
+  `flightCaption.landed` never flips true and the Done button never renders) — exactly the
+  reported "screen pauses, can't click anybody, no Done pill" lockup, escapable only by starting
+  a fresh search (which unconditionally resets both `flightCaption` and `flight`/`camMode`).
+  Fixed by adding the identical `flight` guard to the `'pan'` branch, so a tap during a flyover
+  is ignored everywhere, not just on bubbles, letting the flight land naturally. Also fixed a
+  related, non-locking gap: a genuine drag/pinch that interrupts a flyover already correctly
+  cleared `flight` and handed the camera back (no freeze), but never called `onLand()`, leaving
+  the `FlightCaption` card stuck showing an in-progress crumb-trail with no Done button. Added a
+  new `onAbort` callback on the `flight` object (parallel to `onSegment`/`onLand`), fired at
+  every place `flight` is discarded without a natural landing — the pinch-start interrupt, the
+  real-pan-drag interrupt, and the render ticker's own try/catch error-recovery block — wired in
+  `App.jsx`'s `flyToSearchResult` to `setFlightCaption(null)`, so an abandoned journey clears the
+  caption instead of being left in limbo. Verified live via two dedicated Playwright
+  reproductions against the real dev server: one taps empty canvas mid-flyover and confirms the
+  flight still lands (Done button appears) and the canvas stays responsive afterward (a second
+  tap opens a profile); the other performs a real drag mid-flyover and confirms the caption
+  clears instead of sticking. Both scripts, plus the full unit suite, `npm run build`, and the
+  standard smoke test, passed clean before shipping.
+
+- **Fixed: the "possible duplicates" count pill and the review sheet disagreed, and dismissing
+  a pair never updated the pill** (real user report: "the 'review 1 possible duplicate' pill is
+  seen, though when i click on it, there are none... I also just saw three to review. there were
+  only 2. i dismissed them but now it still says three to review"). Root cause: two completely
+  separate computations of "how many duplicates exist," with no shared source of truth. The
+  topbar's pill (`TopBar.jsx`'s `StatsPopover`) read `duplicatePairs.length` from `App.jsx`,
+  which called `findDuplicatePairs(data.people, data.relationships)` raw — every candidate the
+  heuristic still detects, with zero awareness of anything ever dismissed. `DuplicatesSheet.jsx`,
+  meanwhile, kept its OWN dismissed-pairs set (`bl_dup_dismissed` in localStorage, loaded into its
+  own local `useState`) and filtered its displayed list through that — correctly hiding dismissed
+  pairs, and correctly showing "tree looks tidy" once none were left, but never telling `App.jsx`
+  it had done so. That explains both halves of the report: pairs dismissed in an earlier session
+  were still counted by the pill (App's memo never consulted `bl_dup_dismissed` at all) while the
+  sheet correctly hid them ("pill says 1, sheet says none"); and dismissing in the sheet only
+  mutated the sheet's own local state + localStorage, never `data.people`/`data.relationships` —
+  the pill's only memo dependencies — so it never recomputed ("dismissed 2 of 3, pill still says
+  3"). Fixed by making dismissal-tracking the one shared thing both sides read: the
+  `bl_dup_dismissed` load/save helpers moved from `DuplicatesSheet.jsx` into `lib/duplicates.js`
+  (`loadDismissedDuplicates`/`saveDismissedDuplicates`, alongside the existing `pairKey`) so
+  there's exactly one implementation. `App.jsx` now owns the dismissed set as real state
+  (`dismissedDuplicates`, seeded from localStorage on mount) and filters `duplicatePairs` through
+  it before `.length` is computed for the pill — the same filter the sheet used to apply alone —
+  and exposes `dismissDuplicatePair(key)`, which updates that state (triggering an immediate
+  pill recompute) and persists to localStorage. `DuplicatesSheet.jsx` no longer tracks dismissal
+  at all: it receives `pairs` already filtered by the caller and an `onDismiss` callback, so the
+  "Not a duplicate" button and the post-merge auto-dismiss (the dropped id would otherwise leave
+  a stale pair) both just call the prop — one list, one count, always in agreement, in both
+  directions. Verified live via a dedicated Playwright script (seeded two synthetic duplicate
+  pairs via `addInitScript`, since demo mode seeds fresh in-memory state and never touches
+  localStorage until a mutation commits): pill and sheet agreed on count before touching anything
+  (2 and 2), dismissing one via "Not a duplicate" dropped the sheet to 1 AND the pill to 1 in the
+  same render pass, and a full page reload (a fresh "session") still showed 1 — the dismissal had
+  genuinely persisted, not just changed in-memory. Full unit suite and `npm run build` passed
+  clean; the standard smoke test passed with zero console errors.
+
+- **Redesigned the Keepsake edition banner** (real user reaction to a screenshot: "That
+  notification button is disgraceful. Design and make that button gorgeous and on brand" — the
+  small compile/weave-in/error bar at the top of the reader, previously a flat white pill with
+  plain sans-serif text and a bare bold-orange text link, reading as a generic OS toast rather
+  than part of the Keepsake object). `KeepsakeView.jsx`'s `.ks-banner` is now a small mastheaded
+  card that borrows the cover's own typographic language (`docs/KEEPSAKE.md`'s "constellation of
+  Bloodline design decisions" — Fraunces serif italic, uppercase letter-spaced kicker flanked by
+  the cover masthead's ◆ diamond glyphs, terracotta accents, subtle paper grain) instead of
+  looking like a system notification: a circular icon badge (quill / sparkle / alert / spinner,
+  one new small inline SVG per state, matching the existing `BookModeIcon`/`PrintIcon` style
+  already in the file) sits beside an uppercase kicker ("First edition" / "New chapters" /
+  "Trouble compiling" / "Compiling") and the original note sentence set in serif italic below
+  it; the CTA is now a genuine full-width terracotta-gradient pill button with a warm drop shadow
+  (`Compile the first edition` / `Weave in the changes` / `Try again`) rather than a bare text
+  link — no copy changed beyond the new kicker labels, only the visual treatment. The error state
+  deliberately desaturates the badge/kicker to a muted ink-gray rather than reaching for a red
+  the rest of the palette doesn't have (see `theme.css` — deliberately no error/red token, only
+  terracotta/sage/memorial-violet) — restrained rather than alarming, and the CTA button stays the
+  same terracotta as every other state so "try again" doesn't read as a different, scarier action.
+  A narrow-viewport CSS override that used to fight the old row layout (stacking the note above
+  the button once it got squeezed on phones) is gone — the new layout is column-stacked by
+  default, so the override was dead weight once the redesign made it unconditional. Verified live
+  via Playwright against all four states (mocking `/api/keepsake`'s GET/POST responses, since
+  plain `npm run dev` has no Cloudflare Pages Functions to actually compile against): screenshots
+  of "First edition" (quill badge, terracotta), "New chapters" (sparkle badge), "Trouble
+  compiling" (alert badge, desaturated kicker, CTA still terracotta), and "Compiling…" (spinning
+  ring badge, no button) all confirmed against `docs/KEEPSAKE.md`'s stated design language.
+  `prefers-reduced-motion: reduce` freezes the new spinner alongside the file's other motion
+  overrides. Keepsake unit + API test suites and `npm run build` passed clean; the standard smoke
+  test passed with zero console errors.
+
+- **Desktop "just start typing" search** (feature request, discussed and agreed before building:
+  "on PC, in the tree view, if you just start typing on the keyboard, it should automatically
+  open the search bar and search" — a Gmail/Linear/Notion-style shortcut). A global `keydown`
+  listener in `App.jsx`, placed right after `anyOverlayOpen`'s own declaration (the file's one
+  consolidated "is anything already showing" flag — the same one gating the hover card and
+  `IdleFactHint`), opens `SearchOverlay` the instant a bare printable key is pressed with nothing
+  else open and nothing already focused: `e.ctrlKey || e.metaKey || e.altKey` bails out (every
+  browser/OS shortcut — copy, reload, tab-switch — passes through completely untouched), a
+  non-printable or multi-char `e.key` (arrows, Enter, Escape, function keys) bails out, and
+  `document.activeElement` must be the plain body or the canvas itself (typing into any real
+  input/textarea elsewhere, in any sheet, is never hijacked). `SearchOverlay.jsx` gained an
+  `initialQuery` prop — seeded once into its `query` state on the mount this shortcut triggers
+  (every other open path, the search icon and the lineage banner's search button, passes nothing
+  and starts blank as before), with the caret explicitly placed after the seeded text so the very
+  next keystroke extends it rather than landing at position 0. **Found and fixed one real bug
+  along the way**: the same triggering keydown's native default action (inserting the character)
+  was firing a SECOND time into the just-focused search input once it existed in the DOM — every
+  typed-to-open search opened seeded with the letter doubled ("r" → "rr") — fixed with a single
+  `e.preventDefault()` once the shortcut decides to act. **Also fixed a related latent gap**
+  spotted while reading `anyOverlayOpen`'s own definition: `keepsakeId` (the full-screen Keepsake
+  reader) was missing from that consolidated flag — exactly the class of bug its own comment
+  warns about ("every new sheet added over time needs to be remembered... it only takes missing
+  one") — added it, which also correctly quiets the hover card/idle-fact-hint/recap-nudge/
+  home-nudge that flag already gates whenever a Keepsake is open, not just this new shortcut.
+  Deliberately reuses the existing, already-polished `SearchOverlay` sheet rather than building
+  new UI — the ask was for this to feel "beautiful and elegant," and the most elegant answer was
+  one more door into a component that already animates in cleanly and needed no visual changes at
+  all. Verified live via Playwright: typing with nothing focused opens the sheet pre-seeded with
+  the typed letter (and confirmed NOT doubled, post-fix); continuing to type extends the query
+  and returns live results; Escape closes it; Ctrl+A does NOT open search (confirmed the native
+  select-all still fires untouched); typing while a person's profile sheet is open does NOT
+  hijack; and a direct DOM-level probe (a real focused `<input>`) confirms a focused field always
+  wins regardless of which sheet it lives in. Full unit suite, `npm run build`, and the standard
+  smoke test all passed clean.
+
+- **Marriage/separation captured at creation time, plus a visible chip label** (feature request,
+  discussed and agreed before building: "adding this info on creation of partner profile —
+  'Married?' tick box, date... on creation of an ex-partner, 'were you married?', date, and year
+  separated... there is a married component of the partner piece in relationships, but it's not
+  obvious"). Confirmed the complaint against the actual code first: `is_married`/`marriage_date`/
+  `marriage_place` already existed, but only reachable by opening a profile → finding the
+  partner's relationship chip → tapping the "⋮" manage-relationship button — three taps into a
+  menu most people would never discover, and the chip itself gave no visible hint the fields
+  existed or were already filled in. Three changes, agreed incrementally:
+  1. **Creation-time capture**: `AddRelativeSheet.jsx` gained the same "They married" checkbox +
+     date field already used there for birthplace/residence/deceased (a deliberate exception —
+     see the file's own header comment — to the "everything else lives in the edit form"
+     philosophy, extended to marriage for the same reason). For a new ex-partner specifically, an
+     independent "Year separated" field is offered too — independent of the married checkbox,
+     since a relationship can end whether or not it was ever a marriage. Deliberately scoped to
+     the "new person" flow only, not "link an existing person as a partner" (a fundamentally
+     different picker UI where cramming in marriage fields would be a bigger change than asked).
+  2. **A new `separation_date` field**, which didn't exist before at all (only marriage fields
+     did) — threaded through `store.js` end to end: `partnerEdge()` now takes an optional
+     marriage-meta object stamped straight onto the edge at creation (`addRelative` builds it from
+     the new `is_married`/`marriage_date`/`marriage_place`/`separation_date` params and passes it
+     through `edgesFor`), and `updatePartnerMeta()` (the existing later-edit path) now persists
+     `separation_date` too, independent of `is_married` exactly as at creation. `graph.js`'s
+     `partners()` projection carries the new field through alongside the existing three so
+     nothing downstream needs a separate store lookup.
+  3. **The buried edit menu is now visible, not moved** — deliberately kept the actual editing UI
+     in the existing "⋮" manage-relationship menu (already the one place relationship metadata
+     gets edited, alongside the Biological/Step/Adopted qualifier for parent-child edges) rather
+     than fragmenting it across three locations, but the relationship chip itself now shows a
+     " · Married {year}" / " · Separated {year}" sub-label whenever those fields are set — visible
+     at a glance without opening anything, reusing `lib/dates.js`'s existing `yearOf` helper.
+     `MarriageDetailsEditor` (the menu's own editor) gained the matching "Separated" field for
+     ex-partners, save-in-one-click alongside the existing marriage fields.
+  Covered by 6 new unit tests in `tests/store.test.mjs` (creation-time stamping for a married
+  partner, a married-and-separated ex-partner, a never-married-but-separated ex-partner, a plain
+  partner with no marriage fields at all, and `updatePartnerMeta` persisting/clearing a
+  separation date). Verified live end-to-end via Playwright: added a new married partner and
+  confirmed "Married 2010" on the chip; added a new ex-partner with both a marriage and
+  separation year and confirmed both appeared on the chip; opened the "⋮" menu and confirmed it
+  correctly reflected the just-created state (checkbox checked, both dates populated, the new
+  "Separated" field present only for the ex-partner); edited the separation year through the menu
+  and confirmed the chip updated to match. Also incidentally confirmed against the seed data
+  itself — an existing partner (Megan Mercer, married 2016) already showed the new chip label
+  correctly, with no migration needed since the fields were always additive. Full unit suite,
+  `npm run build`, and the standard smoke test all passed clean.
+
+- **Keepsake pill retitled, and the first compile now needs a minimally-filled profile**
+  (feedback, agreed before building: rename the entry pill "Their Keepsake" → "Keepsake" — it
+  reads oddly on your own profile, since you're not "they" to yourself — and gate "Compile the
+  first edition" behind a completeness threshold, since a book compiled from a bare name and
+  birth year undersells the whole feature). `PersonSheet.jsx`'s `.ks-entry` pill is the one-word
+  fix. The gate reuses infrastructure rather than inventing new: `lib/profile.js`'s existing
+  `profileCompleteness()` score (the same one driving the profile's own completeness meter) is
+  computed for the Keepsake's subject in `KeepsakeView.jsx`, gated at a forgiving
+  `MIN_COMPLETENESS_FOR_FIRST_EDITION = 40` — enough to rule out a stub, not so strict it blocks
+  a decent profile missing a couple of minor fields — mirroring `lib/military.js`'s
+  `canGenerateMilitaryStory()`, an existing "is there enough raw material" gate on that other
+  AI-narrative feature. Deliberately scoped to the FIRST compile only: `!edition &&
+  !readyForFirstEdition` is a new, distinct banner state ("Almost there", desaturated like the
+  error state, no CTA button) that sits alongside — and never touches — the existing `stale`
+  branch, so an edition that already exists stays freely updatable via "Weave in the changes"
+  regardless of the current score; nobody's existing book gets locked mid-edit by a score dip.
+  The not-ready note reuses the completeness meter's own copy convention verbatim ("Add
+  {missing.slice(0,2).join(', ').toLowerCase()}…") instead of inventing new phrasing, so it reads
+  as a nudge with a concrete next step, not an unexplained wall. Verified live via Playwright
+  against three seeded profiles: a richly-filled person (89% — "First edition" state, CTA
+  present), a bare-stub person with only a name and one relationship (11% — "Almost there", no
+  CTA, correct missing-fields note), and that same stub person WITH an existing edition already
+  compiled (confirmed the gate does not apply — "New chapters" / "Weave in the changes" renders
+  normally regardless of the low score). Full unit suite, `npm run build`, and the standard
+  smoke test all passed clean.
+
+- **Creator attribution + duplicate-merge safety** (real user report: "Is there a way to trace
+  who created which profile? ... there are currently 2 Peter Johnstons, possible duplicates. If
+  there has been a mistake made, it would be good to know who added them and why... I accidently
+  merged Ashley last week and it caused some confusion — because it merged, I couldn't tell whos
+  kids belonged to who easily. Maybe in the review duplicates, there be a pill for 'show both in
+  tree' before you can merge?"). Investigated first: `person.created_by` turned out to be dead
+  data — always a hardcoded literal (`'me'`/`'familysearch'`/`'import'`), never read back
+  anywhere — but the activity log's `person_added` event already carries a REAL author
+  (`authorEmail`/`authorName`), it just wasn't surfaced on the profile itself. `DuplicatesSheet`
+  separately had zero relationship context on its candidate cards and zero confirm step —
+  Merge fired on the very first tap, exactly matching the accidental-merge report. Four fixes:
+  1. **Added-by line**: `PersonSheet.jsx` finds that person's `person_added` activity event and
+     renders "Added by {name} · {when}" under the hero location line, reusing `ActivityFeed.jsx`'s
+     `dayLabel` and its `nameByEmail` re-resolution convention — the author's CURRENT
+     `display_name` is looked up fresh from `graph.people` by matching the event's stored
+     `authorEmail`, rather than trusting the name string frozen at add-time, so a later name
+     correction (or the stale-guessed name a first-touch account sometimes gets) is reflected
+     correctly here too.
+  2. **Relationship preview on duplicate cards**: `DuplicatesSheet.jsx`'s `relNames()` helper
+     lists first names (capped at 3) of each candidate's parents/children/partners directly on
+     the card — the actual gap that caused the reported confusion ("couldn't tell whose kids
+     belonged to who"); a bare count wouldn't have prevented that, seeing "Children: Alice" vs
+     "Children: Bob" on the two cards would have.
+  3. **Confirm step before merge commits**: a new `confirmKey` state swaps the action row for a
+     `.dups__confirm` block stating exactly what moves ("This moves {dropped}'s N relationships
+     (parents, children, partners) onto {kept}'s and can't be easily undone") with Merge/Cancel —
+     mirrors the existing `confirmUnlinkId` remove-relationship pattern already used elsewhere in
+     `PersonSheet.jsx` rather than inventing new interaction UI.
+  4. **"Show both in tree"**: a new button on each pair calls `App.jsx`'s
+     `showDuplicatePairInTree(aId, bId)` — closes the duplicates sheet, adds both candidate ids to
+     the `expanded` set (guaranteeing both bubbles render even if unconnected, which is often
+     exactly why true duplicates go undetected), activates the first, switches to bubble view if
+     needed (same view-switch-and-poll-for-`viewApi`-readiness pattern as the existing
+     `flyToPersonFromAnywhere`), then calls `viewApi.current.refocus(0.6)` — re-clustering every
+     currently-visible node into a tight circle around the active node at a fixed zoom, so both
+     candidates end up visually adjacent regardless of their real tree position. Chosen over
+     `spotlightTour` (built for RecapTour's slower sequential narrative, not simultaneous
+     comparison) and a path-based flight (duplicate candidates are frequently NOT connected by any
+     path — that disconnection is often exactly why they were never merged or noticed as the same
+     person). Verified live via Playwright against a seeded family with two duplicate pairs (one
+     with divergent children per candidate, one left unmerged): the added-by line correctly
+     re-resolved a deliberately stale stored author name to the current one; the relationship
+     preview correctly distinguished the two candidates' children; clicking Merge showed the
+     confirm block without merging, Cancel reverted cleanly, and confirming actually committed the
+     merge (pair count dropped by exactly one); "Show both in tree" on the remaining pair closed
+     the sheet and navigated the camera to the candidates. Full unit suite, `npm run build`, and
+     the standard smoke test all passed clean.
+
+- **List view row action: "view in chart" next to "view in tree"** (feature request: "next to
+  [the circle to view in tree], should be a chart option?"). Discussed first — the user's
+  follow-up idea was to collapse both into one icon behind a popover menu to reduce clutter; I
+  recommended against it (two destinations don't justify a menu's extra tap, worse discoverability,
+  and real added complexity positioning a popover inside `AccessibleTree.jsx`'s virtualized
+  directory rows) and suggested hover-reveal on desktop instead if density was the actual concern.
+  User asked for the original two-icon version, unchanged on both mobile and desktop (no
+  hover-reveal). `AccessibleTree.jsx` gained a second per-row circle, `.person-row__chart`, next to
+  the existing `.person-row__map` tree circle, in both places that circle already appeared (the
+  focused person's immediate-family group rows and the virtualized full directory rows) — its icon
+  is the same `ChartModeIcon` glyph as the topbar's own Tree/Chart/List switcher (rectangular cards
+  on rows, not TreeIcon's circles-and-branches), so the pair reads as "same family of action,
+  different destination." Wired through a new `onShowInChart` prop to a new `App.jsx` callback,
+  `showPersonInChart` — deliberately simpler than the existing `flyToPersonFromAnywhere` (the tree
+  circle's handler): `ChartTree` re-roots itself off `activeId` via its own effect, so there's no
+  canvas-mount polling needed, just `setView('bubbles')` + `setLayout('chart')` +
+  `setBloodlineOnly(true)` (matching the topbar's own chart-switch default) + `activateNormal`.
+  **Found and fixed a related, pre-existing latent bug while verifying**: `flyToPersonFromAnywhere`
+  never reset `layout` back to `'organic'` — if `layout` was left on `'chart'` from an earlier
+  switch, clicking the ORIGINAL "view in tree" circle silently did nothing (it polled for
+  `viewApi.current`, which never populates because `BubbleTree` doesn't mount under chart layout,
+  so the poll just timed out after ~1.5s with no visible failure). This bug already existed before
+  this feature — reachable via topbar Chart → List → tree circle — but the new chart circle makes
+  it trivial to trigger (list → chart circle → back to list → tree circle), so it would have made
+  the just-shipped feature look broken. Fixed by also forcing `setLayout('organic')` whenever
+  `flyToPersonFromAnywhere` needs to switch canvases; every call site (this row action, the
+  profile's own "Show in tree", the "back to me" locate pill) already means "fly to them in the
+  organic tree," so the fix is correct for all of them, not just this one. Verified live via
+  Playwright: clicking the new chart circle switches to the pedigree chart re-rooted on exactly the
+  clicked person (confirmed via the focal card's own name); clicking the tree circle afterward
+  correctly lands back on the organic canvas (confirmed via `canvas` presence and the absence of
+  `.chart-tree` — this assertion caught the latent bug above before the fix, and passed clean
+  after). Full unit suite, `npm run build`, and the standard smoke test all passed clean.
+
+- **`IdleFactHint` rewrite: fixed a real double-schedule bug, made "idle" genuine, added a
+  cooldown** (real user report: "the insight pops up... are too much... popping up every 3-4
+  seconds and scrolling through mid pop up. it looks odd"). Two real bugs, not a perception issue.
+  1. The old arm effect's dependency array included `visible` but never guarded against
+     rescheduling while a fact was already showing — and since `IDLE_MS` (8s) was shorter than
+     `VISIBLE_MS` (11s), every single hint silently swapped its own text for a different fact
+     partway through its own display window, with no re-entrance animation (same DOM node) — this
+     is what "scrolling through mid pop-up" actually was.
+  2. Despite the name and the file's own comment ("waits out a long settled pause"), the idle
+     timer was armed the instant browse mode was entered and never reset on real activity —
+     panning/zooming/dragging never touched it — so it fired on a fixed clock regardless of
+     whether the user was actively mid-scroll, not only once they'd genuinely stopped.
+  `IdleFactHint.jsx` was rewritten: the arm effect now bails out early if a fact is already
+  `visible` (kills bug 1 outright); the countdown is rearmed from scratch on every real
+  `pointerdown`/`pointermove`/`wheel` (kills bug 2 — a continuously-panning session now never
+  triggers it, only a genuine pause does); `IDLE_MS` raised to 14s of true stillness; and a new
+  `COOLDOWN_MS` (20s), tracked in a ref (not state — it's only ever read inside the timer
+  scheduling, so a render would be wasted) rather than a rescheduled fact, so one hint hiding can't
+  immediately re-arm the next. Verified live via Playwright at the real timer scale (no mocked
+  clock): 16s of continuous simulated pointer movement never showed a hint; stopping the movement
+  produced one after ~13.5s (matching the new 14s wait); the SAME fact text was confirmed
+  byte-identical 9s into its display (proving the swap bug is gone); it auto-hid at ~12s; and it
+  stayed hidden through a further 15s (inside the 20s cooldown, confirming no immediate re-arm).
+  Full unit suite (`insightModules.test.mjs` unaffected — the fix is purely in the consuming
+  component's timing logic, not the underlying fact-selection code), `npm run build`, and the
+  standard smoke test all passed clean.
+
+- **Fixed List view row overflow on mobile Safari** (real user report, with a screenshot: some
+  rows' right edge bled flush off the screen with no rounded corner or margin, right after the
+  "view in chart" row action shipped — while other rows in the very same list looked fine). Could
+  not reproduce in this sandbox's Chromium (every row measured well within the 390px viewport), but
+  the screenshot was a real iPhone — WebKit is strict about a well-known flex/grid quirk that
+  Chromium is more forgiving of: a flex or grid item's own minimum size defaults to `auto`, not
+  `0`, at EVERY level of nesting, so a container's content can force it past its parent's box
+  unless every level in the chain explicitly opts out with `min-width: 0`. `.person-row` (the
+  card itself, a flex container for the avatar/text/two action circles) gained `min-width: 0` and
+  a defensive `overflow: hidden` (a safety clamp so a row visually can never bleed past its own
+  rounded rectangle regardless of any remaining shrink miscalculation — box-shadow is unaffected,
+  since `overflow: hidden` only clips a box's content, not its own shadow). The `<li>` grid items
+  in both `.listview__group` and `.listview__directory`'s `<ul>` (themselves `display: grid`)
+  gained the same `min-width: 0`, since grid items have the identical default-`auto` behavior as
+  flex items. Verified the fix doesn't regress the demo tree (row bounding boxes measured
+  identically before and after, all comfortably inside the viewport) via Playwright; the real
+  WebKit-only failure mode isn't reproducible in this sandbox's Chromium, so this is a
+  spec-conformant, standard fix for the documented bug class rather than a locally-reproduced
+  regression test. Full unit suite, `npm run build`, and the standard smoke test all passed clean.
+
+- **Custom grandparent names extended to Great-grandparents and beyond** (real user report: "it
+  has not changed the Great-Oma?? still says great-grandma"). The original feature deliberately
+  scoped the custom-term swap to the direct-grandparent branch only (see `kinTerms.js`'s own
+  header comment at the time) — in hindsight too conservative, since "Great-" is just a prefix on
+  the same term, not a different cultural concept the packs don't cover. `kinTerms.js` gained
+  `resolveAncestorTerm(kinTerms, side, gender, greats)` — reuses `resolveGrandparentTerm` under
+  the hood and prepends `'Great-' + 'great-'.repeat(greats - 1)`, the same stacking convention
+  `graph.js`'s own plain-English `ascendingTerm()` already used for "Great-great-grandparent" —
+  but, unlike that plain-English path, never lowercases the resolved term before appending it:
+  these packs store proper address terms ("Oma", "Nonna"), not common nouns continuing an English
+  compound word, and the direct-grandparent branch already treated them the same way ("Paternal
+  Nonna" — the noun is never touched). Wired into two places in `relationLabel`: the specific
+  great-grandparent block (now calls `resolveAncestorTerm(kinTerms, parentSide(p), gender, 1)`,
+  preserving that block's existing no-side-prefix shape) and the general N-generations-up fallback
+  used for great-great-grandparent and beyond (preserving ITS existing side-prefix shape) — each
+  path keeps its own pre-existing structure, only the terminal word changes. Deliberately still
+  NOT threaded into descendant-direction terms (great-grandchildren aren't addressed BY a
+  grandparent-style term, so there's nothing to swap) or step/adoptive great-grandparents (no
+  gender split to swap, same as step/adoptive direct grandparents already). One disclosed,
+  deliberate side effect: for anyone still on the untouched default English pack, a
+  great-grandparent's label capitalization shifts slightly, from "Great-grandmother" (lowercase
+  compound tail) to "Great-Grandmother" (the pack's own always-capitalized term) — the same
+  trade-off already accepted for the direct-grandparent branch, now applied one level further
+  back for internal consistency, rather than adding special-case logic to preserve an arguably
+  arbitrary capitalization quirk. Covered by 7 new unit tests in `tests/kinTerms.test.mjs`
+  (`resolveAncestorTerm`'s greats=0/1/2/3 stacking, a real `relationLabel` great-grandparent case
+  swapping to "Great-Opa"/"Great-Oma", a great-great-grandparent case confirming the side prefix
+  and further stacking, the no-kinTerms-passed byte-identical case, and step/adoptive
+  great-grandparents staying untouched) and verified live via Playwright against the real seed
+  data (`florence`, james's actual paternal great-grandmother) with a German pack set — confirmed
+  the profile's kin-to-viewer badge resolves to "Great-Oma". Full unit suite (including the
+  existing `relations.test.mjs` regression suite, unaffected), `npm run build`, and the standard
+  smoke test all passed clean.
+
+- **Redesigned the topbar "Saving" indicator: the logo IS the indicator now, not a second icon
+  beside it** (real user feedback on a screenshot: "it still looks odd having the two" — the
+  earlier fix had swapped the saving pill's generic spinner for the Logo mark's own `loading`
+  breathe, but that left TWO instances of the same three-bubble mark sitting side by side in the
+  topbar, the real brand logo and the pill's copy of it). Discussed the fix first: rather than
+  overlaying a ring on the real logo (the user's own suggestion) or keeping a separate pill at
+  all, `Logo.jsx` already had exactly the two states this needed built in — `idle` (the
+  permanent barely-there topbar drift) and `loading` (the more pronounced breathe, previously
+  only used on the splash screen and the now-removed pill) — so the fix is to make the ONE
+  persistent brand-mark instance in `.topbar__brand` switch between them live:
+  `loading={syncStatus === 'saving'}` / `idle={syncStatus !== 'saving'}`, `animate={false}` (a
+  persistent header logo never needs its one-shot entrance pop replayed — the app's own splash
+  screen already played that moment; `Home.jsx`'s equivalent small logo already sets `animate=
+  {false}` for the same reason). `TopBar.jsx`'s separate `.pill--saving` and `.pill--saved`
+  blocks (and the now-unused `SavedCheckIcon`) were deleted outright — no second icon ever
+  appears, and per the user's own "perhaps no tick" instinct, there's deliberately no checkmark
+  on completion either: the logo just eases from the loading breathe back to the quiet idle
+  drift the instant `syncStatus` leaves `'saving'`, since a fresh burst of motion right as things
+  go quiet would undercut the whole point of going quiet. Their matching dead CSS (`.pill--saving`,
+  `.pill--saved`, `@keyframes saved-pop`) was removed too. Accessibility is preserved without a
+  visible element: a new `.visually-hidden` `aria-live="polite"` span (reusing the existing
+  utility class from `global.css`) announces "Saving…"/"Saved" to screen readers on the same
+  transitions, decoupled from anything being visibly on screen. The error states
+  (`error`/`error-auth`/`error-forbidden`/`error-toolarge`) were deliberately left exactly as
+  they were — a real save failure needs its own noticeable, tappable retry control, not folded
+  into a passive breathing logo where it could go unnoticed. Verified live via Playwright: since
+  `?demo` mode never calls `enableServerSync()` (no real login, so there's no way to trigger a
+  genuine save to test against), used a temporary `__debugSetSyncStatus` export on `store.js` to
+  drive the transition directly, confirmed exactly one `.logo` element in the brand button at
+  every stage, confirmed its classes correctly switch `logo--idle` → `logo--loading` → back to
+  `logo--idle` (no checkmark pill ever appearing), confirmed the live region text tracks
+  Saving…/Saved/empty, and confirmed zero `.pill--saving`/`.pill--saved` elements ever render —
+  then reverted the temporary export before committing (confirmed via a clean `git diff` on
+  `store.js`). Full unit suite, `npm run build`, and the standard smoke test all passed clean.
+
+- **Unified "back to the tree" across every full-screen subpage, plus a new Time-mode exit
+  pill** (design discussion: "do we need a way to quickly get back to the tree? What ideas do
+  you have that look amazing?" — I pitched a concept board reusing the topbar's own breathing
+  Logo mark everywhere instead of the ~15 bespoke close-button treatments scattered across the
+  app; user: "Yes. Go for it."). Audited every full-screen destination first (a background
+  research pass) and found a real constraint the pitch had to respect: `HowItWorks`/
+  `FamilyTrees` deliberately close back to the **Home hub**, not the bare tree (they're nested
+  one level under it — see the existing `App.jsx` comment "reached only from the hub, so their
+  back button always returns there"), while `TreeInsights`/`FamilySettings`/`UserProfile`/
+  `ActivityFeed`/`FamilyTimeline` (a bottom sheet, not to be confused with the unrelated inline
+  Time-mode slider) all close straight to the tree. Scoped this to a **visual and interaction**
+  unification, not a navigation change: every file's `onClose` still fires exactly whatever it
+  already fired — only what the button looks like changed. New shared `ReturnMark.jsx` (a small
+  button wrapping `Logo` with `idle` breathing, icon-only, no wordmark — every one of these
+  pages already has its own title text beside it) replaces `.subpage__close` (a back-chevron
+  circle), `.icon-btn` (a rounded-square close, used by three different sheets), and
+  `.activity-panel__close` (a third circle variant) — three different existing visual languages,
+  now one. `Home.jsx` itself needed no new component: its already-present but non-interactive
+  `.home__brand` (Logo + "Bloodline" wordmark) became the actual clickable control, and the
+  separate `.home__close` X beside it was deleted outright — "the mark is already here, it just
+  needed to be tappable," exactly as pitched. Four sheet-style headers (`ti__head`/`fs__head`/
+  `tl__head`/`activity-panel__header`) had their title+close order reversed (mark now leads,
+  title follows) and `justify-content: space-between` swapped for a plain `gap`, since the old
+  layout assumed the close button sat on the right. One disclosed simplification from the
+  original pitch: the concept board's mockup described the Time-mode pill "fading in only after
+  real wandering" (a few slider drags) before appearing — built as a fixed heuristic like that,
+  it would have been unproven complexity for uncertain benefit; shipped instead as simply
+  always-visible whenever `timeMode` is on, matching `LineageBanner`'s own existing behavior
+  (which has no such delay either) rather than inventing a new standard just for this one pill.
+  New `ReturnToTreePill.jsx` (mirroring `HomeToMe.jsx`'s two-phase mount/animate mechanics)
+  fills a real, asymmetric gap the audit turned up: Lineage mode already had a working
+  contextual exit (`LineageBanner`'s own "Done" button, wired through the existing
+  `toggleLineage`), but Time mode had *only* the dock's clock icon — no equivalent banner at
+  all. The pill sits at the same top-centre position `LineageBanner` already uses, carries the
+  same breathing mark, and calls a new shared `exitTimeMode` callback (extracted so the dock
+  button's own "tap a second time to leave" path and the new pill both leave Time mode
+  identically, rather than duplicating the same three state-resets in two places). Deliberately
+  did **not** touch `PersonSheet.jsx`, `Lightbox.jsx`, or any of the small in-context edit/confirm
+  sheets (`EditPersonSheet`, `EnrichSheet`, `InviteSheet`, `GedcomImport`, `DuplicatesSheet`,
+  `Legend`, ...) — those are contextual dialogs and forms bound to specific content, not
+  full-screen destinations you navigate away to, and folding a generic brand mark into "Cancel"
+  or "Done" on a form would blur what those controls actually do. Verified live via Playwright
+  across all eight touched surfaces plus the new pill (each opened, confirmed exactly one
+  `.return-mark`/no orphaned old close-button class, clicked, confirmed the correct destination —
+  Home for the two nested subpages, the bare tree for the rest — landed); Time mode specifically
+  confirmed the pill is absent before entering, appears the instant the dock's clock icon is
+  tapped, and clicking it both hides the pill and turns Time mode off via the same dock button
+  state. Full unit suite, `npm run build`, and the standard smoke test all passed clean.
+
+- **Fixed: no way to undo marking a partner as "ex" + the existing-person picker never showed
+  middle names** (real user report: "Cant change relationship back to partners from ex partners.
+  i made a mistake and couldnt go back. had to remove relationship and re add. also, while
+  re adding, already in tree does not show middle names. it should. sooooo many sampson
+  chynoweth's. impossible to know which is which"). Two independent, unrelated bugs in the same
+  report.
+  1. **Ex-partner → partner reversal**: `setRelationshipKind` (`store.js`) and `partnerEdge`
+     were already fully bidirectional — `kind: 'partner'` writes `partner_status: 'current'` and
+     `kind: 'ex_partner'` writes `'former'`, symmetrically, with `graph.js`'s `partners()`
+     projection passing either straight through. The bug was purely a missing menu option:
+     `PersonSheet.jsx`'s `changeOptions` (the "⋮" manage-relationship menu's "Change to" list)
+     had one hardcoded array for every `relType === 'partner'` chip, and it never included
+     `{ kind: 'partner', label: 'Partner' }` — so a relationship already marked "ex" had no way
+     back except the delete-and-re-add workaround the report describes. Fixed by branching on
+     the item's current `status`: `item.status === 'former'` now offers `Partner`/`Parent`/`Child`
+     (the reversal, plus the two kind-changes every partner-type chip already offered); a current
+     partner still offers `Ex-partner`/`Parent`/`Child` exactly as before. No store/graph changes
+     needed — this was always a one-directional UI omission on top of a fully bidirectional data
+     layer.
+  2. **Middle names in the "already in tree" picker**: `AddRelativeSheet.jsx`'s existing-person
+     search built its own `hay` string from `display_name`/`birth_name`/`given_names`/
+     `family_name` — `middle_name` (a real, separately-edited field, and already wired into
+     `SearchOverlay.jsx`'s main search via `lib/search.js`'s `rankPeopleByName` in an earlier
+     fix this session) was never part of it, so two same-named people were indistinguishable
+     here specifically, and searching by a middle name alone (the exact "so many Sampson
+     Chynoweths" scenario) found nothing. Added `p.middle_name` to the filter `hay`, and each
+     candidate row now shows a " · {middle name}" hint next to the name (new `.link-existing__
+     namewrap`/`.link-existing__middle` CSS, styled after `SearchOverlay.jsx`'s own `.search-
+     result__nee` convention) whenever the middle name isn't already visible in `display_name` —
+     same "show it as a disambiguating hint, not a duplicate" rule as the main search overlay.
+  Verified live via Playwright against the real dev server (not mocked): opened James's profile,
+  confirmed his ex-partner Rachel Carter's manage-relationship menu offered "Partner" (not
+  offered before the fix), clicked it, reopened the menu and confirmed it now offered
+  "Ex-partner" instead (the flip actually took, both directions); separately, created a new
+  sibling "Sampson · Alpha · Chynoweth", reopened Add Relative from James for an unrelated
+  relationship type, switched to "Already in tree", searched the bare middle name "Alpha" (which
+  appears nowhere in the display name), and confirmed the picker both found him and rendered
+  " · Alpha" next to his name. Full unit suite (the pre-existing, unrelated step-niece failure
+  in `relations.test.mjs` aside), `npm run build`, and the standard smoke test all passed clean.
+
+- **Fixed: the "back to you" pill never reappeared after the recap tour finished** (real user
+  report: "After the 'XX no. of updates since last visit' sequence has finished, the back to me
+  icon is not displayed. It should be because it lands you on the latest updated profile.").
+  `HomeToMe.jsx`'s pill is gated visible on `!lineageMode && !timeMode && !flightCaption &&
+  !anyOverlayOpen && recapQueue.length === 0` (`App.jsx`) — the `recapQueue.length === 0` half is
+  meant only to keep the pill off the screen *while the recap tour overlay is up*. But
+  `onDone` (fired when the tour's camera lands on its last stop) only ever maps every queue item's
+  `status` to `'done'` — `setRecapQueue((q) => q.map((item) => ({ ...item, status: 'done' })))` —
+  it never empties the array itself, and `closeRecapAll` (wired as both `RecapTour`'s `onClose`,
+  the 3.4s auto-close once the tour finishes, and `onCloseAll`, the manual "stop the tour" X) only
+  ever reset `recapOpen` to `false`, never the queue either. So the very first recap tour played
+  in a session left `recapQueue` permanently non-empty (all `'done'`, but still N items) for the
+  rest of that session — silently disabling the `=== 0` check forever after, exactly matching the
+  report: the tour correctly lands `activeId` on the last-updated profile (`onDone`'s
+  `setActiveId(lastId)`, already working), but the pill that should then offer a way back to your
+  own profile never appears, no matter how many more times you open and finish the tour. Fixed by
+  adding `setRecapQueue([])` to `closeRecapAll`, so the queue is actually cleared the moment the
+  tour's own UI closes, not just marked internally done. Verified live via Playwright against the
+  real dev server: seeded `localStorage`'s `bloodline:recapCutoffAt` key (read directly by
+  `takeRecapCutoff()`, independent of the demo tree's own in-memory-only state) to 40 days ago so
+  the seed family's activity log counted as unseen, opened the Activity feed, tapped "Show me" to
+  start the tour, and let it play out to natural completion (`.recap-tour` fully detaching from
+  the DOM, not manually stopped mid-way — the bug is specifically about the tour *finishing*, and
+  a manual stop never reaches `onDone` at all) — confirmed the `.hometome` pill was present,
+  animated in, and correctly labelled "Back to James" afterward; reverted the fix via `git stash`
+  and reran the identical script to confirm the pill count was 0 beforehand, reproducing the
+  exact reported bug before restoring the fix. Full unit suite (the pre-existing, unrelated
+  step-niece failure in `relations.test.mjs` aside), `npm run build`, and the standard smoke test
+  all passed clean.
+
+- **"Show both in tree" now highlights BOTH duplicate candidates, not just one** (real user
+  feedback on the feature above: "only one is selected/highlighted... the second one does not
+  stand out at all"). Discussed first — I opined that the single glowing/scaled "active" bubble
+  is baked into the ego-camera system (it needs exactly one center) and can't itself go dual, but
+  the recap tour's separate lingering gold ring (`setRecapGlow`) is a non-exclusive primitive
+  already proven to mark an arbitrary SET of bubbles at once — reusing it was the natural fix
+  rather than inventing new visual language. User agreed to reuse the existing gold ring for
+  both. `BubbleTree.jsx` gained `spotlightSetGlow(ids)`, a `viewApi` method mirroring the existing
+  `spotlightClearGlow(ids)` — calls `ensureVisible(ids)` first (same as `spotlightTour`, since a
+  same-render reveal may not have spawned the bubbles yet) then lights `setRecapGlow(true)` on
+  each id directly, no camera choreography. `showDuplicatePairInTree` (`App.jsx`) now calls it
+  with `[aId, bId]` right alongside the existing `refocus()` call — `activateNormal(aId)` still
+  makes only `aId` the single ego-camera "active" bubble (scaled/lifted, and the one the camera
+  centres on), but both now wear the same gold ring, so the second candidate no longer disappears
+  next to it. A new `compareGlowIdsRef` tracks whichever pair is currently lit so a later "Show
+  both in tree" tap on a DIFFERENT pair clears the previous ring first, rather than old rings
+  piling up across repeated uses. Confirmed the reused ring is safe outside its original context:
+  the recap tour's own `recapVisited`-based dimming/legibility logic in the render loop is gated
+  behind `camMode === 'recap' && recap`, so lighting bubbles via `spotlightSetGlow` during normal
+  browsing has no effect on unrelated rendering paths. Verified live via Playwright against the
+  real dev server: created two same-named synthetic siblings ("Duplicate Testerson" ×2, which
+  `findDuplicatePairs`' name-key grouping picks up same as any real duplicate), opened the
+  duplicates sheet, tapped "Show both in tree", and confirmed via a high-resolution screenshot
+  that both bubbles — the larger centred/active one and the smaller one off to the side — carry
+  the identical warm gold ring, clearly distinguishing both from every other (unringed) bubble on
+  screen. Full unit suite (the pre-existing, unrelated step-niece failure in `relations.test.mjs`
+  aside), `npm run build`, and the standard smoke test all passed clean.
+
+- **"Show both in tree" now highlights BOTH duplicate candidates the SAME way the single active
+  person already is** (real user follow-up, with a screenshot: the ring fix above wasn't enough —
+  "the selected profile is not faded, it is vivid, larger, with a gold ring... you can see its
+  immediate family... both of the duplicates should be shown this way... all the other bubbles
+  faded. I should not need to unselect and manually search to locate the other one."). Root cause:
+  the ring was never the whole story — the per-frame distance-based fade/scale (`visualForDistance`
+  + `focusAlpha` in `BubbleTree.jsx`'s render loop) is computed from a single-source BFS,
+  `distancesFrom(graph, activeId)`, so only ONE person (and THEIR immediate family) ever reads as
+  `d≤1` and gets the full-size/undimmed treatment — the second duplicate, wherever it happened to
+  sit relative to the literal active person, faded like any unrelated stranger, exactly as
+  reported. Fixed with a second, independent distance map: `setCompareFocus(ids)` (new `viewApi`
+  method) runs its own `distancesFrom` from EACH id in the pair and merges them by per-person
+  MINIMUM, stored in a new `compareDist` closure variable — completely decoupled from `dist`/
+  `activeRef.current`, so it works regardless of whether the two candidates are connected by any
+  path at all (real report from the earlier duplicate-safety feature: "duplicate candidates are
+  frequently NOT connected by any path"). The per-frame `d` used for rendering folds in
+  `Math.min(rawD, compareDist)` right where it's computed, BEFORE the branch dispatch — so it
+  flows through to the existing `visualForDistance(d)` unchanged (scale 1.38/alpha 1 at d=0, same
+  as "active" already gets) and `focusAlpha` unchanged, with zero new fade logic to maintain.
+  Deliberately does NOT touch the separate `computeRadialTargets` layout function (has its own
+  independent local `dist` computation) or anything keyed on the literal `id === activeRef.current`
+  check (nameplate-hiding, the terracotta "active" ring, chart-mode sizing, camera centring) — only
+  ONE bubble is still the literal ego-camera active node; the fix is purely "which bubbles get to
+  look prominent," not "which bubble the camera centres on" or "which one owns the floating
+  nameplate." `showDuplicatePairInTree` (`App.jsx`) calls `setCompareFocus([aId, bId])` right
+  alongside the existing `spotlightSetGlow` ring call, and `clearCompareFocus()` alongside
+  `spotlightClearGlow` when a later "Show both in tree" replaces the pair — always kept in
+  lockstep with the ring so there's never a lit-but-dim or dim-but-unlit mismatch. Verified live
+  via Playwright against the real dev server with two different scenarios: (1) both duplicates
+  sharing the same parents (both read identically vivid/full-size/ringed, immediate family visible
+  for both — matching the screenshot); (2) a genuinely DISCONNECTED pair — one duplicate added as
+  James's own sibling, the other added as a child of Rachel Carter (James's ex-partner, not a blood
+  relative at all) via her relationship-chip nav (`.rel-chip__nav`, a reliable DOM navigation path
+  discovered along the way — clicking a person's chip on an open profile opens THEIRS directly,
+  sidestepping the canvas/camera coordinate-guessing multi-hop search flights otherwise require) —
+  confirmed Rachel herself rendered vivid/undimmed (she's the second duplicate's own parent, d=1
+  via `compareDist`, despite being outside James's blood line entirely) while James's actual
+  children Oliver and Chloe, unrelated to either duplicate, correctly faded. Full unit suite (the
+  pre-existing, unrelated step-niece failure in `relations.test.mjs` aside), `npm run build`, and
+  the standard smoke test all passed clean.
+
+- **Marriage/separation discoverability + military fields collapsed by default** (real user
+  feedback on the marriage/separation feature above: "not sure where this feature lives now? Only
+  on creation? So when you go into edit profile, there's nothing there for it? It's not all that
+  clear yet to add marriage or separation?" — plus, while looking, "not sure I like having the
+  military data fields. Maybe a drop down? The 98% of people won't have that."). Discussed both
+  first; agreed on the fixes below rather than a full relocation of either feature.
+  1. **Marriage/separation stays in the "⋮" manage-relationship menu** (it's a fact about the
+     *couple*, not one person, so it doesn't belong in the single-person Edit Profile form — that
+     part was deliberate, not a gap), but the entry point itself was too quiet: a bare "⋮" icon
+     gave no hint that marriage info lived behind it. Partner-type relationship chips now show a
+     new "+ Add marriage details" link (`.rel-chip__add-marriage`, `PersonSheet.jsx`) whenever
+     neither marriage nor separation info is set — `hasMarriageInfo` checks the exact same
+     `is_married`/`marriage_date`/`separation_date` fields the existing "· Married {year}" sub-label
+     already reads, so the two are mutually exclusive (a chip shows one or the other, never both,
+     never neither with no way in). Tapping it opens the identical "⋮" menu (`relMenuId` state) —
+     no new UI surface, just a second, louder door into the one that already existed. Rendered as
+     its own row below the nav+menu-button row (`.rel-chip`'s existing `flex-wrap` already puts
+     `.rel-menu` on its own line the same way), since it can't nest inside the `.rel-chip__nav`
+     button itself (that's already a full-row interactive element navigating to the person).
+  2. **Military fields collapsed by default in `EditPersonSheet.jsx`** — the four fields (branch,
+     served-with, rank, service number) sat always-visible in the main form for every profile
+     regardless of relevance. Wrapped in the exact same disclosure pattern the Privacy section
+     already uses (`privacy-section`/`privacy-section__toggle`/`__cur`/`__caret`/`__body` — fully
+     generic CSS, no lock-specific styling to fight), swapping the lock icon for `MilitaryIcons.jsx`'s
+     existing `MedalIcon` and the "current visibility" summary for the branch label when set.
+     `militaryOpen` starts **open** only when the person already has something in at least one of
+     the four fields (a document-accepted fact, or an earlier manual entry) — an existing record is
+     never hidden behind an extra tap the first time the form opens; it only collapses for the
+     blank case the feedback was actually about. Verified live via Playwright against the real dev
+     server: confirmed exactly one "+ Add marriage details" hint on James's profile (his former
+     partner Rachel Carter, who has `is_married: true` in the seed but no `marriage_date` — a real
+     married-but-incomplete case, correctly surfaced) and zero for his current partner Megan
+     (already showing "· Married 2016"); clicking the hint opened the Marriage editor directly;
+     separately confirmed the Rank input has zero matches before expanding the new Military
+     disclosure and exactly one after, with the toggle correctly closed by default on James's
+     mostly-empty seed profile. Full unit suite (the pre-existing, unrelated step-niece failure in
+     `relations.test.mjs` aside), `npm run build`, and the standard smoke test all passed clean.
+
+- **Keepsake first-edition gate tightened: a real life story is now required too, and the bar
+  went from 40% to 67%** (real user follow-up on the completeness-gate feature above: "I think a
+  life story is a minimum requirement as well. Also, 40% is very lean, was thinking at least 70%.
+  John Davies has next to no info but meets the 40% requirement."). Discussed first — confirmed
+  both complaints were real: `profileCompleteness()`'s 9-check score never checks for a life story
+  at all (`person.story`, the separate AI-generated narrative field — distinct from the plain `bio`
+  field the score's "Biography" check already covers), so a profile with just birth date +
+  birthplace + occupation + relationships and nothing else (no photo, bio, story, memories, tags,
+  or events) cleared the old 40% bar at 44%, exactly the John Davies complaint. On the number: with
+  9 checks the rounded score can only land on {0,11,22,...,100} — 70 isn't reachable, and would
+  silently demand 7/9 instead of the intended ~6/9 — agreed on 67 (the true 6/9 value) instead.
+  `KeepsakeView.jsx`: `MIN_COMPLETENESS_FOR_FIRST_EDITION` raised to 67; a life story is now a
+  second, independent requirement (`hasStory = !!person?.story`) rather than folded into the score
+  itself — `profileCompleteness()` is shared with the profile's own completeness meter and
+  `lib/military.js`'s narrative gate, and changing what IT means wasn't the ask, just what Keepsake
+  additionally requires. `scoreBlocking`/`storyBlocking` are tracked separately so the "Almost
+  there" banner only names what's actually still missing: a profile that's already past the score
+  threshold but has no story now correctly says "add life story" alone (not a stale list of
+  completeness fields that aren't really blocking anything anymore), and a genuinely sparse profile
+  still gets the original missing-fields message, with "Life story" folded into that same list
+  (subject to the existing two-item-plus-ellipsis truncation) when both are blocking at once.
+  Verified live via Playwright against the real dev server (mocking `/api/keepsake`'s GET, since
+  plain `npm run dev` has no Cloudflare Pages Functions): James — a fully-filled seed profile
+  (photo, bio, birth date/place, occupation, tags, life events, memories, relationships; 100% on
+  the 9-check score) but with no `person.story`, since nothing in the seed ever pre-generates one —
+  correctly showed "Almost there — 100% complete — add life story to compile a Keepsake." with no
+  compile button, proving the story requirement bites independently of a maxed-out score, and that
+  the banner copy doesn't regress into the old "add " + empty-string bug. The score-blocking path
+  was confirmed via `profileCompleteness()` directly (a bare-stub profile — birth date, birthplace,
+  bio only — scores 44%, still well under the new 67% bar), preserving the original message shape.
+  Full unit suite (the pre-existing, unrelated step-niece failure in `relations.test.mjs` aside),
+  `npm run build`, and the standard smoke test all passed clean.
+
+- **Fixed: "erase tree" wiped local state but the tree came back** (real user report, owner of
+  the tree: "it looks as though it's started again, and reloaded the initial welcome page but
+  hasn't actually wiped the family tree"). Root cause: `resetTree()` (`store.js`) just did
+  `commit({ ...EMPTY })` — clears local state and localStorage fine, but records nowhere that any
+  of it was *deliberately* deleted. `removePerson()` already tombstones what it removes
+  (`withTombstones`/`_deleted`) so a later sync merge can't resurrect it; `resetTree()` never did
+  the same for a full wipe. So the very next merge — a stale-ETag 409 conflict retry on the erase's
+  own save, the 60s background poll, or the next login — saw "no local record for this id" and, per
+  `_mergeByRecency`'s own logic, just kept whatever the server still had: the whole tree came back,
+  and `hasCompletedOnboarding` (a deliberate one-way ratchet for the *opposite* case — a genuinely
+  fresh device shouldn't clobber a real family) flipped back to `true` right along with it. Matches
+  the report exactly: the welcome screen was real (the local flag flip is instant), the "hasn't
+  actually wiped" was also real (nothing durable ever recorded the deletion).
+  Two fixes, agreed together:
+  1. **`resetTree()` now tombstones everything** — every existing person/relationship/memory/
+     photo/document id, the same `withTombstones` call `removePerson` already makes, just for the
+     whole tree at once — then forces the very next save to be authoritative immediately
+     (`_serverEtag = '*'` + `flushPendingSave()`, reusing the existing tab-close/backgrounding
+     force-save helper) instead of the normal 1.5s-debounced save. This means the erase can never
+     enter the merge-and-retry path at all (`If-Match: '*'` bypasses the server's conflict check
+     unconditionally — `tree.js`'s own existing rule, already used by `putTree`'s own
+     deadlock-breaking third attempt), so there's no window where a stale ETag could trigger a
+     merge that ratchets `hasCompletedOnboarding` back on. A no-op when server sync isn't enabled
+     (demo mode) — `flushPendingSave()` only acts if a save was actually armed.
+  2. **A stronger confirmation** (discussed and agreed alongside the root-cause fix): the old
+     `window.confirm()` was a single OK tap for an action that permanently wipes the *entire
+     shared* family tree, for every member, with no undo — clearly too easy to clear by accident,
+     and the same session's own "every deletion needs a confirm step" audit already treats this
+     class of action as needing more friction than a plain Yes/No. `FamilySettings.jsx`'s danger
+     zone now swaps the button for an inline panel (matching the sheet's own `fs__confirm-inline`
+     convention, scaled up) stating exactly what's about to happen and requiring the family's own
+     name to be typed back before "Erase everything" enables — a much higher bar to clear
+     unintentionally than a single native dialog.
+  Covered by 2 new unit tests in `tests/store.test.mjs`: one confirms every person/relationship/
+  memory/photo/document created before a reset is tombstoned afterward; the other directly
+  simulates the exact bug scenario (a stale "server" copy still holding a since-erased person)
+  and confirms the tombstone means that person can never survive a merge with it. Verified live
+  via Playwright against the real dev server: the danger-zone button now opens the inline confirm
+  (not a native dialog); "Erase everything" stays disabled typing the wrong text and enables the
+  instant the real family name is typed; Cancel dismisses without touching anything; and — the
+  actual bug reproduction — the reset UI correctly closes to the onboarding screen after erasing.
+  Full unit suite (the pre-existing, unrelated step-niece failure in `relations.test.mjs` aside),
+  `npm run build`, and the standard smoke test all passed clean.
+
+- **Import pipeline review + fixes** (real user report: "Someone used the import function to
+  create [a] tree of 600 people. They cited many duplicates created."). Full code review of the
+  GEDCOM (`lib/gedcom.js`) and FamilySearch (`lib/familysearch.js`) import pipelines turned up
+  two real duplication bugs plus three gaps, all fixed:
+  1. **FamilySearch subject-duplication bug** (`lib/familysearch.js`) — `fetchTree()` fetches the
+     logged-in user's ancestry and their spouses/children in parallel, both starting from the same
+     FamilySearch person id. `ancestryToStore` and `spousesToStore` each built their OWN
+     independent `idMap` keyed by a fresh `uid()` per FS person id, so the subject person — present
+     in both responses — got two different internal ids: one copy ended up with parents attached,
+     the other with the spouse/children, on every single FamilySearch import. Fixed by sharing one
+     `idMap` (threaded through `fetchAncestry`/`fetchSpousesAndChildren` as an optional param,
+     built once in `fetchTree` and passed to both) — safe across the `Promise.all` concurrency
+     since neither store-conversion function awaits internally, so their synchronous id-building
+     never actually interleaves.
+  2. **FamilySearch pedigree-collapse bug** (`lib/familysearch.js`, same file) — `ancestryToStore`
+     assigned `idMap[p.id] = uid()` unconditionally per entry in `data.persons`, so an ancestor
+     occupying more than one Ahnentafel position (pedigree collapse — e.g. cousins who married)
+     had its id silently overwritten on the second occurrence; the final `people` array (built via
+     a late `idMap` lookup AFTER the loop) picked up the LAST-written id for every occurrence,
+     while relationships built from the earlier, now-stale `ahnMap` snapshot pointed at an id that
+     no longer existed anywhere — a dangling, silently-dropped relationship. New shared
+     `internalIdFor(idMap, fsId)` helper resolves and stably caches one id per FS id, never
+     overwriting; `people` is now deduplicated by FS id in the same pass.
+  3. **`importFromGedcom`'s un-tombstoned "Replace" wipe** (`store.js`) — the exact same bug just
+     fixed in `resetTree()` (see above): the `merge:false` branch swapped in `{...EMPTY, people:
+     newPeople, ...}` with no tombstones, so a later sync merge (a conflict retry, a background
+     poll, the next login) could silently resurrect the pre-import tree underneath the freshly
+     imported one. Now tombstones every old person/relationship/memory/photo/document before
+     swapping in the import, and forces the result to become the authoritative server copy
+     immediately (`_serverEtag = '*'` + `flushPendingSave()`) — identical reasoning to `resetTree`.
+  4. **Proactive duplicate detection at import preview** (design gap — merge mode previously just
+     said "Duplicate people may appear" with no way to know how many before committing).
+     `GedcomImport.jsx` and `FamilySearchImport.jsx` now compute a `duplicateCount` via
+     `findDuplicatePairs` (`lib/duplicates.js`) at the Preview step: merge mode compares the
+     union of the existing tree + the parsed batch, filtered to pairs touching at least one NEW
+     person (pre-existing duplicates already have their own review path, so they're not re-
+     surfaced here); replace mode compares the imported batch against itself. `App.jsx` now passes
+     `existingPeople`/`existingRelationships` (`data.people`/`data.relationships`) into both import
+     components for this. Shown as an amber `.gedcom__dup-note` right below the existing bio-note,
+     naming which review sheet ("Possible duplicates") to use afterward.
+  5. **`nameKey` suffix-handling bug** (`lib/duplicates.js`, minor) — `nameKey()` took the LAST
+     whitespace token as the surname, so "John Smith Jr." keyed as `first=john, last=jr.` and never
+     grouped with a duplicate stub "John Smith" (`last=smith`) — missing a real duplicate rather
+     than causing a false one. Generational suffixes (Jr./Sr./II/III/IV/V) are now stripped before
+     the surname is taken.
+  6. **Pagination + bulk dismiss in `DuplicatesSheet.jsx`** (a big backlog like the reported
+     600-person import needed to be tractable to review) — the pairs list now pages 20 at a time
+     with a "Show N more" button, and a confirm-gated "Dismiss all N as not duplicates" bulk
+     action was added. Deliberately NOT a bulk merge: a merge is destructive (the whole reason the
+     per-pair confirm step exists — see the earlier duplicate-merge-safety work above), and
+     auto-picking which record "wins" across dozens of pairs unsupervised would be a worse mistake
+     than the one this sheet exists to prevent; dismissal is safe by comparison since it never
+     touches tree data.
+  Covered by new unit tests: `tests/familysearch.test.mjs` (2 tests, mocking `fetch` — one proves
+  the subject person appears exactly once across a combined ancestry+spouses fetch with the couple
+  edge correctly wired to the single surviving id, the other proves a pedigree-collapsed ancestor
+  present at two Ahnentafel positions collapses to one internal id with no dangling relationship);
+  `tests/duplicates.test.mjs` (4 tests for the suffix fix, including a regression guard that
+  conflicting birth years still correctly rule out a false match); a new test in
+  `tests/store.test.mjs` mirroring `resetTree`'s own two regression tests, applied to
+  `importFromGedcom`'s replace path. Verified live via Playwright against the real dev server: a
+  synthetic 3-person GEDCOM with a deliberate "John Smith" duplicate (one stub, one with a birth
+  date) correctly showed the duplicate note in both merge mode ("...against your existing tree")
+  and replace mode ("...within this file"); the import committed cleanly; and the resulting
+  Possible Duplicates sheet correctly surfaced the John Smith pair. Full unit suite (the
+  pre-existing, unrelated step-niece failure in `relations.test.mjs` aside), `npm run build`, and
+  the standard smoke test all passed clean.
+
+- **"Show both in tree" polish pass** (real follow-up feedback on a screenshot of that feature:
+  "fade all bubbles other than the two immediate families of the duplicates in question... have
+  the gold ring more noticable and the name tag displayed on both"). Three changes in
+  `BubbleTree.jsx`/`bubble.js`, all scoped to when `compareDist` is active (i.e. only during a
+  duplicate-pair comparison, never ordinary browsing):
+  1. **Harder fade for everyone else** — the normal focus-fade floor (0.2 alpha for anything
+     beyond 3 hops) is deliberately gentle for everyday browsing, so extended relatives stay
+     lightly visible for context. While `compareDist` is set, the same tiers instead floor out at
+     0.05 (d≤1 still reads at full alpha 1 for both families) — isolating just the two families
+     being compared, per the feedback, without touching the gentler default used the rest of the
+     time.
+  2. **A more noticeable gold ring** — `setRecapGlow` (shared with the recap tour's own "who
+     changed" lingering ring) went from a single thin 2.2px stroke to a soft outer halo (7px,
+     faint) plus a thicker 3.4px crisp inner ring, so it reads as clearly "lit" at a glance rather
+     than needing a close look — this matters more here than in the recap tour, since two separate
+     (often distant) bubbles both need to announce themselves without the ego-camera's own
+     active-ring/scale/lift treatment to lean on.
+  3. **Name label on both, unconditionally** — the per-bubble label was already suppressed for
+     whichever person is the literal ego-camera `active` id (that one's name shows via the floating
+     `FocusNameplate` instead, to avoid duplication) — correct for ordinary single-focus browsing,
+     but the nameplate can only ever hover near ONE bubble, so the second duplicate candidate (who
+     can be anywhere else on the canvas, disconnected or not) had no label at all. New
+     `compareIds` (a `Set` of the two ids, set/cleared alongside `compareDist` in
+     `setCompareFocus`/`clearCompareFocus`) forces `labelAlpha = 1` for both members of an active
+     comparison pair regardless of the ordinary active-person/hover rules, guaranteeing both always
+     carry a visible name — the one genuine gap the screenshot showed (one candidate had a label,
+     the other didn't).
+  Verified live via Playwright against the real dev server: merged a duplicate stub "William
+  Mercer" into the seed family (unconnected, matching the real "William Mercer" by name), opened
+  Possible Duplicates, and confirmed via screenshot after "Show both in tree" that (a) the
+  surrounding 24-person tree faded to near-invisible outside the two families, (b) both bubbles
+  carry a clearly thicker layered gold ring, and (c) both show a "William Mercer" label — including
+  the previously-unlabeled second candidate. Full unit suite (the pre-existing, unrelated
+  step-niece failure in `relations.test.mjs` aside) and `npm run build` passed clean.
+
+- **"Show both in tree" gets a real floating nameplate on both, not just the in-canvas label**
+  (immediate follow-up: "its treating the label as the little name underneath. not the name
+  plate. we need it to force both the name plates on" — the fix above forced on the small
+  per-bubble text label, but the user meant the richer floating `FocusNameplate` pill — name,
+  lifespan/age, and any fact — that already floats above the literal active person). Only one
+  person can ever be the ego-camera's `active` id, and `FocusNameplate` was a single instance in
+  `App.jsx` tracking only that one id via `getScreenPos(activeId)` — the second duplicate
+  candidate had no way to get one at all. `App.jsx` gained `comparePairIds` state (set alongside
+  the existing `compareGlowIdsRef` in `showDuplicatePairInTree`, same lifecycle — persists until a
+  later "Show both in tree" replaces it) and a SECOND `<FocusNameplate>` instance, tracking
+  `comparePairIds[1]` (the non-active candidate — `comparePairIds[0]` is always `activeId` itself,
+  already covered by the existing instance) via the same generic `viewApi.current.getScreenPos(id)`
+  the first one already uses. Hidden under the same conditions as the first (overlay open, browse
+  mode, chart layout, self-hover) plus one more specific to this one: `activeId !==
+  comparePairIds[0]` — the moment the user taps away to browse something unrelated, the second
+  plate hides rather than floating orphaned over a bubble the "show both" context no longer
+  applies to. No `fact` passed for the second plate (facts are a separate, unrelated feature).
+  Verified live via Playwright: after merging a duplicate stub into the seed family and triggering
+  "Show both in tree," confirmed exactly 2 `.nameplate` elements render, both at full opacity, both
+  correctly reading "William Mercer" — and via screenshot that the richer info card (dates/age/
+  marriage fact) on the active one and the plain name pill on the stub (which has no dates to show)
+  both float correctly above their own bubble at the same time. Full unit suite (the pre-existing,
+  unrelated step-niece failure in `relations.test.mjs` aside) and `npm run build` passed clean.
+
+- **Icon refresh: bolder circle scale + a refined gold** (design review, prompted by the user
+  sharing an AI-generated rebrand pitch — dark leather, glossy emboss, a serif wordmark — and
+  asking for a design opinion). Reviewed it against the *actual* shipped icon (`public/favicon.svg`
+  + `favicon-maskable.svg`, not just `Logo.jsx`) rather than in the abstract, built a Playwright-
+  verified comparison artifact showing four real variants of the shipped mark at true pixel sizes
+  (96/60/40/29px) plus a light/dark home-screen simulation, and recommended against the leather
+  direction (it's a different visual language from everything else in the app — matte paper, not
+  glossy skeuomorphism) but FOR the one legitimate critique underneath it: the mark sat with too
+  much padding, reading a little timid at small size. Landed on two changes, agreed by the user:
+  1. **Circles enlarged ~18% about the icon's centre** (same relative composition, same flat
+     treatment, no gradient/bevel added) — more confident fill of the frame, which reads faster at
+     the sizes an icon actually lives at (29–40px on a real home screen).
+  2. **The third circle's gold formalized AND re-tuned** — `#b08642` was never a deliberate token,
+     just a hex copy-pasted seven times across `components.css` (one spot even already referenced
+     `var(--gold, #b08642)`, anticipating a token that didn't exist). Promoted to a real `--gold`
+     token in `theme.css`, then nudged warmer/more saturated to `#c4913f` so it reads as a chosen
+     third colour between terracotta and sage rather than a slightly muddy leftover.
+  Applied everywhere this exact mark is duplicated in the codebase, not just the app icon, since
+  leaving some copies stale would have recreated the inconsistency the review was fixing:
+  `public/favicon.svg` + `favicon-maskable.svg` (source SVGs — the maskable variant's own dark
+  `#1c1108` background is untouched; that's a real, deliberate, pre-existing Android-adaptive-icon
+  safe-zone fill, not something this pass touched), the four PNG exports regenerated via the
+  existing `tests/_geniconpng.mjs` Playwright rasterizer, `Logo.jsx` (the in-app topbar/splash
+  mark, its own `viewBox 0 0 42 40` coordinate system scaled by the equivalent factor), the
+  `main.jsx` ErrorBoundary's fallback-screen copy of that same mark, `public/admin.html`'s embedded
+  mark + its own separate `--gold`/`COLOR.gold` (that file keeps a parallel, non-shared token set
+  from the main app's `theme.css`), `public/privacy.html` + `terms.html`'s embedded mark (a THIRD
+  independent coordinate system, `viewBox 0 0 56 56` — also scaled by the equivalent factor), and
+  `Home.jsx`'s unrelated 5-node "family constellation" hero graphic, whose third node happened to
+  reuse the same gold and is now wired to the `--gold` token like everywhere else. Verified live:
+  the regenerated PNGs visually confirmed (fuller, more confident circle fill; noticeably richer
+  gold) and the in-app topbar mark screenshotted clean with no clipping or overflow at its real
+  render size. Full unit suite (the pre-existing, unrelated step-niece failure in
+  `relations.test.mjs` aside) and `npm run build` passed clean.
+
+- **Fixed for good: "Show both in tree" nameplate randomly missing on some reviews** (real user
+  report, after two earlier attempts at this same feature: "This only seems to have worked on the
+  first duplicate reviewed. All subsequent reviews don't show name plate... too many back and
+  forth"). Root-caused this time via a live repro instead of guessing: reviewed 3+ synthetic
+  duplicate pairs back-to-back with a debug trace on `comparePairIds`/`activeId`, and found the
+  actual mechanism — "Show both in tree" is a button click inside `DuplicatesSheet`, so the mouse
+  cursor is left wherever that button was; the very next `refocus()` reframes the camera and can
+  coincidentally land either bubble right under that stale cursor position, satisfying a
+  `hoveredId === activeId` (or `=== comparePairIds[1]`) match with nobody actually pointing at
+  anything. That's a real Pixi hit-test side effect of content moving under a stationary pointer,
+  not a deliberate hover — and it explains the "random" quality of the report: it hit a
+  *different* one of the two nameplates almost every single review in testing, never twice in
+  a predictable pattern, which is exactly what "sometimes the first works, sometimes it doesn't"
+  reads like from the outside. Fixed by having BOTH `FocusNameplate` instances ignore
+  `hoveredId` entirely while a compare pair is genuinely active for the current person
+  (`comparePairIds && comparePairIds[0] === activeId`) — the ordinary self-hover→`HoverCard`
+  handoff for everyday single-person browsing is provably untouched, since with `comparePairIds`
+  null the guard clause collapses back to exactly `hoveredId === activeId`, byte-identical to the
+  pre-existing behavior. Verified live with the actual failure condition reproduced (cursor
+  deliberately left in place after each click, never moved away) across 3 full runs of 3
+  sequential reviews each (9 total) — every single one now shows both nameplates. Full unit suite
+  (the pre-existing, unrelated step-niece failure in `relations.test.mjs` aside) and
+  `npm run build` passed clean.
+
+- **Siblings list gets a real, specified sort order** (explicit request: "Biological / Age /
+  Alphabetical / Half siblings / Age / Alphabetical / Steps / Age / Alphabetical" — a 3-tier sort
+  by kind, then oldest-to-youngest, then alphabetical). The Siblings group previously rendered in
+  whatever order `graph.siblings()` derived them (insertion order from relationship iteration —
+  effectively arbitrary). New `sortSiblings(siblings, byId)` in `graph.js` sorts by the existing
+  `kind` field (`'full'` → what the request calls "Biological" → `'half'` → `'step'`, already
+  computed by the sibling-derivation loop right above it), then by `birth_date` ascending within
+  each tier (a known birth date always sorts before an unknown one, rather than unknowns
+  interleaving unpredictably), then `display_name.localeCompare` as the final tiebreak. Wired into
+  both places a Siblings group is rendered as an ordered list: `PersonSheet.jsx` (the profile) and
+  `AccessibleTree.jsx` (List view's focused-person group) — the two other `graph.siblings()` call
+  sites (`App.jsx`, `HoverCard.jsx`) only ever use it for Set membership or aggregate kind counts,
+  where order is a no-op, so they're untouched. Covered by 3 new unit tests in
+  `relations.test.mjs` (a full family exercising all three tiers at once with an age tie and an
+  all-unknown-dates tie, a known-vs-unknown-date tiebreak, and a non-mutation check) and verified
+  live against the seed data — James's own two full siblings (Sarah b. 1988, Tom b. 1990) render
+  in that exact oldest-first order. Full unit suite (the pre-existing, unrelated step-niece
+  failure aside) and `npm run build` passed clean.
+
+- **Insights: catalogue grown from 13 to 20 modules, Records pinned to the top, the rest
+  reshuffled daily, and the home hub's "Did you know?" pill now rotates on every visit**
+  (real user feedback: "Suggesting we try for a bigger catalogue of interesting insights to
+  scroll through. 11 is not enough in my opinion. 20 minimum if possible. The insights in the
+  family pill are great, but they should alternate and change positions to maintain freshness
+  and variety. Also, 'records the family holds' should be at the top... then alternate the
+  insight boxes below"). Four pieces:
+  1. **Records leads, unconditionally**: `InsightModules.jsx`'s render pass now pulls `records`
+     out of its old spot (second card in "Seasons & milestones") and renders it first, standalone,
+     with no chapter wrapper — `RecordsModule`'s own `Module` title already reads "Records the
+     family holds", so it needs no heading of its own. Matches the feedback's own reasoning
+     verbatim ("those facts are awesome, get the viewer engaged").
+  2. **Everything else reshuffles once a day**: `lib/insightModules.js` gained `dayIndex(now)`
+     (generalizing `records()`'s own pre-existing "which 3 of the pool today" day math, now
+     shared rather than duplicated) and `seededShuffle(arr, seed)` — mulberry32 PRNG + Fisher-
+     Yates, deliberately never `Math.random()`, so the order is stable within a calendar day (no
+     mid-session reshuffling) but different the next day. `InsightModules.jsx` shuffles both which
+     chapter leads and which card leads within each chapter, seeded off `dayIndex()` with a
+     distinct per-chapter offset so chapters don't all reorder identically.
+  3. **Seven new module types, reaching 20**: `surnames` (the given-name hall of fame, mirrored
+     onto family surnames), `livingGenerations` (a living-only cross-section of `strata`'s
+     all-time totals — "4 generations of the family, alive together right now"), `twinBirths`
+     (siblings sharing an exact recorded birth date — real multiples, distinct from the birthday
+     wheel's "same day, different year" twins), `milestoneAnniversaries` (every couple past a
+     25/40/50/60/70-year mark — the whole SET, distinct from `records()`'s single longest-marriage
+     holder), `newArrivals` (living people born in the last 5 years — the family's growing edge),
+     `blendedFamily` (step/adoptive relationship counts — celebrating the family held together by
+     more than blood, matching this app's own "deliberately messy" seed philosophy), and
+     `tradeLineage` (an occupation passed straight down a real parent→child line for 3+
+     generations, distinct from `trades()`'s "most common job of the era" bands). Each gated by
+     its own data-sufficiency threshold, same convention as the original 13 — a module never
+     guesses or half-renders. Deliberately reuses existing, already-styled UI primitives instead
+     of inventing seven new chart types: `SurnamesModule` is a near-copy of `NamesModule`'s bar
+     rows, `LivingGenerationsModule` reuses `StrataModule`'s row/track markup, `TwinBirthsModule`
+     reuses `BirthdaysModule`'s "shared birthday" list rows, `MilestoneAnniversariesModule` and
+     `BlendedFamilyModule` reuse `RecordsModule`'s row pattern, `NewArrivalsModule` reuses
+     `ServiceRecordsModule`'s plain drawer-list pattern, and `TradeLineageModule` reuses
+     `HeartlandsModule`'s migration-arrow chain — zero new CSS needed, four small new icons
+     (`RootsIcon`, `PulseIcon`, `TwinIcon`, `PuzzleIcon`) in the same 18px outline family as
+     the rest. `highlightCandidates` and `buildInsightHighlights` (the "did you know" sentence
+     pool and the privacy-safe AI-narrative digest) gained an entry for all seven, so the new
+     modules feed both the home hub's teaser and the AI biography narrative like every existing
+     module already does. Found and fixed one real bug while wiring `newArrivals` up to a unit
+     test with a pinned `now`: it filtered `birth_year >= cutoff` but never bounded the upper
+     end, so a person born AFTER the pinned "now" (a genuinely future birth relative to the
+     clock being tested) would still incorrectly count as a "recent arrival" — fixed with a
+     `b > thisYear` bound alongside the existing cutoff check.
+  4. **The home hub's "Did you know?" card now rotates on every visit, not once a day**: the
+     card previously called `pickDailyHighlight`, which is deliberately fixed for a whole
+     calendar day (correct for its OTHER purpose — see its own doc comment — but exactly what
+     the feedback asked to change here: "they should alternate... to maintain freshness and
+     variety"). `Home.jsx` now calls the underlying `highlightCandidates` pool directly and
+     steps to the next candidate via a small `nextInsightIndex()` helper backed by a
+     localStorage counter (`bl_home_insight_idx`) — persisted across visits (not component
+     state, which would reset on every Home mount), so returning to the hub always shows a
+     different fact from last time, cycling through the whole pool before repeating.
+     `pickDailyHighlight` itself is untouched and stays exported/tested — it's still exactly
+     right for `IdleFactHint`'s per-person tree hints, which have their own separate
+     session-based variety mechanism.
+  Covered by 21 new unit tests in `tests/insightModules.test.mjs` (`dayIndex`/`seededShuffle`
+  determinism, and threshold-boundary tests for each of the 7 new modules — a qualifying case
+  and a just-below-threshold case for each). Verified live via Playwright against the real dev
+  server: confirmed DOM order inside the Insights sheet (Records first, unconditionally, followed
+  by a genuinely shuffled remainder), drilled into three of the new module cards (Surnames,
+  Living Generations, Milestone Anniversaries) confirming their tap-to-drill-down interactions
+  work with zero console errors, and confirmed the home hub's teaser text differs across 4
+  consecutive visits in the same session (previously identical all day). Full unit suite (the
+  pre-existing, unrelated step-niece failure in `relations.test.mjs` aside), `npm run build`, and
+  the standard smoke test all passed clean.
+
+- **The Children group now sorts too, extending the Siblings ordering fix** (real user report,
+  with a screenshot of Nancy Turner's profile: "Heather is not the oldest?"). Investigated first
+  rather than assuming a regression — the screenshot was of the **Children** group, not Siblings;
+  `sortSiblings` was always scoped to Siblings only, and `graph.children()` has never had any
+  sort applied at all, just whatever order the parent-child relationships were originally added
+  in. Confirmed with the user this should be fixed by extending the same ordering rather than
+  leaving Children unsorted. `graph.js`'s `sortSiblings` was refactored into a shared
+  `sortByTierThenAge(items, byId, tierOf, tierOrder)` helper (byte-identical behavior, covered by
+  the existing sibling tests) and a new `sortChildren(children, byId)` reuses it with a
+  two-tier `CHILD_QUALIFIER_ORDER` (`biological`/`adoptive` ahead of `step` — a child doesn't
+  have Siblings' "half" concept, so there's no three-way split here), keyed off the qualifier
+  parent-child relationships actually carry, with a missing qualifier defaulting to biological
+  (matching the existing `isBioAdopt()` convention used elsewhere in the same file). Wired into
+  the same two call sites `sortSiblings` already reached: `PersonSheet.jsx` and
+  `AccessibleTree.jsx`. Deliberately scoped to the direct Children group only — the extended
+  (read-only) Grandchildren/Great-grandchildren/Nieces-and-Nephews lists derived from it were
+  outside what was reported and asked for, so they're untouched, same boundary the original
+  Siblings-only fix drew. Verified live against the seed data via Playwright: James Mercer's
+  three children (Oliver b.2012 biological, Chloe b.2014 biological, Noah b.2013 **step**) now
+  render as Oliver, Chloe, Noah — tier correctly outranks raw birth year, so the step-child sorts
+  last despite being chronologically between the other two, exactly mirroring how a step-sibling
+  already sorts after full/half siblings regardless of age. Covered by 4 new unit tests in
+  `relations.test.mjs` (tier-before-age with a same-tier tie, a missing qualifier defaulting to
+  biological ahead of an older step child, the known-vs-unknown-birth-date tiebreak, and a
+  non-mutation check). Full unit suite (the pre-existing, unrelated step-niece failure aside) and
+  `npm run build` passed clean.
+
+- **Removed the milestone-anniversaries insight; added centenarians + young-lives-remembered**
+  (real feedback: "Please remove this new insight. The marriage data is not yet fully up to
+  date. Some insight ideas: Could we have an insight for people who didn't live beyond age 20
+  and any centennials?"). `milestoneAnniversaries` (couples past a 25/40/50/60/70-year mark) is
+  removed outright — `lib/insightModules.js`'s compute function, its `highlightCandidates`/
+  `buildInsightHighlights` entries, and `InsightModules.jsx`'s `MilestoneAnniversariesModule` are
+  all deleted rather than hidden behind a flag, since the underlying marriage-date data quality
+  problem isn't something a toggle would fix. Two new modules replace it, both deliberately gated
+  at "at least one" rather than the usual 2+ pool — reaching 100, or not reaching 20, are each
+  individually meaningful, not a statistical pattern that needs a second data point to be worth
+  showing (same reasoning `serviceRecords` already used for documented military records).
+  `centenarians(graph, now)` covers both a deceased person's final age and a living person's
+  current age (measured to `now`, not frozen at their last birthday), plausibility-capped at 130
+  the same way other age-derived modules guard against bad data. `earlyLoss(graph)` covers
+  deceased people who died before 20, sorted youngest-first so the most poignant fact leads.
+  Given explicit "premium design" instructions and the sensitivity of `earlyLoss`'s subject
+  matter, both got real design attention rather than the usual copy-an-existing-pattern pass:
+  `CentenarianModule`/`EarlyLossModule` reuse the same `.tim`/`.tim-drawer__list` card chrome
+  every other module already uses (a bespoke violet "memorial" badge was considered and rejected
+  — it would have broken the grid's consistent terracotta icon treatment, and the copy already
+  carries the tone without needing a color change) with two new hand-drawn 18px icons — a single
+  candle for early loss (deliberately plain, not ornate) and, after a first attempt at a laurel
+  wreath read as an ambiguous pin/lock shape at actual render size on live review, a bolder
+  sunburst for centenarians instead (a small icon needs restraint over literalism at 18px).
+  `earlyLoss` is deliberately excluded from `highlightCandidates` (the home hub's rotating "did
+  you know" pill) and `buildInsightHighlights` (the AI-narrative digest) — a family member's early
+  death belongs in the considered, dedicated Insights card a viewer has to deliberately open, not
+  a casual rotating teaser or an unscripted AI aside; `centenarians` is included in both, since
+  reaching 100 is unambiguously something to celebrate anywhere. Covered by 5 new unit tests in
+  `tests/insightModules.test.mjs` (single-occurrence rendering for both, the living-vs-deceased
+  centenarian ranking, the >130 bad-data guard, and null-when-nothing-qualifies for both). Verified
+  live via Playwright against the real dev server (temporarily adding two synthetic people to
+  `seed.js` to force both cards to render, since neither qualifies against the real seed data,
+  then reverting the seed change before shipping): confirmed the milestone-anniversary card no
+  longer appears anywhere in the sheet, both new cards render with correct copy/pluralization
+  (caught and fixed a "1 yrs" singular bug along the way), and a zoomed-in capture of each icon at
+  4x device scale confirmed the final sunburst reads clearly while the original wreath attempt did
+  not. Full unit suite (the pre-existing, unrelated step-niece failure aside) and `npm run build`
+  passed clean.
+
+- **Design polish pass: the twins card didn't meet the same bar as the rest of the day's new
+  modules** (real feedback with a screenshot: "That two sets of twins design needs more polish.
+  Review all the new ones that were added today's and make sure the meet the high design bar
+  that's expected"). `TwinBirthsModule` was the one genuine miss on review: it borrowed
+  `BirthdaysModule`'s `.tim-shared` markup — bare underlined text links with no avatars, no card
+  chrome, no hover state — which exists in that file only as a secondary, occasionally-toggled
+  drill-down (behind a "N shared birthdays" chip), never as a card's primary content. Sitting
+  directly above the "New Arrivals" card's Avatar-and-name rows in the same sheet, the contrast
+  was obvious. Rebuilt to match `RecordsModule`/`BlendedFamilyModule`'s own tappable-row-plus-
+  `PeopleDrawer` pattern instead: each shared date is now a `.tim-ms__row` (icon badge, bold
+  paired names, date as the subtitle, hover translateX like every other `.tim-ms` row in the
+  file) that expands into the same avatar drawer every other drill-down uses. Audited the other
+  six modules shipped earlier today against the same bar — `SurnamesModule` mirrors `NamesModule`
+  exactly, `LivingGenerationsModule` mirrors `StrataModule`, `BlendedFamilyModule`/
+  `CentenarianModule`/`EarlyLossModule` already used the `.tim-ms`/`.tim-drawer__row` patterns
+  correctly, and `TradeLineageModule` mirrors `HeartlandsModule`'s migration-chain markup — all
+  five held up on a live re-screenshot and needed no changes; only the twins card had drifted.
+  Verified by temporarily wiring three synthetic relationships into `seed.js` (a twin pair, a
+  step/adoptive trio, and a three-generation trade chain — none occur naturally in the real seed
+  data) to force all three previously-unverified cards to render, screenshotting each, then
+  reverting the seed change before committing. Full unit suite (the pre-existing, unrelated
+  step-niece failure aside) and `npm run build` passed clean.
+
+- **Search: fixed middle names outranking real names, uncapped results, added occupation/place
+  search** (real report: "if i were to search for mary... i get 10 names that have 'mar' in the
+  middle name... this should not be the case. It should prioritise first and surnames then middle
+  names... having the ability to search jobs and places would be a great addition"). Investigated
+  before touching anything — my first pass at an answer was wrong (I was working from a stale
+  local checkout that hadn't synced a large chunk of this branch's prior history, including the
+  relationship/status filter chips already in `SearchOverlay.jsx`; caught and corrected once
+  re-synced). The real bug, confirmed in the actual code: `rankPeopleByName` picked
+  `Math.max(nameScore, birthScore, middleScore)` across fields with no notion that a match on the
+  person's actual name should categorically outrank a match on their middle name. Because
+  `middle_name` is stored as its own short, standalone field, a full-word query hits it as an
+  EXACT match (score 10 from `scoreText`) while that same query can only ever hit a real
+  "First Last" `display_name` as a starts-with match (score 6 — the whole string is never
+  literally equal to just the first name) — so a middle name could win a tie it shouldn't have
+  been in at all. Fixed with additive priority BANDS instead of a flat max: any name/birth-name
+  match now scores `nameBand + 40`, any middle-name-only match scores `middleBand + 20`, and
+  occupation/place-only matches keep their raw 0–10 score — so every band is strictly ordered
+  regardless of how the within-band scores compare, and middle-name search (a real, deliberately
+  recent feature — some records are better known by a middle name) still works, just correctly as
+  a fallback rather than a competitor. Also, per the second half of the report: `rankPeopleByName`
+  now also scores `occupation` and `birth_place` + `residence` (joined), tagged with
+  `_matchedOccupation`/`_matchedPlace` so `SearchOverlay.jsx`'s result row only surfaces (and
+  highlights) whichever field actually explains the match, exactly mirroring the existing
+  `_birthName`/`_middleName` "née …" hint pattern rather than inventing a new convention. Fixed
+  the same `residence`-field gap in `AccessibleTree.jsx`'s List-view directory search, which
+  already searched name/occupation/birth_place/tags but had never checked residence either. The
+  hard 10-result cap is gone (`limit` is now optional, defaulting to no cap) — the same
+  `.search-results` list already renders arbitrarily long uncapped lists today for the "browse a
+  relationship chip with no text typed" path, so this needed no new CSS, just removing the
+  artificial `.slice()`. Covered by 16 tests in `tests/search.test.mjs` (the exact regression this
+  was reported for — a real, non-exact first-name match still beats an exact middle-name match —
+  plus occupation/place matching, band-priority ordering, and the uncapped-by-default behavior
+  with an explicit-limit escape hatch). Verified live via Playwright against the real dev server:
+  searching "cardiff" surfaces everyone born or living there with the place highlighted in the
+  row, searching "gp" surfaces Robert Mercer with "GP" highlighted in his occupation, and
+  searching "mercer" returns all 14 matches uncapped. Full unit suite (the pre-existing, unrelated
+  step-niece failure aside) and `npm run build` passed clean.
+
+- **Removed the quick search's All/Living/Deceased status pills** (follow-up to the search fix
+  above — real feedback: "i dont think there is any point having 'deceased, living and all'
+  pills"). Confirmed before removing anything: those pills were fully redundant with the ones
+  List View's own "Everyone" directory already has, so nothing was actually lost — just clutter
+  above the input. Deliberately left the relationship chips (Immediate Family/Grandparents/Aunts &
+  Uncles/Cousins/etc.) alone — a different, earlier feedback thread ("Add relationship + status
+  filter chips to search") added both rows together, but only the status row was ever called out
+  as low-value; the relationship chips solve a distinct problem (browsing when you don't remember
+  a name) that wasn't in question. `SearchOverlay.jsx`: removed the `STATUSES` array, the `status`
+  state and its pill row, and the `status` branches from `basePool`'s filter and the `browsing`
+  check (now driven by the relationship chip alone). Removed the now-dead `.filter-pills--search`
+  CSS rule and updated the block comment above `.search-chips` that had described both rows.
+  Verified live via Playwright: the status pill group is gone, the relationship chips still render
+  and still work for chip-only browsing (tapping "Immediate Family" with no text typed still lists
+  the full, uncapped, alphabetical result set). Full unit suite (the pre-existing, unrelated
+  step-niece failure aside) and `npm run build` passed clean.
+
+- **Added a trade explorer to the Trades insight card** (real feedback: "there is a section that
+  says 'from farmer to teacher'... There should be a search function within, similar to... 'names
+  section, there are 28 John's etc'... Do we have any carpet layers in the family? How many
+  electricians are there"). Reused the exact explorer pattern already proven in `NamesModule` and
+  `SurnamesModule` rather than inventing a new one — same "Wonder about a ___? Try ___…" input,
+  prefix-match-then-substring-fallback, chip row with counts, tap to open the same `PeopleDrawer`
+  every other card uses. `trades()` in `lib/insightModules.js` already built a per-era-band
+  top-3-with-ids tally for the bars; it now *also* builds one unscoped `all` tally across every
+  working life in the family (not capped to the top 3, not scoped to a band — mirrors `names()`'s
+  own `top`/`all` split), reusing the same `trackVariant`/`resolveDisplay` punctuation-merging
+  already used for the per-band tally, so "Carpet Layer" and "Carpet Layer." still count as one
+  trade. `TradesModule` in `InsightModules.jsx` gained a second, independent selection state
+  (`selName`, for the explorer) alongside the existing band-tag selection (`sel`) — picking one
+  clears the other, so only one drawer is ever open at a time, matching how every other module
+  with a single `sel` already behaves. Deliberately did NOT force-capitalize the "no matches"
+  message the way `NamesModule` does ("No {cap(q)}s…") — that capitalization only reads right for
+  proper nouns (names), not common nouns (trades): "No electricians in the tree yet" reads
+  correctly lowercase, "No Electricians" would look like mis-applied Title Case. Covered by 3 new
+  unit tests in `tests/insightModules.test.mjs` (the `all` list covers every distinct trade, not
+  just the per-band top 3; it's sorted count-descending with an alphabetical tiebreak; and the
+  punctuation-merge fix applies to `all` the same way it already did to the per-band tally).
+  Verified live via Playwright: temporarily added 6 synthetic people spanning 1905–1955 with
+  varied trades (including a literal "Carpet layer", the user's own example) to `seed.js` to force
+  the card to qualify — it doesn't naturally in the real seed data (too few people with both an
+  occupation and a birth date spanning 50+ years) — confirmed searching "carpet" surfaces exactly
+  the one match with its count, tapping the chip opens the drawer with the right person, and an
+  unmatched query ("astronaut") shows the empty-state message without disturbing an already-open
+  drawer; reverted the seed change before committing. Full unit suite (the pre-existing, unrelated
+  step-niece failure aside) and `npm run build` passed clean.
+
+- **Search: order-independent, cross-field multi-word matching** (real report: "if i search for
+  robert turner, his name appears. if i search turner robert, it does not. same applies for
+  middle names. example, robert george turner- found if i search, robert turner. not found if i
+  search robert george. or george robert. this is an annoyance with all the older names, as they
+  often swapped their preferred name... so the search needs to return any possibility with the
+  names entered, no matter the order. obviously, being mindful of the display sequence not
+  showing middle names first if there is a better match"). Root cause: `rankPeopleByName` scored
+  each whole name field against the whole, un-split query string via `scoreText` — so a reordered
+  query never matched (nothing about "turner robert" is a substring/prefix of "Robert Turner" in
+  either direction), and a query split across two fields (a first name plus a middle name) never
+  matched at all, since each field was tested independently against the full query string with no
+  word-level decomposition. `lib/search.js` gained `tokenize`/`scoreWordAgainst`/`scoreNameTokens`:
+  the query is split into words, and every query word must find a match — exact, prefix, or
+  substring, mirroring `scoreText`'s own tiers but per-word — in EITHER a person's "primary" word
+  bag (`display_name` + `birth_name`/`maiden_name`) or, only as a fallback, their "secondary" bag
+  (`middle_name`); strict AND across query words, not OR, so a query with one truly unmatched word
+  (e.g. "robert xyzzy") correctly excludes the person rather than the search silently broadening.
+  Because each query word is scored independently of position, "robert turner" and "turner robert"
+  score identically — order never matters. Because a word can be satisfied from either field
+  regardless of which field the OTHER query words came from, "robert george" and "george robert"
+  both now match someone named "Robert Turner" with `middle_name: 'George'`. The existing
+  band-priority principle (a real-name match always outranks a middle-name match) is preserved at
+  the level of the WHOLE match, not per-word: if satisfying every query word requires reaching
+  into the middle name for even one of them, the entire match drops to the secondary band below
+  any match satisfiable from primary fields alone — so a person genuinely named "Robert George"
+  still outranks "Robert Turner" (middle name George) for the query "robert george", exactly the
+  "mindful of the display sequence" requirement. Occupation/place matching is untouched — still
+  whole-string `scoreText` against the full query, since a job title or place name is a phrase,
+  not name tokens people reorder. Covered by 5 new unit tests in `tests/search.test.mjs` (order
+  independence for a two-word name; a query split across name and middle name matching in either
+  order; a real first+last name match outranking a same-query middle-name-derived match; an
+  unmatchable query word excluding the person entirely; three-word order independence spanning
+  name and middle name) — all 14 pre-existing tests continued to pass unchanged, confirming the
+  original middle-name-ranking fix's own regression tests still hold under the new tokenized
+  design. Verified live via Playwright against the real dev server: temporarily added
+  `middle_name: 'George'` to the seed data's Robert Mercer (no `middle_name` field exists in the
+  real seed otherwise) and confirmed "robert mercer"/"mercer robert" return the identical result,
+  and "robert george"/"george robert" both correctly surface him via his middle name with zero
+  console errors; reverted the seed change before committing. Full unit suite (the pre-existing,
+  unrelated step-niece failure aside) and `npm run build` passed clean.
+
+- **Fixed: the "All" dock button crashed the tab on a large family** (real user report: pressing
+  "All" started to display everyone, then the page rebooted/refreshed; on retry it crashed with
+  "a problem repeatedly occurred on myfamilybloodline.com" — reproducible every time). Root cause:
+  `toggleExpandAll` (`App.jsx`) set `expanded = new Set(graph.people.map(p => p.id))` in one
+  synchronous update with no size guard anywhere on that path — for this account's real tree
+  (CLAUDE.md's own tree-storage doc already notes "1000+ people, heavy documents") that forces
+  `BubbleTree.jsx`'s `d3-force` simulation (`forceManyBody`, recomputed every animation-frame tick)
+  and a PixiJS `Bubble` sprite (with a photo texture, rings, a label) for every single person to
+  all spin up in the same frame — fine for the ~23-person demo seed this was built against, a
+  guaranteed CPU/GPU/memory spike at real-world scale. The "problem repeatedly occurred" wording is
+  literally the browser's own GPU-process-crash dialog, and it reproduced every time because it's
+  deterministic on tree size, not a flaky glitch. Two changes, agreed with the user before
+  building: (1) **staggered reveal** — `toggleExpandAll` now adds ids to `expanded` in batches of
+  `REVEAL_BATCH` (40) every `REVEAL_INTERVAL_MS` (90ms) via a `setInterval` tracked in
+  `revealTimerRef` (cleared on the next toggle, a page unmount, or a mid-reveal "Collapse" tap),
+  with the first batch landing synchronously/immediately so a small tree still feels instant,
+  exactly as before this fix; (2) **a cap for large trees** — above `MAX_BUBBLE_REVEAL` (250, a
+  size threshold, not a redesign), "All" reveals only the `MAX_BUBBLE_REVEAL` people nearest to
+  whoever's currently active (via `graph.js`'s existing `distancesFrom` BFS, imported fresh into
+  `App.jsx`) rather than the whole tree, and shows a toast — reusing the existing generic
+  `syncToast`/`setSyncToast` mechanism already used for save-status and duplicate-relationship
+  messages, no new UI — pointing to List view ("switch to List view to see everyone in a family
+  this size"), since List view's directory is already properly virtualized (`useVirtualizer`,
+  AccessibleTree.jsx) and already handles any tree size today; a force-directed bubble canvas
+  packed with 1000+ nodes wouldn't be a usable view even if it didn't crash, so the honest fix
+  above the cap is pointing at the view built for that scale, not pretending the bubble canvas can
+  do it too. Verified live via Playwright against the real dev server: the demo's ~23-person tree
+  still reveals everyone and flips to the "Collapse" button with zero delay and zero toast, byte-
+  identical to the pre-fix behavior; a temporarily-added synthetic 523-person tree (500 extra
+  people chained off James, reverted before committing) confirmed the toast fires with the correct
+  cap wording, the page stays fully responsive and interactive throughout and after the staggered
+  reveal (confirmed via `document.readyState` and zero console/page errors, screenshotted to
+  visually confirm a readable, camera-framed subset rather than the whole synthetic tree dumped on
+  screen), and no crash — reproducing the fix rather than just the absence of a crash. Full unit
+  suite (the pre-existing, unrelated step-niece failure aside), `npm run build`, and the standard
+  smoke test all passed clean.
+
+- **Cinematic Timeline — Phase 0 director (spine only; NOT wired into the app yet)** (user shared
+  a "Cinematic Timeline Animation Specification" doc — a directed, emotional "travel through a
+  life" experience where the timeline is a "River of Time" and the camera "tells the story"
+  rather than following a bubble). Opined it's the right ambition but essentially "The Keepsake as
+  a film" and huge, so recommended (and the user approved) a de-risking prototype first rather than
+  committing to the whole engine. Built `src/lib/cinematicTimeline.js` — `buildCinematicScript(
+  graph, personId)`, a **pure, renderer-agnostic** compiler turning a person into an ordered SCRIPT
+  of beats (opening on the parents before birth → birth → each sibling → marriage → each child →
+  milestones → parent deaths → quiet-stretch world-context → death+legacy, or a living "present"
+  ending). Deliberately the same shape of work `keepsake.js` already does (compile a person → an
+  ordered, inclusion-filtered list of narrative units) so the printed Keepsake and the film could
+  one day share the compiler. Handles messy/sparse real data as a first-class concern: never
+  invents a wedding or a birth year (an unknown-year marriage/child simply produces no dated beat,
+  though the child still appears in the legacy frame), estimates ONLY the subject's own anchor
+  birth year when missing and flags it (`estimated`), and never returns an empty script even for a
+  bare name-only stub. Reuses the existing `lib/profile.js#lifeEvents`, `lib/worldEvents.js`
+  (`detectRegion`/`nearestWorldEvent`/`sameYearWorldEvent`) and `lib/dates.js#yearOf`. Each beat
+  carries `{ kind, year, estimated, focus (NOT always the subject), cast, camera:{move,tightness},
+  pacing, dwellMs, setPiece, title, detail, world }` — camera INTENT, never pixels; a renderer
+  interprets it. Covered by 15 unit tests (`tests/cinematicTimeline.test.mjs`): chronological
+  ordering, opening-on-parents-before-birth, marriage/child/sibling beats, "became a father"
+  milestone folded into the child's own beat, living→present vs deceased→death+legacy endings,
+  parent-death within the subject's lifetime, and the sparse-data guards. **Phase 1 prototype
+  (throwaway, gitignored `tests/_cinematic_proto.mjs`)** baked the real director output for James
+  into an animated canvas "River of Time" and was verified live via Playwright across all 13 of
+  his beats — confirmed the cross-section model reads as cinematic (birth forms James as a glowing
+  point between his parents' merging currents; marriage brings the partner's current alongside;
+  the ending settles on the living family) with the warm-dark era palette + typeset captions. Three
+  real findings surfaced for the next phase: (1) a full living family stacks into a tall column and
+  labels collide — crowding/lane-compression/label-declutter is THE thing to solve for big
+  families, not the camera; (2) real data contradicts itself (the seed's James↔Megan marriage year
+  is 2016 on the partner edge but 2019 in an event, so both a marriage beat and a milestone were
+  emitted — degraded gracefully but confirms the director needs a conflicting-date reconciliation
+  pass); (3) the "everyone alive travels the river together at the current time, on lanes" model is
+  correct (a first attempt parking bubbles at their birth-year x left the parents off-screen at the
+  opening). **Deliberately still Phase 0** — the tested compiler is dead code until a real canvas
+  renderer (Phase 2) and a design doc (`docs/CINEMATIC-TIMELINE.md`) are built; next-step direction
+  (commit-and-build Phase 2 / write the doc first / iterate the prototype feel) is an open decision
+  with the user.
+
+- **GEDCOM import now reads MARR (marriage date + place)** (found while checking whether the
+  importer handles Ancestry.ca exports — Ancestry.ca is just Ancestry.com's Canadian domain, same
+  GEDCOM 5.5.1 export; verified the parser against a realistic Ancestry-flavoured file with its
+  custom `_APID`/`_MTTAG` tags + `OBJE` media refs, which parse and are safely ignored). The gap:
+  `lib/gedcom.js`'s FAM handler read `DIV` (→ former partner) but never `MARR`, so imported couples
+  linked correctly yet lost their wedding date/place — a real miss given the marriage/separation
+  capture feature already in the app. Added `MARR` parsing to the FAM loop: a `MARR` tag marks the
+  couple `is_married: true` and its `DATE`/`PLAC` populate the same `marriage_date`/`marriage_place`
+  the manual add-partner flow already stamps on the partner edge (year-only, via the existing
+  `extractYear`, matching how birth/death dates are reduced; place kept as the full PLAC string like
+  birth_place). A FAM with no MARR is still a valid partnership with the marriage fields left unset;
+  a divorced couple keeps its marriage date but stays a `former` partner (DIV still wins). Photos
+  still don't import (Ancestry's GEDCOM only references media by URL; the images live on Ancestry,
+  and the parser doesn't process `OBJE`). Covered by a new `tests/gedcom.test.mjs` (5 tests: MARR
+  with date+place, MARR with neither, no-MARR-leaves-fields-unset, divorced-but-married, and a full
+  Ancestry-style export with custom tags + OBJE). Full unit suite (the pre-existing, unrelated
+  step-niece failure aside) and `npm run build` passed clean.
+
+- **GEDCOM import: full dates + re-import no longer doubles the tree** (follow-up to the MARR fix,
+  from a full review of the import pipeline). Two fixes:
+  1. **Dates were reduced to year-only** — `extractYear` turned "12 MAR 1950" into "1950", so every
+     imported person lost their month/day and never appeared in the home "birthdays this month"
+     feature (which needs `birth_date` as `YYYY-MM-DD`). New `parseGedcomDate` (`lib/gedcom.js`)
+     produces full ISO for an exact "D MMM YYYY" date, degrades to `YYYY-MM` for a month+year, and
+     to `YYYY` for a year-only or approximate/range date (ABT/BET/BEF/AFT/EST/CAL…) — never faking a
+     day the source didn't assert. Applied to birth, death, and marriage dates.
+  2. **Merge import was a pure append** — re-importing the same GEDCOM/FamilySearch data silently
+     doubled the whole tree. New `dedupeMergeImport` (`lib/duplicates.js`) collapses confident,
+     unambiguous re-adds against the existing tree (same suffix-stripped name + birth year, no
+     conflicting full date), remapping the dropped person's relationships onto the existing id and
+     dropping edges that then duplicate one already present. Deliberately conservative, matching
+     `findDuplicatePairs`' precision-over-recall stance: an ambiguous signature (>1 existing person
+     with that name+year), a dateless record, or a genuine full-date conflict is NOT auto-merged —
+     it imports as new and the existing "Possible duplicates" review sheet handles it. Wired into
+     `importFromGedcom`'s merge branch (`store.js`), so BOTH the GEDCOM and FamilySearch import
+     paths (both call `importFromGedcom`) benefit. Covered by new tests in `tests/gedcom.test.mjs`
+     (exact/partial/approximate date precision) and `tests/duplicates.test.mjs` (re-import collapses
+     with edge remap; genuinely-new people still import; ambiguous / full-date-conflict / dateless
+     cases correctly left for review), plus an end-to-end check parsing a real GEDCOM twice and
+     confirming 0 people/0 edges added on the second import. Full unit suite (the pre-existing,
+     unrelated step-niece failure aside) and `npm run build` passed clean. (Photos still don't
+     import — Ancestry's GEDCOM only references media by URL; the images live on Ancestry.)
+
+- **GEDCOM export (take your tree anywhere)** (agreed direction: standard-format export first as the
+  self-contained quick win, a full lossless photos+docs archive as a later doc-first effort). New
+  `storeToGedcom(people, relationships)` in `lib/gedcom.js` — the inverse of the parser — writes
+  standard **GEDCOM 5.5.1**: groups co-parents + their children into FAM records (HUSB/WIFE by
+  gender), emits NAME/GIVN/SURN, SEX, BIRT/DEAT with dates + places, OCCU, RESI, NOTE (bio, with
+  CONT), MARR (date+place) and DIV from the partner edge, and PEDI on adoptive/step children's FAMC.
+  Round-trips every field GEDCOM can carry — proven by tests that export a controlled tree and
+  re-parse it (marriage/divorce/adoption/childless-couple/isolated-person all survive) plus a real
+  seed round-trip (23 people, 28 parent + 8 partner edges, byte-identical edge counts both ways).
+  Deliberately lossy for what GEDCOM can't express (photos, memories, tags, events, the Keepsake) —
+  that's what the separate full-archive export will be for. One parser change came with it: display_
+  name now derives from **first given + surname** (not every given name), matching the app's own
+  convention ("James Robert /Mercer/" → "James Mercer" in the tree, full name kept in given_names and
+  shown in the profile) — this also makes an Ancestry import's display names app-consistent and is
+  what makes the round-trip faithful. One documented model limitation: two people who co-parent a
+  child but were never partners still become a HUSB/WIFE couple in the FAM (GEDCOM has no "shared a
+  child, never a couple" concept), so a re-import gains a partner edge between them. Wired into the UI
+  as a client-side download (nothing leaves the device): a new "Export data" section in
+  `FamilySettings.jsx` (beside Import, same `canEdit` gate) → `App.jsx`'s `handleExportGedcom` builds
+  the file via `storeToGedcom` and triggers a `.ged` download named `{family}_bloodline_{date}.ged`.
+  Verified live via Playwright end-to-end (Home → Family settings → Export GEDCOM → a valid 5.5.1
+  file downloads with all 23 seed people + 8 families, James as "James Robert /Mercer/"). Full unit
+  suite (the pre-existing, unrelated step-niece failure aside), `npm run build`, and the live check
+  all passed clean. **Next:** the full lossless archive (`.zip` of tree JSON + photos + docs from R2,
+  owner-gated, async job for large trees, and eventually a self-contained offline viewer) — a bigger,
+  design-doc-first effort.
 
 ## Architecture / key files
 

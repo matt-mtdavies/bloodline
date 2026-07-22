@@ -10,6 +10,7 @@ import {
   addRelationship,
   removeRelationship,
   setRelationshipKind,
+  updatePartnerMeta,
   mergePeople,
   removePerson,
   updateRelationshipQualifier,
@@ -29,6 +30,12 @@ import {
   addCondition,
   removeCondition,
   updateCondition,
+  addLifeEvent,
+  addMedal,
+  removeMedal,
+  retractDocumentContributions,
+  dismissRelationshipFact,
+  logActivity,
   loadFromServer,
   saveToServer,
   enableServerSync,
@@ -37,6 +44,7 @@ import {
   importFromGedcom,
   migratePhotosToR2,
   migrateDocsToR2,
+  migrateDocThumbsToR2,
   setCurrentUser,
   setMyPerson,
   bindIdentity,
@@ -45,20 +53,26 @@ import {
   getActivityReadAt,
   setActivityReadAt,
   takeRecapCutoff,
+  setRecapCutoff,
 } from './data/store.js';
 import { groupRecapUpdates, captionForRecapGroup } from './lib/recap.js';
-import { uploadPhoto, generateThumb, uploadDocument, savePhotoToDevice } from './lib/image.js';
+import { uploadPhoto, generateThumb, uploadDocument, savePhotoToDevice, srcToDataUrl, summarizeDocument } from './lib/image.js';
 import { useImageZoom } from './lib/useImageZoom.js';
-import { buildGraph, pathBetween, pathBetweenOrdered, bloodRelativesOf } from './data/graph.js';
+import { buildGraph, pathBetween, pathBetweenOrdered, bloodRelativesOf, distancesFrom } from './data/graph.js';
+import { storeToGedcom } from './lib/gedcom.js';
 import { detectRegion, nearestWorldEvent } from './lib/worldEvents.js';
-import { findDuplicatePairs } from './lib/duplicates.js';
+import { findDuplicatePairs, pairKey, loadDismissedDuplicates, saveDismissedDuplicates } from './lib/duplicates.js';
 import { canManageTree } from './lib/visibility.js';
-import { profileCompleteness } from './lib/profile.js';
+import { profileCompleteness, isDuplicateLifeEvent } from './lib/profile.js';
+import { computeInsightModules, personHighlight, highlightCandidates } from './lib/insightModules.js';
 import { useReducedMotion } from './hooks/useReducedMotion.js';
 import BubbleTree from './viz/BubbleTree.jsx';
+import ChartTree from './viz/ChartTree.jsx';
 import TopBar from './components/TopBar.jsx';
 import FocusNameplate from './components/FocusNameplate.jsx';
 import HoverCard from './components/HoverCard.jsx';
+import HomeToMe from './components/HomeToMe.jsx';
+import ReturnToTreePill from './components/ReturnToTreePill.jsx';
 import PersonSheet from './components/PersonSheet.jsx';
 import AddRelativeSheet from './components/AddRelativeSheet.jsx';
 import EditPersonSheet from './components/EditPersonSheet.jsx';
@@ -73,14 +87,20 @@ import PhotoCropper from './components/PhotoCropper.jsx';
 import AccessibleTree from './components/AccessibleTree.jsx';
 import Legend from './components/Legend.jsx';
 import IntroHint from './components/IntroHint.jsx';
+import IdleFactHint from './components/IdleFactHint.jsx';
 import Intro from './components/Intro.jsx';
 import Onboarding from './components/Onboarding.jsx';
 import LoginScreen from './components/LoginScreen.jsx';
 import FamilySettings from './components/FamilySettings.jsx';
 import UserProfile from './components/UserProfile.jsx';
+import Home from './components/Home.jsx';
+import HowItWorks from './components/HowItWorks.jsx';
+import FamilyTrees from './components/FamilyTrees.jsx';
 import MergeWizard from './components/MergeWizard.jsx';
 import InviteSheet from './components/InviteSheet.jsx';
 import TreeInsights from './components/TreeInsights.jsx';
+import KeepsakeView from './components/Keepsake/KeepsakeView.jsx';
+import { buildKeepsakeFacts, factsHash } from './lib/keepsake.js';
 import DuplicatesSheet from './components/DuplicatesSheet.jsx';
 import LineageBanner from './components/LineageBanner.jsx';
 import FlightCaption from './components/FlightCaption.jsx';
@@ -92,6 +112,7 @@ import RecapTour from './components/RecapTour.jsx';
 import GedcomImport from './components/GedcomImport.jsx';
 import FamilySearchImport from './components/FamilySearchImport.jsx';
 import SaveNudge from './components/SaveNudge.jsx';
+import HomeNudge from './components/HomeNudge.jsx';
 import SearchOverlay from './components/SearchOverlay.jsx';
 
 const isDemo = typeof window !== 'undefined' &&
@@ -132,6 +153,50 @@ const _initialPersonParam = (() => {
 // real cutoff the second time through.
 const _initialRecapCutoff = typeof window === 'undefined' ? null : takeRecapCutoff();
 
+const DOC_FIELD_LABEL = { occupation: 'Occupation', birth_place: 'Birth place', residence: 'Residence' };
+
+// Shapes a raw summarizeDocument() result into the doc.extracted record the
+// store persists — every candidate (a fact, a profile field, a mentioned
+// person) starts 'pending' so Enrich and DocViewer both know it hasn't been
+// reviewed yet. Shared by the manual Summarize button and the background
+// auto-summarize-on-upload path so the two can never drift apart.
+const PROFILE_FIELD_KEYS = [
+  'occupation', 'birth_place', 'residence',
+  'military_branch', 'military_nation', 'military_service_number', 'military_rank',
+];
+
+// Every scalar profile field a document can ever write (see PROFILE_FIELD_KEYS
+// above, plus cause_of_death — filled opportunistically by applyDocumentFact,
+// never offered as its own Enrich candidate). Used two ways: tagging
+// person.field_sources[field] with the accepting document's id when a
+// document writes one, and clearing that tag the moment handleSave sees a
+// human change the same field through the ordinary edit form — so a document
+// deleted later can only ever retract what it actually still owns, never a
+// real correction typed in by hand afterward.
+const DOC_TRACKABLE_FIELDS = [...PROFILE_FIELD_KEYS, 'cause_of_death'];
+
+// See toggleExpandAll's own comment: above this many people, "All" reveals
+// only the nearest ones to whoever's active instead of the whole tree.
+const MAX_BUBBLE_REVEAL = 250;
+const REVEAL_BATCH = 40;
+const REVEAL_INTERVAL_MS = 90;
+
+function buildExtracted(result) {
+  const pf = result.profileFields;
+  const profileFields = {};
+  if (pf) {
+    for (const key of PROFILE_FIELD_KEYS) {
+      profileFields[key] = pf[key] ? { ...pf[key], status: 'pending' } : null;
+    }
+  }
+  return {
+    facts: result.facts.map((f) => ({ ...f, status: 'pending' })),
+    profileFields: pf ? profileFields : null,
+    peopleMentioned: (result.peopleMentioned || []).map((p) => ({ ...p, status: 'pending' })),
+    medals: (result.medals || []).map((m) => ({ ...m, status: 'pending' })),
+  };
+}
+
 export default function App() {
   const data = useSyncExternalStore(store.subscribe, store.getState);
   const syncStatus = useSyncExternalStore(syncStore.subscribe, syncStore.getState);
@@ -153,9 +218,25 @@ export default function App() {
 
   // Possible duplicate people (same name + corroborating evidence) to offer for
   // merging. The cleanup entry point is gated to editors (see canEditTree below).
+  // Dismissed pairs live in one shared place (lib/duplicates.js, localStorage-
+  // backed) rather than inside DuplicatesSheet's own state — the topbar's count
+  // pill and the review sheet's list used to each track "what's left" separately,
+  // so a dismiss in the sheet never reached the pill (stuck showing a stale,
+  // too-high count) and a pair dismissed in an earlier session was still counted
+  // here even though the sheet correctly hid it (pill said N, sheet said "tidy").
+  const [dismissedDuplicates, setDismissedDuplicates] = useState(loadDismissedDuplicates);
+  const dismissDuplicatePair = (key) => {
+    setDismissedDuplicates((prev) => {
+      if (prev.has(key)) return prev;
+      const next = new Set(prev); next.add(key);
+      saveDismissedDuplicates(next);
+      return next;
+    });
+  };
   const duplicatePairs = useMemo(
-    () => findDuplicatePairs(data.people, data.relationships),
-    [data.people, data.relationships],
+    () => findDuplicatePairs(data.people, data.relationships)
+      .filter((p) => !dismissedDuplicates.has(pairKey(p.aId, p.bId))),
+    [data.people, data.relationships, dismissedDuplicates],
   );
 
   // 'loading' → 'open' (no auth / bypass) | 'login' (needs sign-in) | 'authed'
@@ -165,6 +246,10 @@ export default function App() {
   const [isAnonymousTrial] = useState(() => isNewUrl);
   const [user, setUser] = useState(null);
   const [duplicatesOpen, setDuplicatesOpen] = useState(false);
+  // When opened from a person's "Enrich this profile" sheet, filters the
+  // duplicates list down to just that person's own possible matches.
+  const [duplicatesFocusId, setDuplicatesFocusId] = useState(null);
+  const openDuplicatesFor = (personId) => { setDuplicatesFocusId(personId); setDuplicatesOpen(true); };
   // Whether the signed-in member can edit the tree (drives merge/cleanup tools).
   const canEditTree = !user || ['owner', 'coadmin', 'editor'].includes(data._meta?.role || 'owner');
   // Contributors may add memories & photos but not change structure.
@@ -180,6 +265,7 @@ export default function App() {
   const [suggestedClaimPersonId, setSuggestedClaimPersonId] = useState(null);
   const [installEvent, setInstallEvent] = useState(null); // captured beforeinstallprompt
   const [showInstall, setShowInstall] = useState(false);
+  const [showHomeNudge, setShowHomeNudge] = useState(false);
   // Set when a user with existing tree data accepts an invite — gates the app
   // on the merge wizard until they complete or skip the merge.
   const [pendingInvite, setPendingInvite] = useState(_initialPendingInvite);
@@ -276,6 +362,10 @@ export default function App() {
     Promise.all([
       migratePhotosToR2(uploadPhoto).catch(() => ({ total: 0, uploaded: 0, failed: 0 })),
       migrateDocsToR2(uploadDocument).catch(() => ({ total: 0, uploaded: 0, failed: 0 })),
+      // Thumbnails are an invisible storage optimization, not user content —
+      // run it alongside the other two migrations, but never mention it in
+      // the sync toast below (nothing the user did or would recognize).
+      migrateDocThumbsToR2(uploadDocument).catch(() => ({ total: 0, uploaded: 0, failed: 0 })),
     ]).then(([photos, docs]) => {
       const total = (photos.uploaded || 0) + (docs.uploaded || 0);
       if (!total) return;
@@ -388,6 +478,31 @@ export default function App() {
     return () => clearTimeout(t);
   }, [authState, promptClaim, installEvent]);
 
+  const dismissHomeNudge = useCallback(() => {
+    setShowHomeNudge(false);
+    try { localStorage.setItem('bl_home_nudge_seen', '1'); } catch { /* ignore */ }
+  }, []);
+
+  // A one-time coach-mark on the logo — the only way anyone on touch (no
+  // hover, so no hover-tip) would learn tapping it opens the home hub.
+  // Timed a beat after the install nudge (a different corner, so they'd
+  // never actually overlap, but no reason to compete for a first glance)
+  // and gated on the tree having actually rendered, not just any authState.
+  useEffect(() => {
+    if (authState === 'loading' || authState === 'login') return;
+    let seen = false;
+    try { seen = !!localStorage.getItem('bl_home_nudge_seen'); } catch { /* ignore */ }
+    if (seen) return;
+    const t = setTimeout(() => setShowHomeNudge(true), 2600);
+    return () => clearTimeout(t);
+  }, [authState]);
+
+  useEffect(() => {
+    if (!showHomeNudge) return;
+    const t = setTimeout(dismissHomeNudge, 8000);
+    return () => clearTimeout(t);
+  }, [showHomeNudge, dismissHomeNudge]);
+
   useEffect(() => {
     if (isDemo || isNewUrl) return;
     // 12-second timeout: if the auth Worker cold-starts slowly on mobile the
@@ -402,14 +517,9 @@ export default function App() {
   // Listen for background sync events from the store.
   useEffect(() => {
     const showToast = (msg) => { setSyncToast(msg); setTimeout(() => setSyncToast(null), 5000); };
-    const onMerge = () => showToast('Tree updated by another editor — changes merged');
-    const onPoll  = () => showToast('Tree refreshed with new changes');
-    window.addEventListener('bloodline:tree-conflict-merged', onMerge);
+    const onPoll = () => showToast('Tree refreshed with new changes');
     window.addEventListener('bloodline:tree-polled', onPoll);
-    return () => {
-      window.removeEventListener('bloodline:tree-conflict-merged', onMerge);
-      window.removeEventListener('bloodline:tree-polled', onPoll);
-    };
+    return () => window.removeEventListener('bloodline:tree-polled', onPoll);
   }, []);
 
   // Onboarding gate: new users see intro → questionnaire before the tree.
@@ -428,8 +538,13 @@ export default function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data.myPersonId]);
   const [openId, setOpenId] = useState(null); // person card
+  // Set when a profile is opened from the home hub (e.g. tapping an activity
+  // row on Home) — closing that profile should land back on the hub, not the
+  // bare tree, since that's where the person actually navigated from.
+  const [returnToHome, setReturnToHome] = useState(false);
   const [addAnchorId, setAddAnchorId] = useState(null); // add-relative sheet
   const [editId, setEditId] = useState(null); // edit sheet
+  const [editStartInEdit, setEditStartInEdit] = useState(false); // skip the view mode (see handleAdd's "Add & edit details")
   const [timelineId, setTimelineId] = useState(null); // timeline editor
   const [memoryId, setMemoryId] = useState(null); // add-memory sheet
   const [lightbox, setLightbox] = useState(null); // { personId, index }
@@ -443,6 +558,8 @@ export default function App() {
   const [lineageOrder, setLineageOrder] = useState(null); // ordered [fromId,…,toId] | null
   const [cameraFree, setCameraFree] = useState(false); // user has panned/zoomed away
   const [storageWarning, setStorageWarning] = useState(false);
+  const [storageNearLimit, setStorageNearLimit] = useState(false);
+  const [treeSizeWarning, setTreeSizeWarning] = useState(null); // { bytes, limitBytes } | null
   const [syncToast, setSyncToast] = useState(null);
   const [layout, setLayout] = useState('organic'); // 'organic' | 'weighted' | 'hybrid'
   const [timeMode, setTimeMode] = useState(false);
@@ -454,15 +571,24 @@ export default function App() {
   const [timelineOpen, setTimelineOpen] = useState(false);
   const [lifeJourneyId, setLifeJourneyId] = useState(null);
   const playRef = useRef(null);
+  const revealTimerRef = useRef(null);
   const [docViewer, setDocViewer] = useState(null); // { title, src, mime }
+  const [keepsakeId, setKeepsakeId] = useState(null); // personId whose Keepsake is open
+  // The home hub's Keepsake nudge — 'create' (no edition yet), 'stale' (tree
+  // grew since the last one), or 'open' (current). null while signed out,
+  // while the check is in flight, or when the viewer has no claimed person.
+  const [keepsakeNudge, setKeepsakeNudge] = useState(null);
   const [invitePersonId, setInvitePersonId] = useState(null);
   const [activityOpen, setActivityOpen] = useState(false);
   const [lastReadAt, setLastReadAt] = useState(() => getActivityReadAt()); // null = never opened = all unread
-  // "Since you were last here" — frozen once per real page load (see
+  // "Since you were last here" — seeded once per real page load (see
   // _initialRecapCutoff above), deliberately independent of lastReadAt below:
   // opening the activity panel shouldn't shrink the recap queue out from
-  // under a tour that's using it.
-  const recapCutoff = _initialRecapCutoff;
+  // under a tour that's using it. Real state (not the plain constant it used
+  // to be) so opening the recap can advance it — see markRecapSeen below —
+  // otherwise reopening Activity later in the same session (or on a later
+  // visit) would show the exact same "N updates" again forever.
+  const [recapCutoff, setRecapCutoffState] = useState(_initialRecapCutoff);
   const [recapOpen, setRecapOpen] = useState(false);
   const [recapQueue, setRecapQueue] = useState([]);
   const [recapAllDone, setRecapAllDone] = useState(false);
@@ -471,7 +597,14 @@ export default function App() {
   const [gedcomOpen, setGedcomOpen] = useState(false);
   const [fsImportOpen, setFsImportOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [homeOpen, setHomeOpen] = useState(false);
+  const [howItWorksOpen, setHowItWorksOpen] = useState(false);
+  const [familyTreesOpen, setFamilyTreesOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  // Seeds SearchOverlay's query on the one frame it mounts from a keystroke
+  // (see the type-to-search effect below) — null for every other open path
+  // (the search icon, the lineage banner), which start blank as always.
+  const [searchInitialQuery, setSearchInitialQuery] = useState(null);
   // Search's flyover caption — { order: [fromId,…,toId], upTo: number } while a
   // flight is in progress, else null. upTo advances via the flight's onSegment
   // callback so the relationship chain fills in hop by hop as the camera flies.
@@ -480,6 +613,19 @@ export default function App() {
   // (BubbleTree debounces this itself; see onHover).
   const [hoveredId, setHoveredId] = useState(null);
   const viewApi = useRef(null);
+  // Tracks which pair, if any, is currently wearing the duplicate-compare
+  // gold ring (see showDuplicatePairInTree below) so a later call for a
+  // different pair can clear the previous one instead of leaving it lit.
+  const compareGlowIdsRef = useRef(null);
+  // Same pair, but as real state (not just a ref) — needed to render a
+  // SECOND FocusNameplate for the non-active duplicate candidate (see the
+  // extra <FocusNameplate> below): only one person can ever be the literal
+  // ego-camera `active` id and get the ordinary nameplate, but "Show both in
+  // tree" needs both candidates to carry the full name+dates plate, not just
+  // the bare in-canvas label (real follow-up feedback: "we need it to force
+  // both the name plates on"). Persists until a later "Show both in tree"
+  // replaces it, same lifecycle as the ring/dim treatment above.
+  const [comparePairIds, setComparePairIds] = useState(null);
 
   // Notify the user if a commit couldn't persist (localStorage full).
   useEffect(() => {
@@ -491,13 +637,73 @@ export default function App() {
     return () => window.removeEventListener('bloodline:storage-full', handler);
   }, []);
 
+  // Proactive counterpart to the above: warns while there's still room to
+  // act (remove some photos) rather than only after an edit has already
+  // failed to save. See store.js's STORAGE_WARN_BYTES threshold.
+  useEffect(() => {
+    const handler = () => {
+      setStorageNearLimit(true);
+      setTimeout(() => setStorageNearLimit(false), 8000);
+    };
+    window.addEventListener('bloodline:storage-near-limit', handler);
+    return () => window.removeEventListener('bloodline:storage-near-limit', handler);
+  }, []);
+
+  // The engagement loop made visible (docs/KEEPSAKE.md Phase 5): when the
+  // hub opens, quietly check whether the viewer's own Keepsake exists and
+  // whether the tree has grown past it. Best-effort — any failure (signed
+  // out, demo, offline) just means no card.
+  useEffect(() => {
+    if (!homeOpen || !data.myPersonId) { setKeepsakeNudge(null); return; }
+    let alive = true;
+    (async () => {
+      try {
+        const r = await fetch(`/api/keepsake?personId=${encodeURIComponent(data.myPersonId)}`);
+        if (!r.ok) { if (alive) setKeepsakeNudge(null); return; }
+        const edition = await r.json().catch(() => null);
+        const facts = buildKeepsakeFacts(graph, data.myPersonId, {
+          memories: data.memories, documents: data.documents,
+        });
+        if (!facts) { if (alive) setKeepsakeNudge(null); return; }
+        const nudge = !edition ? 'create' : edition.hash !== factsHash(facts) ? 'stale' : 'open';
+        if (alive) setKeepsakeNudge(nudge);
+      } catch {
+        if (alive) setKeepsakeNudge(null);
+      }
+    })();
+    return () => { alive = false; };
+  }, [homeOpen, data.myPersonId, graph, data.memories, data.documents]);
+
+  // Server-side counterpart: the whole tree lives in one D1 row, capped at
+  // 1 MiB. tree.js sends this alongside an otherwise-successful save once
+  // the payload crosses its soft warning threshold, well before the hard
+  // limit that would start rejecting saves outright.
+  useEffect(() => {
+    const handler = (e) => {
+      setTreeSizeWarning(e.detail || null);
+      setTimeout(() => setTreeSizeWarning(null), 10000);
+    };
+    window.addEventListener('bloodline:tree-size-warning', handler);
+    return () => window.removeEventListener('bloodline:tree-size-warning', handler);
+  }, []);
+
   // Family stats for the header: people count, top surnames, year span, photos, memories.
+  // Scoped to blood relatives only when "Bloodline only" is on — otherwise the
+  // pill reads "Bloodline only · 268 people" while still describing the whole
+  // tree, flatly contradicting the filter it's supposed to be summarizing.
   const familyStats = useMemo(() => {
+    const scopeIds = bloodlineOnly ? bloodRelativesOf(graph, data.myPersonId || DEFAULT_FOCUS) : null;
+    const people = scopeIds ? graph.people.filter((p) => scopeIds.has(p.id)) : graph.people;
+    const photos = scopeIds ? data.photos.filter((ph) => scopeIds.has(ph.person_id)) : data.photos;
+    const memories = scopeIds ? data.memories.filter((m) => scopeIds.has(m.person_id)) : data.memories;
+    const relationships = scopeIds
+      ? data.relationships.filter((r) => scopeIds.has(r.from_person) && scopeIds.has(r.to_person))
+      : data.relationships;
     const freq = new Map();
     let yearMin = Infinity, yearMax = -Infinity;
     let oldestPerson = null, youngestPerson = null;
     let withPhoto = 0, withBio = 0, withBirthDate = 0;
-    for (const p of graph.people) {
+    for (const p of people) {
       const surname = p.display_name?.trim().split(/\s+/).slice(-1)[0];
       if (surname) freq.set(surname, (freq.get(surname) ?? 0) + 1);
       const by = p.birth_date ? parseInt(p.birth_date) : null;
@@ -517,11 +723,12 @@ export default function App() {
       ? yearMin === yearMax ? `${yearMin}` : `${yearMin}–${yearMax}`
       : null;
     return {
-      people: graph.people.length,
+      people: people.length,
       surnames,
       yearSpan,
-      photos: data.photos.length,
-      memories: data.memories.length,
+      photos: photos.length,
+      memories: memories.length,
+      connections: relationships.length,
       // Detail fields for the stats popover
       surnameList: sorted.map(([name, count]) => ({ name, count })),
       yearMin: isFinite(yearMin) ? yearMin : null,
@@ -532,7 +739,7 @@ export default function App() {
       withBio,
       withBirthDate,
     };
-  }, [graph, data.photos.length, data.memories.length]);
+  }, [graph, data.photos, data.memories, data.relationships, data.myPersonId, bloodlineOnly]);
 
   // Unread activity count — null lastReadAt means never opened, so all events are "new".
   const unreadCount = useMemo(() => {
@@ -542,13 +749,27 @@ export default function App() {
     return acts.filter((a) => new Date(a.created_at).getTime() > lastReadAt).length;
   }, [data.activity, lastReadAt]);
 
-  // The recap tour's queue — one stop per person changed since recapCutoff,
-  // capped to a real "highlights reel" (see groupRecapUpdates). null cutoff
-  // (first-ever visit, nothing to diff against) always yields an empty queue.
+  // The recap tour's queue — one stop per OTHER person's change since
+  // recapCutoff (your own edits are excluded — see groupRecapUpdates),
+  // capped to a real "highlights reel". null cutoff (first-ever visit,
+  // nothing to diff against) always yields an empty queue.
   const recapGroups = useMemo(
-    () => (recapCutoff ? groupRecapUpdates(data.activity ?? [], recapCutoff) : []),
-    [data.activity, recapCutoff],
+    () => (recapCutoff ? groupRecapUpdates(data.activity ?? [], recapCutoff, { viewerEmail: user?.email }) : []),
+    [data.activity, recapCutoff, user?.email],
   );
+
+  // Advances the "seen" cutoff on genuine intent only: watching the recap
+  // (from the nudge or the activity panel's hero, both via openRecap) or
+  // explicitly dismissing the nudge with its X — never merely by the app
+  // booting or the nudge flashing on screen unread (see takeRecapCutoff in
+  // store.js). Leaving it untouched otherwise is what lets an ignored "N
+  // updates" nudge keep showing up as a standing option in the activity
+  // panel across later visits, instead of silently vanishing.
+  const markRecapSeen = useCallback(() => {
+    const now = Date.now();
+    setRecapCutoffState(now);
+    setRecapCutoff(now);
+  }, []);
 
   // Proactive nudge: the activity page's "Show me" only pays off for people
   // who already habitually open it, so surface it once, right after a real
@@ -737,13 +958,83 @@ export default function App() {
   const allExpanded = expanded.size >= graph.people.length && graph.people.length > 0;
   // Show the collapse button whenever MORE than one person is expanded (not just all-or-nothing).
   const canCollapse = expanded.size > 1;
+  // A real reported crash: revealing every person at once forces BubbleTree's
+  // d3-force simulation and PixiJS bubble sprites (with photo textures) to
+  // all spin up in a single synchronous frame — fine for the ~23-person demo
+  // seed, but a large real tree (this app's own accounts run 1000+ people)
+  // spikes CPU/GPU/memory hard enough to crash the tab. Above this cap, "All"
+  // reveals only the nearest people to whoever's active (a force-directed
+  // canvas isn't a useful way to look at everyone in a tree this size anyway)
+  // and points to List view, which is already virtualized and handles any
+  // tree size today.
   const toggleExpandAll = useCallback(() => {
+    if (revealTimerRef.current) {
+      clearInterval(revealTimerRef.current);
+      revealTimerRef.current = null;
+    }
     if (canCollapse) {
       setExpanded(new Set([activeId]));
+      return;
+    }
+    const total = graph.people.length;
+    let targetIds;
+    if (total <= MAX_BUBBLE_REVEAL) {
+      targetIds = graph.people.map((p) => p.id);
     } else {
-      setExpanded(new Set(graph.people.map((p) => p.id)));
+      const dist = distancesFrom(graph, activeId);
+      targetIds = graph.people
+        .map((p) => ({ id: p.id, d: dist.get(p.id) ?? Infinity }))
+        .sort((a, b) => a.d - b.d)
+        .slice(0, MAX_BUBBLE_REVEAL)
+        .map((x) => x.id);
+      setSyncToast(`Showing the ${MAX_BUBBLE_REVEAL} people closest to you — switch to List view to see everyone in a family this size.`);
+      setTimeout(() => setSyncToast(null), 6000);
+    }
+    // Stagger the reveal in batches rather than one giant Set update, so the
+    // force simulation and texture loads ramp up smoothly instead of all at
+    // once. The first batch lands immediately (no interval delay) so a small
+    // tree still feels instant, same as before this fix.
+    let i = 0;
+    const revealNextBatch = () => {
+      const batch = targetIds.slice(i, i + REVEAL_BATCH);
+      i += REVEAL_BATCH;
+      setExpanded((prev) => {
+        const next = new Set(prev);
+        for (const id of batch) next.add(id);
+        return next;
+      });
+      if (i >= targetIds.length && revealTimerRef.current) {
+        clearInterval(revealTimerRef.current);
+        revealTimerRef.current = null;
+      }
+    };
+    revealNextBatch();
+    if (i < targetIds.length) {
+      revealTimerRef.current = setInterval(revealNextBatch, REVEAL_INTERVAL_MS);
     }
   }, [canCollapse, activeId, graph]);
+
+  // Export the tree as a standard GEDCOM 5.5.1 file (portable to Ancestry,
+  // MyHeritage, FamilySearch, …). Lossy by nature — photos, memories, tags,
+  // events and the Keepsake aren't expressible in GEDCOM; the full archive
+  // export is the lossless path. Client-side, so nothing leaves the device.
+  const handleExportGedcom = useCallback(() => {
+    const ged = storeToGedcom(data.people, data.relationships);
+    const safe = (data.familyName || 'family').replace(/[^\w-]+/g, '_').replace(/^_+|_+$/g, '') || 'family';
+    const blob = new Blob([ged], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${safe}_bloodline_${new Date().toISOString().slice(0, 10)}.ged`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }, [data.people, data.relationships, data.familyName]);
+
+  useEffect(() => () => {
+    if (revealTimerRef.current) clearInterval(revealTimerRef.current);
+  }, []);
 
   const activateNormal = useCallback((id) => {
     setActiveId(id);
@@ -820,6 +1111,7 @@ export default function App() {
     setTimeYear(startYear);
     setTimePlaying(true);
     setOpenId(null);
+    setReturnToHome(false); // jumping into Time Mode, not just closing the profile
     // Re-enter follow mode and warm the sim so the focus family spreads to fill screen.
     setTimeout(() => viewApi.current?.refocus(0.5), 100);
   }, [graph, yearRange.min]);
@@ -859,6 +1151,29 @@ export default function App() {
     });
   }, []);
 
+  // Shared exit for Time mode — the dock's own time-toggle button (tapped a
+  // second time) and the ReturnToTreePill below both need to leave Time mode
+  // exactly the same way, so there's one place that does it.
+  const exitTimeMode = useCallback(() => {
+    setTimePlaying(false);
+    setLifeJourneyId(null);
+    setTimeMode(false);
+  }, []);
+
+  // Shared by the top bar's search pill and the lineage banner's own search
+  // button — both need the exact same iOS-keyboard timing fix (see below),
+  // so it's one place instead of two copies quietly drifting apart.
+  const openSearch = useCallback(() => {
+    // iOS Safari only auto-shows the keyboard when focus() runs synchronously
+    // inside the tap's own call stack. A plain setState here mounts
+    // SearchOverlay (and its input) on a later React commit, which is why
+    // the sheet would open but no keyboard ever appeared. flushSync forces
+    // that mount to finish before this handler returns, so the focus() right
+    // after still lands inside the same user-gesture stack.
+    flushSync(() => setSearchOpen(true));
+    document.querySelector('.search-input')?.focus();
+  }, []);
+
   const openPerson = useCallback((id) => {
     viewApi.current?.unpin();
     viewApi.current?.pin(id);
@@ -890,6 +1205,16 @@ export default function App() {
   // is trivial, or motion is reduced.
   const flyToSearchResult = useCallback((targetId) => {
     setSearchOpen(false);
+    // Chart layout has no canvas to fly — the flight API belongs to
+    // BubbleTree, which isn't even MOUNTED in chart mode, so flyAlong would
+    // silently no-op and activeId (only ever set in the flight's onLand
+    // callback) would never change: picking a search result would do
+    // nothing at all. Activate directly instead; ChartTree recomputes its
+    // pod tree around the new focal person and centres on them itself.
+    if (layout === 'chart') {
+      activateNormal(targetId);
+      return;
+    }
     const originId = data.myPersonId || DEFAULT_FOCUS;
     const ordered = pathBetweenOrdered(graph, originId, targetId);
     const hops = ordered ? ordered.length - 1 : 0;
@@ -916,25 +1241,72 @@ export default function App() {
       },
       onLand: () => {
         setActiveId(targetId);
-        // Let the fully-resolved chain sit on screen for a while — it's the
-        // payoff of the whole flight — instead of wiping it soon after the
-        // camera settles. Matches how long the canvas itself keeps the route
-        // lit (see BubbleTree's postFlightIds), so the text caption and the
-        // illuminated path disappear together rather than the text vanishing
-        // first while the path is still glowing.
-        setTimeout(() => setFlightCaption(null), 10000);
+        // Switch the caption from crumb-trail to the landed two-photo card —
+        // FlightCaption now owns its own dismiss timing from here (15s
+        // untouched, or persists once the chain is expanded), so this just
+        // flips the flag rather than scheduling a fixed hide.
+        setFlightCaption((c) => (c ? { ...c, landed: true } : c));
       },
+      // The user took the camera back mid-flight (a real drag/pinch, or the
+      // ticker's own error-recovery abandoning it) — the journey was never
+      // finished, so there's no "landed" state to show. Clear the caption
+      // rather than leaving it stuck displaying an in-progress crumb-trail
+      // with no Done button and no way to dismiss it short of searching again.
+      onAbort: () => setFlightCaption(null),
     });
-  }, [graph, data.myPersonId, reducedMotion, activateNormal]);
+  }, [graph, data.myPersonId, reducedMotion, activateNormal, layout]);
+
+  // Search, while tracing a lineage, needs to feed the SAME "tap another
+  // relative" logic activate() uses in that mode — not flyToSearchResult,
+  // which unconditionally cancels lineage mode and jumps the camera instead.
+  // The path is computed from the trace's own anchor (activeId), not the
+  // viewer's default person, and its nodes are expanded into view first since
+  // (unlike tapping a bubble) a search result may not be on screen yet.
+  const selectFromSearch = useCallback((targetId) => {
+    setSearchOpen(false);
+    if (!lineageMode) { flyToSearchResult(targetId); return; }
+    if (targetId === activeId) {
+      setLineagePath(null);
+      setLineageOrder(null);
+      return;
+    }
+    const ordered = pathBetweenOrdered(graph, activeId, targetId);
+    if (ordered) {
+      setExpanded((prev) => {
+        const next = new Set(prev);
+        for (const id of ordered) next.add(id);
+        return next;
+      });
+    }
+    setLineagePath(ordered ? new Set(ordered) : null);
+    setLineageOrder(ordered);
+    // A search result may not be anywhere near wherever the camera was
+    // last looking (unlike tapping a bubble, which by definition is already
+    // on screen) — recenter() hands the camera back to follow mode, which
+    // continuously frames the bounding box of whatever's now visible every
+    // frame on its own (see BubbleTree's ticker). refocus() would only have
+    // forced the newly-revealed nodes into a tidy radial cluster around the
+    // trace's anchor, fighting the normal generational layout for no reason
+    // — the camera catching up to wherever they actually are is all that
+    // was ever needed.
+    viewApi.current?.recenter();
+  }, [lineageMode, activeId, graph, flyToSearchResult]);
 
   // Same flight as flyToSearchResult, but callable from anywhere — the
   // profile page's "Show in tree" and the list view's per-row action, not
   // just a search result. Switches back to the bubble canvas first if
   // needed, since the flight animates it and it isn't even mounted while
-  // browsing the list view.
+  // browsing the list view. Also forces layout back to 'organic': every
+  // caller of this means "fly to them in the organic tree" (it's the literal
+  // TreeIcon action, paired with the list view's separate "view in chart"
+  // circle) — without this, a layout left on 'chart' from an earlier switch
+  // (topbar Chart mode, or the list view's own chart circle) silently
+  // stranded the flight, since BubbleTree never mounts under chart layout
+  // and viewApi.current would just never populate.
   const flyToPersonFromAnywhere = useCallback((targetId) => {
-    if (view !== 'bubbles') {
+    if (view !== 'bubbles' || layout === 'chart') {
       setView('bubbles');
+      setLayout('organic');
       // BubbleTree mounts fresh here (a real PIXI/WebGL setup, not just a
       // re-render) and only populates viewApi once that effect has run —
       // poll a few frames rather than guessing a fixed delay that could be
@@ -949,7 +1321,80 @@ export default function App() {
     } else {
       flyToSearchResult(targetId);
     }
-  }, [view, flyToSearchResult]);
+  }, [view, layout, flyToSearchResult]);
+
+  // The list view's per-row "view in chart" action, paired with the tree
+  // circle above. Chart re-roots itself off activeId (see ChartTree's own
+  // re-root effect keyed on that prop), so — unlike flyToPersonFromAnywhere —
+  // there's no canvas mount to poll for: just switch to the chart layout and
+  // activate the target person. bloodlineOnly follows the topbar's own
+  // Tree/Chart/List switcher default (chart is a pedigree; bloodline-only is
+  // its natural reading).
+  const showPersonInChart = useCallback((targetId) => {
+    setView('bubbles');
+    setLayout('chart');
+    setBloodlineOnly(true);
+    activateNormal(targetId);
+  }, [activateNormal]);
+
+  // The duplicate-review sheet's "Show both in tree" — reveal both
+  // candidate bubbles (plus their neighbours) and let the camera's own
+  // bounding-box framing (refocus, already used by Focus Family/Life
+  // Journey) pull them into view together, so whose kids belong to whom is
+  // visible before deciding to merge (real report: "I couldn't tell whose
+  // kids belonged to who easily" after a bad merge). Same view-switch-and-
+  // poll as flyToPersonFromAnywhere, since BubbleTree isn't mounted (and
+  // viewApi isn't populated) while browsing another view.
+  const showDuplicatePairInTree = useCallback((aId, bId) => {
+    setDuplicatesOpen(false);
+    setDuplicatesFocusId(null);
+    setOpenId(null);
+    setExpanded((prev) => {
+      if (prev.has(aId) && prev.has(bId)) return prev;
+      const next = new Set(prev);
+      next.add(aId);
+      next.add(bId);
+      return next;
+    });
+    activateNormal(aId);
+    // Only ONE bubble can be the ego-camera's "active" node (bId just rode
+    // along above so both get revealed and pulled into frame) — but the
+    // recap tour's lingering gold ring is a separate, non-exclusive
+    // primitive, so it can mark BOTH candidates at once. The ring alone
+    // still left the second candidate visibly faded/small next to the
+    // genuinely active one (real follow-up report, with screenshot: "you
+    // can see its immediate family [for the active one]... both of the
+    // duplicates should be shown this way... all the other bubbles faded"),
+    // so setCompareFocus additionally folds bId into the per-frame distance
+    // used for fade/scale, exactly matching what being "active" already does
+    // for aId. Always kept in lockstep with the ring (set/cleared together)
+    // so there's never a lit-but-dim or dim-but-unlit mismatch. Clears
+    // whichever pair was lit by a previous "Show both in tree" first, so old
+    // rings/focus don't pile up across repeated uses on different pairs.
+    if (compareGlowIdsRef.current) {
+      viewApi.current?.spotlightClearGlow(compareGlowIdsRef.current);
+      viewApi.current?.clearCompareFocus();
+    }
+    compareGlowIdsRef.current = [aId, bId];
+    setComparePairIds([aId, bId]);
+    const doRefocus = () => {
+      viewApi.current?.refocus(0.6);
+      viewApi.current?.spotlightSetGlow([aId, bId]);
+      viewApi.current?.setCompareFocus([aId, bId]);
+    };
+    if (view !== 'bubbles') {
+      setView('bubbles');
+      let tries = 0;
+      const tryRefocus = () => {
+        if (viewApi.current) { doRefocus(); return; }
+        if (tries++ > 90) return;
+        requestAnimationFrame(tryRefocus);
+      };
+      requestAnimationFrame(tryRefocus);
+    } else {
+      setTimeout(doRefocus, 100);
+    }
+  }, [view, activateNormal]);
 
   // The activity recap's cinematic tour — see BubbleTree's spotlightTour and
   // RecapTour.jsx. Builds the queue from recapGroups, reveals every stop
@@ -958,14 +1403,34 @@ export default function App() {
   const openRecap = useCallback(() => {
     if (!recapGroups.length) return;
     setActivityOpen(false);
+    // The tour's whole promise is "the target bubble is always screen-
+    // centred" (see RecapTour.jsx) — but a card left pinned open (e.g. the
+    // user opened Activity from a profile without closing it first) biases
+    // the camera left the entire time to make room for it, so every stop
+    // lands off-centre. Same reason to drop any open profile sheet: it's a
+    // full-screen camera experience, nothing should be floating over it.
+    viewApi.current?.unpin();
+    setOpenId(null);
+    markRecapSeen();
     const ids = recapGroups.map((g) => g.personId);
     setRecapQueue(
-      recapGroups.map((g) => ({
-        personId: g.personId,
-        personName: g.personName,
-        caption: captionForRecapGroup(g),
-        status: 'pending',
-      })),
+      recapGroups.map((g) => {
+        // "by whom, when" for the caption's meta line — distinct authors
+        // (usually one), and the most recent of the group's events.
+        const authors = [...new Set(g.events.map((e) => e.authorName).filter(Boolean))];
+        const latest = g.events.reduce((max, e) => {
+          const t = new Date(e.created_at).getTime();
+          return t > max ? t : max;
+        }, 0);
+        return {
+          personId: g.personId,
+          personName: g.personName,
+          caption: captionForRecapGroup(g),
+          authorName: authors.length > 1 ? `${authors[0]} & ${authors.length - 1} more` : (authors[0] || null),
+          at: latest ? new Date(latest).toISOString() : null,
+          status: 'pending',
+        };
+      }),
     );
     setRecapAllDone(false);
     setRecapOpen(true);
@@ -990,9 +1455,15 @@ export default function App() {
         }),
       );
     };
-    const onDone = () => {
+    const onDone = (lastId) => {
       setRecapQueue((q) => q.map((item) => ({ ...item, status: 'done' })));
       setRecapAllDone(true);
+      // Land the tree's own focus on whoever the tour finished on, rather
+      // than leaving it pointed at whoever was active before it started —
+      // BubbleTree already updated its own internal notion of "active" (see
+      // spotlightTour/spotlightEnd), this is the other half so React's
+      // activeId (the nameplate, "Add relative", etc. all read this) agrees.
+      if (lastId) setActiveId(lastId);
     };
 
     const startTour = () => {
@@ -1005,42 +1476,66 @@ export default function App() {
     } else {
       requestAnimationFrame(startTour);
     }
-  }, [recapGroups, view]);
+  }, [recapGroups, view, markRecapSeen]);
 
   const closeRecapAll = useCallback(() => {
     viewApi.current?.spotlightEnd();
     setRecapOpen(false);
+    // Clear the queue itself, not just the overlay — onDone (above) only ever
+    // flips every item's status to 'done', it never empties the array, and
+    // HomeToMe's "back to you" pill (below) is gated on recapQueue.length===0
+    // to stay hidden while the tour overlay is up. Left unset, that length
+    // check never returns true again for the rest of the session once a
+    // single recap tour has run, permanently hiding the pill even though the
+    // tour landed you away from your own profile — exactly the case it
+    // exists for.
+    setRecapQueue([]);
     // The lit constellation lingers a moment after the panel closes — the
     // payoff of the whole tour — rather than vanishing the instant you tap
     // away.
     setTimeout(() => viewApi.current?.spotlightClearGlow(), 2600);
   }, []);
 
-  const dismissRecapItem = useCallback((id) => {
-    viewApi.current?.spotlightRemove(id);
-    setRecapQueue((q) => {
-      const next = q.filter((item) => item.personId !== id);
-      if (!next.length) {
-        setRecapAllDone(true);
-      }
-      return next;
-    });
-  }, []);
-
-  const skipRecapTo = useCallback((id) => {
-    viewApi.current?.spotlightGoTo(id);
-  }, []);
-
   const closePerson = useCallback(() => {
     viewApi.current?.unpin();
     setOpenId(null);
-    deselect(); // returning to the tree from a profile lands in browse mode
-  }, [deselect]);
+    if (returnToHome) {
+      setReturnToHome(false);
+      setHomeOpen(true);
+    } else {
+      deselect(); // returning to the tree from a profile lands in browse mode
+    }
+  }, [deselect, returnToHome]);
+
+  // "Centre the tree here" / "Show in tree" are an explicit request to land
+  // on the tree, focused on this person — never back to Home, even if that's
+  // where the sheet was opened from (returnToHome would otherwise still be
+  // set, and closePerson() would honour it, silently bouncing back to Home
+  // right as activate()/flyTo() moved the camera underneath it — the tree
+  // WAS updated, just never shown, until the next manual visit revealed it).
+  const closePersonForTreeAction = useCallback(() => {
+    viewApi.current?.unpin();
+    setOpenId(null);
+    setReturnToHome(false);
+  }, []);
 
   // Add a relative, then fly to the new person so they greet you on the tree.
   const handleAdd = useCallback(
     (fields) => {
-      const newId = addRelative({ anchorId: addAnchorId, ...fields });
+      // A biological child's other parent: either an existing partner picked
+      // in the sheet (childCoParentId, already set), or a brand-new person
+      // named "someone not in the tree" — create THEM first, as a partner of
+      // the anchor, so the child's parentEdge below has a real id to target.
+      let childCoParentId = fields.childCoParentId || null;
+      if (fields.childCoParentMode === 'new' && fields.childCoParentNew?.given) {
+        childCoParentId = addRelative({
+          anchorId: addAnchorId,
+          relKey: 'partner',
+          given: fields.childCoParentNew.given,
+          family: fields.childCoParentNew.family,
+        });
+      }
+      const newId = addRelative({ anchorId: addAnchorId, ...fields, childCoParentId });
       if (!newId) {
         // Blocked by a constraint — tell the user why instead of silently failing.
         const anchor = graph.byId.get(addAnchorId);
@@ -1050,11 +1545,25 @@ export default function App() {
         setTimeout(() => setSyncToast(null), 6000);
         return;
       }
+      // A mother/father added alongside an already-linked other parent never
+      // gets connected to them by addRelative() itself — the sheet asks how
+      // the two relate up front (see AddRelativeSheet's coParent prompt) so
+      // the couple pod (links.js) renders instead of two disconnected stems.
+      if (fields.coParentId && fields.coParentStatus) {
+        addRelationship(newId, fields.coParentId, fields.coParentStatus);
+      }
       setAddAnchorId(null);
       viewApi.current?.unpin();
       setOpenId(null);
+      setReturnToHome(false); // adding a relative lands on the tree, not the hub
       setExpanded((prev) => new Set(prev).add(addAnchorId).add(newId));
       setActiveId(newId);
+      // "Add & edit details" — skip the birth-year-only mini form the quick
+      // add used to have and go straight to the real profile editor, already
+      // in edit mode rather than the read-only view of an almost-blank profile.
+      if (fields.openDetails) {
+        setTimeout(() => { setEditId(newId); setEditStartInEdit(true); }, 150);
+      }
     },
     [addAnchorId, graph],
   );
@@ -1074,7 +1583,7 @@ export default function App() {
   }, []);
 
   const handleLinkExisting = useCallback(
-    (existingId, relKey, qualifier = 'biological') => {
+    (existingId, relKey, qualifier = 'biological', coParentId = null, coParentStatus = null) => {
       // setRelationshipKind reassigns atomically (clears any existing direct edge
       // first, then validates + sets the new one) so a wrong link can be fixed in
       // one step without leaving a contradiction.
@@ -1094,6 +1603,10 @@ export default function App() {
         }
       }
       if (!res.ok) { notifyRelFail(res.reason); return; }
+      // Same co-parent link as the new-person path (see handleAdd) — linking
+      // an existing person in as mother/father doesn't otherwise connect them
+      // to the other parent already on the tree.
+      if (coParentId && coParentStatus) addRelationship(existingId, coParentId, coParentStatus);
       setAddAnchorId(null);
       viewApi.current?.unpin();
       setExpanded((prev) => new Set(prev).add(addAnchorId).add(existingId));
@@ -1112,19 +1625,60 @@ export default function App() {
   const handleSave = useCallback(
     (fields) => {
       const person = graph.byId.get(editId);
+      // EditPersonSheet always submits the whole form (every field, touched
+      // or not), so "the key is present" was never a real signal — only an
+      // actual value comparison is. This previously covered barely half of
+      // what's editable (nothing for name/gender/colours/contact/deceased/
+      // privacy), and unconditionally flagged "tags" on every single save
+      // regardless of whether tags changed. Field NAMES only, never values —
+      // this is what shows up in the activity feed and the recap tour.
+      const changed = (key) => key in fields && fields[key] !== (person?.[key] ?? null);
+      const sameTags = (a, b) => {
+        const x = a || [], y = b || [];
+        return x.length === y.length && x.every((t, i) => t === y[i]);
+      };
       const parts = [];
-      if ('birth_date' in fields && fields.birth_date !== person?.birth_date) parts.push('birthdate');
-      if ('birth_place' in fields && fields.birth_place !== person?.birth_place) parts.push('birthplace');
-      if ('death_date' in fields && fields.death_date !== person?.death_date) parts.push('death date');
-      if ('bio' in fields && fields.bio !== person?.bio) parts.push('biography');
-      if ('occupation' in fields && fields.occupation !== person?.occupation) parts.push('occupation');
-      if ('residence' in fields && fields.residence !== person?.residence) parts.push('location');
-      if ('display_name' in fields && fields.display_name !== person?.display_name) parts.push('name');
-      if ('tags' in fields) parts.push('tags');
-      const detail = parts.length ? parts.join(' and ') : null;
+      if (changed('display_name')) parts.push('name');
+      if (changed('middle_name')) parts.push('middle name');
+      if (changed('birth_name')) parts.push('birth name');
+      if (changed('gender')) parts.push('gender');
+      if (changed('birth_date')) parts.push('birthdate');
+      if (changed('birth_place')) parts.push('birthplace');
+      if (changed('residence')) parts.push('location');
+      if (changed('occupation')) parts.push('occupation');
+      if (changed('military_branch') || changed('military_nation') ||
+          changed('military_rank') || changed('military_service_number')) parts.push('military details');
+      if (changed('eye_color')) parts.push('eye colour');
+      if (changed('hair_color')) parts.push('hair colour');
+      if (('email' in fields && fields.email !== (person?.email ?? null)) ||
+          ('phone' in fields && fields.phone !== (person?.phone ?? null))) parts.push('contact info');
+      if ('tags' in fields && !sameTags(fields.tags, person?.tags)) parts.push('tags');
+      if (changed('bio')) parts.push('biography');
+      if (changed('is_deceased')) parts.push('deceased status');
+      if (changed('death_date')) parts.push('death date');
+      if (('visibility' in fields && fields.visibility !== (person?.visibility ?? 'full')) ||
+          ('sectionVisibility' in fields && JSON.stringify(fields.sectionVisibility || {}) !== JSON.stringify(person?.sectionVisibility || {}))) {
+        parts.push('privacy settings');
+      }
+      // "a, b and c" rather than "a and b and c" once there's more than two.
+      const detail = parts.length === 0 ? null
+        : parts.length <= 2 ? parts.join(' and ')
+        : `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`;
       const actEvent = detail
         ? { type: 'person_updated', personId: editId, personName: person?.display_name ?? '', detail }
         : null;
+      // A human just retyped this field through the ordinary edit form — it's
+      // no longer attributable to whichever document (if any) filled it in
+      // originally, so a later document deletion must never touch it. See
+      // retractDocumentContributions in store.js.
+      if (person?.field_sources) {
+        let sourcesChanged = false;
+        const nextSources = { ...person.field_sources };
+        for (const key of DOC_TRACKABLE_FIELDS) {
+          if (changed(key) && nextSources[key]) { delete nextSources[key]; sourcesChanged = true; }
+        }
+        if (sourcesChanged) fields = { ...fields, field_sources: nextSources };
+      }
       updatePerson(editId, fields, actEvent);
       setEditId(null);
     },
@@ -1135,6 +1689,7 @@ export default function App() {
     const id = editId;
     setEditId(null);
     setOpenId(null);
+    setReturnToHome(false); // the profile they were viewing is gone — land on the tree
     removePerson(id);
     if (activeId === id) {
       const next = data.myPersonId || data.people.find((p) => p.id !== id)?.id || DEFAULT_FOCUS;
@@ -1145,9 +1700,9 @@ export default function App() {
   }, [editId, activeId, data.myPersonId, data.people]);
 
   const handleSaveTimeline = useCallback(
-    (events) => {
+    (events, corePatch = {}) => {
       const person = graph.byId.get(timelineId);
-      updatePerson(timelineId, { events }, {
+      updatePerson(timelineId, { events, ...corePatch }, {
         type: 'person_updated',
         personId: timelineId,
         personName: person?.display_name ?? '',
@@ -1157,6 +1712,170 @@ export default function App() {
     },
     [timelineId, graph],
   );
+
+  // Enrich's document-fact review — accept writes a real life event (via the
+  // same additive addLifeEvent as everywhere else) and marks the fact
+  // consumed; dismiss just marks it, so a re-summarize never re-offers it.
+  // A backstop against Enrich's own duplicate filter: if this exact fact is
+  // already an obvious duplicate (the Enrich list should have hidden it, but
+  // DocViewer's own inline list is filtered separately — see DocViewer's
+  // pendingFacts — and either can be stale on an older device), skip writing
+  // a second copy of the event and instead opportunistically fill the real
+  // profile field it's about (birth place, cause of death) if that field is
+  // still empty. Never overwrites something already recorded.
+  const applyDocumentFact = useCallback(
+    (docId, factIndex) => {
+      const doc = data.documents?.find((d) => d.id === docId);
+      const fact = doc?.extracted?.facts?.[factIndex];
+      if (!doc || !fact) return;
+      const person = graph.byId.get(doc.person_id);
+      if (person && isDuplicateLifeEvent(person, fact)) {
+        const titleLower = (fact.title || '').toLowerCase();
+        if (titleLower.includes('born') && !person.birth_place && fact.detail) {
+          updatePerson(doc.person_id, { birth_place: fact.detail, field_sources: { ...person.field_sources, birth_place: docId } });
+        } else if ((titleLower.includes('died') || titleLower.includes('passed')) && !person.cause_of_death && fact.detail) {
+          updatePerson(doc.person_id, { cause_of_death: fact.detail, field_sources: { ...person.field_sources, cause_of_death: docId } });
+        }
+      } else {
+        addLifeEvent(doc.person_id, { year: fact.year, title: fact.title, detail: fact.detail, tag: fact.tag, sourceDocId: docId });
+      }
+      const facts = doc.extracted.facts.map((f, i) => (i === factIndex ? { ...f, status: 'accepted' } : f));
+      updateDocument(docId, { extracted: { ...doc.extracted, facts } });
+    },
+    [data.documents, graph],
+  );
+  const dismissDocumentFact = useCallback(
+    (docId, factIndex) => {
+      const doc = data.documents?.find((d) => d.id === docId);
+      if (!doc?.extracted?.facts) return;
+      const facts = doc.extracted.facts.map((f, i) => (i === factIndex ? { ...f, status: 'dismissed' } : f));
+      updateDocument(docId, { extracted: { ...doc.extracted, facts } });
+    },
+    [data.documents],
+  );
+
+  // Same accept/dismiss contract as document facts, for medals/honours a
+  // document summary extracted — accept appends to military_medals via the
+  // same additive addMedal used everywhere else, and marks the candidate
+  // consumed so a re-summarize never re-offers it.
+  const applyDocumentMedal = useCallback(
+    (docId, medalIndex) => {
+      const doc = data.documents?.find((d) => d.id === docId);
+      const medal = doc?.extracted?.medals?.[medalIndex];
+      if (!doc || !medal) return;
+      addMedal(doc.person_id, { name: medal.name, detail: medal.detail, sourceDocId: docId });
+      const medals = doc.extracted.medals.map((m, i) => (i === medalIndex ? { ...m, status: 'accepted' } : m));
+      updateDocument(docId, { extracted: { ...doc.extracted, medals } });
+    },
+    [data.documents],
+  );
+  const dismissDocumentMedal = useCallback(
+    (docId, medalIndex) => {
+      const doc = data.documents?.find((d) => d.id === docId);
+      if (!doc?.extracted?.medals) return;
+      const medals = doc.extracted.medals.map((m, i) => (i === medalIndex ? { ...m, status: 'dismissed' } : m));
+      updateDocument(docId, { extracted: { ...doc.extracted, medals } });
+    },
+    [data.documents],
+  );
+  // Removing a medal already ON the profile — distinct from dismissing an
+  // unaccepted candidate above. There's no live link back to whichever
+  // document (if any) produced it, so this is a plain, permanent removal by
+  // its position in the list; MilitaryService gates it behind its own
+  // "remove this medal?" confirm the same way it does for quotes.
+  const handleRemoveMedal = useCallback((personId, index) => {
+    removeMedal(personId, index);
+  }, []);
+
+  // Relationship-derived findings (Married, Widowed, Became a parent/
+  // grandparent — see lib/enrich.js) carry their own complete { key, year,
+  // title, detail } right on the action, computed live from the tree each
+  // time — no docId/factIndex indirection needed. Accepting just writes the
+  // event; dismissing has to be remembered on the person since the
+  // underlying marriage/birth/death date never goes away on its own.
+  const applyRelationshipFact = useCallback((personId, fact) => {
+    addLifeEvent(personId, { year: fact.year, title: fact.title, detail: fact.detail });
+  }, []);
+
+  // Same accept/dismiss contract as document facts, for the profile-field
+  // candidates (occupation/birth_place/residence) a document summary
+  // extracted — accept writes the real field via the same updatePerson every
+  // manual edit uses, and marks the candidate consumed so it can't be
+  // re-offered by a later re-summarize.
+  const applyDocumentField = useCallback(
+    (docId, field) => {
+      const doc = data.documents?.find((d) => d.id === docId);
+      const candidate = doc?.extracted?.profileFields?.[field];
+      if (!doc || !candidate) return;
+      const person = graph.byId.get(doc.person_id);
+      updatePerson(doc.person_id, {
+        [field]: candidate.value,
+        field_sources: { ...person?.field_sources, [field]: docId },
+      }, {
+        type: 'person_updated', personId: doc.person_id, personName: person?.display_name ?? '', detail: field.replace(/_/g, ' '),
+      });
+      const profileFields = { ...doc.extracted.profileFields, [field]: { ...candidate, status: 'accepted' } };
+      updateDocument(docId, { extracted: { ...doc.extracted, profileFields } });
+    },
+    [data.documents, graph],
+  );
+  const dismissDocumentField = useCallback(
+    (docId, field) => {
+      const doc = data.documents?.find((d) => d.id === docId);
+      const candidate = doc?.extracted?.profileFields?.[field];
+      if (!doc || !candidate) return;
+      const profileFields = { ...doc.extracted.profileFields, [field]: { ...candidate, status: 'dismissed' } };
+      updateDocument(docId, { extracted: { ...doc.extracted, profileFields } });
+    },
+    [data.documents],
+  );
+
+  // Same pattern again for people a document names in a direct family
+  // relationship to its subject. The name-match against the tree lives in
+  // computeEnrichment (see lib/enrich.js), which is the only place with both
+  // the document data and the graph — matchedId comes from its finding, not
+  // from the stored document, so it's passed in rather than looked up here.
+  // Accept just writes the ordinary addRelationship edge the relation implies.
+  const applyDocumentPerson = useCallback(
+    (docId, personIndex, matchedId, relation) => {
+      const doc = data.documents?.find((d) => d.id === docId);
+      const pm = doc?.extracted?.peopleMentioned?.[personIndex];
+      if (!doc || !pm) return;
+      const subjectId = doc.person_id;
+      if (relation === 'parent') addRelationship(matchedId, subjectId, 'parent');
+      else if (relation === 'child') addRelationship(subjectId, matchedId, 'parent');
+      else if (relation === 'spouse') addRelationship(subjectId, matchedId, 'partner');
+      const peopleMentioned = doc.extracted.peopleMentioned.map((p, i) => (i === personIndex ? { ...p, status: 'accepted' } : p));
+      updateDocument(docId, { extracted: { ...doc.extracted, peopleMentioned } });
+    },
+    [data.documents],
+  );
+  const dismissDocumentPerson = useCallback(
+    (docId, personIndex) => {
+      const doc = data.documents?.find((d) => d.id === docId);
+      if (!doc?.extracted?.peopleMentioned) return;
+      const peopleMentioned = doc.extracted.peopleMentioned.map((p, i) => (i === personIndex ? { ...p, status: 'dismissed' } : p));
+      updateDocument(docId, { extracted: { ...doc.extracted, peopleMentioned } });
+    },
+    [data.documents],
+  );
+
+  // Fire-and-forget: summarize a freshly uploaded document in the background,
+  // so Enrich has facts to harvest without waiting on someone to open the
+  // document and press Summarize with AI. summarizeDocument never throws and
+  // is best-effort by design; DocViewer's manual button (which only shows
+  // while a document has no summary/facts yet) covers the case where this
+  // silently fails or the document is closed and reopened before it finishes.
+  const autoSummarizeDocument = useCallback(async (docId, src) => {
+    try {
+      const dataUrl = await srcToDataUrl(src);
+      const result = await summarizeDocument(dataUrl);
+      if (!result) return;
+      updateDocument(docId, { summary: result.summary, extracted: buildExtracted(result) });
+    } catch {
+      /* background best-effort — manual Summarize with AI button is the fallback */
+    }
+  }, []);
 
   const handleAddMemory = useCallback(
     (fields) => {
@@ -1176,6 +1895,12 @@ export default function App() {
       if (c) URL.revokeObjectURL(c.url);
       return null;
     });
+  }, []);
+
+  const handleLogout = useCallback(async () => {
+    await fetch('/api/auth/logout', { method: 'POST' });
+    clearLocalData(); // don't leave this user's tree for the next person
+    window.location.reload();
   }, []);
 
   // notify=true emails the invite; notify=false just mints a share link (email
@@ -1206,6 +1931,33 @@ export default function App() {
 
   const activePerson = graph.byId.get(activeId);
 
+  // "Back to you" — the map-style recenter control. mePerson is the viewer's
+  // own bubble (null in demo / before a user claims a person, in which case
+  // the pill simply never renders). goHome reuses the same flight search's
+  // "show on map" uses; from me-to-me it's a single-node path, so it lands
+  // as a clean activate + camera settle, no flight caption.
+  const mePerson = data.myPersonId ? graph.byId.get(data.myPersonId) : null;
+  const goHome = useCallback(() => {
+    if (data.myPersonId) flyToPersonFromAnywhere(data.myPersonId);
+  }, [data.myPersonId, flyToPersonFromAnywhere]);
+
+  // Tree-screen insight surfacing (nav brief: "surface one real insight from
+  // the tree screen itself, not just Home"). Computed once per graph change;
+  // the per-focus lookup off it is cheap. Deliberately silent far more often
+  // than not — see personHighlight.
+  const insightModules = useMemo(
+    () => computeInsightModules(graph, data.myPersonId || DEFAULT_FOCUS),
+    [graph, data.myPersonId],
+  );
+  const activeFact = useMemo(
+    () => personHighlight(graph, data.myPersonId || DEFAULT_FOCUS, activeId, insightModules),
+    [graph, data.myPersonId, activeId, insightModules],
+  );
+  // The tree screen's ambient hint cycles through several facts per browsing
+  // session (see IdleFactHint) rather than the home hub's single fixed daily
+  // pick, so it needs the whole pool, not pickDailyHighlight's one string.
+  const highlightPool = useMemo(() => highlightCandidates(insightModules), [insightModules]);
+
   // Whether ANY sheet/modal/overlay is currently on screen — used to hide the
   // canvas-anchored overlays (hover card, focus nameplate, recentre button)
   // that would otherwise float on top of whatever just opened. Kept as one
@@ -1217,8 +1969,41 @@ export default function App() {
     openId || addAnchorId || editId || timelineId || memoryId || lightbox || crop ||
     legendOpen || settingsOpen || insightsOpen || timelineOpen || docViewer ||
     invitePersonId || activityOpen || gedcomOpen || fsImportOpen || profileOpen ||
-    searchOpen || duplicatesOpen || promptClaim || showInstall
+    homeOpen || howItWorksOpen || familyTreesOpen || searchOpen || duplicatesOpen || promptClaim || showInstall ||
+    keepsakeId
   );
+
+  // Desktop "just start typing" search (feature request: a keyboard-first
+  // shortcut like Gmail/Linear/Notion's — press a letter with nothing else
+  // going on and the search sheet opens already carrying what you typed,
+  // rather than requiring a click on the search icon first). Deliberately
+  // narrow: only a bare printable key (no Ctrl/Cmd/Alt, so every browser and
+  // OS shortcut still works untouched), only while nothing else is already
+  // open (anyOverlayOpen, above — the same consolidated flag every other "is
+  // something already showing" check in this file uses) and only while
+  // nothing already has focus (typing into a bio text field, a name input
+  // inside some other sheet, etc. must never be hijacked — activeElement is
+  // the canvas or plain body whenever the tree itself has "focus"). Mobile
+  // has no physical keyboard to fire this from, so it's inherently
+  // desktop-only without needing its own device check.
+  useEffect(() => {
+    function onGlobalKeydown(e) {
+      if (anyOverlayOpen) return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.key.length !== 1 || e.key === ' ') return;
+      const el = document.activeElement;
+      if (el && el !== document.body && el.tagName !== 'CANVAS') return;
+      // Without this, the same keydown's native default action (inserting a
+      // character) fires a second time into the search input once it's
+      // synchronously focused below — doubling the very first letter typed.
+      e.preventDefault();
+      flushSync(() => { setSearchInitialQuery(e.key); setSearchOpen(true); });
+      const input = document.querySelector('.search-input');
+      if (input) { input.focus(); input.setSelectionRange(input.value.length, input.value.length); }
+    }
+    window.addEventListener('keydown', onGlobalKeydown);
+    return () => window.removeEventListener('keydown', onGlobalKeydown);
+  }, [anyOverlayOpen]);
 
   // Photo of the person the logged-in user has claimed as their own bubble.
   const userPhoto = useMemo(() => {
@@ -1274,14 +2059,24 @@ export default function App() {
         familyName={data.familyName || DEFAULT_FOCUS}
         stats={familyStats}
         view={view}
+        layout={layout}
         syncStatus={syncStatus}
         syncError={syncError}
         onRetrySync={() => saveToServer()}
-        onToggleView={() => setView((v) => (v === 'bubbles' ? 'list' : 'bubbles'))}
+        onSetViewMode={(mode) => {
+          if (mode === 'list') { setView('list'); return; }
+          setView('bubbles');
+          setLayout(mode === 'chart' ? 'chart' : 'organic');
+          // Chart is a pedigree — bloodline-only is its natural default.
+          // Tree's is everyone. Each switch between the two resets to that
+          // view's own default; List is untouched (mode === 'list' already
+          // returned above), and the manual toggle still works freely
+          // within whichever view you're in.
+          setBloodlineOnly(mode === 'chart');
+        }}
         onOpenLegend={() => setLegendOpen(true)}
         bloodlineOnly={bloodlineOnly}
         onToggleBloodlineOnly={() => setBloodlineOnly((v) => !v)}
-        onOpenSettings={() => setSettingsOpen(true)}
         onOpenActivity={() => {
           setActivityOpen(true);
           const now = Date.now();
@@ -1292,30 +2087,34 @@ export default function App() {
         user={user}
         userPhoto={userPhoto}
         onOpenProfile={user ? () => setProfileOpen(true) : null}
-        onSearch={() => {
-          // iOS Safari only auto-shows the keyboard when focus() runs
-          // synchronously inside the tap's own call stack. A plain setState
-          // here mounts SearchOverlay (and its input) on a later React
-          // commit, which is why the sheet opened but no keyboard ever
-          // appeared. flushSync forces that mount to finish before this
-          // handler returns, so the focus() right after still lands inside
-          // the same user-gesture stack.
-          flushSync(() => setSearchOpen(true));
-          document.querySelector('.search-input')?.focus();
-        }}
+        onOpenHome={() => { setHomeOpen(true); if (showHomeNudge) dismissHomeNudge(); }}
+        onSearch={openSearch}
         onOpenInsights={() => setInsightsOpen(true)}
         onOpenTimeline={() => setTimelineOpen(true)}
         duplicateCount={canManageTreeStructure ? duplicatePairs.length : 0}
         onOpenDuplicates={canManageTreeStructure && duplicatePairs.length ? () => setDuplicatesOpen(true) : null}
         storageWarning={storageWarning}
+        storageNearLimit={storageNearLimit}
+        treeSizeWarning={treeSizeWarning}
         syncToast={syncToast}
         onDismissSyncToast={() => setSyncToast(null)}
         recapNudgeCount={recapNudge ? recapGroups.length : 0}
         onShowRecap={() => { setRecapNudge(false); openRecap(); }}
-        onDismissRecapNudge={() => setRecapNudge(false)}
+        onDismissRecapNudge={() => { setRecapNudge(false); markRecapSeen(); }}
       />
 
       {view === 'bubbles' ? (
+        layout === 'chart' ? (
+          <ChartTree
+            graph={graph}
+            activeId={activeId}
+            viewerId={data.myPersonId || DEFAULT_FOCUS}
+            bloodlineOnly={bloodlineOnly}
+            onOpenPerson={openPerson}
+            onAddRelative={setAddAnchorId}
+            onActivate={activateNormal}
+          />
+        ) : (
         <>
           <BubbleTree
             graph={graph}
@@ -1338,19 +2137,53 @@ export default function App() {
             onHover={setHoveredId}
             apiRef={viewApi}
           />
+          {/* "Show both in tree" is a button click (see showDuplicatePairInTree),
+              so whichever bubble the camera's refocus() happens to reframe
+              under the cursor's now-stale screen position can spuriously
+              satisfy a hoveredId match with nobody actually pointing at
+              anything — not a rare edge case, it hit a different one of the
+              two nameplates on almost every review in testing. Real report:
+              "this only seems to work on the first duplicate reviewed" —
+              root cause was this incidental hover, not review order. Neither
+              nameplate hides on hover while a compare pair is genuinely
+              active for the current activeId; the ordinary self-hover
+              handoff to HoverCard (for anyone NOT mid-comparison) is
+              untouched. */}
           <FocusNameplate
             person={activePerson}
+            fact={activeFact}
             getPos={() => viewApi.current?.getScreenPos(activeId)}
-            // Also hidden while the active person is themselves being hovered —
-            // HoverCard takes over then, showing the same richer view everyone
-            // else gets on hover instead of the plain name+dates nameplate.
-            hidden={anyOverlayOpen || browse || layout === 'chart' || hoveredId === activeId}
+            hidden={
+              anyOverlayOpen || browse || layout === 'chart'
+              || (hoveredId === activeId && !(comparePairIds && comparePairIds[0] === activeId))
+            }
           />
+          {/* Second nameplate for "Show both in tree" — comparePairIds[0] is
+              always activeId itself (already covered above), so this one is
+              strictly the OTHER candidate, who can never be the literal
+              ego-camera active id and so would otherwise never get a plate at
+              all. Hidden the moment activeId drifts away from the pair this
+              was triggered for (the user's moved on to browsing something
+              else), so a stale plate can't linger over an unrelated bubble.
+              No hover-based hide here either, for the same reason as above. */}
+          {comparePairIds && (
+            <FocusNameplate
+              person={graph.byId.get(comparePairIds[1])}
+              fact={null}
+              getPos={() => viewApi.current?.getScreenPos(comparePairIds[1])}
+              hidden={
+                anyOverlayOpen || browse || layout === 'chart'
+                || activeId !== comparePairIds[0]
+              }
+            />
+          )}
           <HoverCard
             graph={graph}
             personId={!anyOverlayOpen && layout !== 'chart' ? hoveredId : null}
             viewerId={data.myPersonId || DEFAULT_FOCUS}
             getPos={() => viewApi.current?.getScreenPos(hoveredId)}
+            photos={data.photos}
+            documents={data.documents}
           />
           {/* Bottom bar: single floating dock */}
           <div className="bottom-bar">
@@ -1428,9 +2261,18 @@ export default function App() {
                     <button
                       className={`time-play${timePlaying ? ' time-play--on' : ''}`}
                       onClick={() => {
-                        if (!timePlaying && timeYear >= yearRange.max) {
+                        const starting = !timePlaying;
+                        if (starting && timeYear >= yearRange.max) {
                           setTimeYear(lifeJourneyPerson?.birth_date ? parseInt(lifeJourneyPerson.birth_date) : yearRange.min);
                         }
+                        // Starting general playback (not a life journey, which
+                        // is deliberately about one person's card staying up)
+                        // drops any active selection first — otherwise
+                        // whoever was last focused keeps dimming everyone
+                        // else for the whole time-lapse, and their nameplate
+                        // keeps floating on screen for no reason once you've
+                        // hit play to watch the WHOLE family unfold.
+                        if (starting && !lifeJourneyId) deselect();
                         setTimePlaying((p) => !p);
                       }}
                       aria-label={timePlaying ? 'Pause' : 'Play family history'}
@@ -1461,9 +2303,10 @@ export default function App() {
                 <button
                   className={`dock-btn time-toggle${timeMode ? ' time-toggle--on' : ''}`}
                   onClick={() => {
-                    if (!timeMode) { setTimeYear(new Date().getFullYear()); setTimePlaying(false); }
-                    else { setTimePlaying(false); setLifeJourneyId(null); }
-                    setTimeMode((m) => !m);
+                    if (timeMode) { exitTimeMode(); return; }
+                    setTimeYear(new Date().getFullYear());
+                    setTimePlaying(false);
+                    setTimeMode(true);
                   }}
                   aria-pressed={timeMode}
                   aria-label={timeMode ? `Time view: ${timeYear}` : 'View family over time'}
@@ -1491,8 +2334,11 @@ export default function App() {
                 <LineageIcon />
                 <span className="dock-btn__label">
                   {lineageMode
-                    ? lineagePath
-                      ? `${[...lineagePath].length} links`
+                    ? lineageOrder
+                      // Edges, not people — matches the banner's own connector
+                      // count (order.length would double-count as "3 links"
+                      // for a 2-hop, 3-person line like a grandparent trace).
+                      ? `${lineageOrder.length - 1} links`
                       : 'Tap…'
                     : 'Lineage'}
                 </span>
@@ -1510,7 +2356,28 @@ export default function App() {
               </button>
             </div>
           </div>
+          {/* "Back to you" — contextual, only when the tree isn't already
+              framed on the viewer and no full-screen mode is running. */}
+          <HomeToMe
+            person={mePerson}
+            visible={
+              !!mePerson &&
+              activeId !== data.myPersonId &&
+              !lineageMode && !timeMode && !flightCaption &&
+              !anyOverlayOpen && recapQueue.length === 0
+            }
+            onGoHome={goHome}
+          />
+          {/* Time mode's own contextual exit — Lineage mode already has one
+              on its banner ("Done"); Time mode had only the dock icon. */}
+          <ReturnToTreePill
+            visible={timeMode && !anyOverlayOpen}
+            onReturn={exitTimeMode}
+          />
           {!lineageMode && !flightCaption && <IntroHint />}
+          {!lineageMode && !flightCaption && (
+            <IdleFactHint facts={highlightPool} active={browse && !anyOverlayOpen} />
+          )}
           {lineageMode && (
             <LineageBanner
               graph={graph}
@@ -1518,12 +2385,22 @@ export default function App() {
               order={lineageOrder}
               onClear={() => { setLineagePath(null); setLineageOrder(null); }}
               onExit={toggleLineage}
+              onPeek={(id) => viewApi.current?.pulseBubble(id)}
+              onSearch={openSearch}
             />
           )}
           {flightCaption && (
-            <FlightCaption graph={graph} order={flightCaption.order} upTo={flightCaption.upTo} />
+            <FlightCaption
+              graph={graph}
+              order={flightCaption.order}
+              upTo={flightCaption.upTo}
+              landed={!!flightCaption.landed}
+              onDone={() => setFlightCaption(null)}
+              onPeek={(id) => viewApi.current?.pulseBubble(id)}
+            />
           )}
         </>
+        )
       ) : (
         <AccessibleTree
           graph={graph}
@@ -1531,6 +2408,7 @@ export default function App() {
           onFocus={activate}
           onOpenPerson={openPerson}
           onShowOnMap={flyToPersonFromAnywhere}
+          onShowInChart={showPersonInChart}
         />
       )}
 
@@ -1541,17 +2419,18 @@ export default function App() {
         memories={data.memories}
         photos={data.photos}
         documents={data.documents}
+        activity={data.activity}
         canEdit={canEditTree}
         canContribute={canContributeTree}
         isAdmin={canManageTreeStructure}
-        lockEscape={!!(addAnchorId || editId || timelineId || memoryId || lightbox || crop || invitePersonId)}
+        lockEscape={!!(addAnchorId || editId || timelineId || memoryId || lightbox || crop || invitePersonId || duplicatesOpen || keepsakeId)}
         onClose={closePerson}
         onFocus={(id) => {
-          closePerson();
+          closePersonForTreeAction();
           activate(id);
         }}
         onShowOnMap={(id) => {
-          closePerson();
+          closePersonForTreeAction();
           flyToPersonFromAnywhere(id);
         }}
         onOpenPerson={openPerson}
@@ -1564,22 +2443,43 @@ export default function App() {
         onUpdateMemory={updateMemory}
         onAddPhoto={(id, src) => addPhoto(id, { src })}
         onOpenLightbox={(personId, index) => setLightbox({ personId, index })}
-        onAddDocument={(personId, fields) => addDocument(personId, fields)}
-        onOpenDocument={(doc) => setDocViewer({ title: doc.title, src: doc.src, mime: doc.mime })}
+        onAddDocument={(personId, fields) => {
+          const docId = addDocument(personId, fields);
+          autoSummarizeDocument(docId, fields.src);
+          return docId;
+        }}
+        onOpenDocument={(doc) => setDocViewer({ id: doc.id, personId: doc.person_id, title: doc.title, src: doc.src, mime: doc.mime, summary: doc.summary, extracted: doc.extracted })}
         onRemoveDocument={(id) => {
           const doc = data.documents?.find((d) => d.id === id);
           if (doc?.src?.startsWith('/api/documents/')) {
             fetch(doc.src, { method: 'DELETE' }).catch(() => {});
           }
+          // Undo whatever this document actually wrote before removing it —
+          // the root-cause fix for a document accepted onto the wrong
+          // person: deleting it now retracts its own events/medals/fields
+          // instead of leaving them behind forever. See
+          // retractDocumentContributions in store.js for what it does and
+          // deliberately does NOT touch (relationships).
+          if (doc) retractDocumentContributions(doc.person_id, id);
           removeDocument(id);
         }}
         onUpdateDocument={(id, patch) => updateDocument(id, patch)}
         onRemoveRelationship={removeRelationship}
         onUpdateRelationshipQualifier={updateRelationshipQualifier}
         onChangeRelationship={handleChangeRelType}
+        onUpdatePartnerMeta={(aId, bId, meta) => updatePartnerMeta(aId, bId, meta)}
         onUpdateStory={(id, story) => {
           const person = graph.byId.get(id);
           updatePerson(id, { story }, { type: 'person_updated', personId: id, personName: person?.display_name ?? '', detail: 'life story' });
+        }}
+        onOpenKeepsake={(id) => setKeepsakeId(id)}
+        onUpdateMilitaryStory={(id, military_story) => {
+          const person = graph.byId.get(id);
+          updatePerson(id, { military_story }, { type: 'person_updated', personId: id, personName: person?.display_name ?? '', detail: 'military service story' });
+        }}
+        onUpdateMilitaryContext={(id, military_context) => {
+          const person = graph.byId.get(id);
+          updatePerson(id, { military_context }, { type: 'person_updated', personId: id, personName: person?.display_name ?? '', detail: 'military historical context' });
         }}
         onAddCondition={addCondition}
         onRemoveCondition={removeCondition}
@@ -1592,13 +2492,34 @@ export default function App() {
         onInvite={(id) => setInvitePersonId(id)}
         onLifeJourney={startLifeJourney}
         onMarkJoined={handleMarkJoined}
+        onReviewDuplicate={openDuplicatesFor}
+        onApplyEnrichedPlace={(id, key, value) => {
+          const person = graph.byId.get(id);
+          const label = key === 'birth_place' ? 'birthplace' : 'residence';
+          updatePerson(id, { [key]: value }, { type: 'person_updated', personId: id, personName: person?.display_name ?? '', detail: label });
+        }}
+        onApplyDocumentFact={applyDocumentFact}
+        onDismissDocumentFact={dismissDocumentFact}
+        onApplyDocumentMedal={applyDocumentMedal}
+        onDismissDocumentMedal={dismissDocumentMedal}
+        onRemoveMedal={handleRemoveMedal}
+        onApplyDocumentField={applyDocumentField}
+        onDismissDocumentField={dismissDocumentField}
+        onApplyDocumentPerson={applyDocumentPerson}
+        onDismissDocumentPerson={dismissDocumentPerson}
+        onApplyRelationshipFact={applyRelationshipFact}
+        onDismissRelationshipFact={dismissRelationshipFact}
       />
 
       {searchOpen && (
         <SearchOverlay
           people={data.people}
-          onSelect={flyToSearchResult}
-          onClose={() => setSearchOpen(false)}
+          graph={graph}
+          viewerId={data.myPersonId || DEFAULT_FOCUS}
+          onSelect={selectFromSearch}
+          onClose={() => { setSearchOpen(false); setSearchInitialQuery(null); }}
+          hint={lineageMode ? `Tracing from ${(activePerson?.display_name || 'this person').split(' ')[0]} — pick who to connect to` : null}
+          initialQuery={searchInitialQuery}
         />
       )}
 
@@ -1620,12 +2541,41 @@ export default function App() {
         />
       )}
 
+      {keepsakeId && (
+        <KeepsakeView
+          graph={graph}
+          personId={keepsakeId}
+          memories={data.memories}
+          photos={data.photos}
+          documents={data.documents}
+          activity={data.activity}
+          familyName={data.familyName}
+          canEdit={canEditTree}
+          onClose={() => setKeepsakeId(null)}
+          onCompiled={(edition) => {
+            const person = graph.byId.get(keepsakeId);
+            const n = edition.editionNumber;
+            const ord = ['first', 'second', 'third', 'fourth', 'fifth', 'sixth', 'seventh', 'eighth', 'ninth', 'tenth'][n - 1] || `${n}th`;
+            logActivity({
+              type: 'keepsake_generated',
+              personId: keepsakeId,
+              personName: person?.display_name ?? '',
+              detail: `${ord} edition`,
+            });
+          }}
+        />
+      )}
+
       {duplicatesOpen && (
         <DuplicatesSheet
-          pairs={duplicatePairs}
+          pairs={duplicatesFocusId
+            ? duplicatePairs.filter((p) => p.aId === duplicatesFocusId || p.bId === duplicatesFocusId)
+            : duplicatePairs}
           graph={graph}
           onMerge={(keepId, dropId) => { mergePeople(keepId, dropId); if (activeId === dropId) activate(keepId); }}
-          onClose={() => setDuplicatesOpen(false)}
+          onDismiss={dismissDuplicatePair}
+          onShowInTree={showDuplicatePairInTree}
+          onClose={() => { setDuplicatesOpen(false); setDuplicatesFocusId(null); }}
         />
       )}
 
@@ -1653,11 +2603,16 @@ export default function App() {
         <InstallPrompt installEvent={installEvent} onClose={dismissInstall} />
       )}
 
+      {showHomeNudge && !anyOverlayOpen && (
+        <HomeNudge onDismiss={dismissHomeNudge} />
+      )}
+
       {addAnchorId && graph.byId.get(addAnchorId) && (
         <AddRelativeSheet
           anchor={graph.byId.get(addAnchorId)}
           people={data.people.filter((p) => p.id !== addAnchorId)}
           relationships={data.relationships}
+          graph={graph}
           onClose={() => setAddAnchorId(null)}
           onAdd={handleAdd}
           onLinkExisting={handleLinkExisting}
@@ -1695,7 +2650,8 @@ export default function App() {
       {editId && graph.byId.get(editId) && (
         <EditPersonSheet
           person={graph.byId.get(editId)}
-          onClose={() => setEditId(null)}
+          startInEdit={editStartInEdit}
+          onClose={() => { setEditId(null); setEditStartInEdit(false); }}
           onSave={handleSave}
           onRemove={canManageTreeStructure ? handleRemovePerson : null}
         />
@@ -1744,7 +2700,20 @@ export default function App() {
       )}
 
       {docViewer && (
-        <DocViewer doc={docViewer} onClose={() => setDocViewer(null)} />
+        <DocViewer
+          doc={docViewer}
+          person={graph.byId.get(docViewer.personId)}
+          onClose={() => setDocViewer(null)}
+          onSummarized={(result) => {
+            const extracted = buildExtracted(result);
+            setDocViewer((d) => (d ? { ...d, summary: result.summary, extracted } : d));
+            if (docViewer.id) updateDocument(docViewer.id, { summary: result.summary, extracted });
+          }}
+          onApplyDocumentFact={applyDocumentFact}
+          onDismissDocumentFact={dismissDocumentFact}
+          onApplyDocumentField={applyDocumentField}
+          onDismissDocumentField={dismissDocumentField}
+        />
       )}
 
       {crop && (
@@ -1770,12 +2739,6 @@ export default function App() {
       <Legend
         open={legendOpen}
         onClose={() => setLegendOpen(false)}
-        layout={layout}
-        onSetLayout={(mode) => {
-          setLayout(mode);
-          // Chart mode works best with Focus Family limiting the visible set.
-          if (mode === 'chart' && !focusMode) setFocusMode(true);
-        }}
       />
 
       {activityOpen && (
@@ -1796,12 +2759,9 @@ export default function App() {
 
       {recapOpen && (
         <RecapTour
-          graph={graph}
           queue={recapQueue}
           reducedMotion={reducedMotion}
           allDone={recapAllDone}
-          onDismiss={dismissRecapItem}
-          onSkipTo={skipRecapTo}
           onCloseAll={closeRecapAll}
           onClose={closeRecapAll}
         />
@@ -1813,14 +2773,11 @@ export default function App() {
           familyName={data.familyName || 'My Family'}
           onUpdateFamilyName={updateFamilyName}
           onReset={resetTree}
-          onLogout={user ? async () => {
-            await fetch('/api/auth/logout', { method: 'POST' });
-            clearLocalData(); // don't leave this user's tree for the next person
-            window.location.reload();
-          } : null}
+          onLogout={user ? handleLogout : null}
           onClose={() => setSettingsOpen(false)}
           onImportGedcom={() => setGedcomOpen(true)}
           onImportFamilySearch={() => setFsImportOpen(true)}
+          onExportGedcom={handleExportGedcom}
           people={data.people}
           userEmail={user?.email}
           onSelectPerson={(id) => {
@@ -1836,16 +2793,60 @@ export default function App() {
           user={user}
           people={data.people}
           onClose={() => setProfileOpen(false)}
-          onLogout={async () => {
-            await fetch('/api/auth/logout', { method: 'POST' });
-            clearLocalData(); // don't leave this user's tree for the next person
-            window.location.reload();
-          }}
+          onLogout={handleLogout}
           onSaved={(updated) => {
             setUser((u) => ({ ...u, ...updated }));
             setCurrentUser({ ...user, ...updated });
           }}
           onPhoto={handlePhoto}
+        />
+      )}
+
+      {homeOpen && (
+        <Home
+          user={user}
+          familyName={data.familyName}
+          stats={familyStats}
+          activity={data.activity ?? []}
+          people={data.people}
+          graph={graph}
+          userEmail={user?.email}
+          onClose={() => setHomeOpen(false)}
+          onOpenAccount={() => { setHomeOpen(false); setProfileOpen(true); }}
+          onLogout={user ? handleLogout : null}
+          onOpenInstall={() => { setHomeOpen(false); setShowInstall(true); }}
+          onOpenHowItWorks={() => { setHomeOpen(false); setHowItWorksOpen(true); }}
+          onOpenFamilyTrees={() => { setHomeOpen(false); setFamilyTreesOpen(true); }}
+          onOpenFamilySettings={() => { setHomeOpen(false); setSettingsOpen(true); }}
+          onOpenInsights={() => { setHomeOpen(false); setInsightsOpen(true); }}
+          keepsakeNudge={keepsakeNudge}
+          onOpenKeepsake={data.myPersonId ? () => { setHomeOpen(false); setKeepsakeId(data.myPersonId); } : null}
+          onOpenActivity={() => {
+            setHomeOpen(false);
+            setActivityOpen(true);
+            const now = Date.now();
+            setLastReadAt(now);
+            setActivityReadAt(now);
+          }}
+          onSelectPerson={(id) => {
+            setHomeOpen(false);
+            const person = graph.byId.get(id);
+            if (person) { setReturnToHome(true); openPerson(id); }
+          }}
+        />
+      )}
+
+      {/* Both subpages are reached only from the hub, so their back button
+          always returns there — not the bare tree. */}
+      {howItWorksOpen && (
+        <HowItWorks onClose={() => { setHowItWorksOpen(false); setHomeOpen(true); }} />
+      )}
+
+      {familyTreesOpen && (
+        <FamilyTrees
+          user={user}
+          onClose={() => { setFamilyTreesOpen(false); setHomeOpen(true); }}
+          onGoToTree={() => setFamilyTreesOpen(false)}
         />
       )}
 
@@ -1862,6 +2863,8 @@ export default function App() {
             setFsImportOpen(false);
           }}
           canReplace={canManageTreeStructure}
+          existingPeople={data.people}
+          existingRelationships={data.relationships}
         />
       )}
 
@@ -1879,6 +2882,8 @@ export default function App() {
             setGedcomOpen(false);
           }}
           canReplace={canManageTreeStructure}
+          existingPeople={data.people}
+          existingRelationships={data.relationships}
         />
       )}
 
@@ -1895,17 +2900,54 @@ export default function App() {
 // ── Document viewer ───────────────────────────────────────────────────────────
 // Renders in-app so the session cookie is sent with the fetch — iOS PWA has a
 // separate cookie store from Safari, so window.open() loses auth entirely.
-function DocViewer({ doc, onClose }) {
+function DocViewer({
+  doc, person, onClose, onSummarized,
+  onApplyDocumentFact, onDismissDocumentFact,
+  onApplyDocumentField, onDismissDocumentField,
+}) {
   const isImage = doc.mime?.startsWith('image/');
   const isPdf = doc.mime === 'application/pdf';
   const { xf, stageRef, handlers } = useImageZoom();
+  // A second, independent zoom instance for the fullscreen view below — once
+  // the AI summary and facts are showing, the inline preview above them is
+  // squeezed down to make room, so this is the "still crisp, still zoomable"
+  // escape hatch back to a full-viewport view of the original scan.
+  const full = useImageZoom();
+  const [fullscreen, setFullscreen] = useState(false);
   const [saveState, setSaveState] = useState('idle'); // idle | saving | error
+  const [summaryState, setSummaryState] = useState('idle'); // idle | working | error
+  const [summary, setSummary] = useState(doc.summary || null);
+  // Dismissing a fact/field marks it consumed on the document (never
+  // re-offered), the same one-way step as accepting — so it gets the same
+  // "are you sure" confirm every other dismiss surface in the app uses.
+  // Keyed by 'fact:<index>' / 'field:<name>' so only the one row being
+  // confirmed shows it.
+  const [confirmDismiss, setConfirmDismiss] = useState(null);
+  const [facts, setFacts] = useState(doc.extracted?.facts || []);
+  const [profileFields, setProfileFields] = useState(doc.extracted?.profileFields || null);
+  // Never offer a fact that's already an obvious duplicate of something on
+  // the profile (the derived Born/Passed-away entry, or a stored event) —
+  // same check Enrich uses, so the two surfaces never disagree about what's
+  // still worth reviewing.
+  const pendingFacts = facts.filter((f) => f.status === 'pending' && f.year && !(person && isDuplicateLifeEvent(person, f)));
+  const pendingFields = ['occupation', 'birth_place', 'residence']
+    .filter((field) => profileFields?.[field]?.status === 'pending');
 
   useEffect(() => {
-    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    const onKey = (e) => {
+      if (e.key !== 'Escape') return;
+      if (fullscreen) setFullscreen(false);
+      else onClose();
+    };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  }, [onClose, fullscreen]);
+
+  // Never carry over zoom/pan from a previous fullscreen visit.
+  useEffect(() => {
+    if (fullscreen) full.reset();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fullscreen]);
 
   async function handleSave() {
     if (saveState === 'saving') return;
@@ -1921,7 +2963,42 @@ function DocViewer({ doc, onClose }) {
     }
   }
 
+  async function handleSummarize() {
+    if (summaryState === 'working') return;
+    setSummaryState('working');
+    try {
+      const dataUrl = await srcToDataUrl(doc.src);
+      const result = await summarizeDocument(dataUrl);
+      if (result) {
+        const extracted = buildExtracted(result);
+        setSummary(result.summary);
+        setFacts(extracted.facts);
+        setProfileFields(extracted.profileFields);
+        onSummarized?.(result);
+        setSummaryState('idle');
+      } else {
+        setSummaryState('error');
+      }
+    } catch (e) {
+      console.warn('[doc viewer] summarize failed:', e.message);
+      setSummaryState('error');
+    }
+  }
+
+  function resolveFact(index, status) {
+    setFacts((fs) => fs.map((f, i) => (i === index ? { ...f, status } : f)));
+    if (status === 'accepted') onApplyDocumentFact?.(doc.id, index);
+    else onDismissDocumentFact?.(doc.id, index);
+  }
+
+  function resolveField(field, status) {
+    setProfileFields((pf) => (pf ? { ...pf, [field]: { ...pf[field], status } } : pf));
+    if (status === 'accepted') onApplyDocumentField?.(doc.id, field);
+    else onDismissDocumentField?.(doc.id, field);
+  }
+
   return (
+    <>
     <div className="doc-viewer-scrim" onClick={onClose}>
       <div className="doc-viewer" onClick={(e) => e.stopPropagation()}>
         <div className="doc-viewer__bar">
@@ -1945,8 +3022,17 @@ function DocViewer({ doc, onClose }) {
               onPointerMove={(e) => { e.stopPropagation(); handlers.onPointerMove(e); }}
               onPointerUp={(e) => { e.stopPropagation(); handlers.onPointerUp(e); }}
               onPointerCancel={(e) => { e.stopPropagation(); handlers.onPointerCancel(e); }}
+              onWheel={(e) => { e.stopPropagation(); handlers.onWheel(e); }}
               onClick={(e) => e.stopPropagation()}
             />
+            <button
+              className="doc-viewer__expand"
+              onClick={(e) => { e.stopPropagation(); setFullscreen(true); }}
+              aria-label="View full size"
+              title="View full size"
+            >
+              <ExpandIcon />
+            </button>
           </div>
         ) : isPdf ? (
           <Suspense fallback={<div className="pdf-viewer__stage"><div className="mw__spinner" aria-label="Loading" /></div>}>
@@ -1960,15 +3046,142 @@ function DocViewer({ doc, onClose }) {
             </a>
           </div>
         )}
+        {summary && (
+          <div className="doc-viewer__summary">
+            <span className="doc-viewer__summary-label">AI summary</span>
+            <p>{summary}</p>
+          </div>
+        )}
+        {pendingFacts.length > 0 && (
+          <div className="doc-viewer__facts">
+            <span className="doc-viewer__summary-label">Life events found in this document</span>
+            {facts.map((f, i) => {
+              if (f.status !== 'pending' || !f.year) return null;
+              const key = `fact:${i}`;
+              const confirming = confirmDismiss === key;
+              return (
+                <div className="doc-fact" key={i}>
+                  <div className="doc-fact__body">
+                    {f.tag === 'military' && (
+                      <span className="timeline__ribbon" title="Military service" aria-label="Military service">
+                        <RibbonIconSmall />
+                      </span>
+                    )}
+                    <span className="doc-fact__title">{f.title} — {f.year}</span>
+                    {f.detail && <span className="doc-fact__detail">{f.detail}</span>}
+                  </div>
+                  {confirming ? (
+                    <div className="doc-fact__confirm">
+                      <span>Dismiss this suggestion?</span>
+                      <div className="doc-fact__confirm-btns">
+                        <button className="doc-card__confirm-remove" onClick={() => { resolveFact(i, 'dismissed'); setConfirmDismiss(null); }}>Dismiss</button>
+                        <button className="doc-card__confirm-cancel" onClick={() => setConfirmDismiss(null)}>Cancel</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="doc-fact__actions">
+                      <button className="enrich__row-action" onClick={() => resolveFact(i, 'accepted')}>Add</button>
+                      <button className="enrich__row-dismiss" onClick={() => setConfirmDismiss(key)}>Dismiss</button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+        {pendingFields.length > 0 && (
+          <div className="doc-viewer__facts">
+            <span className="doc-viewer__summary-label">Profile details found in this document</span>
+            {pendingFields.map((field) => {
+              const key = `field:${field}`;
+              const confirming = confirmDismiss === key;
+              return (
+                <div className="doc-fact" key={field}>
+                  <div className="doc-fact__body">
+                    <span className="doc-fact__title">{DOC_FIELD_LABEL[field]}</span>
+                    <span className="doc-fact__detail">{profileFields[field].value}</span>
+                  </div>
+                  {confirming ? (
+                    <div className="doc-fact__confirm">
+                      <span>Dismiss this suggestion?</span>
+                      <div className="doc-fact__confirm-btns">
+                        <button className="doc-card__confirm-remove" onClick={() => { resolveField(field, 'dismissed'); setConfirmDismiss(null); }}>Dismiss</button>
+                        <button className="doc-card__confirm-cancel" onClick={() => setConfirmDismiss(null)}>Cancel</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="doc-fact__actions">
+                      <button className="enrich__row-action" onClick={() => resolveField(field, 'accepted')}>Add</button>
+                      <button className="enrich__row-dismiss" onClick={() => setConfirmDismiss(key)}>Dismiss</button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
         {(isImage || isPdf) && (
           <div className="doc-viewer__bar doc-viewer__bar--bottom">
             <button className="doc-viewer__save" onClick={handleSave} disabled={saveState === 'saving'}>
               {saveState === 'saving' ? 'Saving…' : saveState === 'error' ? "Couldn't save" : 'Save'}
             </button>
+            <button className="doc-viewer__save" onClick={handleSummarize} disabled={summaryState === 'working'}>
+              {summaryState === 'working' ? 'Reading…'
+                : summaryState === 'error' ? "Couldn't summarize"
+                : summary || facts.length ? 'Re-summarize'
+                : 'Summarize with AI'}
+            </button>
           </div>
         )}
       </div>
     </div>
+    {fullscreen && isImage && (
+      <div className="doc-fullscreen" onClick={() => setFullscreen(false)}>
+        <button
+          className="doc-fullscreen__close"
+          onClick={(e) => { e.stopPropagation(); setFullscreen(false); }}
+          aria-label="Close full size view"
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+          </svg>
+        </button>
+        <div className="doc-fullscreen__stage" ref={full.stageRef}>
+          <img
+            className="doc-fullscreen__img"
+            src={doc.src}
+            alt={doc.title}
+            crossOrigin="anonymous"
+            draggable={false}
+            style={{ transform: `translate(${full.xf.x}px, ${full.xf.y}px) scale(${full.xf.scale})` }}
+            onPointerDown={(e) => { e.stopPropagation(); full.handlers.onPointerDown(e); }}
+            onPointerMove={(e) => { e.stopPropagation(); full.handlers.onPointerMove(e); }}
+            onPointerUp={(e) => { e.stopPropagation(); full.handlers.onPointerUp(e); }}
+            onPointerCancel={(e) => { e.stopPropagation(); full.handlers.onPointerCancel(e); }}
+            onWheel={(e) => { e.stopPropagation(); full.handlers.onWheel(e); }}
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      </div>
+    )}
+    </>
+  );
+}
+
+function ExpandIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M9 3H3v6M15 21h6v-6M21 3l-7 7M3 21l7-7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function RibbonIconSmall() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="8" r="5.5" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M8.5 13l-2 8 5.5-3 5.5 3-2-8" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+    </svg>
   );
 }
 
@@ -2065,7 +3278,7 @@ function FocusIcon() {
 function AppLoadingScreen() {
   return (
     <div className="app-loading">
-      <Logo size={42} />
+      <Logo size={42} animate={false} loading />
     </div>
   );
 }

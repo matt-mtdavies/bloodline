@@ -1,4 +1,5 @@
 import { json } from '../../_lib/util.js';
+import { createFamily } from '../../_lib/family.js';
 
 /*
  * GET /api/families
@@ -32,6 +33,31 @@ export async function onRequestGet({ env, data }) {
     }));
 
     return json({ families });
+  } catch (e) {
+    return json({ error: 'Server error', detail: e.message }, { status: 500 });
+  }
+}
+
+/*
+ * POST /api/families  { name? }
+ * Starts a brand-new, empty tree and switches the user onto it immediately
+ * — used by the "Create new tree" action on the home hub, for someone who
+ * already has at least one tree and wants to start another (their own
+ * first-ever tree is instead created implicitly by /api/tree's own PUT, the
+ * moment they finish onboarding — this is for every tree after that one).
+ * The client is expected to clear its local cache and re-run onboarding
+ * against this new family afterward.
+ */
+export async function onRequestPost({ request, env, data }) {
+  if (!data.user) return json({ error: 'Unauthorized' }, { status: 401 });
+  if (!env.DB) return json({ error: 'Database not configured' }, { status: 503 });
+
+  let name;
+  try { ({ name } = await request.json()); } catch { name = undefined; }
+
+  try {
+    const created = await createFamily(env, data.user.uid, name);
+    return json(created);
   } catch (e) {
     return json({ error: 'Server error', detail: e.message }, { status: 500 });
   }

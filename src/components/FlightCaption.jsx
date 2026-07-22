@@ -1,54 +1,131 @@
-import { relationLabel } from '../data/graph.js';
+import { useEffect, useState } from 'react';
+import Avatar from './Avatar.jsx';
+import { relationLabel, buildRelationCrumbs } from '../data/graph.js';
+import { useKinTerms } from '../lib/kinTerms.js';
 
 /*
- * The search flyover's caption — each person on the path labelled by their
- * relation to the VIEWER (not to the previous hop), so a route through an
- * aunt and a cousin reads as "Mother → Grandmother → Half-Aunt → Half-Cousin"
- * rather than a flat chain of parent/child steps that wouldn't surface those
- * terms at all. The final crumb is the destination's actual name — the
- * payoff, since the profile no longer auto-opens on landing.
- *
- * Purely reactive to `upTo`, which the flyover's onSegment callback advances
- * in App.jsx as the camera passes each hop; the fade-in per crumb is CSS,
- * driven by the --visible class.
+ * The search flyover's payoff — one card that builds itself progressively
+ * across the whole flight, rather than a transit caption that gets replaced
+ * by a different landed card. Both avatars and the connector are on screen
+ * from the first frame; the badge counts (possibly-collapsed, see below)
+ * relationship steps rather than raw camera stops, ticking up live as each
+ * one completes (`upTo`, from App.jsx's onSegment), and the breadcrumb strip
+ * beneath it fills in the same way, fully visible while the chain is still
+ * building. Landing just finishes what's already there: the avatars scale
+ * up (a CSS transition on their size, not a swap of components), the
+ * relation sentence fades in, and the breadcrumb stays open, exactly as it
+ * was mid-flight — seeing how two people connect shouldn't take an extra
+ * tap. The badge still becomes a real toggle button (tap to collapse the
+ * chain, tap again to bring it back), pulsing once, briefly, to hint it's
+ * interactive. Each hop in the chain is itself tappable: it briefly
+ * highlights that person's bubble out on the tree (BubbleTree's
+ * pulseBubble) so you can see where a step actually lives without losing
+ * this card. Auto-dismisses 15s after landing if the chain is left
+ * collapsed; expanding it back cancels that for good, and it stays up
+ * until "Done" is tapped.
  */
-export default function FlightCaption({ graph, order, upTo }) {
+export default function FlightCaption({ graph, order, upTo, landed, onDone, onPeek }) {
+  // Chain starts expanded on landing — as if the badge had already been
+  // tapped — rather than making that a required extra step to see how two
+  // people actually connect.
+  const [chainOpen, setChainOpen] = useState(true);
+  const [badgeTapped, setBadgeTapped] = useState(false);
+  const kinTerms = useKinTerms();
+
+  useEffect(() => {
+    if (!landed || chainOpen) return;
+    const t = setTimeout(() => onDone?.(), 15000);
+    return () => clearTimeout(t);
+  }, [landed, chainOpen, onDone]);
+
   if (!order || order.length < 2) return null;
   const originId = order[0];
+  const origin = graph.byId.get(originId);
   const target = graph.byId.get(order[order.length - 1]);
   const targetName = (target?.display_name || '').trim();
+  const first = (p) => (p?.display_name || '').trim().split(/\s+/)[0] || '';
 
-  // One relation-to-viewer label per hop after the origin (the origin itself
-  // is implicitly "you" and isn't shown as a crumb).
-  const relCrumbs = order.slice(1).map((id) => relationLabel(graph, originId, id));
+  // The possessive relationship chain ("Father's Brother's Daughter") —
+  // shared with Lineage mode's banner; see buildRelationCrumbs in graph.js
+  // for the turn-by-turn labeling and the sibling/nephew-aunt collapses.
+  const hops = order.length - 1;
+  const crumbs = buildRelationCrumbs(graph, order, kinTerms);
+  // revealedUpTo: how far the camera has actually travelled (an order-index,
+  // real hops — unaffected by wording collapse), used to decide which crumbs
+  // have been passed. shownCrumbs: the badge's own number — how many of the
+  // (possibly collapsed) crumbs above are fully revealed. These intentionally
+  // differ during a sibling-detour: the badge holds rather than ticking up
+  // for the "extra" real hop through the shared parent, then jumps once the
+  // camera reaches the sibling — never overshooting past the final count
+  // (crumbs.length) the way counting raw camera hops would, so the badge and
+  // the chain text underneath it always agree once landed.
+  const revealedUpTo = landed ? hops : Math.min(upTo, hops);
+  const shownCrumbs = landed ? crumbs.length : crumbs.filter((c) => c.toIndex <= revealedUpTo).length;
+
+  const relation = landed ? relationLabel(graph, originId, order[order.length - 1], kinTerms) : null;
+  const avatarSize = landed ? 30 : 20;
+  // Visible & building while in transit; once landed, collapsed behind the
+  // badge by default (chainOpen starts false) until tapped back open.
+  const chainVisible = !landed || chainOpen;
+
+  const toggleChain = () => {
+    setChainOpen((v) => !v);
+    setBadgeTapped(true);
+  };
 
   return (
-    <div className="flight-caption" role="status" aria-live="polite">
-      {relCrumbs.map((label, i) => (
-        <span
-          key={i}
-          className={`flight-caption__crumb${i < upTo ? ' flight-caption__crumb--visible' : ''}`}
-        >
-          {i > 0 && <ArrowGlyph />}
-          {label}
+    <div className={`flight-card${landed ? ' flight-card--landed' : ''}`} role="status" aria-live="polite">
+      <div className="flight-card__chain">
+        <span className="flight-card__node">
+          <Avatar person={origin} size={avatarSize} />
+          <span className="flight-card__node-name">{first(origin)}</span>
         </span>
-      ))}
-      {targetName && (
-        <span
-          className={`flight-caption__crumb flight-caption__crumb--name${upTo >= relCrumbs.length ? ' flight-caption__crumb--visible' : ''}`}
+        <button
+          type="button"
+          className={`flight-card__connector${landed && !badgeTapped ? ' flight-card__connector--pulse' : ''}`}
+          onClick={landed ? toggleChain : undefined}
+          aria-label={landed ? 'Show the full relationship chain' : undefined}
+          aria-expanded={landed ? chainOpen : undefined}
+          tabIndex={landed ? 0 : -1}
         >
-          <ArrowGlyph />
-          {targetName}
+          <span className="flight-card__count">{shownCrumbs}</span>
+        </button>
+        <span className="flight-card__node">
+          <Avatar person={target} size={avatarSize} />
+          <span className={`flight-card__node-name${landed || revealedUpTo >= hops ? '' : ' flight-card__node-name--pending'}`}>
+            {landed ? first(target) : (revealedUpTo >= hops ? targetName : '')}
+          </span>
         </span>
+      </div>
+
+      {landed && (
+        <p className="flight-card__rel">
+          {targetName} is {first(origin)}&apos;s <strong>{relation.toLowerCase()}</strong>
+        </p>
       )}
-    </div>
-  );
-}
 
-function ArrowGlyph() {
-  return (
-    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" aria-hidden="true" className="flight-caption__arrow">
-      <path d="M5 12h13M13 6l6 6-6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
+      <div className={`flight-card__breadcrumb${chainVisible ? ' flight-card__breadcrumb--open' : ''}`}>
+        <div className="flight-card__breadcrumb-inner">
+          {/* A possessive chain reads as one flowing phrase — "Father's
+              Brother's Daughter's Daughter" — rather than discrete
+              arrow-separated labels, matching how the headline relation
+              sentence above it is phrased. Every word but the last takes the
+              's; the last is the terminal noun describing the target's role. */}
+          {crumbs.map((c, i) => (
+            <button
+              key={i}
+              type="button"
+              className={`flight-card__crumb${c.toIndex <= revealedUpTo ? ' flight-card__crumb--visible' : ''}`}
+              onClick={landed ? () => onPeek?.(order[c.toIndex]) : undefined}
+              tabIndex={landed && chainOpen ? 0 : -1}
+            >
+              {c.label}{i < crumbs.length - 1 ? "'s" : ''}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {landed && <button className="flight-card__done" onClick={() => onDone?.()}>Done</button>}
+    </div>
   );
 }

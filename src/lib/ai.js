@@ -5,18 +5,31 @@
  * Relevant events: content_block_delta (text_delta) for text chunks,
  * message_stop to signal completion.
  *
+ * Pass `feedback` (and the `previousStory` it's correcting) to regenerate
+ * with the family's own corrections taking priority over the source data —
+ * see PersonSheet's "revise" flow.
+ *
+ * Pass `focus: 'military'` (with `militaryEvents`/`militaryQuotes`, see
+ * lib/military.js) to get a short, tightly-grounded account of just a
+ * person's service instead of the general life story — same endpoint, same
+ * streaming/revision mechanics, a different prompt server-side. See
+ * MilitaryService.jsx.
+ *
  * Callbacks:
  *   onChunk(text)  — called for each incremental text piece
  *   onDone()       — called when the stream ends cleanly
  *   onError(err)   — called on network / server errors (null on abort)
  */
-export async function streamBio(person, { memories = [], relSummary = [] } = {}, { onChunk, onDone, onError, signal } = {}) {
+export async function streamBio(person, { memories = [], relSummary = [], documentSummaries = [], feedback, previousStory, focus, militaryEvents, militaryQuotes } = {}, { onChunk, onDone, onError, signal } = {}) {
   let res;
   try {
     res = await fetch('/api/biography', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ person, memories, relationships: relSummary }),
+      body: JSON.stringify({
+        person, memories, relationships: relSummary, documents: documentSummaries, feedback, previousStory,
+        focus, militaryEvents, militaryQuotes,
+      }),
       signal,
     });
   } catch (e) {

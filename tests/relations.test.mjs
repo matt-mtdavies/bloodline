@@ -3,7 +3,7 @@
  * family propagation, and edge cases. Run with: node tests/relations.test.mjs
  */
 import assert from 'node:assert/strict';
-import { buildGraph, relationLabel, distancesFrom, pathBetween } from '../src/data/graph.js';
+import { buildGraph, relationLabel, distancesFrom, pathBetween, sortSiblings, sortChildren } from '../src/data/graph.js';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -792,6 +792,212 @@ test('three-generation chain: alice→son→grandson labels from alice\'s view',
   assert.equal(relationLabel(g, 'alice', 'gs'),  'Grandson');
   assert.equal(relationLabel(g, 'son',   'alice'), 'Parent'); // alice has no gender
   assert.equal(relationLabel(g, 'gs',    'alice'), 'Paternal Grandparent'); // son is male → paternal side; alice has no gender → Grandparent not Grandfather
+});
+
+// ── General compound-relationship fallback (beyond named patterns) ──────────
+
+test('1st-cousin-once-removed shape reads colloquially as "Mother\'s Cousin"', () => {
+  // Jason -> mother -> maternal grandmother -> great-grandfather (up 3)
+  // great-grandfather -> other child -> grandchild = Peter (down 2)
+  // Jason's mother and Peter are both 2 hops from the shared great-grandfather
+  // (i.e. they're 1st cousins) — "Mother's Cousin" reads far more naturally
+  // than the genealogist's "Maternal Great-grandfather's Grandson" for the
+  // exact same relationship.
+  const g = buildGraph(
+    [
+      person('ggf', 'male'), person('ggm', 'female'),
+      person('gma', 'female'), person('ggf-other-child', 'female'),
+      person('mum', 'female'),
+      person('jason', 'male'), person('peter', 'male'),
+    ],
+    [
+      partnerEdge('ggf', 'ggm'),
+      parentEdge('ggf', 'gma'), parentEdge('ggm', 'gma'),
+      parentEdge('ggf', 'ggf-other-child'), parentEdge('ggm', 'ggf-other-child'),
+      parentEdge('gma', 'mum'),
+      parentEdge('mum', 'jason'),
+      parentEdge('ggf-other-child', 'peter'),
+    ],
+  );
+  assert.equal(relationLabel(g, 'jason', 'peter'), "Mother's Cousin");
+});
+
+test('cousin-shaped compound (2 up / 3 down) reads as "Cousin\'s Daughter"', () => {
+  // Jason -> father -> paternal grandfather (up 2)
+  // grandfather -> other child (aunt) -> her daughter (cousin) -> Mia (down 3)
+  const g = buildGraph(
+    [
+      person('gf', 'male'),
+      person('dad', 'male'), person('aunt', 'female'),
+      person('jason', 'male'), person('cousin', 'female'), person('mia', 'female'),
+    ],
+    [
+      parentEdge('gf', 'dad'), parentEdge('gf', 'aunt'),
+      parentEdge('dad', 'jason'),
+      parentEdge('aunt', 'cousin'),
+      parentEdge('cousin', 'mia'),
+    ],
+  );
+  assert.equal(relationLabel(g, 'jason', 'mia'), "Cousin's Daughter");
+});
+
+test('exact 2nd-cousin shape (3 up / 3 down) reads as "2nd Cousin"', () => {
+  const g = buildGraph(
+    [
+      person('ggp'),
+      person('gpA'), person('gpB'),
+      person('parentA'), person('parentB'),
+      person('jason'), person('other'),
+    ],
+    [
+      parentEdge('ggp', 'gpA'), parentEdge('ggp', 'gpB'),
+      parentEdge('gpA', 'parentA'), parentEdge('gpB', 'parentB'),
+      parentEdge('parentA', 'jason'), parentEdge('parentB', 'other'),
+    ],
+  );
+  assert.equal(relationLabel(g, 'jason', 'other'), '2nd Cousin');
+});
+
+test('4 generations up with no named pattern → "Paternal Great-great-grandfather"', () => {
+  const g = buildGraph(
+    [person('a'), person('p1', 'male'), person('p2'), person('p3'), person('p4', 'male')],
+    [parentEdge('p1', 'a'), parentEdge('p2', 'p1'), parentEdge('p3', 'p2'), parentEdge('p4', 'p3')],
+  );
+  assert.equal(relationLabel(g, 'a', 'p4'), 'Paternal Great-great-grandfather');
+});
+
+test('4 generations down with no named pattern → "Great-great-grandson"', () => {
+  const g = buildGraph(
+    [person('a'), person('c1'), person('c2'), person('c3'), person('c4', 'male')],
+    [parentEdge('a', 'c1'), parentEdge('c1', 'c2'), parentEdge('c2', 'c3'), parentEdge('c3', 'c4')],
+  );
+  assert.equal(relationLabel(g, 'a', 'c4'), 'Great-great-grandson');
+});
+
+test('truly unrelated people (no common ancestor within range) still → Relative', () => {
+  const g = buildGraph(
+    [person('a'), person('b'), person('unrelated')],
+    [parentEdge('a', 'b')],
+  );
+  assert.equal(relationLabel(g, 'a', 'unrelated'), 'Relative');
+});
+
+// ── sortSiblings: Biological (age, name) → Half (age, name) → Step (age, name) ──
+
+test('sortSiblings: full siblings before half before step, oldest-to-youngest within each, alphabetical tiebreak', () => {
+  const people = [
+    person('x'),
+    person('f1', null, { birth_date: '1990-01-01', display_name: 'Zack' }),
+    person('f2', null, { birth_date: '1995-01-01', display_name: 'Amy' }),
+    person('h1', null, { birth_date: '1998-01-01', display_name: 'Wendy' }),
+    person('h2', null, { birth_date: '1998-01-01', display_name: 'Anna' }),
+    person('s1', null, { display_name: 'Chris' }), // no birth_date
+    person('s2', null, { display_name: 'Abby' }),  // no birth_date
+  ];
+  const rels = [
+    parentEdge('p1', 'x'), parentEdge('p2', 'x'),
+    parentEdge('p1', 'f1'), parentEdge('p2', 'f1'),
+    parentEdge('p1', 'f2'), parentEdge('p2', 'f2'),
+    parentEdge('p1', 'h1'), parentEdge('p3', 'h1'),
+    parentEdge('p1', 'h2'), parentEdge('p4', 'h2'),
+    { type: 'parent', from_person: 'p6', to_person: 'x', qualifier: 'step', partner_status: null },
+    parentEdge('p6', 's1'), parentEdge('p7', 's1'),
+    parentEdge('p6', 's2'), parentEdge('p7', 's2'),
+  ];
+  const g = buildGraph(
+    [...people, person('p1'), person('p2'), person('p3'), person('p4'), person('p6'), person('p7')],
+    rels,
+  );
+  const ordered = sortSiblings(g.siblings('x'), g.byId).map((s) => s.id);
+  assert.deepEqual(ordered, ['f1', 'f2', 'h2', 'h1', 's2', 's1']);
+});
+
+test('sortSiblings: within the same tier, a known birth date sorts before an unknown one', () => {
+  const people = [
+    person('x'),
+    person('a', null, { display_name: 'Zed' }), // no birth_date
+    person('b', null, { birth_date: '2000-01-01', display_name: 'Ann' }),
+  ];
+  const rels = [
+    parentEdge('p1', 'x'), parentEdge('p2', 'x'),
+    parentEdge('p1', 'a'), parentEdge('p2', 'a'),
+    parentEdge('p1', 'b'), parentEdge('p2', 'b'),
+  ];
+  const g = buildGraph([...people, person('p1'), person('p2')], rels);
+  const ordered = sortSiblings(g.siblings('x'), g.byId).map((s) => s.id);
+  assert.deepEqual(ordered, ['b', 'a'], 'the sibling with a known birth date should come first even though "Ann" < "Zed" alphabetically');
+});
+
+test('sortSiblings does not mutate the input array', () => {
+  const people = [person('x'), person('a', null, { display_name: 'A' }), person('b', null, { display_name: 'B' }), person('p1'), person('p2')];
+  const rels = [parentEdge('p1', 'x'), parentEdge('p1', 'a'), parentEdge('p1', 'b')];
+  const g = buildGraph(people, rels);
+  const original = g.siblings('x');
+  const originalOrder = original.map((s) => s.id);
+  sortSiblings(original, g.byId);
+  assert.deepEqual(original.map((s) => s.id), originalOrder);
+});
+
+// ── sortChildren: Biological/Adoptive (age, name) → Step (age, name) ───────────
+// Real user report: Nancy Turner's Children group showed Heather first even
+// though she isn't the oldest — Children had never been sorted at all, only
+// Siblings. sortChildren extends the same tier-then-age-then-name convention,
+// with a two-tier split (no "half" concept for a parent's own children).
+
+test('sortChildren: biological/adoptive children before step, oldest-to-youngest within each, alphabetical tiebreak', () => {
+  const people = [
+    person('parent'),
+    person('b1', null, { birth_date: '1970-01-01', display_name: 'Zack' }), // biological
+    person('b2', null, { birth_date: '1975-01-01', display_name: 'Amy' }),  // adoptive, same tier as biological
+    person('s1', null, { birth_date: '1980-01-01', display_name: 'Wendy' }), // step
+    person('s2', null, { birth_date: '1980-01-01', display_name: 'Anna' }),  // step, tied birth date
+  ];
+  const rels = [
+    parentEdge('parent', 'b1', 'biological'),
+    parentEdge('parent', 'b2', 'adoptive'),
+    parentEdge('parent', 's1', 'step'),
+    parentEdge('parent', 's2', 'step'),
+  ];
+  const g = buildGraph([...people, person('parent')], rels);
+  const ordered = sortChildren(g.children('parent'), g.byId).map((c) => c.id);
+  assert.deepEqual(ordered, ['b1', 'b2', 's2', 's1']);
+});
+
+test('sortChildren: a missing qualifier is treated as biological (sorts with adoptive, ahead of step)', () => {
+  const people = [
+    person('parent'),
+    person('u1', null, { birth_date: '1970-01-01', display_name: 'Undocumented' }),
+    person('s1', null, { birth_date: '1965-01-01', display_name: 'Older Step' }), // earlier birth, still sorts after
+  ];
+  const rels = [
+    { type: 'parent', from_person: 'parent', to_person: 'u1' }, // no qualifier at all
+    parentEdge('parent', 's1', 'step'),
+  ];
+  const g = buildGraph([...people, person('parent')], rels);
+  const ordered = sortChildren(g.children('parent'), g.byId).map((c) => c.id);
+  assert.deepEqual(ordered, ['u1', 's1'], 'a missing qualifier defaults to biological, ahead of the step child despite being younger');
+});
+
+test('sortChildren: within the same tier, a known birth date sorts before an unknown one', () => {
+  const people = [
+    person('parent'),
+    person('a', null, { display_name: 'Zed' }), // no birth_date
+    person('b', null, { birth_date: '2000-01-01', display_name: 'Ann' }),
+  ];
+  const rels = [parentEdge('parent', 'a'), parentEdge('parent', 'b')];
+  const g = buildGraph([...people, person('parent')], rels);
+  const ordered = sortChildren(g.children('parent'), g.byId).map((c) => c.id);
+  assert.deepEqual(ordered, ['b', 'a'], 'the child with a known birth date should come first even though "Ann" < "Zed" alphabetically');
+});
+
+test('sortChildren does not mutate the input array', () => {
+  const people = [person('parent'), person('a', null, { display_name: 'A' }), person('b', null, { display_name: 'B' })];
+  const rels = [parentEdge('parent', 'a'), parentEdge('parent', 'b')];
+  const g = buildGraph([...people, person('parent')], rels);
+  const original = g.children('parent');
+  const originalOrder = original.map((c) => c.id);
+  sortChildren(original, g.byId);
+  assert.deepEqual(original.map((c) => c.id), originalOrder);
 });
 
 // ── Report ────────────────────────────────────────────────────────────────────

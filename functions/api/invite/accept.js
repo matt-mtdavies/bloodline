@@ -17,7 +17,7 @@ export async function onRequestPost({ request, env, data }) {
   if (!token) return json({ error: 'Token required' }, { status: 400 });
 
   const now = Math.floor(Date.now() / 1000);
-  const result = await processInvite(env.DB, token, data.user.uid, now);
+  const result = await processInvite(env, token, data.user.uid, now);
 
   if (result?.needsMerge) {
     return json({ needsMerge: true, pendingInvite: result.token });

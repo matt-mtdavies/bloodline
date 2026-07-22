@@ -18,8 +18,16 @@
 
 const norm = (s) => (s || '').toLowerCase().replace(/\s+/g, ' ').trim();
 
+// Generational suffixes — stripped before taking the last token as the
+// surname, or "John Smith Jr." (last token "jr.") never groups with a
+// duplicate stub "John Smith" (last token "smith").
+const SUFFIXES = new Set(['jr', 'sr', 'ii', 'iii', 'iv', 'v']);
+
 function nameKey(p) {
   const parts = norm(p.display_name).split(' ').filter(Boolean);
+  while (parts.length > 2 && SUFFIXES.has(parts[parts.length - 1].replace(/\.+$/, ''))) {
+    parts.pop();
+  }
   if (!parts.length) return null;
   const first = parts[0];
   const last = parts.length > 1 ? parts[parts.length - 1] : '';
@@ -105,4 +113,100 @@ export function findDuplicatePairs(people = [], relationships = []) {
 // Stable key for a pair regardless of order — used to remember dismissals.
 export function pairKey(aId, bId) {
   return [aId, bId].sort().join('~');
+}
+
+// Match signature for cross-import dedup: suffix-stripped name + birth year.
+// Only defined when BOTH are known — a nameless or dateless record is too weak
+// to auto-merge and is left for the review sheet instead.
+function mergeMatchKey(p) {
+  const nk = nameKey(p);
+  const yr = yearOf(p);
+  return nk && yr ? nk + '|' + yr : null;
+}
+
+const fullDateOf = (p) => {
+  const d = String(p?.birth_date || '');
+  return /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : null;
+};
+
+/*
+ * De-duplicate an incoming (merge) import against the existing tree, so that
+ * re-importing the same GEDCOM/FamilySearch data doesn't silently double the
+ * whole tree. An incoming person is treated as the SAME as an existing one
+ * when they share name + birth year AND don't have conflicting full dates;
+ * that incoming person is dropped and its relationships are re-pointed at the
+ * existing id (then any edge that now duplicates one already in the tree — or
+ * another kept incoming edge — is dropped too).
+ *
+ * Deliberately conservative, matching findDuplicatePairs' precision-over-recall
+ * stance: an AMBIGUOUS signature (more than one existing person with the same
+ * name+year), a record with no birth year, or a genuine full-date conflict is
+ * NOT auto-merged — it imports as new and the existing "Possible duplicates"
+ * review sheet handles it. So this only ever collapses confident, unambiguous
+ * re-adds; it never guesses. Pure; unit-tested.
+ *
+ * Returns { people, relationships, skipped } — the incoming arrays with exact
+ * re-adds removed, plus a count of how many people were collapsed.
+ */
+export function dedupeMergeImport(existingPeople = [], existingRelationships = [], newPeople = [], newRelationships = []) {
+  const byKey = new Map(); // match key → [existing people with that key]
+  for (const e of existingPeople) {
+    const k = mergeMatchKey(e);
+    if (!k) continue;
+    if (byKey.has(k)) byKey.get(k).push(e);
+    else byKey.set(k, [e]);
+  }
+
+  const remap = {}; // dropped incoming id → surviving existing id
+  const keptPeople = [];
+  for (const np of newPeople) {
+    const k = mergeMatchKey(np);
+    const matches = k ? byKey.get(k) : null;
+    // Only collapse on an UNAMBIGUOUS match (exactly one existing person with
+    // that name+year) whose full date, if both carry one, agrees.
+    if (matches && matches.length === 1) {
+      const e = matches[0];
+      const fd1 = fullDateOf(np), fd2 = fullDateOf(e);
+      if (!(fd1 && fd2 && fd1 !== fd2)) {
+        remap[np.id] = e.id;
+        continue; // drop this exact re-add
+      }
+    }
+    keptPeople.push(np);
+  }
+
+  // Re-point incoming edges through the remap, then drop any that now duplicate
+  // an edge already in the tree or another kept incoming edge.
+  const edgeKey = (r) => `${r.type}|${r.from_person}|${r.to_person}`;
+  const existingEdges = new Set(existingRelationships.map(edgeKey));
+  const seen = new Set();
+  const keptRels = [];
+  for (const r of newRelationships) {
+    const mapped = {
+      ...r,
+      from_person: remap[r.from_person] || r.from_person,
+      to_person: remap[r.to_person] || r.to_person,
+    };
+    const key = edgeKey(mapped);
+    if (existingEdges.has(key) || seen.has(key)) continue;
+    seen.add(key);
+    keptRels.push(mapped);
+  }
+
+  return { people: keptPeople, relationships: keptRels, skipped: newPeople.length - keptPeople.length };
+}
+
+// Dismissed-pair tracking lives here (not inside DuplicatesSheet) so the
+// review sheet and the topbar's count pill — two separate call sites — read
+// the exact same set. It's a viewer-local "don't ask again", not family
+// data, so plain localStorage rather than the synced tree store is enough.
+const DISMISS_KEY = 'bl_dup_dismissed';
+
+export function loadDismissedDuplicates() {
+  try { return new Set(JSON.parse(localStorage.getItem(DISMISS_KEY) || '[]')); }
+  catch { return new Set(); }
+}
+
+export function saveDismissedDuplicates(set) {
+  try { localStorage.setItem(DISMISS_KEY, JSON.stringify([...set])); } catch { /* ignore */ }
 }

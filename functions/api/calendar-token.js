@@ -1,4 +1,5 @@
 import { json, token } from '../_lib/util.js';
+import { loadTree } from '../_lib/treeStore.js';
 
 /*
  * GET   /api/calendar-token  — this family's birthday-feed subscribe URL
@@ -66,10 +67,8 @@ async function handle({ env, data, forceNew, personIds }) {
         .bind(JSON.stringify(selectedIds), userRow.family_id).run();
     }
 
-    const treeRow = await env.DB.prepare(
-      `SELECT tree_json FROM family_tree WHERE family_id = ?`,
-    ).bind(userRow.family_id).first();
-    const allPeople = treeRow ? (JSON.parse(treeRow.tree_json).people || []) : [];
+    const treeRow = await loadTree(env, userRow.family_id);
+    const allPeople = treeRow ? (JSON.parse(treeRow.raw).people || []) : [];
     const people = allPeople
       .filter((p) => p.birth_date && p.birth_date.length === 10 && p.visibility !== 'private'
         && !(p.is_minor && !p.is_deceased))

@@ -15,6 +15,21 @@ import { Spring } from '../lib/spring.js';
 
 const TREE_FONT = 'Hanken Grotesk, system-ui, sans-serif';
 
+// The last token of display_name, not family_name: display_name is the one
+// field every rename actually keeps current (it's the single "Name" box in
+// Edit), so it's the only reliable source for someone's CURRENT surname.
+// family_name is often set once at creation and never revisited — for
+// someone added before a marriage and later renamed via Edit (e.g.
+// "Fiona Norris" -> "Fiona Kim Davies"), family_name can still read the old
+// "Norris", which would show a bubble label for the maiden name a profile
+// itself already labels "née" and no longer uses as the current name. Only
+// fall back to family_name when display_name is a single, surname-less token.
+function surnameOf(person) {
+  const parts = (person.display_name || '').trim().split(/\s+/);
+  if (parts.length > 1) return parts[parts.length - 1];
+  return (person.family_name || '').trim();
+}
+
 /*
  * One person, rendered as a circular bubble.
  *
@@ -34,6 +49,14 @@ export class Bubble {
     this.r = baseRadius;
     this.deceased = !!person.is_deceased;
     this.visibility = person.visibility || 'full'; // 'full' | 'summary' | 'private'
+    // Deterministic per-person phase/period so the "breathing" scale pulse
+    // BubbleTree applies to living bubbles desyncs across the tree instead
+    // of every alive bubble pulsing in lockstep (a cheap string hash — no
+    // need for anything stronger than a spread-out phase offset).
+    let h = 0;
+    for (let i = 0; i < person.id.length; i++) h = (h * 31 + person.id.charCodeAt(i)) >>> 0;
+    this._breathPhase = ((h % 1000) / 1000) * Math.PI * 2;
+    this._breathPeriod = 3.6 + (h % 7) * 0.35; // ~3.6s – 5.85s, varies per person
     // Eased display state. Scale springs (with a little overshoot) so bubbles
     // pop in when revealed; alpha eases so they fade cleanly.
     this.scaleSpring = new Spring(0, { stiffness: 150, damping: 14 });
@@ -150,11 +173,43 @@ export class Bubble {
   }
 
   _buildNameLabel(person, baseRadius) {
-    const firstName = this.visibility === 'private'
-      ? 'Private'
-      : person.display_name.trim().split(/\s+/)[0];
-    // Estimate pill width: ~7.5 px per char at 13px/700 + horizontal padding
-    const pillW = Math.max(40, firstName.length * 7.5 + 20);
+    const isPrivate = this.visibility === 'private';
+    const firstName = isPrivate ? 'Private' : person.display_name.trim().split(/\s+/)[0];
+    // See surnameOf() — reads the current name, not a possibly-stale
+    // family_name.
+    const lastName = isPrivate ? '' : surnameOf(person);
+    const showLast = !!lastName && lastName !== firstName;
+
+    const firstStyle = {
+      fontFamily: TREE_FONT,
+      fontSize: 13,
+      fontWeight: '700',
+      fill: '#241f1c',
+      letterSpacing: 0.3,
+    };
+    const lastStyle = {
+      fontFamily: TREE_FONT,
+      fontSize: 11,
+      fontWeight: '500',
+      fill: '#a4988b',
+      letterSpacing: 0.2,
+    };
+
+    const firstText = new Text({ text: firstName, style: firstStyle });
+    firstText.resolution = 2.5;
+    firstText.anchor.set(0, 0.5);
+
+    let lastText = null;
+    const GAP = 5;
+    let contentW = firstText.width;
+    if (showLast) {
+      lastText = new Text({ text: lastName, style: lastStyle });
+      lastText.resolution = 2.5;
+      lastText.anchor.set(0, 0.5);
+      contentW += GAP + lastText.width;
+    }
+
+    const pillW = Math.max(40, contentW + 20);
     const pillH = 20;
     const r = pillH / 2;
 
@@ -169,22 +224,16 @@ export class Bubble {
     bg.roundRect(-pillW / 2, -pillH / 2, pillW, pillH, r)
       .stroke({ width: 0.8, color: 0xddd8d2, alpha: 0.8 });
 
-    const label = new Text({
-      text: firstName,
-      style: {
-        fontFamily: TREE_FONT,
-        fontSize: 13,
-        fontWeight: '700',
-        fill: '#241f1c',
-        letterSpacing: 0.3,
-      },
-    });
-    label.anchor.set(0.5, 0.5);
-    label.resolution = 2.5;
+    const startX = -contentW / 2;
+    firstText.position.set(startX, 0);
 
     const group = new Container();
     group.addChild(bg);
-    group.addChild(label);
+    group.addChild(firstText);
+    if (lastText) {
+      lastText.position.set(startX + firstText.width + GAP, 0);
+      group.addChild(lastText);
+    }
     // Position below the ring, with a small gap
     group.position.set(0, baseRadius + 16);
     group.alpha = 0;
@@ -493,7 +542,14 @@ export class Bubble {
   // Warm gold ring left behind after the "what's changed" recap tour visits
   // this bubble — stays lit for the rest of the tour (and a little after) so
   // by the time it ends you can see the whole constellation of who changed,
-  // at a glance, without re-reading the queue list.
+  // at a glance, without re-reading the queue list. Also reused by the
+  // duplicate-review sheet's "Show both in tree" to mark BOTH candidates at
+  // once (see BubbleTree.jsx's spotlightSetGlow) — a soft outer halo plus a
+  // crisp inner ring reads as noticeably more "lit" than a single thin stroke
+  // did (real feedback on that feature: "have the gold ring more noticable"),
+  // which matters more there since two separate, often distant bubbles both
+  // need to announce themselves at a glance rather than one bubble already
+  // anchored by the ego-camera's own active-ring/scale/lift treatment.
   setRecapGlow(on) {
     if (on === this._recapGlow) return;
     this._recapGlow = on;
@@ -504,7 +560,9 @@ export class Bubble {
     }
     this._recapRing.clear();
     if (on) {
-      this._recapRing.circle(0, 0, this.r + 5.5).stroke({ width: 2.2, color: hex('#e8a53d'), alpha: 0.85 });
+      const r = this.r;
+      this._recapRing.circle(0, 0, r + 10).stroke({ width: 7, color: hex('#e8a53d'), alpha: 0.22 });
+      this._recapRing.circle(0, 0, r + 5.5).stroke({ width: 3.4, color: hex('#e8a53d'), alpha: 0.95 });
     }
   }
 

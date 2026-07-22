@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Application, Container, Graphics } from 'pixi.js';
 import {
   forceSimulation,
@@ -15,8 +15,9 @@ import { IgniteEffect } from './ignite.js';
 import { FlightComet } from './comet.js';
 import { drawLinks, drawLinksChart } from './links.js';
 import { computeChartLayout } from './chartLayout.js';
-import { distancesFrom, relationLabel } from '../data/graph.js';
+import { distancesFrom, relationLabel, computeGenerations } from '../data/graph.js';
 import { Spring } from '../lib/spring.js';
+import { kinTermsStore } from '../lib/kinTerms.js';
 
 const BASE_RADIUS = 46;
 const COLLIDE = 70;
@@ -25,12 +26,28 @@ const GEN_GAP = 280; // shorter bands so wide screens use horizontal space too
 const ORGANIC_CHARGE = -1800; // stronger repulsion spreads generations sideways
 const SPREAD_X = 0.004; // weaker centring lets nodes fan out naturally
 const MAX_ZOOM = 2.0; // auto-fit (follow mode) — higher cap so small focus families fill the screen
-const MIN_ZOOM = 0.32; // free zoom-out: take in a huge tree at a glance
+const MIN_ZOOM = 0.16; // free zoom-out: take in a huge tree at a glance (double the old 0.32 floor's field of view)
+// Two different floors for the same follow-mode fit, on purpose: an ordinary
+// tap-to-reveal should keep behaving exactly as it always did (a modest
+// pull-back to frame whoever's newly visible, floor 0.4) — it should never
+// borrow the deep zoom-out meant for the deliberate "show everyone" moment.
+// That one (WHOLE_TREE_FIT_FLOOR, 0.2) only applies once every person in the
+// tree is actually expanded (see wholeTreeActive below), which is otherwise
+// only reachable via the explicit "Show all" toggle.
+const FIT_FLOOR = 0.4;
+const WHOLE_TREE_FIT_FLOOR = 0.2;
+// Below this zoom, bubbles are too small and packed together to grab on
+// purpose — a finger meant for panning the canvas keeps landing on one
+// instead, dragging it out of place. A tap still selects (see
+// drag.tapCandidateId below); only the drag-to-reposition behaviour is
+// disabled, and only this far out.
+const BUBBLE_DRAG_MIN_ZOOM = 0.3;
 const MAX_ZOOM_FREE = 2.8; // free zoom-in: lean right into a single face
 const RECAP_ZOOM = 2.2; // the recap tour's "hero" close-up — big and dramatic, but under MAX_ZOOM_FREE
 const PAN_FRICTION = 0.92; // inertial glide decay (per 1/60 s)
 const FLICK_STOP = 1.5; // world units/s below which the glide rests
 const DOUBLE_TAP_MS = 280; // window for a double-tap-to-recentre
+const SEARCH_LANDED_SCALE = 1.55; // bigger than the default active-person baseline (1.38) — the just-found search target keeps reading as the standout even once the camera has zoomed back out to fit the family
 
 /*
  * The visualization. Everything that matters in Phase 1 lives here:
@@ -64,6 +81,12 @@ export default function BubbleTree({
   apiRef,
 }) {
   const hostRef = useRef(null);
+  // WebGL context creation can fail silently on some devices (observed on
+  // iOS Safari: repeated PWA suspend/relaunch cycles can exhaust its
+  // per-process WebGL context limit) — app.init() then rejects and, with no
+  // handler, the canvas just never appears with no visible error at all.
+  // Catching it turns that into a legible "reload" state instead.
+  const [initFailed, setInitFailed] = useState(false);
   const api = useRef(null);
   const activeRef = useRef(activeId);
   const visibleRef = useRef(visibleIds);
@@ -108,18 +131,26 @@ export default function BubbleTree({
   useEffect(() => {
     let alive = true;
     let hoverTimer = null; // shared with the cleanup below, which runs outside the async IIFE
+    let onVisibility = null; // ditto — assigned inside the IIFE, removed in the cleanup
+    let unsubKinTerms = null; // ditto — assigned inside the IIFE, called in the cleanup
     const host = hostRef.current;
     const app = new Application();
 
     (async () => {
-      await app.init({
-        antialias: true,
-        backgroundAlpha: 0,
-        resolution: Math.min(window.devicePixelRatio || 1, 2),
-        autoDensity: true,
-        resizeTo: host,
-        preference: 'webgl',
-      });
+      try {
+        await app.init({
+          antialias: true,
+          backgroundAlpha: 0,
+          resolution: Math.min(window.devicePixelRatio || 1, 2),
+          autoDensity: true,
+          resizeTo: host,
+          preference: 'webgl',
+        });
+      } catch (err) {
+        console.error('BubbleTree: PixiJS/WebGL failed to initialize', err);
+        if (alive) setInitFailed(true);
+        return;
+      }
       if (!alive) {
         app.destroy(true);
         return;
@@ -145,12 +176,18 @@ export default function BubbleTree({
       world.addChild(fxLayer);
       const births = new Map();      // personId → BirthEffect (currently animating)
       const recapFx = new Map();     // personId → BirthEffect-style bloom (recap tour arrivals)
+      const recapVisited = new Set(); // personId → already visited this recap tour (stays legible, not blurred)
+      let searchSpotlightId = null;  // personId just landed on via search flyover — stays visually elevated until focus moves elsewhere
+      const crumbPulse = new Map();  // personId → pulseAt, a brief tap-feedback bump when a landed FlightCaption crumb is tapped
       const wasVisible = new Set();  // bubbles visible last frame, to spot new arrivals
       let fxSeeded = false;          // first frame seeds wasVisible without celebrating
       // Focus-mode relationship captions (e.g. "Father", "Niece"), cached by id
       // and rebuilt when the active person or graph changes (relationships are
-      // relative to the active person).
+      // relative to the active person), or when the viewer changes their
+      // grandparent term preference (kinTerms.js) — a plain subscribe rather
+      // than a React prop, since this whole closure is imperative/mount-once.
       const relCache = new Map();
+      unsubKinTerms = kinTermsStore.subscribe(() => relCache.clear());
 
       const graph = graphRef.current; // initial build snapshot
 
@@ -158,12 +195,19 @@ export default function BubbleTree({
       // and the radial sectors. Recomputed when people are added.
       let gen = computeGenerations(graph);
 
-      // Simulation nodes, spread by generation so the layout settles cleanly.
-      const nodes = graph.people.map((p, i) => ({
-        id: p.id,
-        x: (Math.random() - 0.5) * 600,
-        y: (gen.get(p.id) ?? 0) * GEN_GAP - 260 + (Math.random() - 0.5) * 30,
-      }));
+      // Simulation nodes exist only for people who are actually part of the
+      // revealed set — not the whole family. A 1000-person tree someone is
+      // quietly browsing one branch of shouldn't pay simulation/render cost
+      // for the other 950 they've never navigated to. Anyone not yet tracked
+      // is spawned lazily the moment they enter visibleIds — see
+      // ensureVisible() below and its [visibleIds] effect.
+      const nodes = graph.people
+        .filter((p) => visibleRef.current?.has(p.id))
+        .map((p) => ({
+          id: p.id,
+          x: (Math.random() - 0.5) * 600,
+          y: (gen.get(p.id) ?? 0) * GEN_GAP - 260 + (Math.random() - 0.5) * 30,
+        }));
       const nodeById = new Map(nodes.map((n) => [n.id, n]));
       const pos = new Map(nodes.map((n) => [n.id, n]));
       // Tracks whether the last sync() actually changed the tree's shape, so a
@@ -174,9 +218,15 @@ export default function BubbleTree({
       // rebuilds a fresh relationships array even when nothing changed.
       let lastRelationshipSig = relSignature(graph.relationships);
 
+      // Only links between two currently-tracked people are meaningful to the
+      // simulation — a relationship reaching an untracked (not-yet-revealed)
+      // person would otherwise hand d3-force an unresolvable link id.
       const buildLinks = (rels) =>
         rels
-          .filter((r) => r.type === 'partner' || r.type === 'parent')
+          .filter(
+            (r) => (r.type === 'partner' || r.type === 'parent')
+              && nodeById.has(r.from_person) && nodeById.has(r.to_person),
+          )
           .map((r) => ({ source: r.from_person, target: r.to_person, kind: r.type }));
 
       const linkForce = forceLink(buildLinks(graph.relationships))
@@ -270,13 +320,45 @@ export default function BubbleTree({
       // person object a bubble was built from, so edits can refresh in place.
       const bubbles = new Map();
       const bubblePerson = new Map();
-      for (const p of graph.people) {
+      for (const n of nodes) {
+        const p = graph.byId.get(n.id);
         const b = new Bubble(p, BASE_RADIUS);
         b.root.__bubbleId = p.id;
         bubbleLayer.addChild(b.root);
         bubbles.set(p.id, b);
         bubblePerson.set(p.id, p);
       }
+
+      // Materializes a sim node + Pixi bubble for a person who wasn't tracked
+      // yet — either a brand-new person from a data edit (sync()) or an
+      // existing person who's only just entered the revealed set
+      // (ensureVisible()). Anchored near whichever already-tracked relative
+      // connects to them, so they appear to sprout from that person rather
+      // than pop in at the world origin.
+      const spawnBubble = (p) => {
+        const rel = graphRef.current.relationships.find(
+          (r) =>
+            (r.from_person === p.id && nodeById.has(r.to_person)) ||
+            (r.to_person === p.id && nodeById.has(r.from_person)),
+        );
+        const anchor = rel
+          ? nodeById.get(rel.from_person === p.id ? rel.to_person : rel.from_person)
+          : nodeById.get(activeRef.current);
+        const node = {
+          id: p.id,
+          x: (anchor?.x ?? 0) + (Math.random() - 0.5) * 24,
+          y: (anchor?.y ?? 0) + (Math.random() - 0.5) * 24,
+        };
+        nodes.push(node);
+        nodeById.set(p.id, node);
+        pos.set(p.id, node);
+        const b = new Bubble(p, BASE_RADIUS);
+        b.root.__bubbleId = p.id;
+        b.root.position.set(node.x, node.y);
+        bubbleLayer.addChild(b.root);
+        bubbles.set(p.id, b);
+        bubblePerson.set(p.id, p);
+      };
 
       // ── Camera ───────────────────────────────────────────────────────────
       // ONE authoritative camera: (camX, camY) is the world point shown at the
@@ -298,6 +380,22 @@ export default function BubbleTree({
       let onModeChange = null;
 
       let dist = distancesFrom(graph, activeRef.current);
+      // Duplicate-review "Show both in tree": while set, this is folded into
+      // the per-frame `d` below (min of the normal single-source `dist` and
+      // this one) so a SECOND person — who the single ego-camera `active` id
+      // can never itself be — still reads as vivid/full-size/immediate-family-
+      // visible instead of fading into the background like an unrelated
+      // stranger. See setCompareFocus/clearCompareFocus in the returned API.
+      let compareDist = null;
+      // The raw pair of ids compareDist was built from — kept alongside it so
+      // the name-label rule below can force BOTH candidates' labels on
+      // unconditionally (see labelAlpha), rather than relying on the ordinary
+      // per-bubble label rules (which suppress the literal `active` person's
+      // label in favour of the floating FocusNameplate — fine when there's
+      // one focal person, but the nameplate can only ever hover near ONE
+      // bubble, so the other candidate needs its label guaranteed some other
+      // way regardless of hover/active state).
+      let compareIds = null;
 
       let reorgTimer = null; // tracks the forceY strength-restore after a tap
       const manualPins = new Set(); // nodes the user has manually repositioned
@@ -432,9 +530,19 @@ export default function BubbleTree({
         const nextIdx = recap.idx + 1;
         if (nextIdx >= recap.ids.length) {
           const onDone = recap.onDone;
+          const lastId = recap.ids[recap.idx];
           recap = null;
           camMode = 'follow';
-          onDone?.();
+          // Land the tree's own focus on whoever the tour just finished on,
+          // rather than snapping back to whoever was active before it
+          // started — false (no animate) since the camera is already there.
+          // React's activeId is the actual source of truth (a prop-effect
+          // pushes it back into this internal state on every change — see
+          // that effect's de-dupe comment), so this call alone won't stick;
+          // onDone(lastId) below tells the caller to setActiveId too, same
+          // two-call pattern flyAlong's onLand already uses.
+          if (lastId) state.setActive(lastId, false);
+          onDone?.(lastId);
           return;
         }
         recap.idx = nextIdx;
@@ -563,6 +671,9 @@ export default function BubbleTree({
           // after a flyover lands) — skip the reorg/zoom kick the second time
           // so landing doesn't get an extra redundant jolt.
           const alreadyActive = id === activeRef.current;
+          // A search-landed spotlight (see flyAlong) stays elevated until
+          // focus genuinely moves elsewhere — this is that "elsewhere".
+          if (searchSpotlightId && id !== searchSpotlightId) searchSpotlightId = null;
           activeRef.current = id;
           state.dist = distancesFrom(graphRef.current, id);
           relCache.clear(); // relationships are relative to the active person
@@ -635,29 +746,13 @@ export default function BubbleTree({
           let structuralChange = false;
           for (const p of g.people) {
             if (!nodeById.has(p.id)) {
+              // Not yet part of the revealed set — stays untracked until the
+              // user actually navigates to them (see ensureVisible()), so a
+              // bulk import of hundreds of new people doesn't spawn hundreds
+              // of bubbles nobody's looking at yet.
+              if (!visibleRef.current?.has(p.id)) continue;
               structuralChange = true;
-              const rel = g.relationships.find(
-                (r) =>
-                  (r.from_person === p.id && nodeById.has(r.to_person)) ||
-                  (r.to_person === p.id && nodeById.has(r.from_person)),
-              );
-              const anchor = rel
-                ? nodeById.get(rel.from_person === p.id ? rel.to_person : rel.from_person)
-                : null;
-              const node = {
-                id: p.id,
-                x: (anchor?.x ?? 0) + (Math.random() - 0.5) * 24,
-                y: (anchor?.y ?? 0) + (Math.random() - 0.5) * 24,
-              };
-              nodes.push(node);
-              nodeById.set(p.id, node);
-              pos.set(p.id, node);
-              const b = new Bubble(p, BASE_RADIUS);
-              b.root.__bubbleId = p.id;
-              b.root.position.set(node.x, node.y);
-              bubbleLayer.addChild(b.root);
-              bubbles.set(p.id, b);
-              bubblePerson.set(p.id, p);
+              spawnBubble(p);
             } else if (bubblePerson.get(p.id) !== p) {
               // The person object changed (an edit / new photo): rebuild in place.
               const node = nodeById.get(p.id);
@@ -697,6 +792,26 @@ export default function BubbleTree({
           relCache.clear(); // graph changed — relationship labels may differ
           if (state.layoutMode === 'radial' || state.layoutMode === 'weighted') state.relayout();
           if (state.layoutMode === 'chart') state.applyChartLayout();
+        },
+        // Called whenever the revealed set (visibleIds) grows — materializes
+        // a sim node + bubble for anyone newly part of it who wasn't tracked
+        // yet. A mild, LOCAL reheat (not sync()'s full 0.5) lets the new
+        // arrival settle in among its neighbours without visibly jiggling the
+        // whole tree on every single expand tap.
+        ensureVisible(ids) {
+          let added = false;
+          for (const id of ids ?? []) {
+            if (nodeById.has(id)) continue;
+            const p = graphRef.current.byId.get(id);
+            if (!p) continue;
+            spawnBubble(p);
+            added = true;
+          }
+          if (added) {
+            sim.nodes(nodes);
+            linkForce.links(buildLinks(graphRef.current.relationships));
+            sim.alpha(Math.max(sim.alpha(), 0.3));
+          }
         },
         // Focus Family toggled — re-apply the (now stronger/weaker) generational
         // banding, refresh relationship captions, and reheat so rows re-form.
@@ -776,6 +891,12 @@ export default function BubbleTree({
         // below). Ends with a tight landing punch, then hands back to the
         // normal follow framing so the spring eases out to reveal the family.
         flyAlong(orderedIds, opts = {}) {
+          // The caller (search flyover) expands orderedIds into visibleIds in
+          // the same handler that calls this, but that's an async React state
+          // update — this runs synchronously, before the [visibleIds] effect
+          // has had a chance to spawn them. Ensure directly rather than
+          // trusting timing, or un-tracked hops would just vanish from pts.
+          state.ensureVisible(orderedIds);
           const pts = orderedIds.map((id) => nodeById.get(id)).filter(Boolean);
           if (reducedMotion || pts.length < 2) {
             if (pts.length) state.setActive(orderedIds[orderedIds.length - 1]);
@@ -791,6 +912,7 @@ export default function BubbleTree({
           postFlightIds = null; // a fresh flight supersedes any lingering previous one
           postFlightEdges = null;
           postFlightLandedAt = 0;
+          searchSpotlightId = null; // ditto for the previous search's spotlight
           const hops = pts.length - 1;
           flight = {
             ids: orderedIds,
@@ -814,6 +936,12 @@ export default function BubbleTree({
             camStartY: camY.value,
             onSegment: opts.onSegment || null,
             onLand: opts.onLand || null,
+            // Fired when a manual drag/pinch takes the camera back mid-flight
+            // (see endGesture/pointermove below) — never on a natural landing,
+            // that's onLand's job. Lets the caller (the search flyover's
+            // caption card) know the journey was abandoned rather than being
+            // left showing a "still flying" state with no way to land it.
+            onAbort: opts.onAbort || null,
           };
           lightHop(0); // origin lights immediately, no ignite flourish for itself
           flightComet?.destroy();
@@ -830,14 +958,21 @@ export default function BubbleTree({
         // people, not a path — so each hop just eases camera position/zoom
         // directly toward the next id's real position.
         spotlightTour(orderedIds, opts = {}) {
+          // Same defensive reasoning as flyAlong — don't assume the caller's
+          // visibleIds expansion has already been reconciled into tracked
+          // nodes by the time this runs.
+          state.ensureVisible(orderedIds);
           const pts = orderedIds.map((id) => nodeById.get(id)).filter(Boolean);
           if (!pts.length) { opts.onDone?.(); return; }
+          recapVisited.clear();
           if (reducedMotion) {
             // No flythrough — just light every bubble at once so the (fully
             // static) queue list the caller shows instead still has something
             // to point at, and hand back immediately.
-            for (const id of orderedIds) bubbles.get(id)?.setRecapGlow(true);
-            opts.onDone?.();
+            for (const id of orderedIds) { bubbles.get(id)?.setRecapGlow(true); recapVisited.add(id); }
+            const lastId = orderedIds[orderedIds.length - 1];
+            if (lastId) state.setActive(lastId, false);
+            opts.onDone?.(lastId);
             return;
           }
           vx = vy = 0;
@@ -907,8 +1042,13 @@ export default function BubbleTree({
         spotlightEnd() {
           if (recap) {
             const onDone = recap.onDone;
+            const lastId = recap.ids[recap.idx];
             recap = null;
-            onDone?.();
+            // Same reasoning as advanceRecap's natural-completion path: land
+            // on whoever the tour was showing when it was cut short, rather
+            // than snapping back to whoever was active before it began.
+            if (lastId) state.setActive(lastId, false);
+            onDone?.(lastId);
           }
           camMode = 'follow';
           for (const [, fx] of recapFx) fx.destroy();
@@ -918,7 +1058,51 @@ export default function BubbleTree({
         // bubble if omitted.
         spotlightClearGlow(ids) {
           const list = ids || [...bubbles.keys()];
-          for (const id of list) bubbles.get(id)?.setRecapGlow(false);
+          for (const id of list) { bubbles.get(id)?.setRecapGlow(false); recapVisited.delete(id); }
+        },
+        // Light the same lingering ring for an arbitrary set of ids straight
+        // away, with no camera choreography — used to mark BOTH candidates in
+        // the duplicate-review sheet's "Show both in tree" (only one of them
+        // can be the single ego-camera `active` bubble, but any number can
+        // wear this ring, exactly as the recap tour already proves). ensures
+        // the ids are tracked first, same as spotlightTour, since a fresh
+        // reveal may not have spawned their bubbles yet.
+        spotlightSetGlow(ids) {
+          state.ensureVisible(ids);
+          for (const id of ids ?? []) { bubbles.get(id)?.setRecapGlow(true); recapVisited.add(id); }
+        },
+        // Companion to spotlightSetGlow above, for the SAME "Show both in
+        // tree" feature but a different concern: the ring alone still left
+        // the second candidate visibly faded/small next to the genuinely
+        // active one (real report, with screenshot — "you can see its
+        // immediate family [for the active one]... both of the duplicates
+        // should be shown this way... all the other bubbles faded"). Sets
+        // compareDist to the per-person MINIMUM hop-distance to either id in
+        // the pair, independent of whichever one is literally `active` —
+        // folded into the shared `d` used by the per-frame fade/scale below,
+        // so both candidates (and each one's own immediate family) read as
+        // d≤1 while everyone unrelated to either still recedes normally.
+        setCompareFocus(ids) {
+          if (!ids || ids.length < 2) { compareDist = null; compareIds = null; return; }
+          state.ensureVisible(ids);
+          const merged = new Map();
+          for (const id of ids) {
+            const m = distancesFrom(graphRef.current, id);
+            for (const [k, v] of m) merged.set(k, Math.min(merged.get(k) ?? Infinity, v));
+          }
+          compareDist = merged;
+          compareIds = new Set(ids);
+        },
+        clearCompareFocus() {
+          compareDist = null;
+          compareIds = null;
+        },
+        // A landed FlightCaption's reopened chain calls this when a hop is
+        // tapped — brief "there it is" bump on that bubble, no camera move
+        // (the whole path is already on screen, per flyToSearchResult
+        // expanding every hop before the flight starts).
+        pulseBubble(id) {
+          crumbPulse.set(id, performance.now());
         },
       };
       api.current = state;
@@ -946,12 +1130,36 @@ export default function BubbleTree({
       app.stage.eventMode = 'static';
       app.stage.hitArea = { contains: () => true };
       const TAP_SLOP = 8; // px of movement still considered a tap
-      const drag = { type: 'none', node: null, id: null, start: null, moved: false, onPip: false };
+      const drag = {
+        type: 'none', node: null, id: null, start: null, moved: false, onPip: false,
+        tapCandidateId: null, // a bubble tapped while too zoomed-out to drag (see BUBBLE_DRAG_MIN_ZOOM)
+      };
       let last = null;
       let lastT = 0;
       let lastTap = { t: 0, x: 0, y: 0 };
       const pointers = new Map();
       const pinch = { active: false, dist0: 0, zoom0: 1 };
+
+      // iOS (and some Android WebViews) can suspend JS mid-touch when the app
+      // is backgrounded — a finger lifted while away never fires its
+      // pointerup/pointercancel, leaving a phantom entry in `pointers` that
+      // survives the trip. On return, that stale entry plus a real new touch
+      // reads as two fingers, silently forcing every single-finger drag into
+      // pinch-zoom; a second background/foreground cycle can wedge `drag` in
+      // a stuck state that swallows taps entirely. This is the same reset
+      // `recenter()` already applies for the user-visible symptom (tapping
+      // Browse "unsticks" it) — running it automatically the moment the page
+      // becomes visible again means it never gets stuck in the first place.
+      onVisibility = () => {
+        if (document.visibilityState !== 'visible') return;
+        pointers.clear();
+        pinch.active = false;
+        drag.type = 'none';
+        drag.node = null;
+        drag.moved = false;
+        vx = vy = 0;
+      };
+      document.addEventListener('visibilitychange', onVisibility);
 
       // ── Hover preview (desktop only) ──────────────────────────────────────
       // Fine-pointer devices only — never activates from touch. A short dwell
@@ -1039,7 +1247,7 @@ export default function BubbleTree({
           pinch.active = true;
           pinch.dist0 = twoFingerDist();
           pinch.zoom0 = screenAnchor().z;
-          if (flight) { flight = null; landingFx?.destroy(); landingFx = null; flightComet?.destroy(); flightComet = null; }
+          if (flight) { flight.onAbort?.(); flight = null; landingFx?.destroy(); landingFx = null; flightComet?.destroy(); flightComet = null; }
           postFlightIds = null; // the user's taken control — stop lingering on the old route
           postFlightEdges = null;
           postFlightLandedAt = 0;
@@ -1052,8 +1260,9 @@ export default function BubbleTree({
         lastT = performance.now();
         drag.start = { x: g.x, y: g.y };
         drag.moved = false;
+        drag.tapCandidateId = null;
         const id = bubbleIdFromTarget(e.target);
-        if (id) {
+        if (id && zoom.value >= BUBBLE_DRAG_MIN_ZOOM) {
           drag.type = 'bubble';
           drag.id = id;
           drag.node = nodeById.get(id);
@@ -1061,6 +1270,7 @@ export default function BubbleTree({
         } else {
           drag.type = 'pan';
           drag.node = null;
+          drag.tapCandidateId = id || null; // too zoomed out to drag it — a clean tap still selects
           vx = vy = 0; // catch the moving tree the instant you touch it
           // Double-tap empty space → recentre on the active family.
           const now = performance.now();
@@ -1122,7 +1332,7 @@ export default function BubbleTree({
         } else if (drag.type === 'pan' && drag.moved) {
           // A real drag interrupts the flyover — hand control back to the user
           // right where the camera is, no jump.
-          if (flight) { flight = null; landingFx?.destroy(); landingFx = null; flightComet?.destroy(); flightComet = null; }
+          if (flight) { flight.onAbort?.(); flight = null; landingFx?.destroy(); landingFx = null; flightComet?.destroy(); flightComet = null; }
           postFlightIds = null; // the user's taken control — stop lingering on the old route
           postFlightEdges = null;
           postFlightLandedAt = 0;
@@ -1183,12 +1393,33 @@ export default function BubbleTree({
           }
           if (!reducedMotion) sim.alphaTarget(0.012); // settle back to idle drift
         } else if (drag.type === 'pan' && !drag.moved) {
-          // A clean tap on empty canvas → deselect into browse mode (every bubble
-          // back to full brightness). Only in the free-flowing views: chart,
-          // lineage and focus-family all rely on a selection, so skip them.
-          const mode = layoutRef.current;
-          if (mode !== 'chart' && !lineageRef.current && !focusRef.current) {
-            onDeselectRef.current?.();
+          if (flight) {
+            // Same guard as the 'bubble' branch above — a tap on empty canvas,
+            // or on a bubble too zoomed-out to drag (see BUBBLE_DRAG_MIN_ZOOM,
+            // very likely mid-flyover, which deliberately zooms out to a wide
+            // "drone" view), used to reach deselect()/activate()/openPerson()
+            // below. Those flip the camera out of 'flight' mode without ever
+            // clearing the flight itself — freezing the camera mid-glide and,
+            // since the bubble-tap guard above checks the same still-truthy
+            // `flight`, silently swallowing every tap from then on. Ignoring
+            // the tap here instead lets the flyover land cleanly, exactly
+            // like a mid-flight bubble tap already does.
+          } else if (drag.tapCandidateId) {
+            // Too zoomed out to drag this bubble (see BUBBLE_DRAG_MIN_ZOOM), but
+            // a clean tap still selects it exactly like the 'bubble' path would.
+            if (!browseRef.current && activeRef.current === drag.tapCandidateId) {
+              onOpenPersonRef.current?.(drag.tapCandidateId);
+            } else {
+              onActivateRef.current?.(drag.tapCandidateId);
+            }
+          } else {
+            // A clean tap on empty canvas → deselect into browse mode (every
+            // bubble back to full brightness). Only in the free-flowing views:
+            // chart, lineage and focus-family all rely on a selection, so skip.
+            const mode = layoutRef.current;
+            if (mode !== 'chart' && !lineageRef.current && !focusRef.current) {
+              onDeselectRef.current?.();
+            }
           }
         }
         // A flick that's barely moving shouldn't drift; reduced-motion never coasts.
@@ -1232,6 +1463,7 @@ export default function BubbleTree({
           frameBody(ticker);
         } catch (err) {
           console.error('[BubbleTree] frame error — recovering to a safe state:', err);
+          flight?.onAbort?.();
           flight = null;
           landingFx?.destroy();
           landingFx = null;
@@ -1376,6 +1608,11 @@ export default function BubbleTree({
               postFlightHops = finished.hops;
               state.setActive(finished.ids[finished.ids.length - 1], false);
               camMode = 'follow'; // setActive() re-enters follow anyway; explicit for clarity
+              // Keep the found person visually elevated even once the camera
+              // has zoomed back out to fit the whole family — see the
+              // lineage-linger and default-branch checks below for how this
+              // is applied, and setActive() above for how it's cleared.
+              searchSpotlightId = finished.ids[finished.ids.length - 1];
               finished.onLand?.();
             }
           }
@@ -1398,7 +1635,14 @@ export default function BubbleTree({
               recap.t = 0;
               const id = recap.ids[recap.idx];
               bubbles.get(id)?.setRecapGlow(true);
-              const fx = new BirthEffect({ x: node.x, y: node.y }, { x: node.x, y: node.y }, BASE_RADIUS);
+              recapVisited.add(id);
+              // BirthEffect's halo rings peak at ~3.1x whatever radius they're
+              // given, in WORLD units — multiplied by RECAP_ZOOM (2.2) that's
+              // a ~314px screen radius at full-size BASE_RADIUS, big enough to
+              // blanket nearly an entire phone screen. A smaller radius here
+              // keeps the bloom a contained flourish around the bubble rather
+              // than a burst that swallows the whole viewport.
+              const fx = new BirthEffect({ x: node.x, y: node.y }, { x: node.x, y: node.y }, BASE_RADIUS * 0.55);
               fxLayer.addChild(fx.root);
               recapFx.set(id, fx);
               recap.onArrive?.(id);
@@ -1456,6 +1700,14 @@ export default function BubbleTree({
           let halfY = Math.max(camTY - minY, maxY - camTY, rr);
           let fit = Math.min(MAX_ZOOM, (W / 2 - PAD) / halfX, ((H - topInset) / 2 - PAD) / halfY);
 
+          // Only the deliberate "every person expanded" moment gets the deeper
+          // floor — an ordinary tap that reveals a handful of relatives keeps
+          // the original, tighter one (see the two constants' comment above).
+          const g = graphRef.current;
+          const wholeTreeActive = !!expandedRef.current && g.people.length > 0
+            && expandedRef.current.size >= g.people.length;
+          const fitFloor = wholeTreeActive ? WHOLE_TREE_FIT_FLOOR : FIT_FLOOR;
+
           // The revealed family can be wide enough that fitting everyone would
           // need to zoom out further than the follow-mode floor allows — most
           // likely right after a search flyover reveals a long path's full
@@ -1463,7 +1715,7 @@ export default function BubbleTree({
           // compensate, so when that happens, re-centre fully on the active
           // person and re-fit from there: keeping them actually on screen
           // matters more than fitting every revealed relative.
-          if (fit < 0.4) {
+          if (fit < fitFloor) {
             camTX = f.x;
             camTY = f.y;
             halfX = Math.max(camTX - minX, maxX - camTX, rr);
@@ -1473,7 +1725,7 @@ export default function BubbleTree({
 
           camX.setTarget(camTX);
           camY.setTarget(camTY);
-          zoom.setTarget(clamp(fit, 0.4, MAX_ZOOM));
+          zoom.setTarget(clamp(fit, fitFloor, MAX_ZOOM));
           camX.step(dt);
           camY.step(dt);
           zoom.step(dt);
@@ -1601,7 +1853,7 @@ export default function BubbleTree({
             } else {
               origin = { x: dest.x, y: dest.y - BASE_RADIUS * 5 };
             }
-            const fx = new BirthEffect({ x: dest.x, y: dest.y }, origin, BASE_RADIUS);
+            const fx = new BirthEffect({ x: dest.x, y: dest.y }, origin, BASE_RADIUS, born);
             fxLayer.addChild(fx.root);
             births.set(id, fx);
           }
@@ -1613,7 +1865,14 @@ export default function BubbleTree({
         for (const [id, b] of bubbles) {
           const n = nodeById.get(id);
           b.root.position.set(n.x, n.y);
-          const d = dmap.has(id) ? dmap.get(id) : 6;
+          const rawD = dmap.has(id) ? dmap.get(id) : 6;
+          // Fold in the duplicate-compare distance (if any) — see
+          // setCompareFocus above — so a second focal person (who can never
+          // be the literal ego-camera `active` id) still reads at d=0/1
+          // exactly like the active person's own immediate family does,
+          // instead of fading into the background at whatever distance they
+          // happen to sit from the one person the camera is actually centred on.
+          const d = compareDist ? Math.min(rawD, compareDist.has(id) ? compareDist.get(id) : 6) : rawD;
           let target;
           if (!effectiveVis.has(id)) {
             target = { scale: 0.5, alpha: 0, lift: 1, blur: 0 }; // collapsed
@@ -1646,7 +1905,19 @@ export default function BubbleTree({
               const age = nowMs - entry.litAt;
               const POP_MS = 450;
               const fade = hopFade(lineageLandedAt, entry.hopIndex, nowMs);
-              const settledRest = 1 + (1.32 - 1) * fade; // eases back toward 1.0 as its turn to extinguish arrives
+              // The search target eases toward SEARCH_LANDED_SCALE instead of
+              // the normal 1.0 floor, so there's no dip when postFlightIds
+              // eventually clears and the default branch's spotlight check
+              // (below) picks up at exactly the same value — one continuous
+              // ease from the landing punch to "settled but still the star",
+              // never a shrink-then-regrow.
+              // Not `id === lineageEnd` — that ref falls back to the (unrelated)
+              // real Lineage Mode prop once flight is null, i.e. exactly during
+              // the post-flight lingering phase this needs to work correctly in.
+              const isSearchTarget = searchSpotlightId === id;
+              const settledRest = isSearchTarget
+                ? SEARCH_LANDED_SCALE + (1.85 - SEARCH_LANDED_SCALE) * fade
+                : 1 + (1.32 - 1) * fade; // eases back toward 1.0 as its turn to extinguish arrives
               restScale = age < POP_MS ? 1.85 : settledRest;
               // A co-parent lights alongside its partner (see coParentsOf), so a
               // couple pod can have BOTH members popping at once — at a fixed
@@ -1654,23 +1925,52 @@ export default function BubbleTree({
               // them into each other. Cap the pop for whichever half of a pod is
               // currently sharing the spotlight so the two bubbles never grow
               // past what that link distance can hold (2 × BASE_RADIUS × 1.15
-              // stays comfortably inside the 112px gap).
+              // stays comfortably inside the 112px gap). Exempt the search
+              // target — it's the whole point of the spotlight.
               const hasLitPartner = graphRef.current
                 .partners(id)
                 .some((x) => lineage.has(x.id));
-              if (hasLitPartner) restScale = Math.min(restScale, 1.15);
+              if (hasLitPartner && !isSearchTarget) restScale = Math.min(restScale, 1.15);
             }
             target = landingPunch
               ? { scale: 1.22, alpha: 1, lift: 1.6, blur: 0 }
               : { scale: restScale, alpha: 1, lift: 1.1 + (restScale - 1) * 0.6, blur: 0 };
           } else if (cardOpen && id !== state.pinnedId) {
             target = { ...visualForDistance(d), alpha: 0.28, blur: 5 }; // dimmed behind card
+          } else if (camMode === 'recap' && recap) {
+            // Recap tour: the person currently being visited must read as
+            // sharp regardless of their graph-distance from whoever was
+            // active before the tour started — the whole point is jumping
+            // to scattered, often-unrelated parts of the tree, so falling
+            // through to the default distance-based fade below would leave
+            // the target greyed out instead of in focus. Already-visited
+            // people (their gold ring still lit) stay legible but recede a
+            // touch, so the current stop still reads as the standout one.
+            const isCurrent = id === recap.ids[recap.idx];
+            target = isCurrent
+              ? { scale: 1.08, alpha: 1, lift: 1.3, blur: 0 }
+              : recapVisited.has(id)
+                ? { ...visualForDistance(d), alpha: 0.7, blur: 0 }
+                : { ...visualForDistance(d), alpha: 0.2, blur: 1.5 };
           } else {
             // Focus fading: immediate family pops; extended family recedes softly.
             // This gives the graph visible hierarchy without a card being open.
             const base = visualForDistance(d);
-            const focusAlpha = d <= 1 ? 1 : d === 2 ? 0.62 : d === 3 ? 0.38 : 0.2;
-            target = { ...base, alpha: focusAlpha };
+            // While comparing two duplicate candidates (compareDist set), fade
+            // everything outside their two immediate families much harder than
+            // ordinary single-focus browsing does — the whole point of "Show
+            // both in tree" is isolating just the two families being compared
+            // (real feedback: "fade all bubbles other than the two immediate
+            // families"), whereas normal browsing's gentler 0.2 floor is tuned
+            // to keep extended relatives lightly visible for context.
+            const focusAlpha = compareDist
+              ? (d <= 1 ? 1 : d === 2 ? 0.22 : d === 3 ? 0.1 : 0.05)
+              : (d <= 1 ? 1 : d === 2 ? 0.62 : d === 3 ? 0.38 : 0.2);
+            // Once the post-flight lingering (above) finally clears, hand off
+            // at the same elevated size rather than dropping back to the
+            // ordinary active-person baseline — see searchSpotlightId.
+            const spotlighted = id === searchSpotlightId && d === 0;
+            target = { ...base, alpha: focusAlpha, scale: spotlighted ? SEARCH_LANDED_SCALE : base.scale };
           }
           // Desktop hover preview: a small pop so the canvas and the floating
           // card visibly agree on who's being previewed — never touches alpha,
@@ -1678,8 +1978,52 @@ export default function BubbleTree({
           if (id === hoveredId) {
             target = { ...target, scale: target.scale * 1.05, lift: (target.lift ?? 1) * 1.15 };
           }
-          // Name labels: all visible bubbles, hidden when card open or lineage active
-          const labelAlpha = (!cardOpen && !lineage && effectiveVis.has(id)) ? 1 : 0;
+          // Tapping a hop in the landed FlightCaption's reopened chain (see
+          // pulseBubble) — a single brief "there it is" bump layered on top
+          // of whatever this bubble's base treatment already is, regardless
+          // of camera mode or how far it is from the active person.
+          const pulseAt = crumbPulse.get(id);
+          if (pulseAt != null) {
+            const PULSE_MS = 700;
+            const page = nowMs - pulseAt;
+            if (page > PULSE_MS) crumbPulse.delete(id);
+            else {
+              const bump = Math.sin(clamp(page / PULSE_MS, 0, 1) * Math.PI) * 0.28;
+              target = { ...target, scale: target.scale * (1 + bump), lift: (target.lift ?? 1) * (1 + bump * 0.5) };
+            }
+          }
+          // A barely-there scale pulse on every living bubble — "these are the
+          // people still with us" without a label. Deceased bubbles hold
+          // still, same quiet distinction the memorial ring already carries.
+          // Desynced per person (phase/period seeded in bubble.js) rather than
+          // one shared clock — a whole tree pulsing in lockstep would read as
+          // anxious, not alive. Skipped for chart layout (exact scale=1.0 is
+          // load-bearing there) and reduced-motion.
+          if (!reducedMotion && !b.deceased && layoutRef.current !== 'chart') {
+            const t = (nowMs / 1000) * ((Math.PI * 2) / b._breathPeriod) + b._breathPhase;
+            target = { ...target, scale: target.scale * (1 + Math.sin(t) * 0.018) };
+          }
+          // Name labels: all visible bubbles, hidden when card open or lineage
+          // active — and hidden for the active person specifically, since
+          // FocusNameplate already floats their name (plus lifespan/age)
+          // above the bubble; showing both was pure duplication. Mirrors the
+          // exact conditions App.jsx uses to decide whether the nameplate
+          // itself is showing (browse mode / chart layout / self-hover), so
+          // the two can never disagree about which one the person is seeing.
+          const nameplateShowing = id === activeRef.current
+            && !browseRef.current
+            && layoutRef.current !== 'chart'
+            && hoveredId !== activeRef.current;
+          // While comparing two duplicate candidates, force BOTH of their
+          // labels on regardless of the rules above — the floating
+          // FocusNameplate can only ever hover near the one literal `active`
+          // bubble, so it's not a substitute for a label on the second
+          // candidate, which can be anywhere else on the canvas (real
+          // feedback: "have... the name tag displayed on both").
+          const forcedCompareLabel = !!(compareIds && compareIds.has(id) && effectiveVis.has(id));
+          const labelAlpha = forcedCompareLabel
+            ? 1
+            : (!cardOpen && !lineage && effectiveVis.has(id) && !nameplateShowing) ? 1 : 0;
           const birth = births.get(id);
           if (birth && !birth.bubbleSettled && effectiveVis.has(id)) {
             // The birth effect owns the pop: it scales the bubble up with an
@@ -1714,7 +2058,7 @@ export default function BubbleTree({
           if (showRel && effectiveVis.has(id) && id !== activeRef.current) {
             relText = relCache.get(id);
             if (relText === undefined) {
-              relText = relationLabel(graphRef.current, activeRef.current, id);
+              relText = relationLabel(graphRef.current, activeRef.current, id, kinTermsStore.getState());
               relCache.set(id, relText);
             }
           }
@@ -1804,6 +2148,8 @@ export default function BubbleTree({
     return () => {
       alive = false;
       clearTimeout(hoverTimer);
+      if (unsubKinTerms) unsubKinTerms();
+      if (onVisibility) document.removeEventListener('visibilitychange', onVisibility);
       api.current?.sim?.stop();
       try {
         app.destroy(true, { children: true });
@@ -1840,14 +2186,29 @@ export default function BubbleTree({
   }, [focusMode]);
 
   // Re-place nodes when the visible set changes: radial/weighted re-run forces,
-  // chart re-computes fixed grid positions.
+  // chart re-computes fixed grid positions. ensureVisible runs first so any
+  // newly-revealed person already has a tracked node/bubble before relayout
+  // tries to place them.
   useEffect(() => {
+    api.current?.ensureVisible(visibleIds);
     const m = api.current?.layoutMode;
     if (m === 'radial' || m === 'weighted') api.current.relayout();
     if (m === 'chart') api.current?.applyChartLayout();
   }, [visibleIds]);
 
-  return <div className="stage" ref={hostRef} aria-hidden="true" />;
+  return (
+    <>
+      <div className="stage" ref={hostRef} aria-hidden="true" />
+      {initFailed && (
+        <div className="stage-error">
+          <p className="stage-error__text">Couldn't load the tree view.</p>
+          <button type="button" className="stage-error__btn" onClick={() => window.location.reload()}>
+            Reload
+          </button>
+        </div>
+      )}
+    </>
+  );
 }
 
 const easeInOutCubic = (x) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
@@ -1898,81 +2259,6 @@ function visualForDistance(d) {
     case 3: return { scale: 0.67, alpha: 1, lift: 1,   blur: 0 }; // distant
     default: return { scale: 0.58, alpha: 1, lift: 1,  blur: 0 }; // far
   }
-}
-
-// Longest-path generation index from the eldest ancestors (no parents = 0).
-function computeGenerations(graph) {
-  const gen = new Map();
-  const visit = (id, guard) => {
-    if (gen.has(id)) return gen.get(id);
-    if (guard.has(id)) return 0;
-    guard.add(id);
-    const parents = graph.parents(id);
-    let g = 0;
-    for (const p of parents) g = Math.max(g, visit(p.id, guard) + 1);
-    guard.delete(id);
-    gen.set(id, g);
-    return g;
-  };
-  for (const p of graph.people) visit(p.id, new Set());
-
-  // Level active partners onto the same generation band using MAX — the deeper
-  // partner's row wins, pulling the shallower one down to meet them.
-  //
-  // Former/ex partners are deliberately EXCLUDED: an ex from a different family
-  // branch may have deeper ancestry, and dragging the current family member
-  // down to match would cascade incorrectly (e.g. Jason getting pulled to
-  // Kate's row instead of staying with Matthew).
-  //
-  // Multi-pass until stable so any chains converge (A=B, B=C → A=B=C).
-  let changed = true;
-  while (changed) {
-    changed = false;
-    const seen = new Set();
-    for (const p of graph.people) {
-      for (const partner of graph.partners(p.id)) {
-        if (partner.status === 'former') continue;
-        const key = [p.id, partner.id].sort().join('|');
-        if (seen.has(key)) continue;
-        seen.add(key);
-        const a = gen.get(p.id) ?? 0;
-        const b = gen.get(partner.id) ?? 0;
-        if (a === b) continue;
-        const lvl = Math.max(a, b);
-        if (a !== lvl) { gen.set(p.id, lvl);           changed = true; }
-        if (b !== lvl) { gen.set(partner.id, lvl);     changed = true; }
-      }
-    }
-  }
-
-  // The levelling above can pull a parent DOWN past their own child's row —
-  // a child's generation was fixed in the first pass, before their parent
-  // got dragged deeper to match a partner's separate, deeper ancestry (e.g.
-  // Ray gets levelled to Flo's row, which happens to be at or past a row
-  // Ray's own child from an earlier relationship already occupies). Cascade
-  // children forward until every parent sits strictly above their children,
-  // never the reverse — repeated to convergence so it propagates down
-  // multiple generations if needed.
-  // Bounded defensively: a valid family tree converges in well under
-  // people.length passes, but corrupted/cyclic relationship data shouldn't
-  // be able to hang the tab.
-  let cascading = true;
-  let guard = graph.people.length + 1;
-  while (cascading && guard-- > 0) {
-    cascading = false;
-    for (const child of graph.people) {
-      const childGen = gen.get(child.id) ?? 0;
-      for (const parent of graph.parents(child.id)) {
-        const parentGen = gen.get(parent.id) ?? 0;
-        if (parentGen >= childGen) {
-          gen.set(child.id, parentGen + 1);
-          cascading = true;
-        }
-      }
-    }
-  }
-
-  return gen;
 }
 
 function clamp(v, lo, hi) {

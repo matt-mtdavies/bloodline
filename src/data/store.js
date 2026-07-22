@@ -17,6 +17,7 @@ import {
   FAMILY_NAME as SEED_FAMILY_NAME,
   DEFAULT_FOCUS,
 } from './seed.js';
+import { dedupeMergeImport } from '../lib/duplicates.js';
 
 const KEY = 'bloodline:v1';
 // The account (user uid) this device's cached tree belongs to. Used to keep
@@ -28,6 +29,16 @@ const OWNER_KEY = 'bloodline:owner';
 // setActivityReadAt() and takeRecapCutoff() below.
 const ACTIVITY_READ_KEY = 'bloodline:activityReadAt';
 const RECAP_CUTOFF_KEY = 'bloodline:recapCutoffAt';
+
+// localStorage quota is unspecified but consistently ~5MB per origin across
+// major browsers (desktop and mobile Safari/PWA included) — there's no
+// synchronous API to ask "how much is actually left", so this is a
+// conservative fixed heuristic, not a measured limit. Warning at 80% gives
+// real headroom to act (remove some photos) before an edit silently fails
+// to persist, rather than only ever finding out after the fact.
+const STORAGE_WARN_BYTES = 4 * 1024 * 1024;
+const STORAGE_WARN_COOLDOWN_MS = 5 * 60 * 1000;
+let lastStorageWarnAt = 0;
 
 const EMPTY = {
   people: [],
@@ -226,6 +237,14 @@ function afterSave(ok, statusCode) {
     // "session expired" message that would be actively misleading here.
     setSyncStatus('error-forbidden');
     console.warn('[store] server sync: forbidden', statusCode);
+  } else if (statusCode === 413) {
+    // The tree is at D1's 1 MB per-family row limit (see tree.js). Retrying
+    // on a timer would just fail the exact same way every 30s forever —
+    // nothing about the payload size changes on its own — so this gets the
+    // same "stop and tell them clearly" treatment as 401/403 rather than
+    // the generic retry loop below.
+    setSyncStatus('error-toolarge');
+    console.warn('[store] server sync: tree too large', statusCode);
   } else {
     _lastSyncError = { code: statusCode || 0, message: statusCode === 409 ? 'Conflict' : statusCode ? `HTTP ${statusCode}` : 'Network error' };
     setSyncStatus('error');
@@ -280,6 +299,13 @@ async function putTree(s, attempt = 0) {
 
     if (r.ok) {
       _serverEtag = r.headers.get('ETag') || _serverEtag;
+      // Proactive, non-blocking heads-up — the save above already succeeded
+      // either way. Best-effort: a body-parse failure here should never
+      // turn a successful save into a reported failure.
+      const body = await r.json().catch(() => null);
+      if (body?.sizeWarning && typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('bloodline:tree-size-warning', { detail: body.sizeWarning }));
+      }
       afterSave(true);
       return;
     }
@@ -309,16 +335,17 @@ async function putTree(s, attempt = 0) {
       code: r.status,
       message: r.status === 409
         ? 'Conflict (retried)'
-        // 403s here always carry a clear, human-readable reason (a
-        // permission boundary, not a raw server fault) — show it as-is.
-        : r.status === 403 && errorBody?.detail
+        // 403s and 413s here always carry a clear, human-readable reason (a
+        // permission boundary or the storage limit, not a raw server
+        // fault) — show it as-is.
+        : (r.status === 403 || r.status === 413) && errorBody?.detail
         ? errorBody.detail
         : errorBody?.detail
         ? `HTTP ${r.status}: ${errorBody.detail}`
         : `HTTP ${r.status}`,
     };
 
-    if (r.status === 401 || r.status === 403) { afterSave(false, r.status); return; }
+    if (r.status === 401 || r.status === 403 || r.status === 413) { afterSave(false, r.status); return; }
     if (attempt < RETRY_DELAYS.length) {
       setTimeout(() => putTree(s, attempt + 1), RETRY_DELAYS[attempt]);
     } else {
@@ -590,13 +617,25 @@ function commit(next, { fromServer = false } = {}) {
   const cleaned = cleanRels.length !== (next.relationships?.length ?? 0);
   next = cleaned ? { ...next, relationships: cleanRels } : next;
   state = fromServer ? next : { ...next, _seq: (next._seq || 0) + 1 };
+  const serialized = JSON.stringify(state);
   try {
-    localStorage.setItem(KEY, JSON.stringify(state));
+    localStorage.setItem(KEY, serialized);
   } catch {
     // Storage full — changes live in-memory but won't survive a reload.
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('bloodline:storage-full'));
     }
+  }
+  // .length is UTF-16 code units, not bytes — close enough for a threshold
+  // check (this data is overwhelmingly ASCII field values; the gap only
+  // matters for a precise byte count, not for "getting close or not").
+  if (
+    typeof window !== 'undefined' &&
+    serialized.length > STORAGE_WARN_BYTES &&
+    Date.now() - lastStorageWarnAt > STORAGE_WARN_COOLDOWN_MS
+  ) {
+    lastStorageWarnAt = Date.now();
+    window.dispatchEvent(new CustomEvent('bloodline:storage-near-limit'));
   }
   // Persist whenever we made a local change, OR when normalisation cleaned up a
   // mess that arrived from the server — so the fix propagates instead of being
@@ -609,6 +648,43 @@ function commit(next, { fromServer = false } = {}) {
 export function saveToServer() {
   setSyncStatus('saving');
   return putTree(state);
+}
+
+// Every field loadFromServer's merge can carry genuinely local-only content
+// in — used by loadFromServer to decide whether the merged result is worth
+// pushing back to the server at all, or whether it's byte-identical to what
+// the server already has (the common case: nothing local pending, this
+// device is just catching up).
+//
+// Deliberately excludes two fields from `EMPTY`'s shape:
+//   - _seq: bumped independently by the server on every save (see
+//     functions/api/tree.js), so comparing it would never match even when
+//     nothing else changed — it carries no user content, just a counter.
+//   - myPersonId: NOT shared content. It's re-resolved fresh, identically,
+//     on every load from resolveViewerPersonId() using only the viewer's own
+//     login identity and the (already-compared) people list — two different
+//     family members always resolve it to two different values by design
+//     ("each family member sees relationship labels from their own seat").
+//     Comparing it would make this check pass to nearly nothing in a
+//     multi-editor family, defeating the whole point, while skipping it
+//     loses no real data: every claimed/matched viewer bypasses the stored
+//     value entirely, and even an unclaimed viewer recomputes their own
+//     default fresh next load regardless of what's stored server-side.
+const SYNC_CONTENT_KEYS = [
+  'people', 'relationships', 'memories', 'photos', 'documents',
+  'activity', '_deleted', 'familyName', 'hasCompletedOnboarding',
+];
+export function hasUnsyncedContent(merged, serverData) {
+  try {
+    const server = { ...EMPTY, ...serverData };
+    return SYNC_CONTENT_KEYS.some(
+      (k) => JSON.stringify(merged[k] ?? null) !== JSON.stringify(server[k] ?? null),
+    );
+  } catch {
+    // Any doubt (e.g. an unexpected shape) falls back to "yes, save it" —
+    // this check only ever skips a save on a proven exact match.
+    return true;
+  }
 }
 
 // Load the user's tree from the server.
@@ -732,13 +808,16 @@ export async function loadFromServer({ forceServerWins = false } = {}) {
 
     commit(merged, { fromServer: true });
 
-    // If this device had any local content, the merge above may include
-    // genuinely-unsaved local edits (or a newer photo the server's stripped
-    // payload didn't carry) that the server doesn't have yet — push the
-    // reconciled result back up rather than assuming a fetch alone caught
-    // it up. This is the only place that used to push raw, unmerged local
-    // state; now it always pushes the merged (safe) result instead.
-    if (state.people?.length > 0) scheduleServerSave(merged);
+    // The merge above may include genuinely-unsaved local edits (or a newer
+    // photo the server's stripped payload didn't carry) that the server
+    // doesn't have yet — push the reconciled result back up rather than
+    // assuming a fetch alone caught it up. But in the common case (this
+    // device is simply catching up to what the server already knows, no
+    // local edit pending) `merged` is content-identical to what the server
+    // just returned, and re-PUTting it is pure noise: a real network
+    // round-trip and a "Saving…" flash in the topbar on every single app
+    // open, for nothing. hasUnsyncedContent skips exactly that no-op case.
+    if (state.people?.length > 0 && hasUnsyncedContent(merged, data)) scheduleServerSave(merged);
 
     return true;
   } catch {
@@ -865,20 +944,39 @@ export function setActivityReadAt(ts) {
 
 // "Since you were last here" for the recap tour — distinct from the activity
 // badge's marker above, which resets the moment you open the activity panel
-// (before you've necessarily played the recap). Call once per app boot: it
-// returns whatever was stored from the END of your previous session (frozen
-// for this whole session, so opening the activity panel mid-session doesn't
-// shrink the recap queue out from under you), then immediately persists a
-// fresh cutoff for next time. Returns null on a person's very first visit —
-// callers should treat that as "nothing to recap," not "recap everything ever".
+// (before you've necessarily played the recap). A plain read, deliberately
+// NOT consume-on-read: merely booting the app (and the nudge/hero flashing
+// on screen as a result) must not advance this, or ignoring it — not
+// watching the tour, not dismissing the nudge — would silently lose it the
+// next time the tree is opened. This used to persist a fresh cutoff on
+// every single call, which is exactly that bug: ignore the "N updates"
+// nudge, close the app, reopen it, and the updates were gone with no way
+// to see them, because the previous boot had already quietly marked them
+// seen. It only moves forward via setRecapCutoff() below, called when the
+// recap is actually watched or the nudge is explicitly dismissed (see
+// App.jsx's markRecapSeen and its wiring to the nudge's own dismiss). The
+// one exception is a person's very first-ever visit, where a baseline has
+// to be established somehow — otherwise a brand-new device would surface
+// the entire historical activity log as "N updates" the first time it
+// loads. Returns null that one time — callers should treat that as
+// "nothing to recap yet," not "recap everything ever".
 export function takeRecapCutoff() {
-  let prev = null;
   try {
     const raw = localStorage.getItem(RECAP_CUTOFF_KEY);
-    prev = raw ? Number(raw) : null;
+    if (raw != null) return Number(raw);
+    localStorage.setItem(RECAP_CUTOFF_KEY, String(Date.now()));
   } catch { /* ignore */ }
-  try { localStorage.setItem(RECAP_CUTOFF_KEY, String(Date.now())); } catch { /* ignore */ }
-  return prev;
+  return null;
+}
+
+// Advances the persisted cutoff mid-session — call this the moment the
+// recap is opened (nudge or the activity panel's hero), so it reads as
+// "seen" immediately rather than only updating on the next full page load.
+// Without this, reopening the activity panel later in the same session (or
+// on a later visit) would show the exact same "N updates" again, since
+// takeRecapCutoff() only ever runs once per boot.
+export function setRecapCutoff(ts) {
+  try { localStorage.setItem(RECAP_CUTOFF_KEY, String(ts)); } catch { /* ignore */ }
 }
 
 function nameFromEmail(email) {
@@ -917,33 +1015,46 @@ export const QUALIFIER_KEYS = new Set(['mother', 'father', 'son', 'daughter']);
 function parentEdge(from, to, qualifier = 'biological') {
   return { id: rid(), from_person: from, to_person: to, type: 'parent', qualifier, partner_status: null };
 }
-function partnerEdge(a, b, status = 'current') {
-  return { id: rid(), from_person: a, to_person: b, type: 'partner', qualifier: 'biological', partner_status: status };
+// `marriageMeta` is the same optional shape updatePartnerMeta persists later
+// (is_married/marriage_date/marriage_place/separation_date) — captured up
+// front when the sheet already asked, rather than left for a separate edit.
+function partnerEdge(a, b, status = 'current', marriageMeta = null) {
+  const edge = { id: rid(), from_person: a, to_person: b, type: 'partner', qualifier: 'biological', partner_status: status };
+  if (marriageMeta) {
+    const { is_married, marriage_date, marriage_place, separation_date } = marriageMeta;
+    if (is_married || marriage_date || marriage_place) {
+      edge.is_married = true;
+      edge.marriage_date = marriage_date || null;
+      edge.marriage_place = marriage_place || null;
+    }
+    if (separation_date) edge.separation_date = separation_date;
+  }
+  return edge;
 }
 
 // Build the edges that connect a new person to the person they were added from.
-function edgesFor(relKey, anchorId, newId, current, qualifier = 'biological') {
+function edgesFor(relKey, anchorId, newId, current, qualifier = 'biological', childCoParentId = null, marriageMeta = null) {
   const parentsOf = (id) =>
     current.relationships.filter((r) => r.type === 'parent' && r.to_person === id).map((r) => r.from_person);
-  const partnersOf = (id) =>
-    current.relationships
-      .filter((r) => r.type === 'partner' && (r.from_person === id || r.to_person === id))
-      .map((r) => (r.from_person === id ? r.to_person : r.from_person));
 
   switch (relKey) {
     case 'mother':
     case 'father':
       return [parentEdge(newId, anchorId, qualifier)]; // new is a parent of the anchor
     case 'partner':
-      return [partnerEdge(anchorId, newId, 'current')];
+      return [partnerEdge(anchorId, newId, 'current', marriageMeta)];
     case 'ex_partner':
-      return [partnerEdge(anchorId, newId, 'former')];
+      return [partnerEdge(anchorId, newId, 'former', marriageMeta)];
     case 'son':
     case 'daughter': {
       const edges = [parentEdge(anchorId, newId, qualifier)];
-      // Only co-parent with current partner for biological children
-      if (qualifier === 'biological') {
-        for (const p of partnersOf(anchorId)) edges.push(parentEdge(p, newId));
+      // The other biological parent is an explicit choice made in the sheet
+      // (a chip picker when the anchor has multiple partners on record,
+      // silent when there's exactly one) — never every partner the anchor
+      // has ever had. Looping every partner used to hand a child two
+      // "biological" fathers/mothers the moment an ex was still on record.
+      if (qualifier === 'biological' && childCoParentId) {
+        edges.push(parentEdge(childCoParentId, newId));
       }
       return edges;
     }
@@ -969,7 +1080,7 @@ export function bioParentGendersFilled(personId) {
   return genders; // Set of 'male'|'female' already occupied
 }
 
-export function addRelative({ anchorId, relKey, name, given, middle, family, gender, birth_date, is_deceased, death_date, qualifier = 'biological' }) {
+export function addRelative({ anchorId, relKey, name, given, middle, family, birth_name, gender, birth_date, birth_place, residence, is_deceased, death_date, qualifier = 'biological', childCoParentId = null, is_married, marriage_date, marriage_place, separation_date }) {
   const id = uid();
   const meta = RELATIONSHIPS.find((r) => r.key === relKey);
 
@@ -997,14 +1108,15 @@ export function addRelative({ anchorId, relKey, name, given, middle, family, gen
     given_names: givenNames,
     middle_name: m || null,
     family_name: familyName,
+    birth_name: (birth_name || '').trim() || null,
     gender: gender || meta?.gender || null,
     birth_date: birth_date || null,
     death_date: is_deceased ? death_date || null : null,
     is_living: !is_deceased,
     is_deceased: !!is_deceased,
     is_minor: false,
-    birth_place: null,
-    residence: null,
+    birth_place: (birth_place || '').trim() || null,
+    residence: (residence || '').trim() || null,
     occupation: null,
     tags: [],
     events: [],
@@ -1014,7 +1126,10 @@ export function addRelative({ anchorId, relKey, name, given, middle, family, gen
     created_by: 'me',
     visibility: defaultVisibility,
   };
-  const edges = edgesFor(relKey, anchorId, id, state, qualifier);
+  const marriageMeta = (relKey === 'partner' || relKey === 'ex_partner')
+    ? { is_married, marriage_date, marriage_place, separation_date }
+    : null;
+  const edges = edgesFor(relKey, anchorId, id, state, qualifier, childCoParentId, marriageMeta);
 
   // When adding a sibling to someone with no parents in the tree, the new person
   // would have zero link-force connections and float free in d3. Fix: auto-create
@@ -1141,6 +1256,37 @@ export function addRelationship(fromId, toId, type, qualifier = 'biological') {
   return { ok: true };
 }
 
+// Record (or clear) marriage details on the partner edge between two people —
+// additive metadata the pedigree chart's marriage strip renders; absent
+// fields never block anything. Accepts partial dates ('1979' or
+// '1979-06-14'), same as birth/death dates everywhere else.
+export function updatePartnerMeta(aId, bId, { is_married, marriage_date, marriage_place, separation_date } = {}) {
+  const isPair = (r) =>
+    (r.from_person === aId && r.to_person === bId) || (r.from_person === bId && r.to_person === aId);
+  const idx = state.relationships.findIndex((r) => r.type === 'partner' && isPair(r));
+  if (idx < 0) return { ok: false, reason: 'no-partner-edge' };
+  const next = state.relationships.slice();
+  next[idx] = {
+    ...next[idx],
+    // A recorded date/place is itself evidence of a marriage.
+    is_married: !!is_married || !!marriage_date || !!marriage_place,
+    marriage_date: marriage_date || null,
+    marriage_place: marriage_place || null,
+    // Independent of is_married — an ex-partner's relationship can have ended
+    // whether or not they were ever married, and it's only ever asked for a
+    // 'former' partner edge (see MarriageDetailsEditor).
+    separation_date: separation_date || null,
+  };
+  const aPerson = state.people.find((p) => p.id === aId);
+  commit(withActivity({ ...state, relationships: next }, {
+    type: 'relationship_changed',
+    personId: aId,
+    personName: aPerson?.display_name ?? '',
+    detail: 'marriage details',
+  }));
+  return { ok: true };
+}
+
 // Set the direct relationship between two existing people to a specific kind,
 // clearing any current direct edge first. kind:
 //   'partner' | 'ex_partner' | 'parent_of' (a is parent of b) | 'child_of' (b is parent of a)
@@ -1150,7 +1296,17 @@ export function setRelationshipKind(aId, bId, kind, qualifier = 'biological') {
   // Clear existing direct edges between the pair so we can re-set cleanly.
   const isPair = (r) =>
     (r.from_person === aId && r.to_person === bId) || (r.from_person === bId && r.to_person === aId);
-  const cleared = state.relationships.filter((r) => !((r.type === 'partner' || r.type === 'parent') && isPair(r)));
+  const isClearable = (r) => (r.type === 'partner' || r.type === 'parent') && isPair(r);
+  // The ids being replaced must be tombstoned, not just filtered out of this
+  // array — otherwise a sync merge that lands before this write reaches the
+  // server (background poll, or a 409-conflict retry) sees the old edge only
+  // on the server side, resurrects it via _mergeByRecency's id union, and
+  // normalizeRelationships' first-seen-wins dedup then keeps that resurrected
+  // edge over the new one — e.g. an "ex-partner" edit silently reverting back
+  // to "partner" a few seconds later (see removeRelationship, which already
+  // tombstones for exactly this reason).
+  const removedIds = state.relationships.filter(isClearable).map((r) => r.id);
+  const cleared = state.relationships.filter((r) => !isClearable(r));
   // Validate the new edge against the cleared set (e.g. cycle check).
   if (kind === 'parent_of' && isAncestorOf(bId, aId, cleared)) return { ok: false, reason: 'cycle' };
   if (kind === 'child_of' && isAncestorOf(aId, bId, cleared)) return { ok: false, reason: 'cycle' };
@@ -1162,20 +1318,36 @@ export function setRelationshipKind(aId, bId, kind, qualifier = 'biological') {
   else if (kind === 'child_of') edge = parentEdge(bId, aId, qualifier);
   else return { ok: false, reason: 'unknown-type' };
 
-  commit({ ...state, relationships: [...cleared, edge] });
+  const aPerson = state.people.find((p) => p.id === aId);
+  const bPerson = state.people.find((p) => p.id === bId);
+  const kindLabel = { partner: 'Partner', ex_partner: 'Ex-partner', parent_of: 'Parent', child_of: 'Child' }[kind];
+  commit(withActivity(withTombstones({ ...state, relationships: [...cleared, edge] }, 'relationships', removedIds), {
+    type: 'relationship_changed',
+    personId: aId,
+    personName: aPerson?.display_name ?? '',
+    detail: `${kindLabel} of ${bPerson?.display_name ?? ''}`,
+  }));
   return { ok: true };
 }
 
 // Change the qualifier on a parent→child edge (biological / step / adoptive).
 export function updateRelationshipQualifier(fromId, toId, qualifier) {
-  commit({
+  const parent = state.people.find((p) => p.id === fromId);
+  const child = state.people.find((p) => p.id === toId);
+  const qualifierLabel = qualifier.charAt(0).toUpperCase() + qualifier.slice(1);
+  commit(withActivity({
     ...state,
     relationships: state.relationships.map((r) =>
       r.type === 'parent' && r.from_person === fromId && r.to_person === toId
         ? { ...r, qualifier }
         : r,
     ),
-  });
+  }, {
+    type: 'relationship_changed',
+    personId: fromId,
+    personName: parent?.display_name ?? '',
+    detail: `${qualifierLabel} parent of ${child?.display_name ?? ''}`,
+  }));
 }
 
 // Remove a specific relationship edge between two people.
@@ -1189,10 +1361,17 @@ export function removeRelationship(fromId, toId, type) {
       (r.from_person === toId && r.to_person === fromId);
   };
   const removedIds = state.relationships.filter(isMatch).map((r) => r.id);
-  commit(withTombstones({
+  const fromPerson = state.people.find((p) => p.id === fromId);
+  const toPerson = state.people.find((p) => p.id === toId);
+  commit(withActivity(withTombstones({
     ...state,
     relationships: state.relationships.filter((r) => !isMatch(r)),
-  }, 'relationships', removedIds));
+  }, 'relationships', removedIds), {
+    type: 'relationship_removed',
+    personId: fromId,
+    personName: fromPerson?.display_name ?? '',
+    detail: toPerson?.display_name ?? '',
+  }));
 }
 
 // Merge a duplicate person (dropId) into the one to keep (keepId): repoint every
@@ -1208,7 +1387,7 @@ export function mergePeople(keepId, dropId) {
   // Field merge: keep wins; fall back to the duplicate for anything blank.
   const merged = { ...keep };
   const fillable = [
-    'photo', 'photo_thumb', 'birth_date', 'death_date', 'birth_place', 'residence',
+    'photo', 'photo_thumb', 'birth_date', 'death_date', 'cause_of_death', 'birth_place', 'residence',
     'occupation', 'bio', 'gender', 'given_names', 'middle_name', 'family_name',
     'birth_name', 'email', 'phone', 'story',
   ];
@@ -1281,6 +1460,7 @@ export function mergePeople(keepId, dropId) {
 // Remove a person and all traces of them from the tree. Tombstones the person,
 // their edges, and their content so a sync merge can't bring any of it back.
 export function removePerson(id) {
+  const removedPerson = state.people.find((p) => p.id === id);
   const relIds = state.relationships.filter((r) => r.from_person === id || r.to_person === id).map((r) => r.id);
   const memIds = (state.memories || []).filter((m) => m.person_id === id).map((m) => m.id);
   const phIds = (state.photos || []).filter((ph) => ph.person_id === id).map((ph) => ph.id);
@@ -1299,7 +1479,15 @@ export function removePerson(id) {
   next = withTombstones(next, 'memories', memIds);
   next = withTombstones(next, 'photos', phIds);
   next = withTombstones(next, 'documents', docIds);
-  commit(next);
+  // personId here no longer resolves to anyone (they're gone) — the activity
+  // feed already falls back to the captured personName for exactly this case
+  // (see member_joined), and groupRecapUpdates excludes this type since
+  // there's no bubble left to fly to.
+  commit(withActivity(next, {
+    type: 'person_removed',
+    personId: id,
+    personName: removedPerson?.display_name ?? '',
+  }));
 }
 
 export function setupTree({ me, partner, parents, children, memoryPersonIdx, memoryText, familyName }) {
@@ -1611,66 +1799,290 @@ export async function migrateDocsToR2(uploadFn) {
   return { total: docs.length, uploaded, failed };
 }
 
+// Upload any inline base64 document thumbnails to R2, the same way
+// migrateDocsToR2 already does for `src` — `thumb` (the PDF page-1 preview
+// generated at upload time) was never given the same treatment, and being
+// permanent and per-document, it's the single biggest identified
+// contributor to tree_json's size (docs/TREE-STORAGE.md §3, Phase 0).
+// uploadFn is image.js#uploadDocument — thumb is just another small JPEG
+// data URL, so the same upload path that already handles `src` fits as-is.
+export async function migrateDocThumbsToR2(uploadFn) {
+  const docs = (state.documents || []).filter((d) => d.thumb?.startsWith('data:'));
+  if (!docs.length) return { total: 0, uploaded: 0, failed: 0 };
+  let uploaded = 0, failed = 0;
+  const thumbUpdates = new Map();
+  await Promise.allSettled(
+    docs.map(async (doc) => {
+      const url = await uploadFn(doc.thumb, { title: `${doc.title}-thumb`, mime: 'image/jpeg' });
+      if (url !== doc.thumb) { thumbUpdates.set(doc.id, url); uploaded++; }
+      else failed++;
+    }),
+  );
+  if (thumbUpdates.size) {
+    commit({
+      ...state,
+      documents: state.documents.map((d) => (thumbUpdates.has(d.id) ? { ...d, thumb: thumbUpdates.get(d.id) } : d)),
+    });
+  }
+  return { total: docs.length, uploaded, failed };
+}
+
 export function updateFamilyName(name) {
   commit({ ...state, familyName: name.trim() || state.familyName });
 }
 
 export function resetTree() {
-  commit({ ...EMPTY });
+  // "Erase tree" used to just commit({ ...EMPTY }) — that clears LOCAL state
+  // (and localStorage) fine, but leaves no record that everything was
+  // DELIBERATELY deleted. removePerson already tombstones what it removes so
+  // a later sync merge can't resurrect it (see withTombstones/dropTombstoned)
+  // — a full reset needs the exact same treatment for every person,
+  // relationship, memory, photo, and document at once, or the very next
+  // merge (a conflict retry on this save, a background poll, the next
+  // login) sees "no local record for this id" and just keeps whatever the
+  // server still has, silently undoing the erase (real report: "it looks
+  // as though it's started again... but hasn't actually wiped the family
+  // tree").
+  let next = { ...EMPTY, _deleted: state._deleted };
+  next = withTombstones(next, 'people', state.people.map((p) => p.id));
+  next = withTombstones(next, 'relationships', state.relationships.map((r) => r.id));
+  next = withTombstones(next, 'memories', (state.memories || []).map((m) => m.id));
+  next = withTombstones(next, 'photos', (state.photos || []).map((ph) => ph.id));
+  next = withTombstones(next, 'documents', (state.documents || []).map((d) => d.id));
+  commit(next);
+  // Force this erase to become the authoritative server copy immediately,
+  // rather than the normal 1.5s-debounced save. Without this, a stale ETag
+  // here would 409 and trigger the usual merge-and-retry — which, even with
+  // the tombstones above correctly stripping every resurrected record back
+  // out, would still ratchet hasCompletedOnboarding back to true from the
+  // still-unerased server copy (see _fetchAndMerge's one-way ratchet, which
+  // exists for the opposite case: a genuinely fresh device joining a real
+  // family shouldn't clobber it). If-Match: '*' bypasses that conflict
+  // check server-side entirely, so this save can't 409 and never enters
+  // the merge path at all. A no-op when server sync isn't enabled (demo
+  // mode) — flushPendingSave() only acts if scheduleServerSave (called by
+  // commit(), above) actually armed a save.
+  _serverEtag = '*';
+  flushPendingSave();
 }
 
 // Replace or merge the tree with people + relationships from a GEDCOM import.
 // merge=false: wipes everything and starts fresh with the imported data.
 // merge=true: appends to the existing tree (duplicates possible).
 export function importFromGedcom(newPeople, newRelationships, { merge = false } = {}) {
-  const next = merge
-    ? {
-        ...state,
-        people: [...state.people, ...newPeople],
-        relationships: [...state.relationships, ...newRelationships],
-      }
-    : {
-        ...EMPTY,
-        people: newPeople,
-        relationships: newRelationships,
-        hasCompletedOnboarding: true,
-        familyName: state.familyName || 'My Family',
-        myPersonId: newPeople[0]?.id ?? null,
-        activity: state.activity ?? [],
-      };
+  if (merge) {
+    // Collapse confident, unambiguous re-adds against the existing tree so a
+    // second import of the same data doesn't silently double it (see
+    // dedupeMergeImport — conservative: anything ambiguous still imports as new
+    // and is caught by the "Possible duplicates" review sheet).
+    const { people: addPeople, relationships: addRels } =
+      dedupeMergeImport(state.people, state.relationships, newPeople, newRelationships);
+    commit({
+      ...state,
+      people: [...state.people, ...addPeople],
+      relationships: [...state.relationships, ...addRels],
+    });
+    return;
+  }
+  // Replace mode wipes the whole existing tree — this used to just spread
+  // ...EMPTY over the old state with no tombstones, the exact same bug fixed
+  // in resetTree() above: a later sync merge (a conflict retry on this save,
+  // a background poll, the next login on another device) would see "no
+  // local record for this id" and silently keep whatever the server still
+  // had, resurrecting the erased tree underneath the freshly-imported one.
+  // Apply the identical tombstone treatment, and force this to become the
+  // authoritative server copy immediately rather than the normal debounced
+  // save (see resetTree()'s own comment for why If-Match: '*' is needed).
+  let next = { ...EMPTY, _deleted: state._deleted };
+  next = withTombstones(next, 'people', state.people.map((p) => p.id));
+  next = withTombstones(next, 'relationships', state.relationships.map((r) => r.id));
+  next = withTombstones(next, 'memories', (state.memories || []).map((m) => m.id));
+  next = withTombstones(next, 'photos', (state.photos || []).map((ph) => ph.id));
+  next = withTombstones(next, 'documents', (state.documents || []).map((d) => d.id));
+  next = {
+    ...next,
+    people: newPeople,
+    relationships: newRelationships,
+    hasCompletedOnboarding: true,
+    familyName: state.familyName || 'My Family',
+    myPersonId: newPeople[0]?.id ?? null,
+    activity: state.activity ?? [],
+  };
   commit(next);
+  _serverEtag = '*';
+  flushPendingSave();
 }
 
 // ── Health conditions ──────────────────────────────────────────────────────────
+// Activity/recap detail is deliberately generic ("Health information updated")
+// rather than naming the condition — same "which field, not the actual data"
+// principle as person_updated, just more warranted here since this is
+// sensitive medical information, not an occupation or a tag.
 export function addCondition(personId, { name, category, status = 'active', onset_year = null }) {
-  commit({
+  const person = state.people.find((p) => p.id === personId);
+  commit(withActivity({
     ...state,
     people: state.people.map((p) =>
       p.id === personId
         ? { ...p, conditions: [...(p.conditions || []), { id: cid(), name, category, status, onset_year }] }
         : p,
     ),
+  }, { type: 'health_updated', personId, personName: person?.display_name ?? '' }));
+}
+
+// Append one AI-suggested life event (from a document extraction) onto a
+// person's existing events, non-destructively — the accept side of the
+// document-fact review in Enrich. `tag` (e.g. 'military') carries through so
+// the timeline can render it distinctly; omitted when the fact isn't tagged.
+export function addLifeEvent(personId, { year, title, detail, tag, sourceDocId } = {}) {
+  const person = state.people.find((p) => p.id === personId);
+  const event = { year, title };
+  if (detail) event.detail = detail;
+  if (tag) event.tag = tag;
+  // Recorded so a later document deletion can retract exactly the events it
+  // produced — see retractDocumentContributions below. Absent for events
+  // written by any other path (manual entry, relationship-derived facts),
+  // which a document deletion must never touch.
+  if (sourceDocId) event.sourceDocId = sourceDocId;
+  commit(withActivity({
+    ...state,
+    people: state.people.map((p) =>
+      p.id === personId ? { ...p, events: [...(p.events || []), event] } : p,
+    ),
+  }, { type: 'person_updated', personId, personName: person?.display_name ?? '', detail: 'life events' }));
+}
+
+// Append one AI-suggested medal/honour (from a document extraction) onto a
+// person's existing military_medals, non-destructively — same shape as
+// addLifeEvent, the accept side of the medal review in Enrich.
+export function addMedal(personId, { name, detail, sourceDocId } = {}) {
+  const person = state.people.find((p) => p.id === personId);
+  const medal = { name };
+  if (detail) medal.detail = detail;
+  if (sourceDocId) medal.sourceDocId = sourceDocId;
+  commit(withActivity({
+    ...state,
+    people: state.people.map((p) =>
+      p.id === personId ? { ...p, military_medals: [...(p.military_medals || []), medal] } : p,
+    ),
+  }, { type: 'person_updated', personId, personName: person?.display_name ?? '', detail: 'medals' }));
+}
+
+// Remove one medal/honour by its position in the list. Medals (appended one
+// at a time, either by hand or via document acceptance) carry no id of their
+// own, so this is index-based — the same convention the timeline editor's
+// own per-row remove already uses. This is the manual correction path for a
+// single wrong medal; retractDocumentContributions below handles the
+// automatic case (the whole source document turns out to be wrong).
+export function removeMedal(personId, index) {
+  const person = state.people.find((p) => p.id === personId);
+  commit(withActivity({
+    ...state,
+    people: state.people.map((p) =>
+      p.id === personId
+        ? { ...p, military_medals: (p.military_medals || []).filter((_, i) => i !== index) }
+        : p,
+    ),
+  }, { type: 'person_updated', personId, personName: person?.display_name ?? '', detail: 'medals' }));
+}
+
+// The root-cause fix behind the Edward Turner report: a document accepted
+// onto the wrong person used to leave permanent, untraceable data behind,
+// because nothing recorded which document a fact came from. Now it does —
+// addLifeEvent/addMedal tag the item with sourceDocId, and applyDocumentField
+// (App.jsx) tags the person's field_sources map — so deleting the document
+// can retract exactly what it produced instead of leaving orphaned facts.
+//
+// Scoped to one person because a document only ever belongs to one
+// (doc.person_id) — nothing else in the tree can carry its sourceDocId.
+// Deliberately does NOT touch relationships a document's "people mentioned"
+// section confirmed (see applyDocumentPerson): that writes a real family
+// edge shared with another person, and removing a relationship already has
+// its own explicit, deliberate confirm step elsewhere — auto-cascading a
+// document deletion into severing a family link is a bigger, cross-person
+// consequence than clearing a field or an item off one profile, and
+// deserves its own review, not a side effect.
+//
+// A field is only cleared if it's STILL attributed to this document —
+// field_sources is deleted the moment a human corrects that field by hand
+// through any other path (see App.jsx's handleSave), so a stale document
+// can never clobber a real, later, hand-typed correction.
+export function retractDocumentContributions(personId, docId) {
+  const person = state.people.find((p) => p.id === personId);
+  if (!person) return;
+  const events = (person.events || []).filter((e) => e.sourceDocId !== docId);
+  const military_medals = (person.military_medals || []).filter((m) => m.sourceDocId !== docId);
+  const fieldSources = person.field_sources || {};
+  const clearedFields = {};
+  const nextFieldSources = { ...fieldSources };
+  for (const [field, sourceId] of Object.entries(fieldSources)) {
+    if (sourceId === docId) {
+      clearedFields[field] = null;
+      delete nextFieldSources[field];
+    }
+  }
+  const changed = events.length !== (person.events || []).length
+    || military_medals.length !== (person.military_medals || []).length
+    || Object.keys(clearedFields).length > 0;
+  if (!changed) return;
+  commit(withActivity({
+    ...state,
+    people: state.people.map((p) =>
+      p.id === personId
+        ? { ...p, ...clearedFields, events, military_medals, field_sources: nextFieldSources }
+        : p,
+    ),
+  }, { type: 'person_updated', personId, personName: person.display_name ?? '', detail: 'facts from a removed document' }));
+}
+
+// Record a plain activity event with no tree mutation attached — for
+// features whose "something happened" lives outside tree_json (today: a
+// Keepsake edition being compiled, which is stored in R2). Goes through the
+// same withActivity/commit path as every store action, so it lands in the
+// feed, the recap, and the durable activity_log identically.
+export function logActivity(partial) {
+  commit(withActivity({ ...state }, partial));
+}
+
+// Dismiss one relationship-derived timeline suggestion (Married, Widowed, a
+// child's or grandchild's birth — see lib/enrich.js) so Enrich stops
+// re-offering it. There's nothing to delete: unlike a document fact, this
+// candidate isn't stored anywhere of its own — it's recomputed fresh each
+// time from the marriage/birth/death dates already on record — so dismissal
+// is just a per-person "don't ask again" key, not silent like a no-op.
+export function dismissRelationshipFact(personId, key) {
+  const person = state.people.find((p) => p.id === personId);
+  if (!person || (person.dismissed_relationship_facts || []).includes(key)) return;
+  commit({
+    ...state,
+    people: state.people.map((p) =>
+      p.id === personId
+        ? { ...p, dismissed_relationship_facts: [...(p.dismissed_relationship_facts || []), key] }
+        : p,
+    ),
   });
 }
 
 export function removeCondition(personId, conditionId) {
-  commit({
+  const person = state.people.find((p) => p.id === personId);
+  commit(withActivity({
     ...state,
     people: state.people.map((p) =>
       p.id === personId
         ? { ...p, conditions: (p.conditions || []).filter((c) => c.id !== conditionId) }
         : p,
     ),
-  });
+  }, { type: 'health_updated', personId, personName: person?.display_name ?? '' }));
 }
 
 export function updateCondition(personId, conditionId, fields) {
-  commit({
+  const person = state.people.find((p) => p.id === personId);
+  commit(withActivity({
     ...state,
     people: state.people.map((p) =>
       p.id === personId
         ? { ...p, conditions: (p.conditions || []).map((c) => (c.id === conditionId ? { ...c, ...fields } : c)) }
         : p,
     ),
-  });
+  }, { type: 'health_updated', personId, personName: person?.display_name ?? '' }));
 }

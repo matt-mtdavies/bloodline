@@ -1,0 +1,2053 @@
+/* ── The Keepsake — the magazine (docs/KEEPSAKE.md) ─────────────────────────
+   All classes ks- prefixed. Screen styles here; motion arrives in Phase 3
+   and print styles in Phase 4, both appended to this file. Everything
+   derives from theme.css tokens with hardcoded fallbacks (iOS dark mode
+   rule) — no new hues: terracotta accents, memorial violet, paper + ink. */
+
+.keepsake-view {
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  background: var(--paper, #ffffff);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scroll-snap-type: y proximity;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Floating chrome — quiet, above the pages, never part of them. */
+.ks-chrome {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: calc(var(--safe-top, 0px) + 12px) 16px 10px;
+  pointer-events: none;
+  background: linear-gradient(to bottom, rgba(255, 255, 255, 0.92), rgba(255, 255, 255, 0));
+}
+.ks-chrome > * { pointer-events: auto; }
+.ks-chrome__mark {
+  font-family: var(--display, serif);
+  font-style: italic;
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  color: var(--ink-soft, #6b6f76);
+}
+.ks-chrome__btns { display: flex; gap: 8px; }
+.ks-chrome__btn {
+  width: 38px;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid var(--hairline, #ebedf0);
+  color: var(--ink, #1c1d21);
+  box-shadow: var(--shadow-soft, 0 1px 2px rgba(20, 22, 28, 0.04));
+}
+.ks-chrome__btn:active { transform: scale(0.96); }
+
+/* The edition bar — compile / weave-in prompts. Floats under the chrome,
+   never over the text column; the book stays readable behind it. Styled
+   as a small mastheaded card (badge + kicker + note, echoing the cover's
+   own typographic language) rather than a generic system notification
+   pill — the one moment before the book exists still needs to feel like
+   a Bloodline object, not an OS toast. */
+.ks-banner {
+  position: fixed;
+  top: calc(var(--safe-top, 0px) + 58px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 19;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+  width: min(92vw, 360px);
+  padding: 14px 16px;
+  border-radius: 20px;
+  background:
+    radial-gradient(120px 80px at 100% 0%, var(--accent-soft, #f0d9cd) 0%, transparent 65%),
+    var(--paper, #ffffff);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--hairline, #ebedf0);
+  box-shadow: var(--shadow-lift, 0 2px 8px rgba(20, 22, 28, 0.06), 0 20px 50px rgba(20, 22, 28, 0.14));
+  overflow: hidden;
+}
+.ks-banner--error {
+  background:
+    radial-gradient(120px 80px at 100% 0%, var(--paper-deep, #f2f3f5) 0%, transparent 65%),
+    var(--paper, #ffffff);
+}
+/* Paper grain, matching the cover's own texture — the card reads as stock,
+   not screen. */
+.ks-banner__grain {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.1;
+  mix-blend-mode: soft-light;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+.ks-banner__top { position: relative; display: flex; align-items: center; gap: 12px; }
+.ks-banner__badge {
+  flex: none;
+  width: 38px;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: linear-gradient(150deg, var(--accent-soft, #f0d9cd), var(--paper, #fff));
+  color: var(--accent-deep, #a44d2c);
+  box-shadow: inset 0 0 0 1px rgba(196, 108, 63, 0.18);
+}
+.ks-banner--error .ks-banner__badge {
+  background: linear-gradient(150deg, var(--paper-deep, #f2f3f5), var(--paper, #fff));
+  color: var(--ink-soft, #6b6f76);
+  box-shadow: inset 0 0 0 1px var(--hairline, #ebedf0);
+}
+.ks-banner__badge--busy .ks-banner__spin { animation: ks-banner-spin 0.9s linear infinite; }
+@keyframes ks-banner-spin { to { transform: rotate(360deg); } }
+.ks-banner__text { position: relative; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ks-banner__kicker {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--accent-deep, #a44d2c);
+}
+.ks-banner--error .ks-banner__kicker { color: var(--ink-soft, #6b6f76); }
+.ks-banner__diamond { color: var(--accent, #c2603a); opacity: 0.6; flex: none; }
+.ks-banner--error .ks-banner__diamond { color: var(--ink-faint, #a6abb3); }
+.ks-banner__note {
+  font-family: var(--display, serif);
+  font-style: italic;
+  font-size: 14.5px;
+  line-height: 1.3;
+  color: var(--ink, #1c1d21);
+}
+.ks-banner__btn {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13.5px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: #fff;
+  padding: 11px 18px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, var(--accent, #c2603a), var(--accent-deep, #a44d2c));
+  box-shadow: 0 1px 2px rgba(20, 22, 28, 0.1), 0 10px 22px -6px rgba(164, 77, 44, 0.55);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.ks-banner__btn:active {
+  transform: scale(0.97);
+  box-shadow: 0 1px 2px rgba(20, 22, 28, 0.1), 0 4px 10px -4px rgba(164, 77, 44, 0.5);
+}
+
+/* ── The spread — one full-viewport page ─────────────────────────────────── */
+.ks-spread {
+  min-height: 100dvh;
+  scroll-snap-align: start;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: calc(var(--safe-top, 0px) + 64px) 22px calc(var(--safe-bottom, 0px) + 56px);
+  position: relative;
+}
+.ks-spread__inner {
+  width: 100%;
+  max-width: 640px;
+}
+
+/* The single ornament: hairline + centered diamond. */
+.ks-orn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 26px 0;
+  color: var(--accent, #c2603a);
+}
+.ks-orn::before,
+.ks-orn::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--hairline, #ebedf0);
+}
+.ks-orn svg { flex: none; }
+
+/* Small-caps label used everywhere for captions/kickers. */
+.ks-label {
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-faint, #a6abb3);
+}
+.ks-label--accent { color: var(--accent, #c2603a); }
+
+/* ── Cover ──────────────────────────────────────────────────────────────── */
+.ks-cover {
+  padding: 0;
+  justify-content: flex-end;
+  min-height: 100dvh;
+  overflow: hidden;
+}
+.ks-cover__photo {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+.ks-cover__photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+/* Legibility scrim over the lower half of the portrait. */
+.ks-cover__photo::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to bottom, rgba(28, 29, 33, 0) 34%, rgba(28, 29, 33, 0.62) 78%, rgba(28, 29, 33, 0.78));
+}
+/* No portrait — a quiet paper wash built from the app's own tones. A child
+   element rather than a section modifier, so the section's className stays
+   static for the reveal observer (see CoverSpread). */
+.ks-cover__wash {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(1200px 700px at 80% -10%, var(--accent-soft, #f0d9cd) 0%, transparent 60%),
+    radial-gradient(900px 600px at -10% 110%, var(--sage-soft, #d8e0d6) 0%, transparent 55%),
+    var(--paper, #ffffff);
+}
+.ks-cover__body {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 720px;
+  padding: 0 26px calc(var(--safe-bottom, 0px) + 64px);
+}
+/* The masthead — a quiet, permanent brand mark at the top of the cover,
+   the way a real magazine's logotype sits above its own cover lines. */
+.ks-cover__masthead {
+  position: absolute;
+  top: calc(var(--safe-top, 0px) + 22px);
+  left: 0;
+  right: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.85);
+}
+.ks-cover__masthead--bare { color: var(--accent, #c2603a); }
+.ks-cover__name {
+  font-family: var(--display, serif);
+  font-weight: 500;
+  font-size: clamp(46px, 12vw, 120px);
+  line-height: 0.98;
+  letter-spacing: -0.02em;
+  color: #fff;
+  margin: 0 0 16px;
+}
+.ks-cover__body--bare .ks-cover__name { color: var(--ink, #1c1d21); }
+.ks-cover__meta {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.ks-cover__lifespan {
+  font-family: var(--display, serif);
+  font-style: italic;
+  font-size: 19px;
+  color: rgba(255, 255, 255, 0.92);
+}
+.ks-cover__epithet {
+  font-size: 14px;
+  letter-spacing: 0.04em;
+  color: rgba(255, 255, 255, 0.75);
+}
+.ks-cover__body--bare .ks-cover__lifespan { color: var(--ink-soft, #6b6f76); }
+.ks-cover__body--bare .ks-cover__epithet { color: var(--ink-faint, #a6abb3); }
+
+/* ── Frontispiece ───────────────────────────────────────────────────────── */
+.ks-front { text-align: center; }
+.ks-front__roles {
+  font-family: var(--display, serif);
+  font-style: italic;
+  font-size: clamp(24px, 5vw, 34px);
+  line-height: 1.35;
+  color: var(--ink, #1c1d21);
+  margin: 0;
+}
+.ks-front__family { margin-top: 26px; }
+.ks-front__records { margin-top: 8px; font-size: 13.5px; color: var(--ink-soft, #6b6f76); }
+
+/* ── Shared prose / typography ──────────────────────────────────────────── */
+.ks-title {
+  font-family: var(--display, serif);
+  font-weight: 500;
+  font-size: clamp(30px, 6.4vw, 44px);
+  letter-spacing: -0.015em;
+  line-height: 1.08;
+  color: var(--ink, #1c1d21);
+  margin: 0 0 6px;
+}
+.ks-prose {
+  font-size: 17.5px;
+  line-height: 1.68;
+  color: var(--ink, #1c1d21);
+  max-width: 38em;
+}
+.ks-prose p { margin: 0 0 1em; }
+/* Drop cap on the first paragraph of a chapter. */
+.ks-prose--dropcap > p:first-child::first-letter {
+  font-family: var(--display, serif);
+  font-size: 3.4em;
+  line-height: 0.82;
+  float: left;
+  padding: 6px 8px 0 0;
+  color: var(--accent, #c2603a);
+}
+/* Where the AI narrative will live once an edition is compiled (Phase 2). */
+.ks-prose-pending {
+  border-left: 2px solid var(--accent-soft, #f0d9cd);
+  padding: 4px 0 4px 16px;
+  font-style: italic;
+  font-size: 14.5px;
+  color: var(--ink-faint, #a6abb3);
+}
+
+/* ── Origins ────────────────────────────────────────────────────────────── */
+.ks-origins__place {
+  font-family: var(--display, serif);
+  font-size: clamp(26px, 5.6vw, 38px);
+  font-style: italic;
+  color: var(--ink, #1c1d21);
+  margin: 4px 0 0;
+}
+.ks-origins__date { margin-top: 6px; font-size: 15px; color: var(--ink-soft, #6b6f76); }
+.ks-parents { display: flex; gap: 22px; margin-top: 26px; flex-wrap: wrap; }
+.ks-parent { display: flex; align-items: center; gap: 12px; }
+.ks-parent__name { font-size: 15px; font-weight: 600; color: var(--ink, #1c1d21); }
+.ks-parent__role { display: block; font-size: 11.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-faint, #a6abb3); }
+
+/* ── Constellation ──────────────────────────────────────────────────────── */
+/* Rendered at its natural fixed pixel size (Constellation.jsx sets width/
+   height to match the viewBox 1:1) so legibility holds regardless of family
+   size — a large family scrolls horizontally instead of shrinking to fit. */
+.ks-constellation { width: 100%; }
+.ks-constellation__scroll {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+/* A circle hard-clipped at the screen edge with no cue reads as broken, not
+   as an invitation to swipe. The .ks-page__scroll background-attachment
+   trick doesn't apply here — that relies on a real padding gap the content
+   never reaches, but the diagram deliberately fills its scroll container
+   edge-to-edge. A CSS grid stack (not the scroll container's own
+   background) puts a plain fade overlay on top instead, pinned to the
+   frame rather than the scrolled content. */
+.ks-constellation__frame { position: relative; display: grid; }
+.ks-constellation__frame > * { grid-area: 1 / 1; }
+.ks-constellation__fade { width: 28px; height: 100%; pointer-events: none; }
+.ks-constellation__fade--l { justify-self: start; background: linear-gradient(to right, var(--paper, #fff), rgba(255, 255, 255, 0)); }
+.ks-constellation__fade--r { justify-self: end; background: linear-gradient(to left, var(--paper, #fff), rgba(255, 255, 255, 0)); }
+.ks-constellation svg { display: block; margin: 0 auto; max-width: none; }
+.ks-constellation__caption { text-align: center; margin-top: 18px; }
+
+/* ── Chapters ───────────────────────────────────────────────────────────── */
+.ks-chapter { margin: 0 0 44px; position: relative; }
+.ks-chapter__years {
+  font-family: var(--display, serif);
+  font-style: italic;
+  font-size: 15px;
+  color: var(--accent, #c2603a);
+  margin-bottom: 4px;
+}
+.ks-chapter__title {
+  font-family: var(--display, serif);
+  font-weight: 500;
+  font-size: clamp(24px, 5vw, 32px);
+  letter-spacing: -0.01em;
+  line-height: 1.12;
+  color: var(--ink, #1c1d21);
+  margin: 0 0 12px;
+}
+.ks-chapter__events { list-style: none; margin: 14px 0 0; padding: 0; }
+.ks-chapter__event {
+  display: grid;
+  grid-template-columns: 52px 1fr;
+  gap: 14px;
+  padding: 9px 0;
+  border-top: 1px solid var(--hairline, #ebedf0);
+}
+.ks-chapter__event:first-child { border-top: 0; }
+.ks-chapter__event-year {
+  font-variant-numeric: tabular-nums;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--accent, #c2603a);
+}
+.ks-chapter__event-title { font-size: 15.5px; font-weight: 600; color: var(--ink, #1c1d21); }
+.ks-chapter__event-detail { display: block; font-size: 13.5px; font-weight: 400; color: var(--ink-soft, #6b6f76); margin-top: 2px; }
+
+/* ── Service ────────────────────────────────────────────────────────────── */
+.ks-service__id {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 0 18px;
+  font-size: 14px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-soft, #6b6f76);
+}
+.ks-service__id svg { color: var(--sage, #3f5e4e); }
+.ks-quote {
+  font-family: var(--display, serif);
+  font-style: italic;
+  font-size: clamp(19px, 4vw, 24px);
+  line-height: 1.5;
+  color: var(--ink, #1c1d21);
+  margin: 22px 0;
+  padding-left: 18px;
+  border-left: 2px solid var(--accent, #c2603a);
+}
+.ks-quote cite { display: block; font-style: normal; font-family: var(--body, sans-serif); font-size: 12.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-faint, #a6abb3); margin-top: 10px; }
+.ks-medals { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.ks-medal {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--ink, #1c1d21);
+  border: 1px solid var(--hairline, #ebedf0);
+  border-radius: 999px;
+  padding: 5px 12px;
+}
+.ks-medal svg { color: var(--accent, #c2603a); }
+
+/* ── Places ─────────────────────────────────────────────────────────────── */
+.ks-places { list-style: none; margin: 20px 0 0; padding: 0; }
+.ks-place { padding: 16px 0; border-top: 1px solid var(--hairline, #ebedf0); }
+.ks-place:first-child { border-top: 0; }
+.ks-place__name {
+  font-family: var(--display, serif);
+  font-size: clamp(22px, 4.6vw, 30px);
+  color: var(--ink, #1c1d21);
+}
+.ks-place__role { margin-top: 3px; }
+
+/* ── Voices ─────────────────────────────────────────────────────────────── */
+.ks-voice { margin: 0 0 30px; }
+.ks-voice blockquote {
+  font-family: var(--display, serif);
+  font-style: italic;
+  /* The vw term scales against the full viewport, not this narrower book
+     page — on a wide desktop that clamp effectively pinned every quote to
+     its max, reading oversized/dominant against the page's own width. */
+  font-size: clamp(17px, 2.6vw, 20px);
+  line-height: 1.5;
+  color: var(--ink, #1c1d21);
+  margin: 0;
+}
+.ks-voice blockquote::before { content: '\201C'; color: var(--accent, #c2603a); }
+.ks-voice blockquote::after { content: '\201D'; color: var(--accent, #c2603a); }
+.ks-voice cite { display: block; font-style: normal; font-size: 12.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-faint, #a6abb3); margin-top: 10px; }
+
+/* ── Album ──────────────────────────────────────────────────────────────── */
+.ks-album { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 20px; }
+.ks-album__item { margin: 0; }
+.ks-album__item--hero { grid-column: 1 / -1; }
+.ks-album__item img {
+  width: 100%;
+  display: block;
+  border-radius: 4px;
+  border: 1px solid var(--hairline, #ebedf0);
+  /* Unconstrained width:100% let a portrait-oriented source photo render
+     taller than an entire book page by itself (no cap on height at all).
+     A fixed aspect ratio + object-fit:cover keeps every photo, regardless
+     of its own dimensions, to a sane, predictable footprint — the usual
+     magazine-grid treatment. */
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+}
+/* The hero gets contain, not cover: a portrait-oriented source (a military
+   ID photo mounted on cardboard, say) can have most of its actual subject
+   in the top half — a center-cropped cover would as often cut into the
+   subject's head as into the blank border. It's the one large photo on
+   the page, so showing the whole thing (letterboxed on the paper tone if
+   need be) beats a confident but wrong crop. */
+.ks-album__item--hero img {
+  aspect-ratio: 16 / 10;
+  object-fit: contain;
+  /* Matches the page background exactly (not --paper-soft) — a visibly
+     different tone read as an unintentional shaded box behind the photo
+     rather than an invisible letterbox. */
+  background: var(--paper, #ffffff);
+}
+.ks-album__item figcaption { margin-top: 7px; font-size: 12.5px; color: var(--ink-soft, #6b6f76); }
+/* Deliberate archival duotone for old/low-quality scans. */
+.ks-photo--archival img { filter: grayscale(1) sepia(0.14) contrast(1.05); }
+
+/* ── Documents ──────────────────────────────────────────────────────────── */
+.ks-docs { display: grid; gap: 18px; margin-top: 20px; }
+.ks-doc {
+  border: 1px solid var(--hairline, #ebedf0);
+  border-radius: 6px;
+  padding: 16px;
+  box-shadow: var(--shadow-soft, 0 1px 2px rgba(20, 22, 28, 0.04));
+  background: var(--card, #ffffff);
+}
+.ks-doc img {
+  width: 100%;
+  display: block;
+  border-radius: 3px;
+  margin-bottom: 12px;
+  /* Unlike Album photos, a scanned document shouldn't get cropped — the
+     text at the edges matters — so this bounds height without cutting
+     anything off, letterboxing on a paper-toned backdrop instead. */
+  max-height: 340px;
+  object-fit: contain;
+  /* Matches the enclosing .ks-doc card's own background (there is no
+     --paper-soft token — it was silently falling back to a hardcoded
+     cream that mismatched the card, same bug as the album hero above). */
+  background: var(--card, #ffffff);
+}
+.ks-doc__title { font-size: 15px; font-weight: 600; color: var(--ink, #1c1d21); }
+.ks-doc__fact { margin-top: 5px; font-size: 13.5px; color: var(--ink-soft, #6b6f76); line-height: 1.5; }
+
+/* ── The Record ─────────────────────────────────────────────────────────── */
+.ks-record { width: 100%; border-collapse: collapse; margin-top: 22px; }
+.ks-record th {
+  text-align: left;
+  vertical-align: top;
+  width: 110px;
+  padding: 11px 14px 11px 0;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-faint, #a6abb3);
+  border-top: 1px solid var(--hairline, #ebedf0);
+}
+.ks-record td {
+  padding: 11px 0;
+  font-size: 15.5px;
+  color: var(--ink, #1c1d21);
+  border-top: 1px solid var(--hairline, #ebedf0);
+}
+.ks-record tr:first-child th, .ks-record tr:first-child td { border-top: 0; }
+
+/* ── Legacy ─────────────────────────────────────────────────────────────── */
+.ks-legacy__row { display: flex; flex-wrap: wrap; gap: 18px; margin-top: 20px; }
+.ks-legacy__person { text-align: center; width: 74px; }
+.ks-legacy__person .avatar { margin: 0 auto; }
+.ks-legacy__name { display: block; margin-top: 7px; font-size: 12.5px; color: var(--ink, #1c1d21); }
+.ks-legacy--memorial .ks-title { color: var(--memorial, #6b5e7a); }
+.ks-legacy__line { margin-top: 22px; font-family: var(--display, serif); font-style: italic; font-size: 17px; color: var(--ink-soft, #6b6f76); }
+
+/* ── Colophon ───────────────────────────────────────────────────────────── */
+.ks-colophon { text-align: center; }
+.ks-colophon__edition {
+  font-family: var(--display, serif);
+  font-style: italic;
+  font-size: 18px;
+  color: var(--ink, #1c1d21);
+}
+.ks-colophon__meta { margin-top: 10px; font-size: 13.5px; color: var(--ink-soft, #6b6f76); line-height: 1.7; }
+.ks-colophon__invite {
+  margin: 26px auto 0;
+  max-width: 30em;
+  font-size: 14.5px;
+  line-height: 1.6;
+  color: var(--ink-soft, #6b6f76);
+  border: 1px dashed var(--hairline, #ebedf0);
+  border-radius: 14px;
+  padding: 14px 18px;
+}
+.ks-colophon__privacy { margin-top: 30px; font-size: 11.5px; color: var(--ink-faint, #a6abb3); }
+
+/* ── Reading progress — a hairline at the very top. Information, not
+   decoration, so it lives outside the motion gate. ─────────────────────── */
+.ks-progress {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  z-index: 21;
+  background: transparent;
+}
+.ks-progress__bar {
+  height: 100%;
+  background: var(--accent, #c2603a);
+  transform: scaleX(0);
+  transform-origin: 0 50%;
+}
+
+/* The chapters margin rail — base state is fully filled (reduced motion and
+   print read it as a simple ornament); the motion block below makes it fill
+   with reading progress instead. Hidden where the margin doesn't exist. */
+.ks-spread--chapters .ks-spread__inner { position: relative; }
+.ks-rail {
+  display: none;
+  position: absolute;
+  left: -26px;
+  top: 6px;
+  bottom: 6px;
+  width: 2px;
+  background: var(--accent-soft, #f0d9cd);
+}
+.ks-rail::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--accent, #c2603a);
+  transform-origin: 0 0;
+}
+@media (min-width: 760px) {
+  .ks-rail { display: block; }
+}
+
+/* ── Motion (Phase 3) — every rule lives inside this gate. The base styles
+   above are the fully-resolved book: reduced-motion users (and print) see
+   everything, drawn and legible, with zero animation. Only transform and
+   opacity ever animate. ─────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: no-preference) {
+  /* The film-title opening: masthead, name, meta rise in 120ms steps. */
+  .ks-cover .ks-cover__masthead,
+  .ks-cover .ks-cover__name,
+  .ks-cover .ks-cover__meta {
+    opacity: 0;
+    transform: translateY(14px);
+    transition: opacity 0.7s ease-out, transform 0.9s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .ks-cover.ks-in .ks-cover__masthead { opacity: 1; transform: none; transition-delay: 0.1s; }
+  .ks-cover.ks-in .ks-cover__name { opacity: 1; transform: none; transition-delay: 0.22s; }
+  .ks-cover.ks-in .ks-cover__meta { opacity: 1; transform: none; transition-delay: 0.34s; }
+  /* The portrait settles from a slight zoom as the title lands. */
+  .ks-cover .ks-cover__photo img {
+    transform: scale(1.06);
+    transition: transform 2.6s cubic-bezier(0.22, 0.61, 0.36, 1);
+  }
+  .ks-cover.ks-in .ks-cover__photo img { transform: scale(1); }
+
+  /* Ken Burns — a 14s drift on full-bleed/hero photos, paused off-screen. */
+  .ks-photo--burns { overflow: hidden; }
+  .ks-in .ks-photo--burns img,
+  .ks-cover.ks-in .ks-photo--burns img {
+    animation: ks-burns 14s ease-in-out 2.8s infinite alternate;
+  }
+  .ks-spread:not(.ks-in) .ks-photo--burns img { animation-play-state: paused; }
+
+  /* Every spread's inner column rises gently on entry (the cover has its
+     own opening; the constellation draws instead). */
+  .ks-spread:not(.ks-cover):not(.ks-spread--const) .ks-spread__inner {
+    opacity: 0;
+    transform: translateY(16px);
+    transition: opacity 0.6s ease-out, transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .ks-spread.ks-in:not(.ks-cover) .ks-spread__inner { opacity: 1; transform: none; }
+
+  /* The constellation draws itself: solid lines run their dash, the dotted
+     partner bond fades, discs pop with the app's spring — each on its own
+     --d stagger set inline by Constellation.jsx. */
+  .ks-const-link--draw {
+    stroke-dasharray: 1;
+    stroke-dashoffset: 1;
+    transition: stroke-dashoffset 0.7s ease;
+    transition-delay: var(--d, 0s);
+  }
+  .ks-in .ks-const-link--draw { stroke-dashoffset: 0; }
+  .ks-const-link--fade {
+    opacity: 0;
+    transition: opacity 0.6s ease;
+    transition-delay: calc(var(--d, 0s) + 0.5s);
+  }
+  .ks-in .ks-const-link--fade { opacity: 0.7; }
+  .ks-const-node {
+    opacity: 0;
+    transform: scale(0.5);
+    transform-box: fill-box;
+    transform-origin: center;
+    transition: opacity 0.4s ease, transform 0.6s var(--spring, cubic-bezier(0.34, 1.56, 0.64, 1));
+    transition-delay: var(--d, 0s);
+  }
+  .ks-in .ks-const-node { opacity: 1; transform: scale(1); }
+
+  /* Pull quotes and voices rise a beat after their spread. */
+  .ks-in .ks-voice,
+  .ks-in .ks-quote {
+    animation: ks-rise 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  .ks-in .ks-voice:nth-child(3) { animation-delay: 0.12s; }
+  .ks-in .ks-voice:nth-child(4) { animation-delay: 0.24s; }
+
+  /* The chapters rail fills with reading progress (KeepsakeView sets
+     --ks-read on the section from its scroll handler). */
+  .ks-rail::after { transform: scaleY(var(--ks-read, 0)); }
+
+  /* The book's arrival is now the coffee-table splash + corner-curl hint
+     (.ks-sheet--rest, .ks-page-curl) and the grand-open transition —
+     the old generic "sheet fades/settles onto the table" + "leaf peeks"
+     treatment they replaced is gone (both were plain keyframe animations
+     on .ks-sheet/.ks-leaf, which would otherwise permanently outrank and
+     clobber the new rest transform the instant either one finished). */
+}
+
+@keyframes ks-rise {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes ks-burns {
+  from { transform: scale(1) translate(0, 0); }
+  to { transform: scale(1.07) translate(-1.4%, -1%); }
+}
+
+/* Entry tile on the profile (lives beside Life Story): a miniature of the
+   book's own cover — portrait or the bare wash — beside the invitation. */
+.ks-entry {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  text-align: left;
+  padding: 13px 16px;
+  border-radius: 16px;
+  border: 1px solid var(--accent-soft, #f0d9cd);
+  background: linear-gradient(135deg, #fdf7f3, #fbf1ea);
+  transition: transform 0.3s var(--spring, ease);
+}
+.ks-entry:active { transform: scale(0.99); }
+/* Inside the profile's flex action row the tile takes its own full row,
+   sitting above "Watch their life story". */
+.profile__actions .ks-entry { flex: 0 0 100%; }
+.ks-entry__cover {
+  position: relative;
+  flex: none;
+  width: 44px;
+  height: 58px;
+  border-radius: 3px;
+  overflow: hidden;
+  box-shadow: 0 2px 6px rgba(20, 22, 28, 0.18);
+  background:
+    radial-gradient(60px 40px at 80% -10%, var(--accent-soft, #f0d9cd) 0%, transparent 70%),
+    radial-gradient(50px 34px at -10% 110%, var(--sage-soft, #d8e0d6) 0%, transparent 65%),
+    var(--paper, #ffffff);
+}
+.ks-entry__cover img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.ks-entry__cover-name {
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  bottom: 3px;
+  z-index: 1;
+  font-family: var(--display, serif);
+  font-size: 8px;
+  line-height: 1.1;
+  color: var(--ink, #1c1d21);
+  text-shadow: 0 0 4px rgba(255, 255, 255, 0.9);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ks-entry__cover img + .ks-entry__cover-name { color: #fff; text-shadow: 0 1px 3px rgba(28, 29, 33, 0.7); }
+.ks-entry__text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ks-entry__text strong { font-size: 14.5px; font-weight: 700; color: var(--accent-deep, #a44d2c); }
+.ks-entry__text span { font-size: 12.5px; line-height: 1.45; color: var(--ink-soft, #6b6f76); }
+
+/* ── Narrative editing — the quiet pencil + its sheet ──────────────────────
+   The pencil sits inline after a section label (or the cover epithet),
+   deliberately faint: the book stays a book first, editable second. */
+.ks-editbtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  margin-left: 8px;
+  vertical-align: middle;
+  border: 1px solid var(--hairline, #ebedf0);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ink-faint, #a6abb3);
+  cursor: pointer;
+  opacity: 0.75;
+  transition: opacity 0.15s ease, color 0.15s ease;
+}
+.ks-editbtn:hover { opacity: 1; color: var(--accent, #c2603a); }
+.ks-editbtn:active { transform: scale(0.94); }
+.ks-editbtn--light {
+  border-color: rgba(255, 255, 255, 0.4);
+  color: rgba(255, 255, 255, 0.85);
+}
+.ks-editbtn--light:hover { color: #fff; }
+
+.ks-editsheet__head {
+  margin: 6px 0 12px;
+  font-family: var(--display, serif);
+  font-size: 19px;
+  font-weight: 600;
+  color: var(--ink, #1c1d21);
+}
+.ks-editsheet .field__input { margin-bottom: 10px; }
+.ks-editsheet__hint {
+  margin: 2px 0 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--ink-soft, #6b6f76);
+}
+.ks-editsheet__error {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--danger, #c0392b);
+}
+.ks-editsheet__actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 16px;
+}
+.ks-editsheet__actions .btn--primary { flex: 1; }
+
+/* ── The page-turn reader (book mode) ──────────────────────────────────────
+   The Keepsake as a physical magazine on a table. One .ks-leaf pivots in 3D
+   on the sheet's left edge (KeepsakeBook.jsx drives the transform); its
+   front is the current page, its back bare paper, and the next page waits
+   beneath. Desktop centres a magazine-proportioned sheet over a deepened
+   wash; phones read full-bleed. */
+.keepsake-view.ks-mode-book {
+  overflow: hidden;
+  scroll-snap-type: none;
+  /* A warm stone tabletop, not an app wash: travertine tones, a whisper of
+     grain, and a vignette pulling the eye to the object. */
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.55'/%3E%3C/svg%3E"),
+    radial-gradient(130% 100% at 50% 42%, rgba(96, 74, 52, 0) 52%, rgba(84, 62, 42, 0.18) 100%),
+    radial-gradient(120% 90% at 50% 0%, #f4ecdf 0%, #eae0cf 62%, #decfba 100%);
+  background-blend-mode: soft-light, normal, normal;
+}
+.ks-book {
+  position: absolute;
+  inset: 0;
+  padding: calc(var(--safe-top, 0px) + 66px) 24px calc(var(--safe-bottom, 0px) + 44px);
+  touch-action: pan-y;
+  user-select: none;
+  -webkit-user-select: none;
+}
+/* The press bed: the sheet is laid out at the canvas's LOGICAL size (set
+   inline by KeepsakeBook) and this wrapper scales the whole thing down to
+   fit the stage — never up. Pages are therefore identical at every window
+   size; only the magnification changes. */
+.ks-stage {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+.ks-scale {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  will-change: transform;
+}
+.ks-sheet {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  perspective: 2600px;
+  border-radius: 4px;
+  background: var(--paper, #ffffff);
+  transition: transform 1.3s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 1.3s cubic-bezier(0.22, 1, 0.36, 1), border-radius 1.3s cubic-bezier(0.22, 1, 0.36, 1);
+  box-shadow:
+    0 30px 60px rgba(28, 29, 33, 0.22),
+    0 6px 16px rgba(28, 29, 33, 0.12);
+}
+
+.ks-page--under,
+.ks-leaf {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+.ks-page--under {
+  z-index: 1;
+  overflow: hidden;
+  background: var(--paper, #ffffff);
+}
+/* The page beneath sits in the lifting leaf's shadow (deepest mid-turn). */
+.ks-page--under::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  background: linear-gradient(to right, rgba(28, 29, 33, 0.38), rgba(28, 29, 33, 0.05) 40%, transparent 62%);
+  opacity: var(--ks-turnshadow, 0);
+}
+.ks-leaf {
+  z-index: 2;
+  transform-style: preserve-3d;
+  transform-origin: left center;
+  will-change: transform;
+}
+.ks-leaf__front,
+.ks-leaf__back {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  overflow: hidden;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  background: var(--paper, #ffffff);
+}
+/* Paper catches the light as it turns — opacity driven per-frame. */
+.ks-leaf__shine {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  opacity: var(--ks-shine, 0);
+  background: linear-gradient(100deg,
+    rgba(255, 255, 255, 0) 22%,
+    rgba(255, 255, 255, 0.55) 45%,
+    rgba(28, 29, 33, 0.10) 60%,
+    rgba(255, 255, 255, 0) 76%);
+}
+/* The back of a turning page: bare stock with the house diamond. */
+.ks-leaf__back {
+  transform: rotateY(180deg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent-soft, #f0d9cd);
+  background:
+    linear-gradient(105deg, rgba(28, 29, 33, 0.05), transparent 30%),
+    radial-gradient(80% 60% at 50% 40%, #fdfbf8 0%, #f4efe7 100%);
+}
+
+/* Margin chevrons — visible on hover-capable screens; fingers swipe. */
+.ks-booknav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 3;
+  width: 42px;
+  height: 42px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid var(--hairline, #ebedf0);
+  color: var(--ink, #1c1d21);
+  box-shadow: var(--shadow-soft, 0 1px 2px rgba(20, 22, 28, 0.04));
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.ks-booknav--prev { left: 22px; }
+.ks-booknav--next { right: 22px; }
+.ks-booknav:disabled { visibility: hidden; }
+@media (hover: hover) {
+  .ks-booknav { display: flex; }
+  .ks-book:hover .ks-booknav { opacity: 1; }
+}
+.ks-bookcounter {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(var(--safe-bottom, 0px) + 14px);
+  z-index: 3;
+  text-align: center;
+}
+
+/* The unread/read page edges peeking out of the sheet — a magazine detail,
+   wide enough to read as depth, never as UI. Desktop only. */
+.ks-edges {
+  display: none;
+  position: absolute;
+  top: 8px;
+  bottom: 8px;
+  background: repeating-linear-gradient(to right, #fdfbf8 0px, #fdfbf8 1px, #e5dfd5 1px, #e5dfd5 2px);
+}
+.ks-edges--right { left: 100%; border-radius: 0 3px 3px 0; }
+.ks-edges--left { right: 100%; border-radius: 3px 0 0 3px; }
+
+/* ── The two-page opening (wide desktop) ───────────────────────────────────
+   A true verso/recto spread: the cover alone on the recto beside a blank
+   inside cover, then pages paired 2–3, 4–5… The leaf is the right half of
+   the sheet pivoting on the centre spine; its back face carries the next
+   left page (paper printed on both sides). KeepsakeBook toggles
+   .ks-sheet--spread from a matchMedia listener at 1140px. */
+.ks-page--left {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 50%;
+  z-index: 1;
+  overflow: hidden;
+  border-radius: 4px 0 0 4px;
+  background: var(--paper, #ffffff);
+}
+/* The verso being uncovered by a back turn sits in the leaf's shadow. */
+.ks-page--left::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  background: linear-gradient(to left, rgba(28, 29, 33, 0.38), rgba(28, 29, 33, 0.05) 40%, transparent 62%);
+  opacity: var(--ks-turnshadow-l, 0);
+}
+.ks-sheet--spread .ks-page--under {
+  inset: auto;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 50%;
+  border-radius: 0 4px 4px 0;
+}
+.ks-sheet--spread .ks-leaf {
+  inset: auto;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 50%;
+  z-index: 3;
+  border-radius: 0 4px 4px 0;
+  /* The leaf only exists mid-turn here — never a tap target. */
+  pointer-events: none;
+}
+/* A back face carrying a real page keeps paper white behind its content. */
+.ks-leaf__back--page { background: var(--paper, #ffffff); }
+/* The gutter — paper dips into the binding at the spine. */
+.ks-spine {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 90px;
+  transform: translateX(-50%);
+  z-index: 2;
+  pointer-events: none;
+  background: linear-gradient(to right,
+    rgba(28, 29, 33, 0) 0%,
+    rgba(28, 29, 33, 0.05) 42%,
+    rgba(28, 29, 33, 0.13) 50%,
+    rgba(28, 29, 33, 0.05) 58%,
+    rgba(28, 29, 33, 0) 100%);
+}
+
+/* At rest on the cover (wide mode, no turn in progress), present as a
+   genuinely closed book — single-page width, no visible inside cover —
+   rather than an already-open spread with an empty left page sitting
+   beside it. The instant a turn begins this class is removed
+   (KeepsakeBook only applies it while `!turn`) and the verso/recto
+   mechanics above (blank inside cover, spine, spread aspect ratio) take
+   over exactly as they already did before this change. Placed after
+   every `.ks-sheet--spread …` rule above so it wins the cascade despite
+   tying on specificity (both classes are present on the same element). */
+.ks-sheet--closed .ks-page--left,
+.ks-sheet--closed .ks-spine { display: none; }
+.ks-sheet--closed .ks-page--under,
+.ks-sheet--closed .ks-leaf {
+  inset: 0;
+  left: 0;
+  width: 100%;
+  border-radius: 4px;
+}
+.ks-blank {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent-soft, #f0d9cd);
+  background: radial-gradient(70% 55% at 50% 42%, #fdfbf8 0%, #f6f1ea 100%);
+}
+
+/* ── The coffee-table splash ────────────────────────────────────────────────
+   Before the reader has ever opened the book (KeepsakeBook.jsx's
+   `everOpened`), present it as a physical object resting on a surface —
+   even on phones, where the rest of the reading experience is deliberately
+   full-bleed edge-to-edge. A pure transform:scale()+rotate() illusion
+   rather than animating width/height/aspect-ratio: those don't interpolate
+   reliably (especially the auto-height mobile full-bleed shape has no
+   fixed ratio to animate FROM), whereas transform is universally smooth —
+   the sheet's real box stays at its normal final size throughout, just
+   visually shrunk and tilted, so un-tilting it is exactly the "camera
+   pushes into the page" zoom the grand-open turn wants, for free. */
+.ks-sheet.ks-sheet--rest {
+  transform-origin: 50% 58%;
+  transform: perspective(1800px) scale(0.71) rotateX(6.5deg) rotateY(-12.5deg) rotateZ(-2.6deg);
+  border-radius: 6px;
+  /* The key light sits upper-left, so the cast shadow falls low-right —
+     visible against the darker table, like the reference photograph. */
+  box-shadow:
+    36px 84px 96px -22px rgba(52, 37, 20, 0.55),
+    16px 38px 48px -16px rgba(52, 37, 20, 0.4),
+    0 3px 0 rgba(255, 255, 255, 0.55) inset;
+}
+.ks-sheet--rest .ks-edges { display: block; }
+@media (prefers-reduced-motion: reduce) {
+  .ks-sheet { transition: none; animation: none; }
+  .ks-dapple { animation: none; }
+  .ks-pager__slot .ks-pager__fit { opacity: 1 !important; transform: none !important; transition: none !important; }
+  .ks-banner__spin { animation: none; }
+}
+
+/* Phones read full-bleed — the sheet IS the screen. */
+@media (max-width: 700px) {
+  /* The pocket folio nearly fills the screen (scale ~1); a slim frame of
+     the table wash around it keeps it reading as a bound object. */
+  .ks-book { padding: calc(var(--safe-top, 0px) + 60px) 10px calc(var(--safe-bottom, 0px) + 14px); }
+  .ks-sheet { border-radius: 6px; }
+  .ks-bookcounter { display: none; }
+}
+@media (min-width: 701px) {
+  .ks-edges { display: block; }
+}
+/* The rest-splash card needs real breathing room for its tilt and ambient
+   shadow, even on phones where .ks-book otherwise pads to zero. Placed
+   after the phones media block so it wins the tie (same specificity). */
+.ks-book--rest {
+  padding:
+    max(40px, calc(var(--safe-top, 0px) + 40px))
+    28px
+    max(40px, calc(var(--safe-bottom, 0px) + 40px));
+}
+
+/* The print pipeline reads .ks-printflow (all spreads in normal flow);
+   on screen it never exists visually. */
+.ks-printflow { display: none; }
+
+/* ── Print (Phase 4) — the book on paper ────────────────────────────────────
+   Scoped to body.ks-has-print (set only while a Keepsake is open) so
+   printing the ordinary app is never hijacked. The visibility trick hides
+   the app behind the book without disturbing the overlay's own layout;
+   the overlay leaves fixed positioning so it paginates in normal flow. */
+@media print {
+  body.ks-has-print { height: auto; }
+  /* #root is the app's fixed, overflow-hidden viewport shell (global.css),
+     and the App component adds one wrapper div inside it — left alone they
+     clip the whole book to a single page. Both become ordinary flowing
+     blocks so the pages can fragment. */
+  body.ks-has-print #root,
+  body.ks-has-print #root > div {
+    position: static;
+    overflow: visible;
+    height: auto;
+  }
+  /* Hide the app around the book with display (not visibility): the book
+     itself must sit in NORMAL FLOW — break-before/break-inside do nothing
+     inside an absolutely-positioned box, which prints the whole book as one
+     clipped page. The keepsake is a direct child of the App wrapper, so its
+     siblings are exactly "the rest of the app". */
+  body.ks-has-print #root > div > *:not(.keepsake-view) { display: none !important; }
+
+  body.ks-has-print .keepsake-view {
+    position: static;
+    width: 100%;
+    overflow: visible;
+    scroll-snap-type: none;
+    /* Book mode's table wash must never tint the paper. */
+    background: var(--paper, #ffffff) !important;
+  }
+
+  /* Page geometry — a Crown-Quarto-ish magazine proportion that also prints
+     acceptably on A4/Letter with shrink-to-fit. The cover page bleeds. */
+  @page { size: 210mm 280mm; margin: 18mm 16mm 22mm; }
+  @page :first { margin: 0; }
+
+  /* Screen chrome never prints. */
+  body.ks-has-print .ks-chrome,
+  body.ks-has-print .ks-banner,
+  body.ks-has-print .ks-progress,
+  body.ks-has-print .ks-editbtn,
+  body.ks-has-print .sheet-scrim,
+  body.ks-has-print .ks-prose-pending { display: none !important; }
+
+  /* Both screen readers print from the plain flow copy — neither the 3D
+     book nor the snapped pager can paginate on paper. */
+  body.ks-has-print .ks-book,
+  body.ks-has-print .ks-pager { display: none !important; }
+  body.ks-has-print .ks-printflow { display: block !important; }
+
+  /* A printed page can't scroll — undo the screen-only fixed-scale/scroll
+     treatment so the whole diagram always scales down to fit the page. */
+  body.ks-has-print .ks-constellation__scroll { overflow: visible; }
+  body.ks-has-print .ks-constellation svg { width: 100%; height: auto; max-width: 100%; }
+  body.ks-has-print .ks-constellation__fade { display: none !important; }
+
+  /* Every motion state resolves fully — a page can never print half-risen,
+     half-drawn, or paused mid-Ken-Burns. (prefers-reduced-motion is
+     independent of the print media type, so the motion gate can still match
+     while printing; these overrides win regardless.) */
+  body.ks-has-print .ks-spread__inner,
+  body.ks-has-print .ks-cover__masthead,
+  body.ks-has-print .ks-cover__name,
+  body.ks-has-print .ks-cover__meta,
+  body.ks-has-print .ks-const-node,
+  body.ks-has-print .ks-voice,
+  body.ks-has-print .ks-quote {
+    opacity: 1 !important;
+    transform: none !important;
+    transition: none !important;
+    animation: none !important;
+  }
+  body.ks-has-print .ks-const-link--draw { stroke-dashoffset: 0 !important; }
+  body.ks-has-print .ks-const-link--fade { opacity: 0.7 !important; }
+  body.ks-has-print .ks-photo--burns img { animation: none !important; transform: none !important; }
+  body.ks-has-print .ks-rail::after { transform: none !important; }
+
+  /* Pagination: one spread starts each page; content flows from the top
+     (viewport-centering makes no sense on paper). */
+  body.ks-has-print .ks-spread {
+    display: block;
+    min-height: 0 !important;
+    padding: 0;
+    break-before: page;
+    scroll-snap-align: none;
+  }
+  body.ks-has-print .ks-spread__inner { max-width: none; }
+
+  /* The cover: a full-bleed first page. */
+  body.ks-has-print .ks-cover {
+    break-before: auto;
+    position: relative;
+    height: 277mm; /* a hair under the page so nothing spills to page 2 */
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    overflow: hidden;
+  }
+  body.ks-has-print .ks-cover__body { padding: 0 18mm 20mm; }
+
+  /* Keep photos, quotes, documents and rows whole across page breaks. */
+  body.ks-has-print .ks-album__item,
+  body.ks-has-print .ks-doc,
+  body.ks-has-print .ks-voice,
+  body.ks-has-print .ks-quote,
+  body.ks-has-print .ks-chapter__event,
+  body.ks-has-print .ks-record tr,
+  body.ks-has-print .ks-parents { break-inside: avoid; }
+  body.ks-has-print .ks-prose p { orphans: 3; widows: 3; }
+  body.ks-has-print .ks-chapter { break-inside: auto; }
+
+  /* Colors are part of the design — ask the browser to keep them. */
+  body.ks-has-print .keepsake-view,
+  body.ks-has-print .keepsake-view * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+
+  /* The chapters rail is a screen affordance (reading progress). */
+  body.ks-has-print .ks-rail { display: none; }
+}
+
+
+/* ═══ The typeset book (v2) ═══════════════════════════════════════════════
+   The .ks-pg design system — pages composed by lib/typeset.js at a fixed
+   canvas size and rendered by BookPage.jsx. Print furniture and all:
+   running heads, folios, drop caps, quote wells, full-bleed photo pages.
+   Two scopes share every rule that matters: .ks-pgs--print (the 780×1040
+   trim) and .ks-pgs--phone (the 360×640 pocket folio). The offscreen
+   measurer (.ks-measure) wears the same scope as the real pages so the
+   measured metrics ARE the layout metrics. */
+
+.ks-measure {
+  position: fixed;
+  left: -10000px;
+  top: 0;
+  visibility: hidden;
+  pointer-events: none;
+  z-index: -1;
+}
+
+/* ── The page frame ── */
+.ks-pg {
+  position: relative;
+  background: var(--paper, #ffffff);
+  color: var(--ink, #1c1d21);
+  overflow: hidden;
+  font-family: var(--body, sans-serif);
+}
+.ks-pg img { -webkit-user-drag: none; user-select: none; }
+.ks-pg__body {
+  position: absolute;
+  left: var(--ks-padx, 84px);
+  right: var(--ks-padx, 84px);
+  top: var(--ks-padtop, 92px);
+  bottom: var(--ks-padbot, 84px);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+.ks-pg--bleed .ks-pg__body { position: absolute; inset: 0; left: 0; right: 0; top: 0; bottom: 0; }
+/* The running head — the subject across the crown of every interior page,
+   held between hairlines the way a feature well runs its title. */
+.ks-pg__head {
+  position: absolute;
+  top: 34px;
+  left: var(--ks-padx, 84px);
+  right: var(--ks-padx, 84px);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+  color: var(--ink-faint, #a6abb3);
+  white-space: nowrap;
+}
+.ks-pg__head span { overflow: hidden; text-overflow: ellipsis; }
+.ks-pg__head::before,
+.ks-pg__head::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--hairline, #ebedf0);
+}
+.ks-pg__folio {
+  position: absolute;
+  bottom: 26px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-family: var(--display, serif);
+  font-size: 12.5px;
+  font-variant-numeric: oldstyle-nums;
+  color: var(--ink-faint, #a6abb3);
+}
+/* One dark leaf in a light book — the night page. */
+.ks-pg--night {
+  background:
+    radial-gradient(120% 90% at 50% 0%, #1d212c 0%, #14171f 70%, #101319 100%);
+  color: #e9e7e0;
+  --hairline: rgba(255, 255, 255, 0.13);
+  --ink: #e9e7e0;
+  --ink-soft: #a9adba;
+  --ink-faint: #7c8190;
+  --paper: transparent;
+}
+.ks-pg--night .ks-pg__head { color: #7c8190; }
+.ks-pg--night .ks-pg__folio { color: #7c8190; }
+
+/* The label — small caps kicker shared by openers and fixed pages. */
+.ks-pg-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--ink-faint, #a6abb3);
+}
+.ks-pg-label--accent { color: var(--accent, #c2603a); }
+.ks-pg-label--night { color: #8b90a0; text-align: center; }
+.ks-pg-orn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 22px 0;
+  color: var(--accent, #c2603a);
+}
+.ks-pg-orn::before,
+.ks-pg-orn::after { content: ''; flex: 1; height: 1px; background: var(--hairline, #ebedf0); }
+
+/* ── The cover — a real masthead ── */
+.ks-pg-cover { position: absolute; inset: 0; }
+.ks-pg-cover__photo,
+.ks-pg-cover__wash { position: absolute; inset: 0; overflow: hidden; }
+.ks-pg-cover__photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  /* A filmic grade: a touch of contrast and warmth, like printed stock. */
+  filter: contrast(1.05) saturate(1.05) sepia(0.04);
+}
+.ks-pg-cover__photo::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(to bottom, rgba(16, 14, 12, 0.34) 0%, rgba(16, 14, 12, 0) 22%),
+    linear-gradient(to bottom, rgba(16, 14, 12, 0) 38%, rgba(16, 14, 12, 0.56) 74%, rgba(16, 14, 12, 0.82) 100%);
+}
+.ks-pg-cover__wash {
+  background:
+    radial-gradient(1200px 700px at 80% -10%, var(--accent-soft, #f0d9cd) 0%, transparent 60%),
+    radial-gradient(900px 600px at -10% 110%, var(--sage-soft, #d8e0d6) 0%, transparent 55%),
+    var(--paper, #ffffff);
+}
+/* Paper grain over the whole cover — the print artifact that reads as
+   stock, not screen. */
+.ks-pg-cover__grain {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.16;
+  mix-blend-mode: soft-light;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+.ks-pg-cover__masthead {
+  position: absolute;
+  top: 30px;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.88);
+}
+.ks-pg-cover--bare .ks-pg-cover__masthead { color: var(--accent, #c2603a); }
+.ks-pg-cover__well {
+  position: absolute;
+  left: 40px;
+  right: 40px;
+  bottom: 44px;
+}
+.ks-pg-cover__name {
+  margin: 0;
+  font-family: var(--display, serif);
+  font-weight: 500;
+  font-optical-sizing: auto;
+  line-height: 0.92;
+  letter-spacing: -0.018em;
+  color: #fff;
+  text-wrap: balance;
+}
+.ks-pg-cover__name span { display: block; }
+.ks-pg-cover--bare .ks-pg-cover__name { color: var(--ink, #1c1d21); }
+.ks-pg-cover__credit {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-top: 20px;
+}
+.ks-pg-cover__lifespan {
+  font-family: var(--display, serif);
+  font-style: italic;
+  font-size: 20px;
+  color: rgba(255, 255, 255, 0.94);
+}
+.ks-pg-cover__epithet {
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.72);
+}
+.ks-pg-cover--bare .ks-pg-cover__lifespan { color: var(--ink-soft, #6b6f76); }
+.ks-pg-cover--bare .ks-pg-cover__epithet { color: var(--ink-faint, #a6abb3); }
+/* The cover line — one quiet strip of small caps along the foot, above a
+   hairline: the single strongest "this is a magazine" cue there is. */
+.ks-pg-cover__line {
+  margin-top: 22px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.36);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.66);
+}
+.ks-pg-cover--bare .ks-pg-cover__line {
+  border-top-color: var(--hairline, #ebedf0);
+  color: var(--ink-faint, #a6abb3);
+}
+
+/* ── Fixed pages ── */
+.ks-pg-front,
+.ks-pg-colophon {
+  margin: auto 0;
+  text-align: center;
+}
+.ks-pg-front__roles {
+  font-family: var(--display, serif);
+  font-style: italic;
+  font-size: 30px;
+  line-height: 1.35;
+  margin: 0;
+}
+.ks-pg-front__records { margin-top: 8px; font-size: 13px; color: var(--ink-soft, #6b6f76); }
+.ks-pg-front .ks-pg-label { margin-top: 4px; }
+
+.ks-pg-const {
+  margin: auto 0;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.ks-pg-const__caption { margin-top: 4px; }
+/* A fixed page can't scroll — the whole star chart scales to fit the trim
+   (same rule the print pipeline uses), drawn bright against the night. */
+.ks-pg-const .ks-constellation__scroll { overflow: visible; }
+.ks-pg-const .ks-constellation__scroll svg { width: 100%; height: auto; max-height: 100%; }
+.ks-pg-const .ks-constellation__fade { display: none; }
+.ks-pg--night .ks-const-link { opacity: 0.85; }
+/* The scroll reader's draw-on-scroll choreography keys off .ks-in, which a
+   typeset page never sets — inside .ks-pg the chart is simply always drawn. */
+.ks-pg .ks-const-node { opacity: 1 !important; transform: none !important; transition: none !important; }
+.ks-pg .ks-const-link--draw { stroke-dashoffset: 0 !important; transition: none !important; }
+.ks-pg .ks-const-link--fade { opacity: 0.7 !important; transition: none !important; }
+
+.ks-pg-hero { position: absolute; inset: 0; margin: 0; }
+.ks-pg-hero img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.ks-pg-hero::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to bottom, rgba(16, 14, 12, 0.3) 0%, rgba(16, 14, 12, 0) 18%, rgba(16, 14, 12, 0) 55%, rgba(16, 14, 12, 0.62) 100%);
+}
+.ks-pg-hero__label {
+  position: absolute;
+  top: 32px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  z-index: 1;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.85);
+}
+.ks-pg-hero figcaption {
+  position: absolute;
+  left: 36px;
+  right: 36px;
+  bottom: 30px;
+  z-index: 1;
+  font-family: var(--display, serif);
+  font-style: italic;
+  font-size: 16px;
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.ks-pg-albumgrid {
+  margin: auto 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+}
+.ks-pg-albumgrid[data-count='1'] { grid-template-columns: 1fr; }
+.ks-pg-albumgrid__item { margin: 0; }
+.ks-pg-albumgrid__item img {
+  width: 100%;
+  aspect-ratio: 4 / 5;
+  object-fit: cover;
+  display: block;
+}
+.ks-pg-albumgrid[data-count='1'] .ks-pg-albumgrid__item img { aspect-ratio: 4 / 3.4; }
+.ks-pg-albumgrid__item figcaption {
+  margin-top: 7px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--ink-soft, #6b6f76);
+}
+
+.ks-pg-docs { margin: auto 0; }
+.ks-pg-docs__grid {
+  margin-top: 20px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+.ks-pg-doc img {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  display: block;
+  border: 1px solid var(--hairline, #ebedf0);
+}
+.ks-pg-doc__title { margin: 8px 0 0; font-weight: 600; font-size: 13px; }
+.ks-pg-doc__fact { margin: 2px 0 0; font-size: 12px; color: var(--ink-soft, #6b6f76); }
+
+.ks-pg-record { margin: auto 0; }
+.ks-pg-record table {
+  margin-top: 18px;
+  width: 100%;
+  border-collapse: collapse;
+}
+.ks-pg-record th {
+  text-align: left;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-faint, #a6abb3);
+  padding: 11px 12px 11px 0;
+  border-bottom: 1px solid var(--hairline, #ebedf0);
+  width: 42%;
+  vertical-align: baseline;
+}
+.ks-pg-record td {
+  font-family: var(--display, serif);
+  font-size: 16px;
+  padding: 11px 0;
+  border-bottom: 1px solid var(--hairline, #ebedf0);
+  vertical-align: baseline;
+}
+
+.ks-pg-colophon__edition {
+  font-family: var(--display, serif);
+  font-style: italic;
+  font-size: 17px;
+  margin: 0 0 12px;
+}
+.ks-pg-colophon__meta { font-size: 13px; line-height: 1.8; color: var(--ink-soft, #6b6f76); margin: 0; }
+.ks-pg-colophon__invite {
+  margin: 18px auto 0;
+  max-width: 30em;
+  font-family: var(--display, serif);
+  font-style: italic;
+  font-size: 14.5px;
+  color: var(--ink-soft, #6b6f76);
+}
+.ks-pg-colophon__privacy { margin: 22px 0 0; font-size: 11px; letter-spacing: 0.06em; color: var(--ink-faint, #a6abb3); }
+
+/* ── Flow blocks ──
+   Spacing lives INSIDE each block (padding, never margins) so the
+   measurer's numbers are exactly what the page lays out. */
+.ks-pgb { min-width: 0; }
+
+.ks-pgb--open { padding-top: 6px; padding-bottom: 10px; }
+.ks-pgb-open__title {
+  margin: 10px 0 0;
+  font-family: var(--display, serif);
+  font-weight: 500;
+  font-size: 40px;
+  line-height: 1.06;
+  letter-spacing: -0.015em;
+  text-wrap: balance;
+}
+.ks-pgb-open__sub {
+  margin: 8px 0 0;
+  font-family: var(--display, serif);
+  font-style: italic;
+  font-size: 16px;
+  color: var(--ink-soft, #6b6f76);
+}
+.ks-pgb--memorial .ks-pg-label--accent { color: var(--memorial, #7a6b8f); }
+
+.ks-pgb--chapter { padding-top: 18px; padding-bottom: 8px; }
+.ks-pgb-chapter__num {
+  display: block;
+  font-family: var(--display, serif);
+  font-style: italic;
+  font-weight: 500;
+  font-size: 74px;
+  line-height: 0.9;
+  color: color-mix(in srgb, var(--accent, #c2603a) 26%, transparent);
+  margin-bottom: 10px;
+}
+
+/* Body prose — serif, like the feature well of a printed magazine. */
+.ks-pgb--prose {
+  margin: 0;
+  padding-top: 15px;
+  font-family: var(--display, serif);
+  font-size: 17px;
+  line-height: 1.66;
+  font-variant-numeric: oldstyle-nums;
+  text-wrap: pretty;
+}
+.ks-pgb--dropcap::first-letter {
+  font-size: 3.6em;
+  line-height: 0.8;
+  float: left;
+  padding: 7px 9px 0 0;
+  font-style: normal;
+  color: var(--accent, #c2603a);
+}
+.ks-pgb--pending {
+  margin: 0;
+  padding-top: 15px;
+  padding-left: 14px;
+  border-left: 2px solid var(--accent-soft, #f0d9cd);
+  font-family: var(--display, serif);
+  font-style: italic;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--ink-faint, #a6abb3);
+}
+
+.ks-pgb--parents { padding-top: 26px; display: flex; gap: 28px; flex-wrap: wrap; }
+.ks-pgb-parent { display: flex; align-items: center; gap: 12px; }
+.ks-pgb-parent__name { display: block; font-weight: 600; font-size: 14.5px; }
+.ks-pgb-parent__role {
+  display: block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-faint, #a6abb3);
+}
+
+.ks-pgb--event { padding-top: 13px; display: flex; gap: 16px; align-items: baseline; }
+.ks-pgb-event__year {
+  flex: none;
+  width: 52px;
+  font-family: var(--display, serif);
+  font-size: 15px;
+  font-variant-numeric: oldstyle-nums;
+  color: var(--accent, #c2603a);
+}
+.ks-pgb-event__title { font-size: 14.5px; line-height: 1.45; }
+.ks-pgb-event__detail { display: block; font-size: 13px; color: var(--ink-soft, #6b6f76); margin-top: 1px; }
+
+.ks-pgb--quote {
+  margin: 0;
+  padding-top: 24px;
+  padding-left: 18px;
+  border-left: 2px solid var(--accent-soft, #f0d9cd);
+  font-family: var(--display, serif);
+  font-style: italic;
+  font-size: 18px;
+  line-height: 1.55;
+}
+.ks-pgb--quote cite {
+  display: block;
+  margin-top: 10px;
+  font-style: normal;
+  font-family: var(--body, sans-serif);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-faint, #a6abb3);
+}
+
+/* The quote well — one voice given the space a printed pull quote gets. */
+.ks-pgb--voice { position: relative; padding-top: 40px; padding-left: 6px; min-height: 150px; }
+.ks-pgb-voice__mark {
+  position: absolute;
+  top: 26px;
+  left: -8px;
+  font-family: var(--display, serif);
+  font-size: 84px;
+  line-height: 1;
+  color: var(--accent-soft, #f0d9cd);
+  pointer-events: none;
+}
+.ks-pgb--voice blockquote {
+  position: relative;
+  margin: 0;
+  padding-left: 26px;
+  font-family: var(--display, serif);
+  font-style: italic;
+  font-size: 20px;
+  line-height: 1.5;
+}
+.ks-pgb--voice cite {
+  position: relative;
+  display: block;
+  margin-top: 10px;
+  padding-left: 26px;
+  font-style: normal;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-faint, #a6abb3);
+}
+
+.ks-pgb--serviceid {
+  padding-top: 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-soft, #6b6f76);
+}
+.ks-pgb--medals { padding-top: 20px; display: flex; flex-wrap: wrap; gap: 8px; }
+.ks-pgb-medal {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px;
+  border: 1px solid var(--hairline, #ebedf0);
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-soft, #6b6f76);
+}
+
+.ks-pgb--place { padding-top: 22px; }
+.ks-pgb-place__name {
+  display: block;
+  font-family: var(--display, serif);
+  font-weight: 500;
+  font-size: 24px;
+  letter-spacing: -0.01em;
+}
+.ks-pgb-place__role { display: block; margin-top: 3px; }
+
+.ks-pgb--legacyrow { padding-top: 24px; display: flex; flex-wrap: wrap; gap: 18px 22px; }
+.ks-pgb-legacy__person {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.ks-pgb--legacyline {
+  margin: 0;
+  padding-top: 20px;
+  font-family: var(--display, serif);
+  font-style: italic;
+  font-size: 16px;
+  color: var(--ink-soft, #6b6f76);
+}
+
+/* ── The pocket folio (phone) — same system, smaller press ── */
+.ks-pgs--phone .ks-pg__head { top: 20px; font-size: 8px; letter-spacing: 0.22em; }
+.ks-pgs--phone .ks-pg__folio { bottom: 14px; font-size: 11px; }
+.ks-pgs--phone .ks-pg-cover__masthead { top: 18px; font-size: 8.5px; letter-spacing: 0.26em; }
+.ks-pgs--phone .ks-pg-cover__well { left: 22px; right: 22px; bottom: 24px; }
+.ks-pgs--phone .ks-pg-cover__lifespan { font-size: 16px; }
+.ks-pgs--phone .ks-pg-cover__epithet { font-size: 10px; }
+.ks-pgs--phone .ks-pg-cover__credit { margin-top: 12px; gap: 10px; }
+.ks-pgs--phone .ks-pg-cover__line { margin-top: 14px; padding-top: 10px; font-size: 8.5px; letter-spacing: 0.24em; }
+.ks-pgs--phone .ks-pg-front__roles { font-size: 22px; }
+.ks-pgs--phone .ks-pgb-open__title { font-size: 28px; }
+.ks-pgs--phone .ks-pgb-open__sub { font-size: 14px; }
+.ks-pgs--phone .ks-pgb-chapter__num { font-size: 52px; }
+.ks-pgs--phone .ks-pgb--prose { font-size: 15.5px; line-height: 1.6; padding-top: 12px; }
+.ks-pgs--phone .ks-pgb--pending { font-size: 13.5px; }
+.ks-pgs--phone .ks-pgb--event { padding-top: 10px; }
+.ks-pgs--phone .ks-pgb-event__year { width: 42px; font-size: 13.5px; }
+.ks-pgs--phone .ks-pgb-event__title { font-size: 13px; }
+.ks-pgs--phone .ks-pgb-event__detail { font-size: 12px; }
+.ks-pgs--phone .ks-pgb--quote { font-size: 16px; padding-top: 18px; }
+.ks-pgs--phone .ks-pgb--voice { min-height: 120px; padding-top: 30px; }
+.ks-pgs--phone .ks-pgb--voice blockquote { font-size: 17px; padding-left: 20px; }
+.ks-pgs--phone .ks-pgb--voice cite { padding-left: 20px; }
+.ks-pgs--phone .ks-pgb-voice__mark { font-size: 62px; top: 20px; }
+.ks-pgs--phone .ks-pgb-place__name { font-size: 20px; }
+.ks-pgs--phone .ks-pg-hero figcaption { left: 20px; right: 20px; bottom: 18px; font-size: 13.5px; }
+.ks-pgs--phone .ks-pg-hero__label { top: 18px; font-size: 8.5px; }
+.ks-pgs--phone .ks-pg-albumgrid { gap: 12px; }
+.ks-pgs--phone .ks-pg-docs__grid { gap: 14px; }
+.ks-pgs--phone .ks-pg-record td { font-size: 14px; }
+.ks-pgs--phone .ks-pg-record th,
+.ks-pgs--phone .ks-pg-record td { padding-top: 8px; padding-bottom: 8px; }
+.ks-pgs--phone .ks-pgb--parents { padding-top: 18px; gap: 16px; }
+.ks-pgs--phone .ks-pg-colophon__meta { font-size: 12px; }
+
+/* Print-flow copy and scroll reader never see .ks-pg pages; the print
+   pipeline keeps reading the old spreads (.ks-printflow). */
+
+/* ═══ The finish pass ═════════════════════════════════════════════════════
+   The rest splash as a photographed object (contact shadow, dappled light,
+   a breathing invitation instead of a fake curl), and the scroll reader as
+   a snapped vertical pager over the same typeset pages. */
+
+/* The tight, directional shadow that anchors the magazine to the table —
+   the ambient drop shadow alone leaves the object floating. */
+.ks-contact {
+  position: absolute;
+  left: 4%;
+  right: 4%;
+  bottom: -3.5%;
+  height: 14%;
+  background: radial-gradient(50% 62% at 48% 45%, rgba(48, 33, 17, 0.55), rgba(48, 33, 17, 0) 76%);
+  filter: blur(13px);
+  transform: rotate(-2.6deg) translateX(3%);
+  pointer-events: none;
+}
+.ks-sheet { z-index: 1; }
+
+/* Dappled foliage light drifting over the whole scene — the light belongs
+   to the room, not the object, which is what makes it read as photography
+   instead of a gradient pasted on the cover. */
+.ks-dapple {
+  position: absolute;
+  inset: -12%;
+  z-index: 5;
+  pointer-events: none;
+  mix-blend-mode: soft-light;
+  background:
+    radial-gradient(38% 28% at 20% 14%, rgba(255, 250, 238, 1), transparent 70%),
+    radial-gradient(44% 32% at 76% 24%, rgba(255, 248, 232, 0.9), transparent 72%),
+    radial-gradient(32% 26% at 36% 76%, rgba(255, 250, 238, 0.8), transparent 70%),
+    radial-gradient(28% 20% at 62% 56%, rgba(44, 31, 16, 0.75), transparent 70%),
+    radial-gradient(24% 18% at 8% 50%, rgba(44, 31, 16, 0.65), transparent 70%),
+    radial-gradient(34% 24% at 90% 80%, rgba(44, 31, 16, 0.7), transparent 72%);
+  opacity: 0;
+  transition: opacity 1.3s ease;
+  animation: ks-dapple-drift 44s ease-in-out infinite alternate;
+}
+.ks-book--rest .ks-dapple { opacity: 1; }
+@keyframes ks-dapple-drift {
+  from { transform: translate3d(-1.6%, -1%, 0) rotate(-0.5deg); }
+  to { transform: translate3d(1.6%, 1.2%, 0) rotate(0.5deg); }
+}
+
+/* The invitation: instead of a fake curled corner pasted over the photo,
+   the resting magazine itself breathes — a gentle rock at the spine, like
+   a cover that's been opened once and wants opening again. Replaces the
+   static rest pose (same values at the loop's ends) while the first-open
+   hint is showing; any interaction removes it. */
+.ks-sheet--breathe { animation: ks-breathe 5.6s ease-in-out infinite; }
+@keyframes ks-breathe {
+  0%, 100% { transform: perspective(1800px) scale(0.71) rotateX(6.5deg) rotateY(-12.5deg) rotateZ(-2.6deg); }
+  50% { transform: perspective(1800px) scale(0.718) rotateX(5.6deg) rotateY(-16.2deg) rotateZ(-2.4deg); }
+}
+
+/* Edit pencils are working chrome, not cover art: gone entirely on the
+   rest splash, hover-revealed wherever a pointer can hover. */
+.ks-sheet--rest .ks-editbtn { opacity: 0; pointer-events: none; }
+@media (hover: hover) {
+  .ks-pg .ks-editbtn { opacity: 0; transition: opacity 0.18s ease; }
+  .ks-pg:hover .ks-editbtn,
+  .ks-pg .ks-editbtn:focus-visible { opacity: 1; }
+}
+
+/* ── The snapped vertical pager (scroll mode) ── */
+.ks-pager {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  scroll-snap-type: y mandatory;
+  scrollbar-width: none;
+  background:
+    radial-gradient(130% 100% at 50% 42%, rgba(96, 74, 52, 0) 55%, rgba(84, 62, 42, 0.12) 100%),
+    radial-gradient(120% 90% at 50% 0%, #f6f0e6 0%, #eee5d6 62%, #e5d9c7 100%);
+}
+.ks-pager::-webkit-scrollbar { display: none; }
+.ks-pager__slot {
+  height: 100dvh;
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.ks-pager__fit {
+  position: relative;
+  border-radius: 4px;
+  box-shadow:
+    0 22px 48px rgba(28, 29, 33, 0.18),
+    0 5px 12px rgba(28, 29, 33, 0.1);
+  /* Each page rises and settles as it arrives (IntersectionObserver adds
+     --in); reduced-motion overrides this above. */
+  opacity: 0;
+  transform: translateY(26px) scale(0.985);
+  transition: opacity 0.65s ease, transform 0.65s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.ks-pager__slot--in .ks-pager__fit {
+  opacity: 1;
+  transform: none;
+}
+.ks-pager__zoom {
+  transform-origin: top left;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+/* ── The tabletop scene v2 — value contrast per the reference photograph.
+   The table is genuinely darker than the page (the magazine is the
+   brightest object in frame), lit by ONE key from the upper-left with the
+   corners falling away; travertine mottling at two scales; a blurred stone
+   dish cropped at the corner as depth-of-field set dressing. Fades to a
+   whisper while actually reading. ─────────────────────────────────────── */
+.ks-scene {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 1.3s ease;
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E"),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='700' height='700'%3E%3Cfilter id='m'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.011' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23m)' opacity='0.55'/%3E%3C/svg%3E"),
+    radial-gradient(95% 75% at 30% 20%, rgba(255, 245, 226, 0.9) 0%, rgba(238, 219, 188, 0.3) 46%, rgba(0, 0, 0, 0) 72%),
+    radial-gradient(150% 120% at 74% 94%, rgba(0, 0, 0, 0) 38%, rgba(62, 45, 26, 0.45) 100%),
+    linear-gradient(158deg, #d7c19e 0%, #c5ab82 52%, #ab8d61 100%);
+  background-blend-mode: soft-light, soft-light, normal, normal, normal;
+}
+.ks-book--rest .ks-scene { opacity: 1; }
+.ks-stage { z-index: 1; }
+/* The out-of-focus stone dish, cropped by the frame like a photograph's
+   foreground — rim caught by the key light, underside falling to shadow. */
+.ks-scene__prop {
+  position: absolute;
+  top: -12%;
+  left: -14%;
+  width: min(52vmin, 460px);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(62% 62% at 44% 38%, #f2e6d0 0%, #ddc9a6 56%, #c0a67c 100%);
+  box-shadow:
+    inset 0 -16px 44px rgba(84, 62, 36, 0.4),
+    inset 0 12px 26px rgba(255, 250, 238, 0.75),
+    26px 44px 70px rgba(62, 45, 26, 0.3);
+  filter: blur(10px);
+}
+/* Now that the field is dark enough to take it: one broad, faint sheen
+   across the resting cover — laminate catching the key, nothing like the
+   old hard glass band (peak 14% white across half the trim). */
+.ks-sheet--rest::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(118deg,
+    rgba(255, 255, 255, 0) 28%,
+    rgba(255, 255, 255, 0.08) 44%,
+    rgba(255, 255, 255, 0.14) 52%,
+    rgba(255, 255, 255, 0.05) 63%,
+    rgba(255, 255, 255, 0) 78%);
+}
