@@ -33,12 +33,12 @@ ${marr}${div ? '1 DIV\n2 DATE 2015\n' : ''}0 TRLR
 }
 const partnerEdge = (store) => store.relationships.find((r) => r.type === 'partner');
 
-test('MARR with a DATE and PLAC stamps marriage_date (year) + marriage_place + is_married', () => {
+test('MARR with a full DATE and PLAC stamps marriage_date (ISO) + marriage_place + is_married', () => {
   const store = gedcomToStore(couple({ marr: '1 MARR\n2 DATE 5 JUN 1975\n2 PLAC Ottawa, Ontario, Canada\n' }));
   const edge = partnerEdge(store);
   assert.ok(edge, 'a partner edge exists');
   assert.equal(edge.is_married, true);
-  assert.equal(edge.marriage_date, '1975', 'reduced to year, matching birth/death date handling');
+  assert.equal(edge.marriage_date, '1975-06-05', 'full date preserved as ISO');
   assert.equal(edge.marriage_place, 'Ottawa, Ontario, Canada');
   assert.equal(edge.partner_status, 'current');
 });
@@ -66,6 +66,37 @@ test('a divorced couple keeps the marriage date but reads as a former partner', 
   assert.equal(edge.is_married, true, 'they were married');
   assert.equal(edge.marriage_date, '1975');
   assert.equal(edge.partner_status, 'former', 'DIV still downgrades them to a former partner');
+});
+
+// ── Date precision (so imported people get real birthdays) ──────────────────
+
+function withBirth(dateLine) {
+  return `0 HEAD
+1 GEDC
+2 VERS 5.5.1
+0 @I1@ INDI
+1 NAME Ann /Lee/
+1 BIRT
+2 DATE ${dateLine}
+0 TRLR
+`;
+}
+const bd = (ged) => gedcomToStore(ged).people[0].birth_date;
+
+test('an exact "D MMM YYYY" date becomes full ISO (so birthdays work)', () => {
+  assert.equal(bd(withBirth('12 MAR 1950')), '1950-03-12');
+  assert.equal(bd(withBirth('3 JUN 1988')), '1988-06-03', 'single-digit day is zero-padded');
+});
+
+test('a month+year date becomes YYYY-MM; a year-only date stays YYYY', () => {
+  assert.equal(bd(withBirth('MAR 1950')), '1950-03');
+  assert.equal(bd(withBirth('1950')), '1950');
+});
+
+test('approximate/range dates degrade to the year, never a faked day', () => {
+  assert.equal(bd(withBirth('ABT 1950')), '1950');
+  assert.equal(bd(withBirth('BET 1950 AND 1960')), '1950');
+  assert.equal(bd(withBirth('ABT 12 MAR 1950')), '1950', 'an approximated exact date is not trusted to the day');
 });
 
 test('an Ancestry-style export (custom _APID/_MTTAG tags, OBJE media) parses and imports MARR', () => {

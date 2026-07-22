@@ -5,7 +5,9 @@
  * Supports: INDI, FAM, NAME (with /surname/ notation), GIVN/SURN sub-tags,
  * BIRT/DEAT events, OCCU, RESI, NOTE (bio), PEDI adoption qualifier, DIV,
  * MARR (marriage date + place onto the partner edge).
- * Date parsing: extracts the 4-digit year from any DATE value.
+ * Date parsing: exact "D MMM YYYY" dates become full ISO (YYYY-MM-DD) so
+ * imported people get real birthdays; partial/approximate dates degrade to
+ * month+year or year, never faking a day.
  */
 
 const uid = () => 'p_' + Math.random().toString(36).slice(2, 9);
@@ -59,11 +61,36 @@ function children(node, tag) {
   return node ? node.children.filter((c) => c.tag === tag) : [];
 }
 
-// Extract the 4-digit year from any GEDCOM DATE value.
-function extractYear(dateStr) {
+const GEDCOM_MONTHS = { JAN: 1, FEB: 2, MAR: 3, APR: 4, MAY: 5, JUN: 6, JUL: 7, AUG: 8, SEP: 9, OCT: 10, NOV: 11, DEC: 12 };
+// Approximation / range qualifiers — when present we keep only the year rather
+// than implying a precise day/month the source didn't actually assert.
+const APPROX_RE = /\b(ABT|EST|CAL|BEF|AFT|BET|AND|FROM|TO|INT|CIRCA|ABOUT)\b/i;
+
+// Parse a GEDCOM DATE into the app's 'YYYY[-MM[-DD]]' string. An exact date
+// becomes full ISO — so imported people get real birthdays (the home
+// "birthdays this month" feature needs month+day) and land correctly on the
+// timeline — while approximate or partial dates degrade to the finest
+// precision we can trust (month+year, or year alone), never faking a day.
+function parseGedcomDate(dateStr) {
   if (!dateStr) return null;
-  const m = (dateStr ?? '').match(/\b(\d{4})\b/);
-  return m ? m[1] : null;
+  const s = String(dateStr).trim();
+  const yearM = s.match(/\b(\d{4})\b/);
+  if (!yearM) return null;
+  const year = yearM[1];
+  if (APPROX_RE.test(s)) return year;
+  // "12 MAR 1950" → 1950-03-12
+  const full = s.match(/\b(\d{1,2})\s+([A-Za-z]{3,})\s+(\d{4})\b/);
+  if (full) {
+    const mo = GEDCOM_MONTHS[full[2].slice(0, 3).toUpperCase()];
+    if (mo) return `${full[3]}-${String(mo).padStart(2, '0')}-${String(Number(full[1])).padStart(2, '0')}`;
+  }
+  // "MAR 1950" → 1950-03
+  const my = s.match(/\b([A-Za-z]{3,})\s+(\d{4})\b/);
+  if (my) {
+    const mo = GEDCOM_MONTHS[my[1].slice(0, 3).toUpperCase()];
+    if (mo) return `${my[2]}-${String(mo).padStart(2, '0')}`;
+  }
+  return year;
 }
 
 // Parse "John /Smith/" → { given, family, display }
@@ -121,13 +148,13 @@ export function gedcomToStore(text) {
 
     // Birth
     const birtNode = child(node, 'BIRT');
-    const birthYear = extractYear(child(birtNode, 'DATE')?.value);
+    const birthDate = parseGedcomDate(child(birtNode, 'DATE')?.value);
     const birthPlace = child(birtNode, 'PLAC')?.value?.trim() || null;
 
     // Death — tag presence (even without sub-records) means deceased.
     const deatNode = children(node, 'DEAT')[0] ?? null;
     const isDeceased = !!deatNode;
-    const deathYear = extractYear(child(deatNode, 'DATE')?.value);
+    const deathDate = parseGedcomDate(child(deatNode, 'DATE')?.value);
 
     // Occupation (first OCCU tag)
     const occupation = child(node, 'OCCU')?.value?.trim() || null;
@@ -145,8 +172,8 @@ export function gedcomToStore(text) {
       given_names: given || null,
       family_name: family || null,
       gender,
-      birth_date: birthYear ?? null,
-      death_date: deathYear ?? null,
+      birth_date: birthDate ?? null,
+      death_date: deathDate ?? null,
       is_living: !isDeceased,
       is_deceased: isDeceased,
       is_minor: false,
@@ -179,7 +206,7 @@ export function gedcomToStore(text) {
     // above (extractYear). A FAM with no MARR is still a valid partnership,
     // just without a recorded marriage (is_married left unset).
     const marrNode = children(node, 'MARR')[0];
-    const marriageDate = marrNode ? extractYear(child(marrNode, 'DATE')?.value) : null;
+    const marriageDate = marrNode ? parseGedcomDate(child(marrNode, 'DATE')?.value) : null;
     const marriagePlace = marrNode ? (child(marrNode, 'PLAC')?.value?.trim() || null) : null;
 
     const husbId = husbXref ? idMap[husbXref] : null;

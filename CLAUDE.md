@@ -1555,6 +1555,31 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   Ancestry-style export with custom tags + OBJE). Full unit suite (the pre-existing, unrelated
   step-niece failure aside) and `npm run build` passed clean.
 
+- **GEDCOM import: full dates + re-import no longer doubles the tree** (follow-up to the MARR fix,
+  from a full review of the import pipeline). Two fixes:
+  1. **Dates were reduced to year-only** — `extractYear` turned "12 MAR 1950" into "1950", so every
+     imported person lost their month/day and never appeared in the home "birthdays this month"
+     feature (which needs `birth_date` as `YYYY-MM-DD`). New `parseGedcomDate` (`lib/gedcom.js`)
+     produces full ISO for an exact "D MMM YYYY" date, degrades to `YYYY-MM` for a month+year, and
+     to `YYYY` for a year-only or approximate/range date (ABT/BET/BEF/AFT/EST/CAL…) — never faking a
+     day the source didn't assert. Applied to birth, death, and marriage dates.
+  2. **Merge import was a pure append** — re-importing the same GEDCOM/FamilySearch data silently
+     doubled the whole tree. New `dedupeMergeImport` (`lib/duplicates.js`) collapses confident,
+     unambiguous re-adds against the existing tree (same suffix-stripped name + birth year, no
+     conflicting full date), remapping the dropped person's relationships onto the existing id and
+     dropping edges that then duplicate one already present. Deliberately conservative, matching
+     `findDuplicatePairs`' precision-over-recall stance: an ambiguous signature (>1 existing person
+     with that name+year), a dateless record, or a genuine full-date conflict is NOT auto-merged —
+     it imports as new and the existing "Possible duplicates" review sheet handles it. Wired into
+     `importFromGedcom`'s merge branch (`store.js`), so BOTH the GEDCOM and FamilySearch import
+     paths (both call `importFromGedcom`) benefit. Covered by new tests in `tests/gedcom.test.mjs`
+     (exact/partial/approximate date precision) and `tests/duplicates.test.mjs` (re-import collapses
+     with edge remap; genuinely-new people still import; ambiguous / full-date-conflict / dateless
+     cases correctly left for review), plus an end-to-end check parsing a real GEDCOM twice and
+     confirming 0 people/0 edges added on the second import. Full unit suite (the pre-existing,
+     unrelated step-niece failure aside) and `npm run build` passed clean. (Photos still don't
+     import — Ancestry's GEDCOM only references media by URL; the images live on Ancestry.)
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);

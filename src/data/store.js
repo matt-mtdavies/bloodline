@@ -17,6 +17,7 @@ import {
   FAMILY_NAME as SEED_FAMILY_NAME,
   DEFAULT_FOCUS,
 } from './seed.js';
+import { dedupeMergeImport } from '../lib/duplicates.js';
 
 const KEY = 'bloodline:v1';
 // The account (user uid) this device's cached tree belongs to. Used to keep
@@ -1870,10 +1871,16 @@ export function resetTree() {
 // merge=true: appends to the existing tree (duplicates possible).
 export function importFromGedcom(newPeople, newRelationships, { merge = false } = {}) {
   if (merge) {
+    // Collapse confident, unambiguous re-adds against the existing tree so a
+    // second import of the same data doesn't silently double it (see
+    // dedupeMergeImport — conservative: anything ambiguous still imports as new
+    // and is caught by the "Possible duplicates" review sheet).
+    const { people: addPeople, relationships: addRels } =
+      dedupeMergeImport(state.people, state.relationships, newPeople, newRelationships);
     commit({
       ...state,
-      people: [...state.people, ...newPeople],
-      relationships: [...state.relationships, ...newRelationships],
+      people: [...state.people, ...addPeople],
+      relationships: [...state.relationships, ...addRels],
     });
     return;
   }
