@@ -128,15 +128,73 @@ export class ZipStreamWriter {
    * multipart upload part accumulator, or into an in-memory buffer for
    * tests. `zip64Threshold` is exposed for tests only (see the exported
    * default above); real usage should never override it.
+   *
+   * `resumeState` (optional) restores a writer to exactly where a PRIOR
+   * instance left off — the offset and central-directory bookkeeping for
+   * every entry already written — so a caller can resume adding entries
+   * across a process boundary a live object could never survive (a
+   * Cloudflare Workflow step: nothing but a step's own serializable return
+   * value persists between step.do() calls). See exportState() below for
+   * the matching snapshot this restores. A resumed writer's onChunk is
+   * only ever invoked for entries added AFTER resuming — it never re-emits
+   * bytes for entries the snapshot already accounts for, since those bytes
+   * were already handed to a PRIOR writer's onChunk and (by the caller's
+   * own contract) already durably stored.
    */
-  constructor({ onChunk, zip64Threshold = DEFAULT_ZIP64_THRESHOLD } = {}) {
+  constructor({ onChunk, zip64Threshold = DEFAULT_ZIP64_THRESHOLD, resumeState } = {}) {
     if (typeof onChunk !== 'function') throw new Error('ZipStreamWriter requires an onChunk(bytes) sink');
     this._onChunk = onChunk;
     this._zip64Threshold = BigInt(zip64Threshold);
-    this._offset = 0n;
-    this._centralRecords = [];
     this._finished = false;
-    this._seenPaths = new Set();
+    if (resumeState) {
+      this._offset = BigInt(resumeState.offset);
+      this._seenPaths = new Set(resumeState.seenPaths);
+      this._centralRecords = resumeState.centralRecords.map((r) => ({
+        path: r.path,
+        nameBytes: new TextEncoder().encode(r.path),
+        method: r.method,
+        dosTime: r.dosTime,
+        dosDate: r.dosDate,
+        crc32: r.crc32,
+        compressedSize: BigInt(r.compressedSize),
+        uncompressedSize: BigInt(r.uncompressedSize),
+        localHeaderOffset: BigInt(r.localHeaderOffset),
+        needsZip64: r.needsZip64,
+      }));
+    } else {
+      this._offset = 0n;
+      this._centralRecords = [];
+      this._seenPaths = new Set();
+    }
+  }
+
+  /*
+   * A JSON-safe snapshot of every entry written so far plus the current
+   * byte offset — everything a future ZipStreamWriter instance needs to
+   * correctly resume adding MORE entries with the right header offsets and
+   * finish() with the right central directory, without needing the actual
+   * bytes already emitted (those already reached the real sink). BigInts
+   * become strings (JSON has no bigint type); `nameBytes` is omitted
+   * entirely since it's always deterministically re-derivable from `path`
+   * (see the constructor above) — storing it separately would just be
+   * redundant, encoded bytes.
+   */
+  exportState() {
+    return {
+      offset: this._offset.toString(),
+      seenPaths: [...this._seenPaths],
+      centralRecords: this._centralRecords.map((r) => ({
+        path: r.path,
+        method: r.method,
+        dosTime: r.dosTime,
+        dosDate: r.dosDate,
+        crc32: r.crc32,
+        compressedSize: r.compressedSize.toString(),
+        uncompressedSize: r.uncompressedSize.toString(),
+        localHeaderOffset: r.localHeaderOffset.toString(),
+        needsZip64: r.needsZip64,
+      })),
+    };
   }
 
   async _emit(bytes) {
@@ -165,8 +223,18 @@ export class ZipStreamWriter {
 
     const method = compress === 'deflate-raw' ? METHOD_DEFLATE : METHOD_STORE;
     const sizeHint = BigInt(uncompressedSizeHint);
-    const needsZip64 = sizeHint >= this._zip64Threshold;
     const localHeaderOffset = this._offset;
+    // The entry's OWN size isn't the only thing that can require ZIP64's
+    // 8-byte offset field in the central directory — the archive's current
+    // running OFFSET can already be past the threshold even for a tiny
+    // entry, once enough prior entries have been written (a real ~4GiB+
+    // family archive, well within this system's stated "1000+ people,
+    // heavy documents" scale, will cross the real 0xfffffffe threshold long
+    // before it's done). Missing this case here would decide "no ZIP64"
+    // for the local header, then fail the finalization check below the
+    // moment localHeaderOffset alone forces `finalNeedsZip64` — a real
+    // large-archive crash this decision must account for up front.
+    const needsZip64 = sizeHint >= this._zip64Threshold || localHeaderOffset >= this._zip64Threshold;
     const nameBytes = new TextEncoder().encode(path);
     const { dosTime, dosDate } = toDosDateTime(mtime);
 

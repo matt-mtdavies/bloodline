@@ -37,6 +37,16 @@ export const BUDGETS = Object.freeze({
   // `requires_segmented_export` threshold (9,500 parts) leaves headroom
   // under this ceiling rather than running right up against it.
   r2MultipartLimits: Object.freeze({ minPartBytes: 5 * 1024 * 1024, maxParts: 10000 }),
+  // The completion-phase brief's actual requires_segmented_export trigger
+  // (docs/FULL-ARCHIVE-EXPORT-COMPLETION-PHASE.md §7 Package) — the PR #8
+  // review flagged that the comment above referenced a "9,500 parts"
+  // threshold with no constant actually backing it. maxProjectedParts
+  // leaves headroom under r2MultipartLimits.maxParts (10,000); at the
+  // default 16-32 MiB part size that ceiling is reached around 0.15-0.3
+  // TiB, so maxProjectedBytes (4 TiB) is a deliberately separate, more
+  // conservative product boundary that stays meaningful even if part
+  // sizing changes later — not a redundant derived value.
+  segmentedExport: Object.freeze({ maxProjectedBytes: 4 * (1024 ** 4), maxProjectedParts: 9500 }),
 });
 
 class BudgetExceededError extends Error {

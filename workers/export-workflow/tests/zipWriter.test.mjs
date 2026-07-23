@@ -294,5 +294,82 @@ await atest('the writer requires an onChunk sink', () => {
   assert.throws(() => new ZipStreamWriter({}));
 });
 
+// ── exportState/resumeState (checkpointed multipart packaging) ──────────
+
+await atest('a writer resumed from exportState() mid-archive produces a byte-identical archive to one built in a single pass', async () => {
+  const entries = [
+    { path: 'a.txt', data: 'hello' },
+    { path: 'folder/b.txt', data: 'world, this is bloodline' },
+    { path: 'c.txt', data: 'a third entry, added after resuming' },
+  ];
+
+  const wholeChunks = [];
+  const wholeWriter = new ZipStreamWriter({ onChunk: async (b) => { wholeChunks.push(b); } });
+  for (const e of entries) {
+    const data = new TextEncoder().encode(e.data);
+    await wholeWriter.addEntry(e.path, [data], { uncompressedSizeHint: data.byteLength });
+  }
+  await wholeWriter.finish();
+  const wholeZip = concatBuffers(wholeChunks);
+
+  // Split the SAME work across two writer instances, simulating two
+  // separate Workflow step invocations — the second never sees the first's
+  // in-memory object, only its exported state.
+  const firstChunks = [];
+  const firstWriter = new ZipStreamWriter({ onChunk: async (b) => { firstChunks.push(b); } });
+  for (const e of entries.slice(0, 2)) {
+    const data = new TextEncoder().encode(e.data);
+    await firstWriter.addEntry(e.path, [data], { uncompressedSizeHint: data.byteLength });
+  }
+  const checkpoint = JSON.parse(JSON.stringify(firstWriter.exportState())); // prove it survives real JSON round-tripping
+
+  const secondChunks = [];
+  const secondWriter = new ZipStreamWriter({ onChunk: async (b) => { secondChunks.push(b); }, resumeState: checkpoint });
+  for (const e of entries.slice(2)) {
+    const data = new TextEncoder().encode(e.data);
+    await secondWriter.addEntry(e.path, [data], { uncompressedSizeHint: data.byteLength });
+  }
+  await secondWriter.finish();
+  const splitZip = concatBuffers([...firstChunks, ...secondChunks]);
+
+  assert.deepEqual(splitZip, wholeZip, 'a split-then-resumed archive must be byte-identical to one built in a single pass');
+
+  const { dir, file } = toTempFile(splitZip);
+  const names = verifyWithUnzip(file);
+  assert.deepEqual([...names].sort(), ['a.txt', 'c.txt', 'folder/b.txt'].sort());
+  rmSync(dir, { recursive: true, force: true });
+});
+
+await atest('exportState/resumeState round-trips correctly across a ZIP64-forced entry (BigInt offsets survive JSON)', async () => {
+  const tinyThreshold = 100;
+  const bigData = new Uint8Array(500).fill(65);
+
+  const firstChunks = [];
+  const firstWriter = new ZipStreamWriter({ onChunk: async (b) => { firstChunks.push(b); }, zip64Threshold: tinyThreshold });
+  await firstWriter.addEntry('big.bin', [bigData], { uncompressedSizeHint: bigData.byteLength });
+  const checkpoint = JSON.parse(JSON.stringify(firstWriter.exportState()));
+  assert.equal(typeof checkpoint.offset, 'string', 'BigInt offset must serialize as a string, not throw on JSON.stringify');
+
+  const secondChunks = [];
+  const secondWriter = new ZipStreamWriter({ onChunk: async (b) => { secondChunks.push(b); }, zip64Threshold: tinyThreshold, resumeState: checkpoint });
+  await secondWriter.addEntry('small.txt', [new TextEncoder().encode('x')], { uncompressedSizeHint: 1 });
+  await secondWriter.finish();
+
+  const zip = concatBuffers([...firstChunks, ...secondChunks]);
+  const { dir, file } = toTempFile(zip);
+  const names = verifyWithUnzip(file);
+  assert.deepEqual([...names].sort(), ['big.bin', 'small.txt']);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+await atest('a resumed writer still rejects a duplicate path carried over from before the checkpoint', async () => {
+  const firstWriter = new ZipStreamWriter({ onChunk: async () => {} });
+  await firstWriter.addEntry('dupe.txt', [new TextEncoder().encode('x')], { uncompressedSizeHint: 1 });
+  const checkpoint = firstWriter.exportState();
+
+  const secondWriter = new ZipStreamWriter({ onChunk: async () => {}, resumeState: checkpoint });
+  await assert.rejects(() => secondWriter.addEntry('dupe.txt', [new TextEncoder().encode('y')], { uncompressedSizeHint: 1 }));
+});
+
 console.log(`\n  ${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);

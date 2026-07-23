@@ -80,7 +80,14 @@ export function classifyReference(rawRef) {
   return { kind: 'unsupported', raw: rawRef.slice(0, 200) };
 }
 
-function decodeBase64ToBytes(base64) {
+// Exported (not just used internally by resolveEntry) because packaging
+// needs the ACTUAL bytes of a data_url entry, not just its resolved
+// metadata — resolveEntry's own returned entry deliberately doesn't carry
+// the bytes themselves (only byteLength/sha256), to keep inventory
+// resolution results small; the Workflow's packaging step re-derives them
+// from the original tree reference at the point it actually streams the
+// entry into the ZIP.
+export function decodeBase64ToBytes(base64) {
   // atob/Buffer both exist in Node; Workers has atob globally too. Using
   // Buffer here (Node-only) would break Workers portability, so this uses
   // the Web-standard atob + manual byte conversion instead.
