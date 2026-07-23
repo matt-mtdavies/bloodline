@@ -3,12 +3,18 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "engines": {
+    "node": ">=20 <25",
+    "npm": ">=10"
+  },
   "description": "A living portrait of your family. Phase 1 — the visualization.",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test:e2e": "node tests/smoke.mjs",
+    "browser:install": "PLAYWRIGHT_BROWSERS_PATH=0 playwright install chromium",
+    "verify:env": "PLAYWRIGHT_BROWSERS_PATH=0 node scripts/verify-env.mjs",
+    "test:e2e": "PLAYWRIGHT_BROWSERS_PATH=0 node tests/smoke.mjs",
     "seed:gen": "node scripts/generate-seed.mjs",
     "db:migrate": "wrangler d1 migrations apply bloodline --local",
     "db:migrate:remote": "wrangler d1 migrations apply bloodline --remote",
@@ -26,7 +32,7 @@
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.4",
-    "playwright-core": "^1.56.1",
+    "playwright": "^1.56.1",
     "vite": "^5.4.11",
     "vite-plugin-pwa": "^0.21.1"
   }

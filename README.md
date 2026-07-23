@@ -56,9 +56,18 @@ and the tree re-centres onto a relative, saving screenshots to
 `tests/screenshots/`.
 
 ```bash
+nvm use              # Node 20, from .nvmrc
+npm ci               # use package-lock.json; do not substitute pnpm
+npm run browser:install
+npm run verify:env   # confirms Node, dependencies, and Chromium
 npm run dev          # one shell
 npm run test:e2e     # another
 ```
+
+If `node` or `npm` is unavailable, install a standard Node 20 distribution (or
+use `nvm install 20`) before continuing. `npm run browser:install` is required on
+each new machine or clean browser cache; the smoke test does not assume a global
+Chrome/Chromium installation.
 
 ## Stack & scaffold
 

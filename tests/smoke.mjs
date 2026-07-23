@@ -10,7 +10,7 @@
  * re-centres via the accessible list view. Screenshots land in tests/screenshots
  * so the look can be eyeballed.
  */
-import { chromium } from 'playwright-core';
+import { chromium } from 'playwright';
 
 const _BASE = process.env.BASE_URL || 'http://localhost:5173/';
 // ?demo seeds the Davies family and bypasses onboarding, which new users see.
