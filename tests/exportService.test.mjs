@@ -1,0 +1,412 @@
+/**
+ * Unit tests for functions/_lib/exportService.js — the shared authority/
+ * serialization service every export route file calls into. Uses a
+ * lightweight in-memory D1 fake (plain arrays + substring-matched query
+ * handlers, same convention as tests/migrate-tree.test.mjs) rather than
+ * node:sqlite — this file must stay Node 20-safe (this repo's main-app CI
+ * job pins .nvmrc/Node 20, which has no node:sqlite; the real-SQLite
+ * constraint/schema tests for family_export_job live in
+ * workers/export-workflow/tests/exportJobSchema.test.mjs instead, which
+ * pins Node 22.5+ for exactly that reason).
+ * Run with: node tests/exportService.test.mjs
+ */
+import assert from 'node:assert/strict';
+import {
+  isFullExportReady, exportAdminEmailList, isExportAdminEmail,
+  createFamilyExport, createAdminExport,
+  listFamilyExports, getFamilyExport, listAdminExports, getAdminExport,
+  searchExportFamilies, cancelFamilyExport, cancelAdminExport,
+  downloadFamilyExport, downloadAdminExport,
+  ExportServiceError,
+} from '../functions/_lib/exportService.js';
+
+let passed = 0, failed = 0;
+async function atest(label, fn) {
+  try { await fn(); passed++; console.log(`PASS  ${label}`); }
+  catch (e) { failed++; console.log(`FAIL  ${label}\n      ${e.message}\n${e.stack?.split('\n').slice(1, 3).join('\n')}`); }
+}
+
+/*
+ * A minimal in-memory "D1" — real arrays for family/user/family_member/
+ * family_export_job/family_export_audit, with query handling done by
+ * matching a distinctive substring of each known SQL statement (the same
+ * approach tests/migrate-tree.test.mjs already uses) rather than a full SQL
+ * parser. Good enough because exportService.js's query set is small and
+ * entirely under this file's own control.
+ */
+function makeFakeEnv({ families = [], users = [], members = [], jobs = [] } = {}) {
+  const audit = [];
+  const jobRows = jobs.map((j) => ({ processed_files: 0, processed_bytes: 0, warning_count: 0, ...j }));
+
+  function first(sql, args) {
+    if (sql.includes('SELECT 1 FROM family_export_job')) return { '1': 1 };
+    if (sql.includes('SELECT family_id FROM user WHERE id')) {
+      const u = users.find((x) => x.id === args[0]);
+      return u ? { family_id: u.family_id } : null;
+    }
+    if (sql.includes('SELECT fm.family_id, fm.role, f.name AS family_name') && sql.includes('fm.family_id = ?')) {
+      const m = members.find((x) => x.user_id === args[0] && x.family_id === args[1]);
+      if (!m) return null;
+      const f = families.find((x) => x.id === m.family_id);
+      return { family_id: m.family_id, role: m.role, family_name: f?.name };
+    }
+    if (sql.includes('SELECT fm.family_id, fm.role, f.name AS family_name')) {
+      const m = members.find((x) => x.user_id === args[0]);
+      if (!m) return null;
+      const f = families.find((x) => x.id === m.family_id);
+      return { family_id: m.family_id, role: m.role, family_name: f?.name };
+    }
+    if (sql.includes('COUNT(*) AS cnt FROM family_export_job WHERE family_id')) {
+      const [familyId, since] = args;
+      return { cnt: jobRows.filter((j) => j.family_id === familyId && j.created_at > since).length };
+    }
+    if (sql.includes("requested_as = 'site_admin' AND created_at")) {
+      const [userId, since] = args;
+      return { cnt: jobRows.filter((j) => j.requested_by_user_id === userId && j.requested_as === 'site_admin' && j.created_at > since).length };
+    }
+    if (sql.includes('SELECT id, name FROM family WHERE id')) {
+      const f = families.find((x) => x.id === args[0]);
+      return f ? { id: f.id, name: f.name } : null;
+    }
+    if (sql.includes('FROM family_export_job WHERE id = ? AND family_id = ?')) {
+      return jobRows.find((j) => j.id === args[0] && j.family_id === args[1]) || null;
+    }
+    if (sql.includes('FROM family_export_job WHERE id = ?')) {
+      return jobRows.find((j) => j.id === args[0]) || null;
+    }
+    throw new Error(`fakeEnv: unhandled .first() query: ${sql}`);
+  }
+
+  function all(sql, args) {
+    if (sql.includes('FROM family_export_job WHERE family_id = ? ORDER BY created_at DESC')) {
+      const [familyId] = args;
+      return jobRows.filter((j) => j.family_id === familyId).sort((a, b) => b.created_at - a.created_at);
+    }
+    if (sql.includes("requested_as = 'site_admin' ORDER BY created_at DESC")) {
+      return jobRows.filter((j) => j.requested_as === 'site_admin').sort((a, b) => b.created_at - a.created_at);
+    }
+    if (sql.includes('FROM family f') && sql.includes('WHERE f.id = ? OR f.name LIKE')) {
+      const [id, likeArg] = args;
+      const needle = likeArg.slice(1, -1).toLowerCase();
+      return families.filter((f) => f.id === id || f.name.toLowerCase().includes(needle))
+        .map((f) => ({ id: f.id, name: f.name, memberCount: members.filter((m) => m.family_id === f.id).length, lastExportStatus: null }));
+    }
+    throw new Error(`fakeEnv: unhandled .all() query: ${sql}`);
+  }
+
+  function run(sql, args) {
+    if (sql.includes('INSERT INTO family_export_job')) {
+      const [id, familyId, requestedByUserId, requestedAs, requestReason, status, createdAt] = args;
+      if (jobRows.some((j) => j.family_id === familyId && ['queued', 'snapshotting', 'inventory', 'packaging', 'verifying', 'cancelling'].includes(j.status))) {
+        throw new Error('UNIQUE constraint failed: family_export_job.family_id');
+      }
+      jobRows.push({ id, family_id: familyId, requested_by_user_id: requestedByUserId, requested_as: requestedAs, request_reason: requestReason, status, created_at: createdAt, processed_files: 0, processed_bytes: 0, warning_count: 0 });
+      return { changes: 1 };
+    }
+    if (sql.includes('INSERT INTO family_export_audit')) {
+      audit.push({ sql, args });
+      return { changes: 1 };
+    }
+    if (sql.includes('UPDATE family_export_job SET status')) {
+      // transitionJobStatements builds `UPDATE family_export_job SET status = ?, [..other cols] WHERE id = ? AND status IN (...)`
+      // args are [...setVals, jobId, ...fromStatuses] — jobId is always the
+      // first non-column bind value right after the SET values; since we
+      // don't know the exact column count here, find the row by scanning
+      // for a job id present in args whose current status is among the
+      // trailing args.
+      const job = jobRows.find((j) => args.includes(j.id));
+      if (!job) return { changes: 0 };
+      const fromStatuses = args.slice(args.indexOf(job.id) + 1);
+      if (!fromStatuses.includes(job.status)) return { changes: 0 };
+      job.status = args[0]; // first SET value is always `status = ?`
+      return { changes: 1 };
+    }
+    throw new Error(`fakeEnv: unhandled .run() query: ${sql}`);
+  }
+
+  function stmt(sql) {
+    let args = [];
+    const s = {
+      bind(...a) { args = a; return s; },
+      async first() { return first(sql, args); },
+      async all() { return { results: all(sql, args) }; },
+      async run() { return { success: true, meta: run(sql, args) }; },
+      __sql: sql,
+      __args: () => args,
+    };
+    return s;
+  }
+
+  const DB = {
+    prepare: (sql) => stmt(sql),
+    async batch(stmts) {
+      const results = [];
+      for (const s of stmts) results.push({ success: true, meta: run(s.__sql, s.__args()) });
+      return results;
+    },
+  };
+
+  const DOCS = {
+    objects: new Map(),
+    async get(key) {
+      const o = this.objects.get(key);
+      return o ? { text: async () => o, arrayBuffer: async () => new TextEncoder().encode(o).buffer } : null;
+    },
+  };
+
+  let workflowCalls = { createExport: [], requestCancellation: [] };
+  const EXPORT_WORKFLOW_SERVICE = {
+    async createExport(jobId) { workflowCalls.createExport.push(jobId); },
+    async requestCancellation(jobId) { workflowCalls.requestCancellation.push(jobId); },
+  };
+
+  return {
+    env: { DB, DOCS, EXPORT_WORKFLOW_SERVICE, ENABLE_FULL_EXPORT: 'true', EXPORT_ADMIN_EMAILS: 'admin@example.test' },
+    jobRows, audit, workflowCalls,
+  };
+}
+
+const FAM = { id: 'fam_1', name: 'Davies Family' };
+const OWNER = { id: 'user_owner', family_id: 'fam_1' };
+const VIEWER = { id: 'user_viewer', family_id: 'fam_1' };
+
+function baseFixture(overrides = {}) {
+  return makeFakeEnv({
+    families: [FAM],
+    users: [OWNER, VIEWER],
+    members: [
+      { user_id: OWNER.id, family_id: FAM.id, role: 'owner' },
+      { user_id: VIEWER.id, family_id: FAM.id, role: 'viewer' },
+    ],
+    jobs: [],
+    ...overrides,
+  });
+}
+
+// ── feature readiness ────────────────────────────────────────────────────
+
+await atest('isFullExportReady is false when the flag is off', async () => {
+  const { env } = baseFixture();
+  env.ENABLE_FULL_EXPORT = 'false';
+  assert.equal(await isFullExportReady(env), false);
+});
+
+await atest('isFullExportReady is false when the service binding is missing', async () => {
+  const { env } = baseFixture();
+  delete env.EXPORT_WORKFLOW_SERVICE;
+  assert.equal(await isFullExportReady(env), false);
+});
+
+await atest('isFullExportReady is true when everything is configured', async () => {
+  const { env } = baseFixture();
+  assert.equal(await isFullExportReady(env), true);
+});
+
+await atest('createFamilyExport throws export_not_configured when the feature is off', async () => {
+  const { env } = baseFixture();
+  env.ENABLE_FULL_EXPORT = 'false';
+  await assert.rejects(() => createFamilyExport(env, { userId: OWNER.id }), (e) => e.code === 'export_not_configured' && e.status === 503);
+});
+
+// ── EXPORT_ADMIN_EMAILS ──────────────────────────────────────────────────
+
+await atest('exportAdminEmailList normalizes case/whitespace and has no fallback var', () => {
+  const env = { EXPORT_ADMIN_EMAILS: ' Admin@Example.test , second@x.test ' };
+  assert.deepEqual(exportAdminEmailList(env), ['admin@example.test', 'second@x.test']);
+  assert.deepEqual(exportAdminEmailList({}), []);
+});
+await atest('isExportAdminEmail is case-insensitive and false for empty config', () => {
+  assert.equal(isExportAdminEmail({ EXPORT_ADMIN_EMAILS: 'a@x.test' }, 'A@X.TEST'), true);
+  assert.equal(isExportAdminEmail({}, 'a@x.test'), false);
+});
+
+// ── createFamilyExport ───────────────────────────────────────────────────
+
+await atest('createFamilyExport succeeds for the owner and starts the Workflow', async () => {
+  const { env, jobRows, workflowCalls } = baseFixture();
+  const { jobId, familyId } = await createFamilyExport(env, { userId: OWNER.id });
+  assert.equal(familyId, 'fam_1');
+  assert.equal(jobRows.length, 1);
+  assert.equal(jobRows[0].status, 'queued');
+  assert.deepEqual(workflowCalls.createExport, [jobId]);
+});
+
+await atest('createFamilyExport is forbidden for a viewer', async () => {
+  const { env } = baseFixture();
+  await assert.rejects(() => createFamilyExport(env, { userId: VIEWER.id }), (e) => e.code === 'forbidden' && e.status === 403);
+});
+
+await atest('createFamilyExport maps a UNIQUE violation to export_already_active, not a raw 500', async () => {
+  const { env } = baseFixture({ jobs: [{ id: 'exp_existing', family_id: 'fam_1', requested_by_user_id: OWNER.id, requested_as: 'owner', status: 'inventory', created_at: Math.floor(Date.now() / 1000) }] });
+  await assert.rejects(() => createFamilyExport(env, { userId: OWNER.id }), (e) => e.code === 'export_already_active' && e.status === 409);
+});
+
+await atest('createFamilyExport enforces the 3-per-24h family rate limit', async () => {
+  const now = Math.floor(Date.now() / 1000);
+  const jobs = Array.from({ length: 3 }, (_, i) => ({ id: `exp_old_${i}`, family_id: 'fam_1', requested_by_user_id: OWNER.id, requested_as: 'owner', status: 'ready', created_at: now - 60 }));
+  const { env } = baseFixture({ jobs });
+  await assert.rejects(() => createFamilyExport(env, { userId: OWNER.id }), (e) => e.code === 'export_rate_limited' && e.status === 429);
+});
+
+// ── createAdminExport ─────────────────────────────────────────────────────
+
+const ADMIN_USER = { id: 'user_admin', family_id: null };
+
+await atest('createAdminExport requires an EXPORT_ADMIN_EMAILS match', async () => {
+  const { env } = baseFixture();
+  await assert.rejects(() => createAdminExport(env, {
+    actorUserId: ADMIN_USER.id, actorEmail: 'not-an-admin@example.test', familyId: 'fam_1',
+    reason: 'A perfectly valid reason string', confirmFamilyName: 'Davies Family',
+  }), (e) => e.code === 'forbidden' && e.status === 403);
+});
+
+await atest('createAdminExport validates reason length (10-500 chars)', async () => {
+  const { env } = baseFixture();
+  await assert.rejects(() => createAdminExport(env, {
+    actorUserId: ADMIN_USER.id, actorEmail: 'admin@example.test', familyId: 'fam_1',
+    reason: 'short', confirmFamilyName: 'Davies Family',
+  }), (e) => e.code === 'bad_request' && e.status === 400);
+});
+
+await atest('createAdminExport requires the typed family name to match the CURRENT family name, case/whitespace-insensitively', async () => {
+  const { env } = baseFixture();
+  await assert.rejects(() => createAdminExport(env, {
+    actorUserId: ADMIN_USER.id, actorEmail: 'admin@example.test', familyId: 'fam_1',
+    reason: 'A perfectly valid reason string', confirmFamilyName: 'Wrong Family Name',
+  }), (e) => e.code === 'bad_request');
+
+  const { env: env2, jobRows } = baseFixture();
+  const result = await createAdminExport(env2, {
+    actorUserId: ADMIN_USER.id, actorEmail: 'admin@example.test', familyId: 'fam_1',
+    reason: 'A perfectly valid reason string', confirmFamilyName: '  davies family  ',
+  });
+  assert.equal(result.familyId, 'fam_1');
+  assert.equal(jobRows[0].requested_as, 'site_admin');
+  assert.equal(jobRows[0].request_reason, 'A perfectly valid reason string');
+});
+
+await atest('createAdminExport enforces the 10-per-hour admin rate limit', async () => {
+  const now = Math.floor(Date.now() / 1000);
+  const jobs = Array.from({ length: 10 }, (_, i) => ({ id: `exp_old_${i}`, family_id: `fam_other_${i}`, requested_by_user_id: ADMIN_USER.id, requested_as: 'site_admin', status: 'ready', created_at: now - 60 }));
+  const { env } = baseFixture({ jobs });
+  await assert.rejects(() => createAdminExport(env, {
+    actorUserId: ADMIN_USER.id, actorEmail: 'admin@example.test', familyId: 'fam_1',
+    reason: 'A perfectly valid reason string', confirmFamilyName: 'Davies Family',
+  }), (e) => e.code === 'export_rate_limited');
+});
+
+// ── list / get ────────────────────────────────────────────────────────────
+
+await atest('listFamilyExports/getFamilyExport are scoped to the caller\'s own family and never leak requestReason', async () => {
+  const now = Math.floor(Date.now() / 1000);
+  const { env } = baseFixture({ jobs: [{ id: 'exp_1', family_id: 'fam_1', requested_by_user_id: OWNER.id, requested_as: 'owner', status: 'ready', created_at: now, request_reason: 'secret internal note' }] });
+  const list = await listFamilyExports(env, { userId: OWNER.id });
+  assert.equal(list.length, 1);
+  assert.equal('requestReason' in list[0], false);
+  const got = await getFamilyExport(env, { userId: OWNER.id, jobId: 'exp_1' });
+  assert.equal(got.id, 'exp_1');
+});
+
+await atest('getFamilyExport 404s for a job belonging to a different family (no cross-family job-id guessing)', async () => {
+  const now = Math.floor(Date.now() / 1000);
+  const { env } = baseFixture({
+    families: [FAM, { id: 'fam_2', name: 'Other Family' }],
+    members: [{ user_id: OWNER.id, family_id: 'fam_1', role: 'owner' }],
+    jobs: [{ id: 'exp_other', family_id: 'fam_2', requested_by_user_id: 'someone_else', requested_as: 'owner', status: 'ready', created_at: now }],
+  });
+  await assert.rejects(() => getFamilyExport(env, { userId: OWNER.id, jobId: 'exp_other' }), (e) => e.code === 'not_found' && e.status === 404);
+});
+
+await atest('listAdminExports/getAdminExport require EXPORT_ADMIN_EMAILS and expose requestReason', async () => {
+  const now = Math.floor(Date.now() / 1000);
+  const { env } = baseFixture({ jobs: [{ id: 'exp_1', family_id: 'fam_1', requested_by_user_id: ADMIN_USER.id, requested_as: 'site_admin', status: 'ready', created_at: now, request_reason: 'audited reason' }] });
+  await assert.rejects(() => listAdminExports(env, { actorEmail: 'not-admin@example.test' }), (e) => e.code === 'forbidden');
+  const list = await listAdminExports(env, { actorEmail: 'admin@example.test' });
+  assert.equal(list[0].requestReason, 'audited reason');
+  const got = await getAdminExport(env, { actorEmail: 'admin@example.test', jobId: 'exp_1' });
+  assert.equal(got.requestReason, 'audited reason');
+});
+
+// ── search ────────────────────────────────────────────────────────────────
+
+await atest('searchExportFamilies requires export-admin authority and returns selection metadata only', async () => {
+  const { env } = baseFixture();
+  await assert.rejects(() => searchExportFamilies(env, { actorEmail: 'not-admin@example.test', query: 'davies' }), (e) => e.code === 'forbidden');
+  const results = await searchExportFamilies(env, { actorEmail: 'admin@example.test', query: 'davies' });
+  assert.equal(results.length, 1);
+  assert.equal(results[0].name, 'Davies Family');
+  assert.equal('tree' in results[0], false);
+});
+
+// ── cancel ────────────────────────────────────────────────────────────────
+
+await atest('cancelFamilyExport transitions a running job to cancelling and notifies the Workflow', async () => {
+  const now = Math.floor(Date.now() / 1000);
+  const { env, jobRows, workflowCalls } = baseFixture({ jobs: [{ id: 'exp_1', family_id: 'fam_1', requested_by_user_id: OWNER.id, requested_as: 'owner', status: 'packaging', created_at: now }] });
+  const result = await cancelFamilyExport(env, { userId: OWNER.id, jobId: 'exp_1' });
+  assert.equal(result.status, 'cancelling');
+  assert.equal(jobRows[0].status, 'cancelling');
+  assert.deepEqual(workflowCalls.requestCancellation, ['exp_1']);
+});
+
+await atest('cancelFamilyExport is idempotent — cancelling an already-cancelled job is a no-op success, not an error', async () => {
+  const now = Math.floor(Date.now() / 1000);
+  const { env } = baseFixture({ jobs: [{ id: 'exp_1', family_id: 'fam_1', requested_by_user_id: OWNER.id, requested_as: 'owner', status: 'cancelled', created_at: now }] });
+  const result = await cancelFamilyExport(env, { userId: OWNER.id, jobId: 'exp_1' });
+  assert.equal(result.status, 'cancelled');
+});
+
+await atest('cancelFamilyExport is forbidden for a viewer', async () => {
+  const now = Math.floor(Date.now() / 1000);
+  const { env } = baseFixture({ jobs: [{ id: 'exp_1', family_id: 'fam_1', requested_by_user_id: OWNER.id, requested_as: 'owner', status: 'packaging', created_at: now }] });
+  await assert.rejects(() => cancelFamilyExport(env, { userId: VIEWER.id, jobId: 'exp_1' }), (e) => e.code === 'forbidden');
+});
+
+await atest('cancelAdminExport requires export-admin authority regardless of family membership', async () => {
+  const now = Math.floor(Date.now() / 1000);
+  const { env } = baseFixture({ jobs: [{ id: 'exp_1', family_id: 'fam_1', requested_by_user_id: ADMIN_USER.id, requested_as: 'site_admin', status: 'packaging', created_at: now }] });
+  await assert.rejects(() => cancelAdminExport(env, { actorEmail: 'not-admin@example.test', jobId: 'exp_1' }), (e) => e.code === 'forbidden');
+  const result = await cancelAdminExport(env, { actorEmail: 'admin@example.test', jobId: 'exp_1' });
+  assert.equal(result.status, 'cancelling');
+});
+
+// ── download ──────────────────────────────────────────────────────────────
+
+await atest('downloadFamilyExport requires ready/ready_with_warnings and an unexpired job, and records an audit row', async () => {
+  const now = Math.floor(Date.now() / 1000);
+  const { env, audit } = baseFixture({ jobs: [{ id: 'exp_1', family_id: 'fam_1', requested_by_user_id: OWNER.id, requested_as: 'owner', status: 'ready', created_at: now, expires_at: now + 1000, archive_r2_key: 'exports/exp_1/bloodline-full-archive.zip' }] });
+  env.DOCS.objects.set('exports/exp_1/bloodline-full-archive.zip', 'zip-bytes');
+  const object = await downloadFamilyExport(env, { userId: OWNER.id, jobId: 'exp_1' });
+  assert.ok(object);
+  assert.equal(audit.length, 1);
+});
+
+await atest('downloadFamilyExport rejects a not-yet-ready job', async () => {
+  const now = Math.floor(Date.now() / 1000);
+  const { env } = baseFixture({ jobs: [{ id: 'exp_1', family_id: 'fam_1', requested_by_user_id: OWNER.id, requested_as: 'owner', status: 'packaging', created_at: now }] });
+  await assert.rejects(() => downloadFamilyExport(env, { userId: OWNER.id, jobId: 'exp_1' }), (e) => e.code === 'archive_unavailable' && e.status === 409);
+});
+
+await atest('downloadFamilyExport rejects an expired job even if still marked ready', async () => {
+  const now = Math.floor(Date.now() / 1000);
+  const { env } = baseFixture({ jobs: [{ id: 'exp_1', family_id: 'fam_1', requested_by_user_id: OWNER.id, requested_as: 'owner', status: 'ready', created_at: now, expires_at: now - 10, archive_r2_key: 'exports/exp_1/x.zip' }] });
+  await assert.rejects(() => downloadFamilyExport(env, { userId: OWNER.id, jobId: 'exp_1' }), (e) => e.code === 'archive_unavailable' && e.status === 410);
+});
+
+await atest('downloadFamilyExport is forbidden for a viewer, even for a ready job', async () => {
+  const now = Math.floor(Date.now() / 1000);
+  const { env } = baseFixture({ jobs: [{ id: 'exp_1', family_id: 'fam_1', requested_by_user_id: OWNER.id, requested_as: 'owner', status: 'ready', created_at: now, expires_at: now + 1000, archive_r2_key: 'exports/exp_1/x.zip' }] });
+  await assert.rejects(() => downloadFamilyExport(env, { userId: VIEWER.id, jobId: 'exp_1' }), (e) => e.code === 'forbidden');
+});
+
+await atest('downloadAdminExport requires export-admin authority independent of family membership', async () => {
+  const now = Math.floor(Date.now() / 1000);
+  const { env } = baseFixture({ jobs: [{ id: 'exp_1', family_id: 'fam_1', requested_by_user_id: ADMIN_USER.id, requested_as: 'site_admin', status: 'ready', created_at: now, expires_at: now + 1000, archive_r2_key: 'exports/exp_1/x.zip' }] });
+  env.DOCS.objects.set('exports/exp_1/x.zip', 'bytes');
+  await assert.rejects(() => downloadAdminExport(env, { actorUserId: 'x', actorEmail: 'not-admin@example.test', jobId: 'exp_1' }), (e) => e.code === 'forbidden');
+  const object = await downloadAdminExport(env, { actorUserId: ADMIN_USER.id, actorEmail: 'admin@example.test', jobId: 'exp_1' });
+  assert.ok(object);
+});
+
+console.log(`\n  ${passed} passed, ${failed} failed`);
+if (failed) process.exit(1);

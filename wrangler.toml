@@ -9,6 +9,14 @@ pages_build_output_dir = "dist"
 [vars]
 APP_URL = "https://myfamilybloodline.com"  # override locally in .dev.vars
 FROM_EMAIL = "hello@myfamilybloodline.com"
+# Full archive export (docs/FULL-ARCHIVE-EXPORT-COMPLETION-PHASE.md §15) —
+# ships flag-off; a named human flips ENABLE_FULL_EXPORT to "true" only
+# after Gate 0's infrastructure spike and the migration are both done, and
+# only adds an address to EXPORT_ADMIN_EMAILS after a further R3 rehearsal.
+# EXPORT_ADMIN_EMAILS is deliberately separate from ADMIN_EMAILS above — no
+# legacy fallback, no relationship to the admin-dashboard allowlist.
+ENABLE_FULL_EXPORT = "false"
+EXPORT_ADMIN_EMAILS = ""
 # FAMILYSEARCH_CLIENT_ID is a secret — set via wrangler pages secret put FAMILYSEARCH_CLIENT_ID
 # Register your app at https://developer.familysearch.org and add this redirect URI:
 #   https://myfamilybloodline.com/fs-callback.html
@@ -37,3 +45,14 @@ database_id = "96e94723-103f-4c4f-a1b0-797810e7dfc9"
 binding = "DOCS"
 bucket_name = "bloodline-docs"
 jurisdiction = "eu"
+
+# Full archive export Workflow Worker (workers/export-workflow/), deployed
+# SEPARATELY — Pages Functions cannot bind a Workflow directly, so this
+# reaches it through a service binding instead (docs/FULL-ARCHIVE-EXPORT-
+# COMPLETION-PHASE.md §2/§15). Uncomment once that Worker is actually
+# deployed (Gate 0) — until then functions/_lib/exportService.js's own
+# readiness check treats a missing binding the same as the feature flag
+# being off, so leaving this commented is safe, not merely inert.
+# [[services]]
+# binding = "EXPORT_WORKFLOW_SERVICE"
+# service = "bloodline-export-workflow"
