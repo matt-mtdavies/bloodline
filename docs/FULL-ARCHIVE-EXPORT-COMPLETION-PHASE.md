@@ -1,10 +1,10 @@
 # Full Archive Export — completion-phase implementation brief
 
-**Status:** ready for Claude implementation review  
-**Design owner:** Codex  
-**Implementation owner:** Claude  
-**Depends on:** Phase A merged in PR #7 and `docs/FULL-ARCHIVE-EXPORT.md`  
-**Risk:** R2 implementation; R3 migration, privileged administration and production rollout  
+**Status:** ready for Claude implementation review
+**Design owner:** Codex
+**Implementation owner:** Claude
+**Depends on:** Phase A merged in PR #7 and `docs/FULL-ARCHIVE-EXPORT.md`
+**Risk:** R2 implementation; R3 migration, privileged administration and production rollout
 **Outcome:** family owners, co-admins and separately allowlisted site administrators can prepare, monitor and download a complete archive containing every family detail Bloodline still holds.
 
 This is the final implementation phase. It combines the former Phase B owner/co-admin work and Phase C site-administrator override. There is no later functional export phase. Where this brief and the master design differ, this brief controls the implementation sequence and combined scope; current code and tests still outrank both.
