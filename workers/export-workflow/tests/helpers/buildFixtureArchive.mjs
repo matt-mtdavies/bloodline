@@ -9,7 +9,26 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildContentIndex, toContentIndexJSON, toTreeDataJs } from '../../src/lib/contentIndex.js';
-import { buildMediaInventory, classifyReference } from '../../src/lib/inventory.js';
+import { buildMediaInventory, buildKeepsakeInventory, classifyReference } from '../../src/lib/inventory.js';
+
+export const FIXTURE_FAMILY_ID = 'fam_fixture';
+
+export const FIXTURE_KEEPSAKE_EDITION = {
+  personId: 'p1',
+  hash: 'facts-hash-current',
+  editionNumber: 2,
+  compiledAt: '2026-06-01T00:00:00.000Z',
+  recordCount: 12,
+  narrative: {
+    epithet: 'The Storyteller of Cardiff',
+    origins: ['James was born to a family of teachers and dockworkers in Cardiff, Wales.'],
+    chapters: [
+      { title: 'A Studious Childhood', years: '1985–2003', paragraphs: ['James grew up chasing books more than footballs.', 'His grandmother Florence often said he read faster than she could keep him in library cards.'] },
+      { title: 'Cardiff University and Beyond', years: '2003–2016', paragraphs: ['He graduated in 2010 and never really left the city he loved.'] },
+    ],
+    legacy: ['He is remembered, above all, for the stories he told at Christmas.'],
+  },
+};
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SRC_DIR = path.join(__dirname, '../../src');
@@ -40,6 +59,7 @@ export const FIXTURE_TREE = {
   ],
   documents: [
     { id: 'doc1', title: 'Birth Certificate', person_id: 'p1', mime: 'application/pdf', src: '/api/documents/missing-doc.pdf' },
+    { id: 'doc2', title: 'Cardiff University Diploma', person_id: 'p1', mime: 'application/pdf', src: 'data:application/pdf;base64,JVBERi0xLjQKJcOkw7zDtsOfCjIgMCBvYmoKPDwvTGVuZ3RoIDMgMCBSPj4Kc3RyZWFtCkJUCi9GMSAyNCBUZgooRml4dHVyZSBkaXBsb21hKSBUagpFVAplbmRzdHJlYW0KZW5kb2JqCnRyYWlsZXIKPDwvUm9vdCAxIDAgUj4+CiUlRU9G' },
   ],
   photos: [],
 };
@@ -51,9 +71,30 @@ export async function buildFixtureArchive() {
     resolveR2Head: async () => ({ found: false }), // every /api/ reference in this fixture is deliberately unresolvable
   });
 
-  const index = buildContentIndex(FIXTURE_TREE, mediaEntries, {
+  // James (p1) has a real, embedded Keepsake edition (proving the readable-
+  // narrative viewer path); Robert (p4) has none at all (proving the "no
+  // Keepsake" case renders nothing, not an error).
+  const { entries: keepsakeEntries } = await buildKeepsakeInventory(FIXTURE_TREE, FIXTURE_FAMILY_ID, {
+    listPrefix: async (prefix) => {
+      if (prefix !== `keepsake/${FIXTURE_FAMILY_ID}/p1/`) return [];
+      // Real Keepsake writes always produce BOTH the hashed edition AND
+      // latest.json in the same put (functions/api/keepsake.js) — sharing
+      // an ETag, since they're byte-identical. Only supplying the hashed
+      // copy (no latest.json) means buildKeepsakeInventory never finds a
+      // "current" edition to flag, which is what a real archive never
+      // actually produces — this fixture should match real behavior.
+      const body = JSON.stringify(FIXTURE_KEEPSAKE_EDITION);
+      return [
+        { key: `${prefix}${FIXTURE_KEEPSAKE_EDITION.hash}.json`, byteLength: body.length, etag: '"fixture-etag"', body },
+        { key: `${prefix}latest.json`, byteLength: body.length, etag: '"fixture-etag"', body },
+      ];
+    },
+  });
+  const allMediaEntries = [...mediaEntries, ...keepsakeEntries];
+
+  const index = buildContentIndex(FIXTURE_TREE, allMediaEntries, {
     sourceChecksum: 'fixture-checksum-123',
-    family: { id: 'fam_fixture', name: 'The Mercer Family' },
+    family: { id: FIXTURE_FAMILY_ID, name: 'The Mercer Family' },
     generatedAt: new Date().toISOString(),
     warnings: [],
   });
@@ -86,12 +127,21 @@ export async function buildFixtureArchive() {
     writeFileSync(path.join(root, entry.path), bytes);
   }
 
+  // Materialize the Keepsake edition file(s) too — 'included' status means
+  // a real extracted archive would contain this file, embedded narrative
+  // or not (the embedded copy in tree-data.js is a convenience for the
+  // viewer; the archived file itself is still the authoritative artifact).
+  for (const entry of keepsakeEntries) {
+    mkdirSync(path.join(root, path.dirname(entry.path)), { recursive: true });
+    writeFileSync(path.join(root, entry.path), JSON.stringify(entry.edition ?? {}));
+  }
+
   mkdirSync(path.join(root, 'data'), { recursive: true });
   writeFileSync(path.join(root, 'data', 'tree.json'), JSON.stringify(FIXTURE_TREE, null, 2));
   writeFileSync(path.join(root, 'data', 'tree-data.js'), toTreeDataJs(index));
   writeFileSync(path.join(root, 'data', 'content-index.json'), toContentIndexJSON(index));
 
-  return { root, index, mediaEntries };
+  return { root, index, mediaEntries: allMediaEntries };
 }
 
 // Allow running standalone for a manual spot-check: `node tests/_buildFixtureArchive.mjs`

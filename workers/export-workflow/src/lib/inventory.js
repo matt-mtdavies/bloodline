@@ -36,6 +36,15 @@ export function extForMime(mime) {
   return MIME_TO_EXT[String(mime || '').toLowerCase()] || 'bin';
 }
 
+// decodeURIComponent throws URIError on malformed percent-encoding (e.g. a
+// lone "%" or "%zz") — classifyReference documents itself as never
+// throwing, so a legacy/hand-edited reference with a broken escape must
+// become an explicit 'unsupported' classification instead of crashing the
+// whole inventory walk over one bad field.
+function safeDecodeURIComponent(s) {
+  try { return decodeURIComponent(s); } catch { return null; }
+}
+
 /*
  * Classifies a raw reference string (a person.photo, photos[].src,
  * documents[].src/thumb value) into one of the shapes §3.5 recognizes.
@@ -53,10 +62,18 @@ export function classifyReference(rawRef) {
   }
 
   const photoMatch = rawRef.match(API_PHOTO_RE);
-  if (photoMatch) return { kind: 'r2', route: 'photos', key: decodeURIComponent(photoMatch[1]) };
+  if (photoMatch) {
+    const key = safeDecodeURIComponent(photoMatch[1]);
+    if (key == null) return { kind: 'unsupported', raw: rawRef.slice(0, 200), reason: 'malformed percent-encoding in photo key' };
+    return { kind: 'r2', route: 'photos', key };
+  }
 
   const docMatch = rawRef.match(API_DOCUMENT_RE);
-  if (docMatch) return { kind: 'r2', route: 'documents', key: decodeURIComponent(docMatch[1]) };
+  if (docMatch) {
+    const key = safeDecodeURIComponent(docMatch[1]);
+    if (key == null) return { kind: 'unsupported', raw: rawRef.slice(0, 200), reason: 'malformed percent-encoding in document key' };
+    return { kind: 'r2', route: 'documents', key };
+  }
 
   if (/^https?:\/\//i.test(rawRef)) return { kind: 'external', url: rawRef };
 
@@ -199,6 +216,22 @@ export async function buildMediaInventory(tree, { resolveR2Head } = {}) {
   return entries;
 }
 
+// A Keepsake edition body is small JSON (docs/KEEPSAKE.md;
+// functions/api/keepsake.js's own `edition` object: { personId, hash,
+// editionNumber, compiledAt, recordCount, narrative: { epithet, origins,
+// chapters, legacy } }) — cheap enough that Phase B's real packaging stage
+// will have the full body in memory anyway once it streams the entry into
+// the ZIP (unlike a multi-MB photo, there's no separate "avoid holding
+// it" concern here). `listPrefix`'s result MAY optionally include that
+// already-read `body` (string or pre-parsed object) per listed object; if
+// present, this parses it defensively — a malformed/corrupt body degrades
+// to no narrative rather than throwing and aborting the whole inventory.
+function parseKeepsakeBody(body) {
+  if (body == null) return null;
+  if (typeof body === 'object') return body;
+  try { return JSON.parse(body); } catch { return null; }
+}
+
 /*
  * Keepsake inventory (§3.6): for every person in the captured tree, lists
  * the exact prefix `keepsake/{familyId}/{personId}/` — never the whole
@@ -206,11 +239,16 @@ export async function buildMediaInventory(tree, { resolveR2Head } = {}) {
  * they carry the same R2 ETag (a single-part R2 `put()` sets ETag from the
  * body's MD5, so two byte-identical uploads always share one — this needs
  * no body read to detect, just the list() result already in hand).
+ * Whichever entry represents the family's CURRENT edition (the alias
+ * target, or a standalone `latest.json` with no matching hashed copy) is
+ * flagged `isLatestEdition: true` — content-index.js uses this to pick
+ * which edition to surface in the offline viewer when a person has
+ * several historical ones.
  *
  * `listPrefix(prefix)` is the only injected I/O — expected to resolve to
- * an array of `{ key, byteLength, etag }` for objects under that prefix
- * (an empty array for a person with no Keepsake at all, which is NOT a
- * warning per §3.6's own rule).
+ * an array of `{ key, byteLength, etag, body? }` for objects under that
+ * prefix (an empty array for a person with no Keepsake at all, which is
+ * NOT a warning per §3.6's own rule).
  */
 export async function buildKeepsakeInventory(tree, familyId, { listPrefix } = {}) {
   if (typeof listPrefix !== 'function') {
@@ -226,10 +264,11 @@ export async function buildKeepsakeInventory(tree, familyId, { listPrefix } = {}
 
     const latest = objects.find((o) => o.key.endsWith('/latest.json'));
     const hashed = objects.filter((o) => o !== latest);
+    let latestEntry = null;
 
     for (const obj of hashed) {
       const editionHash = obj.key.slice(prefix.length).replace(/\.json$/, '');
-      entries.push({
+      const entry = {
         path: buildArchivePath('keepsakes', person.id, editionHash, 'json'),
         id: `${person.id}:${editionHash}`,
         recordType: 'keepsake_edition',
@@ -239,20 +278,22 @@ export async function buildKeepsakeInventory(tree, familyId, { listPrefix } = {}
         byteLength: obj.byteLength ?? null,
         etag: obj.etag ?? null,
         r2Key: obj.key,
-      });
+        edition: parseKeepsakeBody(obj.body),
+      };
+      entries.push(entry);
+      if (latest?.etag && obj.etag && obj.etag === latest.etag) latestEntry = entry;
     }
 
     if (latest) {
-      const aliasOf = hashed.find((o) => o.etag && latest.etag && o.etag === latest.etag);
-      if (aliasOf) {
-        const editionHash = aliasOf.key.slice(prefix.length).replace(/\.json$/, '');
+      if (latestEntry) {
+        const editionHash = latestEntry.id.split(':')[1];
         aliases.push({ personId: person.id, latestKey: latest.key, aliasOfPath: buildArchivePath('keepsakes', person.id, editionHash, 'json') });
       } else {
         // latest.json isn't byte-identical to any hashed edition currently
         // listed (e.g. a hashed copy was pruned, or writes are mid-flight)
         // — archive it as its own distinct file rather than silently
         // dropping the only copy of the family's current edition.
-        entries.push({
+        latestEntry = {
           path: buildArchivePath('keepsakes', person.id, 'latest', 'json'),
           id: `${person.id}:latest`,
           recordType: 'keepsake_edition',
@@ -262,9 +303,13 @@ export async function buildKeepsakeInventory(tree, familyId, { listPrefix } = {}
           byteLength: latest.byteLength ?? null,
           etag: latest.etag ?? null,
           r2Key: latest.key,
-        });
+          edition: parseKeepsakeBody(latest.body),
+        };
+        entries.push(latestEntry);
       }
     }
+
+    if (latestEntry) latestEntry.isLatestEdition = true;
   }
 
   return { entries, aliases };

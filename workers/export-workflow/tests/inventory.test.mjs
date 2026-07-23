@@ -35,6 +35,20 @@ test('classifies an /api/documents/{key} reference', () => {
   assert.equal(c.key, 'doc_xyz.pdf');
 });
 
+test('a malformed percent-encoded /api/photos/ key classifies as unsupported, never throws', () => {
+  assert.doesNotThrow(() => classifyReference('/api/photos/broken%.jpg'));
+  const c = classifyReference('/api/photos/broken%.jpg');
+  assert.equal(c.kind, 'unsupported');
+  assert.match(c.reason, /photo key/);
+});
+
+test('a malformed percent-encoded /api/documents/ key classifies as unsupported, never throws', () => {
+  assert.doesNotThrow(() => classifyReference('/api/documents/broken%zz.pdf'));
+  const c = classifyReference('/api/documents/broken%zz.pdf');
+  assert.equal(c.kind, 'unsupported');
+  assert.match(c.reason, /document key/);
+});
+
 test('classifies an external https URL as external, never fetched', () => {
   const c = classifyReference('https://i.pravatar.cc/1000?img=5');
   assert.equal(c.kind, 'external');
@@ -234,6 +248,55 @@ await atest('latest.json NOT matching any hashed edition is archived as its own 
   });
   assert.equal(entries.length, 2);
   assert.equal(aliases.length, 0);
+});
+
+await atest('the alias-target (current) edition is flagged isLatestEdition; older hashed editions are not', async () => {
+  const tree = { people: [{ id: 'p1' }] };
+  const { entries } = await buildKeepsakeInventory(tree, 'fam_1', {
+    listPrefix: async () => [
+      { key: 'keepsake/fam_1/p1/oldhash.json', byteLength: 400, etag: '"old-etag"' },
+      { key: 'keepsake/fam_1/p1/currenthash.json', byteLength: 500, etag: '"cur-etag"' },
+      { key: 'keepsake/fam_1/p1/latest.json', byteLength: 500, etag: '"cur-etag"' },
+    ],
+  });
+  const current = entries.find((e) => e.id === 'p1:currenthash');
+  const old = entries.find((e) => e.id === 'p1:oldhash');
+  assert.equal(current.isLatestEdition, true);
+  assert.ok(!old.isLatestEdition);
+});
+
+await atest('a standalone latest.json (no matching hashed copy) is itself flagged isLatestEdition', async () => {
+  const tree = { people: [{ id: 'p1' }] };
+  const { entries } = await buildKeepsakeInventory(tree, 'fam_1', {
+    listPrefix: async () => [{ key: 'keepsake/fam_1/p1/latest.json', byteLength: 500, etag: '"new-etag"' }],
+  });
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0].isLatestEdition, true);
+});
+
+await atest('an object\'s body (when supplied by listPrefix) is parsed into the entry\'s edition field', async () => {
+  const editionBody = { personId: 'p1', hash: 'abc', editionNumber: 1, narrative: { epithet: 'The Storyteller', origins: [], chapters: [], legacy: [] } };
+  const tree = { people: [{ id: 'p1' }] };
+  const { entries } = await buildKeepsakeInventory(tree, 'fam_1', {
+    listPrefix: async () => [{ key: 'keepsake/fam_1/p1/abc.json', byteLength: 500, etag: '"e1"', body: JSON.stringify(editionBody) }],
+  });
+  assert.deepEqual(entries[0].edition, editionBody);
+});
+
+await atest('a malformed body degrades to no narrative rather than throwing', async () => {
+  const tree = { people: [{ id: 'p1' }] };
+  const { entries } = await buildKeepsakeInventory(tree, 'fam_1', {
+    listPrefix: async () => [{ key: 'keepsake/fam_1/p1/abc.json', byteLength: 500, etag: '"e1"', body: '{not valid json' }],
+  });
+  assert.equal(entries[0].edition, null);
+});
+
+await atest('no body supplied at all leaves edition null (Phase A\'s own metadata-only listPrefix contract)', async () => {
+  const tree = { people: [{ id: 'p1' }] };
+  const { entries } = await buildKeepsakeInventory(tree, 'fam_1', {
+    listPrefix: async () => [{ key: 'keepsake/fam_1/p1/abc.json', byteLength: 500, etag: '"e1"' }],
+  });
+  assert.equal(entries[0].edition, null);
 });
 
 await atest('buildKeepsakeInventory requires a listPrefix callback', async () => {

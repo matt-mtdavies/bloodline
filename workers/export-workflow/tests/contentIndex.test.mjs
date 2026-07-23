@@ -22,10 +22,17 @@ const tree = {
   memories: [{ id: 'mem1', person_id: 'p1', text: 'A lovely memory' }, { id: 'mem2', person_id: 'p2', text: 'Another one' }],
 };
 
+const SAMPLE_EDITION = {
+  personId: 'p1', hash: 'abc123', editionNumber: 2,
+  narrative: { epithet: 'The Storyteller', origins: ['Cardiff'], chapters: [{ title: 'Early Years', years: '1985-2003', paragraphs: ['He grew up in Cardiff.'] }], legacy: ['A born teacher.'] },
+};
+
 const mediaEntries = [
   { path: 'photos/p1_James.jpg', id: 'p1', ownerId: 'p1', recordType: 'person_photo', status: 'included' },
   { path: 'documents/doc1_Birth.pdf', id: 'doc1', ownerId: 'p1', recordType: 'document', status: 'missing' },
   { path: 'photos/ph2_ext.jpg', id: 'ph2', ownerId: 'p2', recordType: 'photo', status: 'external_reference' },
+  { path: 'keepsakes/p1/abc123.json', id: 'p1:abc123', ownerId: 'p1', recordType: 'keepsake_edition', status: 'included', isLatestEdition: true, edition: SAMPLE_EDITION },
+  { path: 'keepsakes/p1/oldhash.json', id: 'p1:oldhash', ownerId: 'p1', recordType: 'keepsake_edition', status: 'included', isLatestEdition: false, edition: { ...SAMPLE_EDITION, editionNumber: 1 } },
 ];
 
 test('buildContentIndex requires a sourceChecksum', () => {
@@ -82,7 +89,7 @@ test('counts reflect the actual people/documents/media totals', () => {
   const idx = buildContentIndex(tree, mediaEntries, { sourceChecksum: 'abc' });
   assert.equal(idx.counts.people, 3);
   assert.equal(idx.counts.documents, 1);
-  assert.equal(idx.counts.media, 3);
+  assert.equal(idx.counts.media, mediaEntries.length);
 });
 
 test('content-index.json and tree-data.js decode to identical data (§3.5 requirement)', () => {
@@ -113,6 +120,32 @@ test('both output forms carry the same viewerIndexVersion, counts, and sourceChe
   for (const field of ['viewerIndexVersion', 'counts', 'sourceChecksum']) {
     assert.deepEqual(decodedJson[field], decodedJs[field]);
   }
+});
+
+test('a person\'s CURRENT keepsake edition is embedded directly on their profile (viewer needs it under file://)', () => {
+  const idx = buildContentIndex(tree, mediaEntries, { sourceChecksum: 'abc' });
+  assert.deepEqual(idx.people.p1.keepsake, SAMPLE_EDITION);
+});
+
+test('an OLDER (non-latest) keepsake edition is not the one attached to the person', () => {
+  const idx = buildContentIndex(tree, mediaEntries, { sourceChecksum: 'abc' });
+  assert.equal(idx.people.p1.keepsake.editionNumber, 2, 'must be the latest edition, not the older one');
+});
+
+test('a person with no keepsake entries at all gets keepsake: null, not a missing key', () => {
+  const idx = buildContentIndex(tree, mediaEntries, { sourceChecksum: 'abc' });
+  assert.equal(idx.people.p2.keepsake, null);
+  assert.equal(idx.people.p3.keepsake, null);
+});
+
+test('media index preserves isLatestEdition for keepsake entries only', () => {
+  const idx = buildContentIndex(tree, mediaEntries, { sourceChecksum: 'abc' });
+  const current = idx.media.find((m) => m.fileId === 'p1:abc123');
+  const old = idx.media.find((m) => m.fileId === 'p1:oldhash');
+  const photo = idx.media.find((m) => m.fileId === 'p1');
+  assert.equal(current.isLatestEdition, true);
+  assert.equal(old.isLatestEdition, false);
+  assert.equal(photo.isLatestEdition, undefined);
 });
 
 test('an empty tree produces a valid, empty-but-well-formed index', () => {

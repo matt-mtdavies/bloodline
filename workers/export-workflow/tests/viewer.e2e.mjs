@@ -75,12 +75,31 @@ await page.evaluate(() => { location.hash = '#/person/p4'; });
 await page.waitForTimeout(100);
 const mediaText = await page.locator('.av-media-grid').textContent();
 check('a missing photo reference shows an explicit warning, not a broken silent image', mediaText.toLowerCase().includes('missing'));
+check('a person with no Keepsake at all renders no Keepsake section', await page.locator('.av-keepsake').count() === 0);
 
-// Missing-document warning path (James Mercer's document is unresolvable)
+// Documents section — James has one unresolvable document (warning) and
+// one real, resolvable one (real title + working open link), proving the
+// review finding is fixed: the viewer now actually reads DATA.documents
+// for titles instead of treating every document as a generic filename.
 await page.evaluate(() => { location.hash = '#/person/p1'; });
 await page.waitForTimeout(100);
-const jamesMediaText = await page.locator('.av-media-grid').textContent();
-check('James\'s unresolvable document also shows an explicit warning', jamesMediaText.toLowerCase().includes('missing'));
+const documentsText = await page.locator('.av-documents').textContent();
+check('the unresolvable document shows an explicit warning, not a broken link', documentsText.toLowerCase().includes('missing'));
+check('the resolvable document shows its REAL title from DATA.documents, not a generic filename', documentsText.includes('Cardiff University Diploma'));
+const docOpenLink = page.locator('.av-documents a', { hasText: 'Open document' });
+check('the resolvable document has a working "Open document" link', await docOpenLink.count() === 1);
+const docHref = await docOpenLink.getAttribute('href');
+check('the document link points at the archived file path', docHref.includes('documents/'));
+
+// Keepsake narrative reading — James has a real embedded edition; the
+// review finding was that Keepsakes rendered as a bare generic filename
+// link instead of an actual readable narrative.
+const keepsakeText = await page.locator('.av-keepsake').textContent();
+check('the Keepsake section renders the actual epithet (not a filename link)', keepsakeText.includes('The Storyteller of Cardiff'));
+check('the Keepsake section renders chapter titles', keepsakeText.includes('A Studious Childhood') && keepsakeText.includes('Cardiff University and Beyond'));
+check('the Keepsake section renders chapter body paragraphs', keepsakeText.includes('chasing books more than footballs'));
+check('the Keepsake section renders the legacy line', keepsakeText.includes('remembered, above all, for the stories'));
+check('the Keepsake section does NOT just show a bare "Open"/filename link (a real narrative view, not a generic file link)', await page.locator('.av-keepsake a').count() === 0);
 
 // Keyboard navigation — a fresh page, since earlier clicks in this same
 // page already moved focus around (clicking a real button focuses it).

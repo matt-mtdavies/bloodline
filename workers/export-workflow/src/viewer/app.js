@@ -14,7 +14,7 @@
   // Fields rendered in their own dedicated section, or that are internal
   // plumbing — never shown a second time in the generic "fields" grid.
   const NON_GENERIC_FIELDS = new Set([
-    'id', 'searchKey', 'events', 'memories', 'display_name', 'photo', 'photo_thumb',
+    'id', 'searchKey', 'events', 'memories', 'display_name', 'photo', 'photo_thumb', 'keepsake',
 ]);
 
   const FIELD_LABELS = {
@@ -107,7 +107,10 @@
     }
 
     const adjacency = DATA.relationshipAdjacency?.[personId] || { parents: [], children: [], partners: [] };
-    const media = (DATA.media || []).filter((m) => m.ownerId === personId);
+    const allMedia = (DATA.media || []).filter((m) => m.ownerId === personId);
+    const photoMedia = allMedia.filter((m) => m.recordType === 'person_photo' || m.recordType === 'person_photo_thumb' || m.recordType === 'photo');
+    const documentMedia = allMedia.filter((m) => m.recordType === 'document' || m.recordType === 'document_thumb');
+    const keepsakeMedia = allMedia.filter((m) => m.recordType === 'keepsake_edition');
     const genericFields = Object.entries(person).filter(([k, v]) => {
       if (NON_GENERIC_FIELDS.has(k) || v == null || v === '') return false;
       if (Array.isArray(v)) return v.length > 0 && v.every((x) => typeof x !== 'object');
@@ -152,11 +155,21 @@
         </ul>
       </div>` : ''}
 
-      ${media.length ? `
+      ${renderKeepsakeSection(person, keepsakeMedia)}
+
+      ${documentMedia.length ? `
       <div class="av-section">
-        <h2>Photos &amp; documents</h2>
+        <h2>Documents</h2>
+        <ul class="av-documents">
+          ${documentMedia.map(renderDocumentItem).join('')}
+        </ul>
+      </div>` : ''}
+
+      ${photoMedia.length ? `
+      <div class="av-section">
+        <h2>Photos</h2>
         <div class="av-media-grid">
-          ${media.map(renderMediaItem).join('')}
+          ${photoMedia.map(renderMediaItem).join('')}
         </div>
       </div>` : ''}
     `;
@@ -182,6 +195,59 @@
       <div>${escapeHtml(m.path.split('/').pop())}</div>
       <a href="${escapeHtml(m.path)}" target="_blank" rel="noopener">Open</a>
     </div>`;
+  }
+
+  // Documents get their own list (not the generic photo grid) so the
+  // real document TITLE (from DATA.documents, keyed by the media entry's
+  // fileId for the 'document' recordType — 'document_thumb' entries share
+  // the same owning document but their OWN fileId is the thumb's own
+  // record id, not the document's, so those fall back to a generic label)
+  // is what the viewer shows, not just a bare filename.
+  function renderDocumentItem(m) {
+    const doc = m.recordType === 'document' ? DATA.documents?.[m.fileId] : null;
+    const title = doc?.title || m.path.split('/').pop();
+    if (m.warning) {
+      return `<li class="av-media-item"><div class="av-media-item__warning">${escapeHtml(m.warning.replace('_', ' '))}</div><div>${escapeHtml(title)}</div></li>`;
+    }
+    return `<li class="av-media-item">
+      <div>${escapeHtml(title)}</div>
+      <a href="${escapeHtml(m.path)}" target="_blank" rel="noopener">Open document</a>
+    </li>`;
+  }
+
+  // Renders the person's current Keepsake edition as a genuine readable
+  // narrative (epithet, chapters, legacy) — not a bare link to the raw
+  // JSON file, per §3.8's "Keepsake narrative reading when present".
+  // Falls back to an explicit "content not included" note when a
+  // Keepsake reference exists in the archive but no narrative body was
+  // embedded for it (e.g. missing/unreadable, or Phase A's own metadata-
+  // only inventory with no body available at all).
+  function renderKeepsakeSection(person, keepsakeMedia) {
+    if (person.keepsake) {
+      const n = person.keepsake.narrative || {};
+      return `
+      <div class="av-section av-keepsake">
+        <h2>Keepsake</h2>
+        ${n.epithet ? `<p class="av-keepsake__epithet">${escapeHtml(n.epithet)}</p>` : ''}
+        ${(n.origins || []).map((p) => `<p>${escapeHtml(p)}</p>`).join('')}
+        ${(n.chapters || []).map((ch) => `
+          <div class="av-keepsake__chapter">
+            <h3>${escapeHtml(ch.title || '')} ${ch.years ? `<span class="av-keepsake__years">${escapeHtml(ch.years)}</span>` : ''}</h3>
+            ${(ch.paragraphs || []).map((p) => `<p>${escapeHtml(p)}</p>`).join('')}
+          </div>`).join('')}
+        ${(n.legacy || []).length ? `<div class="av-keepsake__legacy">${n.legacy.map((p) => `<p>${escapeHtml(p)}</p>`).join('')}</div>` : ''}
+      </div>`;
+    }
+    if (keepsakeMedia.length) {
+      const current = keepsakeMedia.find((m) => m.isLatestEdition) || keepsakeMedia[0];
+      return `
+      <div class="av-section av-keepsake">
+        <h2>Keepsake</h2>
+        <p>A Keepsake exists for this person, but its narrative content isn't included in this archive${current.warning ? ` (${escapeHtml(current.warning.replace('_', ' '))})` : ''}.</p>
+        ${!current.warning ? `<a href="${escapeHtml(current.path)}" target="_blank" rel="noopener">Open the raw Keepsake file</a>` : ''}
+      </div>`;
+    }
+    return '';
   }
 
   function route() {

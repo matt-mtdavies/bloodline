@@ -80,26 +80,38 @@ export function assertWithinCountBudget(label, count, budget, field = 'maxEntrie
  * Splits an array into shards, each respecting both a max-entry-count and a
  * max-serialized-byte-size budget — used for inventory/activity/central-
  * directory sharding alike (docs/FULL-ARCHIVE-EXPORT.md §2.6's "start a new
- * shard when either limit is reached"). A single oversized entry (bigger
- * than the whole byte budget on its own) still gets its own shard rather
- * than throwing — the byte budget bounds normal growth, it does not reject
- * a single legitimately large record.
+ * shard when either limit is reached", and the hard Workflow-result/shard
+ * ceiling that number backs). A single item whose OWN serialized size
+ * already exceeds `maxBytes` throws `BudgetExceededError` rather than
+ * being placed into a shard that itself violates the hard ceiling — an
+ * earlier version of this function let that item through alone, reasoning
+ * the byte budget only "bounds normal growth"; that was wrong, the ceiling
+ * is meant to hold for every shard unconditionally. The caller (Phase B's
+ * packaging logic) decides how to actually handle an oversized item — e.g.
+ * staging its large field separately in R2 — this function's only job is
+ * to never silently emit something over budget.
  */
 export function shardByBudget(items, { maxEntries, maxBytes }) {
   const shards = [];
   let current = [];
   let currentBytes = 2; // '[]'
   for (const item of items) {
-    const itemBytes = byteLengthOf(item) + (current.length ? 1 : 0); // +1 for the joining comma
+    const itemBytes = byteLengthOf(item);
+    if (maxBytes != null && itemBytes + 2 > maxBytes) {
+      // +2 for '[' and ']' — even alone, in its own shard, this item
+      // would exceed the budget.
+      throw new BudgetExceededError('shard item (exceeds the whole shard byte budget on its own)', itemBytes, maxBytes - 2, ' bytes');
+    }
     const wouldExceedEntries = maxEntries != null && current.length >= maxEntries;
-    const wouldExceedBytes = maxBytes != null && current.length > 0 && currentBytes + itemBytes > maxBytes;
+    const projectedBytes = currentBytes + itemBytes + (current.length ? 1 : 0); // +1 for the joining comma
+    const wouldExceedBytes = maxBytes != null && current.length > 0 && projectedBytes > maxBytes;
     if (wouldExceedEntries || wouldExceedBytes) {
       shards.push(current);
       current = [];
       currentBytes = 2;
     }
+    currentBytes += itemBytes + (current.length ? 1 : 0);
     current.push(item);
-    currentBytes += itemBytes;
   }
   if (current.length) shards.push(current);
   return shards;

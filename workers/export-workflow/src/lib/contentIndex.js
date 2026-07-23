@@ -30,6 +30,19 @@
  * proof, since both output forms are still generated from one object and
  * proven identical by test either way.
  *
+ * One further, deliberate exception to "no field not already in tree.json":
+ * a person's CURRENT Keepsake edition (narrative text) is embedded here
+ * too (`people[id].keepsake`, see buildKeepsakeByPerson below), even though
+ * Keepsake content lives in R2 (`keepsakes/{person}/{hash}.json`), not
+ * inside the logical tree at all. Same root cause as the tree-data.js
+ * question above — §3.8 explicitly requires "Keepsake narrative reading
+ * when present," and file:// has no way to fetch a separate JSON file at
+ * view time — so the only way to satisfy that requirement is to embed the
+ * already-fetched edition content directly. Not new/invented information:
+ * it's the exact Keepsake file the archive already includes as its own
+ * file under keepsakes/, just also duplicated into the index the same way
+ * tree.json's fields are.
+ *
  * Both output forms — the plain JSON file and the `tree-data.js` global-
  * assignment wrapper (needed because file:// blocks fetch()/XHR) — are
  * generated from the exact same in-memory object, so they can never drift
@@ -56,12 +69,33 @@ function normalizeSearchKey(text) {
 // omission, so the exclusion is visible in one place and covered by a
 // test the same way DOC_TRACKABLE_FIELDS-style allowlists are elsewhere
 // in this codebase.
-function buildPeopleIndex(tree) {
+// The person's CURRENT Keepsake edition, embedded directly (not just a
+// file reference) — required so the offline viewer can render the actual
+// narrative under file://, which has no fetch()/XHR to read a separate
+// keepsakes/{person}/{hash}.json file at view time (§3.8's "Keepsake
+// narrative reading when present"). Only the edition flagged
+// `isLatestEdition` by buildKeepsakeInventory is attached — a person may
+// have several historical hashed editions, but the viewer shows the
+// current one, not an arbitrary/old one. Absent entirely when the
+// inventory had no body content for it (Phase A's own listPrefix contract
+// is metadata-only; Phase B's real packaging pass supplies `body`).
+function buildKeepsakeByPerson(mediaEntries) {
+  const byPerson = {};
+  for (const e of mediaEntries) {
+    if (e.recordType === 'keepsake_edition' && e.isLatestEdition && e.edition) {
+      byPerson[e.ownerId] = e.edition;
+    }
+  }
+  return byPerson;
+}
+
+function buildPeopleIndex(tree, mediaEntries) {
   const memoriesByPerson = {};
   for (const m of tree.memories || []) {
     if (!m?.person_id) continue;
     (memoriesByPerson[m.person_id] ||= []).push(m);
   }
+  const keepsakeByPerson = buildKeepsakeByPerson(mediaEntries);
 
   const people = {};
   for (const p of tree.people || []) {
@@ -69,6 +103,7 @@ function buildPeopleIndex(tree) {
       ...p,
       searchKey: normalizeSearchKey(p.display_name),
       memories: memoriesByPerson[p.id] || [],
+      keepsake: keepsakeByPerson[p.id] || null,
     };
   }
   return people;
@@ -115,6 +150,7 @@ function buildMediaIndex(mediaEntries) {
     recordType: e.recordType,
     status: e.status,
     warning: (e.status === 'missing' || e.status === 'external_reference' || e.status === 'unreadable' || e.status === 'unsupported') ? e.status : null,
+    isLatestEdition: e.recordType === 'keepsake_edition' ? Boolean(e.isLatestEdition) : undefined,
   }));
 }
 
@@ -126,7 +162,7 @@ function buildMediaIndex(mediaEntries) {
  */
 export function buildContentIndex(tree, mediaEntries, { sourceChecksum, family, generatedAt, warnings = [] } = {}) {
   if (!sourceChecksum) throw new Error('buildContentIndex requires sourceChecksum');
-  const people = buildPeopleIndex(tree);
+  const people = buildPeopleIndex(tree, mediaEntries);
   const documents = buildDocumentsIndex(tree);
   const media = buildMediaIndex(mediaEntries);
   return {

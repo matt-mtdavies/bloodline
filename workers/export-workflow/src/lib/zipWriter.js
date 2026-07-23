@@ -76,18 +76,31 @@ function concatBuffers(buffers) {
   return out;
 }
 
-async function compressChunks(chunks, method) {
+/*
+ * Streams `chunks` through to `emit(chunk)` as each one becomes available
+ * — NEVER collected into an array first. An earlier version of this
+ * function buffered every (source or compressed) chunk into a `out[]`
+ * array and returned it for the caller to emit afterward, which held an
+ * entire large entry (a big document, a video) fully in memory before a
+ * single byte reached the sink — directly contradicting the streaming
+ * guarantee and the one-part memory budget (§2.6). Fixed by emitting each
+ * chunk the moment it's produced; see the "genuinely streams" tests in
+ * zipWriter.test.mjs, which prove output begins before the source
+ * iterable finishes rather than just checking the end result is correct.
+ */
+async function streamCompressed(chunks, method, emit) {
   if (method === METHOD_STORE) {
     let compressedSize = 0n;
-    const out = [];
-    for await (const chunk of chunks) { out.push(chunk); compressedSize += BigInt(chunk.byteLength); }
-    return { compressedChunks: out, compressedSize };
+    for await (const chunk of chunks) {
+      await emit(chunk);
+      compressedSize += BigInt(chunk.byteLength);
+    }
+    return { compressedSize };
   }
   if (method === METHOD_DEFLATE) {
     const cs = new CompressionStream('deflate-raw');
     const writer = cs.writable.getWriter();
     const reader = cs.readable.getReader();
-    const out = [];
     let compressedSize = 0n;
 
     const pump = (async () => {
@@ -98,12 +111,12 @@ async function compressChunks(chunks, method) {
       for (;;) {
         const { done, value } = await reader.read();
         if (done) break;
-        out.push(value);
+        await emit(value);
         compressedSize += BigInt(value.byteLength);
       }
     })();
     await Promise.all([pump, drain]);
-    return { compressedChunks: out, compressedSize };
+    return { compressedSize };
   }
   throw new Error(`unsupported compression method: ${method}`);
 }
@@ -184,8 +197,7 @@ export class ZipStreamWriter {
       crcHasher.update(chunk);
       uncompressedSize += BigInt(chunk.byteLength);
     });
-    const { compressedChunks, compressedSize } = await compressChunks(trackedChunks, method);
-    for (const chunk of compressedChunks) await this._emit(chunk);
+    const { compressedSize } = await streamCompressed(trackedChunks, method, (chunk) => this._emit(chunk));
 
     if (uncompressedSize !== sizeHint) {
       throw new Error(

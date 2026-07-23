@@ -125,6 +125,94 @@ await atest('a mix of store and deflate entries in the same archive both extract
   rmSync(dir, { recursive: true, force: true });
 });
 
+// ── genuinely streaming (review finding: compressChunks used to buffer ──
+// every chunk into an array before addEntry emitted any of them, holding
+// a whole large entry in memory before a single byte reached the sink —
+// contradicting the streaming guarantee and the one-part memory budget).
+// These tests prove output begins DURING iteration of the source, not
+// only after the source iterable has fully finished producing.
+
+// A chunk is entry-data (not the local file header or the trailing data
+// descriptor) if it's NOT one of ZIP's own small fixed-signature records —
+// both of those are emitted by addEntry too, and would otherwise be
+// miscounted as "data chunks" by a naive count of every onChunk call.
+function isZipStructuralRecord(bytes) {
+  if (bytes.byteLength < 4) return false;
+  const sig = new DataView(bytes.buffer, bytes.byteOffset, 4).getUint32(0, true);
+  return sig === 0x04034b50 /* local file header */ || sig === 0x08074b50 /* data descriptor */;
+}
+
+await atest('store: entry-data chunks reach the sink as they are produced, not only after the source finishes', async () => {
+  const totalChunks = 5;
+  let producedCount = 0;
+  async function* chunkSource() {
+    for (let i = 0; i < totalChunks; i++) {
+      producedCount++;
+      yield new TextEncoder().encode(`chunk-${i}-`);
+    }
+  }
+  const observedCountsAtEmit = [];
+  const writer = new ZipStreamWriter({
+    onChunk: async (bytes) => {
+      if (isZipStructuralRecord(bytes)) return;
+      observedCountsAtEmit.push(producedCount);
+    },
+  });
+  const size = totalChunks * new TextEncoder().encode('chunk-0-').byteLength;
+  await writer.addEntry('x.txt', chunkSource(), { uncompressedSizeHint: size, compress: 'store' });
+
+  assert.equal(observedCountsAtEmit.length, totalChunks, 'one sink call per source chunk (store never batches)');
+  assert.equal(
+    observedCountsAtEmit[0], 1,
+    `first data chunk should reach the sink right after the FIRST source chunk was produced; got producedCount=${observedCountsAtEmit[0]} of ${totalChunks} — buffering bug reproduced if this equals ${totalChunks}`,
+  );
+  // Monotonically non-decreasing and never "jumps" straight to the final
+  // count on the first emit — the specific shape of "was fully buffered".
+  assert.ok(observedCountsAtEmit.every((n, i) => n >= i + 1), 'each emit happens no earlier than its corresponding source chunk');
+});
+
+await atest('deflate-raw: compressed output begins before the source iterable finishes producing (genuine streaming, not buffer-then-compress)', async () => {
+  // CompressionStream has its own internal window/buffering — verified
+  // separately that a SMALL, highly repetitive payload can legitimately
+  // never flush any output until close() (a property of the compressor
+  // itself, not something this module controls). A larger, less-
+  // compressible payload does flush incrementally in practice — this test
+  // uses ~1.5MB of pseudo-random bytes across many chunks specifically so
+  // it can distinguish "my own code buffers before emitting" (the actual
+  // bug that was found) from "the compressor's own internal windowing",
+  // which this module has no control over and shouldn't be tested against.
+  const chunkBytes = 65536;
+  const totalChunks = 24; // ~1.5MB
+  let seed = 12345;
+  function pseudoRandomByte() { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed % 256; }
+  let producedCount = 0;
+  async function* chunkSource() {
+    for (let i = 0; i < totalChunks; i++) {
+      const chunk = new Uint8Array(chunkBytes);
+      for (let j = 0; j < chunkBytes; j += 4) chunk[j] = pseudoRandomByte();
+      producedCount++;
+      yield chunk;
+    }
+  }
+  let firstEmitProducedCount = null;
+  const emitCount = { n: 0 };
+  const writer = new ZipStreamWriter({
+    onChunk: async (bytes) => {
+      if (isZipStructuralRecord(bytes)) return;
+      emitCount.n++;
+      if (firstEmitProducedCount === null) firstEmitProducedCount = producedCount;
+    },
+  });
+  await writer.addEntry('data/tree.json', chunkSource(), {
+    uncompressedSizeHint: chunkBytes * totalChunks, compress: 'deflate-raw',
+  });
+  assert.ok(emitCount.n > 1, `expected multiple separate compressed-output emits (not one big buffered blob); got ${emitCount.n}`);
+  assert.ok(
+    firstEmitProducedCount !== null && firstEmitProducedCount < totalChunks,
+    `expected the first compressed chunk to reach the sink before the source finished producing all ${totalChunks} chunks; got firstEmitProducedCount=${firstEmitProducedCount} — buffering bug reproduced if this is ${totalChunks} (or null)`,
+  );
+});
+
 // ── ZIP64 path — forced via a tiny threshold override, verified by both readers ──
 
 await atest('an entry forced through the ZIP64 code path (tiny threshold) still opens and extracts correctly', async () => {

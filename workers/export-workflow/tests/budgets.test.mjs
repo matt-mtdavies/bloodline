@@ -64,13 +64,19 @@ test('shardByBudget never drops or duplicates an item', () => {
   assert.deepEqual(flat.map((x) => x.id), items.map((x) => x.id));
 });
 
-test('a single oversized item still gets its own shard rather than throwing', () => {
+test('a single item exceeding the byte budget on its own throws, rather than being emitted in an over-budget shard', () => {
   const huge = { blob: 'x'.repeat(20000) };
   const items = [{ id: 'a' }, huge, { id: 'b' }];
-  const shards = shardByBudget(items, { maxEntries: 500, maxBytes: 5000 });
-  const flat = shards.flat();
-  assert.equal(flat.length, 3);
-  assert.ok(shards.some((s) => s.includes(huge)));
+  assert.throws(() => shardByBudget(items, { maxEntries: 500, maxBytes: 5000 }), BudgetExceededError);
+});
+
+test('shardByBudget never produces a shard whose serialized size exceeds maxBytes, for any item at or under the budget', () => {
+  const items = Array.from({ length: 50 }, (_, i) => ({ id: `item_${i}`, blob: 'x'.repeat(200) }));
+  const maxBytes = 3000;
+  const shards = shardByBudget(items, { maxEntries: 500, maxBytes });
+  for (const shard of shards) {
+    assert.ok(JSON.stringify(shard).length <= maxBytes, `shard of ${shard.length} items serialized to ${JSON.stringify(shard).length} bytes, over the ${maxBytes} budget`);
+  }
 });
 
 test('shardByBudget on an empty array returns no shards', () => {
