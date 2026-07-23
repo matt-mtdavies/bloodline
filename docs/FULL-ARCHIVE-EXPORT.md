@@ -84,6 +84,18 @@ Why Workflows:
 
 D1 remains the product-visible job ledger. Cloudflare Workflow instance state is execution infrastructure, not the user-facing source of truth.
 
+This infrastructure jump is deliberate, not accidental over-engineering. The current site has no queue, Workflow Worker or background-job deployment, so this adds a separately deployed service and operational surface. A simpler synchronous Pages Function, `waitUntil()` task or browser-side ZIP would be cheaper to build, but would violate the product requirement at the known scale of 1,000+ people and heavy documents: it would depend on an open request/tab, could not resume multipart work durably, and would make retries duplicate or restart large exports. Workflows is retained because “export the entire family regardless of size” is a durable job, not because every export is expected to be large.
+
+Before Phase B begins, Phase A must include a one-day infrastructure spike that proves:
+
+- Pages can invoke the separate Worker through a service binding in the target account;
+- the selected Workers plan supports the configured Workflow CPU and step budgets;
+- D1 and the EU-jurisdiction R2 bucket can be bound to that Worker without creating a second source of truth;
+- a killed/retried instance resumes a multipart upload idempotently;
+- deployment and rollback can be operated independently from the Pages project.
+
+If that spike fails, stop and revise the design. Do not silently fall back to an in-request ZIP.
+
 ### 2.5 Archive size
 
 There is no product-level family-size or person-count cap.
@@ -97,6 +109,26 @@ There is no product-level family-size or person-count cap.
 - If a preflight estimate approaches 4 TiB or 9,500 multipart parts, stop before packaging with `requires_segmented_export`. A later segmented-export path can create a manifest plus multiple ZIP volumes. This is a technical platform boundary, not an arbitrary family-data policy.
 
 No ordinary Bloodline family should approach that boundary, but the design must report it honestly.
+
+### 2.6 Workflow and packaging budgets
+
+The implementation must stay well below Cloudflare Workflow state/result limits:
+
+- Workflow creation payload: job ID and schema version only; target under 1 KiB, hard maximum 8 KiB.
+- Non-stream result returned by any `step.do`: target under 64 KiB, hard maximum 512 KiB. Large trees, inventories, activity pages, ZIP state and binaries live in R2 staging; steps return only keys, counts, cursors and checksums.
+- D1 job/progress row: target under 16 KiB.
+- Inventory shard: at most 500 entries and at most 512 KiB serialized; start a new shard when either limit is reached.
+- Durable activity query: at most 500 rows per query/shard.
+- R2 metadata operations: at most 100 `head()` calls per Workflow step with bounded concurrency of 10.
+- Multipart ZIP part: 16 MiB by default, adjustable to 32 MiB only after the spike proves memory and retry behavior. All non-final parts use the same size.
+- Packaging checkpoint: after every completed multipart part or 100 archive entries, whichever comes first.
+- In-memory binary buffer: never more than one multipart part plus 4 MiB ZIP-writer overhead; target under 24 MiB with 16 MiB parts.
+- ZIP central-directory records: append to R2 staging shards capped at 512 KiB; do not retain the whole central directory in Workflow state.
+- CPU target per packaging step: under 20 seconds; configure the Workflow Worker for up to five minutes CPU only as a safety ceiling on a paid plan.
+- Compression: store already-compressed photos, video, audio, PDFs and office files without recompression. Streaming-DEFLATE only text/JSON/HTML/CSS/JS when it does not require buffering the complete entry. A large `tree.json` may be stored without compression rather than violating memory/CPU budgets.
+- Heartbeat/progress write: no more often than once per completed part or every 10 seconds.
+
+Tests must fail when a step attempts to return a full tree, inventory, media body or central directory instead of an R2 reference.
 
 ---
 
@@ -120,7 +152,7 @@ Bloodline archive/
 │   ├── tree-data.js
 │   ├── family.json
 │   ├── content-index.json
-│   ├── audit.json
+│   ├── activity-log.json
 │   └── administration/
 │       ├── members.json
 │       └── invitations.json
@@ -128,7 +160,12 @@ Bloodline archive/
 │   ├── app.js
 │   ├── styles.css
 │   ├── logo.svg
-│   └── vendor/
+│   ├── fonts/
+│   │   ├── fraunces-latin.woff2
+│   │   └── hanken-grotesk-latin.woff2
+│   └── licenses/
+│       ├── Fraunces-OFL.txt
+│       └── Hanken-Grotesk-OFL.txt
 ├── photos/
 │   └── {photo-id}_{safe-original-name-or-key}.{ext}
 ├── documents/
@@ -154,7 +191,7 @@ Bloodline archive/
 - memories;
 - photos metadata;
 - documents metadata, extracted text, summaries, facts and provenance;
-- activity stored inside the logical tree;
+- the logical tree’s capped `activity` array, exactly as captured;
 - tags and life events;
 - tombstones in `_deleted`;
 - sequence/version fields and other future top-level fields.
@@ -172,14 +209,79 @@ Storage-only plumbing such as `_extraVersion` is not part of the logical tree an
 - source storage mode (`legacy` or `split`);
 - source extra version when split;
 - archive creation timestamp;
-- requesting authority (`owner` or `site_admin`);
+- requesting authority (`owner`, `coadmin` or `site_admin`);
 - schema and archive-format versions.
 
-`audit.json` contains family-scoped durable activity/audit records already available to the application. It does not contain cross-family admin telemetry.
+The logical tree’s embedded `activity` array and the durable D1 `activity_log` are intentionally different records:
+
+- `tree.json.activity` is the capped, mergeable client fast-path currently limited to the latest 100 events. It remains inside `tree.json` because lossless export preserves the logical tree exactly.
+- `data/activity-log.json` is the complete append-only server record from D1 migration `0008_activity_log.sql`. It is the authoritative durable family activity history and must not be inferred from, replaced by or de-duplicated against `tree.json.activity`.
+
+The export Workflow queries `activity_log` directly:
+
+```sql
+SELECT id, family_id, author_name, author_email, type, person_id,
+       person_name, detail, created_at
+FROM activity_log
+WHERE family_id = ?
+ORDER BY created_at ASC, id ASC
+```
+
+Read it in keyset-paginated batches of at most 500 rows using `(created_at, id)` as the continuation cursor. Write batches to R2 staging as NDJSON or bounded JSON shards, then stream them into one final `activity-log.json` array during packaging. Do not call `/api/activity`, because that route is request-user scoped, capped at 200 rows per page and shaped for the live UI rather than an internal export job.
+
+First page:
+
+```sql
+SELECT id, family_id, author_name, author_email, type, person_id,
+       person_name, detail, created_at
+FROM activity_log
+WHERE family_id = ?
+ORDER BY created_at ASC, id ASC
+LIMIT 500
+```
+
+Subsequent pages:
+
+```sql
+SELECT id, family_id, author_name, author_email, type, person_id,
+       person_name, detail, created_at
+FROM activity_log
+WHERE family_id = ?
+  AND (created_at > ? OR (created_at = ? AND id > ?))
+ORDER BY created_at ASC, id ASC
+LIMIT 500
+```
+
+Bind the last emitted row’s `created_at`, `created_at` and `id` as the three lower-cursor values. At source capture, also select the current final row with `ORDER BY created_at DESC, id DESC LIMIT 1` and record its `(created_at, id)` as the inclusive upper cursor. Add this upper bound to every page:
+
+```sql
+AND (created_at < ? OR (created_at = ? AND id <= ?))
+```
+
+Because `activity_log` is append-only, the lower and upper composite cursors produce one complete stable prefix even when new activity arrives while the job runs. The ID tie-breaker prevents gaps or duplicates when timestamps are equal.
+
+If the table is absent in an unmigrated development environment, the job fails its preflight with `activity_log_unavailable`; production export must not silently omit the durable record.
+
+`activity-log.json` contains no cross-family admin telemetry.
 
 Site-admin `administration/members.json` contains member identity, role and joined timestamp. `invitations.json` contains invitation address, intended role, status and timestamps, but removes tokens, raw delivery-provider payloads and secret links.
 
-### 3.5 Media
+### 3.5 `content-index.json`
+
+`content-index.json` is a derived, non-authoritative lookup used only by the offline viewer. It is not another copy of the tree and must never be treated as restore input.
+
+It contains:
+
+- archive-relative path and manifest file ID for each photo, thumbnail, document and Keepsake;
+- the owning person/document/photo IDs needed to join content to `tree.json`;
+- normalized lowercase search strings for people and document titles;
+- lightweight relationship adjacency by person ID;
+- warning status for missing or external media;
+- no fields that are not already present in `tree.json`, `activity-log.json` or the manifest.
+
+Generate it deterministically from the captured source plus the final media inventory. `tree-data.js` wraps this same viewer index in a JavaScript assignment so it loads under `file://`; the JSON form is included for portability and inspection. Both files must carry the same `viewerIndexVersion`, counts and source checksum, and tests must prove their decoded data is identical.
+
+### 3.6 Media
 
 Resolve media only from references inside the captured tree:
 
@@ -202,7 +304,7 @@ Every archived binary receives:
 - R2 ETag when available;
 - status: `included`, `external_reference`, `missing`, `unreadable` or `unsupported`.
 
-### 3.6 Keepsakes
+### 3.7 Keepsakes
 
 Keepsakes are family artifacts and are included.
 
@@ -211,11 +313,11 @@ Keepsakes are family artifacts and are included.
 - De-duplicate `latest.json` when it is byte-identical to a hashed edition; record the alias in the manifest.
 - A missing Keepsake is not a warning unless the tree or a family record explicitly references one that should exist.
 
-### 3.7 Offline viewer
+### 3.8 Offline viewer
 
 `START-HERE.html` is a purpose-built, read-only family archive viewer.
 
-It must work after the ZIP is extracted and opened with `file://`, without a server, service worker, live API, external font, analytics, CDN or network request.
+It must work after the ZIP is extracted and opened with `file://`, without a server, service worker, live API, externally hosted font, analytics, CDN or network request.
 
 To avoid browser restrictions on `fetch()` from `file://`:
 
@@ -223,6 +325,16 @@ To avoid browser restrictions on `fetch()` from `file://`:
 - `START-HERE.html` loads it through a relative `<script>` tag;
 - photos/documents use relative file paths;
 - all scripts, fonts/icons and styles are bundled locally.
+
+Font decision:
+
+- bundle fixed, Latin-subset WOFF2 builds of Fraunces and Hanken Grotesk with the viewer;
+- include each font’s OFL license text in `viewer/licenses/`;
+- define local `@font-face` rules with `font-display: swap`;
+- use Georgia/Times and system-sans fallbacks;
+- do not download, subset or transform fonts during an export job—the exact reviewed font assets are versioned with the application and copied byte-for-byte into every archive.
+
+If licensing or source provenance cannot be verified during implementation, fall back to the system stacks and remove the font binaries; never ship unlicensed font files or make the offline viewer contact Google Fonts.
 
 Viewer v1 includes:
 
@@ -241,7 +353,7 @@ Viewer v1 does not need to reproduce the live PixiJS tree, editing, authenticati
 
 The raw `tree.json` remains authoritative. The viewer is an additional convenience, not the only way to read the archive.
 
-### 3.8 Manifest
+### 3.9 Manifest
 
 `manifest.json` is UTF-8 JSON with:
 
@@ -314,7 +426,7 @@ Every transition is monotonic and written to D1. Retried Workflow steps must be 
 3. **Inventory**
    - extract every media reference from the captured tree;
    - list Keepsake prefixes only for captured family/person IDs;
-   - load family/audit records according to export authority;
+   - load the bounded `activity_log` snapshot plus family/administration records according to export authority;
    - `head()` every R2 object;
    - calculate expected file count and bytes;
    - create immutable inventory JSON in staging;
@@ -661,7 +773,90 @@ Recovery:
 
 ---
 
-## 10. Observability
+## 10. Deployment and CI
+
+The export Worker is a separately deployed artifact. The existing repository has Cloudflare Pages Git deployment but no GitHub Actions workflow for a standalone Worker, so implementation must add and own that path explicitly.
+
+### 10.1 Repository layout
+
+```text
+workers/
+└── export-workflow/
+    ├── src/
+    ├── tests/
+    ├── wrangler.toml
+    └── package.json
+.github/
+└── workflows/
+    └── export-workflow.yml
+```
+
+Use a distinct Worker name such as `bloodline-export-workflow`. Its production configuration binds the existing D1 database and EU-jurisdiction `bloodline-docs` R2 bucket; it must not create replacement production stores.
+
+Pages receives a service binding named `EXPORT_WORKFLOW_SERVICE`. All Pages export endpoints also require `ENABLE_FULL_EXPORT=true`; a missing binding or false flag returns a controlled `503 export_not_configured`.
+
+### 10.2 Pull requests
+
+PR CI must:
+
+- install with the repository’s pinned Node/npm versions;
+- run export unit, integration and archive-reader tests;
+- apply the new D1 migration to a fresh local database;
+- run `wrangler deploy --dry-run` against the Workflow Worker configuration;
+- verify the Pages Functions bundle can type/import the service-binding client;
+- build the main Vite/Pages project;
+- create archives from synthetic fixtures only;
+- scan produced archives for secrets and unexpected network references.
+
+PRs must not deploy a Workflow Worker or bind a Pages preview to production D1/R2.
+
+Default preview behavior:
+
+- `ENABLE_FULL_EXPORT=false`;
+- no production `EXPORT_WORKFLOW_SERVICE`;
+- export UI shows a deliberate “Archive preparation is unavailable in this preview” state when exercised.
+
+An optional shared staging environment may be added later using a separate Worker name, staging D1 database, staging R2 bucket and synthetic data. A branch preview must never call the production Workflow Worker, even for an administrator.
+
+### 10.3 Main-branch deployment
+
+Merging to `main` produces two independently observable deployments:
+
+1. Cloudflare Pages continues through its existing Git integration.
+2. `export-workflow.yml` deploys the standalone Worker through Wrangler after its checks pass.
+
+Required GitHub secrets:
+
+- `CLOUDFLARE_ACCOUNT_ID`;
+- a dedicated `CLOUDFLARE_API_TOKEN` scoped only to deploy this Worker and use the required bindings.
+
+Do not place R2/S3 credentials in GitHub; runtime access uses bindings.
+
+Initial rollout order:
+
+1. apply the forward D1 migration through the separately approved R3 runbook;
+2. deploy the Workflow Worker;
+3. create/verify the Pages service binding;
+4. deploy Pages with `ENABLE_FULL_EXPORT=false`;
+5. run the staged export rehearsal;
+6. enable the production flag.
+
+Subsequent Worker/Page changes must remain backward-compatible across either deployment order. When a contract must break, version the service-binding method and deploy the Worker-compatible side first.
+
+### 10.4 Rollback
+
+- immediately set `ENABLE_FULL_EXPORT=false` to stop new jobs;
+- leave status/download endpoints available for already-ready archives unless the incident concerns confidentiality;
+- redeploy the last known-good Workflow Worker;
+- do not reverse the D1 migration;
+- abort/quarantine in-progress multipart uploads according to the runbook;
+- preserve D1 audit rows.
+
+CI must report the Worker deployment URL/version separately from the Pages deployment. A passing Pages preview is not evidence that the Workflow Worker deployed.
+
+---
+
+## 11. Observability
 
 Metrics without family content:
 
@@ -688,18 +883,24 @@ Admin job detail may show technical codes and stage timings. It must not show pr
 
 ---
 
-## 11. Implementation sequence
+## 12. Implementation sequence
 
 Keep this as one feature program, but stage risk deliberately.
 
 ### Phase A — archive-format proof
 
+- One-day Workflows/service-binding infrastructure spike with forced retry/resume and rollback.
 - Pure inventory builder from a synthetic full logical tree.
 - Pure archive-path sanitizer.
 - Manifest v1.
+- Direct, paginated `activity_log` extraction and deterministic sharding.
+- Defined `content-index.json` and byte-equivalent `tree-data.js`.
 - Offline viewer using fixture data.
+- Reviewed local WOFF2 font assets plus OFL licenses, with a tested system-font fallback.
 - Streaming ZIP64 proof against synthetic many-file/large-file fixtures.
+- Enforced Workflow payload, step-result, shard, memory, CPU and multipart budgets.
 - Verify ZIP with two independent readers.
+- Worker dry-run deployment in CI and proof that branch previews cannot reach production export bindings.
 
 No production bindings or UI.
 
@@ -730,9 +931,9 @@ The ZIP can ship only when the viewer and raw archive contract are both complete
 
 ---
 
-## 12. Verification
+## 13. Verification
 
-### 12.1 Unit
+### 13.1 Unit
 
 - authorization matrix for every role and site-admin state;
 - admin allowlist empty/missing/multiple-case-normalized addresses;
@@ -747,8 +948,13 @@ The ZIP can ship only when the viewer and raw archive contract are both complete
 - expiry calculations;
 - archive status reducer;
 - viewer index generation preserves every source field.
+- `tree.json.activity` remains unchanged while `activity-log.json` contains every D1 row exactly once;
+- paginated activity extraction is stable when multiple rows share `created_at`;
+- `content-index.json` and decoded `tree-data.js` are identical;
+- every Workflow step result and inventory shard stays within the specified budget;
+- bundled font files match reviewed checksums and include their license text.
 
-### 12.2 Integration
+### 13.2 Integration
 
 - synthetic legacy family;
 - synthetic migrated family;
@@ -764,11 +970,15 @@ The ZIP can ship only when the viewer and raw archive contract are both complete
 - multipart resume;
 - expiry and download denial;
 - owner/co-admin authority removal during job;
+- more than 500 durable activity rows with duplicate timestamps;
+- missing `activity_log` migration fails preflight;
+- Workflow packaging at the 16 MiB part boundary and across multiple inventory/central-directory shards;
+- Pages preview with no service binding returns `export_not_configured` and performs no production I/O;
 - site admin not a family member;
 - two simultaneous create requests;
 - large ZIP requiring ZIP64.
 
-### 12.3 Security
+### 13.3 Security
 
 - cross-family owner/co-admin access attempts;
 - guessed job IDs;
@@ -783,7 +993,7 @@ The ZIP can ship only when the viewer and raw archive contract are both complete
 - no family content in Worker logs;
 - download cache headers.
 
-### 12.4 Visual and accessibility
+### 13.4 Visual and accessibility
 
 - Family Settings owner/co-admin and lower-role states on phone and desktop;
 - long-running progress;
@@ -795,7 +1005,7 @@ The ZIP can ship only when the viewer and raw archive contract are both complete
 - offline viewer at 320, 390, 768 and 1440px;
 - viewer opened with networking disabled.
 
-### 12.5 Archive acceptance
+### 13.5 Archive acceptance
 
 For a controlled fixture, independently prove:
 
@@ -810,7 +1020,7 @@ For a controlled fixture, independently prove:
 
 ---
 
-## 13. Rollout
+## 14. Rollout
 
 This feature introduces a new D1 migration, Workflow Worker, service binding, R2 write pattern and privileged cross-family operation. Production enablement is R3.
 
@@ -833,7 +1043,7 @@ Stop if source state, bindings, jurisdiction, lifecycle rules or Workflow status
 
 ---
 
-## 14. Definition of done
+## 15. Definition of done
 
 The feature is complete only when:
 
@@ -852,7 +1062,7 @@ The feature is complete only when:
 
 ---
 
-## 15. Deferred extensions
+## 16. Deferred extensions
 
 Not required for completion:
 
