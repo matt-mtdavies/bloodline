@@ -588,3 +588,101 @@ export async function handleCancellation(env, { jobId, familyId }) {
   });
   return { cancelled: true };
 }
+
+// ── Scheduled cleanup/reconciliation (§8) ────────────────────────────────
+//
+// Runs from entrypoint.js's `scheduled()` handler (a Cron Trigger a human
+// configures per docs/FULL-ARCHIVE-EXPORT-COMPLETION-RUNBOOK.md), never
+// from the Workflow itself — this is periodic maintenance across ALL jobs,
+// not part of any one job's own run. Every query here is bounded (a fixed
+// page size per invocation) so a cron tick can never turn into an
+// unbounded scan, per §8's own "no cleanup scan may be unbounded" rule.
+
+const EXPIRY_PAGE_LIMIT = 100;
+const STALE_HEARTBEAT_MS = 30 * 60 * 1000;
+const ORPHAN_STAGING_MS = 7 * 24 * 60 * 60 * 1000;
+
+// Expires ready/ready_with_warnings jobs whose 72h window has passed:
+// deletes the final archive object (missing is treated as success — §5's
+// own "missing final object during expiry is idempotent success" rule) and
+// transitions to `expired` with one audit entry.
+export async function expireReadyJobs(env, { now = Date.now(), limit = EXPIRY_PAGE_LIMIT } = {}) {
+  const nowSec = Math.floor(now / 1000);
+  const { results } = await env.DB.prepare(
+    `SELECT id, family_id, archive_r2_key FROM family_export_job
+      WHERE status IN ('ready', 'ready_with_warnings') AND expires_at IS NOT NULL AND expires_at < ?
+      LIMIT ?`,
+  ).bind(nowSec, limit).all();
+
+  let expiredCount = 0;
+  for (const job of results || []) {
+    if (job.archive_r2_key) {
+      try { await env.DOCS.delete(job.archive_r2_key); } catch { /* idempotent success either way */ }
+    }
+    const { applied } = await applyJobTransition(env, {
+      jobId: job.id, fromStatuses: ['ready', 'ready_with_warnings'], toStatus: 'expired',
+      audit: { familyId: job.family_id, event: 'expired', actorAuthority: 'system' },
+    });
+    if (applied) expiredCount += 1;
+  }
+  return { expiredCount, scanned: (results || []).length };
+}
+
+// Reconciles running jobs whose Workflow appears to have stalled (no
+// heartbeat in 30 minutes) — fails them with the stable `workflow_stalled`
+// public code (§12's own error-code list) rather than leaving a job
+// silently stuck "packaging" forever with no way for the family to retry.
+export async function reconcileStaleJobs(env, { now = Date.now(), limit = EXPIRY_PAGE_LIMIT } = {}) {
+  const staleBefore = Math.floor((now - STALE_HEARTBEAT_MS) / 1000);
+  const { results } = await env.DB.prepare(
+    `SELECT id, family_id FROM family_export_job
+      WHERE status IN ('queued', 'snapshotting', 'inventory', 'packaging', 'verifying', 'cancelling')
+        AND COALESCE(last_heartbeat_at, started_at, created_at) < ?
+      LIMIT ?`,
+  ).bind(staleBefore, limit).all();
+
+  let reconciledCount = 0;
+  for (const job of results || []) {
+    const { applied } = await applyJobTransition(env, {
+      jobId: job.id, fromStatuses: ['queued', 'snapshotting', 'inventory', 'packaging', 'verifying', 'cancelling'], toStatus: 'failed',
+      fields: { error_code: 'workflow_stalled', error_summary: capSummary('no heartbeat for over 30 minutes') },
+      audit: { familyId: job.family_id, event: 'failed', actorAuthority: 'system' },
+    });
+    if (applied) reconciledCount += 1;
+  }
+  return { reconciledCount, scanned: (results || []).length };
+}
+
+// Sweeps staging (and any still-open multipart upload) for jobs old enough
+// (7 days, §5's hard backstop) that it can only be orphaned — a genuinely
+// still-active job would have already reached a terminal state well
+// before this, and finalized jobs already clean their own staging via
+// cleanStagingStep at the end of a successful run.
+export async function sweepOrphanStaging(env, { now = Date.now(), limit = EXPIRY_PAGE_LIMIT } = {}) {
+  const cutoffSec = Math.floor((now - ORPHAN_STAGING_MS) / 1000);
+  const { results } = await env.DB.prepare(
+    `SELECT id FROM family_export_job WHERE created_at < ? LIMIT ?`,
+  ).bind(cutoffSec, limit).all();
+
+  let sweptCount = 0;
+  for (const job of results || []) {
+    const checkpoint = await getJson(env, stagingKey(job.id, 'checkpoint.json'));
+    if (checkpoint?.uploadId) {
+      try {
+        const upload = env.DOCS.resumeMultipartUpload(checkpoint.key, checkpoint.uploadId);
+        await upload.abort();
+      } catch { /* already completed/gone — nothing to abort */ }
+    }
+    const { deletedCount } = await cleanStagingStep(env, { jobId: job.id });
+    if (deletedCount > 0 || checkpoint) sweptCount += 1;
+  }
+  return { sweptCount, scanned: (results || []).length };
+}
+
+// The one entry point entrypoint.js's scheduled() handler calls.
+export async function runCleanupSweep(env, { now = Date.now() } = {}) {
+  const expired = await expireReadyJobs(env, { now });
+  const reconciled = await reconcileStaleJobs(env, { now });
+  const swept = await sweepOrphanStaging(env, { now });
+  return { expired, reconciled, swept };
+}

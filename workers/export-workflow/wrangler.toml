@@ -42,3 +42,12 @@ jurisdiction = "eu"
 # Private staging + final archive storage — same bucket, a dedicated prefix
 # (docs/FULL-ARCHIVE-EXPORT.md §4.2/§4.3). No separate bucket: one R2 bucket,
 # one jurisdiction, one place documents/photos/exports all actually live.
+
+# §8 cleanup/reconciliation — invokes entrypoint.js's `scheduled()` handler
+# (runCleanupSweep). Runs hourly: frequent enough that a 30-minute-stale
+# job or a just-expired archive doesn't sit around for long, cheap enough
+# that an hourly bounded sweep is a non-issue. Uncomment once this Worker
+# is actually deployed (Gate 0) — a human enables this the same way as the
+# EXPORT_WORKFLOW_SERVICE binding in the root wrangler.toml.
+# [triggers]
+# crons = ["0 * * * *"]

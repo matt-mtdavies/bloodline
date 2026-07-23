@@ -7,6 +7,7 @@ import {
   startMultipartStep, packageStep, completeMultipartStep, verifyArchiveStep,
   finalizeJobStep, sendCompletionEmailStep, cleanStagingStep,
   isCancellationRequested, handleCancellation,
+  expireReadyJobs, reconcileStaleJobs, sweepOrphanStaging, runCleanupSweep,
   SourceCorruptError, SourceIncompleteError, ArchiveVerificationError,
 } from '../src/workflowSteps.js';
 import { createExportJobStatements } from '../../../functions/_lib/exportJob.js';
@@ -510,6 +511,104 @@ await atest('handleCancellation aborts an in-progress multipart upload, cleans s
   assert.equal(env.DOCS.multipartUploads.size, 0, 'the multipart upload must have been aborted');
   const remainingStaging = [...env.DOCS.store.keys()].filter((k) => k.startsWith(`export-staging/${jobId}/`));
   assert.equal(remainingStaging.length, 0, 'staging must be fully cleaned on cancellation');
+});
+
+// ── §8 cleanup/reconciliation ────────────────────────────────────────────
+
+await atest('expireReadyJobs expires a ready job past its 72h window, deletes the archive object, and audits once', async () => {
+  const { db, env } = makeEnv();
+  const jobId = await seedQueuedJob(env, db);
+  const now = Date.now();
+  const nowSec = Math.floor(now / 1000);
+  await env.DOCS.put(`exports/${jobId}/bloodline-full-archive.zip`, 'zip-bytes');
+  db.exec(`UPDATE family_export_job SET status='ready', archive_r2_key='exports/${jobId}/bloodline-full-archive.zip', expires_at=${nowSec - 10} WHERE id='${jobId}'`);
+
+  const result = await expireReadyJobs(env, { now });
+  assert.equal(result.expiredCount, 1);
+  const job = db.prepare('SELECT * FROM family_export_job WHERE id = ?').get(jobId);
+  assert.equal(job.status, 'expired');
+  assert.equal(await env.DOCS.get(`exports/${jobId}/bloodline-full-archive.zip`), null);
+  const audit = db.prepare(`SELECT * FROM family_export_audit WHERE job_id = ? AND event = 'expired'`).all(jobId);
+  assert.equal(audit.length, 1);
+});
+
+await atest('expireReadyJobs leaves a not-yet-expired ready job untouched', async () => {
+  const { db, env } = makeEnv();
+  const jobId = await seedQueuedJob(env, db);
+  const nowSec = Math.floor(Date.now() / 1000);
+  db.exec(`UPDATE family_export_job SET status='ready', expires_at=${nowSec + 10000} WHERE id='${jobId}'`);
+  const result = await expireReadyJobs(env, {});
+  assert.equal(result.expiredCount, 0);
+});
+
+await atest('expireReadyJobs treats a missing archive object as idempotent success (§5)', async () => {
+  const { db, env } = makeEnv();
+  const jobId = await seedQueuedJob(env, db);
+  const nowSec = Math.floor(Date.now() / 1000);
+  db.exec(`UPDATE family_export_job SET status='ready', archive_r2_key='exports/${jobId}/gone.zip', expires_at=${nowSec - 10} WHERE id='${jobId}'`);
+  const result = await expireReadyJobs(env, {});
+  assert.equal(result.expiredCount, 1);
+});
+
+await atest('reconcileStaleJobs fails a running job with no heartbeat for 30+ minutes as workflow_stalled', async () => {
+  const { db, env } = makeEnv();
+  const jobId = await seedQueuedJob(env, db);
+  const now = Date.now();
+  const staleSec = Math.floor((now - 40 * 60 * 1000) / 1000);
+  db.exec(`UPDATE family_export_job SET status='packaging', started_at=${staleSec}, last_heartbeat_at=${staleSec} WHERE id='${jobId}'`);
+
+  const result = await reconcileStaleJobs(env, { now });
+  assert.equal(result.reconciledCount, 1);
+  const job = db.prepare('SELECT * FROM family_export_job WHERE id = ?').get(jobId);
+  assert.equal(job.status, 'failed');
+  assert.equal(job.error_code, 'workflow_stalled');
+});
+
+await atest('reconcileStaleJobs leaves a recently-active job alone', async () => {
+  const { db, env } = makeEnv();
+  const jobId = await seedQueuedJob(env, db);
+  const now = Date.now();
+  const recentSec = Math.floor((now - 5 * 60 * 1000) / 1000);
+  db.exec(`UPDATE family_export_job SET status='packaging', started_at=${recentSec}, last_heartbeat_at=${recentSec} WHERE id='${jobId}'`);
+  const result = await reconcileStaleJobs(env, { now });
+  assert.equal(result.reconciledCount, 0);
+});
+
+await atest('sweepOrphanStaging aborts an old orphaned multipart upload and deletes its staging', async () => {
+  const { db, env } = makeEnv();
+  const jobId = await seedQueuedJob(env, db);
+  const now = Date.now();
+  const oldSec = Math.floor((now - 8 * 24 * 60 * 60 * 1000) / 1000);
+  db.exec(`UPDATE family_export_job SET created_at=${oldSec} WHERE id='${jobId}'`);
+  const upload = await env.DOCS.createMultipartUpload(`exports/${jobId}/bloodline-full-archive.zip`);
+  await env.DOCS.put(`export-staging/${jobId}/checkpoint.json`, JSON.stringify({ uploadId: upload.uploadId, key: upload.key }));
+  await env.DOCS.put(`export-staging/${jobId}/source/tree.json`, '{}');
+
+  const result = await sweepOrphanStaging(env, { now });
+  assert.equal(result.sweptCount, 1);
+  assert.equal(env.DOCS.multipartUploads.size, 0);
+  const remaining = [...env.DOCS.store.keys()].filter((k) => k.startsWith(`export-staging/${jobId}/`));
+  assert.equal(remaining.length, 0);
+});
+
+await atest('sweepOrphanStaging never touches a recent job\'s staging', async () => {
+  const { db, env } = makeEnv();
+  const jobId = await seedQueuedJob(env, db);
+  await env.DOCS.put(`export-staging/${jobId}/source/tree.json`, '{}');
+  const result = await sweepOrphanStaging(env, {});
+  assert.equal(result.sweptCount, 0);
+  assert.notEqual(await env.DOCS.get(`export-staging/${jobId}/source/tree.json`), null);
+});
+
+await atest('runCleanupSweep runs all three passes and returns their combined counts', async () => {
+  const { db, env } = makeEnv();
+  const jobId = await seedQueuedJob(env, db);
+  const nowSec = Math.floor(Date.now() / 1000);
+  db.exec(`UPDATE family_export_job SET status='ready', expires_at=${nowSec - 10} WHERE id='${jobId}'`);
+  const result = await runCleanupSweep(env, {});
+  assert.equal(result.expired.expiredCount, 1);
+  assert.equal(result.reconciled.reconciledCount, 0);
+  assert.equal(result.swept.sweptCount, 0);
 });
 
 console.log(`\n  ${passed} passed, ${failed} failed`);

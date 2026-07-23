@@ -21,6 +21,7 @@
  * without it.
  */
 import { WorkerEntrypoint } from 'cloudflare:workers';
+import { runCleanupSweep } from './workflowSteps.js';
 
 export { FamilyArchiveExportWorkflow } from './workflow.js';
 
@@ -87,5 +88,14 @@ function assertValidJobId(jobId) {
 export default {
   async fetch() {
     return new Response('bloodline-export-workflow: RPC-only, see WorkerEntrypoint export', { status: 404 });
+  },
+  /*
+   * §8 Cleanup/reconciliation — a Cron Trigger a human configures in
+   * wrangler.toml (docs/FULL-ARCHIVE-EXPORT-COMPLETION-RUNBOOK.md) invokes
+   * this. Deliberately NOT part of any Workflow run — this is periodic
+   * maintenance across every job, not one job's own lifecycle.
+   */
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(runCleanupSweep(env));
   },
 };

@@ -20,6 +20,26 @@ on:
     paths:
       - 'workers/export-workflow/**'
       - '.github/workflows/export-workflow.yml'
+      # The completion phase's shared modules — workers/export-workflow's
+      # own tests (exportJobSchema.test.mjs, workflowSteps.test.mjs) import
+      # these directly across the deploy boundary (see functions/_lib/
+      # exportJob.js's own header comment), so a PR touching ONLY these
+      # files still needs this job to run, not just the `workers/
+      # export-workflow/**` glob above.
+      - 'functions/_lib/exportJob.js'
+      - 'functions/_lib/exportService.js'
+      - 'functions/api/exports.js'
+      - 'functions/api/exports/**'
+      - 'functions/api/admin/export-families.js'
+      - 'functions/api/admin/exports.js'
+      - 'functions/api/admin/exports/**'
+      - 'migrations/0014_export_jobs.sql'
+      - 'tests/exportJob.test.mjs'
+      - 'tests/exportService.test.mjs'
+      - 'src/components/ExportArchiveCard.jsx'
+      - 'src/components/FamilySettings.jsx'
+      - 'public/admin.html'
+      - 'wrangler.toml'
 
 jobs:
   export-workflow-tests:
