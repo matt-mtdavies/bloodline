@@ -120,8 +120,8 @@ Allowed states:
 ```text
 queued → snapshotting → inventory → packaging → verifying
        → ready | ready_with_warnings
-active → cancelling → cancelled
-active → failed
+any non-terminal running state → cancelling → cancelled
+any non-terminal running state → failed
 ready states → expired
 ```
 
@@ -130,9 +130,20 @@ Indexes:
 - `(family_id, created_at DESC)`;
 - `(requested_by_user_id, created_at DESC)`;
 - `(status, expires_at)`;
-- a partial unique index on `family_id` for active states.
+- a partial unique index on `family_id` with this literal predicate:
 
-The partial unique index is the concurrency authority. Map its constraint failure to `409 export_already_active`; do not use read-then-insert.
+```sql
+WHERE status IN (
+  'queued', 'snapshotting', 'inventory', 'packaging',
+  'verifying', 'cancelling'
+)
+```
+
+`cancelling` deliberately remains locked until the first job reaches the
+terminal `cancelled` state, so a second job cannot start while multipart/staging
+cleanup is still in progress. The partial unique index is the concurrency
+authority. Map its constraint failure to `409 export_already_active`; do not
+use read-then-insert.
 
 ### `family_export_audit`
 
@@ -291,6 +302,22 @@ getExportInstance(jobId)
 requestCancellation(jobId)
 ```
 
+This requires correcting a Phase A defect, not merely filling in the method
+bodies. `ExportWorkflowEntrypoint` must import and extend
+`WorkerEntrypoint`:
+
+```js
+import { WorkerEntrypoint, WorkflowEntrypoint } from "cloudflare:workers";
+
+export class ExportWorkflowEntrypoint extends WorkerEntrypoint {
+  // narrow RPC methods
+}
+```
+
+The Phase A class is currently a plain class and therefore is not a callable
+RPC service-binding target. Add a service-binding integration test that would
+fail if the base class is removed.
+
 Validate job grammar, matching D1 row/state and instance identity. RPC payloads contain no family data.
 
 Add `FamilyArchiveExportWorkflow extends WorkflowEntrypoint` using the current Cloudflare Workflows API. Creation payload:
@@ -299,20 +326,28 @@ Add `FamilyArchiveExportWorkflow extends WorkflowEntrypoint` using the current C
 { "jobId": "exp_...", "schemaVersion": 1 }
 ```
 
+Both exported entrypoint classes must be reachable from the module configured
+as `wrangler.toml`'s `main` (`src/entrypoint.js`). They may import
+implementation helpers from other files, but `ExportWorkflowEntrypoint` and
+`FamilyArchiveExportWorkflow` themselves must be exported from that main
+module so the RPC service binding and `[[workflows]].class_name` can resolve
+them.
+
 Stable step plan:
 
 1. `v1-authorize-job`
 2. `v1-capture-source`
-3. `v1-capture-activity`
-4. `v1-build-inventory`
-5. repeated inventory-resolution steps
-6. `v1-start-multipart`
-7. repeated packaging/checkpoint steps
-8. `v1-complete-multipart`
-9. `v1-verify-archive`
-10. `v1-finalize-job`
-11. `v1-send-completion-email`
-12. `v1-clean-staging`
+3. `v1-capture-activity-bound`
+4. repeated `v1-capture-activity-{page}` steps
+5. `v1-build-inventory`
+6. repeated `v1-resolve-inventory-{shard}` steps
+7. `v1-start-multipart`
+8. repeated `v1-package-{checkpoint}` steps
+9. `v1-complete-multipart`
+10. `v1-verify-archive`
+11. `v1-finalize-job`
+12. `v1-send-completion-email`
+13. `v1-clean-staging`
 
 Step names never contain private identifiers beyond job/checkpoint sequence. Step results contain bounded references/counts/cursors/checksums only.
 
@@ -330,7 +365,23 @@ No second “latest tree” read. Edits continue but do not alter the snapshot.
 
 ### Activity
 
-Use Phase A composite upper/lower cursors, pages ≤500, persisted staging shards. Missing `activity_log` fails `activity_log_unavailable`; never substitute capped `tree.activity`.
+Do not call Phase A's whole-history `extractActivityLog()` loop inside one
+Workflow step. Refactor/expose a pure single-page helper while retaining the
+existing tested composite-cursor semantics:
+
+- `v1-capture-activity-bound` captures the inclusive upper
+  `(created_at, id)` cursor once;
+- each repeated page step reads at most 500 rows after the stored lower cursor
+  and at/before that upper cursor;
+- the page is written to one immutable staging shard;
+- the step returns only shard key, row count and next lower cursor;
+- the next deterministic step runs until a page reports `done`;
+- a retry rewrites the same shard bytes/key or confirms the existing checksum;
+- page/step count is capped by the captured upper bound, not by later inserts.
+
+This keeps arbitrarily long histories checkpointed and each step result
+bounded. Missing `activity_log` fails `activity_log_unavailable`; never
+substitute capped `tree.activity`.
 
 ### Inventory
 
@@ -339,7 +390,7 @@ Use Phase A composite upper/lower cursors, pages ≤500, persisted staging shard
 - never list the flat bucket;
 - ≤100 metadata operations/step, concurrency 10;
 - shards ≤500 entries and ≤512 KiB;
-- preflight file/byte counts and platform boundary;
+- preflight file/byte counts and the segmented-export boundary defined below;
 - missing individual media becomes warning;
 - external URLs are recorded, never fetched;
 - missing required tree extra already failed capture.
@@ -356,6 +407,30 @@ Use Phase A composite upper/lower cursors, pages ≤500, persisted staging shard
 - abort/restart only when reconciliation is impossible;
 - store compressed media/PDF/office formats; bounded DEFLATE for text;
 - progress update at most once per part or ten seconds.
+
+Before `v1-start-multipart`, compute a conservative
+`projectedArchiveBytes` from included source bytes, exact generated-file
+bytes, encoded archive-path bytes and a documented ZIP header/central-directory
+reserve. Add and test these Phase A `BUDGETS` constants:
+
+```js
+segmentedExport: {
+  maxProjectedBytes: 4 * (1024 ** 4),
+  maxProjectedParts: 9500
+}
+```
+
+Calculate `projectedParts = ceil(projectedArchiveBytes / selectedPartBytes)`.
+Fail `requires_segmented_export` before starting multipart when either
+projected value is **greater than or equal to** its threshold. The 9,500-part
+guard is expected to trigger before 4 TiB with 16/32 MiB parts; the byte guard
+still documents the product boundary if part sizing changes.
+
+During packaging, independently fail with the same code before uploading part
+9,500 if the conservative estimate was low. This is a terminal, non-retryable
+job failure whose user copy says the family exceeds the current single-archive
+platform boundary. It does not silently omit content, and it does not imply
+segmented archives are implemented.
 
 ### Verify
 
