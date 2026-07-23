@@ -5,9 +5,9 @@ body:
   - type: markdown
     attributes:
       value: |
-        This issue is the durable handoff record between Codex and Claude. Creating it
-        does not run Claude. A maintainer must apply `ready-for-claude-review` after the
-        published brief and scope have been verified.
+        This issue is the durable handoff record between Codex and Claude. To keep Claude
+        usage within the repository owner's Pro plan, open this issue from Claude Code on
+        the web or in the Claude app rather than triggering an API-billed GitHub Action.
 
   - type: input
     id: outcome

@@ -14,70 +14,46 @@ brief, a handoff issue, short-lived branches, commits, pushes, checks, and draft
 It does **not** authorize production deployment, remote migrations, destructive operations,
 production-data access, or expansion beyond the requested product outcome.
 
-## Automated lifecycle
+## Pro-plan lifecycle
 
 1. **Codex designs and publishes.** Codex starts from current `origin/main`, writes the
    implementation-ready brief under `docs/`, pushes it, and opens a `Codex to Claude handoff`
    issue containing a commit-pinned GitHub link.
-2. **Codex requests review.** After checking the issue and scope, Codex applies
-   `ready-for-claude-review`. The `Claude handoff` Action asks Claude to review only; the
-   review job cannot write repository contents.
-3. **Codex resolves the review.** Codex reads Claude's issue comment, updates and republishes
-   the brief, and records how blocking feedback was resolved. If feedback changes product
-   intent, risk, cost, or scope materially, Codex pauses for the owner.
-4. **Codex authorizes implementation.** Codex removes the review label and applies
-   `ready-for-claude-build` only when the brief is implementation-ready.
-5. **Claude implements.** Claude works on a `claude/` branch, verifies the change, pushes it,
-   and opens a PR when permissions allow. If PR creation is unavailable, Claude posts the
-   exact branch and compare link and Codex opens the draft PR.
-6. **Codex reviews.** Codex reviews the complete diff, checks, and deployed preview against
+2. **The owner starts Claude once.** In Claude Code on the web or in the Claude app, select
+   `matt-mtdavies/bloodline` and ask Claude to review the handoff issue and published brief.
+   This uses the owner's Pro-plan allowance rather than Anthropic API credits.
+3. **Codex resolves the review.** After Claude's review is available on GitHub, Codex updates
+   and republishes the brief and records how blocking feedback was resolved. If feedback
+   changes product intent, risk, cost, or scope materially, Codex pauses for the owner.
+4. **The owner starts implementation once.** In the same Claude task, ask Claude to implement
+   the approved brief. Claude works asynchronously, verifies the change, pushes a branch, and
+   creates a PR.
+5. **Codex reviews.** Codex reviews the complete diff, checks, and deployed preview against
    the approved brief. Valid findings return to Claude through PR comments.
-7. **The owner decides.** The owner receives a final summary, evidence, known risks, and
+6. **The owner decides.** The owner receives a final summary, evidence, known risks, and
    Codex's merge recommendation, then reviews and merges or declines the PR.
 
-The owner does not relay text between agents. GitHub issues, comments, commits, checks, and
-pull requests are the handoff record.
+The owner does not copy briefs or review comments between agents. GitHub issues, comments,
+commits, checks, and pull requests are the handoff record. However, a Pro-plan Claude task
+cannot currently be launched by a GitHub label, so the owner must initiate the Claude task.
 
-## Labels and permissions
+## Why this is not a GitHub Action
 
-- `ready-for-claude-review`: run the read-only brief-review job.
-- `ready-for-claude-build`: run the write-enabled implementation job.
-- `needs-codex-review`: implementation is ready for final Codex review.
+The official Claude Code GitHub Action requires API or separately generated automation
+credentials. A direct `ANTHROPIC_API_KEY` consumes Anthropic API credits, which are separate
+from the owner's Claude Pro allowance. This repository deliberately does not install that
+workflow.
 
-Only a maintainer or an authorized agent acting within the owner's request may apply the two
-Claude trigger labels. This is especially important because the repository is public: opening
-an issue alone must never grant write access or spend Anthropic API credits.
+Do not add an `ANTHROPIC_API_KEY` repository secret unless the owner later makes an explicit,
+informed decision to pay separately for unattended GitHub Action usage.
 
-The workflow pins third-party Actions to reviewed commit SHAs. Updating those SHAs is a
-separate dependency-maintenance change.
+## Required browser setup
 
-## Required repository setup
-
-No terminal or Claude CLI access is required. A repository administrator completes this
-one-time setup in the browser:
-
-1. Open the [official Claude GitHub App](https://github.com/apps/claude) while signed into
-   GitHub as the repository owner.
-2. Select **Install** or **Configure**, choose **Only select repositories**, select
-   `matt-mtdavies/bloodline`, and confirm the installation.
-3. Create a direct Anthropic API key in the
-   [Anthropic Console](https://console.anthropic.com/settings/keys). The API account must have
-   billing or credits available for GitHub Action usage.
-4. In GitHub, open `matt-mtdavies/bloodline` → **Settings** → **Secrets and variables** →
-   **Actions** → **New repository secret**.
-5. Enter `ANTHROPIC_API_KEY` as the secret name, paste the API key as its value, and select
-   **Add secret**.
-6. Confirm that `ANTHROPIC_API_KEY` appears in the repository-secret list. GitHub will not
-   show its value again.
-7. Merge the workflow PR before applying either Claude trigger label. After merge, use a
-   disposable handoff issue to test the review label before allowing an implementation run.
-
-The workflow also requires GitHub Actions to remain enabled with permission to write repository
-contents and pull requests for the implementation job. The trigger labels are created when this
-workflow is introduced.
-
-The API key must only be stored as a GitHub Actions secret. Never put it in an issue, prompt,
-workflow file, commit, log, or screenshot.
+1. Open Claude Code on the web from the Claude app or browser.
+2. Connect GitHub when prompted and grant Claude access only to
+   `matt-mtdavies/bloodline`.
+3. For each approved handoff, select that repository and give Claude the handoff issue URL.
+4. Confirm Claude is using the owner's Pro account and do not enable API-credit fallback.
 
 ## Human checkpoints
 
@@ -94,9 +70,8 @@ without intermediate owner involvement.
 
 ## Failure and recovery
 
-- A failed Claude Action changes no production state. Inspect its Actions log, correct the
-  setup or brief, then remove and reapply the relevant trigger label.
-- Do not apply both trigger labels together.
+- A failed Claude web task changes no production state. Review its task output, correct the
+  setup or brief, and retry within the same handoff issue.
 - If Claude pushes a partial branch, keep the issue open and do not open or merge a PR until
   verification and Codex review are complete.
 - Closing a handoff issue does not deploy or delete its branches.

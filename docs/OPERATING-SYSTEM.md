@@ -36,11 +36,13 @@ For design-led features, the standing collaboration model is:
    Claude addresses validated findings before human approval and merge.
 
 A local-only output, chat attachment, draft PR description, or unpushed commit is not a
-completed handoff. The automated form of this process is defined in `docs/AI-HANDOFF.md`.
+completed handoff. The Pro-plan form of this process is defined in `docs/AI-HANDOFF.md`.
 When the owner says “Take this through the standard workflow,” Codex may manage the GitHub
-brief, handoff issue, Claude review and implementation triggers, and final PR review without
-asking the owner to relay messages. This authorization is limited to reversible repository
-and draft-PR work within the requested scope; all production and R3 boundaries below apply.
+brief, handoff issue, review resolution, and final PR review without asking the owner to relay
+messages. The owner starts the Claude web task so Claude work uses the owner's Pro allowance
+rather than separately billed API automation. This authorization is limited to reversible
+repository and draft-PR work within the requested scope; all production and R3 boundaries
+below apply.
 
 ## Risk levels
 
