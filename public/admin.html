@@ -229,7 +229,13 @@
       background: rgba(251,251,252,0.92); backdrop-filter: blur(6px);
       border-bottom: 1px solid var(--hairline);
       display: flex; gap: 4px; overflow-x: auto; -webkit-overflow-scrolling: touch;
-      padding: 6px 20px; margin: 0 -20px 24px;
+      padding: 6px 20px; margin: 0 0 24px;
+      /* NOT a full-bleed -20px margin trick: .section-nav is a sibling of
+         .page, not nested inside it, so that negative margin (meant to
+         cancel .page's own side padding) instead pulled the nav's box a
+         constant 20px past the actual viewport edge at every width — caught
+         by the page-overflow check, not by eye. Matching padding alone keeps
+         it visually aligned with .page's content column with no overflow. */
       scrollbar-width: thin;
     }
     .section-nav a {
