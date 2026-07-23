@@ -153,6 +153,75 @@ function describeReference(ref) {
 }
 
 /*
+ * The pure half of media inventory: walks the captured tree's person
+ * portraits, gallery photos, and document files/thumbnails and returns the
+ * flat list of UNRESOLVED references (§7's "derive photo/document keys only
+ * from captured tree") — no resolver, no I/O, so this can run in full over
+ * an entire family in one cheap in-memory pass. The Workflow's inventory
+ * step (workers/export-workflow/src/workflow.js) shards this list into
+ * ≤100-entry batches and resolves each shard in its own checkpointed step;
+ * buildMediaInventory below (Phase A's original, still used by tests and
+ * any caller that wants the whole thing resolved in one call) is now a
+ * thin wrapper over this plus resolveEntry, unchanged in behavior.
+ */
+export function deriveMediaReferences(tree) {
+  const refs = [];
+
+  for (const person of tree.people || []) {
+    if (person.photo) {
+      refs.push({
+        archivePath: buildArchivePath('photos', person.id, person.display_name, extForMime(classifyReference(person.photo).mimeType)),
+        recordId: person.id,
+        recordType: 'person_photo',
+        rawRef: person.photo,
+      });
+    }
+    if (person.photo_thumb) {
+      refs.push({
+        archivePath: buildArchivePath('thumbnails', person.id, `${person.display_name || ''}-portrait-thumb`, extForMime(classifyReference(person.photo_thumb).mimeType)),
+        recordId: person.id,
+        recordType: 'person_photo_thumb',
+        rawRef: person.photo_thumb,
+      });
+    }
+  }
+
+  for (const photo of tree.photos || []) {
+    if (!photo.src) continue;
+    refs.push({
+      archivePath: buildArchivePath('photos', photo.id, photo.caption || photo.id, extForMime(classifyReference(photo.src).mimeType)),
+      recordId: photo.id,
+      recordType: 'photo',
+      rawRef: photo.src,
+      ownerId: photo.person_id,
+    });
+  }
+
+  for (const doc of tree.documents || []) {
+    if (doc.src) {
+      refs.push({
+        archivePath: buildArchivePath('documents', doc.id, doc.title || doc.id, extForMime(doc.mime || classifyReference(doc.src).mimeType)),
+        recordId: doc.id,
+        recordType: 'document',
+        rawRef: doc.src,
+        ownerId: doc.person_id,
+      });
+    }
+    if (doc.thumb) {
+      refs.push({
+        archivePath: buildArchivePath('thumbnails', doc.id, `${doc.title || doc.id}-thumb`, extForMime(classifyReference(doc.thumb).mimeType)),
+        recordId: doc.id,
+        recordType: 'document_thumb',
+        rawRef: doc.thumb,
+        ownerId: doc.person_id,
+      });
+    }
+  }
+
+  return refs;
+}
+
+/*
  * Walks the captured tree's person portraits, gallery photos, and document
  * files/thumbnails, resolving each one via the injected resolver. Returns
  * a flat array of inventory entries in tree order (callers needing lexical
@@ -161,58 +230,9 @@ function describeReference(ref) {
  */
 export async function buildMediaInventory(tree, { resolveR2Head } = {}) {
   const entries = [];
-
-  for (const person of tree.people || []) {
-    if (person.photo) {
-      entries.push(await resolveEntry({
-        archivePath: buildArchivePath('photos', person.id, person.display_name, extForMime(classifyReference(person.photo).mimeType)),
-        recordId: person.id,
-        recordType: 'person_photo',
-        rawRef: person.photo,
-      }, resolveR2Head));
-    }
-    if (person.photo_thumb) {
-      entries.push(await resolveEntry({
-        archivePath: buildArchivePath('thumbnails', person.id, `${person.display_name || ''}-portrait-thumb`, extForMime(classifyReference(person.photo_thumb).mimeType)),
-        recordId: person.id,
-        recordType: 'person_photo_thumb',
-        rawRef: person.photo_thumb,
-      }, resolveR2Head));
-    }
+  for (const ref of deriveMediaReferences(tree)) {
+    entries.push(await resolveEntry(ref, resolveR2Head));
   }
-
-  for (const photo of tree.photos || []) {
-    if (!photo.src) continue;
-    entries.push(await resolveEntry({
-      archivePath: buildArchivePath('photos', photo.id, photo.caption || photo.id, extForMime(classifyReference(photo.src).mimeType)),
-      recordId: photo.id,
-      recordType: 'photo',
-      rawRef: photo.src,
-      ownerId: photo.person_id,
-    }, resolveR2Head));
-  }
-
-  for (const doc of tree.documents || []) {
-    if (doc.src) {
-      entries.push(await resolveEntry({
-        archivePath: buildArchivePath('documents', doc.id, doc.title || doc.id, extForMime(doc.mime || classifyReference(doc.src).mimeType)),
-        recordId: doc.id,
-        recordType: 'document',
-        rawRef: doc.src,
-        ownerId: doc.person_id,
-      }, resolveR2Head));
-    }
-    if (doc.thumb) {
-      entries.push(await resolveEntry({
-        archivePath: buildArchivePath('thumbnails', doc.id, `${doc.title || doc.id}-thumb`, extForMime(classifyReference(doc.thumb).mimeType)),
-        recordId: doc.id,
-        recordType: 'document_thumb',
-        rawRef: doc.thumb,
-        ownerId: doc.person_id,
-      }, resolveR2Head));
-    }
-  }
-
   return entries;
 }
 
