@@ -87,7 +87,7 @@ This environment has no `wrangler login` session and no Cloudflare API
 access (confirmed: `wrangler whoami` reports "not authenticated," matching
 the same constraint documented in `docs/TREE-STORAGE.md` §11 for the tree-
 storage rollout). Someone with real account access needs to prove the five
-things §2.4 requires **before Phase B begins**:
+things §2.4 requires **before the completion phase begins**:
 
 1. **Pages can invoke the separate Worker through a service binding in the
    target account.**

@@ -8,6 +8,12 @@
 **Risk:** R2 for owner/co-admin self-service; R3 for site-administrator cross-family export and production rollout
 **Primary outcome:** an authorized person can extract a complete, unredacted, point-in-time copy of a family tree and every family-content asset Bloodline still holds, in a durable ZIP archive that can be browsed without the live site.
 
+**Implementation handoff:** Phase A is complete. The remaining owner/co-admin,
+site-administrator, production-pipeline and rollout work is combined into one
+final completion phase in
+`docs/FULL-ARCHIVE-EXPORT-COMPLETION-PHASE.md`. That brief controls the
+remaining implementation sequence.
+
 ---
 
 ## 1. Product position
@@ -86,7 +92,7 @@ D1 remains the product-visible job ledger. Cloudflare Workflow instance state is
 
 This infrastructure jump is deliberate, not accidental over-engineering. The current site has no queue, Workflow Worker or background-job deployment, so this adds a separately deployed service and operational surface. A simpler synchronous Pages Function, `waitUntil()` task or browser-side ZIP would be cheaper to build, but would violate the product requirement at the known scale of 1,000+ people and heavy documents: it would depend on an open request/tab, could not resume multipart work durably, and would make retries duplicate or restart large exports. Workflows is retained because “export the entire family regardless of size” is a durable job, not because every export is expected to be large.
 
-Before Phase B begins, Phase A must include a one-day infrastructure spike that proves:
+Before the completion phase begins, the Phase A infrastructure spike must prove:
 
 - Pages can invoke the separate Worker through a service binding in the target account;
 - the selected Workers plan supports the configured Workflow CPU and step budgets;
@@ -904,30 +910,23 @@ Keep this as one feature program, but stage risk deliberately.
 
 No production bindings or UI.
 
-### Phase B — owner/co-admin self-service
+### Completion phase — self-service, site-admin override and production rollout
 
-- D1 migration and job/audit models.
-- Workflow Worker and Pages service binding.
-- Owner/co-admin endpoints.
-- R2 staging/final prefixes and expiry.
-- Family Settings UI.
-- Completion email.
-- Deploy behind `ENABLE_FULL_EXPORT=false`.
+Implement `docs/FULL-ARCHIVE-EXPORT-COMPLETION-PHASE.md` as one final feature
+program and one implementation PR:
 
-### Phase C — site-admin override
+- D1 job/audit model, Workflow Worker, service binding and R2 lifecycle;
+- owner/co-admin endpoints and Family Settings UI;
+- separate `EXPORT_ADMIN_EMAILS`, family search, reason/confirmation, admin
+  endpoints and dedicated admin UI;
+- completion email, cancellation, verification, expiry and reconciliation;
+- offline viewer completion and raw archive acceptance;
+- flag-off deployment followed by the named-human R3 rehearsal and staged
+  enablement of both authority paths.
 
-- `EXPORT_ADMIN_EMAILS`.
-- family search and dedicated admin export UI.
-- confirmation/reason/audit behavior.
-- admin endpoints and rate limits.
-- enable only after an R3 rollout rehearsal.
-
-### Phase D — offline viewer completion
-
-- profiles, relationship navigation, media/documents, Keepsakes, search, accessibility and print.
-- forward-compatible unknown-field raw-data inspector.
-
-The ZIP can ship only when the viewer and raw archive contract are both complete; do not label a raw-data-only ZIP as the promised finished feature.
+The ZIP can ship only when the viewer and raw archive contract are both
+complete. Do not label a raw-data-only ZIP or an owner-only implementation as
+the promised finished feature.
 
 ---
 
