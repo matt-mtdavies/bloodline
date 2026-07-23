@@ -23,7 +23,7 @@
  *   npm run dev  (background)
  *   BASE_URL=http://localhost:5173/ node tests/sharing.mjs
  */
-import { chromium } from 'playwright-core';
+import { chromium } from 'playwright';
 
 const _BASE = (process.env.BASE_URL || 'http://localhost:5173/').replace(/\/$/, '');
 const shot = (name) => `tests/screenshots/share-${name}`;

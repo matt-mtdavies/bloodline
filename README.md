@@ -69,6 +69,13 @@ use `nvm install 20`) before continuing. `npm run browser:install` is required o
 each new machine or clean browser cache; the smoke test does not assume a global
 Chrome/Chromium installation.
 
+Playwright automatically respects an existing `PLAYWRIGHT_BROWSERS_PATH`. Restricted
+agent sandboxes may choose a project-local install with
+`PLAYWRIGHT_BROWSERS_PATH=0 npm run browser:install`, but must keep that variable set
+for `verify:env` and `test:e2e`. `ALLOW_BROWSER_SANDBOX_FALLBACK=1` changes a launch
+failure to a warning only when a supported external browser will perform the local UI
+verification instead.
+
 ## Stack & scaffold
 
 Everything is Cloudflare, matching the target stack (§2):

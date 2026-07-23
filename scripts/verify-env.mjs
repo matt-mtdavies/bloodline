@@ -25,20 +25,23 @@ for (const dependency of ['playwright', 'workbox-window']) {
 try {
   const { chromium } = await import('playwright');
   const executable = chromium.executablePath();
+  const browserPathSource = process.env.PLAYWRIGHT_BROWSERS_PATH
+    ? `PLAYWRIGHT_BROWSERS_PATH=${process.env.PLAYWRIGHT_BROWSERS_PATH}`
+    : 'Playwright default cache';
   if (!existsSync(executable)) {
-    failures.push(`Playwright Chromium is missing; run npm run browser:install. Expected: ${executable}`);
+    failures.push(`Playwright Chromium is missing; run npm run browser:install. Checked ${executable} (${browserPathSource}).`);
   } else {
-    notes.push('Playwright Chromium installed');
+    notes.push(`Playwright Chromium installed at ${executable} (${browserPathSource})`);
     try {
       const browser = await chromium.launch({ headless: true });
       await browser.close();
       notes.push('Playwright Chromium launches');
     } catch (error) {
       const detail = String(error?.message || error).split('\n')[0];
-      if (process.env.CODEX_SANDBOX) {
-        warnings.push(`This managed Codex shell forbids child Chromium processes (${detail}). Use the Codex in-app Browser against the local dev server.`);
+      if (process.env.ALLOW_BROWSER_SANDBOX_FALLBACK === '1') {
+        warnings.push(`Chromium could not launch (${detail}). An external browser fallback was explicitly allowed; verify the local app there and record that the CLI smoke test did not run.`);
       } else {
-        failures.push(`Chromium is installed but cannot launch (${detail}).`);
+        failures.push(`Chromium is installed at ${executable} but cannot launch (${detail}). Set ALLOW_BROWSER_SANDBOX_FALLBACK=1 only when a supported external browser will verify the app instead.`);
       }
     }
   }

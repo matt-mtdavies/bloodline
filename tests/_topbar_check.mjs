@@ -1,4 +1,4 @@
-import { chromium } from 'playwright-core';
+import { chromium } from 'playwright';
 
 const browser = await chromium.launch({ args: ['--no-sandbox', '--disable-setuid-sandbox'] });
 const page = await browser.newPage();

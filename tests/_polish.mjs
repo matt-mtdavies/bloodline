@@ -1,4 +1,4 @@
-import { chromium } from 'playwright-core';
+import { chromium } from 'playwright';
 const PORT = process.env.PORT || 5193;
 const br = await chromium.launch({ headless: true });
 const pg = await br.newPage({ viewport: { width: 414, height: 896 }, deviceScaleFactor: 2 });
