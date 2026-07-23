@@ -51,14 +51,25 @@
       --topbar-h: 60px;
       --subnav-h: 44px;
     }
-    html, body {
+    /* `overflow-x: hidden` forces the OTHER axis to compute as `auto` per the
+       CSS overflow spec (an axis can't stay `visible` while its sibling is
+       something else) — harmless on `html` alone (it's meant to be the single
+       real scrolling element, exactly what `auto` gives it), but `height:
+       100%` + that same auto-forced overflow-y on `body` too turns body into
+       a SECOND, viewport-height-capped scroll box nested inside html, which
+       traps everything below the first screenful and makes the rest of the
+       page unreachable by normal scrolling. Caught live via a screenshot that
+       came back blank below the fold — height:100% only belongs on html. */
+    html {
       height: 100%;
+      overflow-x: hidden; /* page-level safety net; never the cause of a table's own horizontal scroll */
+    }
+    body {
       font-family: var(--body);
       background: radial-gradient(130% 100% at 50% 0%, #ffffff 0%, #fbfbfc 60%, #f4f5f7 130%);
       color: var(--ink);
       font-size: 15px;
       line-height: 1.5;
-      overflow-x: hidden; /* page-level safety net; never the cause of a table's own horizontal scroll */
     }
 
     /* ── Focus & touch-target baseline (§6) ─────────────────────────────── */
@@ -321,12 +332,19 @@
     tbody tr { border-bottom: 1px solid var(--hairline); }
     tbody tr:last-child { border-bottom: none; }
     tbody tr.has-action:hover, tbody tr.has-action:focus-within { background: var(--paper-deep); }
-    tbody td { padding: 9px 10px 9px 0; color: var(--ink-soft); vertical-align: middle; max-width: 260px; overflow-wrap: anywhere; }
+    /* Cells default to nowrap, relying on the table's own dedicated
+       .table-scroll region for overflow (§5) — NOT overflow-wrap:anywhere.
+       That combination, tried first, let a narrow flex/table column squeeze
+       an identifier down to one character per line (caught live via a
+       screenshot of "example@fixture.test" rendered as a vertical letter
+       stack) instead of the table simply growing wider and scrolling.
+       Genuinely long free text (feedback messages, error text) opts back
+       into wrapping explicitly, inline, where it's actually wanted. */
+    tbody td { padding: 9px 10px 9px 0; color: var(--ink-soft); vertical-align: middle; white-space: nowrap; }
     tbody td.primary { color: var(--ink); font-weight: 500; }
     tbody td.muted { font-size: 12px; }
-    tbody td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-    .cell-flex { display: flex; align-items: center; gap: 6px; min-width: 0; }
-    .cell-flex .cell-text { overflow-wrap: anywhere; min-width: 0; }
+    tbody td.num { text-align: right; font-variant-numeric: tabular-nums; }
+    .cell-flex { display: flex; align-items: center; gap: 6px; }
 
     .copy-btn {
       flex: none; background: none; border: 1px solid transparent; border-radius: 6px;
