@@ -5,7 +5,7 @@ import { cancelFamilyExport, exportErrorResponse } from '../../../_lib/exportSer
 export async function onRequestPost({ params, env, data }) {
   if (!data.user) return json({ error: 'Unauthorized' }, { status: 401 });
   try {
-    const job = await cancelFamilyExport(env, { userId: data.user.uid, jobId: params.id });
+    const job = await cancelFamilyExport(env, { userId: data.user.uid, userEmail: data.user.email, jobId: params.id });
     return json(job);
   } catch (e) {
     return exportErrorResponse(json, e);

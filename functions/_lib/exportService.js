@@ -112,7 +112,7 @@ async function startWorkflow(env, jobId, familyId) {
 
 // ── Create (owner/coadmin) ───────────────────────────────────────────────
 
-export async function createFamilyExport(env, { userId }) {
+export async function createFamilyExport(env, { userId, userEmail }) {
   requireFullExportReady(await isFullExportReady(env));
   const membership = await resolveCanonicalFamily(env, userId);
   if (!membership || !['owner', 'coadmin'].includes(membership.role)) {
@@ -124,7 +124,7 @@ export async function createFamilyExport(env, { userId }) {
   }
 
   const { jobId, statements } = createExportJobStatements(env, {
-    familyId: membership.family_id, requestedByUserId: userId, requestedAs: membership.role,
+    familyId: membership.family_id, requestedByUserId: userId, requestedAs: membership.role, requestedByUserEmail: userEmail,
   });
   try {
     await env.DB.batch(statements);
@@ -169,7 +169,7 @@ export async function createAdminExport(env, { actorUserId, actorEmail, familyId
   }
 
   const { jobId, statements } = createExportJobStatements(env, {
-    familyId, requestedByUserId: actorUserId, requestedAs: 'site_admin', requestReason: reason.trim(),
+    familyId, requestedByUserId: actorUserId, requestedAs: 'site_admin', requestReason: reason.trim(), requestedByUserEmail: actorEmail,
   });
   try {
     await env.DB.batch(statements);
@@ -221,6 +221,24 @@ export async function getAdminExport(env, { actorEmail, jobId }) {
   return serializeExportJob(job, { forAdmin: true });
 }
 
+// §11's "show immutable audit history" — the append-only trail for one
+// job. Never includes people/filenames/R2 keys (family_export_audit's own
+// schema can't carry them — see migrations/0014_export_jobs.sql).
+export async function getAdminExportAudit(env, { actorEmail, jobId }) {
+  requireFullExportReady(await isFullExportReady(env));
+  if (!isExportAdminEmail(env, actorEmail)) throw new ExportServiceError('forbidden', 403, 'Not authorized for administrator exports.');
+  const job = await env.DB.prepare('SELECT id FROM family_export_job WHERE id = ?').bind(jobId).first();
+  if (!job) throw new ExportServiceError('not_found', 404, 'Export not found.');
+  const { results } = await env.DB.prepare(
+    `SELECT event, actor_email_snapshot, actor_authority, reason, created_at
+       FROM family_export_audit WHERE job_id = ? ORDER BY created_at ASC`,
+  ).bind(jobId).all();
+  return (results || []).map((r) => ({
+    event: r.event, actorEmail: r.actor_email_snapshot, actorAuthority: r.actor_authority,
+    reason: r.reason, at: new Date(r.created_at * 1000).toISOString(),
+  }));
+}
+
 // ── Family search for the admin picker (§6 — selection metadata only) ───
 
 export async function searchExportFamilies(env, { actorEmail, query }) {
@@ -231,12 +249,24 @@ export async function searchExportFamilies(env, { actorEmail, query }) {
   const { results } = await env.DB.prepare(
     `SELECT f.id, f.name,
             (SELECT COUNT(*) FROM family_member fm WHERE fm.family_id = f.id) AS memberCount,
-            (SELECT status FROM family_export_job j WHERE j.family_id = f.id ORDER BY j.created_at DESC LIMIT 1) AS lastExportStatus
+            (SELECT u.email FROM family_member fm JOIN user u ON u.id = fm.user_id WHERE fm.family_id = f.id AND fm.role = 'owner' LIMIT 1) AS ownerEmail,
+            (SELECT status FROM family_export_job j WHERE j.family_id = f.id ORDER BY j.created_at DESC LIMIT 1) AS lastExportStatus,
+            -- A cheap presence check, not a full read: _extraVersion is the
+            -- one plumbing field treeStore.js stamps onto a migrated
+            -- family's core JSON (docs/TREE-STORAGE.md §6.3) — this LIKE
+            -- avoids pulling the whole tree_json blob (which, per this
+            -- account's own documented scale, "1000+ people, heavy
+            -- documents", can approach D1's 1 MiB row ceiling) just to
+            -- answer one boolean question for up to 20 matched families.
+            (SELECT CASE WHEN tree_json LIKE '%"_extraVersion"%' THEN 1 ELSE 0 END FROM family_tree ft WHERE ft.family_id = f.id) AS isSplit
        FROM family f
       WHERE f.id = ? OR f.name LIKE ? ESCAPE '\\'
       ORDER BY f.name ASC LIMIT 20`,
   ).bind(q, `%${likeEscape(q)}%`).all();
-  return (results || []).map((r) => ({ id: r.id, name: r.name, memberCount: r.memberCount, lastExportStatus: r.lastExportStatus || null }));
+  return (results || []).map((r) => ({
+    id: r.id, name: r.name, memberCount: r.memberCount, ownerEmail: r.ownerEmail || null,
+    lastExportStatus: r.lastExportStatus || null, storageMode: r.isSplit == null ? null : (r.isSplit ? 'split' : 'legacy'),
+  }));
 }
 function likeEscape(s) {
   return s.replace(/[\\%_]/g, (c) => `\\${c}`);
@@ -246,15 +276,24 @@ function likeEscape(s) {
 
 const RUNNING = ['queued', 'snapshotting', 'inventory', 'packaging', 'verifying'];
 
-async function cancelJob(env, job, actorAuthority) {
+// Always returns the RAW job row (never pre-serialized) — callers are the
+// only place that calls serializeExportJob, exactly once, with the right
+// `forAdmin` flag. An earlier version of this function serialized in its
+// own idempotent branch AND left the caller to serialize again on top of
+// that already-serialized (camelCase) object — silently corrupting the
+// idempotent-repeat response (createdAt/requestedAs would come out
+// null/missing, since a serialized object has no snake_case columns for
+// serializeExportJob to read a second time). Fixed by never serializing
+// here at all.
+async function cancelJob(env, job, actorAuthority, { actorUserId = null, actorEmail = null } = {}) {
   if (!RUNNING.includes(job.status)) {
     // Idempotent — cancelling an already-cancelling/terminal job is a no-op
     // success, not an error (§6: "repeated request is idempotent").
-    return serializeExportJob(job, { forAdmin: actorAuthority !== 'owner' && actorAuthority !== 'coadmin' });
+    return job;
   }
   const { applied } = await applyJobTransition(env, {
     jobId: job.id, fromStatuses: RUNNING, toStatus: 'cancelling',
-    audit: { familyId: job.family_id, event: 'cancel_requested', actorAuthority },
+    audit: { familyId: job.family_id, event: 'cancel_requested', actorAuthority, actorUserId, actorEmailSnapshot: actorEmail },
   });
   const fresh = applied
     ? { ...job, status: 'cancelling' }
@@ -263,7 +302,7 @@ async function cancelJob(env, job, actorAuthority) {
   return fresh;
 }
 
-export async function cancelFamilyExport(env, { userId, jobId }) {
+export async function cancelFamilyExport(env, { userId, userEmail, jobId }) {
   requireFullExportReady(await isFullExportReady(env));
   const membership = await resolveCanonicalFamily(env, userId);
   if (!membership || !['owner', 'coadmin'].includes(membership.role)) {
@@ -271,15 +310,17 @@ export async function cancelFamilyExport(env, { userId, jobId }) {
   }
   const job = await env.DB.prepare('SELECT * FROM family_export_job WHERE id = ? AND family_id = ?').bind(jobId, membership.family_id).first();
   if (!job) throw new ExportServiceError('not_found', 404, 'Export not found.');
-  return serializeExportJob(await cancelJob(env, job, membership.role));
+  const cancelled = await cancelJob(env, job, membership.role, { actorUserId: userId, actorEmail: userEmail });
+  return serializeExportJob(cancelled);
 }
 
-export async function cancelAdminExport(env, { actorEmail, jobId }) {
+export async function cancelAdminExport(env, { actorUserId, actorEmail, jobId }) {
   requireFullExportReady(await isFullExportReady(env));
   if (!isExportAdminEmail(env, actorEmail)) throw new ExportServiceError('forbidden', 403, 'Not authorized for administrator exports.');
   const job = await env.DB.prepare('SELECT * FROM family_export_job WHERE id = ?').bind(jobId).first();
   if (!job) throw new ExportServiceError('not_found', 404, 'Export not found.');
-  return serializeExportJob(await cancelJob(env, job, 'site_admin'), { forAdmin: true });
+  const cancelled = await cancelJob(env, job, 'site_admin', { actorUserId, actorEmail });
+  return serializeExportJob(cancelled, { forAdmin: true });
 }
 
 // ── Download ──────────────────────────────────────────────────────────────

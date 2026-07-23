@@ -5,7 +5,7 @@ import { cancelAdminExport, exportErrorResponse } from '../../../../_lib/exportS
 export async function onRequestPost({ params, env, data }) {
   if (!data.user) return json({ error: 'Unauthorized' }, { status: 401 });
   try {
-    const job = await cancelAdminExport(env, { actorEmail: data.user.email, jobId: params.id });
+    const job = await cancelAdminExport(env, { actorUserId: data.user.uid, actorEmail: data.user.email, jobId: params.id });
     return json(job);
   } catch (e) {
     return exportErrorResponse(json, e);

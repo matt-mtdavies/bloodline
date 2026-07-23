@@ -110,7 +110,7 @@ export { ExportJobError };
  * read-then-insert-free, per §4.
  */
 export function createExportJobStatements(env, {
-  familyId, requestedByUserId, requestedAs, requestReason = null, now = Date.now(),
+  familyId, requestedByUserId, requestedAs, requestReason = null, requestedByUserEmail = null, now = Date.now(),
 }) {
   if (!['owner', 'coadmin', 'site_admin'].includes(requestedAs)) {
     throw new Error(`invalid requestedAs: ${requestedAs}`);
@@ -123,7 +123,7 @@ export function createExportJobStatements(env, {
      VALUES (?, ?, ?, ?, ?, ?, ?)`,
   ).bind(jobId, familyId, requestedByUserId, requestedAs, requestReason, S.QUEUED, nowSec);
   const insertAudit = buildAuditInsertStatement(env, {
-    jobId, familyId, actorUserId: requestedByUserId, actorAuthority: requestedAs,
+    jobId, familyId, actorUserId: requestedByUserId, actorEmailSnapshot: requestedByUserEmail, actorAuthority: requestedAs,
     event: 'requested', reason: requestReason, now,
   });
   return { jobId, statements: [insertJob, insertAudit] };

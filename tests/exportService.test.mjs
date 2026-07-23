@@ -16,7 +16,7 @@ import {
   createFamilyExport, createAdminExport,
   listFamilyExports, getFamilyExport, listAdminExports, getAdminExport,
   searchExportFamilies, cancelFamilyExport, cancelAdminExport,
-  downloadFamilyExport, downloadAdminExport,
+  downloadFamilyExport, downloadAdminExport, getAdminExportAudit,
   ExportServiceError,
 } from '../functions/_lib/exportService.js';
 
@@ -89,7 +89,16 @@ function makeFakeEnv({ families = [], users = [], members = [], jobs = [] } = {}
       const [id, likeArg] = args;
       const needle = likeArg.slice(1, -1).toLowerCase();
       return families.filter((f) => f.id === id || f.name.toLowerCase().includes(needle))
-        .map((f) => ({ id: f.id, name: f.name, memberCount: members.filter((m) => m.family_id === f.id).length, lastExportStatus: null }));
+        .map((f) => {
+          const owner = members.find((m) => m.family_id === f.id && m.role === 'owner');
+          const ownerUser = owner && users.find((u) => u.id === owner.user_id);
+          return { id: f.id, name: f.name, memberCount: members.filter((m) => m.family_id === f.id).length, ownerEmail: ownerUser?.email || null, lastExportStatus: null, isSplit: 0 };
+        });
+    }
+    if (sql.includes('FROM family_export_audit WHERE job_id')) {
+      const [jobId] = args;
+      return audit.filter((a) => a.job_id === jobId).sort((a, b) => a.created_at - b.created_at)
+        .map((a) => ({ event: a.event, actor_email_snapshot: a.actor_email_snapshot, actor_authority: a.actor_authority, reason: a.reason, created_at: a.created_at }));
     }
     throw new Error(`fakeEnv: unhandled .all() query: ${sql}`);
   }
@@ -104,7 +113,18 @@ function makeFakeEnv({ families = [], users = [], members = [], jobs = [] } = {}
       return { changes: 1 };
     }
     if (sql.includes('INSERT INTO family_export_audit')) {
-      audit.push({ sql, args });
+      // Two distinct column layouts share this table: the general 9-column
+      // insert (buildAuditInsertStatement) and recordDownloadAudit's
+      // narrower 7-column one (no actor_email_snapshot/reason, `event`
+      // hardcoded as a SQL literal rather than bound) — detected by
+      // whether actor_email_snapshot is actually a column in THIS insert.
+      if (sql.includes('actor_email_snapshot')) {
+        const [, jobId, familyId, actorUserId, actorEmailSnapshot, actorAuthority, event, reason, createdAt] = args;
+        audit.push({ job_id: jobId, family_id: familyId, actor_user_id: actorUserId, actor_email_snapshot: actorEmailSnapshot, actor_authority: actorAuthority, event, reason, created_at: createdAt });
+      } else {
+        const [, jobId, familyId, actorUserId, actorAuthority, createdAt] = args;
+        audit.push({ job_id: jobId, family_id: familyId, actor_user_id: actorUserId, actor_email_snapshot: null, actor_authority: actorAuthority, event: 'downloaded', reason: null, created_at: createdAt });
+      }
       return { changes: 1 };
     }
     if (sql.includes('UPDATE family_export_job SET status')) {
@@ -406,6 +426,49 @@ await atest('downloadAdminExport requires export-admin authority independent of 
   await assert.rejects(() => downloadAdminExport(env, { actorUserId: 'x', actorEmail: 'not-admin@example.test', jobId: 'exp_1' }), (e) => e.code === 'forbidden');
   const object = await downloadAdminExport(env, { actorUserId: ADMIN_USER.id, actorEmail: 'admin@example.test', jobId: 'exp_1' });
   assert.ok(object);
+});
+
+// ── audit trail + the cancel-idempotence double-serialization regression ──
+
+await atest('createFamilyExport stamps the requester\'s email onto the "requested" audit row', async () => {
+  const { env, audit } = baseFixture();
+  await createFamilyExport(env, { userId: OWNER.id, userEmail: 'owner@example.test' });
+  assert.equal(audit.length, 1);
+  assert.equal(audit[0].event, 'requested');
+  assert.equal(audit[0].actor_email_snapshot, 'owner@example.test');
+});
+
+await atest('cancelFamilyExport is idempotent AND returns a correctly-serialized job on repeat — the exact double-serialization bug: an earlier version pre-serialized inside cancelJob, then serialized AGAIN on top, silently nulling createdAt and dropping requestedAs', async () => {
+  const now = Math.floor(Date.now() / 1000);
+  const { env } = baseFixture({ jobs: [{ id: 'exp_1', family_id: 'fam_1', requested_by_user_id: OWNER.id, requested_as: 'owner', status: 'cancelled', created_at: now }] });
+  const result = await cancelFamilyExport(env, { userId: OWNER.id, userEmail: 'owner@example.test', jobId: 'exp_1' });
+  assert.equal(result.status, 'cancelled');
+  assert.equal(result.createdAt, new Date(now * 1000).toISOString(), 'createdAt must survive the idempotent path intact');
+  assert.equal(result.requestedAs, 'owner', 'requestedAs must survive the idempotent path intact');
+});
+
+await atest('cancelFamilyExport stamps the actor\'s email onto the cancel_requested audit row', async () => {
+  const now = Math.floor(Date.now() / 1000);
+  const { env, audit } = baseFixture({ jobs: [{ id: 'exp_1', family_id: 'fam_1', requested_by_user_id: OWNER.id, requested_as: 'owner', status: 'packaging', created_at: now }] });
+  await cancelFamilyExport(env, { userId: OWNER.id, userEmail: 'owner@example.test', jobId: 'exp_1' });
+  const cancelEvent = audit.find((a) => a.event === 'cancel_requested');
+  assert.equal(cancelEvent.actor_email_snapshot, 'owner@example.test');
+});
+
+await atest('getAdminExportAudit returns the full immutable trail for a job, oldest first, and requires export-admin authority', async () => {
+  const now = Math.floor(Date.now() / 1000);
+  const { env } = baseFixture({ jobs: [{ id: 'exp_1', family_id: 'fam_1', requested_by_user_id: OWNER.id, requested_as: 'owner', status: 'packaging', created_at: now }] });
+  await assert.rejects(() => getAdminExportAudit(env, { actorEmail: 'not-admin@example.test', jobId: 'exp_1' }), (e) => e.code === 'forbidden');
+  await cancelFamilyExport(env, { userId: OWNER.id, userEmail: 'owner@example.test', jobId: 'exp_1' });
+  const events = await getAdminExportAudit(env, { actorEmail: 'admin@example.test', jobId: 'exp_1' });
+  assert.equal(events.length, 1);
+  assert.equal(events[0].event, 'cancel_requested');
+  assert.equal(events[0].actorEmail, 'owner@example.test');
+});
+
+await atest('getAdminExportAudit 404s for an unknown job id', async () => {
+  const { env } = baseFixture();
+  await assert.rejects(() => getAdminExportAudit(env, { actorEmail: 'admin@example.test', jobId: 'exp_nope' }), (e) => e.code === 'not_found');
 });
 
 console.log(`\n  ${passed} passed, ${failed} failed`);

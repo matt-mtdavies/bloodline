@@ -12,7 +12,7 @@ import { createFamilyExport, listFamilyExports, exportErrorResponse } from '../_
 export async function onRequestPost({ env, data }) {
   if (!data.user) return json({ error: 'Unauthorized' }, { status: 401 });
   try {
-    const { jobId } = await createFamilyExport(env, { userId: data.user.uid });
+    const { jobId } = await createFamilyExport(env, { userId: data.user.uid, userEmail: data.user.email });
     return json({ id: jobId }, { status: 201 });
   } catch (e) {
     return exportErrorResponse(json, e);
