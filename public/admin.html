@@ -14,9 +14,19 @@
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
-      /* Mirrors src/styles/theme.css exactly — this page is served outside
-         the Vite bundle (public/admin.html), so the tokens are copied by
-         hand rather than imported. Keep in sync if theme.css changes. */
+      /* Mirrors src/styles/theme.css — this page is served outside the Vite
+         bundle (public/admin.html), so the tokens are copied by hand. Keep in
+         sync if theme.css changes, EXCEPT --gold: this page's mark and gold
+         accents deliberately keep the newer #c4913f the brand mark itself
+         uses (see Logo.jsx), independent of theme.css's own --gold token —
+         a pre-existing, intentional split (see CLAUDE.md's icon-refresh
+         note), not something this pass changes. --danger/--danger-soft have
+         no equivalent in theme.css at all: the main app deliberately avoids
+         a red token (see Keepsake banner work), but an admin operations page
+         genuinely needs one for failure states, so it's a considered,
+         admin-only addition, not drift.
+         tests/admin-theme-tokens.test.mjs asserts the shared tokens stay
+         byte-identical to theme.css so this comment doesn't rot silently. */
       --paper: #ffffff;
       --paper-deep: #f2f3f5;
       --ink: #1c1d21;
@@ -38,6 +48,8 @@
       --shadow-soft: 0 1px 2px rgba(20, 22, 28, 0.04), 0 6px 20px rgba(20, 22, 28, 0.07);
       --shadow-lift: 0 2px 8px rgba(20, 22, 28, 0.06), 0 20px 50px rgba(20, 22, 28, 0.14);
       --safe-top: env(safe-area-inset-top, 0px);
+      --topbar-h: 60px;
+      --subnav-h: 44px;
     }
     html, body {
       height: 100%;
@@ -46,282 +58,383 @@
       color: var(--ink);
       font-size: 15px;
       line-height: 1.5;
+      overflow-x: hidden; /* page-level safety net; never the cause of a table's own horizontal scroll */
     }
 
-    /* ── Auth gate ── */
-    #auth-gate {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      min-height: 100vh;
-      gap: 12px;
-      color: var(--ink-soft);
-      text-align: center;
-      padding: 20px;
+    /* ── Focus & touch-target baseline (§6) ─────────────────────────────── */
+    a, button, [tabindex] { font-family: inherit; }
+    :focus-visible {
+      outline: 2.5px solid var(--accent);
+      outline-offset: 2px;
+      border-radius: 6px;
     }
-    #auth-gate .icon { font-size: 32px; }
-    #auth-gate h2 { font-family: var(--display); font-size: 22px; font-weight: 600; color: var(--ink); }
-    #auth-gate a { color: var(--accent); font-size: 14px; font-weight: 500; }
+    button, .btn, input[type="text"], input[type="search"] {
+      min-height: 44px;
+    }
+    .icon-btn { min-width: 44px; min-height: 44px; }
 
-    /* ── Layout ── */
+    .visually-hidden {
+      position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+      overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0;
+    }
+    .skip-link {
+      position: absolute; left: 12px; top: -60px; z-index: 100;
+      background: var(--ink); color: #fff; padding: 10px 16px; border-radius: 8px;
+      font-size: 13px; font-weight: 600; transition: top 0.15s ease;
+    }
+    .skip-link:focus { top: 12px; }
+
+    @media (prefers-reduced-motion: reduce) {
+      * { transition-duration: 0.001ms !important; animation-duration: 0.001ms !important; }
+      .spin-icon { animation: none !important; border-top-color: var(--accent); }
+    }
+
+    /* ── Preload / fatal error / auth gate (top-level, NOT inside .app) ─── */
+    #preload, #fatal-error, #auth-gate {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      min-height: 100vh; gap: 14px; color: var(--ink-soft); text-align: center; padding: 24px;
+    }
+    #fatal-error, #auth-gate { display: none; }
+    #fatal-error.show, #auth-gate.show { display: flex; }
+    .gate-mark { display: block; }
+    .gate-mark--breathe circle { animation: gate-breathe 2.6s ease-in-out infinite; }
+    .gate-mark--breathe .g-a { animation-delay: 0s; }
+    .gate-mark--breathe .g-b { animation-delay: 0.15s; }
+    .gate-mark--breathe .g-c { animation-delay: 0.3s; }
+    @keyframes gate-breathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(0.9); } }
+    @media (prefers-reduced-motion: reduce) { .gate-mark--breathe circle { animation: none; } }
+    #preload p, #fatal-error p, #auth-gate p { font-size: 14px; max-width: 360px; }
+    .gate-icon { font-size: 32px; }
+    .gate-h { font-family: var(--display); font-size: 22px; font-weight: 600; color: var(--ink); }
+    .gate-reason {
+      background: var(--paper-deep); border-radius: 10px; padding: 10px 14px;
+      font-size: 13px; color: var(--ink-soft); max-width: 420px; word-break: break-word;
+    }
+    .gate-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; justify-content: center; }
+    .gate-link { color: var(--accent); font-size: 14px; font-weight: 500; padding: 10px 4px; }
+    .btn {
+      background: var(--paper); border: 1px solid var(--hairline); border-radius: 10px;
+      padding: 0 18px; font-size: 13px; font-weight: 600; font-family: var(--body);
+      cursor: pointer; color: var(--ink); box-shadow: var(--shadow-soft);
+      transition: transform 0.15s var(--ease, ease), background 0.15s;
+      display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    }
+    .btn:hover { background: var(--paper-deep); }
+    .btn:active { transform: scale(0.97); }
+    .btn:disabled { cursor: default; opacity: 0.7; }
+    .btn--primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .btn--primary:hover { background: var(--accent-deep); }
+
+    /* ── App shell ────────────────────────────────────────────────────── */
     .app { display: none; }
     .app.ready { display: block; }
 
     .topbar {
       background: linear-gradient(180deg, #ffffff 0%, rgba(255,255,255,0.94) 70%, rgba(255,255,255,0.86) 100%);
       border-bottom: 1px solid var(--hairline);
-      padding: calc(var(--safe-top) + 12px) 24px 12px;
-      display: flex;
-      align-items: center;
-      gap: 14px;
-      position: sticky;
-      top: 0;
-      z-index: 10;
-      backdrop-filter: blur(8px);
+      padding: calc(var(--safe-top) + 10px) 20px 10px;
+      display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+      position: sticky; top: 0; z-index: 20; backdrop-filter: blur(8px);
+      row-gap: 6px;
     }
     .topbar-brand {
-      display: flex;
-      align-items: center;
-      gap: 9px;
-      text-decoration: none;
-      border-radius: 999px;
-      padding: 6px 10px;
-      margin: -6px -10px;
+      display: flex; align-items: center; gap: 9px; text-decoration: none;
+      border-radius: 999px; padding: 6px 10px; margin: -6px -10px 0 -10px;
       transition: background 0.15s ease;
     }
     .topbar-brand:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); }
     .topbar-brand__word {
-      font-family: var(--display);
-      font-size: 19px;
-      font-weight: 600;
-      letter-spacing: -0.022em;
-      color: var(--accent);
-      line-height: 1;
+      font-family: var(--display); font-size: 19px; font-weight: 600;
+      letter-spacing: -0.022em; color: var(--accent); line-height: 1;
     }
     .topbar-divider { width: 1px; height: 20px; background: var(--hairline); }
-    .topbar-title {
-      font-size: 12px;
-      font-weight: 600;
-      letter-spacing: 0.06em;
-      text-transform: uppercase;
-      color: var(--ink-soft);
-    }
-    .topbar-spacer { flex: 1; }
-    .topbar-ts { font-size: 12px; color: var(--ink-faint); }
-    .topbar-refresh {
-      background: var(--paper);
-      border: 1px solid var(--hairline);
-      border-radius: 10px;
-      padding: 7px 14px;
-      font-size: 13px;
-      font-weight: 500;
-      font-family: var(--body);
-      cursor: pointer;
-      color: var(--ink);
-      box-shadow: var(--shadow-soft);
-      transition: transform 0.15s var(--ease, ease), background 0.15s;
-    }
-    .topbar-refresh:hover { background: var(--paper-deep); }
-    .topbar-refresh:active { transform: scale(0.96); }
+    .topbar-title { font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-soft); }
+    .topbar-title--short { display: none; }
+    .topbar-spacer { flex: 1; min-width: 8px; }
+    .topbar-ts { font-size: 12px; color: var(--ink-faint); order: 4; }
+    .topbar-ts b { color: var(--ink-soft); font-weight: 600; }
 
-    .page {
-      max-width: 1160px;
-      margin: 0 auto;
-      padding: 28px 20px 72px;
+    .privacy-toggle {
+      display: inline-flex; align-items: center; gap: 7px;
+      background: var(--paper); border: 1px solid var(--hairline); border-radius: 10px;
+      padding: 0 12px; font-size: 12.5px; font-weight: 600; color: var(--ink-soft);
+      box-shadow: var(--shadow-soft); cursor: pointer; min-height: 40px;
+    }
+    .privacy-toggle[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent-deep); border-color: var(--accent-soft); }
+    .privacy-toggle .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ink-faint); flex: none; }
+    .privacy-toggle[aria-pressed="true"] .dot { background: var(--accent); }
+
+    .topbar-refresh { font-weight: 600; }
+    .spin-icon-inline {
+      width: 13px; height: 13px; border: 2px solid rgba(255,255,255,0.4);
+      border-top-color: currentColor; border-radius: 50%; animation: spin 0.7s linear infinite; flex: none;
+    }
+    .btn:not(.btn--primary) .spin-icon-inline { border: 2px solid var(--hairline); border-top-color: var(--accent); }
+
+    @media (max-width: 640px) {
+      .topbar-title--full { display: none; }
+      .topbar-title--short { display: inline; }
+      .topbar-ts { flex-basis: 100%; order: 5; }
     }
 
-    /* ── Stat cards ── */
+    /* ── Page head ────────────────────────────────────────────────────── */
+    .page { max-width: 1160px; margin: 0 auto; padding: 22px 20px 72px; }
+    .page-head { margin-bottom: 18px; }
+    .page-head h1 {
+      font-family: var(--display); font-size: 26px; font-weight: 600;
+      letter-spacing: -0.02em; color: var(--ink); margin-bottom: 4px;
+    }
+    .page-head__desc { font-size: 13.5px; color: var(--ink-soft); max-width: 60ch; }
+
+    /* ── Needs attention (§9) ─────────────────────────────────────────── */
+    .attention {
+      margin: 16px 0 22px; border-radius: var(--radius); border: 1px solid var(--hairline);
+      background: var(--paper); overflow: hidden;
+    }
+    .attention--healthy { display: flex; align-items: center; gap: 10px; padding: 14px 18px; }
+    .attention--healthy .a-icon { color: var(--sage); font-size: 18px; }
+    .attention--healthy strong { font-size: 13.5px; }
+    .attention--healthy span.sub { font-size: 12px; color: var(--ink-soft); }
+    .attention-list { list-style: none; }
+    .attention-item {
+      display: flex; align-items: flex-start; gap: 10px; padding: 12px 18px;
+      border-bottom: 1px solid var(--hairline); font-size: 13px;
+    }
+    .attention-item:last-child { border-bottom: none; }
+    .attention-item__badge {
+      flex: none; font-size: 10.5px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
+      padding: 3px 8px; border-radius: 6px; margin-top: 1px;
+    }
+    .attention-item__badge.critical { background: var(--danger-soft); color: var(--danger); }
+    .attention-item__badge.warning { background: color-mix(in srgb, var(--gold) 16%, transparent); color: var(--gold); }
+    .attention-item__badge.info { background: var(--paper-deep); color: var(--ink-soft); }
+    .attention-item__body { flex: 1; min-width: 0; }
+    .attention-item__text { color: var(--ink); }
+    .attention-item a { color: var(--accent); font-weight: 600; font-size: 12.5px; white-space: nowrap; }
+
+    /* ── Section nav (§8) ─────────────────────────────────────────────── */
+    .section-nav {
+      position: sticky; top: var(--topbar-h); z-index: 15;
+      background: rgba(251,251,252,0.92); backdrop-filter: blur(6px);
+      border-bottom: 1px solid var(--hairline);
+      display: flex; gap: 4px; overflow-x: auto; -webkit-overflow-scrolling: touch;
+      padding: 6px 20px; margin: 0 -20px 24px;
+      scrollbar-width: thin;
+    }
+    .section-nav a {
+      flex: none; text-decoration: none; color: var(--ink-soft); font-size: 12.5px; font-weight: 600;
+      padding: 8px 14px; border-radius: 999px; white-space: nowrap; position: relative;
+      min-height: 32px; display: inline-flex; align-items: center;
+    }
+    .section-nav a[aria-current="true"] {
+      color: var(--accent-deep); background: var(--accent-soft); font-weight: 700;
+    }
+    .section-nav a[aria-current="true"]::after {
+      content: '●'; font-size: 6px; margin-left: 6px; color: var(--accent);
+    }
+    section[id] { scroll-margin-top: calc(var(--topbar-h) + var(--subnav-h) + 12px); }
+
+    /* ── Cards ────────────────────────────────────────────────────────── */
     .cards {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
-      gap: 14px;
-      margin-bottom: 30px;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 14px; margin-bottom: 24px;
     }
     .card {
-      background: var(--paper);
-      border-radius: var(--radius);
-      padding: 18px 20px;
-      box-shadow: var(--shadow-soft);
-      border: 1px solid var(--hairline);
+      background: var(--paper); border-radius: var(--radius); padding: 18px 20px;
+      box-shadow: var(--shadow-soft); border: 1px solid var(--hairline); min-width: 0;
     }
-    .card__label {
-      font-size: 11px;
-      font-weight: 600;
-      letter-spacing: 0.06em;
-      text-transform: uppercase;
-      color: var(--ink-soft);
-      margin-bottom: 8px;
-    }
-    .card__value {
-      font-family: var(--display);
-      font-size: 30px;
-      font-weight: 600;
-      letter-spacing: -0.02em;
-      color: var(--ink);
-      line-height: 1;
-      margin-bottom: 4px;
-    }
+    .card__label { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-soft); margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
+    .card__value { font-family: var(--display); font-size: 28px; font-weight: 600; letter-spacing: -0.02em; color: var(--ink); line-height: 1.1; margin-bottom: 4px; word-break: break-word; }
     .card__value.accent { color: var(--accent); }
-    .card__value.green  { color: var(--sage); }
+    .card__value.healthy { color: var(--sage); }
+    .card__value.warn { color: var(--gold); }
+    .card__value.fail { color: var(--danger); }
     .card__sub { font-size: 12px; color: var(--ink-soft); }
-
-    /* ── Chart row ── */
-    .charts {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 20px;
-      margin-bottom: 30px;
+    .info-hint {
+      background: none; border: none; padding: 0; color: var(--ink-faint); cursor: help;
+      font-size: 11px; min-height: auto; min-width: auto; width: 15px; height: 15px;
+      border-radius: 50%; border: 1px solid var(--ink-faint); line-height: 13px; text-align: center;
     }
+
+    /* ── Quiet config rows (§10 — secondary values, not equal-weight cards) */
+    .quiet-rows {
+      background: var(--paper); border: 1px solid var(--hairline); border-radius: var(--radius);
+      margin-bottom: 24px; overflow: hidden;
+    }
+    .quiet-row {
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      padding: 12px 18px; border-bottom: 1px solid var(--hairline); font-size: 13px; flex-wrap: wrap;
+    }
+    .quiet-row:last-child { border-bottom: none; }
+    .quiet-row__label { color: var(--ink-soft); font-weight: 500; }
+    .quiet-row__value { display: flex; align-items: center; gap: 8px; font-weight: 600; color: var(--ink); min-width: 0; }
+    .quiet-row__value .val-text { overflow-wrap: anywhere; }
+
+    /* ── Chart / table cards ──────────────────────────────────────────── */
+    .charts { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 24px; }
     .charts--thirds { grid-template-columns: 1.3fr 1fr; }
     @media (max-width: 760px) { .charts, .charts--thirds { grid-template-columns: 1fr; } }
 
-    .chart-card {
-      background: var(--paper);
-      border-radius: var(--radius);
-      padding: 20px 22px;
-      box-shadow: var(--shadow-soft);
-      border: 1px solid var(--hairline);
+    .chart-card, .table-card {
+      background: var(--paper); border-radius: var(--radius); padding: 20px 22px;
+      box-shadow: var(--shadow-soft); border: 1px solid var(--hairline); min-width: 0;
     }
-    .chart-card h3 {
-      font-family: var(--display);
-      font-size: 15px;
-      font-weight: 600;
-      color: var(--ink);
-      margin-bottom: 16px;
-    }
+    .chart-card h3, .table-card h3 { font-family: var(--display); font-size: 15px; font-weight: 600; color: var(--ink); margin-bottom: 6px; }
+    .chart-summary { font-size: 12.5px; color: var(--ink-soft); margin-bottom: 14px; }
     .chart-wrap { position: relative; height: 220px; }
+    @media (max-width: 480px) { .chart-card { padding: 14px 16px; } .chart-wrap { height: 170px; } }
+    .chart-empty {
+      display: flex; align-items: center; justify-content: center; height: 100%;
+      color: var(--ink-faint); font-size: 13px; text-align: center; padding: 12px;
+    }
 
-    /* ── Tables ── */
-    .tables {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 20px;
+    .table-toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+    .table-search {
+      flex: 1; min-width: 140px; border: 1px solid var(--hairline); border-radius: 10px;
+      padding: 0 12px; font-size: 13px; font-family: var(--body); background: var(--paper-deep);
     }
-    @media (max-width: 760px) { .tables { grid-template-columns: 1fr; } }
+    .table-count { font-size: 12px; color: var(--ink-faint); white-space: nowrap; }
 
-    .table-card {
-      background: var(--paper);
-      border-radius: var(--radius);
-      padding: 20px 22px;
-      box-shadow: var(--shadow-soft);
-      border: 1px solid var(--hairline);
-      overflow: hidden;
+    .table-scroll {
+      overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: 10px;
+      position: relative;
     }
-    .table-card h3 {
-      font-family: var(--display);
-      font-size: 15px;
-      font-weight: 600;
-      color: var(--ink);
-      margin-bottom: 14px;
-    }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 13px;
-    }
+    .table-scroll.is-scrollable { box-shadow: inset -14px 0 10px -12px rgba(20,22,28,0.10); }
+    .table-scroll-hint { font-size: 11px; color: var(--ink-faint); margin-top: 6px; display: none; }
+    .table-scroll.is-scrollable + .table-scroll-hint { display: block; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 320px; }
     thead th {
-      text-align: left;
-      font-size: 11px;
-      font-weight: 600;
-      letter-spacing: 0.05em;
-      text-transform: uppercase;
-      color: var(--ink-soft);
-      padding: 0 0 8px;
-      border-bottom: 1px solid var(--hairline);
+      text-align: left; font-size: 11px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase;
+      color: var(--ink-soft); padding: 0 10px 8px 0; border-bottom: 1px solid var(--hairline); white-space: nowrap;
     }
+    thead th.num { text-align: right; }
+    th button.sort-btn {
+      background: none; border: none; padding: 4px 2px; font: inherit; font-size: 11px; font-weight: 600;
+      letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-soft); cursor: pointer;
+      display: inline-flex; align-items: center; gap: 4px; min-height: 28px;
+    }
+    th button.sort-btn:hover { color: var(--ink); }
+    th button.sort-btn .arrow { font-size: 9px; opacity: 0.35; }
+    th[aria-sort="ascending"] button.sort-btn .arrow, th[aria-sort="descending"] button.sort-btn .arrow { opacity: 1; color: var(--accent); }
     tbody tr { border-bottom: 1px solid var(--hairline); }
     tbody tr:last-child { border-bottom: none; }
-    tbody td {
-      padding: 9px 0;
-      color: var(--ink-soft);
-      vertical-align: middle;
-    }
+    tbody tr.has-action:hover, tbody tr.has-action:focus-within { background: var(--paper-deep); }
+    tbody td { padding: 9px 10px 9px 0; color: var(--ink-soft); vertical-align: middle; max-width: 260px; overflow-wrap: anywhere; }
     tbody td.primary { color: var(--ink); font-weight: 500; }
     tbody td.muted { font-size: 12px; }
-    tbody td.num { text-align: right; font-variant-numeric: tabular-nums; }
-    thead th.num { text-align: right; }
+    tbody td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .cell-flex { display: flex; align-items: center; gap: 6px; min-width: 0; }
+    .cell-flex .cell-text { overflow-wrap: anywhere; min-width: 0; }
 
-    .badge {
-      display: inline-block;
-      border-radius: 6px;
-      padding: 2px 8px;
-      font-size: 11px;
-      font-weight: 600;
-      letter-spacing: 0.02em;
+    .copy-btn {
+      flex: none; background: none; border: 1px solid transparent; border-radius: 6px;
+      padding: 2px 6px; font-size: 11px; color: var(--ink-faint); cursor: pointer; min-height: 26px;
     }
+    .copy-btn:hover { color: var(--accent); border-color: var(--hairline); }
+    .copy-btn.copied { color: var(--sage); }
+
+    .badge { display: inline-block; border-radius: 6px; padding: 2px 8px; font-size: 11px; font-weight: 600; letter-spacing: 0.02em; white-space: nowrap; }
     .badge-green { background: var(--sage-soft); color: var(--sage); }
     .badge-amber { background: color-mix(in srgb, var(--gold) 16%, transparent); color: var(--gold); }
     .badge-red   { background: var(--danger-soft); color: var(--danger); }
+    .badge-neutral { background: var(--paper-deep); color: var(--ink-soft); }
 
-    /* ── Invite funnel summary row ── */
-    .funnel-row {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 10px;
-      margin-bottom: 16px;
-    }
-    .funnel-item {
-      text-align: center;
-      padding: 12px 8px;
-      border-radius: 12px;
-      background: var(--paper-deep);
-    }
-    .funnel-item__n { font-family: var(--display); font-size: 21px; font-weight: 600; letter-spacing: -0.02em; }
+    .funnel-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 14px; }
+    .funnel-item { text-align: center; padding: 12px 8px; border-radius: 12px; background: var(--paper-deep); }
+    .funnel-item__n { font-family: var(--display); font-size: 20px; font-weight: 600; letter-spacing: -0.02em; }
     .funnel-item__l { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; color: var(--ink-soft); }
+    .funnel-chart-wrap { height: 130px; }
 
-    /* ── Spinner ── */
-    .spinner {
-      display: flex; align-items: center; justify-content: center;
-      height: 80px; color: var(--ink-soft); font-size: 14px; gap: 8px;
-    }
+    /* ── Spinner ──────────────────────────────────────────────────────── */
+    .spinner { display: flex; align-items: center; justify-content: center; height: 80px; color: var(--ink-soft); font-size: 14px; gap: 8px; }
     @keyframes spin { to { transform: rotate(360deg); } }
-    .spin-icon {
-      width: 18px; height: 18px; border: 2px solid var(--hairline);
-      border-top-color: var(--accent); border-radius: 50%;
-      animation: spin 0.7s linear infinite;
-    }
+    .spin-icon { width: 18px; height: 18px; border: 2px solid var(--hairline); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; }
 
-    /* ── Error ── */
-    .error-msg {
-      background: var(--danger-soft); color: var(--danger); border-radius: var(--radius);
-      padding: 14px 18px; font-size: 14px; margin-bottom: 20px; display: none;
+    /* ── Inline / status panels (§3, §7 — one reusable component) ───────── */
+    .inline-error {
+      background: var(--danger-soft); border-radius: var(--radius); padding: 12px 16px 12px 18px;
+      margin-bottom: 18px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
     }
+    .inline-error__text { color: var(--danger); font-size: 13.5px; flex: 1; min-width: 180px; }
+    .inline-error__actions { display: flex; gap: 8px; align-items: center; }
+    .inline-error .btn { min-height: 34px; padding: 0 12px; font-size: 12.5px; }
+    .inline-error__dismiss { background: none; border: none; color: var(--danger); font-size: 18px; cursor: pointer; min-height: 34px; min-width: 34px; }
 
-    /* ── Section heading ── */
-    .section-heading {
-      font-size: 12px; font-weight: 600; letter-spacing: 0.07em;
-      text-transform: uppercase; color: var(--ink-soft); margin-bottom: 14px;
+    .status-panel {
+      border-radius: 12px; padding: 12px 16px; display: flex; gap: 10px; align-items: flex-start;
+      font-size: 13px; margin-top: 12px;
     }
-    .section-heading--first { margin-top: 0; }
+    .status-panel__icon { font-size: 16px; flex: none; line-height: 1.3; }
+    .status-panel__body h4 { font-size: 13.5px; font-weight: 700; margin-bottom: 2px; }
+    .status-panel__body p { font-size: 12.5px; color: inherit; opacity: 0.9; }
+    .status-panel--success { background: var(--sage-soft); color: var(--sage); }
+    .status-panel--warning { background: color-mix(in srgb, var(--gold) 14%, transparent); color: var(--gold); }
+    .status-panel--danger { background: var(--danger-soft); color: var(--danger); }
+    .status-panel--info { background: var(--paper-deep); color: var(--ink-soft); }
 
-    /* ── Not-configured empty state (Cloudflare section) ── */
     .not-configured {
-      background: var(--paper);
-      border: 1px dashed var(--hairline);
-      border-radius: var(--radius);
-      padding: 26px 24px;
-      text-align: center;
-      color: var(--ink-soft);
-      margin-bottom: 30px;
+      background: var(--paper); border: 1px dashed var(--hairline); border-radius: var(--radius);
+      padding: 26px 24px; text-align: center; color: var(--ink-soft); margin-bottom: 24px;
     }
     .not-configured .icon { font-size: 26px; margin-bottom: 8px; }
     .not-configured h4 { font-family: var(--display); font-size: 16px; font-weight: 600; color: var(--ink); margin-bottom: 6px; }
     .not-configured p { font-size: 13px; max-width: 480px; margin: 0 auto; line-height: 1.6; }
-    .not-configured code {
-      background: var(--paper-deep); border-radius: 5px; padding: 1px 6px;
-      font-size: 12px; color: var(--accent-deep);
+    .not-configured code { background: var(--paper-deep); border-radius: 5px; padding: 1px 6px; font-size: 12px; color: var(--accent-deep); }
+
+    .ia-section { margin-bottom: 8px; padding-top: 8px; }
+    .ia-section h2 {
+      font-family: var(--display); font-size: 19px; font-weight: 600; color: var(--ink);
+      margin-bottom: 4px; letter-spacing: -0.01em;
     }
+    .ia-section__desc { font-size: 12.5px; color: var(--ink-soft); margin-bottom: 18px; }
+    .subsection-heading { font-size: 12px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-soft); margin-bottom: 12px; }
+
+    .privacy-hint { font-size: 11.5px; color: var(--ink-faint); margin-bottom: 12px; }
+
+    /* Privacy-mode masking (§12) — visual + textContent swap done in JS so
+       masked values are never in a tooltip or copy target. */
+    [data-sensitive].is-masked { filter: blur(0.03px); /* no-op placeholder hook for future theming */ }
+    .privacy-badge {
+      display: none; align-items: center; gap: 5px; font-size: 11px; font-weight: 700;
+      color: var(--accent-deep); background: var(--accent-soft); padding: 3px 9px; border-radius: 999px;
+      margin-bottom: 12px;
+    }
+    body.privacy-on .privacy-badge { display: inline-flex; }
   </style>
 </head>
 <body>
 
-<div id="auth-gate">
-  <div class="spinner">
-    <div class="spin-icon"></div>
-    Loading…
+<a class="skip-link" href="#main">Skip to dashboard content</a>
+<div class="visually-hidden" role="status" aria-live="polite" id="sr-status"></div>
+
+<div id="preload">
+  <svg class="gate-mark gate-mark--breathe" width="44" height="42" viewBox="0 0 42 40" fill="none" aria-hidden="true">
+    <circle class="g-a" cx="13.9" cy="16.5" r="11.8" fill="#c2603a" stroke="#fff" stroke-width="2.8"/>
+    <circle class="g-b" cx="28.1" cy="16.5" r="11.8" fill="#3f5e4e" stroke="#fff" stroke-width="2.8"/>
+    <circle class="g-c" cx="21" cy="30.6" r="7.8" fill="#c4913f" stroke="#fff" stroke-width="2.8"/>
+  </svg>
+  <p class="gate-h">Loading admin dashboard</p>
+  <div class="spinner"><div class="spin-icon"></div></div>
+</div>
+
+<div id="fatal-error">
+  <div class="gate-icon" aria-hidden="true">⚠️</div>
+  <h2 class="gate-h">Dashboard unavailable</h2>
+  <p id="fatal-error-text">Something went wrong loading the dashboard.</p>
+  <p class="gate-reason" id="fatal-error-reason" hidden></p>
+  <div class="gate-actions">
+    <button class="btn btn--primary" id="btn-fatal-retry">Try again</button>
+    <a class="gate-link" href="/">← Back to Bloodline</a>
   </div>
-  <a href="/">← Back to Bloodline</a>
+</div>
+
+<div id="auth-gate">
+  <div class="gate-icon" aria-hidden="true">🔒</div>
+  <h2 class="gate-h" id="auth-gate-title">Sign in required</h2>
+  <p id="auth-gate-text">This page requires an admin account.</p>
+  <a class="gate-link" href="/">← Back to Bloodline</a>
 </div>
 
 <div class="app" id="app">
@@ -335,191 +448,261 @@
       <span class="topbar-brand__word">Bloodline</span>
     </a>
     <div class="topbar-divider"></div>
-    <span class="topbar-title">Admin Dashboard</span>
+    <span class="topbar-title">
+      <span class="topbar-title--full">Admin Dashboard</span>
+      <span class="topbar-title--short">Admin</span>
+    </span>
     <div class="topbar-spacer"></div>
-    <span class="topbar-ts" id="ts"></span>
-    <button class="topbar-refresh" id="btn-refresh">Refresh</button>
+    <button class="privacy-toggle" id="btn-privacy" type="button" aria-pressed="false" aria-describedby="privacy-desc">
+      <span class="dot" aria-hidden="true"></span>
+      <span id="privacy-label">Privacy mode: off</span>
+    </button>
+    <span class="topbar-ts" id="ts" role="status"></span>
+    <button class="btn topbar-refresh" id="btn-refresh" type="button" aria-busy="false">
+      <span id="refresh-label">Refresh</span>
+    </button>
   </nav>
 
-  <div class="page">
-    <div class="error-msg" id="error-msg"></div>
+  <span id="privacy-desc" class="visually-hidden">
+    Privacy mode blurs names, emails, and messages for screen sharing. The underlying data stays present in the page — this only reduces accidental visual disclosure, and nothing is sent to the server.
+  </span>
 
-    <!-- Metric cards -->
-    <p class="section-heading section-heading--first">Users</p>
-    <div class="cards" id="user-cards">
-      <div class="spinner"><div class="spin-icon"></div></div>
+  <nav class="section-nav" aria-label="Dashboard sections" id="section-nav">
+    <a href="#overview">Overview</a>
+    <a href="#growth">Growth &amp; engagement</a>
+    <a href="#operations">Operations</a>
+    <a href="#communications">Communications</a>
+  </nav>
+
+  <main class="page" id="main">
+    <div class="page-head">
+      <h1>Admin Dashboard</h1>
+      <p class="page-head__desc">Operational health, growth, and delivery for every family on Bloodline — read-only, admin-only.</p>
     </div>
 
-    <p class="section-heading">Families &amp; Invites</p>
-    <div class="cards" id="family-cards">
-      <div class="spinner"><div class="spin-icon"></div></div>
-    </div>
+    <div id="attention-wrap"></div>
+    <div id="refresh-error-wrap"></div>
 
-    <!-- AI spend -->
-    <p class="section-heading">AI Usage &amp; Estimated Spend</p>
-    <div class="cards" id="ai-cards">
-      <div class="spinner"><div class="spin-icon"></div></div>
-    </div>
-    <div class="charts">
-      <div class="chart-card">
-        <h3>Estimated spend — last 30 days</h3>
-        <div class="chart-wrap"><canvas id="chart-ai-spend"></canvas></div>
+    <!-- ═══════════════ 1. OVERVIEW ═══════════════ -->
+    <section id="overview" class="ia-section" aria-labelledby="overview-h">
+      <h2 id="overview-h">Overview</h2>
+      <p class="ia-section__desc">Core account and family metrics, and everything already on the platform.</p>
+
+      <p class="subsection-heading">Users</p>
+      <div class="cards" id="user-cards"><div class="spinner"><div class="spin-icon"></div></div></div>
+
+      <p class="subsection-heading">Families &amp; invites</p>
+      <div class="cards" id="family-cards"><div class="spinner"><div class="spin-icon"></div></div></div>
+
+      <p class="subsection-heading">Content on the platform</p>
+      <div class="cards" id="content-cards"><div class="spinner"><div class="spin-icon"></div></div></div>
+    </section>
+
+    <!-- ═══════════════ 2. GROWTH & ENGAGEMENT ═══════════════ -->
+    <section id="growth" class="ia-section" aria-labelledby="growth-h">
+      <h2 id="growth-h">Growth &amp; engagement</h2>
+      <p class="ia-section__desc">Signups, invites, and how actively families are using their trees.</p>
+
+      <p class="subsection-heading">Signups &amp; invites</p>
+      <div class="charts">
+        <div class="chart-card">
+          <h3>Weekly signups — last 12 weeks</h3>
+          <p class="chart-summary" id="signups-summary"></p>
+          <div class="chart-wrap"><canvas id="chart-signups"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <h3>Invite funnel</h3>
+          <p class="chart-summary" id="funnel-summary-text"></p>
+          <div class="funnel-row" id="funnel-summary"></div>
+          <div class="chart-wrap funnel-chart-wrap"><canvas id="chart-invites"></canvas></div>
+        </div>
       </div>
+
+      <p class="subsection-heading">Engagement</p>
+      <div class="cards" id="engagement-cards"><div class="spinner"><div class="spin-icon"></div></div></div>
+      <div class="charts charts--thirds">
+        <div class="chart-card">
+          <h3>Activity — last 30 days</h3>
+          <p class="chart-summary" id="engagement-summary"></p>
+          <div class="chart-wrap"><canvas id="chart-engagement"></canvas></div>
+        </div>
+        <div class="table-card">
+          <h3 id="active-families-h">Most active family trees</h3>
+          <div class="table-scroll" tabindex="0" role="region" aria-labelledby="active-families-h">
+            <table id="table-active-families" aria-labelledby="active-families-h">
+              <caption class="visually-hidden">Most active family trees, last 30 days</caption>
+              <thead><tr>
+                <th>Family</th>
+                <th class="num" data-col="events">Events (30d)</th>
+              </tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <p class="subsection-heading">Recent sign-ups</p>
       <div class="table-card">
-        <h3>By feature</h3>
-        <table id="table-ai-endpoint">
-          <thead><tr>
-            <th>Feature</th>
-            <th>Model</th>
-            <th class="num">Calls</th>
-            <th class="num">Est. cost</th>
-          </tr></thead>
-          <tbody></tbody>
-        </table>
+        <h3 id="users-h" class="visually-hidden">Most recent sign-ups</h3>
+        <div class="table-toolbar">
+          <input class="table-search" id="search-users" type="search" aria-label="Filter recent sign-ups by email or family">
+          <span class="table-count" id="users-count"></span>
+        </div>
+        <div class="table-scroll" tabindex="0" role="region" aria-labelledby="users-h">
+          <table id="table-users" aria-labelledby="users-h">
+            <caption class="visually-hidden">Most recent sign-ups</caption>
+            <thead><tr>
+              <th data-col="email"><button class="sort-btn" data-sort="email">Email <span class="arrow">↕</span></button></th>
+              <th data-col="family_name"><button class="sort-btn" data-sort="family_name">Family <span class="arrow">↕</span></button></th>
+              <th data-col="joined"><button class="sort-btn" data-sort="joined">Joined <span class="arrow">↕</span></button></th>
+              <th data-col="last_seen"><button class="sort-btn" data-sort="last_seen">Last seen <span class="arrow">↕</span></button></th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <p class="table-scroll-hint">Scroll to see more →</p>
       </div>
-    </div>
+    </section>
 
-    <!-- Engagement -->
-    <p class="section-heading">Engagement</p>
-    <div class="cards" id="engagement-cards">
-      <div class="spinner"><div class="spin-icon"></div></div>
-    </div>
-    <div class="charts charts--thirds">
-      <div class="chart-card">
-        <h3>Activity — last 30 days</h3>
-        <div class="chart-wrap"><canvas id="chart-engagement"></canvas></div>
+    <!-- ═══════════════ 3. OPERATIONS ═══════════════ -->
+    <section id="operations" class="ia-section" aria-labelledby="operations-h">
+      <h2 id="operations-h">Operations</h2>
+      <p class="ia-section__desc">AI usage and spend, edge traffic, and trees that need storage attention.</p>
+
+      <p class="subsection-heading">AI usage &amp; estimated spend</p>
+      <div class="cards" id="ai-cards"><div class="spinner"><div class="spin-icon"></div></div></div>
+      <div class="charts">
+        <div class="chart-card">
+          <h3>Estimated spend — last 30 days</h3>
+          <p class="chart-summary" id="ai-spend-summary"></p>
+          <div class="chart-wrap"><canvas id="chart-ai-spend"></canvas></div>
+        </div>
+        <div class="table-card">
+          <h3 id="ai-endpoint-h">By feature</h3>
+          <div class="table-scroll" tabindex="0" role="region" aria-labelledby="ai-endpoint-h">
+            <table id="table-ai-endpoint" aria-labelledby="ai-endpoint-h">
+              <caption class="visually-hidden">AI usage by feature</caption>
+              <thead><tr>
+                <th data-col="endpoint"><button class="sort-btn" data-sort="endpoint">Feature <span class="arrow">↕</span></button></th>
+                <th>Model</th>
+                <th class="num" data-col="calls"><button class="sort-btn" data-sort="calls">Calls <span class="arrow">↕</span></button></th>
+                <th class="num" data-col="estimated_cost_usd"><button class="sort-btn" data-sort="estimated_cost_usd">Est. cost <span class="arrow">↕</span></button></th>
+              </tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
       </div>
+
+      <p class="subsection-heading">Cloudflare traffic</p>
+      <div id="cf-section"><div class="spinner"><div class="spin-icon"></div></div></div>
+
+      <p class="subsection-heading">Largest trees (by data size)</p>
       <div class="table-card">
-        <h3>Most active family trees</h3>
-        <table id="table-active-families">
-          <thead><tr>
-            <th>Family</th>
-            <th class="num">Events (30d)</th>
-          </tr></thead>
-          <tbody></tbody>
-        </table>
+        <h3 id="trees-h" class="visually-hidden">Largest trees</h3>
+        <div class="table-scroll" tabindex="0" role="region" aria-labelledby="trees-h">
+          <table id="table-trees" aria-labelledby="trees-h">
+            <caption class="visually-hidden">Largest trees by data size</caption>
+            <thead><tr>
+              <th data-col="family_name"><button class="sort-btn" data-sort="family_name">Family <span class="arrow">↕</span></button></th>
+              <th class="num" data-col="size_kb"><button class="sort-btn" data-sort="size_kb">Size <span class="arrow">↕</span></button></th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
       </div>
-    </div>
+    </section>
 
-    <!-- Content growth -->
-    <p class="section-heading">Content on the Platform</p>
-    <div class="cards" id="content-cards">
-      <div class="spinner"><div class="spin-icon"></div></div>
-    </div>
+    <!-- ═══════════════ 4. COMMUNICATIONS ═══════════════ -->
+    <section id="communications" class="ia-section" aria-labelledby="communications-h">
+      <h2 id="communications-h">Communications</h2>
+      <p class="ia-section__desc">Email configuration, delivery health, diagnostics, and recent feedback.</p>
 
-    <!-- Cloudflare traffic -->
-    <p class="section-heading">Cloudflare Traffic</p>
-    <div id="cf-section">
-      <div class="spinner"><div class="spin-icon"></div></div>
-    </div>
+      <div class="quiet-rows" id="email-config-rows"></div>
+      <div class="cards" id="email-cards"><div class="spinner"><div class="spin-icon"></div></div></div>
 
-    <!-- Email & deliverability -->
-    <p class="section-heading">Email &amp; Deliverability</p>
-    <div class="cards" id="email-cards">
-      <div class="spinner"><div class="spin-icon"></div></div>
-    </div>
-    <div class="table-card" style="margin-bottom:28px">
-      <h3>Test invite email delivery</h3>
-      <p style="font-size:13px;color:var(--ink-soft);margin-bottom:14px">
-        Sends a real email — via the same provider invites use — to your own admin
-        address. If it lands in your inbox, invite delivery is healthy.
-      </p>
-      <button class="topbar-refresh" id="btn-test-email" style="font-weight:600">Send test email to myself</button>
-      <p id="test-email-result" style="font-size:13px;margin-top:12px"></p>
-    </div>
-
-    <div class="table-card" style="margin-bottom:28px">
-      <h3>Brevo delivery check</h3>
-      <p style="font-size:13px;color:var(--ink-soft);margin-bottom:14px">
-        Asks Brevo directly: is the sender verified, is the domain authenticated (DKIM/SPF),
-        and what actually happened to recent emails (delivered / bounced / blocked / spam).
-      </p>
-      <button class="topbar-refresh" id="btn-diag" style="font-weight:600">Run delivery check</button>
-      <div id="diag-result" style="margin-top:14px"></div>
-    </div>
-
-    <div class="table-card" id="email-failures" style="margin-bottom:28px;display:none">
-      <h3>Recent invite email failures</h3>
-      <table id="table-email-failures">
-        <thead><tr>
-          <th>Recipient</th>
-          <th>Error</th>
-          <th>When</th>
-        </tr></thead>
-        <tbody></tbody>
-      </table>
-    </div>
-
-    <!-- Charts -->
-    <p class="section-heading" style="margin-top: 8px;">Signups &amp; Invites</p>
-    <div class="charts">
-      <div class="chart-card">
-        <h3>Weekly signups — last 12 weeks</h3>
-        <div class="chart-wrap"><canvas id="chart-signups"></canvas></div>
+      <div class="table-card" style="margin-bottom:24px">
+        <h3>Test invite email delivery</h3>
+        <p style="font-size:13px;color:var(--ink-soft);margin-bottom:14px">
+          Sends a real email — via the same provider invites use — to your own admin
+          address. If it lands in your inbox, invite delivery is healthy.
+        </p>
+        <button class="btn btn--primary" id="btn-test-email" type="button" aria-busy="false">
+          <span id="test-email-label">Send test email to myself</span>
+        </button>
+        <div id="test-email-result" role="status"></div>
       </div>
-      <div class="chart-card">
-        <h3>Invite funnel</h3>
-        <div class="funnel-row" id="funnel-summary"></div>
-        <div class="chart-wrap" style="height:160px;"><canvas id="chart-invites"></canvas></div>
-      </div>
-    </div>
 
-    <!-- Tables -->
-    <p class="section-heading">Recent &amp; Activity</p>
-    <div class="tables">
+      <div class="table-card" style="margin-bottom:24px">
+        <h3>Brevo delivery check</h3>
+        <p style="font-size:13px;color:var(--ink-soft);margin-bottom:14px">
+          Asks Brevo directly: is the sender verified, is the domain authenticated (DKIM/SPF),
+          and what actually happened to recent emails (delivered / bounced / blocked / spam).
+        </p>
+        <button class="btn btn--primary" id="btn-diag" type="button" aria-busy="false">
+          <span id="diag-label">Run delivery check</span>
+        </button>
+        <div id="diag-result" role="status"></div>
+      </div>
+
+      <div class="table-card" id="email-failures" style="margin-bottom:24px;display:none">
+        <h3 id="failures-h">Recent invite email failures</h3>
+        <div class="table-scroll" tabindex="0" role="region" aria-labelledby="failures-h">
+          <table id="table-email-failures" aria-labelledby="failures-h">
+            <caption class="visually-hidden">Recent invite email failures</caption>
+            <thead><tr><th>Recipient</th><th>Error</th><th>When</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+
+      <p class="subsection-heading">Recent feedback</p>
       <div class="table-card">
-        <h3>Most recent sign-ups</h3>
-        <table id="table-users">
-          <thead><tr>
-            <th>Email</th>
-            <th>Family</th>
-            <th>Joined</th>
-            <th>Last seen</th>
-          </tr></thead>
-          <tbody></tbody>
-        </table>
+        <h3 id="feedback-h" class="visually-hidden">Recent feedback</h3>
+        <div class="table-toolbar">
+          <input class="table-search" id="search-feedback" type="search" aria-label="Filter feedback by type, email, or message">
+          <span class="table-count" id="feedback-count"></span>
+        </div>
+        <div class="table-scroll" tabindex="0" role="region" aria-labelledby="feedback-h">
+          <table id="table-feedback" aria-labelledby="feedback-h">
+            <caption class="visually-hidden">Recent feedback</caption>
+            <thead><tr>
+              <th data-col="type"><button class="sort-btn" data-sort="type">Type <span class="arrow">↕</span></button></th>
+              <th data-col="email"><button class="sort-btn" data-sort="email">From <span class="arrow">↕</span></button></th>
+              <th>Message</th>
+              <th data-col="created_at"><button class="sort-btn" data-sort="created_at">When <span class="arrow">↕</span></button></th>
+              <th>Email</th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
       </div>
-      <div class="table-card">
-        <h3>Largest trees (by data size)</h3>
-        <table id="table-trees">
-          <thead><tr>
-            <th>Family</th>
-            <th>Size</th>
-          </tr></thead>
-          <tbody></tbody>
-        </table>
-      </div>
-    </div>
-
-    <div class="table-card" style="margin-top:24px">
-      <h3>Recent feedback</h3>
-      <table id="table-feedback">
-        <thead><tr>
-          <th>Type</th>
-          <th>From</th>
-          <th>Message</th>
-          <th>When</th>
-          <th>Email</th>
-        </tr></thead>
-        <tbody></tbody>
-      </table>
-    </div>
-  </div>
+    </section>
+  </main>
 </div>
 
 <script>
-  const authGate = document.getElementById('auth-gate');
-  const app      = document.getElementById('app');
-  const errorMsg = document.getElementById('error-msg');
+(function () {
+  'use strict';
+
+  // ── Shared DOM refs ───────────────────────────────────────────────────
+  const $ = (sel) => document.querySelector(sel);
+  const preload   = $('#preload');
+  const fatal     = $('#fatal-error');
+  const authGate  = $('#auth-gate');
+  const app       = $('#app');
+  const srStatus  = $('#sr-status');
 
   const COLOR = { accent: '#c2603a', sage: '#3f5e4e', gold: '#c4913f', ink: '#6b6f76', hairline: '#ebedf0', danger: '#b03a2e' };
 
-  let signupChart = null, inviteChart = null, aiSpendChart = null, engagementChart = null, cfRequestsChart = null;
-
-  function showError(msg) {
-    errorMsg.textContent = msg;
-    errorMsg.style.display = 'block';
+  // ── Utilities ─────────────────────────────────────────────────────────
+  function escHtml(s) {
+    return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
+  function announce(msg) { srStatus.textContent = msg; }
+  // Runs a render function, logging (not throwing) on failure — one broken
+  // section must not cancel every section rendered after it.
+  function safe(fn) { try { fn(); } catch (e) { console.error('[admin] render failed:', e); } }
 
   function fmt(isoStr) {
     if (!isoStr) return '—';
@@ -533,568 +716,742 @@
     if (diffDays < 60) return `${Math.floor(diffDays / 7)}w ago`;
     return d.toLocaleDateString('en-CA', { year: 'numeric', month: 'short', day: 'numeric' });
   }
-
   function fmtUsd(n) {
     if (n == null) return '—';
     if (n < 0.01 && n > 0) return '<$0.01';
     return '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
+  function humanizeType(t) { return String(t || 'other').replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase()); }
 
-  function card(label, value, sub, cls) {
+  function card(label, value, sub, cls, hint) {
     return `<div class="card">
-      <div class="card__label">${label}</div>
+      <div class="card__label">${escHtml(label)}${hint ? ` <button type="button" class="info-hint" title="${escHtml(hint)}" aria-label="What is ${escHtml(label)}? ${escHtml(hint)}">?</button>` : ''}</div>
       <div class="card__value ${cls || ''}">${value}</div>
       ${sub ? `<div class="card__sub">${sub}</div>` : ''}
     </div>`;
   }
 
-  function renderCards(data) {
-    const u = data.users;
-    const f = data.families;
-    const inv = data.invites;
-
-    document.getElementById('user-cards').innerHTML = [
-      card('Total users', u.total, '', 'accent'),
-      card('New this week', u.new_7d, `${u.new_30d} in last 30 days`),
-      card('Active (7 days)', u.active_7d, `${u.active_30d} in last 30 days`, 'green'),
-      card('Retention (30d)', u.total > 0 ? Math.round((u.active_30d / u.total) * 100) + '%' : '—', 'of all users active last 30d'),
-    ].join('');
-
-    document.getElementById('family-cards').innerHTML = [
-      card('Family trees', f.total, 'total trees created'),
-      card('Invites sent', inv.total, ''),
-      card('Accepted', inv.accepted, `${inv.acceptance_rate}% acceptance rate`, 'green'),
-      card('Pending', inv.pending, 'awaiting response'),
-      card('Expired', inv.expired, '', inv.expired > 0 ? '' : ''),
-    ].join('');
+  // ── Status panel (§3, §7) — one reusable success/warning/danger/info shape
+  function statusPanel(kind, icon, heading, text) {
+    return `<div class="status-panel status-panel--${kind}">
+      <span class="status-panel__icon" aria-hidden="true">${icon}</span>
+      <div class="status-panel__body"><h4>${escHtml(heading)}</h4><p>${text}</p></div>
+    </div>`;
   }
 
-  // ── AI spend ──────────────────────────────────────────────────────────────
-  const ENDPOINT_LABEL = {
-    biography: 'Life story', summarize: 'Document summary', title: 'Document title',
-    'enrich-places': 'Place lookup', insights: 'Tree insights',
-  };
+  function emptyRow(colspan, text) {
+    return `<tr><td colspan="${colspan}" style="padding:14px 0;color:var(--ink-soft)">${escHtml(text)}</td></tr>`;
+  }
 
-  function renderAiCards(ai) {
-    const failures = (ai.by_endpoint || []).reduce((n, r) => n + (r.failures || 0), 0);
-    document.getElementById('ai-cards').innerHTML = [
-      card('Estimated spend (30d)', fmtUsd(ai.estimated_cost_30d_usd), 'Anthropic list pricing, not a guess at usage', 'accent'),
-      card('AI calls (30d)', ai.total_calls_30d, `${(ai.by_endpoint || []).length} feature${(ai.by_endpoint || []).length === 1 ? '' : 's'} in use`),
-      card('Avg. cost / call', ai.total_calls_30d > 0 ? fmtUsd(ai.estimated_cost_30d_usd / ai.total_calls_30d) : '—', ''),
-      card('Failed calls (30d)', failures, failures > 0 ? 'still billed once tokens are sent' : 'none', failures > 0 ? '' : 'green'),
-    ].join('');
+  // After any table's rows are (re)rendered: mark the scroll wrapper
+  // scrollable if content overflows, so a subtle edge/hint appears only
+  // when it's actually needed (§5).
+  function markScrollable(tableEl) {
+    const wrap = tableEl.closest('.table-scroll');
+    if (!wrap) return;
+    requestAnimationFrame(() => {
+      wrap.classList.toggle('is-scrollable', wrap.scrollWidth > wrap.clientWidth + 2);
+    });
+  }
+  function markAllScrollable() {
+    document.querySelectorAll('.table-scroll table').forEach(markScrollable);
+  }
+  window.addEventListener('resize', () => { clearTimeout(window.__admRT); window.__admRT = setTimeout(markAllScrollable, 150); });
 
-    const tbody = document.querySelector('#table-ai-endpoint tbody');
-    const rows = ai.by_endpoint || [];
-    if (!rows.length) {
-      tbody.innerHTML = '<tr><td colspan="4" style="padding:14px 0;color:var(--ink-soft)">No AI usage recorded yet</td></tr>';
-    } else {
-      tbody.innerHTML = rows.map((r) => `<tr>
-        <td class="primary">${escHtml(ENDPOINT_LABEL[r.endpoint] || r.endpoint)}</td>
-        <td class="muted">${escHtml(r.model)}</td>
-        <td class="num muted">${r.calls}</td>
-        <td class="num primary">${fmtUsd(r.estimated_cost_usd)}</td>
-      </tr>`).join('');
+  // ── Privacy mode (§12) ────────────────────────────────────────────────
+  const PRIVACY_KEY = 'bloodline_admin_privacy_mode';
+  let privacyOn = false;
+  try { privacyOn = localStorage.getItem(PRIVACY_KEY) === '1'; } catch {}
+
+  function maskValue(kind, real) {
+    if (!real) return real;
+    if (kind === 'email') {
+      const at = real.indexOf('@');
+      if (at < 0) return '••••••';
+      return real.slice(0, 1) + '•••@' + '•••'.padEnd(Math.max(3, real.length - at - 1), '•').slice(0, 6);
     }
+    // names / messages / generic identifying text — same visual weight, no real content leaked
+    return '•'.repeat(Math.min(14, Math.max(6, real.length)));
   }
 
-  function renderAiChart(ai) {
-    const rows = ai.by_day || [];
-    const ctx = document.getElementById('chart-ai-spend').getContext('2d');
-    if (aiSpendChart) aiSpendChart.destroy();
-    aiSpendChart = new Chart(ctx, {
-      type: 'bar',
-      data: {
-        labels: rows.map((r) => new Date(r.day + 'T00:00:00').toLocaleDateString('en-CA', { month: 'short', day: 'numeric' })),
-        datasets: [{
-          data: rows.map((r) => r.estimated_cost_usd),
-          backgroundColor: COLOR.accent,
-          borderRadius: 4,
-          maxBarThickness: 18,
-        }],
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: { display: false },
-          tooltip: { callbacks: { label: (ctx) => fmtUsd(ctx.parsed.y) } },
-        },
-        scales: {
-          x: { grid: { display: false }, ticks: { color: COLOR.ink, font: { size: 10 }, maxTicksLimit: 8 } },
-          y: { beginAtZero: true, grid: { color: COLOR.hairline }, ticks: { color: COLOR.ink, font: { size: 11 }, callback: (v) => '$' + v } },
-        },
-      },
+  // Applies (or removes) masking to every currently-rendered [data-sensitive]
+  // element. Swaps textContent directly (never CSS content:attr()) so a
+  // masked cell can never be read via view-source, and never carries a
+  // title/tooltip with the real value. Copy buttons for masked cells are
+  // hidden outright rather than attempting to "copy the mask" (§12).
+  function applyPrivacyMask() {
+    document.body.classList.toggle('privacy-on', privacyOn);
+    document.querySelectorAll('[data-sensitive]').forEach((el) => {
+      if (!('_realText' in el.dataset === false)) { /* no-op, dataset check below is authoritative */ }
+      if (el.dataset.realText === undefined) el.dataset.realText = el.textContent;
+      el.textContent = privacyOn ? maskValue(el.dataset.maskKind || 'text', el.dataset.realText) : el.dataset.realText;
+      el.classList.toggle('is-masked', privacyOn);
+      el.removeAttribute('title');
+    });
+    document.querySelectorAll('.copy-btn').forEach((btn) => {
+      btn.hidden = privacyOn;
+    });
+  }
+  function sensitiveSpan(kind, real) {
+    const safeReal = escHtml(real ?? '');
+    return `<span data-sensitive data-mask-kind="${kind}" data-real-text="${safeReal}">${safeReal}</span>`;
+  }
+
+  const btnPrivacy = $('#btn-privacy');
+  const privacyLabel = $('#privacy-label');
+  function renderPrivacyToggle() {
+    btnPrivacy.setAttribute('aria-pressed', String(privacyOn));
+    privacyLabel.textContent = 'Privacy mode: ' + (privacyOn ? 'on' : 'off');
+  }
+  btnPrivacy.addEventListener('click', () => {
+    privacyOn = !privacyOn;
+    try { localStorage.setItem(PRIVACY_KEY, privacyOn ? '1' : '0'); } catch {}
+    renderPrivacyToggle();
+    applyPrivacyMask();
+    announce(privacyOn ? 'Privacy mode on — identifying content is masked.' : 'Privacy mode off.');
+  });
+  renderPrivacyToggle();
+
+  // ── Section nav active-state (§8) ─────────────────────────────────────
+  const navLinks = Array.from(document.querySelectorAll('#section-nav a'));
+  const sections = navLinks.map((a) => document.querySelector(a.getAttribute('href')));
+  function setActiveNav(id) {
+    navLinks.forEach((a) => a.toggleAttribute('aria-current', a.getAttribute('href') === '#' + id));
+    navLinks.forEach((a) => { if (a.getAttribute('href') === '#' + id) a.setAttribute('aria-current', 'true'); else a.removeAttribute('aria-current'); });
+  }
+  let sectionObserver = null;
+  function initSectionObserver() {
+    if (!('IntersectionObserver' in window)) return; // plain anchors + doc flow still work without it
+    if (sectionObserver) sectionObserver.disconnect();
+    sectionObserver = new IntersectionObserver((entries) => {
+      const visible = entries.filter((e) => e.isIntersecting).sort((a, b) => b.intersectionRatio - a.intersectionRatio);
+      if (visible.length) setActiveNav(visible[0].target.id);
+    }, { rootMargin: '-45% 0px -50% 0px', threshold: [0, 0.25, 0.5, 0.75, 1] });
+    sections.filter(Boolean).forEach((s) => sectionObserver.observe(s));
+  }
+  setActiveNav('overview');
+
+  // ══════════════════════════════════════════════════════════════════════
+  // Generic sortable / filterable table controller — one implementation
+  // reused by every table that needs it (§11), working purely on the rows
+  // array already in memory: no new API calls, no pagination.
+  // ══════════════════════════════════════════════════════════════════════
+  function TableController(tableId, { getRows, renderRow, colspan, emptyText, searchInputId, searchFn, defaultSort }) {
+    const table = document.getElementById(tableId);
+    const tbody = table.querySelector('tbody');
+    let sortCol = defaultSort ? defaultSort.col : null;
+    let sortDir = defaultSort ? defaultSort.dir : 'asc';
+
+    function headerButtons() {
+      return Array.from(table.querySelectorAll('th button.sort-btn'));
+    }
+    headerButtons().forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const col = btn.dataset.sort;
+        if (sortCol === col) sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+        else { sortCol = col; sortDir = 'asc'; }
+        render();
+      });
+    });
+
+    let searchInput = searchInputId ? document.getElementById(searchInputId) : null;
+    let query = '';
+    if (searchInput) {
+      searchInput.addEventListener('input', () => { query = searchInput.value.trim().toLowerCase(); render(); });
+    }
+
+    function render() {
+      let rows = getRows().slice();
+      if (query && searchFn) rows = rows.filter((r) => searchFn(r, query));
+      if (sortCol) {
+        rows.sort((a, b) => {
+          let av = a[sortCol], bv = b[sortCol];
+          if (av == null) av = '';
+          if (bv == null) bv = '';
+          if (typeof av === 'string') av = av.toLowerCase();
+          if (typeof bv === 'string') bv = bv.toLowerCase();
+          if (av < bv) return sortDir === 'asc' ? -1 : 1;
+          if (av > bv) return sortDir === 'asc' ? 1 : -1;
+          return 0;
+        });
+      }
+      table.querySelectorAll('th[data-col]').forEach((th) => th.removeAttribute('aria-sort'));
+      if (sortCol) {
+        const th = table.querySelector(`th[data-col="${sortCol}"]`);
+        if (th) th.setAttribute('aria-sort', sortDir === 'asc' ? 'ascending' : 'descending');
+      }
+      if (!rows.length) {
+        tbody.innerHTML = emptyRow(colspan, query ? 'No matching rows' : emptyText);
+      } else {
+        tbody.innerHTML = rows.map(renderRow).join('');
+      }
+      applyPrivacyMask();
+      wireCopyButtons(tbody);
+      markScrollable(table);
+      const countEl = searchInputId ? document.getElementById(searchInputId.replace('search-', '') + '-count') : null;
+      if (countEl) countEl.textContent = query ? `${rows.length} of ${getRows().length}` : `${getRows().length}`;
+      return rows;
+    }
+    return { render };
+  }
+
+  function wireCopyButtons(scope) {
+    scope.querySelectorAll('.copy-btn[data-copy]').forEach((btn) => {
+      if (btn.__wired) return;
+      btn.__wired = true;
+      btn.addEventListener('click', async () => {
+        if (privacyOn) return; // never copy while masked (§12)
+        try {
+          await navigator.clipboard.writeText(btn.dataset.copy);
+          btn.classList.add('copied');
+          const prev = btn.textContent;
+          btn.textContent = 'Copied';
+          announce('Copied to clipboard.');
+          setTimeout(() => { btn.classList.remove('copied'); btn.textContent = prev; }, 1400);
+        } catch { announce('Could not copy — clipboard unavailable.'); }
+      });
     });
   }
 
-  // ── Engagement ────────────────────────────────────────────────────────────
+  function copyBtn(value, label) {
+    if (!value) return '';
+    return `<button type="button" class="copy-btn" data-copy="${escHtml(value)}" aria-label="Copy ${escHtml(label || value)}">Copy</button>`;
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
+  // State — the last-successful payload from each endpoint. Sort/filter/
+  // privacy-mode all re-render from here; nothing re-fetches on its own.
+  // ══════════════════════════════════════════════════════════════════════
+  const state = { stats: null, cloudflare: null, cloudflareError: null, feedback: [], feedbackError: false };
+  let charts = { signup: null, invite: null, aiSpend: null, engagement: null, cfRequests: null };
+
+  function destroyChart(key) { if (charts[key]) { charts[key].destroy(); charts[key] = null; } }
+  function chartsAvailable() { return typeof window.Chart !== 'undefined'; }
+
+  // ── Overview ──────────────────────────────────────────────────────────
+  function renderCards(data) {
+    const u = data.users, f = data.families, inv = data.invites;
+    const activeShare = u.total > 0 ? Math.round((u.active_30d / u.total) * 100) + '%' : '—';
+    $('#user-cards').innerHTML = [
+      card('Total users', u.total, '', 'accent'),
+      card('New this week', u.new_7d, `${u.new_30d} in last 30 days`),
+      card('Active (7 days)', u.active_7d, `${u.active_30d} in last 30 days`, 'healthy'),
+      card('Active user share (30d)', activeShare, 'Share of all users active in the last 30 days',
+        '', 'The share of ALL users who were active at least once in the last 30 days — not a cohort-retention calculation.'),
+    ].join('');
+    $('#family-cards').innerHTML = [
+      card('Family trees', f.total, 'total trees created'),
+      card('Invites sent', inv.total, ''),
+      card('Accepted', inv.accepted, `${inv.acceptance_rate}% acceptance rate`, 'healthy'),
+      card('Pending', inv.pending, 'awaiting response'),
+      card('Expired', inv.expired, ''),
+    ].join('');
+  }
+  function renderContentCards(content) {
+    $('#content-cards').innerHTML = [
+      card('People in trees', (content.total_people || 0).toLocaleString(), 'across every family', 'accent'),
+      card('Photos', (content.total_photos || 0).toLocaleString(), ''),
+      card('Memories', (content.total_memories || 0).toLocaleString(), '', 'healthy'),
+      card('Documents', (content.total_documents || 0).toLocaleString(), ''),
+    ].join('');
+  }
+
+  // ── AI spend ──────────────────────────────────────────────────────────
+  const ENDPOINT_LABEL = { biography: 'Life story', summarize: 'Document summary', title: 'Document title', 'enrich-places': 'Place lookup', insights: 'Tree insights' };
+  let aiTable;
+  function renderAiCards(ai) {
+    const failures = (ai.by_endpoint || []).reduce((n, r) => n + (r.failures || 0), 0);
+    $('#ai-cards').innerHTML = [
+      card('Estimated spend (30d)', fmtUsd(ai.estimated_cost_30d_usd), 'Anthropic list pricing, not a guess at usage', 'accent'),
+      card('AI calls (30d)', ai.total_calls_30d, `${(ai.by_endpoint || []).length} feature${(ai.by_endpoint || []).length === 1 ? '' : 's'} in use`),
+      card('Avg. cost / call', ai.total_calls_30d > 0 ? fmtUsd(ai.estimated_cost_30d_usd / ai.total_calls_30d) : '—', ''),
+      card('Failed calls (30d)', failures, failures > 0 ? 'still billed once tokens are sent' : 'none', failures > 0 ? 'fail' : 'healthy'),
+    ].join('');
+    $('#ai-spend-summary').textContent = ai.total_calls_30d > 0
+      ? `${fmtUsd(ai.estimated_cost_30d_usd)} across ${ai.total_calls_30d} calls over the last 30 days.`
+      : 'No AI usage recorded in the last 30 days.';
+    if (!aiTable) {
+      aiTable = TableController('table-ai-endpoint', {
+        getRows: () => (state.stats?.ai?.by_endpoint || []).map((r) => ({ ...r, endpoint: ENDPOINT_LABEL[r.endpoint] || r.endpoint })),
+        renderRow: (r) => `<tr><td class="primary">${escHtml(r.endpoint)}</td><td class="muted">${escHtml(r.model)}</td><td class="num muted">${r.calls}</td><td class="num primary">${fmtUsd(r.estimated_cost_usd)}</td></tr>`,
+        colspan: 4, emptyText: 'No AI usage recorded yet',
+      });
+    }
+    aiTable.render();
+  }
+  function renderAiChart(ai) {
+    const wrap = document.getElementById('chart-ai-spend').parentElement;
+    destroyChart('aiSpend');
+    if (!chartsAvailable()) { wrap.innerHTML = '<div class="chart-empty">Chart library unavailable — see the numbers above.</div>'; return; }
+    const rows = ai.by_day || [];
+    if (!rows.length) { wrap.innerHTML = '<div class="chart-empty">No AI usage recorded yet.</div>'; return; }
+    if (!wrap.querySelector('canvas')) wrap.innerHTML = '<canvas id="chart-ai-spend"></canvas>';
+    const ctx = document.getElementById('chart-ai-spend').getContext('2d');
+    charts.aiSpend = new Chart(ctx, {
+      type: 'bar',
+      data: { labels: rows.map((r) => new Date(r.day + 'T00:00:00').toLocaleDateString('en-CA', { month: 'short', day: 'numeric' })),
+        datasets: [{ data: rows.map((r) => r.estimated_cost_usd), backgroundColor: COLOR.accent, borderRadius: 4, maxBarThickness: 18 }] },
+      options: { responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => fmtUsd(c.parsed.y) } } },
+        scales: { x: { grid: { display: false }, ticks: { color: COLOR.ink, font: { size: 10 }, maxTicksLimit: 8 } },
+          y: { beginAtZero: true, grid: { color: COLOR.hairline }, ticks: { color: COLOR.ink, font: { size: 11 }, callback: (v) => '$' + v } } } },
+    });
+  }
+
+  // ── Engagement ────────────────────────────────────────────────────────
+  let activeFamiliesTable;
   function renderEngagementCards(eng) {
-    document.getElementById('engagement-cards').innerHTML = [
+    $('#engagement-cards').innerHTML = [
       card('Actions (7 days)', eng.activity_7d, 'edits, additions, memories, photos…', 'accent'),
       card('Actions (30 days)', eng.activity_30d, ''),
       card('Most common action', (eng.by_type_30d && eng.by_type_30d[0]) ? humanizeType(eng.by_type_30d[0].type) : '—',
         (eng.by_type_30d && eng.by_type_30d[0]) ? `${eng.by_type_30d[0].n} in last 30 days` : ''),
     ].join('');
-
-    const tbody = document.querySelector('#table-active-families tbody');
-    const rows = eng.most_active_families_30d || [];
-    if (!rows.length) {
-      tbody.innerHTML = '<tr><td colspan="2" style="padding:14px 0;color:var(--ink-soft)">No activity recorded yet</td></tr>';
-    } else {
-      tbody.innerHTML = rows.map((r) => `<tr>
-        <td class="primary">${escHtml(r.family_name)}</td>
-        <td class="num muted">${r.events}</td>
-      </tr>`).join('');
+    if (!activeFamiliesTable) {
+      activeFamiliesTable = TableController('table-active-families', {
+        getRows: () => state.stats?.engagement?.most_active_families_30d || [],
+        renderRow: (r) => `<tr><td class="primary">${sensitiveSpan('name', r.family_name)}</td><td class="num muted">${r.events}</td></tr>`,
+        colspan: 2, emptyText: 'No activity recorded yet',
+      });
     }
+    activeFamiliesTable.render();
   }
-
-  function humanizeType(t) {
-    return String(t || 'other').replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase());
-  }
-
   function renderEngagementChart(eng) {
+    const wrap = document.getElementById('chart-engagement').parentElement;
+    destroyChart('engagement');
     const rows = eng.by_day_30d || [];
+    $('#engagement-summary').textContent = rows.length
+      ? `${eng.activity_30d} actions over the last 30 days.`
+      : 'No engagement activity recorded in the last 30 days.';
+    if (!chartsAvailable()) { wrap.innerHTML = '<div class="chart-empty">Chart library unavailable — see the summary above.</div>'; return; }
+    if (!rows.length) { wrap.innerHTML = '<div class="chart-empty">No activity recorded yet.</div>'; return; }
+    if (!wrap.querySelector('canvas')) wrap.innerHTML = '<canvas id="chart-engagement"></canvas>';
     const ctx = document.getElementById('chart-engagement').getContext('2d');
-    if (engagementChart) engagementChart.destroy();
-    engagementChart = new Chart(ctx, {
+    charts.engagement = new Chart(ctx, {
       type: 'line',
-      data: {
-        labels: rows.map((r) => new Date(r.day + 'T00:00:00').toLocaleDateString('en-CA', { month: 'short', day: 'numeric' })),
+      data: { labels: rows.map((r) => new Date(r.day + 'T00:00:00').toLocaleDateString('en-CA', { month: 'short', day: 'numeric' })),
         datasets: [
-          {
-            label: 'Actions',
-            data: rows.map((r) => r.events),
-            borderColor: COLOR.accent,
-            backgroundColor: 'rgba(194,96,58,0.08)',
-            borderWidth: 2.5, pointRadius: 0, tension: 0.3, fill: true,
-          },
-          {
-            label: 'People active',
-            data: rows.map((r) => r.active_people),
-            borderColor: COLOR.sage,
-            backgroundColor: 'transparent',
-            borderWidth: 2, borderDash: [4, 3], pointRadius: 0, tension: 0.3,
-          },
-        ],
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
+          { label: 'Actions', data: rows.map((r) => r.events), borderColor: COLOR.accent, backgroundColor: 'rgba(194,96,58,0.08)', borderWidth: 2.5, pointRadius: 0, tension: 0.3, fill: true },
+          { label: 'People active', data: rows.map((r) => r.active_people), borderColor: COLOR.sage, backgroundColor: 'transparent', borderWidth: 2, borderDash: [4, 3], pointRadius: 0, tension: 0.3 },
+        ] },
+      options: { responsive: true, maintainAspectRatio: false,
         plugins: { legend: { position: 'bottom', labels: { color: COLOR.ink, font: { size: 11 }, boxWidth: 10, usePointStyle: true } } },
-        scales: {
-          x: { grid: { display: false }, ticks: { color: COLOR.ink, font: { size: 10 }, maxTicksLimit: 8 } },
-          y: { beginAtZero: true, grid: { color: COLOR.hairline }, ticks: { color: COLOR.ink, font: { size: 11 }, stepSize: 1 } },
-        },
-      },
+        scales: { x: { grid: { display: false }, ticks: { color: COLOR.ink, font: { size: 10 }, maxTicksLimit: 8 } },
+          y: { beginAtZero: true, grid: { color: COLOR.hairline }, ticks: { color: COLOR.ink, font: { size: 11 }, stepSize: 1 } } } },
     });
   }
 
-  // ── Content totals ────────────────────────────────────────────────────────
-  function renderContentCards(content) {
-    document.getElementById('content-cards').innerHTML = [
-      card('People in trees', (content.total_people || 0).toLocaleString(), 'across every family', 'accent'),
-      card('Photos', (content.total_photos || 0).toLocaleString(), ''),
-      card('Memories', (content.total_memories || 0).toLocaleString(), '', 'green'),
-      card('Documents', (content.total_documents || 0).toLocaleString(), ''),
-    ].join('');
-  }
-
-  // ── Cloudflare traffic ────────────────────────────────────────────────────
-  async function loadCloudflare() {
-    const el = document.getElementById('cf-section');
+  // ── Cloudflare traffic ────────────────────────────────────────────────
+  async function loadCloudflare({ isRefresh } = {}) {
+    const el = $('#cf-section');
+    if (!isRefresh) el.innerHTML = '<div class="spinner"><div class="spin-icon"></div></div>';
     try {
       const res = await fetch('/api/admin/cloudflare');
       const d = await res.json().catch(() => ({}));
       if (!res.ok && res.status !== 200) {
+        state.cloudflare = null; state.cloudflareError = d.error || res.statusText;
         el.innerHTML = `<div class="not-configured"><div class="icon">📡</div><h4>Couldn't load traffic data</h4><p>${escHtml(d.error || res.statusText)}</p></div>`;
-        return;
+        recomputeAttention(); return;
       }
       if (!d.configured) {
+        state.cloudflare = d; state.cloudflareError = null;
         el.innerHTML = `<div class="not-configured">
           <div class="icon">📡</div>
           <h4>Cloudflare traffic isn't connected yet</h4>
-          <p>
-            Set <code>CLOUDFLARE_API_TOKEN</code> and <code>CLOUDFLARE_ZONE_ID</code> as secrets
+          <p>Set <code>CLOUDFLARE_API_TOKEN</code> and <code>CLOUDFLARE_ZONE_ID</code> as secrets
             (Pages → Settings → Environment variables) to see real requests, bandwidth, cache rate,
-            and threats blocked at the edge. See <code>wrangler.toml</code> for how to create the token.
-          </p>
+            and threats blocked at the edge. See <code>wrangler.toml</code> for how to create the token.</p>
         </div>`;
-        return;
+        recomputeAttention(); return;
       }
       if (d.error) {
+        state.cloudflare = d; state.cloudflareError = d.error;
         el.innerHTML = `<div class="not-configured"><div class="icon">⚠️</div><h4>Cloudflare API error</h4><p>${escHtml(d.error)}</p></div>`;
-        return;
+        recomputeAttention(); return;
       }
-
+      state.cloudflare = d; state.cloudflareError = null;
       const t = d.totals;
-      el.innerHTML = `
-        <div class="cards" id="cf-cards"></div>
-        <div class="chart-card" style="margin-bottom:30px">
+      el.innerHTML = `<div class="cards" id="cf-cards"></div>
+        <div class="chart-card" style="margin-bottom:24px">
           <h3>Requests — last 30 days</h3>
+          <p class="chart-summary" id="cf-chart-summary">${t.requests.toLocaleString()} requests, ${t.cache_hit_rate}% cache hit rate over the last 30 days.</p>
           <div class="chart-wrap"><canvas id="chart-cf-requests"></canvas></div>
         </div>`;
-      document.getElementById('cf-cards').innerHTML = [
+      $('#cf-cards').innerHTML = [
         card('Requests (30d)', t.requests.toLocaleString(), '', 'accent'),
         card('Bandwidth', t.bandwidth_gb.toLocaleString() + ' GB', ''),
-        card('Cache hit rate', t.cache_hit_rate + '%', '', t.cache_hit_rate >= 70 ? 'green' : ''),
+        card('Cache hit rate', t.cache_hit_rate + '%', '', t.cache_hit_rate >= 70 ? 'healthy' : ''),
         card('Threats blocked', t.threats_blocked.toLocaleString(), `peak ${t.peak_daily_uniques.toLocaleString()} visitors/day`),
       ].join('');
-
-      // Drawn separately from the fetch/cards above — a chart-library problem
-      // must not make already-fetched, already-rendered cards disappear
-      // behind a misleading "network error" message.
       safe(() => {
+        destroyChart('cfRequests');
+        if (!chartsAvailable()) { document.getElementById('chart-cf-requests').parentElement.innerHTML = '<div class="chart-empty">Chart library unavailable — see the numbers above.</div>'; return; }
         const rows = d.by_day || [];
         const ctx = document.getElementById('chart-cf-requests').getContext('2d');
-        if (cfRequestsChart) cfRequestsChart.destroy();
-        cfRequestsChart = new Chart(ctx, {
+        charts.cfRequests = new Chart(ctx, {
           type: 'line',
-          data: {
-            labels: rows.map((r) => new Date(r.day + 'T00:00:00').toLocaleDateString('en-CA', { month: 'short', day: 'numeric' })),
-            datasets: [{
-              data: rows.map((r) => r.requests),
-              borderColor: COLOR.gold,
-              backgroundColor: 'rgba(176,134,66,0.10)',
-              borderWidth: 2.5, pointRadius: 0, tension: 0.3, fill: true,
-            }],
-          },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: { legend: { display: false } },
-            scales: {
-              x: { grid: { display: false }, ticks: { color: COLOR.ink, font: { size: 10 }, maxTicksLimit: 8 } },
-              y: { beginAtZero: true, grid: { color: COLOR.hairline }, ticks: { color: COLOR.ink, font: { size: 11 } } },
-            },
-          },
+          data: { labels: rows.map((r) => new Date(r.day + 'T00:00:00').toLocaleDateString('en-CA', { month: 'short', day: 'numeric' })),
+            datasets: [{ data: rows.map((r) => r.requests), borderColor: COLOR.gold, backgroundColor: 'rgba(176,134,66,0.10)', borderWidth: 2.5, pointRadius: 0, tension: 0.3, fill: true }] },
+          options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } },
+            scales: { x: { grid: { display: false }, ticks: { color: COLOR.ink, font: { size: 10 }, maxTicksLimit: 8 } },
+              y: { beginAtZero: true, grid: { color: COLOR.hairline }, ticks: { color: COLOR.ink, font: { size: 11 } } } } },
         });
       });
+      recomputeAttention();
     } catch (e) {
+      // A refresh failure must not discard previously-shown real data.
+      if (isRefresh && state.cloudflare && state.cloudflare.configured && !state.cloudflareError) { recomputeAttention(); return; }
+      state.cloudflareError = 'Network error';
       el.innerHTML = `<div class="not-configured"><div class="icon">⚠️</div><h4>Network error</h4><p>Could not reach the server.</p></div>`;
+      recomputeAttention();
     }
   }
 
+  // ── Email & deliverability ────────────────────────────────────────────
   function renderEmailCards(data) {
     const e = data.email || {};
-    const ok = (v) => v
-      ? '<span class="badge badge-green">Configured</span>'
-      : '<span class="badge badge-red">Missing</span>';
-    const cards = [
-      card('Email provider', e.brevo_configured ? '✓' : '✗',
-        e.brevo_configured ? 'Brevo API key set' : 'BREVO_API_KEY not set',
-        e.brevo_configured ? 'green' : 'accent'),
-      card('Sender address', '', `${e.from_email || '<em style="color:var(--danger)">not set</em>'} ${ok(e.from_email)}`),
-      card('App URL', '', `${e.app_url || '<em style="color:var(--danger)">not set</em>'} ${ok(e.app_url)}`),
-    ];
-
-    // Delivery metric (migration 0007). Null = not tracked yet.
+    const ok = (v) => v ? '<span class="badge badge-green">Configured</span>' : '<span class="badge badge-red">Missing</span>';
+    $('#email-config-rows').innerHTML = [
+      `<div class="quiet-row"><span class="quiet-row__label">Email provider</span><span class="quiet-row__value">${e.brevo_configured ? '<span class="badge badge-green">Brevo configured</span>' : '<span class="badge badge-red">BREVO_API_KEY not set</span>'}</span></div>`,
+      `<div class="quiet-row"><span class="quiet-row__label">Sender address</span><span class="quiet-row__value"><span class="val-text">${escHtml(e.from_email || 'not set')}</span> ${ok(e.from_email)}</span></div>`,
+      `<div class="quiet-row"><span class="quiet-row__label">App URL</span><span class="quiet-row__value"><span class="val-text">${escHtml(e.app_url || 'not set')}</span> ${ok(e.app_url)}</span></div>`,
+    ].join('');
+    const cards = [];
     const d = e.delivery;
     if (d && d.tracked > 0) {
       const rate = Math.round((d.sent / d.tracked) * 100);
-      cards.push(card('Delivered', `${rate}%`,
-        `${d.sent} sent · ${d.failed} failed of ${d.tracked} tracked`,
-        d.failed === 0 ? 'green' : (rate >= 90 ? '' : 'accent')));
+      cards.push(card('Delivered', `${rate}%`, `${d.sent} sent · ${d.failed} failed of ${d.tracked} tracked`, d.failed === 0 ? 'healthy' : (rate >= 90 ? '' : 'warn')));
     } else {
       cards.push(card('Delivered', '—', 'No invite emails tracked yet'));
     }
-    document.getElementById('email-cards').innerHTML = cards.join('');
+    $('#email-cards').innerHTML = cards.join('');
 
-    // Recent failures table — actionable triage.
-    const wrap = document.getElementById('email-failures');
+    const wrap = $('#email-failures');
     const rows = e.recent_failures || [];
-    if (!rows.length) {
-      wrap.style.display = 'none';
-    } else {
+    if (!rows.length) { wrap.style.display = 'none'; }
+    else {
       wrap.style.display = 'block';
       document.querySelector('#table-email-failures tbody').innerHTML = rows.map((r) => `<tr>
-        <td class="primary">${escHtml(r.email)}</td>
-        <td class="muted" style="max-width:420px;white-space:pre-wrap;word-break:break-word">${escHtml(r.error || 'Unknown error')}</td>
+        <td class="primary">${sensitiveSpan('email', r.email)}</td>
+        <td class="muted" style="max-width:420px;white-space:pre-wrap">${escHtml(r.error || 'Unknown error')}</td>
         <td class="muted" style="white-space:nowrap">${fmt(r.when)}</td>
       </tr>`).join('');
+      markScrollable(document.getElementById('table-email-failures'));
     }
+    applyPrivacyMask();
   }
 
+  let testEmailBusy = false;
   async function sendTestEmail() {
-    const btn = document.getElementById('btn-test-email');
-    const out = document.getElementById('test-email-result');
-    btn.disabled = true;
-    btn.textContent = 'Sending…';
-    out.textContent = '';
-    out.style.color = 'var(--ink-soft)';
+    if (testEmailBusy) return;
+    testEmailBusy = true;
+    const btn = $('#btn-test-email'), label = $('#test-email-label'), out = $('#test-email-result');
+    btn.disabled = true; btn.setAttribute('aria-busy', 'true');
+    label.innerHTML = '<span class="spin-icon-inline" aria-hidden="true"></span> Sending…';
+    out.innerHTML = '';
     try {
       const res = await fetch('/api/debug/email', { method: 'POST' });
       const body = await res.json().catch(() => ({}));
       if (res.ok && body.sent) {
-        out.style.color = 'var(--sage)';
-        out.innerHTML = `✓ Sent to <strong>${escHtml(body.to || '')}</strong> — check your inbox (and spam).`;
+        out.innerHTML = statusPanel('success', '✓', 'Sent', `Sent to <strong>${escHtml(body.to || '')}</strong> — check your inbox (and spam).`);
+        announce('Test email sent.');
       } else if (body.dev) {
-        out.style.color = 'var(--gold)';
-        out.textContent = 'Email is suppressed in this environment (no provider key).';
+        out.innerHTML = statusPanel('warning', '⚪', 'Suppressed', 'Email is suppressed in this environment (no provider key).');
+        announce('Test email suppressed — no provider key configured.');
       } else {
-        out.style.color = 'var(--danger)';
-        out.textContent = '✗ Failed: ' + (body.error || 'unknown error');
+        out.innerHTML = statusPanel('danger', '✗', 'Failed', escHtml(body.error || 'Unknown error'));
+        announce('Test email failed to send.');
       }
     } catch {
-      out.style.color = 'var(--danger)';
-      out.textContent = '✗ Network error — could not reach the server.';
+      out.innerHTML = statusPanel('danger', '✗', 'Network error', 'Could not reach the server.');
+      announce('Test email failed — network error.');
     } finally {
-      btn.disabled = false;
-      btn.textContent = 'Send test email to myself';
+      btn.disabled = false; btn.setAttribute('aria-busy', 'false');
+      label.textContent = 'Send test email to myself';
+      testEmailBusy = false;
     }
   }
 
+  let diagBusy = false;
   async function runDiagnostic() {
-    const btn = document.getElementById('btn-diag');
-    const out = document.getElementById('diag-result');
-    btn.disabled = true; btn.textContent = 'Checking…';
+    if (diagBusy) return;
+    diagBusy = true;
+    const btn = $('#btn-diag'), label = $('#diag-label'), out = $('#diag-result');
+    btn.disabled = true; btn.setAttribute('aria-busy', 'true');
+    label.innerHTML = '<span class="spin-icon-inline" aria-hidden="true"></span> Checking…';
     out.innerHTML = '';
     try {
       const res = await fetch('/api/admin/email-diagnostic');
       const d = await res.json().catch(() => ({}));
-      if (!res.ok) { out.innerHTML = `<p style="color:var(--danger)">${escHtml(d.error || res.statusText)}</p>`; return; }
-      const yn = (v) => v === true
-        ? '<span class="badge badge-green">Yes</span>'
-        : v === false ? '<span class="badge badge-red">No</span>'
-        : '<span class="badge badge-amber">Unknown</span>';
-      const rows = [
-        ['Sender verified in Brevo', yn(d.sender_verified)],
-        [`Domain authenticated (DKIM/SPF) — ${escHtml(d.from_domain || '?')}`, yn(d.domain_authenticated)],
-      ];
-      let html = '<table><tbody>' + rows.map((r) =>
-        `<tr><td class="primary">${r[0]}</td><td style="text-align:right">${r[1]}</td></tr>`).join('') + '</tbody></table>';
-
-      if (d.account?.credits != null) {
-        html += `<p style="font-size:13px;color:var(--ink-soft);margin-top:10px">Email credits remaining: <strong>${d.account.credits}</strong></p>`;
-      }
+      if (!res.ok) { out.innerHTML = statusPanel('danger', '✗', 'Could not run check', escHtml(d.error || res.statusText)); announce('Delivery check failed.'); return; }
+      const yn = (v) => v === true ? '<span class="badge badge-green">Yes</span>' : v === false ? '<span class="badge badge-red">No</span>' : '<span class="badge badge-amber">Unknown</span>';
+      let html = statusPanel('info', 'ℹ️', 'Delivery check results', `Sender verified: ${yn(d.sender_verified)} · Domain authenticated (${escHtml(d.from_domain || '?')}): ${yn(d.domain_authenticated)}`);
+      if (d.account?.credits != null) html += `<p style="font-size:13px;color:var(--ink-soft);margin-top:10px">Email credits remaining: <strong>${d.account.credits}</strong></p>`;
       const ec = d.event_counts || {};
       if (Object.keys(ec).length) {
         html += '<p style="font-size:12px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-soft);margin:16px 0 8px">Last 30 days — delivery events</p>';
-        html += '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px">' +
-          Object.entries(ec).map(([k, v]) => {
-            const bad = /bounce|block|spam|invalid|error/i.test(k);
-            return `<span class="badge ${bad ? 'badge-red' : 'badge-green'}">${escHtml(k)}: ${v}</span>`;
-          }).join('') + '</div>';
+        html += '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px">' + Object.entries(ec).map(([k, v]) => {
+          const bad = /bounce|block|spam|invalid|error/i.test(k);
+          return `<span class="badge ${bad ? 'badge-red' : 'badge-green'}">${escHtml(k)}: ${v}</span>`;
+        }).join('') + '</div>';
       }
       if (d.recent_events?.length) {
-        html += '<table style="margin-top:10px"><thead><tr><th>Recipient</th><th>Event</th><th>When</th></tr></thead><tbody>' +
+        html += `<div class="table-scroll" tabindex="0" role="region" aria-label="Recent delivery events"><table style="margin-top:10px"><caption class="visually-hidden">Recent delivery events</caption><thead><tr><th>Recipient</th><th>Event</th><th>When</th></tr></thead><tbody>` +
           d.recent_events.map((e) => {
             const bad = /bounce|block|spam|invalid|error/i.test(e.event);
-            return `<tr><td class="primary">${escHtml(e.email)}</td><td style="color:${bad ? 'var(--danger)' : 'var(--sage)'}">${escHtml(e.event)}${e.reason ? ' — ' + escHtml(e.reason) : ''}</td><td class="muted">${escHtml((e.date || '').slice(0, 16).replace('T', ' '))}</td></tr>`;
-          }).join('') + '</tbody></table>';
+            return `<tr><td class="primary">${sensitiveSpan('email', e.email)}</td><td style="color:${bad ? 'var(--danger)' : 'var(--sage)'}">${escHtml(e.event)}${e.reason ? ' — ' + escHtml(e.reason) : ''}</td><td class="muted">${escHtml((e.date || '').slice(0, 16).replace('T', ' '))}</td></tr>`;
+          }).join('') + '</tbody></table></div>';
       } else {
         html += '<p style="font-size:13px;color:var(--ink-soft);margin-top:10px">No recent delivery events returned by Brevo.</p>';
       }
       out.innerHTML = html;
+      applyPrivacyMask();
+      markAllScrollable();
+      announce('Delivery check complete.');
     } catch {
-      out.innerHTML = '<p style="color:var(--danger)">Network error.</p>';
+      out.innerHTML = statusPanel('danger', '✗', 'Network error', 'Could not reach the server.');
+      announce('Delivery check failed — network error.');
     } finally {
-      btn.disabled = false; btn.textContent = 'Run delivery check';
+      btn.disabled = false; btn.setAttribute('aria-busy', 'false');
+      label.textContent = 'Run delivery check';
+      diagBusy = false;
     }
   }
 
+  // ── Signups & invite funnel ───────────────────────────────────────────
   function renderSignupChart(data) {
-    // Fill in any missing weeks with 0s for a clean line chart.
     const now = Date.now();
     const weekMs = 7 * 24 * 60 * 60 * 1000;
     const weekMap = new Map((data.signups_by_week || []).map((r) => [r.week, r.signups]));
-
-    const labels = [];
-    const values = [];
+    const labels = [], values = [];
     for (let i = 11; i >= 0; i--) {
       const d = new Date(Math.floor((now - i * weekMs) / weekMs) * weekMs);
-      const key = d.toISOString().slice(0, 10);
       labels.push(d.toLocaleDateString('en-CA', { month: 'short', day: 'numeric' }));
-      values.push(weekMap.get(key) ?? 0);
+      values.push(weekMap.get(d.toISOString().slice(0, 10)) ?? 0);
     }
-
+    const total = values.reduce((a, b) => a + b, 0);
+    $('#signups-summary').textContent = `${total} new signup${total === 1 ? '' : 's'} over the last 12 weeks.`;
+    const wrap = document.getElementById('chart-signups').parentElement;
+    destroyChart('signup');
+    if (!chartsAvailable()) { wrap.innerHTML = '<div class="chart-empty">Chart library unavailable — see the summary above.</div>'; return; }
+    if (!wrap.querySelector('canvas')) wrap.innerHTML = '<canvas id="chart-signups"></canvas>';
     const ctx = document.getElementById('chart-signups').getContext('2d');
-    if (signupChart) signupChart.destroy();
-    signupChart = new Chart(ctx, {
+    charts.signup = new Chart(ctx, {
       type: 'line',
-      data: {
-        labels,
-        datasets: [{
-          data: values,
-          borderColor: COLOR.accent,
-          backgroundColor: 'rgba(194,96,58,0.10)',
-          borderWidth: 2.5,
-          pointBackgroundColor: COLOR.accent,
-          pointRadius: 4,
-          pointHoverRadius: 6,
-          fill: true,
-          tension: 0.35,
-        }],
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: { legend: { display: false } },
-        scales: {
-          x: {
-            grid: { color: COLOR.hairline },
-            ticks: { color: COLOR.ink, font: { size: 11 }, maxTicksLimit: 6 },
-          },
-          y: {
-            beginAtZero: true,
-            grid: { color: COLOR.hairline },
-            ticks: { color: COLOR.ink, font: { size: 11 }, stepSize: 1 },
-          },
-        },
-      },
+      data: { labels, datasets: [{ data: values, borderColor: COLOR.accent, backgroundColor: 'rgba(194,96,58,0.10)', borderWidth: 2.5, pointBackgroundColor: COLOR.accent, pointRadius: 4, pointHoverRadius: 6, fill: true, tension: 0.35 }] },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } },
+        scales: { x: { grid: { color: COLOR.hairline }, ticks: { color: COLOR.ink, font: { size: 11 }, maxTicksLimit: 6 } },
+          y: { beginAtZero: true, grid: { color: COLOR.hairline }, ticks: { color: COLOR.ink, font: { size: 11 }, stepSize: 1 } } } },
     });
   }
 
   function renderInviteChart(data) {
     const inv = data.invites;
-
-    // Funnel summary row
-    document.getElementById('funnel-summary').innerHTML = `
-      <div class="funnel-item">
-        <div class="funnel-item__n" style="color:${COLOR.sage}">${inv.accepted}</div>
-        <div class="funnel-item__l">Accepted</div>
-      </div>
-      <div class="funnel-item">
-        <div class="funnel-item__n" style="color:${COLOR.gold}">${inv.pending}</div>
-        <div class="funnel-item__l">Pending</div>
-      </div>
-      <div class="funnel-item">
-        <div class="funnel-item__n" style="color:${COLOR.ink}">${inv.expired}</div>
-        <div class="funnel-item__l">Expired</div>
-      </div>`;
-
+    $('#funnel-summary').innerHTML = `
+      <div class="funnel-item"><div class="funnel-item__n" style="color:${COLOR.sage}">${inv.accepted}</div><div class="funnel-item__l">Accepted</div></div>
+      <div class="funnel-item"><div class="funnel-item__n" style="color:${COLOR.gold}">${inv.pending}</div><div class="funnel-item__l">Pending</div></div>
+      <div class="funnel-item"><div class="funnel-item__n" style="color:${COLOR.ink}">${inv.expired}</div><div class="funnel-item__l">Expired</div></div>`;
+    $('#funnel-summary-text').textContent = `${inv.total} invites sent — ${inv.acceptance_rate}% accepted.`;
+    // The numeric row above is the primary communication (§11); the chart
+    // is retained only as a secondary, genuinely-clearer proportional view.
+    const wrap = document.getElementById('chart-invites').parentElement;
+    destroyChart('invite');
+    if (!chartsAvailable()) { wrap.innerHTML = '<div class="chart-empty">Chart library unavailable — see the numbers above.</div>'; return; }
+    if (!(inv.accepted || inv.pending || inv.expired)) { wrap.innerHTML = '<div class="chart-empty">No invites sent yet.</div>'; return; }
+    if (!wrap.querySelector('canvas')) wrap.innerHTML = '<canvas id="chart-invites"></canvas>';
     const ctx = document.getElementById('chart-invites').getContext('2d');
-    if (inviteChart) inviteChart.destroy();
-    inviteChart = new Chart(ctx, {
+    charts.invite = new Chart(ctx, {
       type: 'doughnut',
-      data: {
-        labels: ['Accepted', 'Pending', 'Expired'],
-        datasets: [{
-          data: [inv.accepted || 0, inv.pending || 0, inv.expired || 0],
-          backgroundColor: [COLOR.sage, COLOR.gold, '#d4cfc8'],
-          borderWidth: 0,
-          hoverOffset: 6,
-        }],
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        cutout: '65%',
-        plugins: {
-          legend: {
-            position: 'bottom',
-            labels: { color: COLOR.ink, font: { size: 12 }, padding: 16, boxWidth: 12 },
-          },
-        },
-      },
+      data: { labels: ['Accepted', 'Pending', 'Expired'], datasets: [{ data: [inv.accepted || 0, inv.pending || 0, inv.expired || 0], backgroundColor: [COLOR.sage, COLOR.gold, '#d4cfc8'], borderWidth: 0, hoverOffset: 6 }] },
+      options: { responsive: true, maintainAspectRatio: false, cutout: '65%', plugins: { legend: { position: 'bottom', labels: { color: COLOR.ink, font: { size: 11 }, padding: 12, boxWidth: 10 } } } },
     });
   }
 
-  function renderUsersTable(data) {
-    const tbody = document.querySelector('#table-users tbody');
-    const rows = (data.recent_users || []);
-    if (!rows.length) {
-      tbody.innerHTML = '<tr><td colspan="4" style="padding:14px 0;color:var(--ink-soft)">No users yet</td></tr>';
-      return;
+  // ── Recent sign-ups / largest trees / feedback (sortable + filterable) ─
+  let usersTable, treesTable, feedbackTable;
+  function renderUsersTable() {
+    if (!usersTable) {
+      usersTable = TableController('table-users', {
+        getRows: () => state.stats?.recent_users || [],
+        renderRow: (u) => {
+          const statusBadge = !u.last_seen ? '<span class="badge badge-amber">Joined</span>'
+            : (new Date() - new Date(u.last_seen)) < 7 * 86400000 ? '<span class="badge badge-green">Active</span>' : '';
+          return `<tr class="has-action">
+            <td class="primary"><span class="cell-flex">${sensitiveSpan('email', u.email)} ${statusBadge} ${copyBtn(u.email, 'email address')}</span></td>
+            <td class="muted">${sensitiveSpan('name', u.family_name || 'No tree yet')}</td>
+            <td class="muted">${fmt(u.joined)}</td>
+            <td class="muted">${fmt(u.last_seen)}</td>
+          </tr>`;
+        },
+        colspan: 4, emptyText: 'No users yet',
+        searchInputId: 'search-users',
+        searchFn: (u, q) => (u.email || '').toLowerCase().includes(q) || (u.family_name || '').toLowerCase().includes(q),
+      });
     }
-    tbody.innerHTML = rows.map((u) => {
-      const statusBadge = !u.last_seen
-        ? '<span class="badge badge-amber">Joined</span>'
-        : (new Date() - new Date(u.last_seen)) < 7 * 86400000
-          ? '<span class="badge badge-green">Active</span>'
-          : '';
-      return `<tr>
-        <td class="primary">${escHtml(u.email)} ${statusBadge}</td>
-        <td class="muted">${escHtml(u.family_name || 'No tree yet')}</td>
-        <td class="muted">${fmt(u.joined)}</td>
-        <td class="muted">${fmt(u.last_seen)}</td>
-      </tr>`;
-    }).join('');
+    usersTable.render();
   }
-
-  function renderTreesTable(data) {
-    const tbody = document.querySelector('#table-trees tbody');
-    const rows = (data.largest_trees || []);
-    if (!rows.length) {
-      tbody.innerHTML = '<tr><td colspan="2" style="padding:14px 0;color:var(--ink-soft)">No trees yet</td></tr>';
-      return;
+  function renderTreesTable() {
+    if (!treesTable) {
+      treesTable = TableController('table-trees', {
+        getRows: () => (state.stats?.largest_trees || []).map((t) => ({ ...t })),
+        renderRow: (t) => {
+          const sizeLabel = t.size_kb >= 1024 ? (t.size_kb / 1024).toFixed(1) + ' MB' : t.size_kb + ' KB';
+          const sizeColor = t.size_kb > 500 ? `color:${COLOR.gold}` : `color:${COLOR.sage}`;
+          return `<tr><td class="primary">${sensitiveSpan('name', t.family_name)}</td><td class="muted" style="${sizeColor};font-weight:600">${sizeLabel}</td></tr>`;
+        },
+        colspan: 2, emptyText: 'No trees yet',
+      });
     }
-    tbody.innerHTML = rows.map((t) => {
-      const sizeLabel = t.size_kb >= 1024
-        ? (t.size_kb / 1024).toFixed(1) + ' MB'
-        : t.size_kb + ' KB';
-      const sizeColor = t.size_kb > 500 ? `color:${COLOR.gold}` : `color:${COLOR.sage}`;
-      return `<tr>
-        <td class="primary">${escHtml(t.family_name)}</td>
-        <td class="muted" style="${sizeColor};font-weight:600">${sizeLabel}</td>
-      </tr>`;
-    }).join('');
+    treesTable.render();
   }
-
-  function renderFeedbackTable(rows) {
-    const tbody = document.querySelector('#table-feedback tbody');
-    if (!rows.length) {
-      tbody.innerHTML = '<tr><td colspan="5" style="padding:14px 0;color:var(--ink-soft)">No feedback yet</td></tr>';
-      return;
-    }
+  function renderFeedbackTable() {
     const icons = { idea: '💡', bug: '🐛', praise: '🙌', other: '📬' };
     const emailBadge = { sent: '✅ Sent', failed: '❌ Failed', dev: '⚪ Suppressed (dev)' };
-    tbody.innerHTML = rows.map((f) => {
-      const badge = emailBadge[f.email_status] || (f.email_status ? escHtml(f.email_status) : '—');
-      const title = f.email_status === 'failed' && f.email_error ? ` title="${escHtml(f.email_error)}"` : '';
-      return `<tr>
-      <td style="white-space:nowrap">${icons[f.type] || '📬'} ${escHtml(f.type)}</td>
-      <td class="muted">${escHtml(f.email)}</td>
-      <td class="primary" style="max-width:340px;white-space:pre-wrap;word-break:break-word">${escHtml(f.message)}</td>
-      <td class="muted" style="white-space:nowrap">${fmt(f.created_at)}</td>
-      <td class="muted" style="white-space:nowrap"${title}>${badge}</td>
-    </tr>`;
-    }).join('');
+    if (!feedbackTable) {
+      feedbackTable = TableController('table-feedback', {
+        getRows: () => state.feedback || [],
+        renderRow: (f) => {
+          const badge = emailBadge[f.email_status] || (f.email_status ? escHtml(f.email_status) : '—');
+          return `<tr>
+            <td style="white-space:nowrap">${icons[f.type] || '📬'} ${escHtml(f.type)}</td>
+            <td class="muted"><span class="cell-flex">${sensitiveSpan('email', f.email)} ${copyBtn(f.email, 'feedback email address')}</span></td>
+            <td class="primary" style="max-width:340px;white-space:pre-wrap">${sensitiveSpan('message', f.message)}</td>
+            <td class="muted" style="white-space:nowrap">${fmt(f.created_at)}</td>
+            <td class="muted" style="white-space:nowrap">${badge}</td>
+          </tr>`;
+        },
+        colspan: 5, emptyText: 'No feedback yet',
+        searchInputId: 'search-feedback',
+        searchFn: (f, q) => [(f.type||''),(f.email||''),(f.message||'')].join(' ').toLowerCase().includes(q),
+      });
+    }
+    feedbackTable.render();
   }
 
-  function escHtml(s) {
-    return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  // ══════════════════════════════════════════════════════════════════════
+  // §9 — Needs attention. Derived only from data already on the page;
+  // never a new threshold beyond ones already used elsewhere (largest-trees
+  // >500KB is the same gold cutoff the table itself already colors by).
+  // ══════════════════════════════════════════════════════════════════════
+  function computeAttentionItems() {
+    const items = [];
+    const s = state.stats;
+    if (!s) return items;
+    const add = (severity, text, href) => items.push({ severity, text, href });
+
+    if (!s.email?.brevo_configured) add('critical', 'Email provider (Brevo) is not configured — no invite emails can send.', '#communications');
+    if ((s.email?.recent_failures || []).length > 0) add('warning', `${s.email.recent_failures.length} recent invite email${s.email.recent_failures.length === 1 ? '' : 's'} failed to send.`, '#communications');
+    if (!s.email?.from_email) add('warning', 'No sender address (FROM_EMAIL) is configured.', '#communications');
+    if (!s.email?.app_url) add('warning', 'No application URL (APP_URL) is configured — invite links may be malformed.', '#communications');
+
+    const aiFailures = (s.ai?.by_endpoint || []).reduce((n, r) => n + (r.failures || 0), 0);
+    if (aiFailures > 0) add('warning', `${aiFailures} AI call${aiFailures === 1 ? '' : 's'} failed in the last 30 days.`, '#operations');
+
+    if (state.cloudflareError) add('info', 'Cloudflare traffic data is unavailable right now.', '#operations');
+    else if (state.cloudflare && state.cloudflare.configured === false) add('info', 'Cloudflare traffic isn’t connected — set the two API secrets to see edge analytics.', '#operations');
+
+    const bigTrees = (s.largest_trees || []).filter((t) => t.size_kb > 500);
+    if (bigTrees.length) add('warning', `${bigTrees.length} family tree${bigTrees.length === 1 ? ' is' : 's are'} storage-heavy (already flagged in Largest trees).`, '#operations');
+
+    if ((s.invites?.expired || 0) > 0) add('info', `${s.invites.expired} invite${s.invites.expired === 1 ? '' : 's'} expired without being accepted.`, '#growth');
+
+    const rank = { critical: 0, warning: 1, info: 2 };
+    items.sort((a, b) => rank[a.severity] - rank[b.severity]);
+    return items;
+  }
+  function recomputeAttention() {
+    const items = computeAttentionItems();
+    const wrap = $('#attention-wrap');
+    if (!items.length) {
+      wrap.innerHTML = `<div class="attention attention--healthy">
+        <span class="a-icon" aria-hidden="true">✓</span>
+        <div><strong>All monitored systems look healthy.</strong>
+        <div class="sub">This reflects only the checks represented on this page.</div></div>
+      </div>`;
+      return;
+    }
+    wrap.innerHTML = `<div class="attention"><ul class="attention-list">` + items.map((it) =>
+      `<li class="attention-item">
+        <span class="attention-item__badge ${it.severity}">${it.severity}</span>
+        <span class="attention-item__body"><span class="attention-item__text">${escHtml(it.text)}</span></span>
+        <a href="${it.href}">View →</a>
+      </li>`).join('') + `</ul></div>`;
   }
 
-  // Runs a render function, logging (not throwing) on failure — keeps one
-  // broken section from cancelling every section after it in loadData().
-  function safe(fn) {
-    try { fn(); } catch (e) { console.error('[admin] render failed:', e); }
+  // ══════════════════════════════════════════════════════════════════════
+  // Loading states, refresh, and error handling (§1, §2)
+  // ══════════════════════════════════════════════════════════════════════
+  function showFatal(reasonText) {
+    preload.style.display = 'none';
+    authGate.classList.remove('show');
+    app.classList.remove('ready');
+    fatal.classList.add('show');
+    const reasonEl = $('#fatal-error-reason');
+    if (reasonText) { reasonEl.textContent = reasonText; reasonEl.hidden = false; } else { reasonEl.hidden = true; }
+    announce('Dashboard unavailable.');
+  }
+  function showAuth(status) {
+    preload.style.display = 'none';
+    fatal.classList.remove('show');
+    app.classList.remove('ready');
+    $('#auth-gate-title').textContent = status === 401 ? 'Sign in required' : 'Access denied';
+    $('#auth-gate-text').textContent = status === 401 ? 'This page requires an admin account.' : 'Your account does not have admin access.';
+    authGate.classList.add('show');
+    announce(status === 401 ? 'Sign in required.' : 'Access denied.');
+  }
+  function showApp() {
+    preload.style.display = 'none';
+    fatal.classList.remove('show');
+    authGate.classList.remove('show');
+    app.classList.add('ready');
   }
 
-  async function loadData() {
-    errorMsg.style.display = 'none';
+  function renderRefreshInlineError(message) {
+    $('#refresh-error-wrap').innerHTML = `<div class="inline-error" role="alert">
+      <span class="inline-error__text">${escHtml(message)}</span>
+      <div class="inline-error__actions">
+        <button type="button" class="btn" id="btn-refresh-inline-retry">Try again</button>
+        <button type="button" class="inline-error__dismiss" id="btn-refresh-inline-dismiss" aria-label="Dismiss">×</button>
+      </div>
+    </div>`;
+    $('#btn-refresh-inline-retry').addEventListener('click', () => loadStats({ isRefresh: true }));
+    $('#btn-refresh-inline-dismiss').addEventListener('click', () => { $('#refresh-error-wrap').innerHTML = ''; });
+  }
+  function clearRefreshInlineError() { $('#refresh-error-wrap').innerHTML = ''; }
+
+  let refreshing = false;
+  const btnRefresh = $('#btn-refresh'), refreshLabel = $('#refresh-label');
+  function setRefreshBusy(busy) {
+    refreshing = busy;
+    btnRefresh.disabled = busy;
+    btnRefresh.setAttribute('aria-busy', String(busy));
+    refreshLabel.innerHTML = busy ? '<span class="spin-icon-inline" aria-hidden="true"></span> Refreshing…' : 'Refresh';
+  }
+
+  async function loadStats({ isRefresh = false } = {}) {
+    if (isRefresh) {
+      if (refreshing) return; // prevent repeated requests from multiple clicks
+      setRefreshBusy(true);
+      announce('Refreshing dashboard…');
+    }
     try {
       const res = await fetch('/api/admin/stats');
-      if (res.status === 401 || res.status === 403) {
-        authGate.innerHTML = `
-          <div class="icon">🔒</div>
-          <h2>${res.status === 401 ? 'Sign in required' : 'Access denied'}</h2>
-          <p>${res.status === 401 ? 'This page requires an admin account.' : 'Your account does not have admin access.'}</p>
-          <a href="/">← Back to Bloodline</a>`;
-        authGate.style.display = 'flex';
-        app.classList.remove('ready');
-        return;
-      }
+      if (res.status === 401 || res.status === 403) { showAuth(res.status); return; }
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
-        showError('Could not load stats: ' + (body.error || res.statusText));
+        const reason = body.error ? String(body.error).slice(0, 200) : null;
+        if (isRefresh) { renderRefreshInlineError('Could not refresh: ' + (reason || res.statusText)); }
+        else { showFatal(reason); }
         return;
       }
-
       const data = await res.json();
+      state.stats = data;
+      clearRefreshInlineError();
+      showApp();
 
-      // Show the app, hide auth gate
-      authGate.style.display = 'none';
-      app.classList.add('ready');
+      const generated = new Date(data.generated_at);
+      $('#ts').innerHTML = `Updated <b title="${generated.toLocaleString('en-CA')}">${isRefresh ? 'just now' : generated.toLocaleTimeString('en-CA', { hour: '2-digit', minute: '2-digit' })}</b>`;
 
-      // Timestamp
-      document.getElementById('ts').textContent =
-        'Updated ' + new Date(data.generated_at).toLocaleTimeString('en-CA', { hour: '2-digit', minute: '2-digit' });
-
-      // Each section renders independently — one section throwing (a chart
-      // library that failed to load, an unexpected field shape) must not
-      // blank out every section after it in the list.
       safe(() => renderCards(data));
       safe(() => renderAiCards(data.ai || {}));
       safe(() => renderAiChart(data.ai || {}));
@@ -1104,27 +1461,48 @@
       safe(() => renderEmailCards(data));
       safe(() => renderSignupChart(data));
       safe(() => renderInviteChart(data));
-      safe(() => renderUsersTable(data));
-      safe(() => renderTreesTable(data));
+      safe(() => renderUsersTable());
+      safe(() => renderTreesTable());
+      safe(applyPrivacyMask);
+      safe(markAllScrollable);
+      recomputeAttention();
+      initSectionObserver();
 
-      // Cloudflare + feedback are fetched separately — either one failing
-      // (or simply not being configured) shouldn't break the rest of the page.
-      loadCloudflare();
-      fetch('/api/admin/feedback')
-        .then((r) => r.ok ? r.json() : { rows: [] })
-        .then((fb) => renderFeedbackTable(fb.rows || []))
-        .catch(() => renderFeedbackTable([]));
+      if (!isRefresh) { loadCloudflare(); loadFeedback(); }
+      else { loadCloudflare({ isRefresh: true }); loadFeedback({ isRefresh: true }); }
 
+      if (isRefresh) announce('Dashboard refreshed.');
     } catch (e) {
-      showError('Network error — could not reach the server.');
+      if (isRefresh) renderRefreshInlineError('Network error — could not reach the server.');
+      else showFatal('Network error — could not reach the server.');
       console.error(e);
+    } finally {
+      if (isRefresh) setRefreshBusy(false);
     }
   }
 
-  document.getElementById('btn-refresh').addEventListener('click', loadData);
-  document.getElementById('btn-test-email').addEventListener('click', sendTestEmail);
-  document.getElementById('btn-diag').addEventListener('click', runDiagnostic);
-  loadData();
+  async function loadFeedback({ isRefresh } = {}) {
+    try {
+      const r = await fetch('/api/admin/feedback');
+      if (!r.ok) throw new Error('bad status');
+      const fb = await r.json();
+      state.feedback = fb.rows || [];
+      state.feedbackError = false;
+    } catch {
+      // A refresh failure must not discard previously-shown feedback rows.
+      if (!isRefresh || !state.feedback.length) state.feedback = state.feedback || [];
+      state.feedbackError = true;
+    }
+    safe(renderFeedbackTable);
+  }
+
+  btnRefresh.addEventListener('click', () => loadStats({ isRefresh: true }));
+  $('#btn-fatal-retry').addEventListener('click', () => { preload.style.display = 'flex'; fatal.classList.remove('show'); loadStats(); });
+  $('#btn-test-email').addEventListener('click', sendTestEmail);
+  $('#btn-diag').addEventListener('click', runDiagnostic);
+
+  loadStats();
+})();
 </script>
 </body>
 </html>
