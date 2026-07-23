@@ -1,0 +1,67 @@
+name: Codex to Claude handoff
+description: Track an approved design brief through Claude review and implementation.
+title: "[Handoff] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This issue is the durable handoff record between Codex and Claude. Creating it
+        does not run Claude. A maintainer must apply `ready-for-claude-review` after the
+        published brief and scope have been verified.
+
+  - type: input
+    id: outcome
+    attributes:
+      label: Intended outcome
+      description: Describe the user-visible result, not the implementation.
+      placeholder: A family co-admin can request and download a complete lossless archive.
+    validations:
+      required: true
+  - type: input
+    id: brief
+    attributes:
+      label: Published brief
+      description: Link to the exact GitHub branch/commit version Claude must review.
+      placeholder: https://github.com/owner/repo/blob/commit/docs/BRIEF.md
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope and exclusions
+      description: State what is included, excluded, and already decided.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: risk
+    attributes:
+      label: Risk
+      options:
+        - R0 — trivial
+        - R1 — contained
+        - R2 — sensitive
+        - R3 — critical
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance and verification
+      description: List the acceptance criteria and required checks or visual evidence.
+    validations:
+      required: true
+
+  - type: textarea
+    id: operations
+    attributes:
+      label: Operational boundaries
+      description: Record data, authorization, services, deployment, and recovery constraints.
+      value: |
+        - No production deployment or mutation is authorized by this handoff.
+        - No remote migration or destructive operation is authorized.
+        - Any R3 operation requires separate written owner approval and the safeguards in docs/SAFETY.md.
+    validations:
+      required: true
