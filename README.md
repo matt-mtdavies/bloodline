@@ -56,9 +56,25 @@ and the tree re-centres onto a relative, saving screenshots to
 `tests/screenshots/`.
 
 ```bash
+nvm use              # Node 20, from .nvmrc
+npm ci               # use package-lock.json; do not substitute pnpm
+npm run browser:install
+npm run verify:env   # confirms Node, dependencies, and Chromium
 npm run dev          # one shell
 npm run test:e2e     # another
 ```
+
+If `node` or `npm` is unavailable, install a standard Node 20 distribution (or
+use `nvm install 20`) before continuing. `npm run browser:install` is required on
+each new machine or clean browser cache; the smoke test does not assume a global
+Chrome/Chromium installation.
+
+Playwright automatically respects an existing `PLAYWRIGHT_BROWSERS_PATH`. Restricted
+agent sandboxes may choose a project-local install with
+`PLAYWRIGHT_BROWSERS_PATH=0 npm run browser:install`, but must keep that variable set
+for `verify:env` and `test:e2e`. `ALLOW_BROWSER_SANDBOX_FALLBACK=1` changes a launch
+failure to a warning only when a supported external browser will perform the local UI
+verification instead.
 
 ## Stack & scaffold
 

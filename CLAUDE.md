@@ -27,9 +27,17 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
 
 ### Run / verify (no human can see the screen — self-verify with screenshots)
 - Dev server: `npm run dev` (run in background; picks the first free port, usually 5173).
+- First checkout: use Node 20 (`.nvmrc`), then run `npm ci`,
+  `npm run browser:install`, and `npm run verify:env`.
 - Build check: `npm run build`.
-- Headless smoke + screenshots: `BASE_URL=http://localhost:<port>/ node tests/smoke.mjs`
-  - Uses pre-installed Playwright/Chromium via project-local `playwright-core`.
+- Headless smoke + screenshots: `BASE_URL=http://localhost:<port>/ npm run test:e2e`
+  - Uses the project-local Playwright package and its explicitly installed Chromium build.
+  - Respect an existing `PLAYWRIGHT_BROWSERS_PATH`; never overwrite a host's working browser
+    configuration. In a managed Codex sandbox with no writable browser cache, use
+    `PLAYWRIGHT_BROWSERS_PATH=0 npm run browser:install`, then keep that variable for checks.
+  - If the sandbox forbids child Chromium processes, run
+    `ALLOW_BROWSER_SANDBOX_FALLBACK=1 npm run verify:env`, use Codex's in-app Browser against
+    the local dev URL, and record that fallback; do not claim the CLI smoke test passed.
   - **Quirk:** ad-hoc Playwright scripts must live IN the project dir (e.g. `tests/_foo.mjs`),
     not `/tmp`, or they resolve the wrong Chromium build and fail.
   - Screenshots land in `tests/screenshots/` (gitignored) — Read them to eyeball the look.

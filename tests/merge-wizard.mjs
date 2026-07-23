@@ -9,7 +9,7 @@
  *   npm run dev           # start first (picks port 5173)
  *   BASE_URL=http://localhost:5173/ node tests/merge-wizard.mjs
  */
-import { chromium } from 'playwright-core';
+import { chromium } from 'playwright';
 
 const _BASE = process.env.BASE_URL || 'http://localhost:5173/';
 const BASE = _BASE.replace(/\?.*$/, '').replace(/\/$/, '');

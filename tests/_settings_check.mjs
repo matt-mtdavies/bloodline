@@ -1,4 +1,4 @@
-import { chromium } from 'playwright-core';
+import { chromium } from 'playwright';
 
 const br = await chromium.launch({ headless: true });
 const pg = await br.newPage();
