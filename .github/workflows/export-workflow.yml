@@ -1,0 +1,132 @@
+name: export-workflow
+
+# CI for the full family archive export feature (docs/FULL-ARCHIVE-EXPORT.md
+# §10). This is the FIRST GitHub Actions workflow in this repository —
+# production has always deployed through Cloudflare Pages' own git
+# integration, with no CI gate in front of it. Scoped deliberately to what
+# Phase A can actually prove without a live Cloudflare account: the
+# workers/export-workflow package's own tests, plus a build/test of the
+# main app to catch any accidental breakage. The two steps genuinely
+# requiring live Cloudflare credentials (D1 migration apply, wrangler
+# deploy --dry-run) are included per §10.2's spec but gated on the
+# CLOUDFLARE_API_TOKEN secret existing — until a human operator adds it
+# (see docs/FULL-ARCHIVE-EXPORT-PHASE-A-RUNBOOK.md), this workflow stays
+# green on every PR rather than failing on a step nobody has configured yet.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - 'workers/export-workflow/**'
+      - '.github/workflows/export-workflow.yml'
+
+jobs:
+  export-workflow-tests:
+    name: workers/export-workflow — unit + archive-format + browser tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: workers/export-workflow
+    steps:
+      - uses: actions/checkout@v4
+
+      # workers/export-workflow/tests/activityLog.test.mjs uses node:sqlite
+      # as an independent correctness oracle for the activity_log keyset
+      # pagination — that module was added in Node 22.5.0 and isn't present
+      # at all on Node 20 (this repo's main app still targets Node 20 per
+      # the root .nvmrc, which is unaffected — this sub-package has its own
+      # newer requirement, declared in its own .nvmrc/package.json#engines).
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: 'workers/export-workflow/.nvmrc'
+
+      # The root `playwright` package (and its Chromium browser binary) is
+      # what tests/viewer.e2e.mjs resolves via Node's own upward
+      # node_modules lookup — workers/export-workflow has no package-lock
+      # of its own and deliberately reuses the root install, exactly as it
+      # already does when these tests are run locally.
+      - name: install root dependencies (provides `playwright` for viewer.e2e.mjs)
+        working-directory: ${{ github.workspace }}
+        run: npm ci
+      - name: install Chromium for Playwright
+        working-directory: ${{ github.workspace }}
+        run: npx playwright install --with-deps chromium
+
+      # unzip/zipinfo/python3 (Info-ZIP + Python's zipfile) are the two
+      # independent ZIP readers tests/zipWriter.test.mjs verifies against —
+      # both are already present on the standard ubuntu-latest runner image.
+      - name: confirm independent ZIP readers are available
+        run: |
+          unzip -v
+          python3 -c "import zipfile; print('zipfile ok')"
+
+      - name: run every tests/*.test.mjs
+        run: npm test
+
+      - name: run the offline-viewer browser test (file://, zero network requests)
+        run: node tests/viewer.e2e.mjs
+
+      - name: syntax-check the standalone Worker entrypoint
+        run: node --check src/entrypoint.js
+
+  main-app-still-builds:
+    name: main app — unit tests + build (regression guard)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+
+      - run: npm ci
+
+      # Tolerates ONLY the one documented pre-existing relations.test.mjs
+      # failure (see scripts/run-tests-ci.mjs's own header) — this guard
+      # exists to catch a regression THIS PR might cause, not to also
+      # gate on an unrelated, already-known issue that predates it. Any
+      # OTHER failure, in any file, still fails this job.
+      - name: run the existing unit test suite
+        run: node scripts/run-tests-ci.mjs
+
+      - run: npm run build
+
+  # ── Phase B only: needs CLOUDFLARE_ACCOUNT_ID / CLOUDFLARE_API_TOKEN as
+  # repo secrets, and a real (non-placeholder) database_id in
+  # workers/export-workflow/wrangler.toml. Both are manual, human,
+  # post-Phase-A steps — see docs/FULL-ARCHIVE-EXPORT-PHASE-A-RUNBOOK.md.
+  # Skips itself (not fails) until those exist, so this workflow can be
+  # green today and simply gain a real check once Phase B lands.
+  wrangler-dry-run:
+    name: wrangler deploy --dry-run (Phase B, gated on secrets)
+    runs-on: ubuntu-latest
+    needs: export-workflow-tests
+    if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+    # The `secrets` context is NOT available inside a step's `if:` — GitHub
+    # rejects the whole workflow (0 jobs run) with "Unrecognized named-value:
+    # 'secrets'" if it's referenced there directly (confirmed against a real
+    # failed run of this exact file, and against actionlint). `secrets` IS
+    # readable inside `env:` blocks, so the presence check is computed once
+    # here, as a plain job-level env string, and every step's `if:` reads
+    # THAT (the `env` context, which is allowed in `if:`) instead.
+    env:
+      HAS_CLOUDFLARE_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN != '' }}
+    defaults:
+      run:
+        working-directory: workers/export-workflow
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: 'workers/export-workflow/.nvmrc'
+      - run: npm install --no-save wrangler
+      - name: dry-run deploy (only if Cloudflare secrets are configured)
+        if: ${{ env.HAS_CLOUDFLARE_TOKEN == 'true' }}
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: npx wrangler deploy --dry-run
+      - name: secrets not yet configured — skipping (expected until Phase B rollout)
+        if: ${{ env.HAS_CLOUDFLARE_TOKEN == 'false' }}
+        run: echo "CLOUDFLARE_API_TOKEN is not set — see docs/FULL-ARCHIVE-EXPORT-PHASE-A-RUNBOOK.md. Not a failure."

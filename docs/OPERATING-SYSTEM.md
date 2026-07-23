@@ -25,7 +25,6 @@ For design-led features, the standing collaboration model is:
 1. **Codex leads design:** inspect the current product and implementation, resolve product
    decisions, and write an implementation-ready brief with scope, states, behavior,
    accessibility, security, acceptance criteria, verification, and explicit exclusions.
-2. **Publish the brief:** add the brief under `docs/` on a short-lived branch created from
    current `origin/main`, commit only the intended documentation, and push that branch.
 3. **Claude reviews before coding:** Claude reads the published brief and validates it
    against current code and platform constraints.
