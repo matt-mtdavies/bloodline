@@ -53,13 +53,28 @@ separate dependency-maintenance change.
 
 ## Required repository setup
 
-The workflow requires:
+No terminal or Claude CLI access is required. A repository administrator completes this
+one-time setup in the browser:
 
-1. The official Claude GitHub App installed for this repository.
-2. An Actions secret named `ANTHROPIC_API_KEY`.
-3. GitHub Actions enabled with permission to read and write repository contents and pull
-   requests for the implementation job.
-4. The three labels above.
+1. Open the [official Claude GitHub App](https://github.com/apps/claude) while signed into
+   GitHub as the repository owner.
+2. Select **Install** or **Configure**, choose **Only select repositories**, select
+   `matt-mtdavies/bloodline`, and confirm the installation.
+3. Create a direct Anthropic API key in the
+   [Anthropic Console](https://console.anthropic.com/settings/keys). The API account must have
+   billing or credits available for GitHub Action usage.
+4. In GitHub, open `matt-mtdavies/bloodline` → **Settings** → **Secrets and variables** →
+   **Actions** → **New repository secret**.
+5. Enter `ANTHROPIC_API_KEY` as the secret name, paste the API key as its value, and select
+   **Add secret**.
+6. Confirm that `ANTHROPIC_API_KEY` appears in the repository-secret list. GitHub will not
+   show its value again.
+7. Merge the workflow PR before applying either Claude trigger label. After merge, use a
+   disposable handoff issue to test the review label before allowing an implementation run.
+
+The workflow also requires GitHub Actions to remain enabled with permission to write repository
+contents and pull requests for the implementation job. The trigger labels are created when this
+workflow is introduced.
 
 The API key must only be stored as a GitHub Actions secret. Never put it in an issue, prompt,
 workflow file, commit, log, or screenshot.
