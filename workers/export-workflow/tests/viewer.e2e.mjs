@@ -39,7 +39,7 @@ check('family name renders', (await page.textContent('#av-family-name')) === 'Th
 check('generated-at date renders', (await page.textContent('#av-generated-at')).includes('Archived'));
 
 const peopleButtons = await page.locator('.av-people-list button').allTextContents();
-check('all 4 people appear in the directory', peopleButtons.length === 4);
+check('all 5 people appear in the directory', peopleButtons.length === 5);
 check('directory is sorted alphabetically by display name', JSON.stringify(peopleButtons) === JSON.stringify([...peopleButtons].sort()));
 
 // Search filtering
@@ -50,8 +50,14 @@ check('search filters the directory to matching names only', filtered.length ===
 await page.fill('#av-search', '');
 await page.waitForTimeout(50);
 
-// Default profile (first person alphabetically = James Mercer)
-check('profile defaults to the first person', (await page.textContent('.av-profile__name')) === 'James Mercer');
+// Default profile (first person alphabetically = Florence Mercer, ahead of
+// James since "Florence" < "James")
+check('profile defaults to the first person alphabetically', (await page.textContent('.av-profile__name')) === 'Florence Mercer');
+
+// Navigate explicitly to James for the rest of the detail checks below,
+// rather than relying on him being the alphabetically-first/default person.
+await page.evaluate(() => { location.hash = '#/person/p1'; });
+await page.waitForTimeout(100);
 const detailsText = await page.textContent('.av-section');
 check('scalar fields render (occupation)', detailsText.includes('Teacher'));
 
@@ -100,6 +106,20 @@ check('the Keepsake section renders chapter titles', keepsakeText.includes('A St
 check('the Keepsake section renders chapter body paragraphs', keepsakeText.includes('chasing books more than footballs'));
 check('the Keepsake section renders the legacy line', keepsakeText.includes('remembered, above all, for the stories'));
 check('the Keepsake section does NOT just show a bare "Open"/filename link (a real narrative view, not a generic file link)', await page.locator('.av-keepsake a').count() === 0);
+
+// Resilience: Florence's Keepsake has a structurally malformed narrative
+// (non-array origins/chapters, null legacy) injected directly onto the
+// index, bypassing inventory.js's own validation entirely — proving the
+// VIEWER's Array.isArray guards are real defense-in-depth, not just a
+// second test of the same inventory-level fix (review finding).
+const priorPageErrors = consoleErrors.length;
+await page.evaluate(() => { location.hash = '#/person/p5'; });
+await page.waitForTimeout(150);
+check('a structurally malformed Keepsake narrative does not crash the page (no new console/page errors)', consoleErrors.length === priorPageErrors);
+if (consoleErrors.length > priorPageErrors) console.log('      new errors:', consoleErrors.slice(priorPageErrors));
+check('the profile still rendered for Florence despite the malformed Keepsake', (await page.textContent('.av-profile__name')) === 'Florence Mercer');
+const florenceKeepsakeText = await page.locator('.av-keepsake').textContent();
+check('the malformed narrative\'s valid epithet still renders (partial graceful degradation, not an all-or-nothing blank)', florenceKeepsakeText.includes('Corrupted'));
 
 // Keyboard navigation — a fresh page, since earlier clicks in this same
 // page already moved focus around (clicking a real button focuses it).

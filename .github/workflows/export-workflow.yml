@@ -23,7 +23,7 @@ on:
 
 jobs:
   export-workflow-tests:
-    name: workers/export-workflow — unit + archive-format tests
+    name: workers/export-workflow — unit + archive-format + browser tests
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -31,9 +31,27 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # workers/export-workflow/tests/activityLog.test.mjs uses node:sqlite
+      # as an independent correctness oracle for the activity_log keyset
+      # pagination — that module was added in Node 22.5.0 and isn't present
+      # at all on Node 20 (this repo's main app still targets Node 20 per
+      # the root .nvmrc, which is unaffected — this sub-package has its own
+      # newer requirement, declared in its own .nvmrc/package.json#engines).
       - uses: actions/setup-node@v4
         with:
-          node-version-file: '.nvmrc'
+          node-version-file: 'workers/export-workflow/.nvmrc'
+
+      # The root `playwright` package (and its Chromium browser binary) is
+      # what tests/viewer.e2e.mjs resolves via Node's own upward
+      # node_modules lookup — workers/export-workflow has no package-lock
+      # of its own and deliberately reuses the root install, exactly as it
+      # already does when these tests are run locally.
+      - name: install root dependencies (provides `playwright` for viewer.e2e.mjs)
+        working-directory: ${{ github.workspace }}
+        run: npm ci
+      - name: install Chromium for Playwright
+        working-directory: ${{ github.workspace }}
+        run: npx playwright install --with-deps chromium
 
       # unzip/zipinfo/python3 (Info-ZIP + Python's zipfile) are the two
       # independent ZIP readers tests/zipWriter.test.mjs verifies against —
@@ -45,6 +63,9 @@ jobs:
 
       - name: run every tests/*.test.mjs
         run: npm test
+
+      - name: run the offline-viewer browser test (file://, zero network requests)
+        run: node tests/viewer.e2e.mjs
 
       - name: syntax-check the standalone Worker entrypoint
         run: node --check src/entrypoint.js
@@ -61,8 +82,13 @@ jobs:
 
       - run: npm ci
 
+      # Tolerates ONLY the one documented pre-existing relations.test.mjs
+      # failure (see scripts/run-tests-ci.mjs's own header) — this guard
+      # exists to catch a regression THIS PR might cause, not to also
+      # gate on an unrelated, already-known issue that predates it. Any
+      # OTHER failure, in any file, still fails this job.
       - name: run the existing unit test suite
-        run: for f in tests/*.test.mjs; do node "$f" || exit 1; done
+        run: node scripts/run-tests-ci.mjs
 
       - run: npm run build
 
@@ -93,7 +119,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version-file: '.nvmrc'
+          node-version-file: 'workers/export-workflow/.nvmrc'
       - run: npm install --no-save wrangler
       - name: dry-run deploy (only if Cloudflare secrets are configured)
         if: ${{ env.HAS_CLOUDFLARE_TOKEN == 'true' }}

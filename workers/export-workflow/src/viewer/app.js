@@ -222,20 +222,32 @@
   // Keepsake reference exists in the archive but no narrative body was
   // embedded for it (e.g. missing/unreadable, or Phase A's own metadata-
   // only inventory with no body available at all).
+  // Array.isArray guards throughout — belt-and-suspenders alongside
+  // inventory.js's own isValidNarrative check (the root-cause fix: a
+  // structurally invalid narrative is normalized to `null` before it ever
+  // reaches tree-data.js at all). Kept here too so this renderer stays
+  // safe on its own terms, independent of any future change upstream —
+  // a corrupt/legacy-shaped field degrades to "not shown", never a thrown
+  // TypeError that would take down the whole person view.
+  function asStringArray(v) {
+    return Array.isArray(v) ? v.filter((x) => typeof x === 'string') : [];
+  }
+
   function renderKeepsakeSection(person, keepsakeMedia) {
     if (person.keepsake) {
-      const n = person.keepsake.narrative || {};
+      const n = (person.keepsake.narrative && typeof person.keepsake.narrative === 'object') ? person.keepsake.narrative : {};
+      const chapters = Array.isArray(n.chapters) ? n.chapters : [];
       return `
       <div class="av-section av-keepsake">
         <h2>Keepsake</h2>
-        ${n.epithet ? `<p class="av-keepsake__epithet">${escapeHtml(n.epithet)}</p>` : ''}
-        ${(n.origins || []).map((p) => `<p>${escapeHtml(p)}</p>`).join('')}
-        ${(n.chapters || []).map((ch) => `
+        ${typeof n.epithet === 'string' && n.epithet ? `<p class="av-keepsake__epithet">${escapeHtml(n.epithet)}</p>` : ''}
+        ${asStringArray(n.origins).map((p) => `<p>${escapeHtml(p)}</p>`).join('')}
+        ${chapters.map((ch) => `
           <div class="av-keepsake__chapter">
-            <h3>${escapeHtml(ch.title || '')} ${ch.years ? `<span class="av-keepsake__years">${escapeHtml(ch.years)}</span>` : ''}</h3>
-            ${(ch.paragraphs || []).map((p) => `<p>${escapeHtml(p)}</p>`).join('')}
+            <h3>${escapeHtml(ch?.title || '')} ${ch?.years ? `<span class="av-keepsake__years">${escapeHtml(ch.years)}</span>` : ''}</h3>
+            ${asStringArray(ch?.paragraphs).map((p) => `<p>${escapeHtml(p)}</p>`).join('')}
           </div>`).join('')}
-        ${(n.legacy || []).length ? `<div class="av-keepsake__legacy">${n.legacy.map((p) => `<p>${escapeHtml(p)}</p>`).join('')}</div>` : ''}
+        ${asStringArray(n.legacy).length ? `<div class="av-keepsake__legacy">${asStringArray(n.legacy).map((p) => `<p>${escapeHtml(p)}</p>`).join('')}</div>` : ''}
       </div>`;
     }
     if (keepsakeMedia.length) {

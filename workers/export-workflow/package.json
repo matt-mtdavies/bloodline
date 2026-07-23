@@ -4,6 +4,9 @@
   "version": "0.1.0",
   "description": "Full family archive export — Workflow Worker (docs/FULL-ARCHIVE-EXPORT.md). Deployed separately from the main Cloudflare Pages project; reached from Pages via a service binding (Pages Functions cannot bind Workflows directly).",
   "type": "module",
+  "engines": {
+    "node": ">=22.5.0"
+  },
   "scripts": {
     "test": "for f in tests/*.test.mjs; do node \"$f\" || exit 1; done"
   },

@@ -47,6 +47,7 @@ export const FIXTURE_TREE = {
       id: 'p4', display_name: 'Robert Mercer', birth_date: '1955-02-02', death_date: '2020-11-01',
       photo: '/api/photos/gone.jpg', // deliberately unresolvable — proves the "missing" warning path
     },
+    { id: 'p5', display_name: 'Florence Mercer', birth_date: '1930-05-20', death_date: '2015-08-01' },
   ],
   relationships: [
     { id: 'r1', from_person: 'p1', to_person: 'p3', type: 'parent' },
@@ -98,6 +99,17 @@ export async function buildFixtureArchive() {
     generatedAt: new Date().toISOString(),
     warnings: [],
   });
+
+  // Florence (p5) gets a keepsake with a structurally malformed narrative
+  // injected DIRECTLY onto the built index — deliberately bypassing
+  // buildKeepsakeInventory's own isValidNarrative check entirely, so this
+  // proves the VIEWER'S OWN Array.isArray guards (app.js) are genuine
+  // defense-in-depth, not merely re-testing the inventory-level fix a
+  // second time via a different door.
+  index.people.p5.keepsake = {
+    personId: 'p5', hash: 'corrupt', editionNumber: 1,
+    narrative: { epithet: 'Corrupted', origins: 'not an array', chapters: 'also not an array', legacy: null },
+  };
 
   // Static viewer template, copied verbatim — exactly what Phase B's real
   // packaging step will do, just to a temp dir instead of into the ZIP.

@@ -291,6 +291,54 @@ await atest('a malformed body degrades to no narrative rather than throwing', as
   assert.equal(entries[0].edition, null);
 });
 
+// A structurally valid JSON body whose `narrative` doesn't match the real
+// shape (functions/api/keepsake.js's own validateNarrative) must not reach
+// the viewer as-is — its .map() calls over origins/chapters/legacy/
+// paragraphs would throw on a non-array field (review finding).
+await atest('a narrative with non-array origins normalizes to no narrative, without dropping the rest of the edition', async () => {
+  const body = JSON.stringify({ personId: 'p1', hash: 'abc', editionNumber: 3, narrative: { epithet: 'Test', origins: 'not an array', chapters: [], legacy: [] } });
+  const tree = { people: [{ id: 'p1' }] };
+  const { entries } = await buildKeepsakeInventory(tree, 'fam_1', {
+    listPrefix: async () => [{ key: 'keepsake/fam_1/p1/abc.json', byteLength: 500, etag: '"e1"', body }],
+  });
+  assert.equal(entries[0].edition.narrative, null);
+  assert.equal(entries[0].edition.hash, 'abc');
+  assert.equal(entries[0].edition.editionNumber, 3);
+});
+
+await atest('a narrative with non-array chapters normalizes to no narrative', async () => {
+  const body = JSON.stringify({ narrative: { epithet: 'Test', origins: [], chapters: 'nope', legacy: [] } });
+  const { entries } = await buildKeepsakeInventory({ people: [{ id: 'p1' }] }, 'fam_1', {
+    listPrefix: async () => [{ key: 'keepsake/fam_1/p1/abc.json', byteLength: 500, etag: '"e1"', body }],
+  });
+  assert.equal(entries[0].edition.narrative, null);
+});
+
+await atest('a chapter missing a paragraphs array normalizes to no narrative', async () => {
+  const body = JSON.stringify({ narrative: { epithet: 'Test', origins: [], chapters: [{ title: 'Ch1', years: '2000-2001', paragraphs: 'not an array' }], legacy: [] } });
+  const { entries } = await buildKeepsakeInventory({ people: [{ id: 'p1' }] }, 'fam_1', {
+    listPrefix: async () => [{ key: 'keepsake/fam_1/p1/abc.json', byteLength: 500, etag: '"e1"', body }],
+  });
+  assert.equal(entries[0].edition.narrative, null);
+});
+
+await atest('a narrative missing an epithet normalizes to no narrative', async () => {
+  const body = JSON.stringify({ narrative: { origins: [], chapters: [], legacy: [] } });
+  const { entries } = await buildKeepsakeInventory({ people: [{ id: 'p1' }] }, 'fam_1', {
+    listPrefix: async () => [{ key: 'keepsake/fam_1/p1/abc.json', byteLength: 500, etag: '"e1"', body }],
+  });
+  assert.equal(entries[0].edition.narrative, null);
+});
+
+await atest('a well-formed narrative still passes through unchanged', async () => {
+  const goodNarrative = { epithet: 'The Storyteller', origins: ['Cardiff'], chapters: [{ title: 'Ch1', years: '2000-2010', paragraphs: ['Hello.'] }], legacy: ['Remembered.'] };
+  const body = JSON.stringify({ narrative: goodNarrative });
+  const { entries } = await buildKeepsakeInventory({ people: [{ id: 'p1' }] }, 'fam_1', {
+    listPrefix: async () => [{ key: 'keepsake/fam_1/p1/abc.json', byteLength: 500, etag: '"e1"', body }],
+  });
+  assert.deepEqual(entries[0].edition.narrative, goodNarrative);
+});
+
 await atest('no body supplied at all leaves edition null (Phase A\'s own metadata-only listPrefix contract)', async () => {
   const tree = { people: [{ id: 'p1' }] };
   const { entries } = await buildKeepsakeInventory(tree, 'fam_1', {

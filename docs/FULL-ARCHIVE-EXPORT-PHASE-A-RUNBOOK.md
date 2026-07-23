@@ -57,12 +57,22 @@ yet deployed anywhere:
   missing-media warnings), keyboard tab order, and the bundled font actually
   loading.
 - `.github/workflows/export-workflow.yml` — this repository's first-ever
-  GitHub Actions workflow (see below).
+  GitHub Actions workflow (see below). Runs the full unit suite AND the
+  Playwright viewer test in CI (installs Chromium itself) — both were
+  originally only run locally, a real gap flagged in review. Pinned to
+  Node 22.5+ (`workers/export-workflow/.nvmrc`, separate from the main
+  app's own Node 20 `.nvmrc`) because `tests/activityLog.test.mjs` uses
+  `node:sqlite` as an independent correctness oracle, which doesn't exist
+  on Node 20. The regression-guard job runs the main app's own suite
+  through `scripts/run-tests-ci.mjs`, which tolerates only the one
+  documented pre-existing `relations.test.mjs` failure (unrelated to this
+  feature) rather than either blocking on it or blanket-ignoring the file.
 
 Every module above is pure/injectable-I/O — no real D1 or R2 binding is
-touched anywhere in Phase A. 155 unit-test assertions total across
-`workers/export-workflow/tests/*.test.mjs`, all passing, plus 19 live-browser
-assertions in `tests/viewer.e2e.mjs`.
+touched anywhere in Phase A. 145 unit-test assertions total across 8 files in
+`workers/export-workflow/tests/*.test.mjs`, all passing, plus 31 live-browser
+assertions in `tests/viewer.e2e.mjs` — both now enforced in CI (see below),
+not just run locally.
 
 ## What Phase A deliberately did NOT do
 

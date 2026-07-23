@@ -226,10 +226,44 @@ export async function buildMediaInventory(tree, { resolveR2Head } = {}) {
 // already-read `body` (string or pre-parsed object) per listed object; if
 // present, this parses it defensively — a malformed/corrupt body degrades
 // to no narrative rather than throwing and aborting the whole inventory.
+// Mirrors functions/api/keepsake.js's own `validateNarrative` exactly — a
+// Keepsake edition's `narrative` field is either this shape or it isn't
+// safe to hand to the viewer's renderer, which calls `.map()` on
+// origins/chapters/legacy/paragraphs directly. A corrupt or legacy-shaped
+// object (or a future format change) must degrade to "no narrative"
+// rather than let a malformed array-typed field crash the whole person
+// view — validating here, at the one place every edition passes through,
+// is more robust than trusting every future renderer to guard itself.
+function isValidNarrative(n) {
+  if (!n || typeof n !== 'object') return false;
+  const strings = (a) => Array.isArray(a) && a.every((s) => typeof s === 'string');
+  if (typeof n.epithet !== 'string' || !n.epithet.trim()) return false;
+  if (!strings(n.origins)) return false;
+  if (!strings(n.legacy)) return false;
+  if (!Array.isArray(n.chapters)) return false;
+  for (const ch of n.chapters) {
+    if (!ch || typeof ch.title !== 'string' || typeof ch.years !== 'string' || !strings(ch.paragraphs)) return false;
+  }
+  return true;
+}
+
 function parseKeepsakeBody(body) {
   if (body == null) return null;
-  if (typeof body === 'object') return body;
-  try { return JSON.parse(body); } catch { return null; }
+  let parsed = body;
+  if (typeof body !== 'object') {
+    try { parsed = JSON.parse(body); } catch { return null; }
+  }
+  if (!parsed || typeof parsed !== 'object') return null;
+  // The edition's OTHER fields (personId, hash, editionNumber, compiledAt,
+  // recordCount) are untyped passthrough data the viewer only ever
+  // displays as-is or ignores — only `narrative` drives `.map()` calls, so
+  // only it needs schema validation. An edition with a malformed
+  // narrative still keeps its other fields; the viewer's own `keepsake`
+  // check (`person.keepsake.narrative || {}`) already treats a missing/
+  // invalid narrative as "nothing to render", so this doesn't need a
+  // separate malformed-flag — a null narrative here already downgrades
+  // cleanly to the same UI path as "no Keepsake content available".
+  return { ...parsed, narrative: isValidNarrative(parsed.narrative) ? parsed.narrative : null };
 }
 
 /*
