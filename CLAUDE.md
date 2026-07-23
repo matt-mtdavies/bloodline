@@ -1652,7 +1652,7 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   people / children stay private.
 - iOS dark mode: **hardcoded hex**, `color-scheme: light only` (see `theme.css`).
 - Stack: React + Vite PWA, PixiJS/WebGL + d3-force, Cloudflare Pages/Workers/D1/R2,
-  Resend magic links, Anthropic server-side.
+  Brevo magic links, Anthropic server-side.
 
 ## Full build plan
 

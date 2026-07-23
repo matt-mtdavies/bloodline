@@ -6,8 +6,14 @@ These constraints take priority over speed and convenience.
 
 - Never disclose one family's data to another family or an unauthenticated caller.
 - Server-side authentication, membership, role, visibility, and admin checks are authoritative.
+- Treat living people and children as private by default when designing or changing behavior.
+  The current default-visibility and server-return paths require a separate implementation
+  audit; do not describe this policy as fully enforced until that work is verified.
 - Treat production family data as sensitive. Do not copy it into commits, fixtures,
   screenshots, issue trackers, AI prompts, analytics, or other third-party systems.
+- Engineering-only issue tracking may include technical descriptions and commit hashes, but
+  never names, records, family identifiers, private URLs, screenshots, or other production
+  family data.
 - Keep secrets and private object identifiers out of client bundles and logs.
 
 ## Persistence
