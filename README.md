@@ -67,7 +67,7 @@ Everything is Cloudflare, matching the target stack (§2):
 - **Frontend:** React + Vite, installable PWA (`vite-plugin-pwa`).
 - **Backend:** Cloudflare Pages Functions (`functions/`).
 - **Database:** D1 (SQLite) — schema in `migrations/0001_init.sql`.
-- **Storage:** R2 for photos. **Email:** Resend for magic links. **AI:** Anthropic
+- **Storage:** R2 for photos. **Email:** Brevo for magic links. **AI:** Anthropic
   (server-side only) — both wired for Phase 2/3.
 - **Auth:** magic links only, no passwords (`functions/api/auth/`).
 
@@ -79,7 +79,7 @@ the live graph with no code change.
 ### Provisioning the backend (optional for Phase 1)
 
 ```bash
-cp .dev.vars.example .dev.vars      # add Resend / Anthropic / session secret
+cp .dev.vars.example .dev.vars      # add Brevo / Anthropic / session secret
 npx wrangler d1 create bloodline    # paste the id into wrangler.toml
 npm run db:migrate                  # apply schema to local D1
 npm run seed:gen && npm run db:seed # load the demo family into D1

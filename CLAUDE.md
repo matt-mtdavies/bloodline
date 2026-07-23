@@ -7,12 +7,14 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
 
 ## How to work here
 
-- **Branch:** develop on `claude/bloodline-family-tree-p1ly95`. Never push elsewhere without permission.
-- **Commit footer:** end messages with
-  `Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>` and the
-  `Claude-Session:` line. Do NOT put the model id anywhere in the repo.
-- **Don't open a PR unless asked.** Commit + push to the branch.
-- **Model identity:** this agent is `claude-opus-4-8` (chat only — never in artifacts).
+- Follow `AGENTS.md` and `docs/OPERATING-SYSTEM.md`; those shared repository rules
+  supersede model-specific habits in this project-memory file.
+- Start from current protected `main`, use a short-lived branch, and open a pull
+  request for review. Never assume an old agent branch is still the integration branch.
+- Keep attribution and model/session metadata out of commits and repository artifacts
+  unless the repository owner explicitly asks for it.
+- Treat the source, tests, migrations, and current configuration as authoritative when
+  this historical status narrative has gone stale.
 - **ClickUp logging (standing convention, user-requested):** after shipping a **fix** (commit +
   push), auto-create a ClickUp task in the **"Issues found"** list (`901615914251`, in the
   "Project Optimisation" space) via the ClickUp MCP tools — `name` = concise issue title,
@@ -1650,7 +1652,7 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   people / children stay private.
 - iOS dark mode: **hardcoded hex**, `color-scheme: light only` (see `theme.css`).
 - Stack: React + Vite PWA, PixiJS/WebGL + d3-force, Cloudflare Pages/Workers/D1/R2,
-  Resend magic links, Anthropic server-side.
+  Brevo magic links, Anthropic server-side.
 
 ## Full build plan
 
