@@ -1,0 +1,133 @@
+/* Bloodline full archive — offline viewer styles (docs/FULL-ARCHIVE-EXPORT.md
+   §3.8). Self-contained: no external fonts, no CDN, nothing that requires a
+   network request. Local @font-face only — see ./fonts/ + ./licenses/. */
+
+@font-face {
+  font-family: 'Fraunces Archive';
+  src: url('./fonts/fraunces-latin-400.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Fraunces Archive';
+  src: url('./fonts/fraunces-latin-600.woff2') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Hanken Grotesk Archive';
+  src: url('./fonts/hanken-grotesk-latin-400.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Hanken Grotesk Archive';
+  src: url('./fonts/hanken-grotesk-latin-600.woff2') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  --paper: #ffffff;
+  --paper-deep: #f2f3f5;
+  --ink: #1c1d21;
+  --ink-soft: #6b6f76;
+  --ink-faint: #a6abb3;
+  --hairline: #ebedf0;
+  --accent: #c2603a;
+  --accent-deep: #a44d2c;
+  --accent-soft: #f0d9cd;
+  --sage: #3f5e4e;
+  --sage-soft: #d8e0d6;
+  --display: 'Fraunces Archive', Georgia, 'Times New Roman', serif;
+  --body: 'Hanken Grotesk Archive', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  color-scheme: light only;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0; font-family: var(--body); background: var(--paper-deep); color: var(--ink);
+  font-size: 15px; line-height: 1.5;
+}
+h1, h2, h3 { font-family: var(--display); font-weight: 600; margin: 0 0 8px; }
+a { color: var(--accent-deep); }
+button { font-family: inherit; }
+
+.skip-link {
+  position: absolute; left: 8px; top: -50px; z-index: 20; background: var(--ink); color: #fff;
+  padding: 8px 14px; border-radius: 8px; font-size: 13px; font-weight: 600; transition: top 0.15s ease;
+}
+.skip-link:focus { top: 8px; }
+
+.av-header {
+  background: var(--paper); border-bottom: 1px solid var(--hairline); padding: 16px 20px;
+  display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 8px;
+}
+.av-header h1 { font-size: 22px; }
+.av-header__meta { font-size: 12.5px; color: var(--ink-soft); }
+
+.av-banner {
+  padding: 10px 20px; font-size: 13px; background: var(--accent-soft); color: var(--accent-deep);
+  border-bottom: 1px solid var(--hairline);
+}
+.av-banner[hidden] { display: none; }
+
+.av-layout { display: grid; grid-template-columns: 300px 1fr; min-height: calc(100vh - 70px); }
+@media (max-width: 720px) { .av-layout { grid-template-columns: 1fr; } }
+
+.av-directory { background: var(--paper); border-right: 1px solid var(--hairline); padding: 14px; overflow-y: auto; }
+.av-search {
+  width: 100%; padding: 9px 12px; border-radius: 10px; border: 1px solid var(--hairline);
+  font-size: 14px; margin-bottom: 10px; font-family: inherit;
+}
+.av-people-list { list-style: none; margin: 0; padding: 0; }
+.av-people-list li { margin-bottom: 2px; }
+.av-people-list button {
+  width: 100%; text-align: left; background: none; border: none; border-radius: 8px;
+  padding: 8px 10px; cursor: pointer; font-size: 14px; color: var(--ink);
+}
+.av-people-list button:hover, .av-people-list button:focus-visible { background: var(--paper-deep); }
+.av-people-list button[aria-current="true"] { background: var(--accent-soft); color: var(--accent-deep); font-weight: 600; }
+.av-people-list__empty { color: var(--ink-soft); font-size: 13px; padding: 10px; }
+
+.av-profile { padding: 24px; max-width: 760px; }
+.av-profile__name { font-size: 30px; }
+.av-profile__sub { color: var(--ink-soft); font-size: 14px; margin-bottom: 18px; }
+.av-section { background: var(--paper); border-radius: 14px; padding: 16px 18px; margin-bottom: 16px; border: 1px solid var(--hairline); }
+.av-section h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-soft); margin-bottom: 10px; }
+.av-fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px 16px; }
+.av-field__label { font-size: 11px; text-transform: uppercase; color: var(--ink-faint); letter-spacing: 0.04em; }
+.av-field__value { font-size: 14.5px; }
+.av-rel-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.av-rel-chip {
+  background: var(--paper-deep); border: 1px solid var(--hairline); border-radius: 999px;
+  padding: 6px 12px; font-size: 13px; cursor: pointer; color: var(--ink);
+}
+.av-rel-chip:hover, .av-rel-chip:focus-visible { background: var(--accent-soft); }
+.av-events, .av-memories { list-style: none; margin: 0; padding: 0; }
+.av-events li, .av-memories li { padding: 8px 0; border-bottom: 1px solid var(--hairline); font-size: 14px; }
+.av-events li:last-child, .av-memories li:last-child { border-bottom: none; }
+.av-event__year { color: var(--accent-deep); font-weight: 600; margin-right: 8px; }
+.av-media-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
+.av-media-item { border: 1px solid var(--hairline); border-radius: 10px; padding: 10px; font-size: 12.5px; }
+.av-media-item img { max-width: 100%; border-radius: 6px; display: block; margin-bottom: 6px; }
+.av-media-item a { display: inline-block; margin-top: 4px; }
+.av-media-item__warning { color: var(--accent-deep); font-weight: 600; }
+.av-print-btn {
+  background: var(--accent); color: #fff; border: none; border-radius: 10px; padding: 8px 16px;
+  font-size: 13px; font-weight: 600; cursor: pointer;
+}
+.av-print-btn:hover { background: var(--accent-deep); }
+.av-empty-state { padding: 60px 24px; text-align: center; color: var(--ink-soft); }
+
+@media print {
+  .av-directory, .skip-link, .av-print-btn { display: none !important; }
+  .av-layout { display: block; }
+  .av-section { break-inside: avoid; border: none; padding: 0; margin-bottom: 20px; }
+  body { background: #fff; }
+}

@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Family archive</title>
+<!--
+  Purpose-built, read-only offline viewer (docs/FULL-ARCHIVE-EXPORT.md
+  §3.8). Works after extraction, opened directly with file:// — no server,
+  no service worker, no external font/CDN/analytics, no network request of
+  any kind. tree-data.js is loaded as a plain relative <script> (not
+  fetch()/XHR, which file:// blocks) and assigns the archive's data to a
+  global this page reads. The raw data/tree.json file remains the
+  authoritative record; this page is a convenience, not the only way to
+  read the archive.
+-->
+<link rel="stylesheet" href="viewer/styles.css">
+</head>
+<body>
+<a class="skip-link" href="#av-profile">Skip to profile</a>
+
+<header class="av-header">
+  <div>
+    <h1 id="av-family-name">Family archive</h1>
+    <div class="av-header__meta" id="av-generated-at"></div>
+  </div>
+</header>
+
+<div class="av-banner" id="av-integrity-banner" role="status" hidden></div>
+
+<main class="av-layout">
+  <nav class="av-directory" aria-label="People directory">
+    <input type="search" class="av-search" id="av-search" placeholder="Search people…" aria-label="Search people">
+    <ul class="av-people-list" id="av-people-list"></ul>
+  </nav>
+  <section class="av-profile" id="av-profile" aria-live="polite"></section>
+</main>
+
+<script src="data/tree-data.js"></script>
+<script src="viewer/app.js"></script>
+</body>
+</html>

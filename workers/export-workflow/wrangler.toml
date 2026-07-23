@@ -1,0 +1,44 @@
+#:schema node_modules/wrangler/config-schema.json
+# Full family archive export — Workflow Worker (docs/FULL-ARCHIVE-EXPORT.md §2.4,
+# §10). Deployed SEPARATELY from the main `bloodline` Pages project — Pages
+# Functions cannot bind a Workflow directly, so this Worker owns the Workflow
+# and exposes a narrow RPC surface (see src/entrypoint.js) that Pages reaches
+# through a service binding (`EXPORT_WORKFLOW_SERVICE` in the main project).
+#
+# This file is a template: the real deploy target (account, D1/R2 ids) is
+# filled in by a human operator per docs/FULL-ARCHIVE-EXPORT.md §11/§14 — no
+# production credentials are committed here. See ../../docs/FULL-ARCHIVE-EXPORT-PHASE-A-RUNBOOK.md
+# for exactly what that operator needs to do that this sandbox could not.
+name = "bloodline-export-workflow"
+main = "src/entrypoint.js"
+compatibility_date = "2026-07-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Paid-plan CPU ceiling for the packaging stage (docs/FULL-ARCHIVE-EXPORT.md
+# §2.6) — a safety ceiling, not a target: individual steps are budgeted to
+# stay under 20s so retries stay cheap, this just bounds the worst case.
+[limits]
+cpu_ms = 300000
+
+[[workflows]]
+name = "bloodline-family-archive-export"
+binding = "EXPORT_WORKFLOW"
+class_name = "FamilyArchiveExportWorkflow"
+
+# Same D1 database and EU-jurisdiction R2 bucket as the main Pages project
+# (wrangler.toml at the repo root) — this Worker must not create a second
+# source of truth. Fill in the real database_id once deployed; it must match
+# the root wrangler.toml's [[d1_databases]] entry exactly.
+[[d1_databases]]
+binding = "DB"
+database_name = "bloodline"
+database_id = "REPLACE_WITH_REAL_DATABASE_ID"
+
+[[r2_buckets]]
+binding = "DOCS"
+bucket_name = "bloodline-docs"
+jurisdiction = "eu"
+
+# Private staging + final archive storage — same bucket, a dedicated prefix
+# (docs/FULL-ARCHIVE-EXPORT.md §4.2/§4.3). No separate bucket: one R2 bucket,
+# one jurisdiction, one place documents/photos/exports all actually live.
