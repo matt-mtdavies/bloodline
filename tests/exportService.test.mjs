@@ -12,7 +12,8 @@
  */
 import assert from 'node:assert/strict';
 import {
-  isFullExportReady, exportAdminEmailList, isExportAdminEmail,
+  isExportInfrastructureReady, fullExportTestFamilyIds, isFamilyExportEnabled,
+  exportAdminEmailList, isExportAdminEmail,
   createFamilyExport, createAdminExport,
   listFamilyExports, getFamilyExport, listAdminExports, getAdminExport,
   searchExportFamilies, cancelFamilyExport, cancelAdminExport,
@@ -34,12 +35,15 @@ async function atest(label, fn) {
  * parser. Good enough because exportService.js's query set is small and
  * entirely under this file's own control.
  */
-function makeFakeEnv({ families = [], users = [], members = [], jobs = [] } = {}) {
+function makeFakeEnv({ families = [], users = [], members = [], jobs = [], migrationApplied = true } = {}) {
   const audit = [];
   const jobRows = jobs.map((j) => ({ processed_files: 0, processed_bytes: 0, warning_count: 0, ...j }));
 
   function first(sql, args) {
-    if (sql.includes('SELECT 1 FROM family_export_job')) return { '1': 1 };
+    if (sql.includes('SELECT 1 FROM family_export_job')) {
+      if (!migrationApplied) throw new Error('no such table: family_export_job');
+      return { '1': 1 };
+    }
     if (sql.includes('SELECT family_id FROM user WHERE id')) {
       const u = users.find((x) => x.id === args[0]);
       return u ? { family_id: u.family_id } : null;
@@ -217,28 +221,122 @@ function baseFixture(overrides = {}) {
 }
 
 // ── feature readiness ────────────────────────────────────────────────────
+//
+// docs/FULL-ARCHIVE-EXPORT-TEST-FAMILY-GATE.md splits the old single
+// isFullExportReady() gate into two independent concepts: infrastructure
+// readiness (never depends on either rollout flag) and per-family
+// enablement (infra ready AND (ENABLE_FULL_EXPORT==='true' OR the family
+// is on the FULL_EXPORT_TEST_FAMILY_IDS allowlist)).
 
-await atest('isFullExportReady is false when the flag is off', async () => {
+await atest('isExportInfrastructureReady does NOT depend on ENABLE_FULL_EXPORT — infra can be ready while every family is still disabled', async () => {
   const { env } = baseFixture();
   env.ENABLE_FULL_EXPORT = 'false';
-  assert.equal(await isFullExportReady(env), false);
+  assert.equal(await isExportInfrastructureReady(env), true);
 });
 
-await atest('isFullExportReady is false when the service binding is missing', async () => {
+await atest('isExportInfrastructureReady is false when the service binding is missing', async () => {
   const { env } = baseFixture();
   delete env.EXPORT_WORKFLOW_SERVICE;
-  assert.equal(await isFullExportReady(env), false);
+  assert.equal(await isExportInfrastructureReady(env), false);
 });
 
-await atest('isFullExportReady is true when everything is configured', async () => {
+await atest('isExportInfrastructureReady is false when the DB binding is missing', async () => {
   const { env } = baseFixture();
-  assert.equal(await isFullExportReady(env), true);
+  delete env.DB;
+  assert.equal(await isExportInfrastructureReady(env), false);
 });
 
-await atest('createFamilyExport throws export_not_configured when the feature is off', async () => {
+await atest('isExportInfrastructureReady is false when the migration has not been applied', async () => {
+  const { env } = baseFixture({ migrationApplied: false });
+  assert.equal(await isExportInfrastructureReady(env), false);
+});
+
+await atest('isExportInfrastructureReady is true when everything is configured', async () => {
+  const { env } = baseFixture();
+  assert.equal(await isExportInfrastructureReady(env), true);
+});
+
+// ── fullExportTestFamilyIds — the pure parser ────────────────────────────
+
+await atest('fullExportTestFamilyIds trims whitespace and discards empty entries', () => {
+  assert.deepEqual(fullExportTestFamilyIds({ FULL_EXPORT_TEST_FAMILY_IDS: ' fam_1 ,, fam_2 ,' }), ['fam_1', 'fam_2']);
+  assert.deepEqual(fullExportTestFamilyIds({}), []);
+  assert.deepEqual(fullExportTestFamilyIds({ FULL_EXPORT_TEST_FAMILY_IDS: '' }), []);
+});
+
+await atest('fullExportTestFamilyIds compares CASE-SENSITIVELY, with no prefix or wildcard matching — unlike exportAdminEmailList, family IDs are opaque identifiers, not user-typed text', () => {
+  const ids = fullExportTestFamilyIds({ FULL_EXPORT_TEST_FAMILY_IDS: 'fam_1' });
+  assert.equal(ids.includes('fam_1'), true);
+  assert.equal(ids.includes('FAM_1'), false, 'must not case-fold');
+  assert.equal(ids.includes('fam_'), false, 'must not prefix-match');
+  assert.equal(ids.includes('fam_10'), false, 'must not substring/prefix-match a longer id');
+});
+
+// ── isFamilyExportEnabled — the per-family decision ──────────────────────
+
+await atest('isFamilyExportEnabled: flag false + empty test allowlist is disabled for every family — verification requirement #1', async () => {
+  const { env } = baseFixture();
+  env.ENABLE_FULL_EXPORT = 'false';
+  assert.equal(await isFamilyExportEnabled(env, 'fam_1'), false);
+});
+
+await atest('isFamilyExportEnabled: flag false + exact canonical family allowlisted is enabled for that family only — verification requirement #2/#3', async () => {
+  const { env } = baseFixture();
+  env.ENABLE_FULL_EXPORT = 'false';
+  env.FULL_EXPORT_TEST_FAMILY_IDS = 'fam_1';
+  assert.equal(await isFamilyExportEnabled(env, 'fam_1'), true);
+  assert.equal(await isFamilyExportEnabled(env, 'fam_2'), false, 'a different family remains unavailable');
+});
+
+await atest('isFamilyExportEnabled: case/prefix/wildcard variants of an allowlisted id do NOT match — verification requirement #4', async () => {
+  const { env } = baseFixture();
+  env.ENABLE_FULL_EXPORT = 'false';
+  env.FULL_EXPORT_TEST_FAMILY_IDS = ' fam_1 , fam_2 ';
+  assert.equal(await isFamilyExportEnabled(env, 'fam_1'), true, 'whitespace around the configured entry must still normalize to a match');
+  assert.equal(await isFamilyExportEnabled(env, 'FAM_1'), false);
+  assert.equal(await isFamilyExportEnabled(env, 'fam_'), false);
+  assert.equal(await isFamilyExportEnabled(env, 'fam_10'), false);
+});
+
+await atest('isFamilyExportEnabled: ENABLE_FULL_EXPORT=true enables every family regardless of the test allowlist — verification requirement #9', async () => {
+  const { env } = baseFixture();
+  env.ENABLE_FULL_EXPORT = 'true';
+  env.FULL_EXPORT_TEST_FAMILY_IDS = '';
+  assert.equal(await isFamilyExportEnabled(env, 'fam_1'), true);
+  assert.equal(await isFamilyExportEnabled(env, 'fam_anything_else'), true);
+});
+
+await atest('isFamilyExportEnabled: an allowlisted family is still disabled if infrastructure itself is not ready — verification requirement #11', async () => {
+  const { env } = baseFixture({ migrationApplied: false });
+  env.ENABLE_FULL_EXPORT = 'false';
+  env.FULL_EXPORT_TEST_FAMILY_IDS = 'fam_1';
+  assert.equal(await isFamilyExportEnabled(env, 'fam_1'), false);
+});
+
+await atest('createFamilyExport throws export_not_configured when the feature is off and the caller\'s family is not allowlisted', async () => {
   const { env } = baseFixture();
   env.ENABLE_FULL_EXPORT = 'false';
   await assert.rejects(() => createFamilyExport(env, { userId: OWNER.id }), (e) => e.code === 'export_not_configured' && e.status === 503);
+});
+
+await atest('createFamilyExport succeeds with the flag off when the caller\'s EXACT canonical family is test-allowlisted — verification requirement #2', async () => {
+  const { env, jobRows } = baseFixture();
+  env.ENABLE_FULL_EXPORT = 'false';
+  env.FULL_EXPORT_TEST_FAMILY_IDS = 'fam_1';
+  const { familyId } = await createFamilyExport(env, { userId: OWNER.id });
+  assert.equal(familyId, 'fam_1');
+  assert.equal(jobRows.length, 1);
+});
+
+await atest('createFamilyExport ignores any caller-supplied familyId — only the server-resolved canonical membership decides enablement, never client input — verification requirement #5', async () => {
+  const { env } = baseFixture();
+  env.ENABLE_FULL_EXPORT = 'false';
+  env.FULL_EXPORT_TEST_FAMILY_IDS = 'fam_1';
+  // createFamilyExport's real signature only ever reads {userId, userEmail}
+  // — a stray extra property cannot be used to impersonate an allowlisted
+  // family; the family is always resolved server-side from userId.
+  const result = await createFamilyExport(env, { userId: OWNER.id, familyId: 'fam_spoofed' });
+  assert.equal(result.familyId, 'fam_1');
 });
 
 // ── EXPORT_ADMIN_EMAILS ──────────────────────────────────────────────────
@@ -489,6 +587,142 @@ await atest('getAdminExportAudit returns the full immutable trail for a job, old
 await atest('getAdminExportAudit 404s for an unknown job id', async () => {
   const { env } = baseFixture();
   await assert.rejects(() => getAdminExportAudit(env, { actorEmail: 'admin@example.test', jobId: 'exp_nope' }), (e) => e.code === 'not_found');
+});
+
+// ── disposable-family rollout gate (docs/FULL-ARCHIVE-EXPORT-TEST-FAMILY-GATE.md) ──
+// The remaining numbered "Verification" requirements from the brief that
+// need a real job/family fixture to exercise meaningfully (readiness- and
+// createFamilyExport-level requirements #1/#2/#3/#4/#5/#9/#11 are covered
+// above, right next to the readiness primitives they test).
+
+function gateFixture({ allowlist = '', flag = 'false', jobStatus = 'ready' } = {}) {
+  const now = Math.floor(Date.now() / 1000);
+  const { env, jobRows } = baseFixture({
+    jobs: [{
+      id: 'exp_1', family_id: 'fam_1', requested_by_user_id: OWNER.id, requested_as: 'owner',
+      status: jobStatus, created_at: now, expires_at: now + 1000, archive_r2_key: 'exports/exp_1/x.zip',
+    }],
+  });
+  env.ENABLE_FULL_EXPORT = flag;
+  env.FULL_EXPORT_TEST_FAMILY_IDS = allowlist;
+  env.DOCS.objects.set('exports/exp_1/x.zip', 'zip-bytes');
+  return { env, jobRows };
+}
+
+await atest('a job belonging to a non-allowlisted family cannot be read, cancelled, or downloaded through the OWNER endpoints while the flag is off — verification requirement #6', async () => {
+  const { env } = gateFixture({ allowlist: '' }); // fam_1 NOT allowlisted
+  await assert.rejects(() => getFamilyExport(env, { userId: OWNER.id, jobId: 'exp_1' }), (e) => e.code === 'export_not_configured' && e.status === 503);
+  await assert.rejects(() => cancelFamilyExport(env, { userId: OWNER.id, jobId: 'exp_1' }), (e) => e.code === 'export_not_configured' && e.status === 503);
+  await assert.rejects(() => downloadFamilyExport(env, { userId: OWNER.id, jobId: 'exp_1' }), (e) => e.code === 'export_not_configured' && e.status === 503);
+});
+
+await atest('a job belonging to a non-allowlisted family cannot be read, cancelled, or downloaded through the ADMIN endpoints while the flag is off, even by a genuinely authorized admin — verification requirement #6', async () => {
+  const { env } = gateFixture({ allowlist: '' }); // fam_1 NOT allowlisted
+  await assert.rejects(() => getAdminExport(env, { actorEmail: 'admin@example.test', jobId: 'exp_1' }), (e) => e.code === 'export_not_configured' && e.status === 503);
+  await assert.rejects(() => cancelAdminExport(env, { actorEmail: 'admin@example.test', jobId: 'exp_1' }), (e) => e.code === 'export_not_configured' && e.status === 503);
+  await assert.rejects(() => downloadAdminExport(env, { actorUserId: ADMIN_USER.id, actorEmail: 'admin@example.test', jobId: 'exp_1' }), (e) => e.code === 'export_not_configured' && e.status === 503);
+  await assert.rejects(() => getAdminExportAudit(env, { actorEmail: 'admin@example.test', jobId: 'exp_1' }), (e) => e.code === 'export_not_configured' && e.status === 503);
+});
+
+await atest('the SAME job succeeds through every owner and admin endpoint once fam_1 is on the test allowlist, flag still off', async () => {
+  const { env } = gateFixture({ allowlist: 'fam_1' });
+  const got = await getFamilyExport(env, { userId: OWNER.id, jobId: 'exp_1' });
+  assert.equal(got.id, 'exp_1');
+  const adminGot = await getAdminExport(env, { actorEmail: 'admin@example.test', jobId: 'exp_1' });
+  assert.equal(adminGot.id, 'exp_1');
+  const object = await downloadFamilyExport(env, { userId: OWNER.id, jobId: 'exp_1' });
+  assert.ok(object);
+  const events = await getAdminExportAudit(env, { actorEmail: 'admin@example.test', jobId: 'exp_1' });
+  assert.ok(Array.isArray(events));
+});
+
+await atest('createAdminExport on the test allowlist still requires EXPORT_ADMIN_EMAILS, a valid reason, and the typed family name to match — verification requirement #7', async () => {
+  const { env: envNoAdmin } = gateFixture({ allowlist: 'fam_1', jobStatus: 'cancelled' });
+  await assert.rejects(() => createAdminExport(envNoAdmin, {
+    actorUserId: ADMIN_USER.id, actorEmail: 'not-an-admin@example.test', familyId: 'fam_1',
+    reason: 'A perfectly valid reason string', confirmFamilyName: 'Davies Family',
+  }), (e) => e.code === 'forbidden' && e.status === 403);
+
+  const { env: envBadReason } = gateFixture({ allowlist: 'fam_1', jobStatus: 'cancelled' });
+  await assert.rejects(() => createAdminExport(envBadReason, {
+    actorUserId: ADMIN_USER.id, actorEmail: 'admin@example.test', familyId: 'fam_1',
+    reason: 'short', confirmFamilyName: 'Davies Family',
+  }), (e) => e.code === 'bad_request');
+
+  const { env: envBadName } = gateFixture({ allowlist: 'fam_1', jobStatus: 'cancelled' });
+  await assert.rejects(() => createAdminExport(envBadName, {
+    actorUserId: ADMIN_USER.id, actorEmail: 'admin@example.test', familyId: 'fam_1',
+    reason: 'A perfectly valid reason string', confirmFamilyName: 'Wrong Name',
+  }), (e) => e.code === 'bad_request');
+
+  const { env: envOk, jobRows } = gateFixture({ allowlist: 'fam_1', jobStatus: 'cancelled' });
+  const result = await createAdminExport(envOk, {
+    actorUserId: ADMIN_USER.id, actorEmail: 'admin@example.test', familyId: 'fam_1',
+    reason: 'A perfectly valid reason string', confirmFamilyName: 'Davies Family',
+  });
+  assert.equal(result.familyId, 'fam_1');
+  assert.equal(jobRows.filter((j) => j.requested_as === 'site_admin').length, 1);
+});
+
+await atest('createAdminExport still fails closed when fam_1 is NOT on the test allowlist and the flag is off, even for a fully-authorized admin', async () => {
+  const { env } = gateFixture({ allowlist: '', jobStatus: 'cancelled' });
+  await assert.rejects(() => createAdminExport(env, {
+    actorUserId: ADMIN_USER.id, actorEmail: 'admin@example.test', familyId: 'fam_1',
+    reason: 'A perfectly valid reason string', confirmFamilyName: 'Davies Family',
+  }), (e) => e.code === 'export_not_configured' && e.status === 503);
+});
+
+await atest('listAdminExports and searchExportFamilies are FILTERED to allowlisted families while the flag is false — verification requirement #8', async () => {
+  const now = Math.floor(Date.now() / 1000);
+  const { env } = baseFixture({
+    families: [FAM, { id: 'fam_2', name: 'Other Family' }],
+    members: [
+      { user_id: OWNER.id, family_id: 'fam_1', role: 'owner' },
+      { user_id: 'user_other_owner', family_id: 'fam_2', role: 'owner' },
+    ],
+    users: [OWNER, VIEWER, { id: 'user_other_owner', family_id: 'fam_2' }],
+    jobs: [
+      { id: 'exp_1', family_id: 'fam_1', requested_by_user_id: ADMIN_USER.id, requested_as: 'site_admin', status: 'ready', created_at: now },
+      { id: 'exp_2', family_id: 'fam_2', requested_by_user_id: ADMIN_USER.id, requested_as: 'site_admin', status: 'ready', created_at: now },
+    ],
+  });
+  env.ENABLE_FULL_EXPORT = 'false';
+  env.FULL_EXPORT_TEST_FAMILY_IDS = 'fam_1';
+
+  const list = await listAdminExports(env, { actorEmail: 'admin@example.test' });
+  assert.deepEqual(list.map((j) => j.id), ['exp_1'], 'only the allowlisted family\'s job may appear while the flag is off');
+
+  const searched = await searchExportFamilies(env, { actorEmail: 'admin@example.test', query: 'family' }); // matches both by name
+  assert.deepEqual(searched.map((f) => f.id), ['fam_1'], 'only the allowlisted family may appear in the picker while the flag is off');
+
+  env.ENABLE_FULL_EXPORT = 'true';
+  const listAll = await listAdminExports(env, { actorEmail: 'admin@example.test' });
+  assert.deepEqual(listAll.map((j) => j.id).sort(), ['exp_1', 'exp_2'], 'general release must show every family again, unfiltered');
+});
+
+await atest('removing the family id from the test allowlist revokes create, history, status, cancel, audit, and download access on the very next request — verification requirement #10', async () => {
+  const { env, jobRows } = gateFixture({ allowlist: 'fam_1', jobStatus: 'packaging' });
+
+  // Confirm access genuinely works first — otherwise "revoked" would be
+  // trivially true for the wrong reason.
+  const list = await listFamilyExports(env, { userId: OWNER.id });
+  assert.equal(list.length, 1);
+  const got = await getFamilyExport(env, { userId: OWNER.id, jobId: 'exp_1' });
+  assert.equal(got.id, 'exp_1');
+
+  // Revoke.
+  env.FULL_EXPORT_TEST_FAMILY_IDS = '';
+
+  await assert.rejects(() => createFamilyExport(env, { userId: OWNER.id }), (e) => e.code === 'export_not_configured');
+  await assert.rejects(() => listFamilyExports(env, { userId: OWNER.id }), (e) => e.code === 'export_not_configured');
+  await assert.rejects(() => getFamilyExport(env, { userId: OWNER.id, jobId: 'exp_1' }), (e) => e.code === 'export_not_configured');
+  await assert.rejects(() => cancelFamilyExport(env, { userId: OWNER.id, jobId: 'exp_1' }), (e) => e.code === 'export_not_configured');
+  await assert.rejects(() => downloadFamilyExport(env, { userId: OWNER.id, jobId: 'exp_1' }), (e) => e.code === 'export_not_configured');
+  await assert.rejects(() => getAdminExportAudit(env, { actorEmail: 'admin@example.test', jobId: 'exp_1' }), (e) => e.code === 'export_not_configured');
+
+  // The job itself must be untouched by the revocation — access is denied,
+  // not the underlying data mutated or deleted.
+  assert.equal(jobRows.find((j) => j.id === 'exp_1').status, 'packaging');
 });
 
 console.log(`\n  ${passed} passed, ${failed} failed`);

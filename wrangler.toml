@@ -17,6 +17,15 @@ FROM_EMAIL = "hello@myfamilybloodline.com"
 # legacy fallback, no relationship to the admin-dashboard allowlist.
 ENABLE_FULL_EXPORT = "false"
 EXPORT_ADMIN_EMAILS = ""
+# docs/FULL-ARCHIVE-EXPORT-TEST-FAMILY-GATE.md — a deny-by-default,
+# comma-separated allowlist of EXACT (case-sensitive) family IDs that may
+# use the complete export surface even while ENABLE_FULL_EXPORT is
+# "false", so a single disposable family can run the runbook's synthetic
+# byte-comparison test without broadening access to every family. Kept
+# empty in this committed file; a named operator sets it in Pages →
+# Settings → Environment variables for exactly the disposable family's
+# rollout window (runbook §15 step 8), then clears it again.
+FULL_EXPORT_TEST_FAMILY_IDS = ""
 # FAMILYSEARCH_CLIENT_ID is a secret — set via wrangler pages secret put FAMILYSEARCH_CLIENT_ID
 # Register your app at https://developer.familysearch.org and add this redirect URI:
 #   https://myfamilybloodline.com/fs-callback.html

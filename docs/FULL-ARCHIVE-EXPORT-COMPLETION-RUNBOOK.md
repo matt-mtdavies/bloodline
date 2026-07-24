@@ -1,11 +1,13 @@
 # Full Archive Export — completion-phase status + human-operator runbook
 
 Companion to `docs/FULL-ARCHIVE-EXPORT-COMPLETION-PHASE.md` (the brief this
-implements) and `docs/FULL-ARCHIVE-EXPORT-PHASE-A-RUNBOOK.md` (Phase A's own
-equivalent doc). Same pattern as both: this environment has no `wrangler
-login` session and no Cloudflare API access, so everything below that needs
-real account access is a template for a human operator to fill in and run,
-not something this session could execute itself.
+implements), `docs/FULL-ARCHIVE-EXPORT-PHASE-A-RUNBOOK.md` (Phase A's own
+equivalent doc), and `docs/FULL-ARCHIVE-EXPORT-TEST-FAMILY-GATE.md` (the
+disposable-family rollout gate step 8 below now uses). Same pattern as all
+three: this environment has no `wrangler login` session and no Cloudflare
+API access, so everything below that needs real account access is a
+template for a human operator to fill in and run, not something this
+session could execute itself.
 
 ## What the completion phase delivered (built, tested, and verified here)
 
@@ -122,9 +124,17 @@ multipart corruption, or an expiry/private-download failure.
     backstop, §5) and uncomment the [triggers] cron in
     workers/export-workflow/wrangler.toml (hourly cleanup sweep).    [ ]
  7. Deploy the Pages project with ENABLE_FULL_EXPORT still "false". [ ]
- 8. Synthetic disposable-family byte-comparison test (export a
-    throwaway family, diff the archive's tree.json against a
-    direct API pull).                                               [ ]
+ 8. Synthetic disposable-family byte-comparison test, gated by
+    FULL_EXPORT_TEST_FAMILY_IDS instead of the general release flag
+    (docs/FULL-ARCHIVE-EXPORT-TEST-FAMILY-GATE.md): create a clearly
+    named disposable family containing only synthetic data, record
+    its ID privately outside GitHub/AI tools, set
+    FULL_EXPORT_TEST_FAMILY_IDS to that one ID (ENABLE_FULL_EXPORT
+    stays "false"), run the normal owner export lifecycle end-to-end
+    and diff the archive's tree.json against a direct API pull, then
+    remove the family ID and verify every export route (create,
+    history, status, cancel, download) is revoked on the next
+    request before proceeding.                                      [ ]
  9. Set ENABLE_FULL_EXPORT="true" for owner/co-admin, briefly,
     scoped to the site-owner's own family only if possible.         [ ]
 10. Verify the full lifecycle end-to-end: create, progress,
