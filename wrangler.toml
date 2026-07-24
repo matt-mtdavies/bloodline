@@ -60,3 +60,6 @@ jurisdiction = "eu"
 [[services]]
 binding = "EXPORT_WORKFLOW_SERVICE"
 service = "bloodline-export-workflow"
+# The RPC methods live on this named WorkerEntrypoint, not the Worker's
+# default fetch/scheduled export.
+entrypoint = "ExportWorkflowEntrypoint"
