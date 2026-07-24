@@ -1,11 +1,13 @@
 # Full Archive Export — completion-phase status + human-operator runbook
 
 Companion to `docs/FULL-ARCHIVE-EXPORT-COMPLETION-PHASE.md` (the brief this
-implements) and `docs/FULL-ARCHIVE-EXPORT-PHASE-A-RUNBOOK.md` (Phase A's own
-equivalent doc). Same pattern as both: this environment has no `wrangler
-login` session and no Cloudflare API access, so everything below that needs
-real account access is a template for a human operator to fill in and run,
-not something this session could execute itself.
+implements), `docs/FULL-ARCHIVE-EXPORT-PHASE-A-RUNBOOK.md` (Phase A's own
+equivalent doc), and `docs/FULL-ARCHIVE-EXPORT-TEST-FAMILY-GATE.md` (the
+disposable-family rollout gate step 8 below now uses). Same pattern as all
+three: this environment has no `wrangler login` session and no Cloudflare
+API access, so everything below that needs real account access is a
+template for a human operator to fill in and run, not something this
+session could execute itself.
 
 ## What the completion phase delivered (built, tested, and verified here)
 
@@ -122,11 +124,25 @@ multipart corruption, or an expiry/private-download failure.
     backstop, §5) and uncomment the [triggers] cron in
     workers/export-workflow/wrangler.toml (hourly cleanup sweep).    [ ]
  7. Deploy the Pages project with ENABLE_FULL_EXPORT still "false". [ ]
- 8. Synthetic disposable-family byte-comparison test (export a
-    throwaway family, diff the archive's tree.json against a
-    direct API pull).                                               [ ]
- 9. Set ENABLE_FULL_EXPORT="true" for owner/co-admin, briefly,
-    scoped to the site-owner's own family only if possible.         [ ]
+ 8. Synthetic disposable-family byte-comparison test, gated by
+    FULL_EXPORT_TEST_FAMILY_IDS instead of the general release flag
+    (docs/FULL-ARCHIVE-EXPORT-TEST-FAMILY-GATE.md): create a clearly
+    named disposable family containing only synthetic data, record
+    its ID privately outside GitHub/AI tools, set
+    FULL_EXPORT_TEST_FAMILY_IDS to that one ID (ENABLE_FULL_EXPORT
+    stays "false"), run the normal owner export lifecycle end-to-end
+    and diff the archive's tree.json against a direct API pull, then
+    remove the family ID and verify every export route (create,
+    history, status, cancel, download) is revoked on the next
+    request before proceeding.                                      [ ]
+ 9. Rehearse against the site-owner's own real family too — WITHOUT
+    turning on general release yet: add the site-owner's real family
+    ID alongside (or in place of) the disposable one in
+    FULL_EXPORT_TEST_FAMILY_IDS (ENABLE_FULL_EXPORT stays "false").
+    The allowlist is the only mechanism that can scope this to one
+    family — ENABLE_FULL_EXPORT itself is always global, so "true,
+    scoped to one family" was never actually possible; step 11 below
+    is where it's turned on for everyone.                            [ ]
 10. Verify the full lifecycle end-to-end: create, progress,
     download, offline viewer opens, audit trail, cancel, expiry.    [ ]
 11. Enable owner/co-admin generally (all families).                [ ]
@@ -142,8 +158,17 @@ multipart corruption, or an expiry/private-download failure.
 
 ### Rollback
 
-Disable creation first (`ENABLE_FULL_EXPORT="false"` — this alone stops all
-new `POST /api/exports*` calls immediately). Preserve any already-`ready`
+Disable creation first — this now requires clearing BOTH controls, not
+just one: set `ENABLE_FULL_EXPORT="false"` AND empty
+`FULL_EXPORT_TEST_FAMILY_IDS`. Neither alone is sufficient once both have
+ever been set together — `ENABLE_FULL_EXPORT="false"` no longer stops all
+`POST /api/exports*` calls by itself whenever the test allowlist is still
+non-empty (docs/FULL-ARCHIVE-EXPORT-TEST-FAMILY-GATE.md's whole point is
+that the allowlist keeps working independently of that flag). After
+clearing both, verify by confirming create/list/status/cancel/download all
+return `export_not_configured` for the family that was previously
+allowlisted, the same revocation check step 8/9 already performs — don't
+just assume clearing the vars took effect. Preserve any already-`ready`
 downloads unless confidentiality is specifically in doubt. Redeploy the
 last-known-good Worker version recorded in step 4. Abort any in-progress
 multipart uploads (the scheduled cleanup sweep does this automatically for
