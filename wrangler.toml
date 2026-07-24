@@ -53,6 +53,6 @@ jurisdiction = "eu"
 # deployed (Gate 0) — until then functions/_lib/exportService.js's own
 # readiness check treats a missing binding the same as the feature flag
 # being off, so leaving this commented is safe, not merely inert.
-# [[services]]
-# binding = "EXPORT_WORKFLOW_SERVICE"
-# service = "bloodline-export-workflow"
+[[services]]
+binding = "EXPORT_WORKFLOW_SERVICE"
+service = "bloodline-export-workflow"
