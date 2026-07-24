@@ -13,6 +13,8 @@ name = "bloodline-export-workflow"
 main = "src/entrypoint.js"
 compatibility_date = "2026-07-01"
 compatibility_flags = ["nodejs_compat"]
+workers_dev = false
+preview_urls = false
 
 # Paid-plan CPU ceiling for the packaging stage (docs/FULL-ARCHIVE-EXPORT.md
 # §2.6) — a safety ceiling, not a target: individual steps are budgeted to
