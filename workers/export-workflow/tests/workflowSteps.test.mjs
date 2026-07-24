@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import {
   authorizeJobStep, captureSourceStep, readCapturedTree,
   captureActivityBoundStep, captureActivityPageStep,
-  buildInventoryStep, resolveInventoryShardStep, resolveKeepsakesStep,
+  buildInventoryStep, resolveInventoryShardStep, resolveKeepsakeShardStep,
   startMultipartStep, packageStep, completeMultipartStep, verifyArchiveStep,
   writeActivityLogStream,
   finalizeJobStep, sendCompletionEmailStep, cleanStagingStep,
@@ -15,6 +15,7 @@ import {
 } from '../src/workflowSteps.js';
 import { createExportJobStatements } from '../../../functions/_lib/exportJob.js';
 import { ActivityLogUnavailableError } from '../src/lib/activityLog.js';
+import { BUDGETS } from '../src/lib/budgets.js';
 
 let passed = 0, failed = 0;
 async function atest(label, fn) {
@@ -401,7 +402,7 @@ await atest('buildInventoryStep produces multiple shards once media references e
   assert.equal(first.entryCount + second.entryCount, 150);
 });
 
-await atest('resolveKeepsakesStep lists only the exact family/person prefix, never the flat bucket', async () => {
+await atest('resolveKeepsakeShardStep lists only the exact family/person prefix, never the flat bucket', async () => {
   const { db, env } = makeEnv();
   const jobId = await seedQueuedJob(env, db);
   const tree = { people: [{ id: 'p1', display_name: 'James' }], relationships: [] };
@@ -411,11 +412,13 @@ await atest('resolveKeepsakesStep lists only the exact family/person prefix, nev
   await env.DOCS.put('keepsake/fam_1/p1/latest.json', JSON.stringify({ narrative: null }));
   await env.DOCS.put('keepsake/fam_OTHER/p9/latest.json', JSON.stringify({ narrative: null })); // must never be listed
 
-  const result = await resolveKeepsakesStep(env, { jobId, familyId: 'fam_1' });
+  const plan = await buildInventoryStep(env, { jobId, familyId: 'fam_1' });
+  assert.equal(plan.keepsakeShardCount, 1, 'one person fits in a single shard');
+  const result = await resolveKeepsakeShardStep(env, { jobId, familyId: 'fam_1', shardIndex: 0 });
   assert.equal(result.keepsakeEntryCount, 1);
 });
 
-await atest('resolveKeepsakesStep pages through ALL editions when a person has more Keepsakes than fit in one R2 list() page — the PR #9 re-review pagination finding', async () => {
+await atest('resolveKeepsakeShardStep pages through ALL editions when a person has more Keepsakes than fit in one R2 list() page — the PR #9 re-review pagination finding', async () => {
   const { db, env } = makeEnv();
   const jobId = await seedQueuedJob(env, db);
   const tree = { people: [{ id: 'p1', display_name: 'James' }], relationships: [] };
@@ -432,8 +435,55 @@ await atest('resolveKeepsakesStep pages through ALL editions when a person has m
   const realList = env.DOCS.list.bind(env.DOCS);
   env.DOCS.list = (opts) => realList({ ...opts, limit: 2 });
 
-  const result = await resolveKeepsakesStep(env, { jobId, familyId: 'fam_1' });
+  await buildInventoryStep(env, { jobId, familyId: 'fam_1' });
+  const result = await resolveKeepsakeShardStep(env, { jobId, familyId: 'fam_1', shardIndex: 0 });
   assert.equal(result.keepsakeEntryCount, 5, 'every edition must be found across multiple list() pages, not just the first');
+});
+
+await atest('resolveKeepsakeShardStep fetches each page\'s object bodies with BOUNDED concurrency, never an unbounded Promise.all — the PR #9 3rd-review finding', async () => {
+  const { db, env } = makeEnv();
+  const jobId = await seedQueuedJob(env, db);
+  const tree = { people: [{ id: 'p1', display_name: 'James' }], relationships: [] };
+  db.exec(`INSERT INTO family_tree (family_id, tree_json, updated_at) VALUES ('fam_1', '${JSON.stringify(tree)}', 1000)`);
+  await captureSourceStep(env, { jobId, familyId: 'fam_1' });
+
+  // A "full-size" page (unlike the earlier tiny 2-per-page fake above) —
+  // 40 real retained editions for one person, all within a SINGLE R2
+  // list() page (well under the real 1,000-object cap), so this proves
+  // the concurrency bound applies to fetching ONE page's worth of bodies,
+  // not just across pages.
+  const EDITION_COUNT = 40;
+  for (let i = 0; i < EDITION_COUNT; i++) {
+    await env.DOCS.put(`keepsake/fam_1/p1/edition-${String(i).padStart(3, '0')}.json`, JSON.stringify({ narrative: null, editionNumber: i }));
+  }
+
+  let inFlight = 0;
+  let maxInFlight = 0;
+  let totalGets = 0;
+  const realGet = env.DOCS.get.bind(env.DOCS);
+  env.DOCS.get = async (key, opts) => {
+    if (!key.startsWith('keepsake/')) return realGet(key, opts);
+    inFlight += 1;
+    totalGets += 1;
+    maxInFlight = Math.max(maxInFlight, inFlight);
+    try {
+      // Yield a tick so overlapping calls actually have a chance to race —
+      // proves real concurrency bounding, not just sequential calls that
+      // happen to never overlap because nothing here is ever async.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      return await realGet(key, opts);
+    } finally {
+      inFlight -= 1;
+    }
+  };
+
+  await buildInventoryStep(env, { jobId, familyId: 'fam_1' });
+  const result = await resolveKeepsakeShardStep(env, { jobId, familyId: 'fam_1', shardIndex: 0 });
+
+  assert.equal(result.keepsakeEntryCount, EDITION_COUNT, 'every edition in the page must still be resolved');
+  assert.equal(totalGets, EDITION_COUNT, 'every object must be fetched exactly once');
+  assert.ok(maxInFlight > 1, 'must fetch bodies concurrently, not one at a time');
+  assert.ok(maxInFlight <= BUDGETS.r2HeadOpsPerStep.maxConcurrency, `must never exceed the ${BUDGETS.r2HeadOpsPerStep.maxConcurrency}-op concurrency ceiling, saw ${maxInFlight} in flight at once`);
 });
 
 await atest('writeActivityLogStream produces a byte-valid JSON array spanning multiple shards, in order, without ever parsing a row — the PR #9 review finding about full-history in-memory materialization', async () => {
@@ -513,7 +563,7 @@ async function runFullPipeline(env, db, jobId, familyId, { maxIterations = 200 }
 
   const plan = await buildInventoryStep(env, { jobId, familyId });
   for (let i = 0; i < plan.shardCount; i++) await resolveInventoryShardStep(env, { jobId, familyId, shardIndex: i });
-  await resolveKeepsakesStep(env, { jobId, familyId });
+  for (let i = 0; i < plan.keepsakeShardCount; i++) await resolveKeepsakeShardStep(env, { jobId, familyId, shardIndex: i });
 
   await startMultipartStep(env, { jobId, familyId, family: authorized.family, requestedAs: authorized.requestedAs });
   for (let i = 0; i < maxIterations; i++) {
@@ -658,6 +708,115 @@ await atest('the manifest packaged INSIDE the archive carries a real, ledger-bac
   rmSync(dir, { recursive: true, force: true });
 });
 
+await atest('the packaged manifest.files carries a real ledger-backed entry for EVERY archived file, not just media/Keepsakes, and integrity-report.html displays the SAME final checksum D1 recorded — the PR #9 3rd-review finding', async () => {
+  const { db, env } = makeEnv();
+  const jobId = await seedQueuedJob(env, db);
+  const tree = { people: [{ id: 'p1', display_name: 'James' }], relationships: [] };
+  db.exec(`INSERT INTO family_tree (family_id, tree_json, updated_at) VALUES ('fam_1', '${JSON.stringify(tree)}', 1000)`);
+
+  const verify = await runFullPipeline(env, db, jobId, 'fam_1');
+  assert.equal(verify.warningCount, 0);
+
+  const archiveObj = await env.DOCS.get(`exports/${jobId}/bloodline-full-archive.zip`);
+  const { dir, file } = toTempFile(new Uint8Array(await archiveObj.arrayBuffer()));
+  const packagedManifest = JSON.parse(extractFromZip(file, 'manifest.json'));
+  const filesByPath = new Map(packagedManifest.files.map((f) => [f.path, f]));
+
+  // Before this fix, manifest.files was only ever populated from media/
+  // Keepsake inventory entries — a fixed archive file like tree.json had
+  // NO entry in the shipped manifest at all, even though it's a real file
+  // sitting right there in the ZIP with a real, ledger-computed hash.
+  const treeBytes = new TextEncoder().encode(JSON.stringify(tree));
+  const expectedTreeSha256 = createHash('sha256').update(treeBytes).digest('hex');
+  for (const [path, expectedSha256] of [
+    ['data/tree.json', expectedTreeSha256],
+    ['data/activity-log.json', null], // content varies; just prove the entry exists with a real hash
+    ['data/content-index.json', null],
+    ['data/tree-data.js', null],
+    ['data/family.json', null],
+    ['reports/missing-files.txt', null],
+    ['viewer/app.js', null],
+    ['README.txt', null],
+  ]) {
+    const entry = filesByPath.get(path);
+    assert.ok(entry, `manifest.files must include a record for "${path}"`);
+    assert.ok(entry.sha256, `"${path}"'s manifest record must carry a real sha256`);
+    assert.ok(entry.byteLength > 0, `"${path}"'s manifest record must carry a real byteLength`);
+    if (expectedSha256) assert.equal(entry.sha256, expectedSha256, `"${path}"'s sha256 must be the real hash of its actual archived bytes`);
+  }
+
+  // manifest.json cannot describe its own bytes (unavoidable self-
+  // reference), and reports/integrity-report.html is deliberately packaged
+  // one entry AFTER manifest.json specifically so it can describe the real
+  // final manifest — so neither appears inside manifest.files itself.
+  assert.equal(filesByPath.has('manifest.json'), false);
+  assert.equal(filesByPath.has('reports/integrity-report.html'), false);
+
+  // The archived report must be the FINAL one — generated from this exact
+  // packaged manifest, not the stale pre-packaging "base" version — so its
+  // displayed checksum matches both the manifest actually shipped AND the
+  // checksum D1 recorded for this job.
+  const { computeManifestChecksum } = await import('../src/lib/manifest.js');
+  const finalChecksum = computeManifestChecksum(packagedManifest);
+  const job = db.prepare('SELECT * FROM family_export_job WHERE id = ?').get(jobId);
+  assert.equal(job.manifest_sha256, finalChecksum);
+
+  const integrityHtml = extractFromZip(file, 'reports/integrity-report.html');
+  assert.match(integrityHtml, new RegExp(finalChecksum), 'the packaged integrity report must display the SAME final checksum as the manifest actually shipped and the one D1 recorded — not a stale pre-packaging checksum');
+  assert.match(integrityHtml, new RegExp(`Entries: ${packagedManifest.files.length}`), 'the report\'s displayed entry count must reflect the real final files list, not the incomplete pre-packaging one');
+
+  rmSync(dir, { recursive: true, force: true });
+});
+
+await atest('a family with more people than fit in one Keepsake shard is resolved across MULTIPLE checkpointed shard steps, each retaining only its own shard in memory — the PR #9 3rd-review finding that the whole family was materialized in one non-checkpointed step', async () => {
+  const { db, env } = makeEnv();
+  const jobId = await seedQueuedJob(env, db);
+  // 25 people, each with a real retained Keepsake edition — enough to span
+  // 3 shards at the 10-people-per-shard default (buildInventoryStep's
+  // KEEPSAKE_PEOPLE_PER_SHARD), the exact scenario the reviewer asked to
+  // be tested: multiple full shards, not one small fake.
+  const PEOPLE_COUNT = 25;
+  const people = Array.from({ length: PEOPLE_COUNT }, (_, i) => ({ id: `p${i}`, display_name: `Person ${i}` }));
+  db.exec(`INSERT INTO family_tree (family_id, tree_json, updated_at) VALUES ('fam_1', '${JSON.stringify({ people, relationships: [] })}', 1000)`);
+  await captureSourceStep(env, { jobId, familyId: 'fam_1' });
+  for (let i = 0; i < PEOPLE_COUNT; i++) {
+    await env.DOCS.put(`keepsake/fam_1/p${i}/latest.json`, JSON.stringify({ narrative: null, personId: `p${i}` }));
+  }
+
+  const plan = await buildInventoryStep(env, { jobId, familyId: 'fam_1' });
+  assert.equal(plan.keepsakeShardCount, 3, '25 people at 10/shard must produce exactly 3 shards (10, 10, 5)');
+  assert.equal(plan.keepsakePersonCount, PEOPLE_COUNT);
+
+  let totalEntries = 0;
+  const seenPersonIds = new Set();
+  for (let i = 0; i < plan.keepsakeShardCount; i++) {
+    const result = await resolveKeepsakeShardStep(env, { jobId, familyId: 'fam_1', shardIndex: i });
+    totalEntries += result.keepsakeEntryCount;
+    const shard = JSON.parse(await (await env.DOCS.get(`export-staging/${jobId}/inventory/keepsakes-${i}.json`)).text());
+    // Each shard's own staged result must be small (its own people only),
+    // proving the whole family was never accumulated as one in-memory
+    // batch — the exact P1 finding this fix addresses.
+    assert.ok(shard.entries.length <= 10, `shard ${i} must only contain its own (≤10) people's entries, saw ${shard.entries.length}`);
+    for (const e of shard.entries) seenPersonIds.add(e.ownerId);
+  }
+  assert.equal(totalEntries, PEOPLE_COUNT, 'every person across every shard must be resolved, none dropped, none duplicated');
+  assert.equal(seenPersonIds.size, PEOPLE_COUNT, 'every distinct person must appear in exactly one shard');
+
+  // And the aggregated result actually reaches the packaged archive —
+  // proving the sharded resolution is correctly stitched back together by
+  // startMultipartStep/buildByPathIndex, not just correct in isolation.
+  await startMultipartStep(env, { jobId, familyId: 'fam_1', family: { id: 'fam_1', name: 'Test' }, requestedAs: 'owner' });
+  for (;;) { const r = await packageStep(env, { jobId }); if (r.done) break; }
+  await completeMultipartStep(env, { jobId, familyId: 'fam_1' });
+  const verify = await verifyArchiveStep(env, { jobId });
+  assert.equal(verify.warningCount, 0);
+  const archiveObj = await env.DOCS.get(`exports/${jobId}/bloodline-full-archive.zip`);
+  const { dir, file } = toTempFile(new Uint8Array(await archiveObj.arrayBuffer()));
+  const names = verifyWithUnzip(file);
+  assert.equal(names.filter((n) => n.startsWith('keepsakes/')).length, PEOPLE_COUNT, 'every shard\'s Keepsake editions must end up in the final archive');
+  rmSync(dir, { recursive: true, force: true });
+});
+
 await atest('administration/ files (members.json, invitations.json) appear ONLY for a site_admin export, never for owner/coadmin, per §3.4', async () => {
   const { db, env } = makeEnv();
   db.exec(`INSERT INTO user (id, email) VALUES ('user_2', 'member2@test.example')`);
@@ -743,7 +902,7 @@ await atest('packaging genuinely checkpoints across multiple small steps for a m
   await captureActivityBoundStep(env, { jobId, familyId: 'fam_1' });
   const plan = await buildInventoryStep(env, { jobId, familyId: 'fam_1' });
   for (let i = 0; i < plan.shardCount; i++) await resolveInventoryShardStep(env, { jobId, familyId: 'fam_1', shardIndex: i });
-  await resolveKeepsakesStep(env, { jobId, familyId: 'fam_1' });
+  for (let i = 0; i < plan.keepsakeShardCount; i++) await resolveKeepsakeShardStep(env, { jobId, familyId: 'fam_1', shardIndex: i });
   await startMultipartStep(env, { jobId, familyId: 'fam_1', family: { id: 'fam_1', name: 'Test' }, requestedAs: 'owner' });
 
   let iterations = 0;
@@ -797,7 +956,7 @@ await atest('verifyArchiveStep catches a genuine packaging-ledger mismatch (wron
   await captureActivityBoundStep(env, { jobId, familyId: 'fam_1' });
   const plan = await buildInventoryStep(env, { jobId, familyId: 'fam_1' });
   for (let i = 0; i < plan.shardCount; i++) await resolveInventoryShardStep(env, { jobId, familyId: 'fam_1', shardIndex: i });
-  await resolveKeepsakesStep(env, { jobId, familyId: 'fam_1' });
+  for (let i = 0; i < plan.keepsakeShardCount; i++) await resolveKeepsakeShardStep(env, { jobId, familyId: 'fam_1', shardIndex: i });
   await startMultipartStep(env, { jobId, familyId: 'fam_1', family: { id: 'fam_1', name: 'Test' }, requestedAs: 'owner' });
   for (;;) { const r = await packageStep(env, { jobId }); if (r.done) break; }
   await completeMultipartStep(env, { jobId, familyId: 'fam_1' });
@@ -824,7 +983,7 @@ await atest('verifyArchiveStep never fetches the whole final archive object in o
   await captureActivityBoundStep(env, { jobId, familyId: 'fam_1' });
   const plan = await buildInventoryStep(env, { jobId, familyId: 'fam_1' });
   for (let i = 0; i < plan.shardCount; i++) await resolveInventoryShardStep(env, { jobId, familyId: 'fam_1', shardIndex: i });
-  await resolveKeepsakesStep(env, { jobId, familyId: 'fam_1' });
+  for (let i = 0; i < plan.keepsakeShardCount; i++) await resolveKeepsakeShardStep(env, { jobId, familyId: 'fam_1', shardIndex: i });
   await startMultipartStep(env, { jobId, familyId: 'fam_1', family: { id: 'fam_1', name: 'Test' }, requestedAs: 'owner' });
   for (;;) { const r = await packageStep(env, { jobId }); if (r.done) break; }
   await completeMultipartStep(env, { jobId, familyId: 'fam_1' });
@@ -955,6 +1114,39 @@ await atest('runExportWorkflowSteps aborts the in-progress multipart upload and 
   assert.equal(remainingStaging.objects.length, 0, 'staging must be fully cleaned up after a terminal failure, not left for the 7-day orphan sweep');
 });
 
+await atest('runExportWorkflowSteps deletes the already-completed archive object on a failure AFTER v1-complete-multipart — the PR #9 3rd-review finding that a verification failure orphaned the finished ZIP forever', async () => {
+  const { db, env } = makeEnv();
+  const jobId = await seedQueuedJob(env, db);
+  const tree = { people: [{ id: 'p1', display_name: 'James', photo: 'data:image/jpeg;base64,YWJj' }], relationships: [] };
+  db.exec(`INSERT INTO family_tree (family_id, tree_json, updated_at) VALUES ('fam_1', '${JSON.stringify(tree)}', 1000)`);
+
+  // Fail v1-verify-archive specifically — by this point completeMultipartStep
+  // has already succeeded, so there's no multipart upload left to abort
+  // (abort() is a no-op/throws) but a real, complete archive object DOES
+  // exist at the final exports/{jobId}/... key. Before this fix, nothing
+  // ever deleted it: archive_r2_key is only set once verification succeeds,
+  // so neither the expiry sweep nor the orphan-staging sweep (staging-prefix
+  // only) could ever discover it.
+  const throwingStep = {
+    async do(name, fn) {
+      if (name === 'v1-verify-archive') throw new Error('simulated post-completion verification failure');
+      return fn();
+    },
+  };
+  await assert.rejects(() => runExportWorkflowSteps(env, throwingStep, jobId), /simulated post-completion verification failure/);
+
+  const job = db.prepare('SELECT * FROM family_export_job WHERE id = ?').get(jobId);
+  assert.equal(job.status, 'failed');
+  assert.equal(job.archive_r2_key, null, 'verification never succeeded, so archive_r2_key must never have been set');
+
+  const finalKey = `exports/${jobId}/bloodline-full-archive.zip`;
+  const remaining = await env.DOCS.get(finalKey);
+  assert.equal(remaining, null, 'the completed-but-unverified archive object must be deleted, not left orphaned in R2 forever');
+
+  const remainingStaging = await env.DOCS.list({ prefix: `export-staging/${jobId}/` });
+  assert.equal(remainingStaging.objects.length, 0, 'staging must still be fully cleaned up too');
+});
+
 await atest('sendCompletionEmailStep is best-effort: a missing recipient is reported, not thrown', async () => {
   const { env } = makeEnv();
   const result = await sendCompletionEmailStep(env, { jobId: 'exp_x', toEmail: null, requestedAs: 'owner', appUrl: 'https://example.test' });
@@ -995,7 +1187,7 @@ await atest('handleCancellation aborts an in-progress multipart upload, cleans s
   await captureActivityBoundStep(env, { jobId, familyId: 'fam_1' });
   const plan = await buildInventoryStep(env, { jobId, familyId: 'fam_1' });
   for (let i = 0; i < plan.shardCount; i++) await resolveInventoryShardStep(env, { jobId, familyId: 'fam_1', shardIndex: i });
-  await resolveKeepsakesStep(env, { jobId, familyId: 'fam_1' });
+  for (let i = 0; i < plan.keepsakeShardCount; i++) await resolveKeepsakeShardStep(env, { jobId, familyId: 'fam_1', shardIndex: i });
   await startMultipartStep(env, { jobId, familyId: 'fam_1', family: { id: 'fam_1', name: 'Test' }, requestedAs: 'owner' });
 
   db.exec(`UPDATE family_export_job SET status = 'cancelling' WHERE id = '${jobId}'`);

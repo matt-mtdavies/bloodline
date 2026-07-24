@@ -32,12 +32,25 @@ import { createIncrementalSha256 } from './manifest.js';
  * only be finalized once every OTHER entry has actually been streamed and
  * hashed (the packaging ledger — see workflowSteps.js#packageStep's own
  * finalizeManifestBytes), so it must be the very last thing packaged, not
- * wherever "manifest.json" would normally land alphabetically. Omitting
- * this param entirely preserves the exact prior behavior (manifest.json,
- * if present in `fixedFiles`, sorts normally) — used by this module's own
- * unit tests, which don't need the ledger-finalization behavior at all.
+ * wherever "manifest.json" would normally land alphabetically.
+ *
+ * `integrityReportFile` (optional): `{ path, byteLength, compress }` for
+ * reports/integrity-report.html, appended immediately AFTER manifestFile —
+ * its human-readable checksum/file-count summary is only meaningful once
+ * read back from the TRUE final manifest (see workflowSteps.js's
+ * finalizeIntegrityReportBytes), which in turn only exists once
+ * manifest.json itself has just been finalized. Deliberately placed after,
+ * never before, manifestFile — reversing the order would leave it
+ * describing the stale base manifest again.
+ *
+ * Omitting either param entirely preserves the exact prior behavior
+ * (a same-named file in `fixedFiles`, if present, sorts normally) — used by
+ * this module's own unit tests, which don't need the ledger-finalization
+ * behavior at all.
  */
-export function buildArchivePlan({ fixedFiles = [], mediaEntries = [], keepsakeEntries = [], manifestFile = null }) {
+export function buildArchivePlan({
+  fixedFiles = [], mediaEntries = [], keepsakeEntries = [], manifestFile = null, integrityReportFile = null,
+}) {
   const plan = [];
   for (const f of fixedFiles) {
     plan.push({ kind: 'fixed', path: f.path, byteLength: f.byteLength, compress: f.compress || 'store' });
@@ -57,8 +70,18 @@ export function buildArchivePlan({ fixedFiles = [], mediaEntries = [], keepsakeE
   if (manifestFile) {
     plan.push({ kind: 'manifest', path: manifestFile.path, byteLength: manifestFile.byteLength, compress: manifestFile.compress || 'store' });
   }
+  if (integrityReportFile) {
+    plan.push({ kind: 'integrity-report', path: integrityReportFile.path, byteLength: integrityReportFile.byteLength, compress: integrityReportFile.compress || 'store' });
+  }
   return plan;
 }
+
+// Plan-entry kinds whose real content can only be built once every OTHER
+// entry has already been streamed/hashed — their `byteLength` at plan time
+// is necessarily just a placeholder estimate, so runPackagingStep fully
+// materializes their getEntryBytes() result BEFORE addEntry, using the real
+// length as the size hint instead of trusting the placeholder.
+const LATE_BOUND_KINDS = new Set(['manifest', 'integrity-report']);
 
 /*
  * A crude but adequate projection of the final archive's total size, used
@@ -214,11 +237,14 @@ function concatChunks(chunks, totalBytes) {
  * or from earlier iterations of THIS SAME loop) — needed so a caller can
  * build the manifest.json entry's real content (which embeds every OTHER
  * entry's final sha256) at the exact moment it's actually about to be
- * packaged. Since `kind: 'manifest'` entries are always forced to be the
- * plan's LAST entry (see buildArchivePlan's own `manifestFile` param),
- * `ledgerSoFar` at that point is genuinely complete. A manifest entry's
+ * packaged. `kind: 'manifest'` and `kind: 'integrity-report'` entries are
+ * both always forced to the very end of the plan, in that order (see
+ * buildArchivePlan's own `manifestFile`/`integrityReportFile` params), so
+ * `ledgerSoFar` is genuinely complete for every OTHER entry by the time
+ * either is reached — and, since manifest.json is packaged one step before
+ * integrity-report.html, the report can read the just-finalized manifest
+ * back out of staging to describe it accurately. A late-bound entry's
  * exact final byte length can only be known once its real content is
- * built this way — its plan-time `byteLength` is necessarily just a
  * placeholder — so its `getEntryBytes` call is fully materialized
  * (awaited to a single concrete Uint8Array) BEFORE `writer.addEntry` is
  * called, and that real length is used as the size hint instead of the
@@ -243,7 +269,7 @@ export async function runPackagingStep({
     const entry = plan[index];
     let rawChunks = await getEntryBytes(entry, ledger);
     let sizeHint = entry.byteLength;
-    if (entry.kind === 'manifest') {
+    if (LATE_BOUND_KINDS.has(entry.kind)) {
       const materialized = [];
       let total = 0;
       for await (const chunk of rawChunks) { materialized.push(chunk); total += chunk.byteLength; }

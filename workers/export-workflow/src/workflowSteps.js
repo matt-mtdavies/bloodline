@@ -227,6 +227,14 @@ export async function captureActivityPageStep(env, { jobId, familyId, pageIndex,
 
 // ── Step 5: v1-build-inventory ──────────────────────────────────────────
 
+// A Keepsake edition is heavy per-item compared to a media reference — each
+// person can require several full-body R2 GETs of narrative JSON, not one
+// lightweight descriptor — so a much smaller per-shard person count keeps
+// resolveKeepsakeShardStep's own memory/time bounded per Workflow step call,
+// the same way resolveInventoryShardStep already is for the 100-per-shard
+// media references.
+const KEEPSAKE_PEOPLE_PER_SHARD = 10;
+
 export async function buildInventoryStep(env, { jobId, familyId }) {
   await touchHeartbeat(env, jobId);
   const tree = await readCapturedTree(env, jobId);
@@ -235,14 +243,22 @@ export async function buildInventoryStep(env, { jobId, familyId }) {
   const mediaRefs = deriveMediaReferences(tree);
   const keepsakePersonIds = (tree.people || []).map((p) => p.id);
   const shards = shardByBudget(mediaRefs, { maxEntries: 100, maxBytes: Infinity });
+  const keepsakeShards = shardByBudget(keepsakePersonIds, { maxEntries: KEEPSAKE_PEOPLE_PER_SHARD, maxBytes: Infinity });
 
   await putJson(env, stagingKey(jobId, 'inventory', '_plan.json'), {
-    shardCount: shards.length, mediaRefCount: mediaRefs.length, keepsakePersonIds,
+    shardCount: shards.length, mediaRefCount: mediaRefs.length,
+    keepsakeShardCount: keepsakeShards.length, keepsakePersonCount: keepsakePersonIds.length,
   });
   for (let i = 0; i < shards.length; i++) {
     await putJson(env, stagingKey(jobId, 'inventory', `_pending-${i}.json`), shards[i]);
   }
-  return { shardCount: shards.length, mediaRefCount: mediaRefs.length, keepsakePersonCount: keepsakePersonIds.length };
+  for (let i = 0; i < keepsakeShards.length; i++) {
+    await putJson(env, stagingKey(jobId, 'inventory', `_keepsake-pending-${i}.json`), keepsakeShards[i]);
+  }
+  return {
+    shardCount: shards.length, mediaRefCount: mediaRefs.length,
+    keepsakeShardCount: keepsakeShards.length, keepsakePersonCount: keepsakePersonIds.length,
+  };
 }
 
 // ── repeated Step 6: v1-resolve-inventory-{shard} ───────────────────────
@@ -279,36 +295,70 @@ export async function resolveInventoryShardStep(env, { jobId, familyId, shardInd
   return { shardIndex, entryCount: resolved.length, warningCount };
 }
 
-// One Keepsake-listing pass, scoped strictly to family+person prefixes
-// already present in the captured tree (§7 Inventory: "list Keepsakes only
-// under exact family/person prefixes; never list the flat bucket").
-export async function resolveKeepsakesStep(env, { jobId, familyId }) {
+// ── repeated Step 6b: v1-resolve-keepsakes-{shard} ──────────────────────
+
+// One Keepsake-listing pass over a single SHARD of people (see
+// KEEPSAKE_PEOPLE_PER_SHARD above), scoped strictly to family+person
+// prefixes already present in the captured tree (§7 Inventory: "list
+// Keepsakes only under exact family/person prefixes; never list the flat
+// bucket").
+//
+// Before this fix (a PR #9 3rd-review finding), this ran as ONE single,
+// non-checkpointed Workflow step for the WHOLE family: it accumulated
+// every object descriptor across every R2 list() page for every person
+// into one `allObjects` array before touching any of them, fetched every
+// body concurrently via a single unbounded `Promise.all` (no concurrency
+// ceiling at all, unlike resolveInventoryShardStep's own bounded
+// mapWithConcurrency for media HEAD ops), and kept every parsed Keepsake
+// narrative in memory for the whole family before ever serializing a
+// result. For a family with many people, each with several retained
+// editions, that combination could exhaust the Worker's per-step
+// subrequest/concurrency/memory ceiling well before producing a complete
+// export. Now genuinely sharded and checkpointed exactly like media
+// resolution: `buildInventoryStep` splits people into small
+// KEEPSAKE_PEOPLE_PER_SHARD-sized shards, and this function resolves
+// exactly one shard per call — bounded concurrency for the body GETs
+// within a page (never more than r2HeadOpsPerStep.maxConcurrency in
+// flight), one shard's worth of parsed editions retained at a time, not
+// the whole family's.
+export async function resolveKeepsakeShardStep(env, { jobId, familyId, shardIndex }) {
   await touchHeartbeat(env, jobId);
+  const personIds = await getJson(env, stagingKey(jobId, 'inventory', `_keepsake-pending-${shardIndex}.json`));
+  if (!personIds) return { shardIndex, keepsakeEntryCount: 0, alreadyResolved: true };
+
   const tree = await readCapturedTree(env, jobId);
+  const shardPersonIds = new Set(personIds);
+  const shardTree = { ...tree, people: (tree.people || []).filter((p) => shardPersonIds.has(p.id)) };
+
   // R2 list() is itself paginated (at most 1,000 objects per response) —
   // a person with more retained Keepsake editions than one page would
   // otherwise have the remainder silently dropped, producing a "ready"
   // archive missing content, exactly what the full-extract guarantee
-  // exists to rule out. Confirmed and fixed after a PR #9 re-review caught
-  // it (the earlier fix only ever read the first page and ignored
-  // `truncated`/`cursor`).
+  // exists to rule out (confirmed and fixed after an earlier PR #9
+  // re-review caught it — the very first fix only ever read the first
+  // page and ignored `truncated`/`cursor`). Each page's own object bodies
+  // are now fetched with the SAME bounded concurrency ceiling
+  // resolveInventoryShardStep already uses for media HEAD ops, not an
+  // unbounded `Promise.all` across the whole page.
   const listPrefix = async (prefix) => {
     const allObjects = [];
     let cursor;
     for (;;) {
       const listed = await env.DOCS.list({ prefix, cursor });
-      allObjects.push(...(listed.objects || []));
+      const page = listed.objects || [];
+      const resolvedPage = await mapWithConcurrency(page, BUDGETS.r2HeadOpsPerStep.maxConcurrency, async (o) => {
+        const obj = await env.DOCS.get(o.key);
+        return { key: o.key, byteLength: o.size, etag: o.etag, body: obj ? await obj.text() : null };
+      });
+      allObjects.push(...resolvedPage);
       if (!listed.truncated) break;
       cursor = listed.cursor;
     }
-    return Promise.all(allObjects.map(async (o) => {
-      const obj = await env.DOCS.get(o.key);
-      return { key: o.key, byteLength: o.size, etag: o.etag, body: obj ? await obj.text() : null };
-    }));
+    return allObjects;
   };
-  const { entries, aliases } = await buildKeepsakeInventory(tree, familyId, { listPrefix });
-  await putJson(env, stagingKey(jobId, 'inventory', 'keepsakes.json'), { entries, aliases });
-  return { keepsakeEntryCount: entries.length };
+  const { entries, aliases } = await buildKeepsakeInventory(shardTree, familyId, { listPrefix });
+  await putJson(env, stagingKey(jobId, 'inventory', `keepsakes-${shardIndex}.json`), { entries, aliases });
+  return { shardIndex, keepsakeEntryCount: entries.length };
 }
 
 // ── Step 7: v1-start-multipart ──────────────────────────────────────────
@@ -401,7 +451,7 @@ export async function writeActivityLogStream(env, jobId, key) {
 // (shard/index for an embedded data_url, or the R2 key for anything R2-
 // backed), never the payload itself, so this stays small even when a
 // data_url entry embeds a multi-MB photo.
-async function buildByPathIndex(env, jobId, shardCount) {
+async function buildByPathIndex(env, jobId, shardCount, keepsakeShardCount) {
   const byPath = {};
   for (let i = 0; i < shardCount; i++) {
     const pending = await getJson(env, stagingKey(jobId, 'inventory', `_pending-${i}.json`));
@@ -416,9 +466,14 @@ async function buildByPathIndex(env, jobId, shardCount) {
         : { kind: 'r2', route: ref.route, key: ref.key };
     }
   }
-  const keepsakes = await getJson(env, stagingKey(jobId, 'inventory', 'keepsakes.json'));
-  for (const e of keepsakes?.entries || []) {
-    if (e.status === 'included') byPath[e.path] = { kind: 'r2raw', r2Key: e.r2Key };
+  // Keepsakes are resolved in their own separate shards (see
+  // resolveKeepsakeShardStep) — one keepsakes-{i}.json per shard, mirroring
+  // the media resolved-{i}.json files just above.
+  for (let i = 0; i < (keepsakeShardCount || 0); i++) {
+    const keepsakes = await getJson(env, stagingKey(jobId, 'inventory', `keepsakes-${i}.json`));
+    for (const e of keepsakes?.entries || []) {
+      if (e.status === 'included') byPath[e.path] = { kind: 'r2raw', r2Key: e.r2Key };
+    }
   }
   return byPath;
 }
@@ -441,14 +496,22 @@ export async function startMultipartStep(env, { jobId, familyId, family, request
   ).bind(jobId).first();
   const plan0 = await getJson(env, stagingKey(jobId, 'inventory', '_plan.json'));
   const shardCount = plan0.shardCount;
+  const keepsakeShardCount = plan0.keepsakeShardCount || 0;
 
   const mediaEntries = [];
   for (let i = 0; i < shardCount; i++) {
     const resolved = await getJson(env, stagingKey(jobId, 'inventory', `resolved-${i}.json`));
     mediaEntries.push(...(resolved || []));
   }
-  const keepsakes = await getJson(env, stagingKey(jobId, 'inventory', 'keepsakes.json'));
-  const keepsakeEntries = keepsakes?.entries || [];
+  // Keepsakes were resolved in their own shards (see resolveKeepsakeShardStep)
+  // — one keepsakes-{i}.json per shard, mirroring the media resolved-{i}.json
+  // files just above, rather than one single keepsakes.json for the whole
+  // family materialized in one non-checkpointed step.
+  const keepsakeEntries = [];
+  for (let i = 0; i < keepsakeShardCount; i++) {
+    const keepsakes = await getJson(env, stagingKey(jobId, 'inventory', `keepsakes-${i}.json`));
+    keepsakeEntries.push(...(keepsakes?.entries || []));
+  }
 
   // Every "fixed" (non-media) archive file is staged under the SAME
   // derived/{archivePath} convention, keyed by its own real archive path —
@@ -582,10 +645,13 @@ export async function startMultipartStep(env, { jobId, familyId, family, request
   // so getEntryBytesFor (below) can fetch ANY of them back through one
   // generic lookup keyed by the entry's own real archive path — adding a
   // new fixed file here never means touching that lookup separately.
-  // manifest.json is deliberately NOT in this list — see manifestFile
-  // below and buildArchivePlan's own comment for why it's packaged LAST,
-  // after every other entry, instead of taking its place in the normal
-  // lexical sort.
+  // manifest.json AND reports/integrity-report.html are deliberately NOT in
+  // this list — see manifestFile/integrityReportFile below and
+  // buildArchivePlan's own comment for why both are packaged LAST, after
+  // every other entry, instead of taking their place in the normal lexical
+  // sort: integrity-report.html's checksum/file-count summary is only
+  // truthful once read back from the REAL final manifest, which doesn't
+  // exist until manifest.json itself has just been finalized.
   const fixedFileSpecs = [
     { path: treeJsonArchivePath, content: treeJson, compress: 'deflate-raw' },
     { path: activityLogArchivePath, byteLength: activityLogByteLength }, // already streamed directly to its staging key above
@@ -593,7 +659,6 @@ export async function startMultipartStep(env, { jobId, familyId, family, request
     { path: treeDataArchivePath, content: treeDataJs, compress: 'deflate-raw' },
     { path: familyJsonArchivePath, content: familyJson, compress: 'deflate-raw' },
     { path: missingFilesArchivePath, content: missingFilesText, compress: 'deflate-raw' },
-    { path: integrityReportArchivePath, content: integrityReportHtml, compress: 'deflate-raw' },
     ...administrationFiles,
     ...staticViewerFiles.map((f) => ({ path: f.path, bytes: f.bytes, compress: f.compress })),
   ];
@@ -630,13 +695,29 @@ export async function startMultipartStep(env, { jobId, familyId, family, request
   // hex strings, negligible next to the archive's total projected size.
   const manifestByteLengthEstimate = manifestBaseBytes.byteLength;
 
+  // Same placeholder-then-finalize pattern as the manifest just above: the
+  // BASE report (built from the base manifest/checksum, before packaging
+  // has hashed anything) is staged only so its byte length has a real
+  // estimate for assertNotOverSegmentedExportBoundary's projection —
+  // getEntryBytesFor's `integrity-report` branch overwrites it with the
+  // TRUE final report (read back from the just-finalized manifest.json)
+  // the moment packaging actually reaches it, one entry after manifest.json
+  // itself. Before this fix the report was generated exactly once, here,
+  // from the base manifest — so it permanently displayed a checksum and
+  // file list that didn't match the manifest actually shipped inside the
+  // same archive.
+  const integrityReportBaseBytes = new TextEncoder().encode(integrityReportHtml);
+  await env.DOCS.put(derivedKeyFor(integrityReportArchivePath), integrityReportBaseBytes);
+  const integrityReportByteLengthEstimate = integrityReportBaseBytes.byteLength;
+
   const plan = buildArchivePlan({
     fixedFiles, mediaEntries, keepsakeEntries,
     manifestFile: { path: manifestArchivePath, byteLength: manifestByteLengthEstimate, compress: 'deflate-raw' },
+    integrityReportFile: { path: integrityReportArchivePath, byteLength: integrityReportByteLengthEstimate, compress: 'deflate-raw' },
   });
   assertNotOverSegmentedExportBoundary(plan); // throws requires_segmented_export if over budget
 
-  const byPath = await buildByPathIndex(env, jobId, shardCount);
+  const byPath = await buildByPathIndex(env, jobId, shardCount, keepsakeShardCount);
   await putJson(env, stagingKey(jobId, 'packaging', 'plan.json'), plan);
   await putJson(env, stagingKey(jobId, 'packaging', 'byPath.json'), byPath);
 
@@ -676,11 +757,21 @@ async function getEntryBytesFor(env, jobId, byPath) {
     if (entry.kind === 'manifest') {
       // Finalized HERE, at the exact moment packaging is actually about
       // to write it — `ledgerSoFar` (threaded through by runPackagingStep)
-      // is genuinely complete at this point, since the manifest is always
-      // forced to be the plan's LAST entry. Always returns a single,
-      // fully-materialized chunk (never a lazy stream) — runPackagingStep
-      // relies on that to learn the real byte length before addEntry.
+      // is genuinely complete at this point, since manifest.json is always
+      // forced to the plan's second-to-last slot (integrity-report.html is
+      // the true last entry — see buildArchivePlan). Always returns a
+      // single, fully-materialized chunk (never a lazy stream) —
+      // runPackagingStep relies on that to learn the real byte length
+      // before addEntry.
       const finalBytes = await finalizeManifestBytes(env, jobId, ledgerSoFar || []);
+      return [finalBytes];
+    }
+    if (entry.kind === 'integrity-report') {
+      // Reads back the manifest.json JUST finalized by the branch above —
+      // packaged one entry earlier, so it's already the true final version
+      // sitting in staging by the time this runs. No ledger needed here:
+      // the report only ever describes the manifest, never the raw ledger.
+      const finalBytes = await finalizeIntegrityReportBytes(env, jobId);
       return [finalBytes];
     }
     if (entry.kind === 'fixed') {
@@ -703,28 +794,81 @@ async function getEntryBytesFor(env, jobId, byPath) {
 }
 
 /*
- * Overwrites the staged "base" manifest.json (correct status/counts/
- * warnings/etag/originalReference, but only a sha256 for entries
- * resolveEntry already knew one for at inventory time) with the TRUE
- * final version — every entry's real, ledger-backed sha256 filled in —
- * and returns the finalized bytes. Before this fix, R2-backed photos/
- * documents/Keepsakes had NO sha256 anywhere in the shipped archive (only
- * embedded data_url media did, since that's the only case resolveEntry
- * can compute a hash for before packaging even starts); verification also
- * only ever checked the transient staging ledger, which cleanup deletes,
- * so the downloaded archive itself could never prove the bytes it
- * contained. Confirmed and fixed after a PR #9 re-review caught it.
+ * Overwrites the staged "base" manifest.json with the TRUE final version —
+ * a real, ledger-backed `{path, byteLength, sha256}` record for EVERY file
+ * actually archived, not just media/Keepsakes — and returns the finalized
+ * bytes.
+ *
+ * Before this fix, `files` was built by mapping the base manifest's own
+ * `files` array — which itself was only ever populated from
+ * mediaEntries/keepsakeEntries in startMultipartStep — so a fixed archive
+ * entry (tree.json, activity-log.json, content-index.json, tree-data.js,
+ * family.json, reports/missing-files.txt, administration/*, the whole
+ * viewer/ bundle) could never get a ledger record here, even though every
+ * one of them is a real file physically inside the archive with a real
+ * hash sitting right there in `ledger`. R2-backed photos/documents/
+ * Keepsakes also had NO sha256 anywhere in the shipped archive at all
+ * (only embedded data_url media did, since that's the only case
+ * resolveEntry can compute a hash for before packaging even starts).
+ * Confirmed and fixed after a PR #9 3rd-review caught both gaps.
+ *
+ * `ledger` is genuinely complete for every entry EXCEPT manifest.json
+ * itself (which can't describe its own not-yet-written bytes — the
+ * unavoidable self-reference every manifest-of-a-container format has)
+ * and reports/integrity-report.html (deliberately packaged one entry AFTER
+ * manifest.json, since its whole purpose is to describe THIS manifest —
+ * see finalizeIntegrityReportBytes below). Both are handled by simply not
+ * being in `ledger` yet at this point; nothing here needs to special-case
+ * them by name.
+ *
+ * A media/keepsake path keeps whatever richer inventory metadata the base
+ * manifest already had for it (id/status/recordType/mimeType/etag/
+ * originalReference/warning) with byteLength/sha256 overwritten from the
+ * ledger; a fixed-file path absent from the base manifest gets a new
+ * minimal record. A media/keepsake reference that was never actually
+ * packaged (status !== 'included', so it has no ledger record at all — a
+ * missing/unreadable/unsupported file) is carried over from the base
+ * manifest completely unchanged, since there are no archived bytes to
+ * describe.
  */
 async function finalizeManifestBytes(env, jobId, ledger) {
   const baseManifest = await getJson(env, stagingKey(jobId, 'derived', 'manifest.json'));
+  const inventoryByPath = new Map((baseManifest.files || []).map((f) => [f.path, f]));
   const ledgerByPath = new Map(ledger.map((r) => [r.path, r]));
-  const files = baseManifest.files.map((f) => {
-    if (f.sha256 || !ledgerByPath.has(f.path)) return f;
-    return { ...f, sha256: ledgerByPath.get(f.path).sha256 };
-  });
+  const files = ledger.map((rec) => ({
+    ...(inventoryByPath.get(rec.path) || { path: rec.path, status: 'included' }),
+    byteLength: rec.byteLength,
+    sha256: rec.sha256,
+  }));
+  for (const f of baseManifest.files || []) {
+    if (!ledgerByPath.has(f.path)) files.push(f); // never packaged (missing/unreadable/unsupported) — kept as-is
+  }
+  files.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   const finalManifest = { ...baseManifest, files };
   const bytes = new TextEncoder().encode(JSON.stringify(finalManifest));
   await env.DOCS.put(stagingKey(jobId, 'derived', 'manifest.json'), bytes);
+  return bytes;
+}
+
+/*
+ * Overwrites the staged "base" integrity-report.html — built, back in
+ * startMultipartStep, from the BASE manifest before packaging had hashed
+ * anything — with a report generated from the manifest.json JUST
+ * finalized one plan-entry earlier by finalizeManifestBytes above. Reads
+ * the finalized manifest straight back out of staging rather than being
+ * passed it directly, since getEntryBytesFor's two branches are otherwise
+ * independent calls with no shared state between them. Before this fix
+ * the report was generated exactly once, before packaging began, so its
+ * displayed checksum/file-count permanently described a manifest that was
+ * never actually the one shipped inside the same archive. Confirmed and
+ * fixed after a PR #9 3rd-review caught it.
+ */
+async function finalizeIntegrityReportBytes(env, jobId) {
+  const manifest = await getJson(env, stagingKey(jobId, 'derived', 'manifest.json'));
+  const manifestChecksum = computeManifestChecksum(manifest);
+  const html = buildIntegrityReportHtml({ manifest, manifestChecksum, generatedAt: manifest.createdAt });
+  const bytes = new TextEncoder().encode(html);
+  await env.DOCS.put(stagingKey(jobId, 'derived', 'reports/integrity-report.html'), bytes);
   return bytes;
 }
 
@@ -851,22 +995,43 @@ export async function verifyArchiveStep(env, { jobId }) {
   }
   const planByPath = new Map(plan.map((p) => [p.path, p]));
   const manifestFilesByPath = new Map((manifest.files || []).map((f) => [f.path, f]));
+  // manifest.json and reports/integrity-report.html are both deliberately
+  // packaged LAST, in that order, and both are inherently self-referential
+  // in a way no ledger entry can resolve: manifest.json cannot list a
+  // sha256 of its own not-yet-written bytes, and integrity-report.html
+  // (packaged one entry AFTER manifest.json specifically so it can
+  // describe the real final manifest) is itself never described BY that
+  // manifest — describing it would mean the manifest needing to already
+  // know the report's hash before the report describing THAT manifest can
+  // even be built. Every OTHER archived file has no such cycle, so this is
+  // where the exemption stops — enforced as a real assertion below rather
+  // than the old soft "IF the manifest happens to have an entry" check,
+  // closing the PR #9 3rd-review finding that a fixed file silently
+  // missing from manifest.files would never have been caught here.
+  const SELF_REFERENTIAL_KINDS = new Set(['manifest', 'integrity-report']);
   for (const rec of ledger) {
     const planEntry = planByPath.get(rec.path);
     if (!planEntry) throw new ArchiveVerificationError(`packaging ledger references "${rec.path}", which is not in the archive plan at all`);
-    // The manifest entry's OWN plan-time byteLength is deliberately just a
-    // placeholder (its true size is only known once every other entry has
-    // been hashed and its content is actually finalized — see
-    // getEntryBytesFor's manifest branch), so it's exempt from this
-    // exact-match check; the central-directory cross-check below (against
-    // the archive's own real, physically-written record) already covers
-    // it meaningfully.
-    if (planEntry.kind !== 'manifest' && planEntry.byteLength != null && rec.byteLength !== planEntry.byteLength) {
+    // manifest.json's and integrity-report.html's OWN plan-time byteLength
+    // are deliberately just placeholders (their true size is only known
+    // once every other entry has been hashed and their content is
+    // actually finalized — see getEntryBytesFor's manifest/integrity-report
+    // branches), so both are exempt from this exact-match check; the
+    // central-directory cross-check below (against the archive's own real,
+    // physically-written record) already covers them meaningfully.
+    if (!SELF_REFERENTIAL_KINDS.has(planEntry.kind) && planEntry.byteLength != null && rec.byteLength !== planEntry.byteLength) {
       throw new ArchiveVerificationError(`"${rec.path}" was packaged as ${rec.byteLength} bytes but the archive plan expected ${planEntry.byteLength}`);
     }
+    if (SELF_REFERENTIAL_KINDS.has(planEntry.kind)) continue;
     const manifestFile = manifestFilesByPath.get(rec.path);
-    if (manifestFile?.sha256 && manifestFile.sha256 !== rec.sha256) {
-      throw new ArchiveVerificationError(`"${rec.path}" was packaged with a different checksum than inventory time computed — the source may have changed mid-export`);
+    if (!manifestFile) {
+      throw new ArchiveVerificationError(`"${rec.path}" was packaged into the archive but has no matching entry in the shipped manifest.json`);
+    }
+    if (manifestFile.sha256 !== rec.sha256) {
+      throw new ArchiveVerificationError(`"${rec.path}" was packaged with a different checksum than the shipped manifest.json recorded — the source may have changed mid-export`);
+    }
+    if (manifestFile.byteLength !== rec.byteLength) {
+      throw new ArchiveVerificationError(`"${rec.path}" was packaged as ${rec.byteLength} bytes but the shipped manifest.json recorded ${manifestFile.byteLength}`);
     }
   }
 
@@ -1004,6 +1169,20 @@ async function abortUploadAndCleanStaging(env, jobId) {
       const upload = env.DOCS.resumeMultipartUpload(checkpoint.key, checkpoint.uploadId);
       await upload.abort();
     } catch { /* best-effort — an already-completed/expired upload can't be aborted, and that's fine */ }
+  }
+  // `abort()` above only ever cleans an IN-PROGRESS multipart upload. Once
+  // completeMultipartStep has already succeeded, the real, complete ZIP
+  // object exists at checkpoint.key — no multipart upload to abort at all
+  // — and a LATER failure (verifyArchiveStep is the realistic case) would
+  // otherwise leave it there forever: archive_r2_key is only ever set once
+  // verification succeeds, so neither expiry (keys off archive_r2_key) nor
+  // the orphan-staging sweep (only ever touches the export-staging/
+  // prefix, never exports/) can discover a completed-but-never-verified
+  // archive to clean it up. Deleting it here — idempotently, whether or
+  // not it actually exists yet — closes that gap. Confirmed and fixed
+  // after a PR #9 re-review caught it.
+  if (checkpoint?.key) {
+    try { await env.DOCS.delete(checkpoint.key); } catch { /* best-effort — nothing to delete either way */ }
   }
   await cleanStagingStep(env, { jobId });
 }
@@ -1252,7 +1431,10 @@ export async function runExportWorkflowSteps(env, step, jobId) {
       await step.do(`v1-resolve-inventory-${i}`, () => resolveInventoryShardStep(env, { jobId, familyId, shardIndex: i }));
       if (await step.do(`v1-check-cancel-inventory-${i}`, () => bail(env, jobId, familyId))) return { cancelled: true };
     }
-    await step.do('v1-resolve-inventory-keepsakes', () => resolveKeepsakesStep(env, { jobId, familyId }));
+    for (let i = 0; i < inventoryPlan.keepsakeShardCount; i++) {
+      await step.do(`v1-resolve-keepsakes-${i}`, () => resolveKeepsakeShardStep(env, { jobId, familyId, shardIndex: i }));
+      if (await step.do(`v1-check-cancel-keepsakes-${i}`, () => bail(env, jobId, familyId))) return { cancelled: true };
+    }
 
     await step.do('v1-start-multipart', () => startMultipartStep(env, { jobId, familyId, family, requestedAs }));
 
