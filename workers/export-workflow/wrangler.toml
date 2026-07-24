@@ -62,7 +62,7 @@ FROM_EMAIL = "hello@myfamilybloodline.com"
 [[d1_databases]]
 binding = "DB"
 database_name = "bloodline"
-database_id = "REPLACE_WITH_REAL_DATABASE_ID"
+database_id = "96e94723-103f-4c4f-a1b0-797810e7dfc9"
 
 [[r2_buckets]]
 binding = "DOCS"
