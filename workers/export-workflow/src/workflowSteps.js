@@ -365,7 +365,10 @@ export async function resolveKeepsakeShardStep(env, { jobId, familyId, shardInde
 
   const personId = personIds[checkpoint.personIndex];
   const prefix = `keepsake/${familyId}/${personId}/`;
-  const listed = await env.DOCS.list({ prefix, cursor: checkpoint.cursor });
+  // R2 rejects `cursor: null`; the field must be absent on the first page
+  // and present only when R2 has returned a string cursor to resume from.
+  const listOptions = checkpoint.cursor ? { prefix, cursor: checkpoint.cursor } : { prefix };
+  const listed = await env.DOCS.list(listOptions);
   const objects = [
     ...checkpoint.objects,
     ...(listed.objects || []).map((o) => ({ key: o.key, byteLength: o.size, etag: o.etag })),

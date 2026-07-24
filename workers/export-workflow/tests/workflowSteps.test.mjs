@@ -433,6 +433,26 @@ await atest('resolveKeepsakeShardStep lists only the exact family/person prefix,
   assert.equal(result.done, true, 'a single object with no pagination needed must resolve in one call');
 });
 
+await atest('resolveKeepsakeShardStep omits the R2 cursor field on the first page', async () => {
+  const { db, env } = makeEnv();
+  const jobId = await seedQueuedJob(env, db);
+  const tree = { people: [{ id: 'p1', display_name: 'James' }], relationships: [] };
+  db.exec(`INSERT INTO family_tree (family_id, tree_json, updated_at) VALUES ('fam_1', '${JSON.stringify(tree)}', 1000)`);
+  await captureSourceStep(env, { jobId, familyId: 'fam_1' });
+  await buildInventoryStep(env, { jobId, familyId: 'fam_1' });
+
+  const realList = env.DOCS.list.bind(env.DOCS);
+  env.DOCS.list = (options) => {
+    if (Object.hasOwn(options, 'cursor') && typeof options.cursor !== 'string') {
+      throw new TypeError("Incorrect type for the 'cursor' field on 'ListOptions'");
+    }
+    return realList(options);
+  };
+
+  const result = await resolveKeepsakeShardStep(env, { jobId, familyId: 'fam_1', shardIndex: 0 });
+  assert.equal(result.done, true);
+});
+
 await atest('resolveKeepsakeShardStep checkpoints across MULTIPLE calls when a person has more Keepsakes than fit in one R2 list() page — the PR #9 re-review pagination finding', async () => {
   const { db, env } = makeEnv();
   const jobId = await seedQueuedJob(env, db);
