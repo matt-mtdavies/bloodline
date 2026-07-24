@@ -28,7 +28,15 @@ export default function ExportArchiveCard({ canPrepare }) {
   const [confirming, setConfirming] = useState(false);
   const [creating, setCreating] = useState(false);
   const [cancelling, setCancelling] = useState(false);
-  const [error, setError] = useState(null); // 'not_configured' | 'generic' | null
+  const [error, setError] = useState(null); // 'not_configured' | 'already_active' | 'generic' | any other server error code | null
+  // Populated only for a code that isn't already_active/not_configured (those
+  // have their own deliberately-written copy below) — the server's own
+  // human-readable message for everything else (rate limits, forbidden,
+  // bad_request, export_failed, ...), so a new server-side error code never
+  // silently renders nothing just because this component hasn't been taught
+  // its exact string yet. See exportService.js's ExportServiceError/
+  // exportErrorResponse — every thrown error already carries this message.
+  const [errorMessage, setErrorMessage] = useState('');
   const [announcement, setAnnouncement] = useState('');
 
   const pollTimerRef = useRef(null);
@@ -126,11 +134,13 @@ export default function ExportArchiveCard({ canPrepare }) {
   async function handlePrepare() {
     setCreating(true);
     setError(null);
+    setErrorMessage('');
     try {
       const res = await fetch('/api/exports', { method: 'POST' });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
         setError(body.error === 'export_already_active' ? 'already_active' : (body.error || 'generic'));
+        setErrorMessage(typeof body.message === 'string' ? body.message : '');
         return;
       }
       setConfirming(false);
@@ -236,7 +246,9 @@ export default function ExportArchiveCard({ canPrepare }) {
       )}
 
       {error === 'already_active' && <p className="ea__hint">An archive is already being prepared for this family.</p>}
-      {error === 'generic' && <p className="ea__err">Something went wrong — please try again.</p>}
+      {error && error !== 'not_configured' && error !== 'already_active' && (
+        <p className="ea__err">{errorMessage || 'Something went wrong — please try again.'}</p>
+      )}
     </div>
   );
 }
