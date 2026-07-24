@@ -128,9 +128,10 @@ multipart corruption, or an expiry/private-download failure.
     FULL_EXPORT_TEST_FAMILY_IDS instead of the general release flag
     (docs/FULL-ARCHIVE-EXPORT-TEST-FAMILY-GATE.md): create a clearly
     named disposable family containing only synthetic data, record
-    its ID privately outside GitHub/AI tools, set
-    FULL_EXPORT_TEST_FAMILY_IDS to that one ID (ENABLE_FULL_EXPORT
-    stays "false"), run the normal owner export lifecycle end-to-end
+    its ID privately outside GitHub/AI tools, set the encrypted Pages
+    secret FULL_EXPORT_TEST_FAMILY_IDS to that one ID (do not add it
+    to wrangler.toml; ENABLE_FULL_EXPORT stays "false"), run the normal
+    owner export lifecycle end-to-end
     and diff the archive's tree.json against a direct API pull, then
     remove the family ID and verify every export route (create,
     history, status, cancel, download) is revoked on the next
@@ -159,13 +160,14 @@ multipart corruption, or an expiry/private-download failure.
 ### Rollback
 
 Disable creation first — this now requires clearing BOTH controls, not
-just one: set `ENABLE_FULL_EXPORT="false"` AND empty
-`FULL_EXPORT_TEST_FAMILY_IDS`. Neither alone is sufficient once both have
+just one: set `ENABLE_FULL_EXPORT="false"` AND delete the encrypted
+`FULL_EXPORT_TEST_FAMILY_IDS` Pages secret. Neither alone is sufficient once both have
 ever been set together — `ENABLE_FULL_EXPORT="false"` no longer stops all
 `POST /api/exports*` calls by itself whenever the test allowlist is still
 non-empty (docs/FULL-ARCHIVE-EXPORT-TEST-FAMILY-GATE.md's whole point is
 that the allowlist keeps working independently of that flag). After
-clearing both, verify by confirming create/list/status/cancel/download all
+clearing both, redeploy Pages if the global flag changed, then verify by
+confirming create/list/status/cancel/download all
 return `export_not_configured` for the family that was previously
 allowlisted, the same revocation check step 8/9 already performs — don't
 just assume clearing the vars took effect. Preserve any already-`ready`

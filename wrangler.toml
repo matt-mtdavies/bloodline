@@ -4,7 +4,7 @@ compatibility_date = "2024-11-01"
 pages_build_output_dir = "dist"
 
 # Non-secret vars. Secrets (BREVO_API_KEY, ANTHROPIC_API_KEY, SESSION_SECRET,
-# FAMILYSEARCH_CLIENT_ID) go in .dev.vars locally and
+# FAMILYSEARCH_CLIENT_ID, FULL_EXPORT_TEST_FAMILY_IDS) go in .dev.vars locally and
 # `wrangler pages secret put` (or Pages dashboard → Settings → Variables) in prod.
 [vars]
 APP_URL = "https://myfamilybloodline.com"  # override locally in .dev.vars
@@ -17,15 +17,10 @@ FROM_EMAIL = "hello@myfamilybloodline.com"
 # legacy fallback, no relationship to the admin-dashboard allowlist.
 ENABLE_FULL_EXPORT = "false"
 EXPORT_ADMIN_EMAILS = ""
-# docs/FULL-ARCHIVE-EXPORT-TEST-FAMILY-GATE.md — a deny-by-default,
-# comma-separated allowlist of EXACT (case-sensitive) family IDs that may
-# use the complete export surface even while ENABLE_FULL_EXPORT is
-# "false", so a single disposable family can run the runbook's synthetic
-# byte-comparison test without broadening access to every family. Kept
-# empty in this committed file; a named operator sets it in Pages →
-# Settings → Environment variables for exactly the disposable family's
-# rollout window (runbook §15 step 8), then clears it again.
-FULL_EXPORT_TEST_FAMILY_IDS = ""
+# FULL_EXPORT_TEST_FAMILY_IDS is a deny-by-default, comma-separated allowlist
+# of exact family IDs for a tightly scoped rollout. It is intentionally not
+# declared here: family IDs are private, so production manages it as an
+# encrypted Pages secret for the rollout window (runbook §15 step 8).
 # FAMILYSEARCH_CLIENT_ID is a secret — set via wrangler pages secret put FAMILYSEARCH_CLIENT_ID
 # Register your app at https://developer.familysearch.org and add this redirect URI:
 #   https://myfamilybloodline.com/fs-callback.html

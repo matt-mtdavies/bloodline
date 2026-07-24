@@ -190,15 +190,17 @@ After implementation is reviewed and deployed:
    information are still current;
 2. create a clearly named disposable family containing only synthetic data;
 3. record its ID privately outside GitHub and AI tools;
-4. set `FULL_EXPORT_TEST_FAMILY_IDS` to that ID in Pages production;
+4. set `FULL_EXPORT_TEST_FAMILY_IDS` to that ID as an encrypted Pages
+   production secret (never commit it to `wrangler.toml`);
 5. keep `ENABLE_FULL_EXPORT=false` and `EXPORT_ADMIN_EMAILS` empty;
 6. run the normal owner export lifecycle and byte comparison;
-7. remove the family ID;
+7. delete the `FULL_EXPORT_TEST_FAMILY_IDS` Pages secret;
 8. verify every export route is revoked for the synthetic family;
 9. preserve required audit evidence, then remove synthetic family content
    only under an explicitly approved cleanup procedure.
 
-Immediate rollback is to empty `FULL_EXPORT_TEST_FAMILY_IDS`. This stops new
+Immediate rollback is to delete the `FULL_EXPORT_TEST_FAMILY_IDS` Pages
+secret. This stops new
 and existing-family access on the next request while preserving job/audit
 records and normal archive expiry. Do not reverse migration `0014` or delete
 audit rows as rollback.
