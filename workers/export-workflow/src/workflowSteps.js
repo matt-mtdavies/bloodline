@@ -430,25 +430,6 @@ async function* bodyToChunks(obj) {
   yield new Uint8Array(buf);
 }
 
-// Wraps a plain async generator/iterable in a real ReadableStream via the
-// underlying-source `pull` contract — the same construction the platform
-// itself uses everywhere (this is just the inverse of bodyToChunks above),
-// so it needs no runtime feature newer than the ReadableStream constructor
-// itself, unlike the newer `ReadableStream.from()` static helper.
-function streamFromAsyncIterable(iterable) {
-  const iterator = iterable[Symbol.asyncIterator]();
-  return new ReadableStream({
-    async pull(controller) {
-      const { value, done } = await iterator.next();
-      if (done) { controller.close(); return; }
-      controller.enqueue(value);
-    },
-    async cancel(reason) {
-      if (typeof iterator.return === 'function') await iterator.return(reason);
-    },
-  });
-}
-
 /*
  * Streams the paged activity-log ndjson shards straight into one
  * `activity-log.json` R2 object as a real ReadableStream — never parsing a
@@ -472,14 +453,8 @@ function streamFromAsyncIterable(iterable) {
  */
 export async function writeActivityLogStream(env, jobId, key) {
   const encoder = new TextEncoder();
-  let totalBytes = 0;
   async function* chunks() {
-    const emit = (s) => {
-      const bytes = encoder.encode(s);
-      totalBytes += bytes.byteLength;
-      return bytes;
-    };
-    yield emit('[');
+    yield encoder.encode('[');
     let first = true;
     for (let i = 0; ; i++) {
       const obj = await env.DOCS.get(stagingKey(jobId, 'activity', `${String(i).padStart(5, '0')}.ndjson`));
@@ -488,14 +463,36 @@ export async function writeActivityLogStream(env, jobId, key) {
       if (!text) continue;
       for (const line of text.split('\n')) {
         if (!line) continue;
-        if (!first) yield emit(',');
-        yield emit(line);
+        if (!first) yield encoder.encode(',');
+        yield encoder.encode(line);
         first = false;
       }
     }
-    yield emit(']');
+    yield encoder.encode(']');
   }
-  await env.DOCS.put(key, streamFromAsyncIterable(chunks()), { httpMetadata: { contentType: 'application/json' } });
+
+  // R2 accepts a ReadableStream only when the runtime knows its exact
+  // length. Measure with one bounded shard-at-a-time pass, then stream the
+  // same bytes through FixedLengthStream on Workers. Tests/Node fall back
+  // to an ordinary TransformStream because their in-memory R2 fake accepts
+  // generic streams and does not provide the Workers-only constructor.
+  let totalBytes = 0;
+  for await (const chunk of chunks()) totalBytes += chunk.byteLength;
+
+  const fixed = typeof FixedLengthStream === 'function'
+    ? new FixedLengthStream(totalBytes)
+    : new TransformStream();
+  const writer = fixed.writable.getWriter();
+  const upload = env.DOCS.put(key, fixed.readable, { httpMetadata: { contentType: 'application/json' } });
+  try {
+    for await (const chunk of chunks()) await writer.write(chunk);
+    await writer.close();
+    await upload;
+  } catch (error) {
+    await writer.abort(error).catch(() => {});
+    await upload.catch(() => {});
+    throw error;
+  }
   return totalBytes;
 }
 
