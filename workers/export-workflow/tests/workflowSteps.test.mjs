@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
+import { createHash } from 'node:crypto';
 import {
   authorizeJobStep, captureSourceStep, readCapturedTree,
   captureActivityBoundStep, captureActivityPageStep,
@@ -156,13 +157,18 @@ function makeR2() {
       if (!o) return null;
       return { size: o.bytes.byteLength, etag: o.etag, httpMetadata: { contentType: 'application/octet-stream' } };
     },
-    async list({ prefix, limit = 1000 }) {
-      const all = [...store.entries()].filter(([k]) => k.startsWith(prefix));
-      const page = all.slice(0, limit);
-      return {
-        objects: page.map(([key, o]) => ({ key, size: o.bytes.byteLength, etag: o.etag })),
-        truncated: all.length > limit,
-      };
+    // Genuinely cursor-paginated (like real R2) — a caller that ignores
+    // `truncated`/`cursor` and only reads one page will get an incomplete
+    // list against this fake too, the same way it silently would against
+    // real R2 with more than one page of objects.
+    async list({ prefix, limit = 1000, cursor }) {
+      const all = [...store.entries()]
+        .filter(([k]) => k.startsWith(prefix))
+        .map(([key, o]) => ({ key, size: o.bytes.byteLength, etag: o.etag }));
+      const startIndex = cursor ? Number(cursor) : 0;
+      const page = all.slice(startIndex, startIndex + limit);
+      const truncated = startIndex + limit < all.length;
+      return { objects: page, truncated, cursor: truncated ? String(startIndex + limit) : undefined };
     },
     async delete(key) { store.delete(key); },
     async createMultipartUpload(key) {
@@ -409,6 +415,27 @@ await atest('resolveKeepsakesStep lists only the exact family/person prefix, nev
   assert.equal(result.keepsakeEntryCount, 1);
 });
 
+await atest('resolveKeepsakesStep pages through ALL editions when a person has more Keepsakes than fit in one R2 list() page — the PR #9 re-review pagination finding', async () => {
+  const { db, env } = makeEnv();
+  const jobId = await seedQueuedJob(env, db);
+  const tree = { people: [{ id: 'p1', display_name: 'James' }], relationships: [] };
+  db.exec(`INSERT INTO family_tree (family_id, tree_json, updated_at) VALUES ('fam_1', '${JSON.stringify(tree)}', 1000)`);
+  await captureSourceStep(env, { jobId, familyId: 'fam_1' });
+
+  // 5 real retained editions for one person — enough to force multiple
+  // pages once list() is artificially limited to 2 per call below (real
+  // R2 caps a single list() response at 1,000 objects, which this
+  // transparently simulates without needing 1,000+ real test objects).
+  for (let i = 0; i < 5; i++) {
+    await env.DOCS.put(`keepsake/fam_1/p1/edition-${i}.json`, JSON.stringify({ narrative: null, editionNumber: i }));
+  }
+  const realList = env.DOCS.list.bind(env.DOCS);
+  env.DOCS.list = (opts) => realList({ ...opts, limit: 2 });
+
+  const result = await resolveKeepsakesStep(env, { jobId, familyId: 'fam_1' });
+  assert.equal(result.keepsakeEntryCount, 5, 'every edition must be found across multiple list() pages, not just the first');
+});
+
 await atest('writeActivityLogStream produces a byte-valid JSON array spanning multiple shards, in order, without ever parsing a row — the PR #9 review finding about full-history in-memory materialization', async () => {
   const { env } = makeEnv();
   const jobId = 'exp_activity_stream_test';
@@ -526,6 +553,7 @@ await atest('the full pipeline produces a valid, verifiable ZIP containing tree.
   // tree-data.js lived at the wrong path (root, not data/) relative to
   // docs/FULL-ARCHIVE-EXPORT.md §3.2's own directory layout.
   assert.deepEqual([...names].sort(), [
+    'README.txt',
     'START-HERE.html',
     'data/activity-log.json',
     'data/content-index.json',
@@ -543,6 +571,7 @@ await atest('the full pipeline produces a valid, verifiable ZIP containing tree.
     'viewer/fonts/hanken-grotesk-latin-600.woff2',
     'viewer/licenses/Fraunces-OFL.txt',
     'viewer/licenses/Hanken-Grotesk-OFL.txt',
+    'viewer/logo.svg',
     'viewer/styles.css',
   ]);
 
@@ -557,7 +586,8 @@ await atest('the full pipeline produces a valid, verifiable ZIP containing tree.
   assert.ok(photoEntry, 'the manifest files list must include the media entry');
   assert.equal(photoEntry.mimeType, 'image/jpeg');
   assert.ok(photoEntry.sha256, 'an embedded data_url photo has a real sha256 available at inventory time and it must survive into the manifest');
-  assert.ok(!('r2Key' in photoEntry) && !('etag' in photoEntry), 'internal storage details must not leak into the manifest');
+  assert.ok('originalReference' in photoEntry, '§3.6 requires "original reference" on every archived binary — a PR #9 re-review finding that this was wrongly dropped');
+  assert.ok(!('r2Key' in photoEntry), 'the raw internal R2 storage key must never leak into the manifest, even though etag/originalReference now do per §3.6');
 
   // The other half of the PR #9 P0 finding: the offline viewer bundle,
   // family.json, and the reports/ folder must genuinely be inside the real
@@ -593,6 +623,38 @@ await atest('the full pipeline produces a valid, verifiable ZIP containing tree.
   // is complete it must equal the real final archive size exactly.
   assert.ok(job.last_heartbeat_at > 0, 'last_heartbeat_at must have been recorded during the pipeline');
   assert.equal(job.processed_bytes, job.archive_bytes, 'processed_bytes must track the real bytes written, matching the final archive size');
+  rmSync(dir, { recursive: true, force: true });
+});
+
+await atest('the manifest packaged INSIDE the archive carries a real, ledger-backed sha256 for an R2-backed photo — the PR #9 re-review finding that only embedded data_url media ever got one', async () => {
+  const { db, env } = makeEnv();
+  const jobId = await seedQueuedJob(env, db);
+  const photoBytes = new Uint8Array([10, 20, 30, 40, 50, 60, 70, 80]);
+  await env.DOCS.put('ph_real123.jpg', photoBytes);
+  const tree = {
+    people: [{ id: 'p1', display_name: 'James', photo: '/api/photos/ph_real123.jpg' }],
+    relationships: [],
+  };
+  db.exec(`INSERT INTO family_tree (family_id, tree_json, updated_at) VALUES ('fam_1', '${JSON.stringify(tree)}', 1000)`);
+
+  const verify = await runFullPipeline(env, db, jobId, 'fam_1');
+  assert.equal(verify.warningCount, 0);
+
+  const archiveObj = await env.DOCS.get(`exports/${jobId}/bloodline-full-archive.zip`);
+  const { dir, file } = toTempFile(new Uint8Array(await archiveObj.arrayBuffer()));
+  const packagedManifest = JSON.parse(extractFromZip(file, 'manifest.json'));
+  const photoEntry = packagedManifest.files.find((f) => f.recordType === 'photo' || f.path.startsWith('photos/'));
+  assert.ok(photoEntry, 'the manifest must list the R2-backed photo');
+  const expectedSha256 = createHash('sha256').update(photoBytes).digest('hex');
+  assert.equal(photoEntry.sha256, expectedSha256, 'the manifest baked into the archive must carry the REAL sha256 of the actual archived bytes, not be silently absent for an R2-backed entry');
+  assert.equal(photoEntry.etag, '"etag-1"', 'the R2 ETag must also survive into the manifest per §3.6');
+
+  // Also prove the packaged manifest.json's OWN checksum (recorded in D1)
+  // matches what's actually inside the archive, not the pre-final "base"
+  // version — the whole point of finalizing it last.
+  const job = db.prepare('SELECT * FROM family_export_job WHERE id = ?').get(jobId);
+  const { computeManifestChecksum } = await import('../src/lib/manifest.js');
+  assert.equal(job.manifest_sha256, computeManifestChecksum(packagedManifest), 'the recorded manifest_sha256 must match the manifest genuinely packaged inside the archive');
   rmSync(dir, { recursive: true, force: true });
 });
 
@@ -661,7 +723,19 @@ await atest('a missing R2 photo becomes a manifest warning, and the job finishes
 await atest('packaging genuinely checkpoints across multiple small steps for a many-file tree, and the resulting archive is still valid', async () => {
   const { db, env } = makeEnv();
   const jobId = await seedQueuedJob(env, db);
-  const people = Array.from({ length: 120 }, (_, i) => ({ id: `p${i}`, display_name: `Person ${i}`, photo: 'data:image/jpeg;base64,YWJj' }));
+  // p0/p1 are real R2-backed photos (sorting first among 'photos/...'
+  // paths, so they're packaged in an EARLY checkpoint — proving their
+  // ledger records survive being resumed across checkpoints all the way
+  // to the manifest finalization at the very end, not just the
+  // same-call case a smaller, single-checkpoint test already covers).
+  const r2PhotoBytes = { p0: new Uint8Array([1, 1, 2, 3]), p1: new Uint8Array([5, 8, 13, 21]) };
+  await env.DOCS.put('ph_p0.jpg', r2PhotoBytes.p0);
+  await env.DOCS.put('ph_p1.jpg', r2PhotoBytes.p1);
+  const people = [
+    { id: 'p0', display_name: 'Person 0', photo: '/api/photos/ph_p0.jpg' },
+    { id: 'p1', display_name: 'Person 1', photo: '/api/photos/ph_p1.jpg' },
+    ...Array.from({ length: 118 }, (_, i) => ({ id: `p${i + 2}`, display_name: `Person ${i + 2}`, photo: 'data:image/jpeg;base64,YWJj' })),
+  ];
   db.exec(`INSERT INTO family_tree (family_id, tree_json, updated_at) VALUES ('fam_1', '${JSON.stringify({ people, relationships: [] })}', 1000)`);
 
   await authorizeJobStep(env, { jobId });
@@ -698,6 +772,17 @@ await atest('packaging genuinely checkpoints across multiple small steps for a m
   const { dir, file } = toTempFile(new Uint8Array(await archiveObj.arrayBuffer()));
   const names = verifyWithUnzip(file);
   assert.equal(names.filter((n) => n.startsWith('photos/')).length, 120);
+
+  // The R2-backed photos packaged in an EARLY checkpoint must still have
+  // their real sha256 in the manifest FINALIZED at the very end — proving
+  // the ledger genuinely survives being resumed across checkpoints all
+  // the way through to manifest finalization, not just within one call.
+  const packagedManifest = JSON.parse(extractFromZip(file, 'manifest.json'));
+  for (const [personId, bytes] of Object.entries(r2PhotoBytes)) {
+    const entry = packagedManifest.files.find((f) => f.id === personId);
+    assert.ok(entry, `manifest must list ${personId}'s photo`);
+    assert.equal(entry.sha256, createHash('sha256').update(bytes).digest('hex'), `${personId}'s photo sha256 must survive across a checkpoint boundary into the finalized manifest`);
+  }
   rmSync(dir, { recursive: true, force: true });
 });
 
@@ -829,6 +914,47 @@ await atest('runExportWorkflowSteps leaves an unclassified error as export_faile
   assert.equal(job.error_code, 'export_failed');
 });
 
+await atest('runExportWorkflowSteps aborts the in-progress multipart upload and cleans staging on a failure AFTER v1-start-multipart — the PR #9 re-review cleanup finding', async () => {
+  const { db, env } = makeEnv();
+  const jobId = await seedQueuedJob(env, db);
+  const tree = { people: [{ id: 'p1', display_name: 'James', photo: 'data:image/jpeg;base64,YWJj' }], relationships: [] };
+  db.exec(`INSERT INTO family_tree (family_id, tree_json, updated_at) VALUES ('fam_1', '${JSON.stringify(tree)}', 1000)`);
+
+  // Track every multipart upload actually created, since a real abort()
+  // removes its entry from the fake's own bookkeeping map — proving the
+  // cleanup ran means proving the map is now EMPTY of an id we confirmed
+  // was really created, not just checking an already-vanished record.
+  const createdUploadIds = [];
+  const realCreateMultipartUpload = env.DOCS.createMultipartUpload.bind(env.DOCS);
+  env.DOCS.createMultipartUpload = async (key) => {
+    const upload = await realCreateMultipartUpload(key);
+    createdUploadIds.push(upload.uploadId);
+    return upload;
+  };
+
+  // Fail the FIRST packaging checkpoint — deliberately AFTER
+  // v1-start-multipart has already created a real multipart upload and
+  // staged content, exactly the scenario the previous fix's cleanup gap
+  // left behind (only the disabled 7-day orphan sweep would ever have
+  // caught it).
+  const throwingStep = {
+    async do(name, fn) {
+      if (name === 'v1-package-0') throw new Error('simulated mid-packaging failure');
+      return fn();
+    },
+  };
+  await assert.rejects(() => runExportWorkflowSteps(env, throwingStep, jobId), /simulated mid-packaging failure/);
+
+  const job = db.prepare('SELECT * FROM family_export_job WHERE id = ?').get(jobId);
+  assert.equal(job.status, 'failed');
+
+  assert.equal(createdUploadIds.length, 1, 'a multipart upload must have actually been created for this to be a meaningful test');
+  assert.equal(env.DOCS.multipartUploads.has(createdUploadIds[0]), false, 'the in-progress multipart upload must be aborted (removed), not left open indefinitely');
+
+  const remainingStaging = await env.DOCS.list({ prefix: `export-staging/${jobId}/` });
+  assert.equal(remainingStaging.objects.length, 0, 'staging must be fully cleaned up after a terminal failure, not left for the 7-day orphan sweep');
+});
+
 await atest('sendCompletionEmailStep is best-effort: a missing recipient is reported, not thrown', async () => {
   const { env } = makeEnv();
   const result = await sendCompletionEmailStep(env, { jobId: 'exp_x', toEmail: null, requestedAs: 'owner', appUrl: 'https://example.test' });
@@ -942,6 +1068,26 @@ await atest('reconcileStaleJobs leaves a recently-active job alone', async () =>
   db.exec(`UPDATE family_export_job SET status='packaging', started_at=${recentSec}, last_heartbeat_at=${recentSec} WHERE id='${jobId}'`);
   const result = await reconcileStaleJobs(env, { now });
   assert.equal(result.reconciledCount, 0);
+});
+
+await atest('reconcileStaleJobs completes a STALLED cancelling job to cancelled, never to failed — the PR #9 re-review illegal-transition finding', async () => {
+  const { db, env } = makeEnv();
+  const jobId = await seedQueuedJob(env, db);
+  const now = Date.now();
+  const staleSec = Math.floor((now - 40 * 60 * 1000) / 1000);
+  db.exec(`UPDATE family_export_job SET status='cancelling', started_at=${staleSec}, last_heartbeat_at=${staleSec} WHERE id='${jobId}'`);
+  // A real in-progress multipart upload + staging, exactly like a job that
+  // stalled mid-cleanup would have left behind — reconciliation must
+  // finish the SAME abort+cleanup handleCancellation itself does, not
+  // silently ignore it or (the actual bug) force it to 'failed'.
+  const upload = await env.DOCS.createMultipartUpload(`exports/${jobId}/bloodline-full-archive.zip`);
+  await env.DOCS.put(`export-staging/${jobId}/checkpoint.json`, JSON.stringify({ uploadId: upload.uploadId, key: upload.key }));
+
+  const result = await reconcileStaleJobs(env, { now });
+  assert.equal(result.reconciledCount, 1);
+  const job = db.prepare('SELECT * FROM family_export_job WHERE id = ?').get(jobId);
+  assert.equal(job.status, 'cancelled', 'a stalled cancelling job must complete to cancelled, never failed');
+  assert.notEqual(job.status, 'failed');
 });
 
 await atest('sweepOrphanStaging aborts an old orphaned multipart upload and deletes its staging', async () => {

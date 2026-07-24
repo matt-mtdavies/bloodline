@@ -285,9 +285,23 @@ export async function resolveInventoryShardStep(env, { jobId, familyId, shardInd
 export async function resolveKeepsakesStep(env, { jobId, familyId }) {
   await touchHeartbeat(env, jobId);
   const tree = await readCapturedTree(env, jobId);
+  // R2 list() is itself paginated (at most 1,000 objects per response) —
+  // a person with more retained Keepsake editions than one page would
+  // otherwise have the remainder silently dropped, producing a "ready"
+  // archive missing content, exactly what the full-extract guarantee
+  // exists to rule out. Confirmed and fixed after a PR #9 re-review caught
+  // it (the earlier fix only ever read the first page and ignored
+  // `truncated`/`cursor`).
   const listPrefix = async (prefix) => {
-    const listed = await env.DOCS.list({ prefix });
-    return Promise.all((listed.objects || []).map(async (o) => {
+    const allObjects = [];
+    let cursor;
+    for (;;) {
+      const listed = await env.DOCS.list({ prefix, cursor });
+      allObjects.push(...(listed.objects || []));
+      if (!listed.truncated) break;
+      cursor = listed.cursor;
+    }
+    return Promise.all(allObjects.map(async (o) => {
       const obj = await env.DOCS.get(o.key);
       return { key: o.key, byteLength: o.size, etag: o.etag, body: obj ? await obj.text() : null };
     }));
@@ -499,14 +513,19 @@ export async function startMultipartStep(env, { jobId, familyId, family, request
     counts: { people: (tree.people || []).length, media: mediaEntries.length, keepsakes: keepsakeEntries.length },
     totalBytes: mediaEntries.reduce((n, e) => n + (e.byteLength || 0), 0),
     // Preserves the real, already-computed per-entry metadata resolveEntry/
-    // buildKeepsakeInventory produced (mimeType, byteLength, a real sha256
-    // when one was computable at inventory time, the warning reason) —
-    // before this fix this reduced every entry down to just
-    // `{path, id, status}`, silently discarding data the manifest is
-    // supposed to actually carry. Deliberately excludes internal-only
-    // fields (`etag`, `r2Key`, the full embedded Keepsake `edition` body,
-    // `originalReference`) that either leak storage internals or duplicate
-    // data already present elsewhere in the archive.
+    // buildKeepsakeInventory produced — before this fix this reduced every
+    // entry down to just `{path, id, status}`, silently discarding data the
+    // manifest is supposed to actually carry.
+    // §3.6 requires "original reference" and "R2 ETag when available" on
+    // every archived binary alongside path/id/mimeType/byteLength/sha256/
+    // status — an earlier pass excluded both as "internal storage
+    // details," which was wrong: the spec explicitly calls for them (the
+    // archive's own manifest is meant to let a reader trace exactly what
+    // in the original tree each file came from), and the reviewer caught
+    // that omission. `r2Key`/the full embedded Keepsake `edition` body are
+    // still excluded — neither is spec'd, and the keepsake edition JSON is
+    // already a real file elsewhere in the archive, so duplicating it
+    // inline here would just be redundant, not more complete.
     files: [...mediaEntries, ...keepsakeEntries].map((e) => ({
       path: e.path,
       id: e.id,
@@ -515,6 +534,8 @@ export async function startMultipartStep(env, { jobId, familyId, family, request
       ...(e.mimeType ? { mimeType: e.mimeType } : {}),
       ...(e.byteLength != null ? { byteLength: e.byteLength } : {}),
       ...(e.sha256 ? { sha256: e.sha256 } : {}),
+      ...(e.etag ? { etag: e.etag } : {}),
+      ...(e.originalReference ? { originalReference: e.originalReference } : {}),
       ...(e.warning ? { warning: e.warning } : {}),
     })),
     warnings,
@@ -561,13 +582,16 @@ export async function startMultipartStep(env, { jobId, familyId, family, request
   // so getEntryBytesFor (below) can fetch ANY of them back through one
   // generic lookup keyed by the entry's own real archive path — adding a
   // new fixed file here never means touching that lookup separately.
+  // manifest.json is deliberately NOT in this list — see manifestFile
+  // below and buildArchivePlan's own comment for why it's packaged LAST,
+  // after every other entry, instead of taking its place in the normal
+  // lexical sort.
   const fixedFileSpecs = [
     { path: treeJsonArchivePath, content: treeJson, compress: 'deflate-raw' },
     { path: activityLogArchivePath, byteLength: activityLogByteLength }, // already streamed directly to its staging key above
     { path: contentIndexArchivePath, content: contentIndexJson, compress: 'deflate-raw' },
     { path: treeDataArchivePath, content: treeDataJs, compress: 'deflate-raw' },
     { path: familyJsonArchivePath, content: familyJson, compress: 'deflate-raw' },
-    { path: manifestArchivePath, content: manifestJson, compress: 'deflate-raw' },
     { path: missingFilesArchivePath, content: missingFilesText, compress: 'deflate-raw' },
     { path: integrityReportArchivePath, content: integrityReportHtml, compress: 'deflate-raw' },
     ...administrationFiles,
@@ -586,7 +610,30 @@ export async function startMultipartStep(env, { jobId, familyId, family, request
     fixedFiles.push({ path: spec.path, byteLength: bytes.byteLength, compress: spec.compress });
   }
 
-  const plan = buildArchivePlan({ fixedFiles, mediaEntries, keepsakeEntries });
+  // The manifest's BASE bytes (correct status/counts/warnings/etag/
+  // originalReference for every entry, but only a sha256 for entries
+  // resolveEntry already knew one for at inventory time — an embedded
+  // data_url, never an R2-backed photo/document/Keepsake) are staged now.
+  // packageStep finalizes this into the REAL, ledger-backed manifest
+  // (every entry's TRUE streamed sha256, not just the ones knowable up
+  // front) the moment packaging is actually about to write it — which,
+  // since it's forced to be the LAST plan entry, is only once every other
+  // entry has already been hashed. See packageStep's own comment.
+  const manifestBaseBytes = new TextEncoder().encode(manifestJson);
+  await env.DOCS.put(derivedKeyFor(manifestArchivePath), manifestBaseBytes);
+  // This is only a PLACEHOLDER byteLength — packageStep overwrites it with
+  // the true final size (which ZipStreamWriter requires to match EXACTLY)
+  // the moment it finalizes the manifest, right before actually packaging
+  // it. Using the base version's own real length here (not a guess) keeps
+  // assertNotOverSegmentedExportBoundary's projection sane in the
+  // meantime — the eventual real size only grows by a handful of sha256
+  // hex strings, negligible next to the archive's total projected size.
+  const manifestByteLengthEstimate = manifestBaseBytes.byteLength;
+
+  const plan = buildArchivePlan({
+    fixedFiles, mediaEntries, keepsakeEntries,
+    manifestFile: { path: manifestArchivePath, byteLength: manifestByteLengthEstimate, compress: 'deflate-raw' },
+  });
   assertNotOverSegmentedExportBoundary(plan); // throws requires_segmented_export if over budget
 
   const byPath = await buildByPathIndex(env, jobId, shardCount);
@@ -605,13 +652,17 @@ export async function startMultipartStep(env, { jobId, familyId, family, request
   ).bind(plan.length, manifest.totalBytes, jobId).run();
   await applyJobTransition(env, { jobId, fromStatuses: ['inventory'], toStatus: 'packaging' });
 
-  return { entryCount: plan.length, totalBytes: manifest.totalBytes, manifestChecksum };
+  // manifestChecksum is deliberately NOT returned here — the manifest
+  // staged above is only the BASE version; verifyArchiveStep computes the
+  // real, authoritative checksum from the truly final (ledger-enriched)
+  // manifest once packaging has actually produced it.
+  return { entryCount: plan.length, totalBytes: manifest.totalBytes };
 }
 
 // ── repeated Step 8: v1-package-{checkpoint} ────────────────────────────
 
 async function getEntryBytesFor(env, jobId, byPath) {
-  return async (entry) => {
+  return async (entry, ledgerSoFar) => {
     // Every fixed (non-media) entry — tree.json, activity-log.json,
     // content-index.json, tree-data.js, family.json, manifest.json,
     // reports/*, the whole viewer/ bundle, administration/* — was staged
@@ -622,6 +673,16 @@ async function getEntryBytesFor(env, jobId, byPath) {
     // the viewer/family.json/reports/administration files never appeared
     // anywhere in the packaged ZIP because nothing here knew to look for
     // them, even where the fixedFiles plan itself listed them).
+    if (entry.kind === 'manifest') {
+      // Finalized HERE, at the exact moment packaging is actually about
+      // to write it — `ledgerSoFar` (threaded through by runPackagingStep)
+      // is genuinely complete at this point, since the manifest is always
+      // forced to be the plan's LAST entry. Always returns a single,
+      // fully-materialized chunk (never a lazy stream) — runPackagingStep
+      // relies on that to learn the real byte length before addEntry.
+      const finalBytes = await finalizeManifestBytes(env, jobId, ledgerSoFar || []);
+      return [finalBytes];
+    }
     if (entry.kind === 'fixed') {
       const obj = await env.DOCS.get(stagingKey(jobId, 'derived', entry.path));
       if (!obj) throw new Error(`fixed archive entry "${entry.path}" is missing from staging at packaging time`);
@@ -639,6 +700,32 @@ async function getEntryBytesFor(env, jobId, byPath) {
     if (!obj) throw new Error(`archive entry "${entry.path}" resolved to a missing R2 object at packaging time`);
     return bodyToChunks(obj);
   };
+}
+
+/*
+ * Overwrites the staged "base" manifest.json (correct status/counts/
+ * warnings/etag/originalReference, but only a sha256 for entries
+ * resolveEntry already knew one for at inventory time) with the TRUE
+ * final version — every entry's real, ledger-backed sha256 filled in —
+ * and returns the finalized bytes. Before this fix, R2-backed photos/
+ * documents/Keepsakes had NO sha256 anywhere in the shipped archive (only
+ * embedded data_url media did, since that's the only case resolveEntry
+ * can compute a hash for before packaging even starts); verification also
+ * only ever checked the transient staging ledger, which cleanup deletes,
+ * so the downloaded archive itself could never prove the bytes it
+ * contained. Confirmed and fixed after a PR #9 re-review caught it.
+ */
+async function finalizeManifestBytes(env, jobId, ledger) {
+  const baseManifest = await getJson(env, stagingKey(jobId, 'derived', 'manifest.json'));
+  const ledgerByPath = new Map(ledger.map((r) => [r.path, r]));
+  const files = baseManifest.files.map((f) => {
+    if (f.sha256 || !ledgerByPath.has(f.path)) return f;
+    return { ...f, sha256: ledgerByPath.get(f.path).sha256 };
+  });
+  const finalManifest = { ...baseManifest, files };
+  const bytes = new TextEncoder().encode(JSON.stringify(finalManifest));
+  await env.DOCS.put(stagingKey(jobId, 'derived', 'manifest.json'), bytes);
+  return bytes;
 }
 
 export async function packageStep(env, { jobId }) {
@@ -767,7 +854,14 @@ export async function verifyArchiveStep(env, { jobId }) {
   for (const rec of ledger) {
     const planEntry = planByPath.get(rec.path);
     if (!planEntry) throw new ArchiveVerificationError(`packaging ledger references "${rec.path}", which is not in the archive plan at all`);
-    if (planEntry.byteLength != null && rec.byteLength !== planEntry.byteLength) {
+    // The manifest entry's OWN plan-time byteLength is deliberately just a
+    // placeholder (its true size is only known once every other entry has
+    // been hashed and its content is actually finalized — see
+    // getEntryBytesFor's manifest branch), so it's exempt from this
+    // exact-match check; the central-directory cross-check below (against
+    // the archive's own real, physically-written record) already covers
+    // it meaningfully.
+    if (planEntry.kind !== 'manifest' && planEntry.byteLength != null && rec.byteLength !== planEntry.byteLength) {
       throw new ArchiveVerificationError(`"${rec.path}" was packaged as ${rec.byteLength} bytes but the archive plan expected ${planEntry.byteLength}`);
     }
     const manifestFile = manifestFilesByPath.get(rec.path);
@@ -897,7 +991,13 @@ export async function isCancellationRequested(env, jobId) {
  * audit entry. Never retried past this point; the caller's run() should
  * return immediately afterward.
  */
-export async function handleCancellation(env, { jobId, familyId }) {
+// Shared by handleCancellation and (below) the top-level failure handler:
+// aborts whatever in-progress multipart upload the job's checkpoint still
+// references, then removes every staged object for it. Best-effort by
+// design (an already-completed/expired upload simply can't be aborted,
+// and that's fine) — neither caller can afford this to throw and mask the
+// real reason the job is ending.
+async function abortUploadAndCleanStaging(env, jobId) {
   const checkpoint = await getJson(env, stagingKey(jobId, 'checkpoint.json'));
   if (checkpoint?.uploadId) {
     try {
@@ -906,6 +1006,10 @@ export async function handleCancellation(env, { jobId, familyId }) {
     } catch { /* best-effort — an already-completed/expired upload can't be aborted, and that's fine */ }
   }
   await cleanStagingStep(env, { jobId });
+}
+
+export async function handleCancellation(env, { jobId, familyId }) {
+  await abortUploadAndCleanStaging(env, jobId);
   await applyJobTransition(env, {
     jobId, fromStatuses: ['cancelling'], toStatus: 'cancelled',
     fields: { cancelled_at: Math.floor(Date.now() / 1000) },
@@ -960,7 +1064,7 @@ export async function expireReadyJobs(env, { now = Date.now(), limit = EXPIRY_PA
 export async function reconcileStaleJobs(env, { now = Date.now(), limit = EXPIRY_PAGE_LIMIT } = {}) {
   const staleBefore = Math.floor((now - STALE_HEARTBEAT_MS) / 1000);
   const { results } = await env.DB.prepare(
-    `SELECT id, family_id FROM family_export_job
+    `SELECT id, family_id, status FROM family_export_job
       WHERE status IN ('queued', 'snapshotting', 'inventory', 'packaging', 'verifying', 'cancelling')
         AND COALESCE(last_heartbeat_at, started_at, created_at) < ?
       LIMIT ?`,
@@ -968,8 +1072,27 @@ export async function reconcileStaleJobs(env, { now = Date.now(), limit = EXPIRY
 
   let reconciledCount = 0;
   for (const job of results || []) {
+    if (job.status === 'cancelling') {
+      // The state graph only allows cancelling -> cancelled — never
+      // -> failed. A stalled cancellation (the Workflow instance running
+      // it died mid-cleanup) must finish the SAME way a live
+      // cancellation does: abort any in-progress multipart upload, clean
+      // staging, and complete the transition to 'cancelled' with an audit
+      // entry — not be force-failed. The previous version of this loop
+      // passed 'cancelling' in the SAME fromStatuses list as the other
+      // (legally failable) statuses for a single `-> failed` transition;
+      // transitionJobStatements' validation only required at least one
+      // candidate to support the destination, so this passed validation
+      // while the raw `WHERE status IN (...)` SQL could still match a
+      // genuinely-cancelling row and illegally flip it to 'failed'.
+      // Confirmed and fixed after a PR #9 re-review caught it (paired
+      // with tightening that validation itself — see transitionJobStatements).
+      await handleCancellation(env, { jobId: job.id, familyId: job.family_id });
+      reconciledCount += 1;
+      continue;
+    }
     const { applied } = await applyJobTransition(env, {
-      jobId: job.id, fromStatuses: ['queued', 'snapshotting', 'inventory', 'packaging', 'verifying', 'cancelling'], toStatus: 'failed',
+      jobId: job.id, fromStatuses: ['queued', 'snapshotting', 'inventory', 'packaging', 'verifying'], toStatus: 'failed',
       fields: { error_code: 'workflow_stalled', error_summary: capSummary('no heartbeat for over 30 minutes') },
       audit: { familyId: job.family_id, event: 'failed', actorAuthority: 'system' },
     });
@@ -1067,6 +1190,18 @@ function classifyFailureCode(error) {
  * try/catch): recording a failure must never suppress or replace the
  * ORIGINAL error, which the caller re-throws regardless of whether this
  * succeeds.
+ *
+ * Also aborts any in-progress multipart upload and removes staging for the
+ * job, as a SEPARATE durable step. Before this fix, a failure after
+ * v1-start-multipart left an open multipart upload and every staged object
+ * behind indefinitely — only the 7-day orphan sweep (itself shipped with
+ * its cron disabled, per the rollout runbook) would eventually clean it up,
+ * meaning a real, un-cancelled export could sit there abandoned for a full
+ * week. Confirmed and fixed after a PR #9 re-review caught it — reuses the
+ * exact same abortUploadAndCleanStaging helper handleCancellation already
+ * uses for the equivalent cancellation path, so there's one implementation
+ * of "stop whatever multipart upload is in flight and clean up after it,"
+ * not two.
  */
 async function recordWorkflowFailure(env, step, jobId, error) {
   try {
@@ -1081,6 +1216,13 @@ async function recordWorkflowFailure(env, step, jobId, error) {
       return { recorded: true };
     });
   } catch { /* best-effort — see comment above; the original error still propagates either way */ }
+
+  try {
+    await step.do('v1-cleanup-on-failure', async () => {
+      await abortUploadAndCleanStaging(env, jobId);
+      return { cleaned: true };
+    });
+  } catch { /* best-effort — a failed cleanup must never mask the original error either */ }
 }
 
 export async function runExportWorkflowSteps(env, step, jobId) {

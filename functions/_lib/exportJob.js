@@ -141,23 +141,68 @@ function buildAuditInsertStatement(env, {
 }
 
 /*
- * Builds the [UPDATE job, INSERT audit] pair for an ordinary lifecycle
- * transition. The UPDATE is an atomic conditional write — `WHERE id = ? AND
- * status IN (fromStatuses)` — the same optimistic-concurrency shape
- * treeStore.js#casUpdateTree already uses: if the job moved to some other
- * status since the caller last read it (a race with the Workflow, or a
- * second cancel request), `meta.changes` on the result is 0 and the caller
- * treats that as "the transition didn't apply," not as license to retry
- * blindly. Throws synchronously (before any I/O) if `toStatus` is not a
- * legal destination from ANY of `fromStatuses` — a programmer error, not a
- * race, so it never becomes a silent 0-row update.
+ * The audit-INSERT half of a lifecycle transition, made conditional via
+ * `INSERT ... SELECT ... WHERE EXISTS (...)` instead of an unconditional
+ * VALUES insert — the same `status IN (fromStatuses)` precondition the
+ * transition's own UPDATE checks, so the two statements agree on whether
+ * the transition is legal to apply at all. Deliberately checks
+ * family_export_job's CURRENT (pre-transition) status: this statement runs
+ * BEFORE the UPDATE in the same atomic batch (see transitionJobStatements),
+ * so `family_export_job` hasn't been touched yet when this EXISTS check
+ * runs — if it ran after the UPDATE instead, it would see the row already
+ * sitting at `toStatus` (never itself one of `fromStatuses` in this state
+ * graph) and incorrectly skip the audit for a transition that DID apply.
+ */
+function buildConditionalAuditInsertStatement(env, {
+  jobId, familyId, actorUserId = null, actorEmailSnapshot = null, actorAuthority = null,
+  event, reason = null, now = Date.now(), fromStatuses,
+}) {
+  const placeholders = fromStatuses.map(() => '?').join(', ');
+  return env.DB.prepare(
+    `INSERT INTO family_export_audit
+       (id, job_id, family_id, actor_user_id, actor_email_snapshot, actor_authority, event, reason, created_at)
+     SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?
+     WHERE EXISTS (SELECT 1 FROM family_export_job WHERE id = ? AND status IN (${placeholders}))`,
+  ).bind(
+    uid('expa_'), jobId, familyId, actorUserId, actorEmailSnapshot, actorAuthority, event, capSummary(reason), Math.floor(now / 1000),
+    jobId, ...fromStatuses,
+  );
+}
+
+/*
+ * Builds the [conditional INSERT audit, UPDATE job] pair for an ordinary
+ * lifecycle transition — audit statement FIRST (see
+ * buildConditionalAuditInsertStatement's own comment for why the order
+ * matters), the conditional UPDATE always last. The UPDATE is an atomic
+ * conditional write — `WHERE id = ? AND status IN (fromStatuses)` — the
+ * same optimistic-concurrency shape treeStore.js#casUpdateTree already
+ * uses: if the job moved to some other status since the caller last read
+ * it (a race with the Workflow, or a second cancel request), `meta.changes`
+ * on the result is 0 and the caller treats that as "the transition didn't
+ * apply," not as license to retry blindly. Both statements are run through
+ * ONE `env.DB.batch()` call by applyJobTransition below — batch() is
+ * atomic (all-or-nothing, per D1's own documented guarantee), so there is
+ * no window where one half commits without the other, whichever direction
+ * that would go wrong in. Throws synchronously (before any I/O) if
+ * `toStatus` is not a legal destination from EVERY status in
+ * `fromStatuses` — a programmer error, not a race, so it never becomes a
+ * silent 0-row update. This used to accept a "mixed" list where only SOME
+ * entries could legally reach toStatus (`.some()`, not `.every()`) — which
+ * let a caller pass, say, `['queued', ..., 'cancelling']` for a `-> failed`
+ * transition: the validation passed because queued/etc. really can fail,
+ * but the same SQL `WHERE status IN (...)` would ALSO match a row that's
+ * actually 'cancelling' and illegally flip it straight to 'failed' (the
+ * state graph only allows cancelling -> cancelled). Confirmed and fixed
+ * after a PR #9 re-review caught the real instance of this in
+ * reconcileStaleJobs.
  */
 export function transitionJobStatements(env, {
   jobId, fromStatuses, toStatus, now = Date.now(), fields = {}, audit,
 }) {
   const froms = Array.isArray(fromStatuses) ? fromStatuses : [fromStatuses];
-  if (!froms.some((f) => canTransition(f, toStatus))) {
-    throw new Error(`illegal transition to "${toStatus}" from [${froms.join(', ')}]`);
+  const illegal = froms.filter((f) => !canTransition(f, toStatus));
+  if (illegal.length > 0) {
+    throw new Error(`illegal transition to "${toStatus}" from [${illegal.join(', ')}] (within fromStatuses [${froms.join(', ')}])`);
   }
   const setCols = { status: toStatus, ...fields };
   const setSql = Object.keys(setCols).map((k) => `${k} = ?`).join(', ');
@@ -167,46 +212,40 @@ export function transitionJobStatements(env, {
     `UPDATE family_export_job SET ${setSql} WHERE id = ? AND status IN (${placeholders})`,
   ).bind(...setVals, jobId, ...froms);
 
-  const statements = [updateStmt];
+  const statements = [];
   if (audit) {
-    statements.push(buildAuditInsertStatement(env, { jobId, now, ...audit }));
+    statements.push(buildConditionalAuditInsertStatement(env, { jobId, now, fromStatuses: froms, ...audit }));
   }
+  statements.push(updateStmt);
   return statements;
 }
 
 /*
- * Runs the conditional UPDATE, and ONLY IF it actually matched a row, runs
- * the audit INSERT as a separate follow-up statement — never both in one
- * `env.DB.batch()` call. Batching them together (an earlier version's
- * approach) is wrong: D1's batch() runs every statement in the array
- * regardless of an earlier one's row count, so a 0-row UPDATE (a retried/
- * duplicate cancel, or a Workflow step replayed after its own D1 write
- * already committed) still unconditionally inserted a phantom audit event
- * for a transition that never actually happened — confirmed and fixed
- * after a PR #9 review caught it. The remaining, accepted gap this trades
- * for: a crash between the two calls leaves a real state change with no
- * audit row, rather than risking a fake audit row for no state change —
- * the audit trail is for observability/compliance, not a source of truth
- * the state machine itself depends on, so silence is the safer failure
- * mode of the two.
+ * Runs the transition's statements as ONE atomic `env.DB.batch()` call —
+ * genuinely all-or-nothing, unlike an earlier version of this function
+ * that ran the UPDATE and audit INSERT as two SEPARATE sequential `.run()`
+ * calls specifically to stop a 0-row UPDATE from still inserting a
+ * phantom audit row. That fix traded one bug for another: a crash (or a
+ * failed second call) between the two left a REAL state change with NO
+ * audit row at all — a genuine accountability gap for administrator
+ * export/cancel/download actions. Both problems are solved together now:
+ * the audit INSERT is itself made conditional via `WHERE EXISTS (...)`
+ * (see buildConditionalAuditInsertStatement), so batching it with the
+ * UPDATE in one atomic call can no longer produce a phantom audit row
+ * for a transition that didn't apply, NOR leave a real transition
+ * unaudited — both statements commit together or neither does. Confirmed
+ * and fixed after a PR #9 re-review caught the split-call gap.
  *
- * Callers that need to batch the transition alongside OTHER statements
- * (e.g. the Workflow's own R2 checkpoint bookkeeping) should call
- * transitionJobStatements directly for the UPDATE's shape, but must apply
- * this same conditional-audit rule themselves rather than batching blindly.
+ * The UPDATE is always the LAST statement transitionJobStatements
+ * returns (audit conditionally first) — reading `results[length - 1]`
+ * for its own `meta.changes` is what `applied` is based on, regardless of
+ * whether an audit statement was included.
  */
 export async function applyJobTransition(env, args) {
   const statements = transitionJobStatements(env, args);
-  const updateStmt = statements[0];
-  const auditStmt = statements[1]; // undefined when the caller passed no `audit`
-
-  const updateResult = await updateStmt.run();
+  const results = await env.DB.batch(statements);
+  const updateResult = results[results.length - 1];
   const changes = updateResult?.meta?.changes ?? updateResult?.changes ?? 0;
-  const results = [updateResult];
-
-  if (changes > 0 && auditStmt) {
-    results.push(await auditStmt.run());
-  }
   return { applied: changes > 0, results };
 }
 

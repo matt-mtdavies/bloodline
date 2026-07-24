@@ -248,14 +248,20 @@ await atest('a replayed transition (prior transition already committed) inserts 
 
   // Replay the exact same queued -> snapshotting transition (e.g. a retried
   // Workflow step after its own D1 write already committed). The job is no
-  // longer "queued", so the UPDATE must match 0 rows — and, per the fix,
-  // the audit INSERT must never run at all, not just be attempted twice.
+  // longer "queued", so BOTH statements in the atomic batch must match 0
+  // rows — the conditional audit INSERT's own WHERE EXISTS checks the SAME
+  // pre-transition status the UPDATE's WHERE clause does, so it correctly
+  // no-ops right alongside it in the same batch (not skipped entirely —
+  // see applyJobTransition's own header comment on why both statements
+  // always run together now, atomically, rather than the audit being
+  // conditionally SKIPPED as a separate follow-up call).
   const replay = await applyJobTransition(env, {
     jobId, fromStatuses: ['queued'], toStatus: 'snapshotting', fields: { started_at: 9999 },
     audit: { familyId: 'fam_1', event: 'started', actorAuthority: 'system' },
   });
   assert.equal(replay.applied, false);
-  assert.equal(replay.results.length, 1, 'the audit statement must not even be run when the UPDATE matched 0 rows');
+  assert.equal(replay.results.length, 2, 'both statements run together in one atomic batch');
+  assert.equal(replay.results[0].meta.changes, 0, 'the conditional audit INSERT must match 0 rows on a replay, same as the UPDATE');
 
   const job = readJob(db, jobId);
   assert.equal(job.started_at, 2000, 'the replayed UPDATE must not have overwritten the real transition either');
@@ -263,6 +269,35 @@ await atest('a replayed transition (prior transition already committed) inserts 
     db.prepare('SELECT COUNT(*) AS c FROM family_export_audit WHERE job_id = ?').get(jobId).c,
     2,
     'no phantom third audit row for a transition that never actually happened',
+  );
+});
+
+await atest('an audit-write failure rolls back the WHOLE transition atomically — no partial state, the exact PR #9 re-review atomicity finding', async () => {
+  const db = makeDb();
+  const d1 = makeD1(db);
+  const env = { DB: d1 };
+  const { jobId, statements } = createExportJobStatements(env, { familyId: 'fam_1', requestedByUserId: 'user_1', requestedAs: 'owner' });
+  await d1.batch(statements);
+
+  // An earlier split-call design could leave the UPDATE committed with no
+  // audit row at all if the second call failed or the Worker died between
+  // them — a real accountability gap for administrator export/cancel/
+  // download actions. Forcing the audit INSERT to violate the real
+  // family_export_audit.event CHECK constraint proves the new atomic
+  // batch has no such window: either BOTH statements commit, or NEITHER
+  // does.
+  await assert.rejects(() => applyJobTransition(env, {
+    jobId, fromStatuses: ['queued'], toStatus: 'snapshotting', fields: { started_at: 2000 },
+    audit: { familyId: 'fam_1', event: 'not_a_real_event', actorAuthority: 'system' },
+  }));
+
+  const job = readJob(db, jobId);
+  assert.equal(job.status, 'queued', 'the UPDATE must not have applied either — the batch is all-or-nothing');
+  assert.equal(job.started_at, null);
+  assert.equal(
+    db.prepare('SELECT COUNT(*) AS c FROM family_export_audit WHERE job_id = ?').get(jobId).c,
+    1,
+    'only the original "requested" row — no partial/duplicate audit from the failed attempt',
   );
 });
 

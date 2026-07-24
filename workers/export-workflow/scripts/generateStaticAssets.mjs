@@ -31,8 +31,10 @@ const OUT_FILE = path.join(__dirname, '../src/lib/staticViewerAssets.generated.j
 // archive root, everything else under viewer/).
 const FILES = [
   { archivePath: 'START-HERE.html', diskPath: 'START-HERE.html', encoding: 'text', mimeType: 'text/html' },
+  { archivePath: 'README.txt', diskPath: 'README.txt', encoding: 'text', mimeType: 'text/plain' },
   { archivePath: 'viewer/app.js', diskPath: 'viewer/app.js', encoding: 'text', mimeType: 'application/javascript' },
   { archivePath: 'viewer/styles.css', diskPath: 'viewer/styles.css', encoding: 'text', mimeType: 'text/css' },
+  { archivePath: 'viewer/logo.svg', diskPath: 'viewer/logo.svg', encoding: 'text', mimeType: 'image/svg+xml' },
   { archivePath: 'viewer/fonts/fraunces-latin-400.woff2', diskPath: 'viewer/fonts/fraunces-latin-400.woff2', encoding: 'base64', mimeType: 'font/woff2' },
   { archivePath: 'viewer/fonts/fraunces-latin-600.woff2', diskPath: 'viewer/fonts/fraunces-latin-600.woff2', encoding: 'base64', mimeType: 'font/woff2' },
   { archivePath: 'viewer/fonts/hanken-grotesk-latin-400.woff2', diskPath: 'viewer/fonts/hanken-grotesk-latin-400.woff2', encoding: 'base64', mimeType: 'font/woff2' },

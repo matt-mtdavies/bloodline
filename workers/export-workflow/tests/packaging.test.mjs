@@ -44,6 +44,19 @@ test('buildArchivePlan sorts fixed + media + keepsake entries into one lexical l
   assert.deepEqual(plan.map((p) => p.path), ['keepsakes/p1/abc.json', 'manifest.json', 'photos/aaa.jpg', 'tree.json']);
 });
 
+test('buildArchivePlan appends manifestFile LAST, regardless of where its path would otherwise sort lexically — the PR #9 re-review finding that manifest.json needs the full ledger before it can be finalized', () => {
+  const plan = buildArchivePlan({
+    fixedFiles: [{ path: 'tree.json', byteLength: 50 }],
+    mediaEntries: [{ path: 'photos/aaa.jpg', id: 'p1', status: 'included', byteLength: 10 }],
+    keepsakeEntries: [{ path: 'keepsakes/p1/abc.json', id: 'p1:abc', status: 'included', byteLength: 20 }],
+    manifestFile: { path: 'manifest.json', byteLength: 100, compress: 'deflate-raw' },
+  });
+  // 'manifest.json' would normally sort BEFORE 'photos/...' and 'tree.json'
+  // alphabetically — it must instead be forced to the very end.
+  assert.deepEqual(plan.map((p) => p.path), ['keepsakes/p1/abc.json', 'photos/aaa.jpg', 'tree.json', 'manifest.json']);
+  assert.equal(plan[plan.length - 1].kind, 'manifest');
+});
+
 test('buildArchivePlan drops non-included media/keepsake entries entirely (they still appear in the manifest, just not as archive bytes)', () => {
   const plan = buildArchivePlan({
     mediaEntries: [

@@ -113,11 +113,24 @@ function makeFakeEnv({ families = [], users = [], members = [], jobs = [] } = {}
       return { changes: 1 };
     }
     if (sql.includes('INSERT INTO family_export_audit')) {
-      // Two distinct column layouts share this table: the general 9-column
-      // insert (buildAuditInsertStatement) and recordDownloadAudit's
-      // narrower 7-column one (no actor_email_snapshot/reason, `event`
-      // hardcoded as a SQL literal rather than bound) — detected by
-      // whether actor_email_snapshot is actually a column in THIS insert.
+      // Three distinct shapes share this table:
+      // 1. buildConditionalAuditInsertStatement's `INSERT ... SELECT ...
+      //    WHERE EXISTS (...)` — the lifecycle-transition audit, now
+      //    conditional on the job's CURRENT (pre-transition — this branch
+      //    always runs before the paired UPDATE within the same batch())
+      //    status matching fromStatuses, mirroring the real atomic
+      //    INSERT...SELECT...WHERE EXISTS + conditional UPDATE pair.
+      // 2. buildAuditInsertStatement's unconditional 9-column VALUES
+      //    insert (createExportJobStatements' own "requested" audit row).
+      // 3. recordDownloadAudit's narrower 7-column one (no
+      //    actor_email_snapshot/reason, `event` a SQL literal not bound).
+      if (sql.includes('WHERE EXISTS')) {
+        const [, jobId, familyId, actorUserId, actorEmailSnapshot, actorAuthority, event, reason, createdAt, existsJobId, ...fromStatuses] = args;
+        const job = jobRows.find((j) => j.id === existsJobId);
+        if (!job || !fromStatuses.includes(job.status)) return { changes: 0 };
+        audit.push({ job_id: jobId, family_id: familyId, actor_user_id: actorUserId, actor_email_snapshot: actorEmailSnapshot, actor_authority: actorAuthority, event, reason, created_at: createdAt });
+        return { changes: 1 };
+      }
       if (sql.includes('actor_email_snapshot')) {
         const [, jobId, familyId, actorUserId, actorEmailSnapshot, actorAuthority, event, reason, createdAt] = args;
         audit.push({ job_id: jobId, family_id: familyId, actor_user_id: actorUserId, actor_email_snapshot: actorEmailSnapshot, actor_authority: actorAuthority, event, reason, created_at: createdAt });

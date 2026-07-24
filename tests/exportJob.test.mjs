@@ -110,12 +110,30 @@ test('transitionJobStatements throws on a transition that is not legal from ANY 
   assert.throws(() => transitionJobStatements(fakeEnv(), { jobId: 'exp_1', fromStatuses: ['ready', 'ready_with_warnings'], toStatus: 'packaging' }));
 });
 
-test('transitionJobStatements succeeds if the destination is legal from AT LEAST ONE given prior status', () => {
-  // cancel is offered from any running state — the caller passes the whole
-  // RUNNING_STATUSES list as candidates without knowing which one the job
-  // is actually in; this must not require every candidate to individually
-  // support the transition.
-  assert.doesNotThrow(() => transitionJobStatements(fakeEnv(), { jobId: 'exp_1', fromStatuses: RUNNING_STATUSES, toStatus: 'cancelling' }));
+test('transitionJobStatements succeeds when EVERY given prior status can legally reach the destination', () => {
+  // cancel is offered from any running state EXCEPT cancelling itself
+  // (already cancelling can't be re-cancelled) — the caller passes every
+  // OTHER running status as candidates without knowing which one the job
+  // is actually in.
+  const cancellableFrom = RUNNING_STATUSES.filter((s) => s !== 'cancelling');
+  assert.doesNotThrow(() => transitionJobStatements(fakeEnv(), { jobId: 'exp_1', fromStatuses: cancellableFrom, toStatus: 'cancelling' }));
+});
+
+test('transitionJobStatements throws on a MIXED fromStatuses list where even one entry cannot legally reach the destination — the exact PR #9 re-review finding', () => {
+  // Before this fix, a mixed list like this passed validation via `.some()`
+  // (queued/snapshotting/etc really can fail) even though 'cancelling'
+  // cannot — and the raw SQL `WHERE status IN (...)` this produces would
+  // still match a row whose real status IS 'cancelling', illegally
+  // flipping it straight to 'failed' (the state graph only allows
+  // cancelling -> cancelled). reconcileStaleJobs had exactly this bug.
+  assert.throws(
+    () => transitionJobStatements(fakeEnv(), {
+      jobId: 'exp_1',
+      fromStatuses: ['queued', 'snapshotting', 'inventory', 'packaging', 'verifying', 'cancelling'],
+      toStatus: 'failed',
+    }),
+    /illegal transition/,
+  );
 });
 
 // ── serializeExportJob ────────────────────────────────────────────────────

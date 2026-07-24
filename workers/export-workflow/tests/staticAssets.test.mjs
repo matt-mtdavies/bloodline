@@ -22,13 +22,13 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SRC_DIR = path.join(__dirname, '../src');
 
 const EXPECTED_PATHS = [
-  'START-HERE.html', 'viewer/app.js', 'viewer/styles.css',
+  'START-HERE.html', 'README.txt', 'viewer/app.js', 'viewer/styles.css', 'viewer/logo.svg',
   'viewer/fonts/fraunces-latin-400.woff2', 'viewer/fonts/fraunces-latin-600.woff2',
   'viewer/fonts/hanken-grotesk-latin-400.woff2', 'viewer/fonts/hanken-grotesk-latin-600.woff2',
   'viewer/licenses/Fraunces-OFL.txt', 'viewer/licenses/Hanken-Grotesk-OFL.txt',
 ];
 
-test('getStaticViewerFiles returns exactly the 9 files docs/FULL-ARCHIVE-EXPORT.md §3.2 lists for the viewer + START-HERE.html', () => {
+test('getStaticViewerFiles returns exactly the 11 files docs/FULL-ARCHIVE-EXPORT.md §3.2 lists for the archive root + viewer — the PR #9 re-review finding that README.txt/viewer/logo.svg were missing', () => {
   const files = getStaticViewerFiles();
   assert.deepEqual(files.map((f) => f.path).sort(), [...EXPECTED_PATHS].sort());
 });
@@ -37,8 +37,7 @@ test('every decoded file is byte-identical to the real file on disk', () => {
   const files = getStaticViewerFiles();
   const byPath = Object.fromEntries(files.map((f) => [f.path, f]));
   for (const archivePath of EXPECTED_PATHS) {
-    const diskPath = archivePath === 'START-HERE.html' ? 'START-HERE.html' : archivePath;
-    const real = readFileSync(path.join(SRC_DIR, diskPath));
+    const real = readFileSync(path.join(SRC_DIR, archivePath));
     const decoded = byPath[archivePath];
     assert.equal(decoded.byteLength, real.byteLength, `${archivePath} byte length mismatch`);
     assert.ok(Buffer.from(decoded.bytes).equals(real), `${archivePath} content mismatch`);

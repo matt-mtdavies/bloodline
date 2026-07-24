@@ -19,12 +19,25 @@ import { createIncrementalSha256 } from './manifest.js';
  * as the packaging checkpoint's fixed reference list.
  *
  * `fixedFiles`: [{ path, byteLength, compress }] — tree.json, activity-
- * log.json, content-index.json, tree-data.js, viewer assets; `mediaEntries`
- * / `keepsakeEntries`: resolved inventory entries (only `status ===
+ * log.json, content-index.json, tree-data.js, viewer assets (deliberately
+ * NEVER manifest.json — see `manifestFile` below); `mediaEntries` /
+ * `keepsakeEntries`: resolved inventory entries (only `status ===
  * 'included'` ones become real archive files — everything else is still
  * reported in the manifest, just never written as archive bytes).
+ *
+ * `manifestFile` (optional): `{ path, byteLength, compress }` for
+ * manifest.json specifically, appended as the LAST plan entry — AFTER the
+ * lexical sort, unconditionally, regardless of what its path would
+ * otherwise sort to. manifest.json's own per-entry SHA-256 checksums can
+ * only be finalized once every OTHER entry has actually been streamed and
+ * hashed (the packaging ledger — see workflowSteps.js#packageStep's own
+ * finalizeManifestBytes), so it must be the very last thing packaged, not
+ * wherever "manifest.json" would normally land alphabetically. Omitting
+ * this param entirely preserves the exact prior behavior (manifest.json,
+ * if present in `fixedFiles`, sorts normally) — used by this module's own
+ * unit tests, which don't need the ledger-finalization behavior at all.
  */
-export function buildArchivePlan({ fixedFiles = [], mediaEntries = [], keepsakeEntries = [] }) {
+export function buildArchivePlan({ fixedFiles = [], mediaEntries = [], keepsakeEntries = [], manifestFile = null }) {
   const plan = [];
   for (const f of fixedFiles) {
     plan.push({ kind: 'fixed', path: f.path, byteLength: f.byteLength, compress: f.compress || 'store' });
@@ -41,6 +54,9 @@ export function buildArchivePlan({ fixedFiles = [], mediaEntries = [], keepsakeE
     plan.push({ kind: 'media', path: e.path, id: e.id, byteLength: e.byteLength ?? 0, compress: 'store' });
   }
   plan.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+  if (manifestFile) {
+    plan.push({ kind: 'manifest', path: manifestFile.path, byteLength: manifestFile.byteLength, compress: manifestFile.compress || 'store' });
+  }
   return plan;
 }
 
@@ -191,6 +207,23 @@ function concatChunks(chunks, totalBytes) {
  * and the verify step later cross-checks it against the archive plan/
  * manifest (the "packaging ledger" §4.2 Verify's own "validate manifest/
  * file counts and checksums from the packaging ledger" refers to).
+ *
+ * `getEntryBytes(entry, ledgerSoFar) -> AsyncIterable<Uint8Array>` now
+ * takes a SECOND argument: the ledger as it stands immediately before this
+ * entry (every entry already processed, whether resumed from a prior call
+ * or from earlier iterations of THIS SAME loop) — needed so a caller can
+ * build the manifest.json entry's real content (which embeds every OTHER
+ * entry's final sha256) at the exact moment it's actually about to be
+ * packaged. Since `kind: 'manifest'` entries are always forced to be the
+ * plan's LAST entry (see buildArchivePlan's own `manifestFile` param),
+ * `ledgerSoFar` at that point is genuinely complete. A manifest entry's
+ * exact final byte length can only be known once its real content is
+ * built this way — its plan-time `byteLength` is necessarily just a
+ * placeholder — so its `getEntryBytes` call is fully materialized
+ * (awaited to a single concrete Uint8Array) BEFORE `writer.addEntry` is
+ * called, and that real length is used as the size hint instead of the
+ * plan's own placeholder (ZipStreamWriter requires the hint to match the
+ * true streamed length exactly).
  */
 export async function runPackagingStep({
   plan, startIndex, resumeState, uploadPart, getEntryBytes,
@@ -208,7 +241,15 @@ export async function runPackagingStep({
   let entriesAddedThisStep = 0;
   while (index < plan.length && entriesAddedThisStep < maxEntriesPerStep && accumulator.uploadedParts.length === 0) {
     const entry = plan[index];
-    const rawChunks = await getEntryBytes(entry);
+    let rawChunks = await getEntryBytes(entry, ledger);
+    let sizeHint = entry.byteLength;
+    if (entry.kind === 'manifest') {
+      const materialized = [];
+      let total = 0;
+      for await (const chunk of rawChunks) { materialized.push(chunk); total += chunk.byteLength; }
+      rawChunks = materialized;
+      sizeHint = total;
+    }
     const hasher = createIncrementalSha256();
     let byteLength = 0;
     async function* hashedChunks() {
@@ -218,7 +259,7 @@ export async function runPackagingStep({
         yield chunk;
       }
     }
-    await writer.addEntry(entry.path, hashedChunks(), { uncompressedSizeHint: entry.byteLength, compress: entry.compress });
+    await writer.addEntry(entry.path, hashedChunks(), { uncompressedSizeHint: sizeHint, compress: entry.compress });
     ledger.push({ path: entry.path, byteLength, sha256: hasher.digestHex() });
     index += 1;
     entriesAddedThisStep += 1;
