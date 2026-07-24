@@ -6552,6 +6552,131 @@ button.health-notes {
   margin: 4px 0 0;
 }
 
+/* ── Export cards (docs/FULL-ARCHIVE-EXPORT-COMPLETION-PHASE.md §10) ───────── */
+.ea__card {
+  background: var(--paper-deep);
+  border: 1.5px solid var(--hairline);
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin-top: 10px;
+  max-width: 100%;
+  overflow-wrap: break-word;
+}
+.ea__card--disabled { opacity: 0.7; }
+.ea__title {
+  font-family: var(--display);
+  font-size: 14.5px;
+  font-weight: 700;
+  color: var(--ink);
+  margin: 0 0 4px;
+}
+.ea__desc {
+  font-size: 12.5px;
+  color: var(--ink-soft);
+  line-height: 1.5;
+  margin: 0 0 10px;
+}
+.ea__hint {
+  font-size: 12px;
+  color: var(--ink-faint);
+  margin: 8px 0 0;
+}
+.ea__err {
+  font-size: 12px;
+  color: #b23c30;
+  margin: 8px 0 0;
+}
+.ea__btn,
+.ea__btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 10px 18px;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+  transition: opacity 0.15s ease, background 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.ea__btn {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+}
+.ea__btn:hover { opacity: 0.92; }
+.ea__btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.ea__btn-secondary {
+  background: transparent;
+  color: var(--ink);
+  border: 1.5px solid var(--hairline);
+}
+.ea__btn-secondary:hover { background: rgba(0, 0, 0, 0.03); }
+.ea__btn-secondary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.ea__confirm { margin-top: 10px; }
+.ea__confirm-line {
+  font-size: 12.5px;
+  color: var(--ink-soft);
+  line-height: 1.5;
+  margin: 0 0 8px;
+}
+.ea__confirm-btns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.ea__status { margin-top: 10px; }
+.ea__status-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ea__dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--ink-faint);
+}
+.ea__dot--active { background: #c2603a; animation: ea-pulse 1.6s ease-in-out infinite; }
+.ea__dot--ready { background: #3a8a5a; }
+.ea__dot--warn { background: #c2903a; }
+.ea__dot--fail { background: #b23c30; }
+.ea__dot--muted { background: var(--ink-faint); }
+@keyframes ea-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ea__dot--active { animation: none; }
+}
+.ea__status-label {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.ea__progress {
+  font-size: 12px;
+  color: var(--ink-faint);
+  margin: 4px 0 0;
+}
+.ea__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+@media (max-width: 400px) {
+  .ea__confirm-btns, .ea__actions { flex-direction: column; }
+  .ea__btn, .ea__btn-secondary { width: 100%; }
+}
+
 /* ── Inline member/invite remove confirmation ────────────────────────────────── */
 .fs__confirm-inline {
   display: flex;

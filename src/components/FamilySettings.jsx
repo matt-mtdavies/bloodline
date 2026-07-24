@@ -5,6 +5,7 @@ import {
 import ShareLink from './ShareLink.jsx';
 import { ActivityRow, dayLabel } from './ActivityFeed.jsx';
 import ReturnMark from './ReturnMark.jsx';
+import ExportArchiveCard from './ExportArchiveCard.jsx';
 
 const INVITE_ROLES = ['coadmin', 'editor', 'contributor', 'viewer'];
 
@@ -892,18 +893,25 @@ export default function FamilySettings({
         )}
 
         {/* Export — reading your own tree out to a portable file. It's your
-            family, not ours; you can take it anywhere, anytime. */}
+            family, not ours; you can take it anywhere, anytime. Two cards:
+            a standard GEDCOM (people/dates/places/relationships only, for
+            other genealogy services) and the complete Bloodline archive
+            (docs/FULL-ARCHIVE-EXPORT-COMPLETION-PHASE.md §10). */}
         {onExportGedcom && (
           <div className="fs__section">
-            <label className="fs__label">Export data</label>
-            <button className="fs__import-btn" onClick={onExportGedcom}>
-              <GedcomIcon />
-              Export GEDCOM file
-            </button>
-            <p className="fs__import-hint">
-              A standard family-tree file you can open in Ancestry, MyHeritage, FamilySearch and more.
-              Photos, memories and stories aren&apos;t included — a full backup with those is coming.
-            </p>
+            <label className="fs__label">Export</label>
+            <div className="ea__card">
+              <p className="ea__title">GEDCOM family tree</p>
+              <p className="ea__desc">For Ancestry, MyHeritage, FamilySearch and other genealogy services.</p>
+              <button className="fs__import-btn" onClick={onExportGedcom}>
+                <GedcomIcon />
+                Export GEDCOM file
+              </button>
+              <p className="fs__import-hint">
+                Standard people, dates, places and relationships. Photos, memories, documents and Keepsakes aren&apos;t included.
+              </p>
+            </div>
+            <ExportArchiveCard canPrepare={isOwnerOrCoadmin} />
           </div>
         )}
 

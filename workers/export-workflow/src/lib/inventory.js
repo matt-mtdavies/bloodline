@@ -80,7 +80,14 @@ export function classifyReference(rawRef) {
   return { kind: 'unsupported', raw: rawRef.slice(0, 200) };
 }
 
-function decodeBase64ToBytes(base64) {
+// Exported (not just used internally by resolveEntry) because packaging
+// needs the ACTUAL bytes of a data_url entry, not just its resolved
+// metadata — resolveEntry's own returned entry deliberately doesn't carry
+// the bytes themselves (only byteLength/sha256), to keep inventory
+// resolution results small; the Workflow's packaging step re-derives them
+// from the original tree reference at the point it actually streams the
+// entry into the ZIP.
+export function decodeBase64ToBytes(base64) {
   // atob/Buffer both exist in Node; Workers has atob globally too. Using
   // Buffer here (Node-only) would break Workers portability, so this uses
   // the Web-standard atob + manual byte conversion instead.
@@ -153,6 +160,75 @@ function describeReference(ref) {
 }
 
 /*
+ * The pure half of media inventory: walks the captured tree's person
+ * portraits, gallery photos, and document files/thumbnails and returns the
+ * flat list of UNRESOLVED references (§7's "derive photo/document keys only
+ * from captured tree") — no resolver, no I/O, so this can run in full over
+ * an entire family in one cheap in-memory pass. The Workflow's inventory
+ * step (workers/export-workflow/src/workflow.js) shards this list into
+ * ≤100-entry batches and resolves each shard in its own checkpointed step;
+ * buildMediaInventory below (Phase A's original, still used by tests and
+ * any caller that wants the whole thing resolved in one call) is now a
+ * thin wrapper over this plus resolveEntry, unchanged in behavior.
+ */
+export function deriveMediaReferences(tree) {
+  const refs = [];
+
+  for (const person of tree.people || []) {
+    if (person.photo) {
+      refs.push({
+        archivePath: buildArchivePath('photos', person.id, person.display_name, extForMime(classifyReference(person.photo).mimeType)),
+        recordId: person.id,
+        recordType: 'person_photo',
+        rawRef: person.photo,
+      });
+    }
+    if (person.photo_thumb) {
+      refs.push({
+        archivePath: buildArchivePath('thumbnails', person.id, `${person.display_name || ''}-portrait-thumb`, extForMime(classifyReference(person.photo_thumb).mimeType)),
+        recordId: person.id,
+        recordType: 'person_photo_thumb',
+        rawRef: person.photo_thumb,
+      });
+    }
+  }
+
+  for (const photo of tree.photos || []) {
+    if (!photo.src) continue;
+    refs.push({
+      archivePath: buildArchivePath('photos', photo.id, photo.caption || photo.id, extForMime(classifyReference(photo.src).mimeType)),
+      recordId: photo.id,
+      recordType: 'photo',
+      rawRef: photo.src,
+      ownerId: photo.person_id,
+    });
+  }
+
+  for (const doc of tree.documents || []) {
+    if (doc.src) {
+      refs.push({
+        archivePath: buildArchivePath('documents', doc.id, doc.title || doc.id, extForMime(doc.mime || classifyReference(doc.src).mimeType)),
+        recordId: doc.id,
+        recordType: 'document',
+        rawRef: doc.src,
+        ownerId: doc.person_id,
+      });
+    }
+    if (doc.thumb) {
+      refs.push({
+        archivePath: buildArchivePath('thumbnails', doc.id, `${doc.title || doc.id}-thumb`, extForMime(classifyReference(doc.thumb).mimeType)),
+        recordId: doc.id,
+        recordType: 'document_thumb',
+        rawRef: doc.thumb,
+        ownerId: doc.person_id,
+      });
+    }
+  }
+
+  return refs;
+}
+
+/*
  * Walks the captured tree's person portraits, gallery photos, and document
  * files/thumbnails, resolving each one via the injected resolver. Returns
  * a flat array of inventory entries in tree order (callers needing lexical
@@ -161,58 +237,9 @@ function describeReference(ref) {
  */
 export async function buildMediaInventory(tree, { resolveR2Head } = {}) {
   const entries = [];
-
-  for (const person of tree.people || []) {
-    if (person.photo) {
-      entries.push(await resolveEntry({
-        archivePath: buildArchivePath('photos', person.id, person.display_name, extForMime(classifyReference(person.photo).mimeType)),
-        recordId: person.id,
-        recordType: 'person_photo',
-        rawRef: person.photo,
-      }, resolveR2Head));
-    }
-    if (person.photo_thumb) {
-      entries.push(await resolveEntry({
-        archivePath: buildArchivePath('thumbnails', person.id, `${person.display_name || ''}-portrait-thumb`, extForMime(classifyReference(person.photo_thumb).mimeType)),
-        recordId: person.id,
-        recordType: 'person_photo_thumb',
-        rawRef: person.photo_thumb,
-      }, resolveR2Head));
-    }
+  for (const ref of deriveMediaReferences(tree)) {
+    entries.push(await resolveEntry(ref, resolveR2Head));
   }
-
-  for (const photo of tree.photos || []) {
-    if (!photo.src) continue;
-    entries.push(await resolveEntry({
-      archivePath: buildArchivePath('photos', photo.id, photo.caption || photo.id, extForMime(classifyReference(photo.src).mimeType)),
-      recordId: photo.id,
-      recordType: 'photo',
-      rawRef: photo.src,
-      ownerId: photo.person_id,
-    }, resolveR2Head));
-  }
-
-  for (const doc of tree.documents || []) {
-    if (doc.src) {
-      entries.push(await resolveEntry({
-        archivePath: buildArchivePath('documents', doc.id, doc.title || doc.id, extForMime(doc.mime || classifyReference(doc.src).mimeType)),
-        recordId: doc.id,
-        recordType: 'document',
-        rawRef: doc.src,
-        ownerId: doc.person_id,
-      }, resolveR2Head));
-    }
-    if (doc.thumb) {
-      entries.push(await resolveEntry({
-        archivePath: buildArchivePath('thumbnails', doc.id, `${doc.title || doc.id}-thumb`, extForMime(classifyReference(doc.thumb).mimeType)),
-        recordId: doc.id,
-        recordType: 'document_thumb',
-        rawRef: doc.thumb,
-        ownerId: doc.person_id,
-      }, resolveR2Head));
-    }
-  }
-
   return entries;
 }
 
@@ -277,16 +304,33 @@ function parseKeepsakeBody(body) {
  * target, or a standalone `latest.json` with no matching hashed copy) is
  * flagged `isLatestEdition: true` — content-index.js uses this to pick
  * which edition to surface in the offline viewer when a person has
- * several historical ones.
+ * several historical ones; it is ALSO the only entry that ever needs its
+ * body actually read (content-index.js only ever consumes `.edition` on
+ * an `isLatestEdition` entry — see its own comment). Packaging itself
+ * never needs any entry's body either — every archived file's real bytes
+ * are re-fetched straight from R2 by path at packaging time (see
+ * workflowSteps.js#getEntryBytesFor's r2raw branch), never from this
+ * `.edition` field.
  *
- * `listPrefix(prefix)` is the only injected I/O — expected to resolve to
- * an array of `{ key, byteLength, etag, body? }` for objects under that
- * prefix (an empty array for a person with no Keepsake at all, which is
- * NOT a warning per §3.6's own rule).
+ * `listPrefix(prefix)` is one of two injected I/O callbacks — expected to
+ * resolve to an array of LIGHTWEIGHT `{ key, byteLength, etag }`
+ * descriptors for objects under that prefix (an empty array for a person
+ * with no Keepsake at all, which is NOT a warning per §3.6's own rule) —
+ * deliberately never a body, so a person with any number of retained
+ * editions costs nothing more than cheap listing metadata to inventory.
+ * `getBody(key)` is called AT MOST ONCE per person — only for whichever
+ * key ends up the determined latest edition — never once per edition; a
+ * person with a thousand historical editions and one current one still
+ * costs exactly one body fetch, not a thousand (the PR #9 4th-review
+ * finding this was rewritten to fix: every hashed edition's body used to
+ * be fetched and parsed regardless of whether anything ever read it).
  */
-export async function buildKeepsakeInventory(tree, familyId, { listPrefix } = {}) {
+export async function buildKeepsakeInventory(tree, familyId, { listPrefix, getBody } = {}) {
   if (typeof listPrefix !== 'function') {
     throw new Error('buildKeepsakeInventory requires a listPrefix(prefix) callback');
+  }
+  if (typeof getBody !== 'function') {
+    throw new Error('buildKeepsakeInventory requires a getBody(key) callback');
   }
   const entries = [];
   const aliases = [];
@@ -312,7 +356,7 @@ export async function buildKeepsakeInventory(tree, familyId, { listPrefix } = {}
         byteLength: obj.byteLength ?? null,
         etag: obj.etag ?? null,
         r2Key: obj.key,
-        edition: parseKeepsakeBody(obj.body),
+        edition: null, // populated below ONLY if this entry turns out to be latestEntry
       };
       entries.push(entry);
       if (latest?.etag && obj.etag && obj.etag === latest.etag) latestEntry = entry;
@@ -337,13 +381,16 @@ export async function buildKeepsakeInventory(tree, familyId, { listPrefix } = {}
           byteLength: latest.byteLength ?? null,
           etag: latest.etag ?? null,
           r2Key: latest.key,
-          edition: parseKeepsakeBody(latest.body),
+          edition: null,
         };
         entries.push(latestEntry);
       }
     }
 
-    if (latestEntry) latestEntry.isLatestEdition = true;
+    if (latestEntry) {
+      latestEntry.isLatestEdition = true;
+      latestEntry.edition = parseKeepsakeBody(await getBody(latestEntry.r2Key));
+    }
   }
 
   return { entries, aliases };

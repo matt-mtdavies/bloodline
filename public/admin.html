@@ -365,6 +365,49 @@
     .badge-red   { background: var(--danger-soft); color: var(--danger); }
     .badge-neutral { background: var(--paper-deep); color: var(--ink-soft); }
 
+    /* ── Family Exports (docs/FULL-ARCHIVE-EXPORT-COMPLETION-PHASE.md §11) ── */
+    .exports-banner {
+      background: var(--danger-soft); color: var(--danger); border: 1px solid var(--danger);
+      border-radius: 10px; padding: 10px 16px; font-size: 13px; font-weight: 600;
+      margin-bottom: 18px;
+    }
+    .exports-note { font-size: 12.5px; color: var(--ink-soft); margin-bottom: 10px; }
+    .exports-search { display: flex; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
+    .exports-search input[type="search"] { flex: 1 1 260px; }
+    .exports-results { display: flex; flex-direction: column; gap: 8px; margin-bottom: 18px; }
+    .exports-fam-row {
+      display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+      background: var(--paper); border: 1px solid var(--hairline); border-radius: 10px;
+      padding: 10px 14px; cursor: pointer; text-align: left; width: 100%; font: inherit; color: inherit;
+      min-height: 44px;
+    }
+    .exports-fam-row:hover { border-color: var(--accent); }
+    .exports-fam-row__name { font-weight: 600; }
+    .exports-fam-row__meta { font-size: 12px; color: var(--ink-soft); }
+    .exports-detail {
+      background: var(--paper); border: 1px solid var(--hairline); border-radius: var(--radius);
+      padding: 20px 22px; margin-bottom: 18px;
+    }
+    .exports-detail__row { display: flex; gap: 8px; font-size: 13px; margin-bottom: 6px; flex-wrap: wrap; }
+    .exports-detail__row b { color: var(--ink-soft); font-weight: 600; min-width: 110px; }
+    .exports-field { margin-top: 14px; }
+    .exports-field label { display: block; font-size: 12px; font-weight: 600; color: var(--ink-soft); margin-bottom: 4px; }
+    .exports-field textarea, .exports-field input[type="text"] {
+      width: 100%; border: 1px solid var(--hairline); border-radius: 10px; padding: 10px 12px;
+      font: inherit; font-size: 13px; color: var(--ink); background: var(--paper);
+    }
+    .exports-field textarea { min-height: 70px; resize: vertical; }
+    .exports-hint { font-size: 11.5px; color: var(--ink-faint); margin-top: 4px; }
+    .exports-warning {
+      background: var(--danger-soft); color: var(--danger); border-radius: 10px;
+      padding: 10px 14px; font-size: 12.5px; margin-top: 14px;
+    }
+    .exports-actions { display: flex; gap: 10px; margin-top: 16px; flex-wrap: wrap; }
+    .exports-status-row { display: flex; align-items: center; gap: 8px; margin-top: 14px; }
+    .exports-audit { margin-top: 16px; border-top: 1px solid var(--hairline); padding-top: 14px; }
+    .exports-audit__row { display: flex; gap: 8px; font-size: 12px; color: var(--ink-soft); padding: 4px 0; flex-wrap: wrap; }
+    .exports-audit__row b { color: var(--ink); }
+
     .funnel-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 14px; }
     .funnel-item { text-align: center; padding: 12px 8px; border-radius: 12px; background: var(--paper-deep); }
     .funnel-item__n { font-family: var(--display); font-size: 20px; font-weight: 600; letter-spacing: -0.02em; }
@@ -521,6 +564,7 @@
     <a href="#growth">Growth &amp; engagement</a>
     <a href="#operations">Operations</a>
     <a href="#communications">Communications</a>
+    <a href="#exports">Family Exports</a>
   </nav>
 
   <main class="page" id="main">
@@ -726,6 +770,16 @@
           </table>
         </div>
       </div>
+    </section>
+
+    <!-- ═══════════════ 5. FAMILY EXPORTS ═══════════════ -->
+    <section id="exports" class="ia-section" aria-labelledby="exports-h">
+      <h2 id="exports-h">Family Exports</h2>
+      <p class="ia-section__desc">
+        A separate authority from this dashboard (§11) — search for an exact family, confirm, and prepare
+        a complete, unredacted archive. Seeing this dashboard does not grant this on its own.
+      </p>
+      <div id="exports-root"><div class="spinner"><div class="spin-icon"></div></div></div>
     </section>
   </main>
 </div>
@@ -1495,6 +1549,259 @@
     refreshLabel.innerHTML = busy ? '<span class="spin-icon-inline" aria-hidden="true"></span> Refreshing…' : 'Refresh';
   }
 
+  // ══════════════════════════════════════════════════════════════════════
+  // Family Exports (docs/FULL-ARCHIVE-EXPORT-COMPLETION-PHASE.md §11) — a
+  // SEPARATE authority from the rest of this dashboard (EXPORT_ADMIN_EMAILS,
+  // not ADMIN_EMAILS). Its own independent fetch cycle: seeing this whole
+  // dashboard does not imply this section works — every call here can 403
+  // on its own, and does, for an ordinary dashboard admin not also on the
+  // export allowlist.
+  // ══════════════════════════════════════════════════════════════════════
+  const STATUS_LABELS = {
+    queued: 'Queued', snapshotting: 'Preparing a snapshot', inventory: 'Cataloguing files',
+    packaging: 'Building the archive', verifying: 'Verifying', cancelling: 'Cancelling…',
+    ready: 'Ready', ready_with_warnings: 'Ready (with warnings)', failed: 'Failed',
+    cancelled: 'Cancelled', expired: 'Expired',
+  };
+  const RUNNING_STATUSES = new Set(['queued', 'snapshotting', 'inventory', 'packaging', 'verifying', 'cancelling']);
+  const exportsState = { selectedFamily: null, job: null, pollTimer: null, pollStart: 0, auditEvents: null };
+
+  function exportsRoot() { return $('#exports-root'); }
+
+  async function initExports() {
+    try {
+      const res = await fetch('/api/admin/exports');
+      if (res.status === 403) {
+        exportsRoot().innerHTML = `<p class="exports-note">You have dashboard access, but you're not on the separate export-admin allowlist — no family export metadata is shown here, and none of the export endpoints will respond for your account.</p>`;
+        return;
+      }
+      if (res.status === 503) {
+        exportsRoot().innerHTML = `<p class="exports-note">Full archive export isn't enabled on this deployment yet.</p>`;
+        return;
+      }
+      if (!res.ok) {
+        exportsRoot().innerHTML = `<p class="exports-note">Could not load — please retry.</p>`;
+        return;
+      }
+      renderExportsShell();
+    } catch {
+      exportsRoot().innerHTML = `<p class="exports-note">Network error — could not reach the server.</p>`;
+    }
+  }
+
+  function renderExportsShell() {
+    exportsRoot().innerHTML = `
+      <div class="exports-banner">Administrator export: includes all private family content.</div>
+      <div class="exports-search">
+        <input type="search" id="exports-search-input" placeholder="Search by family name or exact ID…" aria-label="Search families for export">
+      </div>
+      <div class="exports-results" id="exports-results"></div>
+      <div id="exports-detail"></div>
+    `;
+    const input = $('#exports-search-input');
+    let debounceTimer = null;
+    input.addEventListener('input', () => {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => runExportsSearch(input.value), 250);
+    });
+  }
+
+  async function runExportsSearch(query) {
+    const resultsEl = $('#exports-results');
+    const q = query.trim();
+    if (!q) { resultsEl.innerHTML = ''; return; }
+    try {
+      const res = await fetch('/api/admin/export-families?query=' + encodeURIComponent(q));
+      if (!res.ok) { resultsEl.innerHTML = `<p class="exports-note">Search failed — please retry.</p>`; return; }
+      const body = await res.json();
+      const families = body.families || [];
+      if (!families.length) { resultsEl.innerHTML = `<p class="exports-note">No matching family.</p>`; return; }
+      resultsEl.innerHTML = families.map((f) => `
+        <button type="button" class="exports-fam-row" data-family-id="${escHtml(f.id)}">
+          <span>
+            <span class="exports-fam-row__name">${escHtml(f.name)}</span><br>
+            <span class="exports-fam-row__meta">${escHtml(f.id)} · ${f.memberCount} member${f.memberCount === 1 ? '' : 's'}${f.ownerEmail ? ' · owner ' + escHtml(f.ownerEmail) : ''}</span>
+          </span>
+          <span class="badge badge-neutral">${f.storageMode || 'unknown'}</span>
+        </button>
+      `).join('');
+      resultsEl.querySelectorAll('.exports-fam-row').forEach((btn) => {
+        const f = families.find((x) => x.id === btn.dataset.familyId);
+        btn.addEventListener('click', () => selectExportFamily(f));
+      });
+    } catch {
+      resultsEl.innerHTML = `<p class="exports-note">Network error — please retry.</p>`;
+    }
+  }
+
+  function selectExportFamily(family) {
+    stopExportsPoll();
+    exportsState.selectedFamily = family;
+    exportsState.job = null;
+    exportsState.auditEvents = null;
+    renderExportsDetail();
+  }
+
+  function renderExportsDetail() {
+    const f = exportsState.selectedFamily;
+    const detailEl = $('#exports-detail');
+    if (!f) { detailEl.innerHTML = ''; return; }
+    const job = exportsState.job;
+
+    if (job) {
+      const running = RUNNING_STATUSES.has(job.status);
+      const ready = job.status === 'ready' || job.status === 'ready_with_warnings';
+      detailEl.innerHTML = `
+        <div class="exports-detail">
+          <div class="exports-detail__row"><b>Family</b> ${escHtml(f.name)} (${escHtml(f.id)})</div>
+          <div class="exports-status-row">
+            <span class="badge ${ready ? 'badge-green' : (job.status === 'failed' ? 'badge-red' : 'badge-amber')}">${STATUS_LABELS[job.status] || job.status}</span>
+            ${running && job.progress && job.progress.expectedFiles ? `<span class="exports-note">${job.progress.processedFiles} of ${job.progress.expectedFiles} files</span>` : ''}
+          </div>
+          ${ready && job.warningCount ? `<p class="exports-note">${job.warningCount} file(s) couldn't be included.</p>` : ''}
+          <div class="exports-actions">
+            ${running ? `<button type="button" class="btn" id="exports-cancel-btn">${job.status === 'cancelling' ? 'Cancelling…' : 'Cancel'}</button>` : ''}
+            ${ready ? `<a class="btn" href="/api/admin/exports/${encodeURIComponent(job.id)}/download">Download</a>` : ''}
+          </div>
+          <div class="exports-audit" id="exports-audit">${renderAuditRows()}</div>
+        </div>
+      `;
+      if (running) {
+        const btn = $('#exports-cancel-btn');
+        if (btn) btn.addEventListener('click', cancelSelectedExport);
+      }
+      if (exportsState.auditEvents == null) loadExportsAudit(job.id);
+      return;
+    }
+
+    detailEl.innerHTML = `
+      <div class="exports-detail">
+        <div class="exports-detail__row"><b>Family</b> ${escHtml(f.name)}</div>
+        <div class="exports-detail__row"><b>ID</b> ${escHtml(f.id)}</div>
+        <div class="exports-detail__row"><b>Owner</b> ${escHtml(f.ownerEmail || '—')}</div>
+        <div class="exports-detail__row"><b>Members</b> ${f.memberCount}</div>
+        <div class="exports-detail__row"><b>Storage mode</b> ${escHtml(f.storageMode || 'unknown')}</div>
+        <div class="exports-detail__row"><b>Last export</b> ${escHtml(f.lastExportStatus || 'none yet')}</div>
+
+        <div class="exports-field">
+          <label for="exports-reason">Reason (10–500 characters)</label>
+          <textarea id="exports-reason" placeholder="Why is this export needed?"></textarea>
+        </div>
+        <div class="exports-field">
+          <label for="exports-confirm-name">Type the family's current name to confirm</label>
+          <input type="text" id="exports-confirm-name" placeholder="${escHtml(f.name)}">
+          <p class="exports-hint">Must match exactly: "${escHtml(f.name)}"</p>
+        </div>
+        <div class="exports-warning">
+          This creates a complete, private, unencrypted archive of every person and private field in
+          this family — including living people and children. The action is audited.
+        </div>
+        <div class="exports-actions">
+          <button type="button" class="btn" id="exports-create-btn" disabled>Create and monitor</button>
+        </div>
+      </div>
+    `;
+    const reasonEl = $('#exports-reason');
+    const confirmEl = $('#exports-confirm-name');
+    const createBtn = $('#exports-create-btn');
+    function updateCreateEnabled() {
+      const reasonOk = reasonEl.value.trim().length >= 10 && reasonEl.value.length <= 500;
+      const nameOk = confirmEl.value.trim().toLowerCase() === f.name.trim().toLowerCase();
+      createBtn.disabled = !(reasonOk && nameOk);
+    }
+    reasonEl.addEventListener('input', updateCreateEnabled);
+    confirmEl.addEventListener('input', updateCreateEnabled);
+    createBtn.addEventListener('click', () => createSelectedExport(reasonEl.value, confirmEl.value));
+  }
+
+  function renderAuditRows() {
+    if (exportsState.auditEvents == null) return `<p class="exports-note">Loading audit history…</p>`;
+    if (!exportsState.auditEvents.length) return `<p class="exports-note">No audit events yet.</p>`;
+    return exportsState.auditEvents.map((e) => `
+      <div class="exports-audit__row">
+        <b>${escHtml(e.event)}</b>
+        <span>${escHtml(e.actorEmail || 'system')}</span>
+        <span>${fmt(e.at)}</span>
+        ${e.reason ? `<span>— ${escHtml(e.reason)}</span>` : ''}
+      </div>
+    `).join('');
+  }
+
+  async function loadExportsAudit(jobId) {
+    try {
+      const res = await fetch(`/api/admin/exports/${encodeURIComponent(jobId)}/audit`);
+      exportsState.auditEvents = res.ok ? (await res.json()).events || [] : [];
+    } catch {
+      exportsState.auditEvents = [];
+    }
+    const el = $('#exports-audit');
+    if (el) el.innerHTML = renderAuditRows();
+  }
+
+  async function createSelectedExport(reason, confirmFamilyName) {
+    const f = exportsState.selectedFamily;
+    try {
+      const res = await fetch('/api/admin/exports', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ familyId: f.id, reason, confirmFamilyName }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        announce('Could not create export: ' + (body.error || res.statusText));
+        return;
+      }
+      await fetchExportJob(body.id);
+      startExportsPoll(body.id);
+    } catch {
+      announce('Network error creating export.');
+    }
+  }
+
+  async function cancelSelectedExport() {
+    if (!exportsState.job) return;
+    try {
+      const res = await fetch(`/api/admin/exports/${encodeURIComponent(exportsState.job.id)}/cancel`, { method: 'POST' });
+      if (res.ok) { exportsState.job = await res.json(); renderExportsDetail(); }
+    } catch { /* next poll reconciles */ }
+  }
+
+  async function fetchExportJob(jobId) {
+    try {
+      const res = await fetch(`/api/admin/exports/${encodeURIComponent(jobId)}`);
+      if (!res.ok) return;
+      exportsState.job = await res.json();
+      renderExportsDetail();
+    } catch { /* keep the last known state; the next poll will retry */ }
+  }
+
+  function stopExportsPoll() {
+    if (exportsState.pollTimer) { clearTimeout(exportsState.pollTimer); exportsState.pollTimer = null; }
+  }
+
+  function startExportsPoll(jobId) {
+    stopExportsPoll();
+    exportsState.pollStart = Date.now();
+    scheduleExportsPoll(jobId);
+  }
+
+  function scheduleExportsPoll(jobId) {
+    stopExportsPoll();
+    if (document.hidden) return;
+    const elapsed = Date.now() - exportsState.pollStart;
+    const delay = elapsed < 30000 ? 2000 : 5000;
+    exportsState.pollTimer = setTimeout(async () => {
+      await fetchExportJob(jobId);
+      if (exportsState.job && RUNNING_STATUSES.has(exportsState.job.status)) scheduleExportsPoll(jobId);
+    }, delay);
+  }
+
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && exportsState.job && RUNNING_STATUSES.has(exportsState.job.status)) {
+      fetchExportJob(exportsState.job.id).then(() => scheduleExportsPoll(exportsState.job.id));
+    }
+  });
+
   async function loadStats({ isRefresh = false } = {}) {
     if (isRefresh) {
       if (refreshing) return; // prevent repeated requests from multiple clicks
@@ -1583,6 +1890,7 @@
   $('#btn-diag').addEventListener('click', runDiagnostic);
 
   loadStats();
+  initExports();
 })();
 </script>
 </body>
