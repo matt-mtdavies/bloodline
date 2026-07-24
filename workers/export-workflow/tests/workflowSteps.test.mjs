@@ -566,6 +566,40 @@ await atest('writeActivityLogStream produces a valid empty array when there are 
   assert.equal(byteLength, 2);
 });
 
+await atest('writeActivityLogStream uses FixedLengthStream with the exact byte length when the Workers runtime provides it', async () => {
+  const { env } = makeEnv();
+  const jobId = 'exp_activity_fixed_length';
+  const key = `export-staging/${jobId}/derived/activity-log.json`;
+  await env.DOCS.put(`export-staging/${jobId}/activity/00000.ndjson`, JSON.stringify({ id: 'a1' }));
+
+  const originalFixedLengthStream = globalThis.FixedLengthStream;
+  class FakeFixedLengthStream {
+    constructor(length) {
+      const stream = new TransformStream();
+      stream.readable.fixedLength = length;
+      return stream;
+    }
+  }
+  globalThis.FixedLengthStream = FakeFixedLengthStream;
+
+  const realPut = env.DOCS.put.bind(env.DOCS);
+  env.DOCS.put = async (putKey, value, options) => {
+    if (putKey === key) {
+      assert.equal(value.fixedLength, new TextEncoder().encode('[{"id":"a1"}]').byteLength);
+    }
+    return realPut(putKey, value, options);
+  };
+
+  try {
+    const byteLength = await writeActivityLogStream(env, jobId, key);
+    assert.equal(byteLength, new TextEncoder().encode('[{"id":"a1"}]').byteLength);
+    assert.equal(await (await env.DOCS.get(key)).text(), '[{"id":"a1"}]');
+  } finally {
+    if (originalFixedLengthStream === undefined) delete globalThis.FixedLengthStream;
+    else globalThis.FixedLengthStream = originalFixedLengthStream;
+  }
+});
+
 // ── full pipeline: authorize -> ... -> clean-staging, verified with unzip ──
 
 const { execFileSync } = await import('node:child_process');
