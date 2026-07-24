@@ -81,18 +81,58 @@ function makeFakeEnv({ families = [], users = [], members = [], jobs = [], migra
     throw new Error(`fakeEnv: unhandled .first() query: ${sql}`);
   }
 
+  // How many `?` placeholders sit inside the optional test-allowlist
+  // ` AND {col} IN (?, ?, ...)` fragment exportService.js may have spliced
+  // into this statement — 0 when the fragment isn't present at all (general
+  // release, or an empty allowlist that already short-circuited before ever
+  // reaching the DB). Mirrors testAllowlistRestriction's own clause shape
+  // exactly, so the fake stays honest about which bind args belong to the
+  // restriction vs. the query's other own params.
+  function inClausePlaceholderCount(sql) {
+    const idx = sql.indexOf(' IN (');
+    if (idx === -1) return 0;
+    const close = sql.indexOf(')', idx);
+    return sql.slice(idx + 5, close).split(',').length;
+  }
+
   function all(sql, args) {
-    if (sql.includes('FROM family_export_job WHERE family_id = ? ORDER BY created_at DESC')) {
-      const [familyId] = args;
-      return jobRows.filter((j) => j.family_id === familyId).sort((a, b) => b.created_at - a.created_at);
+    if (sql.includes('FROM family_export_job WHERE family_id = ?') && sql.includes('ORDER BY created_at DESC')) {
+      const familyId = args[0];
+      const nIds = inClausePlaceholderCount(sql);
+      const limit = args[args.length - 1];
+      let rows = jobRows.filter((j) => j.family_id === familyId);
+      if (nIds > 0) {
+        const restrictIds = args.slice(1, 1 + nIds);
+        rows = rows.filter((j) => restrictIds.includes(j.family_id));
+      }
+      // ORDER BY created_at DESC LIMIT ? — applied in that order, exactly
+      // like real D1: the allowlist restriction (if any) is already part of
+      // the WHERE clause above, so LIMIT only ever truncates AFTER it, never
+      // before — the whole point of the fix this fake is meant to verify.
+      return rows.slice().sort((a, b) => b.created_at - a.created_at).slice(0, limit);
     }
-    if (sql.includes("requested_as = 'site_admin' ORDER BY created_at DESC")) {
-      return jobRows.filter((j) => j.requested_as === 'site_admin').sort((a, b) => b.created_at - a.created_at);
+    if (sql.includes("requested_as = 'site_admin'") && sql.includes('ORDER BY created_at DESC')) {
+      const nIds = inClausePlaceholderCount(sql);
+      const limit = args[args.length - 1];
+      let rows = jobRows.filter((j) => j.requested_as === 'site_admin');
+      if (nIds > 0) {
+        const restrictIds = args.slice(0, nIds);
+        rows = rows.filter((j) => restrictIds.includes(j.family_id));
+      }
+      return rows.slice().sort((a, b) => b.created_at - a.created_at).slice(0, limit);
     }
-    if (sql.includes('FROM family f') && sql.includes('WHERE f.id = ? OR f.name LIKE')) {
+    if (sql.includes('FROM family f') && sql.includes("WHERE (f.id = ? OR f.name LIKE")) {
       const [id, likeArg] = args;
+      const nIds = inClausePlaceholderCount(sql);
       const needle = likeArg.slice(1, -1).toLowerCase();
-      return families.filter((f) => f.id === id || f.name.toLowerCase().includes(needle))
+      let rows = families.filter((f) => f.id === id || f.name.toLowerCase().includes(needle));
+      if (nIds > 0) {
+        const restrictIds = args.slice(2, 2 + nIds);
+        rows = rows.filter((f) => restrictIds.includes(f.id));
+      }
+      // ORDER BY f.name ASC LIMIT 20 — LIMIT 20 is a SQL literal here (not a
+      // bound param), same as the real query.
+      return rows.slice().sort((a, b) => a.name.localeCompare(b.name)).slice(0, 20)
         .map((f) => {
           const owner = members.find((m) => m.family_id === f.id && m.role === 'owner');
           const ownerUser = owner && users.find((u) => u.id === owner.user_id);
@@ -717,6 +757,40 @@ await atest('listAdminExports and searchExportFamilies are FILTERED to allowlist
   env.ENABLE_FULL_EXPORT = 'true';
   const listAll = await listAdminExports(env, { actorEmail: 'admin@example.test' });
   assert.deepEqual(listAll.map((j) => j.id).sort(), ['exp_1', 'exp_2'], 'general release must show every family again, unfiltered');
+});
+
+await atest('listAdminExports and searchExportFamilies apply the allowlist restriction IN THE QUERY, before LIMIT — a filter-after-limit bug would hide the allowlisted family behind 20+ non-allowlisted rows that sort ahead of it', async () => {
+  const now = Math.floor(Date.now() / 1000);
+  // 22 non-allowlisted families/jobs, each deliberately sorting AHEAD of
+  // fam_1/exp_1 under both queries' own ORDER BY (name ASC for search,
+  // created_at DESC for jobs) — more than LIST_LIMIT/the search LIMIT (20),
+  // so a filter-after-LIMIT implementation would fetch only these 22 (or
+  // the newest/alphabetically-first 20 of them), filter them all out as
+  // not-allowlisted, and never see fam_1/exp_1 at all.
+  const otherFamilies = Array.from({ length: 22 }, (_, i) => ({
+    id: `fam_aaa_${String(i).padStart(2, '0')}`, name: `Aardvark Family ${String(i).padStart(2, '0')}`, // "Aardvark" < "Davies"
+  }));
+  const otherJobs = otherFamilies.map((f, i) => ({
+    id: `exp_other_${i}`, family_id: f.id, requested_by_user_id: ADMIN_USER.id, requested_as: 'site_admin',
+    status: 'ready', created_at: now + 1000 + i, // strictly newer than exp_1 below
+  }));
+  const { env } = baseFixture({
+    families: [FAM, ...otherFamilies],
+    members: [{ user_id: OWNER.id, family_id: 'fam_1', role: 'owner' }],
+    users: [OWNER],
+    jobs: [
+      { id: 'exp_1', family_id: 'fam_1', requested_by_user_id: ADMIN_USER.id, requested_as: 'site_admin', status: 'ready', created_at: now }, // older than all 22 others
+      ...otherJobs,
+    ],
+  });
+  env.ENABLE_FULL_EXPORT = 'false';
+  env.FULL_EXPORT_TEST_FAMILY_IDS = 'fam_1';
+
+  const list = await listAdminExports(env, { actorEmail: 'admin@example.test' });
+  assert.deepEqual(list.map((j) => j.id), ['exp_1'], 'exp_1 must still surface despite 22 newer non-allowlisted jobs sorting ahead of it');
+
+  const searched = await searchExportFamilies(env, { actorEmail: 'admin@example.test', query: 'family' }); // matches every family by name
+  assert.deepEqual(searched.map((f) => f.id), ['fam_1'], 'fam_1 must still surface despite 22 non-allowlisted families sorting ahead of it alphabetically');
 });
 
 await atest('removing the family id from the test allowlist revokes create, history, status, cancel, audit, and download access on the very next request — verification requirement #10', async () => {

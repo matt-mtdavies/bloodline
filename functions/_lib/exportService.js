@@ -86,6 +86,37 @@ function familyIdIsReleasedOrTestAllowlisted(env, familyId) {
 }
 
 /*
+ * The SAME family-enablement restriction as familyIdIsReleasedOrTestAllowlisted,
+ * but expressed as a SQL fragment to apply IN THE QUERY (before any
+ * `LIMIT`), for listAdminExports/searchExportFamilies. Those two used to
+ * fetch the newest/best-matching rows first and filter afterward — a real
+ * bug a PR #15 review caught: if 20+ rows belonging to non-allowlisted
+ * families are newer (or sort earlier) than the one allowlisted
+ * disposable-family row, that row never even reaches the fetched page at
+ * all, making the ONE family this whole gate exists to let an operator
+ * inspect invisible during the exact rollout rehearsal it's for.
+ *
+ * Returns `{ clause, ids, nothingAllowed }`:
+ * - general release on: `clause: ''`, `ids: []` — no restriction at all,
+ *   byte-identical to the pre-existing unfiltered query.
+ * - general release off, non-empty allowlist: `clause` is a ready-to-
+ *   splice ` AND {column} IN (?, ?, ...)` fragment; `ids` are the bind
+ *   values for those placeholders, in order — splice them into `.bind()`
+ *   immediately after this clause's own preceding placeholders.
+ * - general release off, EMPTY allowlist: `nothingAllowed: true` — no
+ *   family is enabled at all, so the caller should return an empty
+ *   result immediately without running the query (there is no SQL
+ *   fragment that means "match nothing" cleanly across every call site
+ *   here, and there is nothing to fetch either way).
+ */
+function testAllowlistRestriction(env, column) {
+  if (env.ENABLE_FULL_EXPORT === 'true') return { clause: '', ids: [], nothingAllowed: false };
+  const ids = fullExportTestFamilyIds(env);
+  if (ids.length === 0) return { clause: '', ids: [], nothingAllowed: true };
+  return { clause: ` AND ${column} IN (${ids.map(() => '?').join(', ')})`, ids, nothingAllowed: false };
+}
+
+/*
  * The per-family enablement decision every operation below gates on:
  * infrastructure must be ready AND (general release is on OR this EXACT
  * family id is on the disposable-family test allowlist). Every caller
@@ -301,11 +332,14 @@ export async function getFamilyExport(env, { userId, jobId }) {
 export async function listAdminExports(env, { actorEmail, familyId }) {
   requireExportInfrastructureReady(await isExportInfrastructureReady(env));
   if (!isExportAdminEmail(env, actorEmail)) throw new ExportServiceError('forbidden', 403, 'Not authorized for administrator exports.');
+  const restriction = testAllowlistRestriction(env, 'family_id');
+  if (restriction.nothingAllowed) return [];
   const { results } = familyId
-    ? await env.DB.prepare(`SELECT * FROM family_export_job WHERE family_id = ? ORDER BY created_at DESC LIMIT ?`).bind(familyId, LIST_LIMIT).all()
-    : await env.DB.prepare(`SELECT * FROM family_export_job WHERE requested_as = 'site_admin' ORDER BY created_at DESC LIMIT ?`).bind(LIST_LIMIT).all();
-  const visible = (results || []).filter((j) => familyIdIsReleasedOrTestAllowlisted(env, j.family_id));
-  return visible.map((j) => serializeExportJob(j, { forAdmin: true }));
+    ? await env.DB.prepare(`SELECT * FROM family_export_job WHERE family_id = ?${restriction.clause} ORDER BY created_at DESC LIMIT ?`)
+        .bind(familyId, ...restriction.ids, LIST_LIMIT).all()
+    : await env.DB.prepare(`SELECT * FROM family_export_job WHERE requested_as = 'site_admin'${restriction.clause} ORDER BY created_at DESC LIMIT ?`)
+        .bind(...restriction.ids, LIST_LIMIT).all();
+  return (results || []).map((j) => serializeExportJob(j, { forAdmin: true }));
 }
 
 export async function getAdminExport(env, { actorEmail, jobId }) {
@@ -348,6 +382,8 @@ export async function searchExportFamilies(env, { actorEmail, query }) {
   if (!isExportAdminEmail(env, actorEmail)) throw new ExportServiceError('forbidden', 403, 'Not authorized for administrator exports.');
   const q = String(query || '').trim();
   if (!q) return [];
+  const restriction = testAllowlistRestriction(env, 'f.id');
+  if (restriction.nothingAllowed) return [];
   const { results } = await env.DB.prepare(
     `SELECT f.id, f.name,
             (SELECT COUNT(*) FROM family_member fm WHERE fm.family_id = f.id) AS memberCount,
@@ -362,11 +398,10 @@ export async function searchExportFamilies(env, { actorEmail, query }) {
             -- answer one boolean question for up to 20 matched families.
             (SELECT CASE WHEN tree_json LIKE '%"_extraVersion"%' THEN 1 ELSE 0 END FROM family_tree ft WHERE ft.family_id = f.id) AS isSplit
        FROM family f
-      WHERE f.id = ? OR f.name LIKE ? ESCAPE '\\'
+      WHERE (f.id = ? OR f.name LIKE ? ESCAPE '\\')${restriction.clause}
       ORDER BY f.name ASC LIMIT 20`,
-  ).bind(q, `%${likeEscape(q)}%`).all();
-  const visible = (results || []).filter((r) => familyIdIsReleasedOrTestAllowlisted(env, r.id));
-  return visible.map((r) => ({
+  ).bind(q, `%${likeEscape(q)}%`, ...restriction.ids).all();
+  return (results || []).map((r) => ({
     id: r.id, name: r.name, memberCount: r.memberCount, ownerEmail: r.ownerEmail || null,
     lastExportStatus: r.lastExportStatus || null, storageMode: r.isSplit == null ? null : (r.isSplit ? 'split' : 'legacy'),
   }));
