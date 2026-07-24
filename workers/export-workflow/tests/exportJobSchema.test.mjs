@@ -232,6 +232,40 @@ await atest('a conditional transition does NOT apply (0 rows) when the job alrea
   assert.equal(applied, false);
 });
 
+await atest('a replayed transition (prior transition already committed) inserts NO phantom audit row — the exact PR #9 review finding', async () => {
+  const db = makeDb();
+  const d1 = makeD1(db);
+  const env = { DB: d1 };
+  const { jobId, statements } = createExportJobStatements(env, { familyId: 'fam_1', requestedByUserId: 'user_1', requestedAs: 'owner' });
+  await d1.batch(statements); // 1 audit row ('requested') so far
+
+  const first = await applyJobTransition(env, {
+    jobId, fromStatuses: ['queued'], toStatus: 'snapshotting', fields: { started_at: 2000 },
+    audit: { familyId: 'fam_1', event: 'started', actorAuthority: 'system' },
+  });
+  assert.equal(first.applied, true);
+  assert.equal(db.prepare('SELECT COUNT(*) AS c FROM family_export_audit WHERE job_id = ?').get(jobId).c, 2, 'requested + started');
+
+  // Replay the exact same queued -> snapshotting transition (e.g. a retried
+  // Workflow step after its own D1 write already committed). The job is no
+  // longer "queued", so the UPDATE must match 0 rows — and, per the fix,
+  // the audit INSERT must never run at all, not just be attempted twice.
+  const replay = await applyJobTransition(env, {
+    jobId, fromStatuses: ['queued'], toStatus: 'snapshotting', fields: { started_at: 9999 },
+    audit: { familyId: 'fam_1', event: 'started', actorAuthority: 'system' },
+  });
+  assert.equal(replay.applied, false);
+  assert.equal(replay.results.length, 1, 'the audit statement must not even be run when the UPDATE matched 0 rows');
+
+  const job = readJob(db, jobId);
+  assert.equal(job.started_at, 2000, 'the replayed UPDATE must not have overwritten the real transition either');
+  assert.equal(
+    db.prepare('SELECT COUNT(*) AS c FROM family_export_audit WHERE job_id = ?').get(jobId).c,
+    2,
+    'no phantom third audit row for a transition that never actually happened',
+  );
+});
+
 test('canTransition rejects an out-of-order jump (queued -> verifying)', () => {
   assert.equal(canTransition('queued', 'verifying'), false);
 });

@@ -105,6 +105,16 @@ multipart corruption, or an expiry/private-download failure.
  4. Deploy workers/export-workflow (fill in the real database_id
     first — it must match root wrangler.toml's [[d1_databases]]
     entry exactly). Record the Worker version.                     [ ]
+ 4a. Provision this Worker's OWN email config — secrets/vars are
+     never shared across separately-deployed Workers, so the root
+     project's FROM_EMAIL/APP_URL/BREVO_API_KEY do not carry over:
+     confirm workers/export-workflow/wrangler.toml's [vars] block
+     (APP_URL, FROM_EMAIL) matches the root wrangler.toml, then run
+     `cd workers/export-workflow && npx wrangler secret put
+     BREVO_API_KEY` with the same Brevo key the main project uses.
+     Left unset, completion emails silently no-op (best-effort by
+     design) rather than failing an export — confirm at least once
+     that a completion email actually arrives before relying on it. [ ]
  5. Configure the EXPORT_WORKFLOW_SERVICE service binding on the
     main Pages project (uncomment the [[services]] block in the
     root wrangler.toml, or add it via the dashboard).               [ ]

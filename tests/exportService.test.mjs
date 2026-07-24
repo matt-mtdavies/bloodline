@@ -327,6 +327,13 @@ await atest('listFamilyExports/getFamilyExport are scoped to the caller\'s own f
   assert.equal(got.id, 'exp_1');
 });
 
+await atest('listFamilyExports/getFamilyExport are forbidden for a viewer — a PR #9 review finding: only membership was checked before, not role', async () => {
+  const now = Math.floor(Date.now() / 1000);
+  const { env } = baseFixture({ jobs: [{ id: 'exp_1', family_id: 'fam_1', requested_by_user_id: OWNER.id, requested_as: 'owner', status: 'ready', created_at: now }] });
+  await assert.rejects(() => listFamilyExports(env, { userId: VIEWER.id }), (e) => e.code === 'forbidden' && e.status === 403);
+  await assert.rejects(() => getFamilyExport(env, { userId: VIEWER.id, jobId: 'exp_1' }), (e) => e.code === 'forbidden' && e.status === 403);
+});
+
 await atest('getFamilyExport 404s for a job belonging to a different family (no cross-family job-id guessing)', async () => {
   const now = Math.floor(Date.now() / 1000);
   const { env } = baseFixture({

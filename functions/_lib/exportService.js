@@ -185,10 +185,21 @@ export async function createAdminExport(env, { actorUserId, actorEmail, familyId
 
 const LIST_LIMIT = 20;
 
+// §6's authority table requires current owner/coadmin on create, list,
+// status, cancel AND download — not merely family membership. An earlier
+// version of list/get only checked membership existed at all, which let
+// an editor/contributor/viewer enumerate export history and poll status
+// for jobs they have no authority over (a PR #9 review finding).
+function requireOwnerOrCoadmin(membership) {
+  if (!membership || !['owner', 'coadmin'].includes(membership.role)) {
+    throw new ExportServiceError('forbidden', 403, 'Only the family owner or a co-admin can view export history.');
+  }
+}
+
 export async function listFamilyExports(env, { userId }) {
   requireFullExportReady(await isFullExportReady(env));
   const membership = await resolveCanonicalFamily(env, userId);
-  if (!membership) throw new ExportServiceError('forbidden', 403, 'No family membership found.');
+  requireOwnerOrCoadmin(membership);
   const { results } = await env.DB.prepare(
     `SELECT * FROM family_export_job WHERE family_id = ? ORDER BY created_at DESC LIMIT ?`,
   ).bind(membership.family_id, LIST_LIMIT).all();
@@ -198,7 +209,7 @@ export async function listFamilyExports(env, { userId }) {
 export async function getFamilyExport(env, { userId, jobId }) {
   requireFullExportReady(await isFullExportReady(env));
   const membership = await resolveCanonicalFamily(env, userId);
-  if (!membership) throw new ExportServiceError('forbidden', 403, 'No family membership found.');
+  requireOwnerOrCoadmin(membership);
   const job = await env.DB.prepare('SELECT * FROM family_export_job WHERE id = ? AND family_id = ?').bind(jobId, membership.family_id).first();
   if (!job) throw new ExportServiceError('not_found', 404, 'Export not found.');
   return serializeExportJob(job);

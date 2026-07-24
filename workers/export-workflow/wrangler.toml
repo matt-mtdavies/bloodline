@@ -25,6 +25,36 @@ name = "bloodline-family-archive-export"
 binding = "EXPORT_WORKFLOW"
 class_name = "FamilyArchiveExportWorkflow"
 
+# sendCompletionEmailStep (src/workflowSteps.js) reuses the SAME
+# functions/_lib/util.js#sendEmail helper the main Pages project uses, but
+# this is a completely separately-deployed Worker — env vars and secrets are
+# never shared across Workers just because they're in the same account, so
+# both must be configured here too, independently of the root wrangler.toml.
+# Without them, sendCompletionEmailStep silently no-ops (best-effort by
+# design — a missing/misconfigured email must never fail an otherwise-ready
+# export; see the step's own comment) and no completion email is ever sent,
+# which was a real gap a PR #9 review caught: this file had no [vars] block
+# and no documented secret step at all before this fix.
+[vars]
+# Must match the root wrangler.toml's APP_URL exactly — it's what the
+# completion email links back to (a family's export history or the admin
+# exports page). workflow.js already falls back to the production URL if
+# this is ever unset, so a missed override here degrades gracefully rather
+# than linking somewhere wrong.
+APP_URL = "https://myfamilybloodline.com"
+# Must match the root wrangler.toml's FROM_EMAIL exactly (see util.js#sendEmail
+# — required, not optional: sendEmail throws without it, which
+# sendCompletionEmailStep only catches and reports as `sent: false`, so a
+# forgotten override here means completion emails silently never send).
+FROM_EMAIL = "hello@myfamilybloodline.com"
+# BREVO_API_KEY is a SECRET, not a var — set it on THIS Worker specifically
+# (secrets do not carry over from the root Pages project):
+#   cd workers/export-workflow && npx wrangler secret put BREVO_API_KEY
+# Left unset, sendEmail logs "[dev] email suppressed" and returns without
+# sending (util.js's own dev-mode fallback) — safe, but silent; see the
+# rollout runbook (docs/FULL-ARCHIVE-EXPORT-COMPLETION-RUNBOOK.md) for when
+# a human operator should actually provision this.
+
 # Same D1 database and EU-jurisdiction R2 bucket as the main Pages project
 # (wrangler.toml at the repo root) — this Worker must not create a second
 # source of truth. Fill in the real database_id once deployed; it must match

@@ -9,6 +9,7 @@
  */
 import { ZipStreamWriter } from './zipWriter.js';
 import { BUDGETS } from './budgets.js';
+import { createIncrementalSha256 } from './manifest.js';
 
 /*
  * Builds the deterministic, lexically-ordered archive plan from already-
@@ -171,6 +172,25 @@ function concatChunks(chunks, totalBytes) {
  * this buffer between steps would silently corrupt the archive: the
  * writer's offset already "counts" those bytes as emitted, but they'd
  * never actually reach R2.
+ *
+ * `resumeLedger` (optional, defaults to []) carries forward the per-entry
+ * packaging ledger from a PRIOR call — one `{ path, byteLength, sha256 }`
+ * record per entry actually streamed into the archive so far, computed
+ * incrementally as each entry's real bytes pass through (§4.2 Package:
+ * "compute SHA-256 while streaming each entry"; `createIncrementalSha256`
+ * already existed in manifest.js for exactly this purpose but had never
+ * been wired in anywhere — confirmed and fixed after a PR #9 review). This
+ * is always safe to finalize entry-by-entry within a single call: the loop
+ * above only ever advances `index` (and can only checkpoint) once
+ * `writer.addEntry` has fully consumed one entry's bytes, so no entry's
+ * hash is ever left partially computed across a step boundary — only
+ * whole, already-finished ledger records need to travel between calls.
+ * The returned `ledger` is the FULL ledger (resumeLedger plus whatever was
+ * added this call) — the caller (workflowSteps.js's packageStep) persists
+ * it to the checkpoint the same way it already persists `uploadedParts`,
+ * and the verify step later cross-checks it against the archive plan/
+ * manifest (the "packaging ledger" §4.2 Verify's own "validate manifest/
+ * file counts and checksums from the packaging ledger" refers to).
  */
 export async function runPackagingStep({
   plan, startIndex, resumeState, uploadPart, getEntryBytes,
@@ -178,16 +198,28 @@ export async function runPackagingStep({
   targetPartBytes = BUDGETS.multipartPart.defaultBytes,
   startPartNumber = 1,
   initialPendingBytes = null,
+  resumeLedger = [],
 }) {
   const accumulator = new PartAccumulator({ uploadPart, targetPartBytes, startPartNumber, initialBytes: initialPendingBytes });
   const writer = new ZipStreamWriter({ onChunk: (b) => accumulator.onChunk(b), resumeState });
+  const ledger = [...resumeLedger];
 
   let index = startIndex;
   let entriesAddedThisStep = 0;
   while (index < plan.length && entriesAddedThisStep < maxEntriesPerStep && accumulator.uploadedParts.length === 0) {
     const entry = plan[index];
-    const chunks = await getEntryBytes(entry);
-    await writer.addEntry(entry.path, chunks, { uncompressedSizeHint: entry.byteLength, compress: entry.compress });
+    const rawChunks = await getEntryBytes(entry);
+    const hasher = createIncrementalSha256();
+    let byteLength = 0;
+    async function* hashedChunks() {
+      for await (const chunk of rawChunks) {
+        hasher.update(chunk);
+        byteLength += chunk.byteLength;
+        yield chunk;
+      }
+    }
+    await writer.addEntry(entry.path, hashedChunks(), { uncompressedSizeHint: entry.byteLength, compress: entry.compress });
+    ledger.push({ path: entry.path, byteLength, sha256: hasher.digestHex() });
     index += 1;
     entriesAddedThisStep += 1;
   }
@@ -209,5 +241,6 @@ export async function runPackagingStep({
     writerState: writer.exportState(),
     uploadedParts: accumulator.uploadedParts,
     nextPartNumber: accumulator.partNumber,
+    ledger,
   };
 }

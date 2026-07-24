@@ -1,5 +1,7 @@
 import { loadFullTree } from '../../../functions/_lib/treeStore.js';
-import { applyJobTransition, capSummary } from '../../../functions/_lib/exportJob.js';
+import {
+  applyJobTransition, capSummary, RUNNING_STATUSES, EXPORT_ERROR_CODES,
+} from '../../../functions/_lib/exportJob.js';
 import { sendEmail } from '../../../functions/_lib/util.js';
 import {
   captureUpperBound, buildActivityLogPageQuery, ActivityLogUnavailableError,
@@ -10,10 +12,17 @@ import {
 import { shardByBudget, BUDGETS } from './lib/budgets.js';
 import { mapWithConcurrency } from './lib/concurrency.js';
 import { buildContentIndex, toContentIndexJSON, toTreeDataJs } from './lib/contentIndex.js';
-import { buildManifest, computeManifestChecksum, sha256Hex } from './lib/manifest.js';
+import {
+  buildManifest, computeManifestChecksum, sha256Hex, createIncrementalSha256,
+} from './lib/manifest.js';
 import {
   buildArchivePlan, assertNotOverSegmentedExportBoundary, runPackagingStep,
 } from './lib/packaging.js';
+import { parseEocdTail, parseCentralDirectory } from './lib/zipVerify.js';
+import { buildFamilyRecord } from './lib/familyRecord.js';
+import { buildMissingFilesReport, buildIntegrityReportHtml } from './lib/reports.js';
+import { buildMembersRecord, buildInvitationsRecord } from './lib/administration.js';
+import { getStaticViewerFiles } from './lib/staticAssets.js';
 
 /*
  * Steps 1-13 of the stable step plan (docs/FULL-ARCHIVE-EXPORT-COMPLETION-PHASE.md
@@ -47,6 +56,30 @@ function stagingKey(jobId, ...parts) {
   return `export-staging/${jobId}/${parts.join('/')}`;
 }
 
+/*
+ * Records "this job's Workflow is still alive" — the only signal
+ * reconcileStaleJobs() (below) has for distinguishing a slow-but-progressing
+ * export from one whose Workflow instance died/got stuck mid-step with no
+ * further D1 writes ever coming. Before this fix NOTHING ever wrote
+ * last_heartbeat_at, so reconcileStaleJobs' own COALESCE(last_heartbeat_at,
+ * started_at, created_at) fell back to started_at for every job — a
+ * legitimately slow but healthy multi-hour export on a large family would
+ * have been auto-failed as "stalled" 30 minutes after it started, same as a
+ * genuinely dead one; there was no way to tell the two apart. Called at the
+ * top of every step that touches a single job's row (never from the
+ * once-per-family-batch scheduled cleanup functions, which have no single
+ * `jobId` of their own). Best-effort by design: a heartbeat write failing
+ * must never fail the export itself, so callers don't need their own
+ * try/catch — this one swallows it and lets reconciliation fail the job
+ * later if the underlying D1/Workflow problem is real and persistent.
+ */
+export async function touchHeartbeat(env, jobId, now = Date.now()) {
+  try {
+    await env.DB.prepare('UPDATE family_export_job SET last_heartbeat_at = ? WHERE id = ?')
+      .bind(Math.floor(now / 1000), jobId).run();
+  } catch { /* best-effort — see comment above */ }
+}
+
 async function putJson(env, key, value) {
   await env.DOCS.put(key, JSON.stringify(value), { httpMetadata: { contentType: 'application/json' } });
 }
@@ -58,6 +91,7 @@ async function getJson(env, key) {
 // ── Step 1: v1-authorize-job ────────────────────────────────────────────
 
 export async function authorizeJobStep(env, { jobId }) {
+  await touchHeartbeat(env, jobId);
   const job = await env.DB.prepare('SELECT * FROM family_export_job WHERE id = ?').bind(jobId).first();
   if (!job) throw new Error(`export job ${jobId} not found`);
 
@@ -68,12 +102,12 @@ export async function authorizeJobStep(env, { jobId }) {
   // export must not fail just because a name or address happens to be
   // unset; downstream steps degrade gracefully (an empty family name, a
   // skipped completion email).
-  const familyRow = await env.DB.prepare('SELECT name FROM family WHERE id = ?').bind(job.family_id).first();
+  const familyRow = await env.DB.prepare('SELECT name, created_at FROM family WHERE id = ?').bind(job.family_id).first();
   const requesterRow = await env.DB.prepare('SELECT email FROM user WHERE id = ?').bind(job.requested_by_user_id).first();
   const context = {
     familyId: job.family_id,
     requestedAs: job.requested_as,
-    family: { id: job.family_id, name: familyRow?.name || '' },
+    family: { id: job.family_id, name: familyRow?.name || '', createdAt: familyRow?.created_at ?? null },
     requesterEmail: requesterRow?.email || null,
   };
 
@@ -102,6 +136,7 @@ export async function authorizeJobStep(env, { jobId }) {
 // ── Step 2: v1-capture-source ───────────────────────────────────────────
 
 export async function captureSourceStep(env, { jobId, familyId }) {
+  await touchHeartbeat(env, jobId);
   let loaded;
   try {
     loaded = await loadFullTree(env, familyId);
@@ -150,6 +185,7 @@ function activityQueryFn(env) {
 }
 
 export async function captureActivityBoundStep(env, { jobId, familyId }) {
+  await touchHeartbeat(env, jobId);
   const upperBound = await captureUpperBound(familyId, activityQueryFn(env));
   await putJson(env, stagingKey(jobId, 'activity', '_upperBound.json'), upperBound);
   return { upperBound, done: upperBound == null };
@@ -161,6 +197,7 @@ export async function captureActivityBoundStep(env, { jobId, familyId }) {
 // captured upper bound never changes mid-run, so replaying page N always
 // produces byte-identical output.
 export async function captureActivityPageStep(env, { jobId, familyId, pageIndex, lowerCursor = null }) {
+  await touchHeartbeat(env, jobId);
   const upperBound = await getJson(env, stagingKey(jobId, 'activity', '_upperBound.json'));
   if (!upperBound) return { done: true, rowCount: 0, nextCursor: null };
 
@@ -191,6 +228,7 @@ export async function captureActivityPageStep(env, { jobId, familyId, pageIndex,
 // ── Step 5: v1-build-inventory ──────────────────────────────────────────
 
 export async function buildInventoryStep(env, { jobId, familyId }) {
+  await touchHeartbeat(env, jobId);
   const tree = await readCapturedTree(env, jobId);
   await applyJobTransition(env, { jobId, fromStatuses: ['snapshotting'], toStatus: 'inventory' });
 
@@ -211,14 +249,25 @@ export async function buildInventoryStep(env, { jobId, familyId }) {
 
 function resolveR2Head(env) {
   return async (route, key) => {
-    const bucketKey = route === 'photos' ? `photos/${key}` : `documents/${key}`;
-    const head = await env.DOCS.head(bucketKey);
+    // Photos/documents are stored at the FLAT key returned by
+    // uid('ph_')/uid('doc_') at upload time (functions/api/photos.js,
+    // functions/api/documents.js both `env.DOCS.put(key, ...)` with no
+    // route prefix, and their own GET routes read `env.DOCS.get(params.key)`
+    // directly) — never under a `photos/`/`documents/` prefix. An earlier
+    // version of this function invented that prefix, which meant every
+    // real R2-backed photo/document resolved to a key that never existed
+    // and was always classified `missing` — confirmed and fixed after a
+    // PR #9 review caught it. `route` is kept as a parameter (used
+    // elsewhere for archive-path naming) but no longer touches the actual
+    // storage key.
+    const head = await env.DOCS.head(bucketKeyFor(route, key));
     if (!head) return { found: false };
     return { found: true, byteLength: head.size, mimeType: head.httpMetadata?.contentType ?? null, etag: head.etag };
   };
 }
 
 export async function resolveInventoryShardStep(env, { jobId, familyId, shardIndex }) {
+  await touchHeartbeat(env, jobId);
   const pending = await getJson(env, stagingKey(jobId, 'inventory', `_pending-${shardIndex}.json`));
   if (!pending) return { shardIndex, entryCount: 0, warningCount: 0, alreadyResolved: true };
 
@@ -234,6 +283,7 @@ export async function resolveInventoryShardStep(env, { jobId, familyId, shardInd
 // already present in the captured tree (§7 Inventory: "list Keepsakes only
 // under exact family/person prefixes; never list the flat bucket").
 export async function resolveKeepsakesStep(env, { jobId, familyId }) {
+  await touchHeartbeat(env, jobId);
   const tree = await readCapturedTree(env, jobId);
   const listPrefix = async (prefix) => {
     const listed = await env.DOCS.list({ prefix });
@@ -263,6 +313,75 @@ async function* bodyToChunks(obj) {
   yield new Uint8Array(buf);
 }
 
+// Wraps a plain async generator/iterable in a real ReadableStream via the
+// underlying-source `pull` contract — the same construction the platform
+// itself uses everywhere (this is just the inverse of bodyToChunks above),
+// so it needs no runtime feature newer than the ReadableStream constructor
+// itself, unlike the newer `ReadableStream.from()` static helper.
+function streamFromAsyncIterable(iterable) {
+  const iterator = iterable[Symbol.asyncIterator]();
+  return new ReadableStream({
+    async pull(controller) {
+      const { value, done } = await iterator.next();
+      if (done) { controller.close(); return; }
+      controller.enqueue(value);
+    },
+    async cancel(reason) {
+      if (typeof iterator.return === 'function') await iterator.return(reason);
+    },
+  });
+}
+
+/*
+ * Streams the paged activity-log ndjson shards straight into one
+ * `activity-log.json` R2 object as a real ReadableStream — never parsing a
+ * row into a JS object, and never holding more than ONE shard's raw text in
+ * memory at a time. A family with a large multi-year activity history can
+ * have thousands of rows across many pages (BUDGETS.activityQueryPage caps
+ * each page at 500), and the previous version of this function parsed every
+ * single row into an array of JS objects and then JSON.stringify'd the
+ * whole array again — holding the full parsed object graph AND the full
+ * final string in memory simultaneously, exactly the class of unbounded
+ * per-step memory §2.6's own budget exists to prevent. Confirmed and fixed
+ * after a PR #9 review caught it. Each ndjson line is already valid,
+ * single-line JSON on its own, so concatenating the raw text with commas
+ * between entries produces a byte-identical JSON array to
+ * `JSON.stringify(parsedRows)` without ever reconstructing the object graph.
+ * Returns the total byte length written (tracked as a side effect of the
+ * generator, available the instant `env.DOCS.put()` resolves — R2's `put()`
+ * always fully drains the stream before returning), needed for the archive
+ * plan's `byteLength` hint, which the caller would otherwise have no way to
+ * know without a separate `head()` round trip or re-materializing the body.
+ */
+export async function writeActivityLogStream(env, jobId, key) {
+  const encoder = new TextEncoder();
+  let totalBytes = 0;
+  async function* chunks() {
+    const emit = (s) => {
+      const bytes = encoder.encode(s);
+      totalBytes += bytes.byteLength;
+      return bytes;
+    };
+    yield emit('[');
+    let first = true;
+    for (let i = 0; ; i++) {
+      const obj = await env.DOCS.get(stagingKey(jobId, 'activity', `${String(i).padStart(5, '0')}.ndjson`));
+      if (!obj) break;
+      const text = await obj.text();
+      if (!text) continue;
+      for (const line of text.split('\n')) {
+        if (!line) continue;
+        if (!first) yield emit(',');
+        yield emit(line);
+        first = false;
+      }
+    }
+    yield emit(']');
+  }
+  await env.DOCS.put(key, streamFromAsyncIterable(chunks()), { httpMetadata: { contentType: 'application/json' } });
+  return totalBytes;
+}
+
 // Builds the byPath lookup packaging needs to fetch each media/keepsake
 // entry's actual bytes without re-deriving it per-entry — a REFERENCE only
 // (shard/index for an embedded data_url, or the R2 key for anything R2-
@@ -290,11 +409,18 @@ async function buildByPathIndex(env, jobId, shardCount) {
   return byPath;
 }
 
+// The real R2 storage key for a photo/document reference IS the key
+// exactly as generated at upload time — flat, no route prefix (see
+// resolveR2Head's own comment above for the confirmed real shape).
+// `route` is unused here now but kept as a parameter so both call sites
+// keep passing it — it's still meaningful metadata (which upload route
+// produced this key), even though it no longer changes the lookup itself.
 function bucketKeyFor(route, key) {
-  return route === 'photos' ? `photos/${key}` : `documents/${key}`;
+  return key;
 }
 
 export async function startMultipartStep(env, { jobId, familyId, family, requestedAs }) {
+  await touchHeartbeat(env, jobId);
   const tree = await readCapturedTree(env, jobId);
   const jobRow = await env.DB.prepare(
     'SELECT source_tree_updated_at, source_extra_version, source_storage_mode FROM family_export_job WHERE id = ?',
@@ -310,15 +436,24 @@ export async function startMultipartStep(env, { jobId, familyId, family, request
   const keepsakes = await getJson(env, stagingKey(jobId, 'inventory', 'keepsakes.json'));
   const keepsakeEntries = keepsakes?.entries || [];
 
-  // Concatenate the paged activity-log shards into one JSON array file.
-  const activityRows = [];
-  for (let i = 0; ; i++) {
-    const obj = await env.DOCS.get(stagingKey(jobId, 'activity', `${String(i).padStart(5, '0')}.ndjson`));
-    if (!obj) break;
-    const text = await obj.text();
-    if (text) activityRows.push(...text.split('\n').filter(Boolean).map((l) => JSON.parse(l)));
-  }
-  const activityLogJson = JSON.stringify(activityRows);
+  // Every "fixed" (non-media) archive file is staged under the SAME
+  // derived/{archivePath} convention, keyed by its own real archive path —
+  // this is what lets getEntryBytesFor (below) fetch ANY of them back
+  // through one generic lookup instead of a hardcoded literal path list,
+  // so adding a new fixed file (as this fix does — family.json, reports/,
+  // the viewer bundle, administration/) never means touching that lookup.
+  const derivedKeyFor = (archivePath) => stagingKey(jobId, 'derived', archivePath);
+
+  const treeJsonArchivePath = 'data/tree.json';
+  const activityLogArchivePath = 'data/activity-log.json';
+  const contentIndexArchivePath = 'data/content-index.json';
+  const treeDataArchivePath = 'data/tree-data.js';
+  const familyJsonArchivePath = 'data/family.json';
+  const manifestArchivePath = 'manifest.json';
+  const missingFilesArchivePath = 'reports/missing-files.txt';
+  const integrityReportArchivePath = 'reports/integrity-report.html';
+
+  const activityLogByteLength = await writeActivityLogStream(env, jobId, derivedKeyFor(activityLogArchivePath));
 
   const treeJson = JSON.stringify(tree);
   const sourceChecksum = sha256Hex(treeJson);
@@ -332,37 +467,124 @@ export async function startMultipartStep(env, { jobId, familyId, family, request
     .filter((e) => ['missing', 'unreadable', 'unsupported'].includes(e.status))
     .map((e) => ({ path: e.path, status: e.status, warning: e.warning || e.status }));
 
+  // The manifest is baked into the ZIP as one of its own FIXED entries
+  // below (in lexical order, well before any large media past "m" in the
+  // path) — there is no way to edit its bytes afterward once packaging has
+  // moved past it, so its `status` field must be the REAL final outcome,
+  // decided HERE rather than a placeholder nothing ever goes back to fix.
+  // That final outcome is already fully knowable at this point: every
+  // media/keepsake reference has already been resolved (inventory is
+  // complete), so `warnings` above is the complete set the job will ever
+  // have — packaging/verify only stream and check bytes, they never
+  // discover NEW missing/unreadable references. Before this fix `status`
+  // was hardcoded to the literal string 'packaging' and simply left that
+  // way forever, so a finished, `ready` archive's own manifest.json inside
+  // it permanently claimed to still be packaging — confirmed and fixed
+  // after a PR #9 review caught it.
+  const manifestStatus = warnings.length > 0 ? 'ready_with_warnings' : 'ready';
+
+  const generatedAt = new Date().toISOString();
+
   const manifest = buildManifest({
     jobId,
     family,
-    createdAt: new Date().toISOString(),
+    createdAt: generatedAt,
     source: {
       treeUpdatedAt: jobRow?.source_tree_updated_at ?? null,
       storageMode: jobRow?.source_storage_mode ?? 'legacy',
       extraVersion: jobRow?.source_extra_version ?? null,
     },
     requestedAs,
-    status: 'packaging',
+    status: manifestStatus,
     counts: { people: (tree.people || []).length, media: mediaEntries.length, keepsakes: keepsakeEntries.length },
     totalBytes: mediaEntries.reduce((n, e) => n + (e.byteLength || 0), 0),
-    files: [...mediaEntries, ...keepsakeEntries].map((e) => ({ path: e.path, id: e.id, status: e.status })),
+    // Preserves the real, already-computed per-entry metadata resolveEntry/
+    // buildKeepsakeInventory produced (mimeType, byteLength, a real sha256
+    // when one was computable at inventory time, the warning reason) —
+    // before this fix this reduced every entry down to just
+    // `{path, id, status}`, silently discarding data the manifest is
+    // supposed to actually carry. Deliberately excludes internal-only
+    // fields (`etag`, `r2Key`, the full embedded Keepsake `edition` body,
+    // `originalReference`) that either leak storage internals or duplicate
+    // data already present elsewhere in the archive.
+    files: [...mediaEntries, ...keepsakeEntries].map((e) => ({
+      path: e.path,
+      id: e.id,
+      status: e.status,
+      ...(e.recordType ? { recordType: e.recordType } : {}),
+      ...(e.mimeType ? { mimeType: e.mimeType } : {}),
+      ...(e.byteLength != null ? { byteLength: e.byteLength } : {}),
+      ...(e.sha256 ? { sha256: e.sha256 } : {}),
+      ...(e.warning ? { warning: e.warning } : {}),
+    })),
     warnings,
   });
   const manifestJson = JSON.stringify(manifest);
   const manifestChecksum = computeManifestChecksum(manifest);
 
-  const fixedFiles = [
-    { path: 'tree.json', byteLength: byteLen(treeJson), compress: 'deflate-raw' },
-    { path: 'activity-log.json', byteLength: byteLen(activityLogJson), compress: 'deflate-raw' },
-    { path: 'content-index.json', byteLength: byteLen(contentIndexJson), compress: 'deflate-raw' },
-    { path: 'tree-data.js', byteLength: byteLen(treeDataJs), compress: 'deflate-raw' },
-    { path: 'manifest.json', byteLength: byteLen(manifestJson), compress: 'deflate-raw' },
+  const familyRecord = buildFamilyRecord({
+    familyId,
+    familyName: family?.name,
+    familyCreatedAt: family?.createdAt,
+    source: manifest.source,
+    generatedAt,
+    requestedAs,
+  });
+  const familyJson = JSON.stringify(familyRecord);
+
+  const missingFilesText = buildMissingFilesReport(warnings);
+  const integrityReportHtml = buildIntegrityReportHtml({ manifest, manifestChecksum, generatedAt });
+
+  // docs/FULL-ARCHIVE-EXPORT.md §3.4: "administration/ is included only in
+  // site-admin exports" — a family owner/co-admin export never sees member
+  // emails or invitation history, matching the same authority split the
+  // rest of the export API already enforces (functions/_lib/exportService.js).
+  const administrationFiles = [];
+  if (requestedAs === 'site_admin') {
+    const { results: memberRows } = await env.DB.prepare(
+      `SELECT fm.user_id, u.email, fm.role, fm.invited_by, fm.joined_at
+         FROM family_member fm JOIN user u ON u.id = fm.user_id
+        WHERE fm.family_id = ? ORDER BY fm.joined_at ASC`,
+    ).bind(familyId).all();
+    const { results: inviteRows } = await env.DB.prepare(
+      `SELECT id, email, role, status, expires_at, created_at FROM invite WHERE family_id = ? ORDER BY created_at ASC`,
+    ).bind(familyId).all();
+    administrationFiles.push(
+      { path: 'data/administration/members.json', content: JSON.stringify(buildMembersRecord(memberRows)), compress: 'deflate-raw' },
+      { path: 'data/administration/invitations.json', content: JSON.stringify(buildInvitationsRecord(inviteRows)), compress: 'deflate-raw' },
+    );
+  }
+
+  const staticViewerFiles = getStaticViewerFiles();
+
+  // Every fixed (non-media) archive entry, staged under derived/{archivePath}
+  // so getEntryBytesFor (below) can fetch ANY of them back through one
+  // generic lookup keyed by the entry's own real archive path — adding a
+  // new fixed file here never means touching that lookup separately.
+  const fixedFileSpecs = [
+    { path: treeJsonArchivePath, content: treeJson, compress: 'deflate-raw' },
+    { path: activityLogArchivePath, byteLength: activityLogByteLength }, // already streamed directly to its staging key above
+    { path: contentIndexArchivePath, content: contentIndexJson, compress: 'deflate-raw' },
+    { path: treeDataArchivePath, content: treeDataJs, compress: 'deflate-raw' },
+    { path: familyJsonArchivePath, content: familyJson, compress: 'deflate-raw' },
+    { path: manifestArchivePath, content: manifestJson, compress: 'deflate-raw' },
+    { path: missingFilesArchivePath, content: missingFilesText, compress: 'deflate-raw' },
+    { path: integrityReportArchivePath, content: integrityReportHtml, compress: 'deflate-raw' },
+    ...administrationFiles,
+    ...staticViewerFiles.map((f) => ({ path: f.path, bytes: f.bytes, compress: f.compress })),
   ];
-  await putJson(env, stagingKey(jobId, 'derived', 'tree.json'), tree);
-  await env.DOCS.put(stagingKey(jobId, 'derived', 'activity-log.json'), activityLogJson);
-  await env.DOCS.put(stagingKey(jobId, 'derived', 'content-index.json'), contentIndexJson);
-  await env.DOCS.put(stagingKey(jobId, 'derived', 'tree-data.js'), treeDataJs);
-  await env.DOCS.put(stagingKey(jobId, 'derived', 'manifest.json'), manifestJson);
+
+  const fixedFiles = [];
+  for (const spec of fixedFileSpecs) {
+    if (spec.byteLength != null) {
+      // Already staged (activity-log.json, streamed directly above).
+      fixedFiles.push({ path: spec.path, byteLength: spec.byteLength, compress: 'deflate-raw' });
+      continue;
+    }
+    const bytes = spec.bytes ?? new TextEncoder().encode(spec.content);
+    await env.DOCS.put(derivedKeyFor(spec.path), bytes);
+    fixedFiles.push({ path: spec.path, byteLength: bytes.byteLength, compress: spec.compress });
+  }
 
   const plan = buildArchivePlan({ fixedFiles, mediaEntries, keepsakeEntries });
   assertNotOverSegmentedExportBoundary(plan); // throws requires_segmented_export if over budget
@@ -375,7 +597,7 @@ export async function startMultipartStep(env, { jobId, familyId, family, request
   const upload = await env.DOCS.createMultipartUpload(finalKey);
   await putJson(env, stagingKey(jobId, 'checkpoint.json'), {
     uploadId: upload.uploadId, key: finalKey, nextIndex: 0, writerState: null,
-    uploadedParts: [], nextPartNumber: 1, pendingBytesKey: null,
+    uploadedParts: [], nextPartNumber: 1, pendingBytesKey: null, ledger: [],
   });
 
   await env.DB.prepare(
@@ -386,15 +608,23 @@ export async function startMultipartStep(env, { jobId, familyId, family, request
   return { entryCount: plan.length, totalBytes: manifest.totalBytes, manifestChecksum };
 }
 
-function byteLen(s) { return new TextEncoder().encode(s).byteLength; }
-
 // ── repeated Step 8: v1-package-{checkpoint} ────────────────────────────
 
 async function getEntryBytesFor(env, jobId, byPath) {
   return async (entry) => {
-    if (entry.path === 'tree.json') return [new TextEncoder().encode(JSON.stringify(await getJson(env, stagingKey(jobId, 'derived', 'tree.json'))))];
-    if (['activity-log.json', 'content-index.json', 'tree-data.js', 'manifest.json'].includes(entry.path)) {
+    // Every fixed (non-media) entry — tree.json, activity-log.json,
+    // content-index.json, tree-data.js, family.json, manifest.json,
+    // reports/*, the whole viewer/ bundle, administration/* — was staged
+    // under this SAME derived/{archivePath} convention by startMultipartStep,
+    // keyed by its own real archive path. This generic lookup is what lets
+    // a new fixed file be added there without this function ever needing a
+    // matching literal-path entry here too (a real bug this fix closes —
+    // the viewer/family.json/reports/administration files never appeared
+    // anywhere in the packaged ZIP because nothing here knew to look for
+    // them, even where the fixedFiles plan itself listed them).
+    if (entry.kind === 'fixed') {
       const obj = await env.DOCS.get(stagingKey(jobId, 'derived', entry.path));
+      if (!obj) throw new Error(`fixed archive entry "${entry.path}" is missing from staging at packaging time`);
       return bodyToChunks(obj);
     }
     const loc = byPath[entry.path];
@@ -412,6 +642,7 @@ async function getEntryBytesFor(env, jobId, byPath) {
 }
 
 export async function packageStep(env, { jobId }) {
+  await touchHeartbeat(env, jobId);
   const checkpoint = await getJson(env, stagingKey(jobId, 'checkpoint.json'));
   const plan = await getJson(env, stagingKey(jobId, 'packaging', 'plan.json'));
   const byPath = await getJson(env, stagingKey(jobId, 'packaging', 'byPath.json'));
@@ -433,6 +664,7 @@ export async function packageStep(env, { jobId }) {
     getEntryBytes: await getEntryBytesFor(env, jobId, byPath),
     startPartNumber: checkpoint.nextPartNumber,
     initialPendingBytes,
+    resumeLedger: checkpoint.ledger || [],
   });
 
   const uploadedParts = [...checkpoint.uploadedParts, ...result.uploadedParts];
@@ -450,16 +682,31 @@ export async function packageStep(env, { jobId }) {
     uploadedParts,
     nextPartNumber: result.nextPartNumber,
     pendingBytesKey: result.pendingBytes ? pendingBytesKey : null,
+    ledger: result.ledger,
   });
 
-  await env.DB.prepare(`UPDATE family_export_job SET processed_files = ? WHERE id = ?`).bind(result.nextIndex, jobId).run();
+  // `writerState.offset` is the ZipStreamWriter's own cumulative
+  // bytes-emitted-so-far counter (a BigInt string — see zipWriter.js's
+  // exportState()) — the one true "how much of the archive has actually
+  // been produced" figure, since it accounts for every entry's local
+  // header + payload + data descriptor written into the stream, not just a
+  // count of whole entries. Used here as `processed_bytes` (§4/§12's
+  // progress.processedBytes) — before this fix nothing ever wrote it, so
+  // every in-progress export showed 0 processed bytes no matter how far
+  // along it actually was. Safe to convert to Number: real archives are
+  // bounded well under Number.MAX_SAFE_INTEGER (~9 PiB) by
+  // BUDGETS.segmentedExport itself.
+  const processedBytes = Number(BigInt(result.writerState.offset));
+  await env.DB.prepare(`UPDATE family_export_job SET processed_files = ?, processed_bytes = ? WHERE id = ?`)
+    .bind(result.nextIndex, processedBytes, jobId).run();
 
-  return { done: result.done, nextIndex: result.nextIndex, partsUploaded: uploadedParts.length };
+  return { done: result.done, nextIndex: result.nextIndex, partsUploaded: uploadedParts.length, processedBytes };
 }
 
 // ── Step 9: v1-complete-multipart ───────────────────────────────────────
 
 export async function completeMultipartStep(env, { jobId, familyId }) {
+  await touchHeartbeat(env, jobId);
   const checkpoint = await getJson(env, stagingKey(jobId, 'checkpoint.json'));
   const upload = env.DOCS.resumeMultipartUpload(checkpoint.key, checkpoint.uploadId);
   const finalObject = await upload.complete(checkpoint.uploadedParts);
@@ -473,7 +720,25 @@ export class ArchiveVerificationError extends Error {
   constructor(message) { super(message); this.name = 'ArchiveVerificationError'; this.code = 'archive_verification_failed'; }
 }
 
+// A generous margin over zipVerify.js's own MAX_TRAILER_BYTES (98) — a
+// single range read at this size always contains the whole EOCD/ZIP64-EOCD/
+// locator trailer for any archive this writer ever produces, since that
+// trailer's size is fixed, not proportional to the archive's own size (see
+// MAX_TRAILER_BYTES' own comment).
+const TAIL_WINDOW_BYTES = 4096;
+// Bounds how much of the archive verifyArchiveStep ever holds in memory at
+// once while computing its whole-file checksum — independent of how large
+// the real archive is (§2.6).
+const HASH_CHUNK_BYTES = 8 * 1024 * 1024;
+
+async function rangeGetBytes(env, key, range) {
+  const obj = await env.DOCS.get(key, { range });
+  if (!obj) throw new ArchiveVerificationError(`range read failed for ${key} (range ${JSON.stringify(range)})`);
+  return new Uint8Array(await obj.arrayBuffer());
+}
+
 export async function verifyArchiveStep(env, { jobId }) {
+  await touchHeartbeat(env, jobId);
   const checkpoint = await getJson(env, stagingKey(jobId, 'checkpoint.json'));
   const plan = await getJson(env, stagingKey(jobId, 'packaging', 'plan.json'));
   const manifestJson = await (await env.DOCS.get(stagingKey(jobId, 'derived', 'manifest.json'))).text();
@@ -483,24 +748,84 @@ export async function verifyArchiveStep(env, { jobId }) {
   const head = await env.DOCS.head(checkpoint.key);
   if (!head) throw new ArchiveVerificationError(`final archive object missing at ${checkpoint.key} immediately after completing multipart upload`);
 
-  // A basic structural check: the archive must at least open and report
-  // the same number of entries the plan produced. A full central-directory
-  // parse/EOCD walk is a further hardening pass — this already catches the
-  // failure classes that matter most (truncated upload, wrong key, part
-  // mismatch), since a corrupt or truncated ZIP fails `unzip -l`/any
-  // conformant reader long before a byte-perfect internal parse would be
-  // needed to prove it.
-  const archiveBytes = await env.DOCS.get(checkpoint.key);
-  if (!archiveBytes) throw new ArchiveVerificationError('final archive object could not be read back after completion');
+  // Cross-checks the packaging ledger (§4.2 Verify: "validate manifest/file
+  // counts and checksums from the packaging ledger") — every entry the plan
+  // called for must have actually been packaged, at the byte length the
+  // plan/manifest expected, and (wherever inventory time already computed a
+  // real hash — embedded data_url media) with the SAME content it had at
+  // inventory time. This is a genuine, previously-nonexistent defense
+  // against silent corruption or a source mutation mid-export (§4.3 already
+  // documents that the tree can keep changing while an export runs) —
+  // before this fix nothing ever compared what packaging ACTUALLY wrote
+  // against what inventory/the manifest SAID it would write.
+  const ledger = checkpoint.ledger || [];
+  if (ledger.length !== plan.length) {
+    throw new ArchiveVerificationError(`packaging ledger has ${ledger.length} entries but the archive plan called for ${plan.length} — some planned entry was never packaged`);
+  }
+  const planByPath = new Map(plan.map((p) => [p.path, p]));
+  const manifestFilesByPath = new Map((manifest.files || []).map((f) => [f.path, f]));
+  for (const rec of ledger) {
+    const planEntry = planByPath.get(rec.path);
+    if (!planEntry) throw new ArchiveVerificationError(`packaging ledger references "${rec.path}", which is not in the archive plan at all`);
+    if (planEntry.byteLength != null && rec.byteLength !== planEntry.byteLength) {
+      throw new ArchiveVerificationError(`"${rec.path}" was packaged as ${rec.byteLength} bytes but the archive plan expected ${planEntry.byteLength}`);
+    }
+    const manifestFile = manifestFilesByPath.get(rec.path);
+    if (manifestFile?.sha256 && manifestFile.sha256 !== rec.sha256) {
+      throw new ArchiveVerificationError(`"${rec.path}" was packaged with a different checksum than inventory time computed — the source may have changed mid-export`);
+    }
+  }
 
-  const archiveSha256 = sha256Hex(new Uint8Array(await archiveBytes.arrayBuffer()));
+  // Real structural validation via BOUNDED range reads — never the whole
+  // (potentially many-GB) archive object in memory at once (§2.6, §4.2
+  // Verify: "read and validate the ZIP central directory/range footer").
+  // Reads a small tail window to locate the EOCD (+ ZIP64 EOCD/locator when
+  // present), then one further targeted read for exactly the central
+  // directory's own bytes — its bounds come straight from the EOCD itself,
+  // never a guess or a scan. Before this fix the ONLY structural check was
+  // `head()` reporting a byte count; a corrupt-but-plausibly-sized archive
+  // (or a part that landed in the wrong order) would have gone completely
+  // undetected. Confirmed and fixed after a PR #9 review caught it.
+  const archiveSize = head.size;
+  const tailWindow = Math.min(TAIL_WINDOW_BYTES, archiveSize);
+  const tailBytes = await rangeGetBytes(env, checkpoint.key, { suffix: tailWindow });
+  const eocd = parseEocdTail(tailBytes, archiveSize - tailWindow);
+  if (eocd.entryCount !== plan.length) {
+    throw new ArchiveVerificationError(`archive EOCD reports ${eocd.entryCount} entries but the plan called for ${plan.length}`);
+  }
+  const cdBytes = await rangeGetBytes(env, checkpoint.key, { offset: Number(eocd.cdStart), length: Number(eocd.cdSize) });
+  const cdEntries = parseCentralDirectory(cdBytes, eocd.entryCount);
+  const cdPaths = cdEntries.map((e) => e.path).sort();
+  const planPaths = plan.map((e) => e.path).sort();
+  if (JSON.stringify(cdPaths) !== JSON.stringify(planPaths)) {
+    throw new ArchiveVerificationError('the archive central directory does not list exactly the files the plan called for');
+  }
+  const cdByPath = new Map(cdEntries.map((e) => [e.path, e]));
+  for (const rec of ledger) {
+    const cdEntry = cdByPath.get(rec.path);
+    if (cdEntry && Number(cdEntry.uncompressedSize) !== rec.byteLength) {
+      throw new ArchiveVerificationError(`"${rec.path}"'s central directory record reports ${cdEntry.uncompressedSize} bytes, but packaging wrote ${rec.byteLength}`);
+    }
+  }
+
+  // The archive's own whole-file checksum, computed via bounded sequential
+  // range reads — never the full archive in memory at once, the exact
+  // memory-budget class of bug §2.6 exists to prevent (the previous
+  // version of this function called `.arrayBuffer()` on the WHOLE final
+  // object just to hash it).
+  const hasher = createIncrementalSha256();
+  for (let offset = 0; offset < archiveSize; offset += HASH_CHUNK_BYTES) {
+    const length = Math.min(HASH_CHUNK_BYTES, archiveSize - offset);
+    hasher.update(await rangeGetBytes(env, checkpoint.key, { offset, length }));
+  }
+  const archiveSha256 = hasher.digestHex();
 
   await env.DB.prepare(
     `UPDATE family_export_job SET archive_r2_key = ?, archive_bytes = ?, archive_sha256 = ?, manifest_sha256 = ? WHERE id = ?`,
-  ).bind(checkpoint.key, head.size, archiveSha256, manifestChecksum, jobId).run();
+  ).bind(checkpoint.key, archiveSize, archiveSha256, manifestChecksum, jobId).run();
 
   const warningCount = manifest.warnings?.length || 0;
-  return { archiveBytes: head.size, archiveSha256, manifestChecksum, warningCount, entryCount: plan.length };
+  return { archiveBytes: archiveSize, archiveSha256, manifestChecksum, warningCount, entryCount: plan.length };
 }
 
 // ── Step 11: v1-finalize-job ────────────────────────────────────────────
@@ -685,4 +1010,131 @@ export async function runCleanupSweep(env, { now = Date.now() } = {}) {
   const reconciled = await reconcileStaleJobs(env, { now });
   const swept = await sweepOrphanStaging(env, { now });
   return { expired, reconciled, swept };
+}
+
+// ── The 13-step orchestration (workflow.js's own run() body) ────────────
+//
+// Lives here, not in workflow.js, for the exact same reason every individual
+// step function above does: this module deliberately imports nothing from
+// `cloudflare:workers`, so the WHOLE orchestration — including the
+// cancellation-check bail-out points and the top-level failure handling
+// below — can be exercised directly under plain Node against fakes
+// (tests/workflowSteps.test.mjs), rather than needing a real Workflow
+// runtime to prove any of it. workflow.js's FamilyArchiveExportWorkflow.run()
+// is a two-line wrapper that just calls this with the real `step` the
+// Workflow SDK provides.
+
+// Checked between shards/parts during every repeated-step loop (§7
+// Cancellation/failure). Returning true here means the caller's loop must
+// stop and hand control to handleCancellation — never silently continue.
+async function bail(env, jobId, familyId) {
+  if (await isCancellationRequested(env, jobId)) {
+    await handleCancellation(env, { jobId, familyId });
+    return true;
+  }
+  return false;
+}
+
+// Every RUNNING_STATUSES entry EXCEPT cancelling can legally reach 'failed'
+// (exportJob.js's own state graph — cancelling can only ever reach
+// cancelled). A job that's mid-cancellation when some OTHER error fires is
+// left alone here — handleCancellation already owns finishing that job off,
+// and racing it to also mark 'failed' would fight the very state graph this
+// module elsewhere depends on staying consistent.
+const FAILABLE_STATUSES = RUNNING_STATUSES.filter((s) => s !== 'cancelling');
+
+function classifyFailureCode(error) {
+  if (error?.code && EXPORT_ERROR_CODES.includes(error.code)) return error.code;
+  if (error?.message && EXPORT_ERROR_CODES.includes(error.message)) return error.message;
+  return 'export_failed';
+}
+
+/*
+ * Runs once runExportWorkflowSteps catches ANYTHING escaping the step
+ * sequence below — before this fix, an uncaught error (a step that
+ * exhausted the Workflow platform's own step.do retry budget, or a genuine
+ * bug) just failed the Workflow INSTANCE with no corresponding write to
+ * family_export_job at all: the product-visible job row stayed stuck
+ * wherever it last was (queued, packaging, verifying, ...) forever, with no
+ * error_code, no audit trail, and canRetry staying false (it's gated on
+ * status === 'failed'). The only thing that would EVER have unstuck it was
+ * reconcileStaleJobs' scheduled 30-minute stale-heartbeat sweep — a real
+ * fix, but a slow, generic one ("workflow_stalled") that discards whatever
+ * the actual error was. Confirmed and fixed after a PR #9 review caught it.
+ * Runs as its own named step so the write itself is durable/retried like
+ * every other D1 mutation in this pipeline, not a bare fire-and-forget call
+ * inside a catch block. Best-effort by design (wrapped in its own
+ * try/catch): recording a failure must never suppress or replace the
+ * ORIGINAL error, which the caller re-throws regardless of whether this
+ * succeeds.
+ */
+async function recordWorkflowFailure(env, step, jobId, error) {
+  try {
+    await step.do('v1-record-failure', async () => {
+      const jobRow = await env.DB.prepare('SELECT family_id FROM family_export_job WHERE id = ?').bind(jobId).first();
+      if (!jobRow) return { recorded: false }; // authorizeJobStep itself threw before the row could even be looked up
+      await applyJobTransition(env, {
+        jobId, fromStatuses: FAILABLE_STATUSES, toStatus: 'failed',
+        fields: { error_code: classifyFailureCode(error), error_summary: capSummary(error?.stack || error?.message || String(error)) },
+        audit: { familyId: jobRow.family_id, event: 'failed', actorAuthority: 'system', reason: capSummary(error?.message) },
+      });
+      return { recorded: true };
+    });
+  } catch { /* best-effort — see comment above; the original error still propagates either way */ }
+}
+
+export async function runExportWorkflowSteps(env, step, jobId) {
+  try {
+    const authorized = await step.do('v1-authorize-job', () => authorizeJobStep(env, { jobId }));
+    if (authorized.alreadyStarted) return { skipped: true, status: authorized.status };
+    const { familyId, family, requestedAs, requesterEmail } = authorized;
+
+    await step.do('v1-capture-source', () => captureSourceStep(env, { jobId, familyId }));
+    if (await step.do('v1-check-cancel-after-capture', () => bail(env, jobId, familyId))) return { cancelled: true };
+
+    const bound = await step.do('v1-capture-activity-bound', () => captureActivityBoundStep(env, { jobId, familyId }));
+    let cursor = null;
+    let pageIndex = 0;
+    if (!bound.done) {
+      for (;;) {
+        const page = await step.do(`v1-capture-activity-${pageIndex}`, () => captureActivityPageStep(env, { jobId, familyId, pageIndex, lowerCursor: cursor }));
+        if (page.done) break;
+        cursor = page.nextCursor;
+        pageIndex += 1;
+        if (await step.do(`v1-check-cancel-activity-${pageIndex}`, () => bail(env, jobId, familyId))) return { cancelled: true };
+      }
+    }
+
+    const inventoryPlan = await step.do('v1-build-inventory', () => buildInventoryStep(env, { jobId, familyId }));
+    for (let i = 0; i < inventoryPlan.shardCount; i++) {
+      await step.do(`v1-resolve-inventory-${i}`, () => resolveInventoryShardStep(env, { jobId, familyId, shardIndex: i }));
+      if (await step.do(`v1-check-cancel-inventory-${i}`, () => bail(env, jobId, familyId))) return { cancelled: true };
+    }
+    await step.do('v1-resolve-inventory-keepsakes', () => resolveKeepsakesStep(env, { jobId, familyId }));
+
+    await step.do('v1-start-multipart', () => startMultipartStep(env, { jobId, familyId, family, requestedAs }));
+
+    let packagingDone = false;
+    let checkpointIndex = 0;
+    while (!packagingDone) {
+      const result = await step.do(`v1-package-${checkpointIndex}`, () => packageStep(env, { jobId }));
+      packagingDone = result.done;
+      checkpointIndex += 1;
+      if (!packagingDone && await step.do(`v1-check-cancel-package-${checkpointIndex}`, () => bail(env, jobId, familyId))) return { cancelled: true };
+    }
+
+    await step.do('v1-complete-multipart', () => completeMultipartStep(env, { jobId, familyId }));
+    const verified = await step.do('v1-verify-archive', () => verifyArchiveStep(env, { jobId }));
+    const finalized = await step.do('v1-finalize-job', () => finalizeJobStep(env, { jobId, familyId, warningCount: verified.warningCount }));
+
+    await step.do('v1-send-completion-email', () => sendCompletionEmailStep(env, {
+      jobId, toEmail: requesterEmail, requestedAs, appUrl: env.APP_URL || 'https://myfamilybloodline.com',
+    }));
+    await step.do('v1-clean-staging', () => cleanStagingStep(env, { jobId }));
+
+    return { jobId, familyId, status: finalized.status, archiveBytes: verified.archiveBytes, warningCount: verified.warningCount };
+  } catch (error) {
+    await recordWorkflowFailure(env, step, jobId, error);
+    throw error;
+  }
 }

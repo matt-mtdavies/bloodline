@@ -3,11 +3,14 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 import {
   buildArchivePlan, projectArchiveBytes, assertNotOverSegmentedExportBoundary,
   PartAccumulator, runPackagingStep,
 } from '../src/lib/packaging.js';
 import { BUDGETS } from '../src/lib/budgets.js';
+
+function sha256Of(bytes) { return createHash('sha256').update(bytes).digest('hex'); }
 
 let passed = 0, failed = 0;
 async function atest(label, fn) {
@@ -179,6 +182,41 @@ await atest('runPackagingStep checkpoints after maxEntriesPerStep and resumes co
   const names = verifyWithUnzip(file);
   assert.deepEqual([...names].sort(), ['a.txt', 'b.txt', 'c.txt']);
   rmSync(dir, { recursive: true, force: true });
+});
+
+await atest('runPackagingStep builds a real per-entry SHA-256 packaging ledger, correct and threaded across checkpoints — the PR #9 review finding that createIncrementalSha256 existed but was never wired in', async () => {
+  const plan = buildArchivePlan({
+    mediaEntries: [
+      { path: 'a.txt', id: 'a', status: 'included', byteLength: 1 },
+      { path: 'b.txt', id: 'b', status: 'included', byteLength: 1 },
+      { path: 'c.txt', id: 'c', status: 'included', byteLength: 1 },
+    ],
+  });
+  const byteMap = new Map([['a.txt', new Uint8Array([97])], ['b.txt', new Uint8Array([98])], ['c.txt', new Uint8Array([99])]]);
+  const getEntryBytes = getEntryBytesFromMap(byteMap);
+  const { uploadPart } = fakeUploader();
+
+  // Checkpoint after 2 entries, exactly like the resume test above — the
+  // ledger for a.txt/b.txt must survive into the second call and come back
+  // out WITH c.txt appended, not be dropped or restarted.
+  const first = await runPackagingStep({
+    plan, startIndex: 0, resumeState: null, uploadPart, getEntryBytes,
+    maxEntriesPerStep: 2, targetPartBytes: 1_000_000,
+  });
+  assert.equal(first.ledger.length, 2);
+  assert.deepEqual(first.ledger.map((r) => r.path), ['a.txt', 'b.txt']);
+  assert.equal(first.ledger[0].byteLength, 1);
+  assert.equal(first.ledger[0].sha256, sha256Of(new Uint8Array([97])), 'the ledger sha256 must be the real hash of the actual bytes streamed');
+
+  const second = await runPackagingStep({
+    plan, startIndex: first.nextIndex, resumeState: first.writerState, uploadPart, getEntryBytes,
+    maxEntriesPerStep: 2, targetPartBytes: 1_000_000, startPartNumber: first.nextPartNumber,
+    initialPendingBytes: first.pendingBytes, resumeLedger: first.ledger,
+  });
+  assert.equal(second.done, true);
+  assert.equal(second.ledger.length, 3, 'the ledger must carry forward across the checkpoint, not restart');
+  assert.deepEqual(second.ledger.map((r) => r.path), ['a.txt', 'b.txt', 'c.txt']);
+  assert.equal(second.ledger[2].sha256, sha256Of(new Uint8Array([99])));
 });
 
 await atest('runPackagingStep flushes a real part mid-archive once the accumulated bytes cross the target, then stops adding more entries that same call', async () => {

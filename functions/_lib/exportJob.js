@@ -174,16 +174,39 @@ export function transitionJobStatements(env, {
   return statements;
 }
 
-// Convenience wrapper: runs transitionJobStatements via env.DB.batch and
-// returns whether the conditional UPDATE actually matched a row (i.e.
-// whether the transition genuinely applied). Callers that need to batch the
-// transition alongside OTHER statements (e.g. the Workflow's own R2
-// checkpoint bookkeeping) should call transitionJobStatements directly and
-// batch it themselves instead.
+/*
+ * Runs the conditional UPDATE, and ONLY IF it actually matched a row, runs
+ * the audit INSERT as a separate follow-up statement — never both in one
+ * `env.DB.batch()` call. Batching them together (an earlier version's
+ * approach) is wrong: D1's batch() runs every statement in the array
+ * regardless of an earlier one's row count, so a 0-row UPDATE (a retried/
+ * duplicate cancel, or a Workflow step replayed after its own D1 write
+ * already committed) still unconditionally inserted a phantom audit event
+ * for a transition that never actually happened — confirmed and fixed
+ * after a PR #9 review caught it. The remaining, accepted gap this trades
+ * for: a crash between the two calls leaves a real state change with no
+ * audit row, rather than risking a fake audit row for no state change —
+ * the audit trail is for observability/compliance, not a source of truth
+ * the state machine itself depends on, so silence is the safer failure
+ * mode of the two.
+ *
+ * Callers that need to batch the transition alongside OTHER statements
+ * (e.g. the Workflow's own R2 checkpoint bookkeeping) should call
+ * transitionJobStatements directly for the UPDATE's shape, but must apply
+ * this same conditional-audit rule themselves rather than batching blindly.
+ */
 export async function applyJobTransition(env, args) {
   const statements = transitionJobStatements(env, args);
-  const results = await env.DB.batch(statements);
-  const changes = results[0]?.meta?.changes ?? results[0]?.changes ?? 0;
+  const updateStmt = statements[0];
+  const auditStmt = statements[1]; // undefined when the caller passed no `audit`
+
+  const updateResult = await updateStmt.run();
+  const changes = updateResult?.meta?.changes ?? updateResult?.changes ?? 0;
+  const results = [updateResult];
+
+  if (changes > 0 && auditStmt) {
+    results.push(await auditStmt.run());
+  }
   return { applied: changes > 0, results };
 }
 
