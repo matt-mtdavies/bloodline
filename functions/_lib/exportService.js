@@ -95,9 +95,19 @@ function familyIdIsReleasedOrTestAllowlisted(env, familyId) {
  * operations — never a caller-supplied family name, cached client state,
  * or an unread job id (docs/FULL-ARCHIVE-EXPORT-TEST-FAMILY-GATE.md's own
  * "Server authorization model").
+ *
+ * `infraReady` (optional) lets a caller that already computed
+ * isExportInfrastructureReady(env) a moment ago (every operation below
+ * does, via requireExportInfrastructureReady, before resolving its
+ * familyId) pass that result straight through instead of this function
+ * re-running the same `SELECT 1 FROM family_export_job` D1 round trip a
+ * second time in the same request. Omit it (as any standalone caller,
+ * e.g. this file's own tests, safely can) and it's computed fresh here —
+ * this function is still correct and self-sufficient on its own either way.
  */
-export async function isFamilyExportEnabled(env, familyId) {
-  if (!(await isExportInfrastructureReady(env))) return false;
+export async function isFamilyExportEnabled(env, familyId, { infraReady } = {}) {
+  const ready = infraReady !== undefined ? infraReady : await isExportInfrastructureReady(env);
+  if (!ready) return false;
   return familyIdIsReleasedOrTestAllowlisted(env, familyId);
 }
 
@@ -167,9 +177,10 @@ async function startWorkflow(env, jobId, familyId) {
 // ── Create (owner/coadmin) ───────────────────────────────────────────────
 
 export async function createFamilyExport(env, { userId, userEmail }) {
-  requireExportInfrastructureReady(await isExportInfrastructureReady(env));
+  const infraReady = await isExportInfrastructureReady(env);
+  requireExportInfrastructureReady(infraReady);
   const membership = await resolveCanonicalFamily(env, userId);
-  requireFamilyExportEnabled(await isFamilyExportEnabled(env, membership?.family_id));
+  requireFamilyExportEnabled(await isFamilyExportEnabled(env, membership?.family_id, { infraReady }));
   if (!membership || !['owner', 'coadmin'].includes(membership.role)) {
     throw new ExportServiceError('forbidden', 403, 'Only the family owner or a co-admin can prepare a complete archive.');
   }
@@ -198,7 +209,8 @@ function isUniqueViolation(e) {
 // ── Create (site admin) ──────────────────────────────────────────────────
 
 export async function createAdminExport(env, { actorUserId, actorEmail, familyId, reason, confirmFamilyName }) {
-  requireExportInfrastructureReady(await isExportInfrastructureReady(env));
+  const infraReady = await isExportInfrastructureReady(env);
+  requireExportInfrastructureReady(infraReady);
   if (!isExportAdminEmail(env, actorEmail)) {
     throw new ExportServiceError('forbidden', 403, 'Not authorized for administrator exports.');
   }
@@ -223,7 +235,7 @@ export async function createAdminExport(env, { actorUserId, actorEmail, familyId
   // release is off, even an EXPORT_ADMIN_EMAILS-authorized admin can only
   // create an admin export for a family on the disposable-family test
   // allowlist (docs/FULL-ARCHIVE-EXPORT-TEST-FAMILY-GATE.md).
-  requireFamilyExportEnabled(await isFamilyExportEnabled(env, family.id));
+  requireFamilyExportEnabled(await isFamilyExportEnabled(env, family.id, { infraReady }));
 
   const recent = await countRecentJobs(env, { requestedByUserId: actorUserId }, ADMIN_RATE_LIMIT.windowMs);
   if (recent >= ADMIN_RATE_LIMIT.count) {
@@ -259,9 +271,10 @@ function requireOwnerOrCoadmin(membership) {
 }
 
 export async function listFamilyExports(env, { userId }) {
-  requireExportInfrastructureReady(await isExportInfrastructureReady(env));
+  const infraReady = await isExportInfrastructureReady(env);
+  requireExportInfrastructureReady(infraReady);
   const membership = await resolveCanonicalFamily(env, userId);
-  requireFamilyExportEnabled(await isFamilyExportEnabled(env, membership?.family_id));
+  requireFamilyExportEnabled(await isFamilyExportEnabled(env, membership?.family_id, { infraReady }));
   requireOwnerOrCoadmin(membership);
   const { results } = await env.DB.prepare(
     `SELECT * FROM family_export_job WHERE family_id = ? ORDER BY created_at DESC LIMIT ?`,
@@ -270,12 +283,13 @@ export async function listFamilyExports(env, { userId }) {
 }
 
 export async function getFamilyExport(env, { userId, jobId }) {
-  requireExportInfrastructureReady(await isExportInfrastructureReady(env));
+  const infraReady = await isExportInfrastructureReady(env);
+  requireExportInfrastructureReady(infraReady);
   const membership = await resolveCanonicalFamily(env, userId);
   requireOwnerOrCoadmin(membership);
   const job = await env.DB.prepare('SELECT * FROM family_export_job WHERE id = ? AND family_id = ?').bind(jobId, membership.family_id).first();
   if (!job) throw new ExportServiceError('not_found', 404, 'Export not found.');
-  requireFamilyExportEnabled(await isFamilyExportEnabled(env, job.family_id));
+  requireFamilyExportEnabled(await isFamilyExportEnabled(env, job.family_id, { infraReady }));
   return serializeExportJob(job);
 }
 
@@ -295,11 +309,12 @@ export async function listAdminExports(env, { actorEmail, familyId }) {
 }
 
 export async function getAdminExport(env, { actorEmail, jobId }) {
-  requireExportInfrastructureReady(await isExportInfrastructureReady(env));
+  const infraReady = await isExportInfrastructureReady(env);
+  requireExportInfrastructureReady(infraReady);
   if (!isExportAdminEmail(env, actorEmail)) throw new ExportServiceError('forbidden', 403, 'Not authorized for administrator exports.');
   const job = await env.DB.prepare('SELECT * FROM family_export_job WHERE id = ?').bind(jobId).first();
   if (!job) throw new ExportServiceError('not_found', 404, 'Export not found.');
-  requireFamilyExportEnabled(await isFamilyExportEnabled(env, job.family_id));
+  requireFamilyExportEnabled(await isFamilyExportEnabled(env, job.family_id, { infraReady }));
   return serializeExportJob(job, { forAdmin: true });
 }
 
@@ -307,11 +322,12 @@ export async function getAdminExport(env, { actorEmail, jobId }) {
 // job. Never includes people/filenames/R2 keys (family_export_audit's own
 // schema can't carry them — see migrations/0014_export_jobs.sql).
 export async function getAdminExportAudit(env, { actorEmail, jobId }) {
-  requireExportInfrastructureReady(await isExportInfrastructureReady(env));
+  const infraReady = await isExportInfrastructureReady(env);
+  requireExportInfrastructureReady(infraReady);
   if (!isExportAdminEmail(env, actorEmail)) throw new ExportServiceError('forbidden', 403, 'Not authorized for administrator exports.');
   const job = await env.DB.prepare('SELECT id, family_id FROM family_export_job WHERE id = ?').bind(jobId).first();
   if (!job) throw new ExportServiceError('not_found', 404, 'Export not found.');
-  requireFamilyExportEnabled(await isFamilyExportEnabled(env, job.family_id));
+  requireFamilyExportEnabled(await isFamilyExportEnabled(env, job.family_id, { infraReady }));
   const { results } = await env.DB.prepare(
     `SELECT event, actor_email_snapshot, actor_authority, reason, created_at
        FROM family_export_audit WHERE job_id = ? ORDER BY created_at ASC`,
@@ -390,24 +406,26 @@ async function cancelJob(env, job, actorAuthority, { actorUserId = null, actorEm
 }
 
 export async function cancelFamilyExport(env, { userId, userEmail, jobId }) {
-  requireExportInfrastructureReady(await isExportInfrastructureReady(env));
+  const infraReady = await isExportInfrastructureReady(env);
+  requireExportInfrastructureReady(infraReady);
   const membership = await resolveCanonicalFamily(env, userId);
   if (!membership || !['owner', 'coadmin'].includes(membership.role)) {
     throw new ExportServiceError('forbidden', 403, 'Only the family owner or a co-admin can cancel an archive.');
   }
   const job = await env.DB.prepare('SELECT * FROM family_export_job WHERE id = ? AND family_id = ?').bind(jobId, membership.family_id).first();
   if (!job) throw new ExportServiceError('not_found', 404, 'Export not found.');
-  requireFamilyExportEnabled(await isFamilyExportEnabled(env, job.family_id));
+  requireFamilyExportEnabled(await isFamilyExportEnabled(env, job.family_id, { infraReady }));
   const cancelled = await cancelJob(env, job, membership.role, { actorUserId: userId, actorEmail: userEmail });
   return serializeExportJob(cancelled);
 }
 
 export async function cancelAdminExport(env, { actorUserId, actorEmail, jobId }) {
-  requireExportInfrastructureReady(await isExportInfrastructureReady(env));
+  const infraReady = await isExportInfrastructureReady(env);
+  requireExportInfrastructureReady(infraReady);
   if (!isExportAdminEmail(env, actorEmail)) throw new ExportServiceError('forbidden', 403, 'Not authorized for administrator exports.');
   const job = await env.DB.prepare('SELECT * FROM family_export_job WHERE id = ?').bind(jobId).first();
   if (!job) throw new ExportServiceError('not_found', 404, 'Export not found.');
-  requireFamilyExportEnabled(await isFamilyExportEnabled(env, job.family_id));
+  requireFamilyExportEnabled(await isFamilyExportEnabled(env, job.family_id, { infraReady }));
   const cancelled = await cancelJob(env, job, 'site_admin', { actorUserId, actorEmail });
   return serializeExportJob(cancelled, { forAdmin: true });
 }
@@ -427,25 +445,27 @@ async function loadDownloadableJob(env, job) {
 }
 
 export async function downloadFamilyExport(env, { userId, jobId }) {
-  requireExportInfrastructureReady(await isExportInfrastructureReady(env));
+  const infraReady = await isExportInfrastructureReady(env);
+  requireExportInfrastructureReady(infraReady);
   const membership = await resolveCanonicalFamily(env, userId);
   if (!membership || !['owner', 'coadmin'].includes(membership.role)) {
     throw new ExportServiceError('forbidden', 403, 'Only the family owner or a co-admin can download this archive.');
   }
   const job = await env.DB.prepare('SELECT * FROM family_export_job WHERE id = ? AND family_id = ?').bind(jobId, membership.family_id).first();
   if (!job) throw new ExportServiceError('not_found', 404, 'Export not found.');
-  requireFamilyExportEnabled(await isFamilyExportEnabled(env, job.family_id));
+  requireFamilyExportEnabled(await isFamilyExportEnabled(env, job.family_id, { infraReady }));
   const object = await loadDownloadableJob(env, job);
   await recordDownloadAudit(env, job, membership.role, userId);
   return object;
 }
 
 export async function downloadAdminExport(env, { actorUserId, actorEmail, jobId }) {
-  requireExportInfrastructureReady(await isExportInfrastructureReady(env));
+  const infraReady = await isExportInfrastructureReady(env);
+  requireExportInfrastructureReady(infraReady);
   if (!isExportAdminEmail(env, actorEmail)) throw new ExportServiceError('forbidden', 403, 'Not authorized for administrator exports.');
   const job = await env.DB.prepare('SELECT * FROM family_export_job WHERE id = ?').bind(jobId).first();
   if (!job) throw new ExportServiceError('not_found', 404, 'Export not found.');
-  requireFamilyExportEnabled(await isFamilyExportEnabled(env, job.family_id));
+  requireFamilyExportEnabled(await isFamilyExportEnabled(env, job.family_id, { infraReady }));
   const object = await loadDownloadableJob(env, job);
   await recordDownloadAudit(env, job, 'site_admin', actorUserId);
   return object;

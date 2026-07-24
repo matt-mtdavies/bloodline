@@ -313,6 +313,25 @@ await atest('isFamilyExportEnabled: an allowlisted family is still disabled if i
   assert.equal(await isFamilyExportEnabled(env, 'fam_1'), false);
 });
 
+await atest('isFamilyExportEnabled: a null/undefined familyId (no canonical membership at all) is never accidentally enabled by the test allowlist, only by general release', async () => {
+  const { env } = baseFixture();
+  env.ENABLE_FULL_EXPORT = 'false';
+  env.FULL_EXPORT_TEST_FAMILY_IDS = 'fam_1';
+  assert.equal(await isFamilyExportEnabled(env, undefined), false);
+  assert.equal(await isFamilyExportEnabled(env, null), false);
+  env.ENABLE_FULL_EXPORT = 'true';
+  assert.equal(await isFamilyExportEnabled(env, undefined), true, 'general release enables even a caller with no family at all — matching the pre-existing behavior a null membership already fell through to the role check for');
+});
+
+await atest('isFamilyExportEnabled: an explicitly passed infraReady:true short-circuits the internal infra check — the exact call shape every operation in this file now uses to avoid a redundant D1 round trip', async () => {
+  const { env } = baseFixture();
+  delete env.EXPORT_WORKFLOW_SERVICE; // infra would genuinely be NOT ready if actually re-checked
+  env.ENABLE_FULL_EXPORT = 'true';
+  assert.equal(await isFamilyExportEnabled(env, 'fam_1', { infraReady: true }), true, 'a caller that already confirmed infra is ready must not have that trusted result silently overridden');
+  assert.equal(await isFamilyExportEnabled(env, 'fam_1', { infraReady: false }), false, 'and an explicit false must be honored too, not treated as "unset"');
+  assert.equal(await isFamilyExportEnabled(env, 'fam_1'), false, 'omitting it entirely still safely recomputes from scratch');
+});
+
 await atest('createFamilyExport throws export_not_configured when the feature is off and the caller\'s family is not allowlisted', async () => {
   const { env } = baseFixture();
   env.ENABLE_FULL_EXPORT = 'false';
