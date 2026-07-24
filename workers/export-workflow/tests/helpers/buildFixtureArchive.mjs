@@ -75,6 +75,8 @@ export async function buildFixtureArchive() {
   // James (p1) has a real, embedded Keepsake edition (proving the readable-
   // narrative viewer path); Robert (p4) has none at all (proving the "no
   // Keepsake" case renders nothing, not an error).
+  const fixtureBody = JSON.stringify(FIXTURE_KEEPSAKE_EDITION);
+  const fixtureHashedKey = `keepsake/${FIXTURE_FAMILY_ID}/p1/${FIXTURE_KEEPSAKE_EDITION.hash}.json`;
   const { entries: keepsakeEntries } = await buildKeepsakeInventory(FIXTURE_TREE, FIXTURE_FAMILY_ID, {
     listPrefix: async (prefix) => {
       if (prefix !== `keepsake/${FIXTURE_FAMILY_ID}/p1/`) return [];
@@ -84,12 +86,15 @@ export async function buildFixtureArchive() {
       // copy (no latest.json) means buildKeepsakeInventory never finds a
       // "current" edition to flag, which is what a real archive never
       // actually produces — this fixture should match real behavior.
-      const body = JSON.stringify(FIXTURE_KEEPSAKE_EDITION);
       return [
-        { key: `${prefix}${FIXTURE_KEEPSAKE_EDITION.hash}.json`, byteLength: body.length, etag: '"fixture-etag"', body },
-        { key: `${prefix}latest.json`, byteLength: body.length, etag: '"fixture-etag"', body },
+        { key: fixtureHashedKey, byteLength: fixtureBody.length, etag: '"fixture-etag"' },
+        { key: `${prefix}latest.json`, byteLength: fixtureBody.length, etag: '"fixture-etag"' },
       ];
     },
+    // Called by buildKeepsakeInventory at most once, for whichever key it
+    // determines to be the current edition — here, always the hashed key
+    // (it shares latest.json's etag above, so it's the alias target).
+    getBody: async (key) => (key === fixtureHashedKey ? fixtureBody : null),
   });
   const allMediaEntries = [...mediaEntries, ...keepsakeEntries];
 

@@ -223,6 +223,20 @@ async function seedQueuedJob(env, db, { familyId = 'fam_1' } = {}) {
   return jobId;
 }
 
+// resolveKeepsakeShardStep is now itself a repeated, page-checkpointed
+// step (one R2 list() page of one person's prefix per call) — this helper
+// drives it to completion for callers that just need the shard fully
+// resolved and don't care about the granular per-page checkpointing
+// (tests exercising that mechanism directly call the step function in a
+// loop themselves instead of using this).
+async function resolveKeepsakeShard(env, { jobId, familyId, shardIndex }) {
+  let result;
+  do {
+    result = await resolveKeepsakeShardStep(env, { jobId, familyId, shardIndex });
+  } while (!result.done);
+  return result;
+}
+
 // ── authorizeJobStep ─────────────────────────────────────────────────────
 
 await atest('authorizeJobStep transitions queued -> snapshotting and returns the family id', async () => {
@@ -416,9 +430,10 @@ await atest('resolveKeepsakeShardStep lists only the exact family/person prefix,
   assert.equal(plan.keepsakeShardCount, 1, 'one person fits in a single shard');
   const result = await resolveKeepsakeShardStep(env, { jobId, familyId: 'fam_1', shardIndex: 0 });
   assert.equal(result.keepsakeEntryCount, 1);
+  assert.equal(result.done, true, 'a single object with no pagination needed must resolve in one call');
 });
 
-await atest('resolveKeepsakeShardStep pages through ALL editions when a person has more Keepsakes than fit in one R2 list() page — the PR #9 re-review pagination finding', async () => {
+await atest('resolveKeepsakeShardStep checkpoints across MULTIPLE calls when a person has more Keepsakes than fit in one R2 list() page — the PR #9 re-review pagination finding', async () => {
   const { db, env } = makeEnv();
   const jobId = await seedQueuedJob(env, db);
   const tree = { people: [{ id: 'p1', display_name: 'James' }], relationships: [] };
@@ -436,54 +451,62 @@ await atest('resolveKeepsakeShardStep pages through ALL editions when a person h
   env.DOCS.list = (opts) => realList({ ...opts, limit: 2 });
 
   await buildInventoryStep(env, { jobId, familyId: 'fam_1' });
-  const result = await resolveKeepsakeShardStep(env, { jobId, familyId: 'fam_1', shardIndex: 0 });
-  assert.equal(result.keepsakeEntryCount, 5, 'every edition must be found across multiple list() pages, not just the first');
+
+  // Each call now resolves exactly ONE page — with 5 objects at a 2-per-
+  // page limit, that's 3 calls (2 + 2 + 1), the first two explicitly NOT
+  // done yet (proving the checkpoint boundary is real, not just an
+  // internal detail the caller never observes).
+  const first = await resolveKeepsakeShardStep(env, { jobId, familyId: 'fam_1', shardIndex: 0 });
+  assert.equal(first.done, false, 'the first page alone must not resolve the whole person');
+  const second = await resolveKeepsakeShardStep(env, { jobId, familyId: 'fam_1', shardIndex: 0 });
+  assert.equal(second.done, false);
+  const third = await resolveKeepsakeShardStep(env, { jobId, familyId: 'fam_1', shardIndex: 0 });
+  assert.equal(third.done, true, 'the third call exhausts the listing and finalizes this person');
+  assert.equal(third.keepsakeEntryCount, 5, 'every edition must be found across multiple list() pages, not just the first');
 });
 
-await atest('resolveKeepsakeShardStep fetches each page\'s object bodies with BOUNDED concurrency, never an unbounded Promise.all — the PR #9 3rd-review finding', async () => {
+await atest('a person with THOUSANDS of retained editions spanning MULTIPLE full 1,000-object R2 list() pages is resolved across many small checkpointed calls, fetching a body for AT MOST ONE edition — the PR #9 4th-review finding that person-level sharding alone did not bound a single person\'s own prefix', async () => {
   const { db, env } = makeEnv();
   const jobId = await seedQueuedJob(env, db);
   const tree = { people: [{ id: 'p1', display_name: 'James' }], relationships: [] };
   db.exec(`INSERT INTO family_tree (family_id, tree_json, updated_at) VALUES ('fam_1', '${JSON.stringify(tree)}', 1000)`);
   await captureSourceStep(env, { jobId, familyId: 'fam_1' });
 
-  // A "full-size" page (unlike the earlier tiny 2-per-page fake above) —
-  // 40 real retained editions for one person, all within a SINGLE R2
-  // list() page (well under the real 1,000-object cap), so this proves
-  // the concurrency bound applies to fetching ONE page's worth of bodies,
-  // not just across pages.
-  const EDITION_COUNT = 40;
+  // 2,500 real retained editions for ONE person, plus a standalone
+  // latest.json matching none of them — enough to span THREE full
+  // 1,000-object R2 list() pages at the fake's real (unshrunk) default
+  // page size, the exact "not representative" gap the reviewer called
+  // out in the earlier 40-object/single-page test this replaces.
+  const EDITION_COUNT = 2500;
   for (let i = 0; i < EDITION_COUNT; i++) {
-    await env.DOCS.put(`keepsake/fam_1/p1/edition-${String(i).padStart(3, '0')}.json`, JSON.stringify({ narrative: null, editionNumber: i }));
+    await env.DOCS.put(`keepsake/fam_1/p1/edition-${String(i).padStart(4, '0')}.json`, JSON.stringify({ narrative: null, editionNumber: i }));
   }
+  await env.DOCS.put('keepsake/fam_1/p1/latest.json', JSON.stringify({ narrative: null, editionNumber: 'current' }));
 
-  let inFlight = 0;
-  let maxInFlight = 0;
-  let totalGets = 0;
+  let listCalls = 0;
+  const realList = env.DOCS.list.bind(env.DOCS);
+  env.DOCS.list = (opts) => { listCalls += 1; return realList(opts); };
+
+  let bodyGets = 0;
   const realGet = env.DOCS.get.bind(env.DOCS);
   env.DOCS.get = async (key, opts) => {
-    if (!key.startsWith('keepsake/')) return realGet(key, opts);
-    inFlight += 1;
-    totalGets += 1;
-    maxInFlight = Math.max(maxInFlight, inFlight);
-    try {
-      // Yield a tick so overlapping calls actually have a chance to race —
-      // proves real concurrency bounding, not just sequential calls that
-      // happen to never overlap because nothing here is ever async.
-      await new Promise((resolve) => setTimeout(resolve, 0));
-      return await realGet(key, opts);
-    } finally {
-      inFlight -= 1;
-    }
+    if (key.startsWith('keepsake/')) bodyGets += 1;
+    return realGet(key, opts);
   };
 
   await buildInventoryStep(env, { jobId, familyId: 'fam_1' });
-  const result = await resolveKeepsakeShardStep(env, { jobId, familyId: 'fam_1', shardIndex: 0 });
 
-  assert.equal(result.keepsakeEntryCount, EDITION_COUNT, 'every edition in the page must still be resolved');
-  assert.equal(totalGets, EDITION_COUNT, 'every object must be fetched exactly once');
-  assert.ok(maxInFlight > 1, 'must fetch bodies concurrently, not one at a time');
-  assert.ok(maxInFlight <= BUDGETS.r2HeadOpsPerStep.maxConcurrency, `must never exceed the ${BUDGETS.r2HeadOpsPerStep.maxConcurrency}-op concurrency ceiling, saw ${maxInFlight} in flight at once`);
+  let stepCalls = 0;
+  let result;
+  do {
+    result = await resolveKeepsakeShardStep(env, { jobId, familyId: 'fam_1', shardIndex: 0 });
+    stepCalls += 1;
+  } while (!result.done);
+
+  assert.equal(result.keepsakeEntryCount, EDITION_COUNT + 1, 'every hashed edition PLUS the standalone latest.json entry must be resolved');
+  assert.ok(listCalls >= 3, `must have paged through at least 3 full list() calls (2,501 objects / 1,000 per page), saw ${listCalls}`);
+  assert.ok(stepCalls >= 3, `must have taken at least 3 separate checkpointed step invocations to resolve this one person, saw ${stepCalls} — proving no single call ever held the whole prefix`);
+  assert.equal(bodyGets, 1, 'exactly ONE body must ever be fetched (the standalone latest.json, since it matches no hashed edition here) — never one per historical edition, no matter how many exist');
 });
 
 await atest('writeActivityLogStream produces a byte-valid JSON array spanning multiple shards, in order, without ever parsing a row — the PR #9 review finding about full-history in-memory materialization', async () => {
@@ -563,7 +586,7 @@ async function runFullPipeline(env, db, jobId, familyId, { maxIterations = 200 }
 
   const plan = await buildInventoryStep(env, { jobId, familyId });
   for (let i = 0; i < plan.shardCount; i++) await resolveInventoryShardStep(env, { jobId, familyId, shardIndex: i });
-  for (let i = 0; i < plan.keepsakeShardCount; i++) await resolveKeepsakeShardStep(env, { jobId, familyId, shardIndex: i });
+  for (let i = 0; i < plan.keepsakeShardCount; i++) await resolveKeepsakeShard(env, { jobId, familyId, shardIndex: i });
 
   await startMultipartStep(env, { jobId, familyId, family: authorized.family, requestedAs: authorized.requestedAs });
   for (let i = 0; i < maxIterations; i++) {
@@ -790,7 +813,7 @@ await atest('a family with more people than fit in one Keepsake shard is resolve
   let totalEntries = 0;
   const seenPersonIds = new Set();
   for (let i = 0; i < plan.keepsakeShardCount; i++) {
-    const result = await resolveKeepsakeShardStep(env, { jobId, familyId: 'fam_1', shardIndex: i });
+    const result = await resolveKeepsakeShard(env, { jobId, familyId: 'fam_1', shardIndex: i });
     totalEntries += result.keepsakeEntryCount;
     const shard = JSON.parse(await (await env.DOCS.get(`export-staging/${jobId}/inventory/keepsakes-${i}.json`)).text());
     // Each shard's own staged result must be small (its own people only),
@@ -902,7 +925,7 @@ await atest('packaging genuinely checkpoints across multiple small steps for a m
   await captureActivityBoundStep(env, { jobId, familyId: 'fam_1' });
   const plan = await buildInventoryStep(env, { jobId, familyId: 'fam_1' });
   for (let i = 0; i < plan.shardCount; i++) await resolveInventoryShardStep(env, { jobId, familyId: 'fam_1', shardIndex: i });
-  for (let i = 0; i < plan.keepsakeShardCount; i++) await resolveKeepsakeShardStep(env, { jobId, familyId: 'fam_1', shardIndex: i });
+  for (let i = 0; i < plan.keepsakeShardCount; i++) await resolveKeepsakeShard(env, { jobId, familyId: 'fam_1', shardIndex: i });
   await startMultipartStep(env, { jobId, familyId: 'fam_1', family: { id: 'fam_1', name: 'Test' }, requestedAs: 'owner' });
 
   let iterations = 0;
@@ -956,7 +979,7 @@ await atest('verifyArchiveStep catches a genuine packaging-ledger mismatch (wron
   await captureActivityBoundStep(env, { jobId, familyId: 'fam_1' });
   const plan = await buildInventoryStep(env, { jobId, familyId: 'fam_1' });
   for (let i = 0; i < plan.shardCount; i++) await resolveInventoryShardStep(env, { jobId, familyId: 'fam_1', shardIndex: i });
-  for (let i = 0; i < plan.keepsakeShardCount; i++) await resolveKeepsakeShardStep(env, { jobId, familyId: 'fam_1', shardIndex: i });
+  for (let i = 0; i < plan.keepsakeShardCount; i++) await resolveKeepsakeShard(env, { jobId, familyId: 'fam_1', shardIndex: i });
   await startMultipartStep(env, { jobId, familyId: 'fam_1', family: { id: 'fam_1', name: 'Test' }, requestedAs: 'owner' });
   for (;;) { const r = await packageStep(env, { jobId }); if (r.done) break; }
   await completeMultipartStep(env, { jobId, familyId: 'fam_1' });
@@ -983,7 +1006,7 @@ await atest('verifyArchiveStep never fetches the whole final archive object in o
   await captureActivityBoundStep(env, { jobId, familyId: 'fam_1' });
   const plan = await buildInventoryStep(env, { jobId, familyId: 'fam_1' });
   for (let i = 0; i < plan.shardCount; i++) await resolveInventoryShardStep(env, { jobId, familyId: 'fam_1', shardIndex: i });
-  for (let i = 0; i < plan.keepsakeShardCount; i++) await resolveKeepsakeShardStep(env, { jobId, familyId: 'fam_1', shardIndex: i });
+  for (let i = 0; i < plan.keepsakeShardCount; i++) await resolveKeepsakeShard(env, { jobId, familyId: 'fam_1', shardIndex: i });
   await startMultipartStep(env, { jobId, familyId: 'fam_1', family: { id: 'fam_1', name: 'Test' }, requestedAs: 'owner' });
   for (;;) { const r = await packageStep(env, { jobId }); if (r.done) break; }
   await completeMultipartStep(env, { jobId, familyId: 'fam_1' });
@@ -1147,6 +1170,165 @@ await atest('runExportWorkflowSteps deletes the already-completed archive object
   assert.equal(remainingStaging.objects.length, 0, 'staging must still be fully cleaned up too');
 });
 
+await atest('a cancel request that lands exactly as the FINAL packaging checkpoint completes is honored, not silently packaged into a ready archive — the PR #9 4th-review "cancel racing the final package" finding', async () => {
+  const { db, env } = makeEnv();
+  const jobId = await seedQueuedJob(env, db);
+  const tree = { people: [{ id: 'p1', display_name: 'James', photo: 'data:image/jpeg;base64,YWJj' }], relationships: [] };
+  db.exec(`INSERT INTO family_tree (family_id, tree_json, updated_at) VALUES ('fam_1', '${JSON.stringify(tree)}', 1000)`);
+
+  const createdUploadIds = [];
+  const realCreateMultipartUpload = env.DOCS.createMultipartUpload.bind(env.DOCS);
+  env.DOCS.createMultipartUpload = async (key) => {
+    const upload = await realCreateMultipartUpload(key);
+    createdUploadIds.push(upload.uploadId);
+    return upload;
+  };
+
+  // A cooperating step fake: runs every real step normally, but the
+  // instant the FINAL packaging checkpoint (result.done === true)
+  // finishes, simulates an external cancel request landing in that exact
+  // window by flipping the job straight to 'cancelling' — before this
+  // fix, the packaging loop's own `!packagingDone && ...` guard skipped
+  // the cancellation check entirely on precisely this iteration, so the
+  // request would be silently missed and the workflow would go on to
+  // complete/verify/finalize a full "ready" archive anyway.
+  const cooperatingStep = {
+    async do(name, fn) {
+      const result = await fn();
+      if (name.startsWith('v1-package-') && result?.done) {
+        db.exec(`UPDATE family_export_job SET status = 'cancelling' WHERE id = '${jobId}'`);
+      }
+      return result;
+    },
+  };
+
+  const result = await runExportWorkflowSteps(env, cooperatingStep, jobId);
+  assert.equal(result.cancelled, true);
+
+  const job = db.prepare('SELECT * FROM family_export_job WHERE id = ?').get(jobId);
+  assert.equal(job.status, 'cancelled');
+  assert.equal(job.archive_r2_key, null);
+
+  // The multipart upload must never have been completed — proven by the
+  // final archive object never existing at all, not just by the upload
+  // bookkeeping being cleared (both completion AND abort remove the
+  // in-progress-upload entry, so only checking for the FINAL OBJECT
+  // distinguishes "aborted" from "completed").
+  const finalKey = `exports/${jobId}/bloodline-full-archive.zip`;
+  assert.equal(await env.DOCS.get(finalKey), null, 'the multipart upload must never be completed once cancellation is honored');
+  assert.equal(createdUploadIds.length, 1, 'a multipart upload must have actually been created for this to be a meaningful test');
+  assert.equal(env.DOCS.multipartUploads.has(createdUploadIds[0]), false, 'the in-progress multipart upload must be aborted');
+
+  const remainingStaging = await env.DOCS.list({ prefix: `export-staging/${jobId}/` });
+  assert.equal(remainingStaging.objects.length, 0);
+});
+
+await atest('completeMultipartStep\'s own conditional transition failing to apply is honored too — a cancel landing between the pre-complete check and completeMultipartStep itself still stops the pipeline', async () => {
+  const { db, env } = makeEnv();
+  const jobId = await seedQueuedJob(env, db);
+  const tree = { people: [{ id: 'p1', display_name: 'James', photo: 'data:image/jpeg;base64,YWJj' }], relationships: [] };
+  db.exec(`INSERT INTO family_tree (family_id, tree_json, updated_at) VALUES ('fam_1', '${JSON.stringify(tree)}', 1000)`);
+
+  // Lets the pre-complete cancellation check run and find nothing (so
+  // completeMultipartStep itself gets called), THEN flips to 'cancelling'
+  // — so completeMultipartStep's OWN `applyJobTransition` call (packaging
+  // -> verifying) is the one that finds the status already moved and
+  // returns `applied: false`. This exercises that function's own
+  // `{ cancelling: true }` return path directly, not just a surrounding
+  // bail() check catching the same race earlier.
+  const cooperatingStep = {
+    async do(name, fn) {
+      const result = await fn();
+      if (name === 'v1-check-cancel-before-complete') {
+        db.exec(`UPDATE family_export_job SET status = 'cancelling' WHERE id = '${jobId}'`);
+      }
+      return result;
+    },
+  };
+
+  const result = await runExportWorkflowSteps(env, cooperatingStep, jobId);
+  assert.equal(result.cancelled, true);
+
+  const job = db.prepare('SELECT * FROM family_export_job WHERE id = ?').get(jobId);
+  assert.equal(job.status, 'cancelled');
+  assert.equal(job.archive_r2_key, null, 'the archive that DID get completed and then deleted must not leave a dangling archive_r2_key on the cancelled row');
+
+  // The multipart WAS completed this time (the race landed after the
+  // upload already finished) — so there IS a real archive object to
+  // clean up, and this proves it actually gets deleted rather than just
+  // never having existed.
+  const finalKey = `exports/${jobId}/bloodline-full-archive.zip`;
+  assert.equal(await env.DOCS.get(finalKey), null, 'the archive completed just before cancellation was noticed must be deleted, not orphaned');
+});
+
+await atest('a cancel request that lands while verifyArchiveStep is running is honored right after it finishes — the fully-verified archive is deleted, not shipped ready with D1 stuck at cancelling — the PR #9 4th-review "cancel while verifying" finding', async () => {
+  const { db, env } = makeEnv();
+  const jobId = await seedQueuedJob(env, db);
+  const tree = { people: [{ id: 'p1', display_name: 'James', photo: 'data:image/jpeg;base64,YWJj' }], relationships: [] };
+  db.exec(`INSERT INTO family_tree (family_id, tree_json, updated_at) VALUES ('fam_1', '${JSON.stringify(tree)}', 1000)`);
+
+  // Since a Workflow step can't be preempted mid-flight, the earliest a
+  // cancel landing DURING verifyArchiveStep's own real work (many bounded
+  // range reads against the archive) can be observed is the instant that
+  // step returns — which is exactly what this simulates.
+  const cooperatingStep = {
+    async do(name, fn) {
+      const result = await fn();
+      if (name === 'v1-verify-archive') {
+        db.exec(`UPDATE family_export_job SET status = 'cancelling' WHERE id = '${jobId}'`);
+      }
+      return result;
+    },
+  };
+
+  const result = await runExportWorkflowSteps(env, cooperatingStep, jobId);
+  assert.equal(result.cancelled, true);
+
+  const job = db.prepare('SELECT * FROM family_export_job WHERE id = ?').get(jobId);
+  assert.equal(job.status, 'cancelled');
+  assert.equal(job.archive_r2_key, null, 'the archive_r2_key verifyArchiveStep wrote must be cleared once the job is actually cancelled');
+
+  const finalKey = `exports/${jobId}/bloodline-full-archive.zip`;
+  assert.equal(await env.DOCS.get(finalKey), null, 'the fully-verified-but-cancelled archive must be deleted, not left ready in R2');
+
+  const remainingStaging = await env.DOCS.list({ prefix: `export-staging/${jobId}/` });
+  assert.equal(remainingStaging.objects.length, 0);
+});
+
+await atest('finalizeJobStep\'s own conditional transition failing to apply is honored too — a cancel landing between the post-verify check and finalizeJobStep itself still stops the pipeline', async () => {
+  const { db, env } = makeEnv();
+  const jobId = await seedQueuedJob(env, db);
+  const tree = { people: [{ id: 'p1', display_name: 'James', photo: 'data:image/jpeg;base64,YWJj' }], relationships: [] };
+  db.exec(`INSERT INTO family_tree (family_id, tree_json, updated_at) VALUES ('fam_1', '${JSON.stringify(tree)}', 1000)`);
+
+  // Lets the post-verify cancellation check run and find nothing (so
+  // finalizeJobStep itself gets called), THEN flips to 'cancelling' — so
+  // finalizeJobStep's OWN `applyJobTransition` call (verifying -> ready)
+  // is the one that finds the status already moved and returns
+  // `applied: false`. This exercises that function's own
+  // `{ cancelling: true }` return path directly.
+  const cooperatingStep = {
+    async do(name, fn) {
+      const result = await fn();
+      if (name === 'v1-check-cancel-after-verify') {
+        db.exec(`UPDATE family_export_job SET status = 'cancelling' WHERE id = '${jobId}'`);
+      }
+      return result;
+    },
+  };
+
+  const result = await runExportWorkflowSteps(env, cooperatingStep, jobId);
+  assert.equal(result.cancelled, true);
+
+  const job = db.prepare('SELECT * FROM family_export_job WHERE id = ?').get(jobId);
+  assert.equal(job.status, 'cancelled');
+  assert.equal(job.archive_r2_key, null);
+  assert.equal(job.completed_at, null, 'finalizeJobStep\'s completed_at/expires_at fields must never have been written once its own transition did not apply');
+
+  const finalKey = `exports/${jobId}/bloodline-full-archive.zip`;
+  assert.equal(await env.DOCS.get(finalKey), null);
+});
+
 await atest('sendCompletionEmailStep is best-effort: a missing recipient is reported, not thrown', async () => {
   const { env } = makeEnv();
   const result = await sendCompletionEmailStep(env, { jobId: 'exp_x', toEmail: null, requestedAs: 'owner', appUrl: 'https://example.test' });
@@ -1187,7 +1369,7 @@ await atest('handleCancellation aborts an in-progress multipart upload, cleans s
   await captureActivityBoundStep(env, { jobId, familyId: 'fam_1' });
   const plan = await buildInventoryStep(env, { jobId, familyId: 'fam_1' });
   for (let i = 0; i < plan.shardCount; i++) await resolveInventoryShardStep(env, { jobId, familyId: 'fam_1', shardIndex: i });
-  for (let i = 0; i < plan.keepsakeShardCount; i++) await resolveKeepsakeShardStep(env, { jobId, familyId: 'fam_1', shardIndex: i });
+  for (let i = 0; i < plan.keepsakeShardCount; i++) await resolveKeepsakeShard(env, { jobId, familyId: 'fam_1', shardIndex: i });
   await startMultipartStep(env, { jobId, familyId: 'fam_1', family: { id: 'fam_1', name: 'Test' }, requestedAs: 'owner' });
 
   db.exec(`UPDATE family_export_job SET status = 'cancelling' WHERE id = '${jobId}'`);

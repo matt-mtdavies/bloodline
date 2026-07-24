@@ -304,16 +304,33 @@ function parseKeepsakeBody(body) {
  * target, or a standalone `latest.json` with no matching hashed copy) is
  * flagged `isLatestEdition: true` — content-index.js uses this to pick
  * which edition to surface in the offline viewer when a person has
- * several historical ones.
+ * several historical ones; it is ALSO the only entry that ever needs its
+ * body actually read (content-index.js only ever consumes `.edition` on
+ * an `isLatestEdition` entry — see its own comment). Packaging itself
+ * never needs any entry's body either — every archived file's real bytes
+ * are re-fetched straight from R2 by path at packaging time (see
+ * workflowSteps.js#getEntryBytesFor's r2raw branch), never from this
+ * `.edition` field.
  *
- * `listPrefix(prefix)` is the only injected I/O — expected to resolve to
- * an array of `{ key, byteLength, etag, body? }` for objects under that
- * prefix (an empty array for a person with no Keepsake at all, which is
- * NOT a warning per §3.6's own rule).
+ * `listPrefix(prefix)` is one of two injected I/O callbacks — expected to
+ * resolve to an array of LIGHTWEIGHT `{ key, byteLength, etag }`
+ * descriptors for objects under that prefix (an empty array for a person
+ * with no Keepsake at all, which is NOT a warning per §3.6's own rule) —
+ * deliberately never a body, so a person with any number of retained
+ * editions costs nothing more than cheap listing metadata to inventory.
+ * `getBody(key)` is called AT MOST ONCE per person — only for whichever
+ * key ends up the determined latest edition — never once per edition; a
+ * person with a thousand historical editions and one current one still
+ * costs exactly one body fetch, not a thousand (the PR #9 4th-review
+ * finding this was rewritten to fix: every hashed edition's body used to
+ * be fetched and parsed regardless of whether anything ever read it).
  */
-export async function buildKeepsakeInventory(tree, familyId, { listPrefix } = {}) {
+export async function buildKeepsakeInventory(tree, familyId, { listPrefix, getBody } = {}) {
   if (typeof listPrefix !== 'function') {
     throw new Error('buildKeepsakeInventory requires a listPrefix(prefix) callback');
+  }
+  if (typeof getBody !== 'function') {
+    throw new Error('buildKeepsakeInventory requires a getBody(key) callback');
   }
   const entries = [];
   const aliases = [];
@@ -339,7 +356,7 @@ export async function buildKeepsakeInventory(tree, familyId, { listPrefix } = {}
         byteLength: obj.byteLength ?? null,
         etag: obj.etag ?? null,
         r2Key: obj.key,
-        edition: parseKeepsakeBody(obj.body),
+        edition: null, // populated below ONLY if this entry turns out to be latestEntry
       };
       entries.push(entry);
       if (latest?.etag && obj.etag && obj.etag === latest.etag) latestEntry = entry;
@@ -364,13 +381,16 @@ export async function buildKeepsakeInventory(tree, familyId, { listPrefix } = {}
           byteLength: latest.byteLength ?? null,
           etag: latest.etag ?? null,
           r2Key: latest.key,
-          edition: parseKeepsakeBody(latest.body),
+          edition: null,
         };
         entries.push(latestEntry);
       }
     }
 
-    if (latestEntry) latestEntry.isLatestEdition = true;
+    if (latestEntry) {
+      latestEntry.isLatestEdition = true;
+      latestEntry.edition = parseKeepsakeBody(await getBody(latestEntry.r2Key));
+    }
   }
 
   return { entries, aliases };

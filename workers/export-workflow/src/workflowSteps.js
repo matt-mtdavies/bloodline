@@ -321,44 +321,94 @@ export async function resolveInventoryShardStep(env, { jobId, familyId, shardInd
 // within a page (never more than r2HeadOpsPerStep.maxConcurrency in
 // flight), one shard's worth of parsed editions retained at a time, not
 // the whole family's.
+// Resolves ONE PAGE of ONE person's Keepsake prefix per call — a repeated,
+// checkpointed step (mirrors packageStep's own checkpoint-and-resume
+// shape) driven by the orchestrator in a loop until `done`. Person-level
+// sharding (KEEPSAKE_PEOPLE_PER_SHARD above) bounds how many PEOPLE one
+// shard covers, but it never bounded a single person's OWN prefix — a
+// person with thousands of retained editions could still blow a single
+// call's memory/subrequest budget even inside a small shard. Confirmed
+// and fixed after a PR #9 4th-review caught it: "Person-level sharding
+// bounds the number of people per step, but it does not close the
+// reported worst case... implement a repeated page-level Workflow step...
+// so no invocation holds the whole prefix, then aggregate only lightweight
+// descriptors for packaging."
+//
+// This function now does exactly that: one R2 list() page per call,
+// accumulating only LIGHTWEIGHT `{key, byteLength, etag}` descriptors (no
+// bodies at all) in a persisted checkpoint between calls — never a JS
+// variable assumed to survive across step.do() boundaries, since real
+// Cloudflare Workflow steps can't assume that. Only once a person's ENTIRE
+// prefix has been listed does buildKeepsakeInventory run for them — and
+// even then it fetches a body for AT MOST ONE key (the determined latest
+// edition; see buildKeepsakeInventory's own header comment), never one
+// per historical edition — closing the real memory blowup this finding
+// was about (every hashed edition's body used to be fetched and parsed
+// regardless of whether content-index.js (the only consumer) would ever
+// read it).
 export async function resolveKeepsakeShardStep(env, { jobId, familyId, shardIndex }) {
   await touchHeartbeat(env, jobId);
   const personIds = await getJson(env, stagingKey(jobId, 'inventory', `_keepsake-pending-${shardIndex}.json`));
-  if (!personIds) return { shardIndex, keepsakeEntryCount: 0, alreadyResolved: true };
+  if (!personIds) return { shardIndex, done: true, keepsakeEntryCount: 0, alreadyResolved: true };
 
-  const tree = await readCapturedTree(env, jobId);
-  const shardPersonIds = new Set(personIds);
-  const shardTree = { ...tree, people: (tree.people || []).filter((p) => shardPersonIds.has(p.id)) };
+  const checkpointKey = stagingKey(jobId, 'inventory', `keepsake-checkpoint-${shardIndex}.json`);
+  const checkpoint = (await getJson(env, checkpointKey)) || { personIndex: 0, cursor: null, objects: [], entries: [], aliases: [] };
 
-  // R2 list() is itself paginated (at most 1,000 objects per response) —
-  // a person with more retained Keepsake editions than one page would
-  // otherwise have the remainder silently dropped, producing a "ready"
-  // archive missing content, exactly what the full-extract guarantee
-  // exists to rule out (confirmed and fixed after an earlier PR #9
-  // re-review caught it — the very first fix only ever read the first
-  // page and ignored `truncated`/`cursor`). Each page's own object bodies
-  // are now fetched with the SAME bounded concurrency ceiling
-  // resolveInventoryShardStep already uses for media HEAD ops, not an
-  // unbounded `Promise.all` across the whole page.
-  const listPrefix = async (prefix) => {
-    const allObjects = [];
-    let cursor;
-    for (;;) {
-      const listed = await env.DOCS.list({ prefix, cursor });
-      const page = listed.objects || [];
-      const resolvedPage = await mapWithConcurrency(page, BUDGETS.r2HeadOpsPerStep.maxConcurrency, async (o) => {
-        const obj = await env.DOCS.get(o.key);
-        return { key: o.key, byteLength: o.size, etag: o.etag, body: obj ? await obj.text() : null };
-      });
-      allObjects.push(...resolvedPage);
-      if (!listed.truncated) break;
-      cursor = listed.cursor;
-    }
-    return allObjects;
+  if (checkpoint.personIndex >= personIds.length) {
+    // Every person in this shard was already fully resolved by a prior
+    // call — a retried/resumed call landing here is a pure idempotent
+    // no-op (just re-writes the same final aggregate, never re-lists or
+    // re-fetches anything).
+    await putJson(env, stagingKey(jobId, 'inventory', `keepsakes-${shardIndex}.json`), { entries: checkpoint.entries, aliases: checkpoint.aliases });
+    return { shardIndex, done: true, keepsakeEntryCount: checkpoint.entries.length };
+  }
+
+  const personId = personIds[checkpoint.personIndex];
+  const prefix = `keepsake/${familyId}/${personId}/`;
+  const listed = await env.DOCS.list({ prefix, cursor: checkpoint.cursor });
+  const objects = [
+    ...checkpoint.objects,
+    ...(listed.objects || []).map((o) => ({ key: o.key, byteLength: o.size, etag: o.etag })),
+  ];
+
+  if (listed.truncated) {
+    // More pages remain for THIS person — checkpoint exactly where we are
+    // (same personIndex, the cursor to resume from, and the lightweight
+    // descriptors accumulated so far) and stop. The next call resumes
+    // from here rather than re-listing from the start.
+    await putJson(env, checkpointKey, { ...checkpoint, cursor: listed.cursor, objects });
+    return { shardIndex, done: false, keepsakeEntryCount: checkpoint.entries.length };
+  }
+
+  // This person's entire prefix is now fully listed (lightweight
+  // descriptors only) — resolve their alias/latest-edition logic in one
+  // pure call. getBody is only ever invoked for the ONE key
+  // buildKeepsakeInventory determines to be the latest edition.
+  const { entries: personEntries, aliases: personAliases } = await buildKeepsakeInventory(
+    { people: [{ id: personId }] },
+    familyId,
+    {
+      listPrefix: async () => objects,
+      getBody: async (key) => {
+        const obj = await env.DOCS.get(key);
+        return obj ? obj.text() : null;
+      },
+    },
+  );
+
+  const nextCheckpoint = {
+    personIndex: checkpoint.personIndex + 1,
+    cursor: null,
+    objects: [],
+    entries: [...checkpoint.entries, ...personEntries],
+    aliases: [...checkpoint.aliases, ...personAliases],
   };
-  const { entries, aliases } = await buildKeepsakeInventory(shardTree, familyId, { listPrefix });
-  await putJson(env, stagingKey(jobId, 'inventory', `keepsakes-${shardIndex}.json`), { entries, aliases });
-  return { shardIndex, keepsakeEntryCount: entries.length };
+  const done = nextCheckpoint.personIndex >= personIds.length;
+  await putJson(env, checkpointKey, nextCheckpoint);
+  if (done) {
+    await putJson(env, stagingKey(jobId, 'inventory', `keepsakes-${shardIndex}.json`), { entries: nextCheckpoint.entries, aliases: nextCheckpoint.aliases });
+  }
+  return { shardIndex, done, keepsakeEntryCount: nextCheckpoint.entries.length };
 }
 
 // ── Step 7: v1-start-multipart ──────────────────────────────────────────
@@ -941,7 +991,24 @@ export async function completeMultipartStep(env, { jobId, familyId }) {
   const checkpoint = await getJson(env, stagingKey(jobId, 'checkpoint.json'));
   const upload = env.DOCS.resumeMultipartUpload(checkpoint.key, checkpoint.uploadId);
   const finalObject = await upload.complete(checkpoint.uploadedParts);
-  await applyJobTransition(env, { jobId, fromStatuses: ['packaging'], toStatus: 'verifying' });
+  // The multipart upload is completed ABOVE — a real, whole ZIP now exists
+  // at checkpoint.key — before this transition even runs, so there is no
+  // way to "not complete" it once we've gotten this far. What matters is
+  // whether the caller can still be trusted to treat that as SUCCESS: the
+  // state graph only allows 'packaging' to reach 'verifying', 'cancelling',
+  // or 'failed', so if this conditional transition doesn't apply, the job
+  // moved to one of the other two — almost certainly a concurrent cancel
+  // request. Previously `applied` was discarded outright: the caller had
+  // no way to learn the transition silently no-opped, so it went on to
+  // verify/finalize/email a job whose D1 status was never actually
+  // 'verifying' at all, and staging (including this very checkpoint) got
+  // cleaned up at the end — the one thing that could have let a later
+  // reconciliation pass discover and delete the now-orphaned archive
+  // object. Confirmed and fixed after a PR #9 4th-review caught it. The
+  // caller (runExportWorkflowSteps) must stop and hand off to
+  // handleCancellation instead of proceeding as if this succeeded.
+  const { applied } = await applyJobTransition(env, { jobId, fromStatuses: ['packaging'], toStatus: 'verifying' });
+  if (!applied) return { cancelling: true, key: checkpoint.key };
   return { key: checkpoint.key, etag: finalObject?.etag ?? null, partCount: checkpoint.uploadedParts.length };
 }
 
@@ -1094,11 +1161,25 @@ const EXPIRY_MS = 72 * 60 * 60 * 1000;
 export async function finalizeJobStep(env, { jobId, familyId, warningCount }) {
   const toStatus = warningCount > 0 ? 'ready_with_warnings' : 'ready';
   const now = Date.now();
-  await applyJobTransition(env, {
+  // Same reasoning as completeMultipartStep's own `applied` check just
+  // above: 'verifying' can only legally reach 'ready'/'ready_with_warnings',
+  // 'cancelling', or 'failed' — if this conditional transition doesn't
+  // apply, a cancel request almost certainly landed while verifyArchiveStep
+  // was still running (a real possibility — it does many bounded range
+  // reads against a potentially large archive, real wall-clock time during
+  // which an external cancel request can land). The archive is already
+  // fully verified and its metadata already written to the job row at this
+  // point; without this check the caller would go on to send a "your
+  // archive is ready" email and clean up staging for a job the requester
+  // already cancelled, and D1's own status would be stuck at 'cancelling'
+  // forever with no staging left for reconciliation to clean the archive
+  // up from. Confirmed and fixed after a PR #9 4th-review caught it.
+  const { applied } = await applyJobTransition(env, {
     jobId, fromStatuses: ['verifying'], toStatus,
     fields: { completed_at: Math.floor(now / 1000), expires_at: Math.floor((now + EXPIRY_MS) / 1000), warning_count: warningCount },
     audit: { familyId, event: toStatus, actorAuthority: 'system' },
   });
+  if (!applied) return { cancelling: true };
   return { status: toStatus };
 }
 
@@ -1191,7 +1272,18 @@ export async function handleCancellation(env, { jobId, familyId }) {
   await abortUploadAndCleanStaging(env, jobId);
   await applyJobTransition(env, {
     jobId, fromStatuses: ['cancelling'], toStatus: 'cancelled',
-    fields: { cancelled_at: Math.floor(Date.now() / 1000) },
+    // A cancel racing verifyArchiveStep/completeMultipartStep (see their
+    // own `applied` checks) can leave archive_r2_key/bytes/sha256 already
+    // written onto this row even though the job never reaches 'ready' —
+    // abortUploadAndCleanStaging above just deleted that very R2 object,
+    // so leaving these columns populated would point a 'cancelled' row at
+    // an archive that no longer exists. Cleared unconditionally — a job
+    // that never got that far already has them NULL, so this is a no-op
+    // for the (overwhelmingly common) ordinary cancellation path.
+    fields: {
+      cancelled_at: Math.floor(Date.now() / 1000),
+      archive_r2_key: null, archive_bytes: null, archive_sha256: null, manifest_sha256: null,
+    },
     audit: { familyId, event: 'cancelled', actorAuthority: 'system' },
   });
   return { cancelled: true };
@@ -1432,8 +1524,18 @@ export async function runExportWorkflowSteps(env, step, jobId) {
       if (await step.do(`v1-check-cancel-inventory-${i}`, () => bail(env, jobId, familyId))) return { cancelled: true };
     }
     for (let i = 0; i < inventoryPlan.keepsakeShardCount; i++) {
-      await step.do(`v1-resolve-keepsakes-${i}`, () => resolveKeepsakeShardStep(env, { jobId, familyId, shardIndex: i }));
-      if (await step.do(`v1-check-cancel-keepsakes-${i}`, () => bail(env, jobId, familyId))) return { cancelled: true };
+      // resolveKeepsakeShardStep is now itself a repeated, page-checkpointed
+      // step (one R2 list() page of one person's prefix per call) — looped
+      // here exactly like the packaging loop below, until the WHOLE shard
+      // (every person, every page) is done, not just called once per shard.
+      let shardDone = false;
+      let pageIndex = 0;
+      while (!shardDone) {
+        const result = await step.do(`v1-resolve-keepsakes-${i}-${pageIndex}`, () => resolveKeepsakeShardStep(env, { jobId, familyId, shardIndex: i }));
+        shardDone = result.done;
+        pageIndex += 1;
+        if (await step.do(`v1-check-cancel-keepsakes-${i}-${pageIndex}`, () => bail(env, jobId, familyId))) return { cancelled: true };
+      }
     }
 
     await step.do('v1-start-multipart', () => startMultipartStep(env, { jobId, familyId, family, requestedAs }));
@@ -1444,12 +1546,59 @@ export async function runExportWorkflowSteps(env, step, jobId) {
       const result = await step.do(`v1-package-${checkpointIndex}`, () => packageStep(env, { jobId }));
       packagingDone = result.done;
       checkpointIndex += 1;
-      if (!packagingDone && await step.do(`v1-check-cancel-package-${checkpointIndex}`, () => bail(env, jobId, familyId))) return { cancelled: true };
+      // Checked UNCONDITIONALLY after every iteration now, including the
+      // one that finishes packaging — the old `!packagingDone &&` guard
+      // skipped this check on exactly the terminal iteration, so a cancel
+      // request landing right as the last package() call completed fell
+      // through untouched and the workflow went on to complete/verify/
+      // finalize a full archive for a job the requester had already asked
+      // to cancel. Confirmed and fixed after a PR #9 4th-review caught it.
+      if (await step.do(`v1-check-cancel-package-${checkpointIndex}`, () => bail(env, jobId, familyId))) return { cancelled: true };
     }
 
-    await step.do('v1-complete-multipart', () => completeMultipartStep(env, { jobId, familyId }));
+    // One more check right before completing the multipart upload — the
+    // loop's own last check (above) and this one bracket the same narrow
+    // window a cancel request could land in between "packaging finished"
+    // and "the upload is irreversibly completed."
+    if (await step.do('v1-check-cancel-before-complete', () => bail(env, jobId, familyId))) return { cancelled: true };
+
+    const completed = await step.do('v1-complete-multipart', () => completeMultipartStep(env, { jobId, familyId }));
+    if (completed.cancelling) {
+      // completeMultipartStep's own conditional transition didn't apply —
+      // see its comment for why. The upload is ALREADY completed (a real
+      // ZIP object exists), so this hands off to bail(), which re-reads
+      // the job's current status and — finding it still 'cancelling' —
+      // runs handleCancellation, which deletes that just-created archive
+      // object rather than leaving it orphaned. If bail() finds nothing to
+      // do (the job somehow isn't 'cancelling' after all — a genuinely
+      // unexpected state, not the ordinary cancel race this is written
+      // for), this throws into the outer catch rather than silently
+      // continuing past a step that just told us it did NOT succeed.
+      if (await step.do('v1-cancel-after-complete', () => bail(env, jobId, familyId))) return { cancelled: true };
+      throw new Error(`v1-complete-multipart's transition to 'verifying' did not apply and job ${jobId} is not (or no longer) cancelling`);
+    }
+    // And again immediately after — verifyArchiveStep below is real
+    // wall-clock work (bounded range reads across a potentially large
+    // archive), so a cancel request can land in the gap right here even
+    // though completeMultipartStep itself saw no cancellation.
+    if (await step.do('v1-check-cancel-after-complete', () => bail(env, jobId, familyId))) return { cancelled: true };
+
     const verified = await step.do('v1-verify-archive', () => verifyArchiveStep(env, { jobId }));
+    // Same reasoning again: verifyArchiveStep can take real time, so check
+    // once more right after it finishes, before committing to finalize.
+    if (await step.do('v1-check-cancel-after-verify', () => bail(env, jobId, familyId))) return { cancelled: true };
+
     const finalized = await step.do('v1-finalize-job', () => finalizeJobStep(env, { jobId, familyId, warningCount: verified.warningCount }));
+    if (finalized.cancelling) {
+      // Same shape as the completeMultipartStep branch above — the archive
+      // is already fully verified and its metadata already written to the
+      // job row; hand off to bail()/handleCancellation rather than sending
+      // a "your archive is ready" email and cleaning up staging (the one
+      // thing reconciliation would otherwise need to find and delete the
+      // archive) for a job nobody wants anymore.
+      if (await step.do('v1-cancel-after-finalize', () => bail(env, jobId, familyId))) return { cancelled: true };
+      throw new Error(`v1-finalize-job's transition did not apply and job ${jobId} is not (or no longer) cancelling`);
+    }
 
     await step.do('v1-send-completion-email', () => sendCompletionEmailStep(env, {
       jobId, toEmail: requesterEmail, requestedAs, appUrl: env.APP_URL || 'https://myfamilybloodline.com',

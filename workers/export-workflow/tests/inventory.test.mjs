@@ -210,18 +210,30 @@ await atest('buildMediaInventory on an empty tree returns no entries', async () 
 
 // ── buildKeepsakeInventory ────────────────────────────────────────────────
 
+// Every test below now supplies BOTH injected callbacks per the current
+// contract (listPrefix returns lightweight {key,byteLength,etag} —
+// deliberately never a body — and getBody(key) is called by
+// buildKeepsakeInventory itself, at most once per person, only for
+// whichever key resolves to the determined latest edition). A no-op
+// getBody that always returns null is used wherever a test doesn't care
+// about narrative content at all.
+function getBodyFromMap(bodiesByKey) {
+  return async (key) => (key in bodiesByKey ? bodiesByKey[key] : null);
+}
+
 await atest('buildKeepsakeInventory lists only the scoped prefix per person, never the whole bucket', async () => {
   const requestedPrefixes = [];
   const tree = { people: [{ id: 'p1' }, { id: 'p2' }] };
   await buildKeepsakeInventory(tree, 'fam_1', {
     listPrefix: async (prefix) => { requestedPrefixes.push(prefix); return []; },
+    getBody: async () => null,
   });
   assert.deepEqual(requestedPrefixes, ['keepsake/fam_1/p1/', 'keepsake/fam_1/p2/']);
 });
 
 await atest('a person with no Keepsake at all contributes no entries and no warning', async () => {
   const tree = { people: [{ id: 'p1' }] };
-  const { entries } = await buildKeepsakeInventory(tree, 'fam_1', { listPrefix: async () => [] });
+  const { entries } = await buildKeepsakeInventory(tree, 'fam_1', { listPrefix: async () => [], getBody: async () => null });
   assert.deepEqual(entries, []);
 });
 
@@ -232,6 +244,7 @@ await atest('latest.json byte-identical to a hashed edition is recorded as an al
       { key: 'keepsake/fam_1/p1/abc123hash.json', byteLength: 500, etag: '"same-etag"' },
       { key: 'keepsake/fam_1/p1/latest.json', byteLength: 500, etag: '"same-etag"' },
     ],
+    getBody: async () => null,
   });
   assert.equal(entries.length, 1, 'only the hashed edition becomes an archived file');
   assert.equal(aliases.length, 1);
@@ -245,6 +258,7 @@ await atest('latest.json NOT matching any hashed edition is archived as its own 
       { key: 'keepsake/fam_1/p1/oldhash.json', byteLength: 400, etag: '"old-etag"' },
       { key: 'keepsake/fam_1/p1/latest.json', byteLength: 500, etag: '"new-etag"' },
     ],
+    getBody: async () => null,
   });
   assert.equal(entries.length, 2);
   assert.equal(aliases.length, 0);
@@ -258,6 +272,7 @@ await atest('the alias-target (current) edition is flagged isLatestEdition; olde
       { key: 'keepsake/fam_1/p1/currenthash.json', byteLength: 500, etag: '"cur-etag"' },
       { key: 'keepsake/fam_1/p1/latest.json', byteLength: 500, etag: '"cur-etag"' },
     ],
+    getBody: async () => null,
   });
   const current = entries.find((e) => e.id === 'p1:currenthash');
   const old = entries.find((e) => e.id === 'p1:oldhash');
@@ -269,86 +284,165 @@ await atest('a standalone latest.json (no matching hashed copy) is itself flagge
   const tree = { people: [{ id: 'p1' }] };
   const { entries } = await buildKeepsakeInventory(tree, 'fam_1', {
     listPrefix: async () => [{ key: 'keepsake/fam_1/p1/latest.json', byteLength: 500, etag: '"new-etag"' }],
+    getBody: async () => null,
   });
   assert.equal(entries.length, 1);
   assert.equal(entries[0].isLatestEdition, true);
 });
 
-await atest('an object\'s body (when supplied by listPrefix) is parsed into the entry\'s edition field', async () => {
+await atest('getBody is called AT MOST ONCE per person, for the determined latest edition only — the PR #9 4th-review finding that every hashed edition\'s body used to be fetched and parsed regardless of whether anything ever read it', async () => {
+  const tree = { people: [{ id: 'p1' }] };
+  const calls = [];
+  const editionCount = 500; // "thousands of retained editions" scaled down for a fast unit test — the mechanism doesn't care about the exact count
+  const objects = Array.from({ length: editionCount }, (_, i) => ({ key: `keepsake/fam_1/p1/hash${i}.json`, byteLength: 500, etag: `"etag-${i}"` }));
+  objects.push({ key: 'keepsake/fam_1/p1/latest.json', byteLength: 500, etag: '"etag-499"' }); // matches the LAST hashed edition
+  const { entries } = await buildKeepsakeInventory(tree, 'fam_1', {
+    listPrefix: async () => objects,
+    getBody: async (key) => { calls.push(key); return JSON.stringify({ narrative: null }); },
+  });
+  assert.equal(entries.length, editionCount, 'every edition still becomes a real archived entry');
+  assert.equal(calls.length, 1, 'exactly one body must ever be fetched, no matter how many total editions exist');
+  assert.equal(calls[0], 'keepsake/fam_1/p1/hash499.json', 'the ONE fetched body must be the determined latest edition, not an arbitrary one');
+});
+
+await atest('a person with NO latest.json at all never triggers a single getBody call — nothing is ever flagged isLatestEdition to fetch a body for', async () => {
+  const tree = { people: [{ id: 'p1' }] };
+  let calls = 0;
+  const { entries } = await buildKeepsakeInventory(tree, 'fam_1', {
+    listPrefix: async () => [
+      { key: 'keepsake/fam_1/p1/hash1.json', byteLength: 500, etag: '"e1"' },
+      { key: 'keepsake/fam_1/p1/hash2.json', byteLength: 500, etag: '"e2"' },
+    ],
+    getBody: async () => { calls += 1; return '{}'; },
+  });
+  assert.equal(entries.length, 2);
+  assert.ok(entries.every((e) => !e.isLatestEdition));
+  assert.equal(calls, 0, 'no getBody call should ever happen when nothing is determined to be the latest edition');
+});
+
+await atest('the determined latest edition\'s body is fetched via getBody and parsed into its edition field', async () => {
   const editionBody = { personId: 'p1', hash: 'abc', editionNumber: 1, narrative: { epithet: 'The Storyteller', origins: [], chapters: [], legacy: [] } };
   const tree = { people: [{ id: 'p1' }] };
   const { entries } = await buildKeepsakeInventory(tree, 'fam_1', {
-    listPrefix: async () => [{ key: 'keepsake/fam_1/p1/abc.json', byteLength: 500, etag: '"e1"', body: JSON.stringify(editionBody) }],
+    listPrefix: async () => [
+      { key: 'keepsake/fam_1/p1/abc.json', byteLength: 500, etag: '"e1"' },
+      { key: 'keepsake/fam_1/p1/latest.json', byteLength: 500, etag: '"e1"' },
+    ],
+    getBody: getBodyFromMap({ 'keepsake/fam_1/p1/abc.json': JSON.stringify(editionBody) }),
   });
-  assert.deepEqual(entries[0].edition, editionBody);
+  const entry = entries.find((e) => e.id === 'p1:abc');
+  assert.equal(entry.isLatestEdition, true);
+  assert.deepEqual(entry.edition, editionBody);
 });
 
 await atest('a malformed body degrades to no narrative rather than throwing', async () => {
   const tree = { people: [{ id: 'p1' }] };
   const { entries } = await buildKeepsakeInventory(tree, 'fam_1', {
-    listPrefix: async () => [{ key: 'keepsake/fam_1/p1/abc.json', byteLength: 500, etag: '"e1"', body: '{not valid json' }],
+    listPrefix: async () => [
+      { key: 'keepsake/fam_1/p1/abc.json', byteLength: 500, etag: '"e1"' },
+      { key: 'keepsake/fam_1/p1/latest.json', byteLength: 500, etag: '"e1"' },
+    ],
+    getBody: getBodyFromMap({ 'keepsake/fam_1/p1/abc.json': '{not valid json' }),
   });
-  assert.equal(entries[0].edition, null);
+  const entry = entries.find((e) => e.id === 'p1:abc');
+  assert.equal(entry.edition, null);
 });
 
 // A structurally valid JSON body whose `narrative` doesn't match the real
 // shape (functions/api/keepsake.js's own validateNarrative) must not reach
 // the viewer as-is — its .map() calls over origins/chapters/legacy/
-// paragraphs would throw on a non-array field (review finding).
+// paragraphs would throw on a non-array field (review finding). Each
+// fixture below gives its single hashed edition a matching latest.json so
+// it becomes the determined latest edition and its body is actually
+// fetched/parsed.
 await atest('a narrative with non-array origins normalizes to no narrative, without dropping the rest of the edition', async () => {
   const body = JSON.stringify({ personId: 'p1', hash: 'abc', editionNumber: 3, narrative: { epithet: 'Test', origins: 'not an array', chapters: [], legacy: [] } });
   const tree = { people: [{ id: 'p1' }] };
   const { entries } = await buildKeepsakeInventory(tree, 'fam_1', {
-    listPrefix: async () => [{ key: 'keepsake/fam_1/p1/abc.json', byteLength: 500, etag: '"e1"', body }],
+    listPrefix: async () => [
+      { key: 'keepsake/fam_1/p1/abc.json', byteLength: 500, etag: '"e1"' },
+      { key: 'keepsake/fam_1/p1/latest.json', byteLength: 500, etag: '"e1"' },
+    ],
+    getBody: getBodyFromMap({ 'keepsake/fam_1/p1/abc.json': body }),
   });
-  assert.equal(entries[0].edition.narrative, null);
-  assert.equal(entries[0].edition.hash, 'abc');
-  assert.equal(entries[0].edition.editionNumber, 3);
+  const entry = entries.find((e) => e.id === 'p1:abc');
+  assert.equal(entry.edition.narrative, null);
+  assert.equal(entry.edition.hash, 'abc');
+  assert.equal(entry.edition.editionNumber, 3);
 });
 
 await atest('a narrative with non-array chapters normalizes to no narrative', async () => {
   const body = JSON.stringify({ narrative: { epithet: 'Test', origins: [], chapters: 'nope', legacy: [] } });
   const { entries } = await buildKeepsakeInventory({ people: [{ id: 'p1' }] }, 'fam_1', {
-    listPrefix: async () => [{ key: 'keepsake/fam_1/p1/abc.json', byteLength: 500, etag: '"e1"', body }],
+    listPrefix: async () => [
+      { key: 'keepsake/fam_1/p1/abc.json', byteLength: 500, etag: '"e1"' },
+      { key: 'keepsake/fam_1/p1/latest.json', byteLength: 500, etag: '"e1"' },
+    ],
+    getBody: getBodyFromMap({ 'keepsake/fam_1/p1/abc.json': body }),
   });
-  assert.equal(entries[0].edition.narrative, null);
+  const entry = entries.find((e) => e.id === 'p1:abc');
+  assert.equal(entry.edition.narrative, null);
 });
 
 await atest('a chapter missing a paragraphs array normalizes to no narrative', async () => {
   const body = JSON.stringify({ narrative: { epithet: 'Test', origins: [], chapters: [{ title: 'Ch1', years: '2000-2001', paragraphs: 'not an array' }], legacy: [] } });
   const { entries } = await buildKeepsakeInventory({ people: [{ id: 'p1' }] }, 'fam_1', {
-    listPrefix: async () => [{ key: 'keepsake/fam_1/p1/abc.json', byteLength: 500, etag: '"e1"', body }],
+    listPrefix: async () => [
+      { key: 'keepsake/fam_1/p1/abc.json', byteLength: 500, etag: '"e1"' },
+      { key: 'keepsake/fam_1/p1/latest.json', byteLength: 500, etag: '"e1"' },
+    ],
+    getBody: getBodyFromMap({ 'keepsake/fam_1/p1/abc.json': body }),
   });
-  assert.equal(entries[0].edition.narrative, null);
+  const entry = entries.find((e) => e.id === 'p1:abc');
+  assert.equal(entry.edition.narrative, null);
 });
 
 await atest('a narrative missing an epithet normalizes to no narrative', async () => {
   const body = JSON.stringify({ narrative: { origins: [], chapters: [], legacy: [] } });
   const { entries } = await buildKeepsakeInventory({ people: [{ id: 'p1' }] }, 'fam_1', {
-    listPrefix: async () => [{ key: 'keepsake/fam_1/p1/abc.json', byteLength: 500, etag: '"e1"', body }],
+    listPrefix: async () => [
+      { key: 'keepsake/fam_1/p1/abc.json', byteLength: 500, etag: '"e1"' },
+      { key: 'keepsake/fam_1/p1/latest.json', byteLength: 500, etag: '"e1"' },
+    ],
+    getBody: getBodyFromMap({ 'keepsake/fam_1/p1/abc.json': body }),
   });
-  assert.equal(entries[0].edition.narrative, null);
+  const entry = entries.find((e) => e.id === 'p1:abc');
+  assert.equal(entry.edition.narrative, null);
 });
 
 await atest('a well-formed narrative still passes through unchanged', async () => {
   const goodNarrative = { epithet: 'The Storyteller', origins: ['Cardiff'], chapters: [{ title: 'Ch1', years: '2000-2010', paragraphs: ['Hello.'] }], legacy: ['Remembered.'] };
   const body = JSON.stringify({ narrative: goodNarrative });
   const { entries } = await buildKeepsakeInventory({ people: [{ id: 'p1' }] }, 'fam_1', {
-    listPrefix: async () => [{ key: 'keepsake/fam_1/p1/abc.json', byteLength: 500, etag: '"e1"', body }],
+    listPrefix: async () => [
+      { key: 'keepsake/fam_1/p1/abc.json', byteLength: 500, etag: '"e1"' },
+      { key: 'keepsake/fam_1/p1/latest.json', byteLength: 500, etag: '"e1"' },
+    ],
+    getBody: getBodyFromMap({ 'keepsake/fam_1/p1/abc.json': body }),
   });
-  assert.deepEqual(entries[0].edition.narrative, goodNarrative);
+  const entry = entries.find((e) => e.id === 'p1:abc');
+  assert.deepEqual(entry.edition.narrative, goodNarrative);
 });
 
-await atest('no body supplied at all leaves edition null (Phase A\'s own metadata-only listPrefix contract)', async () => {
+await atest('getBody returning null (e.g. the object vanished between listing and fetch) leaves edition null rather than throwing', async () => {
   const tree = { people: [{ id: 'p1' }] };
   const { entries } = await buildKeepsakeInventory(tree, 'fam_1', {
-    listPrefix: async () => [{ key: 'keepsake/fam_1/p1/abc.json', byteLength: 500, etag: '"e1"' }],
+    listPrefix: async () => [
+      { key: 'keepsake/fam_1/p1/abc.json', byteLength: 500, etag: '"e1"' },
+      { key: 'keepsake/fam_1/p1/latest.json', byteLength: 500, etag: '"e1"' },
+    ],
+    getBody: async () => null,
   });
-  assert.equal(entries[0].edition, null);
+  const entry = entries.find((e) => e.id === 'p1:abc');
+  assert.equal(entry.edition, null);
 });
 
 await atest('buildKeepsakeInventory requires a listPrefix callback', async () => {
-  await assert.rejects(() => buildKeepsakeInventory({ people: [{ id: 'p1' }] }, 'fam_1', {}));
+  await assert.rejects(() => buildKeepsakeInventory({ people: [{ id: 'p1' }] }, 'fam_1', { getBody: async () => null }));
+});
+
+await atest('buildKeepsakeInventory requires a getBody callback', async () => {
+  await assert.rejects(() => buildKeepsakeInventory({ people: [{ id: 'p1' }] }, 'fam_1', { listPrefix: async () => [] }));
 });
 
 console.log(`\n  ${passed} passed, ${failed} failed`);
