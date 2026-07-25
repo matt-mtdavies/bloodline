@@ -122,8 +122,13 @@ export function seededShuffle(arr, seed) {
  * this synchronous function runs. This file makes no network calls itself;
  * omitting it (every existing caller, until slice 5 wires one up) simply
  * means nearbyRelatives never renders, identical to today's behavior.
+ * `lastViewedByPersonId` (optional): a plain object keyed by personId,
+ * value the unix-SECONDS timestamp of the viewer's own last visit to that
+ * profile — from functions/_lib/profileViews.js, same "resolved by the
+ * caller, no network calls in here" convention. Omitting it means
+ * forgottenPeople never renders.
  */
-export function computeInsightModules(graph, viewerId, now = Date.now(), geocodedByPlace = null) {
+export function computeInsightModules(graph, viewerId, now = Date.now(), geocodedByPlace = null, lastViewedByPersonId = null) {
   const gen = computeGenerations(graph);
   return {
     handshakes: handshakes(graph, viewerId),
@@ -152,6 +157,7 @@ export function computeInsightModules(graph, viewerId, now = Date.now(), geocode
     closestCousinsByAge: closestCousinsByAge(graph, viewerId),
     sharedBirthplaceGenerations: sharedBirthplaceGenerations(graph, gen),
     nearbyRelatives: nearbyRelatives(graph, viewerId, geocodedByPlace),
+    forgottenPeople: forgottenPeople(graph, viewerId, lastViewedByPersonId, now),
   };
 }
 
@@ -1406,6 +1412,12 @@ export function highlightCandidatesDetailed(modules) {
     const n = modules.nearbyRelatives;
     add('nearbyRelatives', `You and ${n.name} live only ${n.km} km apart.`, [n.id]);
   }
+  if (modules.forgottenPeople) {
+    const f = modules.forgottenPeople;
+    const years = Math.floor(f.ageDays / 365);
+    const when = years >= 2 ? `${years} years` : 'over a year';
+    add('forgottenPeople', `You haven't viewed ${f.name}'s profile in ${when}.`, [f.id]);
+  }
   return out;
 }
 
@@ -1434,6 +1446,7 @@ const EMOTIONAL_WEIGHT = {
   missingRecords: 6, sameAgeMarriages: 7,
   birthdayMonthMate: 6, closestCousinsByAge: 8, sharedBirthplaceGenerations: 5,
   nearbyRelatives: 7,
+  forgottenPeople: 6,
 };
 const DEFAULT_EMOTIONAL_WEIGHT = 3;
 // A candidate with no specific "about" person (a genuinely family-wide fact)
@@ -2005,4 +2018,42 @@ function nearbyRelatives(graph, viewerId, geocodedByPlace) {
   }
   if (!best) return null;
   return { id: best.id, name: best.name, km: formatKm(best.km) };
+}
+
+/* ── Family Moments slice 4: Forgotten people — "you haven't viewed X's
+      profile in over a year" ────────────────────────────────────────────
+   `lastViewedByPersonId` is resolved server-side (functions/_lib/
+   profileViews.js) and passed in already fetched — this file makes no
+   network calls. Deliberately only surfaces someone who HAS been viewed at
+   least once before (a real entry exists in the map) — "you haven't
+   looked in a year" is a nudge back to something you used to check on;
+   "you've never looked at all" is a different, less accusatory kind of
+   prompt this module doesn't attempt. Scoped to the viewer's own relatives
+   within a reasonable relational distance (distancesFrom, same BFS
+   scoreCandidate's relevance uses) — a person the viewer has no real
+   connection to isn't a "forgotten" relative, and a stale personId no
+   longer in the tree at all (removed since it was last viewed) is simply
+   skipped, not treated as an error. */
+const FORGOTTEN_MIN_DAYS = 365;
+const FORGOTTEN_MAX_HOPS = 6;
+function forgottenPeople(graph, viewerId, lastViewedByPersonId, now = Date.now()) {
+  if (viewerId == null || !lastViewedByPersonId || !graph.byId.has(viewerId)) return null;
+  const distances = distancesFrom(graph, viewerId);
+  const nowSeconds = Math.floor(now / 1000);
+  const minAgeSeconds = FORGOTTEN_MIN_DAYS * 86400;
+
+  let oldest = null;
+  for (const [personId, viewedAt] of Object.entries(lastViewedByPersonId)) {
+    if (personId === viewerId) continue;
+    const p = graph.byId.get(personId);
+    if (!p) continue; // stale entry — a person since removed from the tree
+    const hops = distances.get(personId);
+    if (hops == null || hops > FORGOTTEN_MAX_HOPS) continue;
+    const ageSeconds = nowSeconds - viewedAt;
+    if (ageSeconds < minAgeSeconds) continue;
+    if (!oldest || ageSeconds > oldest.ageSeconds) {
+      oldest = { id: personId, name: firstNameOf(p), ageDays: Math.floor(ageSeconds / 86400) };
+    }
+  }
+  return oldest;
 }

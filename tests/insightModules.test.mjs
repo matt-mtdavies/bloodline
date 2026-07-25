@@ -1544,6 +1544,60 @@ test('nearbyRelatives: null when the viewer\'s own place never resolved (geocodi
   assert.equal(computeInsightModules(graph, 'viewer', Date.now(), geocodedByPlace).nearbyRelatives, null);
 });
 
+// ── Family Moments Slice 4: forgotten people ────────────────────────────────
+
+const DAY_SECONDS = 86400;
+const NOW = 1_700_000_000_000; // fixed "now" so age-in-days math is deterministic
+
+test('forgottenPeople: surfaces the relative viewed longest ago, past the 1-year threshold', () => {
+  const people = [
+    { id: 'viewer', display_name: 'Viewer' },
+    { id: 'uncle', display_name: 'Uncle Peter' },
+    { id: 'aunt', display_name: 'Aunt Sue' },
+  ];
+  // uncle/aunt are the viewer's siblings via a shared parent — close enough
+  // relational distance to qualify.
+  const rels = [pRel('gp1', 'viewer'), pRel('gp1', 'uncle'), pRel('gp1', 'aunt')];
+  const graph = buildGraph([...people, { id: 'gp1', display_name: 'GP1' }], rels);
+  const lastViewed = {
+    uncle: Math.floor(NOW / 1000) - 400 * DAY_SECONDS, // 400 days ago — past threshold
+    aunt: Math.floor(NOW / 1000) - 40 * DAY_SECONDS,   // 40 days ago — recent, must not win
+  };
+  const f = computeInsightModules(graph, 'viewer', NOW, null, lastViewed).forgottenPeople;
+  assert.ok(f, 'module should render');
+  assert.equal(f.id, 'uncle');
+  assert.equal(f.ageDays, 400);
+});
+
+test('forgottenPeople: a relative viewed less than a year ago never qualifies', () => {
+  const people = [{ id: 'viewer', display_name: 'Viewer' }, { id: 'gp1', display_name: 'GP1' }, { id: 'uncle', display_name: 'Uncle' }];
+  const rels = [pRel('gp1', 'viewer'), pRel('gp1', 'uncle')];
+  const graph = buildGraph(people, rels);
+  const lastViewed = { uncle: Math.floor(NOW / 1000) - 100 * DAY_SECONDS };
+  assert.equal(computeInsightModules(graph, 'viewer', NOW, null, lastViewed).forgottenPeople, null);
+});
+
+test('forgottenPeople: someone NEVER viewed at all (absent from the map) never qualifies — this is "you stopped looking," not "you never looked"', () => {
+  const people = [{ id: 'viewer', display_name: 'Viewer' }, { id: 'gp1', display_name: 'GP1' }, { id: 'uncle', display_name: 'Uncle' }];
+  const rels = [pRel('gp1', 'viewer'), pRel('gp1', 'uncle')];
+  const graph = buildGraph(people, rels);
+  assert.equal(computeInsightModules(graph, 'viewer', NOW, null, {}).forgottenPeople, null);
+});
+
+test('forgottenPeople: a stale personId no longer in the tree is skipped, not an error', () => {
+  const people = [{ id: 'viewer', display_name: 'Viewer' }];
+  const graph = buildGraph(people, []);
+  const lastViewed = { removed_person: Math.floor(NOW / 1000) - 400 * DAY_SECONDS };
+  assert.equal(computeInsightModules(graph, 'viewer', NOW, null, lastViewed).forgottenPeople, null);
+});
+
+test('forgottenPeople: null when no lastViewedByPersonId is passed at all — every existing caller\'s behavior is unchanged', () => {
+  const people = [{ id: 'viewer', display_name: 'Viewer' }, { id: 'gp1', display_name: 'GP1' }, { id: 'uncle', display_name: 'Uncle' }];
+  const rels = [pRel('gp1', 'viewer'), pRel('gp1', 'uncle')];
+  const graph = buildGraph(people, rels);
+  assert.equal(computeInsightModules(graph, 'viewer').forgottenPeople, null);
+});
+
 // ── Family Moments Slice 1: scoring engine ──────────────────────────────────
 
 test('highlightCandidatesDetailed produces the SAME sentences as highlightCandidates, in the same order', () => {

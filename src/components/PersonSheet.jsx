@@ -95,6 +95,7 @@ export default function PersonSheet({
   onDismissDocumentPerson,
   onApplyRelationshipFact,
   onDismissRelationshipFact,
+  onRecordView,
   canEdit = true,        // editor+ : structural changes (people, relationships, edits)
   canContribute = true,  // contributor+ : add memories & photos
   isAdmin = true,        // owner/co-admin : manage anyone's memory, not just your own
@@ -165,6 +166,18 @@ export default function PersonSheet({
     setHealthNotesEditing(false);
     if (profileRef.current) profileRef.current.scrollTop = 0;
   }, [personId]);
+
+  // Family Moments "forgotten people" (docs/FAMILY-MOMENTS.md slice 4) —
+  // records that the viewer looked at this profile, whichever of the many
+  // routes into a profile got them here (a bubble tap, a relationship chip,
+  // search, a recap tour...). One effect here catches all of them, rather
+  // than instrumenting every individual navigation call site in App.jsx.
+  // onRecordView itself decides whether this is worth recording at all
+  // (e.g. skipped entirely for the viewer's own profile, or when nobody's
+  // logged in) — this component only reports WHICH profile is now showing.
+  useEffect(() => {
+    if (personId) onRecordView?.(personId);
+  }, [personId, onRecordView]);
 
   if (!person) return null;
 

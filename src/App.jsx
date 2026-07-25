@@ -1032,6 +1032,23 @@ export default function App() {
     URL.revokeObjectURL(url);
   }, [data.people, data.relationships, data.familyName]);
 
+  // Family Moments "forgotten people" (docs/FAMILY-MOMENTS.md slice 4) —
+  // fire-and-forget: never blocks the profile from opening, never surfaces
+  // an error to the viewer if it fails (missing a single view record isn't
+  // worth interrupting anyone over). Skips entirely for demo mode (no real
+  // login, nothing to scope the record to) and for the viewer's OWN
+  // profile (not a meaningful "forgotten person" signal about someone
+  // else) — both decided here, client-side, since the server has no cheap
+  // way to know "which tree person is this session's own profile."
+  const recordProfileView = useCallback((personId) => {
+    if (!user || !personId || personId === data.myPersonId) return;
+    fetch('/api/profile-views', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ personId }),
+    }).catch(() => {}); // best-effort — a dropped view record is never worth surfacing to the user
+  }, [user, data.myPersonId]);
+
   useEffect(() => () => {
     if (revealTimerRef.current) clearInterval(revealTimerRef.current);
   }, []);
@@ -2434,6 +2451,7 @@ export default function App() {
           flyToPersonFromAnywhere(id);
         }}
         onOpenPerson={openPerson}
+        onRecordView={recordProfileView}
         onAddRelative={setAddAnchorId}
         onEdit={setEditId}
         onEditTimeline={setTimelineId}
