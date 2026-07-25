@@ -138,6 +138,8 @@ export function computeInsightModules(graph, viewerId, now = Date.now()) {
     tradeLineage: tradeLineage(graph),
     earlyLoss: earlyLoss(graph),
     centenarians: centenarians(graph, now),
+    missingRecords: missingRecords(graph, viewerId),
+    sameAgeMarriages: sameAgeMarriages(graph),
   };
 }
 
@@ -1364,6 +1366,18 @@ export function highlightCandidatesDetailed(modules) {
   if (modules.centenarians) {
     add('centenarians', `${modules.centenarians.count} family member${modules.centenarians.count === 1 ? ' has' : 's have'} lived to see 100.`);
   }
+  if (modules.missingRecords?.missingPhotos) {
+    const m = modules.missingRecords.missingPhotos;
+    add('missingRecords', `You still have ${m.count} relative${m.count === 1 ? '' : 's'} missing a photograph.`);
+  }
+  if (modules.missingRecords?.unknownParentAncestors) {
+    const u = modules.missingRecords.unknownParentAncestors;
+    add('missingRecords', `${u.count} direct ancestor${u.count === 1 ? ' has' : 's have'} unknown parents — a brick wall waiting to be explored.`, u.ids);
+  }
+  if (modules.sameAgeMarriages) {
+    const p = modules.sameAgeMarriages.pairs[0];
+    add('sameAgeMarriages', `${p.aName} and ${p.bName} both married for the first time at ${p.age}.`, [p.aId, p.bId]);
+  }
   return out;
 }
 
@@ -1389,6 +1403,7 @@ const EMOTIONAL_WEIGHT = {
   fullestYear: 6, brood: 6, serviceRecords: 7, surnames: 4,
   livingGenerations: 6, twinBirths: 8, newArrivals: 7, blendedFamily: 6,
   tradeLineage: 5, centenarians: 9,
+  missingRecords: 6, sameAgeMarriages: 7,
 };
 const DEFAULT_EMOTIONAL_WEIGHT = 3;
 // A candidate with no specific "about" person (a genuinely family-wide fact)
@@ -1753,4 +1768,86 @@ function tradeLineage(graph) {
     uniq.push(c);
   }
   return { chains: uniq.slice(0, 5), best: uniq[0] };
+}
+
+/* ── Family Moments slice 2: Records & Discoveries — completeness gaps ─────
+   Not a superlative like records() above (nobody "holds" a missing photo) —
+   an invitation to fill in what's not there yet. missingPhotos is family-
+   wide (every recorded person, living or deceased); unknownParentAncestors
+   is scoped to the VIEWER's own direct ancestor line specifically (walking
+   graph.parents() up to a generous depth), matching the vision brief's own
+   framing ("Three DIRECT ancestors have unknown parents") — a random
+   unrelated branch's brick wall isn't a personal discovery for this viewer,
+   their own is. Returns null for a field with nothing to report rather than
+   the whole module returning null, since either half can be independently
+   true — a family with everyone photographed but three real brick walls
+   should still surface the ancestor gap, and vice versa. */
+const ANCESTOR_WALL_DEPTH = 8; // generations — generous; a real family tree rarely runs deeper than this in practice
+function missingRecords(graph, viewerId) {
+  const missingPhotoIds = graph.people.filter((p) => !p.photo).map((p) => p.id);
+
+  let unknownParentAncestors = null;
+  if (viewerId != null && graph.byId.has(viewerId)) {
+    const ancestorIds = new Set();
+    const stack = [{ id: viewerId, depth: 0 }];
+    const seen = new Set([viewerId]);
+    while (stack.length) {
+      const { id, depth } = stack.pop();
+      if (depth >= ANCESTOR_WALL_DEPTH) continue;
+      for (const par of graph.parents(id)) {
+        if (par.qualifier === 'step' || seen.has(par.id)) continue;
+        seen.add(par.id);
+        ancestorIds.add(par.id);
+        stack.push({ id: par.id, depth: depth + 1 });
+      }
+    }
+    const walls = [...ancestorIds].filter((id) => graph.parents(id).length === 0);
+    if (walls.length) unknownParentAncestors = { count: walls.length, ids: walls };
+  }
+
+  if (!missingPhotoIds.length && !unknownParentAncestors) return null;
+  return {
+    missingPhotos: missingPhotoIds.length ? { count: missingPhotoIds.length, ids: missingPhotoIds } : null,
+    unknownParentAncestors,
+  };
+}
+
+/* ── Family Moments slice 2: Family Connections — married at the same age ──
+   Pairs of people (any relation, not just the viewer) who married for the
+   first time at the exact same age — "You and your uncle both married at
+   29." Only the FIRST marriage counts (earliest marriage_date) per person,
+   so someone's second marriage doesn't create a false echo of their own
+   first. Needs both people's birth_date and marriage_date to compute an
+   age, so this stays silent rather than guessing wherever either is
+   missing — same "never invents, never half-renders" rule every other
+   module here follows. */
+function sameAgeMarriages(graph) {
+  const firstMarriageAge = new Map(); // personId -> { age, date }
+  for (const r of graph.relationships) {
+    if (r.type !== 'partner' || !r.marriage_date) continue;
+    for (const personId of [r.from_person, r.to_person]) {
+      const person = graph.byId.get(personId);
+      const age = yearsBetween(person?.birth_date, r.marriage_date);
+      if (age == null) continue;
+      const existing = firstMarriageAge.get(personId);
+      if (!existing || r.marriage_date < existing.date) firstMarriageAge.set(personId, { age, date: r.marriage_date });
+    }
+  }
+  const byAge = new Map(); // age -> [personId, ...]
+  for (const [personId, { age }] of firstMarriageAge) {
+    if (!byAge.has(age)) byAge.set(age, []);
+    byAge.get(age).push(personId);
+  }
+  const pairs = [];
+  for (const [age, ids] of byAge) {
+    if (ids.length < 2) continue;
+    // One pair per age bucket, oldest-recorded-birth-date-first for a
+    // stable, deterministic pick rather than insertion order.
+    const sorted = ids.slice().sort((a, b) => (graph.byId.get(a)?.birth_date || '') < (graph.byId.get(b)?.birth_date || '') ? -1 : 1);
+    const [aId, bId] = sorted;
+    pairs.push({ age, aId, bId, aName: firstNameOf(graph.byId.get(aId)), bName: firstNameOf(graph.byId.get(bId)) });
+  }
+  if (!pairs.length) return null;
+  pairs.sort((a, b) => a.age - b.age);
+  return { pairs };
 }

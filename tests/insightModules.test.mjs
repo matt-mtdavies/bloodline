@@ -959,15 +959,21 @@ test('highlightCandidates: every populated module in the rich fixture contribute
   // The rich fixture lights up every module except serviceRecords (no
   // military data), livingGenerations (only G4 is alive — one generation,
   // not three), twinBirths (needs 2+ sets, the fixture only ever produces
-  // one) and tradeLineage/newArrivals/blendedFamily/earlyLoss (no matching
-  // data at all) — but surnames DOES qualify: "Alpha"/"Beta"/"Delta" each
-  // appear 10+ times across the fixture's generations, an incidental side
-  // effect of richTree()'s naming scheme, not something deliberately
-  // engineered in. centenarians ALSO incidentally qualifies: g3_0_0's own
-  // 1890 birth to a deliberately-set 1992 death (see richTree()'s own
-  // comment on that date, planted for the handshake-chain test) happens to
-  // land at age 102 — 14 of the 21 possible candidates.
-  assert.equal(candidates.length, 14);
+  // one), sameAgeMarriages (only one marriage_date exists in the whole
+  // fixture, so there's no second person at the same age to pair against)
+  // and tradeLineage/newArrivals/blendedFamily/earlyLoss (no matching data
+  // at all) — but surnames DOES qualify: "Alpha"/"Beta"/"Delta" each appear
+  // 10+ times across the fixture's generations, an incidental side effect
+  // of richTree()'s naming scheme, not something deliberately engineered
+  // in. centenarians ALSO incidentally qualifies: g3_0_0's own 1890 birth
+  // to a deliberately-set 1992 death (see richTree()'s own comment on that
+  // date, planted for the handshake-chain test) happens to land at age
+  // 102. missingRecords contributes its OWN two independent candidates —
+  // richTree() never sets `.photo` on anyone (72 missing), and g4_0's real
+  // ancestor chain runs out at the G1 founders, who have no parents
+  // recorded (3 direct ancestors) — 16 of the 23 possible candidates
+  // (missingRecords can contribute up to 2 on its own).
+  assert.equal(candidates.length, 16);
   assert.ok(candidates.every((c) => typeof c === 'string' && c.length > 0));
 });
 
@@ -1271,6 +1277,109 @@ test('tradeLineage: a 2-generation match stays below the 3-generation threshold'
   ];
   const graph = buildGraph(people, [pRel('p1', 'c1')]);
   assert.equal(computeInsightModules(graph, 'c1').tradeLineage, null);
+});
+
+// ── Family Moments Slice 2: new insight categories ──────────────────────────
+
+test('missingRecords: missingPhotos counts everyone with no photo set, family-wide', () => {
+  const people = [
+    { id: 'a', display_name: 'A', birth_date: '1970-01-01', photo: 'data:x' },
+    { id: 'b', display_name: 'B', birth_date: '1972-01-01' },
+    { id: 'c', display_name: 'C', birth_date: '1974-01-01' },
+  ];
+  const graph = buildGraph(people, []);
+  const m = computeInsightModules(graph, null).missingRecords;
+  assert.equal(m.missingPhotos.count, 2);
+  assert.deepEqual(new Set(m.missingPhotos.ids), new Set(['b', 'c']));
+});
+
+test('missingRecords: unknownParentAncestors walks the VIEWER\'s own ancestor line, not a random other branch', () => {
+  // grandparent (no recorded parents) -> parent -> viewer
+  // an UNRELATED founder with no parents either, but not the viewer's own ancestor.
+  const people = [
+    { id: 'gp', display_name: 'Grandparent', birth_date: '1900-01-01' },
+    { id: 'parent', display_name: 'Parent', birth_date: '1930-01-01' },
+    { id: 'viewer', display_name: 'Viewer', birth_date: '1960-01-01' },
+    { id: 'unrelated_founder', display_name: 'Unrelated', birth_date: '1900-01-01' },
+  ];
+  const rels = [pRel('gp', 'parent'), pRel('parent', 'viewer')];
+  const graph = buildGraph(people, rels);
+  const m = computeInsightModules(graph, 'viewer').missingRecords;
+  assert.equal(m.unknownParentAncestors.count, 1, 'only the viewer\'s own ancestor with no recorded parents counts');
+  assert.deepEqual(m.unknownParentAncestors.ids, ['gp']);
+});
+
+test('missingRecords: step-parents are excluded from the ancestor walk, same as elsewhere in this file', () => {
+  const people = [
+    { id: 'bio_gp', display_name: 'Bio GP', birth_date: '1900-01-01' },
+    { id: 'bio_parent', display_name: 'Bio Parent', birth_date: '1930-01-01' },
+    { id: 'step_parent', display_name: 'Step Parent', birth_date: '1930-01-01' }, // also has no recorded parents
+    { id: 'viewer', display_name: 'Viewer', birth_date: '1960-01-01' },
+  ];
+  const rels = [
+    pRel('bio_gp', 'bio_parent'),
+    pRel('bio_parent', 'viewer'),
+    pRel('step_parent', 'viewer', 'step'),
+  ];
+  const graph = buildGraph(people, rels);
+  const m = computeInsightModules(graph, 'viewer').missingRecords;
+  assert.deepEqual(m.unknownParentAncestors.ids, ['bio_gp'], 'the step-parent must never be counted as a direct ancestor');
+});
+
+test('missingRecords: null when every photo is set and no viewerId is given at all', () => {
+  const people = [{ id: 'a', display_name: 'A', birth_date: '1970-01-01', photo: 'data:x' }];
+  const graph = buildGraph(people, []);
+  assert.equal(computeInsightModules(graph, null).missingRecords, null);
+});
+
+test('sameAgeMarriages: pairs two people who married for the first time at the same age', () => {
+  const people = [
+    { id: 'uncle', display_name: 'Uncle Roy', birth_date: '1950-01-01' },
+    { id: 'aunt1', display_name: 'Aunt One', birth_date: '1960-01-01' },
+    { id: 'viewer', display_name: 'Viewer', birth_date: '1970-01-01' },
+    { id: 'spouse', display_name: 'Spouse', birth_date: '1970-01-01' },
+  ];
+  // uncle marries at 1950+29=1979; viewer marries at 1970+29=1999 — both age 29.
+  const rels = [uRel('uncle', 'aunt1', '1979-06-01'), uRel('viewer', 'spouse', '1999-06-01')];
+  const graph = buildGraph(people, rels);
+  const m = computeInsightModules(graph, null).sameAgeMarriages;
+  assert.ok(m, 'module should render');
+  assert.equal(m.pairs[0].age, 29);
+  assert.deepEqual(new Set([m.pairs[0].aId, m.pairs[0].bId]), new Set(['uncle', 'viewer']));
+});
+
+test('sameAgeMarriages: only a person\'s FIRST marriage age is used — a third person sharing their SECOND-marriage age must not pair', () => {
+  // Birthdates deliberately spread so no one's OWN first-marriage age
+  // accidentally collides with anyone else's — the only thing under test is
+  // whether A's second-marriage age (40) leaks into the pairing pool.
+  const people = [
+    { id: 'a', display_name: 'A', birth_date: '1950-01-01' },
+    { id: 'a_spouse1', display_name: 'A Spouse 1', birth_date: '1945-01-01' }, // age 30 at the 1975 marriage
+    { id: 'a_spouse2', display_name: 'A Spouse 2', birth_date: '1955-01-01' }, // age 35 at the 1990 marriage
+    { id: 'c', display_name: 'C', birth_date: '1970-01-01' }, // age 40 at their own 2010 marriage
+    { id: 'c_spouse', display_name: 'C Spouse', birth_date: '1968-01-01' }, // age 42 at that same marriage
+  ];
+  // A's first marriage at 25 (1975), second at 40 (1990). C marries at 40
+  // (2010) — matches A's SECOND age, not A's recorded (first) age of 25, so
+  // A and C must NOT pair.
+  const rels = [
+    uRel('a', 'a_spouse1', '1975-01-01'),
+    uRel('a', 'a_spouse2', '1990-01-01'),
+    uRel('c', 'c_spouse', '2010-01-01'),
+  ];
+  const graph = buildGraph(people, rels);
+  const m = computeInsightModules(graph, null).sameAgeMarriages;
+  assert.equal(m, null, 'A is anchored to age 25 (their first marriage), so age-40 C must find no match');
+});
+
+test('sameAgeMarriages: null when nobody shares a first-marriage age, and missing dates are silently skipped', () => {
+  const people = [
+    { id: 'a', display_name: 'A', birth_date: '1950-01-01' },
+    { id: 'b', display_name: 'B' }, // no birth_date — age can't be computed, must not crash
+  ];
+  const rels = [uRel('a', 'b', '1980-01-01')];
+  const graph = buildGraph(people, rels);
+  assert.equal(computeInsightModules(graph, null).sameAgeMarriages, null);
 });
 
 // ── Family Moments Slice 1: scoring engine ──────────────────────────────────
