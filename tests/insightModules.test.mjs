@@ -1490,6 +1490,60 @@ test('birthdays: monthMate names whoever shares their birth month with the most 
   assert.equal(b.monthMate.mateIds.length, 3);
 });
 
+// ── Family Moments Slice 3: geography/distance ──────────────────────────────
+
+test('nearbyRelatives: finds the closest LIVING relative within the max distance, using pre-resolved coordinates', () => {
+  const people = [
+    { id: 'viewer', display_name: 'Viewer', residence: 'Cardiff, Wales' },
+    { id: 'near', display_name: 'Near Sibling', residence: 'Newport, Wales' }, // ~25km from Cardiff
+    { id: 'far', display_name: 'Far Cousin', residence: 'London, England' },   // ~240km from Cardiff — still under 100km? no, excluded
+  ];
+  const graph = buildGraph(people, []);
+  const geocodedByPlace = {
+    'Cardiff, Wales': { lat: 51.4816, lon: -3.1791 },
+    'Newport, Wales': { lat: 51.5842, lon: -2.9977 },
+    'London, England': { lat: 51.5074, lon: -0.1278 },
+  };
+  const n = computeInsightModules(graph, 'viewer', Date.now(), geocodedByPlace).nearbyRelatives;
+  assert.ok(n, 'module should render');
+  assert.equal(n.id, 'near');
+  assert.ok(n.km > 0 && n.km < 100);
+});
+
+test('nearbyRelatives: excludes deceased people and anyone beyond the max distance', () => {
+  const people = [
+    { id: 'viewer', display_name: 'Viewer', residence: 'Cardiff, Wales' },
+    { id: 'deceased_nearby', display_name: 'Deceased', residence: 'Newport, Wales', is_deceased: true },
+    { id: 'far', display_name: 'Far', residence: 'Tokyo, Japan' },
+  ];
+  const graph = buildGraph(people, []);
+  const geocodedByPlace = {
+    'Cardiff, Wales': { lat: 51.4816, lon: -3.1791 },
+    'Newport, Wales': { lat: 51.5842, lon: -2.9977 },
+    'Tokyo, Japan': { lat: 35.6762, lon: 139.6503 },
+  };
+  assert.equal(computeInsightModules(graph, 'viewer', Date.now(), geocodedByPlace).nearbyRelatives, null);
+});
+
+test('nearbyRelatives: null when no geocoding data is passed at all — every existing caller\'s behavior is unchanged', () => {
+  const people = [
+    { id: 'viewer', display_name: 'Viewer', residence: 'Cardiff, Wales' },
+    { id: 'near', display_name: 'Near', residence: 'Newport, Wales' },
+  ];
+  const graph = buildGraph(people, []);
+  assert.equal(computeInsightModules(graph, 'viewer').nearbyRelatives, null);
+});
+
+test('nearbyRelatives: null when the viewer\'s own place never resolved (geocoding miss)', () => {
+  const people = [
+    { id: 'viewer', display_name: 'Viewer', residence: 'Nowhereville' },
+    { id: 'near', display_name: 'Near', residence: 'Newport, Wales' },
+  ];
+  const graph = buildGraph(people, []);
+  const geocodedByPlace = { 'Newport, Wales': { lat: 51.5842, lon: -2.9977 } }; // 'Nowhereville' absent — never resolved
+  assert.equal(computeInsightModules(graph, 'viewer', Date.now(), geocodedByPlace).nearbyRelatives, null);
+});
+
 // ── Family Moments Slice 1: scoring engine ──────────────────────────────────
 
 test('highlightCandidatesDetailed produces the SAME sentences as highlightCandidates, in the same order', () => {

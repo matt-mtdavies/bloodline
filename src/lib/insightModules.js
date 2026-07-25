@@ -2,6 +2,7 @@ import { computeGenerations, distancesFrom } from '../data/graph.js';
 import { detectRegion, nearestWorldEvent } from './worldEvents.js';
 import { yearsBetween } from './dates.js';
 import { normalizeGender } from './gender.js';
+import { haversineKm, formatKm } from './geo.js';
 
 /*
  * Tree Insights — layer 2: the visual modules (Wave 1).
@@ -114,7 +115,15 @@ export function seededShuffle(arr, seed) {
 // `now` drives records()'s "which 3 of the pool today" rotation — injectable
 // so tests can pin a specific day rather than depending on the real clock
 // (see records() below).
-export function computeInsightModules(graph, viewerId, now = Date.now()) {
+/*
+ * `geocodedByPlace` (optional): a plain object keyed by the EXACT
+ * `residence` string as stored on a person record, value {lat, lon} | null
+ * — already resolved by the caller (see functions/_lib/geocode.js) before
+ * this synchronous function runs. This file makes no network calls itself;
+ * omitting it (every existing caller, until slice 5 wires one up) simply
+ * means nearbyRelatives never renders, identical to today's behavior.
+ */
+export function computeInsightModules(graph, viewerId, now = Date.now(), geocodedByPlace = null) {
   const gen = computeGenerations(graph);
   return {
     handshakes: handshakes(graph, viewerId),
@@ -142,6 +151,7 @@ export function computeInsightModules(graph, viewerId, now = Date.now()) {
     sameAgeMarriages: sameAgeMarriages(graph),
     closestCousinsByAge: closestCousinsByAge(graph, viewerId),
     sharedBirthplaceGenerations: sharedBirthplaceGenerations(graph, gen),
+    nearbyRelatives: nearbyRelatives(graph, viewerId, geocodedByPlace),
   };
 }
 
@@ -1392,6 +1402,10 @@ export function highlightCandidatesDetailed(modules) {
     const s = modules.sharedBirthplaceGenerations;
     add('sharedBirthplaceGenerations', `${s.generations} generations of the family were born in ${s.display}.`, s.ids);
   }
+  if (modules.nearbyRelatives) {
+    const n = modules.nearbyRelatives;
+    add('nearbyRelatives', `You and ${n.name} live only ${n.km} km apart.`, [n.id]);
+  }
   return out;
 }
 
@@ -1419,6 +1433,7 @@ const EMOTIONAL_WEIGHT = {
   tradeLineage: 5, centenarians: 9,
   missingRecords: 6, sameAgeMarriages: 7,
   birthdayMonthMate: 6, closestCousinsByAge: 8, sharedBirthplaceGenerations: 5,
+  nearbyRelatives: 7,
 };
 const DEFAULT_EMOTIONAL_WEIGHT = 3;
 // A candidate with no specific "about" person (a genuinely family-wide fact)
@@ -1958,4 +1973,36 @@ function sharedBirthplaceGenerations(graph, gen) {
   let display = null, bestCount = -1;
   for (const [v, count] of best.variants) if (count > bestCount) { display = v; bestCount = count; }
   return { display, generations: best.gens.size, ids: best.ids };
+}
+
+/* ── Family Moments slice 3: Geography — how close two living relatives
+      actually are ──────────────────────────────────────────────────────
+   Distance math is pure (lib/geo.js's haversineKm); the place -> coordinate
+   resolution itself happens server-side (functions/_lib/geocode.js, a
+   Nominatim proxy with a D1 cache) and is passed in already resolved via
+   `geocodedByPlace` — this file makes no network calls. Only LIVING people
+   with a recorded `residence` are considered — a present-tense "you live
+   near" fact, not about where someone was born or died. Gated to a
+   genuinely close NEARBY_MAX_KM so this never surfaces "your closest
+   living relative happens to be 3000km away" framed as if it were a warm
+   proximity fact — that reads as a non sequitur, not a discovery. */
+const NEARBY_MAX_KM = 100;
+function nearbyRelatives(graph, viewerId, geocodedByPlace) {
+  if (viewerId == null || !geocodedByPlace) return null;
+  const viewer = graph.byId.get(viewerId);
+  if (!viewer || viewer.is_deceased || !viewer.residence) return null;
+  const viewerCoords = geocodedByPlace[viewer.residence];
+  if (!viewerCoords) return null;
+
+  let best = null;
+  for (const p of graph.people) {
+    if (p.id === viewerId || p.is_deceased || !p.residence) continue;
+    const coords = geocodedByPlace[p.residence];
+    if (!coords) continue;
+    const km = haversineKm(viewerCoords, coords);
+    if (km == null || km > NEARBY_MAX_KM) continue;
+    if (!best || km < best.km) best = { id: p.id, name: firstNameOf(p), km };
+  }
+  if (!best) return null;
+  return { id: best.id, name: best.name, km: formatKm(best.km) };
 }
