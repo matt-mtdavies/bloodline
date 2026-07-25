@@ -232,5 +232,33 @@ test('storeToGedcom emits SEX and assigns HUSB/WIFE even when gender is stored T
   assert.match(ged, /1 WIFE @I2@/, 'the Title Case "Female" partner must still be assigned WIFE');
 });
 
+test('storeToGedcom weaves a separately-stored middle_name into GIVN/NAME even when given_names is empty (an in-app-created person, not an import)', () => {
+  const people = [
+    { id: 'a', display_name: 'James Mercer', middle_name: 'Robert', family_name: 'Mercer', gender: 'male', birth_date: '1985' },
+  ];
+  const ged = storeToGedcom(people, []);
+  assert.match(ged, /1 NAME James Robert \/Mercer\//, 'middle name inserted before the surname in the NAME line');
+  assert.match(ged, /2 GIVN James Robert/, 'GIVN carries the middle name too, not just the first given name');
+  const back = gedcomToStore(ged);
+  assert.equal(back.people[0].given_names, 'James Robert', 'round-trips: a re-import now sees the middle name as part of the given names');
+});
+
+test('storeToGedcom does not duplicate a middle name already folded into given_names (e.g. re-exporting an imported person)', () => {
+  const people = [
+    { id: 'a', display_name: 'James Mercer', given_names: 'James Robert', middle_name: 'Robert', family_name: 'Mercer', gender: 'male', birth_date: '1985' },
+  ];
+  const ged = storeToGedcom(people, []);
+  assert.match(ged, /1 NAME James Robert \/Mercer\//);
+  assert.doesNotMatch(ged, /James Robert Robert/, 'must not duplicate the middle name');
+});
+
+test('storeToGedcom leaves the name alone when no middle_name is set', () => {
+  const people = [
+    { id: 'a', display_name: 'James Mercer', family_name: 'Mercer', gender: 'male', birth_date: '1985' },
+  ];
+  const ged = storeToGedcom(people, []);
+  assert.match(ged, /1 NAME James \/Mercer\//);
+});
+
 console.log(`\n  ${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);
