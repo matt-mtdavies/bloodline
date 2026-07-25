@@ -13,6 +13,12 @@ import { dayIndex } from '../lib/insightModules.js';
  *
  * Deliberately does NOT replace the Home hub's existing "Did you know?"
  * card — that stays exactly as it is. This is a new, separate surface.
+ *
+ * `onShown` (slice 6) fires once, the moment this banner actually renders
+ * on screen — App.jsx uses it to log silent engagement instrumentation
+ * (functions/api/moment-engagement.js). This component has no idea that's
+ * happening; it just reports "this was shown" the same way it already
+ * reported it to recordShownMomentKey's own local freshness bookkeeping.
  */
 
 const DISMISS_KEY = 'bl_family_moment_dismissed_day';
@@ -56,7 +62,7 @@ export function greetingForHour(hour) {
   return 'Good evening';
 }
 
-export default function FamilyMomentBanner({ moment, firstName, visible, onOpen, onDismiss }) {
+export default function FamilyMomentBanner({ moment, firstName, visible, onOpen, onDismiss, onShown }) {
   const [mounted, setMounted] = useState(false);
   const [shown, setShown] = useState(false);
   // Tracks a dismiss THIS render session — isDismissedToday() alone reads
@@ -91,7 +97,10 @@ export default function FamilyMomentBanner({ moment, firstName, visible, onOpen,
   // reached browse mode today) doesn't get penalized for a showing that
   // never happened.
   useEffect(() => {
-    if (shown && moment?.key) recordShownMomentKey(moment.key);
+    if (shown && moment?.key) {
+      recordShownMomentKey(moment.key);
+      onShown?.(moment.key);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shown, moment?.key]);
 

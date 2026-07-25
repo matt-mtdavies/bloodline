@@ -1985,6 +1985,23 @@ export default function App() {
     return () => { cancelled = true; };
   }, [user, graph]);
 
+  // Family Moments slice 6 — silent engagement instrumentation. Fire-and-
+  // forget: never awaited, never blocks the UI, and the endpoint itself
+  // always no-ops rather than erroring on anything it can't resolve (see
+  // functions/api/moment-engagement.js). Nothing in THIS app reads it back
+  // — it exists purely so a future slice deciding which moment categories
+  // to surface more often has real usage data instead of a guess. Demo
+  // mode (no `user`) never calls it, same as the geocode/profile-views
+  // fetch above.
+  const logMomentEngagement = useCallback((momentKey, event) => {
+    if (!user || !momentKey) return;
+    fetch('/api/moment-engagement', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ momentKey, event }),
+    }).catch(() => {});
+  }, [user]);
+
   // Tree-screen insight surfacing (nav brief: "surface one real insight from
   // the tree screen itself, not just Home"). Computed once per graph change;
   // the per-focus lookup off it is cheap. Deliberately silent far more often
@@ -2451,6 +2468,7 @@ export default function App() {
               !anyOverlayOpen && recapQueue.length === 0
             }
             onOpen={() => {
+              logMomentEngagement(familyMoment?.key, 'tapped');
               if (familyMoment?.personId) {
                 activate(familyMoment.personId);
                 openPerson(familyMoment.personId);
@@ -2459,6 +2477,7 @@ export default function App() {
               }
             }}
             onDismiss={() => {}}
+            onShown={(key) => logMomentEngagement(key, 'shown')}
           />
           {!lineageMode && !flightCaption && <IntroHint />}
           {!lineageMode && !flightCaption && (
