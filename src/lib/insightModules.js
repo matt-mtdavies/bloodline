@@ -2147,14 +2147,23 @@ export function pickTodaysFamilyMoment(graph, viewerId, now, modules, { distance
     }
   }
 
-  // Restricted to PERSONAL_CATEGORIES (see its own comment) — the full pool
-  // still has plenty of good facts, but only the personal ones are eligible
-  // to BE today's one banner moment. A family with real personal facts but
-  // none available today (or none yet, on a sparse tree) correctly gets no
-  // banner at all rather than falling back to a "tree-centric" stat, which
-  // is the whole point of this filter.
-  const candidates = highlightCandidatesDetailed(modules).filter((c) => PERSONAL_CATEGORIES.has(c.key));
-  if (!candidates.length) return null;
-  const [top] = rankCandidates(candidates, { distances, recentKeys, now });
+  // Prefers PERSONAL_CATEGORIES (see its own comment) — a real relationship
+  // or life event beats a tree-wide stat whenever one's available. But
+  // several personal categories have real, sometimes-high bars to clear
+  // (a 25-year marriage or an 85-year life for `records`, 5+ kids to one
+  // household for `brood`, actual twins, someone reaching 100, a viewer
+  // with children of their own for `closestCousinsByAge`...), or need
+  // accumulated data that only builds up over time (`nearbyRelatives`,
+  // `forgottenPeople`). Real feedback: for plenty of ordinary family trees,
+  // NONE of the nine personal categories clear their bar on a given day —
+  // and a silent banner reads as broken, not as "correctly nothing to
+  // say." So: fall back to the best-scored candidate from the FULL pool
+  // only when the personal pool is completely empty — personal still
+  // always wins when even one qualifies.
+  const fullPool = highlightCandidatesDetailed(modules);
+  const personalPool = fullPool.filter((c) => PERSONAL_CATEGORIES.has(c.key));
+  const pool = personalPool.length ? personalPool : fullPool;
+  if (!pool.length) return null;
+  const [top] = rankCandidates(pool, { distances, recentKeys, now });
   return { key: top.key, personId: top.personIds?.[0] ?? null, text: top.text };
 }

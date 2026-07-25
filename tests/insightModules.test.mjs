@@ -1723,6 +1723,23 @@ test('pickTodaysFamilyMoment: never picks a trivia/structural category, even whe
   assert.notEqual(pick.key, 'trades');
 });
 
+test('pickTodaysFamilyMoment: falls back to a trivia candidate rather than showing nothing, when zero personal candidates qualify', () => {
+  // A lone person with no photo: no marriage, no children, no cousins, no
+  // twins, nobody to share a birthday month with — every PERSONAL_CATEGORIES
+  // entry is null. missingRecords (trivia) still qualifies (no minimum
+  // count beyond "at least one" missing photo), so the fallback should
+  // surface THAT rather than returning null — real feedback was that a
+  // silent banner reads as broken, not as "correctly nothing personal to
+  // say today."
+  const people = [{ id: 'lone', display_name: 'Lone Person' }];
+  const g = buildGraph(people, []);
+  const modules = computeInsightModules(g, 'lone', TODAY.getTime());
+  const pick = pickTodaysFamilyMoment(g, 'lone', TODAY.getTime(), modules);
+  assert.ok(pick, 'must fall back to SOMETHING rather than null, since a trivia candidate does qualify');
+  assert.equal(pick.key, 'missingRecords');
+  assert.ok(!PERSONAL_CATEGORIES.has(pick.key), 'sanity: this really is exercising the trivia fallback, not a personal hit');
+});
+
 test('PERSONAL_CATEGORIES: every key it lists is one highlightCandidatesDetailed can actually key a candidate as', () => {
   // A pure sanity check against typos/renames — every add(key, ...) call
   // site in the source is enumerated here directly (not derived from one
