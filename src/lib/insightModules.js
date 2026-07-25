@@ -1459,6 +1459,30 @@ const EMOTIONAL_WEIGHT = {
   nearbyRelatives: 7,
   forgottenPeople: 6,
 };
+// Real feedback: the always-on banner (pickTodaysFamilyMoment, below) still
+// read as "tree-centric" even after livingLink's weight was lowered —
+// weighting alone wasn't enough, because a lot of categories are aggregate
+// facts about the TREE (a name's spread, a generation count, an era's
+// average lifespan), not about a specific relationship or life event
+// belonging to someone. Explicitly split rather than tuned further: only
+// categories that are genuinely ABOUT a specific person or a real
+// relationship between named people are eligible for the one daily banner
+// slot. Everything else is still a perfectly good fact — it stays in the
+// full Insights sheet (InsightModules.jsx, unaffected by this list) and
+// the Home hub / idle-hint pools (highlightCandidates, also unaffected —
+// this filter is applied ONLY inside pickTodaysFamilyMoment) — it just no
+// longer competes to be presented as today's personal moment.
+export const PERSONAL_CATEGORIES = new Set([
+  'birthdayMonthMate',       // two NAMED people share a birthday month
+  'records',                 // a specific person's own record-holding fact
+  'brood',                   // named parents, their real household
+  'twinBirths',              // named siblings, a real coincidence of birth
+  'centenarians',            // a specific person reaching 100
+  'sameAgeMarriages',        // two named people, an echo across their lives
+  'closestCousinsByAge',     // the viewer's own child and a named cousin
+  'nearbyRelatives',         // the viewer and a named relative, physically close
+  'forgottenPeople',         // a nudge to reconnect with a named relative
+]);
 const DEFAULT_EMOTIONAL_WEIGHT = 3;
 // A candidate with no specific "about" person (a genuinely family-wide fact)
 // is still relevant to everyone — this is its baseline, not a penalty for
@@ -2123,7 +2147,13 @@ export function pickTodaysFamilyMoment(graph, viewerId, now, modules, { distance
     }
   }
 
-  const candidates = highlightCandidatesDetailed(modules);
+  // Restricted to PERSONAL_CATEGORIES (see its own comment) — the full pool
+  // still has plenty of good facts, but only the personal ones are eligible
+  // to BE today's one banner moment. A family with real personal facts but
+  // none available today (or none yet, on a sparse tree) correctly gets no
+  // banner at all rather than falling back to a "tree-centric" stat, which
+  // is the whole point of this filter.
+  const candidates = highlightCandidatesDetailed(modules).filter((c) => PERSONAL_CATEGORIES.has(c.key));
   if (!candidates.length) return null;
   const [top] = rankCandidates(candidates, { distances, recentKeys, now });
   return { key: top.key, personId: top.personIds?.[0] ?? null, text: top.text };

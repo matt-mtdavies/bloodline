@@ -6,7 +6,7 @@
  */
 import assert from 'node:assert/strict';
 import { buildGraph } from '../src/data/graph.js';
-import { computeInsightModules, computeThisMonth, buildInsightHighlights, aliveInYear, livingLinkTo, personHighlight, highlightCandidates, highlightCandidatesDetailed, scoreCandidate, rankCandidates, pickDailyHighlight, pickTodaysFamilyMoment, dayIndex, seededShuffle } from '../src/lib/insightModules.js';
+import { computeInsightModules, computeThisMonth, buildInsightHighlights, aliveInYear, livingLinkTo, personHighlight, highlightCandidates, highlightCandidatesDetailed, scoreCandidate, rankCandidates, pickDailyHighlight, pickTodaysFamilyMoment, PERSONAL_CATEGORIES, dayIndex, seededShuffle } from '../src/lib/insightModules.js';
 import { distancesFrom } from '../src/data/graph.js';
 
 let passed = 0, failed = 0;
@@ -1698,13 +1698,50 @@ test('pickTodaysFamilyMoment: a wedding anniversary TODAY wins when there is no 
   assert.match(pick.text, /34 years since Anna and Ben married/);
 });
 
-test('pickTodaysFamilyMoment: falls back to the top-scored candidate when nothing is happening today', () => {
+test('pickTodaysFamilyMoment: falls back to the top-scored PERSONAL candidate when nothing is happening today', () => {
   const pick = pickTodaysFamilyMoment(graph, 'g4_0', TODAY.getTime(), mods);
-  assert.ok(pick, 'the rich fixture always has SOME scored candidate');
+  assert.ok(pick, 'the rich fixture always has SOME scored personal candidate');
   assert.notEqual(pick.key, 'birthdayToday');
   assert.notEqual(pick.key, 'anniversaryToday');
-  const ranked = rankCandidates(highlightCandidatesDetailed(mods), { now: TODAY.getTime() });
-  assert.equal(pick.key, ranked[0].key, 'must match rankCandidates\' own top pick exactly');
+  assert.ok(PERSONAL_CATEGORIES.has(pick.key), `expected a personal-category pick, got: ${pick.key}`);
+  const personalOnly = highlightCandidatesDetailed(mods).filter((c) => PERSONAL_CATEGORIES.has(c.key));
+  const ranked = rankCandidates(personalOnly, { now: TODAY.getTime() });
+  assert.equal(pick.key, ranked[0].key, 'must match rankCandidates\' own top pick exactly, among personal candidates only');
+});
+
+test('pickTodaysFamilyMoment: never picks a trivia/structural category, even when one outranks every personal candidate on raw weight', () => {
+  // livingLink (weight 3, deliberately low) and records (weight 8) both
+  // qualify in the rich fixture — records is personal (a specific person's
+  // own record) and should be free to win; livingLink is trivia and must
+  // never be picked regardless of where it'd rank unfiltered.
+  const pick = pickTodaysFamilyMoment(graph, 'g4_0', TODAY.getTime(), mods);
+  assert.ok(pick);
+  assert.notEqual(pick.key, 'livingLink');
+  assert.notEqual(pick.key, 'strata');
+  assert.notEqual(pick.key, 'surnames');
+  assert.notEqual(pick.key, 'heartlands');
+  assert.notEqual(pick.key, 'trades');
+});
+
+test('PERSONAL_CATEGORIES: every key it lists is one highlightCandidatesDetailed can actually key a candidate as', () => {
+  // A pure sanity check against typos/renames — every add(key, ...) call
+  // site in the source is enumerated here directly (not derived from one
+  // fixture's coverage, since not every category naturally occurs in any
+  // single synthetic tree, e.g. twinBirths). A stale key in
+  // PERSONAL_CATEGORIES after a future rename would silently starve the
+  // banner of a whole category with no visible error anywhere, so this
+  // guards that the two lists are never allowed to drift apart.
+  const allAddKeys = new Set([
+    'giftOfYears', 'bridges', 'names', 'heartlands', 'trades', 'birthdays',
+    'birthdayMonthMate', 'records', 'parenthood', 'livingLink', 'strata',
+    'fullestYear', 'brood', 'serviceRecords', 'surnames', 'livingGenerations',
+    'twinBirths', 'newArrivals', 'blendedFamily', 'tradeLineage', 'centenarians',
+    'missingRecords', 'sameAgeMarriages', 'closestCousinsByAge',
+    'sharedBirthplaceGenerations', 'nearbyRelatives', 'forgottenPeople',
+  ]);
+  for (const key of PERSONAL_CATEGORIES) {
+    assert.ok(allAddKeys.has(key), `PERSONAL_CATEGORIES has "${key}", which no longer matches any real candidate key`);
+  }
 });
 
 test('pickTodaysFamilyMoment: null when there is nothing today AND no candidates qualify at all', () => {
