@@ -2057,3 +2057,62 @@ function forgottenPeople(graph, viewerId, lastViewedByPersonId, now = Date.now()
   }
   return oldest;
 }
+
+/*
+ * Family Moments slice 5 — the always-on banner's actual pick. A genuine
+ * TODAY birthday or wedding anniversary wins unconditionally: it's the
+ * single most specific, unambiguous, highest-emotional-value thing that
+ * can be true about "today" — no scoring engine is needed to know a real
+ * birthday beats a generic fact. Falls back to the full scored pool
+ * (rankCandidates, above) otherwise.
+ *
+ * Distinct from pickDailyHighlight (the Home hub's own fixed-once-per-
+ * calendar-day teaser, which never checks for a real birthday and always
+ * draws from the flat pool) — this is the richer, viewer-aware selection
+ * built for the proactive banner. `modules` is computeInsightModules'
+ * already-computed output (the caller builds it once, geocoding/last-
+ * viewed data and all, and reuses it here rather than this function
+ * recomputing it) — this function itself makes no network calls and
+ * derives no data of its own beyond computeThisMonth, which is cheap and
+ * synchronous.
+ *
+ * Known, disclosed gap: computeThisMonth only considers LIVING people for
+ * birthdays (deceased relatives are excluded there, not here), so "your
+ * grandfather would have turned 102 today" from the original brief isn't
+ * currently reachable — would need computeThisMonth itself extended, a
+ * separate, deliberate decision given how differently that reads from a
+ * living person's birthday.
+ */
+export function pickTodaysFamilyMoment(graph, viewerId, now, modules, { distances = null, recentKeys = null } = {}) {
+  // computeThisMonth (unlike every other function in this file) takes a
+  // real Date object, not a numeric timestamp — `now` here follows this
+  // file's own now=Date.now() convention, so it needs converting.
+  const month = computeThisMonth(graph, new Date(now));
+  if (month) {
+    const todaysBirthday = month.birthdays.find((b) => b.isToday);
+    if (todaysBirthday) {
+      return {
+        key: 'birthdayToday',
+        personId: todaysBirthday.id,
+        text: todaysBirthday.turning != null
+          ? `It's ${todaysBirthday.name}'s birthday today — turning ${todaysBirthday.turning}.`
+          : `It's ${todaysBirthday.name}'s birthday today.`,
+      };
+    }
+    const todaysAnniversary = month.anniversaries.find((a) => a.isToday);
+    if (todaysAnniversary) {
+      return {
+        key: 'anniversaryToday',
+        personId: todaysAnniversary.aId,
+        text: todaysAnniversary.years > 0
+          ? `Today marks ${todaysAnniversary.years} years since ${todaysAnniversary.aName} and ${todaysAnniversary.bName} married.`
+          : `${todaysAnniversary.aName} and ${todaysAnniversary.bName} married today.`,
+      };
+    }
+  }
+
+  const candidates = highlightCandidatesDetailed(modules);
+  if (!candidates.length) return null;
+  const [top] = rankCandidates(candidates, { distances, recentKeys, now });
+  return { key: top.key, personId: top.personIds?.[0] ?? null, text: top.text };
+}

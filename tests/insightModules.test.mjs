@@ -6,7 +6,7 @@
  */
 import assert from 'node:assert/strict';
 import { buildGraph } from '../src/data/graph.js';
-import { computeInsightModules, computeThisMonth, buildInsightHighlights, aliveInYear, handshakesTo, personHighlight, highlightCandidates, highlightCandidatesDetailed, scoreCandidate, rankCandidates, pickDailyHighlight, dayIndex, seededShuffle } from '../src/lib/insightModules.js';
+import { computeInsightModules, computeThisMonth, buildInsightHighlights, aliveInYear, handshakesTo, personHighlight, highlightCandidates, highlightCandidatesDetailed, scoreCandidate, rankCandidates, pickDailyHighlight, pickTodaysFamilyMoment, dayIndex, seededShuffle } from '../src/lib/insightModules.js';
 import { distancesFrom } from '../src/data/graph.js';
 
 let passed = 0, failed = 0;
@@ -1663,6 +1663,59 @@ test('rankCandidates: real distancesFrom() output plugs in directly and biases t
   // ranking is well-formed and deterministic across two calls on the same day.
   const rankedAgain = rankCandidates(detailed, { distances });
   assert.deepEqual(ranked.map((r) => r.key), rankedAgain.map((r) => r.key), 'ranking must be stable within the same day, not re-shuffled per call');
+});
+
+// ── Family Moments Slice 5: pickTodaysFamilyMoment ──────────────────────────
+
+const TODAY = new Date('2024-06-15T12:00:00Z');
+
+test('pickTodaysFamilyMoment: a real birthday TODAY wins unconditionally over a rich scored pool', () => {
+  const m = computeInsightModules(graph, 'g4_0', TODAY.getTime());
+  // richTree()'s own fixture has plenty of high-weight candidates (records,
+  // handshakes, etc.) already computed in `m` — proving the birthday still
+  // wins even against real competition, not just an empty pool.
+  const people = [...graph.people, { id: 'bday_person', display_name: 'Birthday Person', birth_date: '1990-06-15' }];
+  const bdayGraph = buildGraph(people, graph.relationships);
+  const bdayModules = computeInsightModules(bdayGraph, 'g4_0', TODAY.getTime());
+  const pick = pickTodaysFamilyMoment(bdayGraph, 'g4_0', TODAY.getTime(), bdayModules);
+  assert.ok(pick, 'should return a moment');
+  assert.equal(pick.key, 'birthdayToday');
+  assert.equal(pick.personId, 'bday_person');
+  assert.match(pick.text, /Birthday Person's birthday today — turning 34/);
+});
+
+test('pickTodaysFamilyMoment: a wedding anniversary TODAY wins when there is no birthday today', () => {
+  const people = [
+    { id: 'a', display_name: 'Anna', birth_date: '1960-01-01' },
+    { id: 'b', display_name: 'Ben', birth_date: '1962-01-01' },
+  ];
+  const rels = [{ id: 'r1', type: 'partner', from_person: 'a', to_person: 'b', partner_status: 'current', is_married: true, marriage_date: '1990-06-15' }];
+  const g = buildGraph(people, rels);
+  const modules = computeInsightModules(g, null, TODAY.getTime());
+  const pick = pickTodaysFamilyMoment(g, null, TODAY.getTime(), modules);
+  assert.ok(pick);
+  assert.equal(pick.key, 'anniversaryToday');
+  assert.match(pick.text, /34 years since Anna and Ben married/);
+});
+
+test('pickTodaysFamilyMoment: falls back to the top-scored candidate when nothing is happening today', () => {
+  const pick = pickTodaysFamilyMoment(graph, 'g4_0', TODAY.getTime(), mods);
+  assert.ok(pick, 'the rich fixture always has SOME scored candidate');
+  assert.notEqual(pick.key, 'birthdayToday');
+  assert.notEqual(pick.key, 'anniversaryToday');
+  const ranked = rankCandidates(highlightCandidatesDetailed(mods), { now: TODAY.getTime() });
+  assert.equal(pick.key, ranked[0].key, 'must match rankCandidates\' own top pick exactly');
+});
+
+test('pickTodaysFamilyMoment: null when there is nothing today AND no candidates qualify at all', () => {
+  // A photo is set so missingRecords' "N missing a photograph" doesn't
+  // incidentally qualify — missingRecords has no minimum-count threshold
+  // beyond "at least one," so a bare lone person would otherwise still
+  // produce a candidate and defeat the point of this test.
+  const people = [{ id: 'lone', display_name: 'Lone Person', photo: 'data:x' }];
+  const g = buildGraph(people, []);
+  const modules = computeInsightModules(g, 'lone', TODAY.getTime());
+  assert.equal(pickTodaysFamilyMoment(g, 'lone', TODAY.getTime(), modules), null);
 });
 
 console.log(`\n  ${passed} passed, ${failed} failed`);

@@ -64,7 +64,8 @@ import { detectRegion, nearestWorldEvent } from './lib/worldEvents.js';
 import { findDuplicatePairs, pairKey, loadDismissedDuplicates, saveDismissedDuplicates } from './lib/duplicates.js';
 import { canManageTree } from './lib/visibility.js';
 import { profileCompleteness, isDuplicateLifeEvent } from './lib/profile.js';
-import { computeInsightModules, personHighlight, highlightCandidates } from './lib/insightModules.js';
+import { computeInsightModules, personHighlight, highlightCandidates, pickTodaysFamilyMoment } from './lib/insightModules.js';
+import FamilyMomentBanner, { loadRecentMomentKeys } from './components/FamilyMomentBanner.jsx';
 import { useReducedMotion } from './hooks/useReducedMotion.js';
 import BubbleTree from './viz/BubbleTree.jsx';
 import ChartTree from './viz/ChartTree.jsx';
@@ -1958,13 +1959,39 @@ export default function App() {
     if (data.myPersonId) flyToPersonFromAnywhere(data.myPersonId);
   }, [data.myPersonId, flyToPersonFromAnywhere]);
 
+  // Family Moments slices 3/4 (docs/FAMILY-MOMENTS.md) — the two pieces of
+  // async data computeInsightModules needs for nearbyRelatives/
+  // forgottenPeople but can't fetch itself (that file makes no network
+  // calls). Fetched once per real graph change while logged in; both are
+  // simply absent in demo mode (no session to scope either endpoint to),
+  // which is exactly the same "omitted -> that module just doesn't render"
+  // behavior every existing caller already had before this slice.
+  const [geocodedByPlace, setGeocodedByPlace] = useState(null);
+  const [lastViewedByPersonId, setLastViewedByPersonId] = useState(null);
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    const places = [...new Set(graph.people.map((p) => p.residence).filter(Boolean))].slice(0, 50);
+    if (places.length) {
+      fetch('/api/geocode', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ places }) })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((body) => { if (body && !cancelled) setGeocodedByPlace(body.places || {}); })
+        .catch(() => {});
+    }
+    fetch('/api/profile-views')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((body) => { if (body && !cancelled) setLastViewedByPersonId(body.lastViewed || {}); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [user, graph]);
+
   // Tree-screen insight surfacing (nav brief: "surface one real insight from
   // the tree screen itself, not just Home"). Computed once per graph change;
   // the per-focus lookup off it is cheap. Deliberately silent far more often
   // than not — see personHighlight.
   const insightModules = useMemo(
-    () => computeInsightModules(graph, data.myPersonId || DEFAULT_FOCUS),
-    [graph, data.myPersonId],
+    () => computeInsightModules(graph, data.myPersonId || DEFAULT_FOCUS, Date.now(), geocodedByPlace, lastViewedByPersonId),
+    [graph, data.myPersonId, geocodedByPlace, lastViewedByPersonId],
   );
   const activeFact = useMemo(
     () => personHighlight(graph, data.myPersonId || DEFAULT_FOCUS, activeId, insightModules),
@@ -1974,6 +2001,23 @@ export default function App() {
   // session (see IdleFactHint) rather than the home hub's single fixed daily
   // pick, so it needs the whole pool, not pickDailyHighlight's one string.
   const highlightPool = useMemo(() => highlightCandidates(insightModules), [insightModules]);
+
+  // Family Moments banner (slice 5) — one always-on-open pick for the day,
+  // scored the same way as the tree screen's own idle hints (relevance to
+  // the viewer via hop-distance + freshness), but surfaced unconditionally
+  // rather than only while idle. `distances` is the viewer's own BFS, same
+  // convention as personHighlight's activeId distances just above.
+  const momentDistances = useMemo(
+    () => distancesFrom(graph, data.myPersonId || DEFAULT_FOCUS),
+    [graph, data.myPersonId],
+  );
+  const familyMoment = useMemo(
+    () => pickTodaysFamilyMoment(graph, data.myPersonId || DEFAULT_FOCUS, Date.now(), insightModules, {
+      distances: momentDistances,
+      recentKeys: loadRecentMomentKeys(),
+    }),
+    [graph, data.myPersonId, insightModules, momentDistances],
+  );
 
   // Whether ANY sheet/modal/overlay is currently on screen — used to hide the
   // canvas-anchored overlays (hover card, focus nameplate, recentre button)
@@ -2390,6 +2434,31 @@ export default function App() {
           <ReturnToTreePill
             visible={timeMode && !anyOverlayOpen}
             onReturn={exitTimeMode}
+          />
+          {/* Family Moments — always-on-open banner (slice 5). Deliberately
+              NOT gated on `browse` (that's a narrower "nothing selected"
+              free-look state IdleFactHint uses) — this is meant to be
+              visible on the tree screen by default, same gating as
+              HomeToMe/ReturnToTreePill otherwise: no full-screen mode, no
+              overlay, no recap tour running. Deliberately does NOT replace
+              Home's own "Did you know?" card — this is a separate, ambient
+              surface. */}
+          <FamilyMomentBanner
+            moment={familyMoment}
+            firstName={mePerson?.display_name ? mePerson.display_name.trim().split(/\s+/)[0] : null}
+            visible={
+              !lineageMode && !timeMode && !flightCaption && layout !== 'chart' &&
+              !anyOverlayOpen && recapQueue.length === 0
+            }
+            onOpen={() => {
+              if (familyMoment?.personId) {
+                activate(familyMoment.personId);
+                openPerson(familyMoment.personId);
+              } else {
+                setInsightsOpen(true);
+              }
+            }}
+            onDismiss={() => {}}
           />
           {!lineageMode && !flightCaption && <IntroHint />}
           {!lineageMode && !flightCaption && (
