@@ -19,11 +19,24 @@ import { dayIndex } from '../lib/insightModules.js';
  * (functions/api/moment-engagement.js). This component has no idea that's
  * happening; it just reports "this was shown" the same way it already
  * reported it to recordShownMomentKey's own local freshness bookkeeping.
+ *
+ * Real user feedback on the first cut: too wide/tall, sat too high (clashing
+ * with the topbar's own family-stats pill), and stuck around indefinitely.
+ * Fixed with three changes: (1) CSS moved it below the topbar's two rows,
+ * matching the same `top: 96px` spot .return-pill/.lineage-banner already
+ * use for "float just under the topbar"; (2) collapsed to one slim line —
+ * greeting and moment merged into a single truncated string, no more
+ * two-line stacked text; (3) AUTO_HIDE_MS below — auto-dismisses itself
+ * after 30s on screen, same hide path a manual tap-to-dismiss uses, so it
+ * reads as a passing toast rather than a fixture nobody asked for.
  */
 
 const DISMISS_KEY = 'bl_family_moment_dismissed_day';
 const RECENT_KEYS_KEY = 'bl_family_moment_recent_keys';
 const RECENT_WINDOW_DAYS = 7;
+// How long the banner stays up before it dismisses itself, same as a real
+// tap on the × — a passing toast, not a screen fixture.
+const AUTO_HIDE_MS = 30000;
 
 export function isDismissedToday(now = Date.now()) {
   try { return Number(localStorage.getItem(DISMISS_KEY)) === dayIndex(now); }
@@ -104,9 +117,24 @@ export default function FamilyMomentBanner({ moment, firstName, visible, onOpen,
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shown, moment?.key]);
 
+  // Auto-hide after AUTO_HIDE_MS — the exact same "hide and remember for
+  // today" path a manual dismiss tap takes, just fired by a timer instead
+  // of a click, so there's only ever one way this banner goes away.
+  useEffect(() => {
+    if (!shown) return;
+    const t = setTimeout(() => {
+      markDismissedToday();
+      setDismissedNow(true);
+      onDismiss?.();
+    }, AUTO_HIDE_MS);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shown]);
+
   if (!mounted || !moment) return null;
 
   const greeting = greetingForHour(new Date().getHours());
+  const line = firstName ? `${greeting}, ${firstName} — ${moment.text}` : `${greeting} — ${moment.text}`;
 
   return (
     <div className={`family-moment${shown ? ' family-moment--in' : ''}`} role="status">
@@ -116,15 +144,12 @@ export default function FamilyMomentBanner({ moment, firstName, visible, onOpen,
         onClick={() => { markDismissedToday(); setDismissedNow(true); onOpen?.(); }}
       >
         <span className="family-moment__ico" aria-hidden="true">
-          <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+          <svg width="13" height="13" viewBox="0 0 18 18" fill="none">
             <path d="M9 2.5c.6 1.6 1.9 2.9 3.5 3.5-1.6.6-2.9 1.9-3.5 3.5-.6-1.6-1.9-2.9-3.5-3.5C7.1 5.4 8.4 4.1 9 2.5Z" fill="currentColor" />
             <path d="M14.5 10c.35.95 1.1 1.7 2 2-1 .35-1.65 1.05-2 2-.35-.95-1.05-1.65-2-2 .95-.3 1.65-1.05 2-2Z" fill="currentColor" />
           </svg>
         </span>
-        <span className="family-moment__text">
-          <span className="family-moment__greeting">{firstName ? `${greeting}, ${firstName}` : greeting}</span>
-          <span className="family-moment__moment">{moment.text}</span>
-        </span>
+        <span className="family-moment__line">{line}</span>
       </button>
       <button
         type="button"

@@ -131,7 +131,7 @@ export function seededShuffle(arr, seed) {
 export function computeInsightModules(graph, viewerId, now = Date.now(), geocodedByPlace = null, lastViewedByPersonId = null) {
   const gen = computeGenerations(graph);
   return {
-    handshakes: handshakes(graph, viewerId),
+    livingLink: livingLink(graph, viewerId),
     giftOfYears: giftOfYears(graph),
     fullestYear: fullestYear(graph),
     strata: strata(graph, viewerId, gen),
@@ -211,7 +211,7 @@ function windowOf(p, thisYear) {
   return [b, thisYear];
 }
 
-/* ── Handshakes: the fewest-hop chain of overlapping lives back to the
+/* ── Living link: the fewest-hop chain of overlapping lives back to the
       earliest-born ancestor reachable this way — but only along ONE real,
       unbroken line of ancestors (parent, grandparent, great-grandparent...).
       Earlier versions connected any two ancestors whose lives simply
@@ -223,8 +223,13 @@ function windowOf(p, thisYear) {
       person before it; "reachable" is scoped to lineageLine() below. Step
       parents are excluded from the walk entirely — same "step doesn't count"
       rule bloodRelativesOf() uses elsewhere — since a step-grandparent isn't
-      an ancestor at all, blood or adopted. ─────────────────────────────── */
-function handshakes(graph, viewerId) {
+      an ancestor at all, blood or adopted.
+      Renamed from "handshakes" (real user feedback: "get rid of the
+      handshake insight... never liked it") — same mechanism, kept and
+      reworded rather than removed, since the underlying idea (you're
+      linked, life to life, to someone born a very long time ago) is
+      genuinely personal; the word itself just read as cold/corporate. ── */
+function livingLink(graph, viewerId) {
   const thisYear = new Date().getFullYear();
   const viewer = graph.byId.get(viewerId);
   const vWin = windowOf(viewer, thisYear);
@@ -320,14 +325,14 @@ function handshakes(graph, viewerId) {
   return null;
 }
 
-// Handshakes to ANY chosen person — the same "who overlapped whose life"
+// Living link to ANY chosen person — the same "who overlapped whose life"
 // chain, generalized beyond the ancestor line so it can answer "how many
-// handshakes am I from [any relative]?" Computed on demand (when a user
+// living links am I from [any relative]?" Computed on demand (when a user
 // actually picks a target from the search box), not speculatively for
 // everyone: the BFS considers every person's decidable window, so it's
 // O(people²) worst case — a few hundred thousand comparisons at 600 people,
 // fine once, not worth doing for names nobody asks about.
-export function handshakesTo(graph, fromId, toId) {
+export function livingLinkTo(graph, fromId, toId) {
   if (fromId == null || toId == null || fromId === toId) return null;
   const thisYear = new Date().getFullYear();
   const winById = new Map();
@@ -1211,9 +1216,9 @@ export function computeThisMonth(graph, now = new Date()) {
       the AI narrative to draw on — grounding facts only, no raw people[]. ── */
 export function buildInsightHighlights(modules) {
   const h = {};
-  if (modules.handshakes) {
-    const m = modules.handshakes;
-    h.handshake = {
+  if (modules.livingLink) {
+    const m = modules.livingLink;
+    h.livingLink = {
       hops: m.hops,
       earliestBirth: m.earliestBirth,
       earliestName: m.people[0].name,
@@ -1287,8 +1292,8 @@ export function buildInsightHighlights(modules) {
       pickDailyHighlight (the home hub's one fixed pick per day, below) and
       IdleFactHint (the tree screen's ambient hint, which cycles through
       several per browsing session without repeats — see that component).
-      handshakes needs a real viewerId to mean anything ("you're only 4
-      handshakes from..."); computeInsightModules returns it null when
+      livingLink needs a real viewerId to mean anything ("just 4 living
+      links from..."); computeInsightModules returns it null when
       called without one (the home hub's own call site passes null, so it
       simply never contributes a candidate there — no special-casing needed
       here). strata computes fine either way — its candidate sentence below
@@ -1343,10 +1348,10 @@ export function highlightCandidatesDetailed(modules) {
   if (modules.parenthood) {
     add('parenthood', `On average, people in the family became parents at ${modules.parenthood.avg}.`);
   }
-  if (modules.handshakes) {
-    const h = modules.handshakes;
+  if (modules.livingLink) {
+    const h = modules.livingLink;
     const earliest = h.people[0];
-    add('handshakes', `You're only ${h.hops} handshake${h.hops === 1 ? '' : 's'} from ${earliest.firstName}, born in ${earliest.birth}.`, [earliest.id]);
+    add('livingLink', `Just ${h.hops} living link${h.hops === 1 ? '' : 's'} from ${earliest.firstName}, born in ${earliest.birth}.`, [earliest.id]);
   }
   if (modules.strata) {
     const s = modules.strata;
@@ -1436,10 +1441,16 @@ export function highlightCandidates(modules) {
  * recently. No engagement history feeds this yet (see Slice 6) — there's
  * nothing to learn from before real usage exists, so this is intentionally
  * a tunable formula, not a placeholder for one.
+ *
+ * livingLink's weight was deliberately lowered (real feedback: the
+ * category read as more "tree-centric" trivia than personal, even once
+ * reworded/renamed from "handshakes" — see livingLink()'s own header
+ * comment) — it still computes and still appears in the full Insights
+ * sheet, it just rarely wins the always-on banner / idle-hint slot now.
  */
 const EMOTIONAL_WEIGHT = {
   giftOfYears: 5, bridges: 6, names: 4, heartlands: 5, trades: 4,
-  birthdays: 5, records: 8, parenthood: 5, handshakes: 7, strata: 4,
+  birthdays: 5, records: 8, parenthood: 5, livingLink: 3, strata: 4,
   fullestYear: 6, brood: 6, serviceRecords: 7, surnames: 4,
   livingGenerations: 6, twinBirths: 8, newArrivals: 7, blendedFamily: 6,
   tradeLineage: 5, centenarians: 9,
@@ -1515,7 +1526,7 @@ export function pickDailyHighlight(modules) {
 // far more often than not: most people don't hold a record or share a
 // birthday with anyone, and a generic filler line would cheapen the ones that
 // are real. Checked cheapest-first — twins and records are just a lookup in
-// data `modules` already computed once for the sheet; handshakesTo is the
+// data `modules` already computed once for the sheet; livingLinkTo is the
 // only on-demand call, and only reached when the cheaper checks miss.
 export function personHighlight(graph, viewerId, personId, modules) {
   if (!graph || !personId || personId === viewerId) return null;
@@ -1529,11 +1540,12 @@ export function personHighlight(graph, viewerId, personId, modules) {
   const rec = modules?.records?.pool?.find((r) => r.personId === personId);
   if (rec) return rec.title;
 
-  // Only worth surfacing once it's a real chain of a few hops — "1 handshake
-  // from your own parent" isn't a fact, it's a relationship you already know.
-  const hs = handshakesTo(graph, viewerId, personId);
+  // Only worth surfacing once it's a real chain of a few hops — "1 living
+  // link from your own parent" isn't a fact, it's a relationship you
+  // already know.
+  const hs = livingLinkTo(graph, viewerId, personId);
   if (hs && hs.hops >= 2) {
-    return `You're ${hs.hops} handshakes from ${firstNameOf(graph.byId.get(personId))} — back to ${hs.earliestBirth}.`;
+    return `You're ${hs.hops} living link${hs.hops === 1 ? '' : 's'} from ${firstNameOf(graph.byId.get(personId))} — back to ${hs.earliestBirth}.`;
   }
 
   return null;
