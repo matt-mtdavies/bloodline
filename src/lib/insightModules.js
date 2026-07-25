@@ -1,4 +1,4 @@
-import { computeGenerations } from '../data/graph.js';
+import { computeGenerations, distancesFrom } from '../data/graph.js';
 import { detectRegion, nearestWorldEvent } from './worldEvents.js';
 import { yearsBetween } from './dates.js';
 import { normalizeGender } from './gender.js';
@@ -1275,84 +1275,168 @@ export function buildInsightHighlights(modules) {
       deliberately sticks to tree-wide counts (generations/living/remembered),
       not the viewer-specific fields (viewerLabel etc.), so it works in both
       contexts. ────────────────────────────────────────────────────────── */
-export function highlightCandidates(modules) {
+/*
+ * Same candidate pool as before, but each entry now carries its category
+ * `key` (for the emotional-weight table and freshness tracking below) and
+ * `personIds` (who the sentence is actually about, for relevance scoring) —
+ * neither existed when this only had to produce plain strings for a single
+ * rotating teaser. A candidate with no specific "about" person (a genuinely
+ * family-wide fact like "June is the busiest birthday month") gets an empty
+ * personIds array on purpose rather than a guessed representative — see
+ * relevanceFor's own baseline for why that's not treated as zero relevance.
+ */
+export function highlightCandidatesDetailed(modules) {
   if (!modules) return [];
-  const candidates = [];
+  const out = [];
+  const add = (key, text, personIds = []) => { if (text) out.push({ key, text, personIds }); };
+
   if (modules.giftOfYears) {
     const g = modules.giftOfYears;
-    candidates.push(`Relatives born in the ${g.first.decade}s lived to ${g.first.avg} on average — those born in the ${g.last.decade}s reached ${g.last.avg}.`);
+    add('giftOfYears', `Relatives born in the ${g.first.decade}s lived to ${g.first.avg} on average — those born in the ${g.last.decade}s reached ${g.last.avg}.`);
   }
   if (modules.bridges) {
-    candidates.push(`${modules.bridges.firstName} is the family's bridge — the one marriage joining its two biggest branches.`);
+    add('bridges', `${modules.bridges.firstName} is the family's bridge — the one marriage joining its two biggest branches.`, [modules.bridges.personId]);
   }
   if (modules.names) {
     const n = modules.names.top[0];
-    candidates.push(`${n.name} is the family's most-carried name — ${n.count} people across ${modules.names.thread.present} generations.`);
+    add('names', `${n.name} is the family's most-carried name — ${n.count} people across ${modules.names.thread.present} generations.`);
   }
   if (modules.heartlands) {
-    candidates.push(`Most of the family traces back to ${modules.heartlands.places[0].display}.`);
+    add('heartlands', `Most of the family traces back to ${modules.heartlands.places[0].display}.`);
   }
   if (modules.trades) {
-    candidates.push(`The family's work has shifted from ${modules.trades.firstTop} to ${modules.trades.lastTop}.`);
+    add('trades', `The family's work has shifted from ${modules.trades.firstTop} to ${modules.trades.lastTop}.`);
   }
   if (modules.birthdays) {
-    candidates.push(`${modules.birthdays.peakLabel} is the family's busiest birthday month.`);
+    add('birthdays', `${modules.birthdays.peakLabel} is the family's busiest birthday month.`);
   }
   if (modules.records?.records?.length) {
     const r = modules.records.records[0];
     // detail alone often omits who (e.g. "1927 to 1985, the longest
     // marriage on record.") — the title carries the name, so combine them.
-    candidates.push(`${r.title} — ${r.detail}`);
+    add('records', `${r.title} — ${r.detail}`, [r.personId]);
   }
   if (modules.parenthood) {
-    candidates.push(`On average, people in the family became parents at ${modules.parenthood.avg}.`);
+    add('parenthood', `On average, people in the family became parents at ${modules.parenthood.avg}.`);
   }
   if (modules.handshakes) {
     const h = modules.handshakes;
     const earliest = h.people[0];
-    candidates.push(`You're only ${h.hops} handshake${h.hops === 1 ? '' : 's'} from ${earliest.firstName}, born in ${earliest.birth}.`);
+    add('handshakes', `You're only ${h.hops} handshake${h.hops === 1 ? '' : 's'} from ${earliest.firstName}, born in ${earliest.birth}.`, [earliest.id]);
   }
   if (modules.strata) {
     const s = modules.strata;
-    candidates.push(`The family tree spans ${s.rows.length} generations — ${s.living} living, ${s.remembered} remembered.`);
+    add('strata', `The family tree spans ${s.rows.length} generations — ${s.living} living, ${s.remembered} remembered.`);
   }
   if (modules.fullestYear) {
     const p = modules.fullestYear.peak;
-    candidates.push(`${p.count} family members were alive at the same time in ${p.year} — the fullest year on record.`);
+    add('fullestYear', `${p.count} family members were alive at the same time in ${p.year} — the fullest year on record.`);
   }
   if (modules.brood?.record) {
     const r = modules.brood.record;
-    candidates.push(`${r.parentNames.join(' & ')} raised the family's biggest household — ${r.count} children${r.span ? ` between ${r.span}` : ''}.`);
+    add('brood', `${r.parentNames.join(' & ')} raised the family's biggest household — ${r.count} children${r.span ? ` between ${r.span}` : ''}.`, r.parentIds);
   }
   if (modules.serviceRecords) {
     const sr = modules.serviceRecords;
-    candidates.push(`${sr.count} family member${sr.count === 1 ? ' has' : 's have'} a documented military service record, spanning ${sr.generationsSpanned} generation${sr.generationsSpanned === 1 ? '' : 's'}.`);
+    add('serviceRecords', `${sr.count} family member${sr.count === 1 ? ' has' : 's have'} a documented military service record, spanning ${sr.generationsSpanned} generation${sr.generationsSpanned === 1 ? '' : 's'}.`);
   }
   if (modules.surnames) {
     const s = modules.surnames.top[0];
-    candidates.push(`${s.count} people in the family carry the ${s.name} name.`);
+    add('surnames', `${s.count} people in the family carry the ${s.name} name.`);
   }
   if (modules.livingGenerations) {
-    candidates.push(`${modules.livingGenerations.count} generations of the family are alive together right now.`);
+    add('livingGenerations', `${modules.livingGenerations.count} generations of the family are alive together right now.`);
   }
   if (modules.twinBirths?.sets?.length) {
     const t = modules.twinBirths.sets[0];
-    candidates.push(`The family has twins — born ${t.dateLabel} ${t.year}.`);
+    add('twinBirths', `The family has twins — born ${t.dateLabel} ${t.year}.`, t.ids);
   }
   if (modules.newArrivals) {
-    candidates.push(`${modules.newArrivals.count} new arrivals have joined the family since ${modules.newArrivals.sinceYear}.`);
+    add('newArrivals', `${modules.newArrivals.count} new arrivals have joined the family since ${modules.newArrivals.sinceYear}.`);
   }
   if (modules.blendedFamily) {
-    candidates.push(`${modules.blendedFamily.total} people in the family are connected by a step or adoptive bond.`);
+    add('blendedFamily', `${modules.blendedFamily.total} people in the family are connected by a step or adoptive bond.`);
   }
   if (modules.tradeLineage) {
     const c = modules.tradeLineage.best;
-    candidates.push(`${c.occ} has been passed down through ${c.people.length} generations of the family.`);
+    add('tradeLineage', `${c.occ} has been passed down through ${c.people.length} generations of the family.`, c.people.map((p) => p.id));
   }
   if (modules.centenarians) {
-    candidates.push(`${modules.centenarians.count} family member${modules.centenarians.count === 1 ? ' has' : 's have'} lived to see 100.`);
+    add('centenarians', `${modules.centenarians.count} family member${modules.centenarians.count === 1 ? ' has' : 's have'} lived to see 100.`);
   }
-  return candidates;
+  return out;
+}
+
+// Byte-identical to the old inline implementation — every existing caller
+// (the home hub's rotating teaser, buildInsightHighlights below) keeps
+// working unchanged; this is now just a thin projection.
+export function highlightCandidates(modules) {
+  return highlightCandidatesDetailed(modules).map((c) => c.text);
+}
+
+/*
+ * Slice 1 of the Family Moments engine (docs/FAMILY-MOMENTS.md) — a
+ * deterministic scorer, not a learned one: relevance (how close the viewer
+ * is to who the candidate is actually about) + a fixed per-category
+ * emotional-value weight + a freshness penalty for whatever was shown
+ * recently. No engagement history feeds this yet (see Slice 6) — there's
+ * nothing to learn from before real usage exists, so this is intentionally
+ * a tunable formula, not a placeholder for one.
+ */
+const EMOTIONAL_WEIGHT = {
+  giftOfYears: 5, bridges: 6, names: 4, heartlands: 5, trades: 4,
+  birthdays: 5, records: 8, parenthood: 5, handshakes: 7, strata: 4,
+  fullestYear: 6, brood: 6, serviceRecords: 7, surnames: 4,
+  livingGenerations: 6, twinBirths: 8, newArrivals: 7, blendedFamily: 6,
+  tradeLineage: 5, centenarians: 9,
+};
+const DEFAULT_EMOTIONAL_WEIGHT = 3;
+// A candidate with no specific "about" person (a genuinely family-wide fact)
+// is still relevant to everyone — this is its baseline, not a penalty for
+// lacking personIds. Kept below the closest-possible personal relevance (a
+// sibling or child, 1 hop, scores 5) so a real personal moment still wins a
+// tie against a generic family-wide one, matching the whole point of this
+// engine.
+const FAMILY_WIDE_RELEVANCE = 2;
+const FRESHNESS_PENALTY = 4;
+
+function relevanceFor(personIds, distances) {
+  if (!personIds?.length || !distances) return FAMILY_WIDE_RELEVANCE;
+  let min = Infinity;
+  for (const id of personIds) {
+    const d = distances.get(id);
+    if (d != null && d < min) min = d;
+  }
+  if (!Number.isFinite(min)) return FAMILY_WIDE_RELEVANCE;
+  return Math.max(0, 6 - min); // 6+ hops away -> 0; the viewer themself -> 6
+}
+
+/*
+ * `distances` (optional): a Map from graph.js's distancesFrom(graph,
+ * viewerId), precomputed once per scoring pass rather than per candidate —
+ * pass it in, don't recompute here. Omitted (no viewer, e.g. the Home hub
+ * with nobody logged in) falls every candidate back to the family-wide
+ * baseline, same as today's behavior.
+ * `recentKeys` (optional): a Set of category keys shown recently on this
+ * device — purely a lookup here; where that history is stored (localStorage,
+ * how many days back) is a UI-layer concern, not this pure module's.
+ */
+export function scoreCandidate(candidate, { distances = null, recentKeys = null } = {}) {
+  const relevance = relevanceFor(candidate.personIds, distances);
+  const emotional = EMOTIONAL_WEIGHT[candidate.key] ?? DEFAULT_EMOTIONAL_WEIGHT;
+  const freshnessPenalty = recentKeys?.has(candidate.key) ? FRESHNESS_PENALTY : 0;
+  return relevance + emotional - freshnessPenalty;
+}
+
+// Highest score first. Ties broken by the same day-seeded shuffle every
+// other per-day rotation in this file already uses, so a tie doesn't always
+// favor whichever module happened to be evaluated first, but never
+// reshuffles mid-session either.
+export function rankCandidates(candidates, { distances = null, recentKeys = null, now = Date.now() } = {}) {
+  const shuffled = seededShuffle(candidates, dayIndex(now));
+  return shuffled
+    .map((c) => ({ ...c, score: scoreCandidate(c, { distances, recentKeys }) }))
+    .sort((a, b) => b.score - a.score);
 }
 
 /* ── The home hub's "did you know" teaser: one fact, rotated daily, that taps

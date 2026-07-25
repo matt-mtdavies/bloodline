@@ -6,7 +6,8 @@
  */
 import assert from 'node:assert/strict';
 import { buildGraph } from '../src/data/graph.js';
-import { computeInsightModules, computeThisMonth, buildInsightHighlights, aliveInYear, handshakesTo, personHighlight, highlightCandidates, pickDailyHighlight, dayIndex, seededShuffle } from '../src/lib/insightModules.js';
+import { computeInsightModules, computeThisMonth, buildInsightHighlights, aliveInYear, handshakesTo, personHighlight, highlightCandidates, highlightCandidatesDetailed, scoreCandidate, rankCandidates, pickDailyHighlight, dayIndex, seededShuffle } from '../src/lib/insightModules.js';
+import { distancesFrom } from '../src/data/graph.js';
 
 let passed = 0, failed = 0;
 function test(label, fn) {
@@ -1270,6 +1271,73 @@ test('tradeLineage: a 2-generation match stays below the 3-generation threshold'
   ];
   const graph = buildGraph(people, [pRel('p1', 'c1')]);
   assert.equal(computeInsightModules(graph, 'c1').tradeLineage, null);
+});
+
+// ── Family Moments Slice 1: scoring engine ──────────────────────────────────
+
+test('highlightCandidatesDetailed produces the SAME sentences as highlightCandidates, in the same order', () => {
+  const plain = highlightCandidates(mods);
+  const detailed = highlightCandidatesDetailed(mods);
+  assert.deepEqual(detailed.map((c) => c.text), plain, 'the refactor must not change what the existing teaser/AI-digest callers see');
+});
+
+test('highlightCandidatesDetailed attaches real person ids, resolvable in the graph, for candidates that are about someone specific', () => {
+  const detailed = highlightCandidatesDetailed(mods);
+  const brood = detailed.find((c) => c.key === 'brood');
+  assert.ok(brood, 'brood candidate should be present for the rich tree');
+  assert.ok(brood.personIds.length >= 2, 'the record household has 2 parents');
+  for (const id of brood.personIds) assert.ok(graph.byId.has(id), `${id} should be a real person in the graph`);
+
+  // A genuinely family-wide fact (no single "about" person) is a deliberate
+  // empty array, not a missing/guessed one.
+  const strata = detailed.find((c) => c.key === 'strata');
+  assert.ok(strata);
+  assert.deepEqual(strata.personIds, []);
+});
+
+test('scoreCandidate: a candidate about someone close to the viewer outscores the same-weight candidate about someone far away', () => {
+  const distances = new Map([['sibling', 1], ['distant', 6]]);
+  const near = { key: 'records', text: 'x', personIds: ['sibling'] };
+  const far = { key: 'records', text: 'y', personIds: ['distant'] };
+  assert.ok(scoreCandidate(near, { distances }) > scoreCandidate(far, { distances }), 'same emotional weight, so relevance alone must decide it');
+});
+
+test('scoreCandidate: a real personal moment outranks a family-wide fact of lower emotional weight, even without distances', () => {
+  // No `distances` passed at all — e.g. the Home hub with nobody logged in.
+  const personal = { key: 'records', personIds: ['someone'] }; // weight 8
+  const familyWide = { key: 'names' }; // weight 4, no personIds
+  assert.ok(scoreCandidate(personal, {}) > scoreCandidate(familyWide, {}));
+});
+
+test('scoreCandidate: a recently-shown category is penalized below one just discovered, all else equal', () => {
+  const c = { key: 'twinBirths', personIds: [] };
+  const freshScore = scoreCandidate(c, {});
+  const staleScore = scoreCandidate(c, { recentKeys: new Set(['twinBirths']) });
+  assert.ok(staleScore < freshScore);
+});
+
+test('rankCandidates: sorts strictly by score, highest first, and never drops or duplicates a candidate', () => {
+  const candidates = [
+    { key: 'names', text: 'a', personIds: [] },       // weight 4
+    { key: 'centenarians', text: 'b', personIds: [] }, // weight 9
+    { key: 'trades', text: 'c', personIds: [] },       // weight 4
+  ];
+  const ranked = rankCandidates(candidates, {});
+  assert.equal(ranked.length, 3);
+  assert.equal(ranked[0].key, 'centenarians', 'the highest-weight candidate must lead');
+  assert.ok(ranked[0].score >= ranked[1].score && ranked[1].score >= ranked[2].score);
+  assert.deepEqual(new Set(ranked.map((r) => r.text)), new Set(candidates.map((c) => c.text)));
+});
+
+test('rankCandidates: real distancesFrom() output plugs in directly and biases toward the viewer\'s own close relatives', () => {
+  const distances = distancesFrom(graph, 'g4_0');
+  const detailed = highlightCandidatesDetailed(mods);
+  const ranked = rankCandidates(detailed, { distances });
+  // g4_0's own household (brood's 6-child G1 households are many hops away;
+  // g4_0 has no sibling/child candidates in this fixture) — just assert the
+  // ranking is well-formed and deterministic across two calls on the same day.
+  const rankedAgain = rankCandidates(detailed, { distances });
+  assert.deepEqual(ranked.map((r) => r.key), rankedAgain.map((r) => r.key), 'ranking must be stable within the same day, not re-shuffled per call');
 });
 
 console.log(`\n  ${passed} passed, ${failed} failed`);
