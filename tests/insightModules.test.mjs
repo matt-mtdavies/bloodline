@@ -6,7 +6,8 @@
  */
 import assert from 'node:assert/strict';
 import { buildGraph } from '../src/data/graph.js';
-import { computeInsightModules, computeThisMonth, buildInsightHighlights, aliveInYear, handshakesTo, personHighlight, highlightCandidates, pickDailyHighlight, dayIndex, seededShuffle } from '../src/lib/insightModules.js';
+import { computeInsightModules, computeThisMonth, buildInsightHighlights, aliveInYear, handshakesTo, personHighlight, highlightCandidates, highlightCandidatesDetailed, scoreCandidate, rankCandidates, pickDailyHighlight, pickTodaysFamilyMoment, dayIndex, seededShuffle } from '../src/lib/insightModules.js';
+import { distancesFrom } from '../src/data/graph.js';
 
 let passed = 0, failed = 0;
 function test(label, fn) {
@@ -958,15 +959,28 @@ test('highlightCandidates: every populated module in the rich fixture contribute
   // The rich fixture lights up every module except serviceRecords (no
   // military data), livingGenerations (only G4 is alive — one generation,
   // not three), twinBirths (needs 2+ sets, the fixture only ever produces
-  // one) and tradeLineage/newArrivals/blendedFamily/earlyLoss (no matching
-  // data at all) — but surnames DOES qualify: "Alpha"/"Beta"/"Delta" each
-  // appear 10+ times across the fixture's generations, an incidental side
-  // effect of richTree()'s naming scheme, not something deliberately
-  // engineered in. centenarians ALSO incidentally qualifies: g3_0_0's own
-  // 1890 birth to a deliberately-set 1992 death (see richTree()'s own
-  // comment on that date, planted for the handshake-chain test) happens to
-  // land at age 102 — 14 of the 21 possible candidates.
-  assert.equal(candidates.length, 14);
+  // one), sameAgeMarriages (only one marriage_date exists in the whole
+  // fixture, so there's no second person at the same age to pair against)
+  // and tradeLineage/newArrivals/blendedFamily/earlyLoss (no matching data
+  // at all) — but surnames DOES qualify: "Alpha"/"Beta"/"Delta" each appear
+  // 10+ times across the fixture's generations, an incidental side effect
+  // of richTree()'s naming scheme, not something deliberately engineered
+  // in. centenarians ALSO incidentally qualifies: g3_0_0's own 1890 birth
+  // to a deliberately-set 1992 death (see richTree()'s own comment on that
+  // date, planted for the handshake-chain test) happens to land at age
+  // 102. missingRecords contributes its OWN two independent candidates —
+  // richTree() never sets `.photo` on anyone (72 missing), and g4_0's real
+  // ancestor chain runs out at the G1 founders, who have no parents
+  // recorded (3 direct ancestors). closestCousinsByAge and
+  // sharedBirthplaceGenerations do NOT qualify — g4_0 has no children of
+  // their own, and no single place spans 3+ distinct generations in this
+  // fixture (Cardiff only spans G2's later half + G3) — but
+  // birthdayMonthMate DOES: every G4 person shares March with the rest of
+  // G4 (an incidental side effect of richTree()'s deliberately March-heavy
+  // dates for the handshake/twin tests, not something engineered for this
+  // one) — 17 of the 26 possible candidates (missingRecords can contribute
+  // up to 2 on its own).
+  assert.equal(candidates.length, 17);
   assert.ok(candidates.every((c) => typeof c === 'string' && c.length > 0));
 });
 
@@ -1270,6 +1284,438 @@ test('tradeLineage: a 2-generation match stays below the 3-generation threshold'
   ];
   const graph = buildGraph(people, [pRel('p1', 'c1')]);
   assert.equal(computeInsightModules(graph, 'c1').tradeLineage, null);
+});
+
+// ── Family Moments Slice 2: new insight categories ──────────────────────────
+
+test('missingRecords: missingPhotos counts everyone with no photo set, family-wide', () => {
+  const people = [
+    { id: 'a', display_name: 'A', birth_date: '1970-01-01', photo: 'data:x' },
+    { id: 'b', display_name: 'B', birth_date: '1972-01-01' },
+    { id: 'c', display_name: 'C', birth_date: '1974-01-01' },
+  ];
+  const graph = buildGraph(people, []);
+  const m = computeInsightModules(graph, null).missingRecords;
+  assert.equal(m.missingPhotos.count, 2);
+  assert.deepEqual(new Set(m.missingPhotos.ids), new Set(['b', 'c']));
+});
+
+test('missingRecords: unknownParentAncestors walks the VIEWER\'s own ancestor line, not a random other branch', () => {
+  // grandparent (no recorded parents) -> parent -> viewer
+  // an UNRELATED founder with no parents either, but not the viewer's own ancestor.
+  const people = [
+    { id: 'gp', display_name: 'Grandparent', birth_date: '1900-01-01' },
+    { id: 'parent', display_name: 'Parent', birth_date: '1930-01-01' },
+    { id: 'viewer', display_name: 'Viewer', birth_date: '1960-01-01' },
+    { id: 'unrelated_founder', display_name: 'Unrelated', birth_date: '1900-01-01' },
+  ];
+  const rels = [pRel('gp', 'parent'), pRel('parent', 'viewer')];
+  const graph = buildGraph(people, rels);
+  const m = computeInsightModules(graph, 'viewer').missingRecords;
+  assert.equal(m.unknownParentAncestors.count, 1, 'only the viewer\'s own ancestor with no recorded parents counts');
+  assert.deepEqual(m.unknownParentAncestors.ids, ['gp']);
+});
+
+test('missingRecords: step-parents are excluded from the ancestor walk, same as elsewhere in this file', () => {
+  const people = [
+    { id: 'bio_gp', display_name: 'Bio GP', birth_date: '1900-01-01' },
+    { id: 'bio_parent', display_name: 'Bio Parent', birth_date: '1930-01-01' },
+    { id: 'step_parent', display_name: 'Step Parent', birth_date: '1930-01-01' }, // also has no recorded parents
+    { id: 'viewer', display_name: 'Viewer', birth_date: '1960-01-01' },
+  ];
+  const rels = [
+    pRel('bio_gp', 'bio_parent'),
+    pRel('bio_parent', 'viewer'),
+    pRel('step_parent', 'viewer', 'step'),
+  ];
+  const graph = buildGraph(people, rels);
+  const m = computeInsightModules(graph, 'viewer').missingRecords;
+  assert.deepEqual(m.unknownParentAncestors.ids, ['bio_gp'], 'the step-parent must never be counted as a direct ancestor');
+});
+
+test('missingRecords: null when every photo is set and no viewerId is given at all', () => {
+  const people = [{ id: 'a', display_name: 'A', birth_date: '1970-01-01', photo: 'data:x' }];
+  const graph = buildGraph(people, []);
+  assert.equal(computeInsightModules(graph, null).missingRecords, null);
+});
+
+test('sameAgeMarriages: pairs two people who married for the first time at the same age', () => {
+  const people = [
+    { id: 'uncle', display_name: 'Uncle Roy', birth_date: '1950-01-01' },
+    { id: 'aunt1', display_name: 'Aunt One', birth_date: '1960-01-01' },
+    { id: 'viewer', display_name: 'Viewer', birth_date: '1970-01-01' },
+    { id: 'spouse', display_name: 'Spouse', birth_date: '1970-01-01' },
+  ];
+  // uncle marries at 1950+29=1979; viewer marries at 1970+29=1999 — both age 29.
+  const rels = [uRel('uncle', 'aunt1', '1979-06-01'), uRel('viewer', 'spouse', '1999-06-01')];
+  const graph = buildGraph(people, rels);
+  const m = computeInsightModules(graph, null).sameAgeMarriages;
+  assert.ok(m, 'module should render');
+  assert.equal(m.pairs[0].age, 29);
+  assert.deepEqual(new Set([m.pairs[0].aId, m.pairs[0].bId]), new Set(['uncle', 'viewer']));
+});
+
+test('sameAgeMarriages: only a person\'s FIRST marriage age is used — a third person sharing their SECOND-marriage age must not pair', () => {
+  // Birthdates deliberately spread so no one's OWN first-marriage age
+  // accidentally collides with anyone else's — the only thing under test is
+  // whether A's second-marriage age (40) leaks into the pairing pool.
+  const people = [
+    { id: 'a', display_name: 'A', birth_date: '1950-01-01' },
+    { id: 'a_spouse1', display_name: 'A Spouse 1', birth_date: '1945-01-01' }, // age 30 at the 1975 marriage
+    { id: 'a_spouse2', display_name: 'A Spouse 2', birth_date: '1955-01-01' }, // age 35 at the 1990 marriage
+    { id: 'c', display_name: 'C', birth_date: '1970-01-01' }, // age 40 at their own 2010 marriage
+    { id: 'c_spouse', display_name: 'C Spouse', birth_date: '1968-01-01' }, // age 42 at that same marriage
+  ];
+  // A's first marriage at 25 (1975), second at 40 (1990). C marries at 40
+  // (2010) — matches A's SECOND age, not A's recorded (first) age of 25, so
+  // A and C must NOT pair.
+  const rels = [
+    uRel('a', 'a_spouse1', '1975-01-01'),
+    uRel('a', 'a_spouse2', '1990-01-01'),
+    uRel('c', 'c_spouse', '2010-01-01'),
+  ];
+  const graph = buildGraph(people, rels);
+  const m = computeInsightModules(graph, null).sameAgeMarriages;
+  assert.equal(m, null, 'A is anchored to age 25 (their first marriage), so age-40 C must find no match');
+});
+
+test('sameAgeMarriages: null when nobody shares a first-marriage age, and missing dates are silently skipped', () => {
+  const people = [
+    { id: 'a', display_name: 'A', birth_date: '1950-01-01' },
+    { id: 'b', display_name: 'B' }, // no birth_date — age can't be computed, must not crash
+  ];
+  const rels = [uRel('a', 'b', '1980-01-01')];
+  const graph = buildGraph(people, rels);
+  assert.equal(computeInsightModules(graph, null).sameAgeMarriages, null);
+});
+
+test('closestCousinsByAge: pairs a viewer\'s own child against their niece/nephew (their sibling\'s child), by closest age', () => {
+  const people = [
+    { id: 'gp1', display_name: 'GP1', birth_date: '1900-01-01' },
+    { id: 'gp2', display_name: 'GP2', birth_date: '1900-01-01' },
+    { id: 'viewer', display_name: 'Viewer', birth_date: '1960-01-01' },
+    { id: 'sibling', display_name: 'Sibling', birth_date: '1962-01-01' },
+    { id: 'my_kid', display_name: 'My Kid', birth_date: '1990-01-01' },
+    { id: 'niece_close', display_name: 'Niece Close', birth_date: '1991-01-01' }, // 1 year apart
+    { id: 'niece_far', display_name: 'Niece Far', birth_date: '2005-01-01' },     // 15 years apart
+  ];
+  const rels = [
+    pRel('gp1', 'viewer'), pRel('gp2', 'viewer'),
+    pRel('gp1', 'sibling'), pRel('gp2', 'sibling'),
+    pRel('viewer', 'my_kid'),
+    pRel('sibling', 'niece_close'), pRel('sibling', 'niece_far'),
+  ];
+  const graph = buildGraph(people, rels);
+  const c = computeInsightModules(graph, 'viewer').closestCousinsByAge;
+  assert.ok(c, 'module should render');
+  assert.equal(c.kidId, 'my_kid');
+  assert.equal(c.cousinId, 'niece_close');
+  assert.equal(c.gapYears, 1);
+});
+
+test('closestCousinsByAge: null when the viewer has no children of their own, even with plenty of nieces/nephews', () => {
+  const people = [
+    { id: 'gp1', display_name: 'GP1', birth_date: '1900-01-01' },
+    { id: 'viewer', display_name: 'Viewer', birth_date: '1960-01-01' },
+    { id: 'sibling', display_name: 'Sibling', birth_date: '1962-01-01' },
+    { id: 'niece', display_name: 'Niece', birth_date: '1991-01-01' },
+  ];
+  const rels = [pRel('gp1', 'viewer'), pRel('gp1', 'sibling'), pRel('sibling', 'niece')];
+  const graph = buildGraph(people, rels);
+  assert.equal(computeInsightModules(graph, 'viewer').closestCousinsByAge, null);
+});
+
+test('closestCousinsByAge: a step-sibling\'s children are excluded — not a blood first cousin', () => {
+  const people = [
+    { id: 'gp1', display_name: 'GP1', birth_date: '1900-01-01' },
+    { id: 'viewer', display_name: 'Viewer', birth_date: '1960-01-01' },
+    { id: 'step_sibling', display_name: 'Step Sibling', birth_date: '1962-01-01' },
+    { id: 'my_kid', display_name: 'My Kid', birth_date: '1990-01-01' },
+    { id: 'step_niece', display_name: 'Step Niece', birth_date: '1991-01-01' },
+  ];
+  const rels = [
+    pRel('gp1', 'viewer'),
+    pRel('gp1', 'step_sibling', 'step'),
+    pRel('viewer', 'my_kid'),
+    pRel('step_sibling', 'step_niece'),
+  ];
+  const graph = buildGraph(people, rels);
+  assert.equal(computeInsightModules(graph, 'viewer').closestCousinsByAge, null);
+});
+
+test('sharedBirthplaceGenerations: 3+ distinct generations born in the same place qualifies, spelling variants merged', () => {
+  const people = [
+    { id: 'gp', display_name: 'GP', birth_date: '1900-01-01', birth_place: 'Mt. Gambier' },
+    { id: 'parent', display_name: 'Parent', birth_date: '1930-01-01', birth_place: 'Mt Gambier' },
+    { id: 'kid', display_name: 'Kid', birth_date: '1960-01-01', birth_place: 'Mt. Gambier' },
+  ];
+  const rels = [pRel('gp', 'parent'), pRel('parent', 'kid')];
+  const graph = buildGraph(people, rels);
+  const s = computeInsightModules(graph, null).sharedBirthplaceGenerations;
+  assert.ok(s, 'module should render');
+  assert.equal(s.generations, 3);
+  assert.equal(s.display, 'Mt. Gambier', 'the more common spelling variant wins');
+});
+
+test('sharedBirthplaceGenerations: 2 generations in the same place stays below the 3-generation threshold', () => {
+  const people = [
+    { id: 'parent', display_name: 'Parent', birth_date: '1930-01-01', birth_place: 'Cardiff' },
+    { id: 'kid', display_name: 'Kid', birth_date: '1960-01-01', birth_place: 'Cardiff' },
+  ];
+  const rels = [pRel('parent', 'kid')];
+  const graph = buildGraph(people, rels);
+  assert.equal(computeInsightModules(graph, null).sharedBirthplaceGenerations, null);
+});
+
+test('birthdays: monthMate names whoever shares their birth month with the most OTHER relatives', () => {
+  const people = [
+    { id: 'a', display_name: 'Alice', birth_date: '1970-03-01' },
+    { id: 'b', display_name: 'Bob', birth_date: '1972-03-15' },
+    { id: 'c', display_name: 'Cara', birth_date: '1974-03-20' },
+    { id: 'd', display_name: 'Dan', birth_date: '1976-03-25' },
+    // Filler so withMonth clears the 15-person threshold for the module
+    // itself — every OTHER month, one person each, so none of them
+    // accidentally out-competes March's 4-person cluster above. Day 15,
+    // deliberately not day 1 — birthMonthOf/birthDayOf treat a stored
+    // January-1st specifically as "year only, no real month known" (this
+    // app's own placeholder convention), which would silently drop that
+    // one filler person and undercount withMonth below its own threshold.
+    ...[1, 2, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((m, i) => ({ id: `f${i}`, display_name: `F${i}`, birth_date: `1980-${String(m).padStart(2, '0')}-15` })),
+  ];
+  const b = computeInsightModules(buildGraph(people, []), null).birthdays;
+  assert.ok(b, 'module should render');
+  assert.ok(b.monthMate, 'monthMate should be present — 4 people share March');
+  assert.equal(b.monthMate.others, 3);
+  assert.ok(['a', 'b', 'c', 'd'].includes(b.monthMate.id));
+  assert.equal(b.monthMate.mateIds.length, 3);
+});
+
+// ── Family Moments Slice 3: geography/distance ──────────────────────────────
+
+test('nearbyRelatives: finds the closest LIVING relative within the max distance, using pre-resolved coordinates', () => {
+  const people = [
+    { id: 'viewer', display_name: 'Viewer', residence: 'Cardiff, Wales' },
+    { id: 'near', display_name: 'Near Sibling', residence: 'Newport, Wales' }, // ~25km from Cardiff
+    { id: 'far', display_name: 'Far Cousin', residence: 'London, England' },   // ~240km from Cardiff — still under 100km? no, excluded
+  ];
+  const graph = buildGraph(people, []);
+  const geocodedByPlace = {
+    'Cardiff, Wales': { lat: 51.4816, lon: -3.1791 },
+    'Newport, Wales': { lat: 51.5842, lon: -2.9977 },
+    'London, England': { lat: 51.5074, lon: -0.1278 },
+  };
+  const n = computeInsightModules(graph, 'viewer', Date.now(), geocodedByPlace).nearbyRelatives;
+  assert.ok(n, 'module should render');
+  assert.equal(n.id, 'near');
+  assert.ok(n.km > 0 && n.km < 100);
+});
+
+test('nearbyRelatives: excludes deceased people and anyone beyond the max distance', () => {
+  const people = [
+    { id: 'viewer', display_name: 'Viewer', residence: 'Cardiff, Wales' },
+    { id: 'deceased_nearby', display_name: 'Deceased', residence: 'Newport, Wales', is_deceased: true },
+    { id: 'far', display_name: 'Far', residence: 'Tokyo, Japan' },
+  ];
+  const graph = buildGraph(people, []);
+  const geocodedByPlace = {
+    'Cardiff, Wales': { lat: 51.4816, lon: -3.1791 },
+    'Newport, Wales': { lat: 51.5842, lon: -2.9977 },
+    'Tokyo, Japan': { lat: 35.6762, lon: 139.6503 },
+  };
+  assert.equal(computeInsightModules(graph, 'viewer', Date.now(), geocodedByPlace).nearbyRelatives, null);
+});
+
+test('nearbyRelatives: null when no geocoding data is passed at all — every existing caller\'s behavior is unchanged', () => {
+  const people = [
+    { id: 'viewer', display_name: 'Viewer', residence: 'Cardiff, Wales' },
+    { id: 'near', display_name: 'Near', residence: 'Newport, Wales' },
+  ];
+  const graph = buildGraph(people, []);
+  assert.equal(computeInsightModules(graph, 'viewer').nearbyRelatives, null);
+});
+
+test('nearbyRelatives: null when the viewer\'s own place never resolved (geocoding miss)', () => {
+  const people = [
+    { id: 'viewer', display_name: 'Viewer', residence: 'Nowhereville' },
+    { id: 'near', display_name: 'Near', residence: 'Newport, Wales' },
+  ];
+  const graph = buildGraph(people, []);
+  const geocodedByPlace = { 'Newport, Wales': { lat: 51.5842, lon: -2.9977 } }; // 'Nowhereville' absent — never resolved
+  assert.equal(computeInsightModules(graph, 'viewer', Date.now(), geocodedByPlace).nearbyRelatives, null);
+});
+
+// ── Family Moments Slice 4: forgotten people ────────────────────────────────
+
+const DAY_SECONDS = 86400;
+const NOW = 1_700_000_000_000; // fixed "now" so age-in-days math is deterministic
+
+test('forgottenPeople: surfaces the relative viewed longest ago, past the 1-year threshold', () => {
+  const people = [
+    { id: 'viewer', display_name: 'Viewer' },
+    { id: 'uncle', display_name: 'Uncle Peter' },
+    { id: 'aunt', display_name: 'Aunt Sue' },
+  ];
+  // uncle/aunt are the viewer's siblings via a shared parent — close enough
+  // relational distance to qualify.
+  const rels = [pRel('gp1', 'viewer'), pRel('gp1', 'uncle'), pRel('gp1', 'aunt')];
+  const graph = buildGraph([...people, { id: 'gp1', display_name: 'GP1' }], rels);
+  const lastViewed = {
+    uncle: Math.floor(NOW / 1000) - 400 * DAY_SECONDS, // 400 days ago — past threshold
+    aunt: Math.floor(NOW / 1000) - 40 * DAY_SECONDS,   // 40 days ago — recent, must not win
+  };
+  const f = computeInsightModules(graph, 'viewer', NOW, null, lastViewed).forgottenPeople;
+  assert.ok(f, 'module should render');
+  assert.equal(f.id, 'uncle');
+  assert.equal(f.ageDays, 400);
+});
+
+test('forgottenPeople: a relative viewed less than a year ago never qualifies', () => {
+  const people = [{ id: 'viewer', display_name: 'Viewer' }, { id: 'gp1', display_name: 'GP1' }, { id: 'uncle', display_name: 'Uncle' }];
+  const rels = [pRel('gp1', 'viewer'), pRel('gp1', 'uncle')];
+  const graph = buildGraph(people, rels);
+  const lastViewed = { uncle: Math.floor(NOW / 1000) - 100 * DAY_SECONDS };
+  assert.equal(computeInsightModules(graph, 'viewer', NOW, null, lastViewed).forgottenPeople, null);
+});
+
+test('forgottenPeople: someone NEVER viewed at all (absent from the map) never qualifies — this is "you stopped looking," not "you never looked"', () => {
+  const people = [{ id: 'viewer', display_name: 'Viewer' }, { id: 'gp1', display_name: 'GP1' }, { id: 'uncle', display_name: 'Uncle' }];
+  const rels = [pRel('gp1', 'viewer'), pRel('gp1', 'uncle')];
+  const graph = buildGraph(people, rels);
+  assert.equal(computeInsightModules(graph, 'viewer', NOW, null, {}).forgottenPeople, null);
+});
+
+test('forgottenPeople: a stale personId no longer in the tree is skipped, not an error', () => {
+  const people = [{ id: 'viewer', display_name: 'Viewer' }];
+  const graph = buildGraph(people, []);
+  const lastViewed = { removed_person: Math.floor(NOW / 1000) - 400 * DAY_SECONDS };
+  assert.equal(computeInsightModules(graph, 'viewer', NOW, null, lastViewed).forgottenPeople, null);
+});
+
+test('forgottenPeople: null when no lastViewedByPersonId is passed at all — every existing caller\'s behavior is unchanged', () => {
+  const people = [{ id: 'viewer', display_name: 'Viewer' }, { id: 'gp1', display_name: 'GP1' }, { id: 'uncle', display_name: 'Uncle' }];
+  const rels = [pRel('gp1', 'viewer'), pRel('gp1', 'uncle')];
+  const graph = buildGraph(people, rels);
+  assert.equal(computeInsightModules(graph, 'viewer').forgottenPeople, null);
+});
+
+// ── Family Moments Slice 1: scoring engine ──────────────────────────────────
+
+test('highlightCandidatesDetailed produces the SAME sentences as highlightCandidates, in the same order', () => {
+  const plain = highlightCandidates(mods);
+  const detailed = highlightCandidatesDetailed(mods);
+  assert.deepEqual(detailed.map((c) => c.text), plain, 'the refactor must not change what the existing teaser/AI-digest callers see');
+});
+
+test('highlightCandidatesDetailed attaches real person ids, resolvable in the graph, for candidates that are about someone specific', () => {
+  const detailed = highlightCandidatesDetailed(mods);
+  const brood = detailed.find((c) => c.key === 'brood');
+  assert.ok(brood, 'brood candidate should be present for the rich tree');
+  assert.ok(brood.personIds.length >= 2, 'the record household has 2 parents');
+  for (const id of brood.personIds) assert.ok(graph.byId.has(id), `${id} should be a real person in the graph`);
+
+  // A genuinely family-wide fact (no single "about" person) is a deliberate
+  // empty array, not a missing/guessed one.
+  const strata = detailed.find((c) => c.key === 'strata');
+  assert.ok(strata);
+  assert.deepEqual(strata.personIds, []);
+});
+
+test('scoreCandidate: a candidate about someone close to the viewer outscores the same-weight candidate about someone far away', () => {
+  const distances = new Map([['sibling', 1], ['distant', 6]]);
+  const near = { key: 'records', text: 'x', personIds: ['sibling'] };
+  const far = { key: 'records', text: 'y', personIds: ['distant'] };
+  assert.ok(scoreCandidate(near, { distances }) > scoreCandidate(far, { distances }), 'same emotional weight, so relevance alone must decide it');
+});
+
+test('scoreCandidate: a real personal moment outranks a family-wide fact of lower emotional weight, even without distances', () => {
+  // No `distances` passed at all — e.g. the Home hub with nobody logged in.
+  const personal = { key: 'records', personIds: ['someone'] }; // weight 8
+  const familyWide = { key: 'names' }; // weight 4, no personIds
+  assert.ok(scoreCandidate(personal, {}) > scoreCandidate(familyWide, {}));
+});
+
+test('scoreCandidate: a recently-shown category is penalized below one just discovered, all else equal', () => {
+  const c = { key: 'twinBirths', personIds: [] };
+  const freshScore = scoreCandidate(c, {});
+  const staleScore = scoreCandidate(c, { recentKeys: new Set(['twinBirths']) });
+  assert.ok(staleScore < freshScore);
+});
+
+test('rankCandidates: sorts strictly by score, highest first, and never drops or duplicates a candidate', () => {
+  const candidates = [
+    { key: 'names', text: 'a', personIds: [] },       // weight 4
+    { key: 'centenarians', text: 'b', personIds: [] }, // weight 9
+    { key: 'trades', text: 'c', personIds: [] },       // weight 4
+  ];
+  const ranked = rankCandidates(candidates, {});
+  assert.equal(ranked.length, 3);
+  assert.equal(ranked[0].key, 'centenarians', 'the highest-weight candidate must lead');
+  assert.ok(ranked[0].score >= ranked[1].score && ranked[1].score >= ranked[2].score);
+  assert.deepEqual(new Set(ranked.map((r) => r.text)), new Set(candidates.map((c) => c.text)));
+});
+
+test('rankCandidates: real distancesFrom() output plugs in directly and biases toward the viewer\'s own close relatives', () => {
+  const distances = distancesFrom(graph, 'g4_0');
+  const detailed = highlightCandidatesDetailed(mods);
+  const ranked = rankCandidates(detailed, { distances });
+  // g4_0's own household (brood's 6-child G1 households are many hops away;
+  // g4_0 has no sibling/child candidates in this fixture) — just assert the
+  // ranking is well-formed and deterministic across two calls on the same day.
+  const rankedAgain = rankCandidates(detailed, { distances });
+  assert.deepEqual(ranked.map((r) => r.key), rankedAgain.map((r) => r.key), 'ranking must be stable within the same day, not re-shuffled per call');
+});
+
+// ── Family Moments Slice 5: pickTodaysFamilyMoment ──────────────────────────
+
+const TODAY = new Date('2024-06-15T12:00:00Z');
+
+test('pickTodaysFamilyMoment: a real birthday TODAY wins unconditionally over a rich scored pool', () => {
+  const m = computeInsightModules(graph, 'g4_0', TODAY.getTime());
+  // richTree()'s own fixture has plenty of high-weight candidates (records,
+  // handshakes, etc.) already computed in `m` — proving the birthday still
+  // wins even against real competition, not just an empty pool.
+  const people = [...graph.people, { id: 'bday_person', display_name: 'Birthday Person', birth_date: '1990-06-15' }];
+  const bdayGraph = buildGraph(people, graph.relationships);
+  const bdayModules = computeInsightModules(bdayGraph, 'g4_0', TODAY.getTime());
+  const pick = pickTodaysFamilyMoment(bdayGraph, 'g4_0', TODAY.getTime(), bdayModules);
+  assert.ok(pick, 'should return a moment');
+  assert.equal(pick.key, 'birthdayToday');
+  assert.equal(pick.personId, 'bday_person');
+  assert.match(pick.text, /Birthday Person's birthday today — turning 34/);
+});
+
+test('pickTodaysFamilyMoment: a wedding anniversary TODAY wins when there is no birthday today', () => {
+  const people = [
+    { id: 'a', display_name: 'Anna', birth_date: '1960-01-01' },
+    { id: 'b', display_name: 'Ben', birth_date: '1962-01-01' },
+  ];
+  const rels = [{ id: 'r1', type: 'partner', from_person: 'a', to_person: 'b', partner_status: 'current', is_married: true, marriage_date: '1990-06-15' }];
+  const g = buildGraph(people, rels);
+  const modules = computeInsightModules(g, null, TODAY.getTime());
+  const pick = pickTodaysFamilyMoment(g, null, TODAY.getTime(), modules);
+  assert.ok(pick);
+  assert.equal(pick.key, 'anniversaryToday');
+  assert.match(pick.text, /34 years since Anna and Ben married/);
+});
+
+test('pickTodaysFamilyMoment: falls back to the top-scored candidate when nothing is happening today', () => {
+  const pick = pickTodaysFamilyMoment(graph, 'g4_0', TODAY.getTime(), mods);
+  assert.ok(pick, 'the rich fixture always has SOME scored candidate');
+  assert.notEqual(pick.key, 'birthdayToday');
+  assert.notEqual(pick.key, 'anniversaryToday');
+  const ranked = rankCandidates(highlightCandidatesDetailed(mods), { now: TODAY.getTime() });
+  assert.equal(pick.key, ranked[0].key, 'must match rankCandidates\' own top pick exactly');
+});
+
+test('pickTodaysFamilyMoment: null when there is nothing today AND no candidates qualify at all', () => {
+  // A photo is set so missingRecords' "N missing a photograph" doesn't
+  // incidentally qualify — missingRecords has no minimum-count threshold
+  // beyond "at least one," so a bare lone person would otherwise still
+  // produce a candidate and defeat the point of this test.
+  const people = [{ id: 'lone', display_name: 'Lone Person', photo: 'data:x' }];
+  const g = buildGraph(people, []);
+  const modules = computeInsightModules(g, 'lone', TODAY.getTime());
+  assert.equal(pickTodaysFamilyMoment(g, 'lone', TODAY.getTime(), modules), null);
 });
 
 console.log(`\n  ${passed} passed, ${failed} failed`);

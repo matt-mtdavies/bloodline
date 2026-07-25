@@ -1,7 +1,8 @@
-import { computeGenerations } from '../data/graph.js';
+import { computeGenerations, distancesFrom } from '../data/graph.js';
 import { detectRegion, nearestWorldEvent } from './worldEvents.js';
 import { yearsBetween } from './dates.js';
 import { normalizeGender } from './gender.js';
+import { haversineKm, formatKm } from './geo.js';
 
 /*
  * Tree Insights — layer 2: the visual modules (Wave 1).
@@ -114,7 +115,20 @@ export function seededShuffle(arr, seed) {
 // `now` drives records()'s "which 3 of the pool today" rotation — injectable
 // so tests can pin a specific day rather than depending on the real clock
 // (see records() below).
-export function computeInsightModules(graph, viewerId, now = Date.now()) {
+/*
+ * `geocodedByPlace` (optional): a plain object keyed by the EXACT
+ * `residence` string as stored on a person record, value {lat, lon} | null
+ * — already resolved by the caller (see functions/_lib/geocode.js) before
+ * this synchronous function runs. This file makes no network calls itself;
+ * omitting it (every existing caller, until slice 5 wires one up) simply
+ * means nearbyRelatives never renders, identical to today's behavior.
+ * `lastViewedByPersonId` (optional): a plain object keyed by personId,
+ * value the unix-SECONDS timestamp of the viewer's own last visit to that
+ * profile — from functions/_lib/profileViews.js, same "resolved by the
+ * caller, no network calls in here" convention. Omitting it means
+ * forgottenPeople never renders.
+ */
+export function computeInsightModules(graph, viewerId, now = Date.now(), geocodedByPlace = null, lastViewedByPersonId = null) {
   const gen = computeGenerations(graph);
   return {
     handshakes: handshakes(graph, viewerId),
@@ -138,6 +152,12 @@ export function computeInsightModules(graph, viewerId, now = Date.now()) {
     tradeLineage: tradeLineage(graph),
     earlyLoss: earlyLoss(graph),
     centenarians: centenarians(graph, now),
+    missingRecords: missingRecords(graph, viewerId),
+    sameAgeMarriages: sameAgeMarriages(graph),
+    closestCousinsByAge: closestCousinsByAge(graph, viewerId),
+    sharedBirthplaceGenerations: sharedBirthplaceGenerations(graph, gen),
+    nearbyRelatives: nearbyRelatives(graph, viewerId, geocodedByPlace),
+    forgottenPeople: forgottenPeople(graph, viewerId, lastViewedByPersonId, now),
   };
 }
 
@@ -1275,84 +1295,206 @@ export function buildInsightHighlights(modules) {
       deliberately sticks to tree-wide counts (generations/living/remembered),
       not the viewer-specific fields (viewerLabel etc.), so it works in both
       contexts. ────────────────────────────────────────────────────────── */
-export function highlightCandidates(modules) {
+/*
+ * Same candidate pool as before, but each entry now carries its category
+ * `key` (for the emotional-weight table and freshness tracking below) and
+ * `personIds` (who the sentence is actually about, for relevance scoring) —
+ * neither existed when this only had to produce plain strings for a single
+ * rotating teaser. A candidate with no specific "about" person (a genuinely
+ * family-wide fact like "June is the busiest birthday month") gets an empty
+ * personIds array on purpose rather than a guessed representative — see
+ * relevanceFor's own baseline for why that's not treated as zero relevance.
+ */
+export function highlightCandidatesDetailed(modules) {
   if (!modules) return [];
-  const candidates = [];
+  const out = [];
+  const add = (key, text, personIds = []) => { if (text) out.push({ key, text, personIds }); };
+
   if (modules.giftOfYears) {
     const g = modules.giftOfYears;
-    candidates.push(`Relatives born in the ${g.first.decade}s lived to ${g.first.avg} on average — those born in the ${g.last.decade}s reached ${g.last.avg}.`);
+    add('giftOfYears', `Relatives born in the ${g.first.decade}s lived to ${g.first.avg} on average — those born in the ${g.last.decade}s reached ${g.last.avg}.`);
   }
   if (modules.bridges) {
-    candidates.push(`${modules.bridges.firstName} is the family's bridge — the one marriage joining its two biggest branches.`);
+    add('bridges', `${modules.bridges.firstName} is the family's bridge — the one marriage joining its two biggest branches.`, [modules.bridges.personId]);
   }
   if (modules.names) {
     const n = modules.names.top[0];
-    candidates.push(`${n.name} is the family's most-carried name — ${n.count} people across ${modules.names.thread.present} generations.`);
+    add('names', `${n.name} is the family's most-carried name — ${n.count} people across ${modules.names.thread.present} generations.`);
   }
   if (modules.heartlands) {
-    candidates.push(`Most of the family traces back to ${modules.heartlands.places[0].display}.`);
+    add('heartlands', `Most of the family traces back to ${modules.heartlands.places[0].display}.`);
   }
   if (modules.trades) {
-    candidates.push(`The family's work has shifted from ${modules.trades.firstTop} to ${modules.trades.lastTop}.`);
+    add('trades', `The family's work has shifted from ${modules.trades.firstTop} to ${modules.trades.lastTop}.`);
   }
   if (modules.birthdays) {
-    candidates.push(`${modules.birthdays.peakLabel} is the family's busiest birthday month.`);
+    add('birthdays', `${modules.birthdays.peakLabel} is the family's busiest birthday month.`);
+  }
+  if (modules.birthdays?.monthMate) {
+    const mm = modules.birthdays.monthMate;
+    add('birthdayMonthMate', `${mm.name} shares a birthday month with ${mm.others} relative${mm.others === 1 ? '' : 's'}.`, [mm.id, ...mm.mateIds]);
   }
   if (modules.records?.records?.length) {
     const r = modules.records.records[0];
     // detail alone often omits who (e.g. "1927 to 1985, the longest
     // marriage on record.") — the title carries the name, so combine them.
-    candidates.push(`${r.title} — ${r.detail}`);
+    add('records', `${r.title} — ${r.detail}`, [r.personId]);
   }
   if (modules.parenthood) {
-    candidates.push(`On average, people in the family became parents at ${modules.parenthood.avg}.`);
+    add('parenthood', `On average, people in the family became parents at ${modules.parenthood.avg}.`);
   }
   if (modules.handshakes) {
     const h = modules.handshakes;
     const earliest = h.people[0];
-    candidates.push(`You're only ${h.hops} handshake${h.hops === 1 ? '' : 's'} from ${earliest.firstName}, born in ${earliest.birth}.`);
+    add('handshakes', `You're only ${h.hops} handshake${h.hops === 1 ? '' : 's'} from ${earliest.firstName}, born in ${earliest.birth}.`, [earliest.id]);
   }
   if (modules.strata) {
     const s = modules.strata;
-    candidates.push(`The family tree spans ${s.rows.length} generations — ${s.living} living, ${s.remembered} remembered.`);
+    add('strata', `The family tree spans ${s.rows.length} generations — ${s.living} living, ${s.remembered} remembered.`);
   }
   if (modules.fullestYear) {
     const p = modules.fullestYear.peak;
-    candidates.push(`${p.count} family members were alive at the same time in ${p.year} — the fullest year on record.`);
+    add('fullestYear', `${p.count} family members were alive at the same time in ${p.year} — the fullest year on record.`);
   }
   if (modules.brood?.record) {
     const r = modules.brood.record;
-    candidates.push(`${r.parentNames.join(' & ')} raised the family's biggest household — ${r.count} children${r.span ? ` between ${r.span}` : ''}.`);
+    add('brood', `${r.parentNames.join(' & ')} raised the family's biggest household — ${r.count} children${r.span ? ` between ${r.span}` : ''}.`, r.parentIds);
   }
   if (modules.serviceRecords) {
     const sr = modules.serviceRecords;
-    candidates.push(`${sr.count} family member${sr.count === 1 ? ' has' : 's have'} a documented military service record, spanning ${sr.generationsSpanned} generation${sr.generationsSpanned === 1 ? '' : 's'}.`);
+    add('serviceRecords', `${sr.count} family member${sr.count === 1 ? ' has' : 's have'} a documented military service record, spanning ${sr.generationsSpanned} generation${sr.generationsSpanned === 1 ? '' : 's'}.`);
   }
   if (modules.surnames) {
     const s = modules.surnames.top[0];
-    candidates.push(`${s.count} people in the family carry the ${s.name} name.`);
+    add('surnames', `${s.count} people in the family carry the ${s.name} name.`);
   }
   if (modules.livingGenerations) {
-    candidates.push(`${modules.livingGenerations.count} generations of the family are alive together right now.`);
+    add('livingGenerations', `${modules.livingGenerations.count} generations of the family are alive together right now.`);
   }
   if (modules.twinBirths?.sets?.length) {
     const t = modules.twinBirths.sets[0];
-    candidates.push(`The family has twins — born ${t.dateLabel} ${t.year}.`);
+    add('twinBirths', `The family has twins — born ${t.dateLabel} ${t.year}.`, t.ids);
   }
   if (modules.newArrivals) {
-    candidates.push(`${modules.newArrivals.count} new arrivals have joined the family since ${modules.newArrivals.sinceYear}.`);
+    add('newArrivals', `${modules.newArrivals.count} new arrivals have joined the family since ${modules.newArrivals.sinceYear}.`);
   }
   if (modules.blendedFamily) {
-    candidates.push(`${modules.blendedFamily.total} people in the family are connected by a step or adoptive bond.`);
+    add('blendedFamily', `${modules.blendedFamily.total} people in the family are connected by a step or adoptive bond.`);
   }
   if (modules.tradeLineage) {
     const c = modules.tradeLineage.best;
-    candidates.push(`${c.occ} has been passed down through ${c.people.length} generations of the family.`);
+    add('tradeLineage', `${c.occ} has been passed down through ${c.people.length} generations of the family.`, c.people.map((p) => p.id));
   }
   if (modules.centenarians) {
-    candidates.push(`${modules.centenarians.count} family member${modules.centenarians.count === 1 ? ' has' : 's have'} lived to see 100.`);
+    add('centenarians', `${modules.centenarians.count} family member${modules.centenarians.count === 1 ? ' has' : 's have'} lived to see 100.`);
   }
-  return candidates;
+  if (modules.missingRecords?.missingPhotos) {
+    const m = modules.missingRecords.missingPhotos;
+    add('missingRecords', `You still have ${m.count} relative${m.count === 1 ? '' : 's'} missing a photograph.`);
+  }
+  if (modules.missingRecords?.unknownParentAncestors) {
+    const u = modules.missingRecords.unknownParentAncestors;
+    add('missingRecords', `${u.count} direct ancestor${u.count === 1 ? ' has' : 's have'} unknown parents — a brick wall waiting to be explored.`, u.ids);
+  }
+  if (modules.sameAgeMarriages) {
+    const p = modules.sameAgeMarriages.pairs[0];
+    add('sameAgeMarriages', `${p.aName} and ${p.bName} both married for the first time at ${p.age}.`, [p.aId, p.bId]);
+  }
+  if (modules.closestCousinsByAge) {
+    const c = modules.closestCousinsByAge;
+    add('closestCousinsByAge', `${c.cousinName} is your children's closest cousin by age — just ${c.gapYears} year${c.gapYears === 1 ? '' : 's'} apart from ${c.kidName}.`, [c.kidId, c.cousinId]);
+  }
+  if (modules.sharedBirthplaceGenerations) {
+    const s = modules.sharedBirthplaceGenerations;
+    add('sharedBirthplaceGenerations', `${s.generations} generations of the family were born in ${s.display}.`, s.ids);
+  }
+  if (modules.nearbyRelatives) {
+    const n = modules.nearbyRelatives;
+    add('nearbyRelatives', `You and ${n.name} live only ${n.km} km apart.`, [n.id]);
+  }
+  if (modules.forgottenPeople) {
+    const f = modules.forgottenPeople;
+    const years = Math.floor(f.ageDays / 365);
+    const when = years >= 2 ? `${years} years` : 'over a year';
+    add('forgottenPeople', `You haven't viewed ${f.name}'s profile in ${when}.`, [f.id]);
+  }
+  return out;
+}
+
+// Byte-identical to the old inline implementation — every existing caller
+// (the home hub's rotating teaser, buildInsightHighlights below) keeps
+// working unchanged; this is now just a thin projection.
+export function highlightCandidates(modules) {
+  return highlightCandidatesDetailed(modules).map((c) => c.text);
+}
+
+/*
+ * Slice 1 of the Family Moments engine (docs/FAMILY-MOMENTS.md) — a
+ * deterministic scorer, not a learned one: relevance (how close the viewer
+ * is to who the candidate is actually about) + a fixed per-category
+ * emotional-value weight + a freshness penalty for whatever was shown
+ * recently. No engagement history feeds this yet (see Slice 6) — there's
+ * nothing to learn from before real usage exists, so this is intentionally
+ * a tunable formula, not a placeholder for one.
+ */
+const EMOTIONAL_WEIGHT = {
+  giftOfYears: 5, bridges: 6, names: 4, heartlands: 5, trades: 4,
+  birthdays: 5, records: 8, parenthood: 5, handshakes: 7, strata: 4,
+  fullestYear: 6, brood: 6, serviceRecords: 7, surnames: 4,
+  livingGenerations: 6, twinBirths: 8, newArrivals: 7, blendedFamily: 6,
+  tradeLineage: 5, centenarians: 9,
+  missingRecords: 6, sameAgeMarriages: 7,
+  birthdayMonthMate: 6, closestCousinsByAge: 8, sharedBirthplaceGenerations: 5,
+  nearbyRelatives: 7,
+  forgottenPeople: 6,
+};
+const DEFAULT_EMOTIONAL_WEIGHT = 3;
+// A candidate with no specific "about" person (a genuinely family-wide fact)
+// is still relevant to everyone — this is its baseline, not a penalty for
+// lacking personIds. Kept below the closest-possible personal relevance (a
+// sibling or child, 1 hop, scores 5) so a real personal moment still wins a
+// tie against a generic family-wide one, matching the whole point of this
+// engine.
+const FAMILY_WIDE_RELEVANCE = 2;
+const FRESHNESS_PENALTY = 4;
+
+function relevanceFor(personIds, distances) {
+  if (!personIds?.length || !distances) return FAMILY_WIDE_RELEVANCE;
+  let min = Infinity;
+  for (const id of personIds) {
+    const d = distances.get(id);
+    if (d != null && d < min) min = d;
+  }
+  if (!Number.isFinite(min)) return FAMILY_WIDE_RELEVANCE;
+  return Math.max(0, 6 - min); // 6+ hops away -> 0; the viewer themself -> 6
+}
+
+/*
+ * `distances` (optional): a Map from graph.js's distancesFrom(graph,
+ * viewerId), precomputed once per scoring pass rather than per candidate —
+ * pass it in, don't recompute here. Omitted (no viewer, e.g. the Home hub
+ * with nobody logged in) falls every candidate back to the family-wide
+ * baseline, same as today's behavior.
+ * `recentKeys` (optional): a Set of category keys shown recently on this
+ * device — purely a lookup here; where that history is stored (localStorage,
+ * how many days back) is a UI-layer concern, not this pure module's.
+ */
+export function scoreCandidate(candidate, { distances = null, recentKeys = null } = {}) {
+  const relevance = relevanceFor(candidate.personIds, distances);
+  const emotional = EMOTIONAL_WEIGHT[candidate.key] ?? DEFAULT_EMOTIONAL_WEIGHT;
+  const freshnessPenalty = recentKeys?.has(candidate.key) ? FRESHNESS_PENALTY : 0;
+  return relevance + emotional - freshnessPenalty;
+}
+
+// Highest score first. Ties broken by the same day-seeded shuffle every
+// other per-day rotation in this file already uses, so a tie doesn't always
+// favor whichever module happened to be evaluated first, but never
+// reshuffles mid-session either.
+export function rankCandidates(candidates, { distances = null, recentKeys = null, now = Date.now() } = {}) {
+  const shuffled = seededShuffle(candidates, dayIndex(now));
+  return shuffled
+    .map((c) => ({ ...c, score: scoreCandidate(c, { distances, recentKeys }) }))
+    .sort((a, b) => b.score - a.score);
 }
 
 /* ── The home hub's "did you know" teaser: one fact, rotated daily, that taps
@@ -1461,6 +1603,27 @@ function birthdays(graph, gen) {
     }
   }
   twins.sort((a, b) => Number(b.crossGen) - Number(a.crossGen));
+
+  // Family Moments slice 2: per-person "shares a birthday month with N
+  // relatives" — distinct from peakMonth above (a family-wide aggregate,
+  // not necessarily anyone's own experience of it). Whoever has the most
+  // OTHER people sharing their own birth month wins, regardless of which
+  // month that is.
+  let monthMate = null;
+  for (let m = 0; m < 12; m++) {
+    const list = monthPeople[m];
+    if (list.length < 4) continue; // need the person + at least 3 others
+    for (const entry of list) {
+      const others = list.length - 1;
+      if (!monthMate || others > monthMate.others) {
+        monthMate = {
+          id: entry.id, name: firstNameOf(graph.byId.get(entry.id)), others,
+          mateIds: list.filter((x) => x.id !== entry.id).map((x) => x.id),
+        };
+      }
+    }
+  }
+
   return {
     months,
     monthPeople,
@@ -1470,6 +1633,7 @@ function birthdays(graph, gen) {
     peakLabel: MONTHS[peakMonth],
     twins: twins.slice(0, 2),
     withMonth,
+    monthMate,
   };
 }
 
@@ -1669,4 +1833,286 @@ function tradeLineage(graph) {
     uniq.push(c);
   }
   return { chains: uniq.slice(0, 5), best: uniq[0] };
+}
+
+/* ── Family Moments slice 2: Records & Discoveries — completeness gaps ─────
+   Not a superlative like records() above (nobody "holds" a missing photo) —
+   an invitation to fill in what's not there yet. missingPhotos is family-
+   wide (every recorded person, living or deceased); unknownParentAncestors
+   is scoped to the VIEWER's own direct ancestor line specifically (walking
+   graph.parents() up to a generous depth), matching the vision brief's own
+   framing ("Three DIRECT ancestors have unknown parents") — a random
+   unrelated branch's brick wall isn't a personal discovery for this viewer,
+   their own is. Returns null for a field with nothing to report rather than
+   the whole module returning null, since either half can be independently
+   true — a family with everyone photographed but three real brick walls
+   should still surface the ancestor gap, and vice versa. */
+const ANCESTOR_WALL_DEPTH = 8; // generations — generous; a real family tree rarely runs deeper than this in practice
+function missingRecords(graph, viewerId) {
+  const missingPhotoIds = graph.people.filter((p) => !p.photo).map((p) => p.id);
+
+  let unknownParentAncestors = null;
+  if (viewerId != null && graph.byId.has(viewerId)) {
+    const ancestorIds = new Set();
+    const stack = [{ id: viewerId, depth: 0 }];
+    const seen = new Set([viewerId]);
+    while (stack.length) {
+      const { id, depth } = stack.pop();
+      if (depth >= ANCESTOR_WALL_DEPTH) continue;
+      for (const par of graph.parents(id)) {
+        if (par.qualifier === 'step' || seen.has(par.id)) continue;
+        seen.add(par.id);
+        ancestorIds.add(par.id);
+        stack.push({ id: par.id, depth: depth + 1 });
+      }
+    }
+    const walls = [...ancestorIds].filter((id) => graph.parents(id).length === 0);
+    if (walls.length) unknownParentAncestors = { count: walls.length, ids: walls };
+  }
+
+  if (!missingPhotoIds.length && !unknownParentAncestors) return null;
+  return {
+    missingPhotos: missingPhotoIds.length ? { count: missingPhotoIds.length, ids: missingPhotoIds } : null,
+    unknownParentAncestors,
+  };
+}
+
+/* ── Family Moments slice 2: Family Connections — married at the same age ──
+   Pairs of people (any relation, not just the viewer) who married for the
+   first time at the exact same age — "You and your uncle both married at
+   29." Only the FIRST marriage counts (earliest marriage_date) per person,
+   so someone's second marriage doesn't create a false echo of their own
+   first. Needs both people's birth_date and marriage_date to compute an
+   age, so this stays silent rather than guessing wherever either is
+   missing — same "never invents, never half-renders" rule every other
+   module here follows. */
+function sameAgeMarriages(graph) {
+  const firstMarriageAge = new Map(); // personId -> { age, date }
+  for (const r of graph.relationships) {
+    if (r.type !== 'partner' || !r.marriage_date) continue;
+    for (const personId of [r.from_person, r.to_person]) {
+      const person = graph.byId.get(personId);
+      const age = yearsBetween(person?.birth_date, r.marriage_date);
+      if (age == null) continue;
+      const existing = firstMarriageAge.get(personId);
+      if (!existing || r.marriage_date < existing.date) firstMarriageAge.set(personId, { age, date: r.marriage_date });
+    }
+  }
+  const byAge = new Map(); // age -> [personId, ...]
+  for (const [personId, { age }] of firstMarriageAge) {
+    if (!byAge.has(age)) byAge.set(age, []);
+    byAge.get(age).push(personId);
+  }
+  const pairs = [];
+  for (const [age, ids] of byAge) {
+    if (ids.length < 2) continue;
+    // One pair per age bucket, oldest-recorded-birth-date-first for a
+    // stable, deterministic pick rather than insertion order.
+    const sorted = ids.slice().sort((a, b) => (graph.byId.get(a)?.birth_date || '') < (graph.byId.get(b)?.birth_date || '') ? -1 : 1);
+    const [aId, bId] = sorted;
+    pairs.push({ age, aId, bId, aName: firstNameOf(graph.byId.get(aId)), bName: firstNameOf(graph.byId.get(bId)) });
+  }
+  if (!pairs.length) return null;
+  pairs.sort((a, b) => a.age - b.age);
+  return { pairs };
+}
+
+/* ── Family Moments slice 2: Family Connections — closest cousin by age ────
+   Viewer-specific by design, unlike every other module in this file —
+   "Sarah is your children's closest cousin by age" is inherently about the
+   viewer's own children and their first cousins (their aunts'/uncles' kids
+   — i.e. the viewer's own nieces/nephews), not a family-wide search for the
+   single tightest cousin pair anywhere in the tree. Silent whenever there's
+   no viewer, the viewer has no children of their own yet, or none of their
+   siblings do either — no family-wide fallback invented for those cases,
+   since the fact stops meaning what it says the moment it's not about the
+   viewer's own kids. Step-siblings' children are excluded — a step-cousin
+   isn't a blood first cousin. */
+function closestCousinsByAge(graph, viewerId) {
+  if (viewerId == null || !graph.byId.has(viewerId)) return null;
+  const myKids = graph.children(viewerId);
+  if (!myKids.length) return null;
+  const nieceNephews = graph.siblings(viewerId)
+    .filter((s) => s.kind !== 'step')
+    .flatMap((s) => graph.children(s.id));
+  if (!nieceNephews.length) return null;
+
+  let best = null;
+  for (const kid of myKids) {
+    const kidYear = year(graph.byId.get(kid.id)?.birth_date);
+    if (kidYear == null) continue;
+    for (const cousin of nieceNephews) {
+      const cousinYear = year(graph.byId.get(cousin.id)?.birth_date);
+      if (cousinYear == null) continue;
+      const gapYears = Math.abs(kidYear - cousinYear);
+      if (!best || gapYears < best.gapYears) {
+        best = {
+          kidId: kid.id, kidName: firstNameOf(graph.byId.get(kid.id)),
+          cousinId: cousin.id, cousinName: firstNameOf(graph.byId.get(cousin.id)),
+          gapYears,
+        };
+      }
+    }
+  }
+  return best;
+}
+
+/* ── Family Moments slice 2: Shared History — generations born in the same
+      place ─────────────────────────────────────────────────────────────
+   Distinct from heartlands() above (the family's dominant ORIGIN and how
+   it's shifted over time, an aggregate migration trend) — this counts how
+   many separate GENERATIONS share an exact birthplace, the more personal
+   "three generations were born in the same hospital" kind of fact. Merges
+   punctuation-only spelling variants the same way heartlands()/trades() do
+   ("Mt. Gambier" / "Mt Gambier"), showing whichever spelling is more common
+   among the qualifying group. */
+function sharedBirthplaceGenerations(graph, gen) {
+  const byPlace = new Map(); // normalized key -> { variants: Map<display,count>, gens: Set, ids: [] }
+  for (const p of graph.people) {
+    const place = (p.birth_place || '').trim();
+    if (!place) continue;
+    const key = normalizeTextKey(place);
+    if (!key) continue;
+    if (!byPlace.has(key)) byPlace.set(key, { variants: new Map(), gens: new Set(), ids: [] });
+    const e = byPlace.get(key);
+    e.variants.set(place, (e.variants.get(place) || 0) + 1);
+    e.gens.add(gen.get(p.id) ?? 0);
+    e.ids.push(p.id);
+  }
+  const qualifying = [...byPlace.values()].filter((e) => e.gens.size >= 3);
+  if (!qualifying.length) return null;
+  qualifying.sort((a, b) => b.gens.size - a.gens.size || b.ids.length - a.ids.length);
+  const best = qualifying[0];
+  let display = null, bestCount = -1;
+  for (const [v, count] of best.variants) if (count > bestCount) { display = v; bestCount = count; }
+  return { display, generations: best.gens.size, ids: best.ids };
+}
+
+/* ── Family Moments slice 3: Geography — how close two living relatives
+      actually are ──────────────────────────────────────────────────────
+   Distance math is pure (lib/geo.js's haversineKm); the place -> coordinate
+   resolution itself happens server-side (functions/_lib/geocode.js, a
+   Nominatim proxy with a D1 cache) and is passed in already resolved via
+   `geocodedByPlace` — this file makes no network calls. Only LIVING people
+   with a recorded `residence` are considered — a present-tense "you live
+   near" fact, not about where someone was born or died. Gated to a
+   genuinely close NEARBY_MAX_KM so this never surfaces "your closest
+   living relative happens to be 3000km away" framed as if it were a warm
+   proximity fact — that reads as a non sequitur, not a discovery. */
+const NEARBY_MAX_KM = 100;
+function nearbyRelatives(graph, viewerId, geocodedByPlace) {
+  if (viewerId == null || !geocodedByPlace) return null;
+  const viewer = graph.byId.get(viewerId);
+  if (!viewer || viewer.is_deceased || !viewer.residence) return null;
+  const viewerCoords = geocodedByPlace[viewer.residence];
+  if (!viewerCoords) return null;
+
+  let best = null;
+  for (const p of graph.people) {
+    if (p.id === viewerId || p.is_deceased || !p.residence) continue;
+    const coords = geocodedByPlace[p.residence];
+    if (!coords) continue;
+    const km = haversineKm(viewerCoords, coords);
+    if (km == null || km > NEARBY_MAX_KM) continue;
+    if (!best || km < best.km) best = { id: p.id, name: firstNameOf(p), km };
+  }
+  if (!best) return null;
+  return { id: best.id, name: best.name, km: formatKm(best.km) };
+}
+
+/* ── Family Moments slice 4: Forgotten people — "you haven't viewed X's
+      profile in over a year" ────────────────────────────────────────────
+   `lastViewedByPersonId` is resolved server-side (functions/_lib/
+   profileViews.js) and passed in already fetched — this file makes no
+   network calls. Deliberately only surfaces someone who HAS been viewed at
+   least once before (a real entry exists in the map) — "you haven't
+   looked in a year" is a nudge back to something you used to check on;
+   "you've never looked at all" is a different, less accusatory kind of
+   prompt this module doesn't attempt. Scoped to the viewer's own relatives
+   within a reasonable relational distance (distancesFrom, same BFS
+   scoreCandidate's relevance uses) — a person the viewer has no real
+   connection to isn't a "forgotten" relative, and a stale personId no
+   longer in the tree at all (removed since it was last viewed) is simply
+   skipped, not treated as an error. */
+const FORGOTTEN_MIN_DAYS = 365;
+const FORGOTTEN_MAX_HOPS = 6;
+function forgottenPeople(graph, viewerId, lastViewedByPersonId, now = Date.now()) {
+  if (viewerId == null || !lastViewedByPersonId || !graph.byId.has(viewerId)) return null;
+  const distances = distancesFrom(graph, viewerId);
+  const nowSeconds = Math.floor(now / 1000);
+  const minAgeSeconds = FORGOTTEN_MIN_DAYS * 86400;
+
+  let oldest = null;
+  for (const [personId, viewedAt] of Object.entries(lastViewedByPersonId)) {
+    if (personId === viewerId) continue;
+    const p = graph.byId.get(personId);
+    if (!p) continue; // stale entry — a person since removed from the tree
+    const hops = distances.get(personId);
+    if (hops == null || hops > FORGOTTEN_MAX_HOPS) continue;
+    const ageSeconds = nowSeconds - viewedAt;
+    if (ageSeconds < minAgeSeconds) continue;
+    if (!oldest || ageSeconds > oldest.ageSeconds) {
+      oldest = { id: personId, name: firstNameOf(p), ageDays: Math.floor(ageSeconds / 86400) };
+    }
+  }
+  return oldest;
+}
+
+/*
+ * Family Moments slice 5 — the always-on banner's actual pick. A genuine
+ * TODAY birthday or wedding anniversary wins unconditionally: it's the
+ * single most specific, unambiguous, highest-emotional-value thing that
+ * can be true about "today" — no scoring engine is needed to know a real
+ * birthday beats a generic fact. Falls back to the full scored pool
+ * (rankCandidates, above) otherwise.
+ *
+ * Distinct from pickDailyHighlight (the Home hub's own fixed-once-per-
+ * calendar-day teaser, which never checks for a real birthday and always
+ * draws from the flat pool) — this is the richer, viewer-aware selection
+ * built for the proactive banner. `modules` is computeInsightModules'
+ * already-computed output (the caller builds it once, geocoding/last-
+ * viewed data and all, and reuses it here rather than this function
+ * recomputing it) — this function itself makes no network calls and
+ * derives no data of its own beyond computeThisMonth, which is cheap and
+ * synchronous.
+ *
+ * Known, disclosed gap: computeThisMonth only considers LIVING people for
+ * birthdays (deceased relatives are excluded there, not here), so "your
+ * grandfather would have turned 102 today" from the original brief isn't
+ * currently reachable — would need computeThisMonth itself extended, a
+ * separate, deliberate decision given how differently that reads from a
+ * living person's birthday.
+ */
+export function pickTodaysFamilyMoment(graph, viewerId, now, modules, { distances = null, recentKeys = null } = {}) {
+  // computeThisMonth (unlike every other function in this file) takes a
+  // real Date object, not a numeric timestamp — `now` here follows this
+  // file's own now=Date.now() convention, so it needs converting.
+  const month = computeThisMonth(graph, new Date(now));
+  if (month) {
+    const todaysBirthday = month.birthdays.find((b) => b.isToday);
+    if (todaysBirthday) {
+      return {
+        key: 'birthdayToday',
+        personId: todaysBirthday.id,
+        text: todaysBirthday.turning != null
+          ? `It's ${todaysBirthday.name}'s birthday today — turning ${todaysBirthday.turning}.`
+          : `It's ${todaysBirthday.name}'s birthday today.`,
+      };
+    }
+    const todaysAnniversary = month.anniversaries.find((a) => a.isToday);
+    if (todaysAnniversary) {
+      return {
+        key: 'anniversaryToday',
+        personId: todaysAnniversary.aId,
+        text: todaysAnniversary.years > 0
+          ? `Today marks ${todaysAnniversary.years} years since ${todaysAnniversary.aName} and ${todaysAnniversary.bName} married.`
+          : `${todaysAnniversary.aName} and ${todaysAnniversary.bName} married today.`,
+      };
+    }
+  }
+
+  const candidates = highlightCandidatesDetailed(modules);
+  if (!candidates.length) return null;
+  const [top] = rankCandidates(candidates, { distances, recentKeys, now });
+  return { key: top.key, personId: top.personIds?.[0] ?? null, text: top.text };
 }
