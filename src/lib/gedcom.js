@@ -16,6 +16,8 @@
  * are NOT expressible in GEDCOM; a full, lossless archive is a separate feature.
  */
 
+import { normalizeGender } from './gender.js';
+
 const uid = () => 'p_' + Math.random().toString(36).slice(2, 9);
 const rid = () => 'r_' + Math.random().toString(36).slice(2, 9);
 
@@ -369,7 +371,7 @@ export function storeToGedcom(people = [], relationships = []) {
     const xref = `@F${++fi}@`;
     let husb = null, wife = null;
     for (const pid of fam.parents) {
-      const g = byId.get(pid)?.gender;
+      const g = normalizeGender(byId.get(pid)?.gender);
       if (g === 'male' && !husb) husb = pid;
       else if (g === 'female' && !wife) wife = pid;
     }
@@ -405,8 +407,9 @@ export function storeToGedcom(people = [], relationships = []) {
     put(`1 NAME ${nameLine}`);
     if (given) put(`2 GIVN ${given}`);
     if (family) put(`2 SURN ${family}`);
-    if (p.gender === 'male') put('1 SEX M');
-    else if (p.gender === 'female') put('1 SEX F');
+    const gender = normalizeGender(p.gender);
+    if (gender === 'male') put('1 SEX M');
+    else if (gender === 'female') put('1 SEX F');
     const bd = formatGedcomDate(p.birth_date);
     if (bd || p.birth_place) {
       put('1 BIRT');

@@ -2,11 +2,14 @@ import { useEffect, useState } from 'react';
 import { VISIBILITY_LABELS, VISIBILITY_DESCS, SECTIONS } from '../lib/visibility.js';
 import { formatPhone } from '../lib/phone.js';
 import { formatDate } from '../lib/dates.js';
+import { normalizeGender, genderLabel } from '../lib/gender.js';
 import Avatar from './Avatar.jsx';
 import PhoneField from './PhoneField.jsx';
 import DateField from './DateField.jsx';
 import { MedalIcon } from './MilitaryIcons.jsx';
 
+// Display labels only — the stored value is always normalizeGender(label),
+// i.e. lowercase ('male'/'female'/'non-binary'/'other'). See lib/gender.js.
 const GENDER_OPTIONS = ['Male', 'Female', 'Non-binary', 'Other'];
 
 // Same three values MilitaryIcons.jsx's BranchIcon recognizes — kept as a
@@ -157,7 +160,7 @@ export default function EditPersonSheet({ person, onClose, onSave, onRemove, sta
         rows: [
           ['Middle name', person.middle_name],
           ['Birth name', person.birth_name],
-          ['Gender', person.gender],
+          ['Gender', genderLabel(person.gender)],
           ['Date of birth', person.birth_date ? formatDate(person.birth_date) : null],
           ...(person.is_deceased ? [
             ['Date passed', person.death_date ? formatDate(person.death_date) : null],
@@ -330,14 +333,18 @@ export default function EditPersonSheet({ person, onClose, onSave, onRemove, sta
             <label className="field">
               <span className="field__label">Gender</span>
               <div className="pill-pick pill-pick--gender">
-                {GENDER_OPTIONS.map((g) => (
-                  <button
-                    key={g}
-                    type="button"
-                    className={`pill-pick__opt${f.gender === g ? ' pill-pick__opt--on' : ''}`}
-                    onClick={() => pick('gender')(g)}
-                  >{g}</button>
-                ))}
+                {GENDER_OPTIONS.map((g) => {
+                  const norm = normalizeGender(g);
+                  const on = normalizeGender(f.gender) === norm;
+                  return (
+                    <button
+                      key={g}
+                      type="button"
+                      className={`pill-pick__opt${on ? ' pill-pick__opt--on' : ''}`}
+                      onClick={() => setF((s) => ({ ...s, gender: on ? '' : norm }))}
+                    >{g}</button>
+                  );
+                })}
               </div>
             </label>
           </div>

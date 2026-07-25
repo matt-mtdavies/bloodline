@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { normalizeGender } from '../lib/gender.js';
 
 /*
  * Full-screen wizard shown when a user with their own tree accepts an invitation
@@ -391,7 +392,8 @@ function scorePair(a, b) {
     if (ay === by_) s += 0.4;
     else if (Math.abs(Number(ay) - Number(by_)) <= 1) s += 0.2;
   }
-  if (a.gender && b.gender && a.gender === b.gender) s += 0.05;
+  const ag = normalizeGender(a.gender), bg = normalizeGender(b.gender);
+  if (ag && bg && ag === bg) s += 0.05;
   return Math.min(s, 0.99);
 }
 

@@ -1,6 +1,7 @@
 import { computeGenerations } from '../data/graph.js';
 import { detectRegion, nearestWorldEvent } from './worldEvents.js';
 import { yearsBetween } from './dates.js';
+import { normalizeGender } from './gender.js';
 
 /*
  * Tree Insights — layer 2: the visual modules (Wave 1).
@@ -550,7 +551,7 @@ function records(graph, now = Date.now()) {
     const youngs = [...byParent.values()].sort((x, y) => x.youngest.age - y.youngest.age);
     const oldest = olds[0] ? { parent: olds[0].parent, ...olds[0].oldest } : null;
     const youngest = youngs[0] ? { parent: youngs[0].parent, ...youngs[0].youngest } : null;
-    const role = (p) => (p.gender === 'male' ? 'father' : p.gender === 'female' ? 'mother' : 'parent');
+    const role = (p) => (normalizeGender(p.gender) === 'male' ? 'father' : normalizeGender(p.gender) === 'female' ? 'mother' : 'parent');
     if (oldest && oldest.age >= 45) {
       pool.push({
         key: 'oldestParent', icon: 'time',
@@ -707,7 +708,7 @@ function parenthood(graph) {
   const avg = Math.round(ages.reduce((s, a) => s + a.age, 0) / ages.length);
   const byGender = {};
   for (const g of ['female', 'male']) {
-    const list = ages.filter((a) => a.parent.gender === g);
+    const list = ages.filter((a) => normalizeGender(a.parent.gender) === g);
     if (list.length >= 4) {
       byGender[g] = { avg: Math.round(list.reduce((s, a) => s + a.age, 0) / list.length), n: list.length };
     }

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useMemo } from 'react';
 import { RELATIONSHIPS, QUALIFIER_KEYS, bioParentGendersFilled } from '../data/store.js';
+import { normalizeGender } from '../lib/gender.js';
 import DateField from './DateField.jsx';
 
 const QUALIFIERS = [
@@ -8,6 +9,8 @@ const QUALIFIERS = [
   { key: 'adoptive', label: 'Adopted' },
 ];
 
+// Display labels only — the stored value is always normalizeGender(label),
+// i.e. lowercase ('male'/'female'/'non-binary'/'other'). See lib/gender.js.
 const GENDER_OPTIONS = ['Male', 'Female', 'Non-binary', 'Other'];
 const TODAY = new Date().toISOString().slice(0, 10);
 
@@ -76,7 +79,7 @@ export default function AddRelativeSheet({ anchor, people = [], relationships = 
     setSearch('');
     setCoParentStatus(null);
     const meta = RELATIONSHIPS.find((r) => r.key === key);
-    setGender(meta?.gender === 'male' ? 'Male' : meta?.gender === 'female' ? 'Female' : '');
+    setGender(meta?.gender || '');
     setBirthName('');
     setBirthDate('');
     setBirthPlace('');
@@ -104,7 +107,7 @@ export default function AddRelativeSheet({ anchor, people = [], relationships = 
     for (const r of relationships) {
       if (r.type !== 'parent' || r.to_person !== anchor.id) continue;
       const p = people.find((x) => x.id === r.from_person);
-      if (p?.gender === otherGender) return p;
+      if (normalizeGender(p?.gender) === otherGender) return p;
     }
     return null;
   }, [relKey, relationships, people, anchor.id]);
@@ -474,14 +477,18 @@ export default function AddRelativeSheet({ anchor, people = [], relationships = 
                 <label className="field">
                   <span className="field__label">Gender</span>
                   <div className="pill-pick pill-pick--gender">
-                    {GENDER_OPTIONS.map((g) => (
-                      <button
-                        key={g}
-                        type="button"
-                        className={`pill-pick__opt${gender === g ? ' pill-pick__opt--on' : ''}`}
-                        onClick={() => setGender((cur) => (cur === g ? '' : g))}
-                      >{g}</button>
-                    ))}
+                    {GENDER_OPTIONS.map((g) => {
+                      const norm = normalizeGender(g);
+                      const on = normalizeGender(gender) === norm;
+                      return (
+                        <button
+                          key={g}
+                          type="button"
+                          className={`pill-pick__opt${on ? ' pill-pick__opt--on' : ''}`}
+                          onClick={() => setGender(on ? '' : norm)}
+                        >{g}</button>
+                      );
+                    })}
                   </div>
                 </label>
               </div>
