@@ -140,6 +140,8 @@ export function computeInsightModules(graph, viewerId, now = Date.now()) {
     centenarians: centenarians(graph, now),
     missingRecords: missingRecords(graph, viewerId),
     sameAgeMarriages: sameAgeMarriages(graph),
+    closestCousinsByAge: closestCousinsByAge(graph, viewerId),
+    sharedBirthplaceGenerations: sharedBirthplaceGenerations(graph, gen),
   };
 }
 
@@ -1312,6 +1314,10 @@ export function highlightCandidatesDetailed(modules) {
   if (modules.birthdays) {
     add('birthdays', `${modules.birthdays.peakLabel} is the family's busiest birthday month.`);
   }
+  if (modules.birthdays?.monthMate) {
+    const mm = modules.birthdays.monthMate;
+    add('birthdayMonthMate', `${mm.name} shares a birthday month with ${mm.others} relative${mm.others === 1 ? '' : 's'}.`, [mm.id, ...mm.mateIds]);
+  }
   if (modules.records?.records?.length) {
     const r = modules.records.records[0];
     // detail alone often omits who (e.g. "1927 to 1985, the longest
@@ -1378,6 +1384,14 @@ export function highlightCandidatesDetailed(modules) {
     const p = modules.sameAgeMarriages.pairs[0];
     add('sameAgeMarriages', `${p.aName} and ${p.bName} both married for the first time at ${p.age}.`, [p.aId, p.bId]);
   }
+  if (modules.closestCousinsByAge) {
+    const c = modules.closestCousinsByAge;
+    add('closestCousinsByAge', `${c.cousinName} is your children's closest cousin by age — just ${c.gapYears} year${c.gapYears === 1 ? '' : 's'} apart from ${c.kidName}.`, [c.kidId, c.cousinId]);
+  }
+  if (modules.sharedBirthplaceGenerations) {
+    const s = modules.sharedBirthplaceGenerations;
+    add('sharedBirthplaceGenerations', `${s.generations} generations of the family were born in ${s.display}.`, s.ids);
+  }
   return out;
 }
 
@@ -1404,6 +1418,7 @@ const EMOTIONAL_WEIGHT = {
   livingGenerations: 6, twinBirths: 8, newArrivals: 7, blendedFamily: 6,
   tradeLineage: 5, centenarians: 9,
   missingRecords: 6, sameAgeMarriages: 7,
+  birthdayMonthMate: 6, closestCousinsByAge: 8, sharedBirthplaceGenerations: 5,
 };
 const DEFAULT_EMOTIONAL_WEIGHT = 3;
 // A candidate with no specific "about" person (a genuinely family-wide fact)
@@ -1560,6 +1575,27 @@ function birthdays(graph, gen) {
     }
   }
   twins.sort((a, b) => Number(b.crossGen) - Number(a.crossGen));
+
+  // Family Moments slice 2: per-person "shares a birthday month with N
+  // relatives" — distinct from peakMonth above (a family-wide aggregate,
+  // not necessarily anyone's own experience of it). Whoever has the most
+  // OTHER people sharing their own birth month wins, regardless of which
+  // month that is.
+  let monthMate = null;
+  for (let m = 0; m < 12; m++) {
+    const list = monthPeople[m];
+    if (list.length < 4) continue; // need the person + at least 3 others
+    for (const entry of list) {
+      const others = list.length - 1;
+      if (!monthMate || others > monthMate.others) {
+        monthMate = {
+          id: entry.id, name: firstNameOf(graph.byId.get(entry.id)), others,
+          mateIds: list.filter((x) => x.id !== entry.id).map((x) => x.id),
+        };
+      }
+    }
+  }
+
   return {
     months,
     monthPeople,
@@ -1569,6 +1605,7 @@ function birthdays(graph, gen) {
     peakLabel: MONTHS[peakMonth],
     twins: twins.slice(0, 2),
     withMonth,
+    monthMate,
   };
 }
 
@@ -1850,4 +1887,75 @@ function sameAgeMarriages(graph) {
   if (!pairs.length) return null;
   pairs.sort((a, b) => a.age - b.age);
   return { pairs };
+}
+
+/* ── Family Moments slice 2: Family Connections — closest cousin by age ────
+   Viewer-specific by design, unlike every other module in this file —
+   "Sarah is your children's closest cousin by age" is inherently about the
+   viewer's own children and their first cousins (their aunts'/uncles' kids
+   — i.e. the viewer's own nieces/nephews), not a family-wide search for the
+   single tightest cousin pair anywhere in the tree. Silent whenever there's
+   no viewer, the viewer has no children of their own yet, or none of their
+   siblings do either — no family-wide fallback invented for those cases,
+   since the fact stops meaning what it says the moment it's not about the
+   viewer's own kids. Step-siblings' children are excluded — a step-cousin
+   isn't a blood first cousin. */
+function closestCousinsByAge(graph, viewerId) {
+  if (viewerId == null || !graph.byId.has(viewerId)) return null;
+  const myKids = graph.children(viewerId);
+  if (!myKids.length) return null;
+  const nieceNephews = graph.siblings(viewerId)
+    .filter((s) => s.kind !== 'step')
+    .flatMap((s) => graph.children(s.id));
+  if (!nieceNephews.length) return null;
+
+  let best = null;
+  for (const kid of myKids) {
+    const kidYear = year(graph.byId.get(kid.id)?.birth_date);
+    if (kidYear == null) continue;
+    for (const cousin of nieceNephews) {
+      const cousinYear = year(graph.byId.get(cousin.id)?.birth_date);
+      if (cousinYear == null) continue;
+      const gapYears = Math.abs(kidYear - cousinYear);
+      if (!best || gapYears < best.gapYears) {
+        best = {
+          kidId: kid.id, kidName: firstNameOf(graph.byId.get(kid.id)),
+          cousinId: cousin.id, cousinName: firstNameOf(graph.byId.get(cousin.id)),
+          gapYears,
+        };
+      }
+    }
+  }
+  return best;
+}
+
+/* ── Family Moments slice 2: Shared History — generations born in the same
+      place ─────────────────────────────────────────────────────────────
+   Distinct from heartlands() above (the family's dominant ORIGIN and how
+   it's shifted over time, an aggregate migration trend) — this counts how
+   many separate GENERATIONS share an exact birthplace, the more personal
+   "three generations were born in the same hospital" kind of fact. Merges
+   punctuation-only spelling variants the same way heartlands()/trades() do
+   ("Mt. Gambier" / "Mt Gambier"), showing whichever spelling is more common
+   among the qualifying group. */
+function sharedBirthplaceGenerations(graph, gen) {
+  const byPlace = new Map(); // normalized key -> { variants: Map<display,count>, gens: Set, ids: [] }
+  for (const p of graph.people) {
+    const place = (p.birth_place || '').trim();
+    if (!place) continue;
+    const key = normalizeTextKey(place);
+    if (!key) continue;
+    if (!byPlace.has(key)) byPlace.set(key, { variants: new Map(), gens: new Set(), ids: [] });
+    const e = byPlace.get(key);
+    e.variants.set(place, (e.variants.get(place) || 0) + 1);
+    e.gens.add(gen.get(p.id) ?? 0);
+    e.ids.push(p.id);
+  }
+  const qualifying = [...byPlace.values()].filter((e) => e.gens.size >= 3);
+  if (!qualifying.length) return null;
+  qualifying.sort((a, b) => b.gens.size - a.gens.size || b.ids.length - a.ids.length);
+  const best = qualifying[0];
+  let display = null, bestCount = -1;
+  for (const [v, count] of best.variants) if (count > bestCount) { display = v; bestCount = count; }
+  return { display, generations: best.gens.size, ids: best.ids };
 }

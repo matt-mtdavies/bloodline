@@ -971,9 +971,16 @@ test('highlightCandidates: every populated module in the rich fixture contribute
   // 102. missingRecords contributes its OWN two independent candidates —
   // richTree() never sets `.photo` on anyone (72 missing), and g4_0's real
   // ancestor chain runs out at the G1 founders, who have no parents
-  // recorded (3 direct ancestors) — 16 of the 23 possible candidates
-  // (missingRecords can contribute up to 2 on its own).
-  assert.equal(candidates.length, 16);
+  // recorded (3 direct ancestors). closestCousinsByAge and
+  // sharedBirthplaceGenerations do NOT qualify — g4_0 has no children of
+  // their own, and no single place spans 3+ distinct generations in this
+  // fixture (Cardiff only spans G2's later half + G3) — but
+  // birthdayMonthMate DOES: every G4 person shares March with the rest of
+  // G4 (an incidental side effect of richTree()'s deliberately March-heavy
+  // dates for the handshake/twin tests, not something engineered for this
+  // one) — 17 of the 26 possible candidates (missingRecords can contribute
+  // up to 2 on its own).
+  assert.equal(candidates.length, 17);
   assert.ok(candidates.every((c) => typeof c === 'string' && c.length > 0));
 });
 
@@ -1380,6 +1387,107 @@ test('sameAgeMarriages: null when nobody shares a first-marriage age, and missin
   const rels = [uRel('a', 'b', '1980-01-01')];
   const graph = buildGraph(people, rels);
   assert.equal(computeInsightModules(graph, null).sameAgeMarriages, null);
+});
+
+test('closestCousinsByAge: pairs a viewer\'s own child against their niece/nephew (their sibling\'s child), by closest age', () => {
+  const people = [
+    { id: 'gp1', display_name: 'GP1', birth_date: '1900-01-01' },
+    { id: 'gp2', display_name: 'GP2', birth_date: '1900-01-01' },
+    { id: 'viewer', display_name: 'Viewer', birth_date: '1960-01-01' },
+    { id: 'sibling', display_name: 'Sibling', birth_date: '1962-01-01' },
+    { id: 'my_kid', display_name: 'My Kid', birth_date: '1990-01-01' },
+    { id: 'niece_close', display_name: 'Niece Close', birth_date: '1991-01-01' }, // 1 year apart
+    { id: 'niece_far', display_name: 'Niece Far', birth_date: '2005-01-01' },     // 15 years apart
+  ];
+  const rels = [
+    pRel('gp1', 'viewer'), pRel('gp2', 'viewer'),
+    pRel('gp1', 'sibling'), pRel('gp2', 'sibling'),
+    pRel('viewer', 'my_kid'),
+    pRel('sibling', 'niece_close'), pRel('sibling', 'niece_far'),
+  ];
+  const graph = buildGraph(people, rels);
+  const c = computeInsightModules(graph, 'viewer').closestCousinsByAge;
+  assert.ok(c, 'module should render');
+  assert.equal(c.kidId, 'my_kid');
+  assert.equal(c.cousinId, 'niece_close');
+  assert.equal(c.gapYears, 1);
+});
+
+test('closestCousinsByAge: null when the viewer has no children of their own, even with plenty of nieces/nephews', () => {
+  const people = [
+    { id: 'gp1', display_name: 'GP1', birth_date: '1900-01-01' },
+    { id: 'viewer', display_name: 'Viewer', birth_date: '1960-01-01' },
+    { id: 'sibling', display_name: 'Sibling', birth_date: '1962-01-01' },
+    { id: 'niece', display_name: 'Niece', birth_date: '1991-01-01' },
+  ];
+  const rels = [pRel('gp1', 'viewer'), pRel('gp1', 'sibling'), pRel('sibling', 'niece')];
+  const graph = buildGraph(people, rels);
+  assert.equal(computeInsightModules(graph, 'viewer').closestCousinsByAge, null);
+});
+
+test('closestCousinsByAge: a step-sibling\'s children are excluded — not a blood first cousin', () => {
+  const people = [
+    { id: 'gp1', display_name: 'GP1', birth_date: '1900-01-01' },
+    { id: 'viewer', display_name: 'Viewer', birth_date: '1960-01-01' },
+    { id: 'step_sibling', display_name: 'Step Sibling', birth_date: '1962-01-01' },
+    { id: 'my_kid', display_name: 'My Kid', birth_date: '1990-01-01' },
+    { id: 'step_niece', display_name: 'Step Niece', birth_date: '1991-01-01' },
+  ];
+  const rels = [
+    pRel('gp1', 'viewer'),
+    pRel('gp1', 'step_sibling', 'step'),
+    pRel('viewer', 'my_kid'),
+    pRel('step_sibling', 'step_niece'),
+  ];
+  const graph = buildGraph(people, rels);
+  assert.equal(computeInsightModules(graph, 'viewer').closestCousinsByAge, null);
+});
+
+test('sharedBirthplaceGenerations: 3+ distinct generations born in the same place qualifies, spelling variants merged', () => {
+  const people = [
+    { id: 'gp', display_name: 'GP', birth_date: '1900-01-01', birth_place: 'Mt. Gambier' },
+    { id: 'parent', display_name: 'Parent', birth_date: '1930-01-01', birth_place: 'Mt Gambier' },
+    { id: 'kid', display_name: 'Kid', birth_date: '1960-01-01', birth_place: 'Mt. Gambier' },
+  ];
+  const rels = [pRel('gp', 'parent'), pRel('parent', 'kid')];
+  const graph = buildGraph(people, rels);
+  const s = computeInsightModules(graph, null).sharedBirthplaceGenerations;
+  assert.ok(s, 'module should render');
+  assert.equal(s.generations, 3);
+  assert.equal(s.display, 'Mt. Gambier', 'the more common spelling variant wins');
+});
+
+test('sharedBirthplaceGenerations: 2 generations in the same place stays below the 3-generation threshold', () => {
+  const people = [
+    { id: 'parent', display_name: 'Parent', birth_date: '1930-01-01', birth_place: 'Cardiff' },
+    { id: 'kid', display_name: 'Kid', birth_date: '1960-01-01', birth_place: 'Cardiff' },
+  ];
+  const rels = [pRel('parent', 'kid')];
+  const graph = buildGraph(people, rels);
+  assert.equal(computeInsightModules(graph, null).sharedBirthplaceGenerations, null);
+});
+
+test('birthdays: monthMate names whoever shares their birth month with the most OTHER relatives', () => {
+  const people = [
+    { id: 'a', display_name: 'Alice', birth_date: '1970-03-01' },
+    { id: 'b', display_name: 'Bob', birth_date: '1972-03-15' },
+    { id: 'c', display_name: 'Cara', birth_date: '1974-03-20' },
+    { id: 'd', display_name: 'Dan', birth_date: '1976-03-25' },
+    // Filler so withMonth clears the 15-person threshold for the module
+    // itself — every OTHER month, one person each, so none of them
+    // accidentally out-competes March's 4-person cluster above. Day 15,
+    // deliberately not day 1 — birthMonthOf/birthDayOf treat a stored
+    // January-1st specifically as "year only, no real month known" (this
+    // app's own placeholder convention), which would silently drop that
+    // one filler person and undercount withMonth below its own threshold.
+    ...[1, 2, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((m, i) => ({ id: `f${i}`, display_name: `F${i}`, birth_date: `1980-${String(m).padStart(2, '0')}-15` })),
+  ];
+  const b = computeInsightModules(buildGraph(people, []), null).birthdays;
+  assert.ok(b, 'module should render');
+  assert.ok(b.monthMate, 'monthMate should be present — 4 people share March');
+  assert.equal(b.monthMate.others, 3);
+  assert.ok(['a', 'b', 'c', 'd'].includes(b.monthMate.id));
+  assert.equal(b.monthMate.mateIds.length, 3);
 });
 
 // ── Family Moments Slice 1: scoring engine ──────────────────────────────────
