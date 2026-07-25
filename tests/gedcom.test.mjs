@@ -219,5 +219,18 @@ test('a childless couple and an isolated person both round-trip', () => {
   assert.equal(partners[0].marriage_date, '1995');
 });
 
+test('storeToGedcom emits SEX and assigns HUSB/WIFE even when gender is stored Title Case (as EditPersonSheet used to write before the casing fix)', () => {
+  const people = [
+    { id: 'a', display_name: 'Sam Real', given_names: 'Sam', family_name: 'Real', gender: 'Male', birth_date: '1970' },
+    { id: 'b', display_name: 'Pat Real', given_names: 'Pat', family_name: 'Real', gender: 'Female', birth_date: '1972' },
+  ];
+  const rels = [{ id: 'p', type: 'partner', from_person: 'a', to_person: 'b', qualifier: 'biological', partner_status: 'current' }];
+  const ged = storeToGedcom(people, rels);
+  assert.match(ged, /1 SEX M/, 'a Title Case "Male" must still emit a SEX tag');
+  assert.match(ged, /1 SEX F/, 'a Title Case "Female" must still emit a SEX tag');
+  assert.match(ged, /1 HUSB @I1@/, 'the Title Case "Male" partner must still be assigned HUSB');
+  assert.match(ged, /1 WIFE @I2@/, 'the Title Case "Female" partner must still be assigned WIFE');
+});
+
 console.log(`\n  ${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);

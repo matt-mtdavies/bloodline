@@ -622,6 +622,35 @@ test('parenthood: average, range and gender split over 8+ recorded births', () =
   assert.equal(total, 8, 'histogram buckets account for every sample');
 });
 
+test('parenthood: gender split is case-insensitive — a Title Case gender (as EditPersonSheet used to store before the casing fix) still counts toward Mothers/Fathers, not just the overall average', () => {
+  const people = [];
+  const rels = [];
+  const ages = [20, 22, 24, 26, 28, 30, 32, 34]; // female avg 26, male avg 28, overall 27
+  ages.forEach((age, i) => {
+    const parentId = `par${i}`, childId = `kid${i}`;
+    // Half of each gender stored lowercase (the original convention), half
+    // stored Title Case (what the gender picker used to write) — both must
+    // land in the same byGender bucket, not just the overall average. This
+    // is the exact real-world report this guards against: an overall
+    // figure that didn't match either sub-average because some parents'
+    // gender was silently excluded from the breakdown by an exact-case
+    // string comparison.
+    const gender = i % 2 === 0 ? (i % 4 === 0 ? 'female' : 'Female') : (i % 4 === 1 ? 'male' : 'Male');
+    people.push({ id: parentId, display_name: `Parent${i}`, birth_date: '1970-01-01', gender });
+    people.push({ id: childId, display_name: `Kid${i}`, birth_date: `${1970 + age}-01-01` });
+    rels.push(pRel(parentId, childId));
+  });
+  const graph = buildGraph(people, rels);
+  const mods = computeInsightModules(graph, 'par0');
+  assert.ok(mods.parenthood, 'module should render at 8 samples');
+  assert.equal(mods.parenthood.avg, 27);
+  assert.equal(mods.parenthood.n, 8);
+  assert.equal(mods.parenthood.byGender.female.n, 4, 'both lowercase and Title Case female parents counted');
+  assert.equal(mods.parenthood.byGender.male.n, 4, 'both lowercase and Title Case male parents counted');
+  assert.equal(mods.parenthood.byGender.female.avg, 26);
+  assert.equal(mods.parenthood.byGender.male.avg, 28);
+});
+
 test('parenthood: hides below the 8-sample threshold', () => {
   const people = [];
   const rels = [];

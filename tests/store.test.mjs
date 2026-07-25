@@ -13,6 +13,7 @@ import {
   store, importFromGedcom, setRelationshipKind, addMedal, removeMedal,
   addLifeEvent, updatePerson, retractDocumentContributions,
   addRelative, updatePartnerMeta, resetTree, addMemory, addPhoto, addDocument,
+  bioParentGendersFilled,
 } from '../src/data/store.js';
 
 let passed = 0, failed = 0;
@@ -342,6 +343,31 @@ test('importFromGedcom (replace mode) tombstones the old tree before swapping in
   const staleServerPeople = [{ id: 'old_a', display_name: 'Old Person A' }];
   const survivingPeople = staleServerPeople.filter((p) => !after._deleted?.people?.[p.id]);
   assert.equal(survivingPeople.length, 0, 'a tombstoned old person must not survive a merge with a stale server copy');
+});
+
+test('bioParentGendersFilled recognizes a Title Case gender (as EditPersonSheet used to store) as filling the same slot as lowercase — the bio-parent-per-gender constraint must not be bypassable by casing', () => {
+  // The existing bio-father's gender is stored 'Male' (Title Case) — the
+  // shape EditPersonSheet's gender picker used to write before the casing
+  // fix, still present on any record edited before then. Without
+  // normalizing, bioParentGendersFilled's Set would contain 'Male' while
+  // the constraint check below always tests for lowercase 'male', so it
+  // would silently miss this slot as already filled.
+  importFromGedcom(
+    [
+      { id: 'child1', display_name: 'Child One' },
+      { id: 'dad1', display_name: 'Dad One', gender: 'Male' },
+    ],
+    [{ id: 'r1', type: 'parent', from_person: 'dad1', to_person: 'child1', qualifier: 'biological' }],
+    { merge: false },
+  );
+
+  const filled = bioParentGendersFilled('child1');
+  assert.ok(filled.has('male'), 'a Title Case existing bio-father must still register as the male slot filled');
+
+  // A second biological father must still be rejected.
+  const res = addRelative({ anchorId: 'child1', relKey: 'father', name: 'Dad Two', qualifier: 'biological' });
+  assert.equal(res, null, 'adding a second biological father must be blocked regardless of the existing father\'s gender casing');
+  assert.equal(store.getState().people.length, 2, 'no new person should have been added');
 });
 
 console.log(`\n  ${passed} passed, ${failed} failed`);

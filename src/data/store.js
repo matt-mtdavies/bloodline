@@ -18,6 +18,7 @@ import {
   DEFAULT_FOCUS,
 } from './seed.js';
 import { dedupeMergeImport } from '../lib/duplicates.js';
+import { normalizeGender } from '../lib/gender.js';
 
 const KEY = 'bloodline:v1';
 // The account (user uid) this device's cached tree belongs to. Used to keep
@@ -1075,7 +1076,7 @@ export function bioParentGendersFilled(personId) {
     .filter((r) => r.type === 'parent' && r.qualifier === 'biological' && r.to_person === personId)
     .map((r) => r.from_person);
   const genders = new Set(
-    bioPids.map((pid) => state.people.find((p) => p.id === pid)?.gender).filter(Boolean),
+    bioPids.map((pid) => normalizeGender(state.people.find((p) => p.id === pid)?.gender)).filter(Boolean),
   );
   return genders; // Set of 'male'|'female' already occupied
 }
