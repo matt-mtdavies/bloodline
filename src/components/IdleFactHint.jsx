@@ -28,8 +28,12 @@ const IDLE_MS = 14000; // genuine stillness required before a fact appears
 // Feedback: 6s wasn't enough to read a full fact sentence before it vanished.
 const VISIBLE_MS = 11000;
 // Minimum gap after one hint hides before the next is allowed to arm, so
-// facts read as an occasional aside rather than a metronome.
-const COOLDOWN_MS = 20000;
+// facts read as an occasional aside rather than a metronome. Was 20s —
+// real feedback ("these pop up every 30 seconds") is right: 20s cooldown +
+// 14s idle-wait + 11s display means a hint can recur under a minute apart
+// while continuously idle. Raised to 4.5 minutes so it reads as an
+// occasional aside, not a recurring nag.
+const COOLDOWN_MS = 270000;
 // A pan/zoom/drag on the canvas begins with the exact same pointerdown that
 // bubbles up to window — without this, the first touch of ANY gesture (not
 // just a deliberate dismiss tap) hid the hint mid-sentence, cutting off the

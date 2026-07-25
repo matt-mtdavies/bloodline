@@ -2,7 +2,7 @@ import { useRef, useState, useMemo } from 'react';
 import { toBlob } from 'html-to-image';
 import Avatar from './Avatar.jsx';
 import { lifespan } from '../lib/dates.js';
-import { aliveInYear, handshakesTo, dayIndex, seededShuffle } from '../lib/insightModules.js';
+import { aliveInYear, livingLinkTo, dayIndex, seededShuffle } from '../lib/insightModules.js';
 import { BranchIcon } from './MilitaryIcons.jsx';
 
 const BRANCH_LABEL = { army: 'Army', navy: 'Navy', air_force: 'Air Force' };
@@ -38,7 +38,7 @@ const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 export default function InsightModules({ modules, graph, onNavigate }) {
   if (!modules) return null;
   const {
-    handshakes, giftOfYears, fullestYear, strata, brood, bridges,
+    livingLink, giftOfYears, fullestYear, strata, brood, bridges,
     names, heartlands, trades, birthdays, records, parenthood, serviceRecords,
     surnames, livingGenerations, twinBirths, newArrivals, blendedFamily, tradeLineage,
     earlyLoss, centenarians,
@@ -54,7 +54,7 @@ export default function InsightModules({ modules, graph, onNavigate }) {
 
   let restChapters = [
     ['Deep time', [
-      handshakes && <HandshakesModule key="hands" data={handshakes} graph={graph} onNavigate={onNavigate} />,
+      livingLink && <LivingLinkModule key="hands" data={livingLink} graph={graph} onNavigate={onNavigate} />,
       giftOfYears && <GiftModule key="gift" data={giftOfYears} graph={graph} onNavigate={onNavigate} />,
       fullestYear && <FullestModule key="fullest" data={fullestYear} graph={graph} onNavigate={onNavigate} />,
       centenarians && <CentenarianModule key="centenarians" data={centenarians} graph={graph} onNavigate={onNavigate} />,
@@ -237,7 +237,7 @@ const ordinal = (n) => `${n}${['th', 'st', 'nd', 'rd'][(n % 100 > 10 && n % 100 
 // "knew" reads as a claim about their actual relationship that the data
 // can't back up. Capped at the three oldest links so a long chain doesn't
 // run the caption off the card. Shared by the deep-time default and any
-// "handshakes to ___" result — the wording holds regardless of which
+// "living link to ___" result — the wording holds regardless of which
 // direction chronology runs, since it's just walking the array.
 function chainSentence(people, links, thisYear, earliestBirth) {
   const last = people.length - 1;
@@ -253,7 +253,7 @@ function chainSentence(people, links, thisYear, earliestBirth) {
 
 // The lifespan-bar chain itself — shared by the deep-time default and any
 // picked-target result below it.
-function HandshakeChain({ data, onNavigate }) {
+function LivingLinkChain({ data, onNavigate }) {
   const { people, links, earliestBirth, thisYear } = data;
   // Shared time axis, padded back a touch so the earliest bar doesn't start
   // flush against the edge.
@@ -315,7 +315,7 @@ function HandshakeChain({ data, onNavigate }) {
   );
 }
 
-function HandshakesModule({ data, graph, onNavigate }) {
+function LivingLinkModule({ data, graph, onNavigate }) {
   const { people, links, hops, earliestBirth, thisYear, anchor } = data;
   const viewerId = people[people.length - 1].id;
   const chain = chainSentence(people, links, thisYear, earliestBirth);
@@ -329,15 +329,15 @@ function HandshakesModule({ data, graph, onNavigate }) {
     ? graph.people.filter((p) => p.id !== viewerId && (p.display_name || '').toLowerCase().includes(query)).slice(0, 6)
     : [];
   const result = useMemo(
-    () => (targetId ? handshakesTo(graph, viewerId, targetId) : null),
+    () => (targetId ? livingLinkTo(graph, viewerId, targetId) : null),
     [graph, viewerId, targetId],
   );
   const target = targetId ? graph.byId.get(targetId) : null;
 
   return (
     <Module
-      icon={<HandshakeIcon />}
-      title={`You are ${asWord(hops)} handshake${hops === 1 ? '' : 's'} from ${earliestBirth}`}
+      icon={<LivingLinkIcon />}
+      title={`Just ${asWord(hops)} living link${hops === 1 ? '' : 's'} from ${earliestBirth}`}
       sub={`Lives that overlapped, hand to hand, from you back to ${people[0].name}.`}
       caption={<>
         {chain}
@@ -348,14 +348,14 @@ function HandshakesModule({ data, graph, onNavigate }) {
         )}
       </>}
     >
-      <HandshakeChain data={data} onNavigate={onNavigate} />
+      <LivingLinkChain data={data} onNavigate={onNavigate} />
       <div className="tim-explore">
         <input
           type="search"
           value={q}
           onChange={(e) => { setQ(e.target.value); setTargetId(null); }}
           placeholder="Curious about someone else? Try a name…"
-          aria-label="Find how many handshakes you are from anyone in the tree"
+          aria-label="Find how many living links you are from anyone in the tree"
         />
         {query && matches.length === 0 && (
           <p className="tim-explore__none">No one matches “{q.trim()}”.</p>
@@ -377,7 +377,7 @@ function HandshakesModule({ data, graph, onNavigate }) {
       {target && (
         <div className="tim-hs-panel">
           <div className="tim-drawer__head">
-            <span>{result ? `${asWord(result.hops)} handshake${result.hops === 1 ? '' : 's'} to ${firstNameOfDisplay(target)}` : firstNameOfDisplay(target)}</span>
+            <span>{result ? `${asWord(result.hops)} living link${result.hops === 1 ? '' : 's'} to ${firstNameOfDisplay(target)}` : firstNameOfDisplay(target)}</span>
             <button className="tim-drawer__close" onClick={() => setTargetId(null)} aria-label="Close">×</button>
           </div>
           {result ? (
@@ -385,7 +385,7 @@ function HandshakesModule({ data, graph, onNavigate }) {
               <p className="tim-hs-panel__lede">
                 {chainSentence(result.people, result.links, result.thisYear, result.earliestBirth)}
               </p>
-              <HandshakeChain data={result} onNavigate={onNavigate} />
+              <LivingLinkChain data={result} onNavigate={onNavigate} />
             </>
           ) : (
             <p className="tim-explore__none tim-hs-panel__lede">
@@ -1831,7 +1831,7 @@ function WheelIcon() {
 function ArrowIcon() {
   return (<svg width="14" height="10" viewBox="0 0 14 10" aria-hidden="true"><path d="M1 5h11m-4-3.5L12 5l-4 3.5" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" /></svg>);
 }
-function HandshakeIcon() {
+function LivingLinkIcon() {
   return (<svg {...ip}><path d="M7 12l3 3 7-8M3 12h2m14 0h2" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" /></svg>);
 }
 function BridgeIcon() {

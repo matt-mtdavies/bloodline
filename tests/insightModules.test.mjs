@@ -6,7 +6,7 @@
  */
 import assert from 'node:assert/strict';
 import { buildGraph } from '../src/data/graph.js';
-import { computeInsightModules, computeThisMonth, buildInsightHighlights, aliveInYear, handshakesTo, personHighlight, highlightCandidates, highlightCandidatesDetailed, scoreCandidate, rankCandidates, pickDailyHighlight, pickTodaysFamilyMoment, dayIndex, seededShuffle } from '../src/lib/insightModules.js';
+import { computeInsightModules, computeThisMonth, buildInsightHighlights, aliveInYear, livingLinkTo, personHighlight, highlightCandidates, highlightCandidatesDetailed, scoreCandidate, rankCandidates, pickDailyHighlight, pickTodaysFamilyMoment, PERSONAL_CATEGORIES, dayIndex, seededShuffle } from '../src/lib/insightModules.js';
 import { distancesFrom } from '../src/data/graph.js';
 
 let passed = 0, failed = 0;
@@ -60,7 +60,7 @@ function richTree() {
   // The first G2 couple carries a dated marriage: 1875 → husband's 1920 death,
   // 45 years — the only dated marriage, so the record books' longest.
   // g3_0_0 lives to 1992 so the living G4 kids genuinely overlapped him —
-  // that's the middle link of the handshake chain.
+  // that's the middle link of the living-link chain.
   for (let c = 0; c < 5; c++) {
     const parent = `g2_${c}_0`;
     const spouse = `g2s${c}`;
@@ -331,10 +331,10 @@ test('names: a middle_name field counts even when display_name never spells it o
   assert.equal(john.people.filter((x) => x.id === 'j1').length, 1, 'Peter appears once, not twice');
 });
 
-// ── Wave 2: handshakes, bridges, records, trades ────────────────────────────
-test('handshakes: 3-hop chain from g4_0 back to an 1820 founder', () => {
-  assert.ok(mods.handshakes, 'module should render');
-  const h = mods.handshakes;
+// ── Wave 2: livingLink, bridges, records, trades ────────────────────────────
+test('livingLink: 3-hop chain from g4_0 back to an 1820 founder', () => {
+  assert.ok(mods.livingLink, 'module should render');
+  const h = mods.livingLink;
   assert.equal(h.earliestBirth, 1820);
   // Viewer (b.1985) overlaps only g3_0_0 (d.1992); g3_0_0 (b.1890) overlaps
   // the G2 layer; G2 (b.1850s) overlaps the founders — no shortcut exists.
@@ -345,7 +345,7 @@ test('handshakes: 3-hop chain from g4_0 back to an 1820 founder', () => {
   for (const link of h.links) assert.ok(link.years >= 1, 'every link is a real overlap');
 });
 
-test('handshakes: never links two ancestors from different branches, even if their lifespans overlap', () => {
+test('livingLink: never links two ancestors from different branches, even if their lifespans overlap', () => {
   // v's paternal line: ff (1700-1750) is old enough and deep enough to be a
   // tempting target. v's maternal line: mm (1745-1795) overlaps ff's window
   // by 5 years — but mm is not ff's relative; they share no ancestor of each
@@ -369,11 +369,11 @@ test('handshakes: never links two ancestors from different branches, even if the
     { id: 'r4', type: 'parent', from_person: 'mm', to_person: 'm', qualifier: 'biological' },
   ];
   const g = buildGraph(people, rels);
-  const r = computeInsightModules(g, 'v').handshakes;
+  const r = computeInsightModules(g, 'v').livingLink;
   assert.equal(r, null, 'no unbroken single-line chain exists — a cross-branch shortcut would wrongly return one');
 });
 
-test('handshakes: a step-parent\'s own ancestors are never treated as bloodline', () => {
+test('livingLink: a step-parent\'s own ancestors are never treated as bloodline', () => {
   // v's only bio parent (f, b.1960) is too shallow to clear the 90-year bar
   // on its own. v also has a step-parent (s, b.1780) whose own bio parent
   // (ss, b.1700-1800) overlaps s by 20 years, and s in turn overlaps v — a
@@ -381,7 +381,7 @@ test('handshakes: a step-parent\'s own ancestors are never treated as bloodline'
   // step edges counted as ancestry. graph.parents() returns step edges
   // alongside biological ones (it's qualifier-agnostic), so the walk must
   // explicitly skip qualifier 'step' or it would wrongly crown ss the
-  // viewer's "three handshakes from 1700" ancestor.
+  // viewer's "three living links from 1700" ancestor.
   const people = [
     { id: 'v', display_name: 'Vera', birth_date: '1990-01-01', is_deceased: false },
     { id: 'f', display_name: 'Fred', birth_date: '1960-01-01', is_deceased: false },
@@ -394,13 +394,13 @@ test('handshakes: a step-parent\'s own ancestors are never treated as bloodline'
     { id: 'r3', type: 'parent', from_person: 'ss', to_person: 's', qualifier: 'biological' },
   ];
   const g = buildGraph(people, rels);
-  const r = computeInsightModules(g, 'v').handshakes;
+  const r = computeInsightModules(g, 'v').livingLink;
   assert.equal(r, null, 'the only real ancestor line (f, b.1960) is too shallow — a step-line chain to ss must not substitute');
 });
 
-// ── Wave 3: handshakes to anyone ─────────────────────────────────────────────
-test('handshakesTo: direct parent/child overlap is a single hop, target first, viewer last', () => {
-  const r = handshakesTo(graph, 'g4_0', 'g3_0_0');
+// ── Wave 3: living link to anyone ────────────────────────────────────────────
+test('livingLinkTo: direct parent/child overlap is a single hop, target first, viewer last', () => {
+  const r = livingLinkTo(graph, 'g4_0', 'g3_0_0');
   assert.ok(r, 'g3_0_0 directly overlapped g4_0\'s early years');
   assert.equal(r.hops, 1);
   assert.equal(r.people.length, 2);
@@ -408,29 +408,29 @@ test('handshakesTo: direct parent/child overlap is a single hop, target first, v
   assert.equal(r.people[r.people.length - 1].id, 'g4_0');
 });
 
-test('handshakesTo: reaches the same 1820 founder the deep-time default finds, in no more hops', () => {
-  const founderId = mods.handshakes.people[0].id;
-  const r = handshakesTo(graph, 'g4_0', founderId);
+test('livingLinkTo: reaches the same 1820 founder the deep-time default finds, in no more hops', () => {
+  const founderId = mods.livingLink.people[0].id;
+  const r = livingLinkTo(graph, 'g4_0', founderId);
   assert.ok(r, 'a chain to the default\'s own target must exist');
   assert.equal(r.people[0].id, founderId);
   assert.equal(r.people[r.people.length - 1].id, 'g4_0');
-  assert.ok(r.hops <= mods.handshakes.hops, 'searching the whole tree can only match or beat the ancestor-only path');
+  assert.ok(r.hops <= mods.livingLink.hops, 'searching the whole tree can only match or beat the ancestor-only path');
 });
 
-test('handshakesTo: same person, or a person with no decidable dates, returns null', () => {
-  assert.equal(handshakesTo(graph, 'g4_0', 'g4_0'), null);
+test('livingLinkTo: same person, or a person with no decidable dates, returns null', () => {
+  assert.equal(livingLinkTo(graph, 'g4_0', 'g4_0'), null);
   const ghostPeople = [...people, { id: 'ghost', display_name: 'No Dates' }];
   const ghostGraph = buildGraph(ghostPeople, rels);
-  assert.equal(handshakesTo(ghostGraph, 'g4_0', 'ghost'), null);
+  assert.equal(livingLinkTo(ghostGraph, 'g4_0', 'ghost'), null);
 });
 
-test('handshakesTo: two people in disconnected, non-overlapping fragments find no chain', () => {
+test('livingLinkTo: two people in disconnected, non-overlapping fragments find no chain', () => {
   const isolated = [
     ...people,
     { id: 'iso1', display_name: 'Iso One', birth_date: '1400-01-01', death_date: '1450-01-01', is_deceased: true },
   ];
   const isoGraph = buildGraph(isolated, rels); // no relationship links iso1 to anyone
-  assert.equal(handshakesTo(isoGraph, 'g4_0', 'iso1'), null);
+  assert.equal(livingLinkTo(isoGraph, 'g4_0', 'iso1'), null);
 });
 
 test('bridges: the best split is a mid-chain G2 marriage link (35 vs 36)', () => {
@@ -483,7 +483,7 @@ test('trades: eras run from the railway age to Software engineer', () => {
     assert.equal(thin.names, null);
     assert.equal(thin.heartlands, null);
     assert.equal(thin.birthdays, null);
-    assert.equal(thin.handshakes, null, 'chain only 76 years deep — below the 90-year bar');
+    assert.equal(thin.livingLink, null, 'chain only 76 years deep — below the 90-year bar');
     assert.equal(thin.bridges, null);
     assert.equal(thin.records, null);
     assert.equal(thin.trades, null);
@@ -574,8 +574,8 @@ test('birthdays module: January-1st placeholders never inflate the month tally o
 
 test('highlights: pulls a compact digest from whatever modules rendered', () => {
   const h = buildInsightHighlights(mods);
-  assert.ok(h.handshake);
-  assert.equal(h.handshake.earliestBirth, 1820);
+  assert.ok(h.livingLink);
+  assert.equal(h.livingLink.earliestBirth, 1820);
   assert.ok(h.bridge);
   assert.ok(h.longestMarriage);
   assert.match(h.longestMarriage, /45 years/);
@@ -758,25 +758,25 @@ test('personHighlight: record holder — returns that record\'s own headline, no
   assert.equal(personHighlight(graph, 'g4_0', rec.personId, mods), rec.title);
 });
 
-test('personHighlight: falls back to a handshake fact once a target holds no twin/record fact', () => {
+test('personHighlight: falls back to a living-link fact once a target holds no twin/record fact', () => {
   const excluded = new Set([
     'g4_0',
     ...mods.records.pool.map((r) => r.personId),
     ...mods.birthdays.twins.flatMap((t) => [t.aId, t.bId]),
   ]);
   const candidate = graph.people.find(
-    (p) => !excluded.has(p.id) && (handshakesTo(graph, 'g4_0', p.id)?.hops ?? 0) >= 2,
+    (p) => !excluded.has(p.id) && (livingLinkTo(graph, 'g4_0', p.id)?.hops ?? 0) >= 2,
   );
   assert.ok(candidate, 'fixture sanity: some non-record, non-twin person should be a multi-hop chain away');
   const fact = personHighlight(graph, 'g4_0', candidate.id, mods);
-  assert.ok(fact?.startsWith("You're ") && fact.includes('handshakes from'), `expected a handshake fact, got: ${fact}`);
+  assert.ok(fact?.startsWith("You're ") && fact.includes('living links from'), `expected a living-link fact, got: ${fact}`);
 });
 
 test('personHighlight: null for a merely one-hop relative — true, but not a "fact"', () => {
   // Siblings, both living — a direct overlap edge, hops === 1. Not surprising
   // enough to be worth a sentence, so this should stay quiet rather than say
-  // "you're 1 handshake from your own brother."
-  assert.equal(handshakesTo(graph, 'g4_0', 'g4_1')?.hops, 1);
+  // "you're 1 living link from your own brother."
+  assert.equal(livingLinkTo(graph, 'g4_0', 'g4_1')?.hops, 1);
   assert.equal(personHighlight(graph, 'g4_0', 'g4_1', mods), null);
 });
 
@@ -967,7 +967,7 @@ test('highlightCandidates: every populated module in the rich fixture contribute
   // of richTree()'s naming scheme, not something deliberately engineered
   // in. centenarians ALSO incidentally qualifies: g3_0_0's own 1890 birth
   // to a deliberately-set 1992 death (see richTree()'s own comment on that
-  // date, planted for the handshake-chain test) happens to land at age
+  // date, planted for the living-link-chain test) happens to land at age
   // 102. missingRecords contributes its OWN two independent candidates —
   // richTree() never sets `.photo` on anyone (72 missing), and g4_0's real
   // ancestor chain runs out at the G1 founders, who have no parents
@@ -977,17 +977,17 @@ test('highlightCandidates: every populated module in the rich fixture contribute
   // fixture (Cardiff only spans G2's later half + G3) — but
   // birthdayMonthMate DOES: every G4 person shares March with the rest of
   // G4 (an incidental side effect of richTree()'s deliberately March-heavy
-  // dates for the handshake/twin tests, not something engineered for this
+  // dates for the living-link/twin tests, not something engineered for this
   // one) — 17 of the 26 possible candidates (missingRecords can contribute
   // up to 2 on its own).
   assert.equal(candidates.length, 17);
   assert.ok(candidates.every((c) => typeof c === 'string' && c.length > 0));
 });
 
-test('highlightCandidates: handshakes phrases as "N handshakes from {firstName}, born in {year}"', () => {
+test('highlightCandidates: livingLink phrases as "Just N living links from {firstName}, born in {year}"', () => {
   const candidates = highlightCandidates(mods);
-  const h = mods.handshakes;
-  const expected = `You're only ${h.hops} handshakes from ${h.people[0].firstName}, born in ${h.people[0].birth}.`;
+  const h = mods.livingLink;
+  const expected = `Just ${h.hops} living links from ${h.people[0].firstName}, born in ${h.people[0].birth}.`;
   assert.ok(candidates.includes(expected), `expected to find: ${expected}`);
 });
 
@@ -1024,13 +1024,13 @@ test('highlightCandidates: serviceRecords phrases count + generations, singular/
   assert.deepEqual(many, ['3 family members have a documented military service record, spanning 2 generations.']);
 });
 
-test('highlightCandidates: handshakes is absent (not crashing) when computed without a viewer, but strata still renders', () => {
+test('highlightCandidates: livingLink is absent (not crashing) when computed without a viewer, but strata still renders', () => {
   // Mirrors the home hub's own call site: computeInsightModules(graph, null).
   const homeHubMods = computeInsightModules(graph, null);
-  assert.equal(homeHubMods.handshakes, null, 'handshakes has no meaning without a viewer');
+  assert.equal(homeHubMods.livingLink, null, 'livingLink has no meaning without a viewer');
   assert.ok(homeHubMods.strata, 'strata is tree-wide, not viewer-specific — should still render');
   const candidates = highlightCandidates(homeHubMods);
-  assert.ok(!candidates.some((c) => c.includes('handshake')));
+  assert.ok(!candidates.some((c) => c.includes('living link')));
   assert.ok(candidates.some((c) => c.includes('generations —')), 'strata\'s candidate should still be offered');
 });
 
@@ -1672,7 +1672,7 @@ const TODAY = new Date('2024-06-15T12:00:00Z');
 test('pickTodaysFamilyMoment: a real birthday TODAY wins unconditionally over a rich scored pool', () => {
   const m = computeInsightModules(graph, 'g4_0', TODAY.getTime());
   // richTree()'s own fixture has plenty of high-weight candidates (records,
-  // handshakes, etc.) already computed in `m` — proving the birthday still
+  // livingLink, etc.) already computed in `m` — proving the birthday still
   // wins even against real competition, not just an empty pool.
   const people = [...graph.people, { id: 'bday_person', display_name: 'Birthday Person', birth_date: '1990-06-15' }];
   const bdayGraph = buildGraph(people, graph.relationships);
@@ -1698,13 +1698,50 @@ test('pickTodaysFamilyMoment: a wedding anniversary TODAY wins when there is no 
   assert.match(pick.text, /34 years since Anna and Ben married/);
 });
 
-test('pickTodaysFamilyMoment: falls back to the top-scored candidate when nothing is happening today', () => {
+test('pickTodaysFamilyMoment: falls back to the top-scored PERSONAL candidate when nothing is happening today', () => {
   const pick = pickTodaysFamilyMoment(graph, 'g4_0', TODAY.getTime(), mods);
-  assert.ok(pick, 'the rich fixture always has SOME scored candidate');
+  assert.ok(pick, 'the rich fixture always has SOME scored personal candidate');
   assert.notEqual(pick.key, 'birthdayToday');
   assert.notEqual(pick.key, 'anniversaryToday');
-  const ranked = rankCandidates(highlightCandidatesDetailed(mods), { now: TODAY.getTime() });
-  assert.equal(pick.key, ranked[0].key, 'must match rankCandidates\' own top pick exactly');
+  assert.ok(PERSONAL_CATEGORIES.has(pick.key), `expected a personal-category pick, got: ${pick.key}`);
+  const personalOnly = highlightCandidatesDetailed(mods).filter((c) => PERSONAL_CATEGORIES.has(c.key));
+  const ranked = rankCandidates(personalOnly, { now: TODAY.getTime() });
+  assert.equal(pick.key, ranked[0].key, 'must match rankCandidates\' own top pick exactly, among personal candidates only');
+});
+
+test('pickTodaysFamilyMoment: never picks a trivia/structural category, even when one outranks every personal candidate on raw weight', () => {
+  // livingLink (weight 3, deliberately low) and records (weight 8) both
+  // qualify in the rich fixture — records is personal (a specific person's
+  // own record) and should be free to win; livingLink is trivia and must
+  // never be picked regardless of where it'd rank unfiltered.
+  const pick = pickTodaysFamilyMoment(graph, 'g4_0', TODAY.getTime(), mods);
+  assert.ok(pick);
+  assert.notEqual(pick.key, 'livingLink');
+  assert.notEqual(pick.key, 'strata');
+  assert.notEqual(pick.key, 'surnames');
+  assert.notEqual(pick.key, 'heartlands');
+  assert.notEqual(pick.key, 'trades');
+});
+
+test('PERSONAL_CATEGORIES: every key it lists is one highlightCandidatesDetailed can actually key a candidate as', () => {
+  // A pure sanity check against typos/renames — every add(key, ...) call
+  // site in the source is enumerated here directly (not derived from one
+  // fixture's coverage, since not every category naturally occurs in any
+  // single synthetic tree, e.g. twinBirths). A stale key in
+  // PERSONAL_CATEGORIES after a future rename would silently starve the
+  // banner of a whole category with no visible error anywhere, so this
+  // guards that the two lists are never allowed to drift apart.
+  const allAddKeys = new Set([
+    'giftOfYears', 'bridges', 'names', 'heartlands', 'trades', 'birthdays',
+    'birthdayMonthMate', 'records', 'parenthood', 'livingLink', 'strata',
+    'fullestYear', 'brood', 'serviceRecords', 'surnames', 'livingGenerations',
+    'twinBirths', 'newArrivals', 'blendedFamily', 'tradeLineage', 'centenarians',
+    'missingRecords', 'sameAgeMarriages', 'closestCousinsByAge',
+    'sharedBirthplaceGenerations', 'nearbyRelatives', 'forgottenPeople',
+  ]);
+  for (const key of PERSONAL_CATEGORIES) {
+    assert.ok(allAddKeys.has(key), `PERSONAL_CATEGORIES has "${key}", which no longer matches any real candidate key`);
+  }
 });
 
 test('pickTodaysFamilyMoment: null when there is nothing today AND no candidates qualify at all', () => {

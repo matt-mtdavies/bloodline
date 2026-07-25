@@ -53,9 +53,9 @@ export async function onRequestPost({ request, env, data }) {
   // same grounding rule applies: specific, computed facts, not embellishment
   // prompts. Not every tree will have all of these.
   const h = agg.highlights;
-  if (h?.handshake) {
-    lines.push(`Chain of overlapping lifespans back to the earliest reachable ancestor: ${h.handshake.hops} hop(s) to ${h.handshake.earliestName}, born ${h.handshake.earliestBirth}.`);
-    if (h.handshake.anchor) lines.push(`A world event near that ancestor's birth year: ${h.handshake.anchor}`);
+  if (h?.livingLink) {
+    lines.push(`Chain of overlapping lifespans back to the earliest reachable ancestor: ${h.livingLink.hops} hop(s) to ${h.livingLink.earliestName}, born ${h.livingLink.earliestBirth}.`);
+    if (h.livingLink.anchor) lines.push(`A world event near that ancestor's birth year: ${h.livingLink.anchor}`);
   }
   if (h?.lifespanGain) {
     lines.push(`Average lifespan rose from ${h.lifespanGain.firstAvg} years (born ${h.lifespanGain.firstDecade}s) to ${h.lifespanGain.lastAvg} years (born ${h.lifespanGain.lastDecade}s).`);
