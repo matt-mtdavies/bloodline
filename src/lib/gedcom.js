@@ -310,6 +310,17 @@ function gedcomName(p) {
       ? p.display_name.replace(new RegExp('\\s*' + family.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*$'), '').trim()
       : p.display_name.trim();
   }
+  // Weave in middle_name — a separately-edited field (EditPersonSheet.jsx),
+  // distinct from given_names, that was never being consulted here at all:
+  // a person created in-app (given_names empty, given derived from the
+  // short display_name) lost their middle name from every export. Same
+  // "don't duplicate if it's already there" rule lib/profile.js's
+  // fullName() uses for the profile heading, since a re-exported person's
+  // given_names may already have absorbed it on a prior import.
+  const middle = (p.middle_name || '').trim();
+  if (middle && !given.toLowerCase().includes(middle.toLowerCase())) {
+    given = given ? `${given} ${middle}` : middle;
+  }
   return { given, family, nameLine: `${given} /${family}/`.trim() };
 }
 
