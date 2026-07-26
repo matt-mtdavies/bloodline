@@ -3,8 +3,9 @@
  * bloodline store-compatible people[] and relationships[] arrays.
  *
  * Supports: INDI, FAM, NAME (with /surname/ notation), GIVN/SURN sub-tags,
- * BIRT/DEAT events, OCCU, RESI, NOTE (bio), PEDI adoption qualifier, DIV,
- * MARR (marriage date + place onto the partner edge).
+ * BIRT/DEAT events, OCCU, RESI (every occurrence, into residences[]/Places
+ * Lived — see parseResidencePeriod/formatResidencePeriod), NOTE (bio), PEDI
+ * adoption qualifier, DIV, MARR (marriage date + place onto the partner edge).
  * Date parsing: exact "D MMM YYYY" dates become full ISO (YYYY-MM-DD) so
  * imported people get real birthdays; partial/approximate dates degrade to
  * month+year or year, never faking a day.
@@ -20,6 +21,7 @@ import { normalizeGender } from './gender.js';
 
 const uid = () => 'p_' + Math.random().toString(36).slice(2, 9);
 const rid = () => 'r_' + Math.random().toString(36).slice(2, 9);
+const residenceId = () => 'res_' + Math.random().toString(36).slice(2, 9);
 
 // Parse flat GEDCOM lines into a hierarchy of nodes.
 function parseTree(text) {
@@ -101,6 +103,20 @@ function parseGedcomDate(dateStr) {
   return year;
 }
 
+// Parses a GEDCOM residence-event DATE into a { from, to } year pair. Unlike
+// BIRT/DEAT (a single point in time), RESI commonly expresses a SPAN — "FROM
+// 1980 TO 1988" — and residences[] (src/data/store.js) needs both ends, not
+// just one. A bare year, or a lone FROM/ABT/BEF/AFT, yields just `from` with
+// `to: null` (an ongoing or unknown-end stay) — never a fabricated end year.
+function parseResidencePeriod(dateStr) {
+  if (!dateStr) return { from: null, to: null };
+  const s = String(dateStr).trim();
+  const years = [...s.matchAll(/\d{4}/g)].map((m) => Number(m[0]));
+  if (!years.length) return { from: null, to: null };
+  if (years.length >= 2 && (/\bTO\b/i.test(s) || /\bAND\b/i.test(s))) return { from: years[0], to: years[1] };
+  return { from: years[0], to: null };
+}
+
 // Parse "John /Smith/" → { given, family, display }
 function parseName(raw) {
   if (!raw) return { given: '', family: '', display: '' };
@@ -172,9 +188,27 @@ export function gedcomToStore(text) {
     // Occupation (first OCCU tag)
     const occupation = child(node, 'OCCU')?.value?.trim() || null;
 
-    // Residence — prefer PLAC sub-tag, fall back to tag value
+    // Residence — prefer PLAC sub-tag, fall back to tag value. Deliberately
+    // still reads only the FIRST RESI tag here, unchanged — this is the
+    // app's single "current/most recent place" scalar field, distinct from
+    // residences[] below which captures every RESI GEDCOM actually carries.
     const resiNode = child(node, 'RESI');
     const residence = child(resiNode, 'PLAC')?.value?.trim() || resiNode?.value?.trim() || null;
+
+    // Places Lived (residences[]) — GEDCOM's RESI tag is repeatable, each
+    // with its own DATE/PLAC, a near-exact match for this app's chronological
+    // residence history. A RESI with no resolvable place is skipped (nothing
+    // useful to record); a RESI with a place but no DATE still imports, with
+    // both years left null (an undated stay, same as a person adding one by
+    // hand without years — see PlaceForm, though that form requires a year;
+    // an imported record can't be forced to guess one GEDCOM never gave it).
+    const residences = [];
+    for (const rNode of children(node, 'RESI')) {
+      const place = child(rNode, 'PLAC')?.value?.trim() || rNode?.value?.trim() || null;
+      if (!place) continue;
+      const { from, to } = parseResidencePeriod(child(rNode, 'DATE')?.value);
+      residences.push({ id: residenceId(), place, from_year: from, to_year: to, lat: null, lon: null, suburb: null, state: null, country: null });
+    }
 
     // Bio from NOTE (first one; GEDCOM allows many)
     const bio = noteText(children(node, 'NOTE')[0] ?? null);
@@ -192,6 +226,7 @@ export function gedcomToStore(text) {
       is_minor: false,
       birth_place: birthPlace,
       residence,
+      residences,
       occupation,
       tags: [],
       events: [],
@@ -299,6 +334,17 @@ function formatGedcomDate(iso) {
   const month = MONTH_ABBR[Number(mo) - 1];
   if (d) return `${Number(d)} ${month} ${y}`;
   return `${month} ${y}`;
+}
+
+// Inverse of parseResidencePeriod — a residences[] entry's from/to years
+// become a GEDCOM period DATE ("FROM 1980 TO 1988"), an open-ended "FROM
+// 1980" when there's no end year yet, or nothing at all when neither year
+// is known (the PLAC still gets written either way).
+function formatResidencePeriod(fromYear, toYear) {
+  if (fromYear != null && toYear != null) return `FROM ${fromYear} TO ${toYear}`;
+  if (fromYear != null) return `FROM ${fromYear}`;
+  if (toYear != null) return `TO ${toYear}`;
+  return null;
 }
 
 // Reconstruct "Given /Surname/" from the person's name fields.
@@ -432,7 +478,23 @@ export function storeToGedcom(people = [], relationships = []) {
       if (dd) { put('1 DEAT'); put(`2 DATE ${dd}`); } else put('1 DEAT Y');
     }
     if (p.occupation) put(`1 OCCU ${p.occupation}`);
-    if (p.residence) { put('1 RESI'); put(`2 PLAC ${p.residence}`); }
+    // residences[] (Places Lived), when present, is the fuller record — one
+    // RESI per entry, each with its own period DATE where known. Falls back
+    // to the single scalar `residence` field only when residences[] is empty
+    // (a person who's never used the new Places Lived editor still exports
+    // their one current place, exactly as before this feature existed).
+    if (p.residences?.length) {
+      for (const r of p.residences) {
+        if (!r.place) continue;
+        put('1 RESI');
+        const period = formatResidencePeriod(r.from_year, r.to_year);
+        if (period) put(`2 DATE ${period}`);
+        put(`2 PLAC ${r.place}`);
+      }
+    } else if (p.residence) {
+      put('1 RESI');
+      put(`2 PLAC ${p.residence}`);
+    }
     if (p.bio) {
       const bioLines = String(p.bio).split('\n');
       put(`1 NOTE ${bioLines[0]}`);

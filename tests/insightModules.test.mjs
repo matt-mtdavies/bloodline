@@ -723,6 +723,44 @@ test('records: a grandchild born after a grandparent died surfaces as "never met
   assert.match(entry.detail, /3 grandchildren/);
 });
 
+test('records: most well-traveled surfaces from residences[], with a leaderboard, dedupe applied', () => {
+  const people = [
+    {
+      id: 'nomad', display_name: 'Nomad One', birth_date: '1950-01-01',
+      residences: [
+        { id: 'r1', place: 'Fremantle, Western Australia' },
+        { id: 'r2', place: 'fremantle, western australia' }, // same place, different casing — must not double-count
+        { id: 'r3', place: 'Cardiff, Wales' },
+        { id: 'r4', place: 'Toronto, Canada' },
+      ],
+    },
+    { id: 'settled', display_name: 'Settled One', birth_date: '1952-01-01', residences: [{ id: 'r5', place: 'One Town' }] },
+    // An unrelated long marriage, just to clear records()'s "2+ pool entries" floor.
+    { id: 'm1', display_name: 'Married One', birth_date: '1900-01-01' },
+    { id: 'm2', display_name: 'Married Two', birth_date: '1902-01-01' },
+  ];
+  const rels = [uRel('m1', 'm2', '1930-01-01')];
+  const graph = buildGraph(people, rels);
+  const mods = computeInsightModules(graph, 'nomad');
+  const entry = mods.records?.records?.find((r) => r.key === 'wellTraveled');
+  assert.ok(entry, 'expected a wellTraveled record from the nomad with 3 distinct places');
+  assert.equal(entry.personId, 'nomad');
+  assert.match(entry.title, /3 places called home/, 'the duplicate-cased entry must not inflate the count to 4');
+});
+
+test('records: no wellTraveled record when nobody has 3+ distinct places', () => {
+  const people = [
+    { id: 'a', display_name: 'A', birth_date: '1950-01-01', residences: [{ id: 'r1', place: 'Town A' }, { id: 'r2', place: 'Town B' }] },
+    { id: 'm1', display_name: 'Married One', birth_date: '1900-01-01' },
+    { id: 'm2', display_name: 'Married Two', birth_date: '1902-01-01' },
+  ];
+  const rels = [uRel('m1', 'm2', '1930-01-01')];
+  const graph = buildGraph(people, rels);
+  const mods = computeInsightModules(graph, 'a');
+  const entry = mods.records?.records?.find((r) => r.key === 'wellTraveled');
+  assert.equal(entry, undefined, 'only 2 distinct places — below the 3-place floor');
+});
+
 test('records: a lone never-met pair (below the 3-instance floor) does not surface', () => {
   const people = [
     { id: 'gp', display_name: 'Grandpa', birth_date: '1900-01-01', is_deceased: true, death_date: '1960-01-01' },

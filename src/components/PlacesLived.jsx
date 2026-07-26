@@ -25,9 +25,11 @@ import { geocodePlace } from '../lib/places.js';
  * family history actually needs).
  *
  * Geocoding (lib/places.js) is best-effort and optional: a residence saves
- * immediately on the place/year fields alone, and lat/lon fill in
- * afterward if geocoding succeeds — the chain and cards never depend on
- * having coordinates at all.
+ * immediately on the place/year fields alone, and lat/lon — plus a
+ * suburb/state/country breakdown, for reliably GROUPING places later (an
+ * insight, a future filter) rather than matching on raw free-typed spelling —
+ * fill in afterward if geocoding succeeds. The chain and cards never depend
+ * on having any of that.
  */
 export default function PlacesLived({ person, canEdit, onAddResidence, onUpdateResidence, onRemoveResidence }) {
   const [adding, setAdding] = useState(false);
@@ -43,13 +45,13 @@ export default function PlacesLived({ person, canEdit, onAddResidence, onUpdateR
   const handleAdd = async (fields) => {
     setAdding(false);
     const geo = await geocodePlace(fields.place);
-    onAddResidence({ ...fields, lat: geo?.lat ?? null, lon: geo?.lon ?? null });
+    onAddResidence({ ...fields, ...geoFields(geo) });
   };
 
   const handleUpdate = async (id, fields) => {
     setEditingId(null);
     const geo = await geocodePlace(fields.place);
-    onUpdateResidence(id, { ...fields, lat: geo?.lat ?? null, lon: geo?.lon ?? null });
+    onUpdateResidence(id, { ...fields, ...geoFields(geo) });
   };
 
   return (
@@ -138,6 +140,15 @@ export default function PlacesLived({ person, canEdit, onAddResidence, onUpdateR
       )}
     </section>
   );
+}
+
+// Pulls just the fields a successful (or failed) geocode contributes, so a
+// residence always ends up with a consistent shape regardless of whether
+// geocoding actually ran — a failure (geo === null) still saves the place/
+// year fields alone, with every geocoded field explicitly null rather than
+// simply absent.
+function geoFields(geo) {
+  return { lat: geo?.lat ?? null, lon: geo?.lon ?? null, suburb: geo?.suburb ?? null, state: geo?.state ?? null, country: geo?.country ?? null };
 }
 
 function formatRange(fromYear, toYear) {

@@ -129,6 +129,110 @@ test('an Ancestry-style export (custom _APID/_MTTAG tags, OBJE media) parses and
   assert.equal(edge.marriage_place, 'Ottawa, Ontario, Canada');
 });
 
+// ── RESI → residences[] (Places Lived) ──────────────────────────────────────
+
+function withResi(resiLines) {
+  return `0 HEAD
+1 GEDC
+2 VERS 5.5.1
+0 @I1@ INDI
+1 NAME Ann /Lee/
+${resiLines}0 TRLR
+`;
+}
+
+test('a single RESI with a period DATE populates both residences[] and the scalar residence field', () => {
+  const store = gedcomToStore(withResi('1 RESI\n2 DATE FROM 1980 TO 1988\n2 PLAC Fountain Gate, Victoria\n'));
+  const p = store.people[0];
+  assert.equal(p.residence, 'Fountain Gate, Victoria', 'scalar field still reads the first RESI, unchanged');
+  assert.equal(p.residences.length, 1);
+  assert.equal(p.residences[0].place, 'Fountain Gate, Victoria');
+  assert.equal(p.residences[0].from_year, 1980);
+  assert.equal(p.residences[0].to_year, 1988);
+  assert.ok(p.residences[0].id, 'each residence gets a real id');
+});
+
+test('multiple RESI tags all import into residences[] — previously only the first RESI/PLAC survived at all', () => {
+  const ged = withResi(
+    '1 RESI\n2 DATE FROM 1980 TO 1988\n2 PLAC Fountain Gate, Victoria\n' +
+    '1 RESI\n2 DATE FROM 1988 TO 2001\n2 PLAC Fremantle, Western Australia\n' +
+    '1 RESI\n2 DATE FROM 2001\n2 PLAC Cardiff, Wales\n',
+  );
+  const p = gedcomToStore(ged).people[0];
+  assert.equal(p.residences.length, 3, 'every RESI tag imports, not just the first');
+  assert.equal(p.residences[1].place, 'Fremantle, Western Australia');
+  assert.equal(p.residences[1].from_year, 1988);
+  assert.equal(p.residences[1].to_year, 2001);
+  assert.equal(p.residences[2].place, 'Cardiff, Wales');
+  assert.equal(p.residences[2].to_year, null, 'an open-ended FROM-only period leaves to_year null, not fabricated');
+});
+
+test('a RESI with a BET...AND period is parsed as a from/to span', () => {
+  const p = gedcomToStore(withResi('1 RESI\n2 DATE BET 1990 AND 1995\n2 PLAC Perth, Australia\n')).people[0];
+  assert.equal(p.residences[0].from_year, 1990);
+  assert.equal(p.residences[0].to_year, 1995);
+});
+
+test('a RESI with a place but no DATE still imports, with both years left null', () => {
+  const p = gedcomToStore(withResi('1 RESI\n2 PLAC London, England\n')).people[0];
+  assert.equal(p.residences.length, 1);
+  assert.equal(p.residences[0].from_year, null);
+  assert.equal(p.residences[0].to_year, null);
+});
+
+test('a RESI with no resolvable place is skipped entirely, not recorded as an empty entry', () => {
+  const p = gedcomToStore(withResi('1 RESI\n2 DATE 1990\n')).people[0];
+  assert.equal(p.residences.length, 0);
+});
+
+test('no RESI tag at all leaves both residence and residences[] empty', () => {
+  const p = gedcomToStore(withResi('')).people[0];
+  assert.equal(p.residence, null);
+  assert.equal(p.residences.length, 0);
+});
+
+// ── residences[] → RESI (writer), and round-trip ────────────────────────────
+
+test('storeToGedcom emits one RESI/DATE/PLAC per residences[] entry, and it round-trips', () => {
+  const people = [{
+    id: 'a', display_name: 'Ann Lee', family_name: 'Lee', gender: 'female', birth_date: '1975',
+    residences: [
+      { id: 'res_1', place: 'Fountain Gate, Victoria', from_year: 1980, to_year: 1988 },
+      { id: 'res_2', place: 'Cardiff, Wales', from_year: 2001, to_year: null },
+    ],
+  }];
+  const ged = storeToGedcom(people, []);
+  assert.match(ged, /1 RESI\n2 DATE FROM 1980 TO 1988\n2 PLAC Fountain Gate, Victoria/);
+  assert.match(ged, /1 RESI\n2 DATE FROM 2001\n2 PLAC Cardiff, Wales/);
+
+  const back = gedcomToStore(ged).people[0];
+  assert.equal(back.residences.length, 2);
+  assert.equal(back.residences[0].place, 'Fountain Gate, Victoria');
+  assert.equal(back.residences[0].from_year, 1980);
+  assert.equal(back.residences[0].to_year, 1988);
+  assert.equal(back.residences[1].place, 'Cardiff, Wales');
+  assert.equal(back.residences[1].to_year, null);
+});
+
+test('storeToGedcom falls back to the scalar residence field when residences[] is empty (pre-Places-Lived data)', () => {
+  const people = [{ id: 'a', display_name: 'Ann Lee', family_name: 'Lee', gender: 'female', birth_date: '1975', residence: 'Perth, Australia', residences: [] }];
+  const ged = storeToGedcom(people, []);
+  assert.match(ged, /1 RESI\n2 PLAC Perth, Australia/);
+  assert.equal((ged.match(/1 RESI/g) || []).length, 1, 'only one RESI block — no duplicate from the unused scalar');
+});
+
+test('storeToGedcom prefers residences[] over the scalar field when both are set (never emits both)', () => {
+  const people = [{
+    id: 'a', display_name: 'Ann Lee', family_name: 'Lee', gender: 'female', birth_date: '1975',
+    residence: 'Stale current-residence string',
+    residences: [{ id: 'res_1', place: 'Cardiff, Wales', from_year: 2001, to_year: null }],
+  }];
+  const ged = storeToGedcom(people, []);
+  assert.equal((ged.match(/1 RESI/g) || []).length, 1, 'residences[] wins — the scalar is not also emitted');
+  assert.match(ged, /2 PLAC Cardiff, Wales/);
+  assert.doesNotMatch(ged, /Stale current-residence string/);
+});
+
 // ── Writer: storeToGedcom, and round-trip through the parser ────────────────
 
 // A controlled tree exercising the fields GEDCOM can carry: a married couple

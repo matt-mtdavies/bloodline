@@ -133,6 +133,32 @@ test('places requires two distinct places and dedupes case-insensitively', () =>
   assert.deepEqual(spread.places.map((p) => p.role), ['Born', 'Married', 'Lived']);
 });
 
+test('places prefers residences[] over the scalar residence field, as a dated chronological sequence', () => {
+  const g = buildGraph([P('a', {
+    birth_place: 'Melbourne, Australia',
+    residence: 'Should not appear — residences[] takes over',
+    residences: [
+      { id: 'r2', place: 'Fremantle, Western Australia', from_year: 1988, to_year: 2001 },
+      { id: 'r1', place: 'Fountain Gate, Victoria', from_year: 1980, to_year: 1988 }, // out of order on purpose
+      { id: 'r3', place: 'Cardiff, Wales', from_year: 2001, to_year: null },
+    ],
+  })], []);
+  const spread = keepsakeSpreads(g, 'a', {}).find((s) => s.key === 'places');
+  assert.deepEqual(spread.places.map((p) => p.place), [
+    'Melbourne, Australia', 'Fountain Gate, Victoria', 'Fremantle, Western Australia', 'Cardiff, Wales',
+  ], 'residences[] entries sort chronologically by from_year, regardless of array order');
+  assert.deepEqual(spread.places.map((p) => p.year), [null, 1980, 1988, 2001]);
+  assert.ok(!spread.places.some((p) => p.place.includes('Should not appear')), 'the scalar residence field is not also emitted when residences[] is present');
+});
+
+test('places falls back to the single dateless "Lived" entry when residences[] is empty (pre-Places-Lived data)', () => {
+  const g = buildGraph([P('a', { birth_place: 'Cardiff', residence: 'Melbourne, Australia', residences: [] })], []);
+  const spread = keepsakeSpreads(g, 'a', {}).find((s) => s.key === 'places');
+  const lived = spread.places.find((p) => p.role === 'Lived');
+  assert.equal(lived.place, 'Melbourne, Australia');
+  assert.equal(lived.year, null);
+});
+
 test('the record spread skips rows with nothing on record', () => {
   const g = buildGraph([P('solo', { name: 'Solo', occupation: 'Baker' })], []);
   const record = keepsakeSpreads(g, 'solo', {}).find((s) => s.key === 'record');

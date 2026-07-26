@@ -2110,9 +2110,9 @@ export function updateCondition(personId, conditionId, fields) {
 // then; the id-based add/update/remove trio mirrors addCondition/
 // removeCondition/updateCondition above exactly, the established
 // convention for a small, freely-editable array of dated records.
-export function addResidence(personId, { place, from_year = null, to_year = null, lat = null, lon = null }) {
+export function addResidence(personId, { place, from_year = null, to_year = null, lat = null, lon = null, suburb = null, state: stateName = null, country = null }) {
   const person = state.people.find((p) => p.id === personId);
-  const residence = { id: cid(), place, from_year, to_year, lat, lon };
+  const residence = { id: cid(), place, from_year, to_year, lat, lon, suburb, state: stateName, country };
   commit(withActivity({
     ...state,
     people: state.people.map((p) =>

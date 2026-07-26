@@ -1371,6 +1371,7 @@ function RecordIcon({ name }) {
     case 'seedling': return (<svg {...p}><path d="M12 21v-8M12 13c0-4 3-6 7-6 0 4-3 6-7 6zM12 11c0-4-3-6-7-6 0 4 3 6 7 6z" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>);
     case 'gap': return (<svg {...p}><circle cx="7" cy="12" r="3.2" stroke="currentColor" strokeWidth="1.7" /><circle cx="17" cy="12" r="4.6" stroke="currentColor" strokeWidth="1.7" /><path d="M11 12h2" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeDasharray="0.5 2.5" /></svg>);
     case 'hourglass': return (<svg {...p}><path d="M6 3h12M6 21h12M7 3c0 4 3.5 5.5 5 6.5V12c-1.5 1-5 2.5-5 6.5M17 3c0 4-3.5 5.5-5 6.5V12c1.5 1 5 2.5 5 6.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>);
+    case 'compass': return (<svg {...p}><circle cx="12" cy="12" r="8.5" stroke="currentColor" strokeWidth="1.7" /><path d="M14.8 9.2l-1.6 4-4 1.6 1.6-4 4-1.6z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" /></svg>);
     case 'heart': default: return (<svg {...p}><path d="M12 20s-7-4.5-9.2-9C1.3 8 3 4.5 6.3 4.5c2 0 3.2 1.3 3.7 2.2.5-.9 1.7-2.2 3.7-2.2C20 4.5 21.7 8 21.2 11 19 15.5 12 20 12 20z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" /></svg>);
   }
 }
