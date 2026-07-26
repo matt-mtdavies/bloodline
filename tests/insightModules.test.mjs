@@ -6,7 +6,7 @@
  */
 import assert from 'node:assert/strict';
 import { buildGraph } from '../src/data/graph.js';
-import { computeInsightModules, computeThisMonth, buildInsightHighlights, aliveInYear, livingLinkTo, personHighlight, highlightCandidates, highlightCandidatesDetailed, scoreCandidate, rankCandidates, pickDailyHighlight, pickTodaysFamilyMoment, PERSONAL_CATEGORIES, dayIndex, seededShuffle } from '../src/lib/insightModules.js';
+import { computeInsightModules, computeThisMonth, buildInsightHighlights, aliveInYear, livingLinkTo, personHighlight, highlightCandidates, highlightCandidatesDetailed, scoreCandidate, rankCandidates, pickDailyHighlight, pickTodaysFamilyMoment, dayIndex, seededShuffle } from '../src/lib/insightModules.js';
 import { distancesFrom } from '../src/data/graph.js';
 
 let passed = 0, failed = 0;
@@ -1669,107 +1669,71 @@ test('rankCandidates: real distancesFrom() output plugs in directly and biases t
 
 const TODAY = new Date('2024-06-15T12:00:00Z');
 
-test('pickTodaysFamilyMoment: a real birthday TODAY wins unconditionally over a rich scored pool', () => {
-  const m = computeInsightModules(graph, 'g4_0', TODAY.getTime());
-  // richTree()'s own fixture has plenty of high-weight candidates (records,
-  // livingLink, etc.) already computed in `m` — proving the birthday still
-  // wins even against real competition, not just an empty pool.
+test('pickTodaysFamilyMoment: a real birthday TODAY is returned as a one-item array', () => {
   const people = [...graph.people, { id: 'bday_person', display_name: 'Birthday Person', birth_date: '1990-06-15' }];
   const bdayGraph = buildGraph(people, graph.relationships);
-  const bdayModules = computeInsightModules(bdayGraph, 'g4_0', TODAY.getTime());
-  const pick = pickTodaysFamilyMoment(bdayGraph, 'g4_0', TODAY.getTime(), bdayModules);
-  assert.ok(pick, 'should return a moment');
-  assert.equal(pick.key, 'birthdayToday');
-  assert.equal(pick.personId, 'bday_person');
-  assert.match(pick.text, /Birthday Person's birthday today — turning 34/);
+  const pick = pickTodaysFamilyMoment(bdayGraph, TODAY.getTime());
+  assert.ok(pick, 'should return a moment array');
+  assert.equal(pick.length, 1);
+  assert.equal(pick[0].key, 'birthdayToday');
+  assert.equal(pick[0].personId, 'bday_person');
+  assert.match(pick[0].text, /Birthday Person's birthday today — turning 34/);
 });
 
-test('pickTodaysFamilyMoment: a wedding anniversary TODAY wins when there is no birthday today', () => {
+test('pickTodaysFamilyMoment: a wedding anniversary TODAY is included when there is no birthday today', () => {
   const people = [
     { id: 'a', display_name: 'Anna', birth_date: '1960-01-01' },
     { id: 'b', display_name: 'Ben', birth_date: '1962-01-01' },
   ];
   const rels = [{ id: 'r1', type: 'partner', from_person: 'a', to_person: 'b', partner_status: 'current', is_married: true, marriage_date: '1990-06-15' }];
   const g = buildGraph(people, rels);
-  const modules = computeInsightModules(g, null, TODAY.getTime());
-  const pick = pickTodaysFamilyMoment(g, null, TODAY.getTime(), modules);
+  const pick = pickTodaysFamilyMoment(g, TODAY.getTime());
   assert.ok(pick);
-  assert.equal(pick.key, 'anniversaryToday');
-  assert.match(pick.text, /34 years since Anna and Ben married/);
+  assert.equal(pick.length, 1);
+  assert.equal(pick[0].key, 'anniversaryToday');
+  assert.match(pick[0].text, /34 years since Anna and Ben married/);
 });
 
-test('pickTodaysFamilyMoment: falls back to the top-scored PERSONAL candidate when nothing is happening today', () => {
-  const pick = pickTodaysFamilyMoment(graph, 'g4_0', TODAY.getTime(), mods);
-  assert.ok(pick, 'the rich fixture always has SOME scored personal candidate');
-  assert.notEqual(pick.key, 'birthdayToday');
-  assert.notEqual(pick.key, 'anniversaryToday');
-  assert.ok(PERSONAL_CATEGORIES.has(pick.key), `expected a personal-category pick, got: ${pick.key}`);
-  const personalOnly = highlightCandidatesDetailed(mods).filter((c) => PERSONAL_CATEGORIES.has(c.key));
-  const ranked = rankCandidates(personalOnly, { now: TODAY.getTime() });
-  assert.equal(pick.key, ranked[0].key, 'must match rankCandidates\' own top pick exactly, among personal candidates only');
-});
-
-test('pickTodaysFamilyMoment: never picks a trivia/structural category, even when one outranks every personal candidate on raw weight', () => {
-  // livingLink (weight 3, deliberately low) and records (weight 8) both
-  // qualify in the rich fixture — records is personal (a specific person's
-  // own record) and should be free to win; livingLink is trivia and must
-  // never be picked regardless of where it'd rank unfiltered.
-  const pick = pickTodaysFamilyMoment(graph, 'g4_0', TODAY.getTime(), mods);
-  assert.ok(pick);
-  assert.notEqual(pick.key, 'livingLink');
-  assert.notEqual(pick.key, 'strata');
-  assert.notEqual(pick.key, 'surnames');
-  assert.notEqual(pick.key, 'heartlands');
-  assert.notEqual(pick.key, 'trades');
-});
-
-test('pickTodaysFamilyMoment: falls back to a trivia candidate rather than showing nothing, when zero personal candidates qualify', () => {
-  // A lone person with no photo: no marriage, no children, no cousins, no
-  // twins, nobody to share a birthday month with — every PERSONAL_CATEGORIES
-  // entry is null. missingRecords (trivia) still qualifies (no minimum
-  // count beyond "at least one" missing photo), so the fallback should
-  // surface THAT rather than returning null — real feedback was that a
-  // silent banner reads as broken, not as "correctly nothing personal to
-  // say today."
-  const people = [{ id: 'lone', display_name: 'Lone Person' }];
+test('pickTodaysFamilyMoment: two birthdays on the same day both come back, not just the first', () => {
+  const people = [
+    { id: 'a', display_name: 'Keira', birth_date: '1994-06-15' },
+    { id: 'b', display_name: 'Sam', birth_date: '2001-06-15' },
+  ];
   const g = buildGraph(people, []);
-  const modules = computeInsightModules(g, 'lone', TODAY.getTime());
-  const pick = pickTodaysFamilyMoment(g, 'lone', TODAY.getTime(), modules);
-  assert.ok(pick, 'must fall back to SOMETHING rather than null, since a trivia candidate does qualify');
-  assert.equal(pick.key, 'missingRecords');
-  assert.ok(!PERSONAL_CATEGORIES.has(pick.key), 'sanity: this really is exercising the trivia fallback, not a personal hit');
+  const pick = pickTodaysFamilyMoment(g, TODAY.getTime());
+  assert.ok(pick);
+  assert.equal(pick.length, 2, 'must not drop the second same-day birthday');
+  const names = pick.map((m) => m.text);
+  assert.ok(names.some((t) => t.includes('Keira')));
+  assert.ok(names.some((t) => t.includes('Sam')));
 });
 
-test('PERSONAL_CATEGORIES: every key it lists is one highlightCandidatesDetailed can actually key a candidate as', () => {
-  // A pure sanity check against typos/renames — every add(key, ...) call
-  // site in the source is enumerated here directly (not derived from one
-  // fixture's coverage, since not every category naturally occurs in any
-  // single synthetic tree, e.g. twinBirths). A stale key in
-  // PERSONAL_CATEGORIES after a future rename would silently starve the
-  // banner of a whole category with no visible error anywhere, so this
-  // guards that the two lists are never allowed to drift apart.
-  const allAddKeys = new Set([
-    'giftOfYears', 'bridges', 'names', 'heartlands', 'trades', 'birthdays',
-    'birthdayMonthMate', 'records', 'parenthood', 'livingLink', 'strata',
-    'fullestYear', 'brood', 'serviceRecords', 'surnames', 'livingGenerations',
-    'twinBirths', 'newArrivals', 'blendedFamily', 'tradeLineage', 'centenarians',
-    'missingRecords', 'sameAgeMarriages', 'closestCousinsByAge',
-    'sharedBirthplaceGenerations', 'nearbyRelatives', 'forgottenPeople',
-  ]);
-  for (const key of PERSONAL_CATEGORIES) {
-    assert.ok(allAddKeys.has(key), `PERSONAL_CATEGORIES has "${key}", which no longer matches any real candidate key`);
-  }
+test('pickTodaysFamilyMoment: a same-day birthday and anniversary both come back, birthdays first', () => {
+  const people = [
+    { id: 'a', display_name: 'Keira', birth_date: '1994-06-15' },
+    { id: 'b', display_name: 'Anna', birth_date: '1960-01-01' },
+    { id: 'c', display_name: 'Ben', birth_date: '1962-01-01' },
+  ];
+  const rels = [{ id: 'r1', type: 'partner', from_person: 'b', to_person: 'c', partner_status: 'current', is_married: true, marriage_date: '1990-06-15' }];
+  const g = buildGraph(people, rels);
+  const pick = pickTodaysFamilyMoment(g, TODAY.getTime());
+  assert.ok(pick);
+  assert.equal(pick.length, 2);
+  assert.equal(pick[0].key, 'birthdayToday');
+  assert.equal(pick[1].key, 'anniversaryToday');
 });
 
-test('pickTodaysFamilyMoment: null when there is nothing today AND no candidates qualify at all', () => {
-  // A photo is set so missingRecords' "N missing a photograph" doesn't
-  // incidentally qualify — missingRecords has no minimum-count threshold
-  // beyond "at least one," so a bare lone person would otherwise still
-  // produce a candidate and defeat the point of this test.
+test('pickTodaysFamilyMoment: never falls back to a trivia/structural category — null when nothing real is happening today', () => {
+  // The rich fixture (graph/mods) has plenty of high-weight scored trivia
+  // candidates (records, livingLink, etc.) but nobody with a birthday or
+  // anniversary on TODAY — this must return null, not reach for any of them.
+  assert.equal(pickTodaysFamilyMoment(graph, TODAY.getTime()), null);
+});
+
+test('pickTodaysFamilyMoment: null when there is nothing today at all', () => {
   const people = [{ id: 'lone', display_name: 'Lone Person', photo: 'data:x' }];
   const g = buildGraph(people, []);
-  const modules = computeInsightModules(g, 'lone', TODAY.getTime());
-  assert.equal(pickTodaysFamilyMoment(g, 'lone', TODAY.getTime(), modules), null);
+  assert.equal(pickTodaysFamilyMoment(g, TODAY.getTime()), null);
 });
 
 console.log(`\n  ${passed} passed, ${failed} failed`);

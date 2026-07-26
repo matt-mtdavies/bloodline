@@ -1459,30 +1459,6 @@ const EMOTIONAL_WEIGHT = {
   nearbyRelatives: 7,
   forgottenPeople: 6,
 };
-// Real feedback: the always-on banner (pickTodaysFamilyMoment, below) still
-// read as "tree-centric" even after livingLink's weight was lowered —
-// weighting alone wasn't enough, because a lot of categories are aggregate
-// facts about the TREE (a name's spread, a generation count, an era's
-// average lifespan), not about a specific relationship or life event
-// belonging to someone. Explicitly split rather than tuned further: only
-// categories that are genuinely ABOUT a specific person or a real
-// relationship between named people are eligible for the one daily banner
-// slot. Everything else is still a perfectly good fact — it stays in the
-// full Insights sheet (InsightModules.jsx, unaffected by this list) and
-// the Home hub / idle-hint pools (highlightCandidates, also unaffected —
-// this filter is applied ONLY inside pickTodaysFamilyMoment) — it just no
-// longer competes to be presented as today's personal moment.
-export const PERSONAL_CATEGORIES = new Set([
-  'birthdayMonthMate',       // two NAMED people share a birthday month
-  'records',                 // a specific person's own record-holding fact
-  'brood',                   // named parents, their real household
-  'twinBirths',              // named siblings, a real coincidence of birth
-  'centenarians',            // a specific person reaching 100
-  'sameAgeMarriages',        // two named people, an echo across their lives
-  'closestCousinsByAge',     // the viewer's own child and a named cousin
-  'nearbyRelatives',         // the viewer and a named relative, physically close
-  'forgottenPeople',         // a nudge to reconnect with a named relative
-]);
 const DEFAULT_EMOTIONAL_WEIGHT = 3;
 // A candidate with no specific "about" person (a genuinely family-wide fact)
 // is still relevant to everyone — this is its baseline, not a penalty for
@@ -2095,22 +2071,29 @@ function forgottenPeople(graph, viewerId, lastViewedByPersonId, now = Date.now()
 }
 
 /*
- * Family Moments slice 5 — the always-on banner's actual pick. A genuine
- * TODAY birthday or wedding anniversary wins unconditionally: it's the
- * single most specific, unambiguous, highest-emotional-value thing that
- * can be true about "today" — no scoring engine is needed to know a real
- * birthday beats a generic fact. Falls back to the full scored pool
- * (rankCandidates, above) otherwise.
+ * Family Moments slice 5 — the always-on banner's picks. A genuine TODAY
+ * birthday or wedding anniversary is the single most specific, unambiguous,
+ * highest-emotional-value thing that can be true about "today" — no
+ * scoring engine is needed to know that. Returns EVERY one of them (not
+ * just the first found), since a family can easily have more than one
+ * birthday on the same day — the banner rolls through the whole list,
+ * odometer-style, rather than picking a single "winner" and silently
+ * dropping the rest.
+ *
+ * Deliberately no trivia/scored fallback (this function used to fall back
+ * to the full highlightCandidatesDetailed/rankCandidates pool when nothing
+ * was happening today — real feedback was that a generic tree-wide fact
+ * showing up in this birthday-shaped slot read as an ad, not a moment, so
+ * it's gone). On a day with no real birthday or anniversary, this simply
+ * returns null and the banner doesn't appear — trivia stays exclusively in
+ * the Home hub's own rotating "did you know" card (pickDailyHighlight) and
+ * the tree screen's idle hint (highlightCandidates), both unaffected.
  *
  * Distinct from pickDailyHighlight (the Home hub's own fixed-once-per-
- * calendar-day teaser, which never checks for a real birthday and always
- * draws from the flat pool) — this is the richer, viewer-aware selection
- * built for the proactive banner. `modules` is computeInsightModules'
- * already-computed output (the caller builds it once, geocoding/last-
- * viewed data and all, and reuses it here rather than this function
- * recomputing it) — this function itself makes no network calls and
- * derives no data of its own beyond computeThisMonth, which is cheap and
- * synchronous.
+ * calendar-day teaser, which never checks for a real birthday at all) —
+ * this is the richer selection built for the proactive banner, but it now
+ * derives everything from computeThisMonth alone — cheap and synchronous,
+ * no viewer, no precomputed modules, no scoring inputs needed.
  *
  * Known, disclosed gap: computeThisMonth only considers LIVING people for
  * birthdays (deceased relatives are excluded there, not here), so "your
@@ -2119,51 +2102,32 @@ function forgottenPeople(graph, viewerId, lastViewedByPersonId, now = Date.now()
  * separate, deliberate decision given how differently that reads from a
  * living person's birthday.
  */
-export function pickTodaysFamilyMoment(graph, viewerId, now, modules, { distances = null, recentKeys = null } = {}) {
+export function pickTodaysFamilyMoment(graph, now) {
   // computeThisMonth (unlike every other function in this file) takes a
   // real Date object, not a numeric timestamp — `now` here follows this
   // file's own now=Date.now() convention, so it needs converting.
   const month = computeThisMonth(graph, new Date(now));
-  if (month) {
-    const todaysBirthday = month.birthdays.find((b) => b.isToday);
-    if (todaysBirthday) {
-      return {
-        key: 'birthdayToday',
-        personId: todaysBirthday.id,
-        text: todaysBirthday.turning != null
-          ? `It's ${todaysBirthday.name}'s birthday today — turning ${todaysBirthday.turning}.`
-          : `It's ${todaysBirthday.name}'s birthday today.`,
-      };
-    }
-    const todaysAnniversary = month.anniversaries.find((a) => a.isToday);
-    if (todaysAnniversary) {
-      return {
-        key: 'anniversaryToday',
-        personId: todaysAnniversary.aId,
-        text: todaysAnniversary.years > 0
-          ? `Today marks ${todaysAnniversary.years} years since ${todaysAnniversary.aName} and ${todaysAnniversary.bName} married.`
-          : `${todaysAnniversary.aName} and ${todaysAnniversary.bName} married today.`,
-      };
-    }
+  if (!month) return null;
+  const moments = [];
+  for (const b of month.birthdays) {
+    if (!b.isToday) continue;
+    moments.push({
+      key: 'birthdayToday',
+      personId: b.id,
+      text: b.turning != null
+        ? `It's ${b.name}'s birthday today — turning ${b.turning}.`
+        : `It's ${b.name}'s birthday today.`,
+    });
   }
-
-  // Prefers PERSONAL_CATEGORIES (see its own comment) — a real relationship
-  // or life event beats a tree-wide stat whenever one's available. But
-  // several personal categories have real, sometimes-high bars to clear
-  // (a 25-year marriage or an 85-year life for `records`, 5+ kids to one
-  // household for `brood`, actual twins, someone reaching 100, a viewer
-  // with children of their own for `closestCousinsByAge`...), or need
-  // accumulated data that only builds up over time (`nearbyRelatives`,
-  // `forgottenPeople`). Real feedback: for plenty of ordinary family trees,
-  // NONE of the nine personal categories clear their bar on a given day —
-  // and a silent banner reads as broken, not as "correctly nothing to
-  // say." So: fall back to the best-scored candidate from the FULL pool
-  // only when the personal pool is completely empty — personal still
-  // always wins when even one qualifies.
-  const fullPool = highlightCandidatesDetailed(modules);
-  const personalPool = fullPool.filter((c) => PERSONAL_CATEGORIES.has(c.key));
-  const pool = personalPool.length ? personalPool : fullPool;
-  if (!pool.length) return null;
-  const [top] = rankCandidates(pool, { distances, recentKeys, now });
-  return { key: top.key, personId: top.personIds?.[0] ?? null, text: top.text };
+  for (const a of month.anniversaries) {
+    if (!a.isToday) continue;
+    moments.push({
+      key: 'anniversaryToday',
+      personId: a.aId,
+      text: a.years > 0
+        ? `Today marks ${a.years} years since ${a.aName} and ${a.bName} married.`
+        : `${a.aName} and ${a.bName} married today.`,
+    });
+  }
+  return moments.length ? moments : null;
 }
