@@ -153,6 +153,18 @@ if (state.people) {
   state.people = state.people.map((p) => (p.conditions ? p : { ...p, conditions: [] }));
 }
 
+// Ensure every person has a residences array (Places Lived). Deliberately
+// does NOT backfill it from the existing scalar `residence` string field —
+// that field has no date range attached, and inventing one would mean
+// guessing a from/to year nobody actually entered. `residence` is left
+// exactly as-is (still read by the Hero's location pin, PersonSheet.jsx,
+// and the geocoding pass in App.jsx) — turning it into a dated Places
+// Lived entry is a deliberate action the person takes in the new editor,
+// not something migration should do silently.
+if (state.people) {
+  state.people = state.people.map((p) => (p.residences ? p : { ...p, residences: [] }));
+}
+
 // Upgrade low-res demo gallery photos to current seed set.
 if (state.photos.some((p) => typeof p.src === 'string' && p.src.startsWith('/faces/'))) {
   const ids = new Set(state.people.map((p) => p.id));
@@ -2086,4 +2098,52 @@ export function updateCondition(personId, conditionId, fields) {
         : p,
     ),
   }, { type: 'health_updated', personId, personName: person?.display_name ?? '' }));
+}
+
+// Places Lived — a chronological record of where someone lived, distinct
+// from the single `residence` string (their current/most recent place,
+// still used everywhere else unchanged). `place` is deliberately
+// suburb-level granularity, never a street address — see the Trove/PROV
+// privacy work earlier in this project for the same reasoning applied to
+// residence data specifically. `lat`/`lon` are optional (only set once the
+// place has been geocoded — see lib/geo.js's geocodePlace) and null until
+// then; the id-based add/update/remove trio mirrors addCondition/
+// removeCondition/updateCondition above exactly, the established
+// convention for a small, freely-editable array of dated records.
+export function addResidence(personId, { place, from_year = null, to_year = null, lat = null, lon = null }) {
+  const person = state.people.find((p) => p.id === personId);
+  const residence = { id: cid(), place, from_year, to_year, lat, lon };
+  commit(withActivity({
+    ...state,
+    people: state.people.map((p) =>
+      p.id === personId
+        ? { ...p, residences: [...(p.residences || []), residence] }
+        : p,
+    ),
+  }, { type: 'residence_updated', personId, personName: person?.display_name ?? '' }));
+  return residence.id;
+}
+
+export function removeResidence(personId, residenceId) {
+  const person = state.people.find((p) => p.id === personId);
+  commit(withActivity({
+    ...state,
+    people: state.people.map((p) =>
+      p.id === personId
+        ? { ...p, residences: (p.residences || []).filter((r) => r.id !== residenceId) }
+        : p,
+    ),
+  }, { type: 'residence_updated', personId, personName: person?.display_name ?? '' }));
+}
+
+export function updateResidence(personId, residenceId, fields) {
+  const person = state.people.find((p) => p.id === personId);
+  commit(withActivity({
+    ...state,
+    people: state.people.map((p) =>
+      p.id === personId
+        ? { ...p, residences: (p.residences || []).map((r) => (r.id === residenceId ? { ...r, ...fields } : r)) }
+        : p,
+    ),
+  }, { type: 'residence_updated', personId, personName: person?.display_name ?? '' }));
 }

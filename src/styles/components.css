@@ -10788,3 +10788,138 @@ button.health-notes {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* ── Places Lived ─────────────────────────────────────────────────────────── */
+/* The chain visual — same pattern as InsightModules.jsx's .tim-mig
+   (HeartlandsModule's family migration chips), reimplemented with its own
+   class names since this is one person's own history, not a family-wide
+   aggregate, but deliberately the same visual language. */
+.places-chain {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 8px;
+  margin-bottom: 14px;
+  color: var(--ink-faint, #b0a9a5);
+}
+.places-chain__step { display: inline-flex; align-items: center; gap: 6px; }
+.places-chain__step b {
+  font-weight: 600;
+  color: var(--ink);
+  background: var(--accent-soft, #f7efe9);
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-size: 13.5px;
+}
+.places-chain__step em { font-style: normal; font-size: 11.5px; color: var(--ink-soft); }
+
+.places-cards {
+  list-style: none;
+  margin: 0;
+  padding: 4px 2px 6px;
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+}
+.places-cards::-webkit-scrollbar { display: none; }
+.places-card {
+  scroll-snap-align: start;
+  flex: none;
+  width: 200px;
+  padding: 14px;
+  border-radius: 16px;
+  background: var(--card);
+  box-shadow: var(--shadow-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.places-card--new { width: 100%; box-sizing: border-box; }
+.places-card__place {
+  margin: 0;
+  font-family: var(--display);
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--ink);
+  line-height: 1.25;
+}
+.places-card__range { margin: 2px 0 0; font-size: 12px; font-weight: 600; color: var(--ink-soft); }
+.places-card__caption {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--ink-soft);
+  font-style: italic;
+}
+.places-card__actions { display: flex; gap: 8px; margin-top: 10px; }
+.places-card__edit, .places-card__del {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--paper-deep);
+  color: var(--ink-soft);
+  transition: background 0.15s;
+}
+.places-card__edit:hover, .places-card__del:hover { background: var(--hairline); }
+.places-card__confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--ink-soft);
+  margin-top: 10px;
+}
+.places-card__confirm-btns { display: flex; gap: 8px; }
+
+.places-form { display: flex; flex-direction: column; gap: 10px; width: 100%; }
+.places-form__input {
+  font: inherit;
+  font-size: 14px;
+  padding: 9px 12px;
+  border: 1px solid var(--line, #e7ddd4);
+  border-radius: 10px;
+  background: var(--paper, #fff);
+  color: var(--ink);
+}
+.places-form__years { display: flex; align-items: center; gap: 8px; }
+.places-form__year {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 14px;
+  padding: 9px 10px;
+  border: 1px solid var(--line, #e7ddd4);
+  border-radius: 10px;
+  background: var(--paper, #fff);
+  color: var(--ink);
+}
+.places-form__year:disabled { opacity: 0.5; }
+.places-form__dash { color: var(--ink-faint); flex: none; }
+.places-form__current { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink-soft); }
+.places-form__actions { display: flex; gap: 8px; }
+.places-form__save {
+  flex: 1;
+  padding: 9px;
+  border-radius: 10px;
+  border: none;
+  background: var(--accent, #c2603a);
+  color: #fff;
+  font-weight: 600;
+  font-size: 14px;
+}
+.places-form__save:disabled { opacity: 0.5; }
+.places-form__cancel {
+  flex: 1;
+  padding: 9px;
+  border-radius: 10px;
+  border: none;
+  background: var(--paper-deep);
+  color: var(--ink-soft);
+  font-weight: 600;
+  font-size: 14px;
+}
