@@ -66,6 +66,7 @@ export default function PersonSheet({
   onOpenDocument,
   onRemoveDocument,
   onUpdateDocument,
+  onSearchTrove,
   onInvite,
   onRemoveRelationship,
   onUpdateRelationshipQualifier,
@@ -1016,9 +1017,14 @@ export default function PersonSheet({
                   Documents{personDocs.length > 0 ? ` · ${personDocs.length}` : ''}
                 </h3>
                 {canEdit && (
-                  <button className="section-edit" onClick={() => docRef.current?.click()}>
-                    Add
-                  </button>
+                  <div className="profile-section__head-actions">
+                    <button className="section-edit" onClick={onSearchTrove}>
+                      Search Trove
+                    </button>
+                    <button className="section-edit" onClick={() => docRef.current?.click()}>
+                      Add
+                    </button>
+                  </div>
                 )}
               </div>
               <input
