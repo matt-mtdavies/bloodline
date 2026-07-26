@@ -234,6 +234,24 @@ export default function BubbleTree({
         .distance((l) => (l.kind === 'partner' ? 112 : 280))
         .strength((l) => (l.kind === 'partner' ? 0.9 : 0.26));
 
+      // partnerY/parentAbove (below) only ever touch relationships where BOTH
+      // endpoints are currently tracked — pre-filtered here, the same way
+      // buildLinks() already filters for linkForce, rather than each force
+      // re-scanning and re-filtering the WHOLE relationships array from
+      // scratch on every single tick. For a real 1000+-relationship family,
+      // that used to mean 1000+ iterations per force per tick regardless of
+      // how many people were actually revealed (most immediately discarded
+      // by the !na/!nb check) — real, avoidable cost that scaled with total
+      // family size, not visible size. Recomputed at the same points
+      // buildLinks() is (mount, sync, ensureVisible).
+      let partnerYRels = [];
+      let parentAboveRels = [];
+      const rebuildForceRelCaches = (rels) => {
+        partnerYRels = rels.filter((r) => r.type === 'partner' && nodeById.has(r.from_person) && nodeById.has(r.to_person));
+        parentAboveRels = rels.filter((r) => r.type === 'parent' && nodeById.has(r.from_person) && nodeById.has(r.to_person));
+      };
+      rebuildForceRelCaches(graph.relationships);
+
       // Resting generational pull. Focus Family wants crisp rows — parents
       // clearly above, children clearly below — so the band force is much
       // stronger while focused; otherwise it's a gentle organic drift.
@@ -257,9 +275,26 @@ export default function BubbleTree({
       };
       const genYTarget = (d) => layoutGen(d.id) * GEN_GAP - 260;
 
+      // Held in a variable so its Barnes-Hut theta can be re-tuned later (see
+      // updateChargeTheta) as the live node count changes, rather than fixed
+      // forever at construction time.
+      const chargeForce = forceManyBody().strength(ORGANIC_CHARGE).distanceMax(1200);
+      // Barnes-Hut's theta trades long-range approximation accuracy for
+      // speed — d3-force's default (0.9) is fine for the small-to-medium
+      // families most sessions actually reveal, but the same precision
+      // across 250+ concurrently-live nodes (the ceiling for a large tree's
+      // "reveal all") spends real per-tick cost on a level of long-range
+      // accuracy nobody can perceive at that scale anyway. Coarsened over
+      // two thresholds rather than a single on/off flip, so there's no
+      // visible discontinuity in the tree's motion as a reveal crosses
+      // either line.
+      const updateChargeTheta = () => {
+        const n = nodes.length;
+        chargeForce.theta(n > 400 ? 1.3 : n > 150 ? 1.1 : 0.9);
+      };
       const sim = forceSimulation(nodes)
         .force('link', linkForce)
-        .force('charge', forceManyBody().strength(ORGANIC_CHARGE).distanceMax(1200))
+        .force('charge', chargeForce)
         .force('collide', forceCollide(COLLIDE).strength(0.9))
         .force('x', forceX(0).strength(SPREAD_X))
         .force('y', forceY(genYTarget).strength(restingYStrength()))
@@ -267,6 +302,7 @@ export default function BubbleTree({
         .alphaDecay(0.018)
         .alphaTarget(reducedMotion ? 0 : 0.012)
         .stop();
+      updateChargeTheta();
 
       // Partner Y-alignment: pull each partner pair toward the same Y so they
       // read as a horizontal couple in organic/weighted/hybrid modes. Chart mode
@@ -274,11 +310,10 @@ export default function BubbleTree({
       sim.force('partnerY', (alpha) => {
         const mode = layoutRef.current;
         if (mode === 'chart' || mode === 'radial') return;
-        for (const r of graphRef.current.relationships) {
-          if (r.type !== 'partner') continue;
+        for (const r of partnerYRels) {
           const na = nodeById.get(r.from_person);
           const nb = nodeById.get(r.to_person);
-          if (!na || !nb) continue;
+          if (!na || !nb) continue; // belt-and-braces — the cache should already guarantee this
           const dy = nb.y - na.y;
           na.vy += dy * 0.20 * alpha;
           nb.vy -= dy * 0.20 * alpha;
@@ -298,11 +333,10 @@ export default function BubbleTree({
         const mode = layoutRef.current;
         if (mode === 'chart' || mode === 'radial') return;
         const minGap = GEN_GAP * 0.35;
-        for (const r of graphRef.current.relationships) {
-          if (r.type !== 'parent') continue;
+        for (const r of parentAboveRels) {
           const parent = nodeById.get(r.from_person);
           const child = nodeById.get(r.to_person);
-          if (!parent || !child) continue;
+          if (!parent || !child) continue; // belt-and-braces — the cache should already guarantee this
           const violation = (parent.y + minGap) - child.y; // >0 → parent too low
           if (violation <= 0) continue;
           const push = violation * 0.1 * alpha;
@@ -782,6 +816,8 @@ export default function BubbleTree({
           lastRelationshipSig = relSig;
           sim.nodes(nodes);
           linkForce.links(buildLinks(g.relationships));
+          rebuildForceRelCaches(g.relationships);
+          updateChargeTheta();
           // Only reheat the simulation when the tree's actual shape changed
           // (someone added/removed, or a relationship changed) — a cosmetic
           // edit (photo, bio, tags, an R2 migration, an unrelated merge from
@@ -810,6 +846,8 @@ export default function BubbleTree({
           if (added) {
             sim.nodes(nodes);
             linkForce.links(buildLinks(graphRef.current.relationships));
+            rebuildForceRelCaches(graphRef.current.relationships);
+            updateChargeTheta();
             sim.alpha(Math.max(sim.alpha(), 0.3));
           }
         },

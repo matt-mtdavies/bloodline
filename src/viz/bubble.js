@@ -118,7 +118,15 @@ export class Bubble {
       this._applySummaryBadge(baseRadius);
     }
 
-    this._buildNameLabel(person, baseRadius);
+    // Name label is built LAZILY (see setVisualState) rather than here — it
+    // starts hidden (alpha 0) and only ever becomes visible once BubbleTree
+    // decides this bubble is worth labelling (active/hovered/nearby), so for
+    // most bubbles in a large reveal it's never built at all. Text objects
+    // are one of the more expensive things to create in PixiJS (each unique
+    // string needs its own rendered/uploaded texture) — paying that cost
+    // upfront for every single spawned bubble, most of which never show a
+    // label during an ordinary session, was a real, avoidable cost at scale.
+    this._nameLabelBuilt = false;
     // Private people never load a photo — the sealed look must hold.
     if (this.visibility !== 'private') this.tryLoadPhoto();
   }
@@ -358,7 +366,15 @@ export class Bubble {
     this.root.alpha = this.curAlpha;
     this.shadow.alpha = 0.5 * this.curAlpha * (0.7 + 0.3 * lift);
     this.setBlur(blur);
-    // Name label — eases independently so it can linger a beat after the bubble fades
+    // Name label — built the first moment it's actually wanted (see the
+    // constructor's own comment), THEN eased independently so it can linger
+    // a beat after the bubble fades. Starts at the same alpha=0 the eager
+    // version always did, so there's no visible difference from before —
+    // only the timing of when the Text objects get created changes.
+    if (labelAlpha > 0.01 && !this._nameLabelBuilt) {
+      this._nameLabelBuilt = true;
+      this._buildNameLabel(this.person, this.r);
+    }
     this._labelAlpha += (labelAlpha - this._labelAlpha) * Math.min(1, dt * 4.5);
     if (this.nameLabel) this.nameLabel.alpha = this._labelAlpha;
     if (this._relLabel) this._relLabel.alpha = this._labelAlpha;
