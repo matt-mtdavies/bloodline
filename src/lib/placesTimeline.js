@@ -16,10 +16,12 @@
  * centered in via flexbox, so line and dots can never drift apart the way a
  * hand-tuned `top: Npx` pseudo-element did.
  *
- * A border-crossing marker (a small paper-plane icon in PlacesLived.jsx) is
- * placed at the midpoint of any segment where both residences have a known,
- * differing `country` — never guessed when either side hasn't been geocoded
- * yet.
+ * A crossing marker (a small paper-plane icon in PlacesLived.jsx) is placed
+ * at the midpoint of any segment where both residences have a known,
+ * differing `country` OR a known, differing `state` — a move between states
+ * within the same country (e.g. Victoria to New South Wales) is just as
+ * real a relocation as an international one, and gets the same treatment.
+ * Never guessed when either side hasn't been geocoded yet.
  */
 export const WAYPOINT_W = 116;
 export const GAP = 20;
@@ -38,6 +40,7 @@ export function buildTimelineLayout(residences) {
     x: i * STEP + WAYPOINT_W / 2,
     y: centerY,
     country: r.country || null,
+    state: r.state || null,
   }));
 
   let pathD = '';
@@ -50,7 +53,9 @@ export function buildTimelineLayout(residences) {
       const dir = i % 2 === 0 ? -1 : 1;
       const cy = centerY + WAVE_AMPLITUDE * dir;
       pathD += ` Q ${mx.toFixed(1)} ${cy.toFixed(1)} ${b.x.toFixed(1)} ${b.y.toFixed(1)}`;
-      if (a.country && b.country && a.country !== b.country) {
+      const countryChanged = a.country && b.country && a.country !== b.country;
+      const stateChanged = a.state && b.state && a.state !== b.state;
+      if (countryChanged || stateChanged) {
         const angle = (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI;
         crossings.push({ key: `${a.id}-${b.id}`, x: mx, y: cy, angle });
       }

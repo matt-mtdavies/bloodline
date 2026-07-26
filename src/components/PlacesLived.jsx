@@ -342,15 +342,24 @@ function PlaceForm({ initial, onCancel, onSubmit }) {
 // it reads as "in flight" along the direction of that particular move.
 // Coordinates are centered on (0,0) since the parent <g> already carries
 // the translate to the segment's midpoint.
+//
+// A real dart-shaped paper-plane silhouette (nose, swept-back wings, a
+// concave notch at the tail, a center fold crease) — not the earlier plain
+// 4-point chevron, which was too crude to read as anything but a stray
+// triangle at this size (a real reported complaint, confirmed against a
+// production screenshot).
 function PlaneIcon() {
   return (
-    <path
-      d="M-7 -5 L7 0 L-7 5 L-3 0 Z"
-      fill="currentColor"
-      stroke="var(--paper)"
-      strokeWidth="0.75"
-      strokeLinejoin="round"
-    />
+    <>
+      <path
+        d="M12 0 L-9 -7.5 L-3 0 L-9 7.5 Z"
+        fill="currentColor"
+        stroke="var(--paper)"
+        strokeWidth="1"
+        strokeLinejoin="round"
+      />
+      <path d="M12 0 L-3 0" stroke="var(--paper)" strokeWidth="0.9" strokeLinecap="round" opacity="0.9" />
+    </>
   );
 }
 

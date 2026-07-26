@@ -73,5 +73,32 @@ test('no crossings at all when every place has an unknown country (never fabrica
   assert.deepEqual(layout.crossings, []);
 });
 
+test('a crossing is also flagged for a state change within the same country', () => {
+  const layout = buildTimelineLayout([
+    { id: 'a', country: 'Australia', state: 'Victoria' },
+    { id: 'b', country: 'Australia', state: 'New South Wales' }, // same country, different state — still a crossing
+  ]);
+  assert.equal(layout.crossings.length, 1);
+  assert.equal(layout.crossings[0].key, 'a-b');
+});
+
+test('a state crossing is only flagged when BOTH sides have a known, differing state', () => {
+  const layout = buildTimelineLayout([
+    { id: 'a', country: 'Australia', state: 'Victoria' },
+    { id: 'b', country: 'Australia', state: 'Victoria' },  // same state — no crossing
+    { id: 'c', country: 'Australia', state: null },        // unknown — never guess
+    { id: 'd', country: 'Australia', state: 'Queensland' }, // crosses here (c->d has an unknown side, so no crossing there either)
+  ]);
+  assert.equal(layout.crossings.length, 0);
+});
+
+test('a country change and a state change on the same segment still produce exactly one crossing, not two', () => {
+  const layout = buildTimelineLayout([
+    { id: 'a', country: 'Australia', state: 'Victoria' },
+    { id: 'b', country: 'Canada', state: 'British Columbia' },
+  ]);
+  assert.equal(layout.crossings.length, 1);
+});
+
 console.log(`\n  ${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);
