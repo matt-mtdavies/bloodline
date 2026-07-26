@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { geocodePlace } from '../lib/places.js';
+import PlacesMap from './PlacesMap.jsx';
 
 /*
  * Places Lived — a chronological record of where someone lived through
@@ -35,6 +36,23 @@ export default function PlacesLived({ person, canEdit, onAddResidence, onUpdateR
   const [adding, setAdding] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [confirmRemoveId, setConfirmRemoveId] = useState(null);
+  const [highlightId, setHighlightId] = useState(null);
+  const cardsRef = useRef(null);
+  const highlightTimer = useRef(null);
+
+  // Tapping a dot on the constellation map scrolls its matching chapter card
+  // into view and briefly highlights it — a lightweight way to connect the
+  // new visual back to the existing detail cards without duplicating any
+  // information inside the map itself.
+  const handleSelectPlace = (id) => {
+    const card = cardsRef.current?.querySelector(`[data-residence-id="${id}"]`);
+    card?.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+    setHighlightId(id);
+    clearTimeout(highlightTimer.current);
+    highlightTimer.current = setTimeout(() => setHighlightId(null), 1600);
+  };
+
+  useEffect(() => () => clearTimeout(highlightTimer.current), []);
 
   const residences = [...(person.residences || [])].sort((a, b) => {
     if (a.from_year == null) return 1;
@@ -65,6 +83,8 @@ export default function PlacesLived({ person, canEdit, onAddResidence, onUpdateR
         )}
       </div>
 
+      {residences.length > 0 && <PlacesMap residences={residences} onSelectPlace={handleSelectPlace} />}
+
       {residences.length > 0 && (
         <div className="places-chain" aria-label="Places lived, in order">
           {residences.map((r, i) => (
@@ -78,9 +98,13 @@ export default function PlacesLived({ person, canEdit, onAddResidence, onUpdateR
       )}
 
       {residences.length > 0 && (
-        <ul className="places-cards">
+        <ul className="places-cards" ref={cardsRef}>
           {residences.map((r) => (
-            <li key={r.id} className="places-card">
+            <li
+              key={r.id}
+              className={'places-card' + (highlightId === r.id ? ' places-card--highlight' : '')}
+              data-residence-id={r.id}
+            >
               {editingId === r.id ? (
                 <PlaceForm
                   initial={r}
