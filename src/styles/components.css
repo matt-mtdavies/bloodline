@@ -10811,16 +10811,30 @@ button.health-notes {
   scrollbar-width: none;
 }
 .places-route::-webkit-scrollbar { display: none; }
-.places-route::before {
-  content: '';
+/* The connector (lib/placesTimeline.js#buildTimelineLayout) is a drawn SVG
+   path, not a CSS border — a plain ::before dashed line needed a hand-tuned
+   `top` offset to line up with the dots and drifted (a real reported bug).
+   `top`/`left` here match .places-route's own padding exactly (8px/4px) —
+   an absolutely positioned child is offset from the PADDING edge, while the
+   waypoint buttons below (normal-flow children) start at the CONTENT edge,
+   i.e. padding-edge + padding — matching that padding here is what keeps
+   the SVG's y=0 aligned with the buttons' own top, so the path and the
+   dots (both built against the same DOT_ZONE_H/2 center) can't drift apart. */
+.places-route__svg {
   position: absolute;
-  left: 20px;
-  right: 20px;
-  top: 19px;
-  height: 0;
-  border-top: 2px dashed var(--hairline);
+  top: 8px;
+  left: 4px;
+  pointer-events: none;
   z-index: 0;
 }
+.places-route__path {
+  stroke: var(--gold);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-dasharray: 2 11;
+  opacity: 0.6;
+}
+.places-route__plane { color: var(--gold); }
 .places-waypoint {
   position: relative;
   z-index: 1;
@@ -10837,6 +10851,16 @@ button.health-notes {
   color: inherit;
   cursor: pointer;
 }
+/* A fixed-height zone the dot is centered within (via flexbox, not margin
+   math) — the SAME height (DOT_ZONE_H, 40px) the SVG connector above uses
+   for its own vertical center, so the two can never disagree regardless of
+   any button/font-metric quirk a browser might otherwise introduce. */
+.places-waypoint-dotzone {
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
 .places-waypoint-dot {
   width: 13px;
   height: 13px;
@@ -10844,7 +10868,6 @@ button.health-notes {
   background: var(--card);
   border: 3px solid var(--paper);
   box-shadow: 0 0 0 1.5px var(--ink-faint, #b0a9a5);
-  margin-bottom: 9px;
   transition: background 0.2s ease, box-shadow 0.2s ease, transform 0.2s var(--spring, ease);
 }
 .places-waypoint-range {
