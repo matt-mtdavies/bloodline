@@ -445,5 +445,38 @@ test('removeResidence: removes exactly the matching residence by id, keeps the r
   assert.equal(after.residences[0].place, 'Cardiff, Wales');
 });
 
+// ── Places Lived: activity log gets a distinct type + the place name per action ──
+
+test('addResidence logs a "residence_added" activity event naming the place', () => {
+  importFromGedcom([{ id: 'nomad6', display_name: 'Nomad Six' }], [], { merge: false });
+  addResidence('nomad6', { place: 'Bristol, England', from_year: 2003 });
+  const [event] = store.getState().activity;
+  assert.equal(event.type, 'residence_added');
+  assert.equal(event.personId, 'nomad6');
+  assert.equal(event.detail, 'Bristol, England');
+});
+
+test('removeResidence logs a "residence_removed" activity event naming the place that was removed', () => {
+  importFromGedcom([{ id: 'nomad7', display_name: 'Nomad Seven' }], [], { merge: false });
+  const id = addResidence('nomad7', { place: 'Perth, Australia', from_year: 2010 });
+  removeResidence('nomad7', id);
+  const [event] = store.getState().activity;
+  assert.equal(event.type, 'residence_removed');
+  assert.equal(event.detail, 'Perth, Australia', 'must name the place that was removed, even though it no longer exists on the person');
+});
+
+test('updateResidence logs a "residence_updated" activity event naming the (possibly just-edited) place', () => {
+  importFromGedcom([{ id: 'nomad8', display_name: 'Nomad Eight' }], [], { merge: false });
+  const id = addResidence('nomad8', { place: 'Cardiff, Wales', from_year: 1990, to_year: 2000 });
+  updateResidence('nomad8', id, { to_year: 1998 });
+  const notRenamed = store.getState().activity[0];
+  assert.equal(notRenamed.type, 'residence_updated');
+  assert.equal(notRenamed.detail, 'Cardiff, Wales', 'a year-only edit still names the existing place');
+
+  updateResidence('nomad8', id, { place: 'Swansea, Wales' });
+  const renamed = store.getState().activity[0];
+  assert.equal(renamed.detail, 'Swansea, Wales', 'a place edit names the NEW place, not the old one');
+});
+
 console.log(`\n  ${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);

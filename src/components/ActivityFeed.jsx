@@ -190,6 +190,25 @@ function EventDescription({ event, userEmail, nameByEmail }) {
       return <>{author} updated {subject}'s health information</>;
     case 'keepsake_generated':
       return <>{author} compiled the {event.detail || 'latest edition'} of {subject}'s Keepsake</>;
+    case 'residence_added':
+      return (
+        <>
+          {author} added {event.detail ? <strong key="d">{event.detail}</strong> : 'a place'} to {subject}'s places lived
+        </>
+      );
+    case 'residence_updated':
+      return (
+        <>
+          {author} updated {subject}'s places lived
+          {event.detail ? <> — <strong key="d">{event.detail}</strong></> : null}
+        </>
+      );
+    case 'residence_removed':
+      return (
+        <>
+          {author} removed {event.detail ? <strong key="d">{event.detail}</strong> : 'a place'} from {subject}'s places lived
+        </>
+      );
     default:
       return <>{author} updated {subject}</>;
   }
@@ -239,6 +258,9 @@ function typeConfig(type) {
     case 'health_updated':    return { color: '#5a8a72', Icon: HeartIcon };
     case 'member_joined':     return { color: '#2a7a6a', Icon: JoinIcon };
     case 'keepsake_generated':return { color: '#a44d2c', Icon: KeepsakeIcon };
+    case 'residence_added':
+    case 'residence_updated':
+    case 'residence_removed': return { color: '#c4913f', Icon: PinIcon };
     default:                  return { color: '#6b6f76', Icon: EditIcon };
   }
 }
@@ -402,6 +424,16 @@ function KeepsakeIcon() {
     <svg width="9" height="9" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5v14z" stroke="currentColor" strokeWidth="2.2" strokeLinejoin="round" />
       <path d="M4 19.5A2.5 2.5 0 0 0 6.5 22H20v-5" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function PinIcon() {
+  return (
+    <svg width="9" height="9" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M12 21.5s7-6.5 7-12.5a7 7 0 0 0-14 0c0 6 7 12.5 7 12.5z"
+        stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+      <circle cx="12" cy="9" r="2.4" stroke="currentColor" strokeWidth="2" />
     </svg>
   );
 }
