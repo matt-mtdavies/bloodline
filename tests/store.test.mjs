@@ -14,11 +14,16 @@ import {
   addLifeEvent, updatePerson, retractDocumentContributions,
   addRelative, updatePartnerMeta, resetTree, addMemory, addPhoto, addDocument,
   bioParentGendersFilled, addResidence, updateResidence, removeResidence,
+  backfillResidenceGeocodes,
 } from '../src/data/store.js';
 
 let passed = 0, failed = 0;
 function test(label, fn) {
   try { fn(); passed++; console.log(`PASS  ${label}`); }
+  catch (e) { failed++; console.log(`FAIL  ${label}\n      ${e.message}`); }
+}
+async function atest(label, fn) {
+  try { await fn(); passed++; console.log(`PASS  ${label}`); }
   catch (e) { failed++; console.log(`FAIL  ${label}\n      ${e.message}`); }
 }
 
@@ -476,6 +481,77 @@ test('updateResidence logs a "residence_updated" activity event naming the (poss
   updateResidence('nomad8', id, { place: 'Swansea, Wales' });
   const renamed = store.getState().activity[0];
   assert.equal(renamed.detail, 'Swansea, Wales', 'a place edit names the NEW place, not the old one');
+});
+
+// ── backfillResidenceGeocodes ────────────────────────────────────────────────
+
+await atest('backfillResidenceGeocodes: no-op when nothing is missing coordinates', async () => {
+  importFromGedcom([{ id: 'geo1', display_name: 'Geo One' }], [], { merge: false });
+  addResidence('geo1', { place: 'Cardiff, Wales', from_year: 1990, lat: 51.48, lon: -3.18 });
+  let called = false;
+  const result = await backfillResidenceGeocodes(async () => { called = true; return {}; });
+  assert.deepEqual(result, { total: 0, updated: 0, failed: 0 });
+  assert.equal(called, false, 'must not even call the geocoder when nothing needs it');
+});
+
+await atest('backfillResidenceGeocodes: resolves residences missing lat/lon and leaves already-geocoded ones untouched', async () => {
+  importFromGedcom([{ id: 'geo2', display_name: 'Geo Two' }], [], { merge: false });
+  const alreadyGeocoded = addResidence('geo2', { place: 'Perth, Australia', from_year: 1980, lat: -31.95, lon: 115.86 });
+  const missing1 = addResidence('geo2', { place: 'Cardiff, Wales', from_year: 1990 });
+  const missing2 = addResidence('geo2', { place: 'Toronto, Canada', from_year: 2000 });
+
+  const requested = [];
+  const fakeGeocode = async (places) => {
+    requested.push(...places);
+    return {
+      'Cardiff, Wales': { lat: 51.48, lon: -3.18, suburb: null, state: 'Wales', country: 'United Kingdom' },
+      'Toronto, Canada': { lat: 43.65, lon: -79.38, suburb: null, state: 'Ontario', country: 'Canada' },
+    };
+  };
+  const result = await backfillResidenceGeocodes(fakeGeocode);
+  assert.deepEqual(result, { total: 2, updated: 2, failed: 0 });
+  assert.deepEqual(requested.sort(), ['Cardiff, Wales', 'Toronto, Canada'], 'only the un-geocoded places are ever sent to the geocoder');
+
+  const after = store.getState().people.find((p) => p.id === 'geo2');
+  const perth = after.residences.find((r) => r.id === alreadyGeocoded);
+  assert.equal(perth.lat, -31.95, 'an already-geocoded residence is left exactly as it was');
+  const cardiff = after.residences.find((r) => r.id === missing1);
+  assert.equal(cardiff.lat, 51.48);
+  assert.equal(cardiff.state, 'Wales');
+  assert.equal(cardiff.country, 'United Kingdom');
+  const toronto = after.residences.find((r) => r.id === missing2);
+  assert.equal(toronto.lat, 43.65);
+});
+
+await atest('backfillResidenceGeocodes: a place the geocoder can\'t resolve is left as-is and counted as failed', async () => {
+  importFromGedcom([{ id: 'geo3', display_name: 'Geo Three' }], [], { merge: false });
+  addResidence('geo3', { place: 'Nowhereville', from_year: 1990 });
+  const result = await backfillResidenceGeocodes(async () => ({ Nowhereville: null }));
+  assert.deepEqual(result, { total: 1, updated: 0, failed: 1 });
+  const after = store.getState().people.find((p) => p.id === 'geo3');
+  assert.equal(after.residences[0].lat, null);
+});
+
+await atest('backfillResidenceGeocodes: applies across multiple people in one pass, no activity logged (a silent backfill)', async () => {
+  importFromGedcom([{ id: 'geo4a', display_name: 'Geo Four A' }, { id: 'geo4b', display_name: 'Geo Four B' }], [], { merge: false });
+  addResidence('geo4a', { place: 'Cardiff, Wales', from_year: 1990 });
+  addResidence('geo4b', { place: 'Cardiff, Wales', from_year: 1995 }); // same place, different person
+  const activityBefore = store.getState().activity.length;
+
+  const result = await backfillResidenceGeocodes(async () => ({
+    'Cardiff, Wales': { lat: 51.48, lon: -3.18, suburb: null, state: 'Wales', country: 'United Kingdom' },
+  }));
+  assert.deepEqual(result, { total: 2, updated: 2, failed: 0 });
+  assert.equal(store.getState().people.find((p) => p.id === 'geo4a').residences[0].lat, 51.48);
+  assert.equal(store.getState().people.find((p) => p.id === 'geo4b').residences[0].lat, 51.48);
+  assert.equal(store.getState().activity.length, activityBefore, 'a passive backfill must not log an activity event');
+});
+
+await atest('backfillResidenceGeocodes: a geocoder rejection is caught, leaving everything unchanged rather than throwing', async () => {
+  importFromGedcom([{ id: 'geo5', display_name: 'Geo Five' }], [], { merge: false });
+  addResidence('geo5', { place: 'Cardiff, Wales', from_year: 1990 });
+  const result = await backfillResidenceGeocodes(async () => { throw new Error('network error'); });
+  assert.deepEqual(result, { total: 1, updated: 0, failed: 1 });
 });
 
 console.log(`\n  ${passed} passed, ${failed} failed`);

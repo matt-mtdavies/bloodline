@@ -48,6 +48,7 @@ import {
   migratePhotosToR2,
   migrateDocsToR2,
   migrateDocThumbsToR2,
+  backfillResidenceGeocodes,
   setCurrentUser,
   setMyPerson,
   bindIdentity,
@@ -66,6 +67,7 @@ import { storeToGedcom } from './lib/gedcom.js';
 import { detectRegion, nearestWorldEvent } from './lib/worldEvents.js';
 import { findDuplicatePairs, pairKey, loadDismissedDuplicates, saveDismissedDuplicates } from './lib/duplicates.js';
 import { canManageTree } from './lib/visibility.js';
+import { geocodePlaces } from './lib/places.js';
 import { profileCompleteness, isDuplicateLifeEvent } from './lib/profile.js';
 import { computeInsightModules, personHighlight, highlightCandidates, pickTodaysFamilyMoment } from './lib/insightModules.js';
 import FamilyMomentBanner from './components/FamilyMomentBanner.jsx';
@@ -396,6 +398,13 @@ export default function App() {
       // run it alongside the other two migrations, but never mention it in
       // the sync toast below (nothing the user did or would recognize).
       migrateDocThumbsToR2(uploadDocument).catch(() => ({ total: 0, uploaded: 0, failed: 0 })),
+      // Retroactively resolves any Places Lived entry saved without
+      // coordinates (added before geocoding was wired in, or while a
+      // request failed) — same invisible, no-toast treatment as the
+      // thumbnail migration above; nothing a person did or would recognize,
+      // it just means the constellation map can appear where it couldn't
+      // before.
+      backfillResidenceGeocodes(geocodePlaces).catch(() => ({ total: 0, updated: 0, failed: 0 })),
     ]).then(([photos, docs]) => {
       const total = (photos.uploaded || 0) + (docs.uploaded || 0);
       if (!total) return;
