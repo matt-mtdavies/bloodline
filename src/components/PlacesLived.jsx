@@ -1,23 +1,36 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { geocodePlace } from '../lib/places.js';
-import PlacesMap from './PlacesMap.jsx';
 
 /*
  * Places Lived — a chronological record of where someone lived through
  * their life, distinct from the single `residence` string (their current/
- * most recent place) every other part of the app already reads. Two
- * pieces, both reusing an established visual language rather than
- * inventing a new widget:
- *   1. A chain of place chips connected by arrows — the exact same
- *      pattern InsightModules.jsx's HeartlandsModule already uses for a
- *      family's migration path (`.tim-mig`/`.tim-mig__step`), reimplemented
- *      here with its own class names since this is a single person's
- *      history, not a family-wide aggregate — but the visual is
- *      deliberately identical.
- *   2. A horizontal scroll-snap strip of "chapter" cards below it, one per
- *      residence, each auto-captioned from whatever life events happened
- *      during that stay (a birth, a marriage — pulled straight from
- *      `person.events`, no new data entry needed for that part).
+ * most recent place) every other part of the app already reads.
+ *
+ * Consolidated design (a design review found the original three-layer
+ * version — a text chain, a scroll-snap row of chapter cards, AND a
+ * geographic "constellation map" — genuinely redundant: the chain and the
+ * cards showed near-identical content at two densities, and the map's
+ * abstract lat/lon plot broke down exactly on real, richly-filled data —
+ * many places clustered in one metro area plus a couple of big moves is the
+ * NORM, not an edge case, and no amount of point-separation fixes label
+ * crowding at that density). Replaced with ONE horizontal timeline —
+ * `.places-route`/`.places-waypoint` — deliberately modeled on
+ * MilitaryService.jsx's own `.military__route`/`.military__waypoint`
+ * campaign timeline (own class names, not shared ones — this is a
+ * different section with its own edit/remove/add interactions — but the
+ * same visual language) for cross-feature consistency and because that
+ * design already solves the exact problem the map didn't: position encodes
+ * ONLY chronology (array order), never real-world distance, so it can never
+ * collide no matter how many entries or how tightly clustered the real
+ * places are.
+ *
+ * Tapping a waypoint shows its full detail (place, range, an auto-caption
+ * pulled from whatever life events happened during that stay, edit/remove)
+ * in the single `.places-detail` panel below — one shared detail slot
+ * rather than a card per residence, so browsing many places stays a light
+ * horizontal scroll, not a growing stack of near-duplicate cards. Defaults
+ * to the most recent (or still-current) chapter — the one a visitor to the
+ * profile most likely wants to see first.
  *
  * Deliberately suburb-level only — `place` is free text, but the add/edit
  * form's placeholder guides toward "Suburb, State" rather than a street
@@ -29,30 +42,14 @@ import PlacesMap from './PlacesMap.jsx';
  * immediately on the place/year fields alone, and lat/lon — plus a
  * suburb/state/country breakdown, for reliably GROUPING places later (an
  * insight, a future filter) rather than matching on raw free-typed spelling —
- * fill in afterward if geocoding succeeds. The chain and cards never depend
- * on having any of that.
+ * fill in afterward if geocoding succeeds. The timeline never depends on
+ * having any of that; it reads only place/from_year/to_year.
  */
 export default function PlacesLived({ person, canEdit, onAddResidence, onUpdateResidence, onRemoveResidence }) {
   const [adding, setAdding] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [confirmRemoveId, setConfirmRemoveId] = useState(null);
-  const [highlightId, setHighlightId] = useState(null);
-  const cardsRef = useRef(null);
-  const highlightTimer = useRef(null);
-
-  // Tapping a dot on the constellation map scrolls its matching chapter card
-  // into view and briefly highlights it — a lightweight way to connect the
-  // new visual back to the existing detail cards without duplicating any
-  // information inside the map itself.
-  const handleSelectPlace = (id) => {
-    const card = cardsRef.current?.querySelector(`[data-residence-id="${id}"]`);
-    card?.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
-    setHighlightId(id);
-    clearTimeout(highlightTimer.current);
-    highlightTimer.current = setTimeout(() => setHighlightId(null), 1600);
-  };
-
-  useEffect(() => () => clearTimeout(highlightTimer.current), []);
+  const [selectedId, setSelectedId] = useState(null);
 
   const residences = [...(person.residences || [])].sort((a, b) => {
     if (a.from_year == null) return 1;
@@ -60,16 +57,31 @@ export default function PlacesLived({ person, canEdit, onAddResidence, onUpdateR
     return a.from_year - b.from_year;
   });
 
+  // Falls back to the most recent chapter whenever nothing's explicitly
+  // selected yet, or the previously-selected residence no longer exists
+  // (just removed) — never gets stuck showing nothing when there's still
+  // at least one place on record.
+  const selected = residences.find((r) => r.id === selectedId) || residences[residences.length - 1] || null;
+
+  const select = (id) => { setSelectedId(id); setAdding(false); setEditingId(null); };
+
   const handleAdd = async (fields) => {
     setAdding(false);
     const geo = await geocodePlace(fields.place);
-    onAddResidence({ ...fields, ...geoFields(geo) });
+    const id = onAddResidence({ ...fields, ...geoFields(geo) });
+    if (id) setSelectedId(id);
   };
 
   const handleUpdate = async (id, fields) => {
     setEditingId(null);
     const geo = await geocodePlace(fields.place);
     onUpdateResidence(id, { ...fields, ...geoFields(geo) });
+  };
+
+  const handleRemove = (id) => {
+    onRemoveResidence(id);
+    setConfirmRemoveId(null);
+    if (selectedId === id) setSelectedId(null); // falls back to the new most-recent entry automatically
   };
 
   return (
@@ -79,78 +91,73 @@ export default function PlacesLived({ person, canEdit, onAddResidence, onUpdateR
           Places Lived{residences.length > 0 ? ` · ${residences.length}` : ''}
         </h3>
         {canEdit && !adding && (
-          <button className="section-edit" onClick={() => setAdding(true)}>Add</button>
+          <button className="section-edit" onClick={() => { setAdding(true); setEditingId(null); }}>Add</button>
         )}
       </div>
 
-      {residences.length > 0 && <PlacesMap residences={residences} onSelectPlace={handleSelectPlace} />}
-
       {residences.length > 0 && (
-        <div className="places-chain" aria-label="Places lived, in order">
-          {residences.map((r, i) => (
-            <span className="places-chain__step" key={r.id}>
-              {i > 0 && <ChainArrowIcon />}
-              <b>{r.place}</b>
-              <em>{formatRange(r.from_year, r.to_year)}</em>
-            </span>
-          ))}
+        <div className="places-route" aria-label="Places lived, in order">
+          {residences.map((r) => {
+            const isActive = !adding && selected?.id === r.id;
+            return (
+              <button
+                key={r.id}
+                type="button"
+                className={'places-waypoint' + (isActive ? ' places-waypoint--active' : '')}
+                aria-current={isActive ? 'true' : undefined}
+                onClick={() => select(r.id)}
+              >
+                <span className="places-waypoint-dot" aria-hidden="true" />
+                <span className="places-waypoint-range">{formatRange(r.from_year, r.to_year)}</span>
+                <span className="places-waypoint-title">{shortPlace(r.place)}</span>
+              </button>
+            );
+          })}
         </div>
       )}
 
-      {residences.length > 0 && (
-        <ul className="places-cards" ref={cardsRef}>
-          {residences.map((r) => (
-            <li
-              key={r.id}
-              className={'places-card' + (highlightId === r.id ? ' places-card--highlight' : '')}
-              data-residence-id={r.id}
-            >
-              {editingId === r.id ? (
-                <PlaceForm
-                  initial={r}
-                  onCancel={() => setEditingId(null)}
-                  onSubmit={(fields) => handleUpdate(r.id, fields)}
-                />
-              ) : (
-                <>
-                  <p className="places-card__place">{r.place}</p>
-                  <p className="places-card__range">{formatRange(r.from_year, r.to_year)}</p>
-                  {(() => {
-                    const caption = captionFor(person.events, r.from_year, r.to_year);
-                    return caption ? <p className="places-card__caption">{caption}</p> : null;
-                  })()}
-                  {canEdit && (
-                    confirmRemoveId === r.id ? (
-                      <div className="places-card__confirm">
-                        <span>Remove this place?</span>
-                        <div className="places-card__confirm-btns">
-                          <button className="doc-card__confirm-remove" onClick={() => { onRemoveResidence(r.id); setConfirmRemoveId(null); }}>Remove</button>
-                          <button className="doc-card__confirm-cancel" onClick={() => setConfirmRemoveId(null)}>Cancel</button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="places-card__actions">
-                        <button className="places-card__edit" onClick={() => setEditingId(r.id)} aria-label={`Edit ${r.place}`}>
-                          <PencilIcon />
-                        </button>
-                        <button className="places-card__del" onClick={() => setConfirmRemoveId(r.id)} aria-label={`Remove ${r.place}`}>
-                          <CloseIcon />
-                        </button>
-                      </div>
-                    )
-                  )}
-                </>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
-
-      {adding && (
-        <div className="places-card places-card--new">
+      {adding ? (
+        <div className="places-detail">
           <PlaceForm onCancel={() => setAdding(false)} onSubmit={handleAdd} />
         </div>
-      )}
+      ) : editingId ? (
+        <div className="places-detail">
+          <PlaceForm
+            initial={residences.find((r) => r.id === editingId)}
+            onCancel={() => setEditingId(null)}
+            onSubmit={(fields) => handleUpdate(editingId, fields)}
+          />
+        </div>
+      ) : selected ? (
+        <div className="places-detail">
+          <p className="places-detail__place">{selected.place}</p>
+          <p className="places-detail__range">{formatRange(selected.from_year, selected.to_year)}</p>
+          {(() => {
+            const caption = captionFor(person.events, selected.from_year, selected.to_year);
+            return caption ? <p className="places-detail__caption">{caption}</p> : null;
+          })()}
+          {canEdit && (
+            confirmRemoveId === selected.id ? (
+              <div className="places-detail__confirm">
+                <span>Remove this place?</span>
+                <div className="places-detail__confirm-btns">
+                  <button className="doc-card__confirm-remove" onClick={() => handleRemove(selected.id)}>Remove</button>
+                  <button className="doc-card__confirm-cancel" onClick={() => setConfirmRemoveId(null)}>Cancel</button>
+                </div>
+              </div>
+            ) : (
+              <div className="places-detail__actions">
+                <button className="places-detail__edit" onClick={() => setEditingId(selected.id)} aria-label={`Edit ${selected.place}`}>
+                  <PencilIcon />
+                </button>
+                <button className="places-detail__del" onClick={() => setConfirmRemoveId(selected.id)} aria-label={`Remove ${selected.place}`}>
+                  <CloseIcon />
+                </button>
+              </div>
+            )
+          )}
+        </div>
+      ) : null}
 
       {residences.length === 0 && !adding && (
         canEdit ? (
@@ -180,9 +187,16 @@ function formatRange(fromYear, toYear) {
   return toYear ? `${fromYear}–${toYear}` : `${fromYear}–present`;
 }
 
+// A short label ("Cardiff" not "Cardiff, Wales, UK") so the waypoint stays
+// scannable at a glance — the full place string is always shown in the
+// detail panel the moment it's selected.
+function shortPlace(place) {
+  return (place || '').split(',')[0].trim();
+}
+
 // Pulls a short caption from whatever life events fall within this
 // residence's own year range — e.g. a birth or marriage that happened
-// while they lived there — so a bare place-and-years card reads as part
+// while they lived there — so a bare place-and-years detail reads as part
 // of the actual story, not just a geography fact. Purely additive: a
 // residence with no overlapping events just shows no caption, never a
 // placeholder.
@@ -257,9 +271,6 @@ function PlaceForm({ initial, onCancel, onSubmit }) {
   );
 }
 
-function ChainArrowIcon() {
-  return (<svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h13M13 6l6 6-6 6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>);
-}
 function PencilIcon() {
   return (<svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4Z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" /><path d="M14 6l4 4" stroke="currentColor" strokeWidth="1.7" /></svg>);
 }
