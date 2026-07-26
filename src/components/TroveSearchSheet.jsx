@@ -11,6 +11,14 @@ const KIND_LABEL = {
   memorial: 'Memorial',
   newspapers: 'Newspapers',
 };
+const KIND_ICON = {
+  'civil-registration': ScrollIcon,
+  archive: ArchiveBoxIcon,
+  military: RibbonIcon,
+  commercial: CompassIcon,
+  memorial: HeadstoneIcon,
+  newspapers: TroveIcon,
+};
 
 /*
  * Search Trove (National Library of Australia — historic newspapers,
@@ -151,7 +159,7 @@ export default function TroveSearchSheet({ person, onAddAsDocument, onClose }) {
                   </p>
                   {r.snippet && <p className="trove-result__snippet">{r.snippet}</p>}
                   <a href={r.troveUrl} target="_blank" rel="noreferrer" className="trove-result__link">
-                    View on Trove ↗
+                    View on Trove <ArrowIcon />
                   </a>
                 </div>
                 {(r.category === 'newspaper' || r.category === 'gazette') && (
@@ -180,23 +188,30 @@ export default function TroveSearchSheet({ person, onAddAsDocument, onClose }) {
                 {group.key === 'General' ? 'General' : COUNTRY_NAME[group.key] || group.key}
               </span>
               <ul className="trove-search__other-list">
-                {group.items.map((a) => (
-                  <li key={a.id}>
-                    <a
-                      href={buildArchiveUrl(a, archiveFields)}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="trove-other"
-                    >
-                      <span className="trove-other__body">
-                        <span className="trove-other__kind">{KIND_LABEL[a.kind] || a.kind}</span>
-                        <span className="trove-other__label">{a.label}</span>
-                        <span className="trove-other__desc">{a.description}</span>
-                      </span>
-                      <span className="trove-other__action">{a.prefill ? 'Search ↗' : 'Open ↗'}</span>
-                    </a>
-                  </li>
-                ))}
+                {group.items.map((a) => {
+                  const Icon = KIND_ICON[a.kind] || CompassIcon;
+                  return (
+                    <li key={a.id}>
+                      <a
+                        href={buildArchiveUrl(a, archiveFields)}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="trove-other"
+                      >
+                        <span className="trove-other__icon" aria-hidden="true"><Icon /></span>
+                        <span className="trove-other__body">
+                          <span className="trove-other__kind">{KIND_LABEL[a.kind] || a.kind}</span>
+                          <span className="trove-other__label">{a.label}</span>
+                          <span className="trove-other__desc">{a.description}</span>
+                        </span>
+                        <span className={`trove-other__action${a.prefill ? ' trove-other__action--search' : ''}`}>
+                          {a.prefill ? 'Search' : 'Open'}
+                          <ArrowIcon />
+                        </span>
+                      </a>
+                    </li>
+                  );
+                })}
               </ul>
             </div>
           ))}
@@ -211,4 +226,26 @@ function TroveIcon() {
 }
 function CloseIcon() {
   return (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" /></svg>);
+}
+// Small, one-per-`kind` line icons for the "other archives" list — the same
+// 18px outline style already used across the insights modules (thin 1.5–1.6
+// stroke, rounded joins) rather than borrowing a filled/duotone set that
+// would clash with the rest of this sheet.
+function ScrollIcon() {
+  return (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 4h10a2 2 0 0 1 2 2v13a1.5 1.5 0 0 1-3 0V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2 2 2 0 0 0 2 2h1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /><path d="M7 10h8M7 13h8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" /></svg>);
+}
+function ArchiveBoxIcon() {
+  return (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="4" rx="1.2" stroke="currentColor" strokeWidth="1.5" /><path d="M4.5 8.5v9a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-9" stroke="currentColor" strokeWidth="1.5" /><path d="M10 13h4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>);
+}
+function RibbonIcon() {
+  return (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="8.5" r="4.5" stroke="currentColor" strokeWidth="1.5" /><path d="M9 12.5 7 21l5-2.5 5 2.5-2-8.5" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" /></svg>);
+}
+function CompassIcon() {
+  return (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="8.5" stroke="currentColor" strokeWidth="1.5" /><path d="m14.5 9.5-1.8 4.7a1 1 0 0 1-.5.5l-4.7 1.8 1.8-4.7a1 1 0 0 1 .5-.5z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" /></svg>);
+}
+function HeadstoneIcon() {
+  return (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 21V11a6 6 0 0 1 12 0v10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /><path d="M4 21h16" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /><path d="M12 8.5v4.5M9.75 10.75h4.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" /></svg>);
+}
+function ArrowIcon() {
+  return (<svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M7 17 17 7M8 7h9v9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>);
 }
