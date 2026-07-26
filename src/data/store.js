@@ -1840,6 +1840,58 @@ export async function migrateDocThumbsToR2(uploadFn) {
   return { total: docs.length, uploaded, failed };
 }
 
+// Retroactively geocodes any residences[] entry still missing lat/lon — one
+// added before geocoding was wired in at all, or where the request failed/
+// timed out at the time (a rate-limited moment, a deploy-timing gap). Same
+// one-time-after-login convention as migratePhotosToR2/migrateDocsToR2
+// above: scans the whole tree once, resolves every distinct un-geocoded
+// place in as few batched requests as possible (geocodePlacesFn is
+// lib/places.js#geocodePlaces), and applies every result in a single commit
+// rather than one per residence. Entirely invisible — no activity log entry
+// (nothing a person did), matching migrateDocThumbsToR2's own precedent for
+// silent storage/enrichment backfills.
+export async function backfillResidenceGeocodes(geocodePlacesFn) {
+  const missing = [];
+  for (const p of state.people || []) {
+    for (const r of p.residences || []) {
+      if (r.place?.trim() && !(Number.isFinite(r.lat) && Number.isFinite(r.lon))) missing.push(r);
+    }
+  }
+  if (!missing.length) return { total: 0, updated: 0, failed: 0 };
+
+  const resolved = await geocodePlacesFn(missing.map((r) => r.place)).catch(() => ({}));
+
+  let updated = 0, failed = 0;
+  const byResidenceId = new Map(); // residence id -> resolved geo fields
+  for (const r of missing) {
+    const geo = resolved?.[r.place];
+    if (geo && Number.isFinite(geo.lat) && Number.isFinite(geo.lon)) {
+      byResidenceId.set(r.id, geo);
+      updated++;
+    } else {
+      failed++;
+    }
+  }
+
+  if (byResidenceId.size) {
+    commit({
+      ...state,
+      people: state.people.map((p) => (
+        !p.residences?.length ? p : {
+          ...p,
+          residences: p.residences.map((r) => {
+            const geo = byResidenceId.get(r.id);
+            return geo
+              ? { ...r, lat: geo.lat, lon: geo.lon, suburb: geo.suburb ?? null, state: geo.state ?? null, country: geo.country ?? null }
+              : r;
+          }),
+        }
+      )),
+    });
+  }
+  return { total: missing.length, updated, failed };
+}
+
 export function updateFamilyName(name) {
   commit({ ...state, familyName: name.trim() || state.familyName });
 }
