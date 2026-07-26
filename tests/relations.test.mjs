@@ -858,6 +858,34 @@ test('exact 2nd-cousin shape (3 up / 3 down) reads as "2nd Cousin"', () => {
   assert.equal(relationLabel(g, 'jason', 'other'), '2nd Cousin');
 });
 
+test('relationLabel is already correctly bidirectional for a "2nd cousin\'s son" shape (Lineage swap-toggle feature)', () => {
+  // The exact real-world example from the swap-toggle feature request:
+  // Dianne and Matthew's mother are 2nd cousins (3 up / 3 down from a
+  // shared great-grandparent); Matthew is his mother's son, one more hop
+  // down. relationLabel(g, dianne, matthew) should read "2nd Cousin's Son"
+  // ("Matthew is Dianne's 2nd cousin's son"), and calling it with focus and
+  // other SWAPPED — relationLabel(g, matthew, dianne) — should read
+  // "Mother's 2nd Cousin" ("Dianne is Matthew's mother's 2nd cousin"), with
+  // no separate relationship-inversion logic involved: this is the same
+  // generic classifier, just called the other way around.
+  const g = buildGraph(
+    [
+      person('ggp'),
+      person('gpA'), person('gpB'),
+      person('parentA'), person('parentB'),
+      person('dianne', 'female'), person('mother', 'female'), person('matthew', 'male'),
+    ],
+    [
+      parentEdge('ggp', 'gpA'), parentEdge('ggp', 'gpB'),
+      parentEdge('gpA', 'parentA'), parentEdge('gpB', 'parentB'),
+      parentEdge('parentA', 'dianne'), parentEdge('parentB', 'mother'),
+      parentEdge('mother', 'matthew'),
+    ],
+  );
+  assert.equal(relationLabel(g, 'dianne', 'matthew'), "2nd Cousin's Son");
+  assert.equal(relationLabel(g, 'matthew', 'dianne'), "Mother's 2nd Cousin");
+});
+
 test('4 generations up with no named pattern → "Paternal Great-great-grandfather"', () => {
   const g = buildGraph(
     [person('a'), person('p1', 'male'), person('p2'), person('p3'), person('p4', 'male')],
