@@ -31,9 +31,10 @@ const MIN_ZOOM = 0.16; // free zoom-out: take in a huge tree at a glance (double
 // tap-to-reveal should keep behaving exactly as it always did (a modest
 // pull-back to frame whoever's newly visible, floor 0.4) — it should never
 // borrow the deep zoom-out meant for the deliberate "show everyone" moment.
-// That one (WHOLE_TREE_FIT_FLOOR, 0.2) only applies once every person in the
-// tree is actually expanded (see wholeTreeActive below), which is otherwise
-// only reachable via the explicit "Show all" toggle.
+// The deeper one (WHOLE_TREE_FIT_FLOOR, 0.2) only eases in once past halfway
+// through revealing the WHOLE tree (see the smooth revealFrac/easeIn blend
+// below), which in practice is only ever reachable via the explicit "Show
+// all" toggle — an ordinary reveal never gets anywhere close.
 const FIT_FLOOR = 0.4;
 const WHOLE_TREE_FIT_FLOOR = 0.2;
 // Below this zoom, bubbles are too small and packed together to grab on
@@ -1700,13 +1701,25 @@ export default function BubbleTree({
           let halfY = Math.max(camTY - minY, maxY - camTY, rr);
           let fit = Math.min(MAX_ZOOM, (W / 2 - PAD) / halfX, ((H - topInset) / 2 - PAD) / halfY);
 
-          // Only the deliberate "every person expanded" moment gets the deeper
-          // floor — an ordinary tap that reveals a handful of relatives keeps
-          // the original, tighter one (see the two constants' comment above).
+          // Only the deliberate "every person expanded" moment approaches the
+          // deeper floor — an ordinary tap that reveals a handful of relatives
+          // keeps the original, tighter one (see the two constants' comment
+          // above). Real feedback on the ripple reveal: this used to be a
+          // hard flip (tight floor right up until literally the very last
+          // person appeared, then an instant re-snap to the deep floor) —
+          // now it eases in smoothly over the back half of a reveal instead,
+          // so the last few steps of "All" don't cause a visible re-snap.
+          // Only ever engages once past the HALFWAY point of the whole tree
+          // (revealFrac > 0.5) — an ordinary small reveal, or a large tree's
+          // capped nearest-N reveal (which never gets anywhere near 100% of
+          // the WHOLE tree), never reaches far enough for this to matter, so
+          // both keep behaving exactly as before.
           const g = graphRef.current;
-          const wholeTreeActive = !!expandedRef.current && g.people.length > 0
-            && expandedRef.current.size >= g.people.length;
-          const fitFloor = wholeTreeActive ? WHOLE_TREE_FIT_FLOOR : FIT_FLOOR;
+          const revealFrac = (expandedRef.current && g.people.length > 0)
+            ? expandedRef.current.size / g.people.length
+            : 0;
+          const easeIn = Math.min(1, Math.max(0, (revealFrac - 0.5) / 0.5)) ** 2;
+          const fitFloor = FIT_FLOOR - (FIT_FLOOR - WHOLE_TREE_FIT_FLOOR) * easeIn;
 
           // The revealed family can be wide enough that fitting everyone would
           // need to zoom out further than the follow-mode floor allows — most

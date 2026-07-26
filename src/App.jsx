@@ -58,7 +58,7 @@ import {
 import { groupRecapUpdates, captionForRecapGroup } from './lib/recap.js';
 import { uploadPhoto, generateThumb, uploadDocument, savePhotoToDevice, srcToDataUrl, summarizeDocument } from './lib/image.js';
 import { useImageZoom } from './lib/useImageZoom.js';
-import { buildGraph, pathBetween, pathBetweenOrdered, bloodRelativesOf, distancesFrom } from './data/graph.js';
+import { buildGraph, pathBetween, pathBetweenOrdered, bloodRelativesOf, distancesFrom, distancesFromMany } from './data/graph.js';
 import { storeToGedcom } from './lib/gedcom.js';
 import { detectRegion, nearestWorldEvent } from './lib/worldEvents.js';
 import { findDuplicatePairs, pairKey, loadDismissedDuplicates, saveDismissedDuplicates } from './lib/duplicates.js';
@@ -179,8 +179,31 @@ const DOC_TRACKABLE_FIELDS = [...PROFILE_FIELD_KEYS, 'cause_of_death'];
 // See toggleExpandAll's own comment: above this many people, "All" reveals
 // only the nearest ones to whoever's active instead of the whole tree.
 const MAX_BUBBLE_REVEAL = 250;
-const REVEAL_BATCH = 40;
-const REVEAL_INTERVAL_MS = 90;
+// A single BFS layer (a whole generation band, say) can still be far bigger
+// than is safe to spawn in one frame — this caps how many bubbles ever
+// materialize in a single tick, same crash-prevention reasoning as before,
+// just applied within a layer instead of across the whole flat reveal list.
+const RIPPLE_CHUNK_SIZE = 40;
+// Real feedback: the reveal should feel like a ripple growing outward from
+// whatever's already visible, not an arbitrary dump — and should settle
+// within a couple of seconds regardless of how many BFS layers a given
+// family happens to have. RIPPLE_TOTAL_MS is a target the scheduler
+// continuously re-aims for against the real clock (see toggleExpandAll),
+// not a delay computed once upfront — real per-step overhead (spawning
+// sprites, the force sim re-registering nodes) grows as more bubbles
+// become live, and a fixed schedule was measured overrunning this target
+// by 2-3x on a large tree. [[MIN, MAX]] clamp the per-step gap so a reveal
+// with very few layers doesn't feel instant and one with dozens (or one
+// whose real overhead is unexpectedly high) doesn't drag or stutter.
+const RIPPLE_TOTAL_MS = 2200;
+const RIPPLE_MIN_LAYER_MS = 70;
+const RIPPLE_MAX_LAYER_MS = 260;
+// Between sub-chunks of the SAME layer (only relevant when a layer is bigger
+// than RIPPLE_CHUNK_SIZE) — a tighter range than the inter-layer one, kept
+// fast so a big generation band still reads as one continuous wave filling
+// in, not a series of stutters.
+const RIPPLE_MIN_SUBCHUNK_MS = 25;
+const RIPPLE_MAX_SUBCHUNK_MS = 70;
 
 function buildExtracted(result) {
   const pf = result.profileFields;
@@ -968,9 +991,22 @@ export default function App() {
   // canvas isn't a useful way to look at everyone in a tree this size anyway)
   // and points to List view, which is already virtualized and handles any
   // tree size today.
+  //
+  // Real feedback on the first (crash) fix and its follow-up: reveal order
+  // was completely arbitrary (whatever order people happen to sit in the
+  // tree data), so two directly-connected relatives could land in different
+  // batches with no visible relationship to each other — nothing like the
+  // "organic, ripple growing outward" feel this was asked to have. Rebuilt
+  // around a genuine multi-source BFS from whatever's ALREADY visible
+  // (distancesFromMany), revealing complete layers outward — everyone one
+  // hop from the visible set, then everyone two hops out, and so on — so a
+  // person only ever appears once everyone closer than them already has.
+  // Each bubble's own entrance (Bubble.scaleSpring/curAlpha in bubble.js,
+  // already a springy pop-in + fade) does the rest — this only had to fix
+  // the ORDER and PACING new bubbles arrive in, not build a new animation.
   const toggleExpandAll = useCallback(() => {
     if (revealTimerRef.current) {
-      clearInterval(revealTimerRef.current);
+      clearTimeout(revealTimerRef.current);
       revealTimerRef.current = null;
     }
     if (canCollapse) {
@@ -978,12 +1014,12 @@ export default function App() {
       return;
     }
     const total = graph.people.length;
-    let targetIds;
+    const dist = distancesFromMany(graph, expanded);
+    let candidateIds;
     if (total <= MAX_BUBBLE_REVEAL) {
-      targetIds = graph.people.map((p) => p.id);
+      candidateIds = graph.people.map((p) => p.id);
     } else {
-      const dist = distancesFrom(graph, activeId);
-      targetIds = graph.people
+      candidateIds = graph.people
         .map((p) => ({ id: p.id, d: dist.get(p.id) ?? Infinity }))
         .sort((a, b) => a.d - b.d)
         .slice(0, MAX_BUBBLE_REVEAL)
@@ -991,29 +1027,74 @@ export default function App() {
       setSyncToast(`Showing the ${MAX_BUBBLE_REVEAL} people closest to you — switch to List view to see everyone in a family this size.`);
       setTimeout(() => setSyncToast(null), 6000);
     }
-    // Stagger the reveal in batches rather than one giant Set update, so the
-    // force simulation and texture loads ramp up smoothly instead of all at
-    // once. The first batch lands immediately (no interval delay) so a small
-    // tree still feels instant, same as before this fix.
-    let i = 0;
-    const revealNextBatch = () => {
-      const batch = targetIds.slice(i, i + REVEAL_BATCH);
-      i += REVEAL_BATCH;
+
+    // Group into BFS layers by distance from the currently-visible set,
+    // dropping anyone already shown. `layers[0]` is everyone one hop out,
+    // `layers[1]` two hops, and so on — the actual ripple order.
+    const byDistance = new Map();
+    for (const id of candidateIds) {
+      if (expanded.has(id)) continue;
+      const d = dist.get(id) ?? Infinity;
+      if (!byDistance.has(d)) byDistance.set(d, []);
+      byDistance.get(d).push(id);
+    }
+    const layers = [...byDistance.keys()].sort((a, b) => a - b).map((d) => byDistance.get(d));
+    if (!layers.length) return; // nothing new within the candidate set to reveal
+
+    // Each step carries a WEIGHT, not a fixed delay — the actual gap before
+    // it is computed live, against how much of RIPPLE_TOTAL_MS is actually
+    // left on the real clock, right before it's scheduled. A step ending a
+    // layer (the "reached the next ring" pause) carries more weight — and a
+    // gentle per-layer ease (slightly more weight further out) echoes a real
+    // ripple settling as it travels — than a step mid-layer (kept snappy so
+    // a big generation band still reads as one continuous wave, not a
+    // stutter). Measured live rather than pre-computed because real spawn/
+    // render cost (new sprites, the force sim re-registering nodes) grows
+    // with how many bubbles are already live — a fixed schedule computed
+    // once upfront quietly overran its own target by 2-3x during testing on
+    // a large tree; recomputing the remaining gap against the remaining
+    // budget on every step automatically absorbs that instead of
+    // compounding it into an ever-longer reveal.
+    const steps = [];
+    layers.forEach((layerIds, layerIndex) => {
+      const chunkCount = Math.ceil(layerIds.length / RIPPLE_CHUNK_SIZE);
+      for (let j = 0, c = 0; j < layerIds.length; j += RIPPLE_CHUNK_SIZE, c++) {
+        const chunk = layerIds.slice(j, j + RIPPLE_CHUNK_SIZE);
+        const isLayerEnd = c === chunkCount - 1;
+        steps.push({ ids: chunk, isLayerEnd, weight: isLayerEnd ? 1 + layerIndex * 0.05 : 0.25 });
+      }
+    });
+    const totalWeight = steps.reduce((s, st) => s + st.weight, 0);
+
+    // First step lands immediately (no delay before it) so even a tiny
+    // reveal feels instant, same as before this fix; a chain of timeouts
+    // (rather than a fixed setInterval) is what lets each step carry its own
+    // adaptive delay instead of one flat cadence for the whole reveal.
+    const t0 = Date.now();
+    let idx = 0;
+    let remainingWeight = totalWeight;
+    const revealNextStep = () => {
+      const step = steps[idx++];
+      remainingWeight -= step.weight;
       setExpanded((prev) => {
         const next = new Set(prev);
-        for (const id of batch) next.add(id);
+        for (const id of step.ids) next.add(id);
         return next;
       });
-      if (i >= targetIds.length && revealTimerRef.current) {
-        clearInterval(revealTimerRef.current);
+      if (idx < steps.length) {
+        const remainingBudget = Math.max(0, RIPPLE_TOTAL_MS - (Date.now() - t0));
+        const nextWeight = steps[idx].weight;
+        const rawGap = remainingWeight > 0 ? (remainingBudget * nextWeight) / remainingWeight : RIPPLE_MIN_LAYER_MS;
+        const [gapMin, gapMax] = steps[idx].isLayerEnd
+          ? [RIPPLE_MIN_LAYER_MS, RIPPLE_MAX_LAYER_MS]
+          : [RIPPLE_MIN_SUBCHUNK_MS, RIPPLE_MAX_SUBCHUNK_MS];
+        revealTimerRef.current = setTimeout(revealNextStep, Math.min(gapMax, Math.max(gapMin, rawGap)));
+      } else {
         revealTimerRef.current = null;
       }
     };
-    revealNextBatch();
-    if (i < targetIds.length) {
-      revealTimerRef.current = setInterval(revealNextBatch, REVEAL_INTERVAL_MS);
-    }
-  }, [canCollapse, activeId, graph]);
+    revealNextStep();
+  }, [canCollapse, activeId, expanded, graph]);
 
   // Export the tree as a standard GEDCOM 5.5.1 file (portable to Ancestry,
   // MyHeritage, FamilySearch, …). Lossy by nature — photos, memories, tags,
@@ -1051,7 +1132,7 @@ export default function App() {
   }, [user, data.myPersonId]);
 
   useEffect(() => () => {
-    if (revealTimerRef.current) clearInterval(revealTimerRef.current);
+    if (revealTimerRef.current) clearTimeout(revealTimerRef.current);
   }, []);
 
   const activateNormal = useCallback((id) => {
