@@ -27,6 +27,18 @@ export async function onRequestPost({ request, env, data }) {
     return json({ error: 'bad_request', message: `Too many places in one request (max ${MAX_PLACES_PER_REQUEST}).` }, { status: 400 });
   }
 
-  const resolved = await geocodePlaces(env, places);
-  return json({ places: resolved });
+  try {
+    const resolved = await geocodePlaces(env, places);
+    return json({ places: resolved });
+  } catch (err) {
+    // geocodePlaces already degrades gracefully around the one known
+    // schema-lag case (migration 0018's columns not yet applied to this
+    // database — see _lib/geocode.js's own try/catch). Anything else
+    // reaching here is a genuine, unexpected failure (a real D1 outage,
+    // say) — fail clean with a 503 rather than an unhandled exception, so
+    // a client-side caller (geocodePlace/geocodePlaces in lib/places.js)
+    // sees an ordinary "not ok" response instead of a raw platform error.
+    console.error('POST /api/geocode failed', err);
+    return json({ error: 'geocode_failed' }, { status: 503 });
+  }
 }

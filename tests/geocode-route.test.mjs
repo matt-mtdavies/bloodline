@@ -55,5 +55,11 @@ await atest('POST /api/geocode: 400 when the batch exceeds the per-request cap',
   assert.equal(res.status, 400);
 });
 
+await atest('POST /api/geocode: an unexpected failure inside geocodePlaces (a real DB outage, not the known schema-lag case) returns 503, not an unhandled exception', async () => {
+  const brokenDB = { prepare() { throw new Error('D1 is unreachable'); } };
+  const res = await onRequestPost({ request: req({ places: ['Cardiff'] }), env: { DB: brokenDB }, data: { user: { uid: 'u1' } } });
+  assert.equal(res.status, 503);
+});
+
 console.log(`\n  ${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);
