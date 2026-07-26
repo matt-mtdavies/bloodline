@@ -10790,140 +10790,115 @@ button.health-notes {
 }
 
 /* ── Places Lived ─────────────────────────────────────────────────────────── */
-/* The constellation map (PlacesMap.jsx) — a small plotted journey sitting
-   above the chain below. Card chrome matches .places-card's own convention
-   (soft shadow, rounded corners) so it reads as part of the same section,
-   not a bolted-on widget. */
-.places-map {
-  margin-bottom: 14px;
-  border-radius: var(--radius-lg, 24px);
-  overflow: hidden;
-  box-shadow: var(--shadow-soft);
-}
-.places-map__svg { display: block; width: 100%; height: auto; }
-.places-map__grid line { stroke: var(--hairline); stroke-width: 1; opacity: 0.55; }
-.places-map__path {
-  stroke: var(--gold);
-  stroke-width: 1.6;
-  stroke-linecap: round;
-  stroke-dasharray: 1 6;
-  opacity: 0.75;
-}
-.places-map__point { cursor: default; }
-.places-map__point[role='button'] { cursor: pointer; }
-.places-map__dot {
-  fill: var(--accent);
-  stroke: var(--paper);
-  stroke-width: 1.5;
-  transform-box: fill-box;
-  transform-origin: center;
-  transition: transform 0.2s var(--ease, ease);
-}
-.places-map__point[role='button']:hover .places-map__dot,
-.places-map__point[role='button']:focus-visible .places-map__dot {
-  transform: scale(1.18);
-}
-.places-map__point--current .places-map__dot { fill: var(--gold); }
-.places-map__pulse {
-  fill: none;
-  stroke: var(--gold);
-  stroke-width: 1.5;
-  opacity: 0.55;
-  transform-box: fill-box;
-  transform-origin: center;
-  animation: places-map-pulse 2.6s ease-out infinite;
-}
-@keyframes places-map-pulse {
-  0%   { transform: scale(0.85); opacity: 0.6; }
-  70%  { transform: scale(1.35); opacity: 0; }
-  100% { transform: scale(1.35); opacity: 0; }
-}
-.places-map__label {
-  font-family: var(--body);
-  font-size: 10.5px;
-  font-weight: 600;
-  fill: var(--ink-soft);
-  paint-order: stroke;
-  stroke: var(--paper);
-  stroke-width: 3px;
-}
-@media (prefers-reduced-motion: reduce) {
-  .places-map__pulse { animation: none; opacity: 0.35; }
-}
-
-/* The chain visual — same pattern as InsightModules.jsx's .tim-mig
-   (HeartlandsModule's family migration chips), reimplemented with its own
-   class names since this is one person's own history, not a family-wide
-   aggregate, but deliberately the same visual language. */
-.places-chain {
+/* The timeline — deliberately modeled on MilitaryService.jsx's own
+   .military__route/.military__waypoint campaign timeline (own class names,
+   not shared ones, since this section has its own edit/remove/add
+   interactions the read-only military route doesn't) — same dashed-line-
+   through-dots visual language, and the same reason it works: position
+   encodes ONLY chronology (array order), never real-world distance, so any
+   number of entries — however tightly clustered they really are — can
+   never collide. Replaced an earlier three-layer version (a text chain, a
+   row of chapter cards, AND a geographic "constellation map") that a design
+   review found genuinely redundant and, for the map specifically, prone to
+   real label-collision at realistic data density. */
+.places-route {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 8px;
-  margin-bottom: 14px;
-  color: var(--ink-faint, #b0a9a5);
-}
-.places-chain__step { display: inline-flex; align-items: center; gap: 6px; }
-.places-chain__step b {
-  font-weight: 600;
-  color: var(--ink);
-  background: var(--accent-soft, #f7efe9);
-  border-radius: 999px;
-  padding: 4px 12px;
-  font-size: 13.5px;
-}
-.places-chain__step em { font-style: normal; font-size: 11.5px; color: var(--ink-soft); }
-
-.places-cards {
-  list-style: none;
-  margin: 0;
-  padding: 4px 2px 6px;
-  display: flex;
-  gap: 10px;
+  gap: 20px;
   overflow-x: auto;
-  scroll-snap-type: x mandatory;
-  -webkit-overflow-scrolling: touch;
+  padding: 8px 4px 12px;
+  margin: 0 -4px 6px;
+  position: relative;
+  scrollbar-width: none;
 }
-.places-cards::-webkit-scrollbar { display: none; }
-.places-card {
-  scroll-snap-align: start;
-  flex: none;
-  width: 200px;
-  padding: 14px;
-  border-radius: 16px;
-  background: var(--card);
-  box-shadow: var(--shadow-soft);
+.places-route::-webkit-scrollbar { display: none; }
+.places-route::before {
+  content: '';
+  position: absolute;
+  left: 20px;
+  right: 20px;
+  top: 19px;
+  height: 0;
+  border-top: 2px dashed var(--hairline);
+  z-index: 0;
+}
+.places-waypoint {
+  position: relative;
+  z-index: 1;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  align-items: center;
+  text-align: center;
+  flex: none;
+  width: 116px;
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
 }
-.places-card--new { width: 100%; box-sizing: border-box; }
-/* Briefly lit when its dot is tapped on the constellation map above —
-   connects the two visuals without duplicating any information. */
-.places-card--highlight {
-  box-shadow: 0 0 0 2px var(--gold), var(--shadow-lift);
-  transition: box-shadow 0.3s var(--ease, ease);
+.places-waypoint-dot {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--card);
+  border: 3px solid var(--paper);
+  box-shadow: 0 0 0 1.5px var(--ink-faint, #b0a9a5);
+  margin-bottom: 9px;
+  transition: background 0.2s ease, box-shadow 0.2s ease, transform 0.2s var(--spring, ease);
 }
-.places-card__place {
+.places-waypoint-range {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink-soft);
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.places-waypoint-title {
+  font-family: var(--display);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+  margin-top: 3px;
+  line-height: 1.25;
+}
+.places-waypoint--active .places-waypoint-dot {
+  background: var(--accent);
+  box-shadow: 0 0 0 1.5px var(--accent);
+  transform: scale(1.15);
+}
+.places-waypoint--active .places-waypoint-range { color: var(--accent-deep); }
+
+/* The single shared detail slot for whichever waypoint is selected (or the
+   add/edit form) — one place at a time, not a card per residence, so
+   browsing many places stays a light horizontal scroll rather than a
+   growing stack of near-duplicate cards. */
+.places-detail {
+  background: var(--card);
+  border-radius: 16px;
+  padding: 14px 16px;
+  box-shadow: var(--shadow-soft);
+}
+.places-detail__place {
   margin: 0;
   font-family: var(--display);
-  font-size: 16px;
+  font-size: 17px;
   font-weight: 700;
   color: var(--ink);
   line-height: 1.25;
 }
-.places-card__range { margin: 2px 0 0; font-size: 12px; font-weight: 600; color: var(--ink-soft); }
-.places-card__caption {
-  margin: 6px 0 0;
-  font-size: 12px;
+.places-detail__range { margin: 3px 0 0; font-size: 12.5px; font-weight: 600; color: var(--ink-soft); }
+.places-detail__caption {
+  margin: 8px 0 0;
+  font-size: 13px;
   line-height: 1.4;
   color: var(--ink-soft);
   font-style: italic;
 }
-.places-card__actions { display: flex; gap: 8px; margin-top: 10px; }
-.places-card__edit, .places-card__del {
-  width: 28px;
-  height: 28px;
+.places-detail__actions { display: flex; gap: 8px; margin-top: 12px; }
+.places-detail__edit, .places-detail__del {
+  width: 30px;
+  height: 30px;
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -10932,16 +10907,16 @@ button.health-notes {
   color: var(--ink-soft);
   transition: background 0.15s;
 }
-.places-card__edit:hover, .places-card__del:hover { background: var(--hairline); }
-.places-card__confirm {
+.places-detail__edit:hover, .places-detail__del:hover { background: var(--hairline); }
+.places-detail__confirm {
   display: flex;
   flex-direction: column;
   gap: 8px;
   font-size: 12.5px;
   color: var(--ink-soft);
-  margin-top: 10px;
+  margin-top: 12px;
 }
-.places-card__confirm-btns { display: flex; gap: 8px; }
+.places-detail__confirm-btns { display: flex; gap: 8px; }
 
 .places-form { display: flex; flex-direction: column; gap: 10px; width: 100%; }
 .places-form__input {
