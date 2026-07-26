@@ -2110,6 +2110,10 @@ export function updateCondition(personId, conditionId, fields) {
 // then; the id-based add/update/remove trio mirrors addCondition/
 // removeCondition/updateCondition above exactly, the established
 // convention for a small, freely-editable array of dated records.
+// Three distinct activity types (added/updated/removed), mirroring the
+// existing relationship_added/relationship_changed/relationship_removed
+// convention above — each carries `detail: <place name>` so ActivityFeed.jsx
+// can name the actual place rather than a generic "updated the profile".
 export function addResidence(personId, { place, from_year = null, to_year = null, lat = null, lon = null, suburb = null, state: stateName = null, country = null }) {
   const person = state.people.find((p) => p.id === personId);
   const residence = { id: cid(), place, from_year, to_year, lat, lon, suburb, state: stateName, country };
@@ -2120,12 +2124,13 @@ export function addResidence(personId, { place, from_year = null, to_year = null
         ? { ...p, residences: [...(p.residences || []), residence] }
         : p,
     ),
-  }, { type: 'residence_updated', personId, personName: person?.display_name ?? '' }));
+  }, { type: 'residence_added', personId, personName: person?.display_name ?? '', detail: place }));
   return residence.id;
 }
 
 export function removeResidence(personId, residenceId) {
   const person = state.people.find((p) => p.id === personId);
+  const removed = person?.residences?.find((r) => r.id === residenceId);
   commit(withActivity({
     ...state,
     people: state.people.map((p) =>
@@ -2133,11 +2138,12 @@ export function removeResidence(personId, residenceId) {
         ? { ...p, residences: (p.residences || []).filter((r) => r.id !== residenceId) }
         : p,
     ),
-  }, { type: 'residence_updated', personId, personName: person?.display_name ?? '' }));
+  }, { type: 'residence_removed', personId, personName: person?.display_name ?? '', detail: removed?.place ?? null }));
 }
 
 export function updateResidence(personId, residenceId, fields) {
   const person = state.people.find((p) => p.id === personId);
+  const existing = person?.residences?.find((r) => r.id === residenceId);
   commit(withActivity({
     ...state,
     people: state.people.map((p) =>
@@ -2145,5 +2151,5 @@ export function updateResidence(personId, residenceId, fields) {
         ? { ...p, residences: (p.residences || []).map((r) => (r.id === residenceId ? { ...r, ...fields } : r)) }
         : p,
     ),
-  }, { type: 'residence_updated', personId, personName: person?.display_name ?? '' }));
+  }, { type: 'residence_updated', personId, personName: person?.display_name ?? '', detail: fields.place ?? existing?.place ?? null }));
 }
