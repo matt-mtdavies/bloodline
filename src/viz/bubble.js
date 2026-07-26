@@ -328,6 +328,17 @@ export class Bubble {
         await img.decode();
         if (this._destroyed) return;
         tex = Texture.from(img);
+        // Unlike Assets.load's URL branch below (a shared, Pixi-managed
+        // cache entry other bubbles/views may also be using — destroying it
+        // here would break them), Texture.from(img) mints a brand new,
+        // unshared GPU texture every single call. Nothing else ever
+        // references it, so nothing else destroys it either — left alone,
+        // every bubble ever built for a data:-URL photo (real user-uploaded
+        // portraits, per lib/image.js's fileToDataUrl — as opposed to the
+        // demo's Assets-cached proxied face URLs) leaks its GPU texture for
+        // the lifetime of the WebGL context. Tracked here so destroy() below
+        // can free it explicitly.
+        this._ownedTexture = tex;
       } else {
         tex = await Assets.load(this.person.photo);
       }
@@ -604,6 +615,16 @@ export class Bubble {
   destroy() {
     this._destroyed = true;
     this.root.destroy({ children: true });
+    // Free the GPU-side resource for a data:-URL photo's own unshared
+    // texture (see tryLoadPhoto) — Container.destroy({children:true}) alone
+    // destroys the Sprite but never its bound texture (correct default for
+    // the far more common Assets.load-cached URL photo, which other
+    // bubbles/views may still be using), so an owned texture needs freeing
+    // explicitly or it outlives every bubble ever built from it.
+    if (this._ownedTexture) {
+      this._ownedTexture.destroy(true);
+      this._ownedTexture = null;
+    }
   }
 }
 

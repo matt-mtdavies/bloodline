@@ -135,22 +135,42 @@ export default function BubbleTree({
     let onVisibility = null; // ditto — assigned inside the IIFE, removed in the cleanup
     let unsubKinTerms = null; // ditto — assigned inside the IIFE, called in the cleanup
     const host = hostRef.current;
-    const app = new Application();
+    let app = new Application();
+
+    const initOptions = {
+      antialias: true,
+      backgroundAlpha: 0,
+      resolution: Math.min(window.devicePixelRatio || 1, 2),
+      autoDensity: true,
+      resizeTo: host,
+      preference: 'webgl',
+    };
 
     (async () => {
       try {
-        await app.init({
-          antialias: true,
-          backgroundAlpha: 0,
-          resolution: Math.min(window.devicePixelRatio || 1, 2),
-          autoDensity: true,
-          resizeTo: host,
-          preference: 'webgl',
-        });
+        await app.init(initOptions);
       } catch (err) {
-        console.error('BubbleTree: PixiJS/WebGL failed to initialize', err);
-        if (alive) setInitFailed(true);
-        return;
+        // A first-attempt context-creation failure is sometimes a transient
+        // GPU/driver hiccup (observed alongside the per-process context-limit
+        // case this catch already guards) rather than a genuinely unusable
+        // device — one short-delay retry costs nothing on the common path
+        // (WebGL already worked) and silently recovers the transient case
+        // without the user ever seeing the Reload screen at all.
+        console.error('BubbleTree: PixiJS/WebGL failed to initialize, retrying once', err);
+        await new Promise((resolve) => setTimeout(resolve, 400));
+        if (!alive) return;
+        // A fresh Application for the retry, not a second .init() on the one
+        // that just failed — whether re-initializing the same instance after
+        // a failed attempt is even safe isn't guaranteed, so this avoids
+        // relying on it.
+        app = new Application();
+        try {
+          await app.init(initOptions);
+        } catch (err2) {
+          console.error('BubbleTree: PixiJS/WebGL failed to initialize on retry', err2);
+          if (alive) setInitFailed(true);
+          return;
+        }
       }
       if (!alive) {
         app.destroy(true);
