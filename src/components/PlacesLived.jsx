@@ -179,8 +179,16 @@ export default function PlacesLived({ person, canEdit, onAddResidence, onUpdateR
         </div>
       ) : selected ? (
         <div className="places-detail">
-          <p className="places-detail__place">{selected.state ? shortPlace(selected.place) : selected.place}</p>
-          {selected.state && <p className="places-detail__state">{selected.state}</p>}
+          <p className="places-detail__place">{hasStructuredLocation(selected) ? shortPlace(selected.place) : selected.place}</p>
+          {(() => {
+            if (!hasStructuredLocation(selected)) return null;
+            const subtitle = [selected.state, selected.country].filter(Boolean).join(', ');
+            // A city-state (Singapore, Monaco...) can geocode with the same
+            // name as its own suburb/country — skip the subtitle rather
+            // than repeating the heading verbatim.
+            if (subtitle === shortPlace(selected.place)) return null;
+            return <p className="places-detail__state">{subtitle}</p>;
+          })()}
           <p className="places-detail__range">{formatRange(selected.from_year, selected.to_year)}</p>
           {(() => {
             const caption = captionFor(person.events, selected.from_year, selected.to_year);
@@ -271,6 +279,15 @@ function formatRange(fromYear, toYear) {
 // detail panel the moment it's selected.
 function shortPlace(place) {
   return (place || '').split(',')[0].trim();
+}
+
+// True once either geocoded field is known — the detail panel's cue to
+// switch from the raw typed `place` string to the clean town-heading +
+// state/country-subtitle split. Checking state alone would show the raw
+// string (which may itself already contain the country as typed text)
+// right above a country-only subtitle, duplicating it.
+function hasStructuredLocation(residence) {
+  return !!(residence.state || residence.country);
 }
 
 // Pulls a short caption from whatever life events fall within this
