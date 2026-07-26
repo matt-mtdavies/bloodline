@@ -1,0 +1,52 @@
+/*
+ * Places Lived — "Show on map" (src/components/PlacesMapView.jsx). Scoped
+ * to its own stylesheet, same precedent as keepsake.css, rather than
+ * growing components.css with an embedded third-party map's chrome.
+ *
+ * Only Leaflet-specific styling lives here — the shell itself
+ * (.places-map-view and its children) is in components.css instead, since
+ * this stylesheet only loads once the lazy PlacesMapView.jsx chunk does,
+ * and the shell needs to render correctly during the Suspense fallback
+ * BEFORE that chunk (and this file) has arrived.
+ */
+
+/* Leaflet's own default z-indexes (200-1000) are far below our overlay's
+   z-index: 70 stacking context is fine as-is since this whole view is its
+   own fixed layer, but the attribution/zoom controls need a legible dark-
+   mode-safe treatment against the tile imagery underneath. */
+.places-map-view__stage .leaflet-control-attribution {
+  font-size: 10px;
+  background: rgba(20, 21, 25, 0.7);
+  color: #d8dade;
+}
+.places-map-view__stage .leaflet-control-attribution a { color: #f0b18f; }
+.places-map-view__stage .leaflet-control-zoom a {
+  background: rgba(20, 21, 25, 0.85);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+/* Numbered chronological markers — a small terracotta badge, not Leaflet's
+   default blue teardrop, so the map reads as "the journey, in order," the
+   same story the horizontal chain already tells. */
+.places-map__marker { background: none; border: none; }
+.places-map__marker-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent, #c2603a), var(--accent-deep, #a44d2c));
+  color: #fff;
+  font-family: var(--display);
+  font-size: 13px;
+  font-weight: 700;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25), 0 0 0 2px rgba(255, 255, 255, 0.85);
+}
+
+.leaflet-popup-content-wrapper {
+  border-radius: 12px;
+  font-family: var(--body, sans-serif);
+}
+.leaflet-popup-content { font-size: 13px; line-height: 1.4; margin: 10px 12px; }
