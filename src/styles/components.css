@@ -8849,7 +8849,7 @@ button.health-notes {
 .lineage-banner__connector {
   position: relative; flex: 1; max-width: 120px; height: 2px;
   background: linear-gradient(90deg, var(--accent, #c2603a), #d2814f);
-  border-radius: 2px; margin: 0 4px; margin-bottom: 16px;
+  border-radius: 2px; margin: 0 4px; margin-bottom: 40px;
   display: flex; align-items: center; justify-content: center;
 }
 .lineage-banner__count {
@@ -8860,6 +8860,22 @@ button.health-notes {
   border-radius: 999px; display: grid; place-items: center;
   box-shadow: 0 2px 6px rgba(194, 96, 58, 0.35);
 }
+/* Swap-direction toggle — sits just below the hop-count badge (feature
+   request: read the connection from either person's perspective). Its own
+   circle, not part of the accent-colored count badge, so it reads as a
+   separate control rather than part of the decorative line. */
+.lineage-banner__swap {
+  position: absolute; top: calc(50% + 13px); left: 50%; transform: translate(-50%, 0);
+  width: 22px; height: 22px; border-radius: 50%;
+  border: 1px solid var(--hairline, #ebedf0); background: #fff;
+  color: var(--ink-soft, #6b6260);
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; padding: 0; -webkit-tap-highlight-color: transparent;
+  box-shadow: 0 2px 6px rgba(36, 31, 28, 0.1);
+  transition: color 0.15s, border-color 0.15s, transform 0.15s;
+}
+.lineage-banner__swap:hover { color: var(--accent, #c2603a); border-color: var(--accent, #c2603a); }
+.lineage-banner__swap:active { transform: translate(-50%, 0) scale(0.9); }
 .lineage-banner__rel {
   margin: 0; text-align: center; font-size: 13px; color: var(--ink-soft, #6b6260);
 }
