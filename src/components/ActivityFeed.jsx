@@ -190,6 +190,8 @@ function EventDescription({ event, userEmail, nameByEmail }) {
       return <>{author} updated {subject}'s health information</>;
     case 'keepsake_generated':
       return <>{author} compiled the {event.detail || 'latest edition'} of {subject}'s Keepsake</>;
+    case 'ancestry_story_generated':
+      return <>{author} compiled the {event.detail || 'latest'} of {subject}'s Ancestry Story</>;
     case 'residence_added':
       return (
         <>
@@ -258,6 +260,7 @@ function typeConfig(type) {
     case 'health_updated':    return { color: '#5a8a72', Icon: HeartIcon };
     case 'member_joined':     return { color: '#2a7a6a', Icon: JoinIcon };
     case 'keepsake_generated':return { color: '#a44d2c', Icon: KeepsakeIcon };
+    case 'ancestry_story_generated': return { color: '#a44d2c', Icon: RootsIcon };
     case 'residence_added':
     case 'residence_updated':
     case 'residence_removed': return { color: '#b08642', Icon: PinIcon };
@@ -428,6 +431,17 @@ function KeepsakeIcon() {
   );
 }
 
+// Same glyph as InsightModules.jsx's own RootsIcon (a trunk branching down
+// into roots) — reused here for the identical "ancestry" meaning, one small
+// icon per file being this codebase's own convention rather than a shared
+// icon module.
+function RootsIcon() {
+  return (
+    <svg width="9" height="9" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M12 3v9M12 12l-5 8M12 12l5 8M12 12l-2.5 8.5M12 12l2.5 8.5" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
 function PinIcon() {
   return (
     <svg width="9" height="9" viewBox="0 0 24 24" fill="none" aria-hidden="true">

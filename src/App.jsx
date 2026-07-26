@@ -2667,6 +2667,17 @@ export default function App() {
           updatePerson(id, { story }, { type: 'person_updated', personId: id, personName: person?.display_name ?? '', detail: 'life story' });
         }}
         onOpenKeepsake={(id) => setKeepsakeId(id)}
+        onAncestryStoryCompiled={(id, edition) => {
+          const person = graph.byId.get(id);
+          const n = edition.editionNumber;
+          const ord = ['first', 'second', 'third', 'fourth', 'fifth', 'sixth', 'seventh', 'eighth', 'ninth', 'tenth'][n - 1] || `${n}th`;
+          logActivity({
+            type: 'ancestry_story_generated',
+            personId: id,
+            personName: person?.display_name ?? '',
+            detail: `${ord} chronicle`,
+          });
+        }}
         onUpdateMilitaryStory={(id, military_story) => {
           const person = graph.byId.get(id);
           updatePerson(id, { military_story }, { type: 'person_updated', personId: id, personName: person?.display_name ?? '', detail: 'military service story' });

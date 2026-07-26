@@ -21,7 +21,7 @@ import { buildTimelineLayout } from '../lib/placesTimeline.js';
  * ancestors instead of residences. Waypoints here are read-only (an
  * ancestor isn't a separate editable record the way a residence is).
  */
-export default function AncestryStory({ graph, personId }) {
+export default function AncestryStory({ graph, personId, onCompiled }) {
   const facts = useMemo(() => buildAncestryFacts(graph, personId), [graph, personId]);
 
   const [state, setState] = useState('loading'); // loading | ready | unavailable
@@ -80,6 +80,7 @@ export default function AncestryStory({ graph, personId }) {
       const body = await r.json().catch(() => null);
       if (!r.ok || !body?.narrative) { setCompileError(true); return; }
       setEdition(body);
+      onCompiled?.(body);
     } finally {
       setCompiling(false);
     }
