@@ -79,6 +79,7 @@ export default function PersonSheet({
   onUpdatePartnerMeta,
   onUpdateStory,
   onOpenKeepsake,
+  onAncestryStoryCompiled,
   onUpdateMilitaryStory,
   onUpdateMilitaryContext,
   onAddCondition,
@@ -1613,7 +1614,13 @@ export default function PersonSheet({
                 told forward in time. Not gated on canEdit: compiling only ever
                 writes a stored narrative (never tree data), same as the
                 Keepsake's own compile button. */}
-            {!restricted && <AncestryStory graph={graph} personId={person.id} />}
+            {!restricted && (
+              <AncestryStory
+                graph={graph}
+                personId={person.id}
+                onCompiled={(edition) => onAncestryStoryCompiled?.(person.id, edition)}
+              />
+            )}
 
             {/* Relationships */}
             {(groups.length > 0 || extendedGroups.length > 0) && (
