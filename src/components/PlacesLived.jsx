@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { geocodePlace } from '../lib/places.js';
+import { buildTimelineLayout } from '../lib/placesTimeline.js';
 
 /*
  * Places Lived — a chronological record of where someone lived through
@@ -32,6 +33,17 @@ import { geocodePlace } from '../lib/places.js';
  * to the most recent (or still-current) chapter — the one a visitor to the
  * profile most likely wants to see first.
  *
+ * The connecting line (lib/placesTimeline.js's `buildTimelineLayout`) is a
+ * drawn SVG path, not a CSS border trick — a plain `::before` dashed border
+ * needed its own hand-tuned `top` offset to line up with the dots, which
+ * drifted out of alignment (a real reported bug: the line visibly missed
+ * the dots' centers). The SVG and the dots now both anchor to the SAME
+ * fixed-height `.places-waypoint-dotzone`, so they can't drift apart, and
+ * being a real path rather than a straight border lets it be heavier and
+ * gently wavy — a "flight path," not a ruler line — with a small paper-
+ * plane marker wherever consecutive places cross a country border (never
+ * shown unless both sides have a real, resolved, differing `country`).
+ *
  * Deliberately suburb-level only — `place` is free text, but the add/edit
  * form's placeholder guides toward "Suburb, State" rather than a street
  * address, matching the same privacy stance already applied to the
@@ -62,6 +74,7 @@ export default function PlacesLived({ person, canEdit, onAddResidence, onUpdateR
   // (just removed) — never gets stuck showing nothing when there's still
   // at least one place on record.
   const selected = residences.find((r) => r.id === selectedId) || residences[residences.length - 1] || null;
+  const layout = buildTimelineLayout(residences);
 
   const select = (id) => { setSelectedId(id); setAdding(false); setEditingId(null); };
 
@@ -95,8 +108,24 @@ export default function PlacesLived({ person, canEdit, onAddResidence, onUpdateR
         )}
       </div>
 
-      {residences.length > 0 && (
+      {residences.length > 0 && layout && (
         <div className="places-route" aria-label="Places lived, in order">
+          {layout.pathD && (
+            <svg
+              className="places-route__svg"
+              width={layout.width}
+              height={layout.height}
+              viewBox={`0 0 ${layout.width} ${layout.height}`}
+              aria-hidden="true"
+            >
+              <path d={layout.pathD} className="places-route__path" fill="none" />
+              {layout.crossings.map((c) => (
+                <g key={c.key} transform={`translate(${c.x}, ${c.y}) rotate(${c.angle})`} className="places-route__plane">
+                  <PlaneIcon />
+                </g>
+              ))}
+            </svg>
+          )}
           {residences.map((r) => {
             const isActive = !adding && selected?.id === r.id;
             return (
@@ -107,7 +136,7 @@ export default function PlacesLived({ person, canEdit, onAddResidence, onUpdateR
                 aria-current={isActive ? 'true' : undefined}
                 onClick={() => select(r.id)}
               >
-                <span className="places-waypoint-dot" aria-hidden="true" />
+                <span className="places-waypoint-dotzone"><span className="places-waypoint-dot" aria-hidden="true" /></span>
                 <span className="places-waypoint-range">{formatRange(r.from_year, r.to_year)}</span>
                 <span className="places-waypoint-title">{shortPlace(r.place)}</span>
               </button>
@@ -268,6 +297,24 @@ function PlaceForm({ initial, onCancel, onSubmit }) {
         <button type="button" className="places-form__cancel" onClick={onCancel}>Cancel</button>
       </div>
     </form>
+  );
+}
+
+// A small paper-plane silhouette marking a segment of the timeline where
+// the person actually crossed a country border — nose pointing along +x,
+// rotated per-segment by the caller (see buildTimelineLayout's `angle`) so
+// it reads as "in flight" along the direction of that particular move.
+// Coordinates are centered on (0,0) since the parent <g> already carries
+// the translate to the segment's midpoint.
+function PlaneIcon() {
+  return (
+    <path
+      d="M-7 -5 L7 0 L-7 5 L-3 0 Z"
+      fill="currentColor"
+      stroke="var(--paper)"
+      strokeWidth="0.75"
+      strokeLinejoin="round"
+    />
   );
 }
 
