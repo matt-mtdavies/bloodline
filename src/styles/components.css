@@ -10790,6 +10790,67 @@ button.health-notes {
 }
 
 /* ── Places Lived ─────────────────────────────────────────────────────────── */
+/* The constellation map (PlacesMap.jsx) — a small plotted journey sitting
+   above the chain below. Card chrome matches .places-card's own convention
+   (soft shadow, rounded corners) so it reads as part of the same section,
+   not a bolted-on widget. */
+.places-map {
+  margin-bottom: 14px;
+  border-radius: var(--radius-lg, 24px);
+  overflow: hidden;
+  box-shadow: var(--shadow-soft);
+}
+.places-map__svg { display: block; width: 100%; height: auto; }
+.places-map__grid line { stroke: var(--hairline); stroke-width: 1; opacity: 0.55; }
+.places-map__path {
+  stroke: var(--gold);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-dasharray: 1 6;
+  opacity: 0.75;
+}
+.places-map__point { cursor: default; }
+.places-map__point[role='button'] { cursor: pointer; }
+.places-map__dot {
+  fill: var(--accent);
+  stroke: var(--paper);
+  stroke-width: 1.5;
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: transform 0.2s var(--ease, ease);
+}
+.places-map__point[role='button']:hover .places-map__dot,
+.places-map__point[role='button']:focus-visible .places-map__dot {
+  transform: scale(1.18);
+}
+.places-map__point--current .places-map__dot { fill: var(--gold); }
+.places-map__pulse {
+  fill: none;
+  stroke: var(--gold);
+  stroke-width: 1.5;
+  opacity: 0.55;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: places-map-pulse 2.6s ease-out infinite;
+}
+@keyframes places-map-pulse {
+  0%   { transform: scale(0.85); opacity: 0.6; }
+  70%  { transform: scale(1.35); opacity: 0; }
+  100% { transform: scale(1.35); opacity: 0; }
+}
+.places-map__label {
+  font-family: var(--body);
+  font-size: 10.5px;
+  font-weight: 600;
+  fill: var(--ink-soft);
+  paint-order: stroke;
+  stroke: var(--paper);
+  stroke-width: 3px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .places-map__pulse { animation: none; opacity: 0.35; }
+}
+
 /* The chain visual — same pattern as InsightModules.jsx's .tim-mig
    (HeartlandsModule's family migration chips), reimplemented with its own
    class names since this is one person's own history, not a family-wide
@@ -10837,6 +10898,12 @@ button.health-notes {
   gap: 2px;
 }
 .places-card--new { width: 100%; box-sizing: border-box; }
+/* Briefly lit when its dot is tapped on the constellation map above —
+   connects the two visuals without duplicating any information. */
+.places-card--highlight {
+  box-shadow: 0 0 0 2px var(--gold), var(--shadow-lift);
+  transition: box-shadow 0.3s var(--ease, ease);
+}
 .places-card__place {
   margin: 0;
   font-family: var(--display);
