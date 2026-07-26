@@ -94,14 +94,14 @@ export default function PlacesLived({ person, canEdit, onAddResidence, onUpdateR
   const handleAdd = async (fields) => {
     setAdding(false);
     const geo = await geocodePlace(fields.place);
-    const id = onAddResidence({ ...fields, ...geoFields(geo) });
+    const id = onAddResidence({ ...fields, ...geoFields(geo, fields) });
     if (id) setSelectedId(id);
   };
 
   const handleUpdate = async (id, fields) => {
     setEditingId(null);
     const geo = await geocodePlace(fields.place);
-    onUpdateResidence(id, { ...fields, ...geoFields(geo) });
+    onUpdateResidence(id, { ...fields, ...geoFields(geo, fields) });
   };
 
   const handleRemove = (id) => {
@@ -243,8 +243,22 @@ export default function PlacesLived({ person, canEdit, onAddResidence, onUpdateR
 // geocoding actually ran — a failure (geo === null) still saves the place/
 // year fields alone, with every geocoded field explicitly null rather than
 // simply absent.
-function geoFields(geo) {
-  return { lat: geo?.lat ?? null, lon: geo?.lon ?? null, suburb: geo?.suburb ?? null, state: geo?.state ?? null, country: geo?.country ?? null };
+//
+// `typed` (the form's own suburb/state boxes) always wins over whatever
+// geocoding resolves — a real reported gap: geocoding a bare suburb name
+// with no state given (e.g. "Narre Warren" alone) can't always confidently
+// resolve a state, silently leaving it blank even though the family may
+// simply not have typed it into the old single combined field. Typing it
+// directly into its own box now guarantees it's saved regardless of
+// whether geocoding agrees, resolves nothing, or fails outright.
+function geoFields(geo, typed = {}) {
+  return {
+    lat: geo?.lat ?? null,
+    lon: geo?.lon ?? null,
+    suburb: typed.suburb || geo?.suburb || null,
+    state: typed.state || geo?.state || null,
+    country: geo?.country ?? null,
+  };
 }
 
 function formatRange(fromYear, toYear) {
@@ -278,17 +292,35 @@ function captionFor(events, fromYear, toYear) {
   return matches.slice(0, 2).join(' · ');
 }
 
+// Best-effort split of an existing free-typed `place` string into suburb/state
+// parts, for editing a residence that predates the two-box form (or whose
+// geocoding never resolved separate suburb/state fields) — "Narre Warren,
+// Victoria" splits at the first comma; a bare "Narre Warren" has nothing to
+// put in the State box, which is exactly the gap this form change closes.
+function splitPlace(place) {
+  const [suburb = '', ...rest] = (place || '').split(',');
+  return { suburb: suburb.trim(), state: rest.join(',').trim() };
+}
+
 function PlaceForm({ initial, onCancel, onSubmit }) {
-  const [place, setPlace] = useState(initial?.place || '');
+  const fallback = splitPlace(initial?.place);
+  const [suburb, setSuburb] = useState(initial?.suburb || fallback.suburb);
+  const [stateName, setStateName] = useState(initial?.state || fallback.state);
   const [fromYear, setFromYear] = useState(initial?.from_year ?? '');
   const [toYear, setToYear] = useState(initial?.to_year ?? '');
   const [current, setCurrent] = useState(initial ? initial.to_year == null : false);
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (!place.trim() || !fromYear) return;
+    if (!suburb.trim() || !fromYear) return;
+    // A single combined string is still what's actually displayed (waypoint
+    // titles, the detail heading, GEDCOM export, Keepsake) — built here so
+    // every other consumer keeps reading the one field it always has,
+    // unaware the entry form now has two boxes instead of one.
     onSubmit({
-      place: place.trim(),
+      place: [suburb.trim(), stateName.trim()].filter(Boolean).join(', '),
+      suburb: suburb.trim(),
+      state: stateName.trim() || null,
       from_year: Number(fromYear),
       to_year: current ? null : (toYear ? Number(toYear) : null),
     });
@@ -296,14 +328,23 @@ function PlaceForm({ initial, onCancel, onSubmit }) {
 
   return (
     <form className="places-form" onSubmit={handleSubmit}>
-      <input
-        className="places-form__input"
-        value={place}
-        onChange={(e) => setPlace(e.target.value)}
-        placeholder="Suburb, State"
-        aria-label="Place (suburb-level)"
-        autoFocus
-      />
+      <div className="places-form__location">
+        <input
+          className="places-form__input places-form__input--suburb"
+          value={suburb}
+          onChange={(e) => setSuburb(e.target.value)}
+          placeholder="Suburb"
+          aria-label="Suburb"
+          autoFocus
+        />
+        <input
+          className="places-form__input places-form__input--state"
+          value={stateName}
+          onChange={(e) => setStateName(e.target.value)}
+          placeholder="State"
+          aria-label="State"
+        />
+      </div>
       <div className="places-form__years">
         <input
           className="places-form__year"
@@ -329,7 +370,7 @@ function PlaceForm({ initial, onCancel, onSubmit }) {
         Still lives here
       </label>
       <div className="places-form__actions">
-        <button type="submit" className="places-form__save" disabled={!place.trim() || !fromYear}>Save</button>
+        <button type="submit" className="places-form__save" disabled={!suburb.trim() || !fromYear}>Save</button>
         <button type="button" className="places-form__cancel" onClick={onCancel}>Cancel</button>
       </div>
     </form>
