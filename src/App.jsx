@@ -58,14 +58,14 @@ import {
 import { groupRecapUpdates, captionForRecapGroup } from './lib/recap.js';
 import { uploadPhoto, generateThumb, uploadDocument, savePhotoToDevice, srcToDataUrl, summarizeDocument } from './lib/image.js';
 import { useImageZoom } from './lib/useImageZoom.js';
-import { buildGraph, pathBetween, pathBetweenOrdered, bloodRelativesOf, distancesFrom, distancesFromMany } from './data/graph.js';
+import { buildGraph, pathBetween, pathBetweenOrdered, bloodRelativesOf, distancesFromMany } from './data/graph.js';
 import { storeToGedcom } from './lib/gedcom.js';
 import { detectRegion, nearestWorldEvent } from './lib/worldEvents.js';
 import { findDuplicatePairs, pairKey, loadDismissedDuplicates, saveDismissedDuplicates } from './lib/duplicates.js';
 import { canManageTree } from './lib/visibility.js';
 import { profileCompleteness, isDuplicateLifeEvent } from './lib/profile.js';
 import { computeInsightModules, personHighlight, highlightCandidates, pickTodaysFamilyMoment } from './lib/insightModules.js';
-import FamilyMomentBanner, { loadRecentMomentKeys } from './components/FamilyMomentBanner.jsx';
+import FamilyMomentBanner from './components/FamilyMomentBanner.jsx';
 import { useReducedMotion } from './hooks/useReducedMotion.js';
 import BubbleTree from './viz/BubbleTree.jsx';
 import ChartTree from './viz/ChartTree.jsx';
@@ -2100,21 +2100,13 @@ export default function App() {
   // pick, so it needs the whole pool, not pickDailyHighlight's one string.
   const highlightPool = useMemo(() => highlightCandidates(insightModules), [insightModules]);
 
-  // Family Moments banner (slice 5) — one always-on-open pick for the day,
-  // scored the same way as the tree screen's own idle hints (relevance to
-  // the viewer via hop-distance + freshness), but surfaced unconditionally
-  // rather than only while idle. `distances` is the viewer's own BFS, same
-  // convention as personHighlight's activeId distances just above.
-  const momentDistances = useMemo(
-    () => distancesFrom(graph, data.myPersonId || DEFAULT_FOCUS),
-    [graph, data.myPersonId],
-  );
-  const familyMoment = useMemo(
-    () => pickTodaysFamilyMoment(graph, data.myPersonId || DEFAULT_FOCUS, Date.now(), insightModules, {
-      distances: momentDistances,
-      recentKeys: loadRecentMomentKeys(),
-    }),
-    [graph, data.myPersonId, insightModules, momentDistances],
+  // Family Moments banner (slice 5) — every real birthday/anniversary
+  // happening TODAY, surfaced unconditionally rather than only while idle.
+  // No scoring/fallback needed here any more (see pickTodaysFamilyMoment's
+  // own header comment) — it's either genuinely true today or it isn't.
+  const familyMoments = useMemo(
+    () => pickTodaysFamilyMoment(graph, Date.now()),
+    [graph],
   );
 
   // Whether ANY sheet/modal/overlay is currently on screen — used to hide the
@@ -2542,20 +2534,16 @@ export default function App() {
               Home's own "Did you know?" card — this is a separate, ambient
               surface. */}
           <FamilyMomentBanner
-            moment={familyMoment}
+            moments={familyMoments}
             firstName={mePerson?.display_name ? mePerson.display_name.trim().split(/\s+/)[0] : null}
             visible={
               !lineageMode && !timeMode && !flightCaption && layout !== 'chart' &&
               !anyOverlayOpen && recapQueue.length === 0
             }
-            onOpen={() => {
-              logMomentEngagement(familyMoment?.key, 'tapped');
-              if (familyMoment?.personId) {
-                activate(familyMoment.personId);
-                openPerson(familyMoment.personId);
-              } else {
-                setInsightsOpen(true);
-              }
+            onOpen={(moment) => {
+              logMomentEngagement(moment?.key, 'tapped');
+              activate(moment.personId);
+              openPerson(moment.personId);
             }}
             onDismiss={() => {}}
             onShown={(key) => logMomentEngagement(key, 'shown')}
