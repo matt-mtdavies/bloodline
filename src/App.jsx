@@ -103,6 +103,8 @@ import TreeInsights from './components/TreeInsights.jsx';
 import KeepsakeView from './components/Keepsake/KeepsakeView.jsx';
 import { buildKeepsakeFacts, factsHash } from './lib/keepsake.js';
 import DuplicatesSheet from './components/DuplicatesSheet.jsx';
+import TroveSearchSheet from './components/TroveSearchSheet.jsx';
+import { fetchTroveArticle } from './lib/trove.js';
 import LineageBanner from './components/LineageBanner.jsx';
 import FlightCaption from './components/FlightCaption.jsx';
 import TimelineView from './components/TimelineView.jsx';
@@ -270,6 +272,7 @@ export default function App() {
   const [isAnonymousTrial] = useState(() => isNewUrl);
   const [user, setUser] = useState(null);
   const [duplicatesOpen, setDuplicatesOpen] = useState(false);
+  const [troveSearchPersonId, setTroveSearchPersonId] = useState(null);
   // When opened from a person's "Enrich this profile" sheet, filters the
   // duplicates list down to just that person's own possible matches.
   const [duplicatesFocusId, setDuplicatesFocusId] = useState(null);
@@ -2121,7 +2124,7 @@ export default function App() {
     legendOpen || settingsOpen || insightsOpen || timelineOpen || docViewer ||
     invitePersonId || activityOpen || gedcomOpen || fsImportOpen || profileOpen ||
     homeOpen || howItWorksOpen || familyTreesOpen || searchOpen || duplicatesOpen || promptClaim || showInstall ||
-    keepsakeId
+    keepsakeId || troveSearchPersonId
   );
 
   // Desktop "just start typing" search (feature request: a keyboard-first
@@ -2597,7 +2600,7 @@ export default function App() {
         canEdit={canEditTree}
         canContribute={canContributeTree}
         isAdmin={canManageTreeStructure}
-        lockEscape={!!(addAnchorId || editId || timelineId || memoryId || lightbox || crop || invitePersonId || duplicatesOpen || keepsakeId)}
+        lockEscape={!!(addAnchorId || editId || timelineId || memoryId || lightbox || crop || invitePersonId || duplicatesOpen || keepsakeId || troveSearchPersonId)}
         onClose={closePerson}
         onFocus={(id) => {
           closePersonForTreeAction();
@@ -2623,7 +2626,7 @@ export default function App() {
           autoSummarizeDocument(docId, fields.src);
           return docId;
         }}
-        onOpenDocument={(doc) => setDocViewer({ id: doc.id, personId: doc.person_id, title: doc.title, src: doc.src, mime: doc.mime, summary: doc.summary, extracted: doc.extracted })}
+        onOpenDocument={(doc) => setDocViewer({ id: doc.id, personId: doc.person_id, title: doc.title, src: doc.src, mime: doc.mime, summary: doc.summary, extracted: doc.extracted, troveUrl: doc.troveUrl })}
         onRemoveDocument={(id) => {
           const doc = data.documents?.find((d) => d.id === id);
           if (doc?.src?.startsWith('/api/documents/')) {
@@ -2639,6 +2642,7 @@ export default function App() {
           removeDocument(id);
         }}
         onUpdateDocument={(id, patch) => updateDocument(id, patch)}
+        onSearchTrove={() => setTroveSearchPersonId(openId)}
         onRemoveRelationship={removeRelationship}
         onUpdateRelationshipQualifier={updateRelationshipQualifier}
         onChangeRelationship={handleChangeRelType}
@@ -2751,6 +2755,43 @@ export default function App() {
           onDismiss={dismissDuplicatePair}
           onShowInTree={showDuplicatePairInTree}
           onClose={() => { setDuplicatesOpen(false); setDuplicatesFocusId(null); }}
+        />
+      )}
+
+      {troveSearchPersonId && (
+        <TroveSearchSheet
+          person={graph.byId.get(troveSearchPersonId)}
+          onAddAsDocument={async (candidate) => {
+            const personId = troveSearchPersonId;
+            const article = await fetchTroveArticle({ id: candidate.id, category: candidate.category });
+            if (!article) {
+              setSyncToast('Could not fetch that article from Trove right now — try again in a moment.');
+              setTimeout(() => setSyncToast(null), 5000);
+              return;
+            }
+            // A citation, not a scrape: the document's own text is the
+            // article's OCR'd text where Trove provided it (so extraction
+            // and later reading both work), always paired with a link back
+            // to the real page on Trove rather than treating this as a
+            // standalone copy — see functions/_lib/trove.js's own header
+            // comment on staying on the safe side of Trove's API terms.
+            const title = article.heading || candidate.heading || 'Trove record';
+            const src = article.text || article.troveUrl || candidate.troveUrl;
+            const docId = addDocument(personId, { title, mime: 'text/plain', src });
+            const extracted = buildExtracted(article);
+            updateDocument(docId, {
+              summary: article.summary,
+              extracted,
+              source: 'trove',
+              troveUrl: article.troveUrl || candidate.troveUrl,
+            });
+            setTroveSearchPersonId(null);
+            setDocViewer({
+              id: docId, personId, title, src, mime: 'text/plain', summary: article.summary, extracted,
+              troveUrl: article.troveUrl || candidate.troveUrl,
+            });
+          }}
+          onClose={() => setTroveSearchPersonId(null)}
         />
       )}
 
@@ -3213,6 +3254,20 @@ function DocViewer({
           <Suspense fallback={<div className="pdf-viewer__stage"><div className="mw__spinner" aria-label="Loading" /></div>}>
             <PdfViewer src={doc.src} />
           </Suspense>
+        ) : doc.mime === 'text/plain' ? (
+          // A Trove citation — no scanned image, just the article's own
+          // OCR'd text (or, if Trove didn't provide any, just the link) —
+          // see App.jsx's onAddAsDocument. `doc.src` is plain text here, NOT
+          // a URL, so the generic "Open in a new tab" fallback below would
+          // be wrong; troveUrl is the one real link back to the source.
+          <div className="doc-viewer__text-wrap">
+            {doc.src && <p className="doc-viewer__text">{doc.src}</p>}
+            {doc.troveUrl && (
+              <a href={doc.troveUrl} target="_blank" rel="noreferrer" className="pdf-viewer__open-link">
+                View on Trove ↗
+              </a>
+            )}
+          </div>
         ) : (
           <div className="pdf-viewer__fallback">
             <p>This file type can't be previewed here.</p>
