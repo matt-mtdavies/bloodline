@@ -13,7 +13,7 @@ import {
   store, importFromGedcom, setRelationshipKind, addMedal, removeMedal,
   addLifeEvent, updatePerson, retractDocumentContributions,
   addRelative, updatePartnerMeta, resetTree, addMemory, addPhoto, addDocument,
-  bioParentGendersFilled,
+  bioParentGendersFilled, addResidence, updateResidence, removeResidence,
 } from '../src/data/store.js';
 
 let passed = 0, failed = 0;
@@ -368,6 +368,62 @@ test('bioParentGendersFilled recognizes a Title Case gender (as EditPersonSheet 
   const res = addRelative({ anchorId: 'child1', relKey: 'father', name: 'Dad Two', qualifier: 'biological' });
   assert.equal(res, null, 'adding a second biological father must be blocked regardless of the existing father\'s gender casing');
   assert.equal(store.getState().people.length, 2, 'no new person should have been added');
+});
+
+// ── Places Lived: addResidence/updateResidence/removeResidence ─────────────
+
+test('addResidence: appends a residence with a real id, works even on a person with no residences field at all', () => {
+  importFromGedcom([{ id: 'nomad1', display_name: 'Nomad One' }], [], { merge: false });
+  // A freshly-imported person has no `residences` field at all (it's only
+  // ever backfilled by the one-time module-load migration) — addResidence
+  // must handle that the same way it handles a genuinely empty array,
+  // exactly the defence the migration exists to make redundant, not rely on.
+  const person = store.getState().people.find((p) => p.id === 'nomad1');
+  assert.equal(person.residences, undefined);
+
+  const id = addResidence('nomad1', { place: 'Fremantle, Western Australia', from_year: 1990, to_year: 2001 });
+  assert.ok(id, 'must return the new residence\'s id');
+  const after = store.getState().people.find((p) => p.id === 'nomad1');
+  assert.equal(after.residences.length, 1);
+  assert.equal(after.residences[0].id, id);
+  assert.equal(after.residences[0].place, 'Fremantle, Western Australia');
+  assert.equal(after.residences[0].from_year, 1990);
+  assert.equal(after.residences[0].to_year, 2001);
+  assert.equal(after.residences[0].lat, null, 'lat/lon default to null — geocoding is optional and asynchronous');
+});
+
+test('addResidence: a second residence with no to_year records an ongoing/current stay', () => {
+  importFromGedcom([{ id: 'nomad2', display_name: 'Nomad Two' }], [], { merge: false });
+  addResidence('nomad2', { place: 'Fremantle, Western Australia', from_year: 1990, to_year: 2001 });
+  addResidence('nomad2', { place: 'Cardiff, Wales', from_year: 2001 });
+  const after = store.getState().people.find((p) => p.id === 'nomad2');
+  assert.equal(after.residences.length, 2);
+  assert.equal(after.residences[1].to_year, null);
+});
+
+test('updateResidence: patches only the matching residence by id, leaves the other untouched', () => {
+  importFromGedcom([{ id: 'nomad3', display_name: 'Nomad Three' }], [], { merge: false });
+  const id1 = addResidence('nomad3', { place: 'Fremantle, Western Australia', from_year: 1990, to_year: 2001 });
+  addResidence('nomad3', { place: 'Cardiff, Wales', from_year: 2001 });
+
+  updateResidence('nomad3', id1, { to_year: 2000, lat: -32.05, lon: 115.75 });
+  const after = store.getState().people.find((p) => p.id === 'nomad3');
+  assert.equal(after.residences[0].to_year, 2000);
+  assert.equal(after.residences[0].lat, -32.05);
+  assert.equal(after.residences[1].place, 'Cardiff, Wales', 'the other residence must be untouched');
+  assert.equal(after.residences[1].lat, null);
+});
+
+test('removeResidence: removes exactly the matching residence by id, keeps the rest in place', () => {
+  importFromGedcom([{ id: 'nomad4', display_name: 'Nomad Four' }], [], { merge: false });
+  const id1 = addResidence('nomad4', { place: 'Fremantle, Western Australia', from_year: 1990, to_year: 2001 });
+  const id2 = addResidence('nomad4', { place: 'Cardiff, Wales', from_year: 2001 });
+
+  removeResidence('nomad4', id1);
+  const after = store.getState().people.find((p) => p.id === 'nomad4');
+  assert.equal(after.residences.length, 1);
+  assert.equal(after.residences[0].id, id2);
+  assert.equal(after.residences[0].place, 'Cardiff, Wales');
 });
 
 console.log(`\n  ${passed} passed, ${failed} failed`);

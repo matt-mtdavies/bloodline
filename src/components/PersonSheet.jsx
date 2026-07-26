@@ -9,6 +9,7 @@ import { fileToDataUrl, uploadPhoto, uploadDocument, suggestDocumentTitle, image
 import { streamBio } from '../lib/ai.js';
 import EnrichSheet from './EnrichSheet.jsx';
 import MilitaryService from './MilitaryService.jsx';
+import PlacesLived from './PlacesLived.jsx';
 import DateField from './DateField.jsx';
 import { VISIBILITY_LABELS, VISIBILITY_DESCS } from '../lib/visibility.js';
 import { HEALTH_CATEGORIES, HEALTH_CONDITIONS, HEALTH_STATUSES, colorFor } from '../lib/health.js';
@@ -67,6 +68,9 @@ export default function PersonSheet({
   onRemoveDocument,
   onUpdateDocument,
   onSearchTrove,
+  onAddResidence,
+  onUpdateResidence,
+  onRemoveResidence,
   onInvite,
   onRemoveRelationship,
   onUpdateRelationshipQualifier,
@@ -822,6 +826,14 @@ export default function PersonSheet({
                 <p className="profile-section__empty">No life events yet</p>
               )}
             </section>
+
+            <PlacesLived
+              person={person}
+              canEdit={canEdit}
+              onAddResidence={(fields) => onAddResidence?.(person.id, fields)}
+              onUpdateResidence={(id, fields) => onUpdateResidence?.(person.id, id, fields)}
+              onRemoveResidence={(id) => onRemoveResidence?.(person.id, id)}
+            />
 
             {/* Memories — the heart of the profile. */}
             <section className="profile-section">

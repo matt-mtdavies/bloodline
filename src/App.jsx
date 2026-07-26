@@ -30,6 +30,9 @@ import {
   addCondition,
   removeCondition,
   updateCondition,
+  addResidence,
+  removeResidence,
+  updateResidence,
   addLifeEvent,
   addMedal,
   removeMedal,
@@ -2643,6 +2646,9 @@ export default function App() {
         }}
         onUpdateDocument={(id, patch) => updateDocument(id, patch)}
         onSearchTrove={() => setTroveSearchPersonId(openId)}
+        onAddResidence={(personId, fields) => addResidence(personId, fields)}
+        onUpdateResidence={(personId, id, fields) => updateResidence(personId, id, fields)}
+        onRemoveResidence={(personId, id) => removeResidence(personId, id)}
         onRemoveRelationship={removeRelationship}
         onUpdateRelationshipQualifier={updateRelationshipQualifier}
         onChangeRelationship={handleChangeRelType}
