@@ -1,6 +1,17 @@
-import { useState } from 'react';
+import { useState, lazy, Suspense } from 'react';
+import { createPortal } from 'react-dom';
 import { geocodePlace } from '../lib/places.js';
 import { buildTimelineLayout } from '../lib/placesTimeline.js';
+
+// Leaflet is a real, non-trivial dependency (~150KB) only ever needed once
+// someone actually taps "Show on map" — code-split the same way PdfViewer.jsx
+// already is (App.jsx), so every profile view doesn't pay for it upfront.
+const PlacesMapView = lazy(() => import('./PlacesMapView.jsx'));
+
+// Same threshold the retired constellation map used to gate itself on — a
+// single geocoded place has nowhere to draw a journey between, so "Show on
+// map" only appears once there's an actual path to plot.
+const MIN_GEOCODED_FOR_MAP = 2;
 
 /*
  * Places Lived — a chronological record of where someone lived through
@@ -62,6 +73,7 @@ export default function PlacesLived({ person, canEdit, onAddResidence, onUpdateR
   const [editingId, setEditingId] = useState(null);
   const [confirmRemoveId, setConfirmRemoveId] = useState(null);
   const [selectedId, setSelectedId] = useState(null);
+  const [mapOpen, setMapOpen] = useState(false);
 
   const residences = [...(person.residences || [])].sort((a, b) => {
     if (a.from_year == null) return 1;
@@ -75,6 +87,7 @@ export default function PlacesLived({ person, canEdit, onAddResidence, onUpdateR
   // at least one place on record.
   const selected = residences.find((r) => r.id === selectedId) || residences[residences.length - 1] || null;
   const layout = buildTimelineLayout(residences);
+  const geocodedCount = residences.filter((r) => r.lat != null && r.lon != null).length;
 
   const select = (id) => { setSelectedId(id); setAdding(false); setEditingId(null); };
 
@@ -98,14 +111,20 @@ export default function PlacesLived({ person, canEdit, onAddResidence, onUpdateR
   };
 
   return (
+    <>
     <section className="profile-section">
       <div className="profile-section__head">
         <h3 className="profile-section__title">
           Places Lived{residences.length > 0 ? ` · ${residences.length}` : ''}
         </h3>
-        {canEdit && !adding && (
-          <button className="section-edit" onClick={() => { setAdding(true); setEditingId(null); }}>Add</button>
-        )}
+        <div className="profile-section__head-actions">
+          {geocodedCount >= MIN_GEOCODED_FOR_MAP && (
+            <button className="section-edit" onClick={() => setMapOpen(true)}>Show on map</button>
+          )}
+          {canEdit && !adding && (
+            <button className="section-edit" onClick={() => { setAdding(true); setEditingId(null); }}>Add</button>
+          )}
+        </div>
       </div>
 
       {residences.length > 0 && layout && (
@@ -139,6 +158,7 @@ export default function PlacesLived({ person, canEdit, onAddResidence, onUpdateR
                 <span className="places-waypoint-dotzone"><span className="places-waypoint-dot" aria-hidden="true" /></span>
                 <span className="places-waypoint-range">{formatRange(r.from_year, r.to_year)}</span>
                 <span className="places-waypoint-title">{shortPlace(r.place)}</span>
+                {r.state && <span className="places-waypoint-state">{r.state}</span>}
               </button>
             );
           })}
@@ -159,7 +179,8 @@ export default function PlacesLived({ person, canEdit, onAddResidence, onUpdateR
         </div>
       ) : selected ? (
         <div className="places-detail">
-          <p className="places-detail__place">{selected.place}</p>
+          <p className="places-detail__place">{selected.state ? shortPlace(selected.place) : selected.place}</p>
+          {selected.state && <p className="places-detail__state">{selected.state}</p>}
           <p className="places-detail__range">{formatRange(selected.from_year, selected.to_year)}</p>
           {(() => {
             const caption = captionFor(person.events, selected.from_year, selected.to_year);
@@ -199,6 +220,21 @@ export default function PlacesLived({ person, canEdit, onAddResidence, onUpdateR
         )
       )}
     </section>
+    {mapOpen && (
+      <Suspense
+        fallback={createPortal(
+          <div className="places-map-view places-map-view--loading"><div className="mw__spinner" aria-label="Loading map" /></div>,
+          document.body,
+        )}
+      >
+        <PlacesMapView
+          residences={residences}
+          personName={person.display_name}
+          onClose={() => setMapOpen(false)}
+        />
+      </Suspense>
+    )}
+    </>
   );
 }
 
