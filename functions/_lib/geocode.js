@@ -56,8 +56,23 @@ async function fetchFromNominatim(place) {
   return { lat, lon, displayName: r.display_name || null, ...extractAddressParts(r.address) };
 }
 
+// D1 migrations are a separate, manual step from a code deploy (they never
+// run themselves — see docs/TREE-STORAGE.md's own "nothing auto-migrates"
+// precedent) — a deploy can genuinely go live before migration 0018 (the
+// suburb/state/country columns) has been applied to the real database. Both
+// functions below try the rich query FIRST and only fall back to the
+// pre-0018 shape if it throws (an actual "no such column" error, not
+// swallowing a real different failure) — geocoding degrades to lat/lon-only
+// during that gap instead of throwing and taking the whole endpoint down.
 async function getCached(env, key) {
-  return env.DB.prepare('SELECT lat, lon, status, suburb, state, country FROM place_geocode WHERE place_key = ?').bind(key).first();
+  try {
+    return await env.DB.prepare(
+      'SELECT lat, lon, status, suburb, state, country FROM place_geocode WHERE place_key = ?',
+    ).bind(key).first();
+  } catch {
+    const row = await env.DB.prepare('SELECT lat, lon, status FROM place_geocode WHERE place_key = ?').bind(key).first();
+    return row ? { ...row, suburb: null, state: null, country: null } : row;
+  }
 }
 
 // A genuine "no results" answer from Nominatim IS cached as `not_found` —
@@ -68,14 +83,24 @@ async function getCached(env, key) {
 // on a later request rather than poisoning the cache forever.
 async function putCached(env, key, result) {
   if (result) {
-    await env.DB.prepare(
-      `INSERT INTO place_geocode (place_key, display_name, lat, lon, status, resolved_at, suburb, state, country)
-       VALUES (?, ?, ?, ?, 'ok', unixepoch(), ?, ?, ?)
-       ON CONFLICT(place_key) DO UPDATE SET
-         display_name = excluded.display_name, lat = excluded.lat, lon = excluded.lon,
-         status = 'ok', resolved_at = excluded.resolved_at,
-         suburb = excluded.suburb, state = excluded.state, country = excluded.country`,
-    ).bind(key, result.displayName, result.lat, result.lon, result.suburb ?? null, result.state ?? null, result.country ?? null).run();
+    try {
+      await env.DB.prepare(
+        `INSERT INTO place_geocode (place_key, display_name, lat, lon, status, resolved_at, suburb, state, country)
+         VALUES (?, ?, ?, ?, 'ok', unixepoch(), ?, ?, ?)
+         ON CONFLICT(place_key) DO UPDATE SET
+           display_name = excluded.display_name, lat = excluded.lat, lon = excluded.lon,
+           status = 'ok', resolved_at = excluded.resolved_at,
+           suburb = excluded.suburb, state = excluded.state, country = excluded.country`,
+      ).bind(key, result.displayName, result.lat, result.lon, result.suburb ?? null, result.state ?? null, result.country ?? null).run();
+    } catch {
+      await env.DB.prepare(
+        `INSERT INTO place_geocode (place_key, display_name, lat, lon, status, resolved_at)
+         VALUES (?, ?, ?, ?, 'ok', unixepoch())
+         ON CONFLICT(place_key) DO UPDATE SET
+           display_name = excluded.display_name, lat = excluded.lat, lon = excluded.lon,
+           status = 'ok', resolved_at = excluded.resolved_at`,
+      ).bind(key, result.displayName, result.lat, result.lon).run();
+    }
   } else {
     await env.DB.prepare(
       `INSERT INTO place_geocode (place_key, display_name, lat, lon, status, resolved_at)

@@ -51,6 +51,45 @@ function nominatimResult(lat, lon, displayName = 'Somewhere', address = null) {
   return [{ lat: String(lat), lon: String(lon), display_name: displayName, address }];
 }
 
+// Simulates the real production scenario this fallback exists for: a deploy
+// has gone live with code expecting migration 0018 (suburb/state/country
+// columns), but that migration — a separate, manual step — hasn't been
+// applied to this database yet. Every query touching those columns throws
+// "no such column", exactly what D1/SQLite raises for real.
+function makeOldSchemaFakeDB(seedRows = []) {
+  const rows = new Map(seedRows.map((r) => [r.place_key, r]));
+  function stmt(sql) {
+    let args = [];
+    return {
+      bind(...a) { args = a; return this; },
+      async first() {
+        if (sql.includes('suburb, state, country')) throw new Error('no such column: suburb');
+        if (sql.includes('SELECT lat, lon, status FROM place_geocode WHERE place_key')) {
+          return rows.get(args[0]) || null;
+        }
+        throw new Error(`oldSchemaFakeDB: unhandled .first(): ${sql}`);
+      },
+      async run() {
+        if (sql.includes('INSERT INTO place_geocode') && sql.includes('suburb, state, country')) {
+          throw new Error('no such column: suburb');
+        }
+        if (sql.includes('INSERT INTO place_geocode') && sql.includes("'ok'")) {
+          const [key, displayName, lat, lon] = args;
+          rows.set(key, { place_key: key, display_name: displayName, lat, lon, status: 'ok' });
+          return { success: true };
+        }
+        if (sql.includes('INSERT INTO place_geocode')) {
+          const [key] = args;
+          rows.set(key, { place_key: key, display_name: null, lat: null, lon: null, status: 'not_found' });
+          return { success: true };
+        }
+        throw new Error(`oldSchemaFakeDB: unhandled .run(): ${sql}`);
+      },
+    };
+  }
+  return { env: { DB: { prepare: (sql) => stmt(sql) } }, rows };
+}
+
 const realFetch = globalThis.fetch;
 const realSetTimeout = globalThis.setTimeout;
 
@@ -175,6 +214,35 @@ await atest('geocodePlaces: sequential cache-miss requests are rate-limited to N
   // floor (allowing for the few ms of real synchronous work in between).
   assert.ok(delays.length >= 2, 'at least the 2nd and 3rd fetches must be rate-limited');
   for (const d of delays) assert.ok(d > 1000 && d <= 1100, `expected a ~1100ms rate-limit wait, got ${d}`);
+});
+
+// ── Schema-lag fallback (migration 0018 not yet applied to this database) ──
+
+await atest('geocodePlaces: a fresh lookup against the pre-migration-0018 schema still resolves and returns the full address breakdown (it comes straight from Nominatim, not the DB) — critically, it does not throw', async () => {
+  const { env, rows } = makeOldSchemaFakeDB();
+  globalThis.fetch = async () => ({
+    ok: true,
+    json: async () => nominatimResult(-38.08, 145.32, 'Fountain Gate, Victoria, Australia', {
+      suburb: 'Fountain Gate', state: 'Victoria', country: 'Australia',
+    }),
+  });
+  globalThis.setTimeout = (fn) => { fn(); return 0; };
+
+  const result = await geocodePlaces(env, ['Fountain Gate, Victoria']);
+  assert.deepEqual(result['Fountain Gate, Victoria'], { lat: -38.08, lon: 145.32, suburb: 'Fountain Gate', state: 'Victoria', country: 'Australia' });
+  const row = rows.get('fountain gate, victoria');
+  assert.equal(row.status, 'ok', 'the fallback INSERT still caches lat/lon/status correctly even though suburb/state/country couldn\'t be stored yet');
+});
+
+await atest('geocodePlaces: a cache HIT against the pre-migration-0018 schema also degrades cleanly, without re-fetching', async () => {
+  const { env } = makeOldSchemaFakeDB([{ place_key: 'cardiff, wales', display_name: 'Cardiff', lat: 51.48, lon: -3.18, status: 'ok' }]);
+  let calls = 0;
+  globalThis.fetch = async () => { calls++; return { ok: true, json: async () => nominatimResult(0, 0) }; };
+  globalThis.setTimeout = (fn) => { fn(); return 0; };
+
+  const result = await geocodePlaces(env, ['Cardiff, Wales']);
+  assert.equal(calls, 0, 'still a cache hit — must not re-fetch just because the rich SELECT failed');
+  assert.deepEqual(result['Cardiff, Wales'], { lat: 51.48, lon: -3.18, suburb: null, state: null, country: null });
 });
 
 globalThis.fetch = realFetch;
