@@ -260,7 +260,7 @@ function typeConfig(type) {
     case 'keepsake_generated':return { color: '#a44d2c', Icon: KeepsakeIcon };
     case 'residence_added':
     case 'residence_updated':
-    case 'residence_removed': return { color: '#c4913f', Icon: PinIcon };
+    case 'residence_removed': return { color: '#b08642', Icon: PinIcon };
     default:                  return { color: '#6b6f76', Icon: EditIcon };
   }
 }
