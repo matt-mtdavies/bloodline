@@ -10,6 +10,7 @@ import { streamBio } from '../lib/ai.js';
 import EnrichSheet from './EnrichSheet.jsx';
 import MilitaryService from './MilitaryService.jsx';
 import PlacesLived from './PlacesLived.jsx';
+import AncestryStory from './AncestryStory.jsx';
 import DateField from './DateField.jsx';
 import { VISIBILITY_LABELS, VISIBILITY_DESCS } from '../lib/visibility.js';
 import { HEALTH_CATEGORIES, HEALTH_CONDITIONS, HEALTH_STATUSES, colorFor } from '../lib/health.js';
@@ -1607,6 +1608,12 @@ export default function PersonSheet({
               )}
             </section>
             )}
+
+            {/* Ancestry Story — the patrilineal + matrilineal ascending chains,
+                told forward in time. Not gated on canEdit: compiling only ever
+                writes a stored narrative (never tree data), same as the
+                Keepsake's own compile button. */}
+            {!restricted && <AncestryStory graph={graph} personId={person.id} />}
 
             {/* Relationships */}
             {(groups.length > 0 || extendedGroups.length > 0) && (
