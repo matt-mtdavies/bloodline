@@ -10953,6 +10953,7 @@ button.health-notes {
 .places-detail__confirm-btns { display: flex; gap: 8px; }
 
 .places-form { display: flex; flex-direction: column; gap: 10px; width: 100%; }
+.places-form__location { display: flex; gap: 8px; }
 .places-form__input {
   font: inherit;
   font-size: 14px;
@@ -10961,7 +10962,12 @@ button.health-notes {
   border-radius: 10px;
   background: var(--paper, #fff);
   color: var(--ink);
+  min-width: 0;
 }
+/* Suburb gets more room than State — suburb names run longer ("Narre Warren
+   North"), state names/abbreviations are typically short. */
+.places-form__input--suburb { flex: 1.6; }
+.places-form__input--state { flex: 1; }
 .places-form__years { display: flex; align-items: center; gap: 8px; }
 .places-form__year {
   flex: 1;
