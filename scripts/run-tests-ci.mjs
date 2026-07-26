@@ -1,28 +1,19 @@
 #!/usr/bin/env node
 /*
- * Runs every root tests/*.test.mjs file for CI, tolerating ONLY the single
- * documented pre-existing failure in relations.test.mjs — "niece/nephew
- * from step-sibling appears (step siblings are still siblings)" expects
- * "Niece" but the app currently returns "Step-Niece". This has been
- * called out as a known, unrelated, not-yet-fixed issue across many
- * unrelated feature commits in this repo's history (see CLAUDE.md), so a
- * CI regression guard added for a completely different feature (the full
- * archive export) shouldn't newly start blocking on it.
- *
- * This is a NARROW allowlist for that one exact assertion, not a blanket
- * "ignore relations.test.mjs" — if that file ever fails for ANY OTHER
- * reason (a regression the allowlist doesn't know about, or a SECOND
- * failure alongside the known one), this script still fails loudly. The
- * moment the known failure is genuinely fixed, this file's own check
- * starts failing (module note below) as a reminder to remove the
- * allowlist rather than let it silently rot.
+ * Runs every root tests/*.test.mjs file for CI. Supports a NARROW allowlist
+ * mechanism for tolerating a single documented, pre-existing, unrelated test
+ * failure without masking a genuine regression — if a file fails for ANY
+ * OTHER reason (an unlisted failure, or a SECOND failure alongside an
+ * allowlisted one), this script still fails loudly, and an allowlist entry
+ * that stops reproducing is flagged as stale rather than silently kept.
+ * Empty for now — the one entry this used to carry (a self-contradictory
+ * assertion in relations.test.mjs's step-sibling niece/nephew test) was a
+ * genuine test bug, now fixed at the source.
  */
 import { execFileSync } from 'node:child_process';
 import { readdirSync } from 'node:fs';
 
-const KNOWN_FAILURES = [
-  { file: 'relations.test.mjs', marker: 'niece/nephew from step-sibling appears' },
-];
+const KNOWN_FAILURES = [];
 
 const testsDir = new URL('../tests/', import.meta.url);
 const files = readdirSync(testsDir).filter((f) => f.endsWith('.test.mjs')).sort();

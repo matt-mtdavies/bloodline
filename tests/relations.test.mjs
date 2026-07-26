@@ -785,7 +785,7 @@ test('person with no gender gets neutral sibling label', () => {
   assert.equal(relationLabel(g, 'alice', 'sib'), 'Sibling');
 });
 
-test('niece/nephew from step-sibling appears (step siblings are still siblings)', () => {
+test('niece/nephew from a step-sibling carries the step qualifier (no shared bio/adoptive parent)', () => {
   const g = buildGraph(
     [person('mum', 'female'), person('stepdad', 'male'), person('alice'), person('stepbro', 'male'), person('kid', 'female')],
     [
@@ -795,8 +795,12 @@ test('niece/nephew from step-sibling appears (step siblings are still siblings)'
       parentEdge('stepbro', 'kid'),
     ],
   );
-  // stepbro IS alice's step-sibling; kid IS stepbro's daughter → Niece label
-  assert.equal(relationLabel(g, 'alice', 'kid'), 'Niece');
+  // stepbro is alice's step-sibling (they share stepdad, but only as alice's
+  // step-parent — no shared bio/adoptive parent, so kind === 'step', same as
+  // the aunt/uncle and cousin branches treat this exact case elsewhere in
+  // graph.js). kid, stepbro's daughter, is therefore alice's Step-Niece, not
+  // a plain Niece.
+  assert.equal(relationLabel(g, 'alice', 'kid'), 'Step-Niece');
 });
 
 test('partner is bidirectional', () => {
