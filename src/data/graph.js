@@ -216,6 +216,41 @@ export function distancesFrom(graph, focusId) {
   return dist;
 }
 
+// Same BFS as distancesFrom, but from MULTIPLE simultaneous starting points
+// (all at distance 0) rather than one — the "ripple from what's already
+// visible" reveal (App.jsx's toggleExpandAll) needs the distance from the
+// nearest already-shown bubble, not from a single anchor, so someone whose
+// closest connection into the currently-visible set runs through a
+// different relative than the active person still gets a genuinely short
+// distance rather than an inflated one measured only from the active person.
+export function distancesFromMany(graph, startIds) {
+  const dist = new Map();
+  const queue = [];
+  for (const id of startIds) {
+    if (dist.has(id)) continue;
+    dist.set(id, 0);
+    queue.push(id);
+  }
+  let qi = 0;
+  while (qi < queue.length) {
+    const cur = queue[qi++];
+    const d = dist.get(cur);
+    const neighbours = [
+      ...graph.parents(cur).map((x) => x.id),
+      ...graph.children(cur).map((x) => x.id),
+      ...graph.partners(cur).map((x) => x.id),
+      ...graph.siblings(cur).map((x) => x.id),
+    ];
+    for (const n of neighbours) {
+      if (!dist.has(n)) {
+        dist.set(n, d + 1);
+        queue.push(n);
+      }
+    }
+  }
+  return dist;
+}
+
 // Every ancestor, descendant, and collateral relative (sibling, aunt/uncle,
 // cousin, …) connected to focusId by an unbroken chain of biological/adoptive
 // parent-child links — the actual "blood or adoptive relative" the

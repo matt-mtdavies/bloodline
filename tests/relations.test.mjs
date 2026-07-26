@@ -3,7 +3,7 @@
  * family propagation, and edge cases. Run with: node tests/relations.test.mjs
  */
 import assert from 'node:assert/strict';
-import { buildGraph, relationLabel, distancesFrom, pathBetween, sortSiblings, sortChildren } from '../src/data/graph.js';
+import { buildGraph, relationLabel, distancesFrom, distancesFromMany, pathBetween, sortSiblings, sortChildren } from '../src/data/graph.js';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -695,6 +695,40 @@ test('distancesFrom: disconnected person not in map', () => {
   const g = buildGraph([person('alice'), person('stranger')], []);
   const d = distancesFrom(g, 'alice');
   assert.ok(!d.has('stranger'));
+});
+
+test('distancesFromMany: every starting id is distance 0, regardless of order passed in', () => {
+  const g = buildGraph(
+    [person('a'), person('b'), person('c')],
+    [parentEdge('a', 'b'), parentEdge('b', 'c')],
+  );
+  const d = distancesFromMany(g, ['a', 'c']);
+  assert.equal(d.get('a'), 0);
+  assert.equal(d.get('c'), 0);
+  assert.equal(d.get('b'), 1, 'b is one hop from either starting point');
+});
+
+test('distancesFromMany: a node takes the SHORTER distance when reachable from multiple sources at different depths (the "ripple from visible set" case)', () => {
+  // linear chain g0-g1-g2-g3-g4-g5; starting from BOTH g0 and g4 means g2
+  // (2 hops from g0, 2 hops from g4) still gets 2, but g3 — 3 hops from g0,
+  // only 1 hop from g4 — must take the shorter 1, not the longer path from
+  // the "wrong" source. This is exactly why the ripple-reveal BFS starts
+  // from the whole currently-visible set, not just one anchor.
+  const people = Array.from({ length: 6 }, (_, i) => person(`g${i}`));
+  const rels = [];
+  for (let i = 0; i < 5; i++) rels.push(parentEdge(`g${i}`, `g${i + 1}`));
+  const g = buildGraph(people, rels);
+  const d = distancesFromMany(g, ['g0', 'g4']);
+  assert.equal(d.get('g3'), 1, 'one hop from g4, not three from g0');
+  assert.equal(d.get('g2'), 2);
+  assert.equal(d.get('g5'), 1, 'one hop from g4');
+  assert.equal(d.get('g1'), 1, 'one hop from g0');
+});
+
+test('distancesFromMany: disconnected people are never in the map; empty starting set produces an empty map', () => {
+  const g = buildGraph([person('alice'), person('stranger')], []);
+  assert.ok(!distancesFromMany(g, ['alice']).has('stranger'));
+  assert.equal(distancesFromMany(g, []).size, 0);
 });
 
 test('pathBetween: self returns singleton set', () => {
