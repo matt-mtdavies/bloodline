@@ -414,6 +414,25 @@ test('updateResidence: patches only the matching residence by id, leaves the oth
   assert.equal(after.residences[1].lat, null);
 });
 
+test('addResidence: stores the geocoded suburb/state/country breakdown alongside lat/lon, defaulting to null', () => {
+  importFromGedcom([{ id: 'nomad5', display_name: 'Nomad Five' }], [], { merge: false });
+  const id = addResidence('nomad5', {
+    place: 'Fountain Gate, Victoria', from_year: 1980, to_year: 1988,
+    lat: -38.0, lon: 145.3, suburb: 'Fountain Gate', state: 'Victoria', country: 'Australia',
+  });
+  const after = store.getState().people.find((p) => p.id === 'nomad5');
+  const r = after.residences.find((x) => x.id === id);
+  assert.equal(r.suburb, 'Fountain Gate');
+  assert.equal(r.state, 'Victoria');
+  assert.equal(r.country, 'Australia');
+
+  const id2 = addResidence('nomad5', { place: 'Nowhereville', from_year: 1988 });
+  const r2 = after && store.getState().people.find((p) => p.id === 'nomad5').residences.find((x) => x.id === id2);
+  assert.equal(r2.suburb, null, 'suburb/state/country default to null when geocoding was never provided');
+  assert.equal(r2.state, null);
+  assert.equal(r2.country, null);
+});
+
 test('removeResidence: removes exactly the matching residence by id, keeps the rest in place', () => {
   importFromGedcom([{ id: 'nomad4', display_name: 'Nomad Four' }], [], { merge: false });
   const id1 = addResidence('nomad4', { place: 'Fremantle, Western Australia', from_year: 1990, to_year: 2001 });

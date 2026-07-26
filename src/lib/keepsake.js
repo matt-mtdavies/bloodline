@@ -322,7 +322,17 @@ function placesOf(graph, person) {
   for (const p of graph.partners(person.id)) {
     if (p.marriage_place) push(p.marriage_place, 'Married', yearOf(p.marriage_date));
   }
-  push(person.residence, 'Lived', null);
+  // Places Lived (residences[]) gives a real dated sequence — "Lived in X
+  // (1980)", "Lived in Y (1988)" — far richer than the one dateless "Lived"
+  // entry the scalar `residence` field alone could ever offer (it carries no
+  // date at all). Falls back to that single entry only when residences[] is
+  // empty (nobody's used the Places Lived editor for this person yet).
+  const residences = [...(person.residences || [])].sort((a, b) => (a.from_year ?? Infinity) - (b.from_year ?? Infinity));
+  if (residences.length) {
+    for (const r of residences) push(r.place, 'Lived', r.from_year || null);
+  } else {
+    push(person.residence, 'Lived', null);
+  }
   return out;
 }
 

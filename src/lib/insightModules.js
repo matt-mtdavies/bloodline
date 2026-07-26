@@ -703,6 +703,40 @@ function records(graph, now = Date.now()) {
     }
   }
 
+  // Most well-traveled — from residences[] (Places Lived), distinct from
+  // heartlands()'s birthplace-origin story above: this is a person's own
+  // recorded chronological residence history across their whole life, not a
+  // family-wide birthplace aggregate. Dedups by structured suburb/state/
+  // country when geocoding resolved it (so "Cardiff, Wales" typed twice with
+  // different punctuation doesn't inflate the count), falling back to the
+  // raw place text when it hasn't been geocoded yet.
+  {
+    const all = [];
+    for (const p of graph.people) {
+      const places = p.residences || [];
+      if (places.length < 2) continue;
+      const seen = new Set();
+      for (const r of places) {
+        const key = r.suburb && r.country
+          ? normalizeTextKey(`${r.suburb}|${r.state || ''}|${r.country}`)
+          : normalizeTextKey(r.place || '');
+        if (key) seen.add(key);
+      }
+      if (seen.size >= 2) all.push({ p, n: seen.size });
+    }
+    all.sort((x, y) => y.n - x.n);
+    const best = all[0];
+    if (best && best.n >= 3) {
+      pool.push({
+        key: 'wellTraveled', icon: 'compass',
+        title: `${firstNameOf(best.p)}: ${best.n} places called home`,
+        detail: `${best.p.display_name} — more recorded places lived than anyone else in the tree.`,
+        personId: best.p.id,
+        board: all.slice(0, 5).map((x) => ({ id: x.p.id, detail: `${x.n} places` })),
+      });
+    }
+  }
+
   if (pool.length < 2) return null;
   // Rotate which three show, changing daily — stable within a session so the
   // sheet doesn't reshuffle on every re-render.
