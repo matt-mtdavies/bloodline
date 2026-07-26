@@ -1019,7 +1019,7 @@ export default function PersonSheet({
                 {canEdit && (
                   <div className="profile-section__head-actions">
                     <button className="section-edit" onClick={onSearchTrove}>
-                      Search Trove
+                      Search archives
                     </button>
                     <button className="section-edit" onClick={() => docRef.current?.click()}>
                       Add
