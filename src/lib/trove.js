@@ -9,9 +9,17 @@
 
 // Searches Trove for newspaper/gazette notices and People & Organisations
 // entries matching a name (+ optional place). Returns candidate CITATIONS
-// to review — never a confirmed match. null on any failure.
+// to review — never a confirmed match.
+//
+// Return shape is deliberately richer than a bare array/null: the server
+// returns a distinct 503 when TROVE_API_KEY hasn't been configured yet
+// (see functions/api/trove/search.js) — a PERMANENT state until someone
+// adds the key, not a transient failure worth telling someone to "try
+// again in a moment." Callers need to tell the two apart to show the
+// right message (a dead-end retry prompt vs. a live link to Trove's own
+// search page) instead of treating every failure identically.
 export async function searchTrove({ name, place } = {}, { timeoutMs = 15000 } = {}) {
-  if (!name?.trim()) return null;
+  if (!name?.trim()) return { results: [] };
   const params = new URLSearchParams({ name: name.trim() });
   if (place?.trim()) params.set('place', place.trim());
 
@@ -19,15 +27,16 @@ export async function searchTrove({ name, place } = {}, { timeoutMs = 15000 } = 
   const timer = setTimeout(() => ac.abort(), timeoutMs);
   try {
     const res = await fetch(`/api/trove/search?${params.toString()}`, { signal: ac.signal });
+    if (res.status === 503) return { notConfigured: true };
     if (!res.ok) {
       console.warn('[trove] search failed:', res.status);
-      return null;
+      return { error: true };
     }
     const { results } = await res.json();
-    return results || [];
+    return { results: results || [] };
   } catch (e) {
     console.warn('[trove] search error:', e.message);
-    return null;
+    return { error: true };
   } finally {
     clearTimeout(timer);
   }

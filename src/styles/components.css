@@ -3811,6 +3811,35 @@
   font-size: 13px;
   color: var(--ink-soft);
 }
+.trove-search__fallback {
+  margin: 10px 20px 0;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: var(--paper-deep);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+.trove-search__fallback-note {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--ink-soft);
+}
+.trove-search__fallback-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--accent, #c2603a);
+  border-radius: 999px;
+  padding: 8px 14px;
+  text-decoration: none;
+}
+.trove-search__fallback-link svg { flex: none; }
 .trove-search__empty {
   margin: 16px 20px;
   font-size: 13.5px;

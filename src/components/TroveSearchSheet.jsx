@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { searchTrove } from '../lib/trove.js';
-import { getRelevantArchives, buildArchiveUrl } from '../lib/externalArchives.js';
+import { ARCHIVES, getRelevantArchives, buildArchiveUrl } from '../lib/externalArchives.js';
 import { yearOf } from '../lib/dates.js';
 
 const KIND_LABEL = {
@@ -47,6 +47,11 @@ export default function TroveSearchSheet({ person, onAddAsDocument, onClose }) {
   const [results, setResults] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  // A distinct state from `error`: TROVE_API_KEY isn't configured on this
+  // server at all yet — a permanent state until someone adds it, not a
+  // transient failure worth an "try again in a moment" prompt. See
+  // lib/trove.js's own searchTrove() comment.
+  const [notConfigured, setNotConfigured] = useState(false);
   const [addingId, setAddingId] = useState(null);
 
   useEffect(() => {
@@ -83,10 +88,15 @@ export default function TroveSearchSheet({ person, onAddAsDocument, onClose }) {
     if (!name.trim()) return;
     setLoading(true);
     setError(null);
+    setNotConfigured(false);
     setResults(null);
-    const found = await searchTrove({ name, place });
+    const { results: found, notConfigured: down, error: hardError } = await searchTrove({ name, place });
     setLoading(false);
-    if (found === null) {
+    if (down) {
+      setNotConfigured(true);
+      return;
+    }
+    if (hardError) {
       setError('Could not search Trove right now — try again in a moment.');
       return;
     }
@@ -140,6 +150,23 @@ export default function TroveSearchSheet({ person, onAddAsDocument, onClose }) {
         </form>
 
         {error && <p className="trove-search__error">{error}</p>}
+
+        {notConfigured && (
+          <div className="trove-search__fallback">
+            <p className="trove-search__fallback-note">
+              Live search isn't set up on this server yet — search directly on Trove's own
+              site instead.
+            </p>
+            <a
+              href={buildArchiveUrl(ARCHIVES.find((a) => a.id === 'trove'), { name })}
+              target="_blank"
+              rel="noreferrer"
+              className="trove-search__fallback-link"
+            >
+              Search on Trove <ArrowIcon />
+            </a>
+          </div>
+        )}
 
         {results && results.length === 0 && !error && (
           <p className="trove-search__empty">No matches found — try a different spelling, or add a place to narrow it down.</p>
