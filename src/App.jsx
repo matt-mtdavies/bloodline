@@ -1772,6 +1772,11 @@ export default function App() {
       if (changed('bio')) parts.push('biography');
       if (changed('is_deceased')) parts.push('deceased status');
       if (changed('death_date')) parts.push('death date');
+      // resting_place is an object, so this only ever fires when
+      // EditPersonSheet's own restingPlacePatch() decided there was a real
+      // change and included the key at all — untouched saves never carry
+      // it, so this can't spuriously fire on an unrelated edit.
+      if ('resting_place' in fields) parts.push('resting place');
       if (('visibility' in fields && fields.visibility !== (person?.visibility ?? 'full')) ||
           ('sectionVisibility' in fields && JSON.stringify(fields.sectionVisibility || {}) !== JSON.stringify(person?.sectionVisibility || {}))) {
         parts.push('privacy settings');

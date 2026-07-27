@@ -3,6 +3,7 @@ import { VISIBILITY_LABELS, VISIBILITY_DESCS, SECTIONS } from '../lib/visibility
 import { formatPhone } from '../lib/phone.js';
 import { formatDate } from '../lib/dates.js';
 import { normalizeGender, genderLabel } from '../lib/gender.js';
+import { buildRestingPlacePatch } from '../lib/profile.js';
 import Avatar from './Avatar.jsx';
 import PhoneField from './PhoneField.jsx';
 import DateField from './DateField.jsx';
@@ -82,6 +83,14 @@ export default function EditPersonSheet({ person, onClose, onSave, onRemove, sta
     is_deceased:   !!person.is_deceased,
     death_date:    person.death_date    || '',
     cause_of_death: person.cause_of_death || '',
+    // A quick single-box entry point — mirrors Birthplace/Lives in above,
+    // rather than the richer cemetery/plot/suburb/state breakdown the
+    // dedicated Resting Place profile section offers (real feedback: add
+    // it here "when adding profiles... so you don't have to go back in").
+    // Only ever reads/writes resting_place.place — see save() below for
+    // why a real edit here never destroys the richer fields that section
+    // may have already filled in.
+    resting_place: person.resting_place?.place || '',
     visibility:        person.visibility        || 'full',
     sectionVisibility: person.sectionVisibility || {},
   });
@@ -144,6 +153,7 @@ export default function EditPersonSheet({ person, onClose, onSave, onRemove, sta
       cause_of_death: f.is_deceased ? f.cause_of_death.trim() || null : null,
       visibility:        f.visibility,
       sectionVisibility: f.sectionVisibility,
+      ...buildRestingPlacePatch(f.is_deceased, f.resting_place, person.resting_place),
     });
   };
 
@@ -174,6 +184,9 @@ export default function EditPersonSheet({ person, onClose, onSave, onRemove, sta
           ['Birthplace', person.birth_place],
           ['Lives in', person.residence],
           ['Occupation', person.occupation],
+          ...(person.is_deceased ? [
+            ['Resting place', person.resting_place?.cemetery || person.resting_place?.place || null],
+          ] : []),
         ],
       },
       {
@@ -560,6 +573,22 @@ export default function EditPersonSheet({ person, onClose, onSave, onRemove, sta
               <div className="input-wrap">
                 <input className="field__input" value={f.cause_of_death} onChange={set('cause_of_death')} placeholder="e.g. Heart disease" />
                 {f.cause_of_death && <button type="button" className="input-clear" onClick={clear('cause_of_death')} aria-label="Clear" tabIndex={-1}>×</button>}
+              </div>
+            </label>
+          )}
+          {/* A quick jot, same shape as Birthplace/Lives in above — enough
+              to capture it in one pass while adding the person, without a
+              separate trip to the profile's own Resting Place section.
+              That richer section (cemetery name, plot, suburb/state) picks
+              up right where this leaves off — it splits whatever's typed
+              here the same way it already does for typed-then-refined
+              places elsewhere in the app. */}
+          {f.is_deceased && (
+            <label className="field">
+              <span className="field__label">Resting place <span className="field__label-sub">optional</span></span>
+              <div className="input-wrap">
+                <input className="field__input" value={f.resting_place} onChange={set('resting_place')} placeholder="e.g. Highgate Cemetery, London" />
+                {f.resting_place && <button type="button" className="input-clear" onClick={clear('resting_place')} aria-label="Clear" tabIndex={-1}>×</button>}
               </div>
             </label>
           )}
