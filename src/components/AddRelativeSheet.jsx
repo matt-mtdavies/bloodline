@@ -62,6 +62,16 @@ export default function AddRelativeSheet({ anchor, people = [], relationships = 
   const [childCoParentId, setChildCoParentId] = useState(null);
   const [childCoParentGiven, setChildCoParentGiven] = useState('');
   const [childCoParentFamily, setChildCoParentFamily] = useState('');
+  // A new sibling's other parent, asked only when the anchor has exactly ONE
+  // parent already on record — sharing just that one parent silently reads
+  // as a half-sibling (real user report: "Add Brother" implies a full
+  // sibling to most people). Untouched (no prompt at all) when the anchor
+  // has 0 parents (already defaults to full via two auto-created
+  // placeholders) or 2+ (both already get reused, also already full).
+  const [siblingOtherParentMode, setSiblingOtherParentMode] = useState(null); // null | 'existing' | 'new' | 'unknown' | 'none'
+  const [siblingOtherParentId, setSiblingOtherParentId] = useState(null);
+  const [siblingOtherParentGiven, setSiblingOtherParentGiven] = useState('');
+  const [siblingOtherParentFamily, setSiblingOtherParentFamily] = useState('');
   const nameRef = useRef(null);
   const searchRef = useRef(null);
 
@@ -93,6 +103,10 @@ export default function AddRelativeSheet({ anchor, people = [], relationships = 
     setChildCoParentId(null);
     setChildCoParentGiven('');
     setChildCoParentFamily('');
+    setSiblingOtherParentMode(null);
+    setSiblingOtherParentId(null);
+    setSiblingOtherParentGiven('');
+    setSiblingOtherParentFamily('');
   };
 
   // Adding a mother while a father is already linked (or vice versa) — find
@@ -133,6 +147,37 @@ export default function AddRelativeSheet({ anchor, people = [], relationships = 
   const needsChildCoParentAnswer = childCoParentCandidates.length > 1 && (
     childCoParentMode == null ||
     (childCoParentMode === 'new' && !childCoParentGiven.trim())
+  );
+
+  // The anchor's own recorded parents, for the sibling-add ambiguity below —
+  // only relevant when adding a Brother/Sister.
+  const anchorParents = useMemo(() => {
+    if (!graph || (relKey !== 'brother' && relKey !== 'sister')) return [];
+    return graph.parents(anchor.id).map((p) => graph.byId.get(p.id)).filter(Boolean);
+  }, [graph, relKey, anchor.id]);
+  // Exactly one recorded parent is the genuinely ambiguous case: 0 parents
+  // already defaults to a full sibling (two auto-created placeholders,
+  // above); 2+ parents already reuses both. Only 1 needs a real decision.
+  const soleParent = anchorParents.length === 1 ? anchorParents[0] : null;
+
+  // Candidates for "is this also the sibling's other parent?" — every
+  // partner (current or former) of that one recorded parent. Deliberately
+  // NOT auto-applied even when there's exactly one candidate (unlike
+  // childCoParentCandidates above) — silently assuming yes is the exact
+  // invisible assumption a real user reported the app was making.
+  const siblingOtherParentCandidates = useMemo(() => {
+    if (!graph || !soleParent) return [];
+    return graph.partners(soleParent.id).map((p) => graph.byId.get(p.id)).filter(Boolean);
+  }, [graph, soleParent]);
+
+  const siblingOtherRoleWord = (() => {
+    const g = normalizeGender(soleParent?.gender);
+    return g === 'male' ? 'mother' : g === 'female' ? 'father' : 'other parent';
+  })();
+
+  const needsSiblingOtherParentAnswer = !!soleParent && (
+    siblingOtherParentMode == null ||
+    (siblingOtherParentMode === 'new' && !siblingOtherParentGiven.trim())
   );
 
   // Which bio-parent genders are already filled for the anchor.
@@ -176,7 +221,7 @@ export default function AddRelativeSheet({ anchor, people = [], relationships = 
   }, [people, search, anchor.id]);
 
   const needsCoParentAnswer = !!coParent && !coParentStatus;
-  const canAdd = relKey && given.trim().length > 0 && !needsCoParentAnswer && !needsChildCoParentAnswer;
+  const canAdd = relKey && given.trim().length > 0 && !needsCoParentAnswer && !needsChildCoParentAnswer && !needsSiblingOtherParentAnswer;
   const canLink = relKey && mode === 'existing' && !needsCoParentAnswer;
 
   const submit = (openDetails = false) => {
@@ -203,6 +248,11 @@ export default function AddRelativeSheet({ anchor, people = [], relationships = 
       childCoParentId: childCoParentMode === 'existing' ? childCoParentId : null,
       childCoParentNew: childCoParentMode === 'new'
         ? { given: childCoParentGiven.trim(), family: childCoParentFamily.trim() }
+        : null,
+      siblingOtherParentMode,
+      siblingOtherParentId: siblingOtherParentMode === 'existing' ? siblingOtherParentId : null,
+      siblingOtherParentNew: siblingOtherParentMode === 'new'
+        ? { given: siblingOtherParentGiven.trim(), family: siblingOtherParentFamily.trim() }
         : null,
       openDetails,
     });
@@ -367,6 +417,85 @@ export default function AddRelativeSheet({ anchor, people = [], relationships = 
                       className="field__input"
                       value={childCoParentFamily}
                       onChange={(e) => setChildCoParentFamily(e.target.value)}
+                      autoComplete="off"
+                    />
+                  </div>
+                </label>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Does this new sibling share the anchor's other parent too? Only
+            surfaces when the anchor has exactly one parent on record — real
+            user report: "Add Brother" implies a full sibling to most people,
+            so silently linking only the one recorded parent (making them
+            read as half-siblings) is a surprising, easy-to-miss assumption.
+            0 parents already defaults to full (two auto-created placeholders);
+            2+ parents already reuses both — neither needs this prompt. */}
+        {soleParent && (
+          <div className="coparent-row" role="radiogroup" aria-label={`Does ${given.trim() || 'this sibling'} share ${anchor.display_name.split(/\s+/)[0]}'s ${siblingOtherRoleWord} too?`}>
+            <p className="coparent-row__label">
+              {anchor.display_name.split(/\s+/)[0]} only has {soleParent.display_name.split(/\s+/)[0]} on record so far.
+              Does {given.trim() || 'this sibling'} share the same {siblingOtherRoleWord}?
+            </p>
+            <div className="qualifier-row">
+              {siblingOtherParentCandidates.map((c) => (
+                <button
+                  key={c.id}
+                  role="radio"
+                  aria-checked={siblingOtherParentMode === 'existing' && siblingOtherParentId === c.id}
+                  className={'qualifier-chip' + (siblingOtherParentMode === 'existing' && siblingOtherParentId === c.id ? ' qualifier-chip--on' : '')}
+                  onClick={() => { setSiblingOtherParentMode('existing'); setSiblingOtherParentId(c.id); }}
+                >
+                  Yes — {c.display_name.split(/\s+/)[0]}
+                </button>
+              ))}
+              <button
+                role="radio"
+                aria-checked={siblingOtherParentMode === 'new'}
+                className={'qualifier-chip' + (siblingOtherParentMode === 'new' ? ' qualifier-chip--on' : '')}
+                onClick={() => { setSiblingOtherParentMode('new'); setSiblingOtherParentId(null); }}
+              >
+                No, a different {siblingOtherRoleWord}
+              </button>
+              <button
+                role="radio"
+                aria-checked={siblingOtherParentMode === 'unknown'}
+                className={'qualifier-chip' + (siblingOtherParentMode === 'unknown' ? ' qualifier-chip--on' : '')}
+                onClick={() => { setSiblingOtherParentMode('unknown'); setSiblingOtherParentId(null); }}
+              >
+                Yes, but unknown for now
+              </button>
+              <button
+                role="radio"
+                aria-checked={siblingOtherParentMode === 'none'}
+                className={'qualifier-chip' + (siblingOtherParentMode === 'none' ? ' qualifier-chip--on' : '')}
+                onClick={() => { setSiblingOtherParentMode('none'); setSiblingOtherParentId(null); }}
+              >
+                Just {soleParent.display_name.split(/\s+/)[0]} for now
+              </button>
+            </div>
+            {siblingOtherParentMode === 'new' && (
+              <div className="field-row coparent-row__new">
+                <label className="field">
+                  <span className="field__label">Their first name</span>
+                  <div className="input-wrap">
+                    <input
+                      className="field__input"
+                      value={siblingOtherParentGiven}
+                      onChange={(e) => setSiblingOtherParentGiven(e.target.value)}
+                      autoComplete="off"
+                    />
+                  </div>
+                </label>
+                <label className="field">
+                  <span className="field__label">Family name <span className="field__label-sub">optional</span></span>
+                  <div className="input-wrap">
+                    <input
+                      className="field__input"
+                      value={siblingOtherParentFamily}
+                      onChange={(e) => setSiblingOtherParentFamily(e.target.value)}
                       autoComplete="off"
                     />
                   </div>
