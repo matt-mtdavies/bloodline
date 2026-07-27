@@ -19,6 +19,14 @@ import {
 } from './seed.js';
 import { dedupeMergeImport } from '../lib/duplicates.js';
 import { normalizeGender } from '../lib/gender.js';
+import { fetchWithTimeout } from '../lib/net.js';
+
+// A stalled connection otherwise leaves `await fetch(...)` unresolved
+// forever — real user report: saves/loads "freeze", only a refresh clears
+// it. This is the timeout every fetch() in this file's sync loop uses;
+// generous enough for a large migrated family's R2 round trip, but no
+// fetch here should ever legitimately take anywhere near this long.
+const SYNC_FETCH_TIMEOUT_MS = 25_000;
 
 const KEY = 'bloodline:v1';
 // The account (user uid) this device's cached tree belongs to. Used to keep
@@ -271,7 +279,7 @@ function afterSave(ok, statusCode) {
       // or the GET fails, use '*' so the conflict check is skipped entirely —
       // the local state is the ground truth for a single-editor tree.
       try {
-        const res = await fetch('/api/tree');
+        const res = await fetchWithTimeout('/api/tree', {}, SYNC_FETCH_TIMEOUT_MS);
         _serverEtag = (res.ok && res.headers.get('ETag')) || '*';
       } catch {
         _serverEtag = '*';
@@ -304,11 +312,11 @@ async function putTree(s, attempt = 0) {
     const headers = { 'content-type': 'application/json' };
     if (_serverEtag) headers['If-Match'] = _serverEtag;
 
-    const r = await fetch('/api/tree', {
+    const r = await fetchWithTimeout('/api/tree', {
       method: 'PUT',
       headers,
       body: JSON.stringify(stripForServer(s)),
-    });
+    }, SYNC_FETCH_TIMEOUT_MS);
 
     if (r.ok) {
       _serverEtag = r.headers.get('ETag') || _serverEtag;
@@ -430,7 +438,7 @@ function _mergeActivity(serverArr, localArr) {
 
 async function _fetchAndMerge(local) {
   try {
-    const res = await fetch('/api/tree');
+    const res = await fetchWithTimeout('/api/tree', {}, SYNC_FETCH_TIMEOUT_MS);
     if (!res.ok) return null;
     const server = await res.json();
     _serverEtag = res.headers.get('ETag') || _serverEtag;
@@ -494,7 +502,7 @@ async function _fetchAndMerge(local) {
 // Background poll — apply server changes if another editor saved since our last load.
 async function _pollServer() {
   try {
-    const res = await fetch('/api/tree');
+    const res = await fetchWithTimeout('/api/tree', {}, SYNC_FETCH_TIMEOUT_MS);
     if (!res.ok) return;
     const freshEtag = res.headers.get('ETag');
     // Nothing changed since our last known version.
@@ -707,7 +715,7 @@ export function hasUnsyncedContent(merged, serverData) {
 // joining a new family via invite so local data never overwrites the family tree.
 export async function loadFromServer({ forceServerWins = false } = {}) {
   try {
-    const res = await fetch('/api/tree');
+    const res = await fetchWithTimeout('/api/tree', {}, SYNC_FETCH_TIMEOUT_MS);
     if (!res.ok) return false;
     const data = await res.json();
     if (!data) return false;

@@ -1,6 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { buildKeepsake, applyNarrative } from '../../lib/keepsake.js';
 import { profileCompleteness } from '../../lib/profile.js';
+import { fetchWithTimeout } from '../../lib/net.js';
+
+// A real user report ("if I go to generate a story... it freezes... only a
+// refresh clears it") traced to fetch() having no timeout anywhere in this
+// file — a stalled connection left `compiling`/`saveState` stuck in their
+// "in progress" phase forever, since the existing error-state UI (already
+// built for this) is only ever reached once the fetch promise settles.
+// COMPILE is generous — an LLM narrative compile can legitimately take a
+// while — LOAD is a plain R2 read, much faster in the normal case.
+const LOAD_TIMEOUT_MS = 25_000;
+const COMPILE_TIMEOUT_MS = 90_000;
 import {
   CoverSpread, FrontispieceSpread, OriginsSpread, ConstellationSpread,
   ChaptersSpread, ServiceSpread, PlacesSpread, VoicesSpread, AlbumSpread,
@@ -84,7 +95,7 @@ export default function KeepsakeView({
     setCompileError(false);
     (async () => {
       try {
-        const r = await fetch(`/api/keepsake?personId=${encodeURIComponent(personId)}`);
+        const r = await fetchWithTimeout(`/api/keepsake?personId=${encodeURIComponent(personId)}`, {}, LOAD_TIMEOUT_MS);
         if (!alive) return;
         if (!r.ok) { setEditionState('unavailable'); return; }
         const body = await r.json().catch(() => null);
@@ -185,7 +196,7 @@ export default function KeepsakeView({
     try {
       const chaptersSpread = keepsake.spreads.find((s) => s.key === 'chapters');
       const colophon = keepsake.spreads.find((s) => s.key === 'colophon');
-      const r = await fetch('/api/keepsake', {
+      const r = await fetchWithTimeout('/api/keepsake', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
@@ -194,7 +205,7 @@ export default function KeepsakeView({
           chapterPlan: (chaptersSpread?.chapters || []).map((c) => c.label),
           recordCount: colophon?.recordCount ?? null,
         }),
-      });
+      }, COMPILE_TIMEOUT_MS);
       const body = await r.json().catch(() => null);
       if (!r.ok || !body?.narrative) { setCompileError(true); return; }
       setEdition(body);
@@ -247,11 +258,11 @@ export default function KeepsakeView({
     }
     setSaveState('saving');
     try {
-      const r = await fetch('/api/keepsake', {
+      const r = await fetchWithTimeout('/api/keepsake', {
         method: 'PUT',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ personId, narrative: n }),
-      });
+      }, LOAD_TIMEOUT_MS);
       const body = await r.json().catch(() => null);
       if (!r.ok || !body?.narrative) { setSaveState('error'); return; }
       setEdition(body);

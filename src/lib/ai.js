@@ -1,3 +1,33 @@
+import { fetchWithTimeout } from './net.js';
+
+// A real user report ("if I go to generate a story... it freezes... only a
+// refresh clears it") traced to exactly this: neither the initial connect
+// nor the SSE read loop below had any timeout, so a stalled connection (or
+// a Worker that hangs mid-stream, headers already sent) left this promise
+// unresolved forever — the caller's own "generating…" state never had a
+// chance to reach its existing error handling, which was already correct.
+// CONNECT covers "never got a response at all"; STALL covers "started
+// streaming, then went silent" — generously long since a real generation
+// can legitimately run for a while, but no *gap between chunks* should
+// ever come close to this.
+const CONNECT_TIMEOUT_MS = 20_000;
+const STALL_TIMEOUT_MS = 45_000;
+
+// Races a single reader.read() against a stall timer, rejecting with a
+// clearly-tagged error if no chunk arrives in time — reader.read() itself
+// has no timeout of its own to lean on.
+async function readWithStallTimeout(reader, timeoutMs) {
+  let timer;
+  const stalled = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(Object.assign(new Error('stream stalled'), { stalled: true })), timeoutMs);
+  });
+  try {
+    return await Promise.race([reader.read(), stalled]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /*
  * Client-side helper for streaming AI biography generation.
  *
@@ -18,12 +48,23 @@
  * Callbacks:
  *   onChunk(text)  — called for each incremental text piece
  *   onDone()       — called when the stream ends cleanly
- *   onError(err)   — called on network / server errors (null on abort)
+ *   onError(err)   — called on network / server errors, or a stall/connect
+ *                    timeout (null only when the CALLER's own `signal` was
+ *                    the thing that aborted — a real timeout is always
+ *                    reported, never silently swallowed as if intentional)
+ *
+ * connectTimeoutMs/stallTimeoutMs override the defaults above — exposed
+ * purely so tests can exercise the timeout/stall paths without actually
+ * waiting 20-45 real seconds; production callers never need to pass these.
  */
-export async function streamBio(person, { memories = [], relSummary = [], documentSummaries = [], feedback, previousStory, focus, militaryEvents, militaryQuotes } = {}, { onChunk, onDone, onError, signal } = {}) {
+export async function streamBio(
+  person,
+  { memories = [], relSummary = [], documentSummaries = [], feedback, previousStory, focus, militaryEvents, militaryQuotes } = {},
+  { onChunk, onDone, onError, signal, connectTimeoutMs = CONNECT_TIMEOUT_MS, stallTimeoutMs = STALL_TIMEOUT_MS } = {},
+) {
   let res;
   try {
-    res = await fetch('/api/biography', {
+    res = await fetchWithTimeout('/api/biography', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -31,9 +72,9 @@ export async function streamBio(person, { memories = [], relSummary = [], docume
         focus, militaryEvents, militaryQuotes,
       }),
       signal,
-    });
+    }, connectTimeoutMs);
   } catch (e) {
-    onError?.(e.name === 'AbortError' ? null : e);
+    onError?.(signal?.aborted ? null : (e.name === 'AbortError' ? new Error('Connection timed out — please try again') : e));
     return;
   }
 
@@ -53,7 +94,7 @@ export async function streamBio(person, { memories = [], relSummary = [], docume
 
   try {
     while (true) {
-      const { value, done } = await reader.read();
+      const { value, done } = await readWithStallTimeout(reader, stallTimeoutMs);
       if (done) break;
       buf += decoder.decode(value, { stream: true });
 
@@ -85,7 +126,9 @@ export async function streamBio(person, { memories = [], relSummary = [], docume
       }
     }
   } catch (e) {
+    if (e.stalled) { reader.cancel().catch(() => {}); onError?.(new Error('The story stopped generating — please try again')); return; }
     if (e.name !== 'AbortError') onError?.(e);
+    else if (!signal?.aborted) onError?.(new Error('Connection timed out — please try again'));
     return;
   }
 
