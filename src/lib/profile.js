@@ -140,3 +140,34 @@ export function hasEventMentioning(person, year, name) {
     return tokens.some((t) => haystack.includes(t));
   });
 }
+
+/*
+ * EditPersonSheet.jsx's quick "Resting place" box is a single free-text
+ * field — the same shape as Birthplace/Lives in — sitting alongside the
+ * richer cemetery/plot/suburb/state breakdown the dedicated Resting Place
+ * profile section (RestingPlace.jsx) offers. Real feedback: people want to
+ * jot it down while adding a person, not make a separate trip to that
+ * section, but adding more detail there later shouldn't be undone by an
+ * unrelated later save through this plain form.
+ *
+ * Extracted as a pure function (rather than inlined in the component) for
+ * the same reason `hasUnsyncedContent`/`dedupeMergeImport` are — it decides
+ * whether a save destroys or preserves existing data, so it gets its own
+ * unit tests rather than only ever being exercised by clicking through the
+ * UI. Returns an empty object when nothing should be touched — the caller
+ * spreads the result into its save payload, so an empty object means the
+ * `resting_place` key is omitted entirely, not set to any particular value
+ * (a present-but-undefined key would still overwrite it — see
+ * updatePerson's shallow `{...person, ...fields}` merge in store.js).
+ */
+export function buildRestingPlacePatch(isDeceased, quickText, existingRestingPlace) {
+  if (!isDeceased) return { resting_place: null };
+  const initial = (existingRestingPlace?.place || '').trim();
+  const next = (quickText || '').trim();
+  if (next === initial) return {}; // untouched — the common case, leave whatever's there alone
+  if (!next) return { resting_place: null };
+  // A shallow merge, never a wholesale replace: preserves any cemetery
+  // name/plot/suburb/state/lat/lon already filled in via the dedicated
+  // section — this box only ever represents `place`.
+  return { resting_place: { ...(existingRestingPlace || {}), place: next } };
+}

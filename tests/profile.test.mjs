@@ -3,7 +3,7 @@
  * Run with: node tests/profile.test.mjs
  */
 import assert from 'node:assert/strict';
-import { lifeEvents, isDuplicateLifeEvent, hasEventMentioning } from '../src/lib/profile.js';
+import { lifeEvents, isDuplicateLifeEvent, hasEventMentioning, buildRestingPlacePatch } from '../src/lib/profile.js';
 
 let passed = 0, failed = 0;
 function test(label, fn) {
@@ -128,6 +128,41 @@ test('hasEventMentioning returns false with no year, no name, or no events', () 
   assert.equal(hasEventMentioning({ events: [{ year: 2012, title: 'Birth of Oliver' }] }, null, 'Oliver'), false);
   assert.equal(hasEventMentioning({ events: [{ year: 2012, title: 'Birth of Oliver' }] }, 2012, ''), false);
   assert.equal(hasEventMentioning({ events: [] }, 2012, 'Oliver'), false);
+});
+
+// ── buildRestingPlacePatch (EditPersonSheet's quick-add box) ────────────────
+
+test('buildRestingPlacePatch: unchecking deceased always clears resting_place, even if it was already empty', () => {
+  assert.deepEqual(buildRestingPlacePatch(false, '', null), { resting_place: null });
+  assert.deepEqual(buildRestingPlacePatch(false, '', { cemetery: 'Old Cemetery', place: 'Old Town' }), { resting_place: null });
+});
+
+test('buildRestingPlacePatch: an untouched quick box (unchanged text) leaves resting_place completely alone — omits the key', () => {
+  assert.deepEqual(buildRestingPlacePatch(true, '', null), {});
+  assert.deepEqual(buildRestingPlacePatch(true, 'London, England', { place: 'London, England', cemetery: 'Highgate' }), {});
+});
+
+test('buildRestingPlacePatch: a brand-new value with no prior record creates a bare { place } record', () => {
+  const result = buildRestingPlacePatch(true, 'Highgate Cemetery, London', null);
+  assert.deepEqual(result, { resting_place: { place: 'Highgate Cemetery, London' } });
+});
+
+test('buildRestingPlacePatch: clearing the quick box to empty deletes the whole record', () => {
+  const result = buildRestingPlacePatch(true, '', { place: 'London, England', cemetery: 'Highgate' });
+  assert.deepEqual(result, { resting_place: null });
+});
+
+test('buildRestingPlacePatch: editing the quick text on an existing rich record only updates `place`, preserving cemetery/plot/suburb/state/lat/lon', () => {
+  const existing = { cemetery: 'Highgate Cemetery', plot: 'Section 12', place: 'London, England', suburb: 'London', state: 'England', country: 'UK', lat: 51.5, lon: -0.1 };
+  const result = buildRestingPlacePatch(true, 'Camden, England', existing);
+  assert.deepEqual(result, {
+    resting_place: { cemetery: 'Highgate Cemetery', plot: 'Section 12', place: 'Camden, England', suburb: 'London', state: 'England', country: 'UK', lat: 51.5, lon: -0.1 },
+  });
+});
+
+test('buildRestingPlacePatch: whitespace-only differences do not count as a real change', () => {
+  const result = buildRestingPlacePatch(true, '  London, England  ', { place: 'London, England' });
+  assert.deepEqual(result, {});
 });
 
 console.log(`\n  ${passed} passed, ${failed} failed`);
