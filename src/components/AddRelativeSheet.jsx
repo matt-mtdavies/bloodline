@@ -46,6 +46,7 @@ export default function AddRelativeSheet({ anchor, people = [], relationships = 
   const [residence, setResidence] = useState('');
   const [isDeceased, setIsDeceased] = useState(false);
   const [deathDate, setDeathDate] = useState('');
+  const [restingPlace, setRestingPlace] = useState('');
   // Marriage details for a new partner/ex-partner, captured here rather than
   // left for the buried per-relationship "manage" menu on the profile
   // (feedback: "there is a married component... but it's not obvious").
@@ -96,6 +97,7 @@ export default function AddRelativeSheet({ anchor, people = [], relationships = 
     setResidence('');
     setIsDeceased(false);
     setDeathDate('');
+    setRestingPlace('');
     setIsMarried(false);
     setMarriageDate('');
     setSeparationDate('');
@@ -239,6 +241,7 @@ export default function AddRelativeSheet({ anchor, people = [], relationships = 
       residence: residence.trim(),
       is_deceased: isDeceased,
       death_date: isDeceased ? deathDate.trim() : '',
+      resting_place: isDeceased ? restingPlace.trim() : '',
       is_married: (relKey === 'partner' || relKey === 'ex_partner') ? isMarried : false,
       marriage_date: (relKey === 'partner' || relKey === 'ex_partner') && isMarried ? marriageDate.trim() : '',
       separation_date: relKey === 'ex_partner' ? separationDate.trim() : '',
@@ -674,6 +677,30 @@ export default function AddRelativeSheet({ anchor, people = [], relationships = 
                 <div className="input-wrap dob-wrap">
                   <DateField value={deathDate} max={TODAY} onChange={setDeathDate} />
                   {deathDate && <button type="button" className="input-clear" onClick={() => setDeathDate('')} aria-label="Clear" tabIndex={-1}>×</button>}
+                </div>
+              </label>
+            )}
+            {/* Same quick single-box shape as Birthplace/Lives in above, and
+                the same field EditPersonSheet.jsx offers later — capturing
+                it here too means it's on record the moment a deceased
+                ancestor is first added, not a separate trip back into the
+                profile afterward. The richer cemetery/plot/suburb/state
+                breakdown (PersonSheet's own Resting Place section) picks up
+                right where this leaves off, splitting whatever's typed here
+                the same way it already does for a residence typed before
+                the two-box form existed. */}
+            {isDeceased && (
+              <label className="field">
+                <span className="field__label">Resting place <span className="field__label-sub">optional</span></span>
+                <div className="input-wrap">
+                  <input
+                    className="field__input"
+                    value={restingPlace}
+                    onChange={(e) => setRestingPlace(e.target.value)}
+                    placeholder="e.g. Highgate Cemetery, London"
+                    autoComplete="off"
+                  />
+                  {restingPlace && <button type="button" className="input-clear" onClick={() => setRestingPlace('')} aria-label="Clear" tabIndex={-1}>×</button>}
                 </div>
               </label>
             )}

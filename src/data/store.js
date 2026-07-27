@@ -1101,7 +1101,7 @@ export function bioParentGendersFilled(personId) {
   return genders; // Set of 'male'|'female' already occupied
 }
 
-export function addRelative({ anchorId, relKey, name, given, middle, family, birth_name, gender, birth_date, birth_place, residence, is_deceased, death_date, qualifier = 'biological', childCoParentId = null, is_married, marriage_date, marriage_place, separation_date, siblingOtherParentMode = null, siblingOtherParentId = null, siblingOtherParentNew = null }) {
+export function addRelative({ anchorId, relKey, name, given, middle, family, birth_name, gender, birth_date, birth_place, residence, is_deceased, death_date, resting_place, qualifier = 'biological', childCoParentId = null, is_married, marriage_date, marriage_place, separation_date, siblingOtherParentMode = null, siblingOtherParentId = null, siblingOtherParentNew = null }) {
   const id = uid();
   const meta = RELATIONSHIPS.find((r) => r.key === relKey);
 
@@ -1138,6 +1138,12 @@ export function addRelative({ anchorId, relKey, name, given, middle, family, bir
     is_minor: false,
     birth_place: (birth_place || '').trim() || null,
     residence: (residence || '').trim() || null,
+    // Same quick single-box shape as birth_place/residence above — only
+    // ever a bare { place } record. The richer cemetery/plot/suburb/state
+    // breakdown is added later via the profile's own Resting Place section
+    // (RestingPlace.jsx), which already knows how to split a typed place
+    // string the same way it does for one typed here.
+    resting_place: is_deceased && (resting_place || '').trim() ? { place: resting_place.trim() } : null,
     occupation: null,
     tags: [],
     events: [],

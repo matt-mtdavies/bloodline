@@ -228,6 +228,47 @@ test('addRelative for a plain new partner (no marriage fields passed) leaves the
   assert.equal(edge.separation_date, undefined);
 });
 
+// ── addRelative: resting place captured at creation time ────────────────
+// Real user feedback: resting place should be fillable on the initial
+// "add relative" screen (right where birthplace/lives in/deceased already
+// are), not require a separate trip into the profile editor afterward.
+
+test('addRelative: a deceased new relative with a resting place gets a bare { place } record', () => {
+  importFromGedcom([{ id: 'anchor5', display_name: 'Anchor Five' }], [], { merge: false });
+
+  const newId = addRelative({
+    anchorId: 'anchor5', relKey: 'brother', given: 'Tom', family: 'Doe',
+    is_deceased: true, death_date: '1990', resting_place: 'Highgate Cemetery, London',
+  });
+
+  const person = store.getState().people.find((p) => p.id === newId);
+  assert.deepEqual(person.resting_place, { place: 'Highgate Cemetery, London' });
+});
+
+test('addRelative: resting place is ignored when the person is not marked deceased', () => {
+  importFromGedcom([{ id: 'anchor6', display_name: 'Anchor Six' }], [], { merge: false });
+
+  const newId = addRelative({
+    anchorId: 'anchor6', relKey: 'brother', given: 'Sam', family: 'Doe',
+    is_deceased: false, resting_place: 'Some Cemetery',
+  });
+
+  const person = store.getState().people.find((p) => p.id === newId);
+  assert.equal(person.resting_place, null, 'a living person can\'t have a resting place, regardless of what the field held');
+});
+
+test('addRelative: a deceased new relative with no resting place typed leaves it null (not an empty-string record)', () => {
+  importFromGedcom([{ id: 'anchor7', display_name: 'Anchor Seven' }], [], { merge: false });
+
+  const newId = addRelative({
+    anchorId: 'anchor7', relKey: 'brother', given: 'Joe', family: 'Doe',
+    is_deceased: true, death_date: '1990',
+  });
+
+  const person = store.getState().people.find((p) => p.id === newId);
+  assert.equal(person.resting_place, null);
+});
+
 test('updatePartnerMeta persists a separation date independent of is_married', () => {
   seedPartners('former');
   const [a, b] = ['tina', 'randy'];
