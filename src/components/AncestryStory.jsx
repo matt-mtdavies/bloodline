@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { buildAncestryFacts, ancestryReady, factsHash } from '../lib/ancestryStory.js';
 import { buildTimelineLayout } from '../lib/placesTimeline.js';
+import { fetchWithTimeout } from '../lib/net.js';
+
+// Same fix as KeepsakeView.jsx (the Ancestry Story shares its compiled-
+// edition architecture) — a real user report of the app "freezing" during
+// AI generation traced to fetch() having no timeout anywhere here.
+const LOAD_TIMEOUT_MS = 25_000;
+const COMPILE_TIMEOUT_MS = 90_000;
 
 /*
  * The Ancestry Story — "where you come from," told forward in time from the
@@ -36,7 +43,7 @@ export default function AncestryStory({ graph, personId, onCompiled }) {
     setCompileError(false);
     (async () => {
       try {
-        const r = await fetch(`/api/ancestry-story?personId=${encodeURIComponent(personId)}`);
+        const r = await fetchWithTimeout(`/api/ancestry-story?personId=${encodeURIComponent(personId)}`, {}, LOAD_TIMEOUT_MS);
         if (!alive) return;
         if (!r.ok) { setState('unavailable'); return; }
         const body = await r.json().catch(() => null);
@@ -72,15 +79,23 @@ export default function AncestryStory({ graph, personId, onCompiled }) {
     setCompiling(true);
     setCompileError(false);
     try {
-      const r = await fetch('/api/ancestry-story', {
+      const r = await fetchWithTimeout('/api/ancestry-story', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ personId, facts }),
-      });
+      }, COMPILE_TIMEOUT_MS);
       const body = await r.json().catch(() => null);
       if (!r.ok || !body?.narrative) { setCompileError(true); return; }
       setEdition(body);
       onCompiled?.(body);
+    } catch {
+      // A missing catch here previously meant a network failure (including
+      // the timeout above firing) surfaced as an unhandled promise
+      // rejection instead of the same compileError state every other
+      // failure path already sets — the spinner would clear (`finally`
+      // below still runs) but with no visible error and a scary console
+      // warning. Matches KeepsakeView.jsx's own compile()/saveEdit().
+      setCompileError(true);
     } finally {
       setCompiling(false);
     }
