@@ -11006,6 +11006,73 @@ button.health-notes {
   font-size: 14px;
 }
 
+/* Resting Place (src/components/RestingPlace.jsx) — tinted with the app's
+   one dedicated memorial color (--memorial/--memorial-soft, already used
+   by the "In loving memory" badge) rather than the ordinary terracotta
+   accent, since this section only ever appears on a profile already
+   carrying that badge. The edit form reuses .places-form/.places-form__*
+   verbatim (identical suburb/state two-box shape) — only this display
+   card and its own title icon are new. */
+.profile-section--resting .profile-section__title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.resting-title-icon { color: var(--memorial); display: inline-flex; }
+.resting-card {
+  background: var(--memorial-soft);
+  border-radius: 14px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.resting-card__name { margin: 0; font-size: 15px; font-weight: 600; color: var(--ink); }
+.resting-card__sub { margin: 2px 0 0; font-size: 13px; font-weight: 500; color: var(--ink-soft); }
+.resting-card__plot { margin: 4px 0 0; font-size: 12.5px; color: var(--ink-soft); }
+.resting-card__actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+}
+.resting-card__directions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--memorial);
+  padding: 7px 13px;
+  border-radius: 999px;
+  background: var(--paper);
+  border: 1px solid var(--memorial);
+  text-decoration: none;
+}
+.resting-card__directions:hover { background: #fff; }
+.resting-card__del {
+  margin-left: auto;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-soft);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+.resting-card__del:hover { background: rgba(0, 0, 0, 0.06); }
+.resting-card__confirm {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--ink-soft);
+  margin-left: auto;
+}
+
 /* Ancestry Story (src/components/AncestryStory.jsx) — the patrilineal +
    matrilineal ascending chains, drawn with the identical wave-timeline
    pattern as .places-route (lib/placesTimeline.js#buildTimelineLayout,

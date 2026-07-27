@@ -10,6 +10,7 @@ import { streamBio } from '../lib/ai.js';
 import EnrichSheet from './EnrichSheet.jsx';
 import MilitaryService from './MilitaryService.jsx';
 import PlacesLived from './PlacesLived.jsx';
+import RestingPlace from './RestingPlace.jsx';
 import AncestryStory from './AncestryStory.jsx';
 import DateField from './DateField.jsx';
 import { VISIBILITY_LABELS, VISIBILITY_DESCS } from '../lib/visibility.js';
@@ -72,6 +73,8 @@ export default function PersonSheet({
   onAddResidence,
   onUpdateResidence,
   onRemoveResidence,
+  onSetRestingPlace,
+  onClearRestingPlace,
   onInvite,
   onRemoveRelationship,
   onUpdateRelationshipQualifier,
@@ -828,6 +831,13 @@ export default function PersonSheet({
                 <p className="profile-section__empty">No life events yet</p>
               )}
             </section>
+
+            <RestingPlace
+              person={person}
+              canEdit={canEdit}
+              onSet={(fields) => onSetRestingPlace?.(person.id, fields)}
+              onClear={() => onClearRestingPlace?.(person.id)}
+            />
 
             <PlacesLived
               person={person}

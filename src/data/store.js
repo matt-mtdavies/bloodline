@@ -2279,3 +2279,28 @@ export function updateResidence(personId, residenceId, fields) {
     ),
   }, { type: 'residence_updated', personId, personName: person?.display_name ?? '', detail: fields.place ?? existing?.place ?? null }));
 }
+
+// Resting place — where someone is buried or interred. A single record
+// (person.resting_place | null), not a dated array like residences[]
+// above — there's only ever one. Reuses the same suburb/state two-box +
+// best-effort-geocode shape (see RestingPlace.jsx, mirroring
+// PlacesLived.jsx's own PlaceForm) for the same reason that pattern was
+// built: geocoding a bare cemetery/suburb name can't always confidently
+// resolve a state on its own, so whatever the family typed always wins.
+export function setRestingPlace(personId, { cemetery = null, plot = null, place, suburb = null, state: stateName = null, country = null, lat = null, lon = null }) {
+  const person = state.people.find((p) => p.id === personId);
+  const resting_place = { cemetery: cemetery || null, plot: plot || null, place, suburb, state: stateName, country, lat, lon };
+  commit(withActivity({
+    ...state,
+    people: state.people.map((p) => (p.id === personId ? { ...p, resting_place } : p)),
+  }, { type: 'resting_place_updated', personId, personName: person?.display_name ?? '', detail: cemetery || place || null }));
+}
+
+export function clearRestingPlace(personId) {
+  const person = state.people.find((p) => p.id === personId);
+  const detail = person?.resting_place?.cemetery || person?.resting_place?.place || null;
+  commit(withActivity({
+    ...state,
+    people: state.people.map((p) => (p.id === personId ? { ...p, resting_place: null } : p)),
+  }, { type: 'resting_place_removed', personId, personName: person?.display_name ?? '', detail }));
+}

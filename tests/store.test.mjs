@@ -14,7 +14,7 @@ import {
   addLifeEvent, updatePerson, retractDocumentContributions,
   addRelative, updatePartnerMeta, resetTree, addMemory, addPhoto, addDocument,
   bioParentGendersFilled, addResidence, updateResidence, removeResidence,
-  backfillResidenceGeocodes,
+  backfillResidenceGeocodes, setRestingPlace, clearRestingPlace,
 } from '../src/data/store.js';
 import { buildGraph } from '../src/data/graph.js';
 
@@ -705,6 +705,75 @@ await atest('backfillResidenceGeocodes: a geocoder rejection is caught, leaving 
   addResidence('geo5', { place: 'Cardiff, Wales', from_year: 1990 });
   const result = await backfillResidenceGeocodes(async () => { throw new Error('network error'); });
   assert.deepEqual(result, { total: 1, updated: 0, failed: 1 });
+});
+
+// ── Resting place ────────────────────────────────────────────────────────
+
+test('setRestingPlace: stores a single resting_place record with all fields, defaulting geocoded fields to null', () => {
+  importFromGedcom([{ id: 'rest1', display_name: 'Rest One' }], [], { merge: false });
+  setRestingPlace('rest1', { cemetery: 'Oak Hill Cemetery', plot: 'Section 4, Row B', place: 'Springfield, Illinois' });
+  const person = store.getState().people.find((p) => p.id === 'rest1');
+  assert.equal(person.resting_place.cemetery, 'Oak Hill Cemetery');
+  assert.equal(person.resting_place.plot, 'Section 4, Row B');
+  assert.equal(person.resting_place.place, 'Springfield, Illinois');
+  assert.equal(person.resting_place.lat, null, 'lat/lon default to null — geocoding is optional and asynchronous');
+  assert.equal(person.resting_place.suburb, null);
+});
+
+test('setRestingPlace: stores the geocoded suburb/state/country breakdown alongside lat/lon', () => {
+  importFromGedcom([{ id: 'rest2', display_name: 'Rest Two' }], [], { merge: false });
+  setRestingPlace('rest2', {
+    cemetery: 'Père Lachaise', place: 'Paris, France',
+    suburb: 'Paris', state: 'Île-de-France', country: 'France', lat: 48.86, lon: 2.39,
+  });
+  const person = store.getState().people.find((p) => p.id === 'rest2');
+  assert.equal(person.resting_place.suburb, 'Paris');
+  assert.equal(person.resting_place.state, 'Île-de-France');
+  assert.equal(person.resting_place.country, 'France');
+  assert.equal(person.resting_place.lat, 48.86);
+});
+
+test('setRestingPlace: calling it again replaces the whole record rather than merging with the old one', () => {
+  importFromGedcom([{ id: 'rest3', display_name: 'Rest Three' }], [], { merge: false });
+  setRestingPlace('rest3', { cemetery: 'First Cemetery', plot: 'Plot A', place: 'Town One' });
+  setRestingPlace('rest3', { place: 'Town Two' }); // an edit that drops the cemetery/plot fields
+  const person = store.getState().people.find((p) => p.id === 'rest3');
+  assert.equal(person.resting_place.place, 'Town Two');
+  assert.equal(person.resting_place.cemetery, null, 'a full re-save with no cemetery clears the old one, rather than keeping a stale value around');
+  assert.equal(person.resting_place.plot, null);
+});
+
+test('clearRestingPlace: sets resting_place back to null', () => {
+  importFromGedcom([{ id: 'rest4', display_name: 'Rest Four' }], [], { merge: false });
+  setRestingPlace('rest4', { cemetery: 'Some Cemetery', place: 'Somewhere' });
+  clearRestingPlace('rest4');
+  const person = store.getState().people.find((p) => p.id === 'rest4');
+  assert.equal(person.resting_place, null);
+});
+
+test('setRestingPlace logs a "resting_place_updated" activity event, preferring the cemetery name over the bare place', () => {
+  importFromGedcom([{ id: 'rest5', display_name: 'Rest Five' }], [], { merge: false });
+  setRestingPlace('rest5', { cemetery: 'Highgate Cemetery', place: 'London, England' });
+  const [event] = store.getState().activity;
+  assert.equal(event.type, 'resting_place_updated');
+  assert.equal(event.personId, 'rest5');
+  assert.equal(event.detail, 'Highgate Cemetery', 'the cemetery name is more identifying than the bare place string');
+});
+
+test('setRestingPlace logs the place as the detail when no cemetery name was given', () => {
+  importFromGedcom([{ id: 'rest6', display_name: 'Rest Six' }], [], { merge: false });
+  setRestingPlace('rest6', { place: 'A small churchyard' });
+  const [event] = store.getState().activity;
+  assert.equal(event.detail, 'A small churchyard');
+});
+
+test('clearRestingPlace logs a "resting_place_removed" activity event naming what was removed, even though it no longer exists on the person', () => {
+  importFromGedcom([{ id: 'rest7', display_name: 'Rest Seven' }], [], { merge: false });
+  setRestingPlace('rest7', { cemetery: 'Green Meadow Cemetery', place: 'Anytown' });
+  clearRestingPlace('rest7');
+  const [event] = store.getState().activity;
+  assert.equal(event.type, 'resting_place_removed');
+  assert.equal(event.detail, 'Green Meadow Cemetery');
 });
 
 console.log(`\n  ${passed} passed, ${failed} failed`);

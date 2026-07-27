@@ -211,6 +211,18 @@ function EventDescription({ event, userEmail, nameByEmail }) {
           {author} removed {event.detail ? <strong key="d">{event.detail}</strong> : 'a place'} from {subject}'s places lived
         </>
       );
+    case 'resting_place_updated':
+      return (
+        <>
+          {author} recorded {subject}'s resting place{event.detail ? <> — <strong key="d">{event.detail}</strong></> : null}
+        </>
+      );
+    case 'resting_place_removed':
+      return (
+        <>
+          {author} removed {subject}'s resting place record{event.detail ? <> — <strong key="d">{event.detail}</strong></> : null}
+        </>
+      );
     default:
       return <>{author} updated {subject}</>;
   }
@@ -264,6 +276,8 @@ function typeConfig(type) {
     case 'residence_added':
     case 'residence_updated':
     case 'residence_removed': return { color: '#b08642', Icon: PinIcon };
+    case 'resting_place_updated':
+    case 'resting_place_removed': return { color: '#6b5e7a', Icon: LaurelIcon };
     default:                  return { color: '#6b6f76', Icon: EditIcon };
   }
 }
@@ -448,6 +462,20 @@ function PinIcon() {
       <path d="M12 21.5s7-6.5 7-12.5a7 7 0 0 0-14 0c0 6 7 12.5 7 12.5z"
         stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
       <circle cx="12" cy="9" r="2.4" stroke="currentColor" strokeWidth="2" />
+    </svg>
+  );
+}
+
+// A small laurel sprig, matching RestingPlace.jsx's own icon — one glyph
+// per file being this codebase's convention rather than a shared module.
+function LaurelIcon() {
+  return (
+    <svg width="9" height="9" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M12 20V6" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
+      <path d="M12 8c-2-3-5-4-7-3.4C4.6 6.5 6.6 9.4 9.6 10c1 .2 1.9 0 2.4-.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M12 12c-2-3-5-4-7-3.4C4.6 10.5 6.6 13.4 9.6 14c1 .2 1.9 0 2.4-.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M12 8c2-3 5-4 7-3.4C19.4 6.5 17.4 9.4 14.4 10c-1 .2-1.9 0-2.4-.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M12 12c2-3 5-4 7-3.4C19.4 10.5 17.4 13.4 14.4 14c-1 .2-1.9 0-2.4-.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }

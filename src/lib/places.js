@@ -36,6 +36,26 @@ export async function geocodePlace(place, { timeoutMs = 8000 } = {}) {
   }
 }
 
+// Pulls just the fields a successful (or failed) geocode contributes, so a
+// record always ends up with a consistent shape regardless of whether
+// geocoding actually ran — a failure (geo === null) still saves the typed
+// fields alone, with every geocoded field explicitly null rather than
+// simply absent. `typed` (the form's own suburb/state boxes) always wins
+// over whatever geocoding resolves — geocoding a bare place name with no
+// state given can't always confidently resolve one, so typing it directly
+// guarantees it's saved regardless of whether geocoding agrees, resolves
+// nothing, or fails outright. Shared by PlacesLived.jsx and
+// RestingPlace.jsx — both save a suburb/state-typed place the same way.
+export function geoFields(geo, typed = {}) {
+  return {
+    lat: geo?.lat ?? null,
+    lon: geo?.lon ?? null,
+    suburb: typed.suburb || geo?.suburb || null,
+    state: typed.state || geo?.state || null,
+    country: geo?.country ?? null,
+  };
+}
+
 // Batch counterpart, used by store.js's backfillResidenceGeocodes to
 // retroactively resolve any residence saved before geocoding ran (or while
 // it failed) — e.g. a deploy-timing gap, a rate-limited moment, or entries

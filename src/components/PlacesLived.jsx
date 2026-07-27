@@ -1,6 +1,6 @@
 import { useState, lazy, Suspense } from 'react';
 import { createPortal } from 'react-dom';
-import { geocodePlace } from '../lib/places.js';
+import { geocodePlace, geoFields } from '../lib/places.js';
 import { buildTimelineLayout } from '../lib/placesTimeline.js';
 
 // Leaflet is a real, non-trivial dependency (~150KB) only ever needed once
@@ -244,29 +244,6 @@ export default function PlacesLived({ person, canEdit, onAddResidence, onUpdateR
     )}
     </>
   );
-}
-
-// Pulls just the fields a successful (or failed) geocode contributes, so a
-// residence always ends up with a consistent shape regardless of whether
-// geocoding actually ran — a failure (geo === null) still saves the place/
-// year fields alone, with every geocoded field explicitly null rather than
-// simply absent.
-//
-// `typed` (the form's own suburb/state boxes) always wins over whatever
-// geocoding resolves — a real reported gap: geocoding a bare suburb name
-// with no state given (e.g. "Narre Warren" alone) can't always confidently
-// resolve a state, silently leaving it blank even though the family may
-// simply not have typed it into the old single combined field. Typing it
-// directly into its own box now guarantees it's saved regardless of
-// whether geocoding agrees, resolves nothing, or fails outright.
-function geoFields(geo, typed = {}) {
-  return {
-    lat: geo?.lat ?? null,
-    lon: geo?.lon ?? null,
-    suburb: typed.suburb || geo?.suburb || null,
-    state: typed.state || geo?.state || null,
-    country: geo?.country ?? null,
-  };
 }
 
 function formatRange(fromYear, toYear) {
