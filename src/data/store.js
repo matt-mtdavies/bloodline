@@ -1093,7 +1093,7 @@ export function bioParentGendersFilled(personId) {
   return genders; // Set of 'male'|'female' already occupied
 }
 
-export function addRelative({ anchorId, relKey, name, given, middle, family, birth_name, gender, birth_date, birth_place, residence, is_deceased, death_date, qualifier = 'biological', childCoParentId = null, is_married, marriage_date, marriage_place, separation_date }) {
+export function addRelative({ anchorId, relKey, name, given, middle, family, birth_name, gender, birth_date, birth_place, residence, is_deceased, death_date, qualifier = 'biological', childCoParentId = null, is_married, marriage_date, marriage_place, separation_date, siblingOtherParentMode = null, siblingOtherParentId = null, siblingOtherParentNew = null }) {
   const id = uid();
   const meta = RELATIONSHIPS.find((r) => r.key === relKey);
 
@@ -1153,31 +1153,31 @@ export function addRelative({ anchorId, relKey, name, given, middle, family, bir
   // they clearly read as stand-ins to be filled in or merged later.
   const extraPeople = [];
   const extraEdges = [];
+  const anchor = state.people.find((p) => p.id === anchorId);
+  const anchorFamName = anchor?.family_name || anchor?.display_name?.split(/\s+/).slice(-1)[0] || '';
+  const mkParent = (genderRole, roleWord) => ({
+    id: uid(),
+    display_name: anchorFamName ? `${anchorFamName} ${roleWord}` : `Unknown ${roleWord}`,
+    given_names: null,
+    family_name: anchorFamName || null,
+    gender: genderRole,
+    birth_date: null,
+    death_date: null,
+    is_living: true,
+    is_deceased: false,
+    is_minor: false,
+    birth_place: null,
+    residence: null,
+    occupation: null,
+    tags: [],
+    events: [],
+    bio: null,
+    photo: null,
+    confidence: 'uncertain',
+    created_by: 'me',
+    visibility: 'full',
+  });
   if ((relKey === 'brother' || relKey === 'sister') && edges.length === 0) {
-    const anchor = state.people.find((p) => p.id === anchorId);
-    const fam = anchor?.family_name || anchor?.display_name?.split(/\s+/).slice(-1)[0] || '';
-    const mkParent = (genderRole, roleWord) => ({
-      id: uid(),
-      display_name: fam ? `${fam} ${roleWord}` : `Unknown ${roleWord}`,
-      given_names: null,
-      family_name: fam || null,
-      gender: genderRole,
-      birth_date: null,
-      death_date: null,
-      is_living: true,
-      is_deceased: false,
-      is_minor: false,
-      birth_place: null,
-      residence: null,
-      occupation: null,
-      tags: [],
-      events: [],
-      bio: null,
-      photo: null,
-      confidence: 'uncertain',
-      created_by: 'me',
-      visibility: 'full',
-    });
     const mother = mkParent('female', 'Mother');
     const father = mkParent('male', 'Father');
     extraPeople.push(mother, father);
@@ -1186,6 +1186,80 @@ export function addRelative({ anchorId, relKey, name, given, middle, family, bir
       parentEdge(mother.id, anchorId), parentEdge(father.id, anchorId),
       parentEdge(mother.id, id), parentEdge(father.id, id),
     );
+  }
+
+  // The anchor had exactly ONE parent on record — the sibling would
+  // otherwise share just that one and silently read as a half-sibling
+  // (real user report: choosing "Add Brother" implies a full sibling to
+  // most people, so quietly defaulting to half the moment only one parent
+  // happens to be recorded is a surprising, hard-to-notice assumption).
+  // The sheet resolves the ambiguity up front (AddRelativeSheet.jsx's
+  // sibling-other-parent prompt) and passes back exactly what to do here —
+  // this block only ever fires when the sheet actually asked and got an
+  // answer; any other/older caller with edges.length === 1 and no mode set
+  // behaves exactly as before (single shared parent, unchanged).
+  if ((relKey === 'brother' || relKey === 'sister') && edges.length === 1 && siblingOtherParentMode) {
+    const soleParentId = edges[0].from_person;
+    const soleParent = state.people.find((p) => p.id === soleParentId);
+    const soleGender = normalizeGender(soleParent?.gender);
+    const otherGenderRole = soleGender === 'male' ? 'female' : soleGender === 'female' ? 'male' : null;
+    const otherRoleWord = otherGenderRole === 'female' ? 'Mother' : otherGenderRole === 'male' ? 'Father' : 'Parent';
+
+    if (siblingOtherParentMode === 'existing' && siblingOtherParentId) {
+      // Confirmed: the sole parent's existing partner is the new sibling's
+      // other parent too — which, by definition, makes them the anchor's
+      // other parent as well (that's what "full sibling" means structurally).
+      // Backfilled only if it wouldn't collide with the hard one-bio-parent-
+      // per-gender-role constraint (e.g. two same-gender partners) — skipped
+      // silently rather than blocking the whole add in that rare case.
+      extraEdges.push(parentEdge(siblingOtherParentId, id));
+      const candidateGender = normalizeGender(state.people.find((p) => p.id === siblingOtherParentId)?.gender);
+      const anchorAlreadyHasGender = candidateGender && bioParentGendersFilled(anchorId).has(candidateGender);
+      if (!anchorAlreadyHasGender) {
+        extraEdges.push(parentEdge(siblingOtherParentId, anchorId));
+      }
+    } else if (siblingOtherParentMode === 'new' && siblingOtherParentNew?.given?.trim()) {
+      // A different, named parent — linked to the new sibling ONLY. A real,
+      // deliberate half-sibling, not an accidental one.
+      const g = siblingOtherParentNew.given.trim();
+      const fam2 = (siblingOtherParentNew.family || '').trim();
+      const otherParent = {
+        id: uid(),
+        display_name: [g, fam2].filter(Boolean).join(' '),
+        given_names: g || null,
+        middle_name: null,
+        family_name: fam2 || null,
+        birth_name: null,
+        gender: otherGenderRole,
+        birth_date: null,
+        death_date: null,
+        is_living: true,
+        is_deceased: false,
+        is_minor: false,
+        birth_place: null,
+        residence: null,
+        occupation: null,
+        tags: [],
+        events: [],
+        bio: null,
+        photo: null,
+        confidence: 'confirmed',
+        created_by: 'me',
+        visibility: 'full',
+      };
+      extraPeople.push(otherParent);
+      extraEdges.push(parentEdge(otherParent.id, id));
+    } else if (siblingOtherParentMode === 'unknown') {
+      // "They share another parent too, just not sure who" — an unnamed
+      // placeholder linked to BOTH people, same 'uncertain' stand-in
+      // convention as the zero-parent case above, making them full
+      // siblings without inventing a name nobody actually knows.
+      const placeholder = mkParent(otherGenderRole, otherRoleWord);
+      extraPeople.push(placeholder);
+      extraEdges.push(parentEdge(placeholder.id, anchorId), parentEdge(placeholder.id, id));
+    }
+    // siblingOtherParentMode === 'none' (or anything else): no change —
+    // exactly today's behaviour, now an explicit, informed choice.
   }
 
   commit(withActivity({

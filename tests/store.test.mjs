@@ -16,6 +16,7 @@ import {
   bioParentGendersFilled, addResidence, updateResidence, removeResidence,
   backfillResidenceGeocodes,
 } from '../src/data/store.js';
+import { buildGraph } from '../src/data/graph.js';
 
 let passed = 0, failed = 0;
 function test(label, fn) {
@@ -404,6 +405,158 @@ test('addResidence: a second residence with no to_year records an ongoing/curren
   const after = store.getState().people.find((p) => p.id === 'nomad2');
   assert.equal(after.residences.length, 2);
   assert.equal(after.residences[1].to_year, null);
+});
+
+// ── addRelative: sibling-add "only one parent recorded" ambiguity ──────────
+// Real user report: choosing "Add Brother" implies a full sibling to most
+// people, but silently linking the new sibling to only the anchor's single
+// recorded parent made them read as a half-sibling with no indication that
+// had happened. AddRelativeSheet.jsx now resolves this up front and passes
+// back exactly what to do — these tests exercise addRelative()'s own side
+// of that contract directly, independent of the UI.
+
+function seedAnchorWithOneParent(extra = {}) {
+  importFromGedcom(
+    [
+      { id: 'anchor', display_name: 'Anchor Person', gender: 'female' },
+      { id: 'dad', display_name: 'Dad Person', gender: 'male' },
+      ...(extra.partner ? [{ id: 'partner', display_name: 'Partner Person', gender: extra.partnerGender || 'female' }] : []),
+    ],
+    [
+      { id: 'r1', type: 'parent', from_person: 'dad', to_person: 'anchor', qualifier: 'biological' },
+      ...(extra.partner ? [{ id: 'r2', type: 'partner', from_person: 'dad', to_person: 'partner', partner_status: 'current' }] : []),
+    ],
+    { merge: false },
+  );
+}
+
+test('sibling add, mode "existing": links the sole parent\'s partner as parent of BOTH the new sibling and the anchor (full sibling)', () => {
+  seedAnchorWithOneParent({ partner: true });
+  const newId = addRelative({
+    anchorId: 'anchor', relKey: 'brother', given: 'Sib', family: 'Person',
+    siblingOtherParentMode: 'existing', siblingOtherParentId: 'partner',
+  });
+  assert.ok(newId);
+  const rels = store.getState().relationships;
+  assert.ok(rels.some((r) => r.type === 'parent' && r.from_person === 'partner' && r.to_person === newId), 'partner is a parent of the new sibling');
+  assert.ok(rels.some((r) => r.type === 'parent' && r.from_person === 'partner' && r.to_person === 'anchor'), 'partner is retroactively a parent of the anchor too');
+
+  const g = buildGraph(store.getState().people, rels);
+  const sib = g.siblings('anchor').find((s) => s.id === newId);
+  assert.equal(sib.kind, 'full', 'anchor and the new sibling now share 2 bio parents — full siblings');
+});
+
+test('sibling add, mode "new": a different named parent is linked ONLY to the new sibling — a real, deliberate half-sibling', () => {
+  seedAnchorWithOneParent({ partner: true });
+  const newId = addRelative({
+    anchorId: 'anchor', relKey: 'brother', given: 'Sib', family: 'Person',
+    siblingOtherParentMode: 'new', siblingOtherParentNew: { given: 'Someone', family: 'Else' },
+  });
+  assert.ok(newId);
+  const rels = store.getState().relationships;
+  const anchorParentIds = rels.filter((r) => r.type === 'parent' && r.to_person === 'anchor').map((r) => r.from_person);
+  assert.deepEqual(anchorParentIds, ['dad'], 'the anchor\'s own parents are untouched');
+  const newPersonName = store.getState().people.find((p) => p.display_name === 'Someone Else');
+  assert.ok(newPersonName, 'a brand-new distinct person was created for "a different parent"');
+  assert.ok(rels.some((r) => r.type === 'parent' && r.from_person === newPersonName.id && r.to_person === newId));
+  // father's existing partner was never touched
+  assert.ok(!rels.some((r) => r.type === 'parent' && r.from_person === 'partner'));
+
+  const g = buildGraph(store.getState().people, rels);
+  const sib = g.siblings('anchor').find((s) => s.id === newId);
+  assert.equal(sib.kind, 'half', 'they share exactly one bio parent (dad) — genuinely half-siblings, deliberately');
+});
+
+test('sibling add, mode "unknown": an unnamed placeholder parent is created and linked to BOTH people (full sibling, no name invented)', () => {
+  seedAnchorWithOneParent({}); // no partner on record at all
+  const newId = addRelative({
+    anchorId: 'anchor', relKey: 'brother', given: 'Sib', family: 'Person',
+    siblingOtherParentMode: 'unknown',
+  });
+  assert.ok(newId);
+  const people = store.getState().people;
+  const rels = store.getState().relationships;
+  const placeholder = people.find((p) => p.confidence === 'uncertain' && p.gender === 'female');
+  assert.ok(placeholder, 'an unnamed "Unknown Mother" placeholder was created (dad is male, so the missing role is female)');
+  assert.ok(rels.some((r) => r.type === 'parent' && r.from_person === placeholder.id && r.to_person === 'anchor'));
+  assert.ok(rels.some((r) => r.type === 'parent' && r.from_person === placeholder.id && r.to_person === newId));
+
+  const g = buildGraph(people, rels);
+  const sib = g.siblings('anchor').find((s) => s.id === newId);
+  assert.equal(sib.kind, 'full', 'both now share dad + the placeholder — full siblings');
+});
+
+test('sibling add, mode "none": today\'s exact behaviour — only the one recorded parent is shared (half), no placeholder invented', () => {
+  seedAnchorWithOneParent({ partner: true });
+  const newId = addRelative({
+    anchorId: 'anchor', relKey: 'brother', given: 'Sib', family: 'Person',
+    siblingOtherParentMode: 'none',
+  });
+  const peopleBefore = store.getState().people.length;
+  const rels = store.getState().relationships;
+  assert.equal(rels.filter((r) => r.type === 'parent' && r.to_person === newId).length, 1, 'only dad is linked');
+  assert.equal(store.getState().people.length, peopleBefore, 'no placeholder person created');
+
+  const g = buildGraph(store.getState().people, rels);
+  const sib = g.siblings('anchor').find((s) => s.id === newId);
+  assert.equal(sib.kind, 'half');
+});
+
+test('sibling add with no siblingOtherParentMode at all (older/other callers): unchanged from before this feature — single shared parent, no prompt logic engaged', () => {
+  seedAnchorWithOneParent({ partner: true });
+  const peopleBefore = store.getState().people.length;
+  const newId = addRelative({ anchorId: 'anchor', relKey: 'brother', given: 'Sib', family: 'Person' });
+  assert.ok(newId);
+  assert.equal(store.getState().people.length, peopleBefore + 1, 'exactly one new person, no placeholder');
+  const rels = store.getState().relationships;
+  assert.equal(rels.filter((r) => r.type === 'parent' && r.to_person === newId).length, 1);
+});
+
+test('sibling add, mode "existing": a same-gender candidate is linked to the new sibling but the anchor backfill is skipped rather than violating the one-bio-parent-per-gender rule', () => {
+  seedAnchorWithOneParent({ partner: true, partnerGender: 'male' }); // two dads on record between them
+  const newId = addRelative({
+    anchorId: 'anchor', relKey: 'brother', given: 'Sib', family: 'Person',
+    siblingOtherParentMode: 'existing', siblingOtherParentId: 'partner',
+  });
+  assert.ok(newId);
+  const rels = store.getState().relationships;
+  assert.ok(rels.some((r) => r.type === 'parent' && r.from_person === 'partner' && r.to_person === newId), 'still linked to the new sibling');
+  assert.ok(!rels.some((r) => r.type === 'parent' && r.from_person === 'partner' && r.to_person === 'anchor'), 'anchor already has a male bio parent (dad) — backfill silently skipped, not blocked or crashed');
+});
+
+test('sibling add with 0 existing parents is untouched by this feature — still auto-creates BOTH placeholders (regression guard)', () => {
+  importFromGedcom([{ id: 'loner', display_name: 'Loner Person' }], [], { merge: false });
+  const newId = addRelative({ anchorId: 'loner', relKey: 'sister', given: 'Sib', family: 'Person' });
+  assert.ok(newId);
+  const rels = store.getState().relationships;
+  const anchorParents = rels.filter((r) => r.type === 'parent' && r.to_person === 'loner');
+  const sibParents = rels.filter((r) => r.type === 'parent' && r.to_person === newId);
+  assert.equal(anchorParents.length, 2);
+  assert.equal(sibParents.length, 2);
+  const g = buildGraph(store.getState().people, rels);
+  const sib = g.siblings('loner').find((s) => s.id === newId);
+  assert.equal(sib.kind, 'full');
+});
+
+test('sibling add with 2 existing parents is untouched by this feature — both are reused, full sibling, no mode needed', () => {
+  importFromGedcom(
+    [
+      { id: 'both1', display_name: 'Both One' },
+      { id: 'mum2', display_name: 'Mum Two', gender: 'female' },
+      { id: 'dad2', display_name: 'Dad Two', gender: 'male' },
+    ],
+    [
+      { id: 'r1', type: 'parent', from_person: 'mum2', to_person: 'both1', qualifier: 'biological' },
+      { id: 'r2', type: 'parent', from_person: 'dad2', to_person: 'both1', qualifier: 'biological' },
+    ],
+    { merge: false },
+  );
+  const newId = addRelative({ anchorId: 'both1', relKey: 'brother', given: 'Sib', family: 'Person' });
+  const rels = store.getState().relationships;
+  assert.equal(rels.filter((r) => r.type === 'parent' && r.to_person === newId).length, 2);
+  const g = buildGraph(store.getState().people, rels);
+  const sib = g.siblings('both1').find((s) => s.id === newId);
+  assert.equal(sib.kind, 'full');
 });
 
 test('updateResidence: patches only the matching residence by id, leaves the other untouched', () => {
