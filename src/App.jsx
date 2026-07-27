@@ -33,6 +33,8 @@ import {
   addResidence,
   removeResidence,
   updateResidence,
+  setRestingPlace,
+  clearRestingPlace,
   addLifeEvent,
   addMedal,
   removeMedal,
@@ -2658,6 +2660,8 @@ export default function App() {
         onAddResidence={(personId, fields) => addResidence(personId, fields)}
         onUpdateResidence={(personId, id, fields) => updateResidence(personId, id, fields)}
         onRemoveResidence={(personId, id) => removeResidence(personId, id)}
+        onSetRestingPlace={(personId, fields) => setRestingPlace(personId, fields)}
+        onClearRestingPlace={(personId) => clearRestingPlace(personId)}
         onRemoveRelationship={removeRelationship}
         onUpdateRelationshipQualifier={updateRelationshipQualifier}
         onChangeRelationship={handleChangeRelType}
