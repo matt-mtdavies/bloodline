@@ -64,7 +64,8 @@ import {
 import { groupRecapUpdates, captionForRecapGroup } from './lib/recap.js';
 import { uploadPhoto, generateThumb, uploadDocument, savePhotoToDevice, srcToDataUrl, summarizeDocument } from './lib/image.js';
 import { useImageZoom } from './lib/useImageZoom.js';
-import { buildGraph, pathBetween, pathBetweenOrdered, bloodRelativesOf, distancesFromMany } from './data/graph.js';
+import { buildGraph, pathBetween, pathBetweenOrdered, bloodRelativesOf, distancesFromMany, relationLabel } from './data/graph.js';
+import { useKinTerms } from './lib/kinTerms.js';
 import { storeToGedcom } from './lib/gedcom.js';
 import { detectRegion, nearestWorldEvent } from './lib/worldEvents.js';
 import { findDuplicatePairs, pairKey, loadDismissedDuplicates, saveDismissedDuplicates } from './lib/duplicates.js';
@@ -248,6 +249,7 @@ export default function App() {
   // relationships genuinely change reference.
   const graph = useMemo(() => buildGraph(data.people, data.relationships), [data.people, data.relationships]);
   const reducedMotion = useReducedMotion();
+  const kinTerms = useKinTerms();
 
   // Possible duplicate people (same name + corroborating evidence) to offer for
   // merging. The cleanup entry point is gated to editors (see canEditTree below).
@@ -1544,6 +1546,14 @@ export default function App() {
           caption: captionForRecapGroup(g),
           authorName: authors.length > 1 ? `${authors[0]} & ${authors.length - 1} more` : (authors[0] || null),
           at: latest ? new Date(latest).toISOString() : null,
+          // "Paternal Grandmother", "Your daughter"... — the same kin-to-
+          // viewer term PersonSheet's own badge already shows, so the tour
+          // reads as "here's what changed for someone in your family," not
+          // a bare name. relationLabel never returns null (falls back to
+          // the plain "Relative" for anything too distant to name
+          // precisely), so this only stays unset if the viewer hasn't
+          // claimed a profile at all.
+          relation: data.myPersonId ? relationLabel(graph, data.myPersonId, g.personId, kinTerms) : null,
           status: 'pending',
         };
       }),
@@ -1592,7 +1602,7 @@ export default function App() {
     } else {
       requestAnimationFrame(startTour);
     }
-  }, [recapGroups, view, markRecapSeen]);
+  }, [recapGroups, view, markRecapSeen, graph, data.myPersonId, kinTerms]);
 
   const closeRecapAll = useCallback(() => {
     viewApi.current?.spotlightEnd();

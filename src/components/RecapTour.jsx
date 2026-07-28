@@ -14,10 +14,12 @@ import { relativeTime } from './ActivityFeed.jsx';
  * BubbleTree's world.position.set), and the old right-hand drawer reached
  * well past that centre even on an iPad — a panel narrating the reveal was
  * covering the reveal. The caption at the bubble already names every
- * distinct change (plus who made them and when, below), and the Activity
- * tab remains the place to browse or revisit updates at leisure — this
- * overlay is for sitting back and watching, so the only chrome it keeps is
- * a count of what's left and a way out.
+ * distinct change (plus who made them and when, below) and how that person
+ * relates to the viewer (App.jsx's openRecap() resolves it once per stop via
+ * relationLabel, the same kin-to-viewer term PersonSheet's own badge already
+ * shows), and the Activity tab remains the place to browse or revisit
+ * updates at leisure — this overlay is for sitting back and watching, so the
+ * only chrome it keeps is a count of what's left and a way out.
  */
 export default function RecapTour({ queue, reducedMotion, allDone, onCloseAll, onClose }) {
   useEffect(() => {
@@ -45,6 +47,7 @@ export default function RecapTour({ queue, reducedMotion, allDone, onCloseAll, o
       {!reducedMotion && active && !allDone && (
         <div className="recap-caption" role="status" aria-live="polite">
           <span className="recap-caption__name">{active.personName}</span>
+          {active.relation && <span className="recap-caption__relation">{active.relation}</span>}
           <span className="recap-caption__what">{active.caption}</span>
           {(active.authorName || active.at) && (
             <span className="recap-caption__meta">
