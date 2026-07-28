@@ -173,12 +173,15 @@ function AncestryChain({ label, line, layout }) {
         {line.map((a) => {
           const detail = a.restricted
             ? a.name
-            : [a.name, a.born?.year, a.occupation].filter(Boolean).join(' · ');
+            : [a.name, a.born?.year, a.born?.place, a.occupation].filter(Boolean).join(' · ');
           return (
             <div key={a.id} className="ancestry-waypoint" title={detail}>
               <span className="ancestry-waypoint-dotzone"><span className="ancestry-waypoint-dot" aria-hidden="true" /></span>
               <span className="ancestry-waypoint-year">{a.restricted ? '' : (a.born?.year || '?')}</span>
               <span className="ancestry-waypoint-name">{a.name}</span>
+              {!a.restricted && a.born?.place && (
+                <span className="ancestry-waypoint-place">{a.born.place}</span>
+              )}
             </div>
           );
         })}

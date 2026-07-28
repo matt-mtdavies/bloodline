@@ -11151,6 +11151,12 @@ button.health-notes {
   margin-top: 3px;
   line-height: 1.25;
 }
+.ancestry-waypoint-place {
+  font-size: 11.5px;
+  color: var(--ink-faint, #b0a9a5);
+  margin-top: 2px;
+  line-height: 1.2;
+}
 
 /* The edition banner — a smaller, inline-card echo of the Keepsake's own
    .ks-banner (badge + kicker + note + CTA), but static in the profile-
