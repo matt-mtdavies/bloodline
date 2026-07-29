@@ -1844,6 +1844,43 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   without touching the topbar. Full unit suite, `npm run build`, and the standard smoke test all
   passed clean.
 
+- **Micro-interaction sweep: five shared interactive base classes had zero hover feedback**
+  (self-directed, closing the last named gap from the emotional-design pass: the memo behind
+  this whole thread explicitly asked for a "micro-interaction sweep," which every prior round of
+  this pass had substituted with defect-hunting instead). Audited every generic, widely-reused
+  interactive class in `components.css` for `:hover` coverage and found a consistent pattern: `
+  .dock-btn`, `.person-row`, `.home__row-btn`, and `.btn--primary` all already had a `:hover`
+  state, but five other equally-generic, equally-widely-used classes only ever had `:active`
+  (press) feedback — meaning a desktop mouse got zero visual response until the moment of an
+  actual click. Fixed all five, each reusing an existing token/technique already established
+  elsewhere in the same file rather than inventing new colors: `.pill` (the topbar's search/
+  notification/Bloodline-only icon buttons) gains `background: var(--paper-deep)` on hover, the
+  same "gentle recessed tint" `.hover-card`/`.pplate` already use; `.chip` (every relationship-
+  type picker, search filter chip, insight-explorer chip) gains a `box-shadow: var(--shadow-soft)`
+  lift, since its resting background already occupies `--paper-deep`; `.icon-btn` (the "×" close
+  button on most sheets — DuplicatesSheet, EditPersonSheet, EnrichSheet, GedcomImport,
+  FamilySearchImport, InviteSheet, TroveSearchSheet) gains a one-step-darker
+  `color-mix(in srgb, var(--paper-deep) 85%, var(--ink))`, the same darkening idiom `.pill--on
+  :hover` already uses; `.section-edit` (the small accent-colored "Edit"/"Add" text links
+  scattered across every profile section) gains a plain `text-decoration: underline`, the
+  standard link affordance; `.btn` (the neutral, non-primary action-sheet button — "Cancel",
+  "Skip", "Add & edit details") gains `filter: brightness(0.97)`, mirroring `.btn--primary
+  :hover`'s existing `brightness(1.05)` but darkening instead of brightening since the neutral
+  variant's resting color is already near-white. Three of the five (`.pill`, `.chip`, `.icon-btn`)
+  needed their own `transition` property extended too — the new hover property (`background` or
+  `box-shadow`) wasn't in the existing transition list, so without this the state would have
+  snapped instantly instead of easing, undermining the exact "feels considered" quality the sweep
+  was for. Deliberately scoped to these five shared base classes rather than auditing every
+  one-off component class individually — since these five are reused across dozens of call sites
+  each, fixing the base class fixes the gap consistently everywhere at once. Verified live via
+  Playwright against the real dev server: measured `getComputedStyle()` before/after `.hover()` on
+  one real instance of each of the three most visible ones — the topbar search pill
+  (`rgb(255,255,255)` → `rgb(242,243,245)`), the profile edit sheet's close icon-btn
+  (`rgb(242,243,245)` → a measurably darker `color(srgb 0.82 0.83 0.84)`), and an Add Relative
+  sheet's "Partner" chip (`none` → a real two-layer `box-shadow`) — confirming each one actually
+  changes on hover rather than just editing CSS that never gets reached. Full unit suite,
+  `npm run build`, and the standard smoke test all passed clean.
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);
