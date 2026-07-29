@@ -49,6 +49,28 @@ const PAN_FRICTION = 0.92; // inertial glide decay (per 1/60 s)
 const FLICK_STOP = 1.5; // world units/s below which the glide rests
 const DOUBLE_TAP_MS = 280; // window for a double-tap-to-recentre
 const SEARCH_LANDED_SCALE = 1.55; // bigger than the default active-person baseline (1.38) — the just-found search target keeps reading as the standout even once the camera has zoomed back out to fit the family
+// Wheel-zoom sensitivity: exponential in |deltaY|, not a fixed per-event step.
+// A mouse wheel fires one discrete, large-deltaY "notch" per click; a trackpad
+// fires a continuous stream of small-deltaY events during the same gesture —
+// a FIXED per-event multiplier (the old behaviour) applies that same jump to
+// every one of those frequent small events, so the effective zoom speed scales
+// with event *frequency* rather than gesture *intensity*, reading as twitchy/
+// oversensitive specifically on trackpads. Scaling by (clamped) delta size
+// instead means a trackpad's stream of small deltas produces correspondingly
+// small per-event steps that only add up to a normal zoom rate, while a mouse's
+// occasional large notch still zooms a comfortable amount in one event.
+const WHEEL_ZOOM_SENSITIVITY = 0.0022;
+const WHEEL_DELTA_CLAMP = 240; // caps a single event's influence (a fast trackpad flick or an unusual mouse) so no single event can ever produce a jarring jump
+const ZOOM_BUTTON_FACTOR = 1.35; // per-click step for the on-screen +/- controls — a deliberate, discrete jump distinct from continuous gesture zoom
+// Spring.settled uses a loose 0.05 tolerance, and once "settled" the free-mode
+// ticker re-pins zoom.target to whatever zoom.value currently is (see the
+// zoomEasing branch below) — so a target that started life exactly ON a
+// clamped bound can drift a few thousandths off it once marked settled. An
+// exact-equality "am I at the limit" check would almost never fire; this
+// epsilon is comfortably larger than that drift and comfortably smaller than
+// any real step (steps move by tens of percent, this is a sliver of the
+// 0.16–2.8 zoom range).
+const ZOOM_LIMIT_EPS = 0.02;
 
 /*
  * The visualization. Everything that matters in Phase 1 lives here:
@@ -433,6 +455,14 @@ export default function BubbleTree({
       let camMode = 'follow'; // 'follow' | 'free'
       let vx = 0, vy = 0; // free-pan inertia, world units / second
       let onModeChange = null;
+      // Free mode normally holds zoom.target pinned to zoom.value every frame
+      // (wheel/pinch already set both directly — see zoomTo — so there's
+      // nothing to ease toward). The on-screen zoom buttons are the one free-
+      // mode exception: a discrete step that should glide via the shared
+      // spring, not snap. This flag lets the free-mode branch below step()
+      // the spring toward a real target instead of re-pinning it, only while
+      // that glide is in flight.
+      let zoomEasing = false;
 
       let dist = distancesFrom(graph, activeRef.current);
       // Duplicate-review "Show both in tree": while set, this is folded into
@@ -791,6 +821,42 @@ export default function BubbleTree({
         // Let React mirror the camera mode (to show/hide the recentre control).
         onCameraMode(fn) {
           onModeChange = fn;
+        },
+        // On-screen zoom buttons: a discrete, spring-eased step centred on the
+        // current view centre. Anchoring at the screen centre (not a cursor
+        // position — there isn't one for a button click) means the world point
+        // already under the camera's look-at is the anchor, so camX/camY don't
+        // need to move at all; only the zoom target does, and the existing
+        // per-frame spring step() eases it in exactly like wheel/pinch already
+        // feel. Returns the (clamped) zoom actually being targeted so the
+        // button can give "you're at the limit" feedback when a step is a
+        // no-op. dir > 0 zooms in, dir < 0 zooms out.
+        zoomStep(dir) {
+          state.enterFree();
+          clearHover();
+          // "Already at the limit" is checked against the last COMMANDED
+          // target, not the live easing value: the spring only asymptotically
+          // approaches a target (zoomTo/setTarget always land on an exact
+          // clamped float), so comparing against zoom.value would almost
+          // never see an exact match — a click fired the instant after
+          // reaching the floor would report a false "still moving" for many
+          // frames while the ease visually finishes catching up.
+          const bound = dir > 0 ? MAX_ZOOM_FREE : MIN_ZOOM;
+          const priorTarget = zoom.target;
+          const alreadyAtLimit = dir > 0 ? priorTarget >= bound - ZOOM_LIMIT_EPS : priorTarget <= bound + ZOOM_LIMIT_EPS;
+          const before = clamp(zoom.value, MIN_ZOOM, MAX_ZOOM_FREE);
+          const nz = clamp(before * (dir > 0 ? ZOOM_BUTTON_FACTOR : 1 / ZOOM_BUTTON_FACTOR), MIN_ZOOM, MAX_ZOOM_FREE);
+          if (reducedMotion) {
+            zoom.value = zoom.target = nz;
+            zoom.velocity = 0;
+          } else {
+            zoomEasing = true;
+            zoom.setTarget(nz);
+          }
+          return { zoom: nz, atLimit: alreadyAtLimit };
+        },
+        getZoom() {
+          return clamp(zoom.value, MIN_ZOOM, MAX_ZOOM_FREE);
         },
         // Shorthand: resolve node id from d3's source/target (may be object or string).
         nodeId: (n) => (typeof n === 'string' ? n : n?.id),
@@ -1498,7 +1564,8 @@ export default function BubbleTree({
           e.preventDefault();
           state.enterFree();
           clearHover();
-          const factor = e.deltaY > 0 ? 0.9 : 1.0 / 0.9;
+          const dy = clamp(e.deltaY, -WHEEL_DELTA_CLAMP, WHEEL_DELTA_CLAMP);
+          const factor = Math.pow(2, -dy * WHEEL_ZOOM_SENSITIVITY);
           zoomTo(screenAnchor().z * factor, e.offsetX, e.offsetY);
         },
         { passive: false },
@@ -1842,7 +1909,12 @@ export default function BubbleTree({
           }
           camX.target = camX.value;
           camY.target = camY.value;
-          zoom.target = zoom.value;
+          if (zoomEasing) {
+            zoom.step(dt);
+            if (zoom.settled) zoomEasing = false;
+          } else {
+            zoom.target = zoom.value;
+          }
         }
 
         // When a card is open, slide the anchored bubble to the left so the card
