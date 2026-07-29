@@ -1722,6 +1722,29 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   Lightbox still shows "Set as portrait" normally afterward. Full unit suite, `npm run build`, and
   the standard smoke test all passed clean.
 
+- **Search is now view-aware: List and Chart open the profile instantly, only Tree keeps the
+  flyover** (real user report: "search in list view just runs a tree search you can't see... i
+  was trying to bypass the tree's animation to get to the profile quicker for updating purposes.
+  the search needs to be different for each view"). Investigated before building: confirmed a real
+  bug, not just an animation-visibility annoyance — `App.jsx`'s `selectFromSearch` always called
+  `flyToSearchResult`, which flies the camera along `BubbleTree`'s own canvas via `viewApi.current`.
+  In List view that canvas isn't mounted at all, so `viewApi.current` is `null` and the whole
+  flight (`viewApi.current?.flyAlong(...)`) silently no-ops — `activeId` is only ever set inside
+  the flight's own `onLand` callback, which then never fires, so a multi-hop search result could
+  leave the crumb-trail `FlightCaption` stuck on screen forever with the profile never actually
+  opening. List view (row tap) and Chart view (card double-tap) already have the right primitive
+  for this — `openPerson()`, an instant "open this profile now" call with no camera/animation
+  dependency at all. `selectFromSearch` now checks `view === 'list' || layout === 'chart'` FIRST
+  and routes straight to `openPerson(targetId)` in either case, before any of the existing
+  lineage-mode/flyover branching — only the organic Tree view (`view === 'bubbles' && layout ===
+  'organic'`) still gets today's cinematic flyover, since that's the one place the "journey" is
+  the actual point of the feature. Verified live via Playwright across all three view modes with a
+  genuinely multi-hop target (James's grandfather, 2 hops): List and Chart both show the profile
+  sheet within 400ms of picking the search result (no flight, no stuck caption); Tree view still
+  shows the full crumb-trail flyover ("James — Father's Father — Arthur Mercer") exactly as before,
+  confirming the change is additive and doesn't touch Tree's own behavior at all. Full unit suite,
+  `npm run build`, and the standard smoke test all passed clean.
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);
