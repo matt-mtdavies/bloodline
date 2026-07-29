@@ -6971,6 +6971,18 @@ button.health-notes {
   margin: 0;
 }
 
+/* The narrative landing line (ImportDoneStep.jsx) — "We've found N people
+   connected across X years of family history" — sits between the punchy
+   title and the muted caveat line, carrying the actual data warmly rather
+   than as a bare receipt. */
+.gedcom__done-narrative {
+  font-size: 17px;
+  color: var(--ink);
+  line-height: 1.5;
+  max-width: 320px;
+  margin: 0;
+}
+
 .gedcom__done-sub {
   font-size: 14px;
   color: var(--ink-soft);

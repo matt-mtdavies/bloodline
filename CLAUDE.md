@@ -1745,6 +1745,34 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   confirming the change is additive and doesn't touch Tree's own behavior at all. Full unit suite,
   `npm run build`, and the standard smoke test all passed clean.
 
+- **The GEDCOM/FamilySearch import landing moment is now a narrative arrival, not a receipt**
+  (product strategy discussion: reviewed a proposal to spend focused effort on emotional design/
+  micro-interactions/visual consistency/first-time experience rather than new features; agreed the
+  cheapest, most demonstrable first move was the import "done" screen — real example from the
+  discussion: "Welcome home. We've found 486 people connected across 212 years of family history,"
+  vs. the old "3 people imported / View my tree →"). New `familySpan(people, now)` in `lib/dates.js`
+  — earliest recorded birth year through to the present (or the latest death year, if everyone in
+  the batch is already deceased) — returns `null` rather than inventing a span when nobody in the
+  batch has a usable birth year at all. New shared `ImportDoneStep.jsx` (replacing near-duplicate
+  `DoneStep`s previously living separately in `GedcomImport.jsx` and `FamilySearchImport.jsx`) reads
+  warmly rather than clinically, and varies by `mergeMode`: a fresh `replace` import reads "Welcome
+  home... Let's begin with the people who brought you here... Meet your family →"; a `merge` into an
+  existing tree reads "The family just got bigger... let's see who's new... See what's new →" — the
+  same underlying data, framed as an arrival rather than a transaction log. Each import path keeps
+  its own source-specific caveat line (GEDCOM: photos aren't in the file; FamilySearch: portraits/
+  memories aren't part of that data) via a `sourceNote` prop, and its own noun (`person`/`ancestor`)
+  — the only thing genuinely shared is the narrative shape and the span calculation, which is why
+  this was worth extracting rather than left duplicated a third time. Covered by 5 new unit tests in
+  `tests/dates.test.mjs` (living-extends-to-now, all-deceased-caps-at-latest-death, a death-dateless
+  deceased person never guessing "now", people with no birth date ignored rather than zeroing the
+  span, and the null/no-data case). Verified live via Playwright against the real dev server with a
+  controlled 3-person GEDCOM (1900–1935 birth years, one still-living member): confirmed both the
+  `replace` and `merge` narrative variants render with the correct computed 126-year span and the
+  right heading/CTA pairing for each mode. Full unit suite, `npm run build`, and the standard smoke
+  test all passed clean. Deliberately scoped to just this one landing moment — the wider "emotional
+  design pass" (birth-line narration elsewhere, micro-interaction sweep, visual-consistency audit)
+  stays a later, separately-scoped effort per the same discussion.
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);

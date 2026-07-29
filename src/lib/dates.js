@@ -51,6 +51,29 @@ export function yearsBetween(fromDate, toDate) {
   return years;
 }
 
+// A quick "how far back does this reach" stat for a batch of people — the
+// oldest recorded birth year through to the present (or the most recent
+// death year, if everyone in the batch is already deceased). Built for the
+// GEDCOM/FamilySearch import landing moment (real feedback: "instead of
+// dropping them into a tree, gently introduce them... we've found 486
+// people connected across 212 years of family history"), but deliberately
+// generic — any array of person-shaped objects with birth_date/death_date/
+// is_deceased works. Returns null when nobody in the batch has a usable
+// birth year at all, so the caller can omit the line rather than invent one.
+export function familySpan(people, now = new Date()) {
+  const birthYears = (people || [])
+    .map((p) => Number(yearOf(p.birth_date)))
+    .filter((y) => Number.isFinite(y) && y > 0);
+  if (!birthYears.length) return null;
+  const earliestYear = Math.min(...birthYears);
+  const hasLiving = people.some((p) => !p.is_deceased);
+  const deathYears = people
+    .map((p) => Number(yearOf(p.death_date)))
+    .filter((y) => Number.isFinite(y) && y > 0);
+  const latestYear = hasLiving ? now.getFullYear() : (deathYears.length ? Math.max(...deathYears) : earliestYear);
+  return { earliestYear, latestYear, spanYears: Math.max(0, latestYear - earliestYear) };
+}
+
 export function ageOrAt(person) {
   if (!person.birth_date) return null;
   const parts = person.birth_date.split('-').map(Number);

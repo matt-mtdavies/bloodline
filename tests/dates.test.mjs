@@ -4,7 +4,7 @@
  * Run with: node tests/dates.test.mjs
  */
 import assert from 'node:assert/strict';
-import { lifespan } from '../src/lib/dates.js';
+import { lifespan, familySpan } from '../src/lib/dates.js';
 
 let passed = 0, failed = 0;
 function test(label, fn) {
@@ -40,6 +40,53 @@ test('lifespan: living person with a known birth year reads "b. YYYY"', () => {
 test('lifespan: living person with no birth date falls back to "Dates unknown"', () => {
   const p = { is_deceased: false, birth_date: undefined };
   assert.equal(lifespan(p), 'Dates unknown');
+});
+
+// ── familySpan (the GEDCOM/FamilySearch import landing moment) ─────────────
+
+const NOW = new Date('2026-07-29');
+
+test('familySpan: living people extend the span through to "now", not just the latest birth year', () => {
+  const people = [
+    { birth_date: '1912-01-01', is_deceased: false },
+    { birth_date: '1990-06-01', is_deceased: false },
+  ];
+  const span = familySpan(people, NOW);
+  assert.equal(span.earliestYear, 1912);
+  assert.equal(span.latestYear, 2026);
+  assert.equal(span.spanYears, 114);
+});
+
+test('familySpan: an all-deceased batch spans to the most recent death year, not "now"', () => {
+  const people = [
+    { birth_date: '1900-01-01', death_date: '1970-01-01', is_deceased: true },
+    { birth_date: '1920-01-01', death_date: '1995-01-01', is_deceased: true },
+  ];
+  const span = familySpan(people, NOW);
+  assert.equal(span.earliestYear, 1900);
+  assert.equal(span.latestYear, 1995, 'the later of the two death years, not "now"');
+  assert.equal(span.spanYears, 95);
+});
+
+test('familySpan: a deceased person with no recorded death year falls back to their own birth year, never "now"', () => {
+  const people = [{ birth_date: '1900-01-01', death_date: undefined, is_deceased: true }];
+  const span = familySpan(people, NOW);
+  assert.equal(span.latestYear, 1900, 'no death year on record and nobody living — never guesses "now"');
+  assert.equal(span.spanYears, 0);
+});
+
+test('familySpan: people with no birth date at all are ignored when computing the earliest year', () => {
+  const people = [
+    { birth_date: undefined, is_deceased: false },
+    { birth_date: '1950-01-01', is_deceased: false },
+  ];
+  const span = familySpan(people, NOW);
+  assert.equal(span.earliestYear, 1950);
+});
+
+test('familySpan: returns null when nobody in the batch has a usable birth year — never invents a span', () => {
+  assert.equal(familySpan([], NOW), null);
+  assert.equal(familySpan([{ birth_date: undefined }, { birth_date: undefined }], NOW), null);
 });
 
 console.log(`\n  ${passed} passed, ${failed} failed`);
