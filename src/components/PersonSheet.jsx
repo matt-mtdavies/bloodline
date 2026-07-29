@@ -6,6 +6,7 @@ import { relationLabel, sortSiblings, sortChildren } from '../data/graph.js';
 import { useKinTerms } from '../lib/kinTerms.js';
 import { profileCompleteness, lifeEvents, fullName } from '../lib/profile.js';
 import { fileToDataUrl, uploadPhoto, uploadDocument, suggestDocumentTitle, imageSrcToDataUrl } from '../lib/image.js';
+import { fetchWithTimeout } from '../lib/net.js';
 import { streamBio } from '../lib/ai.js';
 import EnrichSheet from './EnrichSheet.jsx';
 import MilitaryService from './MilitaryService.jsx';
@@ -36,6 +37,18 @@ function documentContributionCount(person, docId) {
 
 const HAIR_DOTS = { Black: '#1a1a1a', Brown: '#6b4226', Blonde: '#d4b483', Auburn: '#9b3a1e', Red: '#c0392b', Grey: '#9e9e9e', White: '#ddd' };
 const EYE_DOTS  = { Brown: '#6b4226', Blue: '#4a7fbf', Green: '#3d8c55', Hazel: '#8b6914', Grey: '#8a9099', Amber: '#c8860a' };
+
+// A document/media upload must eventually give up rather than hang forever
+// on a stalled connection (see uploadDoc below), but a fixed timeout would
+// be wrong here: onDocPick caps files at 20MB while onMediaPick allows up
+// to 200MB, and a legitimately large file on a slow connection can honestly
+// need minutes. Scales with size instead of guessing one number for both.
+const UPLOAD_TIMEOUT_BASE_MS = 20_000;
+const UPLOAD_TIMEOUT_PER_MB_MS = 2_000;
+const UPLOAD_TIMEOUT_MAX_MS = 5 * 60_000;
+function uploadTimeoutFor(bytes) {
+  return Math.min(UPLOAD_TIMEOUT_MAX_MS, UPLOAD_TIMEOUT_BASE_MS + UPLOAD_TIMEOUT_PER_MB_MS * (bytes / (1024 * 1024)));
+}
 
 /*
  * The profile. In V2 this is the destination, not a popover — a portrait,
@@ -376,17 +389,26 @@ export default function PersonSheet({
   };
 
   // Upload a file: try R2 via Worker first, fall back to base64 for offline/unauthed users.
+  // Real user report: this was a bare fetch with no timeout at all — a
+  // stalled connection left the whole "add a document" flow unresolved
+  // forever, with no error and no way out but a hard refresh (see
+  // lib/net.js's fetchWithTimeout, already built for exactly this and
+  // already used by the tree-save/AI-generation paths — this was the one
+  // upload call in the app that never got migrated to it). Timed out, but
+  // scaled to file size: this same helper is shared by the 20MB document
+  // picker and the 200MB media picker (onMediaPick below), and a real large
+  // upload on a slow connection legitimately needs longer than a small scan.
   const uploadDoc = async (file) => {
     try {
       const form = new FormData();
       form.append('file', file, file.name);
-      const res = await fetch('/api/documents', { method: 'POST', body: form });
+      const res = await fetchWithTimeout('/api/documents', { method: 'POST', body: form }, uploadTimeoutFor(file.size));
       if (res.ok) {
         const { url } = await res.json();
         return url;
       }
     } catch {
-      /* network error — fall through to base64 */
+      /* network error, or a stalled upload that timed out — fall through to base64 */
     }
     // Base64 fallback (localStorage; cap 8 MB).
     if (file.type.startsWith('image/')) return fileToDataUrl(file, 1200);
