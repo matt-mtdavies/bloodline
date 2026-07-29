@@ -1772,6 +1772,7 @@ export default function App() {
       if (changed('birth_place')) parts.push('birthplace');
       if (changed('residence')) parts.push('location');
       if (changed('occupation')) parts.push('occupation');
+      if (changed('education')) parts.push('education');
       if (changed('military_branch') || changed('military_nation') ||
           changed('military_rank') || changed('military_service_number')) parts.push('military details');
       if (changed('eye_color')) parts.push('eye colour');

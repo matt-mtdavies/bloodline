@@ -240,7 +240,7 @@ test('storeToGedcom prefers residences[] over the scalar field when both are set
 // divorced couple, a single-parent child, and an adopted child.
 const tree = {
   people: [
-    { id: 'gpa', display_name: 'Arthur Vale', given_names: 'Arthur', family_name: 'Vale', gender: 'male', birth_date: '1928', death_date: '2009-05-14', is_deceased: true, occupation: 'Railwayman', bio: 'Loved the trains.', birth_place: 'Cardiff, Wales' },
+    { id: 'gpa', display_name: 'Arthur Vale', given_names: 'Arthur', family_name: 'Vale', gender: 'male', birth_date: '1928', death_date: '2009-05-14', is_deceased: true, occupation: 'Railwayman', education: 'Cardiff Grammar School', bio: 'Loved the trains.', birth_place: 'Cardiff, Wales' },
     { id: 'dad', display_name: 'Robert Vale', given_names: 'Robert', family_name: 'Vale', gender: 'male', birth_date: '1958-03-12' },
     { id: 'mum', display_name: 'Linda Vale', given_names: 'Linda', family_name: 'Vale', gender: 'female', birth_date: '1960' },
     { id: 'kid', display_name: 'James Vale', given_names: 'James', family_name: 'Vale', gender: 'male', birth_date: '1985-04-12', birth_place: 'Bristol, England' },
@@ -279,6 +279,7 @@ test('round-trip preserves people and their GEDCOM-expressible fields', () => {
   assert.equal(gpa.death_date, '2009-05-14', 'full death date survives');
   assert.equal(gpa.is_deceased, true);
   assert.equal(gpa.occupation, 'Railwayman');
+  assert.equal(gpa.education, 'Cardiff Grammar School');
   assert.equal(gpa.bio, 'Loved the trains.');
   assert.equal(gpa.birth_place, 'Cardiff, Wales');
 
