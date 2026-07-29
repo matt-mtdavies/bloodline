@@ -1385,6 +1385,22 @@ export default function App() {
   // (unlike tapping a bubble) a search result may not be on screen yet.
   const selectFromSearch = useCallback((targetId) => {
     setSearchOpen(false);
+    // Real user report: search in List view "just runs a tree search you
+    // can't see" — flyToSearchResult flies the camera along BubbleTree's own
+    // canvas, which isn't even mounted in List view (view === 'list') or
+    // meaningfully flyable in Chart layout, so the flight silently never
+    // lands (the crumb-trail caption can get stuck forever, and the profile
+    // may not open at all for a multi-hop result). List and Chart already
+    // have a real "open this profile now, no animation" primitive —
+    // openPerson(), the exact thing tapping a List row or double-tapping a
+    // Chart card already does — so search there uses that instead, matching
+    // the fastest path to actually editing a profile. Only the organic Tree
+    // view keeps the cinematic flyover below; that's the one place the
+    // "journey" is the actual point of the feature.
+    if (view === 'list' || layout === 'chart') {
+      openPerson(targetId);
+      return;
+    }
     if (!lineageMode) { flyToSearchResult(targetId); return; }
     if (targetId === activeId) {
       setLineagePath(null);
@@ -1411,7 +1427,7 @@ export default function App() {
     // — the camera catching up to wherever they actually are is all that
     // was ever needed.
     viewApi.current?.recenter();
-  }, [lineageMode, activeId, graph, flyToSearchResult]);
+  }, [view, layout, lineageMode, activeId, graph, flyToSearchResult, openPerson]);
 
   // Same flight as flyToSearchResult, but callable from anywhere — the
   // profile page's "Show in tree" and the list view's per-row action, not
