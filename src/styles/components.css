@@ -241,8 +241,9 @@
   font-size: 13.5px;
   font-weight: 500;
   box-shadow: var(--shadow-soft);
-  transition: transform 0.4s var(--spring), box-shadow 0.3s var(--ease);
+  transition: transform 0.4s var(--spring), box-shadow 0.3s var(--ease), background 0.2s var(--ease);
 }
+.pill:hover { background: var(--paper-deep); }
 .pill:active { transform: scale(0.94); }
 /* A persistent display filter (Bloodline only) reads as "on" with a soft
    accent tint + accent glyph — calmer than a solid fill, and the stats pill
@@ -939,6 +940,7 @@
   color: var(--ink);
   transition: transform 0.4s var(--spring), filter 0.25s var(--ease);
 }
+.btn:hover { filter: brightness(0.97); }
 .btn:active { transform: scale(0.97); }
 .btn--primary { background: var(--accent); color: #fffdf9; }
 .btn--primary:hover { filter: brightness(1.05); }
@@ -2786,8 +2788,9 @@
   font-size: 14.5px;
   font-weight: 500;
   border: 1px solid transparent;
-  transition: transform 0.3s var(--spring), background 0.2s var(--ease), color 0.2s var(--ease);
+  transition: transform 0.3s var(--spring), background 0.2s var(--ease), color 0.2s var(--ease), box-shadow 0.2s var(--ease);
 }
+.chip:hover { box-shadow: var(--shadow-soft); }
 .chip:active { transform: scale(0.95); }
 .chip--on { background: var(--accent); color: #fff; box-shadow: 0 6px 16px rgba(194, 96, 58, 0.28); }
 .chip--disabled { opacity: 0.38; cursor: not-allowed; }
@@ -3180,8 +3183,9 @@
   border-radius: 12px;
   color: var(--ink-soft);
   background: var(--paper-deep);
-  transition: transform 0.3s var(--spring), color 0.2s var(--ease);
+  transition: transform 0.3s var(--spring), color 0.2s var(--ease), background 0.2s var(--ease);
 }
+.icon-btn:hover { background: color-mix(in srgb, var(--paper-deep) 85%, var(--ink)); }
 .icon-btn:active { transform: scale(0.92); }
 .sheet__edit { flex: none; align-self: flex-start; }
 .sheet__head { align-items: flex-start; }
@@ -3745,6 +3749,7 @@
   flex: none;
 }
 .section-edit:empty { display: none; }
+.section-edit:hover { text-decoration: underline; }
 .section-edit:active { opacity: 0.6; }
 .profile-section__head-actions {
   display: flex;
