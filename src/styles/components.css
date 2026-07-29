@@ -1299,6 +1299,72 @@
   background: rgba(139, 120, 100, 0.2);
 }
 
+/* ── Zoom controls — desktop/trackpad only ───────────────────────────────────
+   A discoverable, precise alternative to wheel/pinch zoom, for Mac trackpad
+   users who find the gesture sensitive. Hidden entirely on touchscreens (real
+   pinch-zoom already works well there, and the bottom edge is already busy
+   with the dock + "back to you" pill) — gated by `pointer: fine` + `hover:
+   hover` rather than a JS device check, so it degrades safely on anything
+   unusual (a stylus, a hybrid device) by the same signal the OS itself uses
+   to decide whether hover is meaningful. Bottom-left mirrors HomeToMe's
+   bottom-right pill for compositional balance against the bottom-centre dock.
+   Reuses the dock's own glass-pill material so it reads as the same object,
+   not a bolted-on browser-chrome widget. */
+.zoom-controls { display: none; }
+@media (hover: hover) and (pointer: fine) {
+  .zoom-controls {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    position: fixed;
+    left: 14px;
+    bottom: calc(var(--safe-bottom) + 92px);
+    z-index: 40;
+    background: rgba(255, 255, 255, 0.93);
+    backdrop-filter: blur(20px) saturate(1.6);
+    -webkit-backdrop-filter: blur(20px) saturate(1.6);
+    border-radius: 22px;
+    padding: 5px;
+    box-shadow:
+      0 10px 36px rgba(0, 0, 0, 0.10),
+      0 2px 8px rgba(0, 0, 0, 0.06),
+      inset 0 0 0 0.5px rgba(255, 255, 255, 0.85);
+  }
+}
+.zoom-controls__btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 34px;
+  border: none;
+  border-radius: 18px;
+  background: transparent;
+  color: var(--ink-soft);
+  cursor: pointer;
+  padding: 0;
+  transition: background 0.14s, color 0.14s, transform 0.14s var(--spring);
+}
+.zoom-controls__btn:hover { background: rgba(139, 120, 100, 0.07); color: var(--ink, #241f1c); }
+.zoom-controls__btn:active { transform: scale(0.88); }
+/* Brief shake — the only feedback for "you're already at the zoom limit",
+   deliberately not a persistent disabled state (that would need polling the
+   live zoom value every frame just to dim two buttons that are at their
+   limit a small fraction of the time). */
+.zoom-controls__btn--limit { animation: zoom-limit-shake 0.22s var(--ease); }
+@keyframes zoom-limit-shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-2px); }
+  75% { transform: translateX(2px); }
+}
+.zoom-controls__divider {
+  width: 22px;
+  height: 1px;
+  background: var(--hairline, #ece8e4);
+  flex-shrink: 0;
+}
+@media (prefers-reduced-motion: reduce) { .zoom-controls__btn--limit { animation: none; } }
+
 /* ── "Back to you" — the map-style recenter pill ─────────────────────────────
    The viewer's own portrait, floating in the bottom-right thumb zone above
    the dock. Contextual: HomeToMe mounts it only when the tree isn't already

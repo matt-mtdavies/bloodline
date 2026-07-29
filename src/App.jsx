@@ -85,6 +85,7 @@ import FocusNameplate from './components/FocusNameplate.jsx';
 import HoverCard from './components/HoverCard.jsx';
 import HomeToMe from './components/HomeToMe.jsx';
 import ReturnToTreePill from './components/ReturnToTreePill.jsx';
+import ZoomControls from './components/ZoomControls.jsx';
 import PersonSheet from './components/PersonSheet.jsx';
 import AddRelativeSheet from './components/AddRelativeSheet.jsx';
 import EditPersonSheet from './components/EditPersonSheet.jsx';
@@ -2207,6 +2208,28 @@ export default function App() {
     return () => window.removeEventListener('keydown', onGlobalKeydown);
   }, [anyOverlayOpen]);
 
+  // Keyboard zoom shortcuts (Cmd/Ctrl +/-/0) — parity with the new on-screen
+  // zoom controls (ZoomControls.jsx), standard in every canvas app in this
+  // category. Scoped to exactly when the BubbleTree canvas is mounted
+  // (view === 'bubbles' && layout !== 'chart' — the same condition
+  // flyToSearchResult already uses to know whether viewApi is live) and
+  // nothing else is open, so it never fights the browser's own native
+  // page-zoom shortcut while looking at List/Chart view or any sheet. No
+  // activeElement/focused-input guard needed here (unlike the bare-letter
+  // shortcut above) — Cmd/Ctrl are never part of ordinary text editing, so
+  // there's no legitimate typing context this could hijack.
+  useEffect(() => {
+    function onZoomKeydown(e) {
+      if (anyOverlayOpen || view !== 'bubbles' || layout === 'chart') return;
+      if (!(e.metaKey || e.ctrlKey)) return;
+      if (e.key === '=' || e.key === '+') { e.preventDefault(); viewApi.current?.zoomStep(1); }
+      else if (e.key === '-' || e.key === '_') { e.preventDefault(); viewApi.current?.zoomStep(-1); }
+      else if (e.key === '0') { e.preventDefault(); viewApi.current?.recenter(); }
+    }
+    window.addEventListener('keydown', onZoomKeydown);
+    return () => window.removeEventListener('keydown', onZoomKeydown);
+  }, [anyOverlayOpen, view, layout]);
+
   // Photo of the person the logged-in user has claimed as their own bubble.
   const userPhoto = useMemo(() => {
     if (!user?.person_id) return null;
@@ -2387,6 +2410,7 @@ export default function App() {
             photos={data.photos}
             documents={data.documents}
           />
+          <ZoomControls viewApi={viewApi} />
           {/* Bottom bar: single floating dock */}
           <div className="bottom-bar">
             <div className="bottom-dock">
