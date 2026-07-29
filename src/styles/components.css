@@ -11151,6 +11151,30 @@ button.health-notes {
   color: var(--ink-soft);
   font-style: italic;
 }
+/* A small photo strip per stage (a school photo, a graduation shot) —
+   ordinary gallery photos tagged with this entry's id (see store.js's
+   addPhoto), not a separate photo system. Sized to sit inside the compact
+   rung card rather than the full-width .gallery grid the main Photos
+   section uses. */
+.education-rung__photos { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 0; }
+.education-rung__photo, .education-rung__photo-add {
+  width: 46px;
+  height: 46px;
+  flex: none;
+  border-radius: 10px;
+  overflow: hidden;
+}
+.education-rung__photo { background: var(--paper-deep); }
+.education-rung__photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.education-rung__photo-add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--paper, #fff);
+  border: 1px dashed var(--line, #e7ddd4);
+  color: var(--ink-faint);
+}
+.education-rung__photo-add:hover { color: var(--accent, #c2603a); border-color: var(--accent, #c2603a); }
 .education-form__stages { display: flex; flex-wrap: wrap; gap: 6px; }
 .education-form__stage {
   padding: 6px 12px;

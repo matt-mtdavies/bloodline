@@ -876,9 +876,13 @@ export default function PersonSheet({
             <EducationHistory
               person={person}
               canEdit={canEdit}
+              canContribute={canContribute}
+              photos={personPhotos}
               onAdd={(fields) => onAddEducation?.(person.id, fields)}
               onUpdate={(id, fields) => onUpdateEducation?.(person.id, id, fields)}
               onRemove={(id) => onRemoveEducation?.(person.id, id)}
+              onAddPhoto={onAddPhoto}
+              onOpenLightbox={onOpenLightbox}
             />
 
             {/* Memories — the heart of the profile. */}

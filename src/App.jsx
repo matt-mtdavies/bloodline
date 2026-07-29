@@ -593,7 +593,7 @@ export default function App() {
   const [editStartInEdit, setEditStartInEdit] = useState(false); // skip the view mode (see handleAdd's "Add & edit details")
   const [timelineId, setTimelineId] = useState(null); // timeline editor
   const [memoryId, setMemoryId] = useState(null); // add-memory sheet
-  const [lightbox, setLightbox] = useState(null); // { personId, index }
+  const [lightbox, setLightbox] = useState(null); // { personId, index, educationId? } — educationId scopes it to one Education History entry's photos
   const [crop, setCrop] = useState(null); // { id, url } photo cropper
   const [view, setView] = useState('bubbles');
   const [legendOpen, setLegendOpen] = useState(false);
@@ -2651,8 +2651,8 @@ export default function App() {
         onVoteMemory={toggleMemoryVote}
         onRemoveMemory={removeMemory}
         onUpdateMemory={updateMemory}
-        onAddPhoto={(id, src) => addPhoto(id, { src })}
-        onOpenLightbox={(personId, index) => setLightbox({ personId, index })}
+        onAddPhoto={(id, src, opts) => addPhoto(id, { src, education_id: opts?.educationId || null })}
+        onOpenLightbox={(personId, index, opts) => setLightbox({ personId, index, educationId: opts?.educationId || null })}
         onAddDocument={(personId, fields) => {
           const docId = addDocument(personId, fields);
           autoSummarizeDocument(docId, fields.src);
@@ -2943,7 +2943,8 @@ export default function App() {
 
       {lightbox && (
         <Lightbox
-          photos={data.photos.filter((p) => p.person_id === lightbox.personId)}
+          photos={data.photos.filter((p) => p.person_id === lightbox.personId
+            && (!lightbox.educationId || p.education_id === lightbox.educationId))}
           startIndex={lightbox.index}
           onClose={() => setLightbox(null)}
           onSetCaption={setPhotoCaption}
@@ -2963,6 +2964,7 @@ export default function App() {
               });
             }
           }}
+          showSetPortrait={!lightbox.educationId}
         />
       )}
 

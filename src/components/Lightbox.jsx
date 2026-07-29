@@ -7,8 +7,14 @@ import { useImageZoom } from '../lib/useImageZoom.js';
  * make it their portrait, remove it, or save it to the device. Pinch and
  * double-tap to zoom, drag to pan while zoomed. Arrow keys + on-screen
  * controls; the caption saves as you type.
+ *
+ * showSetPortrait hides the "Set as portrait" action for photos that aren't
+ * really candidates for it — a school building or class photo tagged to an
+ * Education History entry (App.jsx sets this false whenever the lightbox was
+ * opened scoped to one) — offering it there would read as a bug, not a
+ * feature. Every other action (caption, remove, save) still applies.
  */
-export default function Lightbox({ photos, startIndex = 0, onClose, onSetCaption, onDelete, onSetPortrait }) {
+export default function Lightbox({ photos, startIndex = 0, onClose, onSetCaption, onDelete, onSetPortrait, showSetPortrait = true }) {
   const [i, setI] = useState(startIndex);
   const photo = photos[Math.min(i, photos.length - 1)];
   const [saveState, setSaveState] = useState('idle'); // idle | saving | error
@@ -139,9 +145,11 @@ export default function Lightbox({ photos, startIndex = 0, onClose, onSetCaption
             <button className="lightbox__action" onClick={handleSave} disabled={saveState === 'saving'}>
               {saveState === 'saving' ? 'Saving…' : saveState === 'error' ? "Couldn't save" : 'Save'}
             </button>
-            <button className="lightbox__action" onClick={() => onSetPortrait?.(photo.src)}>
-              Set as portrait
-            </button>
+            {showSetPortrait && (
+              <button className="lightbox__action" onClick={() => onSetPortrait?.(photo.src)}>
+                Set as portrait
+              </button>
+            )}
             <button
               className="lightbox__action lightbox__action--danger"
               onClick={() => setConfirmDelete(true)}
