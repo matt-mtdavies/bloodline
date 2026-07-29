@@ -165,6 +165,53 @@ test('the record spread skips rows with nothing on record', () => {
   assert.deepEqual(record.rows, [{ label: 'Occupation', value: 'Baker' }]);
 });
 
+// ── Education History (education[]) reaches the AI facts, the places
+// spread, and the record spread — see lib/keepsake.js#educationOf ─────────
+
+const eduPerson = () => P('e', {
+  name: 'Edna',
+  birth_place: 'Swansea, Wales',
+  education: [
+    { id: 'edu2', stage: 'university', institution: 'Cardiff University', field_of_study: 'History', location: 'Cardiff, Wales', from_year: 1988, to_year: 1991 },
+    { id: 'edu1', stage: 'secondary', institution: 'Fairwater Grammar School', field_of_study: null, location: 'Cardiff, Wales', from_year: 1980, to_year: 1986 }, // out of order on purpose
+    { id: 'edu3', stage: 'primary', institution: '', from_year: 1975, to_year: 1980 }, // no institution — must be skipped
+  ],
+});
+
+test('buildKeepsakeFacts.subject.education is sorted chronologically and drops entries with no institution', () => {
+  const g = buildGraph([eduPerson()], []);
+  const facts = buildKeepsakeFacts(g, 'e', {});
+  assert.deepEqual(facts.subject.education.map((e) => e.institution), ['Fairwater Grammar School', 'Cardiff University']);
+  assert.equal(facts.subject.education[1].fieldOfStudy, 'History');
+  assert.equal(facts.subject.education[1].fromYear, 1988);
+  assert.equal(facts.subject.education.length, 2, 'the entry with no institution is dropped, not passed to the AI as a blank fact');
+});
+
+test('an empty or absent education[] still yields an empty facts array, never throws', () => {
+  const g = buildGraph([P('bare', { name: 'Bare' })], []);
+  assert.deepEqual(buildKeepsakeFacts(g, 'bare', {}).subject.education, []);
+});
+
+test('places spread includes a "Studied" entry for each education location, alongside Born/Lived', () => {
+  const spread = keepsakeSpreads(buildGraph([eduPerson()], []), 'e', {}).find((s) => s.key === 'places');
+  const studied = spread.places.filter((p) => p.role === 'Studied');
+  assert.equal(studied.length, 1, 'both education entries share the same location, deduped like any other place');
+  assert.equal(studied[0].place, 'Cardiff, Wales');
+  assert.equal(studied[0].year, 1980, 'the earliest (chronologically-sorted) education entry at that place wins the year shown');
+});
+
+test('the record spread lists every institution under "Educated"', () => {
+  const record = keepsakeSpreads(buildGraph([eduPerson()], []), 'e', {}).find((s) => s.key === 'record');
+  const row = record.rows.find((r) => r.label === 'Educated');
+  assert.equal(row.value, 'Fairwater Grammar School; Cardiff University');
+});
+
+test('the record spread omits "Educated" entirely when there is no education on record', () => {
+  const g = buildGraph([P('solo', { name: 'Solo', occupation: 'Baker' })], []);
+  const record = keepsakeSpreads(g, 'solo', {}).find((s) => s.key === 'record');
+  assert.ok(!record.rows.some((r) => r.label === 'Educated'));
+});
+
 test('frontispiece roles are kin words only — occupation never mixed in or lowercased', () => {
   // Percy is a father, grandfather, and husband with an occupation on
   // record: the occupation must NOT join the kin line (it's already the

@@ -259,6 +259,7 @@ export function buildKeepsakeFacts(graph, personId, extras = {}) {
         : null,
       occupation: person.occupation || null,
       residence: person.residence || null,
+      education: educationOf(person),
       tags: person.tags || [],
       bio: person.bio || null,
     },
@@ -309,6 +310,27 @@ function dedupeGrandchildren(graph, personId) {
   return [...seen];
 }
 
+// Education History (education[]) — a chronological, structured record the
+// AI can draw on the same way it already draws on residences[]/places
+// (schooling is exactly the kind of concrete, groundable fact the narrative
+// prompt's "use only the facts provided" rule is built for). Sorted
+// chronologically by from_year (undated entries last, never dropped); an
+// entry with no institution name is skipped — nothing to write from.
+function educationOf(person) {
+  return [...(person.education || [])]
+    .filter((e) => e.institution)
+    .sort((a, b) => (a.from_year ?? Infinity) - (b.from_year ?? Infinity))
+    .map((e) => ({
+      stage: e.stage || null,
+      institution: e.institution,
+      fieldOfStudy: e.field_of_study || null,
+      location: e.location || null,
+      fromYear: e.from_year || null,
+      toYear: e.to_year || null,
+      note: e.note || null,
+    }));
+}
+
 function placesOf(graph, person) {
   const out = [];
   const seen = new Set();
@@ -332,6 +354,12 @@ function placesOf(graph, person) {
     for (const r of residences) push(r.place, 'Lived', r.from_year || null);
   } else {
     push(person.residence, 'Lived', null);
+  }
+  // Education History (education[]) locations round out the same "where
+  // their life happened" picture — a school or university town is often a
+  // distinct place from where someone later lived.
+  for (const e of educationOf(person)) {
+    if (e.location) push(e.location, 'Studied', e.fromYear);
   }
   return out;
 }
@@ -488,6 +516,8 @@ export function keepsakeSpreads(graph, personId, extras = {}) {
   row('Married', marriages.join('; '));
   row('Children', childrenRefs.map((c) => c.name).join(', '));
   row('Occupation', person.occupation);
+  const schools = educationOf(person).map((e) => e.institution);
+  row('Educated', schools.join('; '));
   row('Resided', person.residence);
   const mil = militaryProfile(person);
   row('Service', [mil.rank, mil.branch ? mil.branch.replace('_', ' ') : null, mil.nation].filter(Boolean).join(', '));

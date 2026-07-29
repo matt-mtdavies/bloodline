@@ -211,6 +211,25 @@ function EventDescription({ event, userEmail, nameByEmail }) {
           {author} removed {event.detail ? <strong key="d">{event.detail}</strong> : 'a place'} from {subject}'s places lived
         </>
       );
+    case 'education_added':
+      return (
+        <>
+          {author} added {event.detail ? <strong key="d">{event.detail}</strong> : 'a school'} to {subject}'s education history
+        </>
+      );
+    case 'education_updated':
+      return (
+        <>
+          {author} updated {subject}'s education history
+          {event.detail ? <> — <strong key="d">{event.detail}</strong></> : null}
+        </>
+      );
+    case 'education_removed':
+      return (
+        <>
+          {author} removed {event.detail ? <strong key="d">{event.detail}</strong> : 'a school'} from {subject}'s education history
+        </>
+      );
     case 'resting_place_updated':
       return (
         <>
@@ -276,6 +295,9 @@ function typeConfig(type) {
     case 'residence_added':
     case 'residence_updated':
     case 'residence_removed': return { color: '#b08642', Icon: PinIcon };
+    case 'education_added':
+    case 'education_updated':
+    case 'education_removed': return { color: '#4a5a8a', Icon: CapIcon };
     case 'resting_place_updated':
     case 'resting_place_removed': return { color: '#6b5e7a', Icon: LaurelIcon };
     default:                  return { color: '#6b6f76', Icon: EditIcon };
@@ -462,6 +484,18 @@ function PinIcon() {
       <path d="M12 21.5s7-6.5 7-12.5a7 7 0 0 0-14 0c0 6 7 12.5 7 12.5z"
         stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
       <circle cx="12" cy="9" r="2.4" stroke="currentColor" strokeWidth="2" />
+    </svg>
+  );
+}
+
+// A small mortarboard, matching EducationHistory.jsx's own university-stage
+// icon — one glyph per file being this codebase's convention rather than a
+// shared module.
+function CapIcon() {
+  return (
+    <svg width="9" height="9" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M12 5 2 9.5 12 14l10-4.5L12 5Z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+      <path d="M6 11.5V16c0 1.4 2.7 2.5 6 2.5s6-1.1 6-2.5v-4.5" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
     </svg>
   );
 }
