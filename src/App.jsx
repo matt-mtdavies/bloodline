@@ -2413,7 +2413,7 @@ export default function App() {
                   setTimeout(() => deselect(), 60);
                 }}
                 aria-pressed={browse}
-                aria-label="Browse — deselect and reset the view"
+                aria-label="Reset the view"
               >
                 <BrowseIcon />
                 <span className="dock-btn__label">Browse</span>
