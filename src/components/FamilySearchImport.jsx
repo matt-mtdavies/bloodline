@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { openFamilySearchOAuth, fetchTree } from '../lib/familysearch.js';
 import { findDuplicatePairs } from '../lib/duplicates.js';
+import ImportDoneStep from './ImportDoneStep.jsx';
 
 const GENERATION_OPTIONS = [
   { value: 3, label: '3 generations', sub: 'Up to 15 ancestors' },
@@ -121,9 +122,12 @@ export default function FamilySearchImport({ onImport, onClose, canReplace = tru
         )}
 
         {step === 'done' && result && (
-          <DoneStep
-            count={result.people.length}
+          <ImportDoneStep
+            people={result.people}
             mergeMode={mergeMode}
+            noun="ancestor"
+            nounPlural="ancestors"
+            sourceNote="Profile portraits and memories aren't part of FamilySearch data, but all names, dates, and relationships are in."
             onClose={() => onClose(result.people[0]?.id ?? null)}
           />
         )}
@@ -280,29 +284,6 @@ function PreviewStep({ result, generations, onGenerations, mergeMode, onMergeMod
   );
 }
 
-function DoneStep({ count, mergeMode, onClose }) {
-  return (
-    <div className="gedcom__done">
-      <div className="gedcom__done-icon" aria-hidden="true">
-        <CheckIcon />
-      </div>
-      <h3 className="gedcom__done-title">
-        {count} {count === 1 ? 'ancestor' : 'ancestors'} imported
-      </h3>
-      <p className="gedcom__done-sub">
-        {mergeMode === 'merge'
-          ? 'The new ancestors have been added to your existing tree.'
-          : 'Your family tree has been populated with your FamilySearch ancestry.'}
-        {' '}Profile portraits and memories aren't part of FamilySearch data, but all
-        names, dates, and relationships are in.
-      </p>
-      <button className="gedcom__import-btn" onClick={onClose}>
-        View my tree →
-      </button>
-    </div>
-  );
-}
-
 /* ── Icons ──────────────────────────────────────────────────────────────────── */
 
 function FamilySearchLogo({ size = 22 }) {
@@ -325,14 +306,6 @@ function CloseIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
-    </svg>
-  );
-}
-
-function CheckIcon() {
-  return (
-    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path d="M5 13l4 4L19 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
     </svg>
   );
 }

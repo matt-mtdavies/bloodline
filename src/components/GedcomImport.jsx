@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useMemo } from 'react';
 import { gedcomToStore } from '../lib/gedcom.js';
 import { findDuplicatePairs } from '../lib/duplicates.js';
+import ImportDoneStep from './ImportDoneStep.jsx';
 
 export default function GedcomImport({ onImport, onClose, canReplace = true, existingPeople = [], existingRelationships = [] }) {
   const [step, setStep] = useState('upload'); // upload | preview | importing | done
@@ -115,9 +116,10 @@ export default function GedcomImport({ onImport, onClose, canReplace = true, exi
         )}
 
         {step === 'done' && parsed && (
-          <DoneStep
-            count={parsed.people.length}
+          <ImportDoneStep
+            people={parsed.people}
             mergeMode={mergeMode}
+            sourceNote="Portraits and photos aren't included in GEDCOM files, but all names, dates, and relationships are in."
             onClose={() => onClose(firstPersonId.current)}
           />
         )}
@@ -265,28 +267,6 @@ function PreviewStep({ parsed, mergeMode, onMergeMode, onImport, onBack, canRepl
   );
 }
 
-function DoneStep({ count, mergeMode, onClose }) {
-  return (
-    <div className="gedcom__done">
-      <div className="gedcom__done-icon" aria-hidden="true">
-        <CheckIcon />
-      </div>
-      <h3 className="gedcom__done-title">
-        {count} {count === 1 ? 'person' : 'people'} imported
-      </h3>
-      <p className="gedcom__done-sub">
-        {mergeMode === 'merge'
-          ? 'The new people have been added to your existing tree.'
-          : 'Your family tree has been replaced with the imported data.'}
-        {' '}Portraits and photos aren't included in GEDCOM files, but all names, dates, and relationships are in.
-      </p>
-      <button className="gedcom__import-btn" onClick={onClose}>
-        View my tree →
-      </button>
-    </div>
-  );
-}
-
 /* ── Icons ──────────────────────────────────────────────────────────────────── */
 
 function CloseIcon() {
@@ -303,14 +283,6 @@ function UploadIcon() {
       <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
       <polyline points="17 8 12 3 7 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
       <line x1="12" y1="3" x2="12" y2="15" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
-    </svg>
-  );
-}
-
-function CheckIcon() {
-  return (
-    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path d="M5 13l4 4L19 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
     </svg>
   );
 }
