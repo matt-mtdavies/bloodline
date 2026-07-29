@@ -11,6 +11,11 @@ const MARGIN = 16;
 const FLIP_THRESHOLD = 260; // px from top before the card flips below the bubble
 const EXIT_MS = 150; // keep mounted this long after hover ends, to let the fade play
 
+// Fixed chrome the card must never render on top of — see the vertical
+// safe-band comment in the tick loop below.
+const TOP_OBSTACLE_SELECTORS = ['.topbar', '.return-pill--in'];
+const BOTTOM_OBSTACLE_SELECTORS = ['.bottom-bar', '.time-slider-wrap', '.life-event-card--visible'];
+
 /*
  * Desktop-only hover preview — rests over a bubble for a beat and a small
  * card surfaces their core details, without the weight of opening the full
@@ -20,6 +25,7 @@ const EXIT_MS = 150; // keep mounted this long after hover ends, to let the fade
  */
 export default function HoverCard({ graph, personId, viewerId, getPos, photos, documents }) {
   const anchorRef = useRef(null);
+  const cardRef = useRef(null);
   const lastPos = useRef(null);
   const [displayId, setDisplayId] = useState(null);
   const [show, setShow] = useState(false);
@@ -50,7 +56,36 @@ export default function HoverCard({ graph, personId, viewerId, getPos, photos, d
           lastPos.current = p;
           const flip = p.y < FLIP_THRESHOLD;
           const gap = 66; // clears the bubble + its name label
-          const y = flip ? p.y + gap : p.y - gap;
+          let y = flip ? p.y + gap : p.y - gap;
+
+          // Vertical safe band — found via a visual-consistency audit: a
+          // bubble low on screen (in any mode) or during Time mode
+          // specifically could show a card overlapping the bottom dock, or
+          // Time mode's slider/life-event card floating above it; a bubble
+          // near the top could overlap the topbar or the "back to the
+          // tree" pill. Only checks these known, stable, always-in-the-
+          // same-place elements — not a general collision system — and
+          // clamps the card's actual rendered top/bottom edge (not just its
+          // anchor point) into whatever's left of the viewport.
+          const cardH = cardRef.current?.offsetHeight || 0;
+          let topSafe = MARGIN;
+          let bottomSafe = (window.innerHeight || 800) - MARGIN;
+          for (const sel of TOP_OBSTACLE_SELECTORS) {
+            const obEl = document.querySelector(sel);
+            if (obEl) topSafe = Math.max(topSafe, obEl.getBoundingClientRect().bottom + MARGIN);
+          }
+          for (const sel of BOTTOM_OBSTACLE_SELECTORS) {
+            const obEl = document.querySelector(sel);
+            if (obEl) bottomSafe = Math.min(bottomSafe, obEl.getBoundingClientRect().top - MARGIN);
+          }
+          if (flip) {
+            if (y < topSafe) y = topSafe;
+            if (y + cardH > bottomSafe) y = Math.min(y, bottomSafe - cardH);
+          } else {
+            if (y > bottomSafe) y = bottomSafe;
+            if (y - cardH < topSafe) y = Math.max(y, topSafe + cardH);
+          }
+
           const halfW = CARD_WIDTH / 2;
           const minX = halfW + MARGIN;
           const maxX = (window.innerWidth || 1200) - halfW - MARGIN;
@@ -177,7 +212,7 @@ export default function HoverCard({ graph, personId, viewerId, getPos, photos, d
 
   return (
     <div className="hover-card-anchor" ref={anchorRef} style={{ width: CARD_WIDTH }} aria-hidden="true">
-      <div className={`hover-card${show ? ' hover-card--show' : ''}`}>
+      <div className={`hover-card${show ? ' hover-card--show' : ''}`} ref={cardRef}>
         {hasRicherContent && (
           <span className="hover-card__attach" aria-hidden="true">
             <StackIcon />
