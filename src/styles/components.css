@@ -1280,14 +1280,24 @@
 }
 
 /* ── Dock button active states ────────────────────────────────────────────────── */
-.bottom-dock .focus-btn--on   { background: #2d2620; color: #fff; }
-.bottom-dock .time-toggle--on { background: var(--ink, #241f1c); color: #fff; }
-.bottom-dock .lineage-btn--on { background: var(--accent-soft); color: var(--accent-deep); }
-.bottom-dock .expand-btn--on  { background: rgba(139, 120, 100, 0.12); color: var(--ink, #241f1c); }
-.bottom-dock .browse-btn--on  { background: rgba(139, 120, 100, 0.12); color: var(--ink, #241f1c); }
+/* One shared "this mode is on" language across all five dock buttons — the
+   warm taupe tint (not a solid invert, which reads as danger/delete rather
+   than "active mode" against this paper palette). */
+.bottom-dock .focus-btn--on,
+.bottom-dock .time-toggle--on,
+.bottom-dock .lineage-btn--on,
+.bottom-dock .expand-btn--on,
+.bottom-dock .browse-btn--on {
+  background: rgba(139, 120, 100, 0.12);
+  color: var(--ink, #241f1c);
+}
 .bottom-dock .focus-btn--on:hover,
-.bottom-dock .time-toggle--on:hover { background: #1a1310; }
-.bottom-dock .lineage-btn--on:hover { background: color-mix(in srgb, var(--accent-soft) 80%, transparent); }
+.bottom-dock .time-toggle--on:hover,
+.bottom-dock .lineage-btn--on:hover,
+.bottom-dock .expand-btn--on:hover,
+.bottom-dock .browse-btn--on:hover {
+  background: rgba(139, 120, 100, 0.2);
+}
 
 /* ── "Back to you" — the map-style recenter pill ─────────────────────────────
    The viewer's own portrait, floating in the bottom-right thumb zone above
