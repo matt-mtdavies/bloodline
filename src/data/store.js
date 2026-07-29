@@ -173,6 +173,32 @@ if (state.people) {
   state.people = state.people.map((p) => (p.residences ? p : { ...p, residences: [] }));
 }
 
+// Ensure every person has an education array (multi-stage Education
+// History) — this briefly was a single free-text string; any already-saved
+// value is carried over as the one honest fact it held (an institution
+// name), with every new structured field (stage, years, location...) left
+// unknown rather than invented, same discipline as the residences
+// migration above. The id is generated inline rather than via the shared
+// cid() helper below — that's a `const`, not yet initialized this early in
+// module evaluation.
+if (state.people) {
+  state.people = state.people.map((p) => {
+    if (Array.isArray(p.education)) return p;
+    if (typeof p.education === 'string' && p.education.trim()) {
+      return {
+        ...p,
+        education: [{
+          id: 'c_' + Math.random().toString(36).slice(2, 9),
+          stage: null, institution: p.education.trim(), field_of_study: null,
+          location: null, suburb: null, state: null, country: null, lat: null, lon: null,
+          from_year: null, to_year: null, note: null,
+        }],
+      };
+    }
+    return { ...p, education: [] };
+  });
+}
+
 // Upgrade low-res demo gallery photos to current seed set.
 if (state.photos.some((p) => typeof p.src === 'string' && p.src.startsWith('/faces/'))) {
   const ids = new Set(state.people.map((p) => p.id));
@@ -2292,6 +2318,53 @@ export function updateResidence(personId, residenceId, fields) {
         : p,
     ),
   }, { type: 'residence_updated', personId, personName: person?.display_name ?? '', detail: fields.place ?? existing?.place ?? null }));
+}
+
+// Education History — a chronological, multi-stage record of schooling
+// (primary/secondary/trade/university), each entry optionally geocoded so
+// the profile can resolve a country-appropriate stage label (Primary
+// School vs Elementary School, TAFE vs Trade School...) — see
+// lib/educationTerms.js. Same id-based add/update/remove trio as
+// addResidence/updateResidence/removeResidence above, the established
+// convention for a small, freely-editable array of dated records.
+export function addEducation(personId, { stage = null, institution, field_of_study = null, location = null, suburb = null, state: stateName = null, country = null, lat = null, lon = null, from_year = null, to_year = null, note = null }) {
+  const person = state.people.find((p) => p.id === personId);
+  const entry = { id: cid(), stage, institution, field_of_study, location, suburb, state: stateName, country, lat, lon, from_year, to_year, note };
+  commit(withActivity({
+    ...state,
+    people: state.people.map((p) =>
+      p.id === personId
+        ? { ...p, education: [...(p.education || []), entry] }
+        : p,
+    ),
+  }, { type: 'education_added', personId, personName: person?.display_name ?? '', detail: institution }));
+  return entry.id;
+}
+
+export function removeEducation(personId, educationId) {
+  const person = state.people.find((p) => p.id === personId);
+  const removed = person?.education?.find((e) => e.id === educationId);
+  commit(withActivity({
+    ...state,
+    people: state.people.map((p) =>
+      p.id === personId
+        ? { ...p, education: (p.education || []).filter((e) => e.id !== educationId) }
+        : p,
+    ),
+  }, { type: 'education_removed', personId, personName: person?.display_name ?? '', detail: removed?.institution ?? null }));
+}
+
+export function updateEducation(personId, educationId, fields) {
+  const person = state.people.find((p) => p.id === personId);
+  const existing = person?.education?.find((e) => e.id === educationId);
+  commit(withActivity({
+    ...state,
+    people: state.people.map((p) =>
+      p.id === personId
+        ? { ...p, education: (p.education || []).map((e) => (e.id === educationId ? { ...e, ...fields } : e)) }
+        : p,
+    ),
+  }, { type: 'education_updated', personId, personName: person?.display_name ?? '', detail: fields.institution ?? existing?.institution ?? null }));
 }
 
 // Resting place — where someone is buried or interred. A single record

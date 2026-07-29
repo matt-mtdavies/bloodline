@@ -4,8 +4,10 @@
  *
  * Supports: INDI, FAM, NAME (with /surname/ notation), GIVN/SURN sub-tags,
  * BIRT/DEAT events, OCCU, RESI (every occurrence, into residences[]/Places
- * Lived — see parseResidencePeriod/formatResidencePeriod), NOTE (bio), PEDI
- * adoption qualifier, DIV, MARR (marriage date + place onto the partner edge).
+ * Lived — see parseResidencePeriod/formatResidencePeriod), EDUC (every
+ * occurrence, into education[]/Education History, same repeatable-tag
+ * pattern as RESI), NOTE (bio), PEDI adoption qualifier, DIV, MARR
+ * (marriage date + place onto the partner edge).
  * Date parsing: exact "D MMM YYYY" dates become full ISO (YYYY-MM-DD) so
  * imported people get real birthdays; partial/approximate dates degrade to
  * month+year or year, never faking a day.
@@ -22,6 +24,7 @@ import { normalizeGender } from './gender.js';
 const uid = () => 'p_' + Math.random().toString(36).slice(2, 9);
 const rid = () => 'r_' + Math.random().toString(36).slice(2, 9);
 const residenceId = () => 'res_' + Math.random().toString(36).slice(2, 9);
+const educationId = () => 'edu_' + Math.random().toString(36).slice(2, 9);
 
 // Parse flat GEDCOM lines into a hierarchy of nodes.
 function parseTree(text) {
@@ -188,8 +191,25 @@ export function gedcomToStore(text) {
     // Occupation (first OCCU tag)
     const occupation = child(node, 'OCCU')?.value?.trim() || null;
 
-    // Education (first EDUC tag) — same shape as OCCU above.
-    const education = child(node, 'EDUC')?.value?.trim() || null;
+    // Education History (education[]) — GEDCOM's EDUC tag is repeatable,
+    // each with its own DATE/PLAC, mirroring RESI's own repeatable pattern
+    // just above. `stage` and `field_of_study` have no clean GEDCOM
+    // equivalent and are left null on import (never invented) — the
+    // profile still resolves a country-appropriate stage label from
+    // whatever the location later geocodes to (lib/educationTerms.js). An
+    // EDUC with no institution text is skipped — nothing useful to record.
+    const education = [];
+    for (const eNode of children(node, 'EDUC')) {
+      const institution = eNode.value?.trim() || null;
+      if (!institution) continue;
+      const { from, to } = parseResidencePeriod(child(eNode, 'DATE')?.value);
+      const location = child(eNode, 'PLAC')?.value?.trim() || null;
+      education.push({
+        id: educationId(), stage: null, institution, field_of_study: null,
+        location, suburb: null, state: null, country: null, lat: null, lon: null,
+        from_year: from, to_year: to, note: null,
+      });
+    }
 
     // Residence — prefer PLAC sub-tag, fall back to tag value. Deliberately
     // still reads only the FIRST RESI tag here, unchanged — this is the
@@ -482,7 +502,17 @@ export function storeToGedcom(people = [], relationships = []) {
       if (dd) { put('1 DEAT'); put(`2 DATE ${dd}`); } else put('1 DEAT Y');
     }
     if (p.occupation) put(`1 OCCU ${p.occupation}`);
-    if (p.education) put(`1 EDUC ${p.education}`);
+    // education[] (Education History) — one EDUC per entry, mirroring
+    // residences[]/RESI just below, with its own period DATE where known.
+    if (p.education?.length) {
+      for (const e of p.education) {
+        if (!e.institution) continue;
+        put(`1 EDUC ${e.institution}`);
+        const period = formatResidencePeriod(e.from_year, e.to_year);
+        if (period) put(`2 DATE ${period}`);
+        if (e.location) put(`2 PLAC ${e.location}`);
+      }
+    }
     // residences[] (Places Lived), when present, is the fuller record — one
     // RESI per entry, each with its own period DATE where known. Falls back
     // to the single scalar `residence` field only when residences[] is empty

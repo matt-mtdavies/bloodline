@@ -9,6 +9,7 @@ import { fileToDataUrl, uploadPhoto, uploadDocument, suggestDocumentTitle, image
 import { streamBio } from '../lib/ai.js';
 import EnrichSheet from './EnrichSheet.jsx';
 import MilitaryService from './MilitaryService.jsx';
+import EducationHistory from './EducationHistory.jsx';
 import PlacesLived from './PlacesLived.jsx';
 import RestingPlace from './RestingPlace.jsx';
 import AncestryStory from './AncestryStory.jsx';
@@ -75,6 +76,9 @@ export default function PersonSheet({
   onRemoveResidence,
   onSetRestingPlace,
   onClearRestingPlace,
+  onAddEducation,
+  onUpdateEducation,
+  onRemoveEducation,
   onInvite,
   onRemoveRelationship,
   onUpdateRelationshipQualifier,
@@ -845,6 +849,14 @@ export default function PersonSheet({
               onAddResidence={(fields) => onAddResidence?.(person.id, fields)}
               onUpdateResidence={(id, fields) => onUpdateResidence?.(person.id, id, fields)}
               onRemoveResidence={(id) => onRemoveResidence?.(person.id, id)}
+            />
+
+            <EducationHistory
+              person={person}
+              canEdit={canEdit}
+              onAdd={(fields) => onAddEducation?.(person.id, fields)}
+              onUpdate={(id, fields) => onUpdateEducation?.(person.id, id, fields)}
+              onRemove={(id) => onRemoveEducation?.(person.id, id)}
             />
 
             {/* Memories — the heart of the profile. */}

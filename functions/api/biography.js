@@ -90,6 +90,18 @@ export async function onRequestPost({ request, env, data, waitUntil }) {
     if (person.is_deceased) lines.push('Status: Deceased');
     if (person.occupation) lines.push(`Occupation: ${person.occupation}`);
     if (person.residence) lines.push(`Residence: ${person.residence}`);
+    if (person.education?.length) {
+      const edu = person.education
+        .filter((e) => e.institution)
+        .slice()
+        .sort((a, b) => (a.from_year ?? Infinity) - (b.from_year ?? Infinity))
+        .map((e) => {
+          const range = e.from_year ? (e.to_year ? `${e.from_year}–${e.to_year}` : `${e.from_year}–present`) : '';
+          return `  ${[e.institution, e.field_of_study, range].filter(Boolean).join(', ')}`;
+        })
+        .join('\n');
+      if (edu) lines.push(`Education:\n${edu}`);
+    }
     if (person.bio) lines.push(`Family note: ${person.bio}`);
     if (person.tags?.length) lines.push(`Tags: ${person.tags.join(', ')}`);
 
@@ -132,7 +144,7 @@ export async function onRequestPost({ request, env, data, waitUntil }) {
     }
 
     personContext = lines.join('\n');
-    systemText = `You are a thoughtful family archivist writing intimate life story paragraphs for a family tree app. Your voice is warm, plain, and specific — like a letter from a relative who loved this person. Write in the third person. Two to three short paragraphs. No bullet points, no headers. Draw on the details given: timeline events, occupation, place, the family's own documents on file, and above all the memories family members have shared. If the person is deceased, treat them with reverence. If living, write with warmth and a sense of an ongoing story. Write only the biography — nothing else.`;
+    systemText = `You are a thoughtful family archivist writing intimate life story paragraphs for a family tree app. Your voice is warm, plain, and specific — like a letter from a relative who loved this person. Write in the third person. Two to three short paragraphs. No bullet points, no headers. Draw on the details given: timeline events, occupation, education, place, the family's own documents on file, and above all the memories family members have shared. If the person is deceased, treat them with reverence. If living, write with warmth and a sense of an ongoing story. Write only the biography — nothing else.`;
   }
 
   // A family member reviewed a previous draft and flagged something wrong
