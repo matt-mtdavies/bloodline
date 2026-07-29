@@ -3,6 +3,8 @@
  * data URL to a Blob, and upload a photo to R2 via the /api/photos endpoint.
  */
 
+import { fetchWithTimeout } from './net.js';
+
 export async function fileToDataUrl(file, max = 640) {
   const url = URL.createObjectURL(file);
   try {
@@ -60,7 +62,12 @@ export function generateThumb(dataUrl, size = 128) {
 
 // Upload a document data URL to R2. Returns the /api/documents/<key> URL on
 // success, or the original data URL as a fallback if the upload fails.
-export async function uploadDocument(dataUrl, { title = 'document', mime = 'application/octet-stream' } = {}) {
+// Real user report: this used to be a bare fetch with no timeout at all —
+// unlike every other network call in this app — so a stalled connection
+// left the caller's `await` unresolved forever, with no error and no way
+// out but a hard refresh (see lib/net.js's fetchWithTimeout, already built
+// for exactly this and already used by the tree-save/AI-generation paths).
+export async function uploadDocument(dataUrl, { title = 'document', mime = 'application/octet-stream', timeoutMs = 30000 } = {}) {
   if (!dataUrl?.startsWith('data:')) return dataUrl;
   try {
     const blob = dataUrlToBlob(dataUrl);
@@ -69,7 +76,7 @@ export async function uploadDocument(dataUrl, { title = 'document', mime = 'appl
       : 'bin';
     const form = new FormData();
     form.append('file', blob, `${title}.${ext}`);
-    const res = await fetch('/api/documents', { method: 'POST', body: form });
+    const res = await fetchWithTimeout('/api/documents', { method: 'POST', body: form }, timeoutMs);
     if (res.ok) return (await res.json()).url;
     console.warn('[docs] upload failed:', res.status);
   } catch (e) {
@@ -107,10 +114,12 @@ export async function suggestDocumentTitle(previewDataUrl, { timeoutMs = 10000 }
 // Read an existing document src (an /api/documents/<key> URL, or an already-
 // data: URL) into a data URL, without the canvas downscale imageSrcToDataUrl
 // does — a PDF's bytes can't round-trip through a canvas, and a summary of a
-// faded scan wants the original resolution, not a lossy preview.
-export async function srcToDataUrl(src) {
+// faded scan wants the original resolution, not a lossy preview. Timed out
+// the same as every other network call here — a same-origin GET is usually
+// fast, but "usually" isn't a guarantee against a stalled connection.
+export async function srcToDataUrl(src, { timeoutMs = 30000 } = {}) {
   if (src.startsWith('data:')) return src;
-  const res = await fetch(src);
+  const res = await fetchWithTimeout(src, {}, timeoutMs);
   const blob = await res.blob();
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -190,13 +199,15 @@ export async function summarizeDocument(dataUrl, { timeoutMs = 60000 } = {}) {
 
 // Upload a photo data URL to R2. Returns the /api/photos/<key> URL on success,
 // or the original data URL as a fallback if the upload fails (e.g. offline).
-export async function uploadPhoto(dataUrl) {
+// Timed out for the same reason uploadDocument above is — a stalled upload
+// must not leave this unresolved forever.
+export async function uploadPhoto(dataUrl, { timeoutMs = 30000 } = {}) {
   if (!dataUrl?.startsWith('data:')) return dataUrl; // already a URL, pass through
   try {
     const blob = dataUrlToBlob(dataUrl);
     const form = new FormData();
     form.append('file', blob, 'photo.jpg');
-    const res = await fetch('/api/photos', { method: 'POST', body: form });
+    const res = await fetchWithTimeout('/api/photos', { method: 'POST', body: form }, timeoutMs);
     if (res.ok) return (await res.json()).url;
     const body = await res.text().catch(() => '');
     console.warn('[photos] upload failed:', res.status, body);

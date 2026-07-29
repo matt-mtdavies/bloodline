@@ -170,11 +170,19 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   verifies `reassembleTree(splitTree(tree))` deep-equals the original **before any write**,
   archives a snapshot, R2-before-D1). **Nothing auto-migrates a family** — this endpoint is the
   only place that happens, and only when a human calls it. **All Phase 2 code is done, tested,
-  and pushed.** The only thing left is the staged rollout itself, and it needs real Cloudflare
-  credentials (`wrangler login`, a deployed build, an authenticated admin session) that don't
-  exist in an agent sandbox — a step-by-step runbook for a human to follow lives in
+  and pushed. This account's own family (`f_b4fb1e579dae4e51b57c`) has since been migrated and
+  confirmed live** — verified directly against production D1 (a `d1_database_query` MCP tool
+  became available mid-project): the `family_tree` row carries a real `_extraVersion` marker,
+  core is ~411KB (well under both size thresholds), and saves have continued succeeding since
+  (this superseded an earlier stale claim in this file that the rollout hadn't happened yet —
+  a real user report of persistent save/timeout trouble turned out to have a different root
+  cause entirely; see the document-upload timeout fix a few entries below). Rolling out to
+  everyone else is the remaining step, and it needs real Cloudflare credentials (`wrangler
+  login`, a deployed build, an authenticated admin session) that don't exist in a sandbox
+  without that MCP connector — a step-by-step runbook for a human to follow lives in
   `docs/TREE-STORAGE.md` §11 (backup → deploy → one disposable test family → this account,
-  deliberately → everyone else in small batches).
+  deliberately → everyone else in small batches; the first two steps of that sequence are now
+  done for real, not just in principle).
   Full design + progress tracked in `docs/TREE-STORAGE.md` §9.
 
 - **Custom grandparent names** (user feedback: "can I change Grandmother/Grandfather to
@@ -1625,6 +1633,61 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   all passed clean. **Next:** the full lossless archive (`.zip` of tree JSON + photos + docs from R2,
   owner-gated, async job for large trees, and eventually a self-contained offline viewer) — a bigger,
   design-doc-first effort.
+
+- **Education History** (feature request, discussed and agreed before building: "was education a
+  profile gap? ... I think i like the multi stage education section"). The plain single-line
+  `education` field shipped first, then replaced entirely with a real multi-stage record —
+  `education[]` on `person` (stage/institution/field_of_study/location/from_year/to_year/note),
+  migrated in place from the old string with nothing invented beyond the institution name.
+  `lib/educationTerms.js#resolveStageLabel(stage, country)` resolves country-adaptive stage
+  terminology (Primary School in Australia, Elementary School in Canada, TAFE vs Trade School)
+  per entry from its own geocoded location, not a per-viewer preference. `EducationHistory.jsx`
+  is a vertical "ladder" of stage cards on one solid spine with a per-stage icon (satchel/book/
+  tool/cap) — deliberately not the wave-timeline pattern already used three times on this profile
+  (Places Lived/Military Service/Ancestry Story); explicit feedback was that a fourth instance of
+  the same theme was too much. `store.js` gained `addEducation`/`updateEducation`/`removeEducation`
+  (each its own activity event), `lib/gedcom.js`'s `EDUC` tag is now repeatable (mirroring `RESI`).
+  Two real follow-up gaps found when the user asked me to confirm the feature was fully wired up:
+  the activity feed had no message/icon for the new `education_*` events (fell through to a
+  generic "updated" line) — fixed with matching cases + a mortarboard icon; and neither AI
+  narrative surface (the biography generator, the Keepsake's `buildKeepsakeFacts`) actually read
+  `education[]` yet — both now do, and Keepsake's places spread gained a "Studied" role plus an
+  "Educated" row in the printed Record spread. Shipped as PR #55.
+
+- **Document/photo upload had no timeout — the actual cause of a real "saving never finishes,
+  have to refresh" report** (user: "it seems to get caught trying to save, never actually
+  finishing... very frustrating having to refresh all the time"). Investigated thoroughly before
+  touching code, including two dead ends worth recording so a future session doesn't repeat them:
+  first suspected the tree-storage migration hadn't been rolled out to this account (wrong — a
+  live D1 query, once a Cloudflare MCP connector became available mid-session, confirmed this
+  account's family IS migrated and actively saving successfully); then suspected a systemic outage
+  window (also wrong — a bug in my own diagnostic query, comparing a TEXT `created_at` column
+  against numeric bounds, silently matched nothing; the real activity log showed hundreds of
+  successful saves throughout the reported period). The user's own detail — "mostly adding new
+  users and documents" — pointed at the actual bug: `PersonSheet.jsx`'s local `uploadDoc` helper
+  and `lib/image.js`'s `uploadDocument`/`uploadPhoto`/`srcToDataUrl` were bare `fetch()` calls with
+  **no timeout at all** — the one place left in the app that never got migrated to `lib/net.js`'s
+  `fetchWithTimeout` (already used by the tree-save loop and every AI-generation call, built
+  earlier for this exact "freezes, unrecoverable short of a refresh" bug class — see that file's
+  own doc comment). A stalled upload — a flaky connection, a bigger scan — left the `await` and
+  everything sequenced after it unresolved forever, with no error and no escape but a hard refresh.
+  Fixed by routing all four through `fetchWithTimeout`: `uploadDocument`/`uploadPhoto`/
+  `srcToDataUrl` (`lib/image.js`) take a `timeoutMs` option (default 30s); `PersonSheet.jsx`'s
+  `uploadDoc` uses a new size-scaled timeout (`uploadTimeoutFor`, 20s base + 2s/MB, capped at 5
+  minutes) since it's shared by both the 20MB document picker and the 200MB media picker, and a
+  legitimately large upload on a slow connection can honestly need minutes. `uploadDocument`/
+  `uploadPhoto`/`uploadDoc` already had a same-shape fallback for any failure (base64 inline, or
+  returning the original data URL) so a timeout now degrades exactly like a network error always
+  did — no new failure mode, just a bounded one. `srcToDataUrl` had no fallback and now rejects
+  cleanly on timeout instead of hanging; both its callers (`App.jsx`'s `autoSummarizeDocument` and
+  `DocViewer`'s `handleSummarize`) already wrap it in try/catch with proper state resets, so this
+  is a strict improvement there too (a stalled "Summarize with AI" no longer leaves that button
+  stuck on its spinner forever, either). Covered by 6 new unit tests (`tests/image.test.mjs`,
+  mocking `fetch` the same way `tests/net.test.mjs` does) confirming both the fast-success and
+  stalled-timeout paths for all three `lib/image.js` functions. Verified live via Playwright
+  against the real dev server (no Cloudflare Pages Functions locally, so this exercises the
+  base64-fallback branch specifically): a document upload still completes end to end. Full unit
+  suite, `npm run build`, and the standard smoke test all passed clean.
 
 ## Architecture / key files
 
