@@ -233,6 +233,87 @@ test('storeToGedcom prefers residences[] over the scalar field when both are set
   assert.doesNotMatch(ged, /Stale current-residence string/);
 });
 
+// ── EDUC → education[] (Education History) ──────────────────────────────────
+
+function withEduc(educLines) {
+  return `0 HEAD
+1 GEDC
+2 VERS 5.5.1
+0 @I1@ INDI
+1 NAME Ann /Lee/
+${educLines}0 TRLR
+`;
+}
+
+test('a single EDUC with a period DATE and PLAC populates education[]', () => {
+  const p = gedcomToStore(withEduc('1 EDUC Cardiff Grammar School\n2 DATE FROM 1980 TO 1988\n2 PLAC Cardiff, Wales\n')).people[0];
+  assert.equal(p.education.length, 1);
+  assert.equal(p.education[0].institution, 'Cardiff Grammar School');
+  assert.equal(p.education[0].location, 'Cardiff, Wales');
+  assert.equal(p.education[0].from_year, 1980);
+  assert.equal(p.education[0].to_year, 1988);
+  assert.ok(p.education[0].id, 'each entry gets a real id');
+  assert.equal(p.education[0].stage, null, 'stage has no clean GEDCOM equivalent — never invented');
+  assert.equal(p.education[0].field_of_study, null);
+});
+
+test('multiple EDUC tags all import into education[]', () => {
+  const ged = withEduc(
+    '1 EDUC Cardiff Grammar School\n2 DATE FROM 1980 TO 1988\n2 PLAC Cardiff, Wales\n' +
+    '1 EDUC Cardiff University\n2 DATE FROM 1988 TO 1991\n2 PLAC Cardiff, Wales\n',
+  );
+  const p = gedcomToStore(ged).people[0];
+  assert.equal(p.education.length, 2, 'every EDUC tag imports, not just the first');
+  assert.equal(p.education[1].institution, 'Cardiff University');
+  assert.equal(p.education[1].to_year, 1991);
+});
+
+test('an EDUC with no DATE still imports, with both years left null', () => {
+  const p = gedcomToStore(withEduc('1 EDUC Cardiff University\n2 PLAC Cardiff, Wales\n')).people[0];
+  assert.equal(p.education.length, 1);
+  assert.equal(p.education[0].from_year, null);
+  assert.equal(p.education[0].to_year, null);
+});
+
+test('an EDUC with no institution text is skipped entirely', () => {
+  const p = gedcomToStore(withEduc('1 EDUC\n2 DATE 1990\n')).people[0];
+  assert.equal(p.education.length, 0);
+});
+
+test('no EDUC tag at all leaves education[] empty', () => {
+  const p = gedcomToStore(withEduc('')).people[0];
+  assert.equal(p.education.length, 0);
+});
+
+// ── education[] → EDUC (writer), and round-trip ─────────────────────────────
+
+test('storeToGedcom emits one EDUC/DATE/PLAC per education[] entry, and it round-trips', () => {
+  const people = [{
+    id: 'a', display_name: 'Ann Lee', family_name: 'Lee', gender: 'female', birth_date: '1975',
+    education: [
+      { id: 'edu_1', stage: 'secondary', institution: 'Cardiff Grammar School', field_of_study: null, location: 'Cardiff, Wales', from_year: 1980, to_year: 1988, note: null },
+      { id: 'edu_2', stage: 'university', institution: 'Cardiff University', field_of_study: 'History', location: 'Cardiff, Wales', from_year: 1988, to_year: null, note: null },
+    ],
+  }];
+  const ged = storeToGedcom(people, []);
+  assert.match(ged, /1 EDUC Cardiff Grammar School\n2 DATE FROM 1980 TO 1988\n2 PLAC Cardiff, Wales/);
+  assert.match(ged, /1 EDUC Cardiff University\n2 DATE FROM 1988\n2 PLAC Cardiff, Wales/);
+
+  const back = gedcomToStore(ged).people[0];
+  assert.equal(back.education.length, 2);
+  assert.equal(back.education[0].institution, 'Cardiff Grammar School');
+  assert.equal(back.education[0].from_year, 1980);
+  assert.equal(back.education[0].to_year, 1988);
+  assert.equal(back.education[1].institution, 'Cardiff University');
+  assert.equal(back.education[1].to_year, null);
+});
+
+test('storeToGedcom skips an education[] entry with no institution', () => {
+  const people = [{ id: 'a', display_name: 'Ann Lee', family_name: 'Lee', gender: 'female', birth_date: '1975', education: [{ id: 'edu_1', institution: '', from_year: 1980, to_year: null }] }];
+  const ged = storeToGedcom(people, []);
+  assert.equal(ged.match(/1 EDUC/g), null);
+});
+
 // ── Writer: storeToGedcom, and round-trip through the parser ────────────────
 
 // A controlled tree exercising the fields GEDCOM can carry: a married couple
@@ -240,7 +321,7 @@ test('storeToGedcom prefers residences[] over the scalar field when both are set
 // divorced couple, a single-parent child, and an adopted child.
 const tree = {
   people: [
-    { id: 'gpa', display_name: 'Arthur Vale', given_names: 'Arthur', family_name: 'Vale', gender: 'male', birth_date: '1928', death_date: '2009-05-14', is_deceased: true, occupation: 'Railwayman', education: 'Cardiff Grammar School', bio: 'Loved the trains.', birth_place: 'Cardiff, Wales' },
+    { id: 'gpa', display_name: 'Arthur Vale', given_names: 'Arthur', family_name: 'Vale', gender: 'male', birth_date: '1928', death_date: '2009-05-14', is_deceased: true, occupation: 'Railwayman', education: [{ id: 'edu_gpa', institution: 'Cardiff Grammar School', from_year: null, to_year: null }], bio: 'Loved the trains.', birth_place: 'Cardiff, Wales' },
     { id: 'dad', display_name: 'Robert Vale', given_names: 'Robert', family_name: 'Vale', gender: 'male', birth_date: '1958-03-12' },
     { id: 'mum', display_name: 'Linda Vale', given_names: 'Linda', family_name: 'Vale', gender: 'female', birth_date: '1960' },
     { id: 'kid', display_name: 'James Vale', given_names: 'James', family_name: 'Vale', gender: 'male', birth_date: '1985-04-12', birth_place: 'Bristol, England' },
@@ -279,7 +360,8 @@ test('round-trip preserves people and their GEDCOM-expressible fields', () => {
   assert.equal(gpa.death_date, '2009-05-14', 'full death date survives');
   assert.equal(gpa.is_deceased, true);
   assert.equal(gpa.occupation, 'Railwayman');
-  assert.equal(gpa.education, 'Cardiff Grammar School');
+  assert.equal(gpa.education.length, 1);
+  assert.equal(gpa.education[0].institution, 'Cardiff Grammar School');
   assert.equal(gpa.bio, 'Loved the trains.');
   assert.equal(gpa.birth_place, 'Cardiff, Wales');
 

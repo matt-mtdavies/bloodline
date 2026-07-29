@@ -15,6 +15,7 @@ import {
   addRelative, updatePartnerMeta, resetTree, addMemory, addPhoto, addDocument,
   bioParentGendersFilled, addResidence, updateResidence, removeResidence,
   backfillResidenceGeocodes, setRestingPlace, clearRestingPlace,
+  addEducation, updateEducation, removeEducation,
 } from '../src/data/store.js';
 import { buildGraph } from '../src/data/graph.js';
 
@@ -446,6 +447,91 @@ test('addResidence: a second residence with no to_year records an ongoing/curren
   const after = store.getState().people.find((p) => p.id === 'nomad2');
   assert.equal(after.residences.length, 2);
   assert.equal(after.residences[1].to_year, null);
+});
+
+// ── Education History: addEducation/updateEducation/removeEducation ────────
+
+test('addEducation: appends an entry with a real id, works even on a person with no education field at all', () => {
+  importFromGedcom([{ id: 'student1', display_name: 'Student One' }], [], { merge: false });
+  const person = store.getState().people.find((p) => p.id === 'student1');
+  assert.equal(person.education, undefined);
+
+  const id = addEducation('student1', { stage: 'secondary', institution: 'Cardiff Grammar School', from_year: 1980, to_year: 1985 });
+  assert.ok(id, 'must return the new entry\'s id');
+  const after = store.getState().people.find((p) => p.id === 'student1');
+  assert.equal(after.education.length, 1);
+  assert.equal(after.education[0].id, id);
+  assert.equal(after.education[0].stage, 'secondary');
+  assert.equal(after.education[0].institution, 'Cardiff Grammar School');
+  assert.equal(after.education[0].from_year, 1980);
+  assert.equal(after.education[0].to_year, 1985);
+  assert.equal(after.education[0].field_of_study, null, 'defaults to null when not given');
+});
+
+test('addEducation: a second entry with no to_year records ongoing study', () => {
+  importFromGedcom([{ id: 'student2', display_name: 'Student Two' }], [], { merge: false });
+  addEducation('student2', { stage: 'secondary', institution: 'Cardiff Grammar School', from_year: 1980, to_year: 1985 });
+  addEducation('student2', { stage: 'university', institution: 'Cardiff University', field_of_study: 'History', from_year: 1985 });
+  const after = store.getState().people.find((p) => p.id === 'student2');
+  assert.equal(after.education.length, 2);
+  assert.equal(after.education[1].to_year, null);
+  assert.equal(after.education[1].field_of_study, 'History');
+});
+
+test('updateEducation: patches only the matching entry by id, leaves the other untouched', () => {
+  importFromGedcom([{ id: 'student3', display_name: 'Student Three' }], [], { merge: false });
+  const id1 = addEducation('student3', { stage: 'secondary', institution: 'Cardiff Grammar School', from_year: 1980, to_year: 1985 });
+  addEducation('student3', { stage: 'university', institution: 'Cardiff University', from_year: 1985 });
+
+  updateEducation('student3', id1, { to_year: 1984, note: 'Head boy' });
+  const after = store.getState().people.find((p) => p.id === 'student3');
+  assert.equal(after.education[0].to_year, 1984);
+  assert.equal(after.education[0].note, 'Head boy');
+  assert.equal(after.education[1].institution, 'Cardiff University', 'the other entry must be untouched');
+  assert.equal(after.education[1].note, null);
+});
+
+test('removeEducation: removes exactly the matching entry by id, keeps the rest in place', () => {
+  importFromGedcom([{ id: 'student4', display_name: 'Student Four' }], [], { merge: false });
+  const id1 = addEducation('student4', { stage: 'secondary', institution: 'Cardiff Grammar School', from_year: 1980, to_year: 1985 });
+  const id2 = addEducation('student4', { stage: 'university', institution: 'Cardiff University', from_year: 1985 });
+
+  removeEducation('student4', id1);
+  const after = store.getState().people.find((p) => p.id === 'student4');
+  assert.equal(after.education.length, 1);
+  assert.equal(after.education[0].id, id2);
+  assert.equal(after.education[0].institution, 'Cardiff University');
+});
+
+test('addEducation logs an "education_added" activity event naming the institution', () => {
+  importFromGedcom([{ id: 'student5', display_name: 'Student Five' }], [], { merge: false });
+  addEducation('student5', { stage: 'trade', institution: 'Cardiff and Vale College' });
+  const [event] = store.getState().activity;
+  assert.equal(event.type, 'education_added');
+  assert.equal(event.personId, 'student5');
+  assert.equal(event.detail, 'Cardiff and Vale College');
+});
+
+test('removeEducation logs an "education_removed" activity event naming the institution that was removed', () => {
+  importFromGedcom([{ id: 'student6', display_name: 'Student Six' }], [], { merge: false });
+  const id = addEducation('student6', { stage: 'university', institution: 'Cardiff University' });
+  removeEducation('student6', id);
+  const [event] = store.getState().activity;
+  assert.equal(event.type, 'education_removed');
+  assert.equal(event.detail, 'Cardiff University', 'must name the institution that was removed, even though it no longer exists on the person');
+});
+
+test('updateEducation logs an "education_updated" activity event naming the (possibly just-edited) institution', () => {
+  importFromGedcom([{ id: 'student7', display_name: 'Student Seven' }], [], { merge: false });
+  const id = addEducation('student7', { stage: 'university', institution: 'Cardiff University', from_year: 1985 });
+  updateEducation('student7', id, { to_year: 1988 });
+  const notRenamed = store.getState().activity[0];
+  assert.equal(notRenamed.type, 'education_updated');
+  assert.equal(notRenamed.detail, 'Cardiff University', 'a year-only edit still names the existing institution');
+
+  updateEducation('student7', id, { institution: 'Swansea University' });
+  const renamed = store.getState().activity[0];
+  assert.equal(renamed.detail, 'Swansea University', 'an institution edit names the NEW institution, not the old one');
 });
 
 // ── addRelative: sibling-add "only one parent recorded" ambiguity ──────────

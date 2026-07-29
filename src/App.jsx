@@ -35,6 +35,9 @@ import {
   updateResidence,
   setRestingPlace,
   clearRestingPlace,
+  addEducation,
+  updateEducation,
+  removeEducation,
   addLifeEvent,
   addMedal,
   removeMedal,
@@ -1772,7 +1775,6 @@ export default function App() {
       if (changed('birth_place')) parts.push('birthplace');
       if (changed('residence')) parts.push('location');
       if (changed('occupation')) parts.push('occupation');
-      if (changed('education')) parts.push('education');
       if (changed('military_branch') || changed('military_nation') ||
           changed('military_rank') || changed('military_service_number')) parts.push('military details');
       if (changed('eye_color')) parts.push('eye colour');
@@ -2678,6 +2680,9 @@ export default function App() {
         onRemoveResidence={(personId, id) => removeResidence(personId, id)}
         onSetRestingPlace={(personId, fields) => setRestingPlace(personId, fields)}
         onClearRestingPlace={(personId) => clearRestingPlace(personId)}
+        onAddEducation={(personId, fields) => addEducation(personId, fields)}
+        onUpdateEducation={(personId, id, fields) => updateEducation(personId, id, fields)}
+        onRemoveEducation={(personId, id) => removeEducation(personId, id)}
         onRemoveRelationship={removeRelationship}
         onUpdateRelationshipQualifier={updateRelationshipQualifier}
         onChangeRelationship={handleChangeRelType}

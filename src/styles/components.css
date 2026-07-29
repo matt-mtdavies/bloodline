@@ -11081,6 +11081,93 @@ button.health-notes {
   margin-left: auto;
 }
 
+/* Education History (src/components/EducationHistory.jsx) — deliberately
+   NOT the wave-timeline pattern used by Places Lived/Military Service/
+   Ancestry Story above (explicit feedback: a fourth instance of the same
+   theme was too much). A vertical "ladder" instead: one solid spine
+   connecting a stack of full stage cards, an icon per stage carrying the
+   sense of progression rather than geometry. Reuses .places-form/
+   .places-detail__actions/.places-detail__confirm* verbatim for the
+   add/edit form and the edit/remove controls — only the read-mode ladder
+   and its cards are new. */
+.education-ladder { position: relative; display: flex; flex-direction: column; gap: 14px; }
+.education-rung { position: relative; display: flex; gap: 12px; }
+.education-rung__icon {
+  position: relative;
+  flex: none;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--paper-deep);
+  color: var(--accent-deep, var(--accent));
+  z-index: 1;
+}
+/* The solid spine — a single continuous line behind every icon, drawn from
+   the center of the first icon to the center of the last. Each icon sits
+   on top of it (z-index above), so the line reads as connecting the
+   stages rather than sitting beside them. */
+.education-rung:not(:last-child)::before {
+  content: '';
+  position: absolute;
+  top: 34px;
+  left: 17px;
+  width: 1.5px;
+  height: calc(100% - 34px + 14px);
+  background: var(--hairline);
+}
+.education-rung__card {
+  flex: 1;
+  min-width: 0;
+  background: var(--card);
+  border-radius: 16px;
+  padding: 12px 16px;
+  box-shadow: var(--shadow-soft);
+}
+.education-rung__kicker {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--accent-deep, var(--accent));
+}
+.education-rung__institution {
+  margin: 2px 0 0;
+  font-family: var(--display);
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--ink);
+  line-height: 1.25;
+}
+.education-rung__field { margin: 2px 0 0; font-size: 13px; font-weight: 500; color: var(--ink-soft); }
+.education-rung__meta { margin: 4px 0 0; font-size: 12.5px; font-weight: 600; color: var(--ink-faint); }
+.education-rung__note {
+  margin: 8px 0 0;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--ink-soft);
+  font-style: italic;
+}
+.education-form__stages { display: flex; flex-wrap: wrap; gap: 6px; }
+.education-form__stage {
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line, #e7ddd4);
+  background: var(--paper, #fff);
+  color: var(--ink-soft);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.education-form__stage--active {
+  background: var(--accent, #c2603a);
+  border-color: var(--accent, #c2603a);
+  color: #fff;
+}
+.education-form__note { font-style: italic; }
+
 /* Ancestry Story (src/components/AncestryStory.jsx) — the patrilineal +
    matrilineal ascending chains, drawn with the identical wave-timeline
    pattern as .places-route (lib/placesTimeline.js#buildTimelineLayout,

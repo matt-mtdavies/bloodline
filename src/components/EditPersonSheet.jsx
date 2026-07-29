@@ -70,7 +70,6 @@ export default function EditPersonSheet({ person, onClose, onSave, onRemove, sta
     birth_place:   person.birth_place   || '',
     residence:     person.residence     || '',
     occupation:    person.occupation    || '',
-    education:     person.education     || '',
     military_branch:         person.military_branch         || '',
     military_nation:         person.military_nation         || '',
     military_rank:           person.military_rank           || '',
@@ -138,7 +137,6 @@ export default function EditPersonSheet({ person, onClose, onSave, onRemove, sta
       birth_place:   f.birth_place.trim()   || null,
       residence:     f.residence.trim()     || null,
       occupation:    f.occupation.trim()    || null,
-      education:     f.education.trim()     || null,
       military_branch:         f.military_branch                 || null,
       military_nation:         f.military_nation.trim()          || null,
       military_rank:           f.military_rank.trim()            || null,
@@ -186,7 +184,6 @@ export default function EditPersonSheet({ person, onClose, onSave, onRemove, sta
           ['Birthplace', person.birth_place],
           ['Lives in', person.residence],
           ['Occupation', person.occupation],
-          ['Education', person.education],
           ...(person.is_deceased ? [
             ['Resting place', person.resting_place?.cemetery || person.resting_place?.place || null],
           ] : []),
@@ -427,23 +424,15 @@ export default function EditPersonSheet({ person, onClose, onSave, onRemove, sta
             </label>
           </div>
 
-          {/* ── Occupation + Education ── */}
-          <div className="field-row">
-            <label className="field">
-              <span className="field__label">Occupation</span>
-              <div className="input-wrap">
-                <input className="field__input" value={f.occupation} onChange={set('occupation')} placeholder="e.g. Architect" />
-                {f.occupation && <button type="button" className="input-clear" onClick={clear('occupation')} aria-label="Clear" tabIndex={-1}>×</button>}
-              </div>
-            </label>
-            <label className="field">
-              <span className="field__label">Education</span>
-              <div className="input-wrap">
-                <input className="field__input" value={f.education} onChange={set('education')} placeholder="e.g. Cardiff University" />
-                {f.education && <button type="button" className="input-clear" onClick={clear('education')} aria-label="Clear" tabIndex={-1}>×</button>}
-              </div>
-            </label>
-          </div>
+          {/* ── Occupation (Education is now its own multi-stage section on
+              the profile itself — see EducationHistory.jsx) ── */}
+          <label className="field">
+            <span className="field__label">Occupation</span>
+            <div className="input-wrap">
+              <input className="field__input" value={f.occupation} onChange={set('occupation')} placeholder="e.g. Architect" />
+              {f.occupation && <button type="button" className="input-clear" onClick={clear('occupation')} aria-label="Clear" tabIndex={-1}>×</button>}
+            </div>
+          </label>
 
           {/* ── Military service — branch/rank/service number/nation. Usually
               filled in automatically by accepting a document suggestion
