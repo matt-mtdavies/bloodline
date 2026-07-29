@@ -660,7 +660,7 @@ function PlateCard({ card, graph, horizontal, isFocal, selectedId, onOpenPerson,
               <Avatar person={person} size={32} />
               <span className="pplate__text">
                 <span className="pplate__name">
-                  {person.display_name}
+                  <span className="pplate__name-text">{person.display_name}</span>
                   {stepChip && <span className="ped-chip ped-chip--inline">{stepChip}</span>}
                 </span>
                 <span className="pplate__dates">{dates}</span>

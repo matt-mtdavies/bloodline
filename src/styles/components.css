@@ -10009,8 +10009,12 @@ button.health-notes {
 .pplate__name {
   display: flex; align-items: center; gap: 6px;
   font-size: 14.5px; font-weight: 600; color: var(--ink);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   letter-spacing: -0.005em;
+  min-width: 0;
+}
+.pplate__name-text {
+  min-width: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .pplate__dates {
   font-size: 11px; color: var(--ink-faint);
