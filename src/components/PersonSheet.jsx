@@ -490,6 +490,7 @@ export default function PersonSheet({
 
   const metaBits = [];
   if (person.occupation) metaBits.push(person.occupation);
+  if (person.education) metaBits.push(person.education);
   metaBits.push(lifespan(person));
   if (age) metaBits.push(person.is_deceased ? age : `age ${age}`);
 
