@@ -188,6 +188,9 @@ export function gedcomToStore(text) {
     // Occupation (first OCCU tag)
     const occupation = child(node, 'OCCU')?.value?.trim() || null;
 
+    // Education (first EDUC tag) — same shape as OCCU above.
+    const education = child(node, 'EDUC')?.value?.trim() || null;
+
     // Residence — prefer PLAC sub-tag, fall back to tag value. Deliberately
     // still reads only the FIRST RESI tag here, unchanged — this is the
     // app's single "current/most recent place" scalar field, distinct from
@@ -228,6 +231,7 @@ export function gedcomToStore(text) {
       residence,
       residences,
       occupation,
+      education,
       tags: [],
       events: [],
       bio,
@@ -478,6 +482,7 @@ export function storeToGedcom(people = [], relationships = []) {
       if (dd) { put('1 DEAT'); put(`2 DATE ${dd}`); } else put('1 DEAT Y');
     }
     if (p.occupation) put(`1 OCCU ${p.occupation}`);
+    if (p.education) put(`1 EDUC ${p.education}`);
     // residences[] (Places Lived), when present, is the fuller record — one
     // RESI per entry, each with its own period DATE where known. Falls back
     // to the single scalar `residence` field only when residences[] is empty
