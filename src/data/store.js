@@ -1790,13 +1790,19 @@ export function updateMemory(id, patch) {
 }
 
 // ── Photos (gallery) ──────────────────────────────────────────────────────────
-export function addPhoto(personId, { src, caption, date }) {
+// education_id optionally ties a photo to one Education History entry (a
+// school photo, a graduation shot) rather than the general gallery — see
+// EducationHistory.jsx. It's just a tag: the photo is still a normal gallery
+// photo underneath (same Lightbox, caption, delete, R2 upload), never a
+// separate storage system.
+export function addPhoto(personId, { src, caption, date, education_id = null }) {
   const photo = {
     id: phid(),
     person_id: personId,
     src,
     caption: caption || '',
     date: date || '',
+    education_id,
   };
   const person = state.people.find((p) => p.id === personId);
   commit(withActivity({ ...state, photos: [...state.photos, photo] }, {

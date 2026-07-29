@@ -534,6 +534,25 @@ test('updateEducation logs an "education_updated" activity event naming the (pos
   assert.equal(renamed.detail, 'Swansea University', 'an institution edit names the NEW institution, not the old one');
 });
 
+// ── Education History: school photos are ordinary gallery photos tagged
+// with education_id (store.js#addPhoto), not a separate photo system ───────
+
+test('addPhoto: stamps education_id when tagging a photo to an education entry', () => {
+  importFromGedcom([{ id: 'student8', display_name: 'Student Eight' }], [], { merge: false });
+  const eduId = addEducation('student8', { stage: 'secondary', institution: 'Fairwater Grammar School' });
+  const photoId = addPhoto('student8', { src: 'data:image/png;base64,abc', education_id: eduId });
+  const photo = store.getState().photos.find((p) => p.id === photoId);
+  assert.equal(photo.education_id, eduId);
+  assert.equal(photo.person_id, 'student8', 'still a normal gallery photo — person_id is set exactly as any other photo');
+});
+
+test('addPhoto: education_id defaults to null for an ordinary gallery photo (no regression to the main Photos section)', () => {
+  importFromGedcom([{ id: 'student9', display_name: 'Student Nine' }], [], { merge: false });
+  const photoId = addPhoto('student9', { src: 'data:image/png;base64,abc', caption: 'A photo' });
+  const photo = store.getState().photos.find((p) => p.id === photoId);
+  assert.equal(photo.education_id, null);
+});
+
 // ── addRelative: sibling-add "only one parent recorded" ambiguity ──────────
 // Real user report: choosing "Add Brother" implies a full sibling to most
 // people, but silently linking the new sibling to only the anchor's single

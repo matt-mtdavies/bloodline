@@ -1689,6 +1689,39 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   base64-fallback branch specifically): a document upload still completes end to end. Full unit
   suite, `npm run build`, and the standard smoke test all passed clean.
 
+- **Education History: school photos** (feature request: "the ability to add school photos, this
+  is something people would be very interested in... all the premium photo features would need
+  to be implemented"). Discussed direction first — opined for reusing the existing Photos gallery
+  infrastructure with a lightweight tag rather than a bespoke photo system scoped to one profile
+  section, since that makes every "premium" feature (R2 upload/downscale, the pinch-zoom Lightbox,
+  captions, delete-with-confirm) free instead of reimplemented; the one exception is "Set as
+  portrait," which doesn't make sense for a school building or class photo and is now suppressed
+  for these specifically. `store.js`'s `addPhoto` gained an optional `education_id` tag (defaults
+  `null`) — the photo underneath is byte-identical to any other gallery photo, just carrying a
+  link back to the Education History entry it belongs to. `EducationHistory.jsx` renders a small
+  thumbnail strip (`.education-rung__photos`) on each stage card — sized to the compact rung
+  density rather than the full-width `.gallery` grid — plus a dashed camera-icon "add photo"
+  button, gated on `canContribute` (the same permission the main Photos section already uses, not
+  `canEdit`, since a contributor can add a photo without structural-edit rights). One shared hidden
+  file input serves every rung (tracked via a `pendingPhotoEntryId` state set the instant a rung's
+  button is tapped), reusing the identical downscale-then-upload shape as `PersonSheet.jsx`'s own
+  `onGalleryPick`. `Lightbox.jsx` gained a `showSetPortrait` prop (default `true`, so the main
+  gallery's behavior is unchanged); `App.jsx`'s `lightbox` state gained an optional `educationId`
+  that both scopes the photo array to just that entry (`data.photos.filter(... && p.education_id
+  === lightbox.educationId)`) and sets `showSetPortrait={false}`. `onAddPhoto`/`onOpenLightbox`
+  (passed from `App.jsx` down through `PersonSheet.jsx` to `EducationHistory.jsx` unchanged) both
+  gained an optional third `{ educationId }` argument, defaulting to absent so every existing call
+  site (the main gallery) is byte-identical to before. A school-tagged photo still appears in the
+  Keepsake's Album spread and GEDCOM-unrelated exports exactly like any other photo, since nothing
+  about the underlying storage changed — the tag is purely additive. Covered by 2 new unit tests
+  in `tests/store.test.mjs` (`addPhoto` stamping `education_id` when tagged, and defaulting to
+  `null` for an ordinary gallery photo). Verified live via Playwright: added a school to James's
+  Education History, uploaded a photo via the rung's camera button, confirmed it appears in the
+  thumbnail strip, opening it shows the Lightbox scoped to exactly that one photo (`1 / 1`) with
+  no "Set as portrait" action present, and — the regression check — the main Photos section's own
+  Lightbox still shows "Set as portrait" normally afterward. Full unit suite, `npm run build`, and
+  the standard smoke test all passed clean.
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);

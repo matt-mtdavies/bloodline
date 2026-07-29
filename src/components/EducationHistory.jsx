@@ -1,6 +1,8 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { geocodePlace, geoFields } from '../lib/places.js';
 import { EDUCATION_STAGES, resolveStageLabel } from '../lib/educationTerms.js';
+import { fileToDataUrl, uploadPhoto } from '../lib/image.js';
+import SmartImg from './SmartImg.jsx';
 
 // Stages that plausibly have a named degree or trade/field of study — a
 // primary or secondary stage never does, so the form only asks for it
@@ -31,11 +33,25 @@ const STAGES_WITH_FIELD_OF_STUDY = new Set(['trade', 'university']);
  * split) — best-effort geocoded on save the same way (lib/places.js), the
  * resolved country silently driving the stage label; the typed text is
  * always what's shown, geocoding only ever adds the country behind it.
+ *
+ * School photos (a class photo, the school building, a graduation shot —
+ * feature request: "the ability to add school photos, this is something
+ * people would be very interested in") are deliberately NOT a separate
+ * photo system scoped to this section — they're ordinary gallery photos
+ * (person.photos, same R2 upload/downscale/Lightbox/caption/delete as the
+ * profile's main Photos section) carrying an optional `education_id` tag
+ * back to the entry they belong to. That reuse is the whole point: every
+ * "premium" photo feature (pinch-zoom Lightbox, captions, delete-with-
+ * confirm) is free, not reimplemented. The one thing suppressed for a
+ * tagged photo is "Set as portrait" (see Lightbox.jsx's showSetPortrait) —
+ * a school building offered as a portrait candidate would read as a bug.
  */
-export default function EducationHistory({ person, canEdit, onAdd, onUpdate, onRemove }) {
+export default function EducationHistory({ person, canEdit, canContribute = true, photos = [], onAdd, onUpdate, onRemove, onAddPhoto, onOpenLightbox }) {
   const [adding, setAdding] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [confirmRemoveId, setConfirmRemoveId] = useState(null);
+  const photoInputRef = useRef(null);
+  const [pendingPhotoEntryId, setPendingPhotoEntryId] = useState(null);
 
   const entries = [...(person.education || [])].sort((a, b) => {
     if (a.from_year == null) return 1;
@@ -62,6 +78,30 @@ export default function EducationHistory({ person, canEdit, onAdd, onUpdate, onR
     setConfirmRemoveId(null);
   };
 
+  // One shared hidden file input for every rung's "Add photo" button, rather
+  // than one input per entry — pendingPhotoEntryId (set the instant a rung's
+  // button is tapped) tells the shared onChange which entry to tag the
+  // upload with. Same downscale-then-upload shape as PersonSheet.jsx's own
+  // onGalleryPick for the main Photos section.
+  const pickPhotoFor = (entryId) => {
+    setPendingPhotoEntryId(entryId);
+    photoInputRef.current?.click();
+  };
+  const onPhotoPicked = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    const entryId = pendingPhotoEntryId;
+    setPendingPhotoEntryId(null);
+    if (!file || !entryId) return;
+    try {
+      const dataUrl = await fileToDataUrl(file, 1800);
+      const src = await uploadPhoto(dataUrl);
+      onAddPhoto?.(person.id, src, { educationId: entryId });
+    } catch {
+      /* skip an unreadable file */
+    }
+  };
+
   return (
     <section className="profile-section">
       <div className="profile-section__head">
@@ -72,6 +112,13 @@ export default function EducationHistory({ person, canEdit, onAdd, onUpdate, onR
           <button className="section-edit" onClick={() => { setAdding(true); setEditingId(null); }}>Add</button>
         )}
       </div>
+      <input
+        ref={photoInputRef}
+        type="file"
+        accept="image/*"
+        hidden
+        onChange={onPhotoPicked}
+      />
 
       {entries.length > 0 && (
         <div className="education-ladder">
@@ -97,6 +144,12 @@ export default function EducationHistory({ person, canEdit, onAdd, onUpdate, onR
                     {[entry.location, formatRange(entry.from_year, entry.to_year)].filter(Boolean).join(' · ')}
                   </p>
                   {entry.note && <p className="education-rung__note">{entry.note}</p>}
+                  <EducationPhotos
+                    photos={photos.filter((p) => p.education_id === entry.id)}
+                    canContribute={canContribute}
+                    onAddPhoto={() => pickPhotoFor(entry.id)}
+                    onOpenLightbox={(idx) => onOpenLightbox?.(person.id, idx, { educationId: entry.id })}
+                  />
                   {canEdit && (
                     confirmRemoveId === entry.id ? (
                       <div className="places-detail__confirm">
@@ -141,6 +194,36 @@ export default function EducationHistory({ person, canEdit, onAdd, onUpdate, onR
         )
       )}
     </section>
+  );
+}
+
+// A small thumbnail strip of photos tagged to one education entry, plus an
+// "add photo" affordance — gated on canContribute, the same permission the
+// main Photos section already uses (a contributor can add photos even if
+// they can't structurally edit the stage record itself, which stays gated
+// on canEdit above). Tapping a thumbnail opens the shared Lightbox scoped to
+// just this entry's photos (App.jsx's onOpenLightbox with educationId set).
+function EducationPhotos({ photos, canContribute, onAddPhoto, onOpenLightbox }) {
+  if (!photos.length && !canContribute) return null;
+  return (
+    <div className="education-rung__photos">
+      {photos.map((p, idx) => (
+        <button
+          key={p.id}
+          type="button"
+          className="education-rung__photo"
+          onClick={() => onOpenLightbox(idx)}
+          aria-label={p.caption || 'View photo'}
+        >
+          <SmartImg src={p.src} alt={p.caption || ''} />
+        </button>
+      ))}
+      {canContribute && (
+        <button type="button" className="education-rung__photo-add" onClick={onAddPhoto} aria-label="Add a photo">
+          <CameraIcon />
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -301,4 +384,12 @@ function CloseIcon() {
 }
 function PlusIcon() {
   return (<svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>);
+}
+function CameraIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M4 8.5C4 7.7 4.7 7 5.5 7h2l1-2h7l1 2h2c.8 0 1.5.7 1.5 1.5v10c0 .8-.7 1.5-1.5 1.5h-13A1.5 1.5 0 0 1 4 18.5v-10Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+      <circle cx="12" cy="13" r="3.4" stroke="currentColor" strokeWidth="1.5" />
+    </svg>
+  );
 }
