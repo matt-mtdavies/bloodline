@@ -1807,6 +1807,43 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   own per-stage note. Full unit suite, `npm run build`, and the standard smoke test all passed
   clean.
 
+- **Visual-consistency audit + two fixes** (self-directed, following up on the "emotional design
+  pass" discussion: a fresh screenshot pass across Tree/Chart/List/Home hub/Search/Focus/Lineage/
+  Time modes, the full profile sheet, Insights, and mobile). First fix (PR #61): the pedigree
+  **Chart** view clipped a long name mid-letter with no ellipsis ("Eleanor Bennett" → "Eleanor
+  Bennet'") — `.pplate__name` is a flex container (name text + an optional step/adopted chip),
+  and `text-overflow: ellipsis` doesn't reliably apply to a flex box's own overflowing text node,
+  only to a single block/inline-block run. Fixed by wrapping just the name in a new inner
+  `.pplate__name-text` span and moving the truncation CSS onto it, leaving `.pplate__name` as a
+  pure flex layout container. Second fix, this entry: the desktop **hover-preview card**
+  (`HoverCard.jsx`) could crowd or overlap other floating chrome — the bottom dock, Time mode's
+  slider + world-event caption card floating above it, the topbar, and the "back to the tree"
+  pill — since its vertical positioning only ever flipped above/below the hovered bubble
+  (`FLIP_THRESHOLD`, to avoid the very top of the viewport) and clamped horizontally, but never
+  checked the bottom of the screen or any of the other fixed overlays at all. Reproduced live:
+  hovering a bubble in Time mode landed the card overlapping the slider/world-event caption;
+  hovering a bubble near the return-pill overlapped that too. Fixed by measuring a small, fixed
+  set of known, always-in-the-same-place obstacle elements each animation frame — `.topbar` and
+  `.return-pill--in` for the top boundary, `.bottom-bar`, `.time-slider-wrap`, and
+  `.life-event-card--visible` for the bottom boundary (all queried live via `getBoundingClientRect`,
+  not hardcoded pixel guesses, so the safe band adapts automatically to whichever of them is
+  actually on screen) — and clamping the card's own rendered top/bottom edge (measured via a new
+  `cardRef` on the actual `.hover-card` DOM node, not just its anchor point) into whatever's left
+  of the viewport. Deliberately scoped to these concrete, reproduced collisions rather than a
+  general 2D collision-avoidance system: the one remaining edge case (the hover card visually
+  overlapping a DIFFERENT person's `FocusNameplate`, which itself tracks a live bubble position
+  and can be anywhere on screen) was left alone — both elements are `pointer-events: none`, so
+  nothing is ever functionally blocked, just a rarer, momentary legibility overlap, and true
+  avoidance there would need real 2D collision math against a moving target rather than a simple
+  top/bottom clamp. Verified live via Playwright against the real dev server: in Time mode,
+  hovering a bubble that previously reproduced the bug now shows the card cleanly clamped between
+  the return-pill (bottom ~205px) and the world-event caption (top ~527px) with zero rect overlap
+  against any of the five checked obstacles (slider, life-event-card, dock, return-pill, topbar) —
+  confirmed programmatically via `getBoundingClientRect()` comparisons, not just eyeballing a
+  screenshot; a bubble near the very top of the canvas also correctly flips the card below itself
+  without touching the topbar. Full unit suite, `npm run build`, and the standard smoke test all
+  passed clean.
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);
