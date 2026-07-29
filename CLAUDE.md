@@ -1773,6 +1773,40 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   design pass" (birth-line narration elsewhere, micro-interaction sweep, visual-consistency audit)
   stays a later, separately-scoped effort per the same discussion.
 
+- **Birth-line narration** (the second cheapest "emotional design" win flagged alongside the
+  onboarding rewrite above — real feedback: "Born: 4 June 1912" vs. "Born just two years before
+  the First World War... same data, completely different emotional impact"). `lib/worldEvents.js`
+  already computed region-aware nearest/same-year historical events for the Cinematic Timeline
+  prototype, but nothing rendered them into a sentence anywhere — `birthEraContext(birthYear,
+  region)` is the new small, pure function that does: an exact-year match reads "The same year
+  {event}."; a near match (within `nearestWorldEvent`'s existing 4-year window) reads "{One/Two/
+  Three/Four} years {before/after} {event}." (small counts spelled out as words for a more
+  sentence-appropriate feel); no match within range returns `null` — deliberately never invents
+  or reaches for something too distant, exactly one real curated fact or nothing at all. A new
+  `embedClause()` helper lowercases only a leading "The"/"A"/"An" on a WORLD_EVENTS title (a few
+  titles open title-cased for their own standalone display elsewhere — "The Great Lisbon
+  earthquake…" — and read oddly capitalized once embedded after a lead-in clause; every genuine
+  proper noun elsewhere in a title, "World War I", "Ford", "the Titanic", is left untouched).
+  Wired into `PersonSheet.jsx`'s Key Life Events timeline — the natural target once the compact
+  hero meta line and the timeline were compared; the hero line is deliberately terse and the
+  timeline is already a "life story" surface — as a new, purely additive `.timeline__era` line
+  under the existing "Born" row's place detail, present only when `birthEraContext` returns
+  something and never replacing the existing birthplace text. One real bug caught before
+  shipping: `PersonSheet` stays permanently mounted with `personId` toggling null↔real rather
+  than unmounting between profiles (`<PersonSheet personId={openId} .../>` in `App.jsx` is
+  unconditional), so a first attempt at computing `region` via `useMemo` placed AFTER the
+  component's `if (!person) return null` guard broke React's rules of hooks the moment a second
+  profile was opened in the same session ("Rendered more hooks than during the previous render")
+  — moved above the guard, alongside the file's other always-called hooks, with a comment
+  explaining why. Covered by 6 new unit tests in `tests/worldEvents.test.mjs` (exact-year match,
+  before/after near-match with a genuinely unambiguous nearest event in each direction, the
+  leading-article lowercasing, the no-match-within-range null case, and non-numeric/missing birth
+  year). Verified live via Playwright against the real dev server: Florence Mercer (seed data,
+  b. 1908, Merthyr Tydfil) correctly shows "The same year Ford introduces the Model T." beneath
+  her birthplace, in the same muted italic footnote style already used by Education History's
+  own per-stage note. Full unit suite, `npm run build`, and the standard smoke test all passed
+  clean.
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);

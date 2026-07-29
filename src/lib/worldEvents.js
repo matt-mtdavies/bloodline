@@ -73,6 +73,44 @@ export function nearestWorldEvent(year, region, maxDistance = 4) {
   return best;
 }
 
+// A few WORLD_EVENTS titles open with a title-case article ("The Great
+// Lisbon earthquake…") that reads oddly capitalized mid-sentence once
+// embedded after a lead-in clause below; every genuine proper noun
+// elsewhere in a title (World War I, Ford, Titanic…) is left untouched —
+// this only ever touches a leading "The"/"A"/"An".
+function embedClause(title) {
+  return title.replace(/^(The|A|An)\b/, (m) => m.toLowerCase());
+}
+
+const SMALL_NUMBER_WORDS = ['zero', 'one', 'two', 'three', 'four'];
+function capitalize(s) {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+// A short, warm clause tying a birth year to real world history — "The
+// same year World War I begins" / "Two years before the first powered
+// flight" — for the Key Life Events timeline's Born row (real feedback:
+// "Born: 4 June 1912" vs. "Born just two years before the First World
+// War... same data, completely different emotional impact"). Deliberately
+// modest: exactly one real, curated fact from WORLD_EVENTS — never a
+// fabricated or embellished life story — and null whenever nothing in
+// worldEventsInDecade's neighbourhood genuinely falls close enough to feel
+// relevant, rather than reaching for something too distant.
+export function birthEraContext(birthYear, region) {
+  const year = Number(birthYear);
+  if (!Number.isFinite(year)) return null;
+  const exact = sameYearWorldEvent(year, region);
+  if (exact) return `The same year ${embedClause(exact.title)}.`;
+  const near = nearestWorldEvent(year, region, 4);
+  if (!near) return null;
+  const diff = near.year - year;
+  const n = Math.abs(diff);
+  const yearWord = n === 1 ? 'year' : 'years';
+  const rel = diff > 0 ? 'before' : 'after';
+  const count = capitalize(SMALL_NUMBER_WORDS[n] || String(n));
+  return `${count} ${yearWord} ${rel} ${embedClause(near.title)}.`;
+}
+
 // A subtle, warm-to-cool wash across the full span — old decades read a
 // touch more sepia/aged, modern ones a touch cleaner/cooler — entirely
 // within the app's existing warm-paper palette family, never a jarring

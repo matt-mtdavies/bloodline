@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Avatar from './Avatar.jsx';
 import SmartImg from './SmartImg.jsx';
 import { lifespan, formatDate, ageOrAt, yearOf } from '../lib/dates.js';
+import { detectRegion, birthEraContext } from '../lib/worldEvents.js';
 import { relationLabel, sortSiblings, sortChildren } from '../data/graph.js';
 import { useKinTerms } from '../lib/kinTerms.js';
 import { profileCompleteness, lifeEvents, fullName } from '../lib/profile.js';
@@ -206,6 +207,12 @@ export default function PersonSheet({
     if (personId) onRecordView?.(personId);
   }, [personId, onRecordView]);
 
+  // Hooks must run unconditionally on every render (this component stays
+  // mounted with personId/person toggling null↔real, never unmounting) — so
+  // this lives above the `if (!person) return null` guard below, even though
+  // its result is only used once we know person exists.
+  const region = useMemo(() => detectRegion(graph), [graph]);
+
   if (!person) return null;
 
   const minor = person.is_minor && !person.is_deceased;
@@ -302,6 +309,8 @@ export default function PersonSheet({
   const location = person.residence || person.birth_place;
   const age = ageOrAt(person);
   const events = restricted ? [] : lifeEvents(person);
+  const birthYear = person.birth_date ? yearOf(person.birth_date) : null;
+  const eraContext = restricted || !birthYear ? null : birthEraContext(birthYear, region);
   const personMemories = restricted
     ? []
     : memories
@@ -844,6 +853,9 @@ export default function PersonSheet({
                           {e.title}
                         </span>
                         {e.detail && <span className="timeline__detail">{e.detail}</span>}
+                        {e.title === 'Born' && eraContext && (
+                          <span className="timeline__era">{eraContext}</span>
+                        )}
                       </span>
                     </li>
                   ))}
