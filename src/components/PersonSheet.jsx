@@ -711,7 +711,10 @@ export default function PersonSheet({
           <button className="profile__sticky-strip-close" onClick={onClose}>
             <CloseIcon />
           </button>
-          <p className="profile__sticky-strip-name">{person.display_name}</p>
+          <span className="profile__sticky-strip-id">
+            <Avatar person={person} size={28} />
+            <p className="profile__sticky-strip-name">{person.display_name}</p>
+          </span>
         </div>
 
         {/* ── Hero ─────────────────────────────────────────────────────────────
