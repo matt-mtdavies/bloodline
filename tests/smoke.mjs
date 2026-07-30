@@ -55,8 +55,15 @@ const page = await browser.newPage({
 // Ignore failures to load EXTERNAL resources (e.g. the demo faces, which a
 // locked-down sandbox blocks). A missing face is a handled state, not a bug.
 // Real JS exceptions and same-origin errors still fail the test.
+//
+// Chromium and WebKit report the identical blocked-image situation with
+// completely different console text — confirmed against a real CI run:
+// Chromium says "Failed to load resource"/"net::ERR_...", WebKit instead
+// says "Origin ... is not allowed by Access-Control-Allow-Origin" / "due to
+// access control checks". Both patterns are matched so this filter behaves
+// the same across engines rather than only ever having been tuned for one.
 const isExternalResourceError = (t) =>
-  /Failed to load resource|net::ERR_|ERR_CERT_/.test(t);
+  /Failed to load resource|net::ERR_|ERR_CERT_|Access-Control-Allow-Origin|access control checks/.test(t);
 page.on(
   'console',
   (m) => m.type() === 'error' && !isExternalResourceError(m.text()) && errors.push(m.text()),
