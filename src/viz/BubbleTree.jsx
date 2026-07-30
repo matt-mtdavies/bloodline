@@ -71,6 +71,22 @@ const ZOOM_BUTTON_FACTOR = 1.35; // per-click step for the on-screen +/- control
 // any real step (steps move by tens of percent, this is a sliver of the
 // 0.16–2.8 zoom range).
 const ZOOM_LIMIT_EPS = 0.02;
+// Tap-to-expand reveal calming (real user report: expanding felt "frantic
+// and jittery... the profile you clicked on to expand moves as well").
+// ensureVisible() used to reheat the WHOLE simulation to 0.3 on every single
+// expand tap — d3-force's alpha has no concept of a "local" reheat, so that
+// spike re-energized charge/collision/link/band forces for every already-
+// settled bubble on screen, not just the newly-revealed ones. Turned down to
+// a genuine nudge: still enough for a freshly-spawned bubble (which starts
+// overlapping its anchor within a small random radius — see spawnBubble) to
+// separate from its neighbours promptly, but far too gentle to visibly
+// unsettle bubbles that were already at rest.
+const EXPAND_REHEAT_ALPHA = 0.08;
+// How long the just-activated bubble is held perfectly still while its newly
+// -revealed neighbours settle in around it — the direct fix for "the one I
+// clicked on moves too". Long enough to cover the reheat's visible unrest,
+// short enough that it never reads as the bubble being stuck.
+const SETTLE_HOLD_MS = 900;
 
 /*
  * The visualization. Everything that matters in Phase 1 lives here:
@@ -156,6 +172,7 @@ export default function BubbleTree({
     let hoverTimer = null; // shared with the cleanup below, which runs outside the async IIFE
     let onVisibility = null; // ditto — assigned inside the IIFE, removed in the cleanup
     let unsubKinTerms = null; // ditto — assigned inside the IIFE, called in the cleanup
+    let settleHoldTimer = null; // ditto — see holdActiveDuringSettle()
     const host = hostRef.current;
     let app = new Application();
 
@@ -463,6 +480,12 @@ export default function BubbleTree({
       // the spring toward a real target instead of re-pinning it, only while
       // that glide is in flight.
       let zoomEasing = false;
+      // See holdActiveDuringSettle() — tracks which bubble (if any) is
+      // currently held still purely for a post-expand settle, distinct from
+      // state.pinnedId (an open profile card's own, longer-lived pin).
+      // settleHoldTimer itself is declared outside the IIFE (with hoverTimer,
+      // above) since the cleanup that clears it runs outside this IIFE too.
+      let settleHoldId = null;
 
       let dist = distancesFrom(graph, activeRef.current);
       // Duplicate-review "Show both in tree": while set, this is folded into
@@ -918,9 +941,12 @@ export default function BubbleTree({
         },
         // Called whenever the revealed set (visibleIds) grows — materializes
         // a sim node + bubble for anyone newly part of it who wasn't tracked
-        // yet. A mild, LOCAL reheat (not sync()'s full 0.5) lets the new
-        // arrival settle in among its neighbours without visibly jiggling the
-        // whole tree on every single expand tap.
+        // yet. A mild reheat (not sync()'s full 0.5 — see EXPAND_REHEAT_ALPHA's
+        // own comment for why "local" isn't really possible with d3-force's
+        // single global alpha) lets new arrivals separate from their spawn
+        // point without visibly jiggling everyone already settled, and the
+        // active bubble is held still for the same reason (see
+        // holdActiveDuringSettle).
         ensureVisible(ids) {
           let added = false;
           for (const id of ids ?? []) {
@@ -935,8 +961,41 @@ export default function BubbleTree({
             linkForce.links(buildLinks(graphRef.current.relationships));
             rebuildForceRelCaches(graphRef.current.relationships);
             updateChargeTheta();
-            sim.alpha(Math.max(sim.alpha(), 0.3));
+            sim.alpha(Math.max(sim.alpha(), EXPAND_REHEAT_ALPHA));
+            state.holdActiveDuringSettle();
           }
+        },
+        // Real user report: "expanding the tree is frantic... the profile you
+        // clicked on to expand moves as well." Fixes (fx/fy) the active
+        // bubble's position for SETTLE_HOLD_MS so it can never visibly drift
+        // while its newly-revealed neighbours find their places around it —
+        // on top of, not instead of, turning down the reheat itself
+        // (EXPAND_REHEAT_ALPHA) above. Never overrides a REAL profile-card
+        // pin (state.pinnedId, set by pin()/unpin()) — that one has a much
+        // better reason to hold the bubble still and must keep doing so even
+        // after this timer would otherwise have released it. Re-entrant: a
+        // second expand while a hold is already active (fast browsing) moves
+        // the hold to the newly active bubble and releases the stale one.
+        holdActiveDuringSettle() {
+          const id = activeRef.current;
+          if (!id || state.pinnedId === id) return;
+          const n = nodeById.get(id);
+          if (!n) return;
+          if (settleHoldId && settleHoldId !== id && state.pinnedId !== settleHoldId) {
+            const prev = nodeById.get(settleHoldId);
+            if (prev) { prev.fx = null; prev.fy = null; }
+          }
+          n.fx = n.x;
+          n.fy = n.y;
+          settleHoldId = id;
+          clearTimeout(settleHoldTimer);
+          settleHoldTimer = setTimeout(() => {
+            if (settleHoldId === id && state.pinnedId !== id) {
+              const nn = nodeById.get(id);
+              if (nn) { nn.fx = null; nn.fy = null; }
+            }
+            settleHoldId = null;
+          }, SETTLE_HOLD_MS);
         },
         // Focus Family toggled — re-apply the (now stronger/weaker) generational
         // banding, refresh relationship captions, and reheat so rows re-form.
@@ -2291,6 +2350,7 @@ export default function BubbleTree({
     return () => {
       alive = false;
       clearTimeout(hoverTimer);
+      clearTimeout(settleHoldTimer);
       if (unsubKinTerms) unsubKinTerms();
       if (onVisibility) document.removeEventListener('visibilitychange', onVisibility);
       api.current?.sim?.stop();
