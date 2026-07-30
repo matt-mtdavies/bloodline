@@ -91,8 +91,22 @@ try {
   });
   const acx = npRect ? npRect.cx : page.viewportSize().width / 2;
   const acy = npRect ? npRect.bottom + 60 : (page.viewportSize().height + 120) / 2;
+  // Real CI flake, seen twice on WebKit specifically (never on Chromium):
+  // the dialog occasionally doesn't appear within the original 5s window,
+  // even though "canvas mounted" and "names the focused person" both just
+  // succeeded — a cold WebKit render pipeline on a fresh CI runner can be
+  // slow enough for this first real interaction that 5s isn't always
+  // enough, and/or the very first click can land before hit-testing is
+  // fully ready and get swallowed. A longer timeout alone can't tell those
+  // two causes apart, so this guards against both: a more generous wait,
+  // and if that's still not enough, one retry tap before giving up.
   await page.mouse.click(acx, acy);
-  await page.waitForSelector('[role="dialog"]', { timeout: 5000 });
+  try {
+    await page.waitForSelector('[role="dialog"]', { timeout: 8000 });
+  } catch {
+    await page.mouse.click(acx, acy);
+    await page.waitForSelector('[role="dialog"]', { timeout: 8000 });
+  }
   const sheetName = (await page.textContent('.profile__name').catch(() => '')) || '';
   check(sheetName.length > 0, `tapping centred bubble opens the card (${sheetName.trim()})`);
   await page.waitForTimeout(800); // let the tree slide + card FLIP settle
