@@ -239,7 +239,7 @@ export default function AccessibleTree({ graph, focusId, onFocus, onOpenPerson, 
           {[
             { key: 'all', label: 'All' },
             { key: 'living', label: 'Living' },
-            { key: 'deceased', label: 'Deceased' },
+            { key: 'deceased', label: 'Passed away' },
           ].map(({ key, label }) => (
             <button
               key={key}
