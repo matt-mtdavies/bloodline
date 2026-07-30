@@ -3551,16 +3551,6 @@
   padding: 0 24px 22px;
   text-align: center;
 }
-/* .profile__photo-edit occupies the last ~58px on the right (44px circle at
-   right: 14px) — a long line on the bottom-most row of text could otherwise
-   crowd or overlap it. Only the LAST child needs this: name/birth-name/meta
-   sit further up the stack, well clear of the button's own vertical span
-   regardless of width, so reserving space from THEM too (as an earlier fix
-   did, across the whole block) only starved them of room and caused
-   needless wrapping — the actual bug behind "I want my name on one line."
-   Only applied when the edit button actually renders (canEdit), so a plain
-   viewer's centred text stays symmetric with no button to clear. */
-.profile__hero-bottom--has-edit > :last-child { padding-right: 68px; }
 .profile__name {
   margin: 0;
   font-family: var(--display);
@@ -3602,12 +3592,11 @@
 }
 .profile__hero--bare .profile__birth-name { color: var(--ink-faint); }
 .profile__where {
-  /* A full-width flex block (not inline-flex): inline-flex sizes to its own
-     content and centres as a whole box, so a right-side-only padding.
-     reservation (see .profile__hero-bottom--has-edit above) would shift the
-     whole pill off-centre rather than just narrowing its available text
-     area — the same "clear the button, still read as centred" behaviour
-     the block-level name/meta lines above already get for free. */
+  /* A full-width flex block (not inline-flex, which sizes to its own
+     content and centres as a whole box) — needed for .profile__where-text's
+     own overflow/ellipsis to have a real width to measure against, and
+     keeps this line's centring identical to the block-level name/meta
+     lines above it. */
   display: flex;
   justify-content: center;
   align-items: center;
@@ -3626,15 +3615,21 @@
 .profile__hero--bare .profile__where svg { color: var(--ink-faint); }
 /* The photo-change trigger — reuses the exact dark-glass language
    .profile__close/.profile__centre already use (see their own comment for
-   why dark, not light), so it needs no dark scrim of its own to stay
-   legible: the tint alone carries contrast even before the blur factors in.
-   An icon-only circle (not a text pill) so it can sit at the same corner
-   offset as those two without ever fighting the centred name text above it,
-   even on a narrow phone. */
+   why dark, not light). Stacked directly below .profile__close in the
+   top-right corner rather than floating bottom-right over the name/meta/
+   location text: three separate rounds of tuning how much padding the
+   bottom text should reserve for a corner button (crowding, then wrapping,
+   then the surviving lines visually mis-centred against each other) all
+   came from the same root tension — a persistent control competing with
+   centred text for the same space. Moving the control off the text's turf
+   removes the tension outright: the bottom block never needs to reserve
+   anything, for any line, ever, so every line shares exactly the same
+   centre. Same corner-controls region close/centre already established,
+   so it reads as one more of those rather than a new convention. */
 .profile__photo-edit {
   position: absolute;
   right: 14px;
-  bottom: 14px;
+  top: 66px; /* 14 (close's own top) + 44 (close's height) + 8 (gap) */
   z-index: 2;
   display: grid;
   place-items: center;
