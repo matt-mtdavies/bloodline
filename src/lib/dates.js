@@ -74,6 +74,37 @@ export function familySpan(people, now = new Date()) {
   return { earliestYear, latestYear, spanYears: Math.max(0, latestYear - earliestYear) };
 }
 
+// A warmer, prose reading of a person's dates — for the profile hero
+// specifically. Deliberately NOT a replacement for lifespan()/ageOrAt():
+// those stay in their existing terse "1905 – 1985"/"aged 65" form for every
+// space-constrained context that already relies on it (nameplates, hover
+// cards, list rows, insights) — a floating nameplate over a small bubble
+// has no room for "Born 1905 · Lived 65 years". Real design feedback:
+// database-shaped facts ("b. 1934", "Age: 65") read cold; a sentence reads
+// like a person. Returns an ordered array of phrases (never a joined
+// string) so the caller controls its own separator; omits a phrase rather
+// than guessing when the underlying date is unknown, same "silence over
+// invention" rule every date-derived feature in this app already follows.
+export function humanLifeSummary(person) {
+  const b = yearOf(person.birth_date);
+  const parts = [];
+  if (person.is_deceased) {
+    const d = yearOf(person.death_date);
+    if (b) parts.push(`Born ${b}`);
+    if (d) parts.push(`Passed away ${d}`);
+    if (!b && !d) parts.push('Dates unknown');
+    const yrs = yearsBetween(person.birth_date, person.death_date);
+    if (yrs != null) parts.push(yrs === 0 ? 'Lived less than a year' : `Lived ${yrs} year${yrs === 1 ? '' : 's'}`);
+  } else if (b) {
+    parts.push(`Born ${b}`);
+    const age = ageOrAt(person); // bare number for a living person
+    if (age) parts.push(`${age} year${age === '1' ? '' : 's'} old`);
+  } else {
+    parts.push('Dates unknown');
+  }
+  return parts;
+}
+
 export function ageOrAt(person) {
   if (!person.birth_date) return null;
   const parts = person.birth_date.split('-').map(Number);

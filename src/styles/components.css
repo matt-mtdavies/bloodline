@@ -3713,10 +3713,15 @@
 .profile__meta {
   margin: 8px 0 0;
   font-size: 15px;
+  line-height: 1.35;
   color: rgba(255, 255, 255, 0.92);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  /* Wraps rather than truncating — the humanized phrasing ("Born 1905 ·
+     Passed away 1985 · Lived 80 years") runs meaningfully longer than the
+     old terse "1905 – 1985 · aged 80" ever did, and letting the most
+     emotional part ("Lived N years") silently ellipsis off the end would
+     undercut the entire point of writing it that way. The hero has the
+     vertical room for an occasional second line; this can't regress into
+     the old single-line assumption. */
 }
 /* Small italic secondary facts about the name — birth/maiden name ("née …")
    and middle name — sitting quietly under the main heading rather than
@@ -10332,10 +10337,16 @@ button.health-notes {
    Calm by default: editing chrome lives in the on-select action bar; the
    resting card carries only navigation pips. */
 .pcard { position: absolute; transition: opacity 0.25s var(--ease); }
-/* Emphasis tiers — deep ancestors recede gently; hover or selection restores
-   full presence so nothing interactive ever reads as disabled. */
-.pcard--recede1 { opacity: 0.9; }
-.pcard--recede2 { opacity: 0.76; }
+/* Emphasis tiers — deep ancestors recede; hover or selection restores full
+   presence so nothing interactive ever reads as disabled. Deepened from an
+   earlier 0.9/0.76 (real design feedback: Chart View should share Tree
+   View's "selected person is unmistakably the centre of the story"
+   principle — the old tiers were nearly imperceptible next to Tree View's
+   own 1/0.62/0.38/0.2 hierarchy). Kept short of Tree's own floor on
+   purpose: unlike a bubble, a card still carries a name someone may need
+   to actually read, so legibility sets the limit, not parity with Tree. */
+.pcard--recede1 { opacity: 0.7; }
+.pcard--recede2 { opacity: 0.48; }
 .pcard:hover, .pcard:has(.pplate--selected) { opacity: 1; }
 .pcard__row { display: flex; gap: 18px; height: 100%; align-items: stretch; }
 /* Landscape: the couple's plates stack vertically (member over member), joined
@@ -10369,7 +10380,7 @@ button.health-notes {
   cursor: pointer;
   text-align: left;
   font-family: var(--body);
-  transition: border-color 0.15s ease, box-shadow 0.2s var(--ease), background 0.15s ease;
+  transition: border-color 0.15s ease, box-shadow 0.2s var(--ease), background 0.15s ease, transform 0.2s var(--ease);
 }
 .pplate:hover { border-color: #d8d2c8; background: var(--paper-deep); }
 .pplate__text { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
@@ -10388,8 +10399,17 @@ button.health-notes {
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .pplate--passed .pplate__name { color: color-mix(in srgb, var(--ink) 74%, var(--paper)); }
-.pcard--focal .pplate { border-color: var(--accent); }
-.pcard--focal .pplate:hover { background: var(--card); }
+/* The focal card — "this is the person we're exploring" — reads as
+   unmistakably the centre now, not just a thin border: a warm tint, a
+   soft accent glow, and a touch larger, the same "selected person pops"
+   principle Tree View's ego-camera already gives its active bubble. */
+.pcard--focal .pplate {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: 0 0 0 1.5px var(--accent-soft), 0 10px 24px rgba(194, 96, 58, 0.16);
+  transform: scale(1.045);
+}
+.pcard--focal .pplate:hover { background: var(--accent-soft); }
 .pplate--selected,
 .pplate--selected:hover {
   border-color: var(--accent);

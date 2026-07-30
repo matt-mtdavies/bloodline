@@ -4,7 +4,7 @@
  * Run with: node tests/dates.test.mjs
  */
 import assert from 'node:assert/strict';
-import { lifespan, familySpan } from '../src/lib/dates.js';
+import { lifespan, familySpan, humanLifeSummary } from '../src/lib/dates.js';
 
 let passed = 0, failed = 0;
 function test(label, fn) {
@@ -87,6 +87,50 @@ test('familySpan: people with no birth date at all are ignored when computing th
 test('familySpan: returns null when nobody in the batch has a usable birth year — never invents a span', () => {
   assert.equal(familySpan([], NOW), null);
   assert.equal(familySpan([{ birth_date: undefined }, { birth_date: undefined }], NOW), null);
+});
+
+// ── humanLifeSummary (the profile hero's own prose reading of dates) ───────
+
+test('humanLifeSummary: deceased with both dates reads as a full sentence, plural years', () => {
+  const p = { is_deceased: true, birth_date: '1905-01-01', death_date: '1985-01-01' };
+  assert.deepEqual(humanLifeSummary(p), ['Born 1905', 'Passed away 1985', 'Lived 80 years']);
+});
+
+test('humanLifeSummary: a life of exactly one year is singular, not "1 years"', () => {
+  const p = { is_deceased: true, birth_date: '1990-01-01', death_date: '1991-01-01' };
+  assert.deepEqual(humanLifeSummary(p), ['Born 1990', 'Passed away 1991', 'Lived 1 year']);
+});
+
+test('humanLifeSummary: a death in the birth year reads "less than a year", not "Lived 0 years"', () => {
+  const p = { is_deceased: true, birth_date: '1990-06-01', death_date: '1990-09-01' };
+  assert.deepEqual(humanLifeSummary(p), ['Born 1990', 'Passed away 1990', 'Lived less than a year']);
+});
+
+test('humanLifeSummary: deceased with only a birth date omits "Passed away" and "Lived" rather than guessing', () => {
+  const p = { is_deceased: true, birth_date: '1912-01-01', death_date: undefined };
+  assert.deepEqual(humanLifeSummary(p), ['Born 1912']);
+});
+
+test('humanLifeSummary: deceased with only a death date on record', () => {
+  const p = { is_deceased: true, birth_date: undefined, death_date: '1944-01-01' };
+  assert.deepEqual(humanLifeSummary(p), ['Passed away 1944']);
+});
+
+test('humanLifeSummary: deceased with neither date known falls back to "Dates unknown"', () => {
+  const p = { is_deceased: true, birth_date: undefined, death_date: undefined };
+  assert.deepEqual(humanLifeSummary(p), ['Dates unknown']);
+});
+
+test('humanLifeSummary: a living person reads "Born YYYY" plus their current age', () => {
+  const p = { is_deceased: false, birth_date: '1990-01-01' };
+  const parts = humanLifeSummary(p);
+  assert.equal(parts[0], 'Born 1990');
+  assert.match(parts[1], /^\d+ years? old$/);
+});
+
+test('humanLifeSummary: living person with no birth date falls back to "Dates unknown"', () => {
+  const p = { is_deceased: false, birth_date: undefined };
+  assert.deepEqual(humanLifeSummary(p), ['Dates unknown']);
 });
 
 console.log(`\n  ${passed} passed, ${failed} failed`);
