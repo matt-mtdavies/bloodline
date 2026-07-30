@@ -3401,14 +3401,35 @@
   box-shadow: var(--shadow-lift);
   animation: profile-up 0.52s var(--spring) both;
   -webkit-overflow-scrolling: touch;
+  /* Real user report: scrolling this sheet occasionally freezes solid on an
+     iPhone (not every profile), clearing only after backgrounding and
+     re-foregrounding the app — the classic signature of a WebKit compositor
+     bug, not a JS hang (a real JS deadlock wouldn't self-heal from an app
+     switch). .profile__close/.profile__centre/.profile__photo-edit are all
+     literal DOM descendants of THIS momentum-scrolling container and are
+     each independently forced onto their own GPU compositing layer (see
+     their own comments) to make backdrop-filter actually paint on iOS.
+     WebKit has a documented habit of losing track of a scroll region when a
+     position: absolute descendant becomes its own layer without the scroll
+     container itself already having a stable one of its own — see
+     @keyframes profile-up below for how that stable layer is actually
+     given to `.profile` itself (a plain `transform` declared here would be
+     silently overridden by the entrance animation, which already claims
+     that property for this element's whole lifetime under fill-mode: both). */
 }
 @media (min-width: 600px) {
   .profile-scrim { align-items: center; }
   .profile { border-radius: var(--radius-lg); max-height: 90vh; }
 }
+/* translateZ(0) composed into both frames (not just a separate static
+   declaration on .profile, which the animation would silently override for
+   its whole fill-mode: both lifetime) — gives `.profile` its own permanent
+   GPU compositing layer, independent of whether the slide-up animation is
+   still "live". See `.profile`'s own comment for the full bug this guards
+   against. */
 @keyframes profile-up {
-  from { transform: translateY(48px); opacity: 0.5; }
-  to { transform: translateY(0); opacity: 1; }
+  from { transform: translateY(48px) translateZ(0); opacity: 0.5; }
+  to { transform: translateY(0) translateZ(0); opacity: 1; }
 }
 
 /* Dark glass, not light: these float over a photo of unknown tone (a bright
