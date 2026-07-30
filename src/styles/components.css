@@ -3563,12 +3563,14 @@
   /* Real user report: "I want my name on one line" — always exactly one
      line, never wrapped. A small effect (see nameRef in the component)
      measures the natural unwrapped width against the available width and
-     shrinks via transform: scale() just enough to fit, so a long name is
-     still shown in FULL, only smaller, rather than wrapping or truncating —
-     the name is the one line on this page that shouldn't lose a character. */
+     shrinks the font-size just enough to fit (down to a legibility floor),
+     so a long name is still shown in full, only smaller, rather than
+     wrapping. text-overflow: ellipsis is the last-resort fallback for the
+     rare name still too wide even at the floor size — it should essentially
+     never fire, but a graceful truncation beats a silent mid-word clip. */
   white-space: nowrap;
   overflow: hidden;
-  transform-origin: center;
+  text-overflow: ellipsis;
 }
 .profile__hero--bare .profile__name { color: var(--ink); text-shadow: none; }
 .profile__meta {
