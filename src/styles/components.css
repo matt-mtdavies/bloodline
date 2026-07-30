@@ -3619,9 +3619,22 @@
   pointer-events: auto; /* the one interactive part of an otherwise decorative bar (see its aria-hidden wrapper in JSX) — only reachable once --p has faded the bar in enough to matter, same as everything else here */
 }
 .profile__sticky-strip-close:active { transform: scale(0.9); }
+/* Groups the small avatar + name as one centred unit — same quiet at-a-
+   glance recognition a collapsed header/chat title bar usually carries,
+   now that the big hero photo has scrolled out of view. min-width: 0
+   overrides this flex item's default min-width: auto — without it, it can
+   never shrink below its own unclipped content width, and the name's own
+   ellipsis below would silently never trigger (the same flex quirk already
+   fixed for List view's own rows). */
+.profile__sticky-strip-id {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
 .profile__sticky-strip-name {
   margin: 0;
-  max-width: 100%;
+  min-width: 0;
   font-family: var(--display);
   font-weight: 600;
   font-size: 16px;
