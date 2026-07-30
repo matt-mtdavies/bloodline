@@ -83,28 +83,48 @@ try {
 
   // Tap the active bubble → person card opens. Find the nameplate to locate
   // the active person on canvas, then click just below it where the bubble is.
-  const npRect = await page.evaluate(() => {
-    const np = document.querySelector('.nameplate');
-    if (!np) return null;
-    const r = np.getBoundingClientRect();
-    return { cx: r.left + r.width / 2, bottom: r.bottom };
-  });
-  const acx = npRect ? npRect.cx : page.viewportSize().width / 2;
-  const acy = npRect ? npRect.bottom + 60 : (page.viewportSize().height + 120) / 2;
-  // Real CI flake, seen twice on WebKit specifically (never on Chromium):
-  // the dialog occasionally doesn't appear within the original 5s window,
-  // even though "canvas mounted" and "names the focused person" both just
-  // succeeded — a cold WebKit render pipeline on a fresh CI runner can be
-  // slow enough for this first real interaction that 5s isn't always
-  // enough, and/or the very first click can land before hit-testing is
-  // fully ready and get swallowed. A longer timeout alone can't tell those
-  // two causes apart, so this guards against both: a more generous wait,
-  // and if that's still not enough, one retry tap before giving up.
-  await page.mouse.click(acx, acy);
+  // Poll for `.nameplate` rather than a one-shot query: it can be mid-render
+  // (it's driven by the same camera-settle animation as the initial 2.8s wait
+  // above), and a one-shot miss used to silently fall back to a fixed
+  // viewport-center guess — which can land on empty canvas between bubbles
+  // and click nothing at all. A captured CI failure screenshot from the real
+  // WebKit flake this guards against showed exactly that: the full tree
+  // rendered, every face loaded, but no `.nameplate` pill visible above any
+  // bubble and no dialog — consistent with both the original and retry click
+  // landing on empty space rather than a face, not a slow dialog.
+  const findNameplateRect = async () => {
+    try {
+      await page.waitForSelector('.nameplate', { timeout: 5000 });
+    } catch {
+      console.log('  ! .nameplate never appeared — falling back to a viewport-center guess for the click');
+      return null;
+    }
+    return page.evaluate(() => {
+      const np = document.querySelector('.nameplate');
+      if (!np) return null;
+      const r = np.getBoundingClientRect();
+      return { cx: r.left + r.width / 2, bottom: r.bottom };
+    });
+  };
+  const clickAtNameplate = async () => {
+    const npRect = await findNameplateRect();
+    const cx = npRect ? npRect.cx : page.viewportSize().width / 2;
+    const cy = npRect ? npRect.bottom + 60 : (page.viewportSize().height + 120) / 2;
+    await page.mouse.click(cx, cy);
+    return { cx, cy };
+  };
+  // Real CI flake, seen a few times on WebKit specifically (never on
+  // Chromium): the dialog occasionally doesn't appear within the original 5s
+  // window, even though "canvas mounted" and "names the focused person" both
+  // just succeeded. This guards against both a slow first render and a
+  // missed/mistargeted click: a more generous wait, and if that's still not
+  // enough, one retry tap — re-resolving the nameplate rect fresh rather than
+  // reusing the first attempt's (possibly wrong) coordinates.
+  let { cx: acx, cy: acy } = await clickAtNameplate();
   try {
     await page.waitForSelector('[role="dialog"]', { timeout: 8000 });
   } catch {
-    await page.mouse.click(acx, acy);
+    ({ cx: acx, cy: acy } = await clickAtNameplate());
     await page.waitForSelector('[role="dialog"]', { timeout: 8000 });
   }
   const sheetName = (await page.textContent('.profile__name').catch(() => '')) || '';
