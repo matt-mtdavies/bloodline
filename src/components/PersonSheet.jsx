@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Avatar from './Avatar.jsx';
 import SmartImg from './SmartImg.jsx';
+import { initials } from '../lib/color.js';
 import { lifespan, formatDate, ageOrAt, yearOf } from '../lib/dates.js';
 import { detectRegion, birthEraContext } from '../lib/worldEvents.js';
 import { relationLabel, sortSiblings, sortChildren } from '../data/graph.js';
@@ -575,20 +576,54 @@ export default function PersonSheet({
           <CrosshairIcon />
         </button>
 
-        {/* ── Hero ─────────────────────────────────────────────────────────── */}
-        <header className="profile__hero">
-          {canEdit ? (
+        {/* ── Hero ─────────────────────────────────────────────────────────────
+            Full-bleed portrait, not a small centred avatar: the photo is the
+            destination (see the app's own thesis), so it gets the top of the
+            page to itself. Mirrors the Keepsake cover's own proven language
+            (full-bleed photo + bottom scrim + serif name sitting on the
+            photo + a quiet masthead-style label near the top) — calmed down
+            (smaller name, centred rather than left-aligned, no theatrics)
+            since this is the everyday working profile, not the once-in-a-
+            while cinematic book. A person with no photo gets the same "no
+            portrait" quiet wash Keepsake already uses, with their monogram
+            standing in for the missing face — never an empty box. */}
+        <header className={`profile__hero${person.photo ? '' : ' profile__hero--bare'}${person.is_deceased ? ' profile__hero--memorial' : ''}`}>
+          <div className="profile__hero-media" aria-hidden="true">
+            {person.photo ? (
+              <SmartImg src={person.photo} alt="" className="profile__hero-photo" />
+            ) : (
+              <div className="profile__hero-wash">
+                <span className="profile__hero-wash-mono">{initials(person.display_name)}</span>
+              </div>
+            )}
+          </div>
+          {person.photo && <div className="profile__hero-scrim" aria-hidden="true" />}
+
+          {relToViewer && <p className="profile__hero-kin">{relToViewer}</p>}
+
+          <div className="profile__hero-bottom">
+            <h2 className="profile__name">{fullName(person)}</h2>
+            {person.birth_name && (
+              <p className="profile__birth-name">née {person.birth_name}</p>
+            )}
+            <p className="profile__meta">{metaBits.join('  ·  ')}</p>
+            {location && (
+              <p className="profile__where">
+                <PinIcon />
+                {location}
+              </p>
+            )}
+          </div>
+
+          {canEdit && (
             <>
               <button
-                className="avatar-edit avatar-edit--lg"
+                className="profile__photo-edit"
                 onClick={() => fileRef.current?.click()}
                 aria-label={person.photo ? 'Change photo' : 'Add a photo'}
                 title={person.photo ? 'Change photo' : 'Add a photo'}
               >
-                <Avatar person={person} size={108} />
-                <span className="avatar-edit__badge">
-                  <CameraIcon />
-                </span>
+                <CameraIcon />
               </button>
               <input
                 ref={fileRef}
@@ -602,22 +637,12 @@ export default function PersonSheet({
                 }}
               />
             </>
-          ) : (
-            <Avatar person={person} size={108} />
           )}
+        </header>
 
-          {relToViewer && <p className="profile__kin">{relToViewer}</p>}
-          <h2 className="profile__name">{fullName(person)}</h2>
-          {person.birth_name && (
-            <p className="profile__birth-name">née {person.birth_name}</p>
-          )}
-          <p className="profile__meta">{metaBits.join('  ·  ')}</p>
-          {location && (
-            <p className="profile__where">
-              <PinIcon />
-              {location}
-            </p>
-          )}
+        {/* Everything that isn't the photo/name/place lives on plain paper
+            below the hero, so the photo itself stays uncluttered. */}
+        <div className="profile__subhero">
           {creatorEvent && creatorName && (
             <p className="profile__added-by">Added by {creatorName} · {dayLabel(creatorEvent.created_at)}</p>
           )}
@@ -651,7 +676,7 @@ export default function PersonSheet({
               ))}
             </ul>
           )}
-        </header>
+        </div>
 
         {/* ── Actions ──────────────────────────────────────────────────────── */}
         {/* Add relative + Profile share one even row when that's the whole
