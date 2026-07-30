@@ -3422,8 +3422,10 @@
   height: 44px;
   border-radius: 50%;
   color: var(--ink-soft);
-  background: rgba(255, 255, 255, 0.7);
-  backdrop-filter: blur(6px);
+  background: rgba(255, 255, 255, 0.75);
+  backdrop-filter: blur(16px) saturate(1.7);
+  -webkit-backdrop-filter: blur(16px) saturate(1.7);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.16), inset 0 0 0 0.5px rgba(255, 255, 255, 0.85);
   transition: transform 0.3s var(--spring), background 0.2s var(--ease);
 }
 .profile__close:hover { background: var(--paper-deep); }
@@ -3443,8 +3445,10 @@
   height: 44px;
   border-radius: 50%;
   color: var(--ink-soft);
-  background: rgba(255, 255, 255, 0.7);
-  backdrop-filter: blur(6px);
+  background: rgba(255, 255, 255, 0.75);
+  backdrop-filter: blur(16px) saturate(1.7);
+  -webkit-backdrop-filter: blur(16px) saturate(1.7);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.16), inset 0 0 0 0.5px rgba(255, 255, 255, 0.85);
   transition: transform 0.3s var(--spring), background 0.2s var(--ease);
 }
 .profile__centre:hover { background: var(--paper-deep); }
@@ -3572,12 +3576,14 @@
   z-index: 2;
   display: grid;
   place-items: center;
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
   color: var(--ink-soft);
-  background: rgba(255, 255, 255, 0.7);
-  backdrop-filter: blur(6px);
+  background: rgba(255, 255, 255, 0.75);
+  backdrop-filter: blur(16px) saturate(1.7);
+  -webkit-backdrop-filter: blur(16px) saturate(1.7);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.16), inset 0 0 0 0.5px rgba(255, 255, 255, 0.85);
   transition: transform 0.3s var(--spring), background 0.2s var(--ease);
 }
 .profile__photo-edit:hover { background: var(--paper-deep); }
