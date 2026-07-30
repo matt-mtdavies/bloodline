@@ -41,6 +41,14 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   - **Quirk:** ad-hoc Playwright scripts must live IN the project dir (e.g. `tests/_foo.mjs`),
     not `/tmp`, or they resolve the wrong Chromium build and fail.
   - Screenshots land in `tests/screenshots/` (gitignored) — Read them to eyeball the look.
+  - **Optional WebKit run** (closer to Safari/iOS engine bugs than Chromium alone —
+    e.g. it would have caught the profile hero's `backdrop-filter`-under-`overflow:hidden`
+    clipping bug a few entries below): `npm run browser:install:webkit` once (separate
+    from the default `browser:install`, since not every sandbox can reach Playwright's
+    CDN — this one's outbound policy 403s it), then `BASE_URL=... npm run test:e2e:webkit`.
+    It's Playwright's own Linux-built WebKit, not Apple's actual Safari — a good proxy for
+    CSS/rendering bugs, not a substitute for a real-device check on anything iOS-specific
+    (PWA/standalone-mode behavior, safe-area insets, momentum scroll).
 - **Sandbox blocks external images** (randomuser.me, pravatar.cc, etc.): demo faces/photos
   render blank in headless but load on the live site (faces are proxied same-origin via
   `functions/faces`). To verify layout of an `<img>`, measure its `boundingBox()` instead.

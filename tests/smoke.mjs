@@ -1,16 +1,35 @@
 /*
- * Phase 1 smoke test. Headless Chromium boots the app and verifies the magic
- * actually runs — not just that it compiles.
+ * Phase 1 smoke test. Headless Chromium (default) or WebKit boots the app and
+ * verifies the magic actually runs — not just that it compiles.
  *
- *   npm run dev            # in one shell
- *   npm run test:e2e       # in another (or it'll use BASE_URL)
+ *   npm run dev                  # in one shell
+ *   npm run test:e2e             # in another (or it'll use BASE_URL) — Chromium
+ *   npm run test:e2e:webkit      # same test, against WebKit instead
+ *
+ * WebKit is the same engine family as Safari/iOS — closer to catching engine-
+ * specific rendering bugs (e.g. backdrop-filter under an overflow-clipped
+ * ancestor) than Chromium alone, though it's Playwright's own Linux-built
+ * WebKit, not Apple's actual Safari — a good proxy for CSS/rendering bugs, not
+ * a substitute for a real-device check on anything iOS-specific (PWA/
+ * standalone-mode behavior, safe-area insets, momentum scroll). Requires
+ * `npm run browser:install:webkit` once (separate from the default
+ * `browser:install`, since not every environment can download it — see
+ * BROWSER_ENGINES below for the friendly error if it's missing).
  *
  * It fails on ANY console/page error, checks the canvas mounts, taps the centred
  * bubble to open the person sheet (exercising real canvas hit-testing), and
  * re-centres via the accessible list view. Screenshots land in tests/screenshots
  * so the look can be eyeballed.
  */
-import { chromium } from 'playwright';
+import { chromium, webkit } from 'playwright';
+
+const BROWSER_ENGINES = { chromium, webkit };
+const BROWSER_NAME = process.env.BROWSER || 'chromium';
+const engine = BROWSER_ENGINES[BROWSER_NAME];
+if (!engine) {
+  console.error(`Unknown BROWSER "${BROWSER_NAME}" — expected one of: ${Object.keys(BROWSER_ENGINES).join(', ')}`);
+  process.exit(1);
+}
 
 const _BASE = process.env.BASE_URL || 'http://localhost:5173/';
 // ?demo seeds the Davies family and bypasses onboarding, which new users see.
@@ -28,7 +47,7 @@ const check = (cond, msg) => {
   }
 };
 
-const browser = await chromium.launch({ headless: true });
+const browser = await engine.launch({ headless: true });
 const page = await browser.newPage({
   viewport: { width: 414, height: 896 }, // iPhone-ish portrait
   deviceScaleFactor: 2,
@@ -45,7 +64,7 @@ page.on(
 page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
 
 try {
-  console.log('Booting app…');
+  console.log(`Booting app… (${BROWSER_NAME})`);
   await page.goto(BASE_URL, { waitUntil: 'load', timeout: 20000 });
   await page.waitForSelector('canvas', { timeout: 15000 });
   await page.waitForTimeout(2800); // let the layout settle and faces fade in
