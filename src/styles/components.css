@@ -3572,6 +3572,64 @@
   padding: 0 24px 22px;
   text-align: center;
 }
+/* A slim sticky bar that fades in once you've scrolled past the hero below —
+   iOS "large title" style, minus the actual hero shrinking (see
+   PersonSheet.jsx's own comment on why: making the hero itself the sticky,
+   resizing element caused a real, reproducible scroll bug). --p (0 = fully
+   expanded/invisible, 1 = fully faded in) is set by heroRef's scroll effect
+   in PersonSheet.jsx; nothing here has an added transition of its own, since
+   this tracks the user's own scroll position 1:1 rather than playing a
+   decorative animation — the same reason it needs no reduced-motion guard.
+   A CONSTANT height (unlike the hero) — this element's own flow-height
+   never changes while it's pinned, so there's no circularity for the
+   browser's scroll math to fight. */
+.profile__sticky-strip {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  height: 56px;
+  /* A sticky element still occupies its normal-flow height even before any
+     scrolling has happened — without this, an invisible (opacity: 0) 56px
+     bar would push the hero down by 56px at rest. The matching negative
+     margin cancels that: the hero starts exactly where it always did, and
+     this bar simply overlaps its own top 56px until scrolled — invisible
+     at that point anyway, so nothing to see there. */
+  margin-bottom: -56px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 60px; /* clears its own close button on one side, mirrored on the other so the name stays visually centred */
+  background: var(--card);
+  border-bottom: 1px solid var(--paper-deep);
+  opacity: var(--p, 0);
+  pointer-events: none;
+}
+.profile__sticky-strip-close {
+  position: absolute;
+  top: 6px;
+  left: 10px;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  color: var(--ink);
+  background: none;
+  pointer-events: auto; /* the one interactive part of an otherwise decorative bar (see its aria-hidden wrapper in JSX) — only reachable once --p has faded the bar in enough to matter, same as everything else here */
+}
+.profile__sticky-strip-close:active { transform: scale(0.9); }
+.profile__sticky-strip-name {
+  margin: 0;
+  max-width: 100%;
+  font-family: var(--display);
+  font-weight: 600;
+  font-size: 16px;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .profile__name {
   margin: 0;
   font-family: var(--display);
