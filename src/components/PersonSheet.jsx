@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import Avatar from './Avatar.jsx';
 import SmartImg from './SmartImg.jsx';
-import { initials } from '../lib/color.js';
+import { initials, monogramColors } from '../lib/color.js';
 import { lifespan, formatDate, ageOrAt, yearOf } from '../lib/dates.js';
 import { detectRegion, birthEraContext } from '../lib/worldEvents.js';
 import { relationLabel, sortSiblings, sortChildren } from '../data/graph.js';
@@ -672,6 +672,11 @@ export default function PersonSheet({
     }
   }
 
+  // No-portrait hero background: the same deterministic per-person colour
+  // Avatar/bubble already derive from the name, so a bare profile's hero
+  // reads as "this person's own colour," not a generic grey placeholder.
+  const heroWash = monogramColors(person.display_name);
+
   return (
     <div className="profile-scrim" onClick={onClose}>
       <article
@@ -728,21 +733,25 @@ export default function PersonSheet({
             while cinematic book. A person with no photo gets the same "no
             portrait" quiet wash Keepsake already uses, with their monogram
             standing in for the missing face — never an empty box. */}
-        <header className={`profile__hero${person.photo ? '' : ' profile__hero--bare'}${person.is_deceased ? ' profile__hero--memorial' : ''}`}>
+        <header className={`profile__hero${person.is_deceased ? ' profile__hero--memorial' : ''}`}>
           <div className="profile__hero-media" aria-hidden="true">
             {person.photo ? (
               <SmartImg src={person.photo} alt="" className="profile__hero-photo" />
             ) : (
-              <div className="profile__hero-wash">
-                <span className="profile__hero-wash-mono">{initials(person.display_name)}</span>
+              <div
+                className="profile__hero-wash"
+                style={{ '--wash-light': heroWash.light, '--wash-base': heroWash.base }}
+              >
+                <span className="profile__hero-wash-mono" aria-hidden="true">{initials(person.display_name)}</span>
               </div>
             )}
           </div>
-          {person.photo && <div className="profile__hero-scrim" aria-hidden="true" />}
+          <div className="profile__hero-scrim" aria-hidden="true" />
 
           {relToViewer && <p className="profile__hero-kin">{relToViewer}</p>}
 
           <div className="profile__hero-bottom">
+            {!person.photo && <p className="profile__hero-noportrait">No portrait yet</p>}
             <h2 ref={nameRef} className="profile__name">{person.display_name}</h2>
             {person.birth_name && (
               <p className="profile__birth-name">née {person.birth_name}</p>
