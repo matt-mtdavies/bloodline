@@ -601,7 +601,7 @@ export default function PersonSheet({
 
           {relToViewer && <p className="profile__hero-kin">{relToViewer}</p>}
 
-          <div className="profile__hero-bottom">
+          <div className={`profile__hero-bottom${canEdit ? ' profile__hero-bottom--has-edit' : ''}`}>
             <h2 className="profile__name">{fullName(person)}</h2>
             {person.birth_name && (
               <p className="profile__birth-name">née {person.birth_name}</p>
@@ -1931,14 +1931,18 @@ export default function PersonSheet({
   );
 }
 
+// Same 18px thin-stroke language as CloseIcon/CrosshairIcon (the other two
+// hero buttons) — this used to be a small 14px filled shape with a hardcoded
+// white lens, built for a solid colour badge it no longer sits on; redrawn
+// as a stroked outline so all three read as one designed family.
 function CameraIcon() {
   return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <path
         d="M4 8h3l1.5-2h7L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1Z"
-        fill="currentColor"
+        stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"
       />
-      <circle cx="12" cy="13" r="3.2" fill="#fff" />
+      <circle cx="12" cy="13" r="3.4" stroke="currentColor" strokeWidth="1.8" />
     </svg>
   );
 }
