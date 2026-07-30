@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import Avatar from './Avatar.jsx';
 import SmartImg from './SmartImg.jsx';
 import { initials, monogramColors } from '../lib/color.js';
-import { lifespan, formatDate, ageOrAt, yearOf } from '../lib/dates.js';
+import { formatDate, yearOf, humanLifeSummary } from '../lib/dates.js';
 import { detectRegion, birthEraContext } from '../lib/worldEvents.js';
 import { relationLabel, sortSiblings, sortChildren } from '../data/graph.js';
 import { useKinTerms } from '../lib/kinTerms.js';
@@ -421,7 +421,6 @@ export default function PersonSheet({
   const relToViewer =
     viewerId && viewerId !== person.id ? relationLabel(graph, viewerId, person.id, kinTerms) : null;
   const location = person.residence || person.birth_place;
-  const age = ageOrAt(person);
   const events = restricted ? [] : lifeEvents(person);
   const birthYear = person.birth_date ? yearOf(person.birth_date) : null;
   const eraContext = restricted || !birthYear ? null : birthEraContext(birthYear, region);
@@ -637,10 +636,15 @@ export default function PersonSheet({
     }
   };
 
+  // Prose, not database fields, for the hero's own meta line — real design
+  // feedback: "b. 1934 / d. 1999 / Age: 65" reads cold; "Born 1934 · Passed
+  // away 1999 · Lived 65 years" reads like a person. lifespan()/ageOrAt()
+  // stay exactly as they were for every other, space-constrained context
+  // (nameplates, hover cards, list rows) — see humanLifeSummary's own
+  // comment in lib/dates.js.
   const metaBits = [];
   if (person.occupation) metaBits.push(person.occupation);
-  metaBits.push(lifespan(person));
-  if (age) metaBits.push(person.is_deceased ? age : `age ${age}`);
+  metaBits.push(...humanLifeSummary(person));
 
   // Who added this record, and when — real user report: "if there has been
   // a mistake made, it would be good to know who added them and why."

@@ -2194,16 +2194,19 @@ export default function BubbleTree({
               target = { ...target, scale: target.scale * (1 + bump), lift: (target.lift ?? 1) * (1 + bump * 0.5) };
             }
           }
-          // A barely-there scale pulse on every living bubble — "these are the
+          // A gentle scale pulse on every living bubble — "these are the
           // people still with us" without a label. Deceased bubbles hold
           // still, same quiet distinction the memorial ring already carries.
           // Desynced per person (phase/period seeded in bubble.js) rather than
           // one shared clock — a whole tree pulsing in lockstep would read as
           // anxious, not alive. Skipped for chart layout (exact scale=1.0 is
-          // load-bearing there) and reduced-motion.
+          // load-bearing there) and reduced-motion. Amplitude raised from an
+          // earlier 0.018 (real feedback: "so subtle it's almost nonexistent")
+          // to 0.045 — clearly a living pulse now, still calm rather than
+          // twitchy at this pace (a 3.6–5.85s period per person).
           if (!reducedMotion && !b.deceased && layoutRef.current !== 'chart') {
             const t = (nowMs / 1000) * ((Math.PI * 2) / b._breathPeriod) + b._breathPhase;
-            target = { ...target, scale: target.scale * (1 + Math.sin(t) * 0.018) };
+            target = { ...target, scale: target.scale * (1 + Math.sin(t) * 0.045) };
           }
           // Name labels: all visible bubbles, hidden when card open or lineage
           // active — and hidden for the active person specifically, since
