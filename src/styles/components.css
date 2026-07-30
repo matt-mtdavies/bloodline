@@ -3266,25 +3266,6 @@
 .sheet__edit { flex: none; align-self: flex-start; }
 .sheet__head { align-items: flex-start; }
 
-/* Avatar with a camera badge for adding a photo */
-.avatar-edit { position: relative; flex: none; border-radius: 50%; display: block; }
-.avatar-edit__badge {
-  position: absolute;
-  right: -2px;
-  bottom: -2px;
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background: var(--accent);
-  color: #fff;
-  display: grid;
-  place-items: center;
-  border: 2px solid #fff;
-  box-shadow: var(--shadow-soft);
-  transition: transform 0.3s var(--spring);
-}
-.avatar-edit:active .avatar-edit__badge { transform: scale(0.9); }
-
 .btn:disabled { opacity: 0.45; pointer-events: none; }
 
 /* ── Photo cropper ────────────────────────────────────────────────────────── */
@@ -3469,47 +3450,147 @@
 .profile__centre:hover { background: var(--paper-deep); }
 .profile__centre:active { transform: scale(0.9); }
 
-/* Hero — a calm, centred crown to the page. */
+/* Hero — full-bleed portrait, not a small centred avatar. Mirrors the
+   Keepsake cover's own language (full-bleed photo + bottom scrim + serif
+   name sitting on the photo + a quiet masthead label near the top) at a
+   calmer scale for the everyday working profile. Every text child is
+   absolutely positioned over the media, so the header itself carries no
+   padding of its own — the responsive clamp() height IS its content box. */
 .profile__hero {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-  padding: 40px 24px 22px;
-  background: linear-gradient(180deg, var(--paper-deep) 0%, var(--card) 100%);
-  border-bottom: 1px solid var(--hairline);
+  position: relative;
+  height: clamp(260px, 44vh, 420px);
+  overflow: hidden;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  background: var(--paper-deep); /* shows briefly while SmartImg's own photo fades in */
 }
-.avatar-edit--lg .avatar-edit__badge { width: 34px; height: 34px; right: 2px; bottom: 2px; }
-.profile__kin {
-  margin: 16px 0 0;
+.profile__hero-media {
+  position: absolute;
+  inset: 0;
+}
+/* .smartimg (SmartImg.jsx's own wrapper) already fills 100%/100% of this
+   absolutely-positioned parent via its own base rule — no need to touch its
+   position here, and doing so would fight its later, more specific rule. */
+.profile__hero--memorial .profile__hero-photo img {
+  filter: saturate(0.65) brightness(1.02); /* same desaturation Avatar already applies for a memorial photo */
+}
+/* No portrait — the same quiet paper wash Keepsake's own cover uses for a
+   bare profile, scaled down from that full-viewport version to this much
+   smaller box. The person's monogram stands in for the missing face. */
+.profile__hero-wash {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    radial-gradient(420px 300px at 85% -15%, var(--accent-soft) 0%, transparent 60%),
+    radial-gradient(360px 280px at -10% 115%, var(--sage-soft) 0%, transparent 55%),
+    var(--paper);
+}
+.profile__hero-wash-mono {
+  font-family: var(--display);
+  font-weight: 500;
+  font-size: clamp(44px, 12vw, 84px);
+  color: color-mix(in srgb, var(--ink) 22%, transparent);
+}
+/* Legibility scrim over the lower portion of the photo — identical stops to
+   the Keepsake cover's own, so the two full-bleed portraits in this app
+   read as the same idea. Absent in the bare/wash case (nothing to darken
+   toward, and the wash's own paper tones already carry ink-coloured text
+   fine without it). */
+.profile__hero-scrim {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(to bottom, rgba(28, 29, 33, 0) 34%, rgba(28, 29, 33, 0.62) 78%, rgba(28, 29, 33, 0.78));
+}
+/* Masthead — a quiet, permanent label near the top of the photo, mirroring
+   the Keepsake cover's own masthead position. Kin-to-viewer context here
+   instead of the brand mark; it floats above the face, never obstructing it. */
+.profile__hero-kin {
+  position: absolute;
+  top: 18px;
+  left: 16px;
+  right: 16px;
+  z-index: 1;
+  margin: 0;
+  text-align: center;
   font-size: 12.5px;
   text-transform: uppercase;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.14em;
   font-weight: 600;
-  color: var(--accent);
+  color: rgba(255, 255, 255, 0.85);
+}
+.profile__hero--bare .profile__hero-kin { color: var(--accent); }
+/* Name/meta block anchored at the bottom of the photo — the destination of
+   the page landing on the destination of the portrait. */
+.profile__hero-bottom {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1;
+  padding: 0 24px 22px;
+  text-align: center;
 }
 .profile__name {
-  margin: 7px 0 0;
+  margin: 0;
   font-family: var(--display);
-  font-size: 30px;
+  font-size: clamp(26px, 6.5vw, 34px);
   line-height: 1.08;
   font-weight: 600;
   letter-spacing: -0.01em;
-  color: var(--ink);
+  color: #fff;
+  text-shadow: 0 1px 12px rgba(0, 0, 0, 0.18);
 }
-.profile__meta { margin: 8px 0 0; font-size: 15px; color: var(--ink-soft); }
-.profile__birth-name { margin: 2px 0 0; font-size: 13px; color: var(--ink-faint); font-style: italic; letter-spacing: 0.01em; }
+.profile__hero--bare .profile__name { color: var(--ink); text-shadow: none; }
+.profile__meta { margin: 8px 0 0; font-size: 15px; color: rgba(255, 255, 255, 0.92); }
+.profile__hero--bare .profile__meta { color: var(--ink-soft); }
+.profile__birth-name { margin: 2px 0 0; font-size: 13px; color: rgba(255, 255, 255, 0.78); font-style: italic; letter-spacing: 0.01em; }
+.profile__hero--bare .profile__birth-name { color: var(--ink-faint); }
 .profile__where {
   display: inline-flex;
   align-items: center;
   gap: 5px;
   margin: 8px 0 0;
   font-size: 13.5px;
-  color: var(--ink-soft);
+  color: rgba(255, 255, 255, 0.88);
 }
-.profile__where svg { color: var(--ink-faint); }
-.profile__added-by { margin: 4px 0 0; font-size: 12px; color: var(--ink-faint); }
-.profile__badges { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin-top: 12px; }
+.profile__where svg { color: rgba(255, 255, 255, 0.7); }
+.profile__hero--bare .profile__where { color: var(--ink-soft); }
+.profile__hero--bare .profile__where svg { color: var(--ink-faint); }
+/* The photo-change trigger — reuses the exact glass-circle language
+   .profile__close/.profile__centre already use, which is why it needs no
+   dark scrim of its own to stay legible: the blur+translucency create their
+   own contrast against any photo. An icon-only circle (not a text pill) so
+   it can sit at the same corner offset as those two without ever fighting
+   the centred name text above it, even on a narrow phone. */
+.profile__photo-edit {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  color: var(--ink-soft);
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(6px);
+  transition: transform 0.3s var(--spring), background 0.2s var(--ease);
+}
+.profile__photo-edit:hover { background: var(--paper-deep); }
+.profile__photo-edit:active { transform: scale(0.9); }
+
+/* Sub-hero — everything that isn't the photo/name/place, on plain paper. */
+.profile__subhero {
+  padding: 18px 24px 4px;
+  text-align: center;
+  border-bottom: 1px solid var(--hairline);
+}
+.profile__added-by { margin: 0 0 4px; font-size: 12px; color: var(--ink-faint); }
+.profile__badges { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin-top: 6px; }
 
 .tags { list-style: none; margin: 14px 0 0; padding: 0; display: flex; flex-wrap: wrap; justify-content: center; gap: 7px; }
 .tag {
