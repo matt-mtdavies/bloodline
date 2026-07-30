@@ -625,7 +625,7 @@ export default function PersonSheet({
 
           {relToViewer && <p className="profile__hero-kin">{relToViewer}</p>}
 
-          <div className={`profile__hero-bottom${canEdit ? ' profile__hero-bottom--has-edit' : ''}`}>
+          <div className="profile__hero-bottom">
             <h2 className="profile__name">{fullName(person)}</h2>
             {person.birth_name && (
               <p className="profile__birth-name">née {person.birth_name}</p>
