@@ -6,7 +6,7 @@ import { lifespan, formatDate, ageOrAt, yearOf } from '../lib/dates.js';
 import { detectRegion, birthEraContext } from '../lib/worldEvents.js';
 import { relationLabel, sortSiblings, sortChildren } from '../data/graph.js';
 import { useKinTerms } from '../lib/kinTerms.js';
-import { profileCompleteness, lifeEvents, fullName } from '../lib/profile.js';
+import { profileCompleteness, lifeEvents } from '../lib/profile.js';
 import { fileToDataUrl, uploadPhoto, uploadDocument, suggestDocumentTitle, imageSrcToDataUrl } from '../lib/image.js';
 import { fetchWithTimeout } from '../lib/net.js';
 import { streamBio } from '../lib/ai.js';
@@ -223,7 +223,10 @@ export default function PersonSheet({
   // The hero name (real user report: "I want my name on one line") always
   // renders on a single line (see .profile__name's white-space: nowrap) and
   // shrinks just enough to fit by reducing font-size — never wraps, so a
-  // long name is still shown in full, just smaller.
+  // long name is still shown in full, just smaller. Deliberately just
+  // display_name here (not the fuller first+middle+surname composite),
+  // matching every other surface in the app (tree bubbles, list view,
+  // search, kin labels) — see the middle_name rendering below for why.
   //
   // Deliberately font-size, not transform: scale(). An earlier version used
   // scale(), but overflow clipping is evaluated on the box's own untransformed
@@ -269,7 +272,7 @@ export default function PersonSheet({
       cancelled = true;
       window.removeEventListener('resize', fit);
     };
-  }, [personId, person?.display_name, person?.middle_name]);
+  }, [personId, person?.display_name]);
 
   if (!person) return null;
 
@@ -659,9 +662,12 @@ export default function PersonSheet({
           {relToViewer && <p className="profile__hero-kin">{relToViewer}</p>}
 
           <div className="profile__hero-bottom">
-            <h2 ref={nameRef} className="profile__name">{fullName(person)}</h2>
+            <h2 ref={nameRef} className="profile__name">{person.display_name}</h2>
             {person.birth_name && (
               <p className="profile__birth-name">née {person.birth_name}</p>
+            )}
+            {person.middle_name && (
+              <p className="profile__middle-name">middle name {person.middle_name}</p>
             )}
             <p className="profile__meta">{metaBits.join('  ·  ')}</p>
             {location && (

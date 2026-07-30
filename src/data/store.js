@@ -1138,7 +1138,8 @@ export function addRelative({ anchorId, relKey, name, given, middle, family, bir
   }
   // Names: prefer structured given/middle/family; fall back to splitting a single
   // `name` string (older callers). display_name is the everyday name (given +
-  // family); the middle name is stored separately and woven in by fullName().
+  // family); the middle name is stored separately (see EditPersonSheet.jsx) and
+  // shown as its own secondary line on the profile, not woven into display_name.
   const g = (given || '').trim();
   const m = (middle || '').trim();
   const fam = (family || '').trim();

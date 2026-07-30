@@ -3582,7 +3582,13 @@
   text-overflow: ellipsis;
 }
 .profile__hero--bare .profile__meta { color: var(--ink-soft); }
-.profile__birth-name {
+/* Small italic secondary facts about the name — birth/maiden name ("née …")
+   and middle name — sitting quietly under the main heading rather than
+   competing with it for space (a long middle name used to be woven into
+   the hero heading itself and could crowd out the surname; see PersonSheet
+   for the fuller reasoning). Both can appear at once, each its own line. */
+.profile__birth-name,
+.profile__middle-name {
   margin: 2px 0 0;
   font-size: 13px;
   color: rgba(255, 255, 255, 0.78);
@@ -3592,7 +3598,8 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.profile__hero--bare .profile__birth-name { color: var(--ink-faint); }
+.profile__hero--bare .profile__birth-name,
+.profile__hero--bare .profile__middle-name { color: var(--ink-faint); }
 .profile__where {
   /* A full-width flex block (not inline-flex, which sizes to its own
      content and centres as a whole box) — needed for .profile__where-text's
