@@ -62,11 +62,11 @@ const surnameOf = (p) => {
 // given names. Returns [{ name, middle }] so a John-by-middle-name can be
 // labelled as such in the drill-down without being counted any differently.
 //
-// A middle name often lives in its OWN field, not in display_name: the
-// profile heading weaves person.middle_name into display_name only for that
-// one view (see fullName() in lib/profile.js) — "Sari Stein" the record,
-// "Sari Heather Stein" the heading. Mirror that same weave-and-dedupe here
-// so "Heather" counts even when display_name itself never spelled it out.
+// A middle name often lives in its OWN field, not in display_name — "Sari
+// Stein" the record, "Heather" only ever in person.middle_name. Weave it in
+// (with the same dedupe a re-typed middle name already in display_name
+// needs) so "Heather" counts as a given name here even though nothing in
+// the UI ever spells the two out together as one string.
 const givenNamesOf = (p) => {
   const display = (p?.display_name || '').trim();
   const tokens = display.split(/\s+/).filter((t) => !/^[("'“‘]/.test(t));

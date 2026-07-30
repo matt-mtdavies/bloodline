@@ -305,9 +305,8 @@ test('names: middle names count toward the tally and are tagged; `all` answers a
 });
 
 // A middle name often lives in its OWN field, never spelled out in
-// display_name — the profile heading weaves person.middle_name in only for
-// that one view (fullName() in lib/profile.js: "Sari Stein" the record,
-// "Sari Heather Stein" the heading). The tally must count it either way.
+// display_name at all — "Sari Stein" the record, "Heather" only ever in
+// person.middle_name. The tally must count it either way.
 test('names: a middle_name field counts even when display_name never spells it out', () => {
   const people = [
     { id: 's1', display_name: 'Sari Stein', middle_name: 'Heather', birth_date: '1980-01-01' },
