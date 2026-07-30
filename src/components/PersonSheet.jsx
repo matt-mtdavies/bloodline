@@ -40,6 +40,12 @@ function documentContributionCount(person, docId) {
 const HAIR_DOTS = { Black: '#1a1a1a', Brown: '#6b4226', Blonde: '#d4b483', Auburn: '#9b3a1e', Red: '#c0392b', Grey: '#9e9e9e', White: '#ddd' };
 const EYE_DOTS  = { Brown: '#6b4226', Blue: '#4a7fbf', Green: '#3d8c55', Hazel: '#8b6914', Grey: '#8a9099', Amber: '#c8860a' };
 
+// Legibility floor for the hero name's shrink-to-fit (see nameRef below): an
+// exceptionally long name shrinks down to this fraction of its normal size,
+// never smaller — past this point .profile__name's own ellipsis takes over
+// instead of continuing to shrink toward illegible micro-text.
+const NAME_MIN_SCALE = 0.7;
+
 // A document/media upload must eventually give up rather than hang forever
 // on a stalled connection (see uploadDoc below), but a fixed timeout would
 // be wrong here: onDocPick caps files at 20MB while onMediaPick allows up
@@ -216,26 +222,53 @@ export default function PersonSheet({
 
   // The hero name (real user report: "I want my name on one line") always
   // renders on a single line (see .profile__name's white-space: nowrap) and
-  // shrinks just enough to fit via a scale transform — never wraps, never
-  // truncates, so a long name is still shown in full, just smaller. Measures
-  // scrollWidth (the natural, unwrapped width) against clientWidth (the
-  // available width the block layout already constrained it to); transform
-  // doesn't affect either measurement, so no reset-before-measure dance is
-  // needed. Re-measures on person change and on resize (rotation, a resized
-  // browser window).
+  // shrinks just enough to fit by reducing font-size — never wraps, so a
+  // long name is still shown in full, just smaller.
+  //
+  // Deliberately font-size, not transform: scale(). An earlier version used
+  // scale(), but overflow clipping is evaluated on the box's own untransformed
+  // (local) width — so a name wide enough to actually be clipped locally
+  // stayed clipped (missing its tail, no ellipsis) no matter how much the
+  // already-clipped result was then shrunk; verified this directly against a
+  // real long name before switching approaches. Changing font-size instead
+  // makes the browser genuinely reflow the text at the smaller size, so the
+  // box's own width vs. content width comparison — and centering — stays
+  // correct with no transform-origin/position bookkeeping needed.
+  //
+  // Shrinks down to NAME_MIN_SCALE (70% of the CSS clamp() size) as a
+  // legibility floor — past that, further shrinking would make the name hard
+  // to read, so `.profile__name`'s own text-overflow: ellipsis takes over
+  // instead for the rare name that's still too wide at the floor size.
+  //
+  // Re-fits on person change, on resize (rotation, a resized browser window),
+  // and once document.fonts.ready resolves: the display font (Fraunces) loads
+  // with `display=swap` (index.html), so the very first fit can run against
+  // fallback-font metrics before the swap changes the text's real width —
+  // without this second pass, a name that was fine in the fallback font could
+  // silently overflow the instant Fraunces finishes loading.
   const nameRef = useRef(null);
   useLayoutEffect(() => {
     const el = nameRef.current;
     if (!el) return;
+    let cancelled = false;
     const fit = () => {
+      if (cancelled) return;
+      el.style.fontSize = ''; // reset to the CSS clamp() size before remeasuring
+      const baseSize = parseFloat(getComputedStyle(el).fontSize);
       const available = el.clientWidth;
       const natural = el.scrollWidth;
-      const scale = available > 0 && natural > available ? available / natural : 1;
-      el.style.transform = scale < 1 ? `scale(${scale})` : 'none';
+      if (available > 0 && natural > available) {
+        const ratio = Math.max(available / natural, NAME_MIN_SCALE);
+        el.style.fontSize = `${baseSize * ratio}px`;
+      }
     };
     fit();
+    document.fonts?.ready?.then(fit);
     window.addEventListener('resize', fit);
-    return () => window.removeEventListener('resize', fit);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('resize', fit);
+    };
   }, [personId, person?.display_name, person?.middle_name]);
 
   if (!person) return null;
@@ -626,7 +659,7 @@ export default function PersonSheet({
           {relToViewer && <p className="profile__hero-kin">{relToViewer}</p>}
 
           <div className="profile__hero-bottom">
-            <h2 className="profile__name">{fullName(person)}</h2>
+            <h2 ref={nameRef} className="profile__name">{fullName(person)}</h2>
             {person.birth_name && (
               <p className="profile__birth-name">née {person.birth_name}</p>
             )}
