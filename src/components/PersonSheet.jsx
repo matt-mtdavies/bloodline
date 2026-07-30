@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import Avatar from './Avatar.jsx';
 import SmartImg from './SmartImg.jsx';
 import { initials } from '../lib/color.js';
@@ -213,6 +213,30 @@ export default function PersonSheet({
   // this lives above the `if (!person) return null` guard below, even though
   // its result is only used once we know person exists.
   const region = useMemo(() => detectRegion(graph), [graph]);
+
+  // The hero name (real user report: "I want my name on one line") always
+  // renders on a single line (see .profile__name's white-space: nowrap) and
+  // shrinks just enough to fit via a scale transform — never wraps, never
+  // truncates, so a long name is still shown in full, just smaller. Measures
+  // scrollWidth (the natural, unwrapped width) against clientWidth (the
+  // available width the block layout already constrained it to); transform
+  // doesn't affect either measurement, so no reset-before-measure dance is
+  // needed. Re-measures on person change and on resize (rotation, a resized
+  // browser window).
+  const nameRef = useRef(null);
+  useLayoutEffect(() => {
+    const el = nameRef.current;
+    if (!el) return;
+    const fit = () => {
+      const available = el.clientWidth;
+      const natural = el.scrollWidth;
+      const scale = available > 0 && natural > available ? available / natural : 1;
+      el.style.transform = scale < 1 ? `scale(${scale})` : 'none';
+    };
+    fit();
+    window.addEventListener('resize', fit);
+    return () => window.removeEventListener('resize', fit);
+  }, [personId, person?.display_name, person?.middle_name]);
 
   if (!person) return null;
 
@@ -610,7 +634,7 @@ export default function PersonSheet({
             {location && (
               <p className="profile__where">
                 <PinIcon />
-                {location}
+                <span className="profile__where-text">{location}</span>
               </p>
             )}
           </div>

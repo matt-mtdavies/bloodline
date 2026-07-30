@@ -3552,10 +3552,15 @@
   text-align: center;
 }
 /* .profile__photo-edit occupies the last ~58px on the right (44px circle at
-   right: 14px) — a long meta/location line can otherwise crowd or overlap
-   it. Only applied when that button actually renders (canEdit), so a plain
+   right: 14px) — a long line on the bottom-most row of text could otherwise
+   crowd or overlap it. Only the LAST child needs this: name/birth-name/meta
+   sit further up the stack, well clear of the button's own vertical span
+   regardless of width, so reserving space from THEM too (as an earlier fix
+   did, across the whole block) only starved them of room and caused
+   needless wrapping — the actual bug behind "I want my name on one line."
+   Only applied when the edit button actually renders (canEdit), so a plain
    viewer's centred text stays symmetric with no button to clear. */
-.profile__hero-bottom--has-edit { padding-right: 68px; }
+.profile__hero-bottom--has-edit > :last-child { padding-right: 68px; }
 .profile__name {
   margin: 0;
   font-family: var(--display);
@@ -3565,21 +3570,58 @@
   letter-spacing: -0.01em;
   color: #fff;
   text-shadow: 0 1px 12px rgba(0, 0, 0, 0.18);
+  /* Real user report: "I want my name on one line" — always exactly one
+     line, never wrapped. A small effect (see nameRef in the component)
+     measures the natural unwrapped width against the available width and
+     shrinks via transform: scale() just enough to fit, so a long name is
+     still shown in FULL, only smaller, rather than wrapping or truncating —
+     the name is the one line on this page that shouldn't lose a character. */
+  white-space: nowrap;
+  overflow: hidden;
+  transform-origin: center;
 }
 .profile__hero--bare .profile__name { color: var(--ink); text-shadow: none; }
-.profile__meta { margin: 8px 0 0; font-size: 15px; color: rgba(255, 255, 255, 0.92); }
+.profile__meta {
+  margin: 8px 0 0;
+  font-size: 15px;
+  color: rgba(255, 255, 255, 0.92);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .profile__hero--bare .profile__meta { color: var(--ink-soft); }
-.profile__birth-name { margin: 2px 0 0; font-size: 13px; color: rgba(255, 255, 255, 0.78); font-style: italic; letter-spacing: 0.01em; }
+.profile__birth-name {
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.78);
+  font-style: italic;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .profile__hero--bare .profile__birth-name { color: var(--ink-faint); }
 .profile__where {
-  display: inline-flex;
+  /* A full-width flex block (not inline-flex): inline-flex sizes to its own
+     content and centres as a whole box, so a right-side-only padding.
+     reservation (see .profile__hero-bottom--has-edit above) would shift the
+     whole pill off-centre rather than just narrowing its available text
+     area — the same "clear the button, still read as centred" behaviour
+     the block-level name/meta lines above already get for free. */
+  display: flex;
+  justify-content: center;
   align-items: center;
   gap: 5px;
   margin: 8px 0 0;
   font-size: 13.5px;
   color: rgba(255, 255, 255, 0.88);
 }
-.profile__where svg { color: rgba(255, 255, 255, 0.7); }
+.profile__where svg { color: rgba(255, 255, 255, 0.7); flex-shrink: 0; }
+/* min-width: 0 overrides a flex item's default min-width: auto — without
+   it this span can never shrink below its own unwrapped text width, and
+   text-overflow/ellipsis would silently never trigger (the same flex
+   quirk already fixed for List view's own rows). */
+.profile__where-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .profile__hero--bare .profile__where { color: var(--ink-soft); }
 .profile__hero--bare .profile__where svg { color: var(--ink-faint); }
 /* The photo-change trigger — reuses the exact dark-glass language
