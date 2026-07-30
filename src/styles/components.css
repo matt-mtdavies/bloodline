@@ -3411,6 +3411,14 @@
   to { transform: translateY(0); opacity: 1; }
 }
 
+/* Dark glass, not light: these float over a photo of unknown tone (a bright
+   sky, a dark jacket, anything), and a dark tint + white glyph stays legible
+   on its own even in the worst case where backdrop-filter fails to paint on
+   some device — a light glass button with a dark icon has no such fallback,
+   it just reads as a flat grey blob (the exact bug reported twice before
+   this). Same reasoning iOS's own dark chrome over Photos/Camera/video uses.
+   Deliberately the SAME treatment on the bare/no-photo wash too — one
+   consistent control language regardless of profile state, not two. */
 .profile__close {
   position: absolute;
   top: 14px;
@@ -3421,11 +3429,11 @@
   width: 44px;
   height: 44px;
   border-radius: 50%;
-  color: var(--ink-soft);
-  background: rgba(255, 255, 255, 0.75);
+  color: #fff;
+  background: color-mix(in srgb, var(--ink) 55%, transparent);
   backdrop-filter: blur(16px) saturate(1.7);
   -webkit-backdrop-filter: blur(16px) saturate(1.7);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.16), inset 0 0 0 0.5px rgba(255, 255, 255, 0.85);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.22), inset 0 0 0 0.5px rgba(255, 255, 255, 0.18);
   transition: transform 0.3s var(--spring), background 0.2s var(--ease);
   /* Forces its own GPU compositing layer — Safari has a real, documented
      habit of silently no-op'ing backdrop-filter (painting just the flat
@@ -3433,7 +3441,7 @@
      overflow-clipped ancestor, which .profile's own overflow-y: auto is. */
   transform: translateZ(0);
 }
-.profile__close:hover { background: var(--paper-deep); }
+.profile__close:hover { background: color-mix(in srgb, var(--ink) 65%, transparent); }
 .profile__close:active { transform: translateZ(0) scale(0.9); }
 
 /* Mirrors .profile__close on the opposite corner — a quick, no-ceremony
@@ -3449,15 +3457,15 @@
   width: 44px;
   height: 44px;
   border-radius: 50%;
-  color: var(--ink-soft);
-  background: rgba(255, 255, 255, 0.75);
+  color: #fff;
+  background: color-mix(in srgb, var(--ink) 55%, transparent);
   backdrop-filter: blur(16px) saturate(1.7);
   -webkit-backdrop-filter: blur(16px) saturate(1.7);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.16), inset 0 0 0 0.5px rgba(255, 255, 255, 0.85);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.22), inset 0 0 0 0.5px rgba(255, 255, 255, 0.18);
   transition: transform 0.3s var(--spring), background 0.2s var(--ease);
   transform: translateZ(0); /* see .profile__close's own comment */
 }
-.profile__centre:hover { background: var(--paper-deep); }
+.profile__centre:hover { background: color-mix(in srgb, var(--ink) 65%, transparent); }
 .profile__centre:active { transform: translateZ(0) scale(0.9); }
 
 /* Hero — full-bleed portrait, not a small centred avatar. Mirrors the
@@ -3574,12 +3582,13 @@
 .profile__where svg { color: rgba(255, 255, 255, 0.7); }
 .profile__hero--bare .profile__where { color: var(--ink-soft); }
 .profile__hero--bare .profile__where svg { color: var(--ink-faint); }
-/* The photo-change trigger — reuses the exact glass-circle language
-   .profile__close/.profile__centre already use, which is why it needs no
-   dark scrim of its own to stay legible: the blur+translucency create their
-   own contrast against any photo. An icon-only circle (not a text pill) so
-   it can sit at the same corner offset as those two without ever fighting
-   the centred name text above it, even on a narrow phone. */
+/* The photo-change trigger — reuses the exact dark-glass language
+   .profile__close/.profile__centre already use (see their own comment for
+   why dark, not light), so it needs no dark scrim of its own to stay
+   legible: the tint alone carries contrast even before the blur factors in.
+   An icon-only circle (not a text pill) so it can sit at the same corner
+   offset as those two without ever fighting the centred name text above it,
+   even on a narrow phone. */
 .profile__photo-edit {
   position: absolute;
   right: 14px;
@@ -3590,15 +3599,15 @@
   width: 44px;
   height: 44px;
   border-radius: 50%;
-  color: var(--ink-soft);
-  background: rgba(255, 255, 255, 0.75);
+  color: #fff;
+  background: color-mix(in srgb, var(--ink) 55%, transparent);
   backdrop-filter: blur(16px) saturate(1.7);
   -webkit-backdrop-filter: blur(16px) saturate(1.7);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.16), inset 0 0 0 0.5px rgba(255, 255, 255, 0.85);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.22), inset 0 0 0 0.5px rgba(255, 255, 255, 0.18);
   transition: transform 0.3s var(--spring), background 0.2s var(--ease);
   transform: translateZ(0); /* see .profile__close's own comment */
 }
-.profile__photo-edit:hover { background: var(--paper-deep); }
+.profile__photo-edit:hover { background: color-mix(in srgb, var(--ink) 65%, transparent); }
 .profile__photo-edit:active { transform: translateZ(0) scale(0.9); }
 
 /* Sub-hero — everything that isn't the photo/name/place, on plain paper. */
