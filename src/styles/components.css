@@ -976,6 +976,7 @@
 }
 .avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .avatar__mono {
+  position: relative;
   width: 100%;
   height: 100%;
   display: grid;
@@ -983,6 +984,31 @@
   color: #fffdf9;
   font-family: var(--display);
   font-weight: 500;
+}
+/* A fine warm hatch over the flat per-person gradient — "honest about being
+   empty" texture (like the tissue interleaf in an album) so a monogram
+   reads as a deliberate placeholder at a glance, not a flat colour chip.
+   z-index: -1 (not the default auto) is load-bearing: a plain absolutely-
+   positioned pseudo-element with an auto z-index paints ABOVE its parent's
+   own in-flow inline content (the initials text node here), per the normal
+   stacking-order rules — -1 is what actually puts it behind the letters.
+   Naturally fades into an indistinct soft shading at the smallest avatar
+   sizes (28px sticky-strip, list rows) rather than needing a separate
+   small-size variant — the stripe period is fixed in px, so it just
+   resolves to fewer, less legible bands as the circle shrinks. */
+.avatar__mono::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    135deg,
+    transparent,
+    transparent 5px,
+    rgba(255, 255, 255, 0.14) 5px,
+    rgba(255, 255, 255, 0.14) 7px
+  );
 }
 .avatar--memorial { box-shadow: 0 0 0 2px var(--memorial), 0 2px 8px rgba(44, 38, 34, 0.16); }
 
@@ -3512,25 +3538,34 @@
 .profile__hero--memorial .profile__hero-photo img {
   filter: saturate(0.65) brightness(1.02); /* same desaturation Avatar already applies for a memorial photo */
 }
-/* No portrait — the same quiet paper wash Keepsake's own cover uses for a
-   bare profile, scaled down from that full-viewport version to this much
-   smaller box. The person's monogram stands in for the missing face. */
+/* No portrait — the hero becomes the person's OWN monogram colour (the same
+   deterministic hue Avatar/the tree bubbles already derive from their name,
+   set as --wash-light/--wash-base by PersonSheet.jsx) rather than a generic
+   grey box: a rich, saturated field with their initial oversized and
+   cropped behind the name, like a magazine cover run without a photo yet —
+   an object in its own right, not an apology for a missing one. */
 .profile__hero-wash {
   position: absolute;
   inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background:
-    radial-gradient(420px 300px at 85% -15%, var(--accent-soft) 0%, transparent 60%),
-    radial-gradient(360px 280px at -10% 115%, var(--sage-soft) 0%, transparent 55%),
-    var(--paper);
+  overflow: hidden;
+  background: linear-gradient(165deg, var(--wash-light, #d8b878), var(--wash-base, #b08642));
 }
+.profile__hero--memorial .profile__hero-wash { filter: saturate(0.7); }
+/* The ghost letterform — oversized, translucent, bleeding off the top edge
+   (clipped by the wash's own overflow: hidden) so it reads as a cropped
+   photographic object rather than two neatly centred initials. */
 .profile__hero-wash-mono {
+  position: absolute;
+  top: -6%;
+  left: 50%;
+  transform: translateX(-50%);
   font-family: var(--display);
   font-weight: 500;
-  font-size: clamp(44px, 12vw, 84px);
-  color: color-mix(in srgb, var(--ink) 22%, transparent);
+  font-style: italic;
+  font-size: clamp(160px, 46vw, 320px);
+  line-height: 1;
+  color: rgba(255, 252, 245, 0.4);
+  white-space: nowrap;
 }
 /* Legibility scrim over the lower portion of the photo — identical stops to
    the Keepsake cover's own, so the two full-bleed portraits in this app
@@ -3560,7 +3595,6 @@
   font-weight: 600;
   color: rgba(255, 255, 255, 0.85);
 }
-.profile__hero--bare .profile__hero-kin { color: var(--accent); }
 /* Name/meta block anchored at the bottom of the photo — the destination of
    the page landing on the destination of the portrait. */
 .profile__hero-bottom {
@@ -3664,7 +3698,18 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.profile__hero--bare .profile__name { color: var(--ink); text-shadow: none; }
+/* No-portrait kicker — sits directly above the name, only in the bare case
+   (the photo case has no equivalent line: the portrait itself is the
+   statement there). Same uppercase/letter-spaced treatment as the kin
+   label above, so the two read as one family of small caption text. */
+.profile__hero-noportrait {
+  margin: 0 0 4px;
+  font-size: 11.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: rgba(255, 255, 255, 0.75);
+}
 .profile__meta {
   margin: 8px 0 0;
   font-size: 15px;
@@ -3673,7 +3718,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.profile__hero--bare .profile__meta { color: var(--ink-soft); }
 /* Small italic secondary facts about the name — birth/maiden name ("née …")
    and middle name — sitting quietly under the main heading rather than
    competing with it for space (a long middle name used to be woven into
@@ -3690,8 +3734,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.profile__hero--bare .profile__birth-name,
-.profile__hero--bare .profile__middle-name { color: var(--ink-faint); }
 .profile__where {
   /* A full-width flex block (not inline-flex, which sizes to its own
      content and centres as a whole box) — needed for .profile__where-text's
@@ -3712,8 +3754,6 @@
    text-overflow/ellipsis would silently never trigger (the same flex
    quirk already fixed for List view's own rows). */
 .profile__where-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.profile__hero--bare .profile__where { color: var(--ink-soft); }
-.profile__hero--bare .profile__where svg { color: var(--ink-faint); }
 /* The photo-change trigger — reuses the exact dark-glass language
    .profile__close/.profile__centre already use (see their own comment for
    why dark, not light). Stacked directly below .profile__close in the
