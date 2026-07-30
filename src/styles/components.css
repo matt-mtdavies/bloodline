@@ -3427,9 +3427,14 @@
   -webkit-backdrop-filter: blur(16px) saturate(1.7);
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.16), inset 0 0 0 0.5px rgba(255, 255, 255, 0.85);
   transition: transform 0.3s var(--spring), background 0.2s var(--ease);
+  /* Forces its own GPU compositing layer — Safari has a real, documented
+     habit of silently no-op'ing backdrop-filter (painting just the flat
+     background colour, no blur) when the filtered element sits under an
+     overflow-clipped ancestor, which .profile's own overflow-y: auto is. */
+  transform: translateZ(0);
 }
 .profile__close:hover { background: var(--paper-deep); }
-.profile__close:active { transform: scale(0.9); }
+.profile__close:active { transform: translateZ(0) scale(0.9); }
 
 /* Mirrors .profile__close on the opposite corner — a quick, no-ceremony
    recentre, distinct from the "Show in tree" flight in the actions row below
@@ -3450,9 +3455,10 @@
   -webkit-backdrop-filter: blur(16px) saturate(1.7);
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.16), inset 0 0 0 0.5px rgba(255, 255, 255, 0.85);
   transition: transform 0.3s var(--spring), background 0.2s var(--ease);
+  transform: translateZ(0); /* see .profile__close's own comment */
 }
 .profile__centre:hover { background: var(--paper-deep); }
-.profile__centre:active { transform: scale(0.9); }
+.profile__centre:active { transform: translateZ(0) scale(0.9); }
 
 /* Hero — full-bleed portrait, not a small centred avatar. Mirrors the
    Keepsake cover's own language (full-bleed photo + bottom scrim + serif
@@ -3537,6 +3543,11 @@
   padding: 0 24px 22px;
   text-align: center;
 }
+/* .profile__photo-edit occupies the last ~58px on the right (44px circle at
+   right: 14px) — a long meta/location line can otherwise crowd or overlap
+   it. Only applied when that button actually renders (canEdit), so a plain
+   viewer's centred text stays symmetric with no button to clear. */
+.profile__hero-bottom--has-edit { padding-right: 68px; }
 .profile__name {
   margin: 0;
   font-family: var(--display);
@@ -3585,9 +3596,10 @@
   -webkit-backdrop-filter: blur(16px) saturate(1.7);
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.16), inset 0 0 0 0.5px rgba(255, 255, 255, 0.85);
   transition: transform 0.3s var(--spring), background 0.2s var(--ease);
+  transform: translateZ(0); /* see .profile__close's own comment */
 }
 .profile__photo-edit:hover { background: var(--paper-deep); }
-.profile__photo-edit:active { transform: scale(0.9); }
+.profile__photo-edit:active { transform: translateZ(0) scale(0.9); }
 
 /* Sub-hero — everything that isn't the photo/name/place, on plain paper. */
 .profile__subhero {
