@@ -46,6 +46,15 @@ const EYE_DOTS  = { Brown: '#6b4226', Blue: '#4a7fbf', Green: '#3d8c55', Hazel: 
 // instead of continuing to shrink toward illegible micro-text.
 const NAME_MIN_SCALE = 0.7;
 
+// The sticky name strip's fade-in (see stickyStripRef below): how many
+// pixels of scroll it takes to go from fully invisible to fully visible —
+// an iOS "large title" style sticky bar that appears once you've scrolled
+// past the hero. Fixed and deliberately independent of the hero's own
+// actual height (which varies by viewport via clamp()) — simpler to reason
+// about than a 1:1 mapping, and still feels natural since real content is
+// visibly scrolling underneath at the same time.
+const HERO_COLLAPSE_RANGE = 160;
+
 // A document/media upload must eventually give up rather than hang forever
 // on a stalled connection (see uploadDoc below), but a fixed timeout would
 // be wrong here: onDocPick caps files at 20MB while onMediaPick allows up
@@ -138,6 +147,7 @@ export default function PersonSheet({
   const person = personId ? graph.byId.get(personId) : null;
   const kinTerms = useKinTerms();
   const profileRef = useRef(null);
+  const stickyStripRef = useRef(null);
   const fileRef = useRef(null);
   const galleryRef = useRef(null);
   const docRef = useRef(null);
@@ -200,6 +210,12 @@ export default function PersonSheet({
     setStatusPickId(null);
     setHealthNotesEditing(false);
     if (profileRef.current) profileRef.current.scrollTop = 0;
+    // scrollTop = 0 above doesn't reliably fire a synchronous 'scroll' event
+    // in every browser, so the hero-collapse effect below might not get a
+    // chance to re-zero --p before paint — reset it explicitly here so a
+    // freshly opened profile never starts mid-collapsed from whoever was
+    // scrolled through last.
+    stickyStripRef.current?.style.setProperty('--p', 0);
   }, [personId]);
 
   // Family Moments "forgotten people" (docs/FAMILY-MOMENTS.md slice 4) —
@@ -273,6 +289,43 @@ export default function PersonSheet({
       window.removeEventListener('resize', fit);
     };
   }, [personId, person?.display_name]);
+
+  // The sticky name strip (iOS "large title" style: a slim sticky bar fades
+  // in showing the name once you've scrolled past the hero below — see
+  // .profile__sticky-strip's own CSS comment for the full visual design and
+  // why it's a separate constant-height element rather than the hero itself
+  // shrinking). Purely a scroll-position → CSS custom property mapping;
+  // every actual visual change (the strip's opacity) lives in CSS driven by
+  // --p, so this effect's only job is keeping --p in sync with scroll with
+  // as little work per frame as possible:
+  //   - passive: true — never blocks the scroll gesture itself. This sits on
+  //     the exact scroll container a real WebKit compositor freeze was just
+  //     fixed on (see .profile's own CSS comment) — a listener that could
+  //     ever delay or fight the native scroll is not an option here.
+  //   - rAF-coalesced — a touch/wheel scroll can fire far more often than a
+  //     display can paint; only the latest scrollTop per rendered frame
+  //     matters, so extra events between frames are dropped rather than
+  //     each doing their own work.
+  //   - one read (scrollTop), one write (the custom property) per frame —
+  //     no layout thrashing.
+  useEffect(() => {
+    const scrollEl = profileRef.current;
+    const stickyStripEl = stickyStripRef.current;
+    if (!scrollEl || !stickyStripEl) return;
+    let ticking = false;
+    const apply = () => {
+      ticking = false;
+      const progress = Math.min(1, Math.max(0, scrollEl.scrollTop / HERO_COLLAPSE_RANGE));
+      stickyStripEl.style.setProperty('--p', progress);
+    };
+    const onScroll = () => {
+      if (ticking) return;
+      ticking = true;
+      requestAnimationFrame(apply);
+    };
+    scrollEl.addEventListener('scroll', onScroll, { passive: true });
+    return () => scrollEl.removeEventListener('scroll', onScroll);
+  }, [personId]);
 
   if (!person) return null;
 
@@ -635,6 +688,31 @@ export default function PersonSheet({
         <button className="profile__centre" onClick={() => onFocus(person.id)} aria-label="Centre the tree here">
           <CrosshairIcon />
         </button>
+
+        {/* A small, ALWAYS constant-height sticky bar (see stickyStripRef's own
+            scroll effect + --p in CSS) — fades in once you've scrolled past
+            the big hero below, showing the name plus a compact close button
+            so the sheet always stays closable regardless of scroll depth.
+            Deliberately a separate, fixed-size element rather than the big
+            hero itself shrinking into a sticky strip: making the actual
+            hero sticky while its own document-flow height shrank via scroll
+            caused a genuine, reproducible bug — the browser clamps/resets
+            scrollTop when a sticky element's own flow-height changes while
+            it's pinned (confirmed directly: every scroll snapped back to 0).
+            A constant-height sticky bar has no such circularity — its flow
+            contribution never changes, so there's nothing for the browser
+            to "correct" scroll position over. */}
+        {/* aria-hidden on the whole thing: it's a sighted-scrolling
+            convenience, not the primary close path — the original
+            .profile__close above (still in the accessibility tree, just
+            visually scrolls off) and the tap-outside-to-close scrim both
+            already cover keyboard/screen-reader users. */}
+        <div ref={stickyStripRef} className="profile__sticky-strip" aria-hidden="true">
+          <button className="profile__sticky-strip-close" onClick={onClose}>
+            <CloseIcon />
+          </button>
+          <p className="profile__sticky-strip-name">{person.display_name}</p>
+        </div>
 
         {/* ── Hero ─────────────────────────────────────────────────────────────
             Full-bleed portrait, not a small centred avatar: the photo is the
