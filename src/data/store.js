@@ -976,6 +976,13 @@ export function bindIdentity(uid) {
     } catch { /* ignore */ }
     state = { ...EMPTY };
     _serverEtag = null;
+    // KEY no longer exists in localStorage — the redundant-write skip in
+    // commit() (see lastSerializedToStorage's own comment) must forget what
+    // it thinks is already stored, or a later same-account load whose
+    // serialized content happens to match the pre-wipe cache would skip
+    // re-writing it, leaving state correct in memory but no local/offline
+    // cache on disk at all (real bug: PR #86 review).
+    lastSerializedToStorage = null;
   }
   try { localStorage.setItem(OWNER_KEY, uid); } catch { /* ignore */ }
   return sameUser;
@@ -994,6 +1001,10 @@ export function clearLocalData() {
   state = { ...EMPTY };
   _serverEtag = null;
   _currentUser = null;
+  // Same reasoning as bindIdentity's cross-account wipe above — KEY is gone
+  // from localStorage, so the redundant-write skip must not remember a
+  // now-nonexistent cache as "already written."
+  lastSerializedToStorage = null;
   listeners.forEach((l) => l());
 }
 

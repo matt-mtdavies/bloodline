@@ -25,7 +25,7 @@ globalThis.localStorage = {
   removeItem: (k) => backing.delete(k),
 };
 
-const { importFromGedcom, enableServerSync, loadFromServer } = await import('../src/data/store.js');
+const { importFromGedcom, enableServerSync, loadFromServer, clearLocalData } = await import('../src/data/store.js');
 
 let passed = 0, failed = 0;
 function test(label, fn) {
@@ -78,6 +78,38 @@ await atest('a repeated loadFromServer against the same server snapshot only wri
   await loadFromServer(); // second load against the SAME mocked server response
   await settle();
   assert.equal(setItemCalls, 0, 'a repeated load with unchanged server data must not re-write localStorage');
+});
+
+await atest('logout, then a same-account re-login whose content matches what was cleared, must still restore the local cache', async () => {
+  // Real bug this reproduces (PR #86 review): clearLocalData() removes the
+  // cached tree from localStorage but, before the fix, left
+  // lastSerializedToStorage pointing at the pre-logout content. If the very
+  // next load reconciles to byte-identical content (plausible on a
+  // same-account re-login with an unchanged tree), the redundant-write skip
+  // would fire even though there is nothing in localStorage to be
+  // redundant WITH — state stays correct in memory, but the on-disk local/
+  // offline cache silently never comes back.
+  importFromGedcom([person('q1'), person('q2')], [], { merge: false });
+  await settle();
+  assert.ok(backing.size > 0, 'sanity: something was cached before logout');
+  const preLogoutEntries = new Map(backing);
+  const treeKey = [...preLogoutEntries.keys()].find((k) => {
+    try { return JSON.parse(preLogoutEntries.get(k))?.people?.some((p) => p.id === 'q1'); }
+    catch { return false; }
+  });
+  assert.ok(treeKey, 'sanity: found the actual tree cache entry before logout');
+
+  clearLocalData();
+  assert.equal(backing.has(treeKey), false, 'sanity: logout actually removed the cached tree from localStorage');
+
+  // The server still has exactly what was just cleared.
+  const serverSnapshot = JSON.parse(preLogoutEntries.get(treeKey));
+  mockFetch(serverSnapshot);
+  setItemCalls = 0;
+  await loadFromServer({ forceServerWins: true });
+  await settle();
+  assert.ok(setItemCalls >= 1, 'a load right after logout must write the local cache back, even if its content matches what was just cleared');
+  assert.ok(backing.has(treeKey), 'the local/offline cache must actually exist again after re-login');
 });
 
 await atest('a genuinely different server snapshot still writes localStorage', async () => {
