@@ -197,8 +197,9 @@ export function computeGenerations(graph) {
 export function distancesFrom(graph, focusId) {
   const dist = new Map([[focusId, 0]]);
   const queue = [focusId];
-  while (queue.length) {
-    const cur = queue.shift();
+  let qi = 0;
+  while (qi < queue.length) {
+    const cur = queue[qi++];
     const d = dist.get(cur);
     const neighbours = [
       ...graph.parents(cur).map((x) => x.id),
@@ -287,8 +288,9 @@ export function bloodRelativesOf(graph, focusId) {
 
   const blood = new Set(ancestors);
   const queue = [...ancestors];
-  while (queue.length) {
-    const cur = queue.shift();
+  let qi = 0;
+  while (qi < queue.length) {
+    const cur = queue[qi++];
     for (const c of graph.children(cur)) {
       if (c.qualifier === 'step' || blood.has(c.id)) continue;
       blood.add(c.id);
@@ -362,8 +364,9 @@ export function pathBetweenOrdered(graph, fromId, toId) {
   if (fromId === toId) return [fromId];
   const prev = new Map([[fromId, null]]);
   const queue = [fromId];
-  while (queue.length) {
-    const cur = queue.shift();
+  let qi = 0;
+  while (qi < queue.length) {
+    const cur = queue[qi++];
     const neighbours = [
       ...graph.parents(cur).map((x) => x.id),
       ...graph.children(cur).map((x) => x.id),
@@ -390,8 +393,9 @@ export function pathBetween(graph, fromId, toId) {
   if (fromId === toId) return new Set([fromId]);
   const prev = new Map([[fromId, null]]);
   const queue = [fromId];
-  while (queue.length) {
-    const cur = queue.shift();
+  let qi = 0;
+  while (qi < queue.length) {
+    const cur = queue[qi++];
     const neighbours = [
       ...graph.parents(cur).map((x) => x.id),
       ...graph.children(cur).map((x) => x.id),

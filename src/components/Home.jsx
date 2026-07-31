@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import Logo from './Logo.jsx';
 import { ActivityRow } from './ActivityFeed.jsx';
 import { computeThisMonth, computeInsightModules, highlightCandidates } from '../lib/insightModules.js';
+import { timed } from '../lib/perfInstrument.js';
 
 // The "Did you know?" card rotates a step further through the candidate
 // pool every time Home is opened, so returning visits see something new
@@ -50,7 +51,7 @@ export default function Home({
   // lean on "your" position in the tree (see highlightCandidates) contribute.
   const insightTeaser = useMemo(() => {
     if (!graph) return null;
-    const candidates = highlightCandidates(computeInsightModules(graph, null));
+    const candidates = highlightCandidates(timed('computeInsightModules (Home hub)', () => computeInsightModules(graph, null)));
     return candidates.length ? candidates[nextInsightIndex(candidates.length)] : null;
   }, [graph]);
   const recent = activity.slice(0, 3);
