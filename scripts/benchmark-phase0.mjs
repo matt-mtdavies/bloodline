@@ -8,7 +8,10 @@
  * real measured numbers — no production data is read or referenced anywhere here.
  *
  * Run with: node scripts/benchmark-phase0.mjs
- * Writes a full report to: docs/PHASE0-BENCHMARK-REPORT.md
+ * Console-only by default (deliberately does not touch the working tree —
+ * the committed docs/PHASE0-BENCHMARK-REPORT.md is a reference snapshot, not
+ * something every run should dirty with a fresh timestamp/timings). Pass
+ * --write-report to regenerate that snapshot: node scripts/benchmark-phase0.mjs --write-report
  */
 import { gzipSync } from 'node:zlib';
 import { writeFileSync } from 'node:fs';
@@ -75,6 +78,32 @@ function sample(arr, n, rng) {
   return out;
 }
 
+function measureAnchorClusters(graph, meta, size) {
+  const results = [];
+  const anchors = [
+    { label: 'four-partner anchor', id: meta.fourPartnerAnchorId, expectedPartners: 4 },
+    { label: 'eight-partner anchor', id: meta.eightPartnerAnchorId, expectedPartners: 8 },
+  ];
+  for (const { label, id, expectedPartners } of anchors) {
+    if (!id) continue; // eight-partner anchor is only generated for size >= 500
+    const { result: dist, elapsed: distancesMs } = timeIt(() => distancesFrom(graph, id));
+    const clusterIds = [...dist.keys()].filter((otherId) => otherId !== id);
+    const rng = mulberry32(size + expectedPartners);
+    const sampleIds = sample(clusterIds, Math.min(50, clusterIds.length), rng);
+    const { elapsed: relationLabelMs } = timeIt(() => {
+      for (const otherId of sampleIds) relationLabel(graph, id, otherId);
+    });
+    results.push({
+      label, id, expectedPartners,
+      clusterSize: dist.size, // includes the anchor itself
+      distancesMs,
+      relationLabelSampleSize: sampleIds.length,
+      relationLabelMs,
+    });
+  }
+  return results;
+}
+
 function runOneSize(size) {
   console.log(`\n=== size ${size} ===`);
   const { tree, meta } = generateFamilyFixture({ size, seed: 42 });
@@ -112,6 +141,16 @@ function runOneSize(size) {
   const { elapsed: relationLabelMs } = timeIt(() => {
     for (const p of relationSample) relationLabel(graph, tree.myPersonId, p.id);
   });
+
+  // ── Anchor-cluster traversal — the fixture deliberately builds 4- and
+  //    8-current-partner stress clusters as their own disconnected islands
+  //    (see fixtureGenerator.js), but that's only useful if their cost is
+  //    actually measured from their own vantage point, not just from the
+  //    default viewer (who can't reach them at all). Multi-source BFS from
+  //    each anchor, plus relationLabel timing sampled from inside its own
+  //    cluster, represents the traversal cost a perimeter/halo calculation
+  //    would pay when the anchor itself is the viewer. ──
+  const anchorClusters = measureAnchorClusters(graph, meta, size);
 
   // ── Duplicate detection — currently an all-pairs-ish scan over the whole tree ──
   const { result: dupPairs, elapsed: duplicatesMs } = timeIt(() => findDuplicatePairs(tree.people, tree.relationships));
@@ -153,6 +192,7 @@ function runOneSize(size) {
     insightModulesComputed: Object.values(modules).filter((v) => v != null).length, insightsMs,
     withinRevealCap, rippleLayers,
     pctOfLocalStorageQuota, pctOfD1RowCeilingLegacy, pctOfD1RowCeilingCore,
+    anchorClusters,
   };
 
   console.log(`  payload:        ${fmtBytes(rawBytes)} raw / ${fmtBytes(gzipBytes)} gzip  (stringify ${fmtMs(stringifyMs)})`);
@@ -165,6 +205,9 @@ function runOneSize(size) {
   console.log(`  D1 row ceiling: legacy whole-blob ${pctOfD1RowCeilingLegacy.toFixed(1)}% / migrated core-only ${pctOfD1RowCeilingCore.toFixed(1)}% of 1 MiB`);
   console.log(`  localStorage:   ${pctOfLocalStorageQuota.toFixed(1)}% of a typical ${STATIC.LOCALSTORAGE_TYPICAL_QUOTA_MB}MB quota`);
   console.log(`  bubble reveal:  ${reachable} reachable, cap ${STATIC.MAX_BUBBLE_REVEAL} → ${withinRevealCap ? 'under cap' : 'CAPPED'}, ${rippleLayers} ripple layers`);
+  for (const c of anchorClusters) {
+    console.log(`  ${c.label}:  cluster of ${c.clusterSize} (incl. anchor), distancesFrom ${fmtMs(c.distancesMs)}, relationLabel ${fmtMs(c.relationLabelMs)} for ${c.relationLabelSampleSize} pairs`);
+  }
 
   if (!roundTripOk) {
     throw new Error(`splitTree/reassembleTree round-trip mismatch at size ${size} — treeStore.js's own contract is violated for this fixture, investigate before trusting any core/extra numbers`);
@@ -186,6 +229,12 @@ reportLines.push('measurement below is a real timing/size taken by actually runn
 reportLines.push('`buildGraph`, `distancesFrom`, `relationLabel`, `findDuplicatePairs`, and');
 reportLines.push('`computeInsightModules` against these fixtures, plus `JSON.stringify`/`gzip` on');
 reportLines.push('the resulting payload.');
+reportLines.push('');
+reportLines.push('**This file is a reference snapshot, regenerated only via `npm run benchmark:phase0 --');
+reportLines.push('--write-report`** — a plain `npm run benchmark:phase0` prints to the console only and');
+reportLines.push('never touches this file, since per-run timings naturally vary and would otherwise dirty');
+reportLines.push('the working tree on every run. Byte-size figures (payload, core/extra) are deterministic');
+reportLines.push('for a given fixture seed; only the timing figures are run-to-run noise.');
 reportLines.push('');
 reportLines.push(`Run: ${new Date().toISOString()}`);
 reportLines.push('');
@@ -219,6 +268,12 @@ for (const r of rows) {
   reportLines.push(`- \`findDuplicatePairs\`: ${fmtMs(r.duplicatesMs)}, found ${r.dupPairsFound} candidate pairs in this synthetic data (not a defect — the generator does not deliberately plant name/date collisions beyond the fixed anchors, so this count reflects incidental collisions in the seeded random name/date pools).`);
   reportLines.push(`- \`computeInsightModules\`: ${fmtMs(r.insightsMs)} for the full pass.`);
   reportLines.push(`- Bubble reveal ("All" in Tree view): ${r.reachable} people reachable from the viewer vs. the ${STATIC.MAX_BUBBLE_REVEAL}-person hard cap already enforced in \`App.jsx\` — ${r.withinRevealCap ? 'stays under the cap, reveals everyone reachable' : `exceeds the cap; "All" would reveal only the closest ${STATIC.MAX_BUBBLE_REVEAL} and show the existing List-view redirect toast`}, over ${r.rippleLayers} ripple-reveal layers at ${STATIC.RIPPLE_CHUNK_SIZE}/layer.`);
+  if (r.anchorClusters.length) {
+    reportLines.push(`- Anchor-cluster traversal (measured from the anchor's own vantage point, not the default viewer — these clusters are deliberately disconnected islands, per \`fixtureGenerator.js\`, so a default-viewer BFS never reaches them at all):`);
+    for (const c of r.anchorClusters) {
+      reportLines.push(`  - **${c.label}** (${c.expectedPartners} current partners): cluster of ${c.clusterSize} people (including the anchor) reachable via \`distancesFrom\` in ${fmtMs(c.distancesMs)}; \`relationLabel\` over a ${c.relationLabelSampleSize}-pair sample from the anchor took ${fmtMs(c.relationLabelMs)}.`);
+    }
+  }
   reportLines.push('');
 }
 reportLines.push('## Key finding: `computeInsightModules` has a real quadratic-ish hot spot at scale');
@@ -261,5 +316,10 @@ reportLines.push('  (task after this one): they show where the existing D1 1MiB-
 reportLines.push('  `treeStore.js` core/R2-extra split sit relative to real fixture sizes at this scale.');
 reportLines.push('');
 
-writeFileSync(join(__dirname, '..', 'docs', 'PHASE0-BENCHMARK-REPORT.md'), reportLines.join('\n'));
-console.log('\nWrote docs/PHASE0-BENCHMARK-REPORT.md');
+if (process.argv.includes('--write-report')) {
+  writeFileSync(join(__dirname, '..', 'docs', 'PHASE0-BENCHMARK-REPORT.md'), reportLines.join('\n'));
+  console.log('\nWrote docs/PHASE0-BENCHMARK-REPORT.md');
+} else {
+  console.log('\n(Report not written — pass --write-report to regenerate docs/PHASE0-BENCHMARK-REPORT.md.');
+  console.log(' Timings vary run to run, so a plain run stays console-only and never dirties the working tree.)');
+}
