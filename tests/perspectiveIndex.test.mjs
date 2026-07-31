@@ -546,6 +546,92 @@ test('unknown viewerId returns a safe, empty index rather than throwing', () => 
   assert.equal(idx.outsideIds.size, 2);
 });
 
+// ── No arbitrary generation cap (Codex review, PR #87, P1 #1) ─────────────
+
+test('a direct ancestor more than 8 generations up is still primary — no silent truncation', () => {
+  // 10 generations: anc(10) -> ... -> v, all biological.
+  const N = 10;
+  const ids = Array.from({ length: N + 1 }, (_, i) => `g${i}`); // g0 = eldest ancestor, gN = v
+  const people = ids.map((id) => person(id));
+  const rels = [];
+  for (let i = 0; i < N; i++) rels.push(parentEdge(ids[i], ids[i + 1]));
+  const g = buildGraph(people, rels);
+  const idx = computePerspectiveIndex(g, { viewerId: 'g10', perimeterLevel: 1 });
+  const r = reasonOf(idx, 'g0');
+  assert.equal(r.tier, 'primary');
+  assert.equal(r.route, 'ancestor');
+  assert.ok(idx.insightCohortIds.directLine.has('g0'), 'a 10-generations-up ancestor must still be directLine, not truncated at 8');
+});
+
+test('a 1st cousin at a large removal (well beyond 8 generations of descent) is still included — "any removal" has no cap', () => {
+  // v's parent's SIBLING (v's aunt/uncle) has a line of descendants 9
+  // generations deep — the 9th-generation descendant is still v's 1st
+  // cousin (degree 1), just heavily removed. Before the fix, the "generous"
+  // descent from a close ancestor (upA <= maxDegree+1) was still silently
+  // capped at the default maxDepth=8, truncating exactly this case.
+  const g = buildGraph(
+    [person('v'), person('dad'), person('gp'), person('gp2'), person('auntFar'),
+      ...Array.from({ length: 9 }, (_, i) => person(`desc${i}`))],
+    [
+      parentEdge('gp', 'dad'), parentEdge('gp2', 'dad'), parentEdge('dad', 'v'),
+      parentEdge('gp', 'auntFar'), parentEdge('gp2', 'auntFar'),
+      parentEdge('auntFar', 'desc0'),
+      ...Array.from({ length: 8 }, (_, i) => parentEdge(`desc${i}`, `desc${i + 1}`)),
+    ],
+  );
+  const idx = computePerspectiveIndex(g, { viewerId: 'v', perimeterLevel: 1 });
+  const r = idx.inclusionReasonById.get('desc8'); // 9 generations down from auntFar
+  assert.ok(r, 'a heavily-removed 1st cousin must not be truncated');
+  assert.equal(r.tier, 'primary');
+  assert.equal(r.degree, 1);
+  assert.equal(r.removal, 8);
+});
+
+// ── Retained multi-route reasons (Codex review, PR #87, P1 #2) ────────────
+
+test('a person qualifying through two distinct routes retains BOTH in inclusionReasonsById, with the canonical one first and stable', () => {
+  // Same shape as the "former partner with a shared child" case above: the
+  // shared child makes "ex" qualify both as the child's own parent (halo,
+  // via the child) AND as viewer's former-partner-with-shared-child (halo,
+  // via viewer) — a genuine tie, resolved deterministically.
+  const g = buildGraph(
+    [person('v'), person('ex'), person('kid')],
+    [partnerEdge('v', 'ex', 'former'), parentEdge('v', 'kid'), parentEdge('ex', 'kid')],
+  );
+  const idx = computePerspectiveIndex(g, { viewerId: 'v', perimeterLevel: 1 });
+  const all = idx.inclusionReasonsById.get('ex');
+  assert.ok(Array.isArray(all) && all.length >= 2, 'both qualifying routes must be retained for diagnostics');
+  const routes = all.map((r) => `${r.tier}/${r.route}/${r.sourceId}`);
+  assert.ok(routes.includes('familyHalo/parent/kid'));
+  assert.ok(routes.includes('familyHalo/partner/v'));
+  // The canonical single-reason map must always agree with index 0 of the
+  // full retained list — that's the whole point of resolving both from the
+  // same sort order.
+  assert.deepEqual(idx.inclusionReasonById.get('ex'), all[0]);
+});
+
+test('a person already primary who also sits on a temporary-reveal path retains BOTH reasons, without the weaker one ever winning canonically', () => {
+  // Same 3rd-cousin fixture as the temporary-reveal test above: l1 (v's own
+  // parent) is already primary, AND sits on the minimum reveal path to the
+  // outside 3rd-cousin target — so revealing target should add a SECOND,
+  // temporaryReveal-tier candidate for l1 on top of its real one.
+  const g = buildGraph(
+    [person('v'), person('l1'), person('l2'), person('l3'), person('anc4'),
+      person('r3'), person('r2'), person('r1'), person('target'), person('targetKid')],
+    [
+      parentEdge('anc4', 'l3'), parentEdge('anc4', 'r3'),
+      parentEdge('l3', 'l2'), parentEdge('l2', 'l1'), parentEdge('l1', 'v'),
+      parentEdge('r3', 'r2'), parentEdge('r2', 'r1'), parentEdge('r1', 'target'), parentEdge('target', 'targetKid'),
+    ],
+  );
+  const idx = computePerspectiveIndex(g, { viewerId: 'v', perimeterLevel: 1, temporaryRevealIds: ['target'] });
+  assert.equal(idx.inclusionReasonById.get('l1').tier, 'primary', 'the stronger, real reason must still win canonically');
+  const all = idx.inclusionReasonsById.get('l1');
+  assert.ok(all.length >= 2, 'both the real reason and the reveal-path reason must be retained');
+  assert.ok(all.some((r) => r.tier === 'temporaryReveal'), 'the temporary-reveal route is still retained for diagnostics');
+  assert.deepEqual(all[0], idx.inclusionReasonById.get('l1'), 'index 0 of the full list is always the canonical reason');
+});
+
 // ── 5,000-person performance budget (docs §7) ──────────────────────────────
 
 test('5,000-person perimeter calculation meets the ≤300ms budget (standard 4-anchor case, measured on main thread as a worker-budget proxy)', () => {

@@ -108,6 +108,19 @@ function computePrimaryPerimeter(graph, anchorIds, perimeterLevel, candidatesByP
   const primaryIds = new Set();
   const directLineIds = new Set();
 
+  // §3.5/§3.6 require ALL direct ancestors/descendants and cousins "at any
+  // removal" — no arbitrary generation cap. ancestorsWithDistance/
+  // descendantsWithDistance default to maxDepth=8 (fine for relationLabel's
+  // own naming use, which never needs to reach further), but that default
+  // would silently truncate a real perimeter here (Codex review, PR #87).
+  // Their own `visited` set already makes the traversal cycle-safe with NO
+  // depth limit at all — a corrupt cycle just runs out of new neighbours,
+  // it doesn't loop forever — so the only reason to pass a bound here is a
+  // defensive backstop, not a correctness requirement: no family can have
+  // more generations than it has people, so graph.people.length+1 can never
+  // truncate a real line while still being a hard, finite ceiling.
+  const safeDepth = graph.people.length + 1;
+
   const addPrimary = (id, candidate) => {
     primaryIds.add(id);
     addCandidate(candidatesByPersonId, id, candidate);
@@ -123,8 +136,8 @@ function computePrimaryPerimeter(graph, anchorIds, perimeterLevel, candidatesByP
     for (const anchorId of anchorIds) {
       if (!graph.byId.has(anchorId)) continue;
       directLineIds.add(anchorId);
-      for (const id of ancestorsWithDistance(graph, anchorId).keys()) directLineIds.add(id);
-      for (const id of descendantsWithDistance(graph, anchorId).keys()) directLineIds.add(id);
+      for (const id of ancestorsWithDistance(graph, anchorId, safeDepth).keys()) directLineIds.add(id);
+      for (const id of descendantsWithDistance(graph, anchorId, safeDepth).keys()) directLineIds.add(id);
     }
     return { primaryIds, directLineIds };
   }
@@ -139,14 +152,14 @@ function computePrimaryPerimeter(graph, anchorIds, perimeterLevel, candidatesByP
     addPrimary(anchorId, { tier: 'primary', route: 'anchor', sourceId: anchorId, closeness: [0] });
     directLineIds.add(anchorId);
 
-    const ups = ancestorsWithDistance(graph, anchorId);
+    const ups = ancestorsWithDistance(graph, anchorId, safeDepth);
     for (const [id, node] of ups) {
       if (id === anchorId) continue;
       addPrimary(id, { tier: 'primary', route: 'ancestor', sourceId: anchorId, closeness: [node.distance] });
       directLineIds.add(id);
     }
 
-    const downs = descendantsWithDistance(graph, anchorId);
+    const downs = descendantsWithDistance(graph, anchorId, safeDepth);
     for (const [id, node] of downs) {
       if (id === anchorId) continue;
       addPrimary(id, { tier: 'primary', route: 'descendant', sourceId: anchorId, closeness: [node.distance] });
@@ -171,7 +184,7 @@ function computePrimaryPerimeter(graph, anchorIds, perimeterLevel, candidatesByP
       const upA = ancNode.distance;
       if (upA < 1) continue; // ancId === anchor itself — nothing collateral from here
       const descFromAnc = upA <= maxDegree + 1
-        ? descendantsWithDistance(graph, ancId)
+        ? descendantsWithDistance(graph, ancId, safeDepth)
         : descendantsWithDistance(graph, ancId, maxDegree + 1);
       for (const [candId, candNode] of descFromAnc) {
         const downB = candNode.distance;
@@ -377,6 +390,7 @@ function emptyIndex(graph) {
     perimeterIds: new Set(),
     outsideIds: new Set(graph.people.map((p) => p.id)),
     inclusionReasonById: new Map(),
+    inclusionReasonsById: new Map(),
     explanationById: new Map(),
     relationshipById: new Map(),
     boundaryEdges: [],
@@ -411,6 +425,12 @@ function emptyIndex(graph) {
  *   temporaryRevealIds — outside-person ids to add to a session-only
  *                        presentation set (§3.8); never changes perimeterIds
  *                        or insightCohortIds.personal/context.
+ *
+ * `inclusionReasonById` is the one CANONICAL reason per person (for ordinary
+ * explanation); `inclusionReasonsById` is every qualifying reason for that
+ * same person, sorted so index 0 always equals the canonical one — §3.4
+ * requires retaining every route a person qualifies through for diagnostics,
+ * even though only one is ever shown by default.
  */
 export function computePerspectiveIndex(graph, options = {}) {
   const {
@@ -429,30 +449,44 @@ export function computePerspectiveIndex(graph, options = {}) {
   const { haloIds, haloPartnerIds } = computeFamilyHalo(graph, primaryIds, candidatesByPersonId);
   const partnerContextIds = computePartnerContextRing(graph, haloPartnerIds, candidatesByPersonId);
 
-  const inclusionReasonById = resolveCanonicalReasons(candidatesByPersonId);
-
   const perimeterIds = new Set([...primaryIds, ...haloIds, ...partnerContextIds]);
   const outsideIds = new Set();
   for (const p of graph.people) if (!perimeterIds.has(p.id)) outsideIds.add(p.id);
 
+  const boundaryEdges = computeBoundaryEdges(graph, perimeterIds, outsideIds);
+
+  // Temporary-reveal candidates are folded into the SAME candidate pool
+  // before canonical resolution runs — this is what lets a reveal target
+  // who's already reachable some weaker way still show every qualifying
+  // reason (§3.4: "the engine retains all qualifying reasons for
+  // diagnostics"), and it's a no-op for canonical purposes since
+  // temporaryReveal is already the lowest-ranked tier (a stronger existing
+  // reason always still wins).
+  const { presentationIds: temporaryRevealPresentationIds, pathById: minimumRevealPathById } =
+    computeTemporaryReveal(graph, anchorIds, perimeterIds, temporaryRevealIds);
+  for (const id of temporaryRevealPresentationIds) {
+    addCandidate(candidatesByPersonId, id, { tier: 'temporaryReveal', route: 'reveal', sourceId: id, closeness: [0] });
+  }
+
+  // Canonical reason (one per person, for ordinary explanation) AND the
+  // full retained candidate list (§3.4: "retains all qualifying reasons for
+  // diagnostics") — the same sort order (compareReasons) that picks the
+  // canonical winner also orders the full list, so inclusionReasonsById[id][0]
+  // is always exactly inclusionReasonById.get(id).
+  const inclusionReasonById = resolveCanonicalReasons(candidatesByPersonId);
+  const inclusionReasonsById = new Map();
+  for (const [id, candidates] of candidatesByPersonId) {
+    inclusionReasonsById.set(id, [...candidates].sort(compareReasons));
+  }
+
   const relationshipById = new Map();
   const explanationById = new Map();
-  for (const id of perimeterIds) {
+  for (const id of new Set([...perimeterIds, ...temporaryRevealPresentationIds])) {
     relationshipById.set(id, relationLabel(graph, viewerId, id));
     explanationById.set(id, explainInclusion(graph, viewerId, id, inclusionReasonById));
   }
 
-  const boundaryEdges = computeBoundaryEdges(graph, perimeterIds, outsideIds);
   const bloodlineIds = bloodlineOnly ? computeBloodlineProjection(graph, perimeterIds, anchorIds, viewerId) : null;
-
-  const { presentationIds: temporaryRevealPresentationIds, pathById: minimumRevealPathById } =
-    computeTemporaryReveal(graph, anchorIds, perimeterIds, temporaryRevealIds);
-  for (const id of temporaryRevealPresentationIds) {
-    if (inclusionReasonById.has(id)) continue; // a weaker route never overwrites a stronger one (§3.4)
-    inclusionReasonById.set(id, { tier: 'temporaryReveal', route: 'reveal', sourceId: id, closeness: [0] });
-    explanationById.set(id, 'Temporarily shown from Search.');
-    relationshipById.set(id, relationLabel(graph, viewerId, id));
-  }
 
   const insightCohortIds = {
     personal: new Set([...primaryIds, ...haloIds]),
@@ -470,6 +504,7 @@ export function computePerspectiveIndex(graph, options = {}) {
     perimeterIds,
     outsideIds,
     inclusionReasonById,
+    inclusionReasonsById,
     explanationById,
     relationshipById,
     boundaryEdges,
