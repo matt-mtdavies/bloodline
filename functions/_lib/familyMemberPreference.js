@@ -28,23 +28,32 @@ export function isValidPerimeterLevel(level) {
 
 /*
  * Returns the caller's saved preference for one family, or the safe default
- * if they've never chosen one. `hasSavedPreference: false` distinguishes
- * "never set, defaulting" from "explicitly chose Complete family tree" —
- * callers that need to know whether a REAL row exists (e.g. the new-user
- * recommendation's "insert only if absent" check) can use that instead of
- * inferring it from the level string alone.
+ * if they've never chosen one.
+ *
+ * `hasSavedPreference: false` distinguishes "never set, defaulting" from
+ * "a row exists" — but a row existing is NOT the same as the member having
+ * made an explicit choice: `isRecommendation: true` (Codex review, PR #88)
+ * marks a row the SYSTEM planted via the `ifUnset` starting-recommendation
+ * flow, never confirmed by the member. Callers that need "should the
+ * Recommended badge still show?" must check `isRecommendation`, not
+ * `hasSavedPreference` — treating a planted recommendation as an explicit
+ * choice was the exact bug this field fixes.
  */
 export async function getFamilyMemberPreference(env, { familyId, userId }) {
   const row = await env.DB.prepare(
-    'SELECT perimeter_level, preference_version, updated_at FROM family_member_preference WHERE family_id = ? AND user_id = ?',
+    'SELECT perimeter_level, source, preference_version, updated_at FROM family_member_preference WHERE family_id = ? AND user_id = ?',
   ).bind(familyId, userId).first();
   if (!row) {
-    return { perimeterLevel: DEFAULT_PERIMETER_LEVEL, preferenceVersion: 0, hasSavedPreference: false, updatedAt: null };
+    return {
+      perimeterLevel: DEFAULT_PERIMETER_LEVEL, preferenceVersion: 0,
+      hasSavedPreference: false, isRecommendation: false, updatedAt: null,
+    };
   }
   return {
     perimeterLevel: row.perimeter_level,
     preferenceVersion: row.preference_version,
     hasSavedPreference: true,
+    isRecommendation: row.source === 'recommended',
     updatedAt: row.updated_at,
   };
 }
@@ -55,13 +64,20 @@ export async function getFamilyMemberPreference(env, { familyId, userId }) {
  * starting recommendation only if nobody has chosen anything yet" write
  * (the §3.1 "new users offered Extended family" flow), safe to call any
  * number of times without ever clobbering a real choice, and without a
- * separate read-before-write that could race. An ordinary user-initiated
- * settings change always uses the full upsert (overwrite unconditionally).
+ * separate read-before-write that could race. The planted row is stamped
+ * `source: 'recommended'` — never treated as an explicit choice until the
+ * member actually saves something themselves.
  *
- * Always writes an audit row (§9.2) — old_level/new_level only, never any
- * relationship or tree content — even for an `ifUnset` write that turns out
- * to be a no-op, EXCEPT that specific no-op case: if the row already existed,
- * `ifUnset` intentionally changed nothing, so there is nothing to audit.
+ * An ordinary (non-ifUnset) save always stamps `source: 'explicit'`,
+ * unconditionally — even re-selecting the SAME level a recommendation
+ * already held is a real, meaningful transition (confirming a suggestion
+ * is not the same as never having chosen), so it still bumps the version
+ * and writes an audit row. The one case that's skipped entirely as a true
+ * no-op is re-saving a level that was ALREADY explicit — genuinely nothing
+ * changed, so there is genuinely nothing to version-bump or audit.
+ *
+ * Every real change writes an audit row (§9.2) — old_level/new_level only,
+ * never any relationship or tree content.
  */
 export async function setFamilyMemberPreference(env, { familyId, userId, level, ifUnset = false, now = Date.now() }) {
   if (!isValidPerimeterLevel(level)) {
@@ -72,8 +88,8 @@ export async function setFamilyMemberPreference(env, { familyId, userId, level, 
 
   if (ifUnset) {
     const result = await env.DB.prepare(
-      `INSERT OR IGNORE INTO family_member_preference (family_id, user_id, perimeter_level, preference_version, updated_at)
-       VALUES (?, ?, ?, 1, ?)`,
+      `INSERT OR IGNORE INTO family_member_preference (family_id, user_id, perimeter_level, source, preference_version, updated_at)
+       VALUES (?, ?, ?, 'recommended', 1, ?)`,
     ).bind(familyId, userId, level, nowSec).run();
     const changesApplied = (result?.meta?.changes ?? 0) > 0;
     if (!changesApplied) {
@@ -82,15 +98,22 @@ export async function setFamilyMemberPreference(env, { familyId, userId, level, 
       return before;
     }
     await writeAudit(env, { familyId, userId, oldLevel: null, newLevel: level, now: nowSec });
-    return { perimeterLevel: level, preferenceVersion: 1, hasSavedPreference: true, updatedAt: nowSec };
+    return { perimeterLevel: level, preferenceVersion: 1, hasSavedPreference: true, isRecommendation: true, updatedAt: nowSec };
+  }
+
+  // True no-op: already an explicit choice, and re-saving the identical
+  // level — nothing changed, so nothing is written.
+  if (before.hasSavedPreference && !before.isRecommendation && before.perimeterLevel === level) {
+    return before;
   }
 
   const nextVersion = (before.preferenceVersion || 0) + 1;
   await env.DB.prepare(
-    `INSERT INTO family_member_preference (family_id, user_id, perimeter_level, preference_version, updated_at)
-     VALUES (?, ?, ?, ?, ?)
+    `INSERT INTO family_member_preference (family_id, user_id, perimeter_level, source, preference_version, updated_at)
+     VALUES (?, ?, ?, 'explicit', ?, ?)
      ON CONFLICT(family_id, user_id) DO UPDATE SET
        perimeter_level = excluded.perimeter_level,
+       source = 'explicit',
        preference_version = excluded.preference_version,
        updated_at = excluded.updated_at`,
   ).bind(familyId, userId, level, nextVersion, nowSec).run();
@@ -102,7 +125,7 @@ export async function setFamilyMemberPreference(env, { familyId, userId, level, 
     now: nowSec,
   });
 
-  return { perimeterLevel: level, preferenceVersion: nextVersion, hasSavedPreference: true, updatedAt: nowSec };
+  return { perimeterLevel: level, preferenceVersion: nextVersion, hasSavedPreference: true, isRecommendation: false, updatedAt: nowSec };
 }
 
 async function writeAudit(env, { familyId, userId, oldLevel, newLevel, now }) {

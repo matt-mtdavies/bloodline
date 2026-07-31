@@ -44,14 +44,14 @@ function makeFakeEnv({ familyId = 'fam_1', role = 'owner', prefs = [] } = {}) {
           const [fid, uid, level, version, updatedAt] = args;
           const existing = prefRows.find((r) => r.family_id === fid && r.user_id === uid);
           if (existing) return { success: true, meta: { changes: 0 } };
-          prefRows.push({ family_id: fid, user_id: uid, perimeter_level: level, preference_version: version, updated_at: updatedAt });
+          prefRows.push({ family_id: fid, user_id: uid, perimeter_level: level, source: 'recommended', preference_version: version, updated_at: updatedAt });
           return { success: true, meta: { changes: 1 } };
         }
         if (sql.includes('INSERT INTO family_member_preference') && sql.includes('ON CONFLICT')) {
           const [fid, uid, level, version, updatedAt] = args;
           const existing = prefRows.find((r) => r.family_id === fid && r.user_id === uid);
-          if (existing) { existing.perimeter_level = level; existing.preference_version = version; existing.updated_at = updatedAt; }
-          else prefRows.push({ family_id: fid, user_id: uid, perimeter_level: level, preference_version: version, updated_at: updatedAt });
+          if (existing) { existing.perimeter_level = level; existing.source = 'explicit'; existing.preference_version = version; existing.updated_at = updatedAt; }
+          else prefRows.push({ family_id: fid, user_id: uid, perimeter_level: level, source: 'explicit', preference_version: version, updated_at: updatedAt });
           return { success: true };
         }
         if (sql.includes('INSERT INTO family_member_preference_audit')) {
@@ -63,6 +63,31 @@ function makeFakeEnv({ familyId = 'fam_1', role = 'owner', prefs = [] } = {}) {
     };
   }
   return { env: { DB: { prepare: (sql) => stmt(sql) } }, prefRows, auditRows };
+}
+
+// Simulates migration 0019 not yet applied: user/family_member resolve
+// fine (a real, established user/family), but ANY touch of
+// family_member_preference throws, exactly like a real "no such table"
+// D1 error would.
+function makeMissingPreferenceTableEnv({ familyId = 'fam_1', role = 'owner' } = {}) {
+  function stmt(sql) {
+    return {
+      bind() { return this; },
+      async first() {
+        if (sql.includes('SELECT family_id FROM user WHERE id')) return { family_id: familyId };
+        if (sql.includes('SELECT fm.family_id, fm.role, f.name AS family_name')) {
+          return { family_id: familyId, role, family_name: 'Test Family' };
+        }
+        if (sql.includes('FROM family_member_preference')) throw new Error('no such table: family_member_preference');
+        throw new Error(`unhandled .first(): ${sql}`);
+      },
+      async run() {
+        if (sql.includes('family_member_preference')) throw new Error('no such table: family_member_preference');
+        throw new Error(`unhandled .run(): ${sql}`);
+      },
+    };
+  }
+  return { DB: { prepare: (sql) => stmt(sql) } };
 }
 
 function makeUnclaimedEnv() {
@@ -140,11 +165,42 @@ await atest('PATCH: saves the caller\'s own preference and returns the canonical
 });
 
 await atest('PATCH: ifUnset never overwrites an existing real choice, end to end through the route', async () => {
-  const { env, prefRows } = makeFakeEnv({ prefs: [{ family_id: 'fam_1', user_id: 'u1', perimeter_level: 'first', preference_version: 1, updated_at: 1 }] });
+  const { env, prefRows } = makeFakeEnv({ prefs: [{ family_id: 'fam_1', user_id: 'u1', perimeter_level: 'first', source: 'explicit', preference_version: 1, updated_at: 1 }] });
   const res = await onRequestPatch({ request: req({ level: 'second', ifUnset: true }), env, data: { user: { uid: 'u1' } } });
   const body = await res.json();
   assert.equal(body.perimeterLevel, 'first');
   assert.equal(prefRows[0].perimeter_level, 'first');
+});
+
+await atest('PATCH: end to end, a planted recommendation reports isRecommendation:true, and an explicit save clears it', async () => {
+  const { env } = makeFakeEnv();
+  const plantRes = await onRequestPatch({ request: req({ level: 'second', ifUnset: true }), env, data: { user: { uid: 'u1' } } });
+  const planted = await plantRes.json();
+  assert.equal(planted.isRecommendation, true);
+
+  const explicitRes = await onRequestPatch({ request: req({ level: 'second' }), env, data: { user: { uid: 'u1' } } });
+  const confirmed = await explicitRes.json();
+  assert.equal(confirmed.isRecommendation, false, 'an explicit save must clear the recommendation flag, even for the same level');
+
+  const getRes = await onRequestGet({ env, data: { user: { uid: 'u1' } } });
+  const read = await getRes.json();
+  assert.equal(read.isRecommendation, false, 'the cleared state must persist and be read back correctly');
+});
+
+// ── missing-migration safety (Codex review, PR #88, P1 #2) ────────────────
+
+await atest('GET: 503 (not 500/unstructured) when family_member_preference doesn\'t exist yet', async () => {
+  const res = await onRequestGet({ env: makeMissingPreferenceTableEnv(), data: { user: { uid: 'u1' } } });
+  assert.equal(res.status, 503);
+  const body = await res.json();
+  assert.equal(body.error, 'not_configured');
+});
+
+await atest('PATCH: 503 (not 500/unstructured) when family_member_preference doesn\'t exist yet', async () => {
+  const res = await onRequestPatch({ request: req({ level: 'first' }), env: makeMissingPreferenceTableEnv(), data: { user: { uid: 'u1' } } });
+  assert.equal(res.status, 503);
+  const body = await res.json();
+  assert.equal(body.error, 'not_configured');
 });
 
 console.log(`\n  ${passed} passed, ${failed} failed`);

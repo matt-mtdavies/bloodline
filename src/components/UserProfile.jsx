@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useKinTerms, setKinTermsPref, GRANDPARENT_TERM_PACKS, CUSTOM_PACK_ID } from '../lib/kinTerms.js';
 import {
-  PERIMETER_OPTIONS, RECOMMENDED_LEVEL_FOR_NEW_USERS,
+  PERIMETER_OPTIONS,
   fetchPerimeterPreference, savePerimeterPreference, planPerimeterRecommendationIfUnset,
 } from '../lib/familyPerimeter.js';
 import ReturnMark from './ReturnMark.jsx';
@@ -38,7 +38,11 @@ export default function UserProfile({ user, people = [], onClose, onLogout, onSa
   // Family Perimeter (docs/FAMILY-PERIMETER-AND-5000-PERSON-PERFORMANCE.md
   // §3.1/§9.2) — a separate small round trip from the main profile fetch
   // above, since it's its own endpoint/table, not a `user` column.
-  const [perimeter, setPerimeter] = useState(null); // { perimeterLevel, hasSavedPreference, unclaimed? } | null while loading
+  // `{ unavailable: true }` (migration not yet applied in this environment,
+  // or a network failure) is a distinct, renderable state — never left as
+  // a silent, permanently-blank section (Codex review, PR #88: "failure
+  // falls back safely and visibly").
+  const [perimeter, setPerimeter] = useState(null); // { perimeterLevel, hasSavedPreference, isRecommendation, unclaimed? } | { unavailable: true } | null while loading
   const [perimeterSaving, setPerimeterSaving] = useState(false);
   const [perimeterStatus, setPerimeterStatus] = useState(null); // null | 'saved' | error string
   const perimeterStatusTimer = useRef(null);
@@ -46,7 +50,9 @@ export default function UserProfile({ user, people = [], onClose, onLogout, onSa
   const loadPerimeter = useCallback(async () => {
     try {
       setPerimeter(await fetchPerimeterPreference());
-    } catch { /* leave null — section quietly shows nothing until a retry succeeds */ }
+    } catch {
+      setPerimeter({ unavailable: true });
+    }
   }, []);
 
   useEffect(() => { loadPerimeter(); }, [loadPerimeter]);
@@ -59,7 +65,14 @@ export default function UserProfile({ user, people = [], onClose, onLogout, onSa
       setPerimeter((p) => ({ ...p, ...saved }));
       setPerimeterStatus('saved');
     } catch (e) {
-      setPerimeterStatus(e.message || 'Could not save');
+      if (e.unavailable) {
+        // The underlying data isn't reliable either way — show the same
+        // clear "not available" state as a failed load, not a fleeting
+        // status line next to controls that may no longer reflect reality.
+        setPerimeter({ unavailable: true });
+      } else {
+        setPerimeterStatus(e.message || 'Could not save');
+      }
     } finally {
       setPerimeterSaving(false);
       perimeterStatusTimer.current = setTimeout(() => setPerimeterStatus(null), 2500);
@@ -230,11 +243,22 @@ export default function UserProfile({ user, people = [], onClose, onLogout, onSa
               Link your profile to your person in the tree to create a personal
               Family Perimeter. Until then, Bloodline shows the complete family tree.
             </p>
+          ) : perimeter?.unavailable ? (
+            <p className="up__hint">
+              Family Perimeter isn't available right now — showing the complete
+              family tree until this loads. Try again later.
+            </p>
           ) : (
             <div className="up__perimeter" role="radiogroup" aria-label="Family Perimeter">
               {PERIMETER_OPTIONS.map((opt) => {
                 const checked = (perimeter?.perimeterLevel || 'everyone') === opt.value;
-                const recommended = perimeter && !perimeter.hasSavedPreference && opt.value === RECOMMENDED_LEVEL_FOR_NEW_USERS;
+                // A "Recommended" badge means the SYSTEM planted this as a
+                // starting suggestion (§3.1) — never confirmed by the member
+                // yet. It must never show once any real choice is saved,
+                // even if that choice happens to be this same level
+                // (Codex review, PR #88: hasSavedPreference alone can't
+                // tell a recommendation from consent — isRecommendation can).
+                const recommended = checked && perimeter?.isRecommendation === true;
                 return (
                   <label key={opt.value} className={`up__perimeter-row${checked ? ' up__perimeter-row--on' : ''}`}>
                     <input

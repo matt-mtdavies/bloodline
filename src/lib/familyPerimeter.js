@@ -24,10 +24,18 @@ export const PERIMETER_OPTIONS = [
 // starting point after they claim their own person."
 export const RECOMMENDED_LEVEL_FOR_NEW_USERS = 'second';
 
+// A 503 (family_member_preference table not yet migrated in this
+// environment) is a distinct, expected state — not a bug the caller should
+// report as a generic error string. Both fetch helpers surface it as
+// `{ unavailable: true }` / a thrown Error with `.unavailable = true` so
+// the UI can render a clear, honest "not available yet" message (§3.2's
+// Phase 3 "failure falls back safely and visibly" exit criterion) instead
+// of silently showing nothing or a confusing raw error.
 export async function fetchPerimeterPreference() {
   const res = await fetch('/api/user/perimeter');
+  if (res.status === 503) return { unavailable: true };
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return res.json(); // { perimeterLevel, hasSavedPreference, unclaimed? }
+  return res.json(); // { perimeterLevel, hasSavedPreference, isRecommendation, unclaimed? }
 }
 
 export async function savePerimeterPreference(level) {
@@ -36,6 +44,11 @@ export async function savePerimeterPreference(level) {
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ level }),
   });
+  if (res.status === 503) {
+    const e = new Error('Family Perimeter isn’t available right now.');
+    e.unavailable = true;
+    throw e;
+  }
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.message || err.error || `HTTP ${res.status}`);
