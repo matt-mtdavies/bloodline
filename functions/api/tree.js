@@ -1,6 +1,7 @@
 import { json, sendEmail } from '../_lib/util.js';
 import { createFamily } from '../_lib/family.js';
 import { loadTree, loadFullTree, upsertTreeStatement, snapshotStatements, splitTree, putExtra } from '../_lib/treeStore.js';
+import { getFamilyMemberPreference } from '../_lib/familyMemberPreference.js';
 
 /*
  * GET /api/tree  — load the authenticated user's family tree.
@@ -104,9 +105,33 @@ export async function onRequestGet({ env, data }) {
     // family.name. Prefer the real family.name over that empty string here.
     const familyName = parsed.familyName || membership.family_name || '';
 
+    // Family Perimeter preference (docs/FAMILY-PERIMETER-AND-5000-PERSON-
+    // PERFORMANCE.md §9.2: "include preference in authenticated bootstrap"),
+    // so the client has it on the same round trip that loads the tree
+    // rather than a separate request. Wrapped defensively like the
+    // activity_log merge above — this table (migration 0019) may not exist
+    // yet in every environment, and that must never break a tree load.
+    // Absence (missing table OR no saved row) safely defaults to
+    // 'everyone' — never silently narrows an existing user's view.
+    let perimeter = { perimeterLevel: 'everyone', hasSavedPreference: false };
+    try {
+      perimeter = await getFamilyMemberPreference(env, { familyId: membership.family_id, userId: data.user.uid });
+    } catch (e) {
+      console.error('[tree] GET family_member_preference lookup skipped:', e.message);
+    }
+
     const etag = `"${loaded.updatedAt}"`;
     return json(
-      { ...parsed, familyName, _meta: { familyId: membership.family_id, role: membership.role } },
+      {
+        ...parsed,
+        familyName,
+        _meta: {
+          familyId: membership.family_id,
+          role: membership.role,
+          perimeterLevel: perimeter.perimeterLevel,
+          hasSavedPerimeterPreference: perimeter.hasSavedPreference,
+        },
+      },
       { headers: { 'cache-control': 'private, no-store', 'ETag': etag } },
     );
   } catch (e) {

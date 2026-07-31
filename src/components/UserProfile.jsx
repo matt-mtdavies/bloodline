@@ -1,5 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useKinTerms, setKinTermsPref, GRANDPARENT_TERM_PACKS, CUSTOM_PACK_ID } from '../lib/kinTerms.js';
+import {
+  PERIMETER_OPTIONS, RECOMMENDED_LEVEL_FOR_NEW_USERS,
+  fetchPerimeterPreference, savePerimeterPreference, planPerimeterRecommendationIfUnset,
+} from '../lib/familyPerimeter.js';
 import ReturnMark from './ReturnMark.jsx';
 
 export default function UserProfile({ user, people = [], onClose, onLogout, onSaved, onPhoto }) {
@@ -30,6 +34,37 @@ export default function UserProfile({ user, people = [], onClose, onLogout, onSa
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  // Family Perimeter (docs/FAMILY-PERIMETER-AND-5000-PERSON-PERFORMANCE.md
+  // §3.1/§9.2) — a separate small round trip from the main profile fetch
+  // above, since it's its own endpoint/table, not a `user` column.
+  const [perimeter, setPerimeter] = useState(null); // { perimeterLevel, hasSavedPreference, unclaimed? } | null while loading
+  const [perimeterSaving, setPerimeterSaving] = useState(false);
+  const [perimeterStatus, setPerimeterStatus] = useState(null); // null | 'saved' | error string
+  const perimeterStatusTimer = useRef(null);
+
+  const loadPerimeter = useCallback(async () => {
+    try {
+      setPerimeter(await fetchPerimeterPreference());
+    } catch { /* leave null — section quietly shows nothing until a retry succeeds */ }
+  }, []);
+
+  useEffect(() => { loadPerimeter(); }, [loadPerimeter]);
+
+  async function choosePerimeterLevel(level) {
+    setPerimeterSaving(true);
+    clearTimeout(perimeterStatusTimer.current);
+    try {
+      const saved = await savePerimeterPreference(level);
+      setPerimeter((p) => ({ ...p, ...saved }));
+      setPerimeterStatus('saved');
+    } catch (e) {
+      setPerimeterStatus(e.message || 'Could not save');
+    } finally {
+      setPerimeterSaving(false);
+      perimeterStatusTimer.current = setTimeout(() => setPerimeterStatus(null), 2500);
+    }
+  }
 
   useEffect(() => {
     const onKey = (e) => e.key === 'Escape' && onClose();
@@ -90,6 +125,9 @@ export default function UserProfile({ user, people = [], onClose, onLogout, onSa
     if (!person_id) { patch({ person_id: null }); return; }
     const person = people.find((p) => p.id === person_id);
     patch({ person_id, person_name: person?.display_name ?? person_id });
+    // §3.1: plants the "Extended family" starting recommendation right at
+    // the moment of claiming — a no-op if a preference is already saved.
+    planPerimeterRecommendationIfUnset().then(loadPerimeter);
   }
 
   const initials = getInitials(profile?.display_name || user?.email || '');
@@ -176,6 +214,54 @@ export default function UserProfile({ user, people = [], onClose, onLogout, onSa
           )}
           {!claimedPerson && !loading && (
             <p className="up__hint">Pick which person in the tree represents you.</p>
+          )}
+        </div>
+
+        {/* Family Perimeter — docs/FAMILY-PERIMETER-AND-5000-PERSON-PERFORMANCE.md §3.1 */}
+        <div className="fs__section">
+          <p className="fs__label">Family Perimeter</p>
+          <p className="up__hint">
+            Choose how much of your family Bloodline brings forward during everyday
+            browsing. People outside your perimeter remain part of the complete
+            family tree and are always searchable.
+          </p>
+          {!claimedPerson ? (
+            <p className="up__hint">
+              Link your profile to your person in the tree to create a personal
+              Family Perimeter. Until then, Bloodline shows the complete family tree.
+            </p>
+          ) : (
+            <div className="up__perimeter" role="radiogroup" aria-label="Family Perimeter">
+              {PERIMETER_OPTIONS.map((opt) => {
+                const checked = (perimeter?.perimeterLevel || 'everyone') === opt.value;
+                const recommended = perimeter && !perimeter.hasSavedPreference && opt.value === RECOMMENDED_LEVEL_FOR_NEW_USERS;
+                return (
+                  <label key={opt.value} className={`up__perimeter-row${checked ? ' up__perimeter-row--on' : ''}`}>
+                    <input
+                      type="radio"
+                      name="up-perimeter-level"
+                      value={opt.value}
+                      checked={checked}
+                      onChange={() => choosePerimeterLevel(opt.value)}
+                      disabled={perimeterSaving || !perimeter}
+                      aria-describedby={`up-perimeter-desc-${opt.value}`}
+                    />
+                    <span className="up__perimeter-text">
+                      <span className="up__perimeter-title">
+                        {opt.label}
+                        {recommended && <span className="up__perimeter-badge">Recommended</span>}
+                      </span>
+                      <span className="up__perimeter-desc" id={`up-perimeter-desc-${opt.value}`}>{opt.description}</span>
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+          )}
+          {perimeterStatus && (
+            <p className="up__hint" role="status">
+              {perimeterStatus === 'saved' ? 'Saved' : perimeterStatus}
+            </p>
           )}
         </div>
 
