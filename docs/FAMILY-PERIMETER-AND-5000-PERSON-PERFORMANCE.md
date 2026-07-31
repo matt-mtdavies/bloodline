@@ -153,6 +153,44 @@ The inclusion layers are:
 
 The UI should not burden people with these engineering terms during normal use. They exist so behaviour is deterministic, testable and explainable when someone asks why a person is present.
 
+**Decision note — one-generation halo spillover at a cousin-degree boundary (recorded during Phase 2 implementation, PR #87 review).**
+Family halo is deliberately unconditional: it adds every child of *any*
+primary-perimeter person, with no cousin-degree exception. Combined with
+§3.6's "closer cousin degrees include their own children," this has a
+real, provable consequence: a 2nd cousin's parent is always exactly a
+1st-cousin-once-removed of the viewer — and "1st cousins at any removal"
+already qualifies that parent as primary at *Close family*. Once that
+parent is primary, the ordinary, one-pass family halo rule above adds
+their children — including the 2nd cousin — even though the 2nd cousin's
+own cousin degree (2) exceeds Close family's own threshold (1). The same
+one-generation spillover recurs at every boundary: at *Extended family*
+(2nd cousins), a 3rd cousin's parent (a 2nd-cousin-once-removed) is
+primary, pulling the 3rd cousin in via halo one setting early.
+
+This is accepted, intentional behaviour, not a defect to patch out with a
+halo-side cousin-degree check: adding one would mean a primary person's
+own child — someone in their immediate family unit — could be silently
+withheld from the everyday view, which is precisely what family halo
+exists to prevent (§3.4's "added to make socially meaningful family units
+legible" reasoning for the partner context ring applies here too). The
+alternative — special-casing halo to stop one generation short whenever
+the parent's own primary route was a boundary-level cousin match — would
+be exactly the kind of second, competing interpretation of cousin degree
+§3.6 warns against, and would make a family unit look artificially cut in
+half at each perimeter setting.
+
+Product implication to design around, not to silently fix in the engine:
+"Close family (through 1st cousins)" will, in practice, sometimes surface
+a 2nd cousin whose parent is closely connected — read this as "your close
+family, and the immediate family of the people in it," not a strict
+cousin-degree cutoff. Any future UI copy or onboarding explanation should
+describe the setting this way rather than promising an exact cousin-degree
+boundary. `inclusionReasonById`/`inclusionReasonsById` always expose the
+TRUE route (`familyHalo`, sourced from the closer relative) for anyone
+included this way, so a "why am I seeing this person?" explanation
+(§3.10) is always honest about it — it never claims a direct cousin match
+degree/removal that isn't the actual reason.
+
 ### 3.5 Definitive inclusion algorithm
 
 Inputs:
