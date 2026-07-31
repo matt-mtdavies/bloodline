@@ -1,16 +1,24 @@
 /*
  * Family Perimeter — client-side option metadata + thin fetch helpers for
  * the per-user preference (docs/FAMILY-PERIMETER-AND-5000-PERSON-
- * PERFORMANCE.md §3.1/§9.2, Phase 3). This is deliberately UI/persistence
- * only: nothing here reads or filters the tree yet — the saved level is
- * stored and displayed, but doesn't change what's rendered until Phase 4
- * ("Tree perimeter experience") wires src/lib/perspectiveIndex.js's
- * `perimeterLevel` option up to it. The server's own string levels
+ * PERFORMANCE.md §3.1/§9.2). The saved level is a string
  * (first/second/third/everyone, matching functions/_lib/
- * familyMemberPreference.js) are kept as-is here rather than translated to
- * perspectiveIndex.js's numeric 1/2/3/'everyone' convention — that mapping
- * belongs to whichever Phase 4 code actually calls computePerspectiveIndex.
+ * familyMemberPreference.js); `src/lib/perspectiveIndex.js`'s
+ * `perimeterLevel` option (Phase 2) takes the numeric 1/2/3/'everyone'
+ * convention it already shipped and was tested against — `engineLevelFor`
+ * below is the one place that translates between them, so neither side
+ * had to change to match the other.
  */
+
+const ENGINE_LEVEL_BY_API_LEVEL = { first: 1, second: 2, third: 3, everyone: 'everyone' };
+
+// Translates a saved API level (string) to the numeric/`'everyone'` value
+// computePerspectiveIndex expects. Falls back to 'everyone' for anything
+// unrecognized — the same safe default the API layer itself uses for an
+// absent preference, so a malformed value never narrows anyone's view.
+export function engineLevelFor(apiLevel) {
+  return ENGINE_LEVEL_BY_API_LEVEL[apiLevel] ?? 'everyone';
+}
 
 // Copy matches §3.1 verbatim.
 export const PERIMETER_OPTIONS = [

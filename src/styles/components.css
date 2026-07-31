@@ -694,6 +694,9 @@
 .rel-chip__text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .rel-chip__name { font-size: 15.5px; font-weight: 500; color: var(--ink); }
 .rel-chip__kind { font-size: 12.5px; color: var(--ink-soft); }
+/* Family Perimeter (§3.9) boundary rows — the same rel-chip__nav row shape,
+   with a trailing action label instead of the ordinary chevron. */
+.rel-chip__explore { flex: none; font-size: 12.5px; font-weight: 600; color: var(--accent); }
 .rel-chip__marriage { color: var(--ink-faint); }
 /* Single always-visible ⋯ menu button (hover-only controls are invisible on
    touch — the primary platform). */
@@ -3801,6 +3804,18 @@
 }
 .profile__added-by { margin: 0 0 4px; font-size: 12px; color: var(--ink-faint); }
 .profile__badges { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin-top: 6px; }
+
+/* Family Perimeter (§3.10) — the "Outside your Family Perimeter" note +
+   optional "Why am I seeing this person?" explanation toggle. */
+.profile__perimeter-note { margin-top: 10px; }
+.profile__perimeter-note-text {
+  margin: 0 0 4px;
+  font-size: 13px;
+  color: var(--ink-soft);
+  line-height: 1.4;
+}
+.profile__perimeter-why-toggle { font-size: 12.5px; }
+.profile__perimeter-why { font-style: italic; color: var(--ink-faint); }
 
 .tags { list-style: none; margin: 14px 0 0; padding: 0; display: flex; flex-wrap: wrap; justify-content: center; gap: 7px; }
 .tag {

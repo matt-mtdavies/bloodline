@@ -140,6 +140,8 @@ export default function PersonSheet({
   onApplyRelationshipFact,
   onDismissRelationshipFact,
   onRecordView,
+  perspective = null, // Family Perimeter's computePerspectiveIndex output, or null when the viewer's perimeter isn't active (see App.jsx) — every perimeter-aware bit below no-ops cleanly on null
+  onExploreBranch,
   canEdit = true,        // editor+ : structural changes (people, relationships, edits)
   canContribute = true,  // contributor+ : add memories & photos
   isAdmin = true,        // owner/co-admin : manage anyone's memory, not just your own
@@ -189,6 +191,7 @@ export default function PersonSheet({
   const [healthNotesEditing, setHealthNotesEditing] = useState(false);
   const [healthNotesDraft, setHealthNotesDraft] = useState('');
   const [enrichOpen, setEnrichOpen] = useState(false);
+  const [showPerimeterWhy, setShowPerimeterWhy] = useState(false); // "Why am I seeing this person?" toggle, §3.10
 
   useEffect(() => {
     if (!person || lockEscape || enrichOpen) return; // a stacked overlay owns Escape
@@ -209,6 +212,7 @@ export default function PersonSheet({
     setHealthPickerOpen(false);
     setStatusPickId(null);
     setHealthNotesEditing(false);
+    setShowPerimeterWhy(false);
     if (profileRef.current) profileRef.current.scrollTop = 0;
     // scrollTop = 0 above doesn't reliably fire a synchronous 'scroll' event
     // in every browser, so the hero-collapse effect below might not get a
@@ -420,6 +424,23 @@ export default function PersonSheet({
 
   const relToViewer =
     viewerId && viewerId !== person.id ? relationLabel(graph, viewerId, person.id, kinTerms) : null;
+
+  // Family Perimeter (docs/FAMILY-PERIMETER-AND-5000-PERSON-PERFORMANCE.md
+  // §3.9/§3.10) — `perspective` is null for the overwhelming majority (no
+  // perimeter narrower than Everyone active), so every line below is a
+  // total no-op then. `isOutsidePerimeter` is this VIEWED person's own
+  // status (reached here via search or "Explore this branch", never by
+  // ordinary browsing — an outside person was never added to `expanded`
+  // any other way); `boundaryTargets` is the opposite direction — real,
+  // exact, one-hop connections from a perimeter person OUT to people just
+  // beyond it, honest and non-numeric per §3.9 (never a "+N relatives"
+  // count, since a hidden branch can fan out further than one hop shows).
+  const isOutsidePerimeter = !!perspective && perspective.outsideIds.has(person.id);
+  const boundaryTargets = perspective && !isOutsidePerimeter
+    ? perspective.boundaryEdges.filter((e) => e.fromId === person.id).map((e) => e.toId)
+    : [];
+  const perimeterExplanation = perspective?.explanationById.get(person.id) || null;
+
   const location = person.residence || person.birth_place;
   const events = restricted ? [] : lifeEvents(person);
   const birthYear = person.birth_date ? yearOf(person.birth_date) : null;
@@ -812,7 +833,32 @@ export default function PersonSheet({
             {person.confidence === 'uncertain' && (
               <span className="badge badge--quiet">Unconfirmed</span>
             )}
+            {/* §3.10: outside-person profiles are always labelled — reached
+                here via Search or "Explore this branch", never ordinary
+                browsing (see isOutsidePerimeter's own comment above). Reuses
+                the neutral badge--quiet treatment, deliberately not an
+                alarming color — this is informational, not a warning. */}
+            {isOutsidePerimeter && <span className="badge badge--quiet">Outside your Family Perimeter</span>}
           </div>
+
+          {isOutsidePerimeter && (
+            <div className="profile__perimeter-note">
+              <p className="profile__perimeter-note-text">
+                This person remains part of the complete family tree. They are outside the everyday scope you selected in Your profile.
+              </p>
+              {perimeterExplanation && (
+                <button
+                  className="section-edit profile__perimeter-why-toggle"
+                  onClick={() => setShowPerimeterWhy((v) => !v)}
+                >
+                  {showPerimeterWhy ? 'Hide reason' : 'Why am I seeing this person?'}
+                </button>
+              )}
+              {showPerimeterWhy && perimeterExplanation && (
+                <p className="profile__perimeter-note-text profile__perimeter-why">{perimeterExplanation}</p>
+              )}
+            </div>
+          )}
 
           {!restricted && (person.tags?.length > 0 || person.hair_color || person.eye_color) && (
             <ul className="tags">
@@ -2053,6 +2099,36 @@ export default function PersonSheet({
                     </ul>
                   </div>
                 ))}
+              </section>
+            )}
+
+            {/* Family Perimeter (§3.9) — an honest, non-numeric boundary
+                affordance. Each row here is a real, exact, already-known
+                one-hop connection (not an estimate), so naming it is fine;
+                what's deliberately avoided is any aggregate count of what's
+                further beyond it, since a hidden branch can fan out further
+                than this one hop shows. */}
+            {boundaryTargets.length > 0 && (
+              <section className="profile-section">
+                <h3 className="profile-section__title">More family beyond your perimeter</h3>
+                <ul className="rel-group__list">
+                  {boundaryTargets.map((id) => {
+                    const rel = graph.byId.get(id);
+                    if (!rel) return null;
+                    return (
+                      <li key={id} className="rel-chip">
+                        <button className="rel-chip__nav" onClick={() => onExploreBranch?.(id)}>
+                          <Avatar person={rel} size={40} />
+                          <span className="rel-chip__text">
+                            <span className="rel-chip__name">{rel.display_name}</span>
+                            <span className="rel-chip__kind">{relationLabel(graph, person.id, id, kinTerms)}</span>
+                          </span>
+                          <span className="rel-chip__explore">Explore this branch</span>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
               </section>
             )}
           </div>

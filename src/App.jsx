@@ -69,7 +69,9 @@ import { uploadPhoto, generateThumb, uploadDocument, savePhotoToDevice, srcToDat
 import { useImageZoom } from './lib/useImageZoom.js';
 import { buildGraph, pathBetween, pathBetweenOrdered, bloodRelativesOf, distancesFromMany, relationLabel } from './data/graph.js';
 import { useKinTerms } from './lib/kinTerms.js';
-import { planPerimeterRecommendationIfUnset } from './lib/familyPerimeter.js';
+import { planPerimeterRecommendationIfUnset, fetchPerimeterPreference, engineLevelFor } from './lib/familyPerimeter.js';
+import { computePerspectiveIndex } from './lib/perspectiveIndex.js';
+import { scheduleStaggeredReveal } from './lib/staggeredReveal.js';
 import { storeToGedcom } from './lib/gedcom.js';
 import { detectRegion, nearestWorldEvent } from './lib/worldEvents.js';
 import { findDuplicatePairs, pairKey, loadDismissedDuplicates, saveDismissedDuplicates } from './lib/duplicates.js';
@@ -88,6 +90,7 @@ import FocusNameplate from './components/FocusNameplate.jsx';
 import HoverCard from './components/HoverCard.jsx';
 import HomeToMe from './components/HomeToMe.jsx';
 import ReturnToTreePill from './components/ReturnToTreePill.jsx';
+import ReturnToPerimeterPill from './components/ReturnToPerimeterPill.jsx';
 import ZoomControls from './components/ZoomControls.jsx';
 import PersonSheet from './components/PersonSheet.jsx';
 import AddRelativeSheet from './components/AddRelativeSheet.jsx';
@@ -194,33 +197,14 @@ const PROFILE_FIELD_KEYS = [
 const DOC_TRACKABLE_FIELDS = [...PROFILE_FIELD_KEYS, 'cause_of_death'];
 
 // See toggleExpandAll's own comment: above this many people, "All" reveals
-// only the nearest ones to whoever's active instead of the whole tree.
+// only the nearest ones to whoever's active instead of the whole tree. Also
+// the hard cap Family Perimeter's own initial-working-set reveal uses (see
+// the perimeter-reveal effect below) — one shared ceiling, not a second
+// number to keep in sync.
 const MAX_BUBBLE_REVEAL = 250;
-// A single BFS layer (a whole generation band, say) can still be far bigger
-// than is safe to spawn in one frame — this caps how many bubbles ever
-// materialize in a single tick, same crash-prevention reasoning as before,
-// just applied within a layer instead of across the whole flat reveal list.
-const RIPPLE_CHUNK_SIZE = 40;
-// Real feedback: the reveal should feel like a ripple growing outward from
-// whatever's already visible, not an arbitrary dump — and should settle
-// within a couple of seconds regardless of how many BFS layers a given
-// family happens to have. RIPPLE_TOTAL_MS is a target the scheduler
-// continuously re-aims for against the real clock (see toggleExpandAll),
-// not a delay computed once upfront — real per-step overhead (spawning
-// sprites, the force sim re-registering nodes) grows as more bubbles
-// become live, and a fixed schedule was measured overrunning this target
-// by 2-3x on a large tree. [[MIN, MAX]] clamp the per-step gap so a reveal
-// with very few layers doesn't feel instant and one with dozens (or one
-// whose real overhead is unexpectedly high) doesn't drag or stutter.
-const RIPPLE_TOTAL_MS = 2200;
-const RIPPLE_MIN_LAYER_MS = 70;
-const RIPPLE_MAX_LAYER_MS = 260;
-// Between sub-chunks of the SAME layer (only relevant when a layer is bigger
-// than RIPPLE_CHUNK_SIZE) — a tighter range than the inter-layer one, kept
-// fast so a big generation band still reads as one continuous wave filling
-// in, not a series of stutters.
-const RIPPLE_MIN_SUBCHUNK_MS = 25;
-const RIPPLE_MAX_SUBCHUNK_MS = 70;
+// The actual ripple-pacing constants (RIPPLE_CHUNK_SIZE etc.) now live in
+// lib/staggeredReveal.js, shared by toggleExpandAll and the perimeter
+// reveal — see that module's own header for the reasoning.
 
 function buildExtracted(result) {
   const pf = result.profileFields;
@@ -604,6 +588,27 @@ export default function App() {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data.myPersonId]);
+
+  // Family Perimeter (docs/FAMILY-PERIMETER-AND-5000-PERSON-PERFORMANCE.md
+  // Phase 4) — the saved per-user preference, fetched once a person is
+  // claimed (before that, there's genuinely nothing to compute one FROM —
+  // §3.1's "link your profile... until then, use Complete family tree").
+  // Re-fetched whenever the Settings sheet closes too, so a live change
+  // made there takes effect without needing a full reload (no callback
+  // prop threading into UserProfile.jsx's own self-contained fetch/save —
+  // this is the same "just re-check when the thing that might have
+  // changed it closes" shape already used elsewhere in this file).
+  const [perimeterPref, setPerimeterPref] = useState(null); // { perimeterLevel, hasSavedPreference, isRecommendation, unclaimed } | { unavailable: true } | null
+  const loadPerimeterPref = useCallback(async () => {
+    if (!data.myPersonId) { setPerimeterPref(null); return; }
+    try {
+      setPerimeterPref(await fetchPerimeterPreference());
+    } catch {
+      setPerimeterPref({ unavailable: true });
+    }
+  }, [data.myPersonId]);
+  useEffect(() => { loadPerimeterPref(); }, [loadPerimeterPref]);
+  const wasProfileOpenRef = useRef(false);
   const [openId, setOpenId] = useState(null); // person card
   // Set when a profile is opened from the home hub (e.g. tapping an activity
   // row on Home) — closing that profile should land back on the hub, not the
@@ -620,6 +625,28 @@ export default function App() {
   const [legendOpen, setLegendOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [bloodlineOnly, setBloodlineOnly] = useState(false);
+
+  // Family Perimeter (Phase 4). `perimeterActive` is false for anyone who
+  // hasn't claimed a person, or whose saved level is 'everyone' (the
+  // default for every existing user, and for anyone before they've ever
+  // visited Settings) — for that overwhelming majority, `perspective` stays
+  // null and NOTHING below this point runs any differently than before
+  // this feature existed. `temporaryRevealTargets` (§3.8) is session-only —
+  // outside people the viewer explicitly chose to explore via a boundary's
+  // "Explore this branch" action; never persisted, never widens the saved
+  // perimeter itself.
+  const perimeterApiLevel = perimeterPref?.perimeterLevel ?? 'everyone';
+  const perimeterActive = !!data.myPersonId && perimeterApiLevel !== 'everyone';
+  const [temporaryRevealTargets, setTemporaryRevealTargets] = useState([]);
+  const perspective = useMemo(() => {
+    if (!perimeterActive) return null;
+    return computePerspectiveIndex(graph, {
+      viewerId: data.myPersonId,
+      perimeterLevel: engineLevelFor(perimeterApiLevel),
+      bloodlineOnly,
+      temporaryRevealIds: temporaryRevealTargets,
+    });
+  }, [perimeterActive, graph, data.myPersonId, perimeterApiLevel, bloodlineOnly, temporaryRevealTargets]);
   const [lineageMode, setLineageMode] = useState(false);
   const [lineagePath, setLineagePath] = useState(null); // Set<id> | null
   const [lineageOrder, setLineageOrder] = useState(null); // ordered [fromId,…,toId] | null
@@ -638,7 +665,12 @@ export default function App() {
   const [timelineOpen, setTimelineOpen] = useState(false);
   const [lifeJourneyId, setLifeJourneyId] = useState(null);
   const playRef = useRef(null);
-  const revealTimerRef = useRef(null);
+  const revealTimerRef = useRef(null); // holds a scheduleStaggeredReveal cancel() function, not a raw timeout id
+  // A separate cancel-function ref for the perimeter-driven initial reveal
+  // below, so it and the manual "All" button (revealTimerRef) never cancel
+  // each other's in-flight ripple — each trigger owns its own timer.
+  const perimeterRevealTimerRef = useRef(null);
+  const perimeterRevealDoneRef = useRef(false); // fire the initial reveal once per activation, not on every perspective recompute
   const [docViewer, setDocViewer] = useState(null); // { title, src, mime }
   const [keepsakeId, setKeepsakeId] = useState(null); // personId whose Keepsake is open
   // The home hub's Keepsake nudge — 'create' (no edition yet), 'stale' (tree
@@ -664,6 +696,10 @@ export default function App() {
   const [gedcomOpen, setGedcomOpen] = useState(false);
   const [fsImportOpen, setFsImportOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  useEffect(() => {
+    if (wasProfileOpenRef.current && !profileOpen) loadPerimeterPref();
+    wasProfileOpenRef.current = profileOpen;
+  }, [profileOpen, loadPerimeterPref]);
   const [homeOpen, setHomeOpen] = useState(false);
   const [howItWorksOpen, setHowItWorksOpen] = useState(false);
   const [familyTreesOpen, setFamilyTreesOpen] = useState(false);
@@ -1049,7 +1085,7 @@ export default function App() {
   // the ORDER and PACING new bubbles arrive in, not build a new animation.
   const toggleExpandAll = useCallback(() => {
     if (revealTimerRef.current) {
-      clearTimeout(revealTimerRef.current);
+      revealTimerRef.current();
       revealTimerRef.current = null;
     }
     if (canCollapse) {
@@ -1071,73 +1107,65 @@ export default function App() {
       setTimeout(() => setSyncToast(null), 6000);
     }
 
-    // Group into BFS layers by distance from the currently-visible set,
-    // dropping anyone already shown. `layers[0]` is everyone one hop out,
-    // `layers[1]` two hops, and so on — the actual ripple order.
-    const byDistance = new Map();
-    for (const id of candidateIds) {
-      if (expanded.has(id)) continue;
-      const d = dist.get(id) ?? Infinity;
-      if (!byDistance.has(d)) byDistance.set(d, []);
-      byDistance.get(d).push(id);
-    }
-    const layers = [...byDistance.keys()].sort((a, b) => a - b).map((d) => byDistance.get(d));
-    if (!layers.length) return; // nothing new within the candidate set to reveal
-
-    // Each step carries a WEIGHT, not a fixed delay — the actual gap before
-    // it is computed live, against how much of RIPPLE_TOTAL_MS is actually
-    // left on the real clock, right before it's scheduled. A step ending a
-    // layer (the "reached the next ring" pause) carries more weight — and a
-    // gentle per-layer ease (slightly more weight further out) echoes a real
-    // ripple settling as it travels — than a step mid-layer (kept snappy so
-    // a big generation band still reads as one continuous wave, not a
-    // stutter). Measured live rather than pre-computed because real spawn/
-    // render cost (new sprites, the force sim re-registering nodes) grows
-    // with how many bubbles are already live — a fixed schedule computed
-    // once upfront quietly overran its own target by 2-3x during testing on
-    // a large tree; recomputing the remaining gap against the remaining
-    // budget on every step automatically absorbs that instead of
-    // compounding it into an ever-longer reveal.
-    const steps = [];
-    layers.forEach((layerIds, layerIndex) => {
-      const chunkCount = Math.ceil(layerIds.length / RIPPLE_CHUNK_SIZE);
-      for (let j = 0, c = 0; j < layerIds.length; j += RIPPLE_CHUNK_SIZE, c++) {
-        const chunk = layerIds.slice(j, j + RIPPLE_CHUNK_SIZE);
-        const isLayerEnd = c === chunkCount - 1;
-        steps.push({ ids: chunk, isLayerEnd, weight: isLayerEnd ? 1 + layerIndex * 0.05 : 0.25 });
-      }
-    });
-    const totalWeight = steps.reduce((s, st) => s + st.weight, 0);
-
-    // First step lands immediately (no delay before it) so even a tiny
-    // reveal feels instant, same as before this fix; a chain of timeouts
-    // (rather than a fixed setInterval) is what lets each step carry its own
-    // adaptive delay instead of one flat cadence for the whole reveal.
-    const t0 = Date.now();
-    let idx = 0;
-    let remainingWeight = totalWeight;
-    const revealNextStep = () => {
-      const step = steps[idx++];
-      remainingWeight -= step.weight;
+    revealTimerRef.current = scheduleStaggeredReveal(candidateIds, dist, expanded, (ids) => {
       setExpanded((prev) => {
         const next = new Set(prev);
-        for (const id of step.ids) next.add(id);
+        for (const id of ids) next.add(id);
         return next;
       });
-      if (idx < steps.length) {
-        const remainingBudget = Math.max(0, RIPPLE_TOTAL_MS - (Date.now() - t0));
-        const nextWeight = steps[idx].weight;
-        const rawGap = remainingWeight > 0 ? (remainingBudget * nextWeight) / remainingWeight : RIPPLE_MIN_LAYER_MS;
-        const [gapMin, gapMax] = steps[idx].isLayerEnd
-          ? [RIPPLE_MIN_LAYER_MS, RIPPLE_MAX_LAYER_MS]
-          : [RIPPLE_MIN_SUBCHUNK_MS, RIPPLE_MAX_SUBCHUNK_MS];
-        revealTimerRef.current = setTimeout(revealNextStep, Math.min(gapMax, Math.max(gapMin, rawGap)));
-      } else {
-        revealTimerRef.current = null;
-      }
-    };
-    revealNextStep();
-  }, [canCollapse, activeId, expanded, graph]);
+    }, { instant: reducedMotion });
+  }, [canCollapse, activeId, expanded, graph, reducedMotion]);
+
+  // Family Perimeter (Phase 4 §10) — the initial working set. The moment a
+  // viewer's perimeter becomes active (a claimed person whose saved level is
+  // narrower than 'everyone'), reveal their perimeter automatically instead
+  // of requiring a manual "All" tap first — reusing the exact same
+  // crash-safe staggered reveal and MAX_BUBBLE_REVEAL ceiling toggleExpandAll
+  // itself relies on (a perimeter can still legitimately contain hundreds of
+  // people at Wider family). Uses its own ref (perimeterRevealTimerRef, not
+  // revealTimerRef) so this and a manual "All" tap never cancel each other's
+  // in-flight ripple. Guarded by perimeterRevealDoneRef so it fires once per
+  // activation, not on every `perspective` recompute (e.g. a routine tree
+  // edit shouldn't re-trigger the whole ripple) — resets the moment the
+  // perimeter deactivates (person un-claimed, level switched to Everyone) so
+  // a later re-activation reveals fresh again.
+  useEffect(() => {
+    if (!perimeterActive || !perspective) {
+      perimeterRevealDoneRef.current = false;
+      return;
+    }
+    if (perimeterRevealDoneRef.current) return;
+    perimeterRevealDoneRef.current = true;
+
+    const dist = distancesFromMany(graph, expanded);
+    let candidateIds = [...perspective.perimeterIds];
+    if (candidateIds.length > MAX_BUBBLE_REVEAL) {
+      candidateIds = candidateIds
+        .map((id) => ({ id, d: dist.get(id) ?? Infinity }))
+        .sort((a, b) => a.d - b.d)
+        .slice(0, MAX_BUBBLE_REVEAL)
+        .map((x) => x.id);
+      setSyncToast(`Showing the ${MAX_BUBBLE_REVEAL} people closest to you — switch to List view to see everyone in a family this size.`);
+      setTimeout(() => setSyncToast(null), 6000);
+    }
+
+    perimeterRevealTimerRef.current = scheduleStaggeredReveal(candidateIds, dist, expanded, (ids) => {
+      setExpanded((prev) => {
+        const next = new Set(prev);
+        for (const id of ids) next.add(id);
+        return next;
+      });
+    }, { instant: reducedMotion });
+    // expanded/dist are read once at trigger time, not tracked continuously —
+    // this effect's job is a one-time initial reveal, not to keep chasing a
+    // moving target every time expanded itself changes (which would also
+    // self-trigger, since revealing IS a change to expanded).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [perimeterActive, perspective, reducedMotion]);
+
+  useEffect(() => () => {
+    if (perimeterRevealTimerRef.current) perimeterRevealTimerRef.current();
+  }, []);
 
   // Export the tree as a standard GEDCOM 5.5.1 file (portable to Ancestry,
   // MyHeritage, FamilySearch, …). Lossy by nature — photos, memories, tags,
@@ -1175,7 +1203,7 @@ export default function App() {
   }, [user, data.myPersonId]);
 
   useEffect(() => () => {
-    if (revealTimerRef.current) clearTimeout(revealTimerRef.current);
+    if (revealTimerRef.current) revealTimerRef.current();
   }, []);
 
   const activateNormal = useCallback((id) => {
@@ -1323,6 +1351,64 @@ export default function App() {
     viewApi.current?.enterFollow(); // if they'd roamed, re-frame so the card has room
     setOpenId(id);
   }, []);
+
+  // Family Perimeter (§3.8/§3.9) — "Explore this branch" from a boundary
+  // row in PersonSheet. Sets the temporary-reveal target; the effect below
+  // (keyed on `perspective`) is what actually adds the target + minimum
+  // connection path + their local family unit to `expanded` once
+  // computePerspectiveIndex recomputes with it. A short setTimeout before
+  // pinning the camera mirrors showDuplicatePairInTree's own
+  // `setTimeout(doRefocus, 100)` — the newly-revealed bubble needs a render
+  // pass (expanded -> visibleIds -> BubbleTree's sync) before viewApi.pin
+  // has anything to find.
+  const exploreBranch = useCallback((targetId) => {
+    setTemporaryRevealTargets([targetId]);
+    setTimeout(() => openPerson(targetId), 60);
+  }, [openPerson]);
+
+  // "Return to my perimeter" (§3.8) — ends the current temporary reveal.
+  // Only removes ids that were showing SOLELY because of the temporary
+  // reveal (never anything that's also a genuine perimeter member, which
+  // stays visible regardless), closes the profile / re-activates away from
+  // the viewer's own person if either was about to disappear, and leaves
+  // the saved perimeter preference itself completely untouched.
+  const returnToPerimeter = useCallback(() => {
+    if (perspective) {
+      const presentationOnly = new Set(
+        [...perspective.temporaryRevealPresentationIds].filter((id) => !perspective.perimeterIds.has(id)),
+      );
+      if (presentationOnly.size) {
+        setExpanded((prev) => {
+          let changed = false;
+          const next = new Set(prev);
+          for (const id of presentationOnly) {
+            if (next.has(id)) { next.delete(id); changed = true; }
+          }
+          return changed ? next : prev;
+        });
+        if (openId && presentationOnly.has(openId)) setOpenId(null);
+        if (activeId && presentationOnly.has(activeId) && data.myPersonId) activateNormal(data.myPersonId);
+      }
+    }
+    setTemporaryRevealTargets([]);
+  }, [perspective, openId, activeId, data.myPersonId, activateNormal]);
+
+  // Once a temporary-reveal target is set, perspective recomputes with it —
+  // this is what actually surfaces the presentation ids (the target, the
+  // minimum connection path, their local family unit) on the canvas. A
+  // small, known-bounded set (never a whole perimeter's worth), so a plain
+  // direct merge is fine — no staggered reveal needed here.
+  useEffect(() => {
+    if (!perspective || perspective.temporaryRevealPresentationIds.size === 0) return;
+    setExpanded((prev) => {
+      let changed = false;
+      const next = new Set(prev);
+      for (const id of perspective.temporaryRevealPresentationIds) {
+        if (!next.has(id)) { next.add(id); changed = true; }
+      }
+      return changed ? next : prev;
+    });
+  }, [perspective]);
 
   // Resolve the ?person= deep link once the tree has actually loaded — a
   // birthday calendar notification should drop the tapper straight onto
@@ -2630,6 +2716,15 @@ export default function App() {
             visible={timeMode && !anyOverlayOpen}
             onReturn={exitTimeMode}
           />
+          {/* Family Perimeter's own contextual exit (§3.8) — only relevant
+              while a temporary reveal (Search or "Explore this branch") is
+              active. Same gating convention as ReturnToTreePill: hidden
+              while any sheet/modal is up, including the profile itself —
+              closing it brings the pill back into view. */}
+          <ReturnToPerimeterPill
+            visible={temporaryRevealTargets.length > 0 && !anyOverlayOpen}
+            onReturn={returnToPerimeter}
+          />
           {/* Family Moments — always-on-open banner (slice 5). Deliberately
               NOT gated on `browse` (that's a narrower "nothing selected"
               free-look state IdleFactHint uses) — this is meant to be
@@ -2688,6 +2783,8 @@ export default function App() {
           onOpenPerson={openPerson}
           onShowOnMap={flyToPersonFromAnywhere}
           onShowInChart={showPersonInChart}
+          perimeterActive={perimeterActive}
+          perimeterCount={perspective ? perspective.perimeterIds.size : null}
         />
       )}
 
@@ -2809,6 +2906,8 @@ export default function App() {
         onDismissDocumentPerson={dismissDocumentPerson}
         onApplyRelationshipFact={applyRelationshipFact}
         onDismissRelationshipFact={dismissRelationshipFact}
+        perspective={perspective}
+        onExploreBranch={exploreBranch}
       />
 
       {searchOpen && (
