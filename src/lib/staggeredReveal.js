@@ -134,20 +134,29 @@ export function idsToPruneForPerimeter(desiredIds, currentIds) {
 }
 
 /*
- * The "All" dock button's candidate pool (Codex review, PR #89 round 2) —
- * while a perimeter is active, "All" must never silently bypass it by
- * reaching into the complete tree. When `perimeterActive` is true (and a
- * `perspective` is available to define it), the pool is exactly the SAME
- * desired set the reconciliation effect maintains — a perimeter's members
- * plus any current temporary-reveal presentation ids — so a fresh "All" tap
- * can never reintroduce an outside person the reconciliation would then
- * have to clean up again. Otherwise (the overwhelming majority — no
- * perimeter narrower than Everyone active), it's the complete tree, exactly
- * as before this feature existed.
+ * The "All" dock button's candidate pool (Codex review, PR #89 round 2;
+ * PR #90 final P1) — while a perimeter is active, "All" must never silently
+ * bypass it by reaching into the complete tree. When `perimeterActive` is
+ * true (and a `perspective` is available to define it), the pool is
+ * delegated to desiredVisibleIds (below) — the SAME function the perimeter
+ * reconciliation effect itself calls — rather than re-deriving its own
+ * separate union. This was previously its own inline
+ * `perimeterIds ∪ temporaryRevealPresentationIds` union, which drifted out
+ * of sync the moment desiredVisibleIds grew a THIRD ingredient (the active
+ * lineage trace's own path, PR #90 P1): a collapse-then-re-expand via "All"
+ * mid-trace would silently omit exactly the nodes the reconciler had
+ * otherwise learned to protect, breaking the trace all over again. Routing
+ * through the one shared function means "All" and the reconciler can no
+ * longer disagree about what's desired, by construction — not by
+ * remembering to keep two implementations in lockstep. `lineageMode`/
+ * `lineagePath` default to inert values so every pre-existing call site
+ * (none of which knew about lineage tracing) is unaffected. Otherwise (the
+ * overwhelming majority — no perimeter narrower than Everyone active), it's
+ * the complete tree, exactly as before this feature existed.
  */
-export function revealAllCandidatePool(perimeterActive, perspective, allPeopleIds) {
+export function revealAllCandidatePool(perimeterActive, perspective, allPeopleIds, lineageMode = false, lineagePath = null) {
   if (perimeterActive && perspective) {
-    return [...new Set([...perspective.perimeterIds, ...perspective.temporaryRevealPresentationIds])];
+    return [...desiredVisibleIds(perspective, lineageMode, lineagePath)];
   }
   return allPeopleIds;
 }

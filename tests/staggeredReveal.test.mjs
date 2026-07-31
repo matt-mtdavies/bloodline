@@ -215,6 +215,37 @@ test('revealAllCandidatePool: an empty temporary reveal set still returns exactl
   assert.deepEqual(new Set(revealAllCandidatePool(true, perspective, allPeople)), new Set(['viewer', 'parent']));
 });
 
+// Codex review, PR #90 final P1: "All" had fallen out of sync with the
+// lineage-safe desired set the reconciler uses — a collapse-then-re-expand
+// via "All" mid-trace could silently drop the trace's own divergent nodes
+// all over again, even after the reconciler itself was fixed. Reuses the
+// exact same divergent-path fixture as desiredVisibleIds's own regression
+// below (two independent bridges into one subtree) to prove "All" now
+// agrees with the reconciler byte-for-byte, not just "close enough."
+test('revealAllCandidatePool (regression, PR #90 final P1): with an active lineage trace, includes the trace\'s own divergent nodes — not just perimeterIds ∪ temporaryRevealPresentationIds — and matches desiredVisibleIds exactly', () => {
+  const allPeople = ['viewer', 'grandparent', 'cousin', 'outsiderPartner', 'uncle', 'cousinParent'];
+  const perspective = {
+    perimeterIds: new Set(['viewer', 'grandparent']),
+    temporaryRevealPresentationIds: new Set(['cousin', 'outsiderPartner']),
+  };
+  const lineagePath = new Set(['grandparent', 'uncle', 'cousinParent', 'cousin']);
+
+  const oldStyleWithoutLineage = revealAllCandidatePool(true, perspective, allPeople);
+  assert.ok(!oldStyleWithoutLineage.includes('uncle') || !oldStyleWithoutLineage.includes('cousinParent'),
+    'sanity check: the plain perimeter/temp-reveal union alone does NOT already cover the trace-only nodes in this fixture');
+
+  const pool = revealAllCandidatePool(true, perspective, allPeople, true, lineagePath);
+  assert.deepEqual(new Set(pool), new Set(['viewer', 'grandparent', 'cousin', 'outsiderPartner', 'uncle', 'cousinParent']));
+  assert.deepEqual(new Set(pool), desiredVisibleIds(perspective, true, lineagePath),
+    '"All" and the reconciler must compute the identical desired set, not two separately-maintained ones that can drift apart');
+});
+
+test('revealAllCandidatePool: omitting lineageMode/lineagePath (every pre-existing call site) is unaffected — defaults to the plain perimeter/temp-reveal union', () => {
+  const allPeople = ['viewer', 'parent', 'outsider'];
+  const perspective = { perimeterIds: new Set(['viewer', 'parent']), temporaryRevealPresentationIds: new Set() };
+  assert.deepEqual(new Set(revealAllCandidatePool(true, perspective, allPeople)), new Set(['viewer', 'parent']));
+});
+
 // ── desiredVisibleIds (Codex review, PR #90 P1) ──────────────────────────
 // A lineage trace can run from any activeId, not just the viewer — its own
 // path needs protecting separately from the viewer-anchored temporary-

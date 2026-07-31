@@ -1108,9 +1108,13 @@ export default function App() {
     // While a perimeter is active, "All" must never silently bypass it by
     // reaching into the complete tree (Codex follow-up review) — the pool
     // is exactly the same desired set the reconciliation effect below
-    // maintains, so revealing "All" of it can never reintroduce an outside
-    // person. Byte-identical to before when no perimeter is active.
-    const pool = revealAllCandidatePool(perimeterActive, perspective, graph.people.map((p) => p.id));
+    // maintains (both now route through desiredVisibleIds itself — Codex
+    // review, PR #90 final P1 — so a collapse-then-re-expand via "All"
+    // mid-lineage-trace can no longer drop the trace's own extra nodes the
+    // way a separately-maintained union previously could), so revealing
+    // "All" of it can never reintroduce an outside person or break an
+    // active trace. Byte-identical to before when no perimeter is active.
+    const pool = revealAllCandidatePool(perimeterActive, perspective, graph.people.map((p) => p.id), lineageMode, lineagePath);
     const total = pool.length;
     const dist = distancesFromMany(graph, expanded);
     let candidateIds;
@@ -1133,7 +1137,7 @@ export default function App() {
         return next;
       });
     }, { instant: reducedMotion });
-  }, [canCollapse, activeId, expanded, graph, reducedMotion, perimeterActive, perspective]);
+  }, [canCollapse, activeId, expanded, graph, reducedMotion, perimeterActive, perspective, lineageMode, lineagePath]);
 
   // Family Perimeter (Phase 4 §10) — the working-set RECONCILIATION. Runs
   // every time `perspective` changes for any reason: first activation, the
