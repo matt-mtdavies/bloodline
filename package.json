@@ -18,6 +18,7 @@
     "test:e2e": "node tests/smoke.mjs",
     "test:e2e:webkit": "BROWSER=webkit node tests/smoke.mjs",
     "seed:gen": "node scripts/generate-seed.mjs",
+    "benchmark:phase0": "node scripts/benchmark-phase0.mjs",
     "db:migrate": "wrangler d1 migrations apply bloodline --local",
     "db:migrate:remote": "wrangler d1 migrations apply bloodline --remote",
     "db:seed": "wrangler d1 execute bloodline --local --file=./seed/seed.sql",
