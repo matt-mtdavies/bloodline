@@ -12,10 +12,42 @@ import { timed } from '../lib/perfInstrument.js';
  *   • Perspective fact cards that reveal in a gentle stagger.
  *   • Completeness nudges turned into tappable quests.
  */
-export default function TreeInsights({ graph, viewerId, onNavigate, onClose }) {
-  const insights = useMemo(() => computeInsights(graph, viewerId), [graph, viewerId]);
-  const modules = useMemo(() => timed('computeInsightModules (Tree Insights sheet)', () => computeInsightModules(graph, viewerId)), [graph, viewerId]);
+export default function TreeInsights({ graph, viewerId, cohortIds = null, perimeterActive = false, onNavigate, onClose }) {
+  // Family Perimeter (Phase 6 §4.4/§6.9) — `cohortIds` is null for the
+  // overwhelming majority (no perimeter narrower than Everyone active), so
+  // `scopedGraph === graph` and every module below sees the complete tree,
+  // byte-identical to before this feature existed ("Everyone reproduces
+  // complete-tree results"). computeInsights has no per-fact cohort
+  // granularity of its own (unlike computeInsightModules's per-module
+  // MODULE_COHORTS table), so it's handed a PRE-scoped graph directly —
+  // every fact/nudge/aggregate it builds iterates `graph.people`, which is
+  // exactly what gets filtered here; `graph.byId`/`parents`/`children`/
+  // `partners` stay the real, unfiltered graph (same convention as
+  // insightModules.js), so the viewer's own connectivity facts ("N
+  // generations around you", "N cousins") still reflect real relationships,
+  // not just who happens to be inside the personal cohort.
+  const scopedGraph = useMemo(() => {
+    const ids = cohortIds?.personal;
+    if (!ids) return graph;
+    return { ...graph, people: graph.people.filter((p) => ids.has(p.id)) };
+  }, [graph, cohortIds]);
+  const insights = useMemo(() => computeInsights(scopedGraph, viewerId), [scopedGraph, viewerId]);
+  // computeInsightModules gets the REAL, unfiltered graph plus cohortIds —
+  // it does its OWN per-module scoping (MODULE_COHORTS), since `bridges`
+  // declares `complete`, not `personal`, and pre-scoping here would silently
+  // break that.
+  const modules = useMemo(
+    () => timed('computeInsightModules (Tree Insights sheet)', () => computeInsightModules(graph, viewerId, Date.now(), null, null, { cohortIds })),
+    [graph, viewerId, cohortIds],
+  );
   const { viewer, nudges, aggregates } = insights;
+  // §4.3: "Every count says whether it covers your perimeter or the
+  // complete tree." Only genuinely differs from `graph.people.length` when
+  // a real narrow perimeter is active — null the rest of the time so the
+  // hero/AI-aggregate copy below can cheaply tell "should I even mention
+  // the complete-tree total" apart from "perimeter narrowed but happens to
+  // currently equal the complete tree."
+  const completeTotal = perimeterActive && scopedGraph !== graph ? graph.people.length : null;
   // Some text facts are the same number a module now draws — drop the text
   // version when its module renders so nothing appears twice in one sheet:
   // strata replaces "N generations around you"; record books' pool always
@@ -38,12 +70,37 @@ export default function TreeInsights({ graph, viewerId, onNavigate, onClose }) {
   // one richer paragraph from a single call, not a separate AI round-trip per
   // module (11x the cost/latency for a garnish, not the point).
   const highlights = useMemo(() => buildInsightHighlights(modules), [modules]);
-  const enrichedAggregates = useMemo(
-    () => (highlights ? { ...aggregates, highlights } : aggregates),
-    [aggregates, highlights],
-  );
+  // §6.9: "AI receives cohort-labelled aggregates only" — `cohort` names
+  // exactly which population these numbers describe, and `totalInCompleteTree`
+  // (only present when it actually differs — see completeTotal above) lets
+  // the server-side prompt distinguish "your Family Perimeter" from "the
+  // complete family tree" per §4.3, rather than writing an unlabelled
+  // `Total people in the tree: N` straight into the prompt regardless of
+  // whether N is scoped or not.
+  const enrichedAggregates = useMemo(() => {
+    const base = highlights ? { ...aggregates, highlights } : aggregates;
+    return {
+      ...base,
+      cohort: 'personal',
+      ...(completeTotal != null ? { totalInCompleteTree: completeTotal } : {}),
+    };
+  }, [aggregates, highlights, completeTotal]);
   const hash = useMemo(() => aggregatesHash(enrichedAggregates), [enrichedAggregates]);
-  const cacheKey = `bl_insight_${hash}`;
+  // §6.9: "cache keys include family revision, viewer ID and perimeter
+  // setting" — the content hash alone already varies WITH cohort content
+  // (a narrower personal cohort produces different aggregates), but an
+  // explicit dimension is what the spec actually asks for, not an
+  // incidental side effect of two different scopes rarely hashing the
+  // same. `graph.people.length` stands in for "family revision" (no
+  // explicit revision counter exists yet in this client) — good enough to
+  // invalidate the cache the moment the tree's own size changes, which a
+  // pure content hash of the (potentially narrower) aggregates might not
+  // otherwise catch. `perimeterActive` intentionally folds the exact level
+  // string in only when it's actually narrowing anything — an inactive
+  // perimeter (the overwhelming majority) keeps the pre-Phase-6 cache key
+  // shape exactly, so nobody's already-cached narrative is invalidated by
+  // this change alone.
+  const cacheKey = `bl_insight_${viewerId || 'v'}_${perimeterActive ? 'p' : 'all'}_${graph.people.length}_${hash}`;
   const [narrative, setNarrative] = useState(() => {
     try { return localStorage.getItem(cacheKey) || ''; } catch { return ''; }
   });
@@ -99,8 +156,16 @@ export default function TreeInsights({ graph, viewerId, onNavigate, onClose }) {
           <div className="ti__hero-aurora" aria-hidden="true" />
           <div className="ti__hero-stat">
             <span className="ti__hero-num">{heroNum}</span>
-            <span className="ti__hero-label">people in your tree</span>
+            {/* §4.3: never an unlabelled count when the cohort could be
+                ambiguous — "people in your tree" is fine while Everyone
+                already means the complete tree (the overwhelming majority),
+                but the instant a real perimeter narrows it, this number IS
+                the personal cohort, not the whole family, and has to say so. */}
+            <span className="ti__hero-label">{completeTotal != null ? 'people within your Family Perimeter' : 'people in your tree'}</span>
           </div>
+          {completeTotal != null && (
+            <div className="ti__hero-complete">{completeTotal} in the complete family tree</div>
+          )}
           {aggregates?.generations > 0 && (
             <div className="ti__hero-sub">{aggregates.generations} generations
               {viewer?.firstName ? <> · with you, {viewer.firstName}, in the middle</> : null}

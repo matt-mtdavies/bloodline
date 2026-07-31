@@ -15,7 +15,74 @@ import { haversineKm, formatKm } from './geo.js';
  *
  * Everything here consumes only birth/death dates, names, birth places, and
  * the relationship graph — fields the tree already has.
+ *
+ * Insight cohorts (docs/FAMILY-PERIMETER-AND-5000-PERSON-PERFORMANCE.md
+ * §4.4/§6.9): every module below declares exactly one cohort in
+ * MODULE_COHORTS, and computeInsightModules's own aggregation pass — never
+ * the module itself — is the one place that decides which PEOPLE that
+ * module actually gets to see. A module is handed a graph-shaped object
+ * whose `.people` is pre-filtered to its declared cohort's ids (byId/
+ * parents/children/siblings/partners stay the REAL, unfiltered graph —
+ * cohort scoping narrows who gets COUNTED into an aggregate, it never hides
+ * a relationship edge or breaks a lookup for someone already found via that
+ * real graph). §4.4's own table: `personal` (primary perimeter + family
+ * halo — the default for "your family" aggregates, and what the overwhelming
+ * majority of modules here are), `complete` (whole-tree structural facts
+ * that wouldn't mean anything scoped — `bridges`, the one module here that's
+ * a literal graph-connectivity property of the ENTIRE family, is the only
+ * one). None of the current 26 modules is genuinely `directLine`-only
+ * (viewer/current-partner's own direct ancestors and descendants) — `
+ * heartlands`/`tradeLineage` read like spec's own directLine EXAMPLES
+ * ("lineage migration", "ancestral span") at a glance, but both actually
+ * scan every recorded parent-child pair in the tree, not just the viewer's
+ * own line, so tagging them directLine would be dishonest scoping, not
+ * genuine correctness — they're `personal`, same as every other whole-family
+ * aggregate. `context`/`temporaryReveal` aren't declared by any module here
+ * either: `context` (partner-context people) is meant to stay EXCLUDED from
+ * personal aggregates, which `personal = primaryIds ∪ haloIds` already does
+ * by construction; `temporaryReveal` is a session-only navigation state, not
+ * something an aggregate should ever count. Both cohorts remain fully
+ * supported by the infrastructure for a future module that genuinely needs
+ * one.
+ *
+ * When `cohortIds` (the 5th positional options object's `cohortIds` field —
+ * see computeInsightModules below) is omitted, every module gets the
+ * complete, unfiltered graph — byte-identical to this file's behavior
+ * before Phase 6, and exactly what "Everyone reproduces complete-tree
+ * results" requires when the caller has no narrower cohort to offer (no
+ * perimeter narrower than Everyone active, or a caller — like the existing
+ * unit tests below — that predates cohort-awareness entirely).
  */
+const MODULE_COHORTS = {
+  serviceRecords: 'personal',
+  livingLink: 'personal',
+  giftOfYears: 'personal',
+  fullestYear: 'personal',
+  strata: 'personal',
+  brood: 'personal',
+  bridges: 'complete',
+  names: 'personal',
+  heartlands: 'personal',
+  trades: 'personal',
+  birthdays: 'personal',
+  records: 'personal',
+  parenthood: 'personal',
+  surnames: 'personal',
+  livingGenerations: 'personal',
+  twinBirths: 'personal',
+  newArrivals: 'personal',
+  blendedFamily: 'personal',
+  tradeLineage: 'personal',
+  earlyLoss: 'personal',
+  centenarians: 'personal',
+  missingRecords: 'personal',
+  sameAgeMarriages: 'personal',
+  closestCousinsByAge: 'personal',
+  sharedBirthplaceGenerations: 'personal',
+  nearbyRelatives: 'personal',
+  forgottenPeople: 'personal',
+};
+export const VALID_INSIGHT_COHORTS = new Set(['personal', 'context', 'complete', 'directLine', 'temporaryReveal']);
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December'];
@@ -127,40 +194,79 @@ export function seededShuffle(arr, seed) {
  * profile — from functions/_lib/profileViews.js, same "resolved by the
  * caller, no network calls in here" convention. Omitting it means
  * forgottenPeople never renders.
+ *
+ * `options.cohortIds` (optional, Phase 6): the `{personal, context,
+ * complete, directLine, temporaryReveal}` Set map from
+ * lib/perspectiveIndex.js's insightCohortIds / computeInsightCohorts.
+ * Omitted (every caller before Phase 6): every module gets the complete,
+ * unfiltered graph, identical to this file's original behavior.
+ * `options.only` (optional, Phase 6): an array of module keys to compute —
+ * every other module is skipped ENTIRELY, not just filtered out of the
+ * result, so a caller that only wants a handful of cheap modules (Home's
+ * small preselected set, §6.9) never pays for the rest — in particular
+ * never runs `bridges`, the one O(people×edges) module in this file.
+ * Omitted: every module computes, exactly as before.
  */
-export function computeInsightModules(graph, viewerId, now = Date.now(), geocodedByPlace = null, lastViewedByPersonId = null) {
+export function computeInsightModules(graph, viewerId, now = Date.now(), geocodedByPlace = null, lastViewedByPersonId = null, options = {}) {
+  const { cohortIds = null, only = null } = options;
   const gen = computeGenerations(graph);
-  return {
-    livingLink: livingLink(graph, viewerId),
-    giftOfYears: giftOfYears(graph),
-    fullestYear: fullestYear(graph),
-    strata: strata(graph, viewerId, gen),
-    brood: brood(graph),
-    bridges: bridges(graph),
-    names: names(graph, gen),
-    heartlands: heartlands(graph, gen),
-    trades: trades(graph),
-    birthdays: birthdays(graph, gen),
-    records: records(graph, now),
-    parenthood: parenthood(graph),
-    serviceRecords: serviceRecords(graph, gen),
-    surnames: surnames(graph),
-    livingGenerations: livingGenerations(graph, gen),
-    twinBirths: twinBirths(graph),
-    newArrivals: newArrivals(graph, now),
-    blendedFamily: blendedFamily(graph),
-    tradeLineage: tradeLineage(graph),
-    earlyLoss: earlyLoss(graph),
-    centenarians: centenarians(graph, now),
-    missingRecords: missingRecords(graph, viewerId),
-    sameAgeMarriages: sameAgeMarriages(graph),
-    closestCousinsByAge: closestCousinsByAge(graph, viewerId),
-    sharedBirthplaceGenerations: sharedBirthplaceGenerations(graph, gen),
-    nearbyRelatives: nearbyRelatives(graph, viewerId, geocodedByPlace),
-    forgottenPeople: forgottenPeople(graph, viewerId, lastViewedByPersonId, now),
+  const wants = (key) => !only || only.includes(key);
+  // Built lazily per distinct cohort actually needed this call (almost
+  // always just 'personal', occasionally also 'complete' for `bridges`) —
+  // never eagerly for cohorts no requested module declares.
+  const scopedByCohort = new Map();
+  const scopedGraphFor = (moduleKey) => {
+    if (!cohortIds) return graph;
+    const cohort = MODULE_COHORTS[moduleKey] ?? 'complete';
+    if (scopedByCohort.has(cohort)) return scopedByCohort.get(cohort);
+    const ids = cohortIds[cohort];
+    // Defensive, not expected in practice: an unrecognized/missing cohort
+    // key degrades to the complete graph rather than silently reporting
+    // zero facts for a module that's actually correctly configured.
+    const scoped = ids ? { ...graph, people: graph.people.filter((p) => ids.has(p.id)) } : graph;
+    scopedByCohort.set(cohort, scoped);
+    return scoped;
   };
+  const out = {};
+  if (wants('livingLink')) out.livingLink = livingLink(scopedGraphFor('livingLink'), viewerId);
+  if (wants('giftOfYears')) out.giftOfYears = giftOfYears(scopedGraphFor('giftOfYears'));
+  if (wants('fullestYear')) out.fullestYear = fullestYear(scopedGraphFor('fullestYear'));
+  if (wants('strata')) out.strata = strata(scopedGraphFor('strata'), viewerId, gen);
+  if (wants('brood')) out.brood = brood(scopedGraphFor('brood'));
+  if (wants('bridges')) out.bridges = bridges(scopedGraphFor('bridges'));
+  if (wants('names')) out.names = names(scopedGraphFor('names'), gen);
+  if (wants('heartlands')) out.heartlands = heartlands(scopedGraphFor('heartlands'), gen);
+  if (wants('trades')) out.trades = trades(scopedGraphFor('trades'));
+  if (wants('birthdays')) out.birthdays = birthdays(scopedGraphFor('birthdays'), gen);
+  if (wants('records')) out.records = records(scopedGraphFor('records'), now);
+  if (wants('parenthood')) out.parenthood = parenthood(scopedGraphFor('parenthood'));
+  if (wants('serviceRecords')) out.serviceRecords = serviceRecords(scopedGraphFor('serviceRecords'), gen);
+  if (wants('surnames')) out.surnames = surnames(scopedGraphFor('surnames'));
+  if (wants('livingGenerations')) out.livingGenerations = livingGenerations(scopedGraphFor('livingGenerations'), gen);
+  if (wants('twinBirths')) out.twinBirths = twinBirths(scopedGraphFor('twinBirths'));
+  if (wants('newArrivals')) out.newArrivals = newArrivals(scopedGraphFor('newArrivals'), now);
+  if (wants('blendedFamily')) out.blendedFamily = blendedFamily(scopedGraphFor('blendedFamily'));
+  if (wants('tradeLineage')) out.tradeLineage = tradeLineage(scopedGraphFor('tradeLineage'));
+  if (wants('earlyLoss')) out.earlyLoss = earlyLoss(scopedGraphFor('earlyLoss'));
+  if (wants('centenarians')) out.centenarians = centenarians(scopedGraphFor('centenarians'), now);
+  if (wants('missingRecords')) out.missingRecords = missingRecords(scopedGraphFor('missingRecords'), viewerId);
+  if (wants('sameAgeMarriages')) out.sameAgeMarriages = sameAgeMarriages(scopedGraphFor('sameAgeMarriages'));
+  if (wants('closestCousinsByAge')) out.closestCousinsByAge = closestCousinsByAge(scopedGraphFor('closestCousinsByAge'), viewerId);
+  if (wants('sharedBirthplaceGenerations')) out.sharedBirthplaceGenerations = sharedBirthplaceGenerations(scopedGraphFor('sharedBirthplaceGenerations'), gen);
+  if (wants('nearbyRelatives')) out.nearbyRelatives = nearbyRelatives(scopedGraphFor('nearbyRelatives'), viewerId, geocodedByPlace);
+  if (wants('forgottenPeople')) out.forgottenPeople = forgottenPeople(scopedGraphFor('forgottenPeople'), viewerId, lastViewedByPersonId, now);
+  return out;
 }
 
+// Exposed for the cohort-enforcement test and for callers (Home's small
+// preselected set) that need to know a module's declared cohort without
+// duplicating this table.
+export function insightModuleCohort(key) {
+  return MODULE_COHORTS[key];
+}
+export function allInsightModuleKeys() {
+  return Object.keys(MODULE_COHORTS);
+}
 // ── Service records: family members with a documented military connection —
 //    a military-tagged life event, a structured branch/rank/service-number
 //    field, or a medal, all surfaced from documents run through Summarize

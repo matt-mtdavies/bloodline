@@ -70,7 +70,7 @@ import { useImageZoom } from './lib/useImageZoom.js';
 import { buildGraph, pathBetween, pathBetweenOrdered, bloodRelativesOf, distancesFromMany, relationLabel } from './data/graph.js';
 import { useKinTerms } from './lib/kinTerms.js';
 import { planPerimeterRecommendationIfUnset, fetchPerimeterPreference, engineLevelFor, isPerimeterActive } from './lib/familyPerimeter.js';
-import { computePerspectiveIndex } from './lib/perspectiveIndex.js';
+import { computePerspectiveIndex, computeInsightCohorts } from './lib/perspectiveIndex.js';
 import { scheduleStaggeredReveal, idsToPruneForPerimeter, revealAllCandidatePool, desiredVisibleIds } from './lib/staggeredReveal.js';
 import { storeToGedcom } from './lib/gedcom.js';
 import { detectRegion, nearestWorldEvent } from './lib/worldEvents.js';
@@ -654,6 +654,33 @@ export default function App() {
       temporaryRevealIds: temporaryRevealTargets,
     });
   }, [perimeterActive, graph, data.myPersonId, perimeterApiLevel, bloodlineOnly, temporaryRevealTargets]);
+
+  // Insight cohorts (Phase 6 §4.4/§6.9) — deliberately SEPARATE from
+  // `perspective` above, not reused, even though perspective already
+  // carries an identical insightCohortIds field when it's computed.
+  // `perspective` is intentionally `null` for anyone without a perimeter
+  // narrower than Everyone (the overwhelming majority), and several
+  // existing consumers (SearchOverlay's relationship line, PersonSheet's
+  // outside-perimeter badge) treat "perspective is non-null" as a signal to
+  // show perimeter-aware UI, not merely "cohort data happens to exist" —
+  // reusing it here would have made every search row grow a relationship
+  // line the instant this shipped, for every user, whether or not they'd
+  // ever touched Family Perimeter. Insights/Home/Timeline need cohort
+  // labels available UNCONDITIONALLY (count labels must always resolve to
+  // something correct, including the common case where personal === complete),
+  // so this calls the lighter computeInsightCohorts sibling instead — same
+  // inclusion-layer building blocks, but skips boundaryEdges/relationshipById/
+  // explanationById, none of which any insight module needs. Reuses
+  // perspective's own already-computed insightCohortIds when available
+  // (perimeterActive) rather than paying for the computation twice.
+  const insightCohorts = useMemo(() => {
+    if (perspective) return perspective.insightCohortIds;
+    return computeInsightCohorts(graph, {
+      viewerId: data.myPersonId,
+      perimeterLevel: engineLevelFor(perimeterApiLevel),
+    });
+  }, [perspective, graph, data.myPersonId, perimeterApiLevel]);
+
   const [lineageMode, setLineageMode] = useState(false);
   const [lineagePath, setLineagePath] = useState(null); // Set<id> | null
   const [lineageOrder, setLineageOrder] = useState(null); // ordered [fromId,…,toId] | null
@@ -2338,8 +2365,8 @@ export default function App() {
   // a null value until the idle callback resolves is indistinguishable from
   // their existing no-insight-this-render behavior.
   const insightModules = useIdleValue(
-    () => timed('computeInsightModules (ambient)', () => computeInsightModules(graph, data.myPersonId || DEFAULT_FOCUS, Date.now(), geocodedByPlace, lastViewedByPersonId)),
-    [graph, data.myPersonId, geocodedByPlace, lastViewedByPersonId],
+    () => timed('computeInsightModules (ambient)', () => computeInsightModules(graph, data.myPersonId || DEFAULT_FOCUS, Date.now(), geocodedByPlace, lastViewedByPersonId, { cohortIds: insightCohorts })),
+    [graph, data.myPersonId, geocodedByPlace, lastViewedByPersonId, insightCohorts],
     null,
   );
   const activeFact = useMemo(
@@ -3019,6 +3046,8 @@ export default function App() {
         <TreeInsights
           graph={graph}
           viewerId={data.myPersonId || activeId}
+          cohortIds={insightCohorts}
+          perimeterActive={perimeterActive}
           onNavigate={(id) => { setInsightsOpen(false); activate(id); openPerson(id); }}
           onClose={() => setInsightsOpen(false)}
         />
@@ -3103,6 +3132,8 @@ export default function App() {
         <TimelineView
           graph={graph}
           photos={data.photos}
+          cohortIds={insightCohorts}
+          perimeterActive={perimeterActive}
           onNavigate={(id) => { setTimelineOpen(false); activate(id); openPerson(id); }}
           onClose={() => setTimelineOpen(false)}
         />
@@ -3332,6 +3363,7 @@ export default function App() {
           activity={data.activity ?? []}
           people={data.people}
           graph={graph}
+          cohortIds={insightCohorts}
           userEmail={user?.email}
           onClose={() => setHomeOpen(false)}
           onOpenAccount={() => { setHomeOpen(false); setProfileOpen(true); }}

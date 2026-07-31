@@ -4,6 +4,27 @@ import { ActivityRow } from './ActivityFeed.jsx';
 import { computeThisMonth, computeInsightModules, highlightCandidates } from '../lib/insightModules.js';
 import { timed } from '../lib/perfInstrument.js';
 
+// Home's "small preselected set" (Phase 6 §6.9: "Home uses a small
+// preselected set, not the full Insights suite"). Every key
+// highlightCandidatesDetailed actually reads EXCEPT `bridges` — the one
+// O(people×edges) module in insightModules.js (measured ~5-7s on a
+// 5,000-person tree, docs/PHASE0-BENCHMARK-REPORT.md), and the specific
+// module the spec's own performance concern is about. Deliberately NOT
+// trimmed further than that: this teaser's whole point is rotating through
+// a wide, varied pool ("they should alternate... to maintain freshness and
+// variety" — real user feedback that grew this from 13 to 20+ modules in
+// the first place); shrinking it to a token handful would undo that,
+// already-shipped, deliberate product decision in the name of a phrase in
+// a performance-planning doc. "Small" here means "skip the one genuinely
+// expensive module," not "arbitrarily narrow the variety."
+const HOME_TEASER_MODULES = [
+  'livingLink', 'giftOfYears', 'fullestYear', 'strata', 'brood', 'names',
+  'heartlands', 'trades', 'birthdays', 'records', 'parenthood', 'serviceRecords',
+  'surnames', 'livingGenerations', 'twinBirths', 'newArrivals', 'blendedFamily',
+  'tradeLineage', 'centenarians', 'missingRecords', 'sameAgeMarriages',
+  'closestCousinsByAge', 'sharedBirthplaceGenerations', 'nearbyRelatives', 'forgottenPeople',
+];
+
 // The "Did you know?" card rotates a step further through the candidate
 // pool every time Home is opened, so returning visits see something new
 // instead of the same fact locked for the rest of the day (real feedback:
@@ -34,6 +55,7 @@ function nextInsightIndex(poolLen) {
  */
 export default function Home({
   user, familyName, stats = null, activity = [], people = [], graph = null, userEmail,
+  cohortIds = null,
   onClose, onOpenAccount, onLogout, onOpenInstall, onOpenHowItWorks, onOpenFamilyTrees,
   onOpenActivity, onSelectPerson, onOpenFamilySettings, onOpenInsights,
   keepsakeNudge = null, onOpenKeepsake = null,
@@ -48,12 +70,19 @@ export default function Home({
   const tiles = buildStatTiles(stats);
   const thisMonth = useMemo(() => (graph ? computeThisMonth(graph) : null), [graph]);
   // No specific viewer stands behind the hub, so only the modules that don't
-  // lean on "your" position in the tree (see highlightCandidates) contribute.
+  // lean on "your" position in the tree (see highlightCandidates) contribute
+  // — unchanged, deliberate design, so `viewerId` stays null here regardless
+  // of Phase 6. `cohortIds` (from App.jsx's insightCohorts — real cohort
+  // data for whoever's actually logged in, independent of viewerId being
+  // passed to individual modules below) scopes the aggregate to the
+  // personal cohort when a real perimeter narrows it; `only` restricts to
+  // HOME_TEASER_MODULES (see its own comment above) so this "small
+  // preselected set" never runs `bridges`, the one expensive module.
   const insightTeaser = useMemo(() => {
     if (!graph) return null;
-    const candidates = highlightCandidates(timed('computeInsightModules (Home hub)', () => computeInsightModules(graph, null)));
+    const candidates = highlightCandidates(timed('computeInsightModules (Home hub)', () => computeInsightModules(graph, null, Date.now(), null, null, { cohortIds, only: HOME_TEASER_MODULES })));
     return candidates.length ? candidates[nextInsightIndex(candidates.length)] : null;
-  }, [graph]);
+  }, [graph, cohortIds]);
   const recent = activity.slice(0, 3);
   const byId = new Map(people.map((p) => [p.id, p]));
   const nameByEmail = new Map();
