@@ -71,7 +71,7 @@ import { buildGraph, pathBetween, pathBetweenOrdered, bloodRelativesOf, distance
 import { useKinTerms } from './lib/kinTerms.js';
 import { planPerimeterRecommendationIfUnset, fetchPerimeterPreference, engineLevelFor, isPerimeterActive } from './lib/familyPerimeter.js';
 import { computePerspectiveIndex } from './lib/perspectiveIndex.js';
-import { scheduleStaggeredReveal, idsToPruneForPerimeter } from './lib/staggeredReveal.js';
+import { scheduleStaggeredReveal, idsToPruneForPerimeter, revealAllCandidatePool } from './lib/staggeredReveal.js';
 import { storeToGedcom } from './lib/gedcom.js';
 import { detectRegion, nearestWorldEvent } from './lib/worldEvents.js';
 import { findDuplicatePairs, pairKey, loadDismissedDuplicates, saveDismissedDuplicates } from './lib/duplicates.js';
@@ -1094,18 +1094,31 @@ export default function App() {
       revealTimerRef.current();
       revealTimerRef.current = null;
     }
+    // Codex follow-up review, PR #89 round 2: a fresh "All" tap must also
+    // cancel any in-flight PERIMETER reveal — otherwise both timers could
+    // race, each calling setExpanded with a different idea of what belongs.
+    if (perimeterRevealTimerRef.current) {
+      perimeterRevealTimerRef.current();
+      perimeterRevealTimerRef.current = null;
+    }
     if (canCollapse) {
       setExpanded(new Set([activeId]));
       return;
     }
-    const total = graph.people.length;
+    // While a perimeter is active, "All" must never silently bypass it by
+    // reaching into the complete tree (Codex follow-up review) — the pool
+    // is exactly the same desired set the reconciliation effect below
+    // maintains, so revealing "All" of it can never reintroduce an outside
+    // person. Byte-identical to before when no perimeter is active.
+    const pool = revealAllCandidatePool(perimeterActive, perspective, graph.people.map((p) => p.id));
+    const total = pool.length;
     const dist = distancesFromMany(graph, expanded);
     let candidateIds;
     if (total <= MAX_BUBBLE_REVEAL) {
-      candidateIds = graph.people.map((p) => p.id);
+      candidateIds = pool;
     } else {
-      candidateIds = graph.people
-        .map((p) => ({ id: p.id, d: dist.get(p.id) ?? Infinity }))
+      candidateIds = pool
+        .map((id) => ({ id, d: dist.get(id) ?? Infinity }))
         .sort((a, b) => a.d - b.d)
         .slice(0, MAX_BUBBLE_REVEAL)
         .map((x) => x.id);
@@ -1120,7 +1133,7 @@ export default function App() {
         return next;
       });
     }, { instant: reducedMotion });
-  }, [canCollapse, activeId, expanded, graph, reducedMotion]);
+  }, [canCollapse, activeId, expanded, graph, reducedMotion, perimeterActive, perspective]);
 
   // Family Perimeter (Phase 4 §10) — the working-set RECONCILIATION. Runs
   // every time `perspective` changes for any reason: first activation, the
@@ -1148,6 +1161,17 @@ export default function App() {
       perimeterRevealTimerRef.current = null;
     }
     if (!perimeterActive || !perspective) return;
+    // Codex follow-up review, PR #89 round 2: a stale "All" ripple started
+    // before/during this reconciliation (revealTimerRef) must be cancelled
+    // too — it targets the complete tree by default and has no way to
+    // notice a perimeter just activated or changed, so its remaining
+    // callbacks would otherwise keep adding outside-perimeter ids right
+    // after this pass finishes, with no further perspective change to
+    // trigger another reconciliation and catch it.
+    if (revealTimerRef.current) {
+      revealTimerRef.current();
+      revealTimerRef.current = null;
+    }
 
     const desiredIds = new Set([...perspective.perimeterIds, ...perspective.temporaryRevealPresentationIds]);
 

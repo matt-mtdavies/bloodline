@@ -5,7 +5,7 @@
  * Run with: node tests/staggeredReveal.test.mjs
  */
 import assert from 'node:assert/strict';
-import { planRevealSteps, scheduleStaggeredReveal, RIPPLE_CHUNK_SIZE, idsToPruneForPerimeter } from '../src/lib/staggeredReveal.js';
+import { planRevealSteps, scheduleStaggeredReveal, RIPPLE_CHUNK_SIZE, idsToPruneForPerimeter, revealAllCandidatePool } from '../src/lib/staggeredReveal.js';
 
 let passed = 0, failed = 0;
 function test(label, fn) {
@@ -182,6 +182,37 @@ test('idsToPruneForPerimeter (regression, scenario b): Explore A -> Explore B ->
   assert.deepEqual(new Set(pruned), new Set(['b_pathNode', 'B']), 'returning must prune every remaining B-only presentation id');
   expanded = new Set([...expanded].filter((id) => !pruned.includes(id)));
   assert.deepEqual(expanded, perimeterIds, 'only genuine perimeter members remain after returning — no A-only or B-only node left behind');
+});
+
+// ── revealAllCandidatePool (Codex review, PR #89 round 2) ────────────────
+// "All" must never silently bypass an active perimeter by reaching into
+// the complete tree.
+
+test('revealAllCandidatePool: returns the complete tree when no perimeter is active', () => {
+  const allPeople = ['a', 'b', 'c', 'd'];
+  assert.deepEqual(revealAllCandidatePool(false, null, allPeople), allPeople);
+});
+
+test('revealAllCandidatePool: returns exactly perimeterIds ∪ temporaryRevealPresentationIds when a perimeter is active — never the complete tree, even if it includes people not in the pool', () => {
+  const allPeople = ['viewer', 'parent', 'outsider1', 'outsider2', 'outsider3'];
+  const perspective = {
+    perimeterIds: new Set(['viewer', 'parent']),
+    temporaryRevealPresentationIds: new Set(['outsider1']),
+  };
+  const pool = revealAllCandidatePool(true, perspective, allPeople);
+  assert.deepEqual(new Set(pool), new Set(['viewer', 'parent', 'outsider1']));
+  assert.ok(!pool.includes('outsider2') && !pool.includes('outsider3'), '"All" must never bring in people outside the perimeter and outside any active temporary reveal');
+});
+
+test('revealAllCandidatePool: treats perimeterActive=true with no perspective yet (not-yet-computed) as the complete tree, not a crash', () => {
+  const allPeople = ['a', 'b'];
+  assert.deepEqual(revealAllCandidatePool(true, null, allPeople), allPeople);
+});
+
+test('revealAllCandidatePool: an empty temporary reveal set still returns exactly perimeterIds', () => {
+  const allPeople = ['viewer', 'parent', 'outsider'];
+  const perspective = { perimeterIds: new Set(['viewer', 'parent']), temporaryRevealPresentationIds: new Set() };
+  assert.deepEqual(new Set(revealAllCandidatePool(true, perspective, allPeople)), new Set(['viewer', 'parent']));
 });
 
 console.log(`\n  ${passed} passed, ${failed} failed`);

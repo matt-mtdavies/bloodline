@@ -132,3 +132,22 @@ export function idsToPruneForPerimeter(desiredIds, currentIds) {
   }
   return toRemove;
 }
+
+/*
+ * The "All" dock button's candidate pool (Codex review, PR #89 round 2) —
+ * while a perimeter is active, "All" must never silently bypass it by
+ * reaching into the complete tree. When `perimeterActive` is true (and a
+ * `perspective` is available to define it), the pool is exactly the SAME
+ * desired set the reconciliation effect maintains — a perimeter's members
+ * plus any current temporary-reveal presentation ids — so a fresh "All" tap
+ * can never reintroduce an outside person the reconciliation would then
+ * have to clean up again. Otherwise (the overwhelming majority — no
+ * perimeter narrower than Everyone active), it's the complete tree, exactly
+ * as before this feature existed.
+ */
+export function revealAllCandidatePool(perimeterActive, perspective, allPeopleIds) {
+  if (perimeterActive && perspective) {
+    return [...new Set([...perspective.perimeterIds, ...perspective.temporaryRevealPresentationIds])];
+  }
+  return allPeopleIds;
+}
