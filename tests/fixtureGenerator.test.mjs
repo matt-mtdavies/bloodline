@@ -11,7 +11,7 @@
  */
 import assert from 'node:assert/strict';
 import { generateFamilyFixture, generateCorruptCycleFixture } from '../src/lib/fixtureGenerator.js';
-import { buildGraph, distancesFrom } from '../src/data/graph.js';
+import { buildGraph, distancesFrom, distancesFromMany } from '../src/data/graph.js';
 
 let passed = 0, failed = 0;
 function test(label, fn) {
@@ -84,6 +84,32 @@ for (const size of SIZES) {
       assert.equal(meta.eightPartnerAnchorId, null);
     }
 
+    // Connected multi-partner root sets: same 4-/8-current-partner shape as
+    // the isolated anchors above, but attached to someone already embedded
+    // in the main growth tree — proven here by actually being reachable
+    // from the default viewer, unlike the isolated anchors (see the
+    // dedicated "connected anchors are reachable" test below for the full
+    // distancesFrom/distancesFromMany check; this test only checks shape).
+    assert.ok(meta.connectedFourPartnerAnchorId, 'no connected four-partner anchor recorded');
+    const connectedFourPartners = tree.relationships.filter(
+      (r) => r.type === 'partner' && r.partner_status === 'current'
+        && (r.from_person === meta.connectedFourPartnerAnchorId || r.to_person === meta.connectedFourPartnerAnchorId),
+    );
+    assert.equal(connectedFourPartners.length, 4);
+    assert.notEqual(meta.connectedFourPartnerAnchorId, meta.fourPartnerAnchorId, 'connected and isolated four-partner anchors should be different people');
+
+    if (size >= 500) {
+      assert.ok(meta.connectedEightPartnerAnchorId, 'no connected eight-partner anchor recorded for size >= 500');
+      const connectedEightPartners = tree.relationships.filter(
+        (r) => r.type === 'partner' && r.partner_status === 'current'
+          && (r.from_person === meta.connectedEightPartnerAnchorId || r.to_person === meta.connectedEightPartnerAnchorId),
+      );
+      assert.equal(connectedEightPartners.length, 8);
+      assert.notEqual(meta.connectedEightPartnerAnchorId, meta.connectedFourPartnerAnchorId, 'the two connected anchors should be different people');
+    } else {
+      assert.equal(meta.connectedEightPartnerAnchorId, null);
+    }
+
     // Pedigree collapse: the recorded child has two parent edges from two
     // different people who are not partners-in-a-simple-couple-only —
     // concretely, two distinct parent edges pointing at the same child.
@@ -113,6 +139,28 @@ for (const size of SIZES) {
       const touches = tree.relationships.some((r) => r.from_person === id || r.to_person === id);
       assert.equal(touches, false, `${id} was supposed to be disconnected but has a relationship`);
     }
+  });
+
+  test(`size ${size}: connected anchors sit in the main component, isolated anchors don't`, () => {
+    const { tree, meta } = generateFamilyFixture({ size, seed: 42 });
+    const g = buildGraph(tree.people, tree.relationships);
+    const dist = distancesFrom(g, tree.myPersonId);
+    assert.ok(dist.has(meta.connectedFourPartnerAnchorId), 'connected four-partner anchor should be reachable from the default viewer');
+    assert.ok(!dist.has(meta.fourPartnerAnchorId), 'isolated four-partner anchor should NOT be reachable from the default viewer');
+    if (size >= 500) {
+      assert.ok(dist.has(meta.connectedEightPartnerAnchorId), 'connected eight-partner anchor should be reachable from the default viewer');
+      assert.ok(!dist.has(meta.eightPartnerAnchorId), 'isolated eight-partner anchor should NOT be reachable from the default viewer');
+    }
+
+    // The realistic perimeter root-set case: distancesFromMany from the
+    // connected anchor plus its own current partners (the exact root set a
+    // future perimeter algorithm would build for "viewer + partner
+    // anchors") reaches deep into the same large component the default
+    // viewer does, not just the anchor's own immediate partners.
+    const fourHubPartnerIds = g.partners(meta.connectedFourPartnerAnchorId).map((p) => p.id);
+    const rootSet = [meta.connectedFourPartnerAnchorId, ...fourHubPartnerIds];
+    const unionDist = distancesFromMany(g, rootSet);
+    assert.ok(unionDist.size > size * 0.15, `connected four-partner root-set union only reached ${unionDist.size} of ${size} — expected it to land in the main component like the default viewer does`);
   });
 
   test(`size ${size}: a mix of rich and sparse profiles exists`, () => {

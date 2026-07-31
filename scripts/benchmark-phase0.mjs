@@ -20,7 +20,7 @@ import { dirname, join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 
 import { generateFamilyFixture } from '../src/lib/fixtureGenerator.js';
-import { buildGraph, distancesFrom, relationLabel } from '../src/data/graph.js';
+import { buildGraph, distancesFrom, distancesFromMany, relationLabel } from '../src/data/graph.js';
 import { findDuplicatePairs } from '../src/lib/duplicates.js';
 import { computeInsightModules } from '../src/lib/insightModules.js';
 import { splitTree, reassembleTree } from '../functions/_lib/treeStore.js';
@@ -78,13 +78,24 @@ function sample(arr, n, rng) {
   return out;
 }
 
+// Two distinct measurements, deliberately not conflated:
+//   1. "Isolated" anchors — single-source distancesFrom FROM the hub itself,
+//      landing on a tiny (5- or 9-person) disconnected island by fixture
+//      design. This measures "cost of one hub's own partner fan-out in
+//      complete isolation," not a perimeter root-set traversal.
+//   2. "Connected" anchors — the realistic perimeter case: a root SET
+//      (the hub + its own current partners, exactly what a future
+//      perimeter algorithm would build for "viewer + partner anchors")
+//      inside the family's one large connected component, measured with
+//      graph.js's distancesFromMany — a genuine deduplicated multi-source
+//      union traversal, not repeated single-source calls.
 function measureAnchorClusters(graph, meta, size) {
-  const results = [];
-  const anchors = [
-    { label: 'four-partner anchor', id: meta.fourPartnerAnchorId, expectedPartners: 4 },
-    { label: 'eight-partner anchor', id: meta.eightPartnerAnchorId, expectedPartners: 8 },
+  const isolated = [];
+  const isolatedAnchors = [
+    { label: 'isolated four-partner anchor', id: meta.fourPartnerAnchorId, expectedPartners: 4 },
+    { label: 'isolated eight-partner anchor', id: meta.eightPartnerAnchorId, expectedPartners: 8 },
   ];
-  for (const { label, id, expectedPartners } of anchors) {
+  for (const { label, id, expectedPartners } of isolatedAnchors) {
     if (!id) continue; // eight-partner anchor is only generated for size >= 500
     const { result: dist, elapsed: distancesMs } = timeIt(() => distancesFrom(graph, id));
     const clusterIds = [...dist.keys()].filter((otherId) => otherId !== id);
@@ -93,7 +104,7 @@ function measureAnchorClusters(graph, meta, size) {
     const { elapsed: relationLabelMs } = timeIt(() => {
       for (const otherId of sampleIds) relationLabel(graph, id, otherId);
     });
-    results.push({
+    isolated.push({
       label, id, expectedPartners,
       clusterSize: dist.size, // includes the anchor itself
       distancesMs,
@@ -101,7 +112,33 @@ function measureAnchorClusters(graph, meta, size) {
       relationLabelMs,
     });
   }
-  return results;
+
+  const connected = [];
+  const connectedAnchors = [
+    { label: 'connected four-partner root set', id: meta.connectedFourPartnerAnchorId, expectedPartners: 4 },
+    { label: 'connected eight-partner root set', id: meta.connectedEightPartnerAnchorId, expectedPartners: 8 },
+  ];
+  for (const { label, id, expectedPartners } of connectedAnchors) {
+    if (!id) continue; // connected eight-partner root set only generated for size >= 500
+    const partnerIds = graph.partners(id).map((p) => p.id);
+    const rootSet = [id, ...partnerIds];
+    const { result: unionDist, elapsed: distancesFromManyMs } = timeIt(() => distancesFromMany(graph, rootSet));
+    const rng = mulberry32(size + expectedPartners + 1000);
+    const sampleIds = sample([...unionDist.keys()].filter((otherId) => !rootSet.includes(otherId)), Math.min(50, unionDist.size), rng);
+    const { elapsed: relationLabelMs } = timeIt(() => {
+      for (const otherId of sampleIds) relationLabel(graph, id, otherId);
+    });
+    connected.push({
+      label, id, expectedPartners,
+      rootSetSize: rootSet.length,
+      reachedFromRootSet: unionDist.size,
+      distancesFromManyMs,
+      relationLabelSampleSize: sampleIds.length,
+      relationLabelMs,
+    });
+  }
+
+  return { isolated, connected };
 }
 
 function runOneSize(size) {
@@ -142,14 +179,13 @@ function runOneSize(size) {
     for (const p of relationSample) relationLabel(graph, tree.myPersonId, p.id);
   });
 
-  // ── Anchor-cluster traversal — the fixture deliberately builds 4- and
-  //    8-current-partner stress clusters as their own disconnected islands
-  //    (see fixtureGenerator.js), but that's only useful if their cost is
-  //    actually measured from their own vantage point, not just from the
-  //    default viewer (who can't reach them at all). Multi-source BFS from
-  //    each anchor, plus relationLabel timing sampled from inside its own
-  //    cluster, represents the traversal cost a perimeter/halo calculation
-  //    would pay when the anchor itself is the viewer. ──
+  // ── Anchor traversal — two distinct cases (see measureAnchorClusters's own
+  //    header comment): single-source distancesFrom from the fixture's
+  //    ISOLATED 4-/8-partner hubs (their own disconnected 5-/9-person
+  //    islands), and a genuine multi-source distancesFromMany union from the
+  //    CONNECTED 4-/8-partner root sets, which sit inside the family's one
+  //    large component — the realistic shape of a future perimeter's
+  //    "viewer + partner anchors" root-set traversal. ──
   const anchorClusters = measureAnchorClusters(graph, meta, size);
 
   // ── Duplicate detection — currently an all-pairs-ish scan over the whole tree ──
@@ -205,8 +241,11 @@ function runOneSize(size) {
   console.log(`  D1 row ceiling: legacy whole-blob ${pctOfD1RowCeilingLegacy.toFixed(1)}% / migrated core-only ${pctOfD1RowCeilingCore.toFixed(1)}% of 1 MiB`);
   console.log(`  localStorage:   ${pctOfLocalStorageQuota.toFixed(1)}% of a typical ${STATIC.LOCALSTORAGE_TYPICAL_QUOTA_MB}MB quota`);
   console.log(`  bubble reveal:  ${reachable} reachable, cap ${STATIC.MAX_BUBBLE_REVEAL} → ${withinRevealCap ? 'under cap' : 'CAPPED'}, ${rippleLayers} ripple layers`);
-  for (const c of anchorClusters) {
+  for (const c of anchorClusters.isolated) {
     console.log(`  ${c.label}:  cluster of ${c.clusterSize} (incl. anchor), distancesFrom ${fmtMs(c.distancesMs)}, relationLabel ${fmtMs(c.relationLabelMs)} for ${c.relationLabelSampleSize} pairs`);
+  }
+  for (const c of anchorClusters.connected) {
+    console.log(`  ${c.label}:  root set of ${c.rootSetSize}, distancesFromMany reached ${c.reachedFromRootSet}/${size} in ${fmtMs(c.distancesFromManyMs)}, relationLabel ${fmtMs(c.relationLabelMs)} for ${c.relationLabelSampleSize} pairs`);
   }
 
   if (!roundTripOk) {
@@ -268,10 +307,16 @@ for (const r of rows) {
   reportLines.push(`- \`findDuplicatePairs\`: ${fmtMs(r.duplicatesMs)}, found ${r.dupPairsFound} candidate pairs in this synthetic data (not a defect — the generator does not deliberately plant name/date collisions beyond the fixed anchors, so this count reflects incidental collisions in the seeded random name/date pools).`);
   reportLines.push(`- \`computeInsightModules\`: ${fmtMs(r.insightsMs)} for the full pass.`);
   reportLines.push(`- Bubble reveal ("All" in Tree view): ${r.reachable} people reachable from the viewer vs. the ${STATIC.MAX_BUBBLE_REVEAL}-person hard cap already enforced in \`App.jsx\` — ${r.withinRevealCap ? 'stays under the cap, reveals everyone reachable' : `exceeds the cap; "All" would reveal only the closest ${STATIC.MAX_BUBBLE_REVEAL} and show the existing List-view redirect toast`}, over ${r.rippleLayers} ripple-reveal layers at ${STATIC.RIPPLE_CHUNK_SIZE}/layer.`);
-  if (r.anchorClusters.length) {
-    reportLines.push(`- Anchor-cluster traversal (measured from the anchor's own vantage point, not the default viewer — these clusters are deliberately disconnected islands, per \`fixtureGenerator.js\`, so a default-viewer BFS never reaches them at all):`);
-    for (const c of r.anchorClusters) {
+  if (r.anchorClusters.isolated.length) {
+    reportLines.push(`- Isolated anchor traversal (single-source \`distancesFrom\` FROM the hub itself — these are deliberately disconnected 5-/9-person islands, per \`fixtureGenerator.js\`, so a default-viewer BFS never reaches them; this measures the hub's own partner fan-out cost in complete isolation, nothing more):`);
+    for (const c of r.anchorClusters.isolated) {
       reportLines.push(`  - **${c.label}** (${c.expectedPartners} current partners): cluster of ${c.clusterSize} people (including the anchor) reachable via \`distancesFrom\` in ${fmtMs(c.distancesMs)}; \`relationLabel\` over a ${c.relationLabelSampleSize}-pair sample from the anchor took ${fmtMs(c.relationLabelMs)}.`);
+    }
+  }
+  if (r.anchorClusters.connected.length) {
+    reportLines.push(`- Connected root-set traversal (\`distancesFromMany\` — a genuine deduplicated multi-source union from the hub **plus its own current partners**, exactly the root set a future perimeter algorithm would build for "viewer + partner anchors"; these hubs are embedded in the family's one large connected component, not isolated):`);
+    for (const c of r.anchorClusters.connected) {
+      reportLines.push(`  - **${c.label}** (${c.expectedPartners} current partners, root set of ${c.rootSetSize}): reached ${c.reachedFromRootSet} of ${r.size} people via \`distancesFromMany\` in ${fmtMs(c.distancesFromManyMs)}; \`relationLabel\` over a ${c.relationLabelSampleSize}-pair sample from the hub took ${fmtMs(c.relationLabelMs)}.`);
     }
   }
   reportLines.push('');

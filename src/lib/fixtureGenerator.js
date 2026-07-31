@@ -132,12 +132,15 @@ export function generateFamilyFixture({ size, seed = 1, richFraction = 0.28 }) {
   // hub cluster, size >= 500 only: 9; pedigree-collapse child: 1; explicit
   // step child: 1; explicit adoptive child: 1), plus a small margin so a
   // few genuinely disconnected people (the §11.1 "disconnected people"
-  // case) always remain even after every guaranteed case is funded. A
-  // fixed-percentage reserve alone (the previous version of this) silently
-  // under-funded the size >= 500 tier, since the eight-partner cluster
-  // alone (9 people) plus everything else (8 more) could exceed a
+  // case) always remain even after every guaranteed case is funded. Also
+  // covers the worst-case cost of the CONNECTED four/eight-partner root
+  // sets below (up to 4 and 8 new partner-people respectively, if the
+  // picked hub happened to have zero existing partners from natural
+  // growth) — a fixed-percentage reserve alone (the previous version of
+  // this) silently under-funded the size >= 500 tier, since the eight-
+  // partner cluster alone (9 people) plus everything else could exceed a
   // percentage-only budget for the smaller sizes in that tier.
-  const guaranteedBudget = 5 + (size >= 500 ? 9 : 0) + 1 + 1 + 1;
+  const guaranteedBudget = 5 + (size >= 500 ? 9 : 0) + 1 + 1 + 1 + 4 + (size >= 500 ? 8 : 0);
   const reserve = Math.min(80, Math.max(guaranteedBudget + 6, Math.round(size * 0.02)));
   const growthTarget = size - reserve;
 
@@ -342,7 +345,11 @@ export function generateFamilyFixture({ size, seed = 1, richFraction = 0.28 }) {
     }
   }
 
-  const meta = { fourPartnerAnchorId: null, eightPartnerAnchorId: null, pedigreeCollapseChildId: null, disconnectedIds: [], stepChildId: null, adoptiveChildId: null };
+  const meta = {
+    fourPartnerAnchorId: null, eightPartnerAnchorId: null,
+    connectedFourPartnerAnchorId: null, connectedEightPartnerAnchorId: null,
+    pedigreeCollapseChildId: null, disconnectedIds: [], stepChildId: null, adoptiveChildId: null,
+  };
 
   // ── Guaranteed structural fixtures, spent from the reserved budget ──────
   // A hub person with exactly four CURRENT partners — the spec's revised
@@ -376,7 +383,12 @@ export function generateFamilyFixture({ size, seed = 1, richFraction = 0.28 }) {
   // rather than depending on undocumented dice rolls elsewhere in the
   // generator. Two distant cousins from different founder branches produce
   // a shared child, so that child (and the two parents) are reachable by
-  // more than one ancestry path.
+  // more than one ancestry path. Computed BEFORE the connected multi-partner
+  // hubs below so their ids can be excluded from that hub-picking pool —
+  // both draw from "deepest person in a founder branch," and without the
+  // exclusion they could coincidentally land on the same person, silently
+  // giving a "4-partner" hub a 5th partner from this unrelated case.
+  const pedigreeCousinIds = new Set();
   if (founderCouples.length >= 2) {
     const peopleInBranch = (branch) =>
       [...byGenBranch.entries()]
@@ -391,11 +403,52 @@ export function generateFamilyFixture({ size, seed = 1, richFraction = 0.28 }) {
     const cousinB = branchBPeople[branchBPeople.length - 1];
     if (cousinA && cousinB && cousinA.id !== cousinB.id) {
       addPartner(cousinA, cousinB, 'current', {});
+      pedigreeCousinIds.add(cousinA.id);
+      pedigreeCousinIds.add(cousinB.id);
       const collapseChild = addPerson(genIndex);
       if (collapseChild) {
         addParent(cousinA, collapseChild, 'biological');
         addParent(cousinB, collapseChild, 'biological');
         meta.pedigreeCollapseChildId = collapseChild.id;
+      }
+    }
+  }
+
+  // Connected multi-partner root sets — the SAME 4- and 8-current-partner
+  // shape as the isolated anchors above, but attached to a person already
+  // embedded in the main growth tree (real parent/child edges from natural
+  // growth), not a freshly-added isolated person. The isolated anchors
+  // above are useful for measuring "cost of one hub's own partner fan-out
+  // in complete isolation," but a real perimeter root set (viewer + their
+  // current-partner anchors) always sits INSIDE the family's one large
+  // connected component — this is what makes a multi-source traversal from
+  // that root set (graph.js's distancesFromMany) actually exercise the
+  // realistic case, rather than trivially terminating on a 5- or 9-person
+  // island.
+  const connectedHubPool = [...byGenBranch.entries()]
+    .filter(([key]) => Number(key.split('|')[0]) >= 2) // a couple generations deep, not a founder
+    .flatMap(([, v]) => v)
+    .filter((p) => !pedigreeCousinIds.has(p.id));
+  const connectedFourHub = connectedHubPool.length ? pick(rand, connectedHubPool) : null;
+  if (connectedFourHub) {
+    meta.connectedFourPartnerAnchorId = connectedFourHub.id;
+    const existingCurrentPartners = relationships.filter((r) => r.type === 'partner' && r.partner_status === 'current'
+      && (r.from_person === connectedFourHub.id || r.to_person === connectedFourHub.id)).length;
+    for (let i = existingCurrentPartners; i < 4; i++) {
+      const partner = addPerson(genIndex);
+      if (partner) addPartner(connectedFourHub, partner, 'current', {});
+    }
+  }
+  if (size >= 500) {
+    const eightHubPool = connectedHubPool.filter((p) => p.id !== connectedFourHub?.id);
+    const connectedEightHub = eightHubPool.length ? pick(rand, eightHubPool) : null;
+    if (connectedEightHub) {
+      meta.connectedEightPartnerAnchorId = connectedEightHub.id;
+      const existingCurrentPartners = relationships.filter((r) => r.type === 'partner' && r.partner_status === 'current'
+        && (r.from_person === connectedEightHub.id || r.to_person === connectedEightHub.id)).length;
+      for (let i = existingCurrentPartners; i < 8; i++) {
+        const partner = addPerson(genIndex);
+        if (partner) addPartner(connectedEightHub, partner, 'current', {});
       }
     }
   }

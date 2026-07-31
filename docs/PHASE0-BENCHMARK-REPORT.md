@@ -14,16 +14,16 @@ never touches this file, since per-run timings naturally vary and would otherwis
 the working tree on every run. Byte-size figures (payload, core/extra) are deterministic
 for a given fixture seed; only the timing figures are run-to-run noise.
 
-Run: 2026-07-31T02:45:47.685Z
+Run: 2026-07-31T02:56:21.687Z
 
 ## Summary table
 
 | Size | Raw JSON | Gzip | D1 row: legacy whole-blob | D1 row: migrated core-only | buildGraph | distancesFrom (reached) | relationLabel (200-pair sample) | duplicate scan | insight modules | bubble reveal |
 |---|---|---|---|---|---|---|---|---|---|---|
-| 100 | 66.0 KB | 6.3 KB | 6.4% (66.0 KB) | 4.0% (41.3 KB) | 0.71 ms | 0.46 ms (89/100) | 2.13 ms (21.5 µs/pair) | 1.63 ms (0 pairs) | 28.57 ms | under cap (3 layers) |
-| 500 | 325.1 KB | 25.3 KB | 31.7% (325.1 KB) | 20.9% (214.0 KB) | 0.77 ms | 0.82 ms (480/500) | 5.07 ms (25.3 µs/pair) | 1.15 ms (3 pairs) | 53.66 ms | CAPPED at 250 (7 layers) |
-| 1100 | 723.2 KB | 53.1 KB | 70.6% (723.2 KB) | 46.4% (474.7 KB) | 3.43 ms | 1.44 ms (1080/1100) | 1.25 ms (6.2 µs/pair) | 5.47 ms (10 pairs) | 240.52 ms | CAPPED at 250 (7 layers) |
-| 5000 | 3.26 MB | 232.7 KB | 325.6% (3.26 MB) | 212.7% (2.13 MB) | 14.34 ms | 31.16 ms (4923/5000) | 1.41 ms (7.0 µs/pair) | 19.68 ms (203 pairs) | 6168.12 ms | CAPPED at 250 (7 layers) |
+| 100 | 64.3 KB | 6.1 KB | 6.3% (64.3 KB) | 4.0% (41.0 KB) | 0.66 ms | 0.40 ms (88/100) | 1.86 ms (18.8 µs/pair) | 0.78 ms (0 pairs) | 27.15 ms | under cap (3 layers) |
+| 500 | 324.7 KB | 25.2 KB | 31.7% (324.7 KB) | 20.8% (213.3 KB) | 0.85 ms | 0.85 ms (478/500) | 3.52 ms (17.6 µs/pair) | 1.22 ms (2 pairs) | 50.44 ms | CAPPED at 250 (7 layers) |
+| 1100 | 722.6 KB | 53.0 KB | 70.6% (722.6 KB) | 46.3% (474.4 KB) | 1.81 ms | 1.99 ms (1078/1100) | 1.63 ms (8.2 µs/pair) | 3.53 ms (9 pairs) | 197.97 ms | CAPPED at 250 (7 layers) |
+| 5000 | 3.26 MB | 232.7 KB | 325.8% (3.26 MB) | 212.9% (2.13 MB) | 15.44 ms | 48.36 ms (4933/5000) | 2.34 ms (11.7 µs/pair) | 28.00 ms (203 pairs) | 6117.21 ms | CAPPED at 250 (7 layers) |
 
 ## Static architecture constants referenced
 
@@ -40,74 +40,85 @@ Run: 2026-07-31T02:45:47.685Z
 ### 100 people
 
 - Fixture: 100 people, generated deterministically (seed 42), includes a 4-current-partner anchor, a pedigree-collapse case, an explicit step case, an explicit adoptive case, and a pool of fully disconnected people.
-- Payload: **66.0 KB** raw JSON (**6.3 KB** gzip), stringified in 0.34 ms.
-  - Legacy (pre-migration) storage puts the whole 66.0 KB blob in one D1 row: 6.44% of D1's 1 MiB per-row ceiling.
-  - Running `functions/_lib/treeStore.js`'s own `splitTree` against this exact fixture: **41.3 KB** core (D1 row, 4.04% of the ceiling) + **25.8 KB** extra (R2, no comparable ceiling at this scale) — round-trip through `reassembleTree` verified deep-equal to the original fixture.
-  - 1.29% of a typical 5MB browser localStorage quota (the client-side persistence `store.js` uses — this one is unaffected by the D1/R2 split, since `store.js` still holds the whole reassembled tree in memory and localStorage today).
-- `buildGraph`: 0.71 ms.
-- `distancesFrom` (BFS from the default viewer): 0.46 ms, reaching 89 of 100 people (the multi-partner anchor clusters and the disconnected pool are deliberately unreachable islands — see the fixture's own test comments).
-- `relationLabel` (cousin-degree / kin-label computation) over a 99-pair sample from the viewer: 2.13 ms total, 21.5 µs/pair average.
-- `findDuplicatePairs`: 1.63 ms, found 0 candidate pairs in this synthetic data (not a defect — the generator does not deliberately plant name/date collisions beyond the fixed anchors, so this count reflects incidental collisions in the seeded random name/date pools).
-- `computeInsightModules`: 28.57 ms for the full pass.
-- Bubble reveal ("All" in Tree view): 89 people reachable from the viewer vs. the 250-person hard cap already enforced in `App.jsx` — stays under the cap, reveals everyone reachable, over 3 ripple-reveal layers at 40/layer.
-- Anchor-cluster traversal (measured from the anchor's own vantage point, not the default viewer — these clusters are deliberately disconnected islands, per `fixtureGenerator.js`, so a default-viewer BFS never reaches them at all):
-  - **four-partner anchor** (4 current partners): cluster of 5 people (including the anchor) reachable via `distancesFrom` in 0.07 ms; `relationLabel` over a 4-pair sample from the anchor took 0.03 ms.
+- Payload: **64.3 KB** raw JSON (**6.1 KB** gzip), stringified in 0.19 ms.
+  - Legacy (pre-migration) storage puts the whole 64.3 KB blob in one D1 row: 6.28% of D1's 1 MiB per-row ceiling.
+  - Running `functions/_lib/treeStore.js`'s own `splitTree` against this exact fixture: **41.0 KB** core (D1 row, 4.01% of the ceiling) + **24.5 KB** extra (R2, no comparable ceiling at this scale) — round-trip through `reassembleTree` verified deep-equal to the original fixture.
+  - 1.26% of a typical 5MB browser localStorage quota (the client-side persistence `store.js` uses — this one is unaffected by the D1/R2 split, since `store.js` still holds the whole reassembled tree in memory and localStorage today).
+- `buildGraph`: 0.66 ms.
+- `distancesFrom` (BFS from the default viewer): 0.40 ms, reaching 88 of 100 people (the multi-partner anchor clusters and the disconnected pool are deliberately unreachable islands — see the fixture's own test comments).
+- `relationLabel` (cousin-degree / kin-label computation) over a 99-pair sample from the viewer: 1.86 ms total, 18.8 µs/pair average.
+- `findDuplicatePairs`: 0.78 ms, found 0 candidate pairs in this synthetic data (not a defect — the generator does not deliberately plant name/date collisions beyond the fixed anchors, so this count reflects incidental collisions in the seeded random name/date pools).
+- `computeInsightModules`: 27.15 ms for the full pass.
+- Bubble reveal ("All" in Tree view): 88 people reachable from the viewer vs. the 250-person hard cap already enforced in `App.jsx` — stays under the cap, reveals everyone reachable, over 3 ripple-reveal layers at 40/layer.
+- Isolated anchor traversal (single-source `distancesFrom` FROM the hub itself — these are deliberately disconnected 5-/9-person islands, per `fixtureGenerator.js`, so a default-viewer BFS never reaches them; this measures the hub's own partner fan-out cost in complete isolation, nothing more):
+  - **isolated four-partner anchor** (4 current partners): cluster of 5 people (including the anchor) reachable via `distancesFrom` in 0.07 ms; `relationLabel` over a 4-pair sample from the anchor took 0.03 ms.
+- Connected root-set traversal (`distancesFromMany` — a genuine deduplicated multi-source union from the hub **plus its own current partners**, exactly the root set a future perimeter algorithm would build for "viewer + partner anchors"; these hubs are embedded in the family's one large connected component, not isolated):
+  - **connected four-partner root set** (4 current partners, root set of 5): reached 88 of 100 people via `distancesFromMany` in 0.41 ms; `relationLabel` over a 50-pair sample from the hub took 1.07 ms.
 
 ### 500 people
 
 - Fixture: 500 people, generated deterministically (seed 42), includes a 4-current-partner anchor, an 8-current-partner stress anchor, a pedigree-collapse case, an explicit step case, an explicit adoptive case, and a pool of fully disconnected people.
-- Payload: **325.1 KB** raw JSON (**25.3 KB** gzip), stringified in 1.36 ms.
-  - Legacy (pre-migration) storage puts the whole 325.1 KB blob in one D1 row: 31.75% of D1's 1 MiB per-row ceiling.
-  - Running `functions/_lib/treeStore.js`'s own `splitTree` against this exact fixture: **214.0 KB** core (D1 row, 20.90% of the ceiling) + **117.4 KB** extra (R2, no comparable ceiling at this scale) — round-trip through `reassembleTree` verified deep-equal to the original fixture.
-  - 6.35% of a typical 5MB browser localStorage quota (the client-side persistence `store.js` uses — this one is unaffected by the D1/R2 split, since `store.js` still holds the whole reassembled tree in memory and localStorage today).
-- `buildGraph`: 0.77 ms.
-- `distancesFrom` (BFS from the default viewer): 0.82 ms, reaching 480 of 500 people (the multi-partner anchor clusters and the disconnected pool are deliberately unreachable islands — see the fixture's own test comments).
-- `relationLabel` (cousin-degree / kin-label computation) over a 200-pair sample from the viewer: 5.07 ms total, 25.3 µs/pair average.
-- `findDuplicatePairs`: 1.15 ms, found 3 candidate pairs in this synthetic data (not a defect — the generator does not deliberately plant name/date collisions beyond the fixed anchors, so this count reflects incidental collisions in the seeded random name/date pools).
-- `computeInsightModules`: 53.66 ms for the full pass.
-- Bubble reveal ("All" in Tree view): 480 people reachable from the viewer vs. the 250-person hard cap already enforced in `App.jsx` — exceeds the cap; "All" would reveal only the closest 250 and show the existing List-view redirect toast, over 7 ripple-reveal layers at 40/layer.
-- Anchor-cluster traversal (measured from the anchor's own vantage point, not the default viewer — these clusters are deliberately disconnected islands, per `fixtureGenerator.js`, so a default-viewer BFS never reaches them at all):
-  - **four-partner anchor** (4 current partners): cluster of 5 people (including the anchor) reachable via `distancesFrom` in 0.02 ms; `relationLabel` over a 4-pair sample from the anchor took 0.00 ms.
-  - **eight-partner anchor** (8 current partners): cluster of 9 people (including the anchor) reachable via `distancesFrom` in 0.01 ms; `relationLabel` over a 8-pair sample from the anchor took 0.01 ms.
+- Payload: **324.7 KB** raw JSON (**25.2 KB** gzip), stringified in 1.36 ms.
+  - Legacy (pre-migration) storage puts the whole 324.7 KB blob in one D1 row: 31.71% of D1's 1 MiB per-row ceiling.
+  - Running `functions/_lib/treeStore.js`'s own `splitTree` against this exact fixture: **213.3 KB** core (D1 row, 20.83% of the ceiling) + **117.7 KB** extra (R2, no comparable ceiling at this scale) — round-trip through `reassembleTree` verified deep-equal to the original fixture.
+  - 6.34% of a typical 5MB browser localStorage quota (the client-side persistence `store.js` uses — this one is unaffected by the D1/R2 split, since `store.js` still holds the whole reassembled tree in memory and localStorage today).
+- `buildGraph`: 0.85 ms.
+- `distancesFrom` (BFS from the default viewer): 0.85 ms, reaching 478 of 500 people (the multi-partner anchor clusters and the disconnected pool are deliberately unreachable islands — see the fixture's own test comments).
+- `relationLabel` (cousin-degree / kin-label computation) over a 200-pair sample from the viewer: 3.52 ms total, 17.6 µs/pair average.
+- `findDuplicatePairs`: 1.22 ms, found 2 candidate pairs in this synthetic data (not a defect — the generator does not deliberately plant name/date collisions beyond the fixed anchors, so this count reflects incidental collisions in the seeded random name/date pools).
+- `computeInsightModules`: 50.44 ms for the full pass.
+- Bubble reveal ("All" in Tree view): 478 people reachable from the viewer vs. the 250-person hard cap already enforced in `App.jsx` — exceeds the cap; "All" would reveal only the closest 250 and show the existing List-view redirect toast, over 7 ripple-reveal layers at 40/layer.
+- Isolated anchor traversal (single-source `distancesFrom` FROM the hub itself — these are deliberately disconnected 5-/9-person islands, per `fixtureGenerator.js`, so a default-viewer BFS never reaches them; this measures the hub's own partner fan-out cost in complete isolation, nothing more):
+  - **isolated four-partner anchor** (4 current partners): cluster of 5 people (including the anchor) reachable via `distancesFrom` in 0.01 ms; `relationLabel` over a 4-pair sample from the anchor took 0.03 ms.
+  - **isolated eight-partner anchor** (8 current partners): cluster of 9 people (including the anchor) reachable via `distancesFrom` in 0.01 ms; `relationLabel` over a 8-pair sample from the anchor took 0.01 ms.
+- Connected root-set traversal (`distancesFromMany` — a genuine deduplicated multi-source union from the hub **plus its own current partners**, exactly the root set a future perimeter algorithm would build for "viewer + partner anchors"; these hubs are embedded in the family's one large connected component, not isolated):
+  - **connected four-partner root set** (4 current partners, root set of 5): reached 478 of 500 people via `distancesFromMany` in 0.59 ms; `relationLabel` over a 50-pair sample from the hub took 0.58 ms.
+  - **connected eight-partner root set** (8 current partners, root set of 9): reached 478 of 500 people via `distancesFromMany` in 0.87 ms; `relationLabel` over a 50-pair sample from the hub took 3.37 ms.
 
 ### 1100 people
 
 - Fixture: 1100 people, generated deterministically (seed 42), includes a 4-current-partner anchor, an 8-current-partner stress anchor, a pedigree-collapse case, an explicit step case, an explicit adoptive case, and a pool of fully disconnected people.
-- Payload: **723.2 KB** raw JSON (**53.1 KB** gzip), stringified in 2.52 ms.
-  - Legacy (pre-migration) storage puts the whole 723.2 KB blob in one D1 row: 70.62% of D1's 1 MiB per-row ceiling.
-  - Running `functions/_lib/treeStore.js`'s own `splitTree` against this exact fixture: **474.7 KB** core (D1 row, 46.36% of the ceiling) + **262.4 KB** extra (R2, no comparable ceiling at this scale) — round-trip through `reassembleTree` verified deep-equal to the original fixture.
-  - 14.12% of a typical 5MB browser localStorage quota (the client-side persistence `store.js` uses — this one is unaffected by the D1/R2 split, since `store.js` still holds the whole reassembled tree in memory and localStorage today).
-- `buildGraph`: 3.43 ms.
-- `distancesFrom` (BFS from the default viewer): 1.44 ms, reaching 1080 of 1100 people (the multi-partner anchor clusters and the disconnected pool are deliberately unreachable islands — see the fixture's own test comments).
-- `relationLabel` (cousin-degree / kin-label computation) over a 200-pair sample from the viewer: 1.25 ms total, 6.2 µs/pair average.
-- `findDuplicatePairs`: 5.47 ms, found 10 candidate pairs in this synthetic data (not a defect — the generator does not deliberately plant name/date collisions beyond the fixed anchors, so this count reflects incidental collisions in the seeded random name/date pools).
-- `computeInsightModules`: 240.52 ms for the full pass.
-- Bubble reveal ("All" in Tree view): 1080 people reachable from the viewer vs. the 250-person hard cap already enforced in `App.jsx` — exceeds the cap; "All" would reveal only the closest 250 and show the existing List-view redirect toast, over 7 ripple-reveal layers at 40/layer.
-- Anchor-cluster traversal (measured from the anchor's own vantage point, not the default viewer — these clusters are deliberately disconnected islands, per `fixtureGenerator.js`, so a default-viewer BFS never reaches them at all):
-  - **four-partner anchor** (4 current partners): cluster of 5 people (including the anchor) reachable via `distancesFrom` in 0.02 ms; `relationLabel` over a 4-pair sample from the anchor took 0.01 ms.
-  - **eight-partner anchor** (8 current partners): cluster of 9 people (including the anchor) reachable via `distancesFrom` in 0.02 ms; `relationLabel` over a 8-pair sample from the anchor took 0.01 ms.
+- Payload: **722.6 KB** raw JSON (**53.0 KB** gzip), stringified in 2.61 ms.
+  - Legacy (pre-migration) storage puts the whole 722.6 KB blob in one D1 row: 70.56% of D1's 1 MiB per-row ceiling.
+  - Running `functions/_lib/treeStore.js`'s own `splitTree` against this exact fixture: **474.4 KB** core (D1 row, 46.33% of the ceiling) + **262.1 KB** extra (R2, no comparable ceiling at this scale) — round-trip through `reassembleTree` verified deep-equal to the original fixture.
+  - 14.11% of a typical 5MB browser localStorage quota (the client-side persistence `store.js` uses — this one is unaffected by the D1/R2 split, since `store.js` still holds the whole reassembled tree in memory and localStorage today).
+- `buildGraph`: 1.81 ms.
+- `distancesFrom` (BFS from the default viewer): 1.99 ms, reaching 1078 of 1100 people (the multi-partner anchor clusters and the disconnected pool are deliberately unreachable islands — see the fixture's own test comments).
+- `relationLabel` (cousin-degree / kin-label computation) over a 200-pair sample from the viewer: 1.63 ms total, 8.2 µs/pair average.
+- `findDuplicatePairs`: 3.53 ms, found 9 candidate pairs in this synthetic data (not a defect — the generator does not deliberately plant name/date collisions beyond the fixed anchors, so this count reflects incidental collisions in the seeded random name/date pools).
+- `computeInsightModules`: 197.97 ms for the full pass.
+- Bubble reveal ("All" in Tree view): 1078 people reachable from the viewer vs. the 250-person hard cap already enforced in `App.jsx` — exceeds the cap; "All" would reveal only the closest 250 and show the existing List-view redirect toast, over 7 ripple-reveal layers at 40/layer.
+- Isolated anchor traversal (single-source `distancesFrom` FROM the hub itself — these are deliberately disconnected 5-/9-person islands, per `fixtureGenerator.js`, so a default-viewer BFS never reaches them; this measures the hub's own partner fan-out cost in complete isolation, nothing more):
+  - **isolated four-partner anchor** (4 current partners): cluster of 5 people (including the anchor) reachable via `distancesFrom` in 0.02 ms; `relationLabel` over a 4-pair sample from the anchor took 0.01 ms.
+  - **isolated eight-partner anchor** (8 current partners): cluster of 9 people (including the anchor) reachable via `distancesFrom` in 0.02 ms; `relationLabel` over a 8-pair sample from the anchor took 0.01 ms.
+- Connected root-set traversal (`distancesFromMany` — a genuine deduplicated multi-source union from the hub **plus its own current partners**, exactly the root set a future perimeter algorithm would build for "viewer + partner anchors"; these hubs are embedded in the family's one large connected component, not isolated):
+  - **connected four-partner root set** (4 current partners, root set of 5): reached 1078 of 1100 people via `distancesFromMany` in 1.90 ms; `relationLabel` over a 50-pair sample from the hub took 1.92 ms.
+  - **connected eight-partner root set** (8 current partners, root set of 9): reached 1078 of 1100 people via `distancesFromMany` in 1.68 ms; `relationLabel` over a 50-pair sample from the hub took 0.75 ms.
 
 ### 5000 people
 
 - Fixture: 5000 people, generated deterministically (seed 42), includes a 4-current-partner anchor, an 8-current-partner stress anchor, a pedigree-collapse case, an explicit step case, an explicit adoptive case, and a pool of fully disconnected people.
-- Payload: **3.26 MB** raw JSON (**232.7 KB** gzip), stringified in 23.84 ms.
-  - Legacy (pre-migration) storage puts the whole 3.26 MB blob in one D1 row: 325.65% of D1's 1 MiB per-row ceiling.
-  - Running `functions/_lib/treeStore.js`'s own `splitTree` against this exact fixture: **2.13 MB** core (D1 row, 212.67% of the ceiling) + **1.20 MB** extra (R2, no comparable ceiling at this scale) — round-trip through `reassembleTree` verified deep-equal to the original fixture.
-  - 65.13% of a typical 5MB browser localStorage quota (the client-side persistence `store.js` uses — this one is unaffected by the D1/R2 split, since `store.js` still holds the whole reassembled tree in memory and localStorage today).
-- `buildGraph`: 14.34 ms.
-- `distancesFrom` (BFS from the default viewer): 31.16 ms, reaching 4923 of 5000 people (the multi-partner anchor clusters and the disconnected pool are deliberately unreachable islands — see the fixture's own test comments).
-- `relationLabel` (cousin-degree / kin-label computation) over a 200-pair sample from the viewer: 1.41 ms total, 7.0 µs/pair average.
-- `findDuplicatePairs`: 19.68 ms, found 203 candidate pairs in this synthetic data (not a defect — the generator does not deliberately plant name/date collisions beyond the fixed anchors, so this count reflects incidental collisions in the seeded random name/date pools).
-- `computeInsightModules`: 6168.12 ms for the full pass.
-- Bubble reveal ("All" in Tree view): 4923 people reachable from the viewer vs. the 250-person hard cap already enforced in `App.jsx` — exceeds the cap; "All" would reveal only the closest 250 and show the existing List-view redirect toast, over 7 ripple-reveal layers at 40/layer.
-- Anchor-cluster traversal (measured from the anchor's own vantage point, not the default viewer — these clusters are deliberately disconnected islands, per `fixtureGenerator.js`, so a default-viewer BFS never reaches them at all):
-  - **four-partner anchor** (4 current partners): cluster of 5 people (including the anchor) reachable via `distancesFrom` in 0.07 ms; `relationLabel` over a 4-pair sample from the anchor took 0.00 ms.
-  - **eight-partner anchor** (8 current partners): cluster of 9 people (including the anchor) reachable via `distancesFrom` in 0.02 ms; `relationLabel` over a 8-pair sample from the anchor took 0.00 ms.
+- Payload: **3.26 MB** raw JSON (**232.7 KB** gzip), stringified in 12.98 ms.
+  - Legacy (pre-migration) storage puts the whole 3.26 MB blob in one D1 row: 325.79% of D1's 1 MiB per-row ceiling.
+  - Running `functions/_lib/treeStore.js`'s own `splitTree` against this exact fixture: **2.13 MB** core (D1 row, 212.88% of the ceiling) + **1.19 MB** extra (R2, no comparable ceiling at this scale) — round-trip through `reassembleTree` verified deep-equal to the original fixture.
+  - 65.16% of a typical 5MB browser localStorage quota (the client-side persistence `store.js` uses — this one is unaffected by the D1/R2 split, since `store.js` still holds the whole reassembled tree in memory and localStorage today).
+- `buildGraph`: 15.44 ms.
+- `distancesFrom` (BFS from the default viewer): 48.36 ms, reaching 4933 of 5000 people (the multi-partner anchor clusters and the disconnected pool are deliberately unreachable islands — see the fixture's own test comments).
+- `relationLabel` (cousin-degree / kin-label computation) over a 200-pair sample from the viewer: 2.34 ms total, 11.7 µs/pair average.
+- `findDuplicatePairs`: 28.00 ms, found 203 candidate pairs in this synthetic data (not a defect — the generator does not deliberately plant name/date collisions beyond the fixed anchors, so this count reflects incidental collisions in the seeded random name/date pools).
+- `computeInsightModules`: 6117.21 ms for the full pass.
+- Bubble reveal ("All" in Tree view): 4933 people reachable from the viewer vs. the 250-person hard cap already enforced in `App.jsx` — exceeds the cap; "All" would reveal only the closest 250 and show the existing List-view redirect toast, over 7 ripple-reveal layers at 40/layer.
+- Isolated anchor traversal (single-source `distancesFrom` FROM the hub itself — these are deliberately disconnected 5-/9-person islands, per `fixtureGenerator.js`, so a default-viewer BFS never reaches them; this measures the hub's own partner fan-out cost in complete isolation, nothing more):
+  - **isolated four-partner anchor** (4 current partners): cluster of 5 people (including the anchor) reachable via `distancesFrom` in 0.03 ms; `relationLabel` over a 4-pair sample from the anchor took 0.01 ms.
+  - **isolated eight-partner anchor** (8 current partners): cluster of 9 people (including the anchor) reachable via `distancesFrom` in 0.03 ms; `relationLabel` over a 8-pair sample from the anchor took 0.01 ms.
+- Connected root-set traversal (`distancesFromMany` — a genuine deduplicated multi-source union from the hub **plus its own current partners**, exactly the root set a future perimeter algorithm would build for "viewer + partner anchors"; these hubs are embedded in the family's one large connected component, not isolated):
+  - **connected four-partner root set** (4 current partners, root set of 5): reached 4933 of 5000 people via `distancesFromMany` in 17.13 ms; `relationLabel` over a 50-pair sample from the hub took 1.14 ms.
+  - **connected eight-partner root set** (8 current partners, root set of 9): reached 4933 of 5000 people via `distancesFromMany` in 16.76 ms; `relationLabel` over a 50-pair sample from the hub took 0.61 ms.
 
 ## Key finding: `computeInsightModules` has a real quadratic-ish hot spot at scale
 
 The insight-modules timings above are not a flat, uniformly-scaling cost — they blow
-up disproportionately as size grows (28.57 ms → 53.66 ms → 240.52 ms → 6168.12 ms across a 50x
+up disproportionately as size grows (27.15 ms → 50.44 ms → 197.97 ms → 6117.21 ms across a 50x
 growth in people, i.e. roughly two orders of magnitude more than linear). A CPU profile
 (`node --cpu-prof`) taken against the 5,000-person fixture attributes **~82% of all CPU
 time inside `computeInsightModules`** to a single module: `bridges()`
