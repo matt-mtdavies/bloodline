@@ -71,7 +71,7 @@ import { buildGraph, pathBetween, pathBetweenOrdered, bloodRelativesOf, distance
 import { useKinTerms } from './lib/kinTerms.js';
 import { planPerimeterRecommendationIfUnset, fetchPerimeterPreference, engineLevelFor, isPerimeterActive } from './lib/familyPerimeter.js';
 import { computePerspectiveIndex } from './lib/perspectiveIndex.js';
-import { scheduleStaggeredReveal, idsToPruneForPerimeter, revealAllCandidatePool } from './lib/staggeredReveal.js';
+import { scheduleStaggeredReveal, idsToPruneForPerimeter, revealAllCandidatePool, desiredVisibleIds } from './lib/staggeredReveal.js';
 import { storeToGedcom } from './lib/gedcom.js';
 import { detectRegion, nearestWorldEvent } from './lib/worldEvents.js';
 import { findDuplicatePairs, pairKey, loadDismissedDuplicates, saveDismissedDuplicates } from './lib/duplicates.js';
@@ -1108,9 +1108,13 @@ export default function App() {
     // While a perimeter is active, "All" must never silently bypass it by
     // reaching into the complete tree (Codex follow-up review) — the pool
     // is exactly the same desired set the reconciliation effect below
-    // maintains, so revealing "All" of it can never reintroduce an outside
-    // person. Byte-identical to before when no perimeter is active.
-    const pool = revealAllCandidatePool(perimeterActive, perspective, graph.people.map((p) => p.id));
+    // maintains (both now route through desiredVisibleIds itself — Codex
+    // review, PR #90 final P1 — so a collapse-then-re-expand via "All"
+    // mid-lineage-trace can no longer drop the trace's own extra nodes the
+    // way a separately-maintained union previously could), so revealing
+    // "All" of it can never reintroduce an outside person or break an
+    // active trace. Byte-identical to before when no perimeter is active.
+    const pool = revealAllCandidatePool(perimeterActive, perspective, graph.people.map((p) => p.id), lineageMode, lineagePath);
     const total = pool.length;
     const dist = distancesFromMany(graph, expanded);
     let candidateIds;
@@ -1133,7 +1137,7 @@ export default function App() {
         return next;
       });
     }, { instant: reducedMotion });
-  }, [canCollapse, activeId, expanded, graph, reducedMotion, perimeterActive, perspective]);
+  }, [canCollapse, activeId, expanded, graph, reducedMotion, perimeterActive, perspective, lineageMode, lineagePath]);
 
   // Family Perimeter (Phase 4 §10) — the working-set RECONCILIATION. Runs
   // every time `perspective` changes for any reason: first activation, the
@@ -1146,9 +1150,13 @@ export default function App() {
   // was active, and exploring branch B never cleaned up branch A's now-
   // stale presentation-only people (temporary reveal is supposed to be
   // session-only and reversible; it wasn't, once you explored a SECOND
-  // branch). Now `expanded` is reconciled down to EXACTLY `perimeterIds ∪
-  // temporaryRevealPresentationIds` on every pass — anyone outside that,
-  // however they got into `expanded`, is pruned immediately (cheap, no
+  // branch). Now `expanded` is reconciled down to EXACTLY
+  // desiredVisibleIds's result — `perimeterIds ∪ temporaryRevealPresentation
+  // Ids`, plus the active lineage trace's own path when one is in progress
+  // (Codex review, PR #90 P1: a trace can run from any activeId, not just
+  // the viewer, so it needs its own protection beyond the viewer-anchored
+  // presentation set — see desiredVisibleIds's own comment) — anyone outside
+  // that, however they got into `expanded`, is pruned immediately (cheap, no
   // crash risk — only ADDING many bubbles at once needs staggering);
   // anything missing is revealed via the same crash-safe staggered reveal
   // and MAX_BUBBLE_REVEAL ceiling toggleExpandAll itself relies on. Cancels
@@ -1173,7 +1181,12 @@ export default function App() {
       revealTimerRef.current = null;
     }
 
-    const desiredIds = new Set([...perspective.perimeterIds, ...perspective.temporaryRevealPresentationIds]);
+    // Codex review, PR #90 P1: a lineage trace can run from any activeId,
+    // not necessarily the viewer — folding in the trace's own path (rather
+    // than just the viewer-anchored temporary-reveal presentation set) keeps
+    // an outside-perimeter target's connecting nodes from being pruned out
+    // from under an in-progress trace. See desiredVisibleIds's own comment.
+    const desiredIds = desiredVisibleIds(perspective, lineageMode, lineagePath);
 
     const toPrune = idsToPruneForPerimeter(desiredIds, expanded);
     if (toPrune.length) {
@@ -1209,7 +1222,7 @@ export default function App() {
     // changes (which would also self-trigger, since reconciling IS a
     // change to expanded).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [perimeterActive, perspective, reducedMotion]);
+  }, [perimeterActive, perspective, reducedMotion, lineageMode, lineagePath]);
 
   useEffect(() => () => {
     if (perimeterRevealTimerRef.current) perimeterRevealTimerRef.current();
@@ -1435,6 +1448,24 @@ export default function App() {
     setTemporaryRevealTargets([]);
   }, [perspective, openId, activeId, data.myPersonId, activateNormal]);
 
+  // Family Perimeter (Phase 5 §3.8) — "changes primary view" is one of the
+  // spec's listed reset triggers for an active temporary reveal (alongside
+  // choosing Return to my perimeter, starting another outside navigation,
+  // or ending the session — all already handled elsewhere). Switching Tree/
+  // List/Chart or organic/chart layout mid-reveal has no natural place to
+  // fire returnToPerimeter from otherwise, so a small ref tracks the
+  // previous {view, layout} and calls it the moment either genuinely
+  // changes while a reveal is active. A no-op whenever nothing's revealed.
+  const prevViewLayoutRef = useRef({ view, layout });
+  useEffect(() => {
+    const prev = prevViewLayoutRef.current;
+    if ((prev.view !== view || prev.layout !== layout) && temporaryRevealTargets.length) {
+      returnToPerimeter();
+    }
+    prevViewLayoutRef.current = { view, layout };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, layout]);
+
   // Resolve the ?person= deep link once the tree has actually loaded — a
   // birthday calendar notification should drop the tapper straight onto
   // that person's profile instead of the default focus person.
@@ -1518,6 +1549,18 @@ export default function App() {
   // (unlike tapping a bubble) a search result may not be on screen yet.
   const selectFromSearch = useCallback((targetId) => {
     setSearchOpen(false);
+    // Family Perimeter (Phase 5 §3.8) — a search result outside the active
+    // perimeter needs the SAME "explore this branch" temporary reveal a
+    // boundary row already offers, regardless of which view/layout it's
+    // selected from. exploreBranch already does exactly what's needed here
+    // (register the temp-reveal target, then openPerson once the
+    // perspective recompute has had a render pass to expand it into view) —
+    // reused as-is rather than duplicating its setTimeout/openPerson dance.
+    // `perspective` is null for the overwhelming majority (no perimeter
+    // narrower than Everyone active), so isOutside is false and every
+    // branch below is byte-identical to before this feature existed.
+    const isOutside = perimeterActive && perspective && perspective.outsideIds.has(targetId);
+
     // Real user report: search in List view "just runs a tree search you
     // can't see" — flyToSearchResult flies the camera along BubbleTree's own
     // canvas, which isn't even mounted in List view (view === 'list') or
@@ -1531,10 +1574,15 @@ export default function App() {
     // view keeps the cinematic flyover below; that's the one place the
     // "journey" is the actual point of the feature.
     if (view === 'list' || layout === 'chart') {
+      if (isOutside) { exploreBranch(targetId); return; }
       openPerson(targetId);
       return;
     }
-    if (!lineageMode) { flyToSearchResult(targetId); return; }
+    if (!lineageMode) {
+      if (isOutside) { exploreBranch(targetId); return; }
+      flyToSearchResult(targetId);
+      return;
+    }
     if (targetId === activeId) {
       setLineagePath(null);
       setLineageOrder(null);
@@ -1550,6 +1598,16 @@ export default function App() {
     }
     setLineagePath(ordered ? new Set(ordered) : null);
     setLineageOrder(ordered);
+    // A lineage trace can reach outside the perimeter same as any other
+    // search result — register the target for temporary reveal so the
+    // reconciliation effect doesn't prune it back out from under the trace
+    // the moment `perspective` recomputes. The trace's own intermediate
+    // nodes (just expanded above, `ordered`/`lineagePath`) are protected
+    // separately by that same effect via desiredVisibleIds, since they may
+    // differ entirely from the viewer-anchored minimum path
+    // temporaryRevealPresentationIds computes on its own (Codex review,
+    // PR #90 P1 — a trace can run from any activeId, not just the viewer).
+    if (isOutside) setTemporaryRevealTargets([targetId]);
     // A search result may not be anywhere near wherever the camera was
     // last looking (unlike tapping a bubble, which by definition is already
     // on screen) — recenter() hands the camera back to follow mode, which
@@ -1560,7 +1618,7 @@ export default function App() {
     // — the camera catching up to wherever they actually are is all that
     // was ever needed.
     viewApi.current?.recenter();
-  }, [view, layout, lineageMode, activeId, graph, flyToSearchResult, openPerson]);
+  }, [view, layout, lineageMode, activeId, graph, flyToSearchResult, openPerson, perimeterActive, perspective, exploreBranch]);
 
   // Same flight as flyToSearchResult, but callable from anywhere — the
   // profile page's "Show in tree" and the list view's per-row action, not
@@ -2944,6 +3002,7 @@ export default function App() {
           onClose={() => { setSearchOpen(false); setSearchInitialQuery(null); }}
           hint={lineageMode ? `Tracing from ${(activePerson?.display_name || 'this person').split(' ')[0]} — pick who to connect to` : null}
           initialQuery={searchInitialQuery}
+          perspective={perspective}
         />
       )}
 
