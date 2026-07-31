@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import Avatar from './Avatar.jsx';
-import { relationshipCategories, relationLabel } from '../data/graph.js';
+import { relationshipCategories } from '../data/graph.js';
 import { rankPeopleByName } from '../lib/search.js';
 import { useKinTerms } from '../lib/kinTerms.js';
+import { getCachedRelationLabel } from '../lib/relationLabelCache.js';
 
 // Coarser than PersonSheet's extended-family groups (which fold in
 // great-grandparents/great-grandchildren and split grandchildren from
@@ -107,11 +108,20 @@ export default function SearchOverlay({ people, graph, viewerId, onSelect, onClo
   // needed to computePerspectiveIndex for this. Computed per VISIBLE row
   // only (via the virtualizer below), not for the whole result set at
   // once, so this scales fine against a 5,000-person complete-tree search.
+  //
+  // Codex review, PR #90 P2: relationLabel can walk two ancestor traversals
+  // for a distant person — re-running it on every render (cursor movement,
+  // hover, unrelated state) for every mounted row was exactly the avoidable
+  // main-thread work the performance plan exists to cut. relationLabelCache
+  // memoizes per personId; recreated (invalidated) via useMemo whenever
+  // graph/viewerId/kinTerms genuinely change identity, the same convention
+  // lib/search.js's personSearchCache WeakMap already uses.
+  const relationLabelCache = useMemo(() => new Map(), [graph, viewerId, kinTerms]);
   function perimeterInfo(p) {
     if (!perspective || p.id === viewerId) return null;
     const outside = perspective.outsideIds.has(p.id);
     return {
-      relationship: relationLabel(graph, viewerId, p.id, kinTerms),
+      relationship: getCachedRelationLabel(relationLabelCache, graph, viewerId, p.id, kinTerms),
       outside,
     };
   }

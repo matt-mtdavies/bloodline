@@ -71,7 +71,7 @@ import { buildGraph, pathBetween, pathBetweenOrdered, bloodRelativesOf, distance
 import { useKinTerms } from './lib/kinTerms.js';
 import { planPerimeterRecommendationIfUnset, fetchPerimeterPreference, engineLevelFor, isPerimeterActive } from './lib/familyPerimeter.js';
 import { computePerspectiveIndex } from './lib/perspectiveIndex.js';
-import { scheduleStaggeredReveal, idsToPruneForPerimeter, revealAllCandidatePool } from './lib/staggeredReveal.js';
+import { scheduleStaggeredReveal, idsToPruneForPerimeter, revealAllCandidatePool, desiredVisibleIds } from './lib/staggeredReveal.js';
 import { storeToGedcom } from './lib/gedcom.js';
 import { detectRegion, nearestWorldEvent } from './lib/worldEvents.js';
 import { findDuplicatePairs, pairKey, loadDismissedDuplicates, saveDismissedDuplicates } from './lib/duplicates.js';
@@ -1146,9 +1146,13 @@ export default function App() {
   // was active, and exploring branch B never cleaned up branch A's now-
   // stale presentation-only people (temporary reveal is supposed to be
   // session-only and reversible; it wasn't, once you explored a SECOND
-  // branch). Now `expanded` is reconciled down to EXACTLY `perimeterIds ∪
-  // temporaryRevealPresentationIds` on every pass — anyone outside that,
-  // however they got into `expanded`, is pruned immediately (cheap, no
+  // branch). Now `expanded` is reconciled down to EXACTLY
+  // desiredVisibleIds's result — `perimeterIds ∪ temporaryRevealPresentation
+  // Ids`, plus the active lineage trace's own path when one is in progress
+  // (Codex review, PR #90 P1: a trace can run from any activeId, not just
+  // the viewer, so it needs its own protection beyond the viewer-anchored
+  // presentation set — see desiredVisibleIds's own comment) — anyone outside
+  // that, however they got into `expanded`, is pruned immediately (cheap, no
   // crash risk — only ADDING many bubbles at once needs staggering);
   // anything missing is revealed via the same crash-safe staggered reveal
   // and MAX_BUBBLE_REVEAL ceiling toggleExpandAll itself relies on. Cancels
@@ -1173,7 +1177,12 @@ export default function App() {
       revealTimerRef.current = null;
     }
 
-    const desiredIds = new Set([...perspective.perimeterIds, ...perspective.temporaryRevealPresentationIds]);
+    // Codex review, PR #90 P1: a lineage trace can run from any activeId,
+    // not necessarily the viewer — folding in the trace's own path (rather
+    // than just the viewer-anchored temporary-reveal presentation set) keeps
+    // an outside-perimeter target's connecting nodes from being pruned out
+    // from under an in-progress trace. See desiredVisibleIds's own comment.
+    const desiredIds = desiredVisibleIds(perspective, lineageMode, lineagePath);
 
     const toPrune = idsToPruneForPerimeter(desiredIds, expanded);
     if (toPrune.length) {
@@ -1209,7 +1218,7 @@ export default function App() {
     // changes (which would also self-trigger, since reconciling IS a
     // change to expanded).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [perimeterActive, perspective, reducedMotion]);
+  }, [perimeterActive, perspective, reducedMotion, lineageMode, lineagePath]);
 
   useEffect(() => () => {
     if (perimeterRevealTimerRef.current) perimeterRevealTimerRef.current();
@@ -1587,8 +1596,13 @@ export default function App() {
     setLineageOrder(ordered);
     // A lineage trace can reach outside the perimeter same as any other
     // search result — register the target for temporary reveal so the
-    // reconciliation effect doesn't prune it back out from under the
-    // trace the moment `perspective` recomputes.
+    // reconciliation effect doesn't prune it back out from under the trace
+    // the moment `perspective` recomputes. The trace's own intermediate
+    // nodes (just expanded above, `ordered`/`lineagePath`) are protected
+    // separately by that same effect via desiredVisibleIds, since they may
+    // differ entirely from the viewer-anchored minimum path
+    // temporaryRevealPresentationIds computes on its own (Codex review,
+    // PR #90 P1 — a trace can run from any activeId, not just the viewer).
     if (isOutside) setTemporaryRevealTargets([targetId]);
     // A search result may not be anywhere near wherever the camera was
     // last looking (unlike tapping a bubble, which by definition is already

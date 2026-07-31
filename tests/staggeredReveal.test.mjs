@@ -5,7 +5,7 @@
  * Run with: node tests/staggeredReveal.test.mjs
  */
 import assert from 'node:assert/strict';
-import { planRevealSteps, scheduleStaggeredReveal, RIPPLE_CHUNK_SIZE, idsToPruneForPerimeter, revealAllCandidatePool } from '../src/lib/staggeredReveal.js';
+import { planRevealSteps, scheduleStaggeredReveal, RIPPLE_CHUNK_SIZE, idsToPruneForPerimeter, revealAllCandidatePool, desiredVisibleIds } from '../src/lib/staggeredReveal.js';
 
 let passed = 0, failed = 0;
 function test(label, fn) {
@@ -213,6 +213,52 @@ test('revealAllCandidatePool: an empty temporary reveal set still returns exactl
   const allPeople = ['viewer', 'parent', 'outsider'];
   const perspective = { perimeterIds: new Set(['viewer', 'parent']), temporaryRevealPresentationIds: new Set() };
   assert.deepEqual(new Set(revealAllCandidatePool(true, perspective, allPeople)), new Set(['viewer', 'parent']));
+});
+
+// ── desiredVisibleIds (Codex review, PR #90 P1) ──────────────────────────
+// A lineage trace can run from any activeId, not just the viewer — its own
+// path needs protecting separately from the viewer-anchored temporary-
+// reveal presentation set.
+
+test('desiredVisibleIds: with no lineage trace active, returns exactly perimeterIds ∪ temporaryRevealPresentationIds (unchanged from before this fix)', () => {
+  const perspective = {
+    perimeterIds: new Set(['viewer', 'parent']),
+    temporaryRevealPresentationIds: new Set(['outsider1']),
+  };
+  assert.deepEqual(desiredVisibleIds(perspective, false, null), new Set(['viewer', 'parent', 'outsider1']));
+  // lineageMode true but no path yet (e.g. just entered, nothing traced) —
+  // same result, nothing extra to protect.
+  assert.deepEqual(desiredVisibleIds(perspective, true, null), new Set(['viewer', 'parent', 'outsider1']));
+});
+
+test('desiredVisibleIds (regression, PR #90 P1): a lineage trace from activeId !== viewerId, along a path that differs entirely from the viewer-anchored minimum path, keeps every intermediate node', () => {
+  // The trace runs from "grandparent" (NOT the viewer) out to "cousin",
+  // through "uncle" and "cousinParent" — none of which the viewer-anchored
+  // temporaryRevealPresentationIds happens to cover (it only protects the
+  // shortest viewer->target path, plus the target's own immediate family,
+  // per computeTemporaryReveal — here that resolves to a totally different
+  // "outsiderPartner" branch, simulating a real case where the two paths
+  // don't overlap at all).
+  const perspective = {
+    perimeterIds: new Set(['viewer', 'grandparent']),
+    temporaryRevealPresentationIds: new Set(['cousin', 'outsiderPartner']),
+  };
+  const lineagePath = new Set(['grandparent', 'uncle', 'cousinParent', 'cousin']);
+  const result = desiredVisibleIds(perspective, true, lineagePath);
+  assert.deepEqual(
+    result,
+    new Set(['viewer', 'grandparent', 'cousin', 'outsiderPartner', 'uncle', 'cousinParent']),
+    'every node of the traced path must survive reconciliation, not just the target itself',
+  );
+});
+
+test('desiredVisibleIds: a lineage path is ignored when lineageMode is false (trace ended/exited) — no stale protection lingers', () => {
+  const perspective = {
+    perimeterIds: new Set(['viewer']),
+    temporaryRevealPresentationIds: new Set(),
+  };
+  const stalePath = new Set(['viewer', 'someoneNoLongerTraced']);
+  assert.deepEqual(desiredVisibleIds(perspective, false, stalePath), new Set(['viewer']));
 });
 
 console.log(`\n  ${passed} passed, ${failed} failed`);

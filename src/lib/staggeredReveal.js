@@ -151,3 +151,32 @@ export function revealAllCandidatePool(perimeterActive, perspective, allPeopleId
   }
   return allPeopleIds;
 }
+
+/*
+ * What the perimeter reconciliation effect should keep visible right now
+ * (Codex review, PR #90 P1). `perspective.temporaryRevealPresentationIds`
+ * is always the minimum path from the VIEWER's own anchors to a temporary-
+ * reveal target — correct for the ordinary "explore this branch" case, but
+ * a lineage trace can run from any activeId (not necessarily the viewer),
+ * via a completely different path. Without this, selecting a search result
+ * outside the perimeter while tracing from someone else's profile expanded
+ * the real trace path into `expanded`, then the reconciliation effect
+ * (keyed on `perspective`, which recomputes the moment the target is
+ * registered) immediately pruned every node of that path the viewer-anchored
+ * presentation set didn't happen to also cover — leaving the target visible
+ * but disconnected from the rest of the crumb trail.
+ *
+ * `lineagePath` (App.jsx's own traced-node Set, already built by
+ * pathBetweenOrdered from the CURRENT trace anchor) is folded in verbatim
+ * whenever lineage mode is genuinely active — bounded to exactly the current
+ * trace, cleared the instant the trace changes or lineage mode ends (the
+ * caller re-runs this whenever lineageMode/lineagePath change), so it's
+ * exactly as session-only/reversible as the temporary reveal it extends.
+ */
+export function desiredVisibleIds(perspective, lineageMode, lineagePath) {
+  const ids = new Set([...perspective.perimeterIds, ...perspective.temporaryRevealPresentationIds]);
+  if (lineageMode && lineagePath) {
+    for (const id of lineagePath) ids.add(id);
+  }
+  return ids;
+}
