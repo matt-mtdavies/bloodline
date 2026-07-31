@@ -8156,6 +8156,65 @@ button.health-notes {
   line-height: 1.4;
 }
 
+/* Family Perimeter — docs/FAMILY-PERIMETER-AND-5000-PERSON-PERFORMANCE.md §3.1 */
+.up__perimeter {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin-top: 10px;
+}
+
+.up__perimeter-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--hairline);
+  cursor: pointer;
+}
+.up__perimeter-row:last-child { border-bottom: none; }
+.up__perimeter-row input[type="radio"] {
+  margin-top: 2px;
+  width: 17px;
+  height: 17px;
+  flex: none;
+  accent-color: var(--accent);
+}
+
+.up__perimeter-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.up__perimeter-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink);
+}
+.up__perimeter-row--on .up__perimeter-title { color: var(--accent); }
+
+.up__perimeter-badge {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--gold);
+  border: 1px solid var(--gold);
+  border-radius: 999px;
+  padding: 1px 7px;
+}
+
+.up__perimeter-desc {
+  font-size: 12px;
+  color: var(--ink-soft);
+  line-height: 1.4;
+}
+
 /* iOS-style toggle switch */
 .up__toggle {
   width: 44px;

@@ -69,6 +69,7 @@ import { uploadPhoto, generateThumb, uploadDocument, savePhotoToDevice, srcToDat
 import { useImageZoom } from './lib/useImageZoom.js';
 import { buildGraph, pathBetween, pathBetweenOrdered, bloodRelativesOf, distancesFromMany, relationLabel } from './data/graph.js';
 import { useKinTerms } from './lib/kinTerms.js';
+import { planPerimeterRecommendationIfUnset } from './lib/familyPerimeter.js';
 import { storeToGedcom } from './lib/gedcom.js';
 import { detectRegion, nearestWorldEvent } from './lib/worldEvents.js';
 import { findDuplicatePairs, pairKey, loadDismissedDuplicates, saveDismissedDuplicates } from './lib/duplicates.js';
@@ -480,6 +481,11 @@ export default function App() {
         body: JSON.stringify({ person_id: personId, person_name: personName }),
       });
     } catch { /* non-fatal — claim still applies locally */ }
+    // Family Perimeter (docs/FAMILY-PERIMETER-AND-5000-PERSON-PERFORMANCE.md
+    // §3.1): plants the "Extended family" starting recommendation right at
+    // the moment of first claiming a person — a no-op for anyone who already
+    // has a saved preference. Fire-and-forget, same as the claim call above.
+    planPerimeterRecommendationIfUnset();
     setUser((u) => ({ ...u, person_id: personId }));
     setCurrentUser({ ...user, person_id: personId });
     setMyPerson(personId); // store → focuses the tree + perspective on them
