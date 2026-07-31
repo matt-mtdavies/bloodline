@@ -3,6 +3,7 @@ import { computeInsights, aggregatesHash } from '../lib/insights.js';
 import { computeInsightModules, buildInsightHighlights } from '../lib/insightModules.js';
 import InsightModules, { PeopleDrawer } from './InsightModules.jsx';
 import ReturnMark from './ReturnMark.jsx';
+import { timed } from '../lib/perfInstrument.js';
 
 /*
  * Tree Insights sheet — the family archive, felt from the viewer's seat.
@@ -13,7 +14,7 @@ import ReturnMark from './ReturnMark.jsx';
  */
 export default function TreeInsights({ graph, viewerId, onNavigate, onClose }) {
   const insights = useMemo(() => computeInsights(graph, viewerId), [graph, viewerId]);
-  const modules = useMemo(() => computeInsightModules(graph, viewerId), [graph, viewerId]);
+  const modules = useMemo(() => timed('computeInsightModules (Tree Insights sheet)', () => computeInsightModules(graph, viewerId)), [graph, viewerId]);
   const { viewer, nudges, aggregates } = insights;
   // Some text facts are the same number a module now draws — drop the text
   // version when its module renders so nothing appears twice in one sheet:

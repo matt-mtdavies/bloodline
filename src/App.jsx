@@ -72,6 +72,8 @@ import { useKinTerms } from './lib/kinTerms.js';
 import { storeToGedcom } from './lib/gedcom.js';
 import { detectRegion, nearestWorldEvent } from './lib/worldEvents.js';
 import { findDuplicatePairs, pairKey, loadDismissedDuplicates, saveDismissedDuplicates } from './lib/duplicates.js';
+import { useIdleValue } from './lib/useIdleValue.js';
+import { timed } from './lib/perfInstrument.js';
 import { canManageTree } from './lib/visibility.js';
 import { geocodePlaces } from './lib/places.js';
 import { profileCompleteness, isDuplicateLifeEvent } from './lib/profile.js';
@@ -251,7 +253,10 @@ export default function App() {
   // no reason. Keying on the two arrays buildGraph actually reads means
   // `graph` — and that whole pipeline — only reruns when people or
   // relationships genuinely change reference.
-  const graph = useMemo(() => buildGraph(data.people, data.relationships), [data.people, data.relationships]);
+  const graph = useMemo(
+    () => timed('buildGraph', () => buildGraph(data.people, data.relationships)),
+    [data.people, data.relationships],
+  );
   const reducedMotion = useReducedMotion();
   const kinTerms = useKinTerms();
 
@@ -272,10 +277,19 @@ export default function App() {
       return next;
     });
   };
-  const duplicatePairs = useMemo(
-    () => findDuplicatePairs(data.people, data.relationships)
-      .filter((p) => !dismissedDuplicates.has(pairKey(p.aId, p.bId))),
+  // Idle-deferred rather than a synchronous useMemo (Phase 1 performance
+  // relief — docs/FAMILY-PERIMETER-AND-5000-PERSON-PERFORMANCE.md §10,
+  // "lazy/idle duplicate detection"): findDuplicatePairs scans every person
+  // against every other same-named person, a real cost at large-tree scale
+  // that has no reason to block the render thread on every edit — nothing
+  // needs this synchronously, it only feeds the topbar's count pill and the
+  // review sheet, both fine picking up the result a beat later once the
+  // browser is actually idle.
+  const duplicatePairs = useIdleValue(
+    () => timed('findDuplicatePairs', () => findDuplicatePairs(data.people, data.relationships)
+      .filter((p) => !dismissedDuplicates.has(pairKey(p.aId, p.bId)))),
     [data.people, data.relationships, dismissedDuplicates],
+    [],
   );
 
   // 'loading' → 'open' (no auth / bypass) | 'login' (needs sign-in) | 'authed'
@@ -1191,8 +1205,9 @@ export default function App() {
       // BFS from activeId through currentVisible, treating collapseId as a wall.
       const reachable = new Set([activeId]);
       const queue = [activeId];
-      while (queue.length > 0) {
-        const cur = queue.shift();
+      let qi = 0;
+      while (qi < queue.length) {
+        const cur = queue[qi++];
         if (cur === collapseId) continue;
         for (const nid of graphNeighbourIds(cur)) {
           if (!reachable.has(nid) && currentVisible.has(nid) && nid !== collapseId) {
@@ -2136,12 +2151,21 @@ export default function App() {
   }, [user]);
 
   // Tree-screen insight surfacing (nav brief: "surface one real insight from
-  // the tree screen itself, not just Home"). Computed once per graph change;
-  // the per-focus lookup off it is cheap. Deliberately silent far more often
-  // than not — see personHighlight.
-  const insightModules = useMemo(
-    () => computeInsightModules(graph, data.myPersonId || DEFAULT_FOCUS, Date.now(), geocodedByPlace, lastViewedByPersonId),
+  // the tree screen itself, not just Home"). Idle-deferred rather than a
+  // synchronous useMemo (Phase 1 performance relief — docs/FAMILY-PERIMETER-
+  // AND-5000-PERSON-PERFORMANCE.md §10, "insight computation only when
+  // needed"): computeInsightModules includes bridges(), an O(people × edges)
+  // scan measured at ~5-7s on a 5,000-person tree (docs/PHASE0-BENCHMARK-
+  // REPORT.md) — recomputing that synchronously on every graph change would
+  // block the render thread for seconds on a large tree. Nothing needs this
+  // synchronously: personHighlight/highlightCandidates below are both
+  // already null-safe and "deliberately silent far more often than not," so
+  // a null value until the idle callback resolves is indistinguishable from
+  // their existing no-insight-this-render behavior.
+  const insightModules = useIdleValue(
+    () => timed('computeInsightModules (ambient)', () => computeInsightModules(graph, data.myPersonId || DEFAULT_FOCUS, Date.now(), geocodedByPlace, lastViewedByPersonId)),
     [graph, data.myPersonId, geocodedByPlace, lastViewedByPersonId],
+    null,
   );
   const activeFact = useMemo(
     () => personHighlight(graph, data.myPersonId || DEFAULT_FOCUS, activeId, insightModules),

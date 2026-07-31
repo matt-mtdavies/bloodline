@@ -20,6 +20,7 @@ import {
 import { dedupeMergeImport } from '../lib/duplicates.js';
 import { normalizeGender } from '../lib/gender.js';
 import { fetchWithTimeout } from '../lib/net.js';
+import { timed } from '../lib/perfInstrument.js';
 
 // A stalled connection otherwise leaves `await fetch(...)` unresolved
 // forever — real user report: saves/loads "freeze", only a refresh clears
@@ -48,6 +49,19 @@ const RECAP_CUTOFF_KEY = 'bloodline:recapCutoffAt';
 const STORAGE_WARN_BYTES = 4 * 1024 * 1024;
 const STORAGE_WARN_COOLDOWN_MS = 5 * 60 * 1000;
 let lastStorageWarnAt = 0;
+
+// The exact string last written to localStorage — lets commit() (below) skip
+// a genuinely redundant write when the newly-serialized state is byte-
+// identical to what's already there. Real case this protects, per Phase 1's
+// "avoid unnecessary full-state serialization" (docs/FAMILY-PERIMETER-AND-
+// 5000-PERSON-PERFORMANCE.md §10): loadFromServer's background poll (every
+// ~60s) calls commit(merged, {fromServer:true}) even on a perfectly quiet
+// family where the merge reproduces exactly what's already stored — on a
+// large tree that's a full multi-MB localStorage write, purely to write back
+// the same bytes. Comparing strings can't produce a false positive (only an
+// exact, provable match ever skips), so this changes zero observable
+// behaviour: state, _seq handling, and listener notification are untouched.
+let lastSerializedToStorage = null;
 
 const EMPTY = {
   people: [],
@@ -664,13 +678,21 @@ function commit(next, { fromServer = false } = {}) {
   const cleaned = cleanRels.length !== (next.relationships?.length ?? 0);
   next = cleaned ? { ...next, relationships: cleanRels } : next;
   state = fromServer ? next : { ...next, _seq: (next._seq || 0) + 1 };
-  const serialized = JSON.stringify(state);
-  try {
-    localStorage.setItem(KEY, serialized);
-  } catch {
-    // Storage full — changes live in-memory but won't survive a reload.
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('bloodline:storage-full'));
+  const serialized = timed('store.js JSON.stringify(state)', () => JSON.stringify(state));
+  // Skip the actual write when nothing changed since the last one — see
+  // lastSerializedToStorage's own comment above. Everything below this
+  // (the storage-near-limit check, scheduleServerSave, listener notify)
+  // still runs exactly as before; only the redundant localStorage.setItem
+  // call itself is skipped.
+  if (serialized !== lastSerializedToStorage) {
+    try {
+      localStorage.setItem(KEY, serialized);
+      lastSerializedToStorage = serialized;
+    } catch {
+      // Storage full — changes live in-memory but won't survive a reload.
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('bloodline:storage-full'));
+      }
     }
   }
   // .length is UTF-16 code units, not bytes — close enough for a threshold

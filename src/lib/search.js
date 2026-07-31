@@ -3,19 +3,30 @@
  * mounting the component — see tests/search.test.mjs.
  */
 
-// Score a single field against a query; higher = better match. Still used
-// as-is for occupation/place, which are phrases rather than name tokens
-// people casually reorder.
-export function scoreText(text, q) {
+// Lowercase + split, factored out so rankPeopleByName's per-person cache
+// (below) can precompute this once per person instead of on every keystroke.
+function normalizeText(text) {
   const name = (text || '').toLowerCase();
+  return { name, parts: name ? name.split(/\s+/) : [] };
+}
+
+// The actual scoring logic, taking already-normalized { name, parts } —
+// scoreText (below) is a thin wrapper for callers with a raw string.
+function scoreNormalizedText({ name, parts }, q) {
   if (!name || !q) return 0;
-  const parts = name.split(/\s+/);
   if (name === q)                        return 10;
   if (name.startsWith(q))                return 6;
   if (parts.some((w) => w.startsWith(q))) return 4;
   if (name.includes(q))                  return 2;
   if (parts[0]?.includes(q))             return 1; // "mat" → "Matthew"
   return 0;
+}
+
+// Score a single field against a query; higher = better match. Still used
+// as-is for occupation/place, which are phrases rather than name tokens
+// people casually reorder.
+export function scoreText(text, q) {
+  return scoreNormalizedText(normalizeText(text), q);
 }
 
 function tokenize(text) {
@@ -89,6 +100,36 @@ function scoreNameTokens(queryWords, primaryWords, secondaryWords) {
 // *why* it matched (_birthName/_middleName/_place, plus _matchedOccupation/
 // _matchedPlace so the row only surfaces occupation/place as the reason
 // once no higher-band field already explains the match).
+// Per-person cache of everything rankPeopleByName derives from static
+// fields (tokenized name words, joined place, normalized occupation/place)
+// — keyed by object identity, not id. Every mutator in store.js replaces an
+// edited person with a brand-new object (`{ ...p, ...fields }`) while every
+// OTHER person keeps its exact existing reference (see updatePerson), so a
+// WeakMap here is a correct, self-invalidating cache: an edited person
+// naturally misses and recomputes, an untouched person reuses its entry
+// across every keystroke of a search session instead of re-tokenizing on
+// each one. WeakMap (not a plain Map) so entries are GC'd once a person's
+// old object is no longer referenced anywhere (e.g. after a fresh tree load
+// replaces every object wholesale).
+const personSearchCache = new WeakMap();
+function normalizedPerson(p) {
+  let cached = personSearchCache.get(p);
+  if (cached) return cached;
+  // birth_name is the canonical field; maiden_name is legacy seed data.
+  const birthName = p.birth_name || p.maiden_name || '';
+  const middleName = p.middle_name || '';
+  const place = [p.birth_place, p.residence].filter(Boolean).join(', ');
+  cached = {
+    birthName, middleName, place,
+    primaryWords: [...tokenize(p.display_name), ...tokenize(birthName)],
+    secondaryWords: tokenize(middleName),
+    occNormalized: normalizeText(p.occupation),
+    placeNormalized: normalizeText(place),
+  };
+  personSearchCache.set(p, cached);
+  return cached;
+}
+
 const BAND_WIDTH = 20;
 export function rankPeopleByName(people, query, limit = null) {
   const q = (query || '').trim().toLowerCase();
@@ -96,16 +137,11 @@ export function rankPeopleByName(people, query, limit = null) {
   const queryWords = tokenize(q);
   const matches = people
     .map((p) => {
-      // birth_name is the canonical field; maiden_name is legacy seed data.
-      const birthName = p.birth_name || p.maiden_name || '';
-      const middleName = p.middle_name || '';
-      const place = [p.birth_place, p.residence].filter(Boolean).join(', ');
+      const { birthName, middleName, place, primaryWords, secondaryWords, occNormalized, placeNormalized } = normalizedPerson(p);
 
-      const primaryWords = [...tokenize(p.display_name), ...tokenize(birthName)];
-      const secondaryWords = tokenize(middleName);
       const nameResult = scoreNameTokens(queryWords, primaryWords, secondaryWords);
-      const occScore = scoreText(p.occupation, q);
-      const placeScore = scoreText(place, q);
+      const occScore = scoreNormalizedText(occNormalized, q);
+      const placeScore = scoreNormalizedText(placeNormalized, q);
 
       let score;
       if (nameResult && !nameResult.usedSecondary) score = nameResult.avg + BAND_WIDTH * 2;

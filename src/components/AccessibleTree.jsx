@@ -11,6 +11,27 @@ import { useKinTerms } from '../lib/kinTerms.js';
 // components.css; if those change, update this too.
 const DIRECTORY_ROW_HEIGHT = 68;
 
+// Per-person cache of the lowercased fields the directory filter searches —
+// keyed by object identity (see lib/search.js's identical rationale: store.js
+// always replaces an edited person with a new object, so a WeakMap here
+// self-invalidates correctly and lets an untouched person's normalized
+// fields survive across every keystroke of a filter session, rather than
+// re-lowercasing name/occupation/place/tags for every person on each one).
+const directoryFieldCache = new WeakMap();
+function normalizedDirectoryFields(p) {
+  let cached = directoryFieldCache.get(p);
+  if (cached) return cached;
+  cached = {
+    name: p.display_name.toLowerCase(),
+    occupation: (p.occupation || '').toLowerCase(),
+    birthPlace: (p.birth_place || '').toLowerCase(),
+    residence: (p.residence || '').toLowerCase(),
+    tags: (p.tags || []).map((t) => t.toLowerCase()),
+  };
+  directoryFieldCache.set(p, cached);
+  return cached;
+}
+
 /*
  * The parallel, fully accessible view (§1) — semantic, keyboard-navigable, and
  * screen-reader friendly. Anyone can use the whole product here without a single
@@ -134,12 +155,13 @@ export default function AccessibleTree({ graph, focusId, onFocus, onOpenPerson, 
         if (filter === 'living' && p.is_deceased) return false;
         if (filter === 'deceased' && !p.is_deceased) return false;
         if (!term) return true;
+        const f = normalizedDirectoryFields(p);
         return (
-          p.display_name.toLowerCase().includes(term) ||
-          (p.occupation || '').toLowerCase().includes(term) ||
-          (p.birth_place || '').toLowerCase().includes(term) ||
-          (p.residence || '').toLowerCase().includes(term) ||
-          (p.tags || []).some((t) => t.toLowerCase().includes(term))
+          f.name.includes(term) ||
+          f.occupation.includes(term) ||
+          f.birthPlace.includes(term) ||
+          f.residence.includes(term) ||
+          f.tags.some((t) => t.includes(term))
         );
       })
       .sort((a, b) => a.display_name.localeCompare(b.display_name));
