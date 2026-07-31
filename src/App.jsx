@@ -69,9 +69,9 @@ import { uploadPhoto, generateThumb, uploadDocument, savePhotoToDevice, srcToDat
 import { useImageZoom } from './lib/useImageZoom.js';
 import { buildGraph, pathBetween, pathBetweenOrdered, bloodRelativesOf, distancesFromMany, relationLabel } from './data/graph.js';
 import { useKinTerms } from './lib/kinTerms.js';
-import { planPerimeterRecommendationIfUnset, fetchPerimeterPreference, engineLevelFor } from './lib/familyPerimeter.js';
+import { planPerimeterRecommendationIfUnset, fetchPerimeterPreference, engineLevelFor, isPerimeterActive } from './lib/familyPerimeter.js';
 import { computePerspectiveIndex } from './lib/perspectiveIndex.js';
-import { scheduleStaggeredReveal } from './lib/staggeredReveal.js';
+import { scheduleStaggeredReveal, idsToPruneForPerimeter } from './lib/staggeredReveal.js';
 import { storeToGedcom } from './lib/gedcom.js';
 import { detectRegion, nearestWorldEvent } from './lib/worldEvents.js';
 import { findDuplicatePairs, pairKey, loadDismissedDuplicates, saveDismissedDuplicates } from './lib/duplicates.js';
@@ -627,16 +627,23 @@ export default function App() {
   const [bloodlineOnly, setBloodlineOnly] = useState(false);
 
   // Family Perimeter (Phase 4). `perimeterActive` is false for anyone who
-  // hasn't claimed a person, or whose saved level is 'everyone' (the
-  // default for every existing user, and for anyone before they've ever
-  // visited Settings) — for that overwhelming majority, `perspective` stays
-  // null and NOTHING below this point runs any differently than before
-  // this feature existed. `temporaryRevealTargets` (§3.8) is session-only —
+  // hasn't claimed a person, whose saved level is 'everyone' (the default
+  // for every existing user, and for anyone before they've ever visited
+  // Settings), OR whose only "saved" level is the planted new-user
+  // RECOMMENDATION (isRecommendation: true) that they've never actually
+  // confirmed (Codex review, PR #89 round 1 — a recommendation is a
+  // suggestion shown in Settings, not a member's explicit choice; treating
+  // it as active silently narrowed a brand-new member's tree the moment
+  // they claimed their person, before they'd ever agreed to anything —
+  // exactly the consent distinction Phase 3's own `source` column exists
+  // to preserve). For that overwhelming majority, `perspective` stays null
+  // and NOTHING below this point runs any differently than before this
+  // feature existed. `temporaryRevealTargets` (§3.8) is session-only —
   // outside people the viewer explicitly chose to explore via a boundary's
   // "Explore this branch" action; never persisted, never widens the saved
   // perimeter itself.
   const perimeterApiLevel = perimeterPref?.perimeterLevel ?? 'everyone';
-  const perimeterActive = !!data.myPersonId && perimeterApiLevel !== 'everyone';
+  const perimeterActive = isPerimeterActive(perimeterPref, !!data.myPersonId);
   const [temporaryRevealTargets, setTemporaryRevealTargets] = useState([]);
   const perspective = useMemo(() => {
     if (!perimeterActive) return null;
@@ -666,11 +673,10 @@ export default function App() {
   const [lifeJourneyId, setLifeJourneyId] = useState(null);
   const playRef = useRef(null);
   const revealTimerRef = useRef(null); // holds a scheduleStaggeredReveal cancel() function, not a raw timeout id
-  // A separate cancel-function ref for the perimeter-driven initial reveal
-  // below, so it and the manual "All" button (revealTimerRef) never cancel
-  // each other's in-flight ripple — each trigger owns its own timer.
+  // A separate cancel-function ref for the perimeter reconciliation below,
+  // so it and the manual "All" button (revealTimerRef) never cancel each
+  // other's in-flight ripple — each trigger owns its own timer.
   const perimeterRevealTimerRef = useRef(null);
-  const perimeterRevealDoneRef = useRef(false); // fire the initial reveal once per activation, not on every perspective recompute
   const [docViewer, setDocViewer] = useState(null); // { title, src, mime }
   const [keepsakeId, setKeepsakeId] = useState(null); // personId whose Keepsake is open
   // The home hub's Keepsake nudge — 'create' (no edition yet), 'stale' (tree
@@ -1116,29 +1122,46 @@ export default function App() {
     }, { instant: reducedMotion });
   }, [canCollapse, activeId, expanded, graph, reducedMotion]);
 
-  // Family Perimeter (Phase 4 §10) — the initial working set. The moment a
-  // viewer's perimeter becomes active (a claimed person whose saved level is
-  // narrower than 'everyone'), reveal their perimeter automatically instead
-  // of requiring a manual "All" tap first — reusing the exact same
-  // crash-safe staggered reveal and MAX_BUBBLE_REVEAL ceiling toggleExpandAll
-  // itself relies on (a perimeter can still legitimately contain hundreds of
-  // people at Wider family). Uses its own ref (perimeterRevealTimerRef, not
-  // revealTimerRef) so this and a manual "All" tap never cancel each other's
-  // in-flight ripple. Guarded by perimeterRevealDoneRef so it fires once per
-  // activation, not on every `perspective` recompute (e.g. a routine tree
-  // edit shouldn't re-trigger the whole ripple) — resets the moment the
-  // perimeter deactivates (person un-claimed, level switched to Everyone) so
-  // a later re-activation reveals fresh again.
+  // Family Perimeter (Phase 4 §10) — the working-set RECONCILIATION. Runs
+  // every time `perspective` changes for any reason: first activation, the
+  // saved level changing live in Settings, Bloodline-only toggling,
+  // "Explore this branch" replacing the temporary-reveal target, "Return to
+  // my perimeter" clearing it, or a genuine tree edit changing who
+  // qualifies. (Codex review, PR #89 round 1.) The earlier version only
+  // ever ADDED people to `expanded` — switching Everyone -> Close live left
+  // the prior, larger canvas in place even though the UI said a perimeter
+  // was active, and exploring branch B never cleaned up branch A's now-
+  // stale presentation-only people (temporary reveal is supposed to be
+  // session-only and reversible; it wasn't, once you explored a SECOND
+  // branch). Now `expanded` is reconciled down to EXACTLY `perimeterIds ∪
+  // temporaryRevealPresentationIds` on every pass — anyone outside that,
+  // however they got into `expanded`, is pruned immediately (cheap, no
+  // crash risk — only ADDING many bubbles at once needs staggering);
+  // anything missing is revealed via the same crash-safe staggered reveal
+  // and MAX_BUBBLE_REVEAL ceiling toggleExpandAll itself relies on. Cancels
+  // any in-flight reveal from a PREVIOUS pass first, so a rapid double-
+  // change (e.g. exploring branch B right after branch A) never races two
+  // staggered reveals against each other.
   useEffect(() => {
-    if (!perimeterActive || !perspective) {
-      perimeterRevealDoneRef.current = false;
-      return;
+    if (perimeterRevealTimerRef.current) {
+      perimeterRevealTimerRef.current();
+      perimeterRevealTimerRef.current = null;
     }
-    if (perimeterRevealDoneRef.current) return;
-    perimeterRevealDoneRef.current = true;
+    if (!perimeterActive || !perspective) return;
+
+    const desiredIds = new Set([...perspective.perimeterIds, ...perspective.temporaryRevealPresentationIds]);
+
+    const toPrune = idsToPruneForPerimeter(desiredIds, expanded);
+    if (toPrune.length) {
+      setExpanded((prev) => {
+        const next = new Set(prev);
+        for (const id of toPrune) next.delete(id);
+        return next;
+      });
+    }
 
     const dist = distancesFromMany(graph, expanded);
-    let candidateIds = [...perspective.perimeterIds];
+    let candidateIds = [...desiredIds];
     if (candidateIds.length > MAX_BUBBLE_REVEAL) {
       candidateIds = candidateIds
         .map((id) => ({ id, d: dist.get(id) ?? Infinity }))
@@ -1157,9 +1180,10 @@ export default function App() {
       });
     }, { instant: reducedMotion });
     // expanded/dist are read once at trigger time, not tracked continuously —
-    // this effect's job is a one-time initial reveal, not to keep chasing a
-    // moving target every time expanded itself changes (which would also
-    // self-trigger, since revealing IS a change to expanded).
+    // this effect's job is a one-time reconciliation per perspective change,
+    // not to keep chasing a moving target every time expanded itself
+    // changes (which would also self-trigger, since reconciling IS a
+    // change to expanded).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [perimeterActive, perspective, reducedMotion]);
 
@@ -1367,48 +1391,25 @@ export default function App() {
   }, [openPerson]);
 
   // "Return to my perimeter" (§3.8) — ends the current temporary reveal.
-  // Only removes ids that were showing SOLELY because of the temporary
-  // reveal (never anything that's also a genuine perimeter member, which
-  // stays visible regardless), closes the profile / re-activates away from
-  // the viewer's own person if either was about to disappear, and leaves
+  // Clearing `temporaryRevealTargets` makes `perspective` recompute with an
+  // empty temporary-reveal presentation set; the reconciliation effect
+  // above (keyed on `perspective`) is what actually prunes the now-stale
+  // presentation-only people back out of `expanded` — this function only
+  // owns the UI-navigation side effects (closing the profile / moving the
+  // camera away) if the person currently shown was about to disappear.
+  // Computed from the perspective still in effect BEFORE clearing, since
+  // that's the one that knows what's presentation-only right now. Leaves
   // the saved perimeter preference itself completely untouched.
   const returnToPerimeter = useCallback(() => {
     if (perspective) {
       const presentationOnly = new Set(
         [...perspective.temporaryRevealPresentationIds].filter((id) => !perspective.perimeterIds.has(id)),
       );
-      if (presentationOnly.size) {
-        setExpanded((prev) => {
-          let changed = false;
-          const next = new Set(prev);
-          for (const id of presentationOnly) {
-            if (next.has(id)) { next.delete(id); changed = true; }
-          }
-          return changed ? next : prev;
-        });
-        if (openId && presentationOnly.has(openId)) setOpenId(null);
-        if (activeId && presentationOnly.has(activeId) && data.myPersonId) activateNormal(data.myPersonId);
-      }
+      if (openId && presentationOnly.has(openId)) setOpenId(null);
+      if (activeId && presentationOnly.has(activeId) && data.myPersonId) activateNormal(data.myPersonId);
     }
     setTemporaryRevealTargets([]);
   }, [perspective, openId, activeId, data.myPersonId, activateNormal]);
-
-  // Once a temporary-reveal target is set, perspective recomputes with it —
-  // this is what actually surfaces the presentation ids (the target, the
-  // minimum connection path, their local family unit) on the canvas. A
-  // small, known-bounded set (never a whole perimeter's worth), so a plain
-  // direct merge is fine — no staggered reveal needed here.
-  useEffect(() => {
-    if (!perspective || perspective.temporaryRevealPresentationIds.size === 0) return;
-    setExpanded((prev) => {
-      let changed = false;
-      const next = new Set(prev);
-      for (const id of perspective.temporaryRevealPresentationIds) {
-        if (!next.has(id)) { next.add(id); changed = true; }
-      }
-      return changed ? next : prev;
-    });
-  }, [perspective]);
 
   // Resolve the ?person= deep link once the tree has actually loaded — a
   // birthday calendar notification should drop the tapper straight onto

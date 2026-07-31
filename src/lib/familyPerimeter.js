@@ -20,6 +20,30 @@ export function engineLevelFor(apiLevel) {
   return ENGINE_LEVEL_BY_API_LEVEL[apiLevel] ?? 'everyone';
 }
 
+/*
+ * Whether the tree canvas/UI should actually narrow to `pref`'s level
+ * (Codex review, PR #89 round 1). Requires ALL of:
+ *   - a claimed person to compute a perimeter FROM (§3.1);
+ *   - a genuinely SAVED preference (`hasSavedPreference`) — the default
+ *     "no row yet" response already reports level 'everyone', so this is
+ *     mostly a defensive double-check;
+ *   - NOT merely a planted recommendation (`isRecommendation`) — a
+ *     recommendation is a suggestion shown in Settings, never a member's
+ *     own choice, and treating it as active would silently narrow a
+ *     brand-new member's tree before they ever agreed to anything;
+ *   - a level other than 'everyone' (the complete-tree default).
+ * `pref` is whatever fetchPerimeterPreference() last resolved to — may be
+ * null (not yet loaded) or `{ unavailable: true }` (503) as well as the
+ * real shape; both correctly fall through to "not active".
+ */
+export function isPerimeterActive(pref, hasClaimedPerson) {
+  return !!hasClaimedPerson
+    && !!pref?.hasSavedPreference
+    && !pref?.isRecommendation
+    && !!pref?.perimeterLevel
+    && pref.perimeterLevel !== 'everyone';
+}
+
 // Copy matches §3.1 verbatim.
 export const PERIMETER_OPTIONS = [
   { value: 'first', label: 'Close family', description: 'Through 1st cousins' },

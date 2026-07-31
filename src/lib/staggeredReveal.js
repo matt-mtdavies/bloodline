@@ -113,3 +113,22 @@ export function scheduleStaggeredReveal(targetIds, distMap, alreadyVisible, onBa
 
   return () => { if (timer) clearTimeout(timer); };
 }
+
+/*
+ * Family Perimeter reconciliation (Codex review, PR #89 round 1) — given
+ * the ids that SHOULD be visible right now (a perimeter's members plus any
+ * active temporary-reveal presentation ids) and the ids CURRENTLY visible,
+ * returns exactly which currently-visible ids no longer belong. Pure set
+ * diffing, deliberately separate from the reveal/pacing logic above:
+ * removing a bubble is cheap and carries none of the crash risk adding
+ * hundreds at once does, so it's never staggered — the caller applies this
+ * result directly, then uses scheduleStaggeredReveal for whatever's newly
+ * missing from `desiredIds`.
+ */
+export function idsToPruneForPerimeter(desiredIds, currentIds) {
+  const toRemove = [];
+  for (const id of currentIds) {
+    if (!desiredIds.has(id)) toRemove.push(id);
+  }
+  return toRemove;
+}

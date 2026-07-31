@@ -5,7 +5,7 @@
  * Run with: node tests/familyPerimeter.test.mjs
  */
 import assert from 'node:assert/strict';
-import { engineLevelFor, PERIMETER_OPTIONS } from '../src/lib/familyPerimeter.js';
+import { engineLevelFor, PERIMETER_OPTIONS, isPerimeterActive } from '../src/lib/familyPerimeter.js';
 
 let passed = 0, failed = 0;
 function test(label, fn) {
@@ -35,6 +35,43 @@ test('every PERIMETER_OPTIONS value maps to a real engine level (a number, or li
     const mapped = engineLevelFor(opt.value);
     assert.ok(mapped === 'everyone' || typeof mapped === 'number', `unexpected mapping for ${opt.value}: ${mapped}`);
   }
+});
+
+// ── isPerimeterActive (Codex review, PR #89 round 1) ────────────────────
+// A recommendation is a SUGGESTION shown in Settings, never a member's own
+// choice — treating it as active silently narrows a brand-new member's
+// tree before they've agreed to anything. Only a genuinely EXPLICIT,
+// narrower-than-'everyone' saved preference should ever activate it.
+
+test('isPerimeterActive: an explicit, narrower-than-everyone preference is active', () => {
+  const pref = { perimeterLevel: 'second', hasSavedPreference: true, isRecommendation: false };
+  assert.equal(isPerimeterActive(pref, true), true);
+});
+
+test('isPerimeterActive: a planted RECOMMENDATION (never confirmed) is NOT active, even though hasSavedPreference is true', () => {
+  const pref = { perimeterLevel: 'second', hasSavedPreference: true, isRecommendation: true };
+  assert.equal(isPerimeterActive(pref, true), false);
+});
+
+test('isPerimeterActive: an explicit \'everyone\' preference is not active (nothing to narrow)', () => {
+  const pref = { perimeterLevel: 'everyone', hasSavedPreference: true, isRecommendation: false };
+  assert.equal(isPerimeterActive(pref, true), false);
+});
+
+test('isPerimeterActive: no saved preference at all (the default GET response) is not active', () => {
+  const pref = { perimeterLevel: 'everyone', hasSavedPreference: false, isRecommendation: false };
+  assert.equal(isPerimeterActive(pref, true), false);
+});
+
+test('isPerimeterActive: an unclaimed viewer is never active regardless of what the preference says', () => {
+  const pref = { perimeterLevel: 'first', hasSavedPreference: true, isRecommendation: false };
+  assert.equal(isPerimeterActive(pref, false), false);
+});
+
+test('isPerimeterActive: null/unavailable preference states are not active', () => {
+  assert.equal(isPerimeterActive(null, true), false);
+  assert.equal(isPerimeterActive({ unavailable: true }, true), false);
+  assert.equal(isPerimeterActive(undefined, true), false);
 });
 
 console.log(`\n  ${passed} passed, ${failed} failed`);
