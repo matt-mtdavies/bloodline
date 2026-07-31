@@ -131,7 +131,9 @@ This is not a value judgement. Biological and adoptive relationships establish g
 
 ### 3.4 The three inclusion layers
 
-Every person in the everyday view has one internal inclusion reason:
+Every person in the everyday view can qualify through more than one route. The engine retains all qualifying reasons for diagnostics, but assigns one canonical reason for ordinary explanation using this strict precedence: **anchor/primary perimeter > family halo > partner context ring > temporary reveal**. A weaker route never overwrites a stronger route. Within one tier, choose the closest supported relationship and then a stable identifier-based tie-break, so results are independent of graph input order.
+
+The inclusion layers are:
 
 1. **Primary perimeter**
    - Viewer or current-partner anchor.
@@ -197,14 +199,13 @@ Algorithm:
    - their parents;
    - their siblings;
    - their children.
-7. Do not repeat steps 5 or 6 for halo-only or context-only people.
-8. Add any future explicit personal inclusions according to their own bounded rule.
-9. If Bloodline-only is active, produce a narrowed presentation set containing biological/adoptive lineage members. Do not overwrite the saved perimeter.
-10. Add temporary reveal paths to the presentation set for the current navigation session. Do not overwrite the saved perimeter or insight cohort.
+7. Do not repeat steps 5 or 6 for halo-only or context-only people. Apply the canonical-reason precedence rule from section 3.4 after all candidates are collected.
+8. If Bloodline-only is active, produce a narrowed presentation set containing biological/adoptive lineage members. Do not overwrite the saved perimeter.
+9. Add temporary reveal paths to the presentation set for the current navigation session. Do not overwrite the saved perimeter or insight cohort.
 
 ### 3.6 Cousin calculation
 
-Do not use generic graph-hop distance as cousin degree.
+Do not use generic graph-hop distance as cousin degree. Reuse or factor the existing `graph.js` biological/adoptive predicate, sibling classification and common-ancestor/cousin primitives; Family Perimeter must not create a second competing interpretation of lineage, half siblings, cousin degree or removed cousins.
 
 For each candidate and anchor, use biological/adoptive parent-child paths to find a nearest qualifying common ancestor:
 
@@ -399,6 +400,8 @@ Examples:
 
 Each insight module must declare and test its cohort. It may not default to `graph.people`.
 
+Enforcement is required, not merely a review convention: insight modules must be registered through one shared wrapper that requires an explicit cohort declaration, and a test must enumerate the registered modules and fail when any module lacks one. A module may receive a cohort iterator or ID set, but may not silently substitute the complete graph.
+
 ### 4.5 Data provenance
 
 The perimeter engine uses recorded relationship type and qualifier only.
@@ -444,7 +447,7 @@ Current scaling gaps:
 11. Many insight modules scan all people or relationships and some perform nested graph work.
 12. Full R2 extra and complete-tree serialization can exceed practical mobile memory and localStorage limits before reaching 5,000 rich profiles.
 
-The single D1 core row was a sound migration step for approximately 1,000 people, but its fixed 1 MiB row ceiling makes it unsuitable as the permanent 5,000-person graph store.
+The existing `treeStore` core/R2-extra split is a production-tested foundation, not a greenfield design: it uses an explicit core allowlist, an `_extraVersion` pointer embedded in the D1 record, R2-before-D1 writes, round-trip verification and snapshot-first human-triggered migration. Keepsake editions also already use a separate R2 namespace. The single D1 core row and one monolithic R2 extra object are nevertheless unlikely to be a permanent 5,000-person representation: the core row retains its fixed 1 MiB limit and the server currently reassembles the whole extra before responding.
 
 ---
 
@@ -486,11 +489,13 @@ The server may expose topology and summary together if benchmarks prove the comb
 
 ### 6.2 Versioned chunked graph storage
 
-Replace the permanent assumption that all core data fits one D1 JSON row.
+Extend the existing core/R2-extra/manifest-pointer pattern unless Phase 0 measurements demonstrate a concrete reason to replace it. The existing `treeStore` write ordering, pointer ownership, failure behaviour, migration verification and recovery posture are required prior art, not optional inspiration.
+
+The question is how to remove the permanent assumption that all core data fits one D1 JSON row and all detail fits one R2 extra object.
 
 Recommended design:
 
-- D1 `family_tree` becomes the authoritative revision/pointer record.
+- D1 `family_tree` remains the authoritative revision/pointer record.
 - Versioned graph chunks live in R2 or normalized/chunk tables, selected after measurement.
 - Chunks are deterministic and bounded by byte size, not an arbitrary person count.
 - A manifest records:
@@ -615,11 +620,12 @@ Responsibilities:
 - boundary edges;
 - Bloodline-only projection;
 - temporary path calculation;
-- future personal inclusions.
 
 Cache identity:
 
-`familyRevision + viewerPersonId + perimeterLevel + currentPartnerSet + bloodlineOnly + personalInclusionVersion`
+`familyRevision + viewerPersonId + perimeterLevel + currentPartnerSet + bloodlineOnly`
+
+Personal-inclusion cache state is deliberately excluded until Phase 8 defines that feature's data model and invalidation semantics.
 
 All product surfaces consume this output. No component may reimplement perimeter logic.
 
@@ -766,6 +772,8 @@ Initial proposed acceptance budgets:
 
 These are starting budgets. Benchmark work may refine them, but changing a budget requires a recorded reason; it must not be relaxed merely to make a failing implementation pass.
 
+The 5,000-person perimeter budget must be measured for the viewer plus four current-partner anchors as the standard multi-anchor case, and reported separately for an eight-anchor stress case. Bloodline must support every recorded current partner; this is a benchmark assumption, not a hidden product cap.
+
 Payload budgets:
 
 - Bootstrap topology + summaries should target less than 1.5 MB compressed at 5,000 people.
@@ -790,7 +798,7 @@ Each size needs variants:
 
 - narrow/deep ancestry;
 - wide cousin-heavy family;
-- multiple current/former partners;
+- multiple current/former partners, including a four-current-partner standard case and an eight-anchor stress case;
 - adoptive and step relationships;
 - pedigree collapse/reconnected branches;
 - rich profiles and documents metadata;
@@ -892,11 +900,11 @@ Preferred:
 
 ### 9.3 Storage evolution
 
-Before implementing chunked storage, produce an Architecture Decision Record comparing:
+Before implementing chunked storage, produce an Architecture Decision Record that starts from the existing `treeStore` core/R2-extra/manifest-pointer implementation and compares:
 
-1. R2 immutable topology/summary chunks with a D1 manifest pointer.
-2. Normalized D1 person and relationship tables with R2 rich detail.
-3. A hybrid of normalized/indexed D1 summaries plus R2 chunked full records.
+1. Extending the existing R2 extra plus D1 manifest pointer into immutable topology/summary chunks at per-collection or per-person granularity.
+2. Replacing it with normalized D1 person and relationship tables plus R2 rich detail.
+3. Replacing it with a hybrid of normalized/indexed D1 summaries plus R2 chunked full records.
 
 Evaluate:
 
@@ -930,7 +938,8 @@ Deliver:
 - relationship semantics decision table;
 - plain-language examples approved by product owner;
 - inventory of all complete-tree consumers;
-- initial storage-size report.
+- initial storage-size report;
+- a read-only statement of whether the motivating production family is on the migrated core/R2-extra path, recorded without collecting or logging family content; if production diagnostics are not authorized, record that status as unknown.
 
 Exit criteria:
 
@@ -965,12 +974,14 @@ Deliver:
 
 - `perspectiveIndex` pure implementation;
 - biological/adoptive cousin calculation;
+- reuse or extraction of the existing `graph.js` lineage and cousin primitives;
 - two equal current-partner anchors;
 - one family halo;
 - one partner context ring;
 - Bloodline-only projection;
 - temporary reveal paths;
 - explainable inclusion reasons;
+- canonical reason precedence and stable tie-break tests;
 - worker execution;
 - exhaustive fixtures and property tests.
 
@@ -1048,6 +1059,7 @@ Exit criteria:
 Deliver:
 
 - explicit cohort contract for every module;
+- registered-module enforcement and a test enumerating every insight module's declared cohort;
 - perimeter-scoped personal aggregates;
 - direct-line modules;
 - complete-tree administrative modules;
@@ -1087,6 +1099,7 @@ Exit criteria:
 - complete archive round-trip remains lossless;
 - migration can be halted and rolled back safely;
 - old and new readers cannot corrupt one another.
+- populated IndexedDB cache passes the WebKit path; unavailable, private-browsing, quota-failure and evicted-cache conditions degrade safely without silent loss of a pending mutation.
 
 ### Phase 8 — Exact collapsed components and personal inclusions
 
@@ -1139,7 +1152,7 @@ Tests must cover:
 
 - viewer alone;
 - current partner with separate ancestry;
-- multiple current partners;
+- four current partners plus an eight-anchor stress case;
 - former partner with shared children;
 - former partner without children;
 - biological child;
@@ -1229,7 +1242,7 @@ Mitigation:
 
 - union results but retain bounded canvas working set;
 - show cohort counts before/after setting changes;
-- benchmark dual-anchor worst cases;
+- benchmark multi-anchor cases, including the four-anchor standard budget and eight-anchor stress fixture;
 - keep context people out of personal aggregate insights.
 
 ### Risk: stepfamily feels demoted
@@ -1340,4 +1353,3 @@ The next PR should be documentation and measurement only:
 6. Resolve the product and ADR decisions in section 13.
 
 Then implement Phase 1 and Phase 2 as separate, reviewable changes.
-
