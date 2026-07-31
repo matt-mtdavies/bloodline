@@ -429,7 +429,12 @@ function byGender(gender, m, f, n) {
 // each ancestor's distance and the very FIRST hop's parent entry, since the
 // paternal/maternal side of a relationship is always determined by that
 // first step, never recomputed at each level up.
-function ancestorsWithDistance(graph, id, maxDepth = 8) {
+//
+// Exported: this is the shared primitive Phase 2's Perspective Index reuses
+// for bounded collateral/cousin-degree calculations (see
+// docs/FAMILY-PERIMETER-AND-5000-PERSON-PERFORMANCE.md §3.6) rather than
+// reimplementing its own ancestor walk.
+export function ancestorsWithDistance(graph, id, maxDepth = 8) {
   const map = new Map();
   let frontier = [{ id, distance: 0, firstHopParent: null }];
   // The starting person counts as their own distance-0 "ancestor" — without
@@ -449,6 +454,37 @@ function ancestorsWithDistance(graph, id, maxDepth = 8) {
         if (visited.has(p.id)) continue;
         visited.add(p.id);
         const n = { id: p.id, distance: node.distance + 1, firstHopParent: node.firstHopParent || p };
+        next.push(n);
+        map.set(n.id, n);
+      }
+    }
+    frontier = next;
+  }
+  return map;
+}
+
+// Walks downward from `id` via biological/adoptive child links only — the
+// mirror of `ancestorsWithDistance` above, same step-excluded convention and
+// same shape (distance + first-hop entry, starting person included at
+// distance 0). Exported for the same reason: Phase 2's Perspective Index
+// bounds its collateral-relative (cousin/niece/aunt) search by walking
+// DOWN from each shared ancestor to a small fixed depth, which is what
+// keeps that search cheap regardless of how far up the ancestor itself is.
+export function descendantsWithDistance(graph, id, maxDepth = 8) {
+  const map = new Map();
+  let frontier = [{ id, distance: 0, firstHopChild: null }];
+  map.set(id, frontier[0]);
+  const visited = new Set([id]);
+  for (let d = 0; d < maxDepth && frontier.length; d++) {
+    const next = [];
+    for (const node of frontier) {
+      const downwardChildren = graph.children(node.id).filter(
+        (c) => !c.qualifier || c.qualifier === 'biological' || c.qualifier === 'adoptive',
+      );
+      for (const c of downwardChildren) {
+        if (visited.has(c.id)) continue;
+        visited.add(c.id);
+        const n = { id: c.id, distance: node.distance + 1, firstHopChild: node.firstHopChild || c };
         next.push(n);
         map.set(n.id, n);
       }
@@ -483,6 +519,32 @@ function ordinal(n) {
   const v = n % 100;
   if (v >= 11 && v <= 13) return `${n}th`;
   return `${n}${['th', 'st', 'nd', 'rd'][n % 10] || 'th'}`;
+}
+
+// Finds the nearest shared ancestor (biological/adoptive lines only, via
+// `ancestorsWithDistance`) between two people — the single shared primitive
+// behind both `relationLabel`'s cousin-degree wording below and Phase 2's
+// Perspective Index cousin-degree calculation (spec §3.6 explicitly requires
+// one shared interpretation of cousin degree, not two). Returns `null` if no
+// common ancestor exists within `maxDepth` generations of either person.
+// `upDist`/`downDist` are generation counts from `aId`/`bId` respectively up
+// to the shared ancestor; `total` is their sum (0 only when aId === bId);
+// `firstHopParent` is `aId`'s first-hop parent entry on the way up, used to
+// resolve which "side" (paternal/maternal/step/adoptive) the relationship
+// comes from.
+export function nearestCommonAncestor(graph, aId, bId, maxDepth = 8) {
+  const upFromA = ancestorsWithDistance(graph, aId, maxDepth);
+  const upFromB = ancestorsWithDistance(graph, bId, maxDepth);
+  let nearest = null;
+  for (const [ancId, aNode] of upFromA) {
+    const bNode = upFromB.get(ancId);
+    if (!bNode) continue;
+    const total = aNode.distance + bNode.distance;
+    if (!nearest || total < nearest.total) {
+      nearest = { ancId, upDist: aNode.distance, downDist: bNode.distance, total, firstHopParent: aNode.firstHopParent };
+    }
+  }
+  return nearest;
 }
 
 // Human-readable relationship of `otherId` relative to `focusId`, for the
@@ -667,17 +729,7 @@ export function relationLabel(graph, focusId, otherId, kinTerms) {
   // genealogist would call "1st cousin once removed" instead reads as
   // "Maternal Great-grandfather's Grandson". Only ever reached here, since
   // every closer/named relationship already returned above.
-  const upFromFocus = ancestorsWithDistance(graph, focusId);
-  const upFromOther = ancestorsWithDistance(graph, otherId);
-  let nearest = null;
-  for (const [ancId, focusNode] of upFromFocus) {
-    const otherNode = upFromOther.get(ancId);
-    if (!otherNode) continue;
-    const total = focusNode.distance + otherNode.distance;
-    if (!nearest || total < nearest.total) {
-      nearest = { ancId, upDist: focusNode.distance, downDist: otherNode.distance, total, firstHopParent: focusNode.firstHopParent };
-    }
-  }
+  const nearest = nearestCommonAncestor(graph, focusId, otherId);
   if (nearest && nearest.total > 0) {
     const { ancId, upDist, downDist, firstHopParent } = nearest;
     const side = firstHopParent ? parentSide(firstHopParent) : null;
