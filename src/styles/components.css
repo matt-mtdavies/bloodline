@@ -1756,12 +1756,22 @@
 .search-chips .filter-pill { flex: none; white-space: nowrap; }
 
 /* ── Results list ────────────────────────────────────────────────────────────── */
+/* flex:1 + min-height:0 give this its own bounded scroll viewport — needed
+   for @tanstack/react-virtual's absolute-positioned rows (the virtualizer
+   sizes against this element's real client height, not its content). The
+   inner <ul> is the virtualizer's own sized/positioned element (height set
+   inline to getTotalSize()), so list reset + breathing-room padding live
+   on it, not the scroll container itself. */
 .search-results {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.search-results ul {
   list-style: none;
   margin: 0;
   padding: 6px 0;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
 }
 .search-result {
   display: flex;
@@ -1797,6 +1807,18 @@
   letter-spacing: 0.01em;
 }
 .search-result__meta {
+  font-size: 12px;
+  color: var(--ink-faint, #b0a9a5);
+}
+/* Family Perimeter (§3.10/§3.8): the relationship-to-viewer line + the same
+   "Outside your Family Perimeter" badge PersonSheet already shows on an
+   outside person's own profile — only rendered when a perspective is active
+   (see SearchOverlay's perimeterInfo helper), so an ordinary search with no
+   perimeter narrower than Everyone stays byte-identical to before this. */
+.search-result__perimeter {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 12px;
   color: var(--ink-faint, #b0a9a5);
 }

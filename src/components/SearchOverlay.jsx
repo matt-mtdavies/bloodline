@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import Avatar from './Avatar.jsx';
-import { relationshipCategories } from '../data/graph.js';
+import { relationshipCategories, relationLabel } from '../data/graph.js';
 import { rankPeopleByName } from '../lib/search.js';
+import { useKinTerms } from '../lib/kinTerms.js';
 
 // Coarser than PersonSheet's extended-family groups (which fold in
 // great-grandparents/great-grandchildren and split grandchildren from
@@ -16,7 +18,15 @@ const CATEGORIES = [
   { key: 'everyone_else', label: 'Everyone Else' },
 ];
 
-export default function SearchOverlay({ people, graph, viewerId, onSelect, onClose, hint = null, initialQuery = null }) {
+// Family Perimeter (docs/FAMILY-PERIMETER-AND-5000-PERSON-PERFORMANCE.md
+// Phase 5 §3.8) — "Search always queries the complete family index," so
+// this stays a plain estimate; the real per-row height (with or without
+// the perimeter relationship/badge line) is corrected live via
+// rowVirtualizer's own measureElement, same convention as
+// AccessibleTree.jsx's DIRECTORY_ROW_HEIGHT.
+const SEARCH_RESULT_ROW_HEIGHT = 66;
+
+export default function SearchOverlay({ people, graph, viewerId, onSelect, onClose, hint = null, initialQuery = null, perspective = null }) {
   // Seeded once from the mount that opened this sheet — either blank (the
   // search icon, the lineage banner) or the character that triggered
   // desktop's "just start typing" shortcut (see App.jsx). A fresh mount
@@ -27,6 +37,7 @@ export default function SearchOverlay({ people, graph, viewerId, onSelect, onClo
   const [category, setCategory] = useState(null); // one of CATEGORIES[].key, or null
   const inputRef = useRef(null);
   const listRef = useRef(null);
+  const kinTerms = useKinTerms();
 
   // Focus the input as soon as the sheet mounts, on every device — tapping
   // the search icon should bring the keyboard straight up rather than
@@ -82,7 +93,35 @@ export default function SearchOverlay({ people, graph, viewerId, onSelect, onClo
     return [...basePool].sort((a, b) => a.display_name.localeCompare(b.display_name));
   }, [browsing, basePool]);
 
-  const activeList = query.trim() ? results : browseList;
+  const showingResults = !!query.trim();
+  const activeList = showingResults ? results : browseList;
+  const showList = showingResults || browsing;
+
+  // Family Perimeter (Phase 5 §3.8) — every result may show relationship-
+  // to-viewer, inclusion state, and (for outside people) a plain-language
+  // reason. `perspective` is null for the overwhelming majority (no
+  // perimeter narrower than Everyone active), so this is a total no-op
+  // then — rows render exactly as before this feature existed.
+  // relationLabel is a general-purpose function (graph.js) that already
+  // works for ANY two ids, regardless of perimeter membership — no changes
+  // needed to computePerspectiveIndex for this. Computed per VISIBLE row
+  // only (via the virtualizer below), not for the whole result set at
+  // once, so this scales fine against a 5,000-person complete-tree search.
+  function perimeterInfo(p) {
+    if (!perspective || p.id === viewerId) return null;
+    const outside = perspective.outsideIds.has(p.id);
+    return {
+      relationship: relationLabel(graph, viewerId, p.id, kinTerms),
+      outside,
+    };
+  }
+
+  const rowVirtualizer = useVirtualizer({
+    count: activeList.length,
+    getScrollElement: () => listRef.current,
+    estimateSize: () => SEARCH_RESULT_ROW_HEIGHT,
+    overscan: 8,
+  });
 
   useEffect(() => { setCursor(0); }, [activeList]);
 
@@ -98,9 +137,12 @@ export default function SearchOverlay({ people, graph, viewerId, onSelect, onClo
     }
   }
 
-  // Keep focused row in view
+  // Keep the focused row scrolled into view — the virtualizer's own
+  // scrollToIndex (rather than a DOM scrollIntoView) since the cursor's row
+  // may not even be mounted yet when it's off-screen.
   useEffect(() => {
-    listRef.current?.children[cursor]?.scrollIntoView({ block: 'nearest' });
+    if (activeList.length) rowVirtualizer.scrollToIndex(cursor, { align: 'auto' });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cursor]);
 
   function birthYear(p) {
@@ -159,73 +201,80 @@ export default function SearchOverlay({ people, graph, viewerId, onSelect, onClo
           </div>
         )}
 
-        {/* Results */}
-        {query && (
-          <ul ref={listRef} className="search-results" role="listbox">
-            {results.length === 0 ? (
-              <li className="search-empty">No one found for "{query}"</li>
-            ) : results.map((p, i) => (
-              <li
-                key={p.id}
-                role="option"
-                aria-selected={i === cursor}
-                className={`search-result${i === cursor ? ' search-result--focus' : ''}`}
-                onClick={() => onSelect(p.id)}
-                onMouseEnter={() => setCursor(i)}
+        {/* Results — virtualized (Phase 5 §10 delivery item) so a query or
+            chip-browse against a complete tree of thousands never mounts
+            more than a couple of dozen DOM rows at once. One shared list
+            for both the typed-query and chip-browse cases (query results
+            carry née/middle-name/highlight hints from rankPeopleByName;
+            a plain browse doesn't, since those people never passed through
+            it — highlight() itself is already a no-op on an empty query,
+            so this doesn't need a separate code path). */}
+        {showList && (
+          <div ref={listRef} className="search-results">
+            {activeList.length === 0 ? (
+              <p className="search-empty">
+                {showingResults ? `No one found for "${query}"` : 'No one matches this filter'}
+              </p>
+            ) : (
+              <ul
+                role="listbox"
+                style={{ position: 'relative', height: rowVirtualizer.getTotalSize(), display: 'block' }}
               >
-                <Avatar person={p} size={40} />
-                <div className="search-result__info">
-                  <span className="search-result__name">
-                    {highlight(p.display_name, query)}
-                    {p._birthName && !p.display_name.toLowerCase().includes(p._birthName.toLowerCase()) && (
-                      <span className="search-result__nee"> née {highlight(p._birthName, query)}</span>
-                    )}
-                    {p._middleName && !p.display_name.toLowerCase().includes(p._middleName.toLowerCase()) && (
-                      <span className="search-result__nee"> · middle name {highlight(p._middleName, query)}</span>
-                    )}
-                  </span>
-                  <span className="search-result__meta">
-                    {birthYear(p) && <>b. {birthYear(p)}{p.is_deceased ? ' – ' + (p.death_date?.slice(0, 4) || '†') : ''}</>}
-                    {p.occupation && <>{birthYear(p) ? ' · ' : ''}{p._matchedOccupation ? highlight(p.occupation, query) : p.occupation}</>}
-                    {p._matchedPlace && <>{(birthYear(p) || p.occupation) ? ' · ' : ''}{highlight(p._place, query)}</>}
-                    {!birthYear(p) && !p.occupation && !p._matchedPlace && (p.is_deceased ? 'Passed away' : 'Living')}
-                  </span>
-                </div>
-                <ChevronIcon />
-              </li>
-            ))}
-          </ul>
+                {rowVirtualizer.getVirtualItems().map((vRow) => {
+                  const p = activeList[vRow.index];
+                  const info = perimeterInfo(p);
+                  return (
+                    <li
+                      key={p.id}
+                      data-index={vRow.index}
+                      ref={rowVirtualizer.measureElement}
+                      role="option"
+                      aria-selected={vRow.index === cursor}
+                      className={`search-result${vRow.index === cursor ? ' search-result--focus' : ''}`}
+                      onClick={() => onSelect(p.id)}
+                      onMouseEnter={() => setCursor(vRow.index)}
+                      style={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        width: '100%',
+                        transform: `translateY(${vRow.start}px)`,
+                      }}
+                    >
+                      <Avatar person={p} size={40} />
+                      <div className="search-result__info">
+                        <span className="search-result__name">
+                          {highlight(p.display_name, query)}
+                          {p._birthName && !p.display_name.toLowerCase().includes(p._birthName.toLowerCase()) && (
+                            <span className="search-result__nee"> née {highlight(p._birthName, query)}</span>
+                          )}
+                          {p._middleName && !p.display_name.toLowerCase().includes(p._middleName.toLowerCase()) && (
+                            <span className="search-result__nee"> · middle name {highlight(p._middleName, query)}</span>
+                          )}
+                        </span>
+                        <span className="search-result__meta">
+                          {birthYear(p) && <>b. {birthYear(p)}{p.is_deceased ? ' – ' + (p.death_date?.slice(0, 4) || '†') : ''}</>}
+                          {p.occupation && <>{birthYear(p) ? ' · ' : ''}{p._matchedOccupation ? highlight(p.occupation, query) : p.occupation}</>}
+                          {p._matchedPlace && <>{(birthYear(p) || p.occupation) ? ' · ' : ''}{highlight(p._place, query)}</>}
+                          {!birthYear(p) && !p.occupation && !p._matchedPlace && (p.is_deceased ? 'Passed away' : 'Living')}
+                        </span>
+                        {info && (
+                          <span className="search-result__perimeter">
+                            {info.relationship}
+                            {info.outside && <span className="badge badge--quiet">Outside your Family Perimeter</span>}
+                          </span>
+                        )}
+                      </div>
+                      <ChevronIcon />
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
         )}
 
-        {!query && browsing && (
-          <ul ref={listRef} className="search-results" role="listbox">
-            {browseList.length === 0 ? (
-              <li className="search-empty">No one matches this filter</li>
-            ) : browseList.map((p, i) => (
-              <li
-                key={p.id}
-                role="option"
-                aria-selected={i === cursor}
-                className={`search-result${i === cursor ? ' search-result--focus' : ''}`}
-                onClick={() => onSelect(p.id)}
-                onMouseEnter={() => setCursor(i)}
-              >
-                <Avatar person={p} size={40} />
-                <div className="search-result__info">
-                  <span className="search-result__name">{p.display_name}</span>
-                  <span className="search-result__meta">
-                    {birthYear(p) && <>b. {birthYear(p)}{p.is_deceased ? ' – ' + (p.death_date?.slice(0, 4) || '†') : ''}</>}
-                    {p.occupation && <>{birthYear(p) ? ' · ' : ''}{p.occupation}</>}
-                    {!birthYear(p) && !p.occupation && (p.is_deceased ? 'Passed away' : 'Living')}
-                  </span>
-                </div>
-                <ChevronIcon />
-              </li>
-            ))}
-          </ul>
-        )}
-
-        {!query && !browsing && (
+        {!showList && (
           <p className="search-hint">Start typing a name to find anyone in the tree</p>
         )}
       </div>

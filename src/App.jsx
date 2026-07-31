@@ -1435,6 +1435,24 @@ export default function App() {
     setTemporaryRevealTargets([]);
   }, [perspective, openId, activeId, data.myPersonId, activateNormal]);
 
+  // Family Perimeter (Phase 5 §3.8) — "changes primary view" is one of the
+  // spec's listed reset triggers for an active temporary reveal (alongside
+  // choosing Return to my perimeter, starting another outside navigation,
+  // or ending the session — all already handled elsewhere). Switching Tree/
+  // List/Chart or organic/chart layout mid-reveal has no natural place to
+  // fire returnToPerimeter from otherwise, so a small ref tracks the
+  // previous {view, layout} and calls it the moment either genuinely
+  // changes while a reveal is active. A no-op whenever nothing's revealed.
+  const prevViewLayoutRef = useRef({ view, layout });
+  useEffect(() => {
+    const prev = prevViewLayoutRef.current;
+    if ((prev.view !== view || prev.layout !== layout) && temporaryRevealTargets.length) {
+      returnToPerimeter();
+    }
+    prevViewLayoutRef.current = { view, layout };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, layout]);
+
   // Resolve the ?person= deep link once the tree has actually loaded — a
   // birthday calendar notification should drop the tapper straight onto
   // that person's profile instead of the default focus person.
@@ -1518,6 +1536,18 @@ export default function App() {
   // (unlike tapping a bubble) a search result may not be on screen yet.
   const selectFromSearch = useCallback((targetId) => {
     setSearchOpen(false);
+    // Family Perimeter (Phase 5 §3.8) — a search result outside the active
+    // perimeter needs the SAME "explore this branch" temporary reveal a
+    // boundary row already offers, regardless of which view/layout it's
+    // selected from. exploreBranch already does exactly what's needed here
+    // (register the temp-reveal target, then openPerson once the
+    // perspective recompute has had a render pass to expand it into view) —
+    // reused as-is rather than duplicating its setTimeout/openPerson dance.
+    // `perspective` is null for the overwhelming majority (no perimeter
+    // narrower than Everyone active), so isOutside is false and every
+    // branch below is byte-identical to before this feature existed.
+    const isOutside = perimeterActive && perspective && perspective.outsideIds.has(targetId);
+
     // Real user report: search in List view "just runs a tree search you
     // can't see" — flyToSearchResult flies the camera along BubbleTree's own
     // canvas, which isn't even mounted in List view (view === 'list') or
@@ -1531,10 +1561,15 @@ export default function App() {
     // view keeps the cinematic flyover below; that's the one place the
     // "journey" is the actual point of the feature.
     if (view === 'list' || layout === 'chart') {
+      if (isOutside) { exploreBranch(targetId); return; }
       openPerson(targetId);
       return;
     }
-    if (!lineageMode) { flyToSearchResult(targetId); return; }
+    if (!lineageMode) {
+      if (isOutside) { exploreBranch(targetId); return; }
+      flyToSearchResult(targetId);
+      return;
+    }
     if (targetId === activeId) {
       setLineagePath(null);
       setLineageOrder(null);
@@ -1550,6 +1585,11 @@ export default function App() {
     }
     setLineagePath(ordered ? new Set(ordered) : null);
     setLineageOrder(ordered);
+    // A lineage trace can reach outside the perimeter same as any other
+    // search result — register the target for temporary reveal so the
+    // reconciliation effect doesn't prune it back out from under the
+    // trace the moment `perspective` recomputes.
+    if (isOutside) setTemporaryRevealTargets([targetId]);
     // A search result may not be anywhere near wherever the camera was
     // last looking (unlike tapping a bubble, which by definition is already
     // on screen) — recenter() hands the camera back to follow mode, which
@@ -1560,7 +1600,7 @@ export default function App() {
     // — the camera catching up to wherever they actually are is all that
     // was ever needed.
     viewApi.current?.recenter();
-  }, [view, layout, lineageMode, activeId, graph, flyToSearchResult, openPerson]);
+  }, [view, layout, lineageMode, activeId, graph, flyToSearchResult, openPerson, perimeterActive, perspective, exploreBranch]);
 
   // Same flight as flyToSearchResult, but callable from anywhere — the
   // profile page's "Show in tree" and the list view's per-row action, not
@@ -2944,6 +2984,7 @@ export default function App() {
           onClose={() => { setSearchOpen(false); setSearchInitialQuery(null); }}
           hint={lineageMode ? `Tracing from ${(activePerson?.display_name || 'this person').split(' ')[0]} — pick who to connect to` : null}
           initialQuery={searchInitialQuery}
+          perspective={perspective}
         />
       )}
 
