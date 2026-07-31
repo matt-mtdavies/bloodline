@@ -14,11 +14,13 @@ import { gzipSync } from 'node:zlib';
 import { writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
 
 import { generateFamilyFixture } from '../src/lib/fixtureGenerator.js';
 import { buildGraph, distancesFrom, relationLabel } from '../src/data/graph.js';
 import { findDuplicatePairs } from '../src/lib/duplicates.js';
 import { computeInsightModules } from '../src/lib/insightModules.js';
+import { splitTree, reassembleTree } from '../functions/_lib/treeStore.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const SIZES = [100, 500, 1100, 5000];
@@ -82,6 +84,18 @@ function runOneSize(size) {
   const rawBytes = bytesOf(json);
   const gzipBytes = gzipSync(Buffer.from(json, 'utf8')).length;
 
+  // ── The existing treeStore.js core/R2-extra split, applied to this exact
+  //    fixture — how big would the D1 core row actually be if this family
+  //    were on the migrated storage path, vs. the legacy whole-blob size
+  //    measured above? ──
+  const { core, extra } = splitTree(tree);
+  const coreJson = JSON.stringify(core);
+  const extraJson = JSON.stringify(extra);
+  const coreBytes = bytesOf(coreJson);
+  const extraBytes = bytesOf(extraJson);
+  const reassembled = reassembleTree(core, extra);
+  const roundTripOk = isDeepStrictEqual(reassembled, tree);
+
   // ── Graph construction — done on every load and every local mutation ──
   const { result: graph, elapsed: buildGraphMs } = timeIt(() => buildGraph(tree.people, tree.relationships));
 
@@ -116,12 +130,21 @@ function runOneSize(size) {
   const pctOfLocalStorageQuota = (rawBytes / localStorageQuotaBytes) * 100;
 
   const d1RowCeilingBytes = 1024 * 1024; // 1 MiB
-  const pctOfD1RowCeiling = (rawBytes / d1RowCeilingBytes) * 100;
+  // The legacy (pre-migration) storage path writes the WHOLE tree into one D1
+  // row — that's what rawBytes represents. A family migrated onto the
+  // existing treeStore.js core/R2-extra split only ever puts `core` in the D1
+  // row; `extra` goes to R2, which has no comparable per-object ceiling at
+  // these sizes. Both percentages matter: the legacy number shows why
+  // migration is necessary at all, the core-only number shows how much
+  // headroom the *existing* split already buys without inventing anything new.
+  const pctOfD1RowCeilingLegacy = (rawBytes / d1RowCeilingBytes) * 100;
+  const pctOfD1RowCeilingCore = (coreBytes / d1RowCeilingBytes) * 100;
 
   const row = {
     size,
     meta,
     rawBytes, gzipBytes, stringifyMs,
+    coreBytes, extraBytes, roundTripOk,
     buildGraphMs,
     reachable, distancesMs,
     relationLabelSampleSize: relationSample.length, relationLabelMs,
@@ -129,18 +152,23 @@ function runOneSize(size) {
     dupPairsFound: dupPairs.length, duplicatesMs,
     insightModulesComputed: Object.values(modules).filter((v) => v != null).length, insightsMs,
     withinRevealCap, rippleLayers,
-    pctOfLocalStorageQuota, pctOfD1RowCeiling,
+    pctOfLocalStorageQuota, pctOfD1RowCeilingLegacy, pctOfD1RowCeilingCore,
   };
 
   console.log(`  payload:        ${fmtBytes(rawBytes)} raw / ${fmtBytes(gzipBytes)} gzip  (stringify ${fmtMs(stringifyMs)})`);
+  console.log(`  core/extra:     ${fmtBytes(coreBytes)} core (D1) / ${fmtBytes(extraBytes)} extra (R2)  (round-trip ${roundTripOk ? 'OK' : 'MISMATCH — investigate'})`);
   console.log(`  buildGraph:     ${fmtMs(buildGraphMs)}`);
   console.log(`  distancesFrom:  ${fmtMs(distancesMs)}  (reached ${reachable}/${size})`);
   console.log(`  relationLabel:  ${fmtMs(relationLabelMs)} for ${relationSample.length} pairs (${row.relationLabelPerPairUs.toFixed(1)} µs/pair)`);
   console.log(`  duplicates:     ${fmtMs(duplicatesMs)}  (${dupPairs.length} candidate pairs)`);
   console.log(`  insights:       ${fmtMs(insightsMs)}`);
-  console.log(`  D1 row ceiling: ${pctOfD1RowCeiling.toFixed(1)}% of 1 MiB`);
+  console.log(`  D1 row ceiling: legacy whole-blob ${pctOfD1RowCeilingLegacy.toFixed(1)}% / migrated core-only ${pctOfD1RowCeilingCore.toFixed(1)}% of 1 MiB`);
   console.log(`  localStorage:   ${pctOfLocalStorageQuota.toFixed(1)}% of a typical ${STATIC.LOCALSTORAGE_TYPICAL_QUOTA_MB}MB quota`);
   console.log(`  bubble reveal:  ${reachable} reachable, cap ${STATIC.MAX_BUBBLE_REVEAL} → ${withinRevealCap ? 'under cap' : 'CAPPED'}, ${rippleLayers} ripple layers`);
+
+  if (!roundTripOk) {
+    throw new Error(`splitTree/reassembleTree round-trip mismatch at size ${size} — treeStore.js's own contract is violated for this fixture, investigate before trusting any core/extra numbers`);
+  }
 
   return row;
 }
@@ -163,11 +191,11 @@ reportLines.push(`Run: ${new Date().toISOString()}`);
 reportLines.push('');
 reportLines.push('## Summary table');
 reportLines.push('');
-reportLines.push('| Size | Raw JSON | Gzip | % of D1 1MiB row | buildGraph | distancesFrom (reached) | relationLabel (200-pair sample) | duplicate scan | insight modules | bubble reveal |');
-reportLines.push('|---|---|---|---|---|---|---|---|---|---|');
+reportLines.push('| Size | Raw JSON | Gzip | D1 row: legacy whole-blob | D1 row: migrated core-only | buildGraph | distancesFrom (reached) | relationLabel (200-pair sample) | duplicate scan | insight modules | bubble reveal |');
+reportLines.push('|---|---|---|---|---|---|---|---|---|---|---|');
 for (const r of rows) {
   reportLines.push(
-    `| ${r.size} | ${fmtBytes(r.rawBytes)} | ${fmtBytes(r.gzipBytes)} | ${r.pctOfD1RowCeiling.toFixed(1)}% | ${fmtMs(r.buildGraphMs)} | ${fmtMs(r.distancesMs)} (${r.reachable}/${r.size}) | ${fmtMs(r.relationLabelMs)} (${r.relationLabelPerPairUs.toFixed(1)} µs/pair) | ${fmtMs(r.duplicatesMs)} (${r.dupPairsFound} pairs) | ${fmtMs(r.insightsMs)} | ${r.withinRevealCap ? 'under cap' : `CAPPED at ${STATIC.MAX_BUBBLE_REVEAL}`} (${r.rippleLayers} layers) |`,
+    `| ${r.size} | ${fmtBytes(r.rawBytes)} | ${fmtBytes(r.gzipBytes)} | ${r.pctOfD1RowCeilingLegacy.toFixed(1)}% (${fmtBytes(r.rawBytes)}) | ${r.pctOfD1RowCeilingCore.toFixed(1)}% (${fmtBytes(r.coreBytes)}) | ${fmtMs(r.buildGraphMs)} | ${fmtMs(r.distancesMs)} (${r.reachable}/${r.size}) | ${fmtMs(r.relationLabelMs)} (${r.relationLabelPerPairUs.toFixed(1)} µs/pair) | ${fmtMs(r.duplicatesMs)} (${r.dupPairsFound} pairs) | ${fmtMs(r.insightsMs)} | ${r.withinRevealCap ? 'under cap' : `CAPPED at ${STATIC.MAX_BUBBLE_REVEAL}`} (${r.rippleLayers} layers) |`,
   );
 }
 reportLines.push('');
@@ -182,8 +210,9 @@ for (const r of rows) {
   reportLines.push('');
   reportLines.push(`- Fixture: ${r.size} people, generated deterministically (seed 42), includes a 4-current-partner anchor, ${r.size >= 500 ? 'an 8-current-partner stress anchor, ' : ''}a pedigree-collapse case, an explicit step case, an explicit adoptive case, and a pool of fully disconnected people.`);
   reportLines.push(`- Payload: **${fmtBytes(r.rawBytes)}** raw JSON (**${fmtBytes(r.gzipBytes)}** gzip), stringified in ${fmtMs(r.stringifyMs)}.`);
-  reportLines.push(`  - ${r.pctOfD1RowCeiling.toFixed(2)}% of D1's 1 MiB per-row ceiling (the exact constraint \`docs/TREE-STORAGE.md\` and \`functions/_lib/treeStore.js\`'s core/R2-extra split already exist to solve).`);
-  reportLines.push(`  - ${r.pctOfLocalStorageQuota.toFixed(2)}% of a typical ${STATIC.LOCALSTORAGE_TYPICAL_QUOTA_MB}MB browser localStorage quota (the client-side persistence \`store.js\` uses).`);
+  reportLines.push(`  - Legacy (pre-migration) storage puts the whole ${fmtBytes(r.rawBytes)} blob in one D1 row: ${r.pctOfD1RowCeilingLegacy.toFixed(2)}% of D1's 1 MiB per-row ceiling.`);
+  reportLines.push(`  - Running \`functions/_lib/treeStore.js\`'s own \`splitTree\` against this exact fixture: **${fmtBytes(r.coreBytes)}** core (D1 row, ${r.pctOfD1RowCeilingCore.toFixed(2)}% of the ceiling) + **${fmtBytes(r.extraBytes)}** extra (R2, no comparable ceiling at this scale) — round-trip through \`reassembleTree\` verified deep-equal to the original fixture.`);
+  reportLines.push(`  - ${r.pctOfLocalStorageQuota.toFixed(2)}% of a typical ${STATIC.LOCALSTORAGE_TYPICAL_QUOTA_MB}MB browser localStorage quota (the client-side persistence \`store.js\` uses — this one is unaffected by the D1/R2 split, since \`store.js\` still holds the whole reassembled tree in memory and localStorage today).`);
   reportLines.push(`- \`buildGraph\`: ${fmtMs(r.buildGraphMs)}.`);
   reportLines.push(`- \`distancesFrom\` (BFS from the default viewer): ${fmtMs(r.distancesMs)}, reaching ${r.reachable} of ${r.size} people (the multi-partner anchor clusters and the disconnected pool are deliberately unreachable islands — see the fixture's own test comments).`);
   reportLines.push(`- \`relationLabel\` (cousin-degree / kin-label computation) over a ${r.relationLabelSampleSize}-pair sample from the viewer: ${fmtMs(r.relationLabelMs)} total, ${r.relationLabelPerPairUs.toFixed(1)} µs/pair average.`);
