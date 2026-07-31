@@ -38,7 +38,7 @@ function normalizedDirectoryFields(p) {
  * pixel of canvas. It mirrors the ego model: the focused person, then the people
  * immediately around them, then a searchable directory of everyone.
  */
-export default function AccessibleTree({ graph, focusId, onFocus, onOpenPerson, onShowOnMap, onShowInChart }) {
+export default function AccessibleTree({ graph, focusId, onFocus, onOpenPerson, onShowOnMap, onShowInChart, perimeterActive = false, perimeterCount = null }) {
   const [q, setQ] = useState('');
   const [filter, setFilter] = useState('all');
   const kinTerms = useKinTerms();
@@ -238,9 +238,19 @@ export default function AccessibleTree({ graph, focusId, onFocus, onOpenPerson, 
 
       <section className="listview__directory">
         <h3>
+          {/* §6.11: List stays the complete-family view unconditionally
+              (never filtered by perimeter) — only the COUNT is
+              perimeter-aware, and always labelled per §4.3's "every count
+              says whether it covers your perimeter or the complete tree."
+              A search/status filter already has its own "N of M" label;
+              that one takes priority since it's the more specific/active
+              state — the perimeter count only shows on the plain,
+              unfiltered "Everyone" heading. */}
           Everyone{isFiltered && directory.length !== graph.people.length
             ? ` · ${directory.length} of ${graph.people.length}`
-            : ''}
+            : perimeterActive && perimeterCount != null
+              ? ` · ${perimeterCount} within your Family Perimeter · ${graph.people.length} in the complete family tree`
+              : ''}
         </h3>
         <div className="search-wrap">
           <input
