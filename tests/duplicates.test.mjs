@@ -120,5 +120,49 @@ test('a dateless record is never auto-merged (too weak — left for review)', ()
   assert.deepEqual(out.people.map((p) => p.id), ['n1']);
 });
 
+test('a collapsed re-add carries its field data onto the surviving existing person', () => {
+  const existingP = [
+    { id: 'e1', display_name: 'John Smith', birth_date: '1950-03-12', residences: [] },
+  ];
+  const newP = [
+    {
+      id: 'n1',
+      display_name: 'John Smith',
+      birth_date: '1950-03-12',
+      residences: [{ place: 'Cardiff', from_year: '1970' }],
+      education: [{ stage: 'university', institution: 'Cardiff University' }],
+      military_branch: 'Army',
+      military_medals: [{ name: 'Victory Medal' }],
+    },
+  ];
+  const out = dedupeMergeImport(existingP, [], newP, []);
+  assert.equal(out.people.length, 0, 'the re-add is still collapsed, not kept as a new person');
+  assert.ok(out.updatedExisting, 'returns an updatedExisting map');
+  const merged = out.updatedExisting.get('e1');
+  assert.ok(merged, 'e1 has an updated record');
+  assert.equal(merged.residences.length, 1, 'residences carried over from the collapsed re-add');
+  assert.equal(merged.education.length, 1, 'education carried over from the collapsed re-add');
+  assert.equal(merged.military_branch, 'Army', 'a blank scalar field is filled from the re-add');
+  assert.equal(merged.military_medals.length, 1, 'medals carried over from the collapsed re-add');
+});
+
+test('an existing person\'s own field values are never overwritten by a collapsed re-add', () => {
+  const existingP = [
+    { id: 'e1', display_name: 'John Smith', birth_date: '1950-03-12', occupation: 'Carpenter' },
+  ];
+  const newP = [
+    { id: 'n1', display_name: 'John Smith', birth_date: '1950-03-12', occupation: 'Farmer' },
+  ];
+  const out = dedupeMergeImport(existingP, [], newP, []);
+  assert.equal(out.updatedExisting.get('e1').occupation, 'Carpenter', 'existing scalar wins over the re-add on conflict');
+});
+
+test('genuinely new (non-colliding) people never appear in updatedExisting', () => {
+  const existingP = [{ id: 'e1', display_name: 'John Smith', birth_date: '1950' }];
+  const newP = [{ id: 'n1', display_name: 'Baby Smith', birth_date: '2020' }];
+  const out = dedupeMergeImport(existingP, [], newP, []);
+  assert.equal(out.updatedExisting.size, 0);
+});
+
 console.log(`\n  ${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);

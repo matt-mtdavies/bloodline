@@ -129,6 +129,42 @@ const fullDateOf = (p) => {
   return /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : null;
 };
 
+// Shared by mergePeople (store.js, a manual duplicate merge via
+// DuplicatesSheet) and dedupeMergeImport just below (an automatic
+// exact-re-add collapse on GEDCOM/FamilySearch re-import) — the same
+// fill-if-blank-scalar + concat-array rule, so there's exactly one place
+// that decides what surviving a merge actually means, not two drifting
+// copies. `keep` wins on any real scalar conflict; `drop`'s data is
+// otherwise carried forward rather than discarded, which is the fix for a
+// real report: both call sites used to (or, for dedupeMergeImport, still
+// did until this function existed) silently lose Places Lived / Education
+// History / military details whenever they only existed on the side that
+// didn't survive.
+const SCALAR_FILLABLE = [
+  'photo', 'photo_thumb', 'birth_date', 'death_date', 'cause_of_death', 'birth_place', 'residence',
+  'occupation', 'bio', 'gender', 'given_names', 'middle_name', 'family_name',
+  'birth_name', 'email', 'phone', 'story',
+  'military_branch', 'military_nation', 'military_rank', 'military_service_number',
+];
+const ARRAY_CONCAT_FIELDS = ['events', 'conditions', 'residences', 'education', 'military_medals'];
+
+export function mergePersonFields(keep, drop) {
+  const merged = { ...keep };
+  for (const f of SCALAR_FILLABLE) {
+    if (merged[f] == null || merged[f] === '') merged[f] = drop[f] ?? merged[f] ?? null;
+  }
+  merged.tags = [...new Set([...(keep.tags || []), ...(drop.tags || [])])];
+  for (const f of ARRAY_CONCAT_FIELDS) {
+    merged[f] = [...(keep[f] || []), ...(drop[f] || [])];
+  }
+  if (drop.is_deceased && !keep.is_deceased) {
+    merged.is_deceased = true;
+    merged.is_living = false;
+    if (!merged.death_date) merged.death_date = drop.death_date || null;
+  }
+  return merged;
+}
+
 /*
  * De-duplicate an incoming (merge) import against the existing tree, so that
  * re-importing the same GEDCOM/FamilySearch data doesn't silently double the
@@ -145,8 +181,13 @@ const fullDateOf = (p) => {
  * review sheet handles it. So this only ever collapses confident, unambiguous
  * re-adds; it never guesses. Pure; unit-tested.
  *
- * Returns { people, relationships, skipped } — the incoming arrays with exact
- * re-adds removed, plus a count of how many people were collapsed.
+ * Returns { people, relationships, skipped, updatedExisting } — the incoming
+ * arrays with exact re-adds removed, a count of how many people were
+ * collapsed, and a Map of existingId → merged person object for every
+ * existing person a collapsed re-add contributed field data to (via
+ * mergePersonFields, so a re-import can carry over Places Lived/Education/
+ * military details the existing record was missing, rather than the
+ * collapsed incoming record's own data being silently discarded).
  */
 export function dedupeMergeImport(existingPeople = [], existingRelationships = [], newPeople = [], newRelationships = []) {
   const byKey = new Map(); // match key → [existing people with that key]
@@ -158,6 +199,7 @@ export function dedupeMergeImport(existingPeople = [], existingRelationships = [
   }
 
   const remap = {}; // dropped incoming id → surviving existing id
+  const updatedExisting = new Map(); // existing id → merged person object
   const keptPeople = [];
   for (const np of newPeople) {
     const k = mergeMatchKey(np);
@@ -169,6 +211,8 @@ export function dedupeMergeImport(existingPeople = [], existingRelationships = [
       const fd1 = fullDateOf(np), fd2 = fullDateOf(e);
       if (!(fd1 && fd2 && fd1 !== fd2)) {
         remap[np.id] = e.id;
+        const base = updatedExisting.get(e.id) || e;
+        updatedExisting.set(e.id, mergePersonFields(base, np));
         continue; // drop this exact re-add
       }
     }
@@ -193,7 +237,7 @@ export function dedupeMergeImport(existingPeople = [], existingRelationships = [
     keptRels.push(mapped);
   }
 
-  return { people: keptPeople, relationships: keptRels, skipped: newPeople.length - keptPeople.length };
+  return { people: keptPeople, relationships: keptRels, skipped: newPeople.length - keptPeople.length, updatedExisting };
 }
 
 // Dismissed-pair tracking lives here (not inside DuplicatesSheet) so the

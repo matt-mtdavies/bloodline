@@ -1551,6 +1551,11 @@ export function mergePeople(keepId, dropId) {
     'photo', 'photo_thumb', 'birth_date', 'death_date', 'cause_of_death', 'birth_place', 'residence',
     'occupation', 'bio', 'gender', 'given_names', 'middle_name', 'family_name',
     'birth_name', 'email', 'phone', 'story',
+    // Real user report: merging two duplicate records silently dropped the
+    // dropped record's Places Lived / Education / military details whenever
+    // they only existed on that side — this list predates all three
+    // features and was never updated when they shipped.
+    'military_branch', 'military_nation', 'military_rank', 'military_service_number',
   ];
   for (const f of fillable) {
     if (merged[f] == null || merged[f] === '') merged[f] = drop[f] ?? merged[f] ?? null;
@@ -1558,6 +1563,12 @@ export function mergePeople(keepId, dropId) {
   merged.tags = [...new Set([...(keep.tags || []), ...(drop.tags || [])])];
   merged.events = [...(keep.events || []), ...(drop.events || [])];
   merged.conditions = [...(keep.conditions || []), ...(drop.conditions || [])];
+  // Same gap as above — residences[]/education[]/military_medals are each
+  // their own array of independently-id'd entries (never merged before),
+  // concatenated the same way events/conditions already are.
+  merged.residences = [...(keep.residences || []), ...(drop.residences || [])];
+  merged.education = [...(keep.education || []), ...(drop.education || [])];
+  merged.military_medals = [...(keep.military_medals || []), ...(drop.military_medals || [])];
   if (drop.is_deceased && !keep.is_deceased) {
     merged.is_deceased = true;
     merged.is_living = false;
@@ -2094,11 +2105,17 @@ export function importFromGedcom(newPeople, newRelationships, { merge = false } 
     // second import of the same data doesn't silently double it (see
     // dedupeMergeImport — conservative: anything ambiguous still imports as new
     // and is caught by the "Possible duplicates" review sheet).
-    const { people: addPeople, relationships: addRels } =
+    const { people: addPeople, relationships: addRels, updatedExisting } =
       dedupeMergeImport(state.people, state.relationships, newPeople, newRelationships);
+    // A collapsed re-add can carry field data (Places Lived, Education,
+    // military details, ...) the existing record was missing — fold it in
+    // rather than silently discarding it, same fix as mergePeople's own.
+    const people = updatedExisting && updatedExisting.size
+      ? state.people.map((p) => updatedExisting.get(p.id) || p)
+      : state.people;
     commit({
       ...state,
-      people: [...state.people, ...addPeople],
+      people: [...people, ...addPeople],
       relationships: [...state.relationships, ...addRels],
     });
     return;
