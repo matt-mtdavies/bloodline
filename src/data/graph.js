@@ -133,6 +133,18 @@ export function buildGraph(people, relationships) {
 // about the viewer's own family perimeter).
 export function scopeGraphToIds(graph, ids) {
   if (!ids) return graph;
+  // Cheap short-circuit for the default "Everyone" perimeter (the
+  // overwhelming majority of calls, and every `complete`-cohort module):
+  // cohort id sets are always built as subsets of `graph.people` (see
+  // computeInsightCohorts), so a size match means `ids` covers everyone —
+  // reuse `graph` as-is rather than paying for a full buildGraph rebuild on
+  // every insight/Home/Timeline computation (Codex review, PR #91: "the
+  // default Everyone path now needlessly rebuilds complete graphs in
+  // several views... reuse the existing graph so the 5,000-person baseline
+  // stays lean"). Also makes reference equality (`scoped === graph`) a
+  // correct signal again for callers like TreeInsights/TimelineView's own
+  // "was this actually narrowed" check.
+  if (ids.size === graph.people.length) return graph;
   const people = graph.people.filter((p) => ids.has(p.id));
   const relationships = graph.relationships.filter(
     (r) => ids.has(r.from_person) && ids.has(r.to_person),

@@ -1077,6 +1077,12 @@ test('scopeGraphToIds returns the same graph unchanged when ids is null', () => 
   assert.equal(scopeGraphToIds(g, null), g);
 });
 
+test('scopeGraphToIds reuses the original graph reference (no rebuild) when ids covers everyone — the default Everyone-perimeter path must stay lean at 5,000-person scale', () => {
+  const g = buildGraph([person('a'), person('b'), person('c')], [parentEdge('a', 'b')]);
+  const everyone = new Set(g.people.map((p) => p.id));
+  assert.equal(scopeGraphToIds(g, everyone), g, 'a full-coverage id set must short-circuit to the SAME graph object, not an equal-but-rebuilt one');
+});
+
 test('scopeGraphToIds drops a relationship when either endpoint is outside ids — byId, parents/children, and .relationships all agree', () => {
   const people = [person('a'), person('b'), person('outside')];
   const rels = [parentEdge('a', 'b'), parentEdge('a', 'outside')];
