@@ -447,5 +447,110 @@ test('storeToGedcom leaves the name alone when no middle_name is set', () => {
   assert.match(ged, /1 NAME James \/Mercer\//);
 });
 
+// ── BURI / DEAT PLAC → resting_place ────────────────────────────────────────
+
+function withDeath(deathLines) {
+  return `0 HEAD
+1 GEDC
+2 VERS 5.5.1
+0 @I1@ INDI
+1 NAME Ann /Lee/
+${deathLines}0 TRLR
+`;
+}
+
+test('a BURI PLAC populates resting_place', () => {
+  const p = gedcomToStore(withDeath('1 DEAT\n2 DATE 1990\n1 BURI\n2 PLAC Mount Royal, Montreal, Quebec, Canada\n')).people[0];
+  assert.ok(p.resting_place);
+  assert.equal(p.resting_place.place, 'Mount Royal, Montreal, Quebec, Canada');
+  assert.equal(p.resting_place.cemetery, null, 'no cemetery breakdown is invented from a bare PLAC');
+});
+
+test('with no BURI tag, DEAT\'s own PLAC is used as a fallback for resting_place', () => {
+  const p = gedcomToStore(withDeath('1 DEAT\n2 DATE 1990\n2 PLAC Knowlton, Quebec, Canada\n')).people[0];
+  assert.equal(p.resting_place.place, 'Knowlton, Quebec, Canada');
+});
+
+test('a real BURI PLAC wins over a DEAT PLAC fallback when both are present', () => {
+  const p = gedcomToStore(withDeath('1 DEAT\n2 DATE 1990\n2 PLAC Knowlton, Quebec, Canada\n1 BURI\n2 PLAC Mount Royal, Montreal, Quebec, Canada\n')).people[0];
+  assert.equal(p.resting_place.place, 'Mount Royal, Montreal, Quebec, Canada');
+});
+
+test('no BURI and no DEAT PLAC leaves resting_place null, not fabricated', () => {
+  const p = gedcomToStore(withDeath('1 DEAT\n2 DATE 1990\n')).people[0];
+  assert.equal(p.resting_place, null);
+});
+
+test('a living person (no DEAT at all) has resting_place null', () => {
+  const p = gedcomToStore(withDeath('')).people[0];
+  assert.equal(p.resting_place, null);
+});
+
+test('storeToGedcom emits BURI/PLAC from resting_place, and it round-trips', () => {
+  const people = [{
+    id: 'a', display_name: 'Ann Lee', family_name: 'Lee', gender: 'female', birth_date: '1900',
+    is_deceased: true, death_date: '1990',
+    resting_place: { cemetery: null, plot: null, place: 'Mount Royal, Montreal, Quebec, Canada', suburb: null, state: null, country: null, lat: null, lon: null },
+  }];
+  const ged = storeToGedcom(people, []);
+  assert.match(ged, /1 BURI\n2 PLAC Mount Royal, Montreal, Quebec, Canada/);
+  const back = gedcomToStore(ged).people[0];
+  assert.equal(back.resting_place.place, 'Mount Royal, Montreal, Quebec, Canada');
+});
+
+test('storeToGedcom emits no BURI when resting_place is unset', () => {
+  const people = [{ id: 'a', display_name: 'Ann Lee', family_name: 'Lee', gender: 'female', birth_date: '1900' }];
+  const ged = storeToGedcom(people, []);
+  assert.doesNotMatch(ged, /1 BURI/);
+});
+
+// ── _MILT → events[] (tag: 'military') ──────────────────────────────────────
+
+function withMilt(miltLines) {
+  return `0 HEAD
+1 GEDC
+2 VERS 5.5.1
+0 @I1@ INDI
+1 NAME Stephen /Ransom/
+${miltLines}0 TRLR
+`;
+}
+
+test('a _MILT with DATE and PLAC becomes a military-tagged event', () => {
+  const p = gedcomToStore(withMilt('1 _MILT\n2 DATE 22 Mar 1918\n2 PLAC Fort Slocum, New York\n')).people[0];
+  assert.equal(p.events.length, 1);
+  assert.equal(p.events[0].tag, 'military');
+  assert.equal(p.events[0].year, 1918);
+  assert.equal(p.events[0].title, 'Military service');
+  assert.equal(p.events[0].detail, 'Fort Slocum, New York');
+});
+
+test('multiple _MILT tags each become their own event, oldest and newest alike', () => {
+  const p = gedcomToStore(withMilt(
+    '1 _MILT\n2 DATE 22 Mar 1918\n2 PLAC Fort Slocum, New York\n' +
+    '1 _MILT\n2 DATE 1919\n2 PLAC Camp Dix, New Jersey\n',
+  )).people[0];
+  assert.equal(p.events.length, 2);
+  assert.equal(p.events[0].year, 1918);
+  assert.equal(p.events[1].year, 1919);
+  assert.ok(p.events.every((e) => e.tag === 'military'));
+});
+
+test('a _MILT with no DATE is skipped — no year, no usable timeline entry', () => {
+  const p = gedcomToStore(withMilt('1 _MILT\n2 PLAC Fort Slocum, New York\n')).people[0];
+  assert.equal(p.events.length, 0);
+});
+
+test('a _MILT with a DATE but no PLAC still imports, with no detail line', () => {
+  const p = gedcomToStore(withMilt('1 _MILT\n2 DATE 1918\n')).people[0];
+  assert.equal(p.events.length, 1);
+  assert.equal(p.events[0].detail, undefined);
+});
+
+test('no _MILT tag at all leaves events[] empty', () => {
+  const p = gedcomToStore(withMilt('')).people[0];
+  assert.equal(p.events.length, 0);
+});
+
 console.log(`\n  ${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);
