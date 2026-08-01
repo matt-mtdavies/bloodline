@@ -83,6 +83,7 @@ export async function onRequestGet({ env }) {
         <a class="pub-btn pub-btn--primary pub-btn--lg" href="/start#fresh">Start fresh</a>
         <a class="pub-btn pub-btn--secondary pub-btn--lg" href="/start#import">Import a GEDCOM instead</a>
       </div>
+      <p style="margin-top:22px; font-size:14px; color:var(--ink-soft);">Not sure where to begin? Read <a href="/guides/how-to-start-a-family-tree" style="color:var(--accent-deep); font-weight:600;">our guide to starting a family tree</a>.</p>
     </div>
   </section>`;
 

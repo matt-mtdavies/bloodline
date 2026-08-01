@@ -13,11 +13,11 @@ const FAQ = [
   },
   {
     q: 'How do I start a new family tree?',
-    a: '<a href="/start#fresh">Choose "Start fresh"</a>, sign in with your email, and begin with your own name. Add the people closest to you first — parents, siblings, partner, children — and add photos, memories, or other details whenever you have them. It takes about two minutes to get a first tree on screen; everything else can wait.',
+    a: '<a href="/start#fresh">Choose "Start fresh"</a>, sign in with your email, and begin with your own name. Add the people closest to you first — parents, siblings, partner, children — and add photos, memories, or other details whenever you have them. It takes about two minutes to get a first tree on screen; everything else can wait. See our <a href="/guides/how-to-start-a-family-tree">full guide</a> for a more detailed walkthrough.',
   },
   {
     q: 'How do I import a GEDCOM file?',
-    a: '<a href="/start#import">Choose "Import a GEDCOM"</a> after signing in, then upload the file exported from your previous genealogy tool. You’ll see a review screen showing exactly what’s new and what would change before anything is saved — see the <a href="/import">full import page</a> for what does and doesn’t come across.',
+    a: '<a href="/start#import">Choose "Import a GEDCOM"</a> after signing in, then upload the file exported from your previous genealogy tool. You’ll see a review screen showing exactly what’s new and what would change before anything is saved — see the <a href="/import">full import page</a> for what does and doesn’t come across, or our <a href="/guides/import-a-gedcom-file">import guide</a> for a full pre-import checklist.',
   },
   {
     q: 'How do I add or correct a person’s details?',
