@@ -215,6 +215,32 @@ test("step sibling (no shared bio/adoptive parent at all): NOT reachable via the
   assert.equal(r.route, 'sibling');
 });
 
+test('a direct parent/grandparent/child is never re-labeled as a spurious "cousin" via the collateral walk, even when they also have other children (a real bug: the collateral walk previously found candidates that land back on the anchor\'s own direct line — e.g. walking up to a grandparent and back down passes straight through the anchor\'s own parent — and a low cousin degree/removal beat the correct, larger ancestor/descendant distance in canonical resolution, silently mislabeling a parent or child as a "cousin")', () => {
+  // v's parent (dad) has a sibling (auntP) — dad is reachable from v's own
+  // grandparent (gp) via the exact same up-then-down collateral path that
+  // correctly finds auntP as v's aunt, so dad must be excluded from that
+  // walk (he already has his own correct 'ancestor' candidate). Likewise
+  // v's own child (kid) is reachable from gp by walking further down past
+  // v, and must stay 'descendant', not 'cousin'.
+  const g = buildGraph(
+    [person('v'), person('dad'), person('auntP'), person('gp'), person('kid')],
+    [
+      parentEdge('gp', 'dad'), parentEdge('gp', 'auntP'),
+      parentEdge('dad', 'v'), parentEdge('v', 'kid'),
+    ],
+  );
+  const idx = computePerspectiveIndex(g, { viewerId: 'v', perimeterLevel: 1 });
+  assert.equal(reasonOf(idx, 'dad').route, 'ancestor');
+  assert.equal(idx.inclusionReasonById.get('dad').closeness[0], 1);
+  assert.equal(reasonOf(idx, 'gp').route, 'ancestor');
+  assert.equal(idx.inclusionReasonById.get('gp').closeness[0], 2);
+  assert.equal(reasonOf(idx, 'kid').route, 'descendant');
+  // auntP is a genuine collateral relative (v's aunt) — still correctly
+  // found via the walk this fix narrows, not accidentally excluded too.
+  assert.equal(reasonOf(idx, 'auntP').route, 'cousin');
+  assert.equal(idx.inclusionReasonById.get('auntP').degree, 0);
+});
+
 // ── 10/11. cousins + removals ─────────────────────────────────────────────
 
 function cousinFixture() {

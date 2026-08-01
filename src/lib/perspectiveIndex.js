@@ -190,6 +190,23 @@ function computePrimaryPerimeter(graph, anchorIds, perimeterLevel, candidatesByP
         const downB = candNode.distance;
         if (downB < 1) continue; // candId === ancId itself
         if (candId === anchorId) continue;
+        // candId can land back on the anchor's OWN direct line — e.g.
+        // walking up to a grandparent and back down passes straight through
+        // the anchor's own parent, and further down again through the
+        // anchor's own children (a grandparent's grandchild is unavoidably
+        // "reached" this way too). Those already have their own correct
+        // ancestor/descendant candidate from the loops above; a collateral
+        // 'cousin' candidate for the same person is not just redundant, it's
+        // WRONG — compareReasons compares closeness arrays element-wise, and
+        // a low cousin degree (0 or 1) numerically beats a real ancestor/
+        // descendant distance of the same or even a much smaller value,
+        // silently overriding a person's own parent/child/grandparent with a
+        // spurious "0th cousin" label. Skipping anyone already in this
+        // anchor's own ups/downs keeps the collateral walk scoped to actual
+        // collateral relatives (siblings, aunts/uncles, cousins), matching
+        // genealogical convention: a cousin relationship is by definition
+        // someone NOT in your own direct line.
+        if (ups.has(candId) || downs.has(candId)) continue;
         const degree = Math.min(upA, downB) - 1;
         if (degree < 0 || degree > maxDegree) continue;
         const removal = Math.abs(upA - downB);

@@ -11987,6 +11987,12 @@ button.health-notes {
 .pp__legend-row--on .pp__legend-label { font-weight: 700; }
 .pp__legend-count { font-size: 13px; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
 
+.pp__level-desc {
+  flex: 0 0 auto;
+  margin: 0 4px 12px;
+  font-size: 13px; line-height: 1.45; color: var(--ink-soft);
+}
+
 .pp__search-wrap { flex: 0 0 auto; padding: 0 4px 10px; position: relative; }
 
 .pp__list { flex: 1 1 auto; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; }
