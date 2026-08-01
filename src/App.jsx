@@ -206,6 +206,60 @@ const MAX_BUBBLE_REVEAL = 250;
 // lib/staggeredReveal.js, shared by toggleExpandAll and the perimeter
 // reveal — see that module's own header for the reasoning.
 
+// Shared by familyStats (the topbar stats pill, scoped by the unrelated
+// "Bloodline only" toggle) and homeStats (the Home hub hero, scoped by the
+// viewer's Family Perimeter personal cohort — see homeStats below). Pure:
+// scopeIds narrows which people/photos/memories/relationships count,
+// null means "the complete tree."
+function computeFamilyStatsFor(graph, data, scopeIds) {
+  const people = scopeIds ? graph.people.filter((p) => scopeIds.has(p.id)) : graph.people;
+  const photos = scopeIds ? data.photos.filter((ph) => scopeIds.has(ph.person_id)) : data.photos;
+  const memories = scopeIds ? data.memories.filter((m) => scopeIds.has(m.person_id)) : data.memories;
+  const relationships = scopeIds
+    ? data.relationships.filter((r) => scopeIds.has(r.from_person) && scopeIds.has(r.to_person))
+    : data.relationships;
+  const freq = new Map();
+  let yearMin = Infinity, yearMax = -Infinity;
+  let oldestPerson = null, youngestPerson = null;
+  let withPhoto = 0, withBio = 0, withBirthDate = 0;
+  for (const p of people) {
+    const surname = p.display_name?.trim().split(/\s+/).slice(-1)[0];
+    if (surname) freq.set(surname, (freq.get(surname) ?? 0) + 1);
+    const by = p.birth_date ? parseInt(p.birth_date) : null;
+    if (by && by > 1000) {
+      withBirthDate++;
+      if (by < yearMin) { yearMin = by; oldestPerson = p; }
+      if (by > yearMax) { yearMax = by; youngestPerson = p; }
+    }
+    if (p.photo) withPhoto++;
+    if (p.bio && p.bio.trim()) withBio++;
+  }
+  const sorted = [...freq.entries()].sort((a, b) => b[1] - a[1]);
+  const topTwo = sorted.slice(0, 2).map(([s]) => s);
+  const extraCount = Math.max(0, sorted.length - 2);
+  const surnames = topTwo.join(', ') + (extraCount > 0 ? ` +${extraCount}` : '');
+  const yearSpan = isFinite(yearMin)
+    ? yearMin === yearMax ? `${yearMin}` : `${yearMin}–${yearMax}`
+    : null;
+  return {
+    people: people.length,
+    surnames,
+    yearSpan,
+    photos: photos.length,
+    memories: memories.length,
+    connections: relationships.length,
+    // Detail fields for the stats popover
+    surnameList: sorted.map(([name, count]) => ({ name, count })),
+    yearMin: isFinite(yearMin) ? yearMin : null,
+    yearMax: isFinite(yearMax) ? yearMax : null,
+    oldestName: oldestPerson?.display_name ?? null,
+    youngestName: youngestPerson?.display_name ?? null,
+    withPhoto,
+    withBio,
+    withBirthDate,
+  };
+}
+
 function buildExtracted(result) {
   const pf = result.profileFields;
   const profileFields = {};
@@ -829,53 +883,25 @@ export default function App() {
   // tree, flatly contradicting the filter it's supposed to be summarizing.
   const familyStats = useMemo(() => {
     const scopeIds = bloodlineOnly ? bloodRelativesOf(graph, data.myPersonId || DEFAULT_FOCUS) : null;
-    const people = scopeIds ? graph.people.filter((p) => scopeIds.has(p.id)) : graph.people;
-    const photos = scopeIds ? data.photos.filter((ph) => scopeIds.has(ph.person_id)) : data.photos;
-    const memories = scopeIds ? data.memories.filter((m) => scopeIds.has(m.person_id)) : data.memories;
-    const relationships = scopeIds
-      ? data.relationships.filter((r) => scopeIds.has(r.from_person) && scopeIds.has(r.to_person))
-      : data.relationships;
-    const freq = new Map();
-    let yearMin = Infinity, yearMax = -Infinity;
-    let oldestPerson = null, youngestPerson = null;
-    let withPhoto = 0, withBio = 0, withBirthDate = 0;
-    for (const p of people) {
-      const surname = p.display_name?.trim().split(/\s+/).slice(-1)[0];
-      if (surname) freq.set(surname, (freq.get(surname) ?? 0) + 1);
-      const by = p.birth_date ? parseInt(p.birth_date) : null;
-      if (by && by > 1000) {
-        withBirthDate++;
-        if (by < yearMin) { yearMin = by; oldestPerson = p; }
-        if (by > yearMax) { yearMax = by; youngestPerson = p; }
-      }
-      if (p.photo) withPhoto++;
-      if (p.bio && p.bio.trim()) withBio++;
-    }
-    const sorted = [...freq.entries()].sort((a, b) => b[1] - a[1]);
-    const topTwo = sorted.slice(0, 2).map(([s]) => s);
-    const extraCount = Math.max(0, sorted.length - 2);
-    const surnames = topTwo.join(', ') + (extraCount > 0 ? ` +${extraCount}` : '');
-    const yearSpan = isFinite(yearMin)
-      ? yearMin === yearMax ? `${yearMin}` : `${yearMin}–${yearMax}`
-      : null;
-    return {
-      people: people.length,
-      surnames,
-      yearSpan,
-      photos: photos.length,
-      memories: memories.length,
-      connections: relationships.length,
-      // Detail fields for the stats popover
-      surnameList: sorted.map(([name, count]) => ({ name, count })),
-      yearMin: isFinite(yearMin) ? yearMin : null,
-      yearMax: isFinite(yearMax) ? yearMax : null,
-      oldestName: oldestPerson?.display_name ?? null,
-      youngestName: youngestPerson?.display_name ?? null,
-      withPhoto,
-      withBio,
-      withBirthDate,
-    };
+    return computeFamilyStatsFor(graph, data, scopeIds);
   }, [graph, data.photos, data.memories, data.relationships, data.myPersonId, bloodlineOnly]);
+
+  // Home hub hero stats (PR #91 review): a SEPARATE stat object from
+  // familyStats above, scoped to the viewer's Family Perimeter personal
+  // cohort rather than the unrelated "Bloodline only" toggle. Deliberately
+  // not folded into familyStats itself — that object also feeds the
+  // topbar's StatsPopover, which isn't part of what the review flagged and
+  // has its own, independent scoping semantic; narrowing it too would be a
+  // bigger, undiscussed behavior change than this fix calls for. Carries
+  // completeTotal (§4.3's "never an unlabelled count when the cohort could
+  // be ambiguous") only when a real narrower perimeter is active, mirroring
+  // the same convention TreeInsights/TimelineView already established.
+  const homeStats = useMemo(() => {
+    const personalIds = insightCohorts?.personal;
+    const narrowed = perimeterActive && personalIds && personalIds.size < graph.people.length;
+    const base = computeFamilyStatsFor(graph, data, narrowed ? personalIds : null);
+    return { ...base, completeTotal: narrowed ? graph.people.length : null };
+  }, [graph, data.photos, data.memories, data.relationships, insightCohorts, perimeterActive]);
 
   // Unread activity count — null lastReadAt means never opened, so all events are "new".
   const unreadCount = useMemo(() => {
@@ -3359,7 +3385,7 @@ export default function App() {
         <Home
           user={user}
           familyName={data.familyName}
-          stats={familyStats}
+          stats={homeStats}
           activity={data.activity ?? []}
           people={data.people}
           graph={graph}

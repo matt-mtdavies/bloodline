@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import Logo from './Logo.jsx';
 import { ActivityRow } from './ActivityFeed.jsx';
 import { computeThisMonth, computeInsightModules, highlightCandidates } from '../lib/insightModules.js';
+import { scopeGraphToIds } from '../data/graph.js';
 import { timed } from '../lib/perfInstrument.js';
 
 // Home's "small preselected set" (Phase 6 §6.9: "Home uses a small
@@ -68,7 +69,19 @@ export default function Home({
 
   const first = user?.display_name ? firstName(user.display_name) : null;
   const tiles = buildStatTiles(stats);
-  const thisMonth = useMemo(() => (graph ? computeThisMonth(graph) : null), [graph]);
+  // Family Perimeter (PR #91 review): computeThisMonth reads marriage
+  // anniversaries straight off graph.relationships, so it needs a
+  // genuinely cohort-scoped graph (scopeGraphToIds — people AND
+  // relationships both filtered), not the raw graph — otherwise an
+  // outside branch's birthday or anniversary could surface under the
+  // unlabelled "[Month] in your family" heading.
+  const scopedGraph = useMemo(() => {
+    if (!graph) return null;
+    const ids = cohortIds?.personal;
+    if (!ids) return graph;
+    return scopeGraphToIds(graph, ids);
+  }, [graph, cohortIds]);
+  const thisMonth = useMemo(() => (scopedGraph ? computeThisMonth(scopedGraph) : null), [scopedGraph]);
   // No specific viewer stands behind the hub, so only the modules that don't
   // lean on "your" position in the tree (see highlightCandidates) contribute
   // — unchanged, deliberate design, so `viewerId` stays null here regardless
@@ -111,10 +124,16 @@ export default function Home({
             <p className="home__hero-card-eyebrow">{first ? `Welcome back, ${first}` : 'Currently viewing'}</p>
             <h2 className="home__hero-card-title">{familyName || 'Your family'}</h2>
             {stats && stats.people > 0 && (
-              <p className="home__hero-card-sub">
-                {stats.people} {stats.people === 1 ? 'person' : 'people'}
-                {stats.yearSpan && <> · {stats.yearSpan}</>}
-              </p>
+              <>
+                <p className="home__hero-card-sub">
+                  {stats.people} {stats.people === 1 ? 'person' : 'people'}
+                  {stats.completeTotal != null && ' within your Family Perimeter'}
+                  {stats.yearSpan && <> · {stats.yearSpan}</>}
+                </p>
+                {stats.completeTotal != null && (
+                  <p className="home__hero-card-complete">{stats.completeTotal} in the complete family tree</p>
+                )}
+              </>
             )}
           </div>
 

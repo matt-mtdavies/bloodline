@@ -113,6 +113,33 @@ export function buildGraph(people, relationships) {
   };
 }
 
+// A GENUINELY cohort-scoped graph — not just a `.people` filter. Building
+// `{ ...graph, people: filtered }` alone leaves `.byId`/`.relationships` and
+// the `parents`/`children`/`partners`/`siblings` closures bound to the
+// FULL, unfiltered relationship set, so anything that walks a relationship
+// or resolves an id through them (computeInsightModules's `records()`,
+// `parenthood()`, `livingLink()`, `computeThisMonth()`'s anniversaries,
+// `computeInsights()`'s reachability BFS, ...) can still surface or count
+// someone outside the intended cohort even though they never appear in
+// `.people` itself (Codex review, PR #91: "an outside branch can still
+// determine a 'personal' record... this violates the central trust
+// requirement"). Rebuilds a real graph from people AND relationships both
+// filtered to `ids`, so every derived structure — byId, parentsOf/
+// childrenOf/partnersOf/siblingsOf, and the accessor closures over them —
+// only ever knows about cohort members. A relationship is kept only when
+// BOTH endpoints are in `ids`; one endpoint outside the cohort makes the
+// whole edge invisible to this scoped view, which is the correct behavior
+// for a "personal" aggregate (an outside co-parent's marriage isn't a fact
+// about the viewer's own family perimeter).
+export function scopeGraphToIds(graph, ids) {
+  if (!ids) return graph;
+  const people = graph.people.filter((p) => ids.has(p.id));
+  const relationships = graph.relationships.filter(
+    (r) => ids.has(r.from_person) && ids.has(r.to_person),
+  );
+  return buildGraph(people, relationships);
+}
+
 // Longest-path generation index from the eldest ancestors (no parents = 0).
 // Shared by the canvas layout (BubbleTree's vertical bands) and the insights
 // strata — both need in-law partners levelled onto their spouse's row and

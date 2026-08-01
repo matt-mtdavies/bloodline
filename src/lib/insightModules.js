@@ -1,4 +1,4 @@
-import { computeGenerations, distancesFrom } from '../data/graph.js';
+import { computeGenerations, distancesFrom, scopeGraphToIds } from '../data/graph.js';
 import { detectRegion, nearestWorldEvent } from './worldEvents.js';
 import { yearsBetween } from './dates.js';
 import { normalizeGender } from './gender.js';
@@ -20,12 +20,15 @@ import { haversineKm, formatKm } from './geo.js';
  * §4.4/§6.9): every module below declares exactly one cohort in
  * MODULE_COHORTS, and computeInsightModules's own aggregation pass — never
  * the module itself — is the one place that decides which PEOPLE that
- * module actually gets to see. A module is handed a graph-shaped object
- * whose `.people` is pre-filtered to its declared cohort's ids (byId/
- * parents/children/siblings/partners stay the REAL, unfiltered graph —
- * cohort scoping narrows who gets COUNTED into an aggregate, it never hides
- * a relationship edge or breaks a lookup for someone already found via that
- * real graph). §4.4's own table: `personal` (primary perimeter + family
+ * module actually gets to see. A module is handed a graph rebuilt via
+ * data/graph.js#scopeGraphToIds — people AND relationships both filtered to
+ * its declared cohort's ids, so byId/parents/children/siblings/partners are
+ * genuinely cohort-safe, not just `.people`. (PR #91 review: an earlier
+ * version filtered only `.people` and left `.relationships`/`.byId` bound
+ * to the full, unfiltered graph — modules that iterate `graph.relationships`
+ * directly, like `records()`'s marriages or `parenthood()`'s parent-age
+ * pairs, could still surface or count someone outside the cohort even
+ * though they never appeared in `.people` itself.) §4.4's own table: `personal` (primary perimeter + family
  * halo — the default for "your family" aggregates, and what the overwhelming
  * majority of modules here are), `complete` (whole-tree structural facts
  * that wouldn't mean anything scoped — `bridges`, the one module here that's
@@ -223,7 +226,11 @@ export function computeInsightModules(graph, viewerId, now = Date.now(), geocode
     // Defensive, not expected in practice: an unrecognized/missing cohort
     // key degrades to the complete graph rather than silently reporting
     // zero facts for a module that's actually correctly configured.
-    const scoped = ids ? { ...graph, people: graph.people.filter((p) => ids.has(p.id)) } : graph;
+    // scopeGraphToIds rebuilds byId/relationships/parents/children/
+    // partners/siblings from cohort-filtered people+relationships — a
+    // module can never reach an outside person via any of them, not just
+    // via `.people` (see the header comment above).
+    const scoped = ids ? scopeGraphToIds(graph, ids) : graph;
     scopedByCohort.set(cohort, scoped);
     return scoped;
   };

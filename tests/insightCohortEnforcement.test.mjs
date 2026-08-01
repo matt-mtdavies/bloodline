@@ -156,5 +156,82 @@ test('the `only` option never computes `bridges` unless explicitly requested —
   assert.ok(!('bridges' in result), 'bridges must not even be a key on the result when not requested via `only`');
 });
 
+// ── Relationship-derived modules must not leak through unfiltered edges
+//    (Codex review on PR #91: filtering `.people` alone left `records()`/
+//    `parenthood()` free to iterate the FULL `graph.relationships` and
+//    resolve both endpoints through the FULL `byId`, so an outside couple
+//    or parent edge could still win a "personal" record even though
+//    neither person appeared in `.people`.) ────────────────────────────────
+
+test('records(): an outside couple\'s marriage cannot win the "longest marriage" record once scoped to personal', () => {
+  // An INSIDE marriage (still-ongoing since 1960) and a longer OUTSIDE
+  // marriage (since 1930) — if the outside couple's relationship edge
+  // leaks through, they win on raw years and their names appear in the
+  // record; scoped correctly, the inside couple must win instead, and the
+  // outside names must never appear anywhere in the result (headline OR
+  // leaderboard). A second, cohort-independent "longest life" record
+  // (inLife, inside the cohort either way) keeps pool.length >= 2 in BOTH
+  // runs, so the module's own "need at least 2 record types" gate doesn't
+  // confound the marriage-specific assertion below.
+  const now = Date.now();
+  const people = [
+    person('v'),
+    person('in1', { birth_date: '1930-01-01' }),
+    person('in2', { birth_date: '1932-01-01' }),
+    person('inLife', { birth_date: '1900-01-01', is_deceased: true, death_date: '1990-01-01' }),
+    person('out1', { display_name: 'Outsider One', birth_date: '1900-01-01' }),
+    person('out2', { display_name: 'Outsider Two', birth_date: '1902-01-01' }),
+  ];
+  const rels = [
+    { type: 'partner', from_person: 'in1', to_person: 'in2', partner_status: 'current', marriage_date: '1960-01-01' },
+    { type: 'partner', from_person: 'out1', to_person: 'out2', partner_status: 'current', marriage_date: '1930-01-01' },
+  ];
+  const g = buildGraph(people, rels);
+  const cohortIds = {
+    personal: new Set(['v', 'in1', 'in2', 'inLife']),
+    context: new Set(),
+    complete: new Set(g.people.map((p) => p.id)),
+    directLine: new Set(),
+    temporaryReveal: new Set(),
+  };
+  const withoutCohort = computeInsightModules(g, 'v', now, null, null, {}).records;
+  assert.ok(withoutCohort?.records?.length, 'sanity: the unscoped fixture must actually produce a records result');
+  const outsideNamesUnscoped = JSON.stringify(withoutCohort);
+  assert.ok(outsideNamesUnscoped.includes('Outsider'), 'sanity: without a cohort, the outside couple (the longer marriage) wins and appears');
+
+  const withCohort = computeInsightModules(g, 'v', now, null, null, { cohortIds }).records;
+  assert.ok(withCohort?.records?.length, 'sanity: the scoped result must still clear the >=2-record-types pool gate via the cohort-independent life record');
+  const scopedJson = JSON.stringify(withCohort);
+  assert.ok(!scopedJson.includes('Outsider'), 'a personal-cohort records() must never let an outside couple\'s marriage appear, in the headline OR the leaderboard');
+});
+
+test('parenthood(): an outside parent-child edge cannot affect the personal-cohort histogram/average', () => {
+  // One inside parent-age data point plus enough outside ones to shift the
+  // average and clear the module's own >=8 threshold if they leaked in.
+  const people = [person('v'), person('inParent', { birth_date: '1970-01-01' }), person('inChild', { birth_date: '2000-01-01' })];
+  const rels = [{ type: 'parent', from_person: 'inParent', to_person: 'inChild', qualifier: 'biological' }];
+  for (let i = 0; i < 10; i++) {
+    people.push(person(`outParent${i}`, { birth_date: '1950-01-01' }));
+    people.push(person(`outChild${i}`, { birth_date: '1970-01-01' })); // age 20 at birth — outside cohort only
+    rels.push({ type: 'parent', from_person: `outParent${i}`, to_person: `outChild${i}`, qualifier: 'biological' });
+  }
+  const g = buildGraph(people, rels);
+  const cohortIds = {
+    personal: new Set(['v', 'inParent', 'inChild']),
+    context: new Set(),
+    complete: new Set(g.people.map((p) => p.id)),
+    directLine: new Set(),
+    temporaryReveal: new Set(),
+  };
+  const withoutCohort = computeInsightModules(g, 'v', 0, null, null, {}).parenthood;
+  assert.ok(withoutCohort, 'sanity: the unscoped fixture clears parenthood()\'s own >=8 threshold via the outside pairs');
+
+  const withCohort = computeInsightModules(g, 'v', 0, null, null, { cohortIds }).parenthood;
+  // Only ONE real parent-age data point (age 30) survives scoping — well
+  // under the module's own threshold, so it must return null rather than
+  // silently keep computing an average/histogram from outside pairs.
+  assert.equal(withCohort, null, 'a personal-cohort parenthood() must not fall back on outside parent-age data to clear its own threshold');
+});
+
 console.log(`\n  ${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);

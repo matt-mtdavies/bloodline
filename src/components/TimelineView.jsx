@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useRef } from 'react';
 import { buildTimeline, bucketOf, groupByDecade } from '../lib/timeline.js';
 import { detectRegion, worldEventsInDecade, sameYearWorldEvent, eraTint } from '../lib/worldEvents.js';
 import { CATEGORY_LABELS } from '../data/worldEvents.js';
+import { scopeGraphToIds } from '../data/graph.js';
 import ReturnMark from './ReturnMark.jsx';
 
 /*
@@ -63,15 +64,16 @@ export default function TimelineView({ graph, photos = [], cohortIds = null, per
   // separate, not-yet-tackled performance item; this is the cohort half).
   // `cohortIds` is null for the overwhelming majority (no perimeter
   // narrower than Everyone active), so `scopedGraph === graph` and every
-  // moment renders exactly as before this feature existed. Scoping the
-  // GRAPH view (same convention as insightModules.js/TreeInsights.jsx)
-  // naturally scopes buildTimeline's birth/death/event entries (it
-  // iterates `graph.people`); `photos` is a separate array not attached to
-  // the graph at all, so it needs its own explicit filter by `person_id`.
+  // moment renders exactly as before this feature existed. Scoping via
+  // scopeGraphToIds (same convention as insightModules.js/TreeInsights.jsx
+  // — people AND relationships both filtered, not just `.people`) naturally
+  // scopes buildTimeline's birth/death/event entries (it iterates
+  // `graph.people`); `photos` is a separate array not attached to the graph
+  // at all, so it needs its own explicit filter by `person_id`.
   const scopedGraph = useMemo(() => {
     const ids = cohortIds?.personal;
     if (!ids) return graph;
-    return { ...graph, people: graph.people.filter((p) => ids.has(p.id)) };
+    return scopeGraphToIds(graph, ids);
   }, [graph, cohortIds]);
   const scopedPhotos = useMemo(() => {
     const ids = cohortIds?.personal;

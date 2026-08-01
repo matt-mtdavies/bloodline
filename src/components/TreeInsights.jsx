@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { computeInsights, aggregatesHash } from '../lib/insights.js';
 import { computeInsightModules, buildInsightHighlights } from '../lib/insightModules.js';
+import { scopeGraphToIds } from '../data/graph.js';
 import InsightModules, { PeopleDrawer } from './InsightModules.jsx';
 import ReturnMark from './ReturnMark.jsx';
 import { timed } from '../lib/perfInstrument.js';
@@ -19,17 +20,17 @@ export default function TreeInsights({ graph, viewerId, cohortIds = null, perime
   // byte-identical to before this feature existed ("Everyone reproduces
   // complete-tree results"). computeInsights has no per-fact cohort
   // granularity of its own (unlike computeInsightModules's per-module
-  // MODULE_COHORTS table), so it's handed a PRE-scoped graph directly —
-  // every fact/nudge/aggregate it builds iterates `graph.people`, which is
-  // exactly what gets filtered here; `graph.byId`/`parents`/`children`/
-  // `partners` stay the real, unfiltered graph (same convention as
-  // insightModules.js), so the viewer's own connectivity facts ("N
-  // generations around you", "N cousins") still reflect real relationships,
-  // not just who happens to be inside the personal cohort.
+  // MODULE_COHORTS table), so it's handed a PRE-scoped graph directly via
+  // scopeGraphToIds — people AND relationships both filtered, so byId/
+  // parents/children/partners are genuinely cohort-safe too (PR #91 review:
+  // a `.people`-only filter left computeInsights's own reachability BFS
+  // free to walk into outside-cohort relatives via the still-unfiltered
+  // graph, inflating "N relatives connect to you"/cousin counts with people
+  // who were never actually in the viewer's personal cohort).
   const scopedGraph = useMemo(() => {
     const ids = cohortIds?.personal;
     if (!ids) return graph;
-    return { ...graph, people: graph.people.filter((p) => ids.has(p.id)) };
+    return scopeGraphToIds(graph, ids);
   }, [graph, cohortIds]);
   const insights = useMemo(() => computeInsights(scopedGraph, viewerId), [scopedGraph, viewerId]);
   // computeInsightModules gets the REAL, unfiltered graph plus cohortIds —

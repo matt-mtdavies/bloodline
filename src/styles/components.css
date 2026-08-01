@@ -8372,6 +8372,7 @@ button.health-notes {
   margin: 0;
 }
 .home__hero-card-sub { font-size: 13px; color: var(--ink-soft); margin-top: 6px; }
+.home__hero-card-complete { font-size: 12px; color: var(--ink-faint, #b0a9a5); margin-top: 2px; }
 
 .home__constellation {
   display: block;
