@@ -70,6 +70,17 @@ export async function onRequestGet({ request, env }) {
     var emailEl = document.getElementById('email');
     var btn = document.getElementById('signin-submit');
     var hint = document.getElementById('signin-hint');
+    // Activation-funnel telemetry (docs/PRODUCTIZATION-BRIEF.md §11.7):
+    // reaching this page with a real, allowlisted ?start= is the "path
+    // chosen" moment — the visitor picked fresh/import/invite on /start and
+    // is now proceeding to sign in. A bare /sign-in visit (no ?start=, e.g.
+    // a returning member using the footer link) isn't a path choice, so it
+    // deliberately doesn't fire this.
+    if (START) {
+      try {
+        if (navigator.sendBeacon) navigator.sendBeacon('/api/activation-event', new Blob([JSON.stringify({ event: 'path_chosen', path: START })], { type: 'application/json' }));
+      } catch (e) {}
+    }
     function send() {
       var email = emailEl.value.trim();
       if (!email) { hint.textContent = 'Enter your email to continue.'; return; }

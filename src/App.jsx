@@ -77,6 +77,7 @@ import { detectRegion, nearestWorldEvent } from './lib/worldEvents.js';
 import { findDuplicatePairs, pairKey, loadDismissedDuplicates, saveDismissedDuplicates } from './lib/duplicates.js';
 import { useIdleValue } from './lib/useIdleValue.js';
 import { timed } from './lib/perfInstrument.js';
+import { trackActivation } from './lib/activation.js';
 import { canManageTree } from './lib/visibility.js';
 import { geocodePlaces } from './lib/places.js';
 import { profileCompleteness, isDuplicateLifeEvent } from './lib/profile.js';
@@ -403,6 +404,16 @@ export default function App() {
     // B) Already logged in → ?invite param in URL, OTP never shown → accept here
     const inviteToken = _initialInviteToken;
     const joiningFamily = !!loginExtras?.joinedViaInvite || !!inviteToken;
+    // Activation-funnel telemetry (docs/PRODUCTIZATION-BRIEF.md §11.7).
+    // Deliberately scoped to path A only (a fresh OTP verify that came in
+    // via the invite landing page) — that call only ever fires once, from
+    // a real user action, so it can't double-count. Path B (already signed
+    // in, then clicks an invite link) re-runs this whole function on every
+    // mount while ?invite= remains in the URL — see the "not stripped from
+    // the URL after path B" note where inviteToken is read a few lines
+    // below — so it's deliberately left uncounted here rather than adding
+    // an id-keyed localStorage guard for an edge case this narrow.
+    if (loginExtras?.joinedViaInvite) trackActivation('invite_accepted');
     // Whoever the invite that brought this session in was actually for, if
     // any — threaded from whichever of paths A/B/C below actually fires, and
     // handed to ClaimSpot at the bottom of this function.
@@ -622,6 +633,41 @@ export default function App() {
     const t = setTimeout(dismissHomeNudge, 8000);
     return () => clearTimeout(t);
   }, [showHomeNudge, dismissHomeNudge]);
+
+  // Activation-funnel telemetry (docs/PRODUCTIZATION-BRIEF.md §11.7): "first
+  // meaningful contribution" — the first time content grows beyond whatever
+  // onboarding itself created (a name, an optional starter memory/photo, a
+  // GEDCOM import). The render right after onboarding completes captures
+  // that starting point as a baseline rather than firing immediately, so an
+  // import's own bulk of new people doesn't get mistaken for a step beyond
+  // it; a later real addition (a memory, a photo, a document, a new
+  // relative) — from any account, whichever content type happens first —
+  // is what actually counts. Fires at most once per browser, guarded by a
+  // localStorage flag since the telemetry payload itself carries no id to
+  // dedupe against server-side.
+  const contributionBaselineRef = useRef(null);
+  useEffect(() => {
+    if (!data.hasCompletedOnboarding) return;
+    const counts = {
+      people: data.people.length,
+      memories: data.memories.length,
+      photos: data.photos.length,
+      documents: data.documents.length,
+    };
+    if (contributionBaselineRef.current === null) {
+      contributionBaselineRef.current = counts;
+      return;
+    }
+    let alreadySent = false;
+    try { alreadySent = localStorage.getItem('bl_first_contribution_sent') === '1'; } catch { /* ignore */ }
+    if (alreadySent) return;
+    const b = contributionBaselineRef.current;
+    const grew = counts.people > b.people || counts.memories > b.memories
+      || counts.photos > b.photos || counts.documents > b.documents;
+    if (!grew) return;
+    try { localStorage.setItem('bl_first_contribution_sent', '1'); } catch { /* ignore */ }
+    trackActivation('first_contribution');
+  }, [data.hasCompletedOnboarding, data.people.length, data.memories.length, data.photos.length, data.documents.length]);
 
   useEffect(() => {
     if (isDemo || isNewUrl) return;
@@ -2582,6 +2628,15 @@ export default function App() {
           setupTree(fields);
           // Strip ?new from URL so refreshing loads their tree normally from localStorage.
           if (isNewUrl) window.history.replaceState(null, '', '/');
+          // Activation-funnel telemetry (docs/PRODUCTIZATION-BRIEF.md §11.7):
+          // the "fresh" path builds its first tree in this same step as
+          // onboarding, so both fire together — deliberately two distinct
+          // events rather than one, since they measure different funnel
+          // stages that just happen to coincide here (for the "import"
+          // path, tree_created's equivalent is import_completed, fired
+          // later once a GEDCOM import actually commits).
+          trackActivation('onboarding_completed', _initialStartIntent === 'import' ? 'import' : 'fresh');
+          if (_initialStartIntent !== 'import') trackActivation('tree_created', 'fresh');
           // Safe handoff from the public start-path chooser: a brand-new
           // account that chose "Import my GEDCOM" goes straight into the
           // import sheet instead of landing on a blank tree with no next step.
@@ -3525,6 +3580,7 @@ export default function App() {
         <FamilySearchImport
           onImport={(people, relationships, opts) => {
             importFromGedcom(people, relationships, opts);
+            trackActivation('import_completed', 'import');
           }}
           onClose={(firstPersonId) => {
             if (firstPersonId) {
@@ -3543,6 +3599,7 @@ export default function App() {
         <GedcomImport
           onImport={(people, relationships, opts) => {
             importFromGedcom(people, relationships, opts);
+            trackActivation('import_completed', 'import');
           }}
           onClose={(firstPersonId) => {
             // After the wizard's "done" screen, navigate to the first imported person.

@@ -283,6 +283,32 @@ export async function onRequestGet({ env, data }) {
       }
     } catch (e) { console.error('[admin/stats] content totals skipped:', e.message); }
 
+    // Activation funnel (migration 0020) — the aggregate, no-PII telemetry
+    // required by docs/PRODUCTIZATION-BRIEF.md §11.7/§12 Phase B. Defensive
+    // like ai_usage_log/activity_log above: the table is new, so an
+    // unmigrated environment reports an empty section rather than a 500.
+    let activation = { total_30d: 0, by_event_30d: [], by_path_30d: [] };
+    try {
+      const cutoff30 = now - day * 30;
+      const [byEvent, byPath] = await Promise.all([
+        env.DB.prepare(
+          `SELECT event, COUNT(*) AS n FROM activation_event
+             WHERE created_at > ? GROUP BY event ORDER BY n DESC`,
+        ).bind(cutoff30).all(),
+        env.DB.prepare(
+          `SELECT path, COUNT(*) AS n FROM activation_event
+             WHERE event = 'path_chosen' AND created_at > ? AND path IS NOT NULL
+             GROUP BY path ORDER BY n DESC`,
+        ).bind(cutoff30).all(),
+      ]);
+      const byEventRows = (byEvent.results || []).map((r) => ({ event: r.event, n: r.n }));
+      activation = {
+        total_30d: byEventRows.reduce((sum, r) => sum + r.n, 0),
+        by_event_30d: byEventRows,
+        by_path_30d: (byPath.results || []).map((r) => ({ path: r.path, n: r.n })),
+      };
+    } catch (e) { console.error('[admin/stats] activation skipped:', e.message); }
+
     const totalInviteCount = totalInvites?.n ?? 0;
     const acceptanceRate = totalInviteCount > 0
       ? Math.round((invites.accepted / totalInviteCount) * 100)
@@ -332,6 +358,7 @@ export async function onRequestGet({ env, data }) {
       })),
       ai,
       engagement,
+      activation,
       content,
     });
   } catch (e) {

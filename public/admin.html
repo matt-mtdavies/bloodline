@@ -482,6 +482,7 @@
     }
     .ia-section__desc { font-size: 12.5px; color: var(--ink-soft); margin-bottom: 18px; }
     .subsection-heading { font-size: 12px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-soft); margin-bottom: 12px; }
+    .section-note { text-transform: none; letter-spacing: normal; font-weight: 400; color: var(--ink-soft); opacity: 0.8; }
 
     .privacy-hint { font-size: 11.5px; color: var(--ink-faint); margin-bottom: 12px; }
 
@@ -610,6 +611,10 @@
           <div class="chart-wrap funnel-chart-wrap"><canvas id="chart-invites"></canvas></div>
         </div>
       </div>
+
+      <p class="subsection-heading">Activation funnel <span class="section-note">(last 30 days &middot; aggregate counts only, no user-level tracking)</span></p>
+      <div class="cards" id="activation-cards"><div class="spinner"><div class="spin-icon"></div></div></div>
+      <div class="funnel-row" id="activation-path-row"></div>
 
       <p class="subsection-heading">Engagement</p>
       <div class="cards" id="engagement-cards"><div class="spinner"><div class="spin-icon"></div></div></div>
@@ -1067,6 +1072,33 @@
       card('Expired', inv.expired, ''),
     ].join('');
   }
+  // ── Activation funnel (docs/PRODUCTIZATION-BRIEF.md §11.7/§12 Phase B) ──
+  // Aggregate-only counts — no per-visitor identifier exists anywhere in
+  // this data, so this can only ever show totals, never an individual
+  // journey. See functions/api/activation-event.js and migrations/
+  // 0020_activation_events.sql for what is and isn't recorded.
+  const ACTIVATION_EVENT_ORDER = ['cta_click', 'path_chosen', 'onboarding_completed', 'tree_created', 'import_completed', 'invite_accepted', 'first_contribution'];
+  const ACTIVATION_EVENT_LABEL = {
+    cta_click: 'Clicked "Start your family tree"',
+    path_chosen: 'Chose a starting path',
+    onboarding_completed: 'Completed onboarding',
+    tree_created: 'Created first tree (fresh)',
+    import_completed: 'Completed a GEDCOM import',
+    invite_accepted: 'Accepted an invitation',
+    first_contribution: 'Made a first contribution',
+  };
+  const ACTIVATION_PATH_LABEL = { fresh: 'Start fresh', import: 'Import a GEDCOM', invite: 'Have an invitation' };
+  function renderActivationCards(activation) {
+    const byEvent = new Map((activation.by_event_30d || []).map((r) => [r.event, r.n]));
+    $('#activation-cards').innerHTML = ACTIVATION_EVENT_ORDER
+      .map((event, i) => card(ACTIVATION_EVENT_LABEL[event], byEvent.get(event) || 0, '', i === 0 ? 'accent' : ''))
+      .join('');
+    const paths = activation.by_path_30d || [];
+    $('#activation-path-row').innerHTML = paths.length
+      ? paths.map((p) => `<div class="funnel-item"><div class="funnel-item__n" style="color:${COLOR.accent}">${p.n}</div><div class="funnel-item__l">${escHtml(ACTIVATION_PATH_LABEL[p.path] || p.path)}</div></div>`).join('')
+      : '<div class="chart-empty" style="padding:8px 0;">No start-path selections recorded in the last 30 days.</div>';
+  }
+
   function renderContentCards(content) {
     $('#content-cards').innerHTML = [
       card('People in trees', (content.total_people || 0).toLocaleString(), 'across every family', 'accent'),
@@ -1826,6 +1858,7 @@
       const generated = new Date(data.generated_at);
 
       safe(() => renderCards(data));
+      safe(() => renderActivationCards(data.activation || {}));
       safe(() => renderAiCards(data.ai || {}));
       safe(() => renderAiChart(data.ai || {}));
       safe(() => renderEngagementCards(data.engagement || {}));
