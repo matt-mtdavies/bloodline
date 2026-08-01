@@ -2181,6 +2181,56 @@ done/partial/not-started). Read it before planning a new sprint.
   above), but the brief document itself still just reads as a spec, not a tracker. Cross-
   reference this file's Status section for what's actually done rather than assuming the
   brief's own phase headings reflect current state.
+
+- **Productization brief — what's actually left** (`docs/PRODUCTIZATION-BRIEF.md` §12):
+  - **Phase C (Commercial readiness)** — not started, and deliberately not startable yet:
+    it needs a real plans/billing/entitlement model, receipts, cancellation, and support
+    procedures decided by the business first (`/plans` and any upgrade surface are only
+    supposed to appear once that system is real) — this is a product/business decision
+    gate, not an engineering backlog item. Don't start building a pricing page without that
+    decision being made explicitly first.
+  - **Phase D (Growth content)** — 3 of 7 suggested guide topics shipped in PR #108 (start a
+    tree, import a GEDCOM, blended/chosen families). §16.4 lists the remaining topic ideas;
+    the brief's own editorial-quality bar (§16.8: small batches, reviewed, grounded only in
+    real shipped behavior, no mass-produced AI content) should keep governing how many get
+    written per pass. Permissioned customer stories (also part of Phase D) haven't been
+    started at all — that one needs a real customer-story sourcing/consent process, not just
+    engineering.
+
+- **Performance/scale plan — what's actually left**
+  (`docs/FAMILY-PERIMETER-AND-5000-PERSON-PERFORMANCE.md` §10, the "5,000-person
+  architecture" programme). Phases 0 through 6 are fully shipped (see this file's own
+  Status entries for the Family Perimeter feature, the Phase 0/1 benchmark-and-relief work,
+  the Perspective Index, per-user persistence, the perimeter tree/List/Chart experience,
+  perimeter-aware Search, and cohort-aware Home/Insights) — but **Phase 7 (Progressive data
+  architecture), Phase 8 (exact collapsed counts + personal inclusions), and Phase 9
+  (feature-flagged rollout) have not been started.** Phase 7 is the actually load-bearing
+  one for the plan's own stated goal: per §5, the current architecture still eagerly loads
+  and reassembles the complete graph core+extra on every `GET /api/tree`, the client parses
+  and retains the whole rich tree, and full-state serialization can exceed practical mobile
+  memory/localStorage limits before 5,000 rich profiles — none of that is fixed by Phases
+  0–6 alone, which only reduced canvas/render-time cost for whatever's already loaded. §6 of
+  the doc lays out the target architecture (separate topology/summary/detail/media layers,
+  versioned chunked storage building on the existing `treeStore` core/R2-extra split,
+  progressive bootstrap/detail APIs, IndexedDB caches, a mutation journal). §13 has a list
+  of design/architecture decisions that need to be made explicitly *before* writing code for
+  this phase — read that section first; it is intentionally a bigger, riskier, more
+  infrastructure-heavy body of work than anything shipped so far in this programme, and its
+  own §15 has a recommended immediate next action worth reading before diving in.
+  Related but smaller-scoped: `docs/TREE-STORAGE.md`'s per-family migration off the single
+  D1 row is code-complete and this account's own family has been migrated, but rolling the
+  `POST /api/admin/migrate-tree` endpoint out to every other family is still a manual,
+  one-family-at-a-time human operation (§11 of that doc has the runbook) — it needs real
+  Cloudflare credentials this sandbox doesn't have, not more code.
+
+- **Two smaller open items tracked only in this session's task list, not yet written up
+  anywhere in the repo** — worth turning into real GitHub issues so they aren't lost:
+  "Duplicate cluster detection + merge ordering in `DuplicatesSheet`" (a follow-up idea from
+  the import-pipeline duplicate-safety work — grouping/ordering duplicate *clusters* of 3+
+  people rather than only pairwise matches) and "Codex #2: compact top-bar 'Family' menu"
+  (one item from an earlier Codex review round; #1/#3/#4/#5 from that same round shipped,
+  this one didn't). Neither has a design decided yet — check with the repo owner on intent
+  before implementing either from scratch.
 - **Phase 2 remaining:** Documents (letters, certificates, military records) + Voice & Video —
   both need R2 storage. Create R2 bucket, update wrangler.toml, build upload Worker endpoint,
   then build the Documents UI (list + lightbox) and Voice & Video player.
