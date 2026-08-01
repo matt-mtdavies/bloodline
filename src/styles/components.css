@@ -127,6 +127,33 @@
   flex-shrink: 0;
 }
 
+/* Family Perimeter badge — a real gap real feedback pointed at ("we need to
+   make it better known that it's in effect"): shown only when the viewer
+   has narrowed their perimeter below Complete family tree, deliberately
+   SEPARATE from the stats pill above rather than appended text inside it
+   (that pill already truncates on a real, large family — cramming more in
+   would just get cut off). Tapping it jumps straight to the Preview sheet. */
+.perimeter-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 4px;
+  padding: 3px 10px 3px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  border: 1px solid var(--hairline);
+  background: var(--paper-deep);
+  color: var(--ink-soft);
+  transition: background 0.2s var(--ease), color 0.2s var(--ease), border-color 0.2s var(--ease);
+}
+.perimeter-badge:hover { background: color-mix(in srgb, var(--paper-deep) 70%, var(--ink-faint)); }
+.perimeter-badge svg { flex: none; }
+.perimeter-badge__label { white-space: nowrap; }
+.perimeter-badge--first { color: var(--accent, #c2603a); border-color: color-mix(in srgb, var(--accent, #c2603a) 35%, transparent); }
+.perimeter-badge--second { color: var(--sage, #3f5e4e); border-color: color-mix(in srgb, var(--sage, #3f5e4e) 35%, transparent); }
+.perimeter-badge--third { color: var(--gold, #b08642); border-color: color-mix(in srgb, var(--gold, #b08642) 35%, transparent); }
+
 /* Logo mark + staggered bubble pop-in */
 .logo { overflow: visible; }
 .logo circle { transform-box: fill-box; transform-origin: center; }
@@ -11938,12 +11965,34 @@ button.health-notes {
 }
 .pp__empty { padding: 32px 12px; text-align: center; color: var(--ink-soft); }
 
+.pp__tabs {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 4px;
+  border-bottom: 1.5px solid var(--hairline);
+  margin: 0 4px 14px;
+}
+.pp__tab {
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink-soft);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1.5px;
+  transition: color 0.15s, border-color 0.15s;
+}
+.pp__tab--on { color: var(--accent); border-bottom-color: var(--accent); font-weight: 700; }
+
 .pp__rings-wrap {
   flex: 0 0 auto;
   display: flex; align-items: center; gap: 18px;
   padding: 4px 4px 16px;
 }
-.pp__rings { width: 108px; height: 108px; flex: none; overflow: visible; }
+/* Grown from the original 108px — the diagram was too small to legibly
+   carry the new on-ring labels (see .pp__ring-label) as well as its own
+   circles; the viewBox stays 0 0 200 200 so this is a pure scale-up, no
+   coordinate changes needed anywhere else. */
+.pp__rings { width: 136px; height: 136px; flex: none; overflow: visible; }
 .pp__ring {
   fill: none;
   stroke-width: 2;
@@ -11956,6 +12005,29 @@ button.health-notes {
 .pp__ring--everyone { stroke: var(--ink-faint, #a6abb3); }
 .pp__ring--on { opacity: 1; stroke-width: 3.5; }
 .pp__ring-you { fill: var(--accent, #c2603a); }
+
+/* Short labels ON the rings themselves ("1st"/"2nd"/"3rd"/"All") — real
+   user feedback was that the ring-to-level mapping relied on matching
+   colors by eye against the legend rows beside it. paint-order gives the
+   text a soft halo of the page background so it stays legible crossing a
+   ring's own stroke, without needing a separate background shape. */
+.pp__ring-label {
+  font-size: 12px;
+  font-weight: 700;
+  fill: var(--ink-soft);
+  opacity: 0.6;
+  paint-order: stroke fill;
+  stroke: var(--paper, #fff);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+  pointer-events: none;
+  transition: opacity 0.25s var(--ease), fill 0.25s var(--ease);
+}
+.pp__ring-label--on { opacity: 1; font-weight: 800; }
+.pp__ring-label--first.pp__ring-label--on { fill: var(--accent, #c2603a); }
+.pp__ring-label--second.pp__ring-label--on { fill: var(--sage, #3f5e4e); }
+.pp__ring-label--third.pp__ring-label--on { fill: var(--gold, #b08642); }
+.pp__ring-label--everyone.pp__ring-label--on { fill: var(--ink, #241f1c); }
 
 .pp__legend { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .pp__legend-row {
@@ -12002,3 +12074,60 @@ button.health-notes {
   color: var(--ink-soft); margin: 0;
 }
 .pp__list .person-row { margin-bottom: 6px; }
+
+.pp__geno-section { flex: 0 0 auto; padding: 4px 4px 4px; }
+.pp__geno-section .pp__legend { margin-bottom: 14px; }
+
+/* PerimeterGenogram — the "family tree" alternative to the rings: a
+   schematic stack of generation rows, each a wrapped row of chips. Direct
+   ancestors/descendants and degree-0 collateral (siblings/aunts-uncles/
+   nieces-nephews) are unconditionally included at every real level (see
+   categoryQualifiesAtLevel's own comment) so most chips read "on" all the
+   time — only the 2nd/3rd-cousin chips in the centre "You" row actually
+   dim in/out as the level changes, which is itself the point: seeing most
+   of the diagram stay lit answers "why does even Close family already
+   include so many people." */
+.pp-geno { display: flex; flex-direction: column; gap: 6px; padding: 2px 4px 4px; }
+.pp-geno__row { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+.pp-geno__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+  border: 1.5px solid var(--hairline);
+  color: var(--ink);
+  background: var(--paper);
+  transition: opacity 0.2s var(--ease), border-color 0.2s var(--ease);
+}
+.pp-geno__chip--off {
+  opacity: 0.4;
+  color: var(--ink-soft);
+  border-style: dashed;
+}
+.pp-geno__chip--you {
+  font-weight: 700;
+  background: var(--paper-deep);
+  border-color: var(--accent, #c2603a);
+  color: var(--accent, #c2603a);
+}
+.pp-geno__chip-count {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--ink-soft);
+  background: var(--paper-deep);
+  border-radius: 999px;
+  padding: 1px 6px;
+  font-variant-numeric: tabular-nums;
+}
+.pp-geno__chip--you .pp-geno__chip-count { background: rgba(255, 255, 255, 0.65); color: var(--accent, #c2603a); }
+.pp-geno__note {
+  margin: 10px 6px 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--ink-faint, #a6abb3);
+  text-align: center;
+  font-style: italic;
+}

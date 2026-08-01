@@ -210,8 +210,21 @@ function computePrimaryPerimeter(graph, anchorIds, perimeterLevel, candidatesByP
         const degree = Math.min(upA, downB) - 1;
         if (degree < 0 || degree > maxDegree) continue;
         const removal = Math.abs(upA - downB);
+        // Which side of the shared ancestor candId sits on, relative to the
+        // anchor — meaningless on its own (it's not part of "cousin degree"
+        // in the genealogical sense) but the only thing that distinguishes,
+        // e.g., an aunt/uncle from a niece/nephew: both are degree 0,
+        // removal 1 (an aunt/uncle IS formally "0th cousin, once removed" —
+        // that's genuinely correct genealogical terminology, just not how a
+        // lay person files it). upA > downB means candId is CLOSER to the
+        // shared ancestor than the anchor is, i.e. an older generation
+        // (aunt/uncle-shaped); upA < downB means younger (niece/nephew-
+        // shaped); equal means same generation (siblings, or same-generation
+        // cousins at removal 0). A consumer that only cares about cousin
+        // degree can ignore this entirely — it changes no existing field.
+        const side = upA > downB ? 'older' : upA < downB ? 'younger' : 'same';
         addPrimary(candId, {
-          tier: 'primary', route: 'cousin', sourceId: anchorId, closeness: [degree, removal], degree, removal,
+          tier: 'primary', route: 'cousin', sourceId: anchorId, closeness: [degree, removal], degree, removal, side,
         });
       }
     }

@@ -784,10 +784,15 @@ export default function App() {
   const [gedcomOpen, setGedcomOpen] = useState(false);
   const [fsImportOpen, setFsImportOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
-  // "Who's in your perimeter" preview — nested under Settings the same way
-  // Home's HowItWorks/FamilyTrees nest under Home (opened from a link
-  // inside UserProfile, closes back to it, not to the bare tree).
+  // "Who's in your perimeter" preview — reachable two ways now: nested under
+  // Settings (opened from a link inside UserProfile, same as Home's
+  // HowItWorks/FamilyTrees nest under Home) OR directly from the new topbar
+  // perimeter badge, which skips Settings entirely. onClose needs to know
+  // which door it came through so it returns to the right place — reopening
+  // Profile after a badge-opened preview would pop up a sheet the user never
+  // asked for.
   const [perimeterPreviewOpen, setPerimeterPreviewOpen] = useState(false);
+  const [perimeterPreviewFromProfile, setPerimeterPreviewFromProfile] = useState(false);
   useEffect(() => {
     if (wasProfileOpenRef.current && !profileOpen) loadPerimeterPref();
     wasProfileOpenRef.current = profileOpen;
@@ -2593,6 +2598,12 @@ export default function App() {
         recapNudgeCount={recapNudge ? recapGroups.length : 0}
         onShowRecap={() => { setRecapNudge(false); openRecap(); }}
         onDismissRecapNudge={() => { setRecapNudge(false); markRecapSeen(); }}
+        perimeterActive={perimeterActive}
+        perimeterLevel={perimeterApiLevel}
+        onOpenPerimeterPreview={() => {
+          setPerimeterPreviewFromProfile(false);
+          setPerimeterPreviewOpen(true);
+        }}
       />
 
       {view === 'bubbles' ? (
@@ -3393,7 +3404,11 @@ export default function App() {
             setCurrentUser({ ...user, ...updated });
           }}
           onPhoto={handlePhoto}
-          onPreviewPerimeter={() => { setProfileOpen(false); setPerimeterPreviewOpen(true); }}
+          onPreviewPerimeter={() => {
+            setProfileOpen(false);
+            setPerimeterPreviewFromProfile(true);
+            setPerimeterPreviewOpen(true);
+          }}
         />
       )}
 
@@ -3402,7 +3417,10 @@ export default function App() {
           graph={graph}
           viewerId={data.myPersonId}
           currentLevel={perimeterApiLevel}
-          onClose={() => { setPerimeterPreviewOpen(false); setProfileOpen(true); }}
+          onClose={() => {
+            setPerimeterPreviewOpen(false);
+            if (perimeterPreviewFromProfile) setProfileOpen(true);
+          }}
           onSelectPerson={(id) => {
             setPerimeterPreviewOpen(false);
             activate(id);
