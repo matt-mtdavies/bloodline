@@ -1908,6 +1908,16 @@
   background: var(--accent-soft) !important;
   border-color: color-mix(in srgb, var(--accent) 28%, transparent) !important;
 }
+/* Supporting "N in the complete family tree" line — same treatment as
+   .home__hero-card-complete / .ti__hero-complete, so the perimeter/total
+   relationship reads identically wherever it appears. */
+.topbar__stats-complete {
+  display: block;
+  font-size: 10px;
+  color: var(--ink-faint, #b0a9a5);
+  text-align: center;
+  margin-top: 2px;
+}
 
 /* ── Stats detail popover ─────────────────────────────────────────────────── */
 .stats-popover {
@@ -7358,16 +7368,42 @@ button.health-notes {
 .gedcom__import-btn:active { opacity: 0.78; }
 
 /* Review step (MergeReviewStep.jsx) — what a merge-mode import will actually
-   do, shown before it commits. Reuses .gedcom__stats/.gedcom__names/
-   .gedcom__name-chip/.gedcom__dup-note/.gedcom__preview-actions verbatim
-   from the Preview step above; only the parts unique to a diff (the muted
-   "already up to date" stat, the per-person changed-facts list, the empty
-   "nothing new" state) need their own rules. */
+   do, shown before it commits. Reuses .gedcom__stats/.gedcom__dup-note/
+   .gedcom__preview-actions verbatim from the Preview step above; only the
+   parts unique to a diff (the sticky summary, the muted "already up to
+   date" stat, the shared checkbox-row list, the empty "nothing new" state)
+   need their own rules. */
 .gedcom__review {
   padding: 0 20px 32px;
   display: flex;
   flex-direction: column;
   gap: 20px;
+}
+
+/* Pins the numeric stats + plain-language summary sentence to the top of
+   the sheet's own scroll container while the lists below scroll past —
+   Codex design review: the numbers alone don't say what Apply will DO, and
+   on a long list that sentence would otherwise scroll out of view. The
+   negative side margins + matching padding let its background span the
+   sheet's full width flush with the edges it's pinned against. */
+.gedcom__review-sticky {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--paper);
+  margin: 0 -20px;
+  padding: 14px 20px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.gedcom__review-summary {
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--ink);
+  margin: 0;
 }
 
 .gedcom__stats--review {
@@ -7406,13 +7442,39 @@ button.health-notes {
   overflow-y: auto;
 }
 
-/* A row is now a per-person toggle (tap to leave that one out of the
-   apply) — a full-width reset button rather than static text, with a
-   checkmark that appears/disappears rather than a checkbox input, matching
-   the toggle-chip treatment new-people get just below. */
+/* A row is a per-person toggle (tap to leave that one out of the apply) —
+   ONE shared checkbox-row treatment for both new and enriched people
+   (Codex design review: two different widgets — a chip grid and a row
+   list — for the identical include/exclude action read as ambiguous). The
+   row is a plain container, not itself a button — it holds an inner
+   toggle button (name + checkmark) and an optional sibling "+N more"
+   details button, since a <button> can't nest another interactive element
+   and the two need independent click targets. */
 .gedcom__review-row {
-  width: 100%;
   background: var(--paper-deep);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: opacity 0.15s ease;
+}
+.gedcom__review-row:hover { background: color-mix(in srgb, var(--paper-deep) 85%, var(--ink)); }
+
+.gedcom__review-row--off {
+  opacity: 0.45;
+}
+
+/* A row findLikelyExistingMatches (lib/duplicates.js) thinks is probably
+   already in the tree under a different, dateless record — a dashed inset
+   ring rather than a solid one so it reads as "flagged," distinct from an
+   ordinary manual exclusion, and stays visible even if tapped back on. */
+.gedcom__review-row--flagged {
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+.gedcom__review-row-toggle {
+  flex: 1;
+  min-width: 0;
+  background: none;
   border: none;
   padding: 10px 14px;
   display: flex;
@@ -7422,13 +7484,7 @@ button.health-notes {
   text-align: left;
   font: inherit;
   color: inherit;
-  transition: opacity 0.15s ease;
   -webkit-tap-highlight-color: transparent;
-}
-.gedcom__review-row:hover { background: color-mix(in srgb, var(--paper-deep) 85%, var(--ink)); }
-
-.gedcom__review-row--off {
-  opacity: 0.45;
 }
 
 .gedcom__review-row-check {
@@ -7465,6 +7521,29 @@ button.health-notes {
   color: var(--ink-soft);
 }
 
+.gedcom__review-row-flag {
+  font-size: 12px;
+  color: #8a5a1f;
+}
+
+/* The optional per-row "+N more" / "Show less" disclosure (Codex design
+   review: a long diff shouldn't turn one row into a wall of text next to
+   everyone else's one-liner). A plain text-link button, not another
+   checkbox — it never affects inclusion, only how much of that row's own
+   changes list is visible. */
+.gedcom__review-row-details {
+  flex: 0 0 auto;
+  background: none;
+  border: none;
+  padding: 10px 14px 10px 0;
+  color: var(--accent);
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.gedcom__review-row-details:hover { text-decoration: underline; }
+
 .gedcom__review-section-head {
   display: flex;
   align-items: baseline;
@@ -7493,35 +7572,6 @@ button.health-notes {
 .gedcom__review-select-sep {
   margin: 0 4px;
   color: var(--hairline);
-}
-
-/* New-people chips are the same toggle idea, in the compact pill form
-   .gedcom__name-chip already uses in the Preview step. */
-.gedcom__names--scroll {
-  max-height: 180px;
-  overflow-y: auto;
-}
-
-.gedcom__name-chip--toggle {
-  border: 1.5px solid transparent;
-  cursor: pointer;
-  transition: opacity 0.15s ease, border-color 0.15s ease;
-  -webkit-tap-highlight-color: transparent;
-}
-.gedcom__name-chip--toggle:hover { border-color: var(--accent); }
-
-.gedcom__name-chip--off {
-  opacity: 0.4;
-  text-decoration: line-through;
-}
-
-/* A new-person chip findLikelyExistingMatches (lib/duplicates.js) thinks is
-   probably already in the tree under a different, dateless record — dashed
-   rather than solid so it reads as "flagged," distinct from an ordinary
-   manual exclusion, and stays visible even if the person taps it back on. */
-.gedcom__name-chip--flagged {
-  border-style: dashed;
-  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
 }
 
 .gedcom__review-flag-note {

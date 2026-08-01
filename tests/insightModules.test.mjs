@@ -1410,6 +1410,50 @@ test('missingRecords: null when every photo is set and no viewerId is given at a
   assert.equal(computeInsightModules(graph, null).missingRecords, null);
 });
 
+test('missingRecords: missingPhotos carries names + total/withPhoto for the personalized sentence', () => {
+  const people = [
+    { id: 'a', display_name: 'A', birth_date: '1970-01-01', photo: 'data:x' },
+    { id: 'b', display_name: 'B', birth_date: '1972-01-01' },
+    { id: 'c', display_name: 'C', birth_date: '1974-01-01' },
+  ];
+  const graph = buildGraph(people, []);
+  const m = computeInsightModules(graph, null).missingRecords.missingPhotos;
+  assert.deepEqual(new Set(m.names), new Set(['B', 'C']));
+  assert.equal(m.totalPeople, 3);
+  assert.equal(m.withPhoto, 1);
+});
+
+test('highlightCandidates: missingPhotos names people directly when the gap is small ("Add a portrait for...")', () => {
+  const people = [
+    { id: 'a', display_name: 'Fred Smith', birth_date: '1970-01-01', photo: 'data:x' },
+    { id: 'b', display_name: 'Jane Doe', birth_date: '1972-01-01' },
+  ];
+  const graph = buildGraph(people, []);
+  const candidates = highlightCandidates(computeInsightModules(graph, null));
+  assert.ok(candidates.includes('Add a portrait for Jane Doe.'));
+});
+
+test('highlightCandidates: missingPhotos names up to three people with an Oxford-comma "and"', () => {
+  const people = [
+    { id: 'a', display_name: 'A', birth_date: '1970-01-01' },
+    { id: 'b', display_name: 'B', birth_date: '1971-01-01' },
+    { id: 'c', display_name: 'C', birth_date: '1972-01-01' },
+  ];
+  const graph = buildGraph(people, []);
+  const candidates = highlightCandidates(computeInsightModules(graph, null));
+  assert.ok(candidates.includes('Add a portrait for A, B, and C.'));
+});
+
+test('highlightCandidates: missingPhotos switches to progress framing (not deficit language) past 3 people', () => {
+  const people = Array.from({ length: 10 }, (_, i) => ({
+    id: `p${i}`, display_name: `Person ${i}`, birth_date: '1970-01-01', photo: i < 6 ? 'data:x' : null,
+  }));
+  const graph = buildGraph(people, []);
+  const candidates = highlightCandidates(computeInsightModules(graph, null));
+  assert.ok(candidates.includes('6 of 10 people have a portrait so far.'));
+  assert.ok(!candidates.some((c) => /still have|missing a photograph/.test(c)), 'no deficit-oriented phrasing should remain');
+});
+
 test('sameAgeMarriages: pairs two people who married for the first time at the same age', () => {
   const people = [
     { id: 'uncle', display_name: 'Uncle Roy', birth_date: '1950-01-01' },

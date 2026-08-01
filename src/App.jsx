@@ -207,11 +207,11 @@ const MAX_BUBBLE_REVEAL = 250;
 // lib/staggeredReveal.js, shared by toggleExpandAll and the perimeter
 // reveal — see that module's own header for the reasoning.
 
-// Shared by familyStats (the topbar stats pill, scoped by the unrelated
-// "Bloodline only" toggle) and homeStats (the Home hub hero, scoped by the
-// viewer's Family Perimeter personal cohort — see homeStats below). Pure:
-// scopeIds narrows which people/photos/memories/relationships count,
-// null means "the complete tree."
+// Shared by familyStats (the topbar stats pill, scoped by "Bloodline only"
+// AND the viewer's Family Perimeter together) and homeStats (the Home hub
+// hero, scoped by the Family Perimeter personal cohort alone — see homeStats
+// below). Pure: scopeIds narrows which people/photos/memories/relationships
+// count, null means "the complete tree."
 function computeFamilyStatsFor(graph, data, scopeIds) {
   const people = scopeIds ? graph.people.filter((p) => scopeIds.has(p.id)) : graph.people;
   const photos = scopeIds ? data.photos.filter((ph) => scopeIds.has(ph.person_id)) : data.photos;
@@ -891,21 +891,44 @@ export default function App() {
   // Scoped to blood relatives only when "Bloodline only" is on — otherwise the
   // pill reads "Bloodline only · 268 people" while still describing the whole
   // tree, flatly contradicting the filter it's supposed to be summarizing.
+  //
+  // Also scoped to the viewer's Family Perimeter (Codex design review: "make
+  // the active perimeter unmistakable" — previously this pill ALWAYS showed
+  // the complete-archive total even with a narrower perimeter active, on the
+  // stated reasoning that the pill "already truncates... cramming more text
+  // in would just get cut off." That's still true of the perimeter LEVEL
+  // name, which is why the separate topbar__perimeter-badge below still
+  // carries it — but the plain leading NUMBER has room, and showing the full
+  // archive count as the primary, most prominent figure in the header while
+  // the perimeter (the thing actually governing what's on screen) was a
+  // count-less secondary badge had it backwards. Mirrors the exact
+  // homeStats/TreeInsights convention below: scoped count leads, completeTotal
+  // is the supporting "N in the complete family tree" line, shown only when
+  // the perimeter genuinely narrows things.
   const familyStats = useMemo(() => {
-    const scopeIds = bloodlineOnly ? bloodRelativesOf(graph, data.myPersonId || DEFAULT_FOCUS) : null;
-    return computeFamilyStatsFor(graph, data, scopeIds);
-  }, [graph, data.photos, data.memories, data.relationships, data.myPersonId, bloodlineOnly]);
+    const bloodScope = bloodlineOnly ? bloodRelativesOf(graph, data.myPersonId || DEFAULT_FOCUS) : null;
+    const personalIds = insightCohorts?.personal;
+    const perimeterNarrows = perimeterActive && personalIds && personalIds.size < graph.people.length;
+    let scopeIds = null;
+    if (bloodScope && perimeterNarrows) {
+      scopeIds = new Set([...bloodScope].filter((id) => personalIds.has(id)));
+    } else if (perimeterNarrows) {
+      scopeIds = personalIds;
+    } else if (bloodScope) {
+      scopeIds = bloodScope;
+    }
+    const base = computeFamilyStatsFor(graph, data, scopeIds);
+    return { ...base, completeTotal: perimeterNarrows ? graph.people.length : null };
+  }, [graph, data.photos, data.memories, data.relationships, data.myPersonId, bloodlineOnly, insightCohorts, perimeterActive]);
 
   // Home hub hero stats (PR #91 review): a SEPARATE stat object from
-  // familyStats above, scoped to the viewer's Family Perimeter personal
-  // cohort rather than the unrelated "Bloodline only" toggle. Deliberately
-  // not folded into familyStats itself — that object also feeds the
-  // topbar's StatsPopover, which isn't part of what the review flagged and
-  // has its own, independent scoping semantic; narrowing it too would be a
-  // bigger, undiscussed behavior change than this fix calls for. Carries
-  // completeTotal (§4.3's "never an unlabelled count when the cohort could
-  // be ambiguous") only when a real narrower perimeter is active, mirroring
-  // the same convention TreeInsights/TimelineView already established.
+  // familyStats above — scoped ONLY to the viewer's Family Perimeter
+  // personal cohort, deliberately ignoring the unrelated "Bloodline only"
+  // toggle (that's a display filter for the canvas, not something the Home
+  // hub's own hero has any UI for). Carries completeTotal (§4.3's "never an
+  // unlabelled count when the cohort could be ambiguous") only when a real
+  // narrower perimeter is active, the same convention TreeInsights/
+  // TimelineView/the topbar's own familyStats above now all share.
   const homeStats = useMemo(() => {
     const personalIds = insightCohorts?.personal;
     const narrowed = perimeterActive && personalIds && personalIds.size < graph.people.length;

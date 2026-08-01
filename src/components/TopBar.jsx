@@ -187,15 +187,23 @@ export default function TopBar({ familyName, stats, view, layout, syncStatus, sy
               {stats.memories > 0 && <> · {stats.memories} {stats.memories === 1 ? 'memory' : 'memories'}</>}
             </button>
           )}
+          {/* Codex design review: "make the active perimeter unmistakable" —
+              the pill above now leads with the PERIMETER-scoped count
+              whenever one is narrower than Everyone (see familyStats in
+              App.jsx), matching the exact convention Home's hero and Tree
+              Insights already used. This line is the supporting "and here's
+              the real total" context, same wording/weight as those two
+              surfaces' own completeTotal line — only rendered when the
+              perimeter genuinely narrows the count, silent otherwise. */}
+          {stats?.completeTotal != null && (
+            <span className="topbar__stats-complete">{stats.completeTotal} in the complete family tree</span>
+          )}
           {/* Real feedback: "we need to make it better known that [a narrowed
-              perimeter is] in effect" — the stats pill above deliberately
-              never reflects the perimeter (it's the true archive total, and
-              already truncates on a real family; cramming more text in would
-              just get cut off). A SEPARATE small badge instead, echoing the
-              same ring motif the Preview sheet itself uses at icon scale, so
-              it visually reads as "that, zoomed out" — shown only when a
-              level narrower than Everyone is actually active, silent for the
-              common case. */}
+              perimeter is] in effect" — a separate small badge naming WHICH
+              perimeter level is active, echoing the same ring motif the
+              Preview sheet itself uses at icon scale, so it visually reads
+              as "that, zoomed out". Shown only when a level narrower than
+              Everyone is actually active, silent for the common case. */}
           {perimeterActive && perimeterLevelLabel && onOpenPerimeterPreview && (
             <button
               className={`perimeter-badge perimeter-badge--${perimeterLevel}`}
