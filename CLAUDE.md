@@ -55,6 +55,14 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
 
 ## Status — what's built
 
+- **Member-management authorization hardening:** the server-side
+  `/api/family/members` boundary now treats the target member's role as
+  authoritative: a Co-Admin cannot demote a fellow Co-Admin, and the owner
+  membership cannot be changed through this endpoint. The member-management
+  UI mirrors that hierarchy by showing its More action only for people below
+  the current member's role. `tests/family-members-auth.test.mjs` pins the
+  peer-Co-Admin, owner-authorized, and immutable-owner cases. No tree data,
+  migration, or Cloudflare configuration is involved.
 - **Phase 1 ✅:** rich profile destination (hero, kin-to-viewer, tags, About, key-life-events
   timeline, grouped relationships, completeness meter), expanded person records
   (`occupation`, `residence`, `tags[]`, `events[]`), graph scaling.
@@ -2160,17 +2168,10 @@ done/partial/not-started). Read it before planning a new sprint.
 
 ## Open thread / likely next steps
 
-- **Immediate: PR #109 is open, unmerged** — "Premium UX refinement: member directory,
-  Family/Profile settings, Family overview" (branch `claude/continue-build-y05lyu`, full
-  writeup in the Status section above). Everything in it is verified (full unit suite,
-  `npm run build`, the standard smoke test, and a live 34-member-roster Playwright pass all
-  clean) but it has not yet been reviewed or merged. Read the PR description and diff before
-  starting new work on any of the touched files (`TopBar.jsx`'s `StatsPopover`,
-  `DuplicatesSheet.jsx`/`IntegritySheet.jsx`'s new `embedded` mode, `FamilySettings.jsx`,
-  `UserProfile.jsx`, the two new components `ArchiveCareSheet.jsx`/`ManageMemberSheet.jsx`,
-  and `lib/archiveCare.js`) — if it's still open, prefer branching from it or waiting for it
-  to merge over redoing the same information-architecture pass. If a maintainer has left
-  review feedback on it, that supersedes this summary.
+- **PR #109 merged:** "Premium UX refinement: member directory, Family/Profile settings,
+  Family overview" is now in `main`. Its implementation and verification notes remain in the
+  Status section above; subsequent member-management changes must preserve its nested-sheet
+  Escape handling and the server-side role hierarchy.
 - The next wave of Codex feedback that prompted PR #109 was specific to the member
   list/family administration surfaces; there may be a **further round of feedback on PR
   #109 itself** once it's reviewed — check open PR comments before assuming this thread is

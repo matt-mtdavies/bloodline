@@ -20,7 +20,10 @@ export default function ManageMemberSheet({ member, assignableRoles, isSelf, onU
 
   const initials = (member.display_name || member.email).slice(0, 2).toUpperCase();
   const joined = new Date(member.joined_at * 1000).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
-  const canChangeRole = assignableRoles.length > 0 && !isSelf && member.role !== 'owner';
+  // A manager may act only on someone below their own role. `assignableRoles`
+  // contains exactly the roles below the current member, so this also keeps a
+  // Co-Admin from being offered controls for a fellow Co-Admin.
+  const canChangeRole = !isSelf && assignableRoles.includes(member.role);
   const canRemove = canChangeRole; // same protection bar as changing role
 
   async function handleRemove() {

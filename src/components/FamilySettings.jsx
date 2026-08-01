@@ -623,7 +623,7 @@ export default function FamilySettings({
                         key={m.id}
                         member={m}
                         isSelf={m.id === data.myId}
-                        canManage={isOwnerOrCoadmin}
+                        canManage={isOwnerOrCoadmin && m.id !== data.myId && roleRank(m.role) < roleRank(effectiveRole)}
                         onManage={() => setManageMemberId(m.id)}
                       />
                     ))}
@@ -637,7 +637,7 @@ export default function FamilySettings({
                         key={m.id}
                         member={m}
                         isSelf={m.id === data.myId}
-                        canManage={isOwnerOrCoadmin}
+                        canManage={isOwnerOrCoadmin && m.id !== data.myId && roleRank(m.role) < roleRank(effectiveRole)}
                         onManage={() => setManageMemberId(m.id)}
                       />
                     ))}
