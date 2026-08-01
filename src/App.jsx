@@ -76,6 +76,7 @@ import { storeToGedcom } from './lib/gedcom.js';
 import { detectRegion, nearestWorldEvent } from './lib/worldEvents.js';
 import { findDuplicatePairs, pairKey, loadDismissedDuplicates, saveDismissedDuplicates } from './lib/duplicates.js';
 import { computeIntegrityIssues, loadDismissedIntegrityIssues, saveDismissedIntegrityIssues } from './lib/integrity.js';
+import { loadSeenArchiveCareKeys, saveSeenArchiveCareKeys, hasUnseenKeys } from './lib/archiveCare.js';
 import { useIdleValue } from './lib/useIdleValue.js';
 import { timed } from './lib/perfInstrument.js';
 import { trackActivation } from './lib/activation.js';
@@ -124,7 +125,7 @@ import TreeInsights from './components/TreeInsights.jsx';
 import KeepsakeView from './components/Keepsake/KeepsakeView.jsx';
 import { buildKeepsakeFacts, factsHash } from './lib/keepsake.js';
 import DuplicatesSheet from './components/DuplicatesSheet.jsx';
-import IntegritySheet from './components/IntegritySheet.jsx';
+import ArchiveCareSheet from './components/ArchiveCareSheet.jsx';
 import TroveSearchSheet from './components/TroveSearchSheet.jsx';
 import { fetchTroveArticle } from './lib/trove.js';
 import LineageBanner from './components/LineageBanner.jsx';
@@ -380,7 +381,32 @@ export default function App() {
   const [isAnonymousTrial] = useState(() => isNewUrl);
   const [user, setUser] = useState(null);
   const [duplicatesOpen, setDuplicatesOpen] = useState(false);
-  const [integrityOpen, setIntegrityOpen] = useState(false);
+  // "Care for your archive" — the combined duplicates+integrity maintenance
+  // workspace (ArchiveCareSheet.jsx), replacing what used to be two separate
+  // topbar popover entries. Superseded the old standalone `integrityOpen`
+  // (there was never a person-focused integrity entry point the way
+  // duplicatesOpen/duplicatesFocusId has for duplicates, so nothing else
+  // needs the old state).
+  const [archiveCareOpen, setArchiveCareOpen] = useState(false);
+  const [seenArchiveCareKeys, setSeenArchiveCareKeys] = useState(loadSeenArchiveCareKeys);
+  // Archive Care's combined count + "is there something NEW" notification
+  // state (premium-UX brief: a permanent raw-count badge reads as urgent
+  // forever; a dot that only appears for genuinely unseen items doesn't).
+  const archiveCareKeys = useMemo(
+    () => [...duplicatePairs.map((p) => pairKey(p.aId, p.bId)), ...integrityIssues.map((i) => i.key)],
+    [duplicatePairs, integrityIssues],
+  );
+  const archiveCareCount = archiveCareKeys.length;
+  const archiveCareHasNew = hasUnseenKeys(archiveCareKeys, seenArchiveCareKeys);
+  const openArchiveCare = () => {
+    setSeenArchiveCareKeys((prev) => {
+      const next = new Set(prev);
+      for (const k of archiveCareKeys) next.add(k);
+      saveSeenArchiveCareKeys(next);
+      return next;
+    });
+    setArchiveCareOpen(true);
+  };
   const [troveSearchPersonId, setTroveSearchPersonId] = useState(null);
   // When opened from a person's "Enrich this profile" sheet, filters the
   // duplicates list down to just that person's own possible matches.
@@ -2554,7 +2580,7 @@ export default function App() {
     openId || addAnchorId || editId || timelineId || memoryId || lightbox || crop ||
     legendOpen || settingsOpen || insightsOpen || timelineOpen || docViewer ||
     invitePersonId || activityOpen || gedcomOpen || fsImportOpen || profileOpen ||
-    homeOpen || howItWorksOpen || familyTreesOpen || searchOpen || duplicatesOpen || integrityOpen || promptClaim || showInstall ||
+    homeOpen || howItWorksOpen || familyTreesOpen || searchOpen || duplicatesOpen || archiveCareOpen || promptClaim || showInstall ||
     keepsakeId || troveSearchPersonId || perimeterPreviewOpen
   );
 
@@ -2711,10 +2737,9 @@ export default function App() {
         onSearch={openSearch}
         onOpenInsights={() => setInsightsOpen(true)}
         onOpenTimeline={() => setTimelineOpen(true)}
-        duplicateCount={canManageTreeStructure ? duplicatePairs.length : 0}
-        onOpenDuplicates={canManageTreeStructure && duplicatePairs.length ? () => setDuplicatesOpen(true) : null}
-        integrityIssueCount={canManageTreeStructure ? integrityIssues.length : 0}
-        onOpenIntegrityIssues={canManageTreeStructure && integrityIssues.length ? () => setIntegrityOpen(true) : null}
+        archiveCareCount={canManageTreeStructure ? archiveCareCount : 0}
+        archiveCareHasNew={canManageTreeStructure && archiveCareHasNew}
+        onOpenArchiveCare={canManageTreeStructure && archiveCareCount ? openArchiveCare : null}
         storageWarning={storageWarning}
         storageNearLimit={storageNearLimit}
         treeSizeWarning={treeSizeWarning}
@@ -3087,7 +3112,7 @@ export default function App() {
         canEdit={canEditTree}
         canContribute={canContributeTree}
         isAdmin={canManageTreeStructure}
-        lockEscape={!!(addAnchorId || editId || timelineId || memoryId || lightbox || crop || invitePersonId || duplicatesOpen || integrityOpen || keepsakeId || troveSearchPersonId)}
+        lockEscape={!!(addAnchorId || editId || timelineId || memoryId || lightbox || crop || invitePersonId || duplicatesOpen || archiveCareOpen || keepsakeId || troveSearchPersonId)}
         onClose={closePerson}
         onFocus={(id) => {
           closePersonForTreeAction();
@@ -3269,13 +3294,17 @@ export default function App() {
         />
       )}
 
-      {integrityOpen && (
-        <IntegritySheet
-          issues={integrityIssues}
+      {archiveCareOpen && (
+        <ArchiveCareSheet
+          duplicatePairs={duplicatePairs}
+          integrityIssues={integrityIssues}
           graph={graph}
-          onDismiss={dismissIntegrityIssue}
-          onClose={() => setIntegrityOpen(false)}
-          onOpenPerson={(id) => { setIntegrityOpen(false); openPerson(id); }}
+          onMerge={(keepId, dropId) => { mergePeople(keepId, dropId); if (activeId === dropId) activate(keepId); }}
+          onDismissDuplicate={dismissDuplicatePair}
+          onShowInTree={showDuplicatePairInTree}
+          onDismissIntegrity={dismissIntegrityIssue}
+          onOpenPerson={(id) => { setArchiveCareOpen(false); openPerson(id); }}
+          onClose={() => setArchiveCareOpen(false)}
         />
       )}
 

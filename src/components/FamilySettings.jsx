@@ -1,20 +1,31 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-  ROLES, ROLE_LABELS, ROLE_COLORS, canInvite, canEdit, roleRank,
+  ROLES, ROLE_LABELS, ROLE_COLORS, ROLE_DESCS, canInvite, canEdit, roleRank,
 } from '../lib/visibility.js';
 import ShareLink from './ShareLink.jsx';
 import { ActivityRow, dayLabel } from './ActivityFeed.jsx';
 import ReturnMark from './ReturnMark.jsx';
 import ExportArchiveCard from './ExportArchiveCard.jsx';
+import ManageMemberSheet from './ManageMemberSheet.jsx';
 import { clearLocalData } from '../data/store.js';
 
 const INVITE_ROLES = ['coadmin', 'editor', 'contributor', 'viewer'];
+// Occasional admin tools, tucked behind "More" rather than sitting as
+// equal-weight tabs next to Members/Invites (premium-UX brief §3).
+const SECONDARY_TABS = [
+  { key: 'activity', label: 'Audit log' },
+  { key: 'restore', label: 'Restore' },
+  { key: 'calendar', label: 'Birthdays' },
+];
 
 export default function FamilySettings({
   myRole, familyName, onUpdateFamilyName, onReset, onLogout, onClose, onImportGedcom, onImportFamilySearch,
   onExportGedcom, people = [], userEmail, onSelectPerson,
 }) {
   const [tab, setTab] = useState('members'); // 'members' | 'invite' | 'activity' | 'restore' | 'calendar'
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
+  const [manageMemberId, setManageMemberId] = useState(null);
+  const [memberSearch, setMemberSearch] = useState('');
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [fbType, setFbType]     = useState('idea');
@@ -239,10 +250,26 @@ export default function FamilySettings({
   }, [tab, auditLoaded, loadAudit]);
 
   useEffect(() => {
-    const onKey = (e) => e.key === 'Escape' && onClose();
+    // manageMemberId guard: ManageMemberSheet is a nested overlay with its
+    // own independent Escape listener — without this, one Escape press
+    // would close both it AND the whole Family Settings sheet at once,
+    // since both listeners are bound to window and neither's
+    // stopPropagation() reaches a sibling listener on the same target.
+    const onKey = (e) => e.key === 'Escape' && !manageMemberId && onClose();
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  }, [onClose, manageMemberId]);
+
+  // Audit log / Restore / Birthdays live behind a "More" overflow instead of
+  // three more equal-width tabs (premium-UX brief §3: don't let 4+ tabs
+  // compete on mobile) — close it on any outside tap, same convention a
+  // native menu would use.
+  useEffect(() => {
+    if (!moreMenuOpen) return;
+    const onDocClick = (e) => { if (!e.target.closest('.fs__more-wrap')) setMoreMenuOpen(false); };
+    document.addEventListener('pointerdown', onDocClick);
+    return () => document.removeEventListener('pointerdown', onDocClick);
+  }, [moreMenuOpen]);
 
   const busy = inviteStatus === 'linking' || inviteStatus === 'sending';
   const isReady = inviteStatus === 'sent' || inviteStatus === 'sent-no-email' || inviteStatus === 'link';
@@ -395,6 +422,23 @@ export default function FamilySettings({
   const effectiveRole = data?.myRole || myRole;
   const isOwnerOrCoadmin = canInvite(effectiveRole);
 
+  // Member directory redesign (premium-UX brief §4): group by role rather
+  // than one long list of raw emails, and search once the family is big
+  // enough that scanning stops being trivial (~12+ members).
+  const { adminMembers, regularMembers, memberMatchCount } = useMemo(() => {
+    const all = data?.members || [];
+    const q = memberSearch.trim().toLowerCase();
+    const filtered = q
+      ? all.filter((m) => (m.display_name || '').toLowerCase().includes(q) || m.email.toLowerCase().includes(q))
+      : all;
+    const byName = (a, b) => (a.display_name || a.email).localeCompare(b.display_name || b.email);
+    const admins = filtered.filter((m) => roleRank(m.role) >= roleRank('coadmin')).sort(byName);
+    const regular = filtered.filter((m) => roleRank(m.role) < roleRank('coadmin')).sort(byName);
+    return { adminMembers: admins, regularMembers: regular, memberMatchCount: filtered.length };
+  }, [data?.members, memberSearch]);
+
+  const manageMember = data?.members?.find((m) => m.id === manageMemberId) || null;
+
   // Audit log rendering support — same shape ActivityFeed uses, so its
   // ActivityRow can be reused as-is.
   const peopleById = useMemo(() => new Map(people.map((p) => [p.id, p])), [people]);
@@ -495,133 +539,119 @@ export default function FamilySettings({
 
         {data?.familyId && (
           <>
-            {/* Tabs */}
-            <div className="fs__tabs">
-              <button
-                className={`fs__tab${tab === 'members' ? ' fs__tab--on' : ''}`}
-                onClick={() => setTab('members')}
-              >
-                Members{data.members?.length ? ` (${data.members.length})` : ''}
-              </button>
-              {isOwnerOrCoadmin && (
+            {/* Primary nav: Members / Invites, segmented — the two things
+                someone administering a family actually does day to day.
+                Audit log / Restore / Birthdays are real but occasional, so
+                they live behind "More" rather than competing for the same
+                row (premium-UX brief §3). */}
+            <div className="fs__nav">
+              <div className="fs__seg">
                 <button
-                  className={`fs__tab${tab === 'invite' ? ' fs__tab--on' : ''}`}
-                  onClick={() => setTab('invite')}
+                  className={`fs__seg-btn${tab === 'members' ? ' fs__seg-btn--on' : ''}`}
+                  onClick={() => { setTab('members'); setMoreMenuOpen(false); }}
                 >
-                  Invite
+                  Members{data.members?.length ? ` (${data.members.length})` : ''}
                 </button>
-              )}
+                {isOwnerOrCoadmin && (
+                  <button
+                    className={`fs__seg-btn${tab === 'invite' ? ' fs__seg-btn--on' : ''}`}
+                    onClick={() => { setTab('invite'); setMoreMenuOpen(false); }}
+                  >
+                    Invites{dedupedInvites.length ? ` (${dedupedInvites.length})` : ''}
+                  </button>
+                )}
+              </div>
               {isOwnerOrCoadmin && (
-                <button
-                  className={`fs__tab${tab === 'activity' ? ' fs__tab--on' : ''}`}
-                  onClick={() => setTab('activity')}
-                >
-                  Audit log
-                </button>
-              )}
-              {isOwnerOrCoadmin && (
-                <button
-                  className={`fs__tab${tab === 'restore' ? ' fs__tab--on' : ''}`}
-                  onClick={() => setTab('restore')}
-                >
-                  Restore
-                </button>
-              )}
-              {isOwnerOrCoadmin && (
-                <button
-                  className={`fs__tab${tab === 'calendar' ? ' fs__tab--on' : ''}`}
-                  onClick={() => setTab('calendar')}
-                >
-                  Birthdays
-                </button>
+                <div className="fs__more-wrap">
+                  <button
+                    className={`fs__more-btn${SECONDARY_TABS.some((t) => t.key === tab) ? ' fs__more-btn--on' : ''}`}
+                    onClick={() => setMoreMenuOpen((o) => !o)}
+                    aria-haspopup="true"
+                    aria-expanded={moreMenuOpen}
+                    aria-label="More family tools"
+                  >
+                    <MoreIcon />
+                  </button>
+                  {moreMenuOpen && (
+                    <div className="fs__more-menu" role="menu">
+                      {SECONDARY_TABS.map((t) => (
+                        <button
+                          key={t.key}
+                          role="menuitem"
+                          className={`fs__more-item${tab === t.key ? ' fs__more-item--on' : ''}`}
+                          onClick={() => { setTab(t.key); setMoreMenuOpen(false); }}
+                        >
+                          {t.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               )}
             </div>
 
+            {SECONDARY_TABS.some((t) => t.key === tab) && (
+              <div className="fs__subview-head">
+                <button className="fs__subview-back" onClick={() => setTab('members')}>
+                  <BackIcon /> Members
+                </button>
+                <span className="fs__subview-title">{SECONDARY_TABS.find((t) => t.key === tab)?.label}</span>
+              </div>
+            )}
+
             {tab === 'members' && (
               <div className="fs__members">
-                {data.members?.map((m) => (
-                  <MemberRow
-                    key={m.id}
-                    member={m}
-                    myRole={effectiveRole}
-                    isSelf={m.id === data.myId}
-                    onUpdateRole={updateRole}
-                    onRemove={removeMember}
-                    confirming={pendingConfirm?.type === 'member' && pendingConfirm?.id === m.id}
-                    onRequestConfirm={() => setPendingConfirm({ type: 'member', id: m.id })}
-                    onCancelConfirm={() => setPendingConfirm(null)}
+                {isOwnerOrCoadmin && (
+                  <button type="button" className="fs__invite-cta" onClick={() => setTab('invite')}>
+                    <PlusIcon /> Invite family
+                  </button>
+                )}
+                {(data.members?.length || 0) > 12 && (
+                  <input
+                    className="fs__input fs__member-search"
+                    type="search"
+                    placeholder="Search members"
+                    value={memberSearch}
+                    onChange={(e) => setMemberSearch(e.target.value)}
                   />
-                ))}
-                {dedupedInvites.length > 0 && (
+                )}
+                {adminMembers.length > 0 && (
                   <>
-                    <p className="fs__section-label">Pending invites</p>
-                    {dedupedInvites.map((inv) => {
-                      const confirming = pendingConfirm?.type === 'invite' && pendingConfirm?.id === inv.id;
-                      return (
-                        <div key={inv.id} className="fs__member">
-                          <div className="fs__member-avatar">{inv.email.slice(0, 2).toUpperCase()}</div>
-                          <div className="fs__member-info">
-                            <span className="fs__member-email">{inv.email}</span>
-                            <span className="fs__member-joined fs__invite-pending">Pending</span>
-                          </div>
-                          {confirming ? (
-                            <div className="fs__confirm-inline">
-                              <span className="fs__confirm-label">Cancel invite?</span>
-                              <button className="fs__confirm-yes" onClick={() => cancelInvite(inv.id)}>Yes</button>
-                              <button className="fs__confirm-no" onClick={() => setPendingConfirm(null)}>No</button>
-                            </div>
-                          ) : (
-                            <>
-                              {isOwnerOrCoadmin ? (
-                                <select
-                                  className="fs__role-select"
-                                  value={inv.role}
-                                  onChange={(e) => updateInviteRole(inv.id, e.target.value)}
-                                >
-                                  {INVITE_ROLES.map((r) => (
-                                    <option key={r} value={r}>{ROLE_LABELS[r]}</option>
-                                  ))}
-                                </select>
-                              ) : (
-                                <RoleBadge role={inv.role} />
-                              )}
-                              {isOwnerOrCoadmin && inv.invite_url && (
-                                <button
-                                  className={`fs__resend-btn${copiedId === inv.id ? ' fs__resend-btn--sent' : ''}`}
-                                  onClick={() => copyInviteLink(inv)}
-                                  aria-label="Copy invite link"
-                                >
-                                  {copiedId === inv.id ? 'Copied' : 'Copy link'}
-                                </button>
-                              )}
-                              {isOwnerOrCoadmin && (
-                                <button
-                                  className={`fs__resend-btn${resendStates[inv.id] === 'sent' ? ' fs__resend-btn--sent' : ''}${resendStates[inv.id] === 'error' ? ' fs__resend-btn--err' : ''}`}
-                                  onClick={() => resendInvite(inv.id)}
-                                  disabled={resendStates[inv.id] === 'sending'}
-                                  aria-label="Resend invite email"
-                                >
-                                  {resendStates[inv.id] === 'sending' ? '…'
-                                    : resendStates[inv.id] === 'sent' ? 'Sent!'
-                                    : resendStates[inv.id] === 'error' ? 'Failed'
-                                    : 'Resend'}
-                                </button>
-                              )}
-                              {isOwnerOrCoadmin && (
-                                <button
-                                  className="fs__remove"
-                                  onClick={() => setPendingConfirm({ type: 'invite', id: inv.id })}
-                                  aria-label="Cancel invite"
-                                >
-                                  <CloseIcon />
-                                </button>
-                              )}
-                            </>
-                          )}
-                        </div>
-                      );
-                    })}
+                    <p className="fs__section-label">Owner &amp; co-admins</p>
+                    {adminMembers.map((m) => (
+                      <MemberRow
+                        key={m.id}
+                        member={m}
+                        isSelf={m.id === data.myId}
+                        canManage={isOwnerOrCoadmin}
+                        onManage={() => setManageMemberId(m.id)}
+                      />
+                    ))}
                   </>
+                )}
+                {regularMembers.length > 0 && (
+                  <>
+                    <p className="fs__section-label">Members</p>
+                    {regularMembers.map((m) => (
+                      <MemberRow
+                        key={m.id}
+                        member={m}
+                        isSelf={m.id === data.myId}
+                        canManage={isOwnerOrCoadmin}
+                        onManage={() => setManageMemberId(m.id)}
+                      />
+                    ))}
+                  </>
+                )}
+                {isOwnerOrCoadmin && (data.members?.length || 0) <= 1 && !memberSearch && (
+                  <p className="fs__empty-sub" style={{ textAlign: 'center', padding: '12px 0 4px' }}>
+                    Invite the first family member to start sharing this tree.
+                  </p>
+                )}
+                {memberMatchCount === 0 && (
+                  <p className="fs__empty-sub" style={{ textAlign: 'center', padding: '16px 0' }}>
+                    No members match &ldquo;{memberSearch}&rdquo;.
+                  </p>
                 )}
               </div>
             )}
@@ -679,6 +709,9 @@ export default function FamilySettings({
                         </button>
                       ))}
                     </div>
+                    <p className="fs__invite-privacy">
+                      Invited people only see the family information their role permits.
+                    </p>
 
                     <button type="button" className="fs__link-btn" onClick={createLink} disabled={busy}>
                       <FsLinkIcon />
@@ -707,6 +740,70 @@ export default function FamilySettings({
                       </button>
                     </form>
                   </>
+                )}
+
+                <p className="fs__section-label" style={{ marginTop: 22 }}>Pending invitations</p>
+                {dedupedInvites.length === 0 ? (
+                  <p className="fs__empty-sub">No pending invitations.</p>
+                ) : (
+                  dedupedInvites.map((inv) => {
+                    const confirming = pendingConfirm?.type === 'invite' && pendingConfirm?.id === inv.id;
+                    return (
+                      <div key={inv.id} className="fs__member">
+                        <div className="fs__member-avatar">{inv.email.slice(0, 2).toUpperCase()}</div>
+                        <div className="fs__member-info">
+                          <span className="fs__member-email">{inv.email}</span>
+                          <span className="fs__member-joined fs__invite-pending">Pending</span>
+                        </div>
+                        {confirming ? (
+                          <div className="fs__confirm-inline">
+                            <span className="fs__confirm-label">Cancel invite?</span>
+                            <button className="fs__confirm-yes" onClick={() => cancelInvite(inv.id)}>Yes</button>
+                            <button className="fs__confirm-no" onClick={() => setPendingConfirm(null)}>No</button>
+                          </div>
+                        ) : (
+                          <>
+                            <select
+                              className="fs__role-select"
+                              value={inv.role}
+                              onChange={(e) => updateInviteRole(inv.id, e.target.value)}
+                            >
+                              {INVITE_ROLES.map((r) => (
+                                <option key={r} value={r}>{ROLE_LABELS[r]}</option>
+                              ))}
+                            </select>
+                            {inv.invite_url && (
+                              <button
+                                className={`fs__resend-btn${copiedId === inv.id ? ' fs__resend-btn--sent' : ''}`}
+                                onClick={() => copyInviteLink(inv)}
+                                aria-label="Copy invite link"
+                              >
+                                {copiedId === inv.id ? 'Copied' : 'Copy link'}
+                              </button>
+                            )}
+                            <button
+                              className={`fs__resend-btn${resendStates[inv.id] === 'sent' ? ' fs__resend-btn--sent' : ''}${resendStates[inv.id] === 'error' ? ' fs__resend-btn--err' : ''}`}
+                              onClick={() => resendInvite(inv.id)}
+                              disabled={resendStates[inv.id] === 'sending'}
+                              aria-label="Resend invite email"
+                            >
+                              {resendStates[inv.id] === 'sending' ? '…'
+                                : resendStates[inv.id] === 'sent' ? 'Sent!'
+                                : resendStates[inv.id] === 'error' ? 'Failed'
+                                : 'Resend'}
+                            </button>
+                            <button
+                              className="fs__remove"
+                              onClick={() => setPendingConfirm({ type: 'invite', id: inv.id })}
+                              aria-label="Cancel invite"
+                            >
+                              <CloseIcon />
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    );
+                  })
                 )}
               </div>
             )}
@@ -1017,6 +1114,16 @@ export default function FamilySettings({
           )}
         </div>
       </div>
+      {manageMember && (
+        <ManageMemberSheet
+          member={manageMember}
+          assignableRoles={INVITE_ROLES.filter((r) => roleRank(r) < roleRank(effectiveRole))}
+          isSelf={manageMember.id === data.myId}
+          onUpdateRole={updateRole}
+          onRemove={async (id) => { await removeMember(id); setManageMemberId(null); }}
+          onClose={() => setManageMemberId(null)}
+        />
+      )}
     </div>
   );
 }
@@ -1033,9 +1140,10 @@ function formatSnapshotTime(iso) {
   return `${date}, ${time}`;
 }
 
-function MemberRow({ member, myRole, isSelf, onUpdateRole, onRemove, confirming, onRequestConfirm, onCancelConfirm }) {
-  const canChange = canInvite(myRole) && !isSelf && member.role !== 'owner';
-  const assignableRoles = INVITE_ROLES.filter((r) => roleRank(r) < roleRank(myRole));
+// Simplified per the member-directory redesign: a quiet role badge, plus
+// one "More" action that opens ManageMemberSheet instead of a permanent
+// inline role <select> + bare "×" on every single row (premium-UX brief §4).
+function MemberRow({ member, isSelf, canManage, onManage }) {
   const initials = (member.display_name || member.email).slice(0, 2).toUpperCase();
 
   return (
@@ -1050,31 +1158,15 @@ function MemberRow({ member, myRole, isSelf, onUpdateRole, onRemove, confirming,
           Joined {new Date(member.joined_at * 1000).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })}
         </span>
       </div>
-      {confirming ? (
-        <div className="fs__confirm-inline">
-          <span className="fs__confirm-label">Remove?</span>
-          <button className="fs__confirm-yes" onClick={() => onRemove(member.id)}>Yes</button>
-          <button className="fs__confirm-no" onClick={onCancelConfirm}>No</button>
-        </div>
-      ) : (
-        <>
-          {canChange ? (
-            <select
-              className="fs__role-select"
-              value={member.role}
-              onChange={(e) => onUpdateRole(member.id, e.target.value)}
-            >
-              {assignableRoles.map((r) => (
-                <option key={r} value={r}>{ROLE_LABELS[r]}</option>
-              ))}
-            </select>
-          ) : (
-            <RoleBadge role={member.role} />
-          )}
-          {canChange && (
-            <button className="fs__remove" onClick={onRequestConfirm} aria-label="Remove member"><CloseIcon /></button>
-          )}
-        </>
+      <RoleBadge role={member.role} />
+      {canManage && (
+        <button
+          className="fs__more-row-btn"
+          onClick={onManage}
+          aria-label={`Manage ${member.display_name || member.email}`}
+        >
+          <MoreIcon />
+        </button>
       )}
     </div>
   );
@@ -1095,6 +1187,32 @@ function CloseIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+    </svg>
+  );
+}
+
+function PlusIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+    </svg>
+  );
+}
+
+function MoreIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <circle cx="5" cy="12" r="1.9"/>
+      <circle cx="12" cy="12" r="1.9"/>
+      <circle cx="19" cy="12" r="1.9"/>
+    </svg>
+  );
+}
+
+function BackIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M15 18l-6-6 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
     </svg>
   );
 }
@@ -1172,10 +1290,3 @@ function FsLinkIcon() {
     </svg>
   );
 }
-
-const ROLE_DESCS = {
-  coadmin: 'Can manage members, edit the whole tree',
-  editor: 'Can add and edit people, memories, photos',
-  contributor: 'Can add memories and photos only',
-  viewer: 'Read-only access',
-};

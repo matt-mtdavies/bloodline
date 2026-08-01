@@ -40,8 +40,15 @@ function relNames(graph, list, cap = 3) {
  * Review possible duplicate people and merge them. Each card pair lets you pick
  * which record to keep (the fuller one is preselected) and merges the other into
  * it, or dismiss the suggestion if they're actually different people.
+ *
+ * `embedded`: renders just the section content (no scrim/sheet/own head/close,
+ * no empty-state message) — used by ArchiveCareSheet.jsx to host this list
+ * alongside IntegritySheet's, under one shared head. The standalone,
+ * non-embedded mode stays exactly as it was for the person-focused entry
+ * point (PersonSheet's "review possible duplicate" → App.jsx's
+ * openDuplicatesFor), which still wants its own full sheet.
  */
-export default function DuplicatesSheet({ pairs, graph, onMerge, onDismiss, onClose, onShowInTree }) {
+export default function DuplicatesSheet({ pairs, graph, onMerge, onDismiss, onClose, onShowInTree, embedded = false }) {
   const [keepChoice, setKeepChoice] = useState({}); // pairKey → chosen keepId
   // A pair awaiting the "are you sure" confirm before its merge actually
   // commits — a merge used to fire on the very first tap with no way back
@@ -59,10 +66,11 @@ export default function DuplicatesSheet({ pairs, graph, onMerge, onDismiss, onCl
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
   useEffect(() => {
+    if (embedded) return; // the host (ArchiveCareSheet) owns Escape-to-close
     const onKey = (e) => e.key === 'Escape' && onClose();
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  }, [embedded, onClose]);
 
   // `pairs` arrives already filtered to un-dismissed candidates (the caller
   // owns dismissal — see lib/duplicates.js — so the topbar's count pill and
@@ -86,14 +94,16 @@ export default function DuplicatesSheet({ pairs, graph, onMerge, onDismiss, onCl
     setConfirmKey(null);
   };
 
-  return (
-    <div className="sheet-scrim" role="dialog" aria-modal="true" aria-label="Possible duplicates" onClick={onClose}>
-      <div className="sheet dups" onClick={(e) => e.stopPropagation()}>
-        <div className="sheet__grip" />
+  if (embedded && visible.length === 0) return null;
+
+  const content = (
+    <>
+      {!embedded && (
         <div className="dups__head">
           <h2 className="dups__title"><MergeIcon /> Possible duplicates</h2>
           <button className="icon-btn" onClick={onClose} aria-label="Close"><CloseIcon /></button>
         </div>
+      )}
 
         {visible.length === 0 ? (
           <div className="dups__empty">
@@ -102,6 +112,9 @@ export default function DuplicatesSheet({ pairs, graph, onMerge, onDismiss, onCl
           </div>
         ) : (
           <>
+            {embedded && (
+              <h3 className="dups__embedded-heading">Possible duplicates <span className="dups__embedded-count">{visible.length}</span></h3>
+            )}
             <p className="dups__intro">
               These people share a name and look like they might be the same person.
               Pick the record to keep, then merge — or dismiss if they're different people.
@@ -219,6 +232,16 @@ export default function DuplicatesSheet({ pairs, graph, onMerge, onDismiss, onCl
             )}
           </>
         )}
+    </>
+  );
+
+  if (embedded) return <section className="dups__embedded-section">{content}</section>;
+
+  return (
+    <div className="sheet-scrim" role="dialog" aria-modal="true" aria-label="Possible duplicates" onClick={onClose}>
+      <div className="sheet dups" onClick={(e) => e.stopPropagation()}>
+        <div className="sheet__grip" />
+        {content}
       </div>
     </div>
   );

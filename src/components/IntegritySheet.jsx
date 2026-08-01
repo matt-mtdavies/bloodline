@@ -25,16 +25,21 @@ const TYPE_LABELS = {
  * involved so the actual correction happens through the normal edit flow,
  * or can be dismissed if it's not really a mistake (see lib/integrity.js's
  * own doc comment on why every check here favors precision over recall).
+ *
+ * `embedded`: renders just the section content (no scrim/sheet/own head/
+ * close, no empty-state message) — used by ArchiveCareSheet.jsx to host
+ * this list alongside DuplicatesSheet's, under one shared head.
  */
-export default function IntegritySheet({ issues, graph, onDismiss, onClose, onOpenPerson }) {
+export default function IntegritySheet({ issues, graph, onDismiss, onClose, onOpenPerson, embedded = false }) {
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [bulkConfirming, setBulkConfirming] = useState(false);
 
   useEffect(() => {
+    if (embedded) return; // the host (ArchiveCareSheet) owns Escape-to-close
     const onKey = (e) => e.key === 'Escape' && onClose();
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  }, [embedded, onClose]);
 
   // `issues` arrives already filtered to un-dismissed (the caller owns
   // dismissal, same convention as DuplicatesSheet/lib/duplicates.js, so the
@@ -50,22 +55,27 @@ export default function IntegritySheet({ issues, graph, onDismiss, onClose, onOp
 
   const paged = visible.slice(0, visibleCount);
 
-  return (
-    <div className="sheet-scrim" role="dialog" aria-modal="true" aria-label="Data integrity check" onClick={onClose}>
-      <div className="sheet dups" onClick={(e) => e.stopPropagation()}>
-        <div className="sheet__grip" />
+  if (embedded && visible.length === 0) return null;
+
+  const content = (
+    <>
+      {!embedded && (
         <div className="dups__head">
-          <h2 className="dups__title"><ShieldIcon /> Data integrity check</h2>
+          <h2 className="dups__title"><ShieldIcon /> Details worth reviewing</h2>
           <button className="icon-btn" onClick={onClose} aria-label="Close"><CloseIcon /></button>
         </div>
+      )}
 
         {visible.length === 0 ? (
           <div className="dups__empty">
             <CheckIcon />
-            <p>Nothing looks off — no integrity issues found.</p>
+            <p>Your archive looks healthy — nothing to review.</p>
           </div>
         ) : (
           <>
+            {embedded && (
+              <h3 className="dups__embedded-heading">Details worth reviewing <span className="dups__embedded-count">{visible.length}</span></h3>
+            )}
             <p className="dups__intro">
               These facts look logically impossible or very unlikely — a good sign one of them
               has a wrong date or link. Open a profile to fix it, or dismiss if it's genuinely correct.
@@ -132,6 +142,16 @@ export default function IntegritySheet({ issues, graph, onDismiss, onClose, onOp
             )}
           </>
         )}
+    </>
+  );
+
+  if (embedded) return <section className="dups__embedded-section">{content}</section>;
+
+  return (
+    <div className="sheet-scrim" role="dialog" aria-modal="true" aria-label="Details worth reviewing" onClick={onClose}>
+      <div className="sheet dups" onClick={(e) => e.stopPropagation()}>
+        <div className="sheet__grip" />
+        {content}
       </div>
     </div>
   );

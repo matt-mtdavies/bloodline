@@ -8,6 +8,15 @@ export const ROLE_COLORS = {
   owner: '#241f1c', coadmin: '#c2603a', editor: '#3a6ec2',
   contributor: '#3a8a4a', viewer: '#8a8480',
 };
+// What each assignable role can actually do — shown wherever a role is
+// picked (the invite flow, ManageMemberSheet's role picker) so the choice
+// is explained inline rather than left to the label alone.
+export const ROLE_DESCS = {
+  coadmin: 'Can manage members, edit the whole tree',
+  editor: 'Can add and edit people, memories, photos',
+  contributor: 'Can add memories and photos only',
+  viewer: 'Read-only access',
+};
 
 export const VISIBILITY_LABELS = {
   full: 'Open', summary: 'Protected', private: 'Private',

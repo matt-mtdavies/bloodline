@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, forwardRef } from 'react';
 import Logo from './Logo.jsx';
 import { PERIMETER_OPTIONS } from '../lib/familyPerimeter.js';
 
-export default function TopBar({ familyName, stats, view, layout, syncStatus, syncError, onRetrySync, onSetViewMode, onOpenLegend, bloodlineOnly = false, onToggleBloodlineOnly, onOpenActivity, activityCount = 0, user, userPhoto, onOpenProfile, onOpenHome, onSearch, onOpenInsights, onOpenTimeline, onOpenDuplicates, duplicateCount = 0, onOpenIntegrityIssues, integrityIssueCount = 0, storageWarning, storageNearLimit, treeSizeWarning, syncToast, onDismissSyncToast, recapNudgeCount = 0, onShowRecap, onDismissRecapNudge, perimeterActive = false, perimeterLevel = null, onOpenPerimeterPreview, anyOverlayOpen = false }) {
+export default function TopBar({ familyName, stats, view, layout, syncStatus, syncError, onRetrySync, onSetViewMode, onOpenLegend, bloodlineOnly = false, onToggleBloodlineOnly, onOpenActivity, activityCount = 0, user, userPhoto, onOpenProfile, onOpenHome, onSearch, onOpenInsights, onOpenTimeline, onOpenArchiveCare, archiveCareCount = 0, archiveCareHasNew = false, storageWarning, storageNearLimit, treeSizeWarning, syncToast, onDismissSyncToast, recapNudgeCount = 0, onShowRecap, onDismissRecapNudge, perimeterActive = false, perimeterLevel = null, onOpenPerimeterPreview, anyOverlayOpen = false }) {
   const perimeterLevelLabel = PERIMETER_OPTIONS.find((o) => o.value === perimeterLevel)?.label ?? null;
   const [statsOpen, setStatsOpen] = useState(false);
   const [viewMenuOpen, setViewMenuOpen] = useState(false);
@@ -297,27 +297,42 @@ export default function TopBar({ familyName, stats, view, layout, syncStatus, sy
           onClose={() => setStatsOpen(false)}
           onOpenInsights={onOpenInsights ? () => { setStatsOpen(false); onOpenInsights(); } : null}
           onOpenTimeline={onOpenTimeline ? () => { setStatsOpen(false); onOpenTimeline(); } : null}
-          onOpenDuplicates={onOpenDuplicates ? () => { setStatsOpen(false); onOpenDuplicates(); } : null}
-          duplicateCount={duplicateCount}
-          onOpenIntegrityIssues={onOpenIntegrityIssues ? () => { setStatsOpen(false); onOpenIntegrityIssues(); } : null}
-          integrityIssueCount={integrityIssueCount}
+          onOpenArchiveCare={onOpenArchiveCare ? () => { setStatsOpen(false); onOpenArchiveCare(); } : null}
+          archiveCareCount={archiveCareCount}
+          archiveCareHasNew={archiveCareHasNew}
         />
       )}
     </header>
   );
 }
 
-const StatsPopover = forwardRef(function StatsPopover({ stats, onClose, onOpenInsights, onOpenTimeline, onOpenDuplicates, duplicateCount = 0, onOpenIntegrityIssues, integrityIssueCount = 0 }, ref) {
+const SURNAME_PREVIEW_COUNT = 5;
+
+const StatsPopover = forwardRef(function StatsPopover({ stats, onClose, onOpenInsights, onOpenTimeline, onOpenArchiveCare, archiveCareCount = 0, archiveCareHasNew = false }, ref) {
   const total = stats.people;
   const maxCount = stats.surnameList?.[0]?.count ?? 1;
   const spanYears = stats.yearMin && stats.yearMax ? stats.yearMax - stats.yearMin : null;
+  const [surnamesExpanded, setSurnamesExpanded] = useState(false);
+  const surnamesToShow = surnamesExpanded ? stats.surnameList : stats.surnameList?.slice(0, SURNAME_PREVIEW_COUNT);
+  const hasMoreSurnames = (stats.surnameList?.length ?? 0) > SURNAME_PREVIEW_COUNT;
 
   return (
-    <div ref={ref} className="stats-popover" role="dialog" aria-label="Family archive details">
-      <button className="stats-popover__close" onClick={onClose} aria-label="Close">
-        <CloseIcon />
-      </button>
+    <div ref={ref} className="stats-popover" role="dialog" aria-label="Family overview">
+      {/* Its own heading + close, so the X unambiguously closes THIS panel —
+          not Tree insights, which used to sit directly under a bare corner
+          close button with no label of its own (Codex review: "the close
+          icon must not appear to dismiss Tree insights"). */}
+      <div className="stats-popover__head">
+        <h2 className="stats-popover__title">Family overview</h2>
+        <button className="stats-popover__close" onClick={onClose} aria-label="Close">
+          <CloseIcon />
+        </button>
+      </div>
 
+      {/* Discover — Tree insights (terracotta, primary) then Family timeline
+          (calm, secondary). Kept visually first and un-labelled as its own
+          eyebrow-less pair; Archive Care below gets the explicit label,
+          since that's the one that needs to read as clearly separate. */}
       {onOpenInsights && (
         <button className="stats-popover__insights-btn" onClick={onOpenInsights}>
           <SparkIcon />
@@ -334,20 +349,21 @@ const StatsPopover = forwardRef(function StatsPopover({ stats, onClose, onOpenIn
         </button>
       )}
 
-      {onOpenDuplicates && duplicateCount > 0 && (
-        <button className="stats-popover__dups-btn" onClick={onOpenDuplicates}>
-          <DupIcon />
-          <span>Review {duplicateCount} possible duplicate{duplicateCount > 1 ? 's' : ''}</span>
-          <span className="stats-popover__insights-arrow"><ChevronRightIcon /></span>
-        </button>
-      )}
-
-      {onOpenIntegrityIssues && integrityIssueCount > 0 && (
-        <button className="stats-popover__dups-btn" onClick={onOpenIntegrityIssues}>
-          <ShieldWarnIcon />
-          <span>Review {integrityIssueCount} data integrity issue{integrityIssueCount > 1 ? 's' : ''}</span>
-          <span className="stats-popover__insights-arrow"><ChevronRightIcon /></span>
-        </button>
+      {/* Care for your archive — possible duplicates and data-quality checks
+          merged into one quiet maintenance entry, distinct from the two
+          discovery cards above. "details worth reviewing" rather than
+          "issues": most of these turn out to be correct once looked at,
+          and "issues" reads as corruption before anyone's actually checked. */}
+      {onOpenArchiveCare && archiveCareCount > 0 && (
+        <section className="stats-popover__care">
+          <h3 className="stats-popover__heading">Care for your archive</h3>
+          <button className="stats-popover__care-btn" onClick={onOpenArchiveCare}>
+            <ShieldWarnIcon />
+            <span>{archiveCareCount} detail{archiveCareCount > 1 ? 's' : ''} worth reviewing</span>
+            {archiveCareHasNew && <span className="stats-popover__care-dot" aria-label="New" />}
+            <span className="stats-popover__insights-arrow"><ChevronRightIcon /></span>
+          </button>
+        </section>
       )}
 
       {/* Surnames */}
@@ -355,7 +371,7 @@ const StatsPopover = forwardRef(function StatsPopover({ stats, onClose, onOpenIn
         <section className="stats-popover__section">
           <h3 className="stats-popover__heading">Surnames</h3>
           <ul className="stats-popover__surname-list">
-            {stats.surnameList.map(({ name, count }) => (
+            {surnamesToShow.map(({ name, count }) => (
               <li key={name} className="stats-popover__surname-row">
                 <span className="stats-popover__surname-name">{name}</span>
                 <div className="stats-bar">
@@ -368,32 +384,28 @@ const StatsPopover = forwardRef(function StatsPopover({ stats, onClose, onOpenIn
               </li>
             ))}
           </ul>
+          {hasMoreSurnames && (
+            <button
+              type="button"
+              className="stats-popover__surnames-more"
+              onClick={() => setSurnamesExpanded((v) => !v)}
+            >
+              {surnamesExpanded ? 'Show fewer' : `View all ${stats.surnameList.length} surnames`}
+            </button>
+          )}
         </section>
       )}
 
-      {/* Time span */}
+      {/* Time span — one insight sentence, not a labelled stats block. */}
       {stats.yearMin && (
         <section className="stats-popover__section">
-          <h3 className="stats-popover__heading">Time span</h3>
-          <p className="stats-popover__span-label">
-            {stats.yearMin}
-            {stats.yearMax !== stats.yearMin && <> – {stats.yearMax}</>}
-            {spanYears > 0 && <span className="stats-popover__muted"> · {spanYears} years</span>}
+          <p className="stats-popover__timespan">
+            {spanYears > 0 ? (
+              <>{spanYears} years of family history <span className="stats-popover__muted">· {stats.yearMin}–{stats.yearMax}</span></>
+            ) : (
+              <>Family history from <span className="stats-popover__muted">{stats.yearMin}</span></>
+            )}
           </p>
-          {stats.oldestName && (
-            <p className="stats-popover__timerow">
-              <span className="stats-popover__muted">Earliest</span>
-              {stats.oldestName}
-              <span className="stats-popover__muted">({stats.yearMin})</span>
-            </p>
-          )}
-          {stats.youngestName && stats.youngestName !== stats.oldestName && (
-            <p className="stats-popover__timerow">
-              <span className="stats-popover__muted">Latest</span>
-              {stats.youngestName}
-              <span className="stats-popover__muted">({stats.yearMax})</span>
-            </p>
-          )}
         </section>
       )}
 
@@ -535,15 +547,6 @@ function PopClockIcon() {
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <circle cx="12" cy="12" r="8.5" stroke="currentColor" strokeWidth="1.8"/>
       <path d="M12 7.5v5l3 1.8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-    </svg>
-  );
-}
-
-function DupIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <circle cx="9" cy="9" r="5" stroke="currentColor" strokeWidth="1.7"/>
-      <circle cx="15" cy="15" r="5" stroke="currentColor" strokeWidth="1.7"/>
     </svg>
   );
 }
