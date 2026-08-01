@@ -17,6 +17,10 @@ Do not silently resolve a material contradiction. Record it in the pull request.
 ## Working rules
 
 - Begin from current `main` and work on a short-lived branch.
+- **Merge authority:** Codex may squash-merge its own reviewed pull requests once all
+  required checks are green. Explicit repository-owner approval is still required before
+  merging any pull request that changes migrations, production configuration, billing,
+  deletion/reset/restore/import-replace behavior, or another explicitly high-risk area.
 - Keep changes within the requested scope; preserve unrelated work.
 - Classify risk before editing and use the verification required by
   `docs/OPERATING-SYSTEM.md`.
