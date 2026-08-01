@@ -79,7 +79,7 @@ function headerHtml({ home, activeKey, ctaHref = '/start', ctaLabel = 'Start you
       <nav class="pub-nav" aria-label="Primary">${navLinks}</nav>
       <div class="pub-header__actions">
         <a class="pub-signin-link" href="/sign-in">Sign in</a>
-        <a class="pub-btn pub-btn--primary" href="${ctaHref}">${esc(ctaLabel)}</a>
+        <a class="pub-btn pub-btn--primary pub-btn--cta" href="${ctaHref}"><span class="pub-btn--cta__full">${esc(ctaLabel)}</span><span class="pub-btn--cta__short">Start</span></a>
         <details class="pub-menu">
           <summary aria-label="Menu">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>

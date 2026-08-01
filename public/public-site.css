@@ -19,6 +19,7 @@ body {
   font-family: var(--body);
   -webkit-font-smoothing: antialiased;
   line-height: 1.5;
+  overflow-wrap: break-word;
 }
 :root {
   --accent: #c2603a;
@@ -93,7 +94,21 @@ a:focus-visible, button:focus-visible, summary:focus-visible, input:focus-visibl
 .pub-nav a { text-decoration: none; color: var(--ink-soft); padding: 6px 0; border-bottom: 2px solid transparent; transition: color .15s; }
 .pub-nav a:hover { color: var(--ink); }
 .pub-nav a[aria-current="page"] { color: var(--accent-deep); border-bottom-color: var(--accent); }
-.pub-header__actions { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.pub-header__actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.pub-btn--cta__short { display: inline; }
+.pub-btn--cta__full { display: none; }
+/* The CTA reads "Start your family tree" everywhere it fits (nav row, hero,
+   CTA bands); the header copy specifically collapses to a short "Start" below
+   ~480px so the CTA + menu button never force the header wider than a narrow
+   phone viewport — see the 320px overflow bug this was written to fix. */
+@media (min-width: 480px) {
+  .pub-btn--cta__short { display: none; }
+  .pub-btn--cta__full { display: inline; }
+}
+@media (max-width: 479px) {
+  .pub-header__inner { padding: 12px 14px; gap: 10px; }
+  .pub-btn--cta { padding: 12px 16px; }
+}
 .pub-signin-link {
   display: none;
   font-size: 14px; font-weight: 600; color: var(--ink-soft); text-decoration: none;
@@ -102,6 +117,7 @@ a:focus-visible, button:focus-visible, summary:focus-visible, input:focus-visibl
 .pub-signin-link:hover { color: var(--ink); }
 
 .pub-menu { position: relative; }
+.pub-menu:not([open]) .pub-menu__panel { display: none; }
 .pub-menu > summary {
   list-style: none; cursor: pointer;
   display: flex; align-items: center; justify-content: center;

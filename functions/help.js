@@ -75,7 +75,7 @@ export async function onRequestGet({ env }) {
     <div class="pub-wrap pub-wrap--narrow" style="text-align:center;">
       <p class="pub-eyebrow">Still stuck?</p>
       <h2 class="pub-h2">Contact support</h2>
-      <p class="pub-lede" style="margin:0 auto 22px;">Email <a href="mailto:support@myfamilybloodline.com" style="color:var(--accent-deep); font-weight:700;">support@myfamilybloodline.com</a> and a real person will reply. This address is monitored during business hours; response times aren’t yet formally guaranteed.</p>
+      <p class="pub-lede" style="margin:0 auto 22px;">Email <a href="mailto:support@myfamilybloodline.com" style="color:var(--accent-deep); font-weight:700; overflow-wrap:anywhere;">support@myfamilybloodline.com</a> and a real person will reply. This address is monitored during business hours; response times aren’t yet formally guaranteed.</p>
     </div>
   </section>
 
