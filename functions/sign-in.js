@@ -114,8 +114,16 @@ export async function onRequestGet({ request, env }) {
           btn.textContent = 'Send me a code';
           return;
         }
-        var dest = '/';
-        if (START) dest += '?start=' + encodeURIComponent(START);
+        // Always carry a flow marker, even with no ?start= at all (the plain
+        // nav-menu "Sign in" path) — functions/index.js's "/" route only
+        // falls through to the SPA (where LoginScreen reads the pending
+        // email out of sessionStorage) when the URL carries one of a known
+        // set of flow params or the visitor is already authenticated. A
+        // bare "/" here would silently re-render the public marketing
+        // homepage instead, stranding the visitor with a code in their
+        // inbox and nowhere to enter it.
+        var dest = '/?otp=1';
+        if (START) dest += '&start=' + encodeURIComponent(START);
         window.location.href = dest;
       }).catch(function () {
         hint.textContent = 'Something went wrong. Please try again.';
