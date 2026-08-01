@@ -215,6 +215,46 @@ test("step sibling (no shared bio/adoptive parent at all): NOT reachable via the
   assert.equal(r.route, 'sibling');
 });
 
+test('sibling (removal 0) carries side "same"; aunt/uncle (removal 1, older generation) carries side "older"', () => {
+  // v's parent (mum) has a sibling (auntP) — a real aunt, degree 0 removal 1
+  // (shares grandparent gp: mum is 1 step from gp, auntP is 1 step from gp
+  // too, but from v's own perspective upA=2 (v→mum→gp), downB=1 (gp→auntP),
+  // so auntP sits one generation ABOVE v — "older").
+  const g = buildGraph(
+    [person('v'), person('sib'), person('mum'), person('dad'), person('gp'), person('auntP')],
+    [
+      parentEdge('mum', 'v'), parentEdge('dad', 'v'),
+      parentEdge('mum', 'sib'), parentEdge('dad', 'sib'),
+      parentEdge('gp', 'mum'), parentEdge('gp', 'auntP'),
+    ],
+  );
+  const idx = computePerspectiveIndex(g, { viewerId: 'v', perimeterLevel: 1 });
+  const sibR = idx.inclusionReasonById.get('sib');
+  assert.equal(sibR.degree, 0);
+  assert.equal(sibR.removal, 0);
+  assert.equal(sibR.side, 'same');
+
+  const auntR = idx.inclusionReasonById.get('auntP');
+  assert.equal(auntR.degree, 0);
+  assert.equal(auntR.removal, 1);
+  assert.equal(auntR.side, 'older');
+});
+
+test('niece/nephew (removal 1, younger generation) carries side "younger" — the mirror image of an aunt/uncle', () => {
+  // v's sibling (sib) has a child (kid) — v's real nephew/niece. Shared
+  // ancestor is v's own parent (mum): upA=1 (v→mum), downB=2 (mum→sib→kid),
+  // so kid sits one generation BELOW v — "younger".
+  const g = buildGraph(
+    [person('v'), person('sib'), person('mum'), person('kid')],
+    [parentEdge('mum', 'v'), parentEdge('mum', 'sib'), parentEdge('sib', 'kid')],
+  );
+  const idx = computePerspectiveIndex(g, { viewerId: 'v', perimeterLevel: 1 });
+  const kidR = idx.inclusionReasonById.get('kid');
+  assert.equal(kidR.degree, 0);
+  assert.equal(kidR.removal, 1);
+  assert.equal(kidR.side, 'younger');
+});
+
 test('a direct parent/grandparent/child is never re-labeled as a spurious "cousin" via the collateral walk, even when they also have other children (a real bug: the collateral walk previously found candidates that land back on the anchor\'s own direct line — e.g. walking up to a grandparent and back down passes straight through the anchor\'s own parent — and a low cousin degree/removal beat the correct, larger ancestor/descendant distance in canonical resolution, silently mislabeling a parent or child as a "cousin")', () => {
   // v's parent (dad) has a sibling (auntP) — dad is reachable from v's own
   // grandparent (gp) via the exact same up-then-down collateral path that

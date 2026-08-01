@@ -1,7 +1,9 @@
 import { useState, useRef, useEffect, forwardRef } from 'react';
 import Logo from './Logo.jsx';
+import { PERIMETER_OPTIONS } from '../lib/familyPerimeter.js';
 
-export default function TopBar({ familyName, stats, view, layout, syncStatus, syncError, onRetrySync, onSetViewMode, onOpenLegend, bloodlineOnly = false, onToggleBloodlineOnly, onOpenActivity, activityCount = 0, user, userPhoto, onOpenProfile, onOpenHome, onSearch, onOpenInsights, onOpenTimeline, onOpenDuplicates, duplicateCount = 0, storageWarning, storageNearLimit, treeSizeWarning, syncToast, onDismissSyncToast, recapNudgeCount = 0, onShowRecap, onDismissRecapNudge }) {
+export default function TopBar({ familyName, stats, view, layout, syncStatus, syncError, onRetrySync, onSetViewMode, onOpenLegend, bloodlineOnly = false, onToggleBloodlineOnly, onOpenActivity, activityCount = 0, user, userPhoto, onOpenProfile, onOpenHome, onSearch, onOpenInsights, onOpenTimeline, onOpenDuplicates, duplicateCount = 0, storageWarning, storageNearLimit, treeSizeWarning, syncToast, onDismissSyncToast, recapNudgeCount = 0, onShowRecap, onDismissRecapNudge, perimeterActive = false, perimeterLevel = null, onOpenPerimeterPreview }) {
+  const perimeterLevelLabel = PERIMETER_OPTIONS.find((o) => o.value === perimeterLevel)?.label ?? null;
   const [statsOpen, setStatsOpen] = useState(false);
   const [viewMenuOpen, setViewMenuOpen] = useState(false);
   const popoverRef = useRef(null);
@@ -183,6 +185,25 @@ export default function TopBar({ familyName, stats, view, layout, syncStatus, sy
               {stats.yearSpan && <> · {stats.yearSpan}</>}
               {stats.photos > 0 && <> · {stats.photos} {stats.photos === 1 ? 'photo' : 'photos'}</>}
               {stats.memories > 0 && <> · {stats.memories} {stats.memories === 1 ? 'memory' : 'memories'}</>}
+            </button>
+          )}
+          {/* Real feedback: "we need to make it better known that [a narrowed
+              perimeter is] in effect" — the stats pill above deliberately
+              never reflects the perimeter (it's the true archive total, and
+              already truncates on a real family; cramming more text in would
+              just get cut off). A SEPARATE small badge instead, echoing the
+              same ring motif the Preview sheet itself uses at icon scale, so
+              it visually reads as "that, zoomed out" — shown only when a
+              level narrower than Everyone is actually active, silent for the
+              common case. */}
+          {perimeterActive && perimeterLevelLabel && onOpenPerimeterPreview && (
+            <button
+              className={`perimeter-badge perimeter-badge--${perimeterLevel}`}
+              onClick={onOpenPerimeterPreview}
+              aria-label={`Family Perimeter active: ${perimeterLevelLabel}. Tap to see who's included.`}
+            >
+              <PerimeterRingIcon />
+              <span className="perimeter-badge__label">{perimeterLevelLabel}</span>
             </button>
           )}
         </div>
@@ -514,6 +535,20 @@ function BellIcon() {
   );
 }
 
+
+// Three concentric rings + a center dot — the same "perimeter" motif the
+// Preview sheet's own diagram uses, at icon scale, so the badge visually
+// rhymes with the sheet it opens rather than introducing a new glyph.
+function PerimeterRingIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="12" r="9.5" stroke="currentColor" strokeWidth="1.3" opacity="0.4"/>
+      <circle cx="12" cy="12" r="6.5" stroke="currentColor" strokeWidth="1.3" opacity="0.65"/>
+      <circle cx="12" cy="12" r="3.5" stroke="currentColor" strokeWidth="1.5"/>
+      <circle cx="12" cy="12" r="1.3" fill="currentColor"/>
+    </svg>
+  );
+}
 
 function LegendIcon() {
   return (
