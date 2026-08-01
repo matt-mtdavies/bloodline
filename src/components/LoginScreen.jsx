@@ -19,12 +19,24 @@ export default function LoginScreen({ onAuthSuccess }) {
           : 'Something went wrong. Please try again.',
       );
     }
-    // Coming from the invite landing page, or the public /sign-in page —
-    // either way the OTP was already requested server-side, so skip straight
-    // to the code step pre-filled with the email it was sent to.
+    // Coming from the invite landing page — OTP was already requested
+    // server-side, so skip straight to the code step pre-filled with the
+    // email it was sent to.
+    let pendingEmail = null;
+    try {
+      pendingEmail = sessionStorage.getItem('bl_signin_email');
+      if (pendingEmail) sessionStorage.removeItem('bl_signin_email');
+    } catch { /* sessionStorage unavailable (private mode, etc.) — fall through */ }
+
     if (p.has('auth_email')) {
       setEmail(p.get('auth_email'));
       if (p.has('invite')) setInviteToken(p.get('invite'));
+      setStep('code');
+    } else if (pendingEmail) {
+      // Handed off from the public /sign-in page (functions/sign-in.js) via
+      // sessionStorage rather than a URL param, specifically so the email
+      // never lands in browser history, copied links, or access logs.
+      setEmail(pendingEmail);
       setStep('code');
     } else if (p.has('invite')) {
       setInviteToken(p.get('invite'));

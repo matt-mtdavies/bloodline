@@ -2,13 +2,19 @@
  * GET /sign-in
  * Focused passwordless sign-in — not the marketing homepage. Collects an
  * email, requests a one-time code, then hands off to the SPA's own
- * LoginScreen (which already knows how to collect the OTP) via ?auth_email=.
- * An optional ?start= is carried straight through so App.jsx can route a
- * brand-new account into the right first action (see src/App.jsx
- * _initialStartIntent). See docs/PRODUCTIZATION-BRIEF.md §5, §7, §8.
+ * LoginScreen (which already knows how to collect the OTP). An optional
+ * ?start= is carried straight through (via URL — it's a UI hint, not
+ * sensitive) so App.jsx can route a brand-new account into the right first
+ * action (see src/App.jsx _initialStartIntent). The email itself is handed
+ * off via sessionStorage rather than a URL param — unlike the existing
+ * invite-landing page's ?auth_email= handoff (functions/invite/[token].js,
+ * unchanged here — that's an already-shipped, separately-reviewed flow),
+ * this is new code with no reason to put PII in the URL/history/logs when a
+ * same-origin sessionStorage relay works just as well and LoginScreen reads
+ * it out and clears it in the same tick. See docs/PRODUCTIZATION-BRIEF.md
+ * §5, §7, §8.
  */
 import { publicPage, breadcrumbStructuredData } from './_lib/publicShell.js';
-import { Icons } from './_lib/publicIcons.js';
 
 const START_COPY = {
   fresh: 'Starting a new family tree — sign in to begin.',
@@ -19,11 +25,24 @@ const START_COPY = {
 export async function onRequestGet({ request, env }) {
   const home = env.APP_URL || 'https://myfamilybloodline.com';
   const url = new URL(request.url);
-  const start = url.searchParams.get('start');
+  // ?start= is attacker-controlled and gets embedded into an inline <script>
+  // below — allowlist it against the only three values this page ever acts
+  // on, so anything else (including an HTML/script-injection attempt) is
+  // simply dropped rather than reaching the response at all.
+  const requestedStart = url.searchParams.get('start');
+  const start = Object.prototype.hasOwnProperty.call(START_COPY, requestedStart)
+    ? requestedStart
+    : '';
   const contextLine = START_COPY[start] || 'Sign in with your email — no password to remember.';
   const structuredData = [
     breadcrumbStructuredData(home, [{ name: 'Home', href: '/' }, { name: 'Sign in' }]),
   ];
+  // Belt-and-suspenders alongside the allowlist above: JSON.stringify does
+  // NOT escape '<', so a literal "</script>" inside an embedded string can
+  // still terminate this script element early and inject markup. Escaping
+  // '<' to its unicode escape defeats that regardless of what value ever
+  // ends up here.
+  const serializedStart = JSON.stringify(start).replace(/</g, '\\u003c');
 
   const content = `
   <section class="pub-section">
@@ -40,11 +59,6 @@ export async function onRequestGet({ request, env }) {
           <button id="signin-submit" class="pub-btn pub-btn--primary pub-btn--block" type="button">Send me a code</button>
           <p id="signin-hint" class="pub-form-hint"></p>
         </div>
-        <div id="signin-sent-wrap" style="display:none;">
-          <div style="color:var(--sage); margin-bottom:14px;">${Icons.mail(34)}</div>
-          <p style="font-family:var(--display); font-weight:700; font-size:19px; margin-bottom:8px;">Check your inbox</p>
-          <p style="color:var(--ink-soft); font-size:14.5px; line-height:1.6;">We sent a sign-in code to <strong id="signin-sent-email"></strong>. Enter it on the next screen to continue.</p>
-        </div>
         <p class="pub-form-note">Don't have a family tree yet? <a href="/start" style="color:var(--accent-deep); font-weight:700;">Start one instead</a>.</p>
       </div>
     </div>
@@ -52,7 +66,7 @@ export async function onRequestGet({ request, env }) {
 
   <script>
   (function () {
-    var START = ${JSON.stringify(start || '')};
+    var START = ${serializedStart};
     var emailEl = document.getElementById('email');
     var btn = document.getElementById('signin-submit');
     var hint = document.getElementById('signin-hint');
@@ -68,11 +82,14 @@ export async function onRequestGet({ request, env }) {
         body: JSON.stringify({ email: email }),
       }).then(function (res) {
         if (!res.ok) throw new Error();
-        document.getElementById('signin-form-wrap').style.display = 'none';
-        document.getElementById('signin-sent-wrap').style.display = 'block';
-        document.getElementById('signin-sent-email').textContent = email;
-        var dest = '/?auth_email=' + encodeURIComponent(email);
-        if (START) dest += '&start=' + encodeURIComponent(START);
+        // Hand the email to LoginScreen via sessionStorage rather than a URL
+        // query param, so it never lands in browser history, copied links,
+        // screenshots, or access logs — LoginScreen reads this once on
+        // mount and removes it immediately. ?start= alone (a non-sensitive
+        // UI hint, not PII) still travels via the URL.
+        try { sessionStorage.setItem('bl_signin_email', email); } catch (e) {}
+        var dest = '/';
+        if (START) dest += '?start=' + encodeURIComponent(START);
         window.location.href = dest;
       }).catch(function () {
         hint.textContent = 'Something went wrong. Please try again.';
