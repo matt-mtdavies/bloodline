@@ -5,7 +5,7 @@
  * Run with: node tests/insightModules.test.mjs
  */
 import assert from 'node:assert/strict';
-import { buildGraph } from '../src/data/graph.js';
+import { buildGraph, scopeGraphToIds } from '../src/data/graph.js';
 import { computeInsightModules, computeThisMonth, buildInsightHighlights, aliveInYear, livingLinkTo, personHighlight, highlightCandidates, highlightCandidatesDetailed, scoreCandidate, rankCandidates, pickDailyHighlight, pickTodaysFamilyMoment, dayIndex, seededShuffle } from '../src/lib/insightModules.js';
 import { distancesFrom } from '../src/data/graph.js';
 
@@ -549,6 +549,40 @@ test('this month: January-1st placeholder dates are excluded; a real Jan-15 birt
   const r = computeThisMonth(g, new Date(2026, 0, 20)); // January
   assert.ok(r, 'should still render — Jan 15 is a real birthday');
   assert.deepEqual(r.birthdays.map((b) => b.id), ['b']);
+});
+
+// PR #91 review: computeThisMonth reads marriage anniversaries straight off
+// graph.relationships, so Home.jsx must hand it a graph scoped via
+// scopeGraphToIds (people AND relationships filtered), not the raw graph —
+// otherwise an outside branch's birthday/anniversary leaks into the
+// unlabelled "[Month] in your family" digest.
+test('this month + scopeGraphToIds: an outside person\'s birthday and an outside couple\'s anniversary are both excluded once scoped to the personal cohort', () => {
+  const people = [
+    { id: 'v', display_name: 'Viewer', birth_date: '1985-03-01', is_deceased: false },
+    { id: 'in', display_name: 'Inside Lee', birth_date: '1950-06-05', is_deceased: false },
+    { id: 'inP1', display_name: 'Inside Partner One', birth_date: '1950-01-01', is_deceased: false },
+    { id: 'inP2', display_name: 'Inside Partner Two', birth_date: '1950-01-01', is_deceased: false },
+    { id: 'out', display_name: 'Outside Lee', birth_date: '1950-06-10', is_deceased: false },
+    { id: 'outP1', display_name: 'Outside Partner One', birth_date: '1950-01-01', is_deceased: false },
+    { id: 'outP2', display_name: 'Outside Partner Two', birth_date: '1950-01-01', is_deceased: false },
+  ];
+  const rels = [
+    { type: 'partner', from_person: 'inP1', to_person: 'inP2', partner_status: 'current', is_married: true, marriage_date: '1975-06-15' },
+    { type: 'partner', from_person: 'outP1', to_person: 'outP2', partner_status: 'current', is_married: true, marriage_date: '1980-06-20' },
+  ];
+  const g = buildGraph(people, rels);
+  const june15 = new Date(2026, 5, 15);
+
+  const unscoped = computeThisMonth(g, june15);
+  assert.deepEqual(unscoped.birthdays.map((b) => b.id).sort(), ['in', 'out'], 'sanity: unscoped, both birthdays appear');
+  assert.equal(unscoped.anniversaries.length, 2, 'sanity: unscoped, both anniversaries appear');
+
+  const personalIds = new Set(['v', 'in', 'inP1', 'inP2']);
+  const scoped = scopeGraphToIds(g, personalIds);
+  const r = computeThisMonth(scoped, june15);
+  assert.deepEqual(r.birthdays.map((b) => b.id), ['in'], 'the outside person\'s birthday must not appear once scoped');
+  assert.equal(r.anniversaries.length, 1, 'the outside couple\'s anniversary must not appear once scoped');
+  assert.equal(r.anniversaries[0].aName, 'Inside');
 });
 
 test('birthdays module: January-1st placeholders never inflate the month tally or fake a twin pair', () => {

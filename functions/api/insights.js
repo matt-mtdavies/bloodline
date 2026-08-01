@@ -30,8 +30,25 @@ export async function onRequestPost({ request, env, data }) {
   }
 
   // Render the facts as a compact, unambiguous block for the model.
+  // Family Perimeter (docs/FAMILY-PERIMETER-AND-5000-PERSON-PERFORMANCE.md
+  // §4.4/§6.9): `agg.cohort` names which population these numbers actually
+  // describe — the client tags it 'personal' whenever the viewer has a real
+  // perimeter narrower than Everyone active (the overwhelming majority of
+  // requests still have no `cohort` field at all, from before this existed,
+  // or simply aren't narrowed — both read identically to "the complete
+  // tree" below, matching every existing cached narrative's own wording).
+  // `totalInCompleteTree` is only ever present alongside a genuinely
+  // narrower `totalPeople`, so the model can be told the honest wider
+  // number too rather than silently omitting it or claiming the smaller
+  // figure IS the whole family (§4.1's "Personal: your setting affects only
+  // your view" trust promise extends to what this narrative claims, not
+  // just the app's own UI copy).
+  const scoped = agg.cohort === 'personal' && agg.totalInCompleteTree != null;
   const lines = [];
-  lines.push(`Total people in the tree: ${agg.totalPeople ?? 'unknown'}`);
+  lines.push(`Total people ${scoped ? 'within the reader\'s Family Perimeter (their own everyday view, not the whole family)' : 'in the tree'}: ${agg.totalPeople ?? 'unknown'}`);
+  if (scoped) {
+    lines.push(`The complete family tree has ${agg.totalInCompleteTree} people in total — everyone above is the READER'S OWN NARROWER VIEW of it, not the whole family. Make this distinction clear if you mention the count at all (e.g. "the corner of your family you're closest to" rather than implying it's everyone).`);
+  }
   if (agg.generations) lines.push(`Generations represented: ${agg.generations}`);
   if (agg.surnames?.length) {
     lines.push(`Surnames (name × count): ${agg.surnames.map((s) => `${s.name} ×${s.count}`).join(', ')}`);

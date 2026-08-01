@@ -3,7 +3,7 @@
  * family propagation, and edge cases. Run with: node tests/relations.test.mjs
  */
 import assert from 'node:assert/strict';
-import { buildGraph, relationLabel, distancesFrom, distancesFromMany, pathBetween, sortSiblings, sortChildren } from '../src/data/graph.js';
+import { buildGraph, relationLabel, distancesFrom, distancesFromMany, pathBetween, sortSiblings, sortChildren, scopeGraphToIds } from '../src/data/graph.js';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -1064,6 +1064,51 @@ test('sortChildren does not mutate the input array', () => {
   const originalOrder = original.map((c) => c.id);
   sortChildren(original, g.byId);
   assert.deepEqual(original.map((c) => c.id), originalOrder);
+});
+
+// ── scopeGraphToIds: a GENUINELY cohort-scoped graph, not just .people ──────
+// (PR #91 review, Phase 6 Family Perimeter: a `.people`-only filter left
+// `.byId`/`.relationships`/parents/children/partners/siblings bound to the
+// full, unfiltered graph, so a relationship-derived module could still
+// surface or count someone outside the intended cohort.)
+
+test('scopeGraphToIds returns the same graph unchanged when ids is null', () => {
+  const g = buildGraph([person('a'), person('b')], [parentEdge('a', 'b')]);
+  assert.equal(scopeGraphToIds(g, null), g);
+});
+
+test('scopeGraphToIds reuses the original graph reference (no rebuild) when ids covers everyone — the default Everyone-perimeter path must stay lean at 5,000-person scale', () => {
+  const g = buildGraph([person('a'), person('b'), person('c')], [parentEdge('a', 'b')]);
+  const everyone = new Set(g.people.map((p) => p.id));
+  assert.equal(scopeGraphToIds(g, everyone), g, 'a full-coverage id set must short-circuit to the SAME graph object, not an equal-but-rebuilt one');
+});
+
+test('scopeGraphToIds drops a relationship when either endpoint is outside ids — byId, parents/children, and .relationships all agree', () => {
+  const people = [person('a'), person('b'), person('outside')];
+  const rels = [parentEdge('a', 'b'), parentEdge('a', 'outside')];
+  const g = buildGraph(people, rels);
+  const scoped = scopeGraphToIds(g, new Set(['a', 'b']));
+
+  assert.deepEqual(scoped.people.map((p) => p.id).sort(), ['a', 'b']);
+  assert.equal(scoped.byId.get('outside'), undefined, 'byId must not resolve an outside id');
+  assert.equal(scoped.relationships.length, 1, 'the edge touching "outside" must be dropped entirely, not just the outside person');
+  assert.deepEqual(scoped.children('a').map((c) => c.id), ['b'], 'the parent-of-b edge survives (both endpoints in ids)');
+  assert.deepEqual(scoped.parents('outside'), [], 'an outside person is unreachable through the scoped graph at all');
+});
+
+test('scopeGraphToIds recomputes siblings/partners from the filtered relationship set, not the original', () => {
+  const people = [person('a'), person('b'), person('c'), person('outsideParent')];
+  // b and c are full siblings via a AND outsideParent; scoping out
+  // outsideParent should degrade them to half-siblings (only "a" shared),
+  // proving siblingsOf is recomputed from scratch, not inherited.
+  const rels = [
+    parentEdge('a', 'b'), parentEdge('outsideParent', 'b'),
+    parentEdge('a', 'c'), parentEdge('outsideParent', 'c'),
+  ];
+  const g = buildGraph(people, rels);
+  assert.equal(g.siblings('b')[0].kind, 'full', 'sanity: full siblings in the unscoped graph');
+  const scoped = scopeGraphToIds(g, new Set(['a', 'b', 'c']));
+  assert.equal(scoped.siblings('b')[0].kind, 'half', 'once outsideParent is excluded, only one shared parent remains');
 });
 
 // ── Report ────────────────────────────────────────────────────────────────────

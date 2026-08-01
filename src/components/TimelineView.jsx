@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useRef } from 'react';
 import { buildTimeline, bucketOf, groupByDecade } from '../lib/timeline.js';
 import { detectRegion, worldEventsInDecade, sameYearWorldEvent, eraTint } from '../lib/worldEvents.js';
 import { CATEGORY_LABELS } from '../data/worldEvents.js';
+import { scopeGraphToIds } from '../data/graph.js';
 import ReturnMark from './ReturnMark.jsx';
 
 /*
@@ -56,10 +57,38 @@ function withWorldContext(groups, region) {
   });
 }
 
-export default function TimelineView({ graph, photos = [], onNavigate, onClose }) {
+export default function TimelineView({ graph, photos = [], cohortIds = null, perimeterActive = false, onNavigate, onClose }) {
   const [filter, setFilter] = useState('all');
-  const all = useMemo(() => buildTimeline(graph, photos), [graph, photos]);
-  const region = useMemo(() => detectRegion(graph), [graph]);
+  // Family Perimeter (Phase 6 §6.11: "Timeline: query or calculate by
+  // cohort... and virtualize entries" — virtualization itself is a
+  // separate, not-yet-tackled performance item; this is the cohort half).
+  // `cohortIds` is null for the overwhelming majority (no perimeter
+  // narrower than Everyone active), so `scopedGraph === graph` and every
+  // moment renders exactly as before this feature existed. Scoping via
+  // scopeGraphToIds (same convention as insightModules.js/TreeInsights.jsx
+  // — people AND relationships both filtered, not just `.people`) naturally
+  // scopes buildTimeline's birth/death/event entries (it iterates
+  // `graph.people`); `photos` is a separate array not attached to the graph
+  // at all, so it needs its own explicit filter by `person_id`.
+  const scopedGraph = useMemo(() => {
+    const ids = cohortIds?.personal;
+    if (!ids) return graph;
+    return scopeGraphToIds(graph, ids);
+  }, [graph, cohortIds]);
+  const scopedPhotos = useMemo(() => {
+    const ids = cohortIds?.personal;
+    if (!ids) return photos;
+    return photos.filter((ph) => ids.has(ph.person_id));
+  }, [photos, cohortIds]);
+  const all = useMemo(() => buildTimeline(scopedGraph, scopedPhotos), [scopedGraph, scopedPhotos]);
+  const region = useMemo(() => detectRegion(scopedGraph), [scopedGraph]);
+  // §4.3: never an unlabelled count when the cohort could be ambiguous —
+  // same convention AccessibleTree.jsx's List view already established for
+  // its own directory count.
+  const completeMomentCount = useMemo(() => {
+    if (!perimeterActive || scopedGraph === graph) return null;
+    return buildTimeline(graph, photos).length;
+  }, [perimeterActive, scopedGraph, graph, photos]);
   const filtered = useMemo(
     () => (filter === 'all' ? all : all.filter((e) => bucketOf(e.type) === filter)),
     [all, filter],
@@ -98,7 +127,14 @@ export default function TimelineView({ graph, photos = [], onNavigate, onClose }
           <ReturnMark onClick={onClose} />
           <div>
             <h2 className="tl__title"><ClockIcon /> Family timeline</h2>
-            {span && <p className="tl__span">{all.length} moments · {span}</p>}
+            {span && (
+              <p className="tl__span">
+                {all.length} moments{completeMomentCount != null ? ' within your Family Perimeter' : ''} · {span}
+                {completeMomentCount != null && (
+                  <span className="tl__span-complete"> · {completeMomentCount} in the complete family tree</span>
+                )}
+              </p>
+            )}
           </div>
         </div>
 

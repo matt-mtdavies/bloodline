@@ -514,3 +514,53 @@ export function computePerspectiveIndex(graph, options = {}) {
     insightCohortIds,
   };
 }
+
+/*
+ * computeInsightCohorts(graph, options) — Phase 6 (§4.4/§6.9). Insights,
+ * Home and Timeline need `insightCohortIds` (personal/context/complete/
+ * directLine/temporaryReveal) available UNCONDITIONALLY — even for the
+ * overwhelming majority of viewers who have never narrowed their perimeter
+ * below Everyone, where App.jsx's own `perspective` stays `null` (see its
+ * own comment: computed only when `perimeterActive`, to keep every EXISTING
+ * perimeter-UI consumer — search badges, boundary labels, the reconciler —
+ * a total no-op until a viewer deliberately narrows their perimeter).
+ *
+ * Reusing `perspective` itself for this would leak insight-cohort
+ * availability into those UI consumers too (several of them treat
+ * "perspective is non-null" as "show perimeter-aware UI," not merely "cohort
+ * data happens to exist") — so this is a deliberately SEPARATE, lighter
+ * sibling: it calls the exact same three inclusion-layer building blocks
+ * computePerspectiveIndex does (computePrimaryPerimeter/computeFamilyHalo/
+ * computePartnerContextRing — the "one pass each, no recursion" layers) but
+ * skips everything Insights never needs — boundaryEdges, relationshipById,
+ * explanationById, minimumRevealPathById, bloodlineIds — each of which does
+ * real additional per-person work (relationLabel walks ancestor chains).
+ *
+ * `viewerId` missing/unknown: an honest "no personalization available" is
+ * `personal = complete` (everyone counts), NOT the empty Sets
+ * emptyIndex() returns for the perimeter/rendering case above — that empty
+ * shape means "nothing is in view yet," which is right for a canvas about
+ * to render nothing, and wrong for an insight module about to silently
+ * report zero facts about a family that's actually fully populated.
+ */
+export function computeInsightCohorts(graph, options = {}) {
+  const { viewerId, perimeterLevel = 'everyone' } = options;
+  const complete = new Set(graph.people.map((p) => p.id));
+  if (!viewerId || !graph.byId.has(viewerId)) {
+    return { personal: complete, context: new Set(), complete, directLine: new Set(), temporaryReveal: new Set() };
+  }
+  const anchorIds = buildAnchorIds(graph, viewerId);
+  const candidatesByPersonId = new Map();
+  const { primaryIds, directLineIds } = computePrimaryPerimeter(graph, anchorIds, perimeterLevel, candidatesByPersonId);
+  const { haloIds, haloPartnerIds } = computeFamilyHalo(graph, primaryIds, candidatesByPersonId);
+  const partnerContextIds = computePartnerContextRing(graph, haloPartnerIds, candidatesByPersonId);
+  return {
+    personal: new Set([...primaryIds, ...haloIds]),
+    context: new Set(partnerContextIds),
+    complete,
+    directLine: directLineIds,
+    // No temporary-reveal concept outside the full perspective — a lighter
+    // caller (Insights/Home/Timeline) never registers reveal targets.
+    temporaryReveal: new Set(),
+  };
+}

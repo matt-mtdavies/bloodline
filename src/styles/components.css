@@ -8372,6 +8372,7 @@ button.health-notes {
   margin: 0;
 }
 .home__hero-card-sub { font-size: 13px; color: var(--ink-soft); margin-top: 6px; }
+.home__hero-card-complete { font-size: 12px; color: var(--ink-faint, #b0a9a5); margin-top: 2px; }
 
 .home__constellation {
   display: block;
@@ -9253,6 +9254,11 @@ button.health-notes {
   letter-spacing: -0.03em;
 }
 .ti__hero-label { font-size: 14px; color: var(--ink-soft, #6b6260); margin-top: 4px; }
+/* §4.3 "show both" convention — a small secondary line under the (now
+   perimeter-scoped) hero number naming the complete-tree total, only ever
+   rendered when a real narrow perimeter is active and the two numbers
+   actually differ. */
+.ti__hero-complete { position: relative; margin-top: 2px; font-size: 12px; color: var(--ink-faint, #b0a9a5); }
 .ti__hero-sub { position: relative; margin-top: 12px; font-size: 13px; color: var(--ink-soft, #6b6260); }
 
 /* AI story */
@@ -10183,6 +10189,7 @@ button.health-notes {
 }
 .tl__title svg { color: var(--accent, #c2603a); }
 .tl__span { margin: 4px 0 0 29px; font-size: 13px; color: var(--ink-soft, #8a8480); }
+.tl__span-complete { color: var(--ink-faint, #b0a9a5); }
 
 .tl__filters { display: flex; gap: 8px; padding: 4px 2px 14px; flex-wrap: wrap; }
 .tl__filter {

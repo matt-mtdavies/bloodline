@@ -70,7 +70,7 @@ import { useImageZoom } from './lib/useImageZoom.js';
 import { buildGraph, pathBetween, pathBetweenOrdered, bloodRelativesOf, distancesFromMany, relationLabel } from './data/graph.js';
 import { useKinTerms } from './lib/kinTerms.js';
 import { planPerimeterRecommendationIfUnset, fetchPerimeterPreference, engineLevelFor, isPerimeterActive } from './lib/familyPerimeter.js';
-import { computePerspectiveIndex } from './lib/perspectiveIndex.js';
+import { computePerspectiveIndex, computeInsightCohorts } from './lib/perspectiveIndex.js';
 import { scheduleStaggeredReveal, idsToPruneForPerimeter, revealAllCandidatePool, desiredVisibleIds } from './lib/staggeredReveal.js';
 import { storeToGedcom } from './lib/gedcom.js';
 import { detectRegion, nearestWorldEvent } from './lib/worldEvents.js';
@@ -205,6 +205,60 @@ const MAX_BUBBLE_REVEAL = 250;
 // The actual ripple-pacing constants (RIPPLE_CHUNK_SIZE etc.) now live in
 // lib/staggeredReveal.js, shared by toggleExpandAll and the perimeter
 // reveal — see that module's own header for the reasoning.
+
+// Shared by familyStats (the topbar stats pill, scoped by the unrelated
+// "Bloodline only" toggle) and homeStats (the Home hub hero, scoped by the
+// viewer's Family Perimeter personal cohort — see homeStats below). Pure:
+// scopeIds narrows which people/photos/memories/relationships count,
+// null means "the complete tree."
+function computeFamilyStatsFor(graph, data, scopeIds) {
+  const people = scopeIds ? graph.people.filter((p) => scopeIds.has(p.id)) : graph.people;
+  const photos = scopeIds ? data.photos.filter((ph) => scopeIds.has(ph.person_id)) : data.photos;
+  const memories = scopeIds ? data.memories.filter((m) => scopeIds.has(m.person_id)) : data.memories;
+  const relationships = scopeIds
+    ? data.relationships.filter((r) => scopeIds.has(r.from_person) && scopeIds.has(r.to_person))
+    : data.relationships;
+  const freq = new Map();
+  let yearMin = Infinity, yearMax = -Infinity;
+  let oldestPerson = null, youngestPerson = null;
+  let withPhoto = 0, withBio = 0, withBirthDate = 0;
+  for (const p of people) {
+    const surname = p.display_name?.trim().split(/\s+/).slice(-1)[0];
+    if (surname) freq.set(surname, (freq.get(surname) ?? 0) + 1);
+    const by = p.birth_date ? parseInt(p.birth_date) : null;
+    if (by && by > 1000) {
+      withBirthDate++;
+      if (by < yearMin) { yearMin = by; oldestPerson = p; }
+      if (by > yearMax) { yearMax = by; youngestPerson = p; }
+    }
+    if (p.photo) withPhoto++;
+    if (p.bio && p.bio.trim()) withBio++;
+  }
+  const sorted = [...freq.entries()].sort((a, b) => b[1] - a[1]);
+  const topTwo = sorted.slice(0, 2).map(([s]) => s);
+  const extraCount = Math.max(0, sorted.length - 2);
+  const surnames = topTwo.join(', ') + (extraCount > 0 ? ` +${extraCount}` : '');
+  const yearSpan = isFinite(yearMin)
+    ? yearMin === yearMax ? `${yearMin}` : `${yearMin}–${yearMax}`
+    : null;
+  return {
+    people: people.length,
+    surnames,
+    yearSpan,
+    photos: photos.length,
+    memories: memories.length,
+    connections: relationships.length,
+    // Detail fields for the stats popover
+    surnameList: sorted.map(([name, count]) => ({ name, count })),
+    yearMin: isFinite(yearMin) ? yearMin : null,
+    yearMax: isFinite(yearMax) ? yearMax : null,
+    oldestName: oldestPerson?.display_name ?? null,
+    youngestName: youngestPerson?.display_name ?? null,
+    withPhoto,
+    withBio,
+    withBirthDate,
+  };
+}
 
 function buildExtracted(result) {
   const pf = result.profileFields;
@@ -654,6 +708,33 @@ export default function App() {
       temporaryRevealIds: temporaryRevealTargets,
     });
   }, [perimeterActive, graph, data.myPersonId, perimeterApiLevel, bloodlineOnly, temporaryRevealTargets]);
+
+  // Insight cohorts (Phase 6 §4.4/§6.9) — deliberately SEPARATE from
+  // `perspective` above, not reused, even though perspective already
+  // carries an identical insightCohortIds field when it's computed.
+  // `perspective` is intentionally `null` for anyone without a perimeter
+  // narrower than Everyone (the overwhelming majority), and several
+  // existing consumers (SearchOverlay's relationship line, PersonSheet's
+  // outside-perimeter badge) treat "perspective is non-null" as a signal to
+  // show perimeter-aware UI, not merely "cohort data happens to exist" —
+  // reusing it here would have made every search row grow a relationship
+  // line the instant this shipped, for every user, whether or not they'd
+  // ever touched Family Perimeter. Insights/Home/Timeline need cohort
+  // labels available UNCONDITIONALLY (count labels must always resolve to
+  // something correct, including the common case where personal === complete),
+  // so this calls the lighter computeInsightCohorts sibling instead — same
+  // inclusion-layer building blocks, but skips boundaryEdges/relationshipById/
+  // explanationById, none of which any insight module needs. Reuses
+  // perspective's own already-computed insightCohortIds when available
+  // (perimeterActive) rather than paying for the computation twice.
+  const insightCohorts = useMemo(() => {
+    if (perspective) return perspective.insightCohortIds;
+    return computeInsightCohorts(graph, {
+      viewerId: data.myPersonId,
+      perimeterLevel: engineLevelFor(perimeterApiLevel),
+    });
+  }, [perspective, graph, data.myPersonId, perimeterApiLevel]);
+
   const [lineageMode, setLineageMode] = useState(false);
   const [lineagePath, setLineagePath] = useState(null); // Set<id> | null
   const [lineageOrder, setLineageOrder] = useState(null); // ordered [fromId,…,toId] | null
@@ -802,53 +883,25 @@ export default function App() {
   // tree, flatly contradicting the filter it's supposed to be summarizing.
   const familyStats = useMemo(() => {
     const scopeIds = bloodlineOnly ? bloodRelativesOf(graph, data.myPersonId || DEFAULT_FOCUS) : null;
-    const people = scopeIds ? graph.people.filter((p) => scopeIds.has(p.id)) : graph.people;
-    const photos = scopeIds ? data.photos.filter((ph) => scopeIds.has(ph.person_id)) : data.photos;
-    const memories = scopeIds ? data.memories.filter((m) => scopeIds.has(m.person_id)) : data.memories;
-    const relationships = scopeIds
-      ? data.relationships.filter((r) => scopeIds.has(r.from_person) && scopeIds.has(r.to_person))
-      : data.relationships;
-    const freq = new Map();
-    let yearMin = Infinity, yearMax = -Infinity;
-    let oldestPerson = null, youngestPerson = null;
-    let withPhoto = 0, withBio = 0, withBirthDate = 0;
-    for (const p of people) {
-      const surname = p.display_name?.trim().split(/\s+/).slice(-1)[0];
-      if (surname) freq.set(surname, (freq.get(surname) ?? 0) + 1);
-      const by = p.birth_date ? parseInt(p.birth_date) : null;
-      if (by && by > 1000) {
-        withBirthDate++;
-        if (by < yearMin) { yearMin = by; oldestPerson = p; }
-        if (by > yearMax) { yearMax = by; youngestPerson = p; }
-      }
-      if (p.photo) withPhoto++;
-      if (p.bio && p.bio.trim()) withBio++;
-    }
-    const sorted = [...freq.entries()].sort((a, b) => b[1] - a[1]);
-    const topTwo = sorted.slice(0, 2).map(([s]) => s);
-    const extraCount = Math.max(0, sorted.length - 2);
-    const surnames = topTwo.join(', ') + (extraCount > 0 ? ` +${extraCount}` : '');
-    const yearSpan = isFinite(yearMin)
-      ? yearMin === yearMax ? `${yearMin}` : `${yearMin}–${yearMax}`
-      : null;
-    return {
-      people: people.length,
-      surnames,
-      yearSpan,
-      photos: photos.length,
-      memories: memories.length,
-      connections: relationships.length,
-      // Detail fields for the stats popover
-      surnameList: sorted.map(([name, count]) => ({ name, count })),
-      yearMin: isFinite(yearMin) ? yearMin : null,
-      yearMax: isFinite(yearMax) ? yearMax : null,
-      oldestName: oldestPerson?.display_name ?? null,
-      youngestName: youngestPerson?.display_name ?? null,
-      withPhoto,
-      withBio,
-      withBirthDate,
-    };
+    return computeFamilyStatsFor(graph, data, scopeIds);
   }, [graph, data.photos, data.memories, data.relationships, data.myPersonId, bloodlineOnly]);
+
+  // Home hub hero stats (PR #91 review): a SEPARATE stat object from
+  // familyStats above, scoped to the viewer's Family Perimeter personal
+  // cohort rather than the unrelated "Bloodline only" toggle. Deliberately
+  // not folded into familyStats itself — that object also feeds the
+  // topbar's StatsPopover, which isn't part of what the review flagged and
+  // has its own, independent scoping semantic; narrowing it too would be a
+  // bigger, undiscussed behavior change than this fix calls for. Carries
+  // completeTotal (§4.3's "never an unlabelled count when the cohort could
+  // be ambiguous") only when a real narrower perimeter is active, mirroring
+  // the same convention TreeInsights/TimelineView already established.
+  const homeStats = useMemo(() => {
+    const personalIds = insightCohorts?.personal;
+    const narrowed = perimeterActive && personalIds && personalIds.size < graph.people.length;
+    const base = computeFamilyStatsFor(graph, data, narrowed ? personalIds : null);
+    return { ...base, completeTotal: narrowed ? graph.people.length : null };
+  }, [graph, data.photos, data.memories, data.relationships, insightCohorts, perimeterActive]);
 
   // Unread activity count — null lastReadAt means never opened, so all events are "new".
   const unreadCount = useMemo(() => {
@@ -2338,8 +2391,8 @@ export default function App() {
   // a null value until the idle callback resolves is indistinguishable from
   // their existing no-insight-this-render behavior.
   const insightModules = useIdleValue(
-    () => timed('computeInsightModules (ambient)', () => computeInsightModules(graph, data.myPersonId || DEFAULT_FOCUS, Date.now(), geocodedByPlace, lastViewedByPersonId)),
-    [graph, data.myPersonId, geocodedByPlace, lastViewedByPersonId],
+    () => timed('computeInsightModules (ambient)', () => computeInsightModules(graph, data.myPersonId || DEFAULT_FOCUS, Date.now(), geocodedByPlace, lastViewedByPersonId, { cohortIds: insightCohorts })),
+    [graph, data.myPersonId, geocodedByPlace, lastViewedByPersonId, insightCohorts],
     null,
   );
   const activeFact = useMemo(
@@ -3019,6 +3072,8 @@ export default function App() {
         <TreeInsights
           graph={graph}
           viewerId={data.myPersonId || activeId}
+          cohortIds={insightCohorts}
+          perimeterActive={perimeterActive}
           onNavigate={(id) => { setInsightsOpen(false); activate(id); openPerson(id); }}
           onClose={() => setInsightsOpen(false)}
         />
@@ -3103,6 +3158,8 @@ export default function App() {
         <TimelineView
           graph={graph}
           photos={data.photos}
+          cohortIds={insightCohorts}
+          perimeterActive={perimeterActive}
           onNavigate={(id) => { setTimelineOpen(false); activate(id); openPerson(id); }}
           onClose={() => setTimelineOpen(false)}
         />
@@ -3328,10 +3385,11 @@ export default function App() {
         <Home
           user={user}
           familyName={data.familyName}
-          stats={familyStats}
+          stats={homeStats}
           activity={data.activity ?? []}
           people={data.people}
           graph={graph}
+          cohortIds={insightCohorts}
           userEmail={user?.email}
           onClose={() => setHomeOpen(false)}
           onOpenAccount={() => { setHomeOpen(false); setProfileOpen(true); }}

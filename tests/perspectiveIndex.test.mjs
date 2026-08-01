@@ -9,7 +9,7 @@
  */
 import assert from 'node:assert/strict';
 import { buildGraph } from '../src/data/graph.js';
-import { computePerspectiveIndex } from '../src/lib/perspectiveIndex.js';
+import { computePerspectiveIndex, computeInsightCohorts } from '../src/lib/perspectiveIndex.js';
 import { generateFamilyFixture, generateCorruptCycleFixture } from '../src/lib/fixtureGenerator.js';
 
 let passed = 0, failed = 0;
@@ -643,6 +643,54 @@ test('5,000-person perimeter calculation meets the ≤300ms budget (standard 4-a
   const elapsed = performance.now() - t0;
   console.log(`      (5,000-person perimeter calc: ${elapsed.toFixed(2)}ms, perimeter size ${idx.perimeterIds.size})`);
   assert.ok(elapsed <= 300, `perimeter calculation took ${elapsed.toFixed(2)}ms, budget is 300ms`);
+});
+
+// ── computeInsightCohorts (Phase 6 §4.4/§6.9) — lightweight, always-on cohort
+//    resolution for Insights/Home/Timeline, independent of whether a
+//    perimeter narrower than Everyone is active. ──────────────────────────
+
+test('computeInsightCohorts: no viewer (unknown/missing) → personal falls back to complete, not empty — insight modules must never silently report zero facts about a populated family', () => {
+  const g = buildGraph([person('a'), person('b'), person('c')], []);
+  const cohorts = computeInsightCohorts(g, {});
+  assert.deepEqual(cohorts.personal, new Set(['a', 'b', 'c']));
+  assert.deepEqual(cohorts.complete, new Set(['a', 'b', 'c']));
+  assert.deepEqual(cohorts.context, new Set());
+  assert.deepEqual(cohorts.directLine, new Set());
+  assert.deepEqual(cohorts.temporaryReveal, new Set());
+});
+
+test('computeInsightCohorts: default perimeterLevel (everyone) makes personal === complete, matching computePerspectiveIndex\'s own tested "everyone" degenerate case', () => {
+  const g = buildGraph(
+    [person('v'), person('parent'), person('cousinOfDistantKind'), person('unrelatedStranger')],
+    [parentEdge('parent', 'v')],
+  );
+  const cohorts = computeInsightCohorts(g, { viewerId: 'v' });
+  assert.deepEqual(cohorts.personal, cohorts.complete);
+  assert.equal(cohorts.personal.size, 4);
+});
+
+test('computeInsightCohorts: a real narrow perimeter level actually narrows personal (matches computePerspectiveIndex\'s own insightCohortIds for the same inputs)', () => {
+  const g = buildGraph(
+    [person('v'), person('parent'), person('grandparent'), person('greatGrandparent'), person('greatGreatUncle'),
+      person('distantCousinParent'), person('distantCousin'), person('distantCousinKid')],
+    [
+      parentEdge('parent', 'v'), parentEdge('grandparent', 'parent'), parentEdge('greatGrandparent', 'grandparent'),
+      parentEdge('greatGrandparent', 'greatGreatUncle'), parentEdge('greatGreatUncle', 'distantCousinParent'),
+      parentEdge('distantCousinParent', 'distantCousin'), parentEdge('distantCousin', 'distantCousinKid'),
+    ],
+  );
+  const cohorts = computeInsightCohorts(g, { viewerId: 'v', perimeterLevel: 1 });
+  const full = computePerspectiveIndex(g, { viewerId: 'v', perimeterLevel: 1 });
+  assert.deepEqual(cohorts.personal, full.insightCohortIds.personal);
+  assert.deepEqual(cohorts.directLine, full.insightCohortIds.directLine);
+  assert.deepEqual(cohorts.context, full.insightCohortIds.context);
+  assert.notEqual(cohorts.personal.size, cohorts.complete.size, 'sanity check: this fixture must actually narrow, or the test proves nothing');
+});
+
+test('computeInsightCohorts: never computes boundaryEdges/relationshipById/explanationById — the whole point of the lighter sibling', () => {
+  const g = buildGraph([person('v'), person('friend')], []);
+  const cohorts = computeInsightCohorts(g, { viewerId: 'v' });
+  assert.deepEqual(Object.keys(cohorts).sort(), ['complete', 'context', 'directLine', 'personal', 'temporaryReveal']);
 });
 
 // ── Report ──────────────────────────────────────────────────────────────────
