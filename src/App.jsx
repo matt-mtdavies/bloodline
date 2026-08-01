@@ -3592,6 +3592,7 @@ export default function App() {
           canReplace={canManageTreeStructure}
           existingPeople={data.people}
           existingRelationships={data.relationships}
+          familyName={data.familyName}
         />
       )}
 
@@ -3612,6 +3613,7 @@ export default function App() {
           canReplace={canManageTreeStructure}
           existingPeople={data.people}
           existingRelationships={data.relationships}
+          familyName={data.familyName}
         />
       )}
 

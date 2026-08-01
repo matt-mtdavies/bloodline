@@ -1889,6 +1889,51 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   changes on hover rather than just editing CSS that never gets reached. Full unit suite,
   `npm run build`, and the standard smoke test all passed clean.
 
+- **REAL INCIDENT, root-caused and hardened — GEDCOM import's "Replace" mode defaulted to
+  ON and wiped 797 of 1,104 people from this account's real production tree** (the family
+  owner reported: "This is a serious integrity breach. Under no circumstances can a tree be
+  wiped so easily. Harden this ASAP."). `GedcomImport.jsx`'s `mergeMode` state initialized
+  to `canReplace ? 'replace' : 'merge'` — meaning any owner/co-admin opening the import
+  dialog saw **Replace pre-selected**, one tap of the already-highlighted main action button
+  (labelled "Import N people →", no different visually from Merge's button) away from a
+  full, tombstoning wipe-and-replace of the entire shared family tree. The only warning was
+  a line of subtext under the Replace option itself. `FamilySearchImport.jsx` had the
+  identical bug. **Recovery was its own harder problem**: `importFromGedcom`'s replace path
+  correctly tombstones every wiped person/relationship (a deliberate earlier fix, so a stale
+  sync can't resurrect them) — but that same tombstoning meant the affected device's local
+  cache kept re-asserting the wipe on every sync even after the tree was correctly restored
+  server-side (via direct D1 access — a Cloudflare MCP connector was available this
+  session), silently undoing two consecutive restores with no visible error before the
+  actual mechanism (stale local tombstones, cleared only by a full sign-out/sign-in — i.e.
+  `clearLocalData()`) was identified. Full incident, mechanism, and the standing rules this
+  produced are written up in **`docs/SAFETY.md`'s new "Destructive whole-tree operations"
+  section — read it before touching any full-tree replace/reset/restore code path.** Fixes
+  shipped same-session:
+  1. **`mergeMode` now always initializes to `'merge'`**, in both `GedcomImport.jsx` and
+     `FamilySearchImport.jsx`, regardless of `canReplace` — permission controls who is
+     ALLOWED to choose Replace, never which option is pre-selected for them.
+  2. **Replace now requires typed confirmation** before it can commit — the exact same bar
+     as `FamilySettings.jsx`'s existing "Start over — erase tree" (type the family's own
+     name back), reusing its `fs__reset-*`/`fs__danger-btn` CSS directly rather than
+     inventing a parallel visual language. Selecting a different merge mode, or Cancel,
+     clears the typed state. Merge mode's own flow (review screen, `MergeReviewStep`) is
+     completely untouched.
+  3. **`FamilySettings.jsx`'s snapshot-restore action now calls `clearLocalData()` before
+     reloading** — the same call `handleLogout` already makes — so a restore can never again
+     be silently undone by a stale local tombstone set the way this incident's own recovery
+     was, twice, before a full sign-out/sign-in broke the cycle. This closes the exact gap
+     that turned a few minutes of server-side recovery into ~20 minutes of real user-facing
+     stress.
+  Verified live via Playwright against the real dev server (not mocked): confirmed the
+  import dialog now opens with Merge selected by default; confirmed selecting Replace and
+  clicking the main action button shows the typed-confirm block instead of committing,
+  confirms the button stays disabled with no input AND with a wrong name typed, confirms it
+  enables only on an exact family-name match, and confirms Cancel returns to the normal
+  action row with nothing committed. Full unit suite and `npm run build` passed clean.
+  **This account's real tree (`f_b4fb1e579dae4e51b57c`) was fully restored to its correct
+  1,104-person / 1,791-relationship state** as part of this incident, confirmed directly
+  against production D1 before and after, with the owner confirming live in the app.
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);
