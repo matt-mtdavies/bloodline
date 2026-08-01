@@ -13,11 +13,27 @@ import { familySpan } from '../lib/dates.js';
  * in noun ("person" vs "ancestor") and what their source can't carry
  * (portraits/memories) — everything else, including the family-span
  * calculation, is identical and lives here once.
+ *
+ * `addedCount`/`enrichedCount` (merge mode only, from summarizeMergeImport —
+ * see lib/duplicates.js): a delta re-import of an already-imported file
+ * mostly COLLAPSES re-adds rather than adding new people, so `people.length`
+ * (the raw parsed batch) would overstate what actually happened — "The
+ * family just got bigger... We've found 300 more people" when only 5 were
+ * genuinely new. When addedCount is 0, this lands on an honest "up to date"
+ * state instead of the arrival narrative, which doesn't fit an import that
+ * added nobody.
  */
-export default function ImportDoneStep({ people, mergeMode, noun = 'person', nounPlural = 'people', sourceNote, onClose }) {
+export default function ImportDoneStep({ people, mergeMode, noun = 'person', nounPlural = 'people', sourceNote, addedCount, enrichedCount = 0, onClose }) {
   const span = familySpan(people);
-  const count = people.length;
   const isMerge = mergeMode === 'merge';
+  const count = isMerge && addedCount != null ? addedCount : people.length;
+  const nothingAdded = isMerge && addedCount === 0;
+
+  const narrative = nothingAdded
+    ? enrichedCount > 0
+      ? `No new ${nounPlural}, but ${enrichedCount} ${enrichedCount === 1 ? 'profile' : 'profiles'} picked up new details from this file.`
+      : `Nothing in this file was new — your tree already had everyone in it.`
+    : `We've found ${isMerge ? `${count} more` : count} ${count === 1 ? noun : nounPlural}${span ? ` connected across ${span.spanYears} years of family history` : ''}.`;
 
   return (
     <div className="gedcom__done">
@@ -25,20 +41,19 @@ export default function ImportDoneStep({ people, mergeMode, noun = 'person', nou
         <CheckIcon />
       </div>
       <h3 className="gedcom__done-title">
-        {isMerge ? 'The family just got bigger.' : 'Welcome home.'}
+        {nothingAdded ? 'Your tree is up to date.' : isMerge ? 'The family just got bigger.' : 'Welcome home.'}
       </h3>
-      <p className="gedcom__done-narrative">
-        We've found {isMerge ? `${count} more` : count} {count === 1 ? noun : nounPlural}
-        {span ? ` connected across ${span.spanYears} years of family history` : ''}.
-      </p>
-      <p className="gedcom__done-sub">
-        {isMerge
-          ? "They've been added to your existing tree — let's see who's new."
-          : "Let's begin with the people who brought you here."}
-        {' '}{sourceNote}
-      </p>
+      <p className="gedcom__done-narrative">{narrative}</p>
+      {!nothingAdded && (
+        <p className="gedcom__done-sub">
+          {isMerge
+            ? "They've been added to your existing tree — let's see who's new."
+            : "Let's begin with the people who brought you here."}
+          {' '}{sourceNote}
+        </p>
+      )}
       <button className="gedcom__import-btn" onClick={onClose}>
-        {isMerge ? 'See what\'s new →' : 'Meet your family →'}
+        {nothingAdded ? 'Done' : isMerge ? 'See what\'s new →' : 'Meet your family →'}
       </button>
     </div>
   );

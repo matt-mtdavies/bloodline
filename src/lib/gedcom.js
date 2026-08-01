@@ -188,8 +188,40 @@ export function gedcomToStore(text) {
     const isDeceased = !!deatNode;
     const deathDate = parseGedcomDate(child(deatNode, 'DATE')?.value);
 
+    // Resting place — GEDCOM's BURI tag, if present, or otherwise DEAT's own
+    // PLAC as a fallback (many exports never emit a distinct BURI, but the
+    // death place is often the only death-related place data on record, and
+    // this app has no separate "died in" field to put it in instead). Only
+    // `place` is ever populated from GEDCOM — no cemetery/plot breakdown, no
+    // geocode — same "leave what can't be honestly inferred null" rule
+    // residences[] below already follows.
+    const buriNode = child(node, 'BURI');
+    const restingPlaceName = child(buriNode, 'PLAC')?.value?.trim() || child(deatNode, 'PLAC')?.value?.trim() || null;
+    const resting_place = restingPlaceName
+      ? { cemetery: null, plot: null, place: restingPlaceName, suburb: null, state: null, country: null, lat: null, lon: null }
+      : null;
+
     // Occupation (first OCCU tag)
     const occupation = child(node, 'OCCU')?.value?.trim() || null;
+
+    // Military service (events[], tag: 'military') — Ancestry's GEDCOM export
+    // carries no structured branch/rank/unit for this, just a custom _MILT
+    // tag with a DATE/PLAC (confirmed against a real Ancestry.com export) —
+    // mapped as a tagged life event, which every existing military-aware
+    // surface (the Service Records insight, the Keepsake narrative gate,
+    // the profile's own military icon) already reads via `tag === 'military'`
+    // — rather than the structured military_* profile fields, which this
+    // data doesn't have the granularity to fill honestly. Repeatable,
+    // mirroring the EDUC/RESI pattern below. A _MILT with no year is
+    // skipped — the timeline's own year field is required, and a title-only
+    // stub isn't useful there.
+    const militaryEvents = [];
+    for (const mNode of children(node, '_MILT')) {
+      const year = child(mNode, 'DATE')?.value?.match(/\d{4}/)?.[0] || null;
+      if (!year) continue;
+      const place = child(mNode, 'PLAC')?.value?.trim() || null;
+      militaryEvents.push({ year: Number(year), title: 'Military service', tag: 'military', ...(place ? { detail: place } : {}) });
+    }
 
     // Education History (education[]) — GEDCOM's EDUC tag is repeatable,
     // each with its own DATE/PLAC, mirroring RESI's own repeatable pattern
@@ -250,10 +282,11 @@ export function gedcomToStore(text) {
       birth_place: birthPlace,
       residence,
       residences,
+      resting_place,
       occupation,
       education,
       tags: [],
-      events: [],
+      events: militaryEvents,
       bio,
       photo: null,
       conditions: [],
@@ -499,6 +532,14 @@ export function storeToGedcom(people = [], relationships = []) {
     if (p.is_deceased) {
       const dd = formatGedcomDate(p.death_date);
       if (dd) { put('1 DEAT'); put(`2 DATE ${dd}`); } else put('1 DEAT Y');
+    }
+    // resting_place (Resting Place) → BURI, mirroring the import side's own
+    // BURI-first, DEAT-PLAC-fallback rule — round-tripping only ever needs
+    // the one place GEDCOM has for this, regardless of which of the two it
+    // originally came from.
+    if (p.resting_place?.place) {
+      put('1 BURI');
+      put(`2 PLAC ${p.resting_place.place}`);
     }
     if (p.occupation) put(`1 OCCU ${p.occupation}`);
     // education[] (Education History) — one EDUC per entry, mirroring

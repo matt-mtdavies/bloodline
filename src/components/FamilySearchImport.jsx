@@ -1,7 +1,8 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef } from 'react';
 import { openFamilySearchOAuth, fetchTree } from '../lib/familysearch.js';
-import { findDuplicatePairs } from '../lib/duplicates.js';
+import { findDuplicatePairs, summarizeMergeImport } from '../lib/duplicates.js';
 import ImportDoneStep from './ImportDoneStep.jsx';
+import MergeReviewStep from './MergeReviewStep.jsx';
 
 const GENERATION_OPTIONS = [
   { value: 3, label: '3 generations', sub: 'Up to 15 ancestors' },
@@ -10,7 +11,7 @@ const GENERATION_OPTIONS = [
 ];
 
 export default function FamilySearchImport({ onImport, onClose, canReplace = true, existingPeople = [], existingRelationships = [] }) {
-  const [step, setStep] = useState('connect'); // connect | fetching | preview | importing | done
+  const [step, setStep] = useState('connect'); // connect | fetching | preview | review | importing | done
   const [generations, setGenerations] = useState(4);
   const [token, setToken] = useState(null);
   const [result, setResult] = useState(null); // { people, relationships }
@@ -32,6 +33,22 @@ export default function FamilySearchImport({ onImport, onClose, canReplace = tru
     }
     return findDuplicatePairs(result.people, result.relationships).length;
   }, [result, mergeMode, existingPeople, existingRelationships]);
+
+  // Same reviewable-delta summary as GedcomImport.jsx — see its own comment
+  // and summarizeMergeImport's doc comment (lib/duplicates.js).
+  const mergeSummary = useMemo(() => {
+    if (!result || mergeMode !== 'merge') return null;
+    return summarizeMergeImport(existingPeople, existingRelationships, result.people, result.relationships);
+  }, [result, mergeMode, existingPeople, existingRelationships]);
+
+  // Frozen at the moment Apply is clicked — see GedcomImport.jsx's own
+  // comment for why this can't just read the live mergeSummary: the instant
+  // onImport() commits, existingPeople updates and mergeSummary recomputes
+  // against the now-already-merged tree, silently zeroing out the Done
+  // screen's counts.
+  const frozenSummary = useRef(null);
+
+  const firstPersonId = useRef(null);
 
   async function handleConnect() {
     setError(null);
@@ -66,7 +83,22 @@ export default function FamilySearchImport({ onImport, onClose, canReplace = tru
   }
 
   function handleImport() {
+    if (mergeMode === 'merge') {
+      frozenSummary.current = mergeSummary;
+      setStep('review');
+      return;
+    }
+    commitImport();
+  }
+
+  function commitImport() {
     setStep('importing');
+    const summary = frozenSummary.current;
+    firstPersonId.current =
+      summary?.newPeople[0]?.id
+      ?? summary?.enrichedPeople[0]?.id
+      ?? result.people[0]?.id
+      ?? null;
     setTimeout(() => {
       onImport(result.people, result.relationships, { merge: mergeMode === 'merge' });
       setStep('done');
@@ -114,6 +146,17 @@ export default function FamilySearchImport({ onImport, onClose, canReplace = tru
           />
         )}
 
+        {step === 'review' && frozenSummary.current && (
+          <MergeReviewStep
+            summary={frozenSummary.current}
+            duplicateCount={duplicateCount}
+            noun="ancestor"
+            nounPlural="ancestors"
+            onApply={commitImport}
+            onBack={() => setStep('preview')}
+          />
+        )}
+
         {step === 'importing' && (
           <div className="gedcom__importing">
             <div className="gedcom__spinner" aria-hidden="true" />
@@ -127,8 +170,10 @@ export default function FamilySearchImport({ onImport, onClose, canReplace = tru
             mergeMode={mergeMode}
             noun="ancestor"
             nounPlural="ancestors"
+            addedCount={frozenSummary.current?.newPeople.length}
+            enrichedCount={frozenSummary.current?.enrichedPeople.length ?? 0}
             sourceNote="Profile portraits and memories aren't part of FamilySearch data, but all names, dates, and relationships are in."
-            onClose={() => onClose(result.people[0]?.id ?? null)}
+            onClose={() => onClose(firstPersonId.current)}
           />
         )}
       </div>
@@ -277,7 +322,7 @@ function PreviewStep({ result, generations, onGenerations, mergeMode, onMergeMod
       <div className="gedcom__preview-actions">
         <button className="gedcom__back-btn" onClick={onBack}>← Disconnect</button>
         <button className="gedcom__import-btn" onClick={onImport}>
-          Import {people.length} {people.length === 1 ? 'person' : 'people'} →
+          {mergeMode === 'merge' ? 'Review changes →' : `Import ${people.length} ${people.length === 1 ? 'person' : 'people'} →`}
         </button>
       </div>
     </div>

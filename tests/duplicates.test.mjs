@@ -9,7 +9,7 @@
  * Run with: node tests/duplicates.test.mjs
  */
 import assert from 'node:assert/strict';
-import { findDuplicatePairs, dedupeMergeImport } from '../src/lib/duplicates.js';
+import { findDuplicatePairs, dedupeMergeImport, mergePersonFields, describeMergeChanges, summarizeMergeImport } from '../src/lib/duplicates.js';
 
 let passed = 0, failed = 0;
 function test(label, fn) {
@@ -118,6 +118,181 @@ test('a dateless record is never auto-merged (too weak — left for review)', ()
   const newP = [{ id: 'n1', display_name: 'John Smith' }];
   const out = dedupeMergeImport(existingP, [], newP, []);
   assert.deepEqual(out.people.map((p) => p.id), ['n1']);
+});
+
+// ── mergePersonFields: array-field dedup (delta re-import safety) ──────────
+// Blind concatenation was fine for a one-off duplicate-person merge, but a
+// repeatable "re-import an updated export" workflow calls this again on
+// every re-import — without dedup, unchanged residence/education/military/
+// event/condition entries would double (then triple, ...) each time the
+// same source data was re-imported.
+
+test('mergePersonFields dedupes identical residences instead of doubling them', () => {
+  const keep = { residences: [{ id: 'r1', place: 'Cardiff, Wales', from_year: 1970, to_year: 1980 }] };
+  const drop = { residences: [{ id: 'r2', place: 'Cardiff, Wales', from_year: 1970, to_year: 1980 }] };
+  const merged = mergePersonFields(keep, drop);
+  assert.equal(merged.residences.length, 1, 'the identical re-imported residence is not duplicated');
+});
+
+test('mergePersonFields keeps two residences at the same place with different years', () => {
+  const keep = { residences: [{ id: 'r1', place: 'Cardiff, Wales', from_year: 1970, to_year: 1980 }] };
+  const drop = { residences: [{ id: 'r2', place: 'Cardiff, Wales', from_year: 1990, to_year: 1995 }] };
+  const merged = mergePersonFields(keep, drop);
+  assert.equal(merged.residences.length, 2, 'genuinely distinct stays at the same place are both kept');
+});
+
+test('mergePersonFields dedupes identical education, military medals, events, and conditions', () => {
+  const keep = {
+    education: [{ id: 'e1', institution: 'Cardiff University', from_year: 1988, to_year: 1991 }],
+    military_medals: [{ name: 'Victory Medal', detail: 'WWI' }],
+    events: [{ year: 1918, title: 'Military service', tag: 'military', detail: 'Fort Slocum, New York' }],
+    conditions: [{ id: 'c1', name: 'Diabetes', category: 'chronic', status: 'active', onset_year: 1960 }],
+  };
+  const drop = {
+    education: [{ id: 'e2', institution: 'Cardiff University', from_year: 1988, to_year: 1991 }],
+    military_medals: [{ name: 'Victory Medal', detail: 'WWI' }],
+    events: [{ year: 1918, title: 'Military service', tag: 'military', detail: 'Fort Slocum, New York' }],
+    conditions: [{ id: 'c2', name: 'Diabetes', category: 'chronic', status: 'active', onset_year: 1960 }],
+  };
+  const merged = mergePersonFields(keep, drop);
+  assert.equal(merged.education.length, 1);
+  assert.equal(merged.military_medals.length, 1);
+  assert.equal(merged.events.length, 1);
+  assert.equal(merged.conditions.length, 1);
+});
+
+test('mergePersonFields fills a blank resting_place from the dropped record', () => {
+  const keep = { resting_place: null };
+  const drop = { resting_place: { cemetery: null, plot: null, place: 'Mount Royal, Montreal, Quebec, Canada', suburb: null, state: null, country: null, lat: null, lon: null } };
+  const merged = mergePersonFields(keep, drop);
+  assert.equal(merged.resting_place.place, 'Mount Royal, Montreal, Quebec, Canada');
+});
+
+test('mergePersonFields never overwrites an existing resting_place', () => {
+  const keep = { resting_place: { cemetery: null, plot: null, place: 'Victor, New York', suburb: null, state: null, country: null, lat: null, lon: null } };
+  const drop = { resting_place: { cemetery: null, plot: null, place: 'Somewhere else', suburb: null, state: null, country: null, lat: null, lon: null } };
+  const merged = mergePersonFields(keep, drop);
+  assert.equal(merged.resting_place.place, 'Victor, New York');
+});
+
+test('mergePersonFields still concatenates genuinely distinct array entries (no over-dedup)', () => {
+  const keep = { residences: [{ id: 'r1', place: 'Cardiff, Wales', from_year: 1970, to_year: 1980 }] };
+  const drop = { residences: [{ id: 'r2', place: 'Fremantle, Australia', from_year: 1988, to_year: 2001 }] };
+  const merged = mergePersonFields(keep, drop);
+  assert.equal(merged.residences.length, 2);
+});
+
+test('re-running mergePersonFields on its own output a second time is a no-op (idempotent re-import)', () => {
+  const keep = { residences: [{ id: 'r1', place: 'Cardiff, Wales', from_year: 1970, to_year: 1980 }] };
+  const drop = { residences: [{ id: 'r2', place: 'Cardiff, Wales', from_year: 1970, to_year: 1980 }] };
+  const once = mergePersonFields(keep, drop);
+  const twice = mergePersonFields(once, drop);
+  assert.equal(twice.residences.length, 1, 'importing the same snapshot again does not grow the array further');
+});
+
+test('a collapsed re-add carries its field data onto the surviving existing person', () => {
+  const existingP = [
+    { id: 'e1', display_name: 'John Smith', birth_date: '1950-03-12', residences: [] },
+  ];
+  const newP = [
+    {
+      id: 'n1',
+      display_name: 'John Smith',
+      birth_date: '1950-03-12',
+      residences: [{ place: 'Cardiff', from_year: '1970' }],
+      education: [{ stage: 'university', institution: 'Cardiff University' }],
+      military_branch: 'Army',
+      military_medals: [{ name: 'Victory Medal' }],
+    },
+  ];
+  const out = dedupeMergeImport(existingP, [], newP, []);
+  assert.equal(out.people.length, 0, 'the re-add is still collapsed, not kept as a new person');
+  assert.ok(out.updatedExisting, 'returns an updatedExisting map');
+  const merged = out.updatedExisting.get('e1');
+  assert.ok(merged, 'e1 has an updated record');
+  assert.equal(merged.residences.length, 1, 'residences carried over from the collapsed re-add');
+  assert.equal(merged.education.length, 1, 'education carried over from the collapsed re-add');
+  assert.equal(merged.military_branch, 'Army', 'a blank scalar field is filled from the re-add');
+  assert.equal(merged.military_medals.length, 1, 'medals carried over from the collapsed re-add');
+});
+
+test('an existing person\'s own field values are never overwritten by a collapsed re-add', () => {
+  const existingP = [
+    { id: 'e1', display_name: 'John Smith', birth_date: '1950-03-12', occupation: 'Carpenter' },
+  ];
+  const newP = [
+    { id: 'n1', display_name: 'John Smith', birth_date: '1950-03-12', occupation: 'Farmer' },
+  ];
+  const out = dedupeMergeImport(existingP, [], newP, []);
+  assert.equal(out.updatedExisting.get('e1').occupation, 'Carpenter', 'existing scalar wins over the re-add on conflict');
+});
+
+test('genuinely new (non-colliding) people never appear in updatedExisting', () => {
+  const existingP = [{ id: 'e1', display_name: 'John Smith', birth_date: '1950' }];
+  const newP = [{ id: 'n1', display_name: 'Baby Smith', birth_date: '2020' }];
+  const out = dedupeMergeImport(existingP, [], newP, []);
+  assert.equal(out.updatedExisting.size, 0);
+});
+
+// ── describeMergeChanges / summarizeMergeImport (delta-import review) ──────
+
+test('describeMergeChanges reports each newly-filled scalar field', () => {
+  const before = { display_name: 'Ann Lee' };
+  const after = { display_name: 'Ann Lee', birth_place: 'Cardiff, Wales', occupation: 'Nurse' };
+  const changes = describeMergeChanges(before, after);
+  assert.ok(changes.includes('birth place added'));
+  assert.ok(changes.includes('occupation added'));
+});
+
+test('describeMergeChanges reports a newly-filled resting_place as "burial place added"', () => {
+  const before = { resting_place: null };
+  const after = { resting_place: { place: 'Mount Royal, Montreal, Quebec, Canada' } };
+  assert.deepEqual(describeMergeChanges(before, after), ['burial place added']);
+});
+
+test('describeMergeChanges reports growth in array fields with a count', () => {
+  const before = { residences: [{ place: 'Cardiff, Wales' }] };
+  const after = { residences: [{ place: 'Cardiff, Wales' }, { place: 'Fremantle, Australia' }, { place: 'London, England' }] };
+  assert.deepEqual(describeMergeChanges(before, after), ['+2 places lived']);
+});
+
+test('describeMergeChanges reports nothing when nothing actually changed', () => {
+  const person = { display_name: 'Ann Lee', birth_place: 'Cardiff, Wales', residences: [{ place: 'Cardiff, Wales' }] };
+  assert.deepEqual(describeMergeChanges(person, { ...person }), []);
+});
+
+test('describeMergeChanges never reports a field that was already filled, even if the incoming value differs', () => {
+  const before = { occupation: 'Carpenter' };
+  const after = { occupation: 'Carpenter' }; // mergePersonFields never overwrites — after always equals before here
+  assert.deepEqual(describeMergeChanges(before, after), []);
+});
+
+test('summarizeMergeImport buckets new people, enriched people, and true no-ops separately', () => {
+  const existingP = [
+    { id: 'e1', display_name: 'John Smith', birth_date: '1950', residences: [] }, // will be enriched
+    { id: 'e2', display_name: 'Mary Smith', birth_date: '1952', occupation: 'Teacher' }, // true no-op re-add
+  ];
+  const newP = [
+    { id: 'n1', display_name: 'John Smith', birth_date: '1950', residences: [{ place: 'Cardiff, Wales' }] },
+    { id: 'n2', display_name: 'Mary Smith', birth_date: '1952', occupation: 'Teacher' }, // identical — nothing new
+    { id: 'n3', display_name: 'Baby Smith', birth_date: '2020' }, // genuinely new
+  ];
+  const summary = summarizeMergeImport(existingP, [], newP, []);
+  assert.equal(summary.newPeople.length, 1, 'exactly one genuinely new person');
+  assert.equal(summary.newPeople[0].id, 'n3');
+  assert.equal(summary.enrichedPeople.length, 1, 'exactly one existing person gained something');
+  assert.equal(summary.enrichedPeople[0].id, 'e1');
+  assert.deepEqual(summary.enrichedPeople[0].changes, ['+1 place lived']);
+  assert.equal(summary.unchangedCount, 1, 'the identical Mary Smith re-add is a true no-op, not "enriched"');
+});
+
+test('summarizeMergeImport on a literal re-import of the same file reports zero new, zero enriched', () => {
+  const existingP = [{ id: 'e1', display_name: 'John Smith', birth_date: '1950', occupation: 'Carpenter' }];
+  const newP = [{ id: 'n1', display_name: 'John Smith', birth_date: '1950', occupation: 'Carpenter' }];
+  const summary = summarizeMergeImport(existingP, [], newP, []);
+  assert.equal(summary.newPeople.length, 0);
+  assert.equal(summary.enrichedPeople.length, 0);
+  assert.equal(summary.unchangedCount, 1);
 });
 
 console.log(`\n  ${passed} passed, ${failed} failed`);

@@ -15,7 +15,7 @@ import {
   addRelative, updatePartnerMeta, resetTree, addMemory, addPhoto, addDocument,
   bioParentGendersFilled, addResidence, updateResidence, removeResidence,
   backfillResidenceGeocodes, setRestingPlace, clearRestingPlace,
-  addEducation, updateEducation, removeEducation,
+  addEducation, updateEducation, removeEducation, mergePeople,
 } from '../src/data/store.js';
 import { buildGraph } from '../src/data/graph.js';
 
@@ -920,6 +920,74 @@ test('clearRestingPlace logs a "resting_place_removed" activity event naming wha
   const [event] = store.getState().activity;
   assert.equal(event.type, 'resting_place_removed');
   assert.equal(event.detail, 'Green Meadow Cemetery');
+});
+
+// Real user report: merging two duplicate records (via DuplicatesSheet) —
+// or auto-collapsing them on GEDCOM re-import — silently dropped whichever
+// side wasn't kept's Places Lived / Education History / military details.
+// mergePeople's fillable-field list predates all three features.
+test('mergePeople: carries over residences[]/education[]/military_medals from the dropped record', () => {
+  importFromGedcom(
+    [
+      {
+        id: 'mp_keep', display_name: 'Keep Person',
+        residences: [{ id: 'res_keep', place: 'Sydney', from_year: 2000, to_year: null }],
+        education: [{ id: 'edu_keep', institution: 'Keep University' }],
+        military_medals: [{ name: 'Keep Medal' }],
+      },
+      {
+        id: 'mp_drop', display_name: 'Drop Person',
+        residences: [{ id: 'res_drop', place: 'Melbourne', from_year: 1990, to_year: 1999 }],
+        education: [{ id: 'edu_drop', institution: 'Drop University' }],
+        military_medals: [{ name: 'Drop Medal' }],
+      },
+    ],
+    [],
+    { merge: false },
+  );
+  mergePeople('mp_keep', 'mp_drop');
+  const kept = store.getState().people.find((p) => p.id === 'mp_keep');
+  assert.equal(kept.residences.length, 2, 'both residences survive the merge');
+  assert.ok(kept.residences.some((r) => r.place === 'Melbourne'), 'the dropped record\'s residence is not silently lost');
+  assert.equal(kept.education.length, 2);
+  assert.ok(kept.education.some((e) => e.institution === 'Drop University'));
+  assert.equal(kept.military_medals.length, 2);
+  assert.ok(kept.military_medals.some((m) => m.name === 'Drop Medal'));
+});
+
+test('mergePeople: fills blank military_branch/nation/rank/service_number from the dropped record', () => {
+  importFromGedcom(
+    [
+      { id: 'mp_keep2', display_name: 'Keep Two' },
+      {
+        id: 'mp_drop2', display_name: 'Drop Two',
+        military_branch: 'army', military_nation: 'Australia',
+        military_rank: 'Corporal', military_service_number: 'NX12345',
+      },
+    ],
+    [],
+    { merge: false },
+  );
+  mergePeople('mp_keep2', 'mp_drop2');
+  const kept = store.getState().people.find((p) => p.id === 'mp_keep2');
+  assert.equal(kept.military_branch, 'army');
+  assert.equal(kept.military_nation, 'Australia');
+  assert.equal(kept.military_rank, 'Corporal');
+  assert.equal(kept.military_service_number, 'NX12345');
+});
+
+test('mergePeople: the kept record\'s own residences/education/military fields are never overwritten, only extended', () => {
+  importFromGedcom(
+    [
+      { id: 'mp_keep3', display_name: 'Keep Three', military_branch: 'navy' },
+      { id: 'mp_drop3', display_name: 'Drop Three', military_branch: 'army' },
+    ],
+    [],
+    { merge: false },
+  );
+  mergePeople('mp_keep3', 'mp_drop3');
+  const kept = store.getState().people.find((p) => p.id === 'mp_keep3');
+  assert.equal(kept.military_branch, 'navy', 'kept wins on a genuine conflict — this is a fill-if-blank merge, not an overwrite');
 });
 
 console.log(`\n  ${passed} passed, ${failed} failed`);

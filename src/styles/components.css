@@ -7357,6 +7357,116 @@ button.health-notes {
 .gedcom__import-btn:hover { opacity: 0.88; }
 .gedcom__import-btn:active { opacity: 0.78; }
 
+/* Review step (MergeReviewStep.jsx) — what a merge-mode import will actually
+   do, shown before it commits. Reuses .gedcom__stats/.gedcom__names/
+   .gedcom__name-chip/.gedcom__dup-note/.gedcom__preview-actions verbatim
+   from the Preview step above; only the parts unique to a diff (the muted
+   "already up to date" stat, the per-person changed-facts list, the empty
+   "nothing new" state) need their own rules. */
+.gedcom__review {
+  padding: 0 20px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.gedcom__stats--review {
+  grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
+}
+
+.gedcom__stat--muted .gedcom__stat-num {
+  color: var(--ink-soft);
+}
+
+.gedcom__review-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.gedcom__review-section-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink-soft);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin: 0;
+}
+
+.gedcom__review-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  border-radius: 12px;
+  overflow: hidden;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.gedcom__review-row {
+  background: var(--paper-deep);
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.gedcom__review-row-name {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.gedcom__review-row-changes {
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+
+.gedcom__review-row--more {
+  color: var(--ink-soft);
+  font-size: 12.5px;
+  text-align: center;
+}
+
+.gedcom__review-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 8px;
+  padding: 24px 12px;
+}
+
+.gedcom__review-empty-icon {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: #edf7f1;
+  color: #3a8a5a;
+  display: grid;
+  place-items: center;
+  margin-bottom: 4px;
+}
+
+.gedcom__review-empty-title {
+  font-family: var(--display);
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--ink);
+  margin: 0;
+}
+
+.gedcom__review-empty-sub {
+  font-size: 13.5px;
+  color: var(--ink-soft);
+  line-height: 1.5;
+  max-width: 280px;
+  margin: 0;
+}
+
 /* Importing spinner */
 .gedcom__importing {
   display: flex;
