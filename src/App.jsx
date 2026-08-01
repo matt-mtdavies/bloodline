@@ -3463,6 +3463,7 @@ export default function App() {
           graph={graph}
           cohortIds={insightCohorts}
           userEmail={user?.email}
+          myPersonId={data.myPersonId}
           onClose={() => setHomeOpen(false)}
           onOpenAccount={() => { setHomeOpen(false); setProfileOpen(true); }}
           onLogout={user ? handleLogout : null}
