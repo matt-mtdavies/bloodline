@@ -295,5 +295,82 @@ test('summarizeMergeImport on a literal re-import of the same file reports zero 
   assert.equal(summary.unchangedCount, 1);
 });
 
+// ── dedupeMergeImport: selective apply (skipPeople / skipEnrichmentFor) ────
+// Real user follow-up on a large re-import: "I don't necessarily want to
+// add all new people, and maybe I only want the diffs to existing people,
+// or maybe I only want diffs for a few selected people."
+
+test('skipPeople fully excludes a genuinely new person — not added, not merged', () => {
+  const existingP = [{ id: 'e1', display_name: 'John Smith', birth_date: '1950' }];
+  const newP = [
+    { id: 'n1', display_name: 'John Smith', birth_date: '1950' },  // dup → collapsed as usual
+    { id: 'n2', display_name: 'Baby Smith', birth_date: '2020' },  // new, but excluded
+    { id: 'n3', display_name: 'Other Smith', birth_date: '2021' }, // new, kept
+  ];
+  const out = dedupeMergeImport(existingP, [], newP, [], { skipPeople: new Set(['n2']) });
+  assert.deepEqual(out.people.map((p) => p.id), ['n3'], 'n2 is excluded, n3 still imports normally');
+});
+
+test('skipPeople drops relationships that would have referenced the excluded person', () => {
+  const existingP = [{ id: 'e1', display_name: 'Parent One', birth_date: '1950' }];
+  const newP = [
+    { id: 'n1', display_name: 'Baby Smith', birth_date: '2020' }, // excluded
+    { id: 'n2', display_name: 'Other Smith', birth_date: '2021' },
+  ];
+  const newR = [
+    { id: 'r1', type: 'parent', from_person: 'e1', to_person: 'n1' }, // references the excluded person
+    { id: 'r2', type: 'parent', from_person: 'e1', to_person: 'n2' },
+  ];
+  const out = dedupeMergeImport(existingP, [], newP, newR, { skipPeople: new Set(['n1']) });
+  assert.equal(out.relationships.length, 1, 'the edge to the excluded person is dropped, the other survives');
+  assert.equal(out.relationships[0].to_person, 'n2');
+});
+
+test('skipPeople does not affect the skipped count (that still means "collapsed as duplicate")', () => {
+  const existingP = [{ id: 'e1', display_name: 'John Smith', birth_date: '1950' }];
+  const newP = [
+    { id: 'n1', display_name: 'John Smith', birth_date: '1950' }, // collapses
+    { id: 'n2', display_name: 'Baby Smith', birth_date: '2020' }, // excluded by choice, not a duplicate
+  ];
+  const out = dedupeMergeImport(existingP, [], newP, [], { skipPeople: new Set(['n2']) });
+  assert.equal(out.skipped, 1, 'only the real collapse counts as "skipped" (duplicate), not the opted-out person');
+  assert.equal(out.people.length, 0);
+});
+
+test('skipEnrichmentFor still collapses the duplicate (no doubling) but writes no new facts', () => {
+  const existingP = [{ id: 'e1', display_name: 'John Smith', birth_date: '1950', occupation: null, residences: [] }];
+  const newP = [
+    { id: 'n1', display_name: 'John Smith', birth_date: '1950', occupation: 'Carpenter', residences: [{ place: 'Cardiff' }] },
+  ];
+  const out = dedupeMergeImport(existingP, [], newP, [], { skipEnrichmentFor: new Set(['e1']) });
+  assert.equal(out.people.length, 0, 'still collapsed — no duplicate person created');
+  assert.equal(out.updatedExisting.size, 0, 'but nothing was merged onto e1');
+});
+
+test('skipEnrichmentFor still remaps relationships onto the existing survivor', () => {
+  const existingP = [
+    { id: 'e1', display_name: 'John Smith', birth_date: '1950' },
+    { id: 'e2', display_name: 'Existing Child', birth_date: '1975' },
+  ];
+  const newP = [{ id: 'n1', display_name: 'John Smith', birth_date: '1950', occupation: 'Carpenter' }];
+  const newR = [{ id: 'r1', type: 'parent', from_person: 'n1', to_person: 'e2' }];
+  const out = dedupeMergeImport(existingP, [], newP, newR, { skipEnrichmentFor: new Set(['e1']) });
+  assert.equal(out.relationships.length, 1, 'the edge still resolves through the collapse');
+  assert.equal(out.relationships[0].from_person, 'e1', 'remapped onto the survivor exactly as without the opt');
+  assert.equal(out.updatedExisting.size, 0, 'still no field data written to e1');
+});
+
+test('skipPeople and skipEnrichmentFor can be used together, independently', () => {
+  const existingP = [{ id: 'e1', display_name: 'John Smith', birth_date: '1950' }];
+  const newP = [
+    { id: 'n1', display_name: 'John Smith', birth_date: '1950', occupation: 'Carpenter' }, // collapses, enrichment skipped
+    { id: 'n2', display_name: 'Baby Smith', birth_date: '2020' }, // fully excluded
+    { id: 'n3', display_name: 'Other Smith', birth_date: '2021' }, // imports normally
+  ];
+  const out = dedupeMergeImport(existingP, [], newP, [], { skipPeople: new Set(['n2']), skipEnrichmentFor: new Set(['e1']) });
+  assert.deepEqual(out.people.map((p) => p.id), ['n3']);
+  assert.equal(out.updatedExisting.size, 0);
+});
+
 console.log(`\n  ${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);

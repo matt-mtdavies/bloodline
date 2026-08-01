@@ -1,3 +1,5 @@
+import { useMemo, useState } from 'react';
+
 /*
  * The "what's actually about to happen" screen for a merge-mode import —
  * shown between Preview and committing, only for Merge (not Replace, which
@@ -10,14 +12,56 @@
  * how many records in the file were already fully accounted for — before
  * anything is written. Shared by GedcomImport.jsx and FamilySearchImport.jsx,
  * same convention as ImportDoneStep.jsx.
+ *
+ * Real user feedback: on a large re-import (300+ people, 355 flagged
+ * duplicates), an all-or-nothing Apply wasn't granular enough — "I don't
+ * necessarily want to add all new people, and maybe I only want the diffs
+ * to existing people, or maybe I only want diffs for a few selected
+ * people." Every new-person chip and every enriched-person row is now its
+ * own toggle, defaulting to included (so a quick Apply with no taps behaves
+ * exactly as before this existed) — onApply receives the two exclusion sets
+ * and dedupeMergeImport's own skipPeople/skipEnrichmentFor opts do the rest:
+ * a deselected new person is dropped along with any relationship that would
+ * have linked to them; a deselected existing person still gets its
+ * duplicate collapsed/de-doubled normally, it just doesn't pick up any new
+ * facts from it.
  */
 export default function MergeReviewStep({ summary, duplicateCount = 0, noun = 'person', nounPlural = 'people', onApply, onBack }) {
   const { newPeople, enrichedPeople, unchangedCount } = summary;
-  const nothingNew = newPeople.length === 0 && enrichedPeople.length === 0;
+  const [excludedNew, setExcludedNew] = useState(() => new Set());
+  const [excludedExisting, setExcludedExisting] = useState(() => new Set());
+
+  const toggleNew = (id) => setExcludedNew((prev) => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+  const toggleExisting = (id) => setExcludedExisting((prev) => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+
+  const includedNewCount = newPeople.length - excludedNew.size;
+  const includedExistingCount = enrichedPeople.length - excludedExisting.size;
+  const nothingToShow = newPeople.length === 0 && enrichedPeople.length === 0;
+  const nothingSelected = !nothingToShow && includedNewCount === 0 && includedExistingCount === 0;
+
+  const applyLabel = useMemo(() => {
+    if (nothingToShow) return 'Close';
+    const parts = [];
+    if (includedNewCount > 0) parts.push(`${includedNewCount} new`);
+    if (includedExistingCount > 0) parts.push(`${includedExistingCount} updated`);
+    return parts.length ? `Add & update (${parts.join(', ')}) →` : 'Nothing selected';
+  }, [nothingToShow, includedNewCount, includedExistingCount]);
+
+  function handleApply() {
+    onApply({ excludedNewIds: excludedNew, excludedExistingIds: excludedExisting });
+  }
 
   return (
     <div className="gedcom__review">
-      {nothingNew ? (
+      {nothingToShow ? (
         <div className="gedcom__review-empty">
           <div className="gedcom__review-empty-icon" aria-hidden="true"><CheckIcon /></div>
           <p className="gedcom__review-empty-title">You're already up to date.</p>
@@ -31,13 +75,13 @@ export default function MergeReviewStep({ summary, duplicateCount = 0, noun = 'p
           <div className="gedcom__stats gedcom__stats--review">
             {newPeople.length > 0 && (
               <div className="gedcom__stat">
-                <span className="gedcom__stat-num">{newPeople.length}</span>
-                <span className="gedcom__stat-label">new {newPeople.length === 1 ? noun : nounPlural}</span>
+                <span className="gedcom__stat-num">{includedNewCount}<span className="gedcom__stat-num-of">/{newPeople.length}</span></span>
+                <span className="gedcom__stat-label">new {nounPlural}</span>
               </div>
             )}
             {enrichedPeople.length > 0 && (
               <div className="gedcom__stat">
-                <span className="gedcom__stat-num">{enrichedPeople.length}</span>
+                <span className="gedcom__stat-num">{includedExistingCount}<span className="gedcom__stat-num-of">/{enrichedPeople.length}</span></span>
                 <span className="gedcom__stat-label">gaining new facts</span>
               </div>
             )}
@@ -51,31 +95,58 @@ export default function MergeReviewStep({ summary, duplicateCount = 0, noun = 'p
 
           {newPeople.length > 0 && (
             <div className="gedcom__review-section">
-              <p className="gedcom__review-section-title">New {newPeople.length === 1 ? noun : nounPlural}</p>
-              <div className="gedcom__names">
-                {newPeople.slice(0, 8).map((p) => (
-                  <span key={p.id} className="gedcom__name-chip">{p.display_name}</span>
+              <div className="gedcom__review-section-head">
+                <p className="gedcom__review-section-title">New {nounPlural} — tap to leave one out</p>
+                <SelectLinks
+                  onAll={() => setExcludedNew(new Set())}
+                  onNone={() => setExcludedNew(new Set(newPeople.map((p) => p.id)))}
+                />
+              </div>
+              <div className="gedcom__names gedcom__names--scroll">
+                {newPeople.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    className={`gedcom__name-chip gedcom__name-chip--toggle${excludedNew.has(p.id) ? ' gedcom__name-chip--off' : ''}`}
+                    aria-pressed={!excludedNew.has(p.id)}
+                    onClick={() => toggleNew(p.id)}
+                  >
+                    {p.display_name}
+                  </button>
                 ))}
-                {newPeople.length > 8 && (
-                  <span className="gedcom__name-chip gedcom__name-chip--more">+{newPeople.length - 8} more</span>
-                )}
               </div>
             </div>
           )}
 
           {enrichedPeople.length > 0 && (
             <div className="gedcom__review-section">
-              <p className="gedcom__review-section-title">Gaining new facts</p>
+              <div className="gedcom__review-section-head">
+                <p className="gedcom__review-section-title">Gaining new facts — tap to leave one out</p>
+                <SelectLinks
+                  onAll={() => setExcludedExisting(new Set())}
+                  onNone={() => setExcludedExisting(new Set(enrichedPeople.map((p) => p.id)))}
+                />
+              </div>
               <ul className="gedcom__review-list">
-                {enrichedPeople.slice(0, 20).map((p) => (
-                  <li key={p.id} className="gedcom__review-row">
-                    <span className="gedcom__review-row-name">{p.name}</span>
-                    <span className="gedcom__review-row-changes">{p.changes.join(' · ')}</span>
-                  </li>
-                ))}
-                {enrichedPeople.length > 20 && (
-                  <li className="gedcom__review-row gedcom__review-row--more">+{enrichedPeople.length - 20} more</li>
-                )}
+                {enrichedPeople.map((p) => {
+                  const off = excludedExisting.has(p.id);
+                  return (
+                    <li key={p.id}>
+                      <button
+                        type="button"
+                        className={`gedcom__review-row${off ? ' gedcom__review-row--off' : ''}`}
+                        aria-pressed={!off}
+                        onClick={() => toggleExisting(p.id)}
+                      >
+                        <span className="gedcom__review-row-check" aria-hidden="true">{off ? '' : <CheckIcon size={12} />}</span>
+                        <span className="gedcom__review-row-text">
+                          <span className="gedcom__review-row-name">{p.name}</span>
+                          <span className="gedcom__review-row-changes">{p.changes.join(' · ')}</span>
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })}
               </ul>
             </div>
           )}
@@ -91,17 +162,27 @@ export default function MergeReviewStep({ summary, duplicateCount = 0, noun = 'p
 
       <div className="gedcom__preview-actions">
         <button className="gedcom__back-btn" onClick={onBack}>← Back</button>
-        <button className="gedcom__import-btn" onClick={onApply}>
-          {nothingNew ? 'Close' : 'Add & update →'}
+        <button className="gedcom__import-btn" onClick={handleApply} disabled={nothingSelected}>
+          {applyLabel}
         </button>
       </div>
     </div>
   );
 }
 
-function CheckIcon() {
+function SelectLinks({ onAll, onNone }) {
   return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <span className="gedcom__review-select-links">
+      <button type="button" className="gedcom__review-select-link" onClick={onAll}>All</button>
+      <span className="gedcom__review-select-sep">·</span>
+      <button type="button" className="gedcom__review-select-link" onClick={onNone}>None</button>
+    </span>
+  );
+}
+
+function CheckIcon({ size = 22 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <path d="M5 13l4 4L19 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );

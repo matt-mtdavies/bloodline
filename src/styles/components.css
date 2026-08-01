@@ -7402,16 +7402,56 @@ button.health-notes {
   gap: 1px;
   border-radius: 12px;
   overflow: hidden;
-  max-height: 260px;
+  max-height: 320px;
   overflow-y: auto;
 }
 
+/* A row is now a per-person toggle (tap to leave that one out of the
+   apply) — a full-width reset button rather than static text, with a
+   checkmark that appears/disappears rather than a checkbox input, matching
+   the toggle-chip treatment new-people get just below. */
 .gedcom__review-row {
+  width: 100%;
   background: var(--paper-deep);
+  border: none;
   padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  transition: opacity 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.gedcom__review-row:hover { background: color-mix(in srgb, var(--paper-deep) 85%, var(--ink)); }
+
+.gedcom__review-row--off {
+  opacity: 0.45;
+}
+
+.gedcom__review-row-check {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1.5px solid var(--accent);
+  color: #fff;
+  background: var(--accent);
+  display: grid;
+  place-items: center;
+}
+.gedcom__review-row--off .gedcom__review-row-check {
+  background: transparent;
+  border-color: var(--hairline);
+}
+
+.gedcom__review-row-text {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  min-width: 0;
 }
 
 .gedcom__review-row-name {
@@ -7425,10 +7465,66 @@ button.health-notes {
   color: var(--ink-soft);
 }
 
-.gedcom__review-row--more {
+.gedcom__review-section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.gedcom__review-select-links {
+  flex: 0 0 auto;
+  font-size: 12px;
   color: var(--ink-soft);
-  font-size: 12.5px;
-  text-align: center;
+  white-space: nowrap;
+}
+
+.gedcom__review-select-link {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.gedcom__review-select-link:hover { text-decoration: underline; }
+
+.gedcom__review-select-sep {
+  margin: 0 4px;
+  color: var(--hairline);
+}
+
+/* New-people chips are the same toggle idea, in the compact pill form
+   .gedcom__name-chip already uses in the Preview step. */
+.gedcom__names--scroll {
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.gedcom__name-chip--toggle {
+  border: 1.5px solid transparent;
+  cursor: pointer;
+  transition: opacity 0.15s ease, border-color 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.gedcom__name-chip--toggle:hover { border-color: var(--accent); }
+
+.gedcom__name-chip--off {
+  opacity: 0.4;
+  text-decoration: line-through;
+}
+
+.gedcom__stat-num-of {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink-faint, #a09590);
+  letter-spacing: normal;
+}
+
+.gedcom__import-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
 .gedcom__review-empty {

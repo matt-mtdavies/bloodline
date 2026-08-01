@@ -47,6 +47,9 @@ export default function FamilySearchImport({ onImport, onClose, canReplace = tru
   // against the now-already-merged tree, silently zeroing out the Done
   // screen's counts.
   const frozenSummary = useRef(null);
+  // What the user chose to apply on the review screen — see GedcomImport.jsx
+  // and MergeReviewStep.jsx's own comments.
+  const selectionRef = useRef({ excludedNewIds: new Set(), excludedExistingIds: new Set() });
 
   const firstPersonId = useRef(null);
 
@@ -91,16 +94,22 @@ export default function FamilySearchImport({ onImport, onClose, canReplace = tru
     commitImport();
   }
 
-  function commitImport() {
+  function commitImport(selection = { excludedNewIds: new Set(), excludedExistingIds: new Set() }) {
     setStep('importing');
+    selectionRef.current = selection;
     const summary = frozenSummary.current;
+    const { excludedNewIds, excludedExistingIds } = selection;
     firstPersonId.current =
-      summary?.newPeople[0]?.id
-      ?? summary?.enrichedPeople[0]?.id
+      summary?.newPeople.find((p) => !excludedNewIds.has(p.id))?.id
+      ?? summary?.enrichedPeople.find((p) => !excludedExistingIds.has(p.id))?.id
       ?? result.people[0]?.id
       ?? null;
     setTimeout(() => {
-      onImport(result.people, result.relationships, { merge: mergeMode === 'merge' });
+      onImport(result.people, result.relationships, {
+        merge: mergeMode === 'merge',
+        skipPeople: excludedNewIds,
+        skipEnrichmentFor: excludedExistingIds,
+      });
       setStep('done');
     }, 500);
   }
@@ -170,8 +179,8 @@ export default function FamilySearchImport({ onImport, onClose, canReplace = tru
             mergeMode={mergeMode}
             noun="ancestor"
             nounPlural="ancestors"
-            addedCount={frozenSummary.current?.newPeople.length}
-            enrichedCount={frozenSummary.current?.enrichedPeople.length ?? 0}
+            addedCount={frozenSummary.current ? frozenSummary.current.newPeople.length - selectionRef.current.excludedNewIds.size : undefined}
+            enrichedCount={frozenSummary.current ? frozenSummary.current.enrichedPeople.length - selectionRef.current.excludedExistingIds.size : 0}
             sourceNote="Profile portraits and memories aren't part of FamilySearch data, but all names, dates, and relationships are in."
             onClose={() => onClose(firstPersonId.current)}
           />
