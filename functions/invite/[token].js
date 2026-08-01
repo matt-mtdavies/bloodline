@@ -37,7 +37,15 @@ export async function onRequestGet({ params, env }) {
 }
 
 function page(html) {
-  return new Response(html, { headers: { 'content-type': 'text/html; charset=utf-8' } });
+  // Invite pages carry a real family name and inviter identity — must never
+  // be indexed (docs/PRODUCTIZATION-BRIEF.md §16.2 indexing boundary). The
+  // meta tag in shell() covers rendering crawlers; this header covers the rest.
+  return new Response(html, {
+    headers: {
+      'content-type': 'text/html; charset=utf-8',
+      'X-Robots-Tag': 'noindex, nofollow',
+    },
+  });
 }
 
 function errorHtml(title, body, home) {
@@ -158,6 +166,7 @@ function shell(content) {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>You're invited — Bloodline</title>
+<meta name="robots" content="noindex, nofollow">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@600;700&family=Hanken+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
