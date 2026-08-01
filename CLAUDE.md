@@ -1934,6 +1934,48 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   1,104-person / 1,791-relationship state** as part of this incident, confirmed directly
   against production D1 before and after, with the owner confirming live in the app.
 
+- **The SAME incident recurred hours later — a systemic fix (`_restoreEpoch`), not just a
+  one-off recovery, was needed** (the owner: "I think it happened again as I had an old
+  Safari browser that wasn't closed. This is after I logged in."). Confirmed directly
+  against D1: the tree had collapsed back to 307 people a second time. Root cause was
+  different from — and deeper than — the first occurrence: the previous fix
+  (`restoreSnapshot` calling `clearLocalData()`) only protects the ONE device that performs
+  a restore. It does nothing for a COMPLETELY DIFFERENT device that already has its own
+  stale, tombstone-poisoned local cache sitting open from before the fix — that device's
+  perfectly ordinary next background-poll sync merges its still-intact "old" people right
+  back in via `_mergeByRecency`, and its equally-intact tombstones (from the original bad
+  import) delete the just-restored people right back out, with no error, no user action,
+  and no `restoreSnapshot` call anywhere in the chain — exactly what an old, never-closed
+  Safari tab would do on its own. Restored the data directly against D1 again (archive-first,
+  same procedure as the first incident), then built the actual systemic fix rather than
+  relying on "remember to close every tab": a new `_restoreEpoch` field, stamped to a fresh
+  timestamp by every authoritative whole-tree reset (`resetTree()`, `importFromGedcom`'s
+  replace path — both in `store.js` — and the snapshot-restore endpoint,
+  `functions/api/tree/snapshots/[id].js`), added to `treeStore.js`'s `CORE_TOP_LEVEL_KEYS`
+  so it round-trips through the R2/D1 split like `_seq` already does. Every client sync path
+  (`loadFromServer` and `_fetchAndMerge`, the background-poll merge function) now calls a
+  new shared `isNewerRestore(server, local)` check FIRST, before any per-record merge logic
+  runs: if the server's `_restoreEpoch` is ahead of what this device last saw, the device
+  takes the server's tree wholesale — same mechanism as the existing `forceServerWins` path
+  used when joining a family via invite, deliberately reused rather than inventing a second
+  one — with no per-record recency comparison and no tombstone union, regardless of how
+  recent or legitimate any of the device's own local `updated_at` timestamps look. This is
+  the actually load-bearing fix: it protects every device, active or idle, open or closed,
+  synced or not, not just the one that triggered the fix. The production tree itself was
+  re-restored (1,104 people confirmed again) and its row was directly stamped with a fresh
+  `_restoreEpoch` via D1 so it's covered the moment this code deploys, even though the field
+  does nothing under the still-live old client code until then. Covered by 9 new unit tests
+  (`tests/restore-epoch.test.mjs`, `tests/snapshot-restore.test.mjs`) — critically, one
+  proves the actual failure mode directly: a local record with a newer `updated_at` than
+  anything on the server (exactly what would normally WIN a `_mergeByRecency` comparison)
+  is still correctly discarded wholesale when the server carries a newer `_restoreEpoch`,
+  plus regression guards that an equal or absent server epoch still merges normally and
+  that ordinary Merge-mode imports never touch the field at all. Full unit suite and
+  `npm run build` passed clean. `docs/SAFETY.md`'s "Destructive whole-tree operations"
+  section was rewritten to make `_restoreEpoch` the primary rule, not an afterthought under
+  the `clearLocalData()` one — any future destructive-reset or recovery code path must stamp
+  it, and any future sync/merge path must check it before touching `_mergeByRecency`.
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);

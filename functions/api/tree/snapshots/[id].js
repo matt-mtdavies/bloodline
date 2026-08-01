@@ -100,6 +100,15 @@ export async function onRequestPost({ params, env, data }) {
     const stamp = (arr) => (Array.isArray(arr) ? arr.map((x) => ({ ...x, updated_at: restoredAtMs })) : arr);
     restored.people = stamp(restored.people);
     restored.relationships = stamp(restored.relationships);
+    // Real incident (docs/SAFETY.md): stamping record-level updated_at above
+    // stops THIS restore from losing a recency merge, but it does nothing
+    // for a device that was already open with a stale local cache from
+    // before the restore — that device's own next sync still merges its
+    // still-intact (but now-wrong) copy right back in. _restoreEpoch marks
+    // this as an authoritative reset every client checks on every sync
+    // (src/data/store.js's isNewerRestore) and, if its own last-seen epoch
+    // is behind, takes this restore wholesale instead of merging against it.
+    restored._restoreEpoch = restoredAtMs;
     restored.memories = stamp(restored.memories);
     restored.photos = stamp(restored.photos);
     restored.documents = stamp(restored.documents);

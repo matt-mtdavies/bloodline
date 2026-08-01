@@ -112,6 +112,25 @@ await test('restoring over an existing tree archives it first as TWO separate ca
   assert.ok(restored.people[0].updated_at, 'every restored person should be stamped with a fresh updated_at');
 });
 
+await test('every restore stamps a fresh _restoreEpoch (docs/SAFETY.md: a device with a stale ' +
+  'local cache from before the restore must take the server wholesale on its next sync, not merge)', async () => {
+  const snapshotRow = { tree_json: JSON.stringify({ people: [{ id: 'old_p' }], _seq: 5 }) };
+  const currentTreeRow = {
+    tree_json: JSON.stringify({ people: [{ id: 'current_p' }], _seq: 7, _restoreEpoch: 1000 }),
+    updated_at: 1000,
+  };
+  const db = makeFakeDB({ membershipRow: OWNER, snapshotRow, currentTreeRow });
+  const before = Date.now();
+
+  const res = await onRequestPost({ params: { id: 'snap1' }, env: { DB: db }, data: { user: USER } });
+  assert.equal(res.status, 200);
+
+  const finalWrite = db.calls.find((c) => c.type === 'run' && /INSERT INTO family_tree \(/.test(c.sql));
+  const restored = JSON.parse(finalWrite.args[1]);
+  assert.ok(typeof restored._restoreEpoch === 'number', 'restored tree must carry a numeric _restoreEpoch');
+  assert.ok(restored._restoreEpoch >= before, '_restoreEpoch must be a fresh timestamp from this restore, not the pre-restore tree\'s old one (1000)');
+});
+
 await test('restoring when there is no current tree yet skips archiving, currentSeq starts at 0', async () => {
   const snapshotRow = { tree_json: JSON.stringify({ people: [{ id: 'old_p' }] }) };
   const db = makeFakeDB({ membershipRow: OWNER, snapshotRow, currentTreeRow: null });

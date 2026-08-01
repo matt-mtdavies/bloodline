@@ -103,7 +103,11 @@ export const CORE_PERSON_FIELDS = new Set([
 // activity, and any future top-level key nobody's added yet — defaults to
 // extra, the same "unknown things aren't core" principle as the person
 // allowlist above.
-const CORE_TOP_LEVEL_KEYS = new Set(['relationships', 'myPersonId', 'familyName', 'hasCompletedOnboarding', '_seq']);
+// _restoreEpoch (docs/SAFETY.md "Destructive whole-tree operations") must be
+// core: it has to survive every split/reassemble round trip untouched and be
+// cheap to read, since every client compares it on every sync to decide
+// whether to merge or take the server wholesale — the same reasoning as _seq.
+const CORE_TOP_LEVEL_KEYS = new Set(['relationships', 'myPersonId', 'familyName', 'hasCompletedOnboarding', '_seq', '_restoreEpoch']);
 
 // _deleted's tombstone kinds correspond 1:1 with the top-level collection
 // they tombstone — people/relationships stay with core, everything else
