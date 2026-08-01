@@ -1973,10 +1973,22 @@
   from { opacity: 0; transform: translateX(-50%) translateY(-6px) scale(0.97); }
   to   { opacity: 1; transform: translateX(-50%) translateY(0)    scale(1);    }
 }
+.stats-popover__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.stats-popover__title {
+  font-family: var(--display, serif);
+  font-size: 16px;
+  font-weight: 700;
+  margin: 0;
+  color: var(--ink);
+}
 .stats-popover__close {
-  position: absolute;
-  top: 14px;
-  right: 14px;
+  flex-shrink: 0;
   background: var(--surface);
   border: none;
   width: 28px;
@@ -5741,30 +5753,154 @@ button.health-notes {
   margin-bottom: 2px;
 }
 .fs__sub { font-size: 13px; color: var(--ink-soft); }
-.fs__tabs {
+/* Primary nav (premium-UX brief §3): Members/Invites as a segmented control
+   — the two everyday actions — plus a "More" overflow for the occasional
+   admin tools (Audit log/Restore/Birthdays), instead of 5 equal-width tabs
+   fighting for a phone-width row. */
+.fs__nav {
   display: flex;
-  gap: 4px;
-  border-bottom: 1.5px solid var(--hairline);
-  margin-bottom: 20px;
-  /* Owner/co-admin sees 5 tabs — wider than a phone screen, so this
-     scrolls horizontally instead of clipping the last one (Birthdays)
-     off the edge with no indication there was more. */
-  overflow-x: auto;
-  scrollbar-width: none;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
 }
-.fs__tabs::-webkit-scrollbar { display: none; }
-.fs__tab {
-  flex: none;
-  white-space: nowrap;
-  padding: 10px 16px;
-  font-size: 14px;
-  font-weight: 500;
+.fs__seg {
+  flex: 1;
+  display: flex;
+  gap: 3px;
+  background: var(--ground, #f7f3ec);
+  border-radius: 12px;
+  padding: 3px;
+}
+.fs__seg-btn {
+  flex: 1;
+  padding: 9px 10px;
+  border-radius: 9px;
+  font-size: 13.5px;
+  font-weight: 600;
   color: var(--ink-soft);
-  border-bottom: 2px solid transparent;
-  margin-bottom: -1.5px;
-  transition: color 0.15s, border-color 0.15s;
+  text-align: center;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s, box-shadow 0.15s;
 }
-.fs__tab--on { color: var(--accent); border-bottom-color: var(--accent); }
+.fs__seg-btn--on {
+  color: var(--ink);
+  background: #fff;
+  box-shadow: var(--shadow-soft, 0 1px 3px rgba(0,0,0,0.08));
+}
+.fs__more-wrap { position: relative; flex: none; }
+.fs__more-btn {
+  width: 40px;
+  height: 40px;
+  min-width: 44px;
+  min-height: 44px;
+  border-radius: 12px;
+  color: var(--ink-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+.fs__more-btn:hover, .fs__more-btn--on { background: var(--ground, #f7f3ec); color: var(--ink); }
+.fs__more-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 5;
+  min-width: 168px;
+  background: #fff;
+  border: 1px solid var(--hairline);
+  border-radius: 14px;
+  box-shadow: 0 8px 28px rgba(20,15,10,0.14);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.fs__more-item {
+  text-align: left;
+  padding: 10px 12px;
+  min-height: 40px;
+  border-radius: 9px;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--ink);
+}
+.fs__more-item:hover { background: var(--ground, #f7f3ec); }
+.fs__more-item--on { color: var(--accent); font-weight: 600; }
+
+/* Sub-view breadcrumb — shown only when a "More" tool (Audit log/Restore/
+   Birthdays) is the active tab, so it's clear this isn't Members/Invites. */
+.fs__subview-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.fs__subview-back {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 4px;
+  min-height: 44px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+.fs__subview-back:hover { color: var(--accent); }
+.fs__subview-title {
+  font-family: var(--display);
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+/* "Invite family" — the visible primary CTA the brief calls for, rather
+   than Invite being just another tab among equals. */
+.fs__invite-cta {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  width: 100%;
+  padding: 13px 16px;
+  min-height: 44px;
+  margin-bottom: 14px;
+  border-radius: 12px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 14.5px;
+  font-weight: 600;
+  transition: filter 0.15s;
+}
+.fs__invite-cta:hover { filter: brightness(1.05); }
+
+.fs__member-search {
+  margin-bottom: 14px;
+}
+
+/* "More" per-row action opening ManageMemberSheet, replacing the old
+   permanent role <select> + bare "×" (premium-UX brief §4). */
+.fs__more-row-btn {
+  width: 32px;
+  height: 32px;
+  min-width: 44px;
+  min-height: 44px;
+  border-radius: 50%;
+  color: var(--ink-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background 0.15s, color 0.15s;
+}
+.fs__more-row-btn:hover { background: var(--ground, #f7f3ec); color: var(--ink); }
+
+.fs__invite-privacy {
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--ink-faint, #a09590);
+  margin: 8px 2px 4px;
+}
 
 .fs__audit { display: flex; flex-direction: column; gap: 2px; }
 .fs__audit-note {
@@ -8275,15 +8411,6 @@ button.health-notes {
   min-width: 0;
 }
 
-.up__email {
-  font-size: 14px;
-  color: var(--ink-soft);
-  margin: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .up__save-status {
   font-size: 12px;
   margin: 0;
@@ -8317,6 +8444,35 @@ button.health-notes {
 .up__admin-link > svg:last-child { margin-left: auto; color: var(--ink-soft, #8a8480); flex-shrink: 0; }
 .up__admin-title { display: block; font-size: 15px; font-weight: 600; }
 .up__admin-desc { display: block; font-size: 12px; color: var(--ink-soft, #8a8480); margin-top: 1px; }
+
+/* Notifications summary row — opens the dedicated Notifications sub-view
+   instead of showing every toggle inline (premium-UX refinement brief). */
+.up__notif-summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 4px 0;
+  border: none;
+  background: none;
+  color: var(--ink, #241f1c);
+  cursor: pointer;
+  text-align: left;
+  min-height: 44px;
+}
+.up__notif-summary-text { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.up__notif-summary > svg { flex-shrink: 0; color: var(--ink-faint, #a6abb3); }
+
+/* Account email — shown once, quietly, in the Account group rather than
+   as prominent identity content in the hero. */
+.up__account-email {
+  font-size: 13.5px;
+  color: var(--ink-soft);
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 /* ── Shareable invite link (Copy / native Share) ── */
 .sharelink {
@@ -10392,19 +10548,44 @@ button.health-notes {
 .stats-popover__timeline-btn:hover { background: #fff; border-color: #d8d2c8; }
 .stats-popover__timeline-btn > svg:first-child { color: var(--accent, #c2603a); }
 
-/* Duplicate-cleanup entry — only appears when matches exist, so give it a gentle
-   nudge tone (amber) to read as a to-do without alarming. */
-.stats-popover__dups-btn {
+/* Care for your archive — a quiet warm-neutral maintenance entry, deliberately
+   NOT the amber "nudge" tone this used to have: these are review items, most
+   of which turn out fine once checked, not alarms. Terracotta stays reserved
+   for Tree insights, the one genuinely primary/positive discovery action. */
+.stats-popover__care { margin: -6px 0 16px; }
+.stats-popover__care-btn {
   display: flex; align-items: center; gap: 9px; width: 100%;
-  margin: -6px 0 16px;
   padding: 11px 14px; border-radius: 14px; cursor: pointer;
-  color: #8a5a1c; font-size: 14px; font-weight: 600;
-  background: #fbf1e2; border: 1px solid #f0dcc0;
+  color: var(--ink, #241f1c); font-size: 14px; font-weight: 600;
+  background: var(--ground, #f7f3ec); border: 1px solid var(--hairline, #ebedf0);
   transition: background 0.15s, border-color 0.15s;
 }
-.stats-popover__dups-btn:hover { background: #fff7ec; border-color: #e6caa0; }
-.stats-popover__dups-btn > svg:first-child { color: #c2843a; flex-shrink: 0; }
-.stats-popover__dups-btn > span:first-of-type { text-align: left; }
+.stats-popover__care-btn:hover { background: #fff; border-color: #d8d2c8; }
+.stats-popover__care-btn > svg:first-child { color: var(--ink-soft, #6b6f76); flex-shrink: 0; }
+.stats-popover__care-btn > span:first-of-type { text-align: left; }
+.stats-popover__care-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--accent, #c2603a); flex-shrink: 0;
+}
+
+.stats-popover__timespan {
+  font-size: 14px;
+  color: var(--ink);
+  margin: 0;
+}
+
+.stats-popover__surnames-more {
+  display: block;
+  margin-top: 8px;
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--accent-deep, #a44d2c);
+  cursor: pointer;
+}
+.stats-popover__surnames-more:hover { text-decoration: underline; }
 
 /* ════════════════════════════════════════════════════════════════════════
    Duplicate review sheet
@@ -10419,6 +10600,20 @@ button.health-notes {
 }
 .dups__title > svg { color: var(--accent, #c2603a); }
 .dups__intro { margin: 2px 2px 16px; font-size: 13.5px; line-height: 1.5; color: var(--ink-soft, #6b6260); }
+
+/* Embedded mode (ArchiveCareSheet.jsx hosts both DuplicatesSheet and
+   IntegritySheet as sub-sections under one shared head/scrim). */
+.dups__embedded-section + .dups__embedded-section {
+  margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--hairline, #ebedf0);
+}
+.dups__embedded-heading {
+  display: flex; align-items: center; gap: 8px; margin: 0 2px 10px;
+  font-family: 'Fraunces', Georgia, serif; font-size: 16px; font-weight: 700; color: var(--ink, #241f1c);
+}
+.dups__embedded-count {
+  font-family: var(--body, sans-serif); font-size: 11.5px; font-weight: 700; color: var(--ink-soft, #6b6260);
+  background: var(--ground, #f7f3ec); border-radius: 999px; padding: 2px 8px;
+}
 /* Bulk "dismiss all" — for a large post-import backlog. Never a bulk merge:
    see the component's own comment on why that stays per-pair only. */
 .dups__bulk { margin: 0 2px 14px; }
@@ -10514,6 +10709,35 @@ button.health-notes {
   padding: 36px 20px; text-align: center; color: var(--ink-soft, #6b6260);
 }
 .dups__empty > svg { color: #3d8c55; }
+
+/* ════════════════════════════════════════════════════════════════════════
+   ManageMemberSheet — "Manage {name}": role picker + protected remove,
+   opened from the member directory's per-row "More" action instead of a
+   permanent inline <select> + bare "×" (premium-UX brief §4).
+   ════════════════════════════════════════════════════════════════════════ */
+.mms__who { display: flex; align-items: center; gap: 12px; margin: 4px 2px 18px; }
+.mms__avatar {
+  width: 48px; height: 48px; border-radius: 50%; flex-shrink: 0;
+  background: color-mix(in srgb, var(--accent) 12%, white);
+  color: var(--accent); font-size: 15px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+}
+.mms__who-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.mms__name { font-size: 15.5px; font-weight: 600; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mms__meta { font-size: 12.5px; color: var(--ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mms__note {
+  font-size: 13.5px; line-height: 1.5; color: var(--ink-soft);
+  background: var(--ground, #f7f3ec); border-radius: 12px; padding: 12px 14px; margin: 4px 2px 8px;
+}
+.mms__danger { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--hairline); }
+.mms__remove-btn {
+  width: 100%; padding: 12px 14px; min-height: 44px; border-radius: 12px;
+  background: transparent; border: 1px solid var(--hairline);
+  color: #c0392b; font-size: 14px; font-weight: 600;
+  transition: background 0.15s;
+}
+.mms__remove-btn:hover { background: #fef2f2; }
+.mms__remove-confirm { margin: 0; }
 
 /* Enrich this profile */
 .enrich-trigger {

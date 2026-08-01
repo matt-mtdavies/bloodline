@@ -8,6 +8,11 @@ import ReturnMark from './ReturnMark.jsx';
 
 export default function UserProfile({ user, people = [], onClose, onLogout, onSaved, onPhoto, onPreviewPerimeter }) {
   const [profile, setProfile] = useState(null);
+  // Premium-UX refinement brief: don't show every notification toggle on
+  // the main Profile screen — a compact summary row opens this instead,
+  // reusing the same sheet shell as a nested "page" (own head, own
+  // ReturnMark back-target) rather than a whole separate top-level route.
+  const [notifView, setNotifView] = useState(false);
   // Grandparent-term preference: a personal display setting, not tree data —
   // lives in this browser's localStorage (see lib/kinTerms.js), so it's read
   // and written directly, no /api/user/profile round-trip needed.
@@ -155,6 +160,67 @@ export default function UserProfile({ user, people = [], onClose, onLogout, onSa
     e.target.value = '';
   }
 
+  // Notifications sub-view — a nested "page" inside the same sheet, with its
+  // own head/back-target, rather than every toggle sitting on the main
+  // Profile screen (premium-UX brief: "use a summary such as 'Family
+  // activity and invitations' with a chevron").
+  if (notifView) {
+    return (
+      <div className="sheet-scrim" role="dialog" aria-modal="true" aria-label="Notifications" onClick={onClose}>
+        <div className="sheet" onClick={(e) => e.stopPropagation()}>
+          <div className="sheet__grip" />
+          <div className="fs__head">
+            <ReturnMark onClick={() => setNotifView(false)} />
+            <h2 className="fs__title">Notifications</h2>
+          </div>
+          {profile && (
+            <div className="fs__section">
+              <div className="up__notif-list">
+                <label className="up__notif-row">
+                  <div className="up__notif-text">
+                    <span className="up__notif-title">Family activity</span>
+                    <span className="up__notif-desc">Emails when people add memories, photos, or new relatives</span>
+                  </div>
+                  <button
+                    role="switch"
+                    aria-checked={profile.notification_prefs?.activity ?? true}
+                    className={`up__toggle${(profile.notification_prefs?.activity ?? true) ? ' up__toggle--on' : ''}`}
+                    onClick={() => toggleNotif('activity')}
+                    disabled={saving}
+                  >
+                    <span className="up__toggle-knob" />
+                  </button>
+                </label>
+                <label className="up__notif-row">
+                  <div className="up__notif-text">
+                    <span className="up__notif-title">Invites</span>
+                    <span className="up__notif-desc">Emails when someone invites you to a family tree</span>
+                  </div>
+                  <button
+                    role="switch"
+                    aria-checked={profile.notification_prefs?.invites ?? true}
+                    className={`up__toggle${(profile.notification_prefs?.invites ?? true) ? ' up__toggle--on' : ''}`}
+                    onClick={() => toggleNotif('invites')}
+                    disabled={saving}
+                  >
+                    <span className="up__toggle-knob" />
+                  </button>
+                </label>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  const notifSummary = profile
+    ? [
+        (profile.notification_prefs?.activity ?? true) && 'Family activity',
+        (profile.notification_prefs?.invites ?? true) && 'Invites',
+      ].filter(Boolean).join(' and ') || 'All off'
+    : '';
+
   return (
     <div className="sheet-scrim" role="dialog" aria-modal="true" aria-label="Your profile" onClick={onClose}>
       <div className="sheet" onClick={(e) => e.stopPropagation()}>
@@ -165,7 +231,7 @@ export default function UserProfile({ user, people = [], onClose, onLogout, onSa
           <h2 className="fs__title">Your profile</h2>
         </div>
 
-        {/* Avatar + identity */}
+        {/* Avatar */}
         <div className="up__hero">
           <button
             className={`up__avatar-btn${claimedPerson ? '' : ' up__avatar-btn--noclaim'}`}
@@ -182,14 +248,17 @@ export default function UserProfile({ user, people = [], onClose, onLogout, onSa
             )}
           </button>
           <input ref={fileRef} type="file" accept="image/*" hidden onChange={handleFileChange} />
-          <div className="up__identity">
-            <p className="up__email">{user?.email}</p>
-            {saveStatus === 'saved' && <p className="up__save-status up__save-status--ok">Saved</p>}
-            {saveStatus && saveStatus !== 'saved' && <p className="up__save-status up__save-status--err">{saveStatus}</p>}
-          </div>
+          {(saveStatus === 'saved' || (saveStatus && saveStatus !== 'saved')) && (
+            <div className="up__identity">
+              {saveStatus === 'saved' && <p className="up__save-status up__save-status--ok">Saved</p>}
+              {saveStatus !== 'saved' && <p className="up__save-status up__save-status--err">{saveStatus}</p>}
+            </div>
+          )}
         </div>
 
-        {/* Display name */}
+        {/* You in the family */}
+        <p className="fs__section-label">You in the family</p>
+
         <div className="fs__section">
           <label className="fs__label" htmlFor="up-display-name">Display name</label>
           <input
@@ -205,7 +274,6 @@ export default function UserProfile({ user, people = [], onClose, onLogout, onSa
           <p className="up__hint">How you appear to other family members.</p>
         </div>
 
-        {/* Claim a bubble */}
         <div className="fs__section">
           <label className="fs__label" htmlFor="up-claim">Your bubble in the tree</label>
           <select
@@ -230,13 +298,15 @@ export default function UserProfile({ user, people = [], onClose, onLogout, onSa
           )}
         </div>
 
+        {/* Your view */}
+        <p className="fs__section-label">Your view</p>
+
         {/* Family Perimeter — docs/FAMILY-PERIMETER-AND-5000-PERSON-PERFORMANCE.md §3.1 */}
         <div className="fs__section">
           <p className="fs__label">Family Perimeter</p>
           <p className="up__hint">
-            Choose how much of your family Bloodline brings forward during everyday
-            browsing. People outside your perimeter remain part of the complete
-            family tree and are always searchable.
+            How much of your family Bloodline brings forward during everyday browsing —
+            people outside it stay in the tree and are always searchable.
           </p>
           {!claimedPerson ? (
             <p className="up__hint">
@@ -321,48 +391,28 @@ export default function UserProfile({ user, people = [], onClose, onLogout, onSa
           </div>
         </div>
 
-        {/* Notifications */}
+        {/* Notifications — compact summary, not every toggle inline */}
         {profile && (
-          <div className="fs__section">
-            <p className="fs__label">Notifications</p>
-            <div className="up__notif-list">
-              <label className="up__notif-row">
-                <div className="up__notif-text">
-                  <span className="up__notif-title">Family activity</span>
-                  <span className="up__notif-desc">Emails when people add memories, photos, or new relatives</span>
-                </div>
-                <button
-                  role="switch"
-                  aria-checked={profile.notification_prefs?.activity ?? true}
-                  className={`up__toggle${(profile.notification_prefs?.activity ?? true) ? ' up__toggle--on' : ''}`}
-                  onClick={() => toggleNotif('activity')}
-                  disabled={saving}
-                >
-                  <span className="up__toggle-knob" />
-                </button>
-              </label>
-              <label className="up__notif-row">
-                <div className="up__notif-text">
-                  <span className="up__notif-title">Invites</span>
-                  <span className="up__notif-desc">Emails when someone invites you to a family tree</span>
-                </div>
-                <button
-                  role="switch"
-                  aria-checked={profile.notification_prefs?.invites ?? true}
-                  className={`up__toggle${(profile.notification_prefs?.invites ?? true) ? ' up__toggle--on' : ''}`}
-                  onClick={() => toggleNotif('invites')}
-                  disabled={saving}
-                >
-                  <span className="up__toggle-knob" />
-                </button>
-              </label>
+          <>
+            <p className="fs__section-label">Notifications</p>
+            <div className="fs__section">
+              <button type="button" className="up__notif-summary" onClick={() => setNotifView(true)}>
+                <span className="up__notif-summary-text">
+                  <span className="up__notif-title">Notifications</span>
+                  <span className="up__notif-desc">{notifSummary}</span>
+                </span>
+                <ArrowIcon />
+              </button>
             </div>
-          </div>
+          </>
         )}
 
-        {/* Admin dashboard — only visible to the site admin */}
-        {user?.isAdmin && (
-          <div className="fs__section">
+        {/* Account — email shown once, quietly; destructive/account actions
+            visually separated at the very bottom. */}
+        <p className="fs__section-label">Account</p>
+        <div className="fs__section">
+          <p className="up__account-email">{user?.email}</p>
+          {user?.isAdmin && (
             <a className="up__admin-link" href="/admin.html">
               <ChartIcon />
               <span>
@@ -371,10 +421,9 @@ export default function UserProfile({ user, people = [], onClose, onLogout, onSa
               </span>
               <ArrowIcon />
             </a>
-          </div>
-        )}
+          )}
+        </div>
 
-        {/* Sign out */}
         <div className="fs__danger">
           {onLogout && (
             <button className="fs__signout-btn" onClick={onLogout}>
