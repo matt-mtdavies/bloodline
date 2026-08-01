@@ -267,6 +267,36 @@ test('describeMergeChanges never reports a field that was already filled, even i
   assert.deepEqual(describeMergeChanges(before, after), []);
 });
 
+// Real report: a military-tagged event added via a GEDCOM's _MILT tag was
+// indistinguishable from any other life event in the summary ("I don't see
+// any military additions" when there actually were some).
+test('describeMergeChanges reports a newly-added military-tagged event as "military record", not "life event"', () => {
+  const before = { events: [] };
+  const after = { events: [{ year: 1918, title: 'Military service', tag: 'military', detail: 'Fort Slocum, New York' }] };
+  assert.deepEqual(describeMergeChanges(before, after), ['+1 military record']);
+});
+
+test('describeMergeChanges keeps a non-military new event as "life event"', () => {
+  const before = { events: [] };
+  const after = { events: [{ year: 2007, title: 'Graduated' }] };
+  assert.deepEqual(describeMergeChanges(before, after), ['+1 life event']);
+});
+
+test('describeMergeChanges reports military and non-military new events as separate lines, correctly pluralized', () => {
+  const before = { events: [{ year: 2000, title: 'Existing event' }] };
+  const after = {
+    events: [
+      { year: 2000, title: 'Existing event' },
+      { year: 1917, title: 'Military service', tag: 'military' },
+      { year: 1918, title: 'Military service', tag: 'military' },
+      { year: 2010, title: 'Moved house' },
+    ],
+  };
+  const changes = describeMergeChanges(before, after);
+  assert.ok(changes.includes('+2 military records'));
+  assert.ok(changes.includes('+1 life event'));
+});
+
 test('summarizeMergeImport buckets new people, enriched people, and true no-ops separately', () => {
   const existingP = [
     { id: 'e1', display_name: 'John Smith', birth_date: '1950', residences: [] }, // will be enriched

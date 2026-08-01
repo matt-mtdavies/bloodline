@@ -320,12 +320,12 @@ const CHANGE_FIELD_LABELS = {
   military_rank: 'military rank', military_service_number: 'service number',
 };
 // [singular, plural] — "place lived" doesn't pluralize by suffix like the
-// rest ("places lived", not "place liveds").
+// rest ("places lived", not "place liveds"). `events` is handled separately
+// below, not through this generic loop — see describeMergeChanges.
 const CHANGE_ARRAY_LABELS = {
   residences: ['place lived', 'places lived'],
   education: ['education record', 'education records'],
   military_medals: ['medal', 'medals'],
-  events: ['life event', 'life events'],
   conditions: ['health record', 'health records'],
 };
 
@@ -345,6 +345,20 @@ export function describeMergeChanges(before, after) {
     const n = (after?.[field]?.length || 0) - (before?.[field]?.length || 0);
     if (n > 0) changes.push(`+${n} ${n === 1 ? singular : plural}`);
   }
+  // events[] is split by tag rather than reported as one generic count — a
+  // real user report on a GEDCOM's two _MILT-tagged records ("I don't see
+  // any military additions") turned out to be exactly this: they WERE
+  // there, just indistinguishable from an ordinary life event in the
+  // summary. mergePersonFields' array-dedup always keeps `before`'s own
+  // entries as an unchanged prefix (dedupeByKey never reorders, and ties
+  // resolve to the first/keep occurrence), so the newly-added entries are
+  // reliably exactly the tail past `before`'s own length — no need to
+  // recompute a full diff.
+  const newEvents = (after?.events || []).slice((before?.events || []).length);
+  const newMilitary = newEvents.filter((e) => e.tag === 'military').length;
+  const newOther = newEvents.length - newMilitary;
+  if (newMilitary > 0) changes.push(`+${newMilitary} military record${newMilitary === 1 ? '' : 's'}`);
+  if (newOther > 0) changes.push(`+${newOther} life event${newOther === 1 ? '' : 's'}`);
   return changes;
 }
 
