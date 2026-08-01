@@ -440,6 +440,24 @@ test("perimeterLevel 'everyone' marks every person primary and skips cousin calc
   assert.equal(idx.outsideIds.size, 0);
 });
 
+// Real bug found while building PerimeterPreview.jsx: the 'everyone' branch
+// marks every person primary with a SELF-referential sourceId (`p.id`,
+// deliberately — "skip cousin calculation entirely" is the whole point,
+// for performance). Before this fix, explainInclusion's `id === anchorId`
+// check was satisfied by that self-reference for literally every person,
+// so every single row read "Your partner." regardless of the real
+// relationship — nothing before PerimeterPreview ever displayed this text
+// for the 'everyone' level, so it went unnoticed until now.
+test("explanationById at perimeterLevel 'everyone': every non-viewer person reads a neutral, correct phrase — never the self-referential 'Your partner.' bug", () => {
+  const g = cousinFixture();
+  const idx = computePerspectiveIndex(g, { viewerId: 'v', perimeterLevel: 'everyone' });
+  for (const p of g.people) {
+    if (p.id === 'v') continue;
+    const text = idx.explanationById.get(p.id);
+    assert.equal(text, 'In your family tree.', `${p.id} got "${text}" instead of the neutral 'everyone' explanation`);
+  }
+});
+
 // ── Bloodline-only projection (§3.7) ───────────────────────────────────────
 
 test('Bloodline-only narrows the current perimeter to biological/adoptive lineage, never adds anyone new', () => {

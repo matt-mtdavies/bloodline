@@ -369,6 +369,16 @@ function explainInclusion(graph, viewerId, id, resolvedReasons) {
   if (!reason) return 'Relative.';
   if (reason.tier === 'temporaryReveal') return 'Temporarily shown from Search.';
   if (reason.tier === 'primary') {
+    // §3.5 step 3's 'everyone' branch deliberately marks every person
+    // primary with `sourceId: p.id` (self-referential) rather than computing
+    // a real relationship route — "skip cousin calculation entirely" is the
+    // whole point of that branch, for performance. Without this check, the
+    // self-referential sourceId satisfies `id === anchorId` below for EVERY
+    // single person, so every row would misread "Your partner." regardless
+    // of the real relationship (a real bug this surfaced: PerimeterPreview
+    // is the first caller to ever display explainInclusion's text for the
+    // 'everyone' level — nothing before it did).
+    if (reason.route === 'everyone') return 'In your family tree.';
     const anchorId = reason.sourceId;
     if (anchorId === viewerId) return `${capitalize(relDescriptor(graph, viewerId, id))}.`;
     if (id === anchorId) return 'Your partner.';

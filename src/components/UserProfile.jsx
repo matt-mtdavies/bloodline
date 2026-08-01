@@ -6,7 +6,7 @@ import {
 } from '../lib/familyPerimeter.js';
 import ReturnMark from './ReturnMark.jsx';
 
-export default function UserProfile({ user, people = [], onClose, onLogout, onSaved, onPhoto }) {
+export default function UserProfile({ user, people = [], onClose, onLogout, onSaved, onPhoto, onPreviewPerimeter }) {
   const [profile, setProfile] = useState(null);
   // Grandparent-term preference: a personal display setting, not tree data —
   // lives in this browser's localStorage (see lib/kinTerms.js), so it's read
@@ -286,6 +286,11 @@ export default function UserProfile({ user, people = [], onClose, onLogout, onSa
             <p className="up__hint" role="status">
               {perimeterStatus === 'saved' ? 'Saved' : perimeterStatus}
             </p>
+          )}
+          {claimedPerson && !perimeter?.unavailable && perimeter && onPreviewPerimeter && (
+            <button className="section-edit up__preview-perimeter" onClick={onPreviewPerimeter}>
+              Preview who's included at each level →
+            </button>
           )}
         </div>
 

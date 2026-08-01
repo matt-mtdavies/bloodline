@@ -71,7 +71,7 @@ import { buildGraph, pathBetween, pathBetweenOrdered, bloodRelativesOf, distance
 import { useKinTerms } from './lib/kinTerms.js';
 import { planPerimeterRecommendationIfUnset, fetchPerimeterPreference, engineLevelFor, isPerimeterActive } from './lib/familyPerimeter.js';
 import { computePerspectiveIndex, computeInsightCohorts } from './lib/perspectiveIndex.js';
-import { scheduleStaggeredReveal, idsToPruneForPerimeter, revealAllCandidatePool, desiredVisibleIds } from './lib/staggeredReveal.js';
+import { scheduleStaggeredReveal, idsToPruneForPerimeter, revealAllCandidatePool, desiredVisibleIds, desiredMandatoryRevealIds } from './lib/staggeredReveal.js';
 import { storeToGedcom } from './lib/gedcom.js';
 import { detectRegion, nearestWorldEvent } from './lib/worldEvents.js';
 import { findDuplicatePairs, pairKey, loadDismissedDuplicates, saveDismissedDuplicates } from './lib/duplicates.js';
@@ -112,6 +112,7 @@ import Onboarding from './components/Onboarding.jsx';
 import LoginScreen from './components/LoginScreen.jsx';
 import FamilySettings from './components/FamilySettings.jsx';
 import UserProfile from './components/UserProfile.jsx';
+import PerimeterPreview from './components/PerimeterPreview.jsx';
 import Home from './components/Home.jsx';
 import HowItWorks from './components/HowItWorks.jsx';
 import FamilyTrees from './components/FamilyTrees.jsx';
@@ -783,6 +784,10 @@ export default function App() {
   const [gedcomOpen, setGedcomOpen] = useState(false);
   const [fsImportOpen, setFsImportOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  // "Who's in your perimeter" preview — nested under Settings the same way
+  // Home's HowItWorks/FamilyTrees nest under Home (opened from a link
+  // inside UserProfile, closes back to it, not to the bare tree).
+  const [perimeterPreviewOpen, setPerimeterPreviewOpen] = useState(false);
   useEffect(() => {
     if (wasProfileOpenRef.current && !profileOpen) loadPerimeterPref();
     wasProfileOpenRef.current = profileOpen;
@@ -1203,19 +1208,24 @@ export default function App() {
   // was active, and exploring branch B never cleaned up branch A's now-
   // stale presentation-only people (temporary reveal is supposed to be
   // session-only and reversible; it wasn't, once you explored a SECOND
-  // branch). Now `expanded` is reconciled down to EXACTLY
-  // desiredVisibleIds's result — `perimeterIds ∪ temporaryRevealPresentation
-  // Ids`, plus the active lineage trace's own path when one is in progress
-  // (Codex review, PR #90 P1: a trace can run from any activeId, not just
-  // the viewer, so it needs its own protection beyond the viewer-anchored
-  // presentation set — see desiredVisibleIds's own comment) — anyone outside
-  // that, however they got into `expanded`, is pruned immediately (cheap, no
-  // crash risk — only ADDING many bubbles at once needs staggering);
-  // anything missing is revealed via the same crash-safe staggered reveal
-  // and MAX_BUBBLE_REVEAL ceiling toggleExpandAll itself relies on. Cancels
-  // any in-flight reveal from a PREVIOUS pass first, so a rapid double-
-  // change (e.g. exploring branch B right after branch A) never races two
-  // staggered reveals against each other.
+  // branch). `expanded` is pruned down to `desiredVisibleIds`'s full result
+  // (perimeterIds ∪ temporaryRevealPresentationIds ∪ the active lineage
+  // trace's own path — the whole BOUNDARY of what's allowed to stay on
+  // screen) — anyone outside that, however they got into `expanded`, is
+  // removed immediately (cheap, no crash risk).
+  //
+  // What gets ADDED back is deliberately much narrower (real user report:
+  // picking any perimeter level — even the narrowest — dumped hundreds of
+  // people onto the canvas at once, "not navigable"; a perimeter is meant
+  // to be a boundary on what CAN be reached, not an eager mass-reveal the
+  // instant it activates). Only `desiredMandatoryRevealIds` — an explicit
+  // "Explore this branch"/search target, or an in-progress lineage trace's
+  // own path — is auto-revealed; the perimeter's own primaryIds/familyHalo/
+  // partnerContext members stay reachable exactly like every bubble always
+  // has been: one tap at a time, or via "All" (which still respects the
+  // perimeter boundary — see revealAllCandidatePool). So the tree opens and
+  // grows the same way it always did; the perimeter only ever narrows what
+  // "All", search, and boundary exploration can ever bring in.
   useEffect(() => {
     if (perimeterRevealTimerRef.current) {
       perimeterRevealTimerRef.current();
@@ -1239,9 +1249,9 @@ export default function App() {
     // than just the viewer-anchored temporary-reveal presentation set) keeps
     // an outside-perimeter target's connecting nodes from being pruned out
     // from under an in-progress trace. See desiredVisibleIds's own comment.
-    const desiredIds = desiredVisibleIds(perspective, lineageMode, lineagePath);
+    const boundaryIds = desiredVisibleIds(perspective, lineageMode, lineagePath);
 
-    const toPrune = idsToPruneForPerimeter(desiredIds, expanded);
+    const toPrune = idsToPruneForPerimeter(boundaryIds, expanded);
     if (toPrune.length) {
       setExpanded((prev) => {
         const next = new Set(prev);
@@ -1250,8 +1260,12 @@ export default function App() {
       });
     }
 
+    // Only auto-reveal the mandatory subset (see desiredMandatoryRevealIds's
+    // own comment) — everything else the perimeter allows stays available on
+    // request, not front-loaded.
+    const mandatoryIds = desiredMandatoryRevealIds(perspective, lineageMode, lineagePath);
     const dist = distancesFromMany(graph, expanded);
-    let candidateIds = [...desiredIds];
+    let candidateIds = [...mandatoryIds].filter((id) => !expanded.has(id));
     if (candidateIds.length > MAX_BUBBLE_REVEAL) {
       candidateIds = candidateIds
         .map((id) => ({ id, d: dist.get(id) ?? Infinity }))
@@ -1261,6 +1275,7 @@ export default function App() {
       setSyncToast(`Showing the ${MAX_BUBBLE_REVEAL} people closest to you — switch to List view to see everyone in a family this size.`);
       setTimeout(() => setSyncToast(null), 6000);
     }
+    if (!candidateIds.length) return;
 
     perimeterRevealTimerRef.current = scheduleStaggeredReveal(candidateIds, dist, expanded, (ids) => {
       setExpanded((prev) => {
@@ -2425,7 +2440,7 @@ export default function App() {
     legendOpen || settingsOpen || insightsOpen || timelineOpen || docViewer ||
     invitePersonId || activityOpen || gedcomOpen || fsImportOpen || profileOpen ||
     homeOpen || howItWorksOpen || familyTreesOpen || searchOpen || duplicatesOpen || promptClaim || showInstall ||
-    keepsakeId || troveSearchPersonId
+    keepsakeId || troveSearchPersonId || perimeterPreviewOpen
   );
 
   // Desktop "just start typing" search (feature request: a keyboard-first
@@ -3378,6 +3393,21 @@ export default function App() {
             setCurrentUser({ ...user, ...updated });
           }}
           onPhoto={handlePhoto}
+          onPreviewPerimeter={() => { setProfileOpen(false); setPerimeterPreviewOpen(true); }}
+        />
+      )}
+
+      {perimeterPreviewOpen && (
+        <PerimeterPreview
+          graph={graph}
+          viewerId={data.myPersonId}
+          currentLevel={perimeterApiLevel}
+          onClose={() => { setPerimeterPreviewOpen(false); setProfileOpen(true); }}
+          onSelectPerson={(id) => {
+            setPerimeterPreviewOpen(false);
+            activate(id);
+            openPerson(id);
+          }}
         />
       )}
 
