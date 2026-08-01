@@ -87,7 +87,22 @@ export async function onRequestGet({ request, env }) {
         // screenshots, or access logs — LoginScreen reads this once on
         // mount and removes it immediately. ?start= alone (a non-sensitive
         // UI hint, not PII) still travels via the URL.
-        try { sessionStorage.setItem('bl_signin_email', email); } catch (e) {}
+        //
+        // If storage is blocked (Safari private browsing, a storage policy,
+        // a full quota), the code has already been sent server-side but
+        // there'd be no way left to hand the email to LoginScreen — silently
+        // redirecting would strand the user on a blank email-entry screen
+        // with no clue a code is already waiting. Caught separately from
+        // the network-failure catch below so this gets its own honest
+        // message instead of the generic "something went wrong" one.
+        try {
+          sessionStorage.setItem('bl_signin_email', email);
+        } catch (e) {
+          hint.textContent = 'Your browser blocked temporary storage needed to continue. Enable cookies/storage for this site, or use the code entry link in the email we just sent.';
+          btn.disabled = false;
+          btn.textContent = 'Send me a code';
+          return;
+        }
         var dest = '/';
         if (START) dest += '?start=' + encodeURIComponent(START);
         window.location.href = dest;
