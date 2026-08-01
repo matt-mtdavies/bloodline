@@ -96,6 +96,7 @@ export async function onRequestGet({ env }) {
         <a class="pub-btn pub-btn--primary pub-btn--lg" href="/start#import">Import a GEDCOM</a>
         <a class="pub-btn pub-btn--secondary pub-btn--lg" href="/help">Read the import FAQ</a>
       </div>
+      <p style="margin-top:22px; font-size:14px; color:var(--ink-soft);">Want a full pre-import checklist first? Read <a href="/guides/import-a-gedcom-file" style="color:var(--accent-deep); font-weight:600;">our GEDCOM import guide</a>.</p>
     </div>
   </section>`;
 

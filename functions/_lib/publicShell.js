@@ -25,6 +25,7 @@ const FOOTER_COLUMNS = [
       { href: '/how-it-works', label: 'How it works' },
       { href: '/features', label: 'Features' },
       { href: '/import', label: 'Import a GEDCOM' },
+      { href: '/guides', label: 'Guides' },
     ],
   },
   {
@@ -70,7 +71,7 @@ export function brandMark(size = 26) {
 
 function headerHtml({ home, activeKey, ctaHref = '/start', ctaLabel = 'Start your family tree' }) {
   const navLinks = NAV_LINKS.map((l) => `<a href="${l.href}"${l.key === activeKey ? ' aria-current="page"' : ''}>${esc(l.label)}</a>`).join('');
-  const menuLinks = [...NAV_LINKS, { href: '/import', label: 'Import a GEDCOM' }, { href: '/help', label: 'Help' }]
+  const menuLinks = [...NAV_LINKS, { href: '/import', label: 'Import a GEDCOM' }, { href: '/guides', label: 'Guides' }, { href: '/help', label: 'Help' }]
     .map((l) => `<a href="${l.href}"${l.key && l.key === activeKey ? ' aria-current="page"' : ''}>${esc(l.label)}</a>`).join('');
   return `
   <header class="pub-header">
@@ -227,6 +228,26 @@ export function breadcrumbStructuredData(home, items) {
       name: item.name,
       item: item.href ? `${home}${item.href}` : undefined,
     })),
+  };
+}
+
+/**
+ * Article JSON-LD for a maintained guide (docs/PRODUCTIZATION-BRIEF.md §16.7).
+ * `datePublished`/`dateModified` are plain 'YYYY-MM-DD' strings the guide
+ * itself owns and bumps by hand on a real edit — never auto-generated at
+ * request time, or every response would claim "modified today".
+ */
+export function articleStructuredData(home, { path, title, description, datePublished, dateModified }) {
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'Article',
+    headline: title,
+    description,
+    url: `${home}${path}`,
+    author: { '@type': 'Organization', name: SITE_NAME },
+    publisher: { '@type': 'Organization', name: SITE_NAME },
+    datePublished,
+    dateModified: dateModified || datePublished,
   };
 }
 
