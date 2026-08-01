@@ -16,9 +16,15 @@
  * as alive rather than a static icon, without competing for attention while
  * someone's actually using the app. Picks up seamlessly once the entrance
  * pop-in finishes, rather than fighting it for the same frames.
+ *
+ * `paused` freezes whatever idle motion is currently playing mid-frame
+ * (`animation-play-state: paused`, not a class swap that would snap back
+ * to rest) — for the persistent header mark specifically, while a sheet or
+ * search dialog sits open in front of it (Codex design review: ambient
+ * motion shouldn't keep competing for attention behind a modal).
  */
-export default function Logo({ size = 30, animate = true, loading = false, idle = false }) {
-  const cls = 'logo' + (animate ? ' logo--in' : '') + (loading ? ' logo--loading' : '') + (idle ? ' logo--idle' : '');
+export default function Logo({ size = 30, animate = true, loading = false, idle = false, paused = false }) {
+  const cls = 'logo' + (animate ? ' logo--in' : '') + (loading ? ' logo--loading' : '') + (idle ? ' logo--idle' : '') + (paused ? ' logo--paused' : '');
   return (
     <svg
       className={cls}

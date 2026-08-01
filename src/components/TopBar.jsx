@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, forwardRef } from 'react';
 import Logo from './Logo.jsx';
 import { PERIMETER_OPTIONS } from '../lib/familyPerimeter.js';
 
-export default function TopBar({ familyName, stats, view, layout, syncStatus, syncError, onRetrySync, onSetViewMode, onOpenLegend, bloodlineOnly = false, onToggleBloodlineOnly, onOpenActivity, activityCount = 0, user, userPhoto, onOpenProfile, onOpenHome, onSearch, onOpenInsights, onOpenTimeline, onOpenDuplicates, duplicateCount = 0, storageWarning, storageNearLimit, treeSizeWarning, syncToast, onDismissSyncToast, recapNudgeCount = 0, onShowRecap, onDismissRecapNudge, perimeterActive = false, perimeterLevel = null, onOpenPerimeterPreview }) {
+export default function TopBar({ familyName, stats, view, layout, syncStatus, syncError, onRetrySync, onSetViewMode, onOpenLegend, bloodlineOnly = false, onToggleBloodlineOnly, onOpenActivity, activityCount = 0, user, userPhoto, onOpenProfile, onOpenHome, onSearch, onOpenInsights, onOpenTimeline, onOpenDuplicates, duplicateCount = 0, storageWarning, storageNearLimit, treeSizeWarning, syncToast, onDismissSyncToast, recapNudgeCount = 0, onShowRecap, onDismissRecapNudge, perimeterActive = false, perimeterLevel = null, onOpenPerimeterPreview, anyOverlayOpen = false }) {
   const perimeterLevelLabel = PERIMETER_OPTIONS.find((o) => o.value === perimeterLevel)?.label ?? null;
   const [statsOpen, setStatsOpen] = useState(false);
   const [viewMenuOpen, setViewMenuOpen] = useState(false);
@@ -69,7 +69,7 @@ export default function TopBar({ familyName, stats, view, layout, syncStatus, sy
               it eases straight back to the quiet `idle` drift — no
               checkmark tick, since a fresh burst of motion right as
               things go quiet would undercut the point of going quiet. */}
-          <Logo size={26} loading={syncStatus === 'saving'} idle={syncStatus !== 'saving'} animate={false} />
+          <Logo size={26} loading={syncStatus === 'saving'} idle={syncStatus !== 'saving'} paused={anyOverlayOpen} animate={false} />
           <span className="topbar__word">Bloodline</span>
           <span className="hover-tip hover-tip--down">Home</span>
         </button>
@@ -269,20 +269,24 @@ export default function TopBar({ familyName, stats, view, layout, syncStatus, sy
         </div>
       )}
       {recapNudgeCount > 0 && (
-        <button className="recap-nudge" onClick={onShowRecap}>
-          <span className="recap-nudge__spark" aria-hidden="true">✨</span>
-          {recapNudgeCount} {recapNudgeCount === 1 ? 'update' : 'updates'} while you were away — Show me
-          <span
+        // Two real, independent controls as SIBLINGS, not a dismiss `role="button"`
+        // nested inside the "show me" <button> — a <button> inside a <button> is
+        // invalid HTML; browsers silently reparent it out, which is exactly what
+        // made keyboard/screen-reader behavior here unreliable (Codex review).
+        <div className="recap-nudge">
+          <button className="recap-nudge__main" onClick={onShowRecap}>
+            <span className="recap-nudge__spark" aria-hidden="true">✨</span>
+            {recapNudgeCount} {recapNudgeCount === 1 ? 'update' : 'updates'} while you were away — Show me
+          </button>
+          <button
+            type="button"
             className="recap-nudge__dismiss"
-            role="button"
-            tabIndex={0}
             aria-label="Dismiss"
-            onClick={(e) => { e.stopPropagation(); onDismissRecapNudge?.(); }}
-            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); onDismissRecapNudge?.(); } }}
+            onClick={() => onDismissRecapNudge?.()}
           >
             ×
-          </span>
-        </button>
+          </button>
+        </div>
       )}
 
       {/* Stats detail popover */}

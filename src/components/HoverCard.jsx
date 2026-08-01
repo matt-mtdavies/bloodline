@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import Avatar from './Avatar.jsx';
 import { relationLabel } from '../data/graph.js';
 import { useKinTerms } from '../lib/kinTerms.js';
@@ -31,6 +31,17 @@ export default function HoverCard({ graph, personId, viewerId, getPos, photos, d
   const [show, setShow] = useState(false);
   const hideTimer = useRef(null);
   const kinTerms = useKinTerms();
+  // Codex design review: the ticker used to key off a length heuristic
+  // (>3 items or >40 chars) rather than whether the text is ACTUALLY
+  // clipped — a fixed-width card can have plenty of room for, say, "2
+  // sisters, 1 half-brother" (well under 40 chars) while a single long
+  // qualifier like "1 great-grandchild" alone could still clip on a
+  // narrower render. A permanently-rendered, visually hidden measuring
+  // span reports the text's true natural width regardless of which mode
+  // is currently showing, so truncation is measured, not guessed.
+  const tickerContainerRef = useRef(null);
+  const relMeasureRef = useRef(null);
+  const [tickerNeeded, setTickerNeeded] = useState(false);
 
   useEffect(() => {
     clearTimeout(hideTimer.current);
@@ -187,6 +198,15 @@ export default function HoverCard({ graph, personId, viewerId, getPos, photos, d
   }
   const relSummary = familyRelBits.join(' · ');
 
+  useLayoutEffect(() => {
+    const container = tickerContainerRef.current;
+    const measure = relMeasureRef.current;
+    if (!container || !measure) { setTickerNeeded(false); return; }
+    // +1px guards against subpixel rounding flapping the mode on a value
+    // that's genuinely right at the edge.
+    setTickerNeeded(measure.scrollWidth > container.clientWidth + 1);
+  }, [relSummary]);
+
   // Quiet "there's more here" signal — not clickable, not counted anywhere
   // else on the card. Any document at all counts (a scanned letter or
   // certificate is a real find, however few a family has uploaded), and a
@@ -236,13 +256,21 @@ export default function HoverCard({ graph, personId, viewerId, getPos, photos, d
         {familyRelBits.length > 0 && (
           <div className="hover-card__family hover-card__relbits">
             <FamilyIcon />
-            {/* Ticker kicks in either once there are enough items to page
-                through, or once the joined text is long enough to clip on
-                one line — "great-grandchildren" alone can push even 3 items
-                past the card width, where 3 shorter words wouldn't. */}
-            {familyRelBits.length > 3 || relSummary.length > 40 ? (
-              <div className="hover-card__ticker">
+            {/* Ticker kicks in only when relMeasureRef's measured width
+                actually overflows tickerContainerRef's real available
+                width (Codex design review — this used to be a length
+                heuristic, "more than 3 items or more than 40 chars," which
+                could both false-positive (short items that still fit) and
+                false-negative (one long qualifier under 40 chars that
+                still clips). `key={person.id}` forces a fresh DOM node —
+                and so a freshly-started animation — every time a different
+                person is hovered, rather than possibly reusing the same
+                track element mid-animation. */}
+            <div className="hover-card__ticker" ref={tickerContainerRef}>
+              <span ref={relMeasureRef} className="hover-card__ticker-measure" aria-hidden="true">{relSummary}</span>
+              {tickerNeeded ? (
                 <div
+                  key={person.id}
                   className="hover-card__ticker-track"
                   style={{ animationDuration: `${familyRelBits.length * 1.98}s` }}
                 >
@@ -250,10 +278,10 @@ export default function HoverCard({ graph, personId, viewerId, getPos, photos, d
                     <span className="hover-card__ticker-item" key={i}>{label}</span>
                   ))}
                 </div>
-              </div>
-            ) : (
-              <span>{relSummary}</span>
-            )}
+              ) : (
+                <span>{relSummary}</span>
+              )}
+            </div>
           </div>
         )}
         {location && (

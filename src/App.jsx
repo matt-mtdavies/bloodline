@@ -2623,6 +2623,7 @@ export default function App() {
         onDismissRecapNudge={() => { setRecapNudge(false); markRecapSeen(); }}
         perimeterActive={perimeterActive}
         perimeterLevel={perimeterApiLevel}
+        anyOverlayOpen={anyOverlayOpen}
         onOpenPerimeterPreview={() => {
           setPerimeterPreviewFromProfile(false);
           setPerimeterPreviewOpen(true);
