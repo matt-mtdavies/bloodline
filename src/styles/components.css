@@ -12059,6 +12059,21 @@ button.health-notes {
 .pp__legend-row--on .pp__legend-label { font-weight: 700; }
 .pp__legend-count { font-size: 13px; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
 
+/* Genogram mode's picker — a wrapped row of small pills instead of four
+   full-width rows, so it costs a fraction of the vertical space the
+   variable-height diagram below it can't spare (see .pp__geno-section's
+   own comment). Same rows/dots/labels, just laid out as pills. */
+.pp__legend--compact { flex-direction: row; flex-wrap: wrap; gap: 6px; }
+.pp__legend--compact .pp__legend-row {
+  width: auto;
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1.5px solid var(--hairline);
+}
+.pp__legend--compact .pp__legend-row--on { border-color: var(--ink-soft); }
+.pp__legend--compact .pp__legend-label { flex: none; font-size: 13px; }
+.pp__legend--compact .pp__legend-count { font-size: 12px; }
+
 .pp__level-desc {
   flex: 0 0 auto;
   margin: 0 4px 12px;
@@ -12087,7 +12102,18 @@ button.health-notes {
    dim in/out as the level changes, which is itself the point: seeing most
    of the diagram stay lit answers "why does even Close family already
    include so many people." */
-.pp-geno { display: flex; flex-direction: column; gap: 6px; padding: 2px 4px 4px; }
+/* Real bug (live production report): on a real, deeper family the seven
+   generation rows + note easily exceed the fixed-height .sheet.pp's
+   remaining space — since everything above .pp__list is `flex: 0 0 auto`
+   (non-shrinking) inside a parent with `overflow: hidden`, an over-tall
+   genogram silently squeezed .pp__list down to ZERO height (confirmed via
+   direct measurement, reproducible even on the small demo family, not just
+   a large real tree) with no way to scroll to it — the person list and
+   search below simply vanished. Bounded here with its own internal scroll
+   so it can never starve the list; the level picker (.pp__legend, rendered
+   as a sibling above this in .pp__geno-section) deliberately stays OUTSIDE
+   this scroll box since it's primary navigation, not diagram content. */
+.pp-geno { display: flex; flex-direction: column; gap: 6px; padding: 2px 4px 4px; max-height: 24vh; overflow-y: auto; -webkit-overflow-scrolling: touch; }
 .pp-geno__row { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
 .pp-geno__chip {
   display: inline-flex;
@@ -12100,8 +12126,15 @@ button.health-notes {
   border: 1.5px solid var(--hairline);
   color: var(--ink);
   background: var(--paper);
-  transition: opacity 0.2s var(--ease), border-color 0.2s var(--ease);
+  transition: opacity 0.2s var(--ease), border-color 0.2s var(--ease), background 0.15s var(--ease);
 }
+/* Real chips now — a tap scrolls the list below straight to that category.
+   Only ones with someone actually in them right now are enabled; an "on"
+   chip nobody currently occupies, or an "off" chip a level away from
+   unlocking, has nowhere to scroll to and stays visually inert. */
+.pp-geno__chip:disabled { cursor: default; }
+.pp-geno__chip:not(:disabled):hover { background: var(--paper-deep); border-color: var(--ink-soft); }
+.pp-geno__chip--you:not(:disabled):hover { background: color-mix(in srgb, var(--paper-deep) 70%, var(--accent, #c2603a)); }
 .pp-geno__chip--off {
   opacity: 0.4;
   color: var(--ink-soft);
