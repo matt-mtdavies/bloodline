@@ -66,15 +66,40 @@ category is reviewed against every rule below before it ships, not after:
   only reliable fix is a clean slate: `FamilySettings.jsx`'s `restoreSnapshot` calls
   `clearLocalData()` (the same call `handleLogout` already makes) before reloading, so nothing
   stale is left to fight the restore. Any future recovery/restore code path must do the same.
+  **This alone is not sufficient — see `_restoreEpoch` below.** It only protects the ONE
+  device performing the restore; a real second incident (same day) came from a completely
+  different device — an old Safari tab that had simply been left open from before the fix —
+  syncing later and silently reverting it a second time, with no `restoreSnapshot` call
+  involved at all.
+- **Every authoritative whole-tree reset must stamp `_restoreEpoch`, and every sync must
+  check it before merging.** This is the actual fix for the "different, already-open
+  device" case above, and it's the load-bearing rule in this section — everything else
+  reduces how OFTEN a destructive reset happens; this is what makes a reset (intentional or
+  corrective) stick regardless of what any other device was doing at the time.
+  `_restoreEpoch` is a top-level, core (never-split-to-R2) field bumped to a fresh timestamp
+  by every authoritative reset — `resetTree()`, `importFromGedcom`'s replace path
+  (`src/data/store.js`), and the snapshot-restore endpoint
+  (`functions/api/tree/snapshots/[id].js`) — and checked by every client sync path
+  (`loadFromServer` and `_fetchAndMerge`/`_pollServer`, via the shared `isNewerRestore`
+  helper) BEFORE the normal per-record `_mergeByRecency`/tombstone-union merge runs. Any
+  device whose own last-seen `_restoreEpoch` is behind the server's takes the server
+  wholesale — exactly like the existing `forceServerWins` path used when joining a family
+  via invite — no per-record merge, no tombstone union, no vote for local's pre-reset data,
+  regardless of how recent or legitimate-looking that local data's own `updated_at`
+  timestamps are. Any new code path that performs (or could be argued to perform) an
+  authoritative whole-tree reset must stamp this field; any new sync/merge path must check
+  it first, before touching `_mergeByRecency`.
 - **When performing an emergency data restore directly against production** (D1/R2, not
   through the app), always archive the current state as a fresh snapshot first — the same
-  thing the app's own restore endpoint does — so the action is itself undoable. Prefer the
-  app's own tested restore endpoint (`POST /api/tree/snapshots/:id`) over hand-written SQL
-  whenever an authenticated session is available; hand-written SQL is a last resort for
-  exactly the scenario that produced this rule (no session, `d1_database_query` MCP access
-  only), and must reproduce that endpoint's exact behavior — including the local-cache-clear
-  problem above, which a raw SQL write cannot fix by itself and must be explicitly told to
-  the user (sign out and back in, or wait for a client-side fix).
+  thing the app's own restore endpoint does — so the action is itself undoable, AND stamp
+  `_restoreEpoch` to a fresh `Date.now()`-style millisecond timestamp on the restored core
+  JSON. Prefer the app's own tested restore endpoint (`POST /api/tree/snapshots/:id`) over
+  hand-written SQL whenever an authenticated session is available — it already does both of
+  the above. Hand-written SQL is a last resort for exactly the scenario that produced this
+  rule (no session, `d1_database_query` MCP access only), and must reproduce the endpoint's
+  full behavior, not just copy the snapshot's people/relationships — a restore that forgets
+  `_restoreEpoch` looks successful immediately and then silently reverts the next time any
+  other device (open or not, active or not) happens to sync.
 
 ## Production operations
 

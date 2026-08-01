@@ -443,6 +443,25 @@ function _unionStrings(a, b) {
   return [...new Set([...(a || []), ...(b || [])])];
 }
 
+// Real incident (docs/SAFETY.md): a device that was already open with its
+// own local cache from BEFORE an authoritative whole-tree reset (a
+// snapshot restore, a Replace import, an "erase tree") has no way to know
+// one happened — its per-record tombstones/edits look, to _mergeByRecency,
+// exactly like ordinary concurrent local work, so its next sync silently
+// merges the stale data right back in and undoes the reset. This happened
+// for real, twice, from a Safari tab that had simply been left open.
+// _restoreEpoch is the fix: every authoritative reset stamps a fresh one
+// (resetTree, importFromGedcom's replace path, the snapshot-restore
+// endpoint). Any device whose last-seen epoch is behind the server's
+// takes the server's copy WHOLESALE on its next sync — no per-record
+// merge, no tombstone union — exactly like forceServerWins, because that's
+// exactly what an authoritative reset means: local divergence from before
+// it doesn't get a vote.
+function isNewerRestore(server, local) {
+  return typeof server?._restoreEpoch === 'number'
+    && server._restoreEpoch > (local?._restoreEpoch || 0);
+}
+
 // Merge two arrays of {id, updated_at?} records: whichever side was edited
 // more recently wins for ids present on both; ids unique to either side are
 // kept as-is. Ties (including both sides missing updated_at, e.g. records
@@ -496,6 +515,12 @@ async function _fetchAndMerge(local) {
     // forward), so swapping in the latest can only preserve more real work,
     // never lose any — including the case where local IS already state.
     local = state;
+
+    if (isNewerRestore(server, local)) {
+      commit({ ...EMPTY, ...server }, { fromServer: true });
+      window.dispatchEvent(new CustomEvent('bloodline:tree-conflict-merged'));
+      return server;
+    }
 
     const mergedPeople = _mergeByRecency(server.people, local.people);
 
@@ -774,6 +799,14 @@ export async function loadFromServer({ forceServerWins = false } = {}) {
     // into (or overwrite) the family they're joining, so take the server's
     // tree exactly as given, no merge.
     if (forceServerWins) {
+      commit({ ...EMPTY, ...data }, { fromServer: true });
+      return true;
+    }
+
+    // See isNewerRestore's own comment — this device's local cache predates
+    // an authoritative whole-tree reset elsewhere; take the server wholesale
+    // instead of merging stale local records/tombstones back into it.
+    if (isNewerRestore(data, state)) {
       commit({ ...EMPTY, ...data }, { fromServer: true });
       return true;
     }
@@ -2079,6 +2112,18 @@ export function resetTree() {
   next = withTombstones(next, 'memories', (state.memories || []).map((m) => m.id));
   next = withTombstones(next, 'photos', (state.photos || []).map((ph) => ph.id));
   next = withTombstones(next, 'documents', (state.documents || []).map((d) => d.id));
+  // Real incident (docs/SAFETY.md): tombstoning what THIS device erases
+  // stops a stale-ETag retry or background poll on THIS device from
+  // resurrecting it, but it does nothing for a DIFFERENT device that was
+  // already open with its own, older local cache — that device's own next
+  // sync merges its still-intact copy of everything right back in, since
+  // per-record recency merging has no way to know a deliberate whole-tree
+  // reset just happened elsewhere. _restoreEpoch marks exactly that: any
+  // device whose last-seen epoch is behind this one takes the server's
+  // copy wholesale on its next sync instead of merging (see loadFromServer
+  // / _fetchAndMerge below) — the same mechanism the snapshot-restore
+  // endpoint uses server-side.
+  next._restoreEpoch = Date.now();
   commit(next);
   // Force this erase to become the authoritative server copy immediately,
   // rather than the normal 1.5s-debounced save. Without this, a stale ETag
@@ -2145,6 +2190,9 @@ export function importFromGedcom(newPeople, newRelationships, { merge = false, s
     familyName: state.familyName || 'My Family',
     myPersonId: newPeople[0]?.id ?? null,
     activity: state.activity ?? [],
+    // See resetTree()'s own comment — same real incident, same fix: a
+    // Replace import is authoritative for every device, not just this one.
+    _restoreEpoch: Date.now(),
   };
   commit(next);
   _serverEtag = '*';
