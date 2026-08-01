@@ -117,12 +117,26 @@ export default function PerimeterPreview({ graph, viewerId, currentLevel, onClos
     [indexByLevel],
   );
 
+  // A tap on a genogram chip jumps the (already-rendered, shared) list
+  // straight to that category — a no-op if there's no header for it (an
+  // empty category has none; PerimeterGenogram itself already only wires
+  // taps up for chips that have someone in them).
+  const scrollToCategory = (cat) => {
+    const idx = flatItems.findIndex((item) => item.type === 'header' && item.key === `h_${cat}`);
+    if (idx >= 0) rowVirtualizer.scrollToIndex(idx, { align: 'start' });
+  };
+
   // Shared between both diagram modes — the level picker itself doesn't
   // change, only what's drawn above it (rings vs. the genogram), and both
   // modes still need it since the description/search/list below all key
-  // off `selected`.
-  const legend = (
-    <div className="pp__legend" role="tablist" aria-label="Perimeter level">
+  // off `selected`. Genogram mode renders it `compact` (a wrapped row of
+  // small pills instead of four full-width rows) — the diagram below it is
+  // real, variable-height content in a way the fixed rings graphic never
+  // was, and giving the picker its full vertical footprint on top of that
+  // was squeezing the person list underneath down to almost nothing (a
+  // real bug: it measured out to a literal 0px list on some screens).
+  const renderLegend = (compact = false) => (
+    <div className={`pp__legend${compact ? ' pp__legend--compact' : ''}`} role="tablist" aria-label="Perimeter level">
       {PERIMETER_OPTIONS.map((opt) => (
         <button
           key={opt.value}
@@ -201,16 +215,17 @@ export default function PerimeterPreview({ graph, viewerId, currentLevel, onClos
                   <circle cx={100} cy={100} r={9} className="pp__ring-you" />
                 </svg>
 
-                {legend}
+                {renderLegend()}
               </div>
             ) : (
               <div className="pp__geno-section">
-                {legend}
+                {renderLegend(true)}
                 <PerimeterGenogram
                   current={current}
                   viewerId={viewerId}
                   graph={graph}
                   engineLevel={engineLevelFor(selected)}
+                  onSelectCategory={scrollToCategory}
                 />
               </div>
             )}
