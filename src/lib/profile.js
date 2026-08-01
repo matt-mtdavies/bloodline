@@ -145,7 +145,14 @@ export function hasEventMentioning(person, year, name) {
  * updatePerson's shallow `{...person, ...fields}` merge in store.js).
  */
 export function buildRestingPlacePatch(isDeceased, quickText, existingRestingPlace) {
-  if (!isDeceased) return { resting_place: null };
+  // Only a real change (and thus only ever included in the save payload —
+  // see the activity-feed field-summary logic in App.jsx, which reports
+  // "resting place" as changed purely from this key's presence) when
+  // there's actually something to clear. Otherwise every single edit to a
+  // living person's profile — who was never deceased and never had a
+  // resting_place — would unconditionally re-write `resting_place: null`
+  // and get spuriously reported as an update to their resting place.
+  if (!isDeceased) return existingRestingPlace ? { resting_place: null } : {};
   const initial = (existingRestingPlace?.place || '').trim();
   const next = (quickText || '').trim();
   if (next === initial) return {}; // untouched — the common case, leave whatever's there alone
