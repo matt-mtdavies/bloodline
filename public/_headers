@@ -7,5 +7,15 @@
 /manifest.webmanifest
   Cache-Control: no-cache
 
+# Defense-in-depth alongside robots.txt's Disallow rules (docs/PRODUCTIZATION-BRIEF.md
+# §16.6 #3): robots.txt is a crawling hint, not the protection mechanism — these
+# headers keep private/admin responses out of the index even if something links
+# to one directly. Real access control still happens server-side regardless.
+/api/*
+  X-Robots-Tag: noindex, nofollow
+
+/admin.html
+  X-Robots-Tag: noindex, nofollow
+
 /index.html
   Cache-Control: no-cache

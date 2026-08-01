@@ -166,6 +166,20 @@ const _initialPersonParam = (() => {
   return new URLSearchParams(window.location.search).get('person');
 })();
 
+// ?start=import — the public "Start your family tree" chooser's safe handoff
+// (functions/start.js -> functions/sign-in.js -> here) for a brand-new
+// account that chose "Import my GEDCOM" before signing in. Read once, same
+// reasoning as _initialPersonParam above; consumed the moment onboarding
+// completes (see the Onboarding onComplete handler below), which auto-opens
+// the GEDCOM import sheet instead of leaving a freshly-onboarded user on an
+// empty tree with no clue what to do next. Any other value (or none) is the
+// ordinary "start fresh" path and needs no special handling — onboarding
+// already lands on a normal, empty tree today.
+const _initialStartIntent = (() => {
+  if (typeof window === 'undefined') return null;
+  return new URLSearchParams(window.location.search).get('start');
+})();
+
 // The recap tour's "since you were last here" cutoff — captured once at
 // module scope, same reasoning as _initialPendingInvite above: this reads
 // AND bumps a localStorage timestamp, so it must run exactly once per real
@@ -2568,6 +2582,10 @@ export default function App() {
           setupTree(fields);
           // Strip ?new from URL so refreshing loads their tree normally from localStorage.
           if (isNewUrl) window.history.replaceState(null, '', '/');
+          // Safe handoff from the public start-path chooser: a brand-new
+          // account that chose "Import my GEDCOM" goes straight into the
+          // import sheet instead of landing on a blank tree with no next step.
+          if (_initialStartIntent === 'import') setGedcomOpen(true);
         }}
       />
     );

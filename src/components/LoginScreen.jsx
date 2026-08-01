@@ -19,10 +19,12 @@ export default function LoginScreen({ onAuthSuccess }) {
           : 'Something went wrong. Please try again.',
       );
     }
-    // Coming from the invite landing page — OTP was already requested.
-    if (p.has('auth_email') && p.has('invite')) {
+    // Coming from the invite landing page, or the public /sign-in page —
+    // either way the OTP was already requested server-side, so skip straight
+    // to the code step pre-filled with the email it was sent to.
+    if (p.has('auth_email')) {
       setEmail(p.get('auth_email'));
-      setInviteToken(p.get('invite'));
+      if (p.has('invite')) setInviteToken(p.get('invite'));
       setStep('code');
     } else if (p.has('invite')) {
       setInviteToken(p.get('invite'));
