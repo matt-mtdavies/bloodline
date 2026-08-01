@@ -6,6 +6,7 @@ import ShareLink from './ShareLink.jsx';
 import { ActivityRow, dayLabel } from './ActivityFeed.jsx';
 import ReturnMark from './ReturnMark.jsx';
 import ExportArchiveCard from './ExportArchiveCard.jsx';
+import { clearLocalData } from '../data/store.js';
 
 const INVITE_ROLES = ['coadmin', 'editor', 'contributor', 'viewer'];
 
@@ -213,9 +214,19 @@ export default function FamilySettings({
       const res = await fetch(`/api/tree/snapshots/${id}`, { method: 'POST' });
       if (!res.ok) { setRestoreError(true); setRestoringId(null); return; }
       setRestoreDone(true);
-      // A full reload is the simplest way to guarantee every piece of local
-      // state (canvas, camera, cached tree) picks up the restored data
-      // consistently, rather than trying to hot-swap it in place.
+      // Real incident (docs/SAFETY.md): a plain reload used to be "enough,"
+      // but this device's own localStorage can be holding tombstones for
+      // exactly the people this restore just brought back — e.g. after a
+      // bad whole-tree Replace, which tombstones everything it wipes (see
+      // store.js's importFromGedcom). A reload alone re-loads that same
+      // poisoned local cache, and the very next sync merge honours its
+      // tombstones and silently deletes the just-restored people right back
+      // out — this happened for real, twice, before the cause was found.
+      // clearLocalData() (the same call handleLogout already makes) empties
+      // this device's local tree state first, so there's nothing stale left
+      // to fight the restore — the reload then pulls the server's restored
+      // copy with a clean slate, exactly like a fresh sign-in would.
+      clearLocalData();
       setTimeout(() => window.location.reload(), 1400);
     } catch {
       setRestoreError(true);

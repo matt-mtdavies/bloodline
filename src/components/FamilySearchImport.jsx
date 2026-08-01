@@ -10,14 +10,15 @@ const GENERATION_OPTIONS = [
   { value: 5, label: '5 generations', sub: 'Up to 63 ancestors' },
 ];
 
-export default function FamilySearchImport({ onImport, onClose, canReplace = true, existingPeople = [], existingRelationships = [] }) {
+export default function FamilySearchImport({ onImport, onClose, canReplace = true, existingPeople = [], existingRelationships = [], familyName = '' }) {
   const [step, setStep] = useState('connect'); // connect | fetching | preview | review | importing | done
   const [generations, setGenerations] = useState(4);
   const [token, setToken] = useState(null);
   const [result, setResult] = useState(null); // { people, relationships }
-  // Replacing the whole tree is a co-admin+ action (src/lib/visibility.js
-  // canManageTree) — default and restrict accordingly for anyone below that.
-  const [mergeMode, setMergeMode] = useState(canReplace ? 'replace' : 'merge');
+  // Real incident (docs/SAFETY.md) in GedcomImport.jsx's sibling flow — this
+  // must never default to 'replace' for anyone, regardless of permission.
+  // See GedcomImport.jsx's own comment for the full story.
+  const [mergeMode, setMergeMode] = useState('merge');
   const [error, setError] = useState(null);
 
   // Same proactive duplicate check as GedcomImport.jsx — see its comment.
@@ -152,6 +153,7 @@ export default function FamilySearchImport({ onImport, onClose, canReplace = tru
             onBack={() => setStep('connect')}
             canReplace={canReplace}
             duplicateCount={duplicateCount}
+            familyName={familyName}
           />
         )}
 
@@ -243,13 +245,27 @@ function FetchingStep({ generations }) {
   );
 }
 
-function PreviewStep({ result, generations, onGenerations, mergeMode, onMergeMode, error, onFetch, onImport, onBack, canReplace, duplicateCount = 0 }) {
+function PreviewStep({ result, generations, onGenerations, mergeMode, onMergeMode, error, onFetch, onImport, onBack, canReplace, duplicateCount = 0, familyName = '' }) {
   const { people, relationships } = result;
   const partnerCount = relationships.filter((r) => r.type === 'partner').length;
   const parentCount = relationships.filter((r) => r.type === 'parent').length;
   const withDates = people.filter((p) => p.birth_date || p.death_date).length;
   const sample = people.slice(0, 6).map((p) => p.display_name);
   const extra = people.length - sample.length;
+
+  // Same typed-confirmation gate as GedcomImport.jsx's PreviewStep — see its
+  // own comment for why this exists.
+  const [replaceConfirming, setReplaceConfirming] = useState(false);
+  const [replaceTypedName, setReplaceTypedName] = useState('');
+  const replaceNameMatches = familyName && replaceTypedName.trim() === familyName.trim();
+
+  function handleActionClick() {
+    if (mergeMode === 'replace' && !replaceConfirming) {
+      setReplaceConfirming(true);
+      return;
+    }
+    onImport();
+  }
 
   return (
     <div className="gedcom__preview">
@@ -309,7 +325,7 @@ function PreviewStep({ result, generations, onGenerations, mergeMode, onMergeMod
           {canReplace && (
             <button
               className={`gedcom__merge-opt${mergeMode === 'replace' ? ' gedcom__merge-opt--on' : ''}`}
-              onClick={() => onMergeMode('replace')}
+              onClick={() => { onMergeMode('replace'); setReplaceConfirming(false); setReplaceTypedName(''); }}
             >
               <span className="gedcom__merge-opt-name">Replace</span>
               <span className="gedcom__merge-opt-desc">Start fresh with the imported tree. Your current tree will be erased.</span>
@@ -317,7 +333,7 @@ function PreviewStep({ result, generations, onGenerations, mergeMode, onMergeMod
           )}
           <button
             className={`gedcom__merge-opt${mergeMode === 'merge' ? ' gedcom__merge-opt--on' : ''}`}
-            onClick={() => onMergeMode('merge')}
+            onClick={() => { onMergeMode('merge'); setReplaceConfirming(false); setReplaceTypedName(''); }}
           >
             <span className="gedcom__merge-opt-name">Merge</span>
             <span className="gedcom__merge-opt-desc">Append to your current tree. Duplicate people may appear.</span>
@@ -328,12 +344,45 @@ function PreviewStep({ result, generations, onGenerations, mergeMode, onMergeMod
         )}
       </div>
 
-      <div className="gedcom__preview-actions">
-        <button className="gedcom__back-btn" onClick={onBack}>← Disconnect</button>
-        <button className="gedcom__import-btn" onClick={onImport}>
-          {mergeMode === 'merge' ? 'Review changes →' : `Import ${people.length} ${people.length === 1 ? 'person' : 'people'} →`}
-        </button>
-      </div>
+      {replaceConfirming ? (
+        <div className="fs__reset-confirm">
+          <p className="fs__reset-warning">
+            This erases every person, relationship, memory, photo, and document currently in
+            {' '}<strong>{familyName || 'your tree'}</strong> — for every family member, not just you — and
+            replaces it with the {people.length} {people.length === 1 ? 'person' : 'people'} from FamilySearch.
+            It can't be undone.
+          </p>
+          <label className="fs__reset-label">
+            Type <strong>{familyName || 'your family name'}</strong> to confirm
+          </label>
+          <input
+            className="fs__reset-input"
+            value={replaceTypedName}
+            onChange={(e) => setReplaceTypedName(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter' && replaceNameMatches) onImport(); }}
+            placeholder={familyName}
+            autoFocus
+          />
+          <div className="fs__reset-btns">
+            <button className="fs__danger-btn" disabled={!replaceNameMatches} onClick={onImport}>
+              Replace tree
+            </button>
+            <button
+              className="fs__reset-cancel"
+              onClick={() => { setReplaceConfirming(false); setReplaceTypedName(''); }}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="gedcom__preview-actions">
+          <button className="gedcom__back-btn" onClick={onBack}>← Disconnect</button>
+          <button className="gedcom__import-btn" onClick={handleActionClick}>
+            {mergeMode === 'merge' ? 'Review changes →' : `Import ${people.length} ${people.length === 1 ? 'person' : 'people'} →`}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
