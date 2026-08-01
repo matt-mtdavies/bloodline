@@ -9,7 +9,7 @@
  * Run with: node tests/duplicates.test.mjs
  */
 import assert from 'node:assert/strict';
-import { findDuplicatePairs, dedupeMergeImport, mergePersonFields, describeMergeChanges, summarizeMergeImport } from '../src/lib/duplicates.js';
+import { findDuplicatePairs, dedupeMergeImport, mergePersonFields, describeMergeChanges, summarizeMergeImport, findLikelyExistingMatches } from '../src/lib/duplicates.js';
 
 let passed = 0, failed = 0;
 function test(label, fn) {
@@ -267,6 +267,36 @@ test('describeMergeChanges never reports a field that was already filled, even i
   assert.deepEqual(describeMergeChanges(before, after), []);
 });
 
+// Real report: a military-tagged event added via a GEDCOM's _MILT tag was
+// indistinguishable from any other life event in the summary ("I don't see
+// any military additions" when there actually were some).
+test('describeMergeChanges reports a newly-added military-tagged event as "military record", not "life event"', () => {
+  const before = { events: [] };
+  const after = { events: [{ year: 1918, title: 'Military service', tag: 'military', detail: 'Fort Slocum, New York' }] };
+  assert.deepEqual(describeMergeChanges(before, after), ['+1 military record']);
+});
+
+test('describeMergeChanges keeps a non-military new event as "life event"', () => {
+  const before = { events: [] };
+  const after = { events: [{ year: 2007, title: 'Graduated' }] };
+  assert.deepEqual(describeMergeChanges(before, after), ['+1 life event']);
+});
+
+test('describeMergeChanges reports military and non-military new events as separate lines, correctly pluralized', () => {
+  const before = { events: [{ year: 2000, title: 'Existing event' }] };
+  const after = {
+    events: [
+      { year: 2000, title: 'Existing event' },
+      { year: 1917, title: 'Military service', tag: 'military' },
+      { year: 1918, title: 'Military service', tag: 'military' },
+      { year: 2010, title: 'Moved house' },
+    ],
+  };
+  const changes = describeMergeChanges(before, after);
+  assert.ok(changes.includes('+2 military records'));
+  assert.ok(changes.includes('+1 life event'));
+});
+
 test('summarizeMergeImport buckets new people, enriched people, and true no-ops separately', () => {
   const existingP = [
     { id: 'e1', display_name: 'John Smith', birth_date: '1950', residences: [] }, // will be enriched
@@ -370,6 +400,90 @@ test('skipPeople and skipEnrichmentFor can be used together, independently', () 
   const out = dedupeMergeImport(existingP, [], newP, [], { skipPeople: new Set(['n2']), skipEnrichmentFor: new Set(['e1']) });
   assert.deepEqual(out.people.map((p) => p.id), ['n3']);
   assert.equal(out.updatedExisting.size, 0);
+});
+
+// ── findLikelyExistingMatches (dateless "new" people who likely already
+// exist) ─────────────────────────────────────────────────────────────────
+// Real finding: 81 "new" people on a delta re-import turned out to already
+// be in the tree — the GEDCOM export just omitted their birth dates
+// (Ancestry's usual privacy redaction for living people), and the match key
+// needs a year on both sides. This corroborates via relationships instead.
+
+test('findLikelyExistingMatches finds a dateless partner via an already-matched spouse', () => {
+  const existingP = [
+    { id: 'e_richard', display_name: 'Richard Partridge', birth_date: '1955' },
+    { id: 'e_linda', display_name: 'Linda Partridge', birth_date: null },
+  ];
+  const existingR = [{ id: 'er1', type: 'partner', from_person: 'e_richard', to_person: 'e_linda' }];
+  const newP = [
+    { id: 'n_richard', display_name: 'Richard Partridge', birth_date: '1955' }, // collapses normally
+    { id: 'n_linda', display_name: 'Linda Partridge', birth_date: null },       // stays "new" — no year
+  ];
+  const newR = [{ id: 'nr1', type: 'partner', from_person: 'n_richard', to_person: 'n_linda' }];
+  const out = dedupeMergeImport(existingP, existingR, newP, newR);
+  assert.deepEqual(out.people.map((p) => p.id), ['n_linda'], 'Linda still shows as new by the ordinary rule');
+
+  const matches = findLikelyExistingMatches(existingP, existingR, newR, out.remap, out.people);
+  assert.equal(matches.get('n_linda')?.id, 'e_linda', 'but she is corroborated via her already-matched husband');
+});
+
+test('findLikelyExistingMatches finds a dateless child via an already-matched parent', () => {
+  const existingP = [
+    { id: 'e_parent', display_name: 'John Ransom', birth_date: '1950' },
+    { id: 'e_child', display_name: 'Jonathan Ransom', birth_date: null },
+  ];
+  const existingR = [{ id: 'er1', type: 'parent', from_person: 'e_parent', to_person: 'e_child' }];
+  const newP = [
+    { id: 'n_parent', display_name: 'John Ransom', birth_date: '1950' },
+    { id: 'n_child', display_name: 'Jonathan Ransom', birth_date: null },
+  ];
+  const newR = [{ id: 'nr1', type: 'parent', from_person: 'n_parent', to_person: 'n_child' }];
+  const out = dedupeMergeImport(existingP, existingR, newP, newR);
+  const matches = findLikelyExistingMatches(existingP, existingR, newR, out.remap, out.people);
+  assert.equal(matches.get('n_child')?.id, 'e_child');
+});
+
+test('findLikelyExistingMatches never flags a person whose relative resolved but whose name does not match anyone there', () => {
+  const existingP = [
+    { id: 'e_parent', display_name: 'John Ransom', birth_date: '1950' },
+    { id: 'e_child', display_name: 'Someone Else', birth_date: null },
+  ];
+  const existingR = [{ id: 'er1', type: 'parent', from_person: 'e_parent', to_person: 'e_child' }];
+  const newP = [
+    { id: 'n_parent', display_name: 'John Ransom', birth_date: '1950' },
+    { id: 'n_child', display_name: 'Jonathan Ransom', birth_date: null }, // no existing child with this name
+  ];
+  const newR = [{ id: 'nr1', type: 'parent', from_person: 'n_parent', to_person: 'n_child' }];
+  const out = dedupeMergeImport(existingP, existingR, newP, newR);
+  const matches = findLikelyExistingMatches(existingP, existingR, newR, out.remap, out.people);
+  assert.equal(matches.has('n_child'), false);
+});
+
+test('findLikelyExistingMatches finds nothing for a genuinely new, unrelated person', () => {
+  const existingP = [{ id: 'e1', display_name: 'John Ransom', birth_date: '1950' }];
+  const newP = [{ id: 'n1', display_name: 'Totally New Person', birth_date: null }];
+  const out = dedupeMergeImport(existingP, [], newP, []);
+  const matches = findLikelyExistingMatches(existingP, [], [], out.remap, out.people);
+  assert.equal(matches.size, 0);
+});
+
+test('summarizeMergeImport attaches _likelyExisting to a corroborated new person and null to an uncorroborated one', () => {
+  const existingP = [
+    { id: 'e_richard', display_name: 'Richard Partridge', birth_date: '1955' },
+    { id: 'e_linda', display_name: 'Linda Partridge', birth_date: null },
+  ];
+  const existingR = [{ id: 'er1', type: 'partner', from_person: 'e_richard', to_person: 'e_linda' }];
+  const newP = [
+    { id: 'n_richard', display_name: 'Richard Partridge', birth_date: '1955' },
+    { id: 'n_linda', display_name: 'Linda Partridge', birth_date: null },
+    { id: 'n_stranger', display_name: 'Totally New Person', birth_date: null },
+  ];
+  const newR = [{ id: 'nr1', type: 'partner', from_person: 'n_richard', to_person: 'n_linda' }];
+  const summary = summarizeMergeImport(existingP, existingR, newP, newR);
+  const linda = summary.newPeople.find((p) => p.id === 'n_linda');
+  const stranger = summary.newPeople.find((p) => p.id === 'n_stranger');
+  assert.equal(linda._likelyExisting?.id, 'e_linda');
+  assert.equal(stranger._likelyExisting, null);
 });
 
 console.log(`\n  ${passed} passed, ${failed} failed`);

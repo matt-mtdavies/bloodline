@@ -25,11 +25,25 @@ import { useMemo, useState } from 'react';
  * have linked to them; a deselected existing person still gets its
  * duplicate collapsed/de-doubled normally, it just doesn't pick up any new
  * facts from it.
+ *
+ * A "new" person can still be a person who's ALREADY in the tree — most
+ * commonly a living relative the source export omits a birth date for
+ * (Ancestry's own privacy convention), which is exactly what
+ * dedupeMergeImport's ordinary name+year match needs and can never get.
+ * findLikelyExistingMatches (lib/duplicates.js) catches many of these via a
+ * second signal — a shared relative already matched by name+year — and
+ * summarizeMergeImport attaches it as `_likelyExisting` on the affected
+ * newPeople entries. Those start OUT of the selection (excluded by
+ * default, the opposite of every other new person) and carry a visibly
+ * different chip treatment, so the review doesn't quietly re-add 51 people
+ * who were already there — confirmed against a real 81-person batch where
+ * that was true for 51 of them.
  */
 export default function MergeReviewStep({ summary, duplicateCount = 0, noun = 'person', nounPlural = 'people', onApply, onBack }) {
   const { newPeople, enrichedPeople, unchangedCount } = summary;
-  const [excludedNew, setExcludedNew] = useState(() => new Set());
+  const [excludedNew, setExcludedNew] = useState(() => new Set(newPeople.filter((p) => p._likelyExisting).map((p) => p.id)));
   const [excludedExisting, setExcludedExisting] = useState(() => new Set());
+  const likelyExistingCount = useMemo(() => newPeople.filter((p) => p._likelyExisting).length, [newPeople]);
 
   const toggleNew = (id) => setExcludedNew((prev) => {
     const next = new Set(prev);
@@ -102,13 +116,21 @@ export default function MergeReviewStep({ summary, duplicateCount = 0, noun = 'p
                   onNone={() => setExcludedNew(new Set(newPeople.map((p) => p.id)))}
                 />
               </div>
+              {likelyExistingCount > 0 && (
+                <p className="gedcom__review-flag-note">
+                  <FlagIcon /> {likelyExistingCount} of these share a close relative already in your tree — left
+                  out below (dashed) since they're likely already there under a slightly different record. Tap to
+                  include if they really are new.
+                </p>
+              )}
               <div className="gedcom__names gedcom__names--scroll">
                 {newPeople.map((p) => (
                   <button
                     key={p.id}
                     type="button"
-                    className={`gedcom__name-chip gedcom__name-chip--toggle${excludedNew.has(p.id) ? ' gedcom__name-chip--off' : ''}`}
+                    className={`gedcom__name-chip gedcom__name-chip--toggle${excludedNew.has(p.id) ? ' gedcom__name-chip--off' : ''}${p._likelyExisting ? ' gedcom__name-chip--flagged' : ''}`}
                     aria-pressed={!excludedNew.has(p.id)}
+                    title={p._likelyExisting ? `Possibly already in your tree as ${p._likelyExisting.name}` : undefined}
                     onClick={() => toggleNew(p.id)}
                   >
                     {p.display_name}
@@ -193,6 +215,15 @@ function DupIcon() {
     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{display:'inline',verticalAlign:'middle',marginRight:4}}>
       <path d="M12 9v4M12 16.5h.01" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
       <path d="M10.3 3.9 1.8 18.3a1.6 1.6 0 0 0 1.4 2.4h17.6a1.6 1.6 0 0 0 1.4-2.4L13.7 3.9a1.6 1.6 0 0 0-2.8 0Z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round"/>
+    </svg>
+  );
+}
+
+function FlagIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{display:'inline',verticalAlign:'middle',marginRight:4}}>
+      <path d="M5 3v18" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/>
+      <path d="M5 4h11l-2.5 3.5L16 11H5" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round"/>
     </svg>
   );
 }
