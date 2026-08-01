@@ -12,16 +12,106 @@ import { PERIMETER_OPTIONS, engineLevelFor } from '../lib/familyPerimeter.js';
 const ROW_HEIGHT = 68;
 const HEADER_HEIGHT = 40;
 
-// Friendly labels for each inclusion tier (perspectiveIndex.js's own
-// TIER_RANK order) — every person in perimeterIds carries a canonical
-// inclusionReasonById entry with one of these three tiers (temporaryReveal
-// never appears in a SAVED perimeter, only in a session-only exploration).
-const TIER_LABELS = {
-  primary: 'Direct family & cousins',
-  familyHalo: 'Family halo — connected through marriage',
-  partnerContext: "Your partner's own family",
+// Fine-grained category buckets, derived entirely from the canonical
+// inclusionReasonById entry perspectiveIndex.js already computes for every
+// perimeter member — no new inclusion logic, just a finer read of the same
+// route/closeness/degree fields. Replaces the earlier flat 3-tier grouping
+// (primary/familyHalo/partnerContext), which lumped e.g. a parent and a
+// 3rd cousin into one undifferentiated "Direct family & cousins" bucket.
+//
+// Deliberately does NOT split by which anchor (viewer vs. current partner)
+// produced an ancestor/descendant/cousin route — both anchors' primary
+// perimeters are folded into the same generation/degree bucket, since from
+// a shared-household perspective "your parents" and "your partner's
+// parents" both just read as "Parents" here. Only the family-halo and
+// partner-context TIERS (routes that are inherently about someone else's
+// connections, not a shared lineage) get their own "via your partner"-style
+// buckets.
+const CATEGORY_META = {
+  you: { label: 'You & your partner', order: 0 },
+  parents: { label: 'Parents', order: 1 },
+  siblings: { label: 'Siblings', order: 2 },
+  children: { label: 'Children', order: 3 },
+  grandparents: { label: 'Grandparents', order: 4 },
+  grandchildren: { label: 'Grandchildren', order: 5 },
+  greatGrandparents: { label: 'Great-grandparents & further back', order: 6 },
+  greatGrandchildren: { label: 'Great-grandchildren & further on', order: 7 },
+  cousins1: { label: '1st cousins', order: 8 },
+  cousins2: { label: '2nd cousins', order: 9 },
+  cousins3: { label: '3rd cousins', order: 10 },
+  halo: { label: 'Connected through marriage', order: 11 },
+  partnerFamily: { label: "Your partner's family", order: 12 },
+  everyone: { label: 'Everyone in your tree', order: 13 },
+  other: { label: 'Other', order: 14 },
 };
-const TIER_ORDER = ['primary', 'familyHalo', 'partnerContext'];
+
+// Resolves which bucket a perimeter member belongs in from their canonical
+// reason alone. `route: 'everyone'` (only ever produced at the Complete
+// family tree level — see perspectiveIndex.js's own comment on why it
+// "skips cousin calculation entirely") carries no real relationship route,
+// so everyone there collapses to one bucket except the viewer/current
+// partner themselves, checked directly against graph.partners.
+function categoryFor(id, viewerId, graph, reason) {
+  if (!reason) return 'other';
+  if (reason.tier === 'familyHalo') return 'halo';
+  if (reason.tier === 'partnerContext') return 'partnerFamily';
+  if (reason.route === 'everyone') {
+    if (id === viewerId) return 'you';
+    return graph.partners(viewerId).some((p) => p.id === id && p.status === 'current') ? 'you' : 'everyone';
+  }
+  if (reason.route === 'anchor') return 'you';
+  if (reason.route === 'ancestor') {
+    const dist = reason.closeness?.[0] ?? 0;
+    if (dist === 1) return 'parents';
+    if (dist === 2) return 'grandparents';
+    return 'greatGrandparents';
+  }
+  if (reason.route === 'descendant') {
+    const dist = reason.closeness?.[0] ?? 0;
+    if (dist === 1) return 'children';
+    if (dist === 2) return 'grandchildren';
+    return 'greatGrandchildren';
+  }
+  if (reason.route === 'cousin') {
+    // A shared parent (upA=downB=1) resolves to degree 0 here — a full/half
+    // sibling reached via the same ancestor-then-descend collateral walk
+    // that finds real cousins, not a separate concept. Gets its own bucket
+    // rather than falling through to "3rd cousins" (the un-handled default
+    // this replaced), and deliberately distinct from step-siblings, which
+    // only ever qualify via the familyHalo tier's own 'sibling' route above
+    // and land in "Connected through marriage" — the same biological/
+    // adoptive-vs-step split the rest of the app already draws.
+    const degree = reason.degree ?? reason.closeness?.[0] ?? 1;
+    if (degree === 0) return 'siblings';
+    if (degree === 1) return 'cousins1';
+    if (degree === 2) return 'cousins2';
+    return 'cousins3';
+  }
+  return 'other';
+}
+
+// Within a category, order by closeness to the viewer first (matches the
+// rings' own "radiating outward from you" metaphor, and the search box
+// already covers "find a specific name"), alphabetical as the tiebreak —
+// never the other way around. The viewer themself always leads "You & your
+// partner" regardless of name.
+function secondarySortValue(id, viewerId, reason) {
+  if (id === viewerId) return -1;
+  if (!reason) return 0;
+  if (reason.route === 'cousin') return reason.removal ?? 0;
+  return reason.closeness?.[0] ?? 0;
+}
+
+// One-line descriptions of how each level is derived — drawn straight from
+// the engine's own rules (§3.5/§3.6), not marketing copy, so the "why is
+// this person in/out" question the preview exists to answer is answered in
+// words too, not just a list.
+const LEVEL_DESCRIPTIONS = {
+  first: 'Your direct ancestors and descendants, plus first cousins from every branch — even ones many generations back.',
+  second: 'Everything in Close family, plus second cousins — people who share a great-great-grandparent with you.',
+  third: 'Everything in Extended family, plus third cousins.',
+  everyone: 'Everyone recorded in the family, with no limit.',
+};
 
 // Ring radii, largest (Everyone) last so it paints first/furthest back —
 // deliberately fixed proportions, not data-proportional: a real family can
@@ -70,24 +160,33 @@ export default function PerimeterPreview({ graph, viewerId, currentLevel, onClos
   const flatItems = useMemo(() => {
     if (!current) return [];
     const term = q.trim().toLowerCase();
-    const byTier = { primary: [], familyHalo: [], partnerContext: [] };
+    const byCategory = new Map();
     for (const id of current.perimeterIds) {
       const p = graph.byId.get(id);
       if (!p) continue;
       if (term && !p.display_name.toLowerCase().includes(term)) continue;
       const reason = current.inclusionReasonById.get(id);
-      const tier = reason?.tier === 'familyHalo' || reason?.tier === 'partnerContext' ? reason.tier : 'primary';
-      byTier[tier].push(p);
+      const cat = categoryFor(id, viewerId, graph, reason);
+      if (!byCategory.has(cat)) byCategory.set(cat, []);
+      byCategory.get(cat).push({ person: p, reason });
     }
+    const cats = [...byCategory.keys()].sort(
+      (a, b) => (CATEGORY_META[a]?.order ?? 99) - (CATEGORY_META[b]?.order ?? 99),
+    );
     const out = [];
-    for (const tier of TIER_ORDER) {
-      const people = byTier[tier].sort((a, b) => a.display_name.localeCompare(b.display_name));
-      if (!people.length) continue;
-      out.push({ type: 'header', key: `h_${tier}`, tier, count: people.length });
-      for (const p of people) out.push({ type: 'person', key: p.id, person: p });
+    for (const cat of cats) {
+      const entries = byCategory.get(cat);
+      entries.sort((x, y) => {
+        const sx = secondarySortValue(x.person.id, viewerId, x.reason);
+        const sy = secondarySortValue(y.person.id, viewerId, y.reason);
+        if (sx !== sy) return sx - sy;
+        return x.person.display_name.localeCompare(y.person.display_name);
+      });
+      out.push({ type: 'header', key: `h_${cat}`, label: CATEGORY_META[cat]?.label ?? 'Other', count: entries.length });
+      for (const e of entries) out.push({ type: 'person', key: e.person.id, person: e.person });
     }
     return out;
-  }, [current, q, graph]);
+  }, [current, q, graph, viewerId]);
 
   const rowVirtualizer = useVirtualizer({
     count: flatItems.length,
@@ -146,6 +245,8 @@ export default function PerimeterPreview({ graph, viewerId, currentLevel, onClos
               </div>
             </div>
 
+            <p className="pp__level-desc">{LEVEL_DESCRIPTIONS[selected]}</p>
+
             <div className="pp__search-wrap">
               <input
                 className="search"
@@ -171,7 +272,7 @@ export default function PerimeterPreview({ graph, viewerId, currentLevel, onClos
                         style={{ position: 'absolute', top: 0, left: 0, width: '100%', transform: `translateY(${vRow.start}px)` }}
                       >
                         {item.type === 'header' ? (
-                          <h3 className="pp__group-title">{TIER_LABELS[item.tier]} · {item.count}</h3>
+                          <h3 className="pp__group-title">{item.label} · {item.count}</h3>
                         ) : (
                           <button className="person-row" onClick={() => onSelectPerson?.(item.person.id)}>
                             <Avatar person={item.person} size={42} />
