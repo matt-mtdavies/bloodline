@@ -2123,6 +2123,34 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   hooks. 7 new unit tests (`tests/archiveCare.test.mjs`). Full unit suite, `npm run build`,
   and the standard smoke test (`npm run test:e2e`) all passed clean.
 
+- **Fixed: activity feed reported "resting place" updated for people who are alive** (real
+  user report, with a screenshot: "Cathy Ransom updated Kennith Ransom's name, gender,
+  birthdate, birthplace, eye colour, hair colour and resting place" — Kennith is alive).
+  `lib/profile.js`'s `buildRestingPlacePatch(isDeceased, quickText, existingRestingPlace)` had
+  `if (!isDeceased) return { resting_place: null };` — unconditional, unlike the deceased
+  branch a few lines below it which correctly compares against the existing value and returns
+  `{}` (omitting the key entirely) when nothing changed. So every single save of a living
+  person's profile through `EditPersonSheet` re-wrote `resting_place: null` even when it was
+  already `null` and always had been, and `App.jsx`'s activity-message builder treats the
+  key's mere presence in the save payload as "this changed" (`if ('resting_place' in fields)
+  parts.push('resting place')` — deliberately not a value comparison, per that line's own
+  comment, because an object field can't be diffed by simple equality against what was already
+  a no-op `{}`). Fixed by only including the clearing write when there was actually an
+  existing `resting_place` to clear: `if (!isDeceased) return existingRestingPlace ?
+  { resting_place: null } : {};` — a person marked not-deceased who once had a resting place
+  set (a correction) still gets it cleared and reported, exactly as before; a person who was
+  never deceased and never had one now omits the key entirely, matching the deceased branch's
+  own "leave whatever's there alone" convention. One existing unit test in
+  `tests/profile.test.mjs` had actually pinned the buggy behavior by name ("unchecking
+  deceased always clears resting_place, even if it was already empty") — replaced with two
+  tests: the real clearing case (existing record present) keeps its own test, and a new test
+  asserts the omit-the-key case for `null`/`undefined` existing values. Verified live via
+  Playwright against the real dev server: opened a living demo person (James Mercer), edited
+  an unrelated field (occupation) through the real Edit Profile form, saved, and confirmed the
+  resulting activity-feed entry read "You updated James Mercer's occupation" with no mention
+  of resting place — reproducing the exact reported shape of the bug via the real UI, not a
+  mocked comparison. Full unit suite and `npm run build` passed clean.
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);

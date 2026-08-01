@@ -132,9 +132,13 @@ test('hasEventMentioning returns false with no year, no name, or no events', () 
 
 // ── buildRestingPlacePatch (EditPersonSheet's quick-add box) ────────────────
 
-test('buildRestingPlacePatch: unchecking deceased always clears resting_place, even if it was already empty', () => {
-  assert.deepEqual(buildRestingPlacePatch(false, '', null), { resting_place: null });
+test('buildRestingPlacePatch: unchecking deceased clears an existing resting_place', () => {
   assert.deepEqual(buildRestingPlacePatch(false, '', { cemetery: 'Old Cemetery', place: 'Old Town' }), { resting_place: null });
+});
+
+test('buildRestingPlacePatch: a living person with no resting_place omits the key entirely — real bug report: this used to unconditionally write resting_place:null on every edit to a living person, making the activity feed spuriously report "resting place" as changed for people who were never deceased', () => {
+  assert.deepEqual(buildRestingPlacePatch(false, '', null), {});
+  assert.deepEqual(buildRestingPlacePatch(false, '', undefined), {});
 });
 
 test('buildRestingPlacePatch: an untouched quick box (unchanged text) leaves resting_place completely alone — omits the key', () => {
