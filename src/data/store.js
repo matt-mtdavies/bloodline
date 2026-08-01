@@ -2099,14 +2099,16 @@ export function resetTree() {
 // Replace or merge the tree with people + relationships from a GEDCOM import.
 // merge=false: wipes everything and starts fresh with the imported data.
 // merge=true: appends to the existing tree (duplicates possible).
-export function importFromGedcom(newPeople, newRelationships, { merge = false } = {}) {
+export function importFromGedcom(newPeople, newRelationships, { merge = false, skipPeople, skipEnrichmentFor } = {}) {
   if (merge) {
     // Collapse confident, unambiguous re-adds against the existing tree so a
     // second import of the same data doesn't silently double it (see
     // dedupeMergeImport — conservative: anything ambiguous still imports as new
-    // and is caught by the "Possible duplicates" review sheet).
+    // and is caught by the "Possible duplicates" review sheet). skipPeople/
+    // skipEnrichmentFor let the review screen apply only part of the diff —
+    // see dedupeMergeImport's own doc comment.
     const { people: addPeople, relationships: addRels, updatedExisting } =
-      dedupeMergeImport(state.people, state.relationships, newPeople, newRelationships);
+      dedupeMergeImport(state.people, state.relationships, newPeople, newRelationships, { skipPeople, skipEnrichmentFor });
     // A collapsed re-add can carry field data (Places Lived, Education,
     // military details, ...) the existing record was missing — fold it in
     // rather than silently discarding it, same fix as mergePeople's own.

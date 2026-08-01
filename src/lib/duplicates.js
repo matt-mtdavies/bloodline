@@ -218,6 +218,23 @@ export function mergePersonFields(keep, drop) {
  * review sheet handles it. So this only ever collapses confident, unambiguous
  * re-adds; it never guesses. Pure; unit-tested.
  *
+ * Two optional opts let a caller apply only PART of what this would
+ * otherwise do — the granular-review case: "don't add these few new people,
+ * and don't let these few existing people pick up new facts, but still
+ * import everything else exactly as normal."
+ *   - `skipPeople` (Set of incoming ids): a genuinely-new person in this set
+ *     is dropped entirely, as if they weren't in the file — and so is any
+ *     relationship edge that references them (an edge can't point at a
+ *     person that was never added).
+ *   - `skipEnrichmentFor` (Set of EXISTING person ids): a collapsed re-add
+ *     whose survivor is in this set still collapses normally — no duplicate
+ *     person is created, and its relationships still resolve onto the
+ *     existing id exactly as always — it just never calls mergePersonFields,
+ *     so none of ITS extra facts get written onto that existing record.
+ *     Deduping (not creating a duplicate person) and enriching (writing new
+ *     facts onto the survivor) are separable, and this is what makes them
+ *     separable.
+ *
  * Returns { people, relationships, skipped, updatedExisting } — the incoming
  * arrays with exact re-adds removed, a count of how many people were
  * collapsed, and a Map of existingId → merged person object for every
@@ -226,7 +243,8 @@ export function mergePersonFields(keep, drop) {
  * military details the existing record was missing, rather than the
  * collapsed incoming record's own data being silently discarded).
  */
-export function dedupeMergeImport(existingPeople = [], existingRelationships = [], newPeople = [], newRelationships = []) {
+export function dedupeMergeImport(existingPeople = [], existingRelationships = [], newPeople = [], newRelationships = [], opts = {}) {
+  const { skipPeople = new Set(), skipEnrichmentFor = new Set() } = opts;
   const byKey = new Map(); // match key → [existing people with that key]
   for (const e of existingPeople) {
     const k = mergeMatchKey(e);
@@ -238,6 +256,7 @@ export function dedupeMergeImport(existingPeople = [], existingRelationships = [
   const remap = {}; // dropped incoming id → surviving existing id
   const updatedExisting = new Map(); // existing id → merged person object
   const keptPeople = [];
+  const droppedIds = new Set(); // fully-excluded incoming ids — their edges must be dropped, not remapped
   for (const np of newPeople) {
     const k = mergeMatchKey(np);
     const matches = k ? byKey.get(k) : null;
@@ -248,21 +267,29 @@ export function dedupeMergeImport(existingPeople = [], existingRelationships = [
       const fd1 = fullDateOf(np), fd2 = fullDateOf(e);
       if (!(fd1 && fd2 && fd1 !== fd2)) {
         remap[np.id] = e.id;
-        const base = updatedExisting.get(e.id) || e;
-        updatedExisting.set(e.id, mergePersonFields(base, np));
+        if (!skipEnrichmentFor.has(e.id)) {
+          const base = updatedExisting.get(e.id) || e;
+          updatedExisting.set(e.id, mergePersonFields(base, np));
+        }
         continue; // drop this exact re-add
       }
+    }
+    if (skipPeople.has(np.id)) {
+      droppedIds.add(np.id);
+      continue; // fully excluded — not added, and not merged into anyone
     }
     keptPeople.push(np);
   }
 
-  // Re-point incoming edges through the remap, then drop any that now duplicate
-  // an edge already in the tree or another kept incoming edge.
+  // Re-point incoming edges through the remap, drop any edge that references
+  // a fully-excluded person (neither endpoint exists to link), then drop any
+  // that now duplicates an edge already in the tree or another kept edge.
   const edgeKey = (r) => `${r.type}|${r.from_person}|${r.to_person}`;
   const existingEdges = new Set(existingRelationships.map(edgeKey));
   const seen = new Set();
   const keptRels = [];
   for (const r of newRelationships) {
+    if (droppedIds.has(r.from_person) || droppedIds.has(r.to_person)) continue;
     const mapped = {
       ...r,
       from_person: remap[r.from_person] || r.from_person,
@@ -274,7 +301,7 @@ export function dedupeMergeImport(existingPeople = [], existingRelationships = [
     keptRels.push(mapped);
   }
 
-  return { people: keptPeople, relationships: keptRels, skipped: newPeople.length - keptPeople.length, updatedExisting };
+  return { people: keptPeople, relationships: keptRels, skipped: newPeople.length - keptPeople.length - droppedIds.size, updatedExisting };
 }
 
 // Friendly per-field/array labels for describeMergeChanges below — deliberately

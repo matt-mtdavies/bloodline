@@ -56,6 +56,12 @@ export default function GedcomImport({ onImport, onClose, canReplace = true, exi
   // summary at the moment Apply is clicked, before anything commits, so the
   // Done screen always describes what actually just happened.
   const frozenSummary = useRef(null);
+  // What the user actually chose to apply on the review screen (per-person
+  // opt-outs — see MergeReviewStep.jsx's own comment). Defaults to "include
+  // everything" so Replace mode (which never visits the review screen) and
+  // a merge where nobody touched a toggle both behave exactly as before
+  // this existed.
+  const selectionRef = useRef({ excludedNewIds: new Set(), excludedExistingIds: new Set() });
 
   const processFile = useCallback((file) => {
     if (!file) return;
@@ -103,20 +109,27 @@ export default function GedcomImport({ onImport, onClose, canReplace = true, exi
     commitImport();
   }
 
-  function commitImport() {
+  function commitImport(selection = { excludedNewIds: new Set(), excludedExistingIds: new Set() }) {
     setStep('importing');
+    selectionRef.current = selection;
     const summary = frozenSummary.current;
-    // Land on a genuinely new person when there is one, rather than
-    // whichever record happened to be first in the file — for a merge that
-    // only enriched existing people, that's the first person who gained
-    // something; only truly falls back to the raw batch order for Replace.
+    const { excludedNewIds, excludedExistingIds } = selection;
+    // Land on a genuinely new (and actually included) person when there is
+    // one, rather than whichever record happened to be first in the file —
+    // for a merge that only enriched existing people, that's the first
+    // included person who gained something; only truly falls back to the
+    // raw batch order for Replace.
     firstPersonId.current =
-      summary?.newPeople[0]?.id
-      ?? summary?.enrichedPeople[0]?.id
+      summary?.newPeople.find((p) => !excludedNewIds.has(p.id))?.id
+      ?? summary?.enrichedPeople.find((p) => !excludedExistingIds.has(p.id))?.id
       ?? parsed.people[0]?.id
       ?? null;
     setTimeout(() => {
-      onImport(parsed.people, parsed.relationships, { merge: mergeMode === 'merge' });
+      onImport(parsed.people, parsed.relationships, {
+        merge: mergeMode === 'merge',
+        skipPeople: excludedNewIds,
+        skipEnrichmentFor: excludedExistingIds,
+      });
       setStep('done');
     }, 500);
   }
@@ -175,8 +188,8 @@ export default function GedcomImport({ onImport, onClose, canReplace = true, exi
           <ImportDoneStep
             people={parsed.people}
             mergeMode={mergeMode}
-            addedCount={frozenSummary.current?.newPeople.length}
-            enrichedCount={frozenSummary.current?.enrichedPeople.length ?? 0}
+            addedCount={frozenSummary.current ? frozenSummary.current.newPeople.length - selectionRef.current.excludedNewIds.size : undefined}
+            enrichedCount={frozenSummary.current ? frozenSummary.current.enrichedPeople.length - selectionRef.current.excludedExistingIds.size : 0}
             sourceNote="Portraits and photos aren't included in GEDCOM files, but all names, dates, and relationships are in."
             onClose={() => onClose(firstPersonId.current)}
           />
