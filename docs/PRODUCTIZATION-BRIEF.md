@@ -595,3 +595,219 @@ Baseline first; do not set fictional targets before measurement exists.
 - Any claim that a full lossless archive export exists before it has passed its
   production verification and support checks.
 
+## 16. SEO and discoverability
+
+SEO is a product discipline, not a list of metadata chores. Bloodline earns
+search traffic by publishing genuinely useful, original family-history help
+and by making its public product pages fast, legible, and technically
+indexable. It must never trade a family’s privacy for organic reach.
+
+### 16.1 SEO objective
+
+Build a durable, high-intent acquisition channel for people who are looking to:
+
+- start a private family tree;
+- organise or preserve family photographs, documents, and stories;
+- understand how to invite relatives into a shared family tree;
+- import an existing GEDCOM safely; and
+- decide which family-history product is right for them.
+
+The search result should accurately set expectations. A visitor who arrives
+from Google should recognise the page they clicked, find a complete answer,
+and have one appropriate next step.
+
+### 16.2 Indexing boundary: public knowledge, never private family data
+
+| May be indexed | Must never be indexed |
+| --- | --- |
+| Public marketing pages, help articles, original guides, feature pages, plans (when real), and public product announcements. | Authenticated tree canvas, person profiles, search results, family names, memories, documents, media URLs, activity, invite tokens, account settings, exports, and all user-generated family content. |
+
+This is an absolute privacy boundary. Do not make a person or family profile
+public merely to create search inventory. Any future public-sharing feature
+requires its own consent model, threat model, legal review, and separate
+product brief.
+
+### 16.3 Information architecture for search
+
+Use stable, descriptive, canonical public URLs:
+
+```
+/
+/how-it-works
+/features
+/privacy
+/import
+/help
+/guides/
+/guides/how-to-start-a-family-tree
+/guides/import-a-gedcom-file
+/guides/invite-family-to-a-private-family-tree
+/guides/preserve-family-photos-and-stories
+```
+
+Use `/guides/` only for useful, maintained editorial content. Do not create
+dozens of near-identical city, surname, ethnicity, relationship, or
+competitor-comparison pages merely to capture keywords.
+
+### 16.4 Search themes and initial content roadmap
+
+Start with a small editorial library that Bloodline can make materially better
+than generic content. Each guide needs a named owner, a source/review date,
+an original point of view, and a clear next step.
+
+| Theme | Visitor need | Initial page |
+| --- | --- | --- |
+| Starting a tree | “I do not know where to begin.” | How to start a family tree when all you have are names and stories |
+| Private sharing | “How can my family collaborate safely?” | How to create a private family tree for your family |
+| Preservation | “What should I do with old photographs and documents?” | A practical guide to preserving family photos, documents, and stories |
+| Importing | “Can I bring my genealogy work with me?” | How to import a GEDCOM file—and what to review first |
+| Family participation | “How do I get relatives to contribute?” | Seven low-pressure ways to invite relatives into the family story |
+| Family structures | “Will this represent my family accurately?” | Building a family tree that includes adoptive, step, blended, and chosen family |
+| Ownership | “What happens to my data?” | What it means to own and export your family history |
+
+Avoid publishing an article just because a keyword has volume. It must provide
+more depth, clarity, or practical help than the search result already offers.
+Family-history advice can be sensitive; factual claims about history,
+genealogy, preservation, privacy, or law need appropriate sourcing and review.
+
+### 16.5 On-page standards
+
+Every indexable public page must have:
+
+- a unique, descriptive `<title>` and a human-written meta description;
+- one visible page purpose and a clear H1;
+- useful text content in the initial rendered HTML, not only inside a canvas,
+  image, video, or client-only application shell;
+- a descriptive, stable URL;
+- one canonical URL;
+- relevant internal links to adjacent help and product pages;
+- optimised, permissioned images with meaningful alt text;
+- an author or accountable editorial owner and “last reviewed” date for
+guides where currency matters; and
+- one primary CTA that matches the query’s intent.
+
+Examples:
+
+| Page | Working title | CTA |
+| --- | --- | --- |
+| Home | Bloodline | Start your private family tree |
+| How it works | How Bloodline helps families preserve their stories | See how it works |
+| Import | Import a GEDCOM file into Bloodline | Bring your existing tree |
+| Guide | How to start a family tree: a gentle first step | Start with your family |
+
+Title and description copy must be deliberately authored per page, not
+assembled from a generic template such as “Bloodline | Family Tree.”
+
+### 16.6 Technical SEO requirements
+
+The existing application is a client-side experience. The public marketing and
+guide routes must be served or pre-rendered as complete, fast HTML documents;
+do not make crawlers execute the full authenticated Pixi application just to
+understand the homepage.
+
+Required launch work:
+
+1. Serve public routes with prerendering or server-side rendering, including
+   title, description, canonical URL, Open Graph/Twitter metadata, and page
+   body content in the first HTML response.
+2. Add a curated `/sitemap.xml` containing only canonical indexable public
+   routes, with correct `lastmod` values when content actually changes.
+3. Add `/robots.txt` that permits public content and blocks private application
+   paths. `robots.txt` is not the protection mechanism: sensitive responses
+   must also use `X-Robots-Tag: noindex, nofollow` or an equivalent meta rule,
+   and require authentication server-side.
+4. Canonicalise `www`/non-`www`, trailing-slash conventions, parameters, and
+   duplicate campaign URLs. Redirect non-canonical variants rather than
+   creating duplicate indexable pages.
+5. Ensure each public page has a share image, site name, favicon, accurate
+   page title, and useful preview description.
+6. Ship responsive images with explicit dimensions, modern formats, lazy
+   loading below the fold, and no layout shift.
+7. Keep public JavaScript small and route-split. Do not preload the tree
+   renderer, private app code, large fixtures, or authenticated API requests
+   on public pages.
+8. Test mobile rendering, keyboard navigation, and Core Web Vitals before
+   launch. A gorgeous but slow visual hero is not acceptable.
+9. Register the domain in Google Search Console and Bing Webmaster Tools;
+   submit the sitemap, inspect the homepage and key routes, and monitor
+   crawl/indexing failures after each release.
+10. Validate structured data and rendered HTML in the relevant search tools;
+   treat structured data as a correctness and understanding aid, never a
+   ranking shortcut.
+
+Google’s own guidance emphasises people-first, original, helpful content;
+accessible rendered content; descriptive URLs; and crawlable CSS/JavaScript.
+It also recommends verifying how Google sees a JavaScript site and submitting
+a sitemap for discovery. [SEO Starter Guide](https://developers.google.com/search/docs/fundamentals/seo-starter-guide)
+and [developer guide](https://developers.google.com/search/docs/fundamentals/get-started-developers).
+
+### 16.7 Structured data
+
+Use JSON-LD only where it describes visible, truthful page content:
+
+- `Organization` and `WebSite` on the public site root.
+- `SoftwareApplication` on the product homepage/features page when the
+  properties accurately reflect the available application.
+- `BreadcrumbList` on guides and help content.
+- `Article` with author, date published, and date modified for maintained
+  guides.
+- `VideoObject` only for real, accessible product videos with transcripts or
+  equivalent text context.
+
+Do not add fake ratings, invented reviews, unsupported pricing, or schema for
+content hidden from users. FAQ and HowTo markup must not be treated as a
+traffic tactic: Google has substantially reduced these rich-result treatments
+for ordinary commercial sites. [Google’s Search appearance guidance](https://developers.google.com/search/docs/appearance)
+and [structured-data policies](https://developers.google.com/search/docs/appearance/structured-data/sd-policies)
+set the applicable standard.
+
+### 16.8 Content design and editorial quality
+
+Every guide should follow this shape:
+
+1. Answer the question in the opening paragraph.
+2. Explain the practical steps with real examples.
+3. Address privacy, uncertainty, and common mistakes when relevant.
+4. Link naturally to the next useful guide or product route.
+5. State author/reviewer, update date, and source basis where useful.
+
+Do not use AI to mass-produce unreviewed family-history articles. It will
+damage trust, produce repetitive search pages, and create maintenance debt.
+AI can assist research and drafting only with an accountable human editor,
+fact-checking, source review, and a distinct editorial point of view.
+
+### 16.9 Measurement and operating cadence
+
+Use privacy-preserving analytics and Search Console as the core search
+measurement stack. Do not inject third-party behavioural tracking into the
+authenticated family product for SEO measurement.
+
+Track at aggregate level:
+
+- impressions, clicks, CTR, and query/page groups in Search Console;
+- indexed versus excluded public URLs;
+- Core Web Vitals and crawl errors;
+- organic landing page → start-path selection;
+- organic landing page → completed first tree/import; and
+- guide freshness, inbound links, and support questions that reveal missing
+content.
+
+Monthly: review search queries, index coverage, broken links, titles, and
+outdated guides. Quarterly: prune, merge, or substantially update low-value
+content rather than allowing a stale library to grow indefinitely.
+
+### 16.10 SEO launch gates
+
+- No authenticated or user-generated family URL appears in the sitemap or is
+  indexable.
+- Public routes render useful, page-specific text without requiring client-side
+  interaction.
+- Each public route has unique title, description, canonical, social preview,
+  and a validated responsive layout.
+- Sitemap, robots, redirects, and noindex headers are tested in staging and
+  production.
+- Search Console ownership and monitoring are operational.
+- All claims about privacy, export, pricing, AI, and advertising are accurate
+  at the time of publication.
+- At least the seven initial guides above pass editorial and factual review;
+  none are thin keyword pages.
