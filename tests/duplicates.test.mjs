@@ -9,7 +9,7 @@
  * Run with: node tests/duplicates.test.mjs
  */
 import assert from 'node:assert/strict';
-import { findDuplicatePairs, dedupeMergeImport } from '../src/lib/duplicates.js';
+import { findDuplicatePairs, dedupeMergeImport, mergePersonFields } from '../src/lib/duplicates.js';
 
 let passed = 0, failed = 0;
 function test(label, fn) {
@@ -118,6 +118,62 @@ test('a dateless record is never auto-merged (too weak — left for review)', ()
   const newP = [{ id: 'n1', display_name: 'John Smith' }];
   const out = dedupeMergeImport(existingP, [], newP, []);
   assert.deepEqual(out.people.map((p) => p.id), ['n1']);
+});
+
+// ── mergePersonFields: array-field dedup (delta re-import safety) ──────────
+// Blind concatenation was fine for a one-off duplicate-person merge, but a
+// repeatable "re-import an updated export" workflow calls this again on
+// every re-import — without dedup, unchanged residence/education/military/
+// event/condition entries would double (then triple, ...) each time the
+// same source data was re-imported.
+
+test('mergePersonFields dedupes identical residences instead of doubling them', () => {
+  const keep = { residences: [{ id: 'r1', place: 'Cardiff, Wales', from_year: 1970, to_year: 1980 }] };
+  const drop = { residences: [{ id: 'r2', place: 'Cardiff, Wales', from_year: 1970, to_year: 1980 }] };
+  const merged = mergePersonFields(keep, drop);
+  assert.equal(merged.residences.length, 1, 'the identical re-imported residence is not duplicated');
+});
+
+test('mergePersonFields keeps two residences at the same place with different years', () => {
+  const keep = { residences: [{ id: 'r1', place: 'Cardiff, Wales', from_year: 1970, to_year: 1980 }] };
+  const drop = { residences: [{ id: 'r2', place: 'Cardiff, Wales', from_year: 1990, to_year: 1995 }] };
+  const merged = mergePersonFields(keep, drop);
+  assert.equal(merged.residences.length, 2, 'genuinely distinct stays at the same place are both kept');
+});
+
+test('mergePersonFields dedupes identical education, military medals, events, and conditions', () => {
+  const keep = {
+    education: [{ id: 'e1', institution: 'Cardiff University', from_year: 1988, to_year: 1991 }],
+    military_medals: [{ name: 'Victory Medal', detail: 'WWI' }],
+    events: [{ year: 1918, title: 'Military service', tag: 'military', detail: 'Fort Slocum, New York' }],
+    conditions: [{ id: 'c1', name: 'Diabetes', category: 'chronic', status: 'active', onset_year: 1960 }],
+  };
+  const drop = {
+    education: [{ id: 'e2', institution: 'Cardiff University', from_year: 1988, to_year: 1991 }],
+    military_medals: [{ name: 'Victory Medal', detail: 'WWI' }],
+    events: [{ year: 1918, title: 'Military service', tag: 'military', detail: 'Fort Slocum, New York' }],
+    conditions: [{ id: 'c2', name: 'Diabetes', category: 'chronic', status: 'active', onset_year: 1960 }],
+  };
+  const merged = mergePersonFields(keep, drop);
+  assert.equal(merged.education.length, 1);
+  assert.equal(merged.military_medals.length, 1);
+  assert.equal(merged.events.length, 1);
+  assert.equal(merged.conditions.length, 1);
+});
+
+test('mergePersonFields still concatenates genuinely distinct array entries (no over-dedup)', () => {
+  const keep = { residences: [{ id: 'r1', place: 'Cardiff, Wales', from_year: 1970, to_year: 1980 }] };
+  const drop = { residences: [{ id: 'r2', place: 'Fremantle, Australia', from_year: 1988, to_year: 2001 }] };
+  const merged = mergePersonFields(keep, drop);
+  assert.equal(merged.residences.length, 2);
+});
+
+test('re-running mergePersonFields on its own output a second time is a no-op (idempotent re-import)', () => {
+  const keep = { residences: [{ id: 'r1', place: 'Cardiff, Wales', from_year: 1970, to_year: 1980 }] };
+  const drop = { residences: [{ id: 'r2', place: 'Cardiff, Wales', from_year: 1970, to_year: 1980 }] };
+  const once = mergePersonFields(keep, drop);
+  const twice = mergePersonFields(once, drop);
+  assert.equal(twice.residences.length, 1, 'importing the same snapshot again does not grow the array further');
 });
 
 test('a collapsed re-add carries its field data onto the surviving existing person', () => {

@@ -148,6 +148,36 @@ const SCALAR_FILLABLE = [
 ];
 const ARRAY_CONCAT_FIELDS = ['events', 'conditions', 'residences', 'education', 'military_medals'];
 
+// Content-based dedup keys for the array fields above — ignores each item's
+// own generated `id` (keep and drop always mint independent ids, so an id
+// comparison would never match anything) and instead keys on what the entry
+// actually SAYS. This matters most for dedupeMergeImport: a one-off manual
+// merge of two duplicate PERSON records only ever runs once, so blind
+// concatenation was harmless there, but a repeatable "re-import an updated
+// export" workflow calls mergePersonFields again on every re-import — without
+// this, the same residence/education/military entry would silently double
+// (then triple, ...) every time the same source data was re-imported.
+// `norm` (name-normalization helper above) doubles as a fine text-dedup key.
+const ARRAY_DEDUPE_KEYS = {
+  residences: (r) => `${norm(r.place)}|${r.from_year ?? ''}|${r.to_year ?? ''}`,
+  education: (e) => `${norm(e.institution)}|${e.from_year ?? ''}|${e.to_year ?? ''}`,
+  military_medals: (m) => `${norm(m.name)}|${norm(m.detail)}`,
+  events: (e) => `${e.year ?? ''}|${norm(e.title)}|${e.tag ?? ''}`,
+  conditions: (c) => `${norm(c.name)}|${c.onset_year ?? ''}`,
+};
+
+function dedupeByKey(items, keyFn) {
+  const seen = new Set();
+  const out = [];
+  for (const item of items) {
+    const k = keyFn(item);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(item);
+  }
+  return out;
+}
+
 export function mergePersonFields(keep, drop) {
   const merged = { ...keep };
   for (const f of SCALAR_FILLABLE) {
@@ -155,7 +185,8 @@ export function mergePersonFields(keep, drop) {
   }
   merged.tags = [...new Set([...(keep.tags || []), ...(drop.tags || [])])];
   for (const f of ARRAY_CONCAT_FIELDS) {
-    merged[f] = [...(keep[f] || []), ...(drop[f] || [])];
+    const combined = [...(keep[f] || []), ...(drop[f] || [])];
+    merged[f] = ARRAY_DEDUPE_KEYS[f] ? dedupeByKey(combined, ARRAY_DEDUPE_KEYS[f]) : combined;
   }
   if (drop.is_deceased && !keep.is_deceased) {
     merged.is_deceased = true;
