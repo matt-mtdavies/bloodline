@@ -167,27 +167,41 @@
    fighting the entrance for the same property. Two comma-separated
    animations on one element/property compose in listed order — this only
    works declared together like this, not as separately-cascading rules. */
-.logo--in.logo--idle .logo__a { animation: logo-pop 0.55s var(--spring) both, logo-idle-a 3.2s ease-in-out 0.6s infinite; }
-.logo--in.logo--idle .logo__b { animation: logo-pop 0.55s var(--spring) 0.09s both, logo-idle-b 3.8s ease-in-out 0.7s infinite; }
-.logo--in.logo--idle .logo__c { animation: logo-pop 0.55s var(--spring) 0.18s both, logo-idle-c 4.4s ease-in-out 0.8s infinite; }
-.logo--idle:not(.logo--in) .logo__a { animation: logo-idle-a 3.2s ease-in-out infinite; }
-.logo--idle:not(.logo--in) .logo__b { animation: logo-idle-b 3.8s ease-in-out infinite; }
-.logo--idle:not(.logo--in) .logo__c { animation: logo-idle-c 4.4s ease-in-out infinite; }
-/* Two rounds too subtle already (first a sub-pixel translate, then a 6-8%
-   scale) — turns out a small icon needs a genuinely large relative size
-   swing plus a bit of motion together before "breathing" actually reads
-   as breathing rather than a barely-there shimmer. */
+.logo--in.logo--idle .logo__a { animation: logo-pop 0.55s var(--spring) both, logo-idle-a 5.6s ease-in-out 0.6s infinite; }
+.logo--in.logo--idle .logo__b { animation: logo-pop 0.55s var(--spring) 0.09s both, logo-idle-b 6.6s ease-in-out 0.7s infinite; }
+.logo--in.logo--idle .logo__c { animation: logo-pop 0.55s var(--spring) 0.18s both, logo-idle-c 7.6s ease-in-out 0.8s infinite; }
+.logo--idle:not(.logo--in) .logo__a { animation: logo-idle-a 5.6s ease-in-out infinite; }
+.logo--idle:not(.logo--in) .logo__b { animation: logo-idle-b 6.6s ease-in-out infinite; }
+.logo--idle:not(.logo--in) .logo__c { animation: logo-idle-c 7.6s ease-in-out infinite; }
+/* Paused while a sheet or search dialog is open (Codex design review) — the
+   header logo sits behind/around whatever's open, so breathing there
+   shouldn't keep competing for attention while someone's reading a modal.
+   `animation-play-state` freezes mid-motion rather than snapping to rest,
+   so nothing jumps the instant a sheet opens or closes. `!important`
+   because the idle rules above set play-state implicitly via the
+   `animation` shorthand at equal-or-higher specificity — same convention
+   the prefers-reduced-motion override just below already uses to force an
+   animation to stop regardless of what turned it on. */
+.logo--paused .logo__a, .logo--paused .logo__b, .logo--paused .logo__c {
+  animation-play-state: paused !important;
+}
+/* Codex design review: a ~20-24% scale swing read as "more alive than
+   premium" for a mark that's visible continuously in the header, not just
+   during a load. Pulled back to a 4-7% swing (still enough to read as
+   breathing at this size, per the same reasoning the larger version was
+   originally tuned for) and slowed down (durations below) so it settles
+   into something ambient rather than attention-grabbing. */
 @keyframes logo-idle-a {
   0%, 100% { transform: scale(1) translate(0, 0); }
-  50% { transform: scale(1.22) translate(0.6px, -0.8px); }
+  50% { transform: scale(1.05) translate(0.6px, -0.8px); }
 }
 @keyframes logo-idle-b {
   0%, 100% { transform: scale(1) translate(0, 0); }
-  50% { transform: scale(1.2) translate(-0.7px, 0.6px); }
+  50% { transform: scale(1.045) translate(-0.7px, 0.6px); }
 }
 @keyframes logo-idle-c {
   0%, 100% { transform: scale(1) translate(0, 0); }
-  50% { transform: scale(1.24) translate(0.5px, 0.7px); }
+  50% { transform: scale(1.055) translate(0.5px, 0.7px); }
 }
 @keyframes logo-pop {
   from { transform: scale(0); opacity: 0; }
@@ -513,18 +527,32 @@
 .hover-card__pin { flex-shrink: 0; color: var(--ink-faint); }
 .hover-card__relbits > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .hover-card__ticker {
+  position: relative;
   flex: 1;
   min-width: 0;
   overflow: hidden;
   mask-image: linear-gradient(to right, transparent, black 10%, black 90%, transparent);
   -webkit-mask-image: linear-gradient(to right, transparent, black 10%, black 90%, transparent);
 }
+/* Reports the text's true natural width for the truncation check — never
+   painted, never affects layout (absolutely positioned out of flow). */
+.hover-card__ticker-measure {
+  position: absolute;
+  visibility: hidden;
+  white-space: nowrap;
+  pointer-events: none;
+}
 .hover-card__ticker-track {
   display: inline-flex;
   white-space: nowrap;
   animation-name: hover-ticker-scroll;
   animation-timing-function: linear;
-  animation-iteration-count: infinite;
+  /* Codex design review: "scroll only when truly truncated—and ideally
+     once, not forever." One pass, then hold — the track's own content is
+     the list duplicated end-to-end, so landing at the end of one pass
+     (-50%) shows the same content as the start; nothing visibly jumps. */
+  animation-iteration-count: 1;
+  animation-fill-mode: forwards;
 }
 .hover-card__ticker-item::after {
   content: '·';
@@ -7057,6 +7085,9 @@ button.health-notes {
    stats pill next to it (topbar__stats--btn) rather than a bold full-width
    alert banner — it's a small, content-hugging pill among other pills, not
    the loudest thing in the header. */
+/* A plain (non-interactive) flex container — .recap-nudge__main and
+   .recap-nudge__dismiss are the two real, independent <button>s inside it,
+   as siblings (see TopBar.jsx's own comment on why nesting was wrong). */
 .recap-nudge {
   display: inline-flex;
   align-items: center;
@@ -7065,19 +7096,29 @@ button.health-notes {
   margin: 0 16px 12px;
   background: var(--accent-soft);
   border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
-  color: var(--accent-deep);
-  font-size: 12px;
-  font-weight: 600;
-  padding: 6px 14px;
+  padding: 6px 8px 6px 14px;
   border-radius: 999px;
   max-width: calc(100vw - 32px);
-  text-align: center;
   z-index: 9999;
   animation: toast-in 0.3s var(--spring) both;
   pointer-events: auto;
   transition: background 0.15s ease, border-color 0.15s ease;
 }
 .recap-nudge:hover { background: color-mix(in srgb, var(--accent) 14%, var(--accent-soft)); }
+.recap-nudge__main {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: var(--accent-deep);
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
 .recap-nudge__spark { flex-shrink: 0; font-size: 11px; }
 .recap-nudge__dismiss {
   flex-shrink: 0;
@@ -7086,11 +7127,13 @@ button.health-notes {
   width: 16px;
   height: 16px;
   margin-left: 2px;
+  border: none;
   border-radius: 50%;
   background: color-mix(in srgb, var(--accent) 16%, transparent);
   color: var(--accent-deep);
   font-size: 11px;
   line-height: 1;
+  cursor: pointer;
 }
 .recap-nudge__dismiss:hover { background: color-mix(in srgb, var(--accent) 28%, transparent); }
 
@@ -7526,13 +7569,30 @@ button.health-notes {
   color: #8a5a1f;
 }
 
-/* The optional per-row "+N more" / "Show less" disclosure (Codex design
-   review: a long diff shouldn't turn one row into a wall of text next to
-   everyone else's one-liner). A plain text-link button, not another
-   checkbox — it never affects inclusion, only how much of that row's own
-   changes list is visible. */
+/* The practical consequence line on a potential-match row ("Including this
+   person will add 3 relationships.") — Codex design review: this is the
+   fact someone actually needs to decide whether to trust the match, not
+   just the flag itself. Muted like .gedcom__review-row-changes (a fact,
+   not a warning — the warning tone already lives in the amber flag note
+   above the list) rather than repeating the flag's own amber color. */
+.gedcom__review-row-consequence {
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+
+/* The per-row "+N more" / "Show less" disclosure (Codex design review: a
+   long diff shouldn't turn one row into a wall of text next to everyone
+   else's one-liner). A plain text-link button, not another checkbox — it
+   never affects inclusion, only how much of that row's own changes list
+   is visible. Its accessible name (see MergeReviewStep.jsx) names the
+   person and the real aria-expanded state — the visible label alone
+   ("+3 more") doesn't say whose changes it's revealing once several rows
+   on screen all carry the same generic text. */
 .gedcom__review-row-details {
   flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   background: none;
   border: none;
   padding: 10px 14px 10px 0;
@@ -7543,6 +7603,11 @@ button.health-notes {
   white-space: nowrap;
 }
 .gedcom__review-row-details:hover { text-decoration: underline; }
+.gedcom__review-row-chevron {
+  flex: none;
+  transition: transform 0.15s ease;
+}
+.gedcom__review-row-chevron--up { transform: rotate(180deg); }
 
 .gedcom__review-section-head {
   display: flex;

@@ -34,27 +34,33 @@ import { useMemo, useState } from 'react';
  * second signal — a shared relative already matched by name+year — and
  * summarizeMergeImport attaches it as `_likelyExisting` on the affected
  * newPeople entries. Those start OUT of the selection (excluded by
- * default, the opposite of every other new person) and carry a visibly
- * different row treatment, so the review doesn't quietly re-add 51 people
- * who were already there — confirmed against a real 81-person batch where
- * that was true for 51 of them.
+ * default, the opposite of every other new person) and — per the Codex
+ * design review below — render as their OWN section rather than flagged
+ * rows mixed into the New people list: "Potential matches — not selected."
+ * A person deciding whether to trust a big re-import needs that boundary
+ * to be structural, not a visual detail inside a list they might not
+ * notice; confirmed against a real 81-person batch where 51 of them were
+ * exactly this case.
  *
  * Codex design review, second pass: new people and enriched people used to
  * render as two visually DIFFERENT widgets — new people were a wrapped grid
- * of chip pills (no check glyph, state conveyed only by opacity/
+ * of chip pills with no check glyph (state only conveyed by opacity/
  * strikethrough), enriched people were a vertical list of rows with a real
- * checkmark circle. Two different visual languages for the identical "tap
- * to include/exclude" action read as ambiguous — a chip could plausibly
- * mean "add this" or "this is flagged as a duplicate" depending which of
- * the two you'd seen first. Both sections now share ONE row treatment
- * (ReviewRow below). A sticky summary sentence pins under the numeric
- * stats so the plain-language consequence of the current selection ("You're
- * about to add 68 new people and update 12 existing records") stays visible
- * while scrolling a long list — the numbers alone don't say what tapping
- * Apply actually DOES. Per-row change details collapse to a short preview
- * with a "+N more" disclosure rather than always showing the full diff
- * inline, so one person with many changes doesn't turn their row into a
- * wall of text next to everyone else's one-liner.
+ * checkmark circle. Both sections now share ONE row treatment (ReviewRow
+ * below). A sticky summary sentence pins under the numeric stats so the
+ * plain-language consequence of the current selection stays visible while
+ * scrolling a long list.
+ *
+ * Codex design review, third pass (polish): (1) the flagged/matches rows
+ * get their own section (above) with a stated consequence — "Including
+ * this person will add N relationships" — computed from summary.raw's own
+ * relationship list (the same one a real Apply would write), so the number
+ * is never a guess; (2) the "+N more" details disclosure now names who it's
+ * about, shows a rotating chevron, and exposes real aria-expanded state;
+ * (3) "All"/"None" carry a real accessible name per section/action
+ * ("Include all new people") — the visible text stays terse, but a screen
+ * reader tabbing past several identical bare "All"/"None" pairs on one
+ * screen previously had no way to tell them apart.
  */
 const CHANGE_PREVIEW_COUNT = 2;
 
@@ -63,13 +69,29 @@ export default function MergeReviewStep({ summary, duplicateCount = 0, noun = 'p
   const [excludedNew, setExcludedNew] = useState(() => new Set(newPeople.filter((p) => p._likelyExisting).map((p) => p.id)));
   const [excludedExisting, setExcludedExisting] = useState(() => new Set());
   const [expandedChanges, setExpandedChanges] = useState(() => new Set());
-  const likelyExistingCount = useMemo(() => newPeople.filter((p) => p._likelyExisting).length, [newPeople]);
 
-  const toggleNew = (id) => setExcludedNew((prev) => {
+  const plainNewPeople = useMemo(() => newPeople.filter((p) => !p._likelyExisting), [newPeople]);
+  const potentialMatches = useMemo(() => newPeople.filter((p) => p._likelyExisting), [newPeople]);
+
+  // How many relationships including this person would actually add —
+  // summary.raw.relationships is dedupeMergeImport's own kept-edges list
+  // (already deduped/remapped against the existing tree), the same set a
+  // real Apply writes, so this is a fact about the file, not an estimate.
+  const relCountByPersonId = useMemo(() => {
+    const m = new Map();
+    for (const r of summary.raw?.relationships || []) {
+      m.set(r.from_person, (m.get(r.from_person) || 0) + 1);
+      m.set(r.to_person, (m.get(r.to_person) || 0) + 1);
+    }
+    return m;
+  }, [summary.raw]);
+
+  const toggleNewIds = (ids, exclude) => setExcludedNew((prev) => {
     const next = new Set(prev);
-    if (next.has(id)) next.delete(id); else next.add(id);
+    for (const id of ids) { if (exclude) next.add(id); else next.delete(id); }
     return next;
   });
+  const toggleNew = (id) => toggleNewIds([id], !excludedNew.has(id));
   const toggleExisting = (id) => setExcludedExisting((prev) => {
     const next = new Set(prev);
     if (next.has(id)) next.delete(id); else next.add(id);
@@ -151,30 +173,52 @@ export default function MergeReviewStep({ summary, duplicateCount = 0, noun = 'p
             )}
           </div>
 
-          {newPeople.length > 0 && (
+          {plainNewPeople.length > 0 && (
             <div className="gedcom__review-section">
               <div className="gedcom__review-section-head">
                 <p className="gedcom__review-section-title">New {nounPlural} — tap to leave one out</p>
                 <SelectLinks
-                  onAll={() => setExcludedNew(new Set())}
-                  onNone={() => setExcludedNew(new Set(newPeople.map((p) => p.id)))}
+                  sectionLabel={`new ${nounPlural}`}
+                  onAll={() => toggleNewIds(plainNewPeople.map((p) => p.id), false)}
+                  onNone={() => toggleNewIds(plainNewPeople.map((p) => p.id), true)}
                 />
               </div>
-              {likelyExistingCount > 0 && (
-                <p className="gedcom__review-flag-note">
-                  <FlagIcon /> {likelyExistingCount} of these share a close relative already in your tree — left
-                  out below (flagged) since they're likely already there under a slightly different record. Tap to
-                  include if they really are new.
-                </p>
-              )}
               <ul className="gedcom__review-list">
-                {newPeople.map((p) => (
+                {plainNewPeople.map((p) => (
                   <ReviewRow
                     key={p.id}
                     name={p.display_name}
                     off={excludedNew.has(p.id)}
                     onToggle={() => toggleNew(p.id)}
-                    flagNote={p._likelyExisting ? `Might already be ${p._likelyExisting.name} — ${p._likelyExisting.reason}` : null}
+                  />
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {potentialMatches.length > 0 && (
+            <div className="gedcom__review-section">
+              <div className="gedcom__review-section-head">
+                <p className="gedcom__review-section-title">Potential matches — not selected</p>
+                <SelectLinks
+                  sectionLabel="potential matches"
+                  onAll={() => toggleNewIds(potentialMatches.map((p) => p.id), false)}
+                  onNone={() => toggleNewIds(potentialMatches.map((p) => p.id), true)}
+                />
+              </div>
+              <p className="gedcom__review-flag-note">
+                <FlagIcon /> These share a close relative already in your tree — likely already there under a
+                slightly different record. Left out by default; tap to include if they really are new.
+              </p>
+              <ul className="gedcom__review-list">
+                {potentialMatches.map((p) => (
+                  <ReviewRow
+                    key={p.id}
+                    name={p.display_name}
+                    off={excludedNew.has(p.id)}
+                    onToggle={() => toggleNew(p.id)}
+                    flagNote={`Might already be ${p._likelyExisting.name} — ${p._likelyExisting.reason}`}
+                    consequence={relConsequence(relCountByPersonId.get(p.id))}
                   />
                 ))}
               </ul>
@@ -186,6 +230,7 @@ export default function MergeReviewStep({ summary, duplicateCount = 0, noun = 'p
               <div className="gedcom__review-section-head">
                 <p className="gedcom__review-section-title">Gaining new facts — tap to leave one out</p>
                 <SelectLinks
+                  sectionLabel="existing records"
                   onAll={() => setExcludedExisting(new Set())}
                   onNone={() => setExcludedExisting(new Set(enrichedPeople.map((p) => p.id)))}
                 />
@@ -201,7 +246,8 @@ export default function MergeReviewStep({ summary, duplicateCount = 0, noun = 'p
                       off={excludedExisting.has(p.id)}
                       onToggle={() => toggleExisting(p.id)}
                       changesText={(expanded ? p.changes : p.changes.slice(0, CHANGE_PREVIEW_COUNT)).join(' · ')}
-                      detailsLabel={restCount > 0 ? (expanded ? 'Show less' : `+${restCount} more`) : null}
+                      detailsCount={restCount > 0 ? restCount : null}
+                      detailsExpanded={expanded}
                       onToggleDetails={restCount > 0 ? () => toggleExpanded(p.id) : null}
                     />
                   );
@@ -229,6 +275,11 @@ export default function MergeReviewStep({ summary, duplicateCount = 0, noun = 'p
   );
 }
 
+function relConsequence(count) {
+  if (!count) return null;
+  return `Including this person will add ${count} relationship${count === 1 ? '' : 's'}.`;
+}
+
 // One shared row treatment for both "new" and "enriched" people — a real
 // checkbox-style row (checkmark circle, not a chip), matching what the
 // enriched section already used so both read the same, unambiguous way.
@@ -236,7 +287,8 @@ export default function MergeReviewStep({ summary, duplicateCount = 0, noun = 'p
 // separate buttons rather than one nested inside the other — a <button>
 // can't contain another interactive element, and they need independent
 // click targets (expanding details must never also exclude the person).
-function ReviewRow({ name, off, onToggle, flagNote = null, changesText = null, detailsLabel = null, onToggleDetails = null }) {
+function ReviewRow({ name, off, onToggle, flagNote = null, consequence = null, changesText = null, detailsCount = null, detailsExpanded = false, onToggleDetails = null }) {
+  const detailsLabel = detailsExpanded ? 'Show less' : `+${detailsCount} more`;
   return (
     <li>
       <div className={`gedcom__review-row${off ? ' gedcom__review-row--off' : ''}${flagNote ? ' gedcom__review-row--flagged' : ''}`}>
@@ -250,12 +302,20 @@ function ReviewRow({ name, off, onToggle, flagNote = null, changesText = null, d
           <span className="gedcom__review-row-text">
             <span className="gedcom__review-row-name">{name}</span>
             {flagNote && <span className="gedcom__review-row-flag">{flagNote}</span>}
+            {consequence && <span className="gedcom__review-row-consequence">{consequence}</span>}
             {changesText && <span className="gedcom__review-row-changes">{changesText}</span>}
           </span>
         </button>
-        {detailsLabel && (
-          <button type="button" className="gedcom__review-row-details" onClick={(e) => { e.stopPropagation(); onToggleDetails(); }}>
+        {onToggleDetails && (
+          <button
+            type="button"
+            className="gedcom__review-row-details"
+            aria-expanded={detailsExpanded}
+            aria-label={detailsExpanded ? `Show fewer changes for ${name}` : `Show ${detailsCount} more change${detailsCount === 1 ? '' : 's'} for ${name}`}
+            onClick={(e) => { e.stopPropagation(); onToggleDetails(); }}
+          >
             {detailsLabel}
+            <ChevronIcon expanded={detailsExpanded} />
           </button>
         )}
       </div>
@@ -263,12 +323,12 @@ function ReviewRow({ name, off, onToggle, flagNote = null, changesText = null, d
   );
 }
 
-function SelectLinks({ onAll, onNone }) {
+function SelectLinks({ onAll, onNone, sectionLabel }) {
   return (
     <span className="gedcom__review-select-links">
-      <button type="button" className="gedcom__review-select-link" onClick={onAll}>All</button>
+      <button type="button" className="gedcom__review-select-link" aria-label={`Include all ${sectionLabel}`} onClick={onAll}>All</button>
       <span className="gedcom__review-select-sep">·</span>
-      <button type="button" className="gedcom__review-select-link" onClick={onNone}>None</button>
+      <button type="button" className="gedcom__review-select-link" aria-label={`Exclude all ${sectionLabel}`} onClick={onNone}>None</button>
     </span>
   );
 }
@@ -277,6 +337,17 @@ function CheckIcon({ size = 22 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <path d="M5 13l4 4L19 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function ChevronIcon({ expanded }) {
+  return (
+    <svg
+      width="11" height="11" viewBox="0 0 24 24" fill="none" aria-hidden="true"
+      className={`gedcom__review-row-chevron${expanded ? ' gedcom__review-row-chevron--up' : ''}`}
+    >
+      <path d="M6 9l6 6 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
