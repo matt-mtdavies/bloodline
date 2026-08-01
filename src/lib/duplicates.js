@@ -235,13 +235,17 @@ export function mergePersonFields(keep, drop) {
  *     facts onto the survivor) are separable, and this is what makes them
  *     separable.
  *
- * Returns { people, relationships, skipped, updatedExisting } — the incoming
- * arrays with exact re-adds removed, a count of how many people were
- * collapsed, and a Map of existingId → merged person object for every
+ * Returns { people, relationships, skipped, updatedExisting, remap } — the
+ * incoming arrays with exact re-adds removed, a count of how many people
+ * were collapsed, a Map of existingId → merged person object for every
  * existing person a collapsed re-add contributed field data to (via
  * mergePersonFields, so a re-import can carry over Places Lived/Education/
  * military details the existing record was missing, rather than the
- * collapsed incoming record's own data being silently discarded).
+ * collapsed incoming record's own data being silently discarded), and the
+ * raw incoming-id → existing-id collapse map itself (consumed by
+ * findLikelyExistingMatches below, to trace a still-"new" person's incoming
+ * relationships through to whichever existing people their relatives
+ * already resolved to).
  */
 export function dedupeMergeImport(existingPeople = [], existingRelationships = [], newPeople = [], newRelationships = [], opts = {}) {
   const { skipPeople = new Set(), skipEnrichmentFor = new Set() } = opts;
@@ -301,7 +305,88 @@ export function dedupeMergeImport(existingPeople = [], existingRelationships = [
     keptRels.push(mapped);
   }
 
-  return { people: keptPeople, relationships: keptRels, skipped: newPeople.length - keptPeople.length - droppedIds.size, updatedExisting };
+  return { people: keptPeople, relationships: keptRels, skipped: newPeople.length - keptPeople.length - droppedIds.size, updatedExisting, remap };
+}
+
+/*
+ * Real report: a delta re-import proposed 81 "new" people who, checked
+ * directly against production data, turned out to already be in the tree —
+ * several with real birth dates recorded THERE, but none in the freshly
+ * re-exported GEDCOM (Ancestry's export commonly omits birth dates for
+ * living people, for privacy). dedupeMergeImport's own match key needs a
+ * birth year on BOTH sides, so a person the source can structurally never
+ * supply one for will read as "new" on every single re-import, forever.
+ *
+ * This is a second, independent signal for exactly that gap — the same
+ * relationship-based corroboration findDuplicatePairs already uses (a
+ * shared parent/child/partner), rather than a shared birth year: for each
+ * still-"new" person, walk their relationships in the INCOMING batch; for
+ * any relative who DID resolve to an existing person (via dedupeMergeImport's
+ * own remap — i.e., that relative matched cleanly by name+year), check
+ * whether that existing person already has a same-kind relationship to
+ * someone with the exact same name. If so, that's real, specific evidence
+ * this "new" person is likely the same as that existing one.
+ *
+ * Deliberately still never auto-merges anything (single-hop only, no
+ * transitive chase, and requires an exact name match on top of the
+ * relationship link) — this only flags a SUGGESTION for a human to confirm
+ * or override, same precision-over-recall stance as everywhere else in this
+ * file. Pure; unit-tested.
+ *
+ * Returns a Map<incomingPersonId, { id, name, reason }> — existing person id
+ * + display name + a short human reason, for whichever "new" people got a
+ * hit.
+ */
+export function findLikelyExistingMatches(existingPeople = [], existingRelationships = [], newRelationships = [], remap = {}, candidatePeople = []) {
+  const add = (m, k, v) => { if (!m.has(k)) m.set(k, new Set()); m.get(k).add(v); };
+
+  const existingParents = new Map();  // child → Set(parent)   [existing ids]
+  const existingChildren = new Map(); // parent → Set(child)   [existing ids]
+  const existingPartners = new Map(); // person → Set(partner) [existing ids]
+  for (const r of existingRelationships) {
+    if (r.type === 'parent') { add(existingChildren, r.from_person, r.to_person); add(existingParents, r.to_person, r.from_person); }
+    else if (r.type === 'partner') { add(existingPartners, r.from_person, r.to_person); add(existingPartners, r.to_person, r.from_person); }
+  }
+  const existingById = new Map(existingPeople.map((p) => [p.id, p]));
+
+  const incomingParentsOf = new Map();  // child → Set(parent)   [incoming ids]
+  const incomingChildrenOf = new Map(); // parent → Set(child)   [incoming ids]
+  const incomingPartnersOf = new Map(); // person → Set(partner) [incoming ids]
+  for (const r of newRelationships) {
+    if (r.type === 'parent') { add(incomingChildrenOf, r.from_person, r.to_person); add(incomingParentsOf, r.to_person, r.from_person); }
+    else if (r.type === 'partner') { add(incomingPartnersOf, r.from_person, r.to_person); add(incomingPartnersOf, r.to_person, r.from_person); }
+  }
+
+  const findViaRelatives = (relatedIncomingIds, existingSideMap, key) => {
+    if (!relatedIncomingIds) return null;
+    for (const q of relatedIncomingIds) {
+      const eq = remap[q];
+      if (!eq) continue;
+      const candidates = existingSideMap.get(eq);
+      if (!candidates) continue;
+      for (const cid of candidates) {
+        const cPerson = existingById.get(cid);
+        if (cPerson && nameKey(cPerson) === key) return cPerson;
+      }
+    }
+    return null;
+  };
+
+  const results = new Map();
+  for (const p of candidatePeople) {
+    const key = nameKey(p);
+    if (!key) continue;
+
+    const match =
+      findViaRelatives(incomingParentsOf.get(p.id), existingChildren, key)
+      ?? findViaRelatives(incomingChildrenOf.get(p.id), existingParents, key)
+      ?? findViaRelatives(incomingPartnersOf.get(p.id), existingPartners, key);
+
+    if (match) {
+      results.set(p.id, { id: match.id, name: match.display_name, reason: 'shares a close relative already matched in your tree' });
+    }
+  }
+  return results;
 }
 
 // Friendly per-field/array labels for describeMergeChanges below — deliberately
@@ -383,8 +468,15 @@ export function summarizeMergeImport(existingPeople, existingRelationships, newP
   // (rather than silently folding it into "enriched") is what makes a
   // re-import of an unchanged file honestly say "nothing new here."
   const unchangedCount = result.skipped - enrichedPeople.length;
+  // Some "new" people are only new because the source couldn't supply a
+  // birth year for them (most commonly living relatives, redacted by the
+  // export itself) — dedupeMergeImport's own match key needs one on both
+  // sides, so it can never recognize them, no matter how many times the
+  // same file is re-imported. This is a second signal via relationships
+  // rather than dates — see findLikelyExistingMatches' own doc comment.
+  const likelyExisting = findLikelyExistingMatches(existingPeople, existingRelationships, newRelationships, result.remap, result.people);
   return {
-    newPeople: result.people,
+    newPeople: result.people.map((p) => ({ ...p, _likelyExisting: likelyExisting.get(p.id) || null })),
     newRelationshipCount: result.relationships.length,
     enrichedPeople,
     unchangedCount,
