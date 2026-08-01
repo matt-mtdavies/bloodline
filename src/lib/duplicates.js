@@ -183,6 +183,12 @@ export function mergePersonFields(keep, drop) {
   for (const f of SCALAR_FILLABLE) {
     if (merged[f] == null || merged[f] === '') merged[f] = drop[f] ?? merged[f] ?? null;
   }
+  // resting_place is a single object (cemetery/plot/place/...), not a plain
+  // scalar or an array — same fill-if-blank rule as the scalars above, just
+  // applied to the record as a whole rather than per-property.
+  if (!merged.resting_place?.place && drop.resting_place?.place) {
+    merged.resting_place = drop.resting_place;
+  }
   merged.tags = [...new Set([...(keep.tags || []), ...(drop.tags || [])])];
   for (const f of ARRAY_CONCAT_FIELDS) {
     const combined = [...(keep[f] || []), ...(drop[f] || [])];
@@ -269,6 +275,80 @@ export function dedupeMergeImport(existingPeople = [], existingRelationships = [
   }
 
   return { people: keptPeople, relationships: keptRels, skipped: newPeople.length - keptPeople.length, updatedExisting };
+}
+
+// Friendly per-field/array labels for describeMergeChanges below — deliberately
+// a curated subset of SCALAR_FILLABLE/ARRAY_CONCAT_FIELDS, not every one of
+// them: internal name-decomposition fields (given_names/middle_name/
+// family_name), photo_thumb (a derived copy of `photo`), and contact fields
+// (email/phone) aren't the kind of thing worth narrating in a "what's new"
+// summary — a GEDCOM import rarely touches them, and surfacing them would be
+// noise, not signal, for the one thing a delta-import review screen actually
+// needs to answer: "what did I gain from this file?"
+const CHANGE_FIELD_LABELS = {
+  photo: 'photo', birth_date: 'birth date', death_date: 'death date', cause_of_death: 'cause of death',
+  birth_place: 'birth place', residence: 'residence', occupation: 'occupation', bio: 'biography',
+  birth_name: 'birth name',
+  military_branch: 'military branch', military_nation: 'military nation',
+  military_rank: 'military rank', military_service_number: 'service number',
+};
+// [singular, plural] — "place lived" doesn't pluralize by suffix like the
+// rest ("places lived", not "place liveds").
+const CHANGE_ARRAY_LABELS = {
+  residences: ['place lived', 'places lived'],
+  education: ['education record', 'education records'],
+  military_medals: ['medal', 'medals'],
+  events: ['life event', 'life events'],
+  conditions: ['health record', 'health records'],
+};
+
+// Human-readable summary of what a merge added to an existing person —
+// "birth place added", "+2 places lived" — for a delta-import review screen
+// to show someone BEFORE they commit, not just a bare "34 people updated"
+// count. Pure; takes the person before and after mergePersonFields.
+export function describeMergeChanges(before, after) {
+  const changes = [];
+  for (const [field, label] of Object.entries(CHANGE_FIELD_LABELS)) {
+    const wasBlank = before?.[field] == null || before?.[field] === '';
+    const nowSet = after?.[field] != null && after?.[field] !== '';
+    if (wasBlank && nowSet) changes.push(`${label} added`);
+  }
+  if (!before?.resting_place?.place && after?.resting_place?.place) changes.push('burial place added');
+  for (const [field, [singular, plural]] of Object.entries(CHANGE_ARRAY_LABELS)) {
+    const n = (after?.[field]?.length || 0) - (before?.[field]?.length || 0);
+    if (n > 0) changes.push(`+${n} ${n === 1 ? singular : plural}`);
+  }
+  return changes;
+}
+
+// Everything a delta-import review screen needs to show BEFORE committing —
+// wraps dedupeMergeImport (the actual merge logic) with a human-facing
+// summary, so "Update from file" can say what will happen rather than just
+// doing it. Pure; nothing here writes to the tree — the caller still passes
+// dedupeMergeImport's own people/relationships/updatedExisting on to
+// importFromGedcom (store.js) to actually commit, exactly as today.
+export function summarizeMergeImport(existingPeople, existingRelationships, newPeople, newRelationships) {
+  const result = dedupeMergeImport(existingPeople, existingRelationships, newPeople, newRelationships);
+  const byId = new Map(existingPeople.map((p) => [p.id, p]));
+  const enrichedPeople = [];
+  for (const [id, after] of result.updatedExisting) {
+    const before = byId.get(id);
+    const changes = describeMergeChanges(before, after);
+    if (changes.length) enrichedPeople.push({ id, name: after.display_name, changes });
+  }
+  // A collapsed re-add that contributed nothing new (identical to what's
+  // already on record) is a true no-op — not "new," not "enriched," just
+  // correctly recognized as already-known. Surfacing it as a third bucket
+  // (rather than silently folding it into "enriched") is what makes a
+  // re-import of an unchanged file honestly say "nothing new here."
+  const unchangedCount = result.skipped - enrichedPeople.length;
+  return {
+    newPeople: result.people,
+    newRelationshipCount: result.relationships.length,
+    enrichedPeople,
+    unchangedCount,
+    raw: result,
+  };
 }
 
 // Dismissed-pair tracking lives here (not inside DuplicatesSheet) so the

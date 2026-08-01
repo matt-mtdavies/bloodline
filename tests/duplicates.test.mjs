@@ -9,7 +9,7 @@
  * Run with: node tests/duplicates.test.mjs
  */
 import assert from 'node:assert/strict';
-import { findDuplicatePairs, dedupeMergeImport, mergePersonFields } from '../src/lib/duplicates.js';
+import { findDuplicatePairs, dedupeMergeImport, mergePersonFields, describeMergeChanges, summarizeMergeImport } from '../src/lib/duplicates.js';
 
 let passed = 0, failed = 0;
 function test(label, fn) {
@@ -161,6 +161,20 @@ test('mergePersonFields dedupes identical education, military medals, events, an
   assert.equal(merged.conditions.length, 1);
 });
 
+test('mergePersonFields fills a blank resting_place from the dropped record', () => {
+  const keep = { resting_place: null };
+  const drop = { resting_place: { cemetery: null, plot: null, place: 'Mount Royal, Montreal, Quebec, Canada', suburb: null, state: null, country: null, lat: null, lon: null } };
+  const merged = mergePersonFields(keep, drop);
+  assert.equal(merged.resting_place.place, 'Mount Royal, Montreal, Quebec, Canada');
+});
+
+test('mergePersonFields never overwrites an existing resting_place', () => {
+  const keep = { resting_place: { cemetery: null, plot: null, place: 'Victor, New York', suburb: null, state: null, country: null, lat: null, lon: null } };
+  const drop = { resting_place: { cemetery: null, plot: null, place: 'Somewhere else', suburb: null, state: null, country: null, lat: null, lon: null } };
+  const merged = mergePersonFields(keep, drop);
+  assert.equal(merged.resting_place.place, 'Victor, New York');
+});
+
 test('mergePersonFields still concatenates genuinely distinct array entries (no over-dedup)', () => {
   const keep = { residences: [{ id: 'r1', place: 'Cardiff, Wales', from_year: 1970, to_year: 1980 }] };
   const drop = { residences: [{ id: 'r2', place: 'Fremantle, Australia', from_year: 1988, to_year: 2001 }] };
@@ -218,6 +232,67 @@ test('genuinely new (non-colliding) people never appear in updatedExisting', () 
   const newP = [{ id: 'n1', display_name: 'Baby Smith', birth_date: '2020' }];
   const out = dedupeMergeImport(existingP, [], newP, []);
   assert.equal(out.updatedExisting.size, 0);
+});
+
+// ── describeMergeChanges / summarizeMergeImport (delta-import review) ──────
+
+test('describeMergeChanges reports each newly-filled scalar field', () => {
+  const before = { display_name: 'Ann Lee' };
+  const after = { display_name: 'Ann Lee', birth_place: 'Cardiff, Wales', occupation: 'Nurse' };
+  const changes = describeMergeChanges(before, after);
+  assert.ok(changes.includes('birth place added'));
+  assert.ok(changes.includes('occupation added'));
+});
+
+test('describeMergeChanges reports a newly-filled resting_place as "burial place added"', () => {
+  const before = { resting_place: null };
+  const after = { resting_place: { place: 'Mount Royal, Montreal, Quebec, Canada' } };
+  assert.deepEqual(describeMergeChanges(before, after), ['burial place added']);
+});
+
+test('describeMergeChanges reports growth in array fields with a count', () => {
+  const before = { residences: [{ place: 'Cardiff, Wales' }] };
+  const after = { residences: [{ place: 'Cardiff, Wales' }, { place: 'Fremantle, Australia' }, { place: 'London, England' }] };
+  assert.deepEqual(describeMergeChanges(before, after), ['+2 places lived']);
+});
+
+test('describeMergeChanges reports nothing when nothing actually changed', () => {
+  const person = { display_name: 'Ann Lee', birth_place: 'Cardiff, Wales', residences: [{ place: 'Cardiff, Wales' }] };
+  assert.deepEqual(describeMergeChanges(person, { ...person }), []);
+});
+
+test('describeMergeChanges never reports a field that was already filled, even if the incoming value differs', () => {
+  const before = { occupation: 'Carpenter' };
+  const after = { occupation: 'Carpenter' }; // mergePersonFields never overwrites — after always equals before here
+  assert.deepEqual(describeMergeChanges(before, after), []);
+});
+
+test('summarizeMergeImport buckets new people, enriched people, and true no-ops separately', () => {
+  const existingP = [
+    { id: 'e1', display_name: 'John Smith', birth_date: '1950', residences: [] }, // will be enriched
+    { id: 'e2', display_name: 'Mary Smith', birth_date: '1952', occupation: 'Teacher' }, // true no-op re-add
+  ];
+  const newP = [
+    { id: 'n1', display_name: 'John Smith', birth_date: '1950', residences: [{ place: 'Cardiff, Wales' }] },
+    { id: 'n2', display_name: 'Mary Smith', birth_date: '1952', occupation: 'Teacher' }, // identical — nothing new
+    { id: 'n3', display_name: 'Baby Smith', birth_date: '2020' }, // genuinely new
+  ];
+  const summary = summarizeMergeImport(existingP, [], newP, []);
+  assert.equal(summary.newPeople.length, 1, 'exactly one genuinely new person');
+  assert.equal(summary.newPeople[0].id, 'n3');
+  assert.equal(summary.enrichedPeople.length, 1, 'exactly one existing person gained something');
+  assert.equal(summary.enrichedPeople[0].id, 'e1');
+  assert.deepEqual(summary.enrichedPeople[0].changes, ['+1 place lived']);
+  assert.equal(summary.unchangedCount, 1, 'the identical Mary Smith re-add is a true no-op, not "enriched"');
+});
+
+test('summarizeMergeImport on a literal re-import of the same file reports zero new, zero enriched', () => {
+  const existingP = [{ id: 'e1', display_name: 'John Smith', birth_date: '1950', occupation: 'Carpenter' }];
+  const newP = [{ id: 'n1', display_name: 'John Smith', birth_date: '1950', occupation: 'Carpenter' }];
+  const summary = summarizeMergeImport(existingP, [], newP, []);
+  assert.equal(summary.newPeople.length, 0);
+  assert.equal(summary.enrichedPeople.length, 0);
+  assert.equal(summary.unchangedCount, 1);
 });
 
 console.log(`\n  ${passed} passed, ${failed} failed`);

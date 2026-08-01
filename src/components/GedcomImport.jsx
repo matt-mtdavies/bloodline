@@ -1,10 +1,11 @@
 import { useState, useRef, useCallback, useMemo } from 'react';
 import { gedcomToStore } from '../lib/gedcom.js';
-import { findDuplicatePairs } from '../lib/duplicates.js';
+import { findDuplicatePairs, summarizeMergeImport } from '../lib/duplicates.js';
 import ImportDoneStep from './ImportDoneStep.jsx';
+import MergeReviewStep from './MergeReviewStep.jsx';
 
 export default function GedcomImport({ onImport, onClose, canReplace = true, existingPeople = [], existingRelationships = [] }) {
-  const [step, setStep] = useState('upload'); // upload | preview | importing | done
+  const [step, setStep] = useState('upload'); // upload | preview | review | importing | done
   const [parsed, setParsed] = useState(null);
   // Replacing the whole tree is a co-admin+ action (src/lib/visibility.js
   // canManageTree) — default and restrict accordingly for anyone below that.
@@ -31,6 +32,30 @@ export default function GedcomImport({ onImport, onClose, canReplace = true, exi
     }
     return findDuplicatePairs(parsed.people, parsed.relationships).length;
   }, [parsed, mergeMode, existingPeople, existingRelationships]);
+
+  // What a merge would actually do — genuinely new people vs. existing
+  // people gaining new facts vs. records already fully accounted for. Only
+  // computed for merge mode; Replace is a full, unambiguous wipe-and-start-
+  // fresh action that doesn't need a diff. This is what makes "Update from
+  // file" a reviewable delta rather than a blind re-commit — see
+  // summarizeMergeImport's own doc comment (lib/duplicates.js).
+  const mergeSummary = useMemo(() => {
+    if (!parsed || mergeMode !== 'merge') return null;
+    return summarizeMergeImport(existingPeople, existingRelationships, parsed.people, parsed.relationships);
+  }, [parsed, mergeMode, existingPeople, existingRelationships]);
+
+  // mergeSummary above is deliberately LIVE (it depends on existingPeople,
+  // which is App.jsx's own data.people prop) — necessary so the review
+  // screen always reflects the CURRENT tree if it's edited elsewhere while
+  // this sheet is open. But that liveness is exactly wrong for the Done
+  // screen: the instant commitImport's onImport() call lands, existingPeople
+  // updates to include what was just merged, mergeSummary recomputes against
+  // the now-already-merged tree, and the diff collapses to zero — a real bug
+  // caught live-testing this (Done screen said "up to date" immediately
+  // after adding a genuinely new person). frozenSummary snapshots the
+  // summary at the moment Apply is clicked, before anything commits, so the
+  // Done screen always describes what actually just happened.
+  const frozenSummary = useRef(null);
 
   const processFile = useCallback((file) => {
     if (!file) return;
@@ -66,8 +91,30 @@ export default function GedcomImport({ onImport, onClose, canReplace = true, exi
   const firstPersonId = useRef(null);
 
   function handleImport() {
+    // Replace commits immediately (a full, unambiguous wipe-and-start-fresh
+    // action with its own warning already shown). Merge goes to the review
+    // step first — see mergeSummary above. Freeze the summary the instant we
+    // commit to reviewing it, before anything changes underneath it.
+    if (mergeMode === 'merge') {
+      frozenSummary.current = mergeSummary;
+      setStep('review');
+      return;
+    }
+    commitImport();
+  }
+
+  function commitImport() {
     setStep('importing');
-    firstPersonId.current = parsed.people[0]?.id ?? null;
+    const summary = frozenSummary.current;
+    // Land on a genuinely new person when there is one, rather than
+    // whichever record happened to be first in the file — for a merge that
+    // only enriched existing people, that's the first person who gained
+    // something; only truly falls back to the raw batch order for Replace.
+    firstPersonId.current =
+      summary?.newPeople[0]?.id
+      ?? summary?.enrichedPeople[0]?.id
+      ?? parsed.people[0]?.id
+      ?? null;
     setTimeout(() => {
       onImport(parsed.people, parsed.relationships, { merge: mergeMode === 'merge' });
       setStep('done');
@@ -108,6 +155,15 @@ export default function GedcomImport({ onImport, onClose, canReplace = true, exi
           />
         )}
 
+        {step === 'review' && frozenSummary.current && (
+          <MergeReviewStep
+            summary={frozenSummary.current}
+            duplicateCount={duplicateCount}
+            onApply={commitImport}
+            onBack={() => setStep('preview')}
+          />
+        )}
+
         {step === 'importing' && (
           <div className="gedcom__importing">
             <div className="gedcom__spinner" aria-hidden="true" />
@@ -119,6 +175,8 @@ export default function GedcomImport({ onImport, onClose, canReplace = true, exi
           <ImportDoneStep
             people={parsed.people}
             mergeMode={mergeMode}
+            addedCount={frozenSummary.current?.newPeople.length}
+            enrichedCount={frozenSummary.current?.enrichedPeople.length ?? 0}
             sourceNote="Portraits and photos aren't included in GEDCOM files, but all names, dates, and relationships are in."
             onClose={() => onClose(firstPersonId.current)}
           />
@@ -260,7 +318,7 @@ function PreviewStep({ parsed, mergeMode, onMergeMode, onImport, onBack, canRepl
       <div className="gedcom__preview-actions">
         <button className="gedcom__back-btn" onClick={onBack}>← Back</button>
         <button className="gedcom__import-btn" onClick={onImport}>
-          Import {people.length} {people.length === 1 ? 'person' : 'people'} →
+          {mergeMode === 'merge' ? 'Review changes →' : `Import ${people.length} ${people.length === 1 ? 'person' : 'people'} →`}
         </button>
       </div>
     </div>
