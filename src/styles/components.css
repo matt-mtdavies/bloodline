@@ -8729,6 +8729,45 @@ button.health-notes {
 .home__stat-tile:nth-child(4n+2) { border-top-color: var(--sage); }
 .home__stat-tile:nth-child(4n+3) { border-top-color: var(--gold); }
 .home__stat-tile:nth-child(4n+4) { border-top-color: #6b5e7a; }
+
+/* Codex design review: a family with no photos and no memories yet
+   replaces the stat grid above with this single, invitational card rather
+   than showing "0 Faces preserved" / "0 Stories recorded" — a fact that's
+   accurate but reads as a deficit, not a next step. Sits in the exact same
+   slot the grid occupies (same top divider/spacing), so swapping between
+   the two as a family gains its first photo or story is seamless. */
+.home__next-step {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  width: 100%;
+  margin-top: 18px;
+  padding-top: 18px;
+  border: none;
+  border-top: 1px solid var(--hairline);
+  background: none;
+  color: var(--ink);
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  transition: opacity 0.15s ease;
+}
+.home__next-step:disabled { cursor: default; opacity: 0.6; }
+.home__next-step:not(:disabled):hover { opacity: 0.88; }
+.home__next-step-icon {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent, #c2603a);
+  color: #fff;
+}
+.home__next-step-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.home__next-step-title { font-family: var(--display); font-size: 15px; font-weight: 700; color: var(--ink); }
+.home__next-step-sub { font-size: 12.5px; line-height: 1.4; color: var(--ink-soft); }
 .home__stat-value {
   font-family: var(--display);
   font-size: 25px;

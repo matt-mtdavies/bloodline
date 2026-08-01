@@ -56,7 +56,7 @@ function nextInsightIndex(poolLen) {
  */
 export default function Home({
   user, familyName, stats = null, activity = [], people = [], graph = null, userEmail,
-  cohortIds = null,
+  cohortIds = null, myPersonId = null,
   onClose, onOpenAccount, onLogout, onOpenInstall, onOpenHowItWorks, onOpenFamilyTrees,
   onOpenActivity, onSelectPerson, onOpenFamilySettings, onOpenInsights,
   keepsakeNudge = null, onOpenKeepsake = null,
@@ -69,6 +69,26 @@ export default function Home({
 
   const first = user?.display_name ? firstName(user.display_name) : null;
   const tiles = buildStatTiles(stats);
+  // Codex design review: "0 Faces preserved" / "0 Stories recorded" sitting
+  // in an otherwise-empty stat grid reads as a cold dashboard, not an
+  // invitation — for a family that genuinely has no content yet (as
+  // opposed to a rich tree where one stat happens to be thin), a single
+  // attractive next-step card replaces the whole grid. "Has no content
+  // yet" is deliberately scoped to the two CONTENT stats (photos,
+  // memories) — not yearSpan/surnames/connections, which are structural
+  // side effects of just having added people and relationships, not
+  // something anyone "adds" as a next step the way a photo or a story is.
+  const hasNoContentYet = !!(stats && stats.people > 0 && stats.withPhoto === 0 && stats.memories === 0);
+  // Prefers the viewer's own profile when it's a real, portrait-less
+  // person (the most natural "start with yourself" nudge); falls back to
+  // the first person in the tree without one so the card always has
+  // someone concrete to name rather than falling back to something vague.
+  const nextStepPerson = useMemo(() => {
+    if (!hasNoContentYet) return null;
+    const self = myPersonId ? people.find((p) => p.id === myPersonId) : null;
+    if (self && !self.photo) return self;
+    return people.find((p) => !p.photo) || null;
+  }, [hasNoContentYet, myPersonId, people]);
   // Family Perimeter (PR #91 review): computeThisMonth reads marriage
   // anniversaries straight off graph.relationships, so it needs a
   // genuinely cohort-scoped graph (scopeGraphToIds — people AND
@@ -140,14 +160,37 @@ export default function Home({
           <TreeConstellation />
 
           {tiles.length > 0 && (
-            <div className="home__stat-grid">
-              {tiles.map((t, i) => (
-                <div className="home__stat-tile" key={i}>
-                  <span className="home__stat-value">{t.value}</span>
-                  <span className="home__stat-label">{t.label}</span>
-                </div>
-              ))}
-            </div>
+            hasNoContentYet ? (
+              <button
+                className="home__next-step"
+                onClick={() => nextStepPerson && onSelectPerson?.(nextStepPerson.id)}
+                disabled={!nextStepPerson}
+              >
+                <span className="home__next-step-icon" aria-hidden="true">
+                  {nextStepPerson ? <CameraIcon /> : <BookIcon />}
+                </span>
+                <span className="home__next-step-body">
+                  <span className="home__next-step-title">
+                    {nextStepPerson ? `Start ${firstName(nextStepPerson.display_name)}'s portrait` : 'Add the first family story'}
+                  </span>
+                  <span className="home__next-step-sub">
+                    {nextStepPerson
+                      ? 'Every profile becomes real once there’s a face to it.'
+                      : 'A memory, however small, is what makes this more than a chart.'}
+                  </span>
+                </span>
+                <ArrowIcon />
+              </button>
+            ) : (
+              <div className="home__stat-grid">
+                {tiles.map((t, i) => (
+                  <div className="home__stat-tile" key={i}>
+                    <span className="home__stat-value">{t.value}</span>
+                    <span className="home__stat-label">{t.label}</span>
+                  </div>
+                ))}
+              </div>
+            )
           )}
         </div>
 
@@ -428,6 +471,18 @@ function SettingsIcon() {
     <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="1.6"/>
       <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  );
+}
+
+function CameraIcon() {
+  return (
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M4 8h3l1.5-2h7L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1Z"
+        stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round"
+      />
+      <circle cx="12" cy="13" r="3.2" stroke="currentColor" strokeWidth="1.7" />
     </svg>
   );
 }
