@@ -1976,6 +1976,145 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   the `clearLocalData()` one — any future destructive-reset or recovery code path must stamp
   it, and any future sync/merge path must check it before touching `_mergeByRecency`.
 
+- **Data integrity checker** (PR #107, shipped alongside the `_restoreEpoch` fix above) —
+  flags implausible/impossible facts for review, same shape and philosophy as the existing
+  duplicate-detection feature. Real motivating example: the same person showing as the
+  current partner of two different people at once. `lib/integrity.js` runs six
+  precision-over-recall checks against the graph (concurrent partners, implausible age
+  >115, death before birth, a child born before or long after a parent, a bio/adoptive
+  parent under 10 at a child's birth, a marriage date outside either partner's lifespan,
+  ancestor cycles). Never auto-fixes anything — each flagged issue links straight to the
+  profile(s) involved, or can be dismissed if it's genuinely correct, using the same
+  localStorage-backed dismissal pattern `lib/duplicates.js` already established.
+  `IntegritySheet.jsx` mirrored `DuplicatesSheet.jsx`'s review-and-dismiss UI wholesale and
+  was wired into the topbar stats popover with its own count pill (App.jsx owns the
+  dismissed set as real state so the pill and the sheet always agree, same convention as
+  the duplicates fix earlier in this file). 27 unit tests in `tests/integrity.test.mjs`.
+  **Superseded by the premium UX refinement entry below** — `IntegritySheet`'s standalone
+  topbar entry point was later folded into the combined Archive Care workspace, though the
+  component and its checks are unchanged.
+
+- **Phase D growth-content guide library** (PR #108, `docs/PRODUCTIZATION-BRIEF.md` §16.4) —
+  three original, editorially-reviewed guides plus a `/guides` index (Phase A/B of the
+  productization brief were already shipped; Phase C — plans/billing — is gated on business
+  decisions, not engineering, so this was the next buildable step). `/guides/
+  how-to-start-a-family-tree` (top-of-funnel, no genealogy background assumed), `/guides/
+  import-a-gedcom-file` (deeper than the `/import` product page — a pre-import checklist
+  grounded in the real merge/replace, review-before-apply, duplicate-safeguard, and
+  backup/restore behavior actually shipped), and `/guides/family-tree-for-blended-and-
+  chosen-families` (Bloodline's strongest competitive differentiator per the brief's
+  competitive-posture section, grounded only in real, shipped relationship modeling —
+  biological/step/adoptive qualifiers, derived full/half/step siblings, custom kin terms).
+  Each guide carries Article + BreadcrumbList JSON-LD via a new `articleStructuredData()`
+  helper in `publicShell.js`; wired into `sitemap.xml`, the footer's Product column, and
+  natural cross-links from `/help`, `/how-it-works`, and `/import` (per §16.8's "link to the
+  next useful guide" standard). CSS additions purely additive (h3/ol support + a callout
+  block for `.pub-article`, a topic-tag chip for the guides index cards). Deliberately
+  scoped to 3 of the brief's 7 suggested topics rather than all 7 — small, reviewed, and
+  grounded in verified product behavior, per §16.8's explicit warning against
+  mass-produced/unreviewed AI content. **Remaining Phase D scope**: permissioned customer
+  stories, and the other 4 guide topics from §16.4 whenever there's real product surface to
+  ground them in.
+
+- **Premium UX refinement: member directory, Family/Profile settings, Family overview**
+  (PR #109 — open, not yet merged as of this writing) — real user/reviewer feedback: "the
+  member list is the biggest weak spot. On mobile it feels like an email directory with
+  controls bolted on, rather than premium family administration." A full
+  information-architecture and interaction-quality pass, deliberately scoped as layout/
+  grouping/copy only — no new colors (still just the existing warm paper/ink/terracotta/
+  sage/gold system), no changes to permissions/roles/audit/restore behavior, and the top bar
+  itself untouched (only the `StatsPopover` overlay it opens).
+  1. **Family overview** (`TopBar.jsx`'s `StatsPopover`): restructured into a clear
+     hierarchy — Discover (Tree insights, kept as the warm terracotta primary card; Family
+     timeline, kept as the calm secondary card) separated from a new, quieter **Care for
+     your archive** section. "Review N data integrity issues" renamed to "N details worth
+     reviewing" (the old wording implied corruption before anyone had actually looked).
+     Surnames cap at 5 with a "View all N surnames" expansion; time span collapsed from a
+     labelled stats block into one sentence ("113 years of family history · 1905–2018").
+     Gained its own `.stats-popover__head` (title + close) so the corner X unambiguously
+     closes the whole panel rather than reading as if it dismisses Tree insights specifically.
+  2. **Archive Care workspace** (`src/components/ArchiveCareSheet.jsx`, new) — merges
+     Possible Duplicates and the data integrity checker (previous entry) into one dedicated
+     review workspace instead of two separate topbar popover entries, per the brief's
+     explicit instruction not to present duplicates/integrity/insights/timeline as four
+     equal cards. Both `DuplicatesSheet.jsx` and `IntegritySheet.jsx` gained an `embedded`
+     prop (default `false`) that swaps their own `sheet-scrim`/`sheet` wrapper for a plain
+     `<section className="dups__embedded-section">` and skips their own Escape-key handler,
+     so `ArchiveCareSheet` can host both under one shared head/scrim with zero duplicated
+     review logic. The topbar's notification indicator (`archiveCareHasNew`, new
+     `src/lib/archiveCare.js`) shows a dot **only when genuinely new** review items exist
+     (a `bl_archivecare_seen` localStorage set of keys already shown), never a permanent
+     raw-total badge — the brief's explicit requirement, and a deliberately different
+     mechanism from `lib/duplicates.js`/`lib/integrity.js`'s own *dismissal* tracking
+     (seeing an item isn't the same as saying it isn't a real issue). Deliberately preserved
+     the one pre-existing person-focused entry point (`PersonSheet`'s "review this
+     duplicate" → `App.jsx`'s `openDuplicatesFor`) on the original **standalone**
+     `DuplicatesSheet`, unchanged — there was never an equivalent person-focused entry for
+     integrity issues, so `IntegritySheet`'s standalone mode is now technically unreachable
+     from the UI but kept functionally correct rather than deleted.
+  3. **Profile settings** (`UserProfile.jsx`) regrouped under `.fs__section-label` eyebrow
+     headings into "You in the family" (display name, claimed bubble), "Your view" (Family
+     Perimeter, grandparent-name packs), "Notifications" (a compact summary row — e.g. "On
+     for activity, off for the weekly digest" — opening a dedicated nested sub-page via a
+     new `notifView` state, rather than showing every toggle on the main screen), and
+     "Account" (email shown once, quietly, rather than repeated as primary hero content;
+     admin link). Sign-out stays the final, visually distinct `.fs__danger` block.
+     Deliberately did NOT add "Bloodline-only" here despite the brief listing it
+     conditionally ("if personal") — it's transient in-memory-only `App.jsx` state
+     (`useState(false)`, never persisted), so surfacing it in Profile settings would read as
+     a saved preference when it isn't one; it already has its own topbar toggle.
+  4. **Family settings** (`FamilySettings.jsx`) — the old 5 equal-width `.fs__tabs` (which
+     needed horizontal scroll on a phone) replaced with a **Members/Invites segmented
+     control** (`.fs__seg`) plus a **"More" overflow** (`.fs__more-btn`/`.fs__more-menu`) for
+     the occasional tools — Audit log, Restore, Birthdays — each showing a back-breadcrumb
+     sub-view header (`.fs__subview-head`, "‹ Members · Audit log") rather than looking like
+     a fourth equal tab. A visible **"+ Invite family"** CTA (`.fs__invite-cta`) now sits at
+     the top of the Members view, replacing Invite-as-just-another-tab. Members are grouped
+     into **"Owner & co-admins"** vs **"Members"** (`roleRank(m.role) >= roleRank('coadmin')`)
+     and sorted alphabetically by name within each group; a search box
+     (`.fs__member-search`) appears once a family passes 12 members. Pending invitations
+     moved entirely out of the Members list into the Invites view (with a "No pending
+     invitations" empty state), matching the brief's "pending invitations belong in Invites,
+     not mixed into active members."
+  5. **Member directory redesign**: `MemberRow` simplified to show name first (falling back
+     to email only when no `display_name` exists — and never showing the email a second time
+     once it's already the name), a quiet `RoleBadge`, and a single **"More"** button
+     (`.fs__more-row-btn`) opening a new **`src/components/ManageMemberSheet.jsx`** —
+     replacing the permanent inline role `<select>` + bare "×" that used to sit on every
+     single row. The sheet shows the person's avatar/name/email/joined-date, a role picker
+     with inline descriptions (reusing the existing `.fs__role-grid`/`.fs__role-opt` markup
+     from the invite flow, and a newly-exported `ROLE_DESCS` moved from a local const in
+     `FamilySettings.jsx` into `lib/visibility.js` so both share one definition), and gates
+     "Remove access" behind an explicit `.dups__confirm`-style consequence-stating confirm
+     ("This removes {name}'s access to the family tree — they'll need a new invitation to
+     rejoin. It doesn't delete anything they've already added.") rather than a bare "×".
+  6. **Invitation experience**: the existing role-picker's per-role descriptions were kept
+     as-is; a new one-line privacy reassurance (`.fs__invite-privacy`, "Invited people only
+     see the family information their role permits") sits just below it.
+  Two real bugs were found and fixed while wiring this up, neither part of the brief itself:
+  `archiveCareHasNew` (App.jsx) referenced `seenArchiveCareKeys` in a `useMemo` several lines
+  **above** that state's own `useState` declaration — a temporal-dead-zone `ReferenceError`
+  that would have thrown on every single render in production; caught immediately by the
+  verification pass below (`✗ pageerror: Cannot access 'seenArchiveCareKeys' before
+  initialization`) and fixed by reordering. Separately, pressing Escape while
+  `ManageMemberSheet` was open closed the entire Family Settings sheet underneath it too —
+  both components register independent `window` keydown listeners, and one's
+  `stopPropagation()` doesn't stop a sibling listener on the same target — fixed by guarding
+  `FamilySettings.jsx`'s own Escape handler to no-op while `manageMemberId` is set. Verified
+  live via a throwaway, gitignored Playwright script (`tests/_uxbrief_verify.mjs` — matches
+  the existing `tests/_*.mjs` convention for scripts that live in the project dir rather
+  than `/tmp`) that mocks `/api/auth/me` + `/api/family/members` with a realistic 34-member
+  roster (mixed roles, some accounts with no `display_name`, two pending invitations) and
+  screenshots every required state on desktop (1280×900) and mobile (390×844) — confirmed no
+  tab overflow, no duplicated-email-as-name rendering, the search box appears above the
+  12-member threshold, and both role changes and removal require deliberate confirmation.
+  Also required a temporary `?debugUser` App.jsx hook (reverted before commit, confirmed via
+  a clean `git diff` on `App.jsx`) to force `applySession()` to run under `?demo` so the
+  mocked session could populate `user` for the login-gated Profile/Family-settings surfaces
+  demo mode otherwise never reaches — same pattern as earlier sessions' temporary debug
+  hooks. 7 new unit tests (`tests/archiveCare.test.mjs`). Full unit suite, `npm run build`,
+  and the standard smoke test (`npm run test:e2e`) all passed clean.
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);
@@ -2021,6 +2160,27 @@ done/partial/not-started). Read it before planning a new sprint.
 
 ## Open thread / likely next steps
 
+- **Immediate: PR #109 is open, unmerged** — "Premium UX refinement: member directory,
+  Family/Profile settings, Family overview" (branch `claude/continue-build-y05lyu`, full
+  writeup in the Status section above). Everything in it is verified (full unit suite,
+  `npm run build`, the standard smoke test, and a live 34-member-roster Playwright pass all
+  clean) but it has not yet been reviewed or merged. Read the PR description and diff before
+  starting new work on any of the touched files (`TopBar.jsx`'s `StatsPopover`,
+  `DuplicatesSheet.jsx`/`IntegritySheet.jsx`'s new `embedded` mode, `FamilySettings.jsx`,
+  `UserProfile.jsx`, the two new components `ArchiveCareSheet.jsx`/`ManageMemberSheet.jsx`,
+  and `lib/archiveCare.js`) — if it's still open, prefer branching from it or waiting for it
+  to merge over redoing the same information-architecture pass. If a maintainer has left
+  review feedback on it, that supersedes this summary.
+- The next wave of Codex feedback that prompted PR #109 was specific to the member
+  list/family administration surfaces; there may be a **further round of feedback on PR
+  #109 itself** once it's reviewed — check open PR comments before assuming this thread is
+  fully closed.
+- **Docs-only debt, not urgent:** `docs/PRODUCTIZATION-BRIEF.md` §12's Phase A/B/D delivery
+  plan doesn't self-track completion the way this file's own Status section does — Phase A
+  and B are fully shipped and Phase D has its first slice shipped (PR #108, see Status
+  above), but the brief document itself still just reads as a spec, not a tracker. Cross-
+  reference this file's Status section for what's actually done rather than assuming the
+  brief's own phase headings reflect current state.
 - **Phase 2 remaining:** Documents (letters, certificates, military records) + Voice & Video —
   both need R2 storage. Create R2 bucket, update wrangler.toml, build upload Worker endpoint,
   then build the Documents UI (list + lightbox) and Voice & Video player.
