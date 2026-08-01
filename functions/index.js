@@ -18,7 +18,7 @@ import { Icons } from './_lib/publicIcons.js';
 // Every query-param signal a currently-shipping in-app flow reads at the
 // SPA root. Any one of these present means "this is a live product flow,
 // not a fresh marketing visit" — fall through unchanged.
-const FLOW_PARAMS = ['demo', 'new', 'invite', 'pending_invite', 'person', 'auth', 'auth_email', 'start'];
+const FLOW_PARAMS = ['demo', 'new', 'invite', 'pending_invite', 'person', 'auth', 'auth_email', 'start', 'otp'];
 
 export async function onRequestGet({ request, env, data }) {
   const url = new URL(request.url);

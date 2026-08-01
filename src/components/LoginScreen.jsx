@@ -41,7 +41,7 @@ export default function LoginScreen({ onAuthSuccess }) {
     } else if (p.has('invite')) {
       setInviteToken(p.get('invite'));
     }
-    if (p.has('auth') || p.has('invite') || p.has('auth_email')) {
+    if (p.has('auth') || p.has('invite') || p.has('auth_email') || p.has('otp')) {
       window.history.replaceState({}, '', window.location.pathname);
     }
   }, []);

@@ -57,7 +57,18 @@ export async function onRequestGet({ env }) {
       <p class="pub-lede" style="margin:0 auto 20px;">Take a look at the journey from one name to a shared family legacy before you sign in.</p>
       <a class="pub-btn pub-btn--secondary" href="/how-it-works">How it works</a>
     </div>
-  </section>`;
+  </section>
+
+  <script>
+  // Activation-funnel telemetry (docs/PRODUCTIZATION-BRIEF.md §11.7): reaching
+  // this page is the proxy signal for "public CTA click" — every header/hero/
+  // closing-band "Start your family tree" link across the public site leads
+  // here, so one beacon here covers all of them without needing per-link JS
+  // on every page. No identifying data of any kind in the payload.
+  try {
+    if (navigator.sendBeacon) navigator.sendBeacon('/api/activation-event', new Blob([JSON.stringify({ event: 'cta_click' })], { type: 'application/json' }));
+  } catch (e) {}
+  </script>`;
 
   const html = publicPage({
     home,
