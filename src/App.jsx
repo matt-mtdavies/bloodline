@@ -75,6 +75,7 @@ import { scheduleStaggeredReveal, idsToPruneForPerimeter, revealAllCandidatePool
 import { storeToGedcom } from './lib/gedcom.js';
 import { detectRegion, nearestWorldEvent } from './lib/worldEvents.js';
 import { findDuplicatePairs, pairKey, loadDismissedDuplicates, saveDismissedDuplicates } from './lib/duplicates.js';
+import { computeIntegrityIssues, loadDismissedIntegrityIssues, saveDismissedIntegrityIssues } from './lib/integrity.js';
 import { useIdleValue } from './lib/useIdleValue.js';
 import { timed } from './lib/perfInstrument.js';
 import { trackActivation } from './lib/activation.js';
@@ -123,6 +124,7 @@ import TreeInsights from './components/TreeInsights.jsx';
 import KeepsakeView from './components/Keepsake/KeepsakeView.jsx';
 import { buildKeepsakeFacts, factsHash } from './lib/keepsake.js';
 import DuplicatesSheet from './components/DuplicatesSheet.jsx';
+import IntegritySheet from './components/IntegritySheet.jsx';
 import TroveSearchSheet from './components/TroveSearchSheet.jsx';
 import { fetchTroveArticle } from './lib/trove.js';
 import LineageBanner from './components/LineageBanner.jsx';
@@ -347,6 +349,30 @@ export default function App() {
     [],
   );
 
+  // Data-integrity issues (lib/integrity.js) — logically impossible or wildly
+  // implausible facts (two simultaneous current partners, a 140-year
+  // lifespan, a child born before their own parent) flagged for review.
+  // Same shared-dismissal pattern as duplicatePairs above, in its own
+  // localStorage key so dismissing one kind never touches the other.
+  const [dismissedIntegrityIssues, setDismissedIntegrityIssues] = useState(loadDismissedIntegrityIssues);
+  const dismissIntegrityIssue = (key) => {
+    setDismissedIntegrityIssues((prev) => {
+      if (prev.has(key)) return prev;
+      const next = new Set(prev); next.add(key);
+      saveDismissedIntegrityIssues(next);
+      return next;
+    });
+  };
+  // Idle-deferred for the same reason as duplicatePairs above — several of
+  // these checks walk every relationship/person and have no reason to block
+  // the render thread on every edit.
+  const integrityIssues = useIdleValue(
+    () => timed('computeIntegrityIssues', () => computeIntegrityIssues(graph)
+      .filter((i) => !dismissedIntegrityIssues.has(i.key))),
+    [graph, dismissedIntegrityIssues],
+    [],
+  );
+
   // 'loading' → 'open' (no auth / bypass) | 'login' (needs sign-in) | 'authed'
   const [authState, setAuthState] = useState((isDemo || isNewUrl) ? 'open' : 'loading');
   // Track whether this session started as an anonymous ?new trial (stays true even
@@ -354,6 +380,7 @@ export default function App() {
   const [isAnonymousTrial] = useState(() => isNewUrl);
   const [user, setUser] = useState(null);
   const [duplicatesOpen, setDuplicatesOpen] = useState(false);
+  const [integrityOpen, setIntegrityOpen] = useState(false);
   const [troveSearchPersonId, setTroveSearchPersonId] = useState(null);
   // When opened from a person's "Enrich this profile" sheet, filters the
   // duplicates list down to just that person's own possible matches.
@@ -2527,7 +2554,7 @@ export default function App() {
     openId || addAnchorId || editId || timelineId || memoryId || lightbox || crop ||
     legendOpen || settingsOpen || insightsOpen || timelineOpen || docViewer ||
     invitePersonId || activityOpen || gedcomOpen || fsImportOpen || profileOpen ||
-    homeOpen || howItWorksOpen || familyTreesOpen || searchOpen || duplicatesOpen || promptClaim || showInstall ||
+    homeOpen || howItWorksOpen || familyTreesOpen || searchOpen || duplicatesOpen || integrityOpen || promptClaim || showInstall ||
     keepsakeId || troveSearchPersonId || perimeterPreviewOpen
   );
 
@@ -2686,6 +2713,8 @@ export default function App() {
         onOpenTimeline={() => setTimelineOpen(true)}
         duplicateCount={canManageTreeStructure ? duplicatePairs.length : 0}
         onOpenDuplicates={canManageTreeStructure && duplicatePairs.length ? () => setDuplicatesOpen(true) : null}
+        integrityIssueCount={canManageTreeStructure ? integrityIssues.length : 0}
+        onOpenIntegrityIssues={canManageTreeStructure && integrityIssues.length ? () => setIntegrityOpen(true) : null}
         storageWarning={storageWarning}
         storageNearLimit={storageNearLimit}
         treeSizeWarning={treeSizeWarning}
@@ -3058,7 +3087,7 @@ export default function App() {
         canEdit={canEditTree}
         canContribute={canContributeTree}
         isAdmin={canManageTreeStructure}
-        lockEscape={!!(addAnchorId || editId || timelineId || memoryId || lightbox || crop || invitePersonId || duplicatesOpen || keepsakeId || troveSearchPersonId)}
+        lockEscape={!!(addAnchorId || editId || timelineId || memoryId || lightbox || crop || invitePersonId || duplicatesOpen || integrityOpen || keepsakeId || troveSearchPersonId)}
         onClose={closePerson}
         onFocus={(id) => {
           closePersonForTreeAction();
@@ -3237,6 +3266,16 @@ export default function App() {
           onDismiss={dismissDuplicatePair}
           onShowInTree={showDuplicatePairInTree}
           onClose={() => { setDuplicatesOpen(false); setDuplicatesFocusId(null); }}
+        />
+      )}
+
+      {integrityOpen && (
+        <IntegritySheet
+          issues={integrityIssues}
+          graph={graph}
+          onDismiss={dismissIntegrityIssue}
+          onClose={() => setIntegrityOpen(false)}
+          onOpenPerson={(id) => { setIntegrityOpen(false); openPerson(id); }}
         />
       )}
 

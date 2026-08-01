@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, forwardRef } from 'react';
 import Logo from './Logo.jsx';
 import { PERIMETER_OPTIONS } from '../lib/familyPerimeter.js';
 
-export default function TopBar({ familyName, stats, view, layout, syncStatus, syncError, onRetrySync, onSetViewMode, onOpenLegend, bloodlineOnly = false, onToggleBloodlineOnly, onOpenActivity, activityCount = 0, user, userPhoto, onOpenProfile, onOpenHome, onSearch, onOpenInsights, onOpenTimeline, onOpenDuplicates, duplicateCount = 0, storageWarning, storageNearLimit, treeSizeWarning, syncToast, onDismissSyncToast, recapNudgeCount = 0, onShowRecap, onDismissRecapNudge, perimeterActive = false, perimeterLevel = null, onOpenPerimeterPreview, anyOverlayOpen = false }) {
+export default function TopBar({ familyName, stats, view, layout, syncStatus, syncError, onRetrySync, onSetViewMode, onOpenLegend, bloodlineOnly = false, onToggleBloodlineOnly, onOpenActivity, activityCount = 0, user, userPhoto, onOpenProfile, onOpenHome, onSearch, onOpenInsights, onOpenTimeline, onOpenDuplicates, duplicateCount = 0, onOpenIntegrityIssues, integrityIssueCount = 0, storageWarning, storageNearLimit, treeSizeWarning, syncToast, onDismissSyncToast, recapNudgeCount = 0, onShowRecap, onDismissRecapNudge, perimeterActive = false, perimeterLevel = null, onOpenPerimeterPreview, anyOverlayOpen = false }) {
   const perimeterLevelLabel = PERIMETER_OPTIONS.find((o) => o.value === perimeterLevel)?.label ?? null;
   const [statsOpen, setStatsOpen] = useState(false);
   const [viewMenuOpen, setViewMenuOpen] = useState(false);
@@ -299,13 +299,15 @@ export default function TopBar({ familyName, stats, view, layout, syncStatus, sy
           onOpenTimeline={onOpenTimeline ? () => { setStatsOpen(false); onOpenTimeline(); } : null}
           onOpenDuplicates={onOpenDuplicates ? () => { setStatsOpen(false); onOpenDuplicates(); } : null}
           duplicateCount={duplicateCount}
+          onOpenIntegrityIssues={onOpenIntegrityIssues ? () => { setStatsOpen(false); onOpenIntegrityIssues(); } : null}
+          integrityIssueCount={integrityIssueCount}
         />
       )}
     </header>
   );
 }
 
-const StatsPopover = forwardRef(function StatsPopover({ stats, onClose, onOpenInsights, onOpenTimeline, onOpenDuplicates, duplicateCount = 0 }, ref) {
+const StatsPopover = forwardRef(function StatsPopover({ stats, onClose, onOpenInsights, onOpenTimeline, onOpenDuplicates, duplicateCount = 0, onOpenIntegrityIssues, integrityIssueCount = 0 }, ref) {
   const total = stats.people;
   const maxCount = stats.surnameList?.[0]?.count ?? 1;
   const spanYears = stats.yearMin && stats.yearMax ? stats.yearMax - stats.yearMin : null;
@@ -336,6 +338,14 @@ const StatsPopover = forwardRef(function StatsPopover({ stats, onClose, onOpenIn
         <button className="stats-popover__dups-btn" onClick={onOpenDuplicates}>
           <DupIcon />
           <span>Review {duplicateCount} possible duplicate{duplicateCount > 1 ? 's' : ''}</span>
+          <span className="stats-popover__insights-arrow"><ChevronRightIcon /></span>
+        </button>
+      )}
+
+      {onOpenIntegrityIssues && integrityIssueCount > 0 && (
+        <button className="stats-popover__dups-btn" onClick={onOpenIntegrityIssues}>
+          <ShieldWarnIcon />
+          <span>Review {integrityIssueCount} data integrity issue{integrityIssueCount > 1 ? 's' : ''}</span>
           <span className="stats-popover__insights-arrow"><ChevronRightIcon /></span>
         </button>
       )}
@@ -534,6 +544,16 @@ function DupIcon() {
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <circle cx="9" cy="9" r="5" stroke="currentColor" strokeWidth="1.7"/>
       <circle cx="15" cy="15" r="5" stroke="currentColor" strokeWidth="1.7"/>
+    </svg>
+  );
+}
+
+function ShieldWarnIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3Z" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/>
+      <path d="M12 8.5v4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/>
+      <circle cx="12" cy="15.5" r="0.9" fill="currentColor"/>
     </svg>
   );
 }
