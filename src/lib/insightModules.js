@@ -1542,7 +1542,7 @@ export function highlightCandidatesDetailed(modules) {
   }
   if (modules.missingRecords?.missingPhotos) {
     const m = modules.missingRecords.missingPhotos;
-    add('missingRecords', `You still have ${m.count} relative${m.count === 1 ? '' : 's'} missing a photograph.`);
+    add('missingRecords', missingPhotosSentence(m), m.count <= 3 ? m.ids : []);
   }
   if (modules.missingRecords?.unknownParentAncestors) {
     const u = modules.missingRecords.unknownParentAncestors;
@@ -2008,7 +2008,7 @@ function tradeLineage(graph) {
    should still surface the ancestor gap, and vice versa. */
 const ANCESTOR_WALL_DEPTH = 8; // generations — generous; a real family tree rarely runs deeper than this in practice
 function missingRecords(graph, viewerId) {
-  const missingPhotoIds = graph.people.filter((p) => !p.photo).map((p) => p.id);
+  const missingPhotoPeople = graph.people.filter((p) => !p.photo);
 
   let unknownParentAncestors = null;
   if (viewerId != null && graph.byId.has(viewerId)) {
@@ -2029,11 +2029,42 @@ function missingRecords(graph, viewerId) {
     if (walls.length) unknownParentAncestors = { count: walls.length, ids: walls };
   }
 
-  if (!missingPhotoIds.length && !unknownParentAncestors) return null;
+  if (!missingPhotoPeople.length && !unknownParentAncestors) return null;
   return {
-    missingPhotos: missingPhotoIds.length ? { count: missingPhotoIds.length, ids: missingPhotoIds } : null,
+    // `names` (just the first few) and totalPeople/withPhoto ride along so
+    // the sentence built in highlightCandidatesDetailed can either name
+    // specific people or fall back to progress framing — see
+    // missingPhotosSentence below for why both exist (Codex design review:
+    // personalized invitations over generic deficit language, progress
+    // framing over guilt-oriented phrasing once naming everyone stops being
+    // practical on a large tree).
+    missingPhotos: missingPhotoPeople.length ? {
+      count: missingPhotoPeople.length,
+      ids: missingPhotoPeople.map((p) => p.id),
+      names: missingPhotoPeople.slice(0, 3).map((p) => p.display_name),
+      totalPeople: graph.people.length,
+      withPhoto: graph.people.length - missingPhotoPeople.length,
+    } : null,
     unknownParentAncestors,
   };
+}
+
+// Codex design review: "Add a portrait for Fred Smith" over "you still have
+// N relatives missing a photograph" — a specific, actionable invitation
+// while there are few enough gaps to name; "312 of 1,104 people have a
+// portrait" (progress, not deficit) once naming everyone stops being
+// practical. The threshold is deliberately small — three is about as many
+// names as a single sentence can carry before it reads as a list, not an
+// invitation.
+function missingPhotosSentence(m) {
+  if (m.count <= 3) return `Add a portrait for ${joinWithAnd(m.names)}.`;
+  return `${m.withPhoto} of ${m.totalPeople} people have a portrait so far.`;
+}
+
+function joinWithAnd(names) {
+  if (names.length === 1) return names[0];
+  if (names.length === 2) return `${names[0]} and ${names[1]}`;
+  return `${names.slice(0, -1).join(', ')}, and ${names[names.length - 1]}`;
 }
 
 /* ── Family Moments slice 2: Family Connections — married at the same age ──
