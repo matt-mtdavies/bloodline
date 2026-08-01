@@ -189,3 +189,32 @@ export function desiredVisibleIds(perspective, lineageMode, lineagePath) {
   }
   return ids;
 }
+
+/*
+ * What the perimeter reconciliation effect should AUTOMATICALLY reveal
+ * without any user action (real user report: picking a perimeter level
+ * dumped the whole perimeter — hundreds of people — onto the canvas at
+ * once, "not navigable"; the whole point of a perimeter is to declutter,
+ * not to front-load a different, still-large crowd the instant you choose
+ * a level). Deliberately excludes `perspective.perimeterIds` — the tree
+ * should open and grow exactly like it always did (additive reveal from
+ * whoever's focused, one tap at a time); the perimeter's job is to be a
+ * BOUNDARY on what CAN ever be reached (via "All", search, boundary
+ * exploration — see desiredVisibleIds/revealAllCandidatePool above), not
+ * an eager mass-reveal the moment it activates.
+ *
+ * Only `temporaryRevealPresentationIds` (an explicit "Explore this
+ * branch"/search selection) and the active lineage trace's own path (an
+ * explicit trace in progress) are mandatory — both are the result of a
+ * specific user action that already committed to seeing those people, so
+ * they still need to appear without a second tap. Everything else the
+ * perimeter allows stays available on request (tap to expand, or "All"),
+ * exactly as it always has.
+ */
+export function desiredMandatoryRevealIds(perspective, lineageMode, lineagePath) {
+  const ids = new Set(perspective.temporaryRevealPresentationIds);
+  if (lineageMode && lineagePath) {
+    for (const id of lineagePath) ids.add(id);
+  }
+  return ids;
+}

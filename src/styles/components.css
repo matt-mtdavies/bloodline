@@ -4155,6 +4155,7 @@
 .section-edit:empty { display: none; }
 .section-edit:hover { text-decoration: underline; }
 .section-edit:active { opacity: 0.6; }
+.up__preview-perimeter { display: block; margin-top: 10px; }
 .profile-section__head-actions {
   display: flex;
   align-items: baseline;
@@ -11911,3 +11912,87 @@ button.health-notes {
   padding: 24px;
   text-align: center;
 }
+
+/* Perimeter Preview — "who's in your Family Perimeter" (nested under User
+   Profile / Settings, same as HowItWorks/FamilyTrees nest under Home).
+   The sheet itself doesn't scroll — .pp__list is its own bounded,
+   internally-scrolling region so @tanstack/react-virtual's absolute
+   positioning has a real scroll owner to measure against (same reason
+   AccessibleTree.jsx's directory list works the way it does). */
+.sheet.pp {
+  display: flex;
+  flex-direction: column;
+  height: 88vh;
+  max-height: 88vh;
+  overflow: hidden;
+  padding-bottom: calc(var(--safe-bottom) + 16px);
+}
+.pp__head {
+  flex: 0 0 auto;
+  display: flex; align-items: center; gap: 12px;
+  padding: 4px 4px 12px;
+}
+.pp__title {
+  font-family: 'Fraunces', Georgia, serif;
+  font-size: 22px; font-weight: 700; color: var(--ink, #241f1c); margin: 0;
+}
+.pp__empty { padding: 32px 12px; text-align: center; color: var(--ink-soft); }
+
+.pp__rings-wrap {
+  flex: 0 0 auto;
+  display: flex; align-items: center; gap: 18px;
+  padding: 4px 4px 16px;
+}
+.pp__rings { width: 108px; height: 108px; flex: none; overflow: visible; }
+.pp__ring {
+  fill: none;
+  stroke-width: 2;
+  opacity: 0.35;
+  transition: opacity 0.25s var(--ease), stroke-width 0.25s var(--ease);
+}
+.pp__ring--first { stroke: var(--accent, #c2603a); }
+.pp__ring--second { stroke: var(--sage, #3f5e4e); }
+.pp__ring--third { stroke: var(--gold, #b08642); }
+.pp__ring--everyone { stroke: var(--ink-faint, #a6abb3); }
+.pp__ring--on { opacity: 1; stroke-width: 3.5; }
+.pp__ring-you { fill: var(--accent, #c2603a); }
+
+.pp__legend { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.pp__legend-row {
+  display: flex; align-items: center; gap: 9px;
+  width: 100%;
+  padding: 7px 8px;
+  border-radius: 10px;
+  text-align: left;
+  transition: background 0.2s var(--ease);
+}
+.pp__legend-row:hover { background: var(--paper-deep); }
+.pp__legend-row--on { background: var(--paper-deep); }
+.pp__legend-dot {
+  width: 10px; height: 10px; border-radius: 50%; flex: none;
+  border: 2px solid var(--ink-faint, #a6abb3);
+  opacity: 0.5;
+}
+.pp__legend-row--on .pp__legend-dot { opacity: 1; }
+.pp__legend-dot--first { border-color: var(--accent, #c2603a); }
+.pp__legend-dot--second { border-color: var(--sage, #3f5e4e); }
+.pp__legend-dot--third { border-color: var(--gold, #b08642); }
+.pp__legend-dot--everyone { border-color: var(--ink-faint, #a6abb3); }
+.pp__legend-row--on .pp__legend-dot { background: currentColor; }
+.pp__legend-row--on .pp__legend-dot--first { background: var(--accent, #c2603a); }
+.pp__legend-row--on .pp__legend-dot--second { background: var(--sage, #3f5e4e); }
+.pp__legend-row--on .pp__legend-dot--third { background: var(--gold, #b08642); }
+.pp__legend-row--on .pp__legend-dot--everyone { background: var(--ink-faint, #a6abb3); }
+.pp__legend-label { flex: 1; min-width: 0; font-size: 14px; font-weight: 500; color: var(--ink); }
+.pp__legend-row--on .pp__legend-label { font-weight: 700; }
+.pp__legend-count { font-size: 13px; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+
+.pp__search-wrap { flex: 0 0 auto; padding: 0 4px 10px; position: relative; }
+
+.pp__list { flex: 1 1 auto; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+.pp__group-title {
+  padding: 14px 12px 8px;
+  font-size: 12px; font-weight: 700; letter-spacing: 0.02em; text-transform: uppercase;
+  color: var(--ink-soft); margin: 0;
+}
+.pp__list .person-row { margin-bottom: 6px; }

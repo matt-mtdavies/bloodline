@@ -5,7 +5,7 @@
  * Run with: node tests/staggeredReveal.test.mjs
  */
 import assert from 'node:assert/strict';
-import { planRevealSteps, scheduleStaggeredReveal, RIPPLE_CHUNK_SIZE, idsToPruneForPerimeter, revealAllCandidatePool, desiredVisibleIds } from '../src/lib/staggeredReveal.js';
+import { planRevealSteps, scheduleStaggeredReveal, RIPPLE_CHUNK_SIZE, idsToPruneForPerimeter, revealAllCandidatePool, desiredVisibleIds, desiredMandatoryRevealIds } from '../src/lib/staggeredReveal.js';
 
 let passed = 0, failed = 0;
 function test(label, fn) {
@@ -290,6 +290,63 @@ test('desiredVisibleIds: a lineage path is ignored when lineageMode is false (tr
   };
   const stalePath = new Set(['viewer', 'someoneNoLongerTraced']);
   assert.deepEqual(desiredVisibleIds(perspective, false, stalePath), new Set(['viewer']));
+});
+
+// ── desiredMandatoryRevealIds (real user report: picking any perimeter
+// level dumped the whole perimeter onto the canvas at once, "not
+// navigable") — the reconciliation effect's ADD side must be much
+// narrower than its PRUNE side (desiredVisibleIds): only an explicit
+// temporary-reveal target or an in-progress lineage trace auto-reveals;
+// the perimeter's own members stay reachable one tap at a time, same as
+// always.
+
+test('desiredMandatoryRevealIds: excludes perimeterIds entirely — only temporaryRevealPresentationIds auto-reveals', () => {
+  const perspective = {
+    perimeterIds: new Set(['viewer', 'parent', 'sibling', 'cousin']),
+    temporaryRevealPresentationIds: new Set(['outsider1']),
+  };
+  assert.deepEqual(desiredMandatoryRevealIds(perspective, false, null), new Set(['outsider1']));
+});
+
+test('desiredMandatoryRevealIds: empty when there is no temporary reveal and no lineage trace — a fresh perimeter activation reveals nothing extra', () => {
+  const perspective = {
+    perimeterIds: new Set(['viewer', 'parent', 'sibling', 'cousin', 'aunt', 'uncle']),
+    temporaryRevealPresentationIds: new Set(),
+  };
+  assert.deepEqual(desiredMandatoryRevealIds(perspective, false, null), new Set());
+  assert.deepEqual(desiredMandatoryRevealIds(perspective, true, null), new Set());
+});
+
+test('desiredMandatoryRevealIds: an in-progress lineage trace\'s own path is still auto-revealed, even though none of it is a perimeter member', () => {
+  const perspective = {
+    perimeterIds: new Set(['viewer']),
+    temporaryRevealPresentationIds: new Set(),
+  };
+  const lineagePath = new Set(['viewer', 'uncle', 'cousinParent', 'cousin']);
+  assert.deepEqual(
+    desiredMandatoryRevealIds(perspective, true, lineagePath),
+    new Set(['uncle', 'cousinParent', 'cousin', 'viewer']),
+  );
+});
+
+test('desiredMandatoryRevealIds: a lineage path is ignored when lineageMode is false, same as desiredVisibleIds', () => {
+  const perspective = {
+    perimeterIds: new Set(['viewer']),
+    temporaryRevealPresentationIds: new Set(['outsider1']),
+  };
+  const stalePath = new Set(['someoneNoLongerTraced']);
+  assert.deepEqual(desiredMandatoryRevealIds(perspective, false, stalePath), new Set(['outsider1']));
+});
+
+test('desiredMandatoryRevealIds is always a subset of desiredVisibleIds (the mandatory set can never demand more than the boundary allows)', () => {
+  const perspective = {
+    perimeterIds: new Set(['viewer', 'parent', 'sibling']),
+    temporaryRevealPresentationIds: new Set(['outsider1', 'outsider2']),
+  };
+  const lineagePath = new Set(['viewer', 'uncle', 'cousin']);
+  const mandatory = desiredMandatoryRevealIds(perspective, true, lineagePath);
+  const boundary = desiredVisibleIds(perspective, true, lineagePath);
+  for (const id of mandatory) assert.ok(boundary.has(id), `${id} is mandatory but not inside the boundary`);
 });
 
 console.log(`\n  ${passed} passed, ${failed} failed`);
