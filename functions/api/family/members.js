@@ -79,7 +79,18 @@ export async function onRequestPost({ request, env, data }) {
     if (!['coadmin', 'editor', 'contributor', 'viewer'].includes(newRole)) {
       return json({ error: 'Invalid role' }, { status: 400 });
     }
-    // Only owner can promote to/demote from coadmin.
+    const target = await env.DB.prepare(
+      'SELECT role FROM family_member WHERE family_id = ? AND user_id = ?',
+    ).bind(membership.family_id, targetUserId).first();
+    if (!target) return json({ error: 'Member not found' }, { status: 404 });
+    // The owner membership is immutable here. Only the owner may change a
+    // Co-Admin's role — checking the TARGET is essential: checking only
+    // `newRole` would let a Co-Admin demote a peer to Editor.
+    if (target.role === 'owner') return json({ error: 'Cannot change owner role' }, { status: 403 });
+    if (target.role === 'coadmin' && membership.role !== 'owner') {
+      return json({ error: 'Only the owner can change Co-Admin roles' }, { status: 403 });
+    }
+    // Only owner can promote to Co-Admin.
     if (newRole === 'coadmin' && membership.role !== 'owner') {
       return json({ error: 'Only the owner can set Co-Admin' }, { status: 403 });
     }
