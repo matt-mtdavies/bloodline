@@ -116,26 +116,23 @@ export default function HoverCard({ graph, personId, viewerId, getPos, photos, d
   }, [personId]);
 
   const person = displayId ? graph.byId.get(displayId) : null;
-  if (!person) return null;
 
-  const minor = person.is_minor && !person.is_deceased;
-  const vis = person.visibility || 'full';
+  // Real production crash (React error #310, "Rendered more hooks than
+  // during the previous render"): this component stays mounted continuously
+  // for the whole tree-browsing session (see its call site in App.jsx —
+  // `personId` toggles between an id and null as the mouse moves, it is
+  // never remounted per-hover), so `useLayoutEffect` below MUST be called on
+  // every render regardless of whether `person` is currently set — the same
+  // rule, and the same bug class, already fixed once in PersonSheet.jsx.
+  // `restricted`/`familyRelBits`/`relSummary` are therefore all computed
+  // unconditionally here too (null-safe via `person?.`), ahead of the
+  // early-return below, purely so the hook's own dependency is available in
+  // time — moving the hook alone without its inputs would just move the bug.
+  const minor = person?.is_minor && !person?.is_deceased;
+  const vis = person?.visibility || 'full';
   const sealed = vis === 'private';
   const summaryOnly = vis === 'summary';
   const restricted = minor || sealed || summaryOnly;
-
-  const relToViewer = viewerId && viewerId !== person.id ? relationLabel(graph, viewerId, person.id, kinTerms) : null;
-  const location = !restricted && (person.residence || person.birth_place);
-  const age = ageOrAt(person);
-
-  const metaBits = [];
-  if (!sealed) {
-    if (!restricted && person.occupation) metaBits.push(person.occupation);
-    metaBits.push(lifespan(person));
-    if (!minor && age) metaBits.push(person.is_deceased ? age : `age ${age}`);
-  }
-  const bio = !restricted ? person.bio : null;
-  const tags = !restricted && person.tags?.length ? person.tags.slice(0, 3) : [];
 
   // A quick "what's their story" hook — counts read as an invitation to
   // explore ("oh, 5 grandchildren?") in a way a bare relationship label
@@ -152,7 +149,7 @@ export default function HoverCard({ graph, personId, viewerId, getPos, photos, d
   // All three relation types share one row/ticker rather than three
   // separate lines.
   const familyRelBits = [];
-  if (!restricted) {
+  if (person && !restricted) {
     const counts = new Map(); // singular label -> count, insertion-order preserved
     const bump = (label) => counts.set(label, (counts.get(label) || 0) + 1);
 
@@ -206,6 +203,21 @@ export default function HoverCard({ graph, personId, viewerId, getPos, photos, d
     // that's genuinely right at the edge.
     setTickerNeeded(measure.scrollWidth > container.clientWidth + 1);
   }, [relSummary]);
+
+  if (!person) return null;
+
+  const relToViewer = viewerId && viewerId !== person.id ? relationLabel(graph, viewerId, person.id, kinTerms) : null;
+  const location = !restricted && (person.residence || person.birth_place);
+  const age = ageOrAt(person);
+
+  const metaBits = [];
+  if (!sealed) {
+    if (!restricted && person.occupation) metaBits.push(person.occupation);
+    metaBits.push(lifespan(person));
+    if (!minor && age) metaBits.push(person.is_deceased ? age : `age ${age}`);
+  }
+  const bio = !restricted ? person.bio : null;
+  const tags = !restricted && person.tags?.length ? person.tags.slice(0, 3) : [];
 
   // Quiet "there's more here" signal — not clickable, not counted anywhere
   // else on the card. Any document at all counts (a scanned letter or

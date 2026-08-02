@@ -106,6 +106,28 @@ try {
       return { cx: r.left + r.width / 2, bottom: r.bottom };
     });
   };
+  // Real production crash (React error #310, "Rendered more hooks than
+  // during the previous render"): HoverCard.jsx stays mounted for the whole
+  // session with `personId` toggling between an id and null as the mouse
+  // moves — a `useLayoutEffect` textually after an `if (!person) return
+  // null` guard meant the hook was skipped on a null-person render and
+  // called on the next truthy-person render, a hooks-order violation. Only
+  // reproduces on a genuine hover TRANSITION (empty → bubble → empty →
+  // bubble), not a single hover, so this exercises that exact sequence.
+  const hoverRect = await findNameplateRect();
+  if (hoverRect) {
+    const hx = hoverRect.cx, hy = hoverRect.bottom + 60;
+    await page.mouse.move(20, 20); // empty canvas — HoverCard's person is null
+    await page.waitForTimeout(200);
+    await page.mouse.move(hx, hy); // onto the active bubble — person becomes truthy
+    await page.waitForTimeout(200);
+    await page.mouse.move(20, 20); // off again
+    await page.waitForTimeout(200);
+    await page.mouse.move(hx, hy); // and back — the transition that used to crash
+    await page.waitForTimeout(300);
+  }
+  check(errors.length === 0, 'hover transition (empty → bubble → empty → bubble) causes no console/page errors');
+
   const clickAtNameplate = async () => {
     const npRect = await findNameplateRect();
     const cx = npRect ? npRect.cx : page.viewportSize().width / 2;
