@@ -2230,6 +2230,55 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   total, and screenshotted all three level colours distinctly rendered. Full unit suite and
   `npm run build` passed clean.
 
+- **Jason's recurring crash — new evidence, a real gap closed in the update mechanism, but likely
+  still needs one manual action on his device.** Follow-up on the earlier, inconclusive Jason
+  investigation: he reported it's STILL crashing on his PC (both browsers and the installed app),
+  every open, and separately that repeatedly re-signing in "opens as though I am Amie" (a different
+  family member) until a manual refresh — on all his devices, though only the PC crashes. His own
+  screenshot showed the real console error: minified React #310 ("Rendered more hooks than during
+  the previous render"), confirmed by fetching React's own error-codes mapping rather than guessing.
+  Investigated `bindIdentity()`/`clearLocalData()` (`store.js`) — the exact mechanism built to stop
+  one device from showing a previous user's cached tree — and it looks correct in the CURRENT
+  codebase: a different `uid` signing in wipes the local tree and owner stamp before the new
+  session's own data loads. Also checked every Pages Function for accidental response caching (a
+  real alternate hypothesis — a poisoned edge cache could explain "shows as someone else" across
+  devices) — found none; nothing in `functions/` ever touches the Cache API or sets `Cache-Control`
+  on an authenticated route, so a server-side cross-user cache leak looks unlikely from the code
+  alone. That leaves a stale, stuck service worker as the best-supported explanation, and it now
+  fits BOTH symptoms at once, not just the crash: `main.jsx`'s update mechanism (documented in its
+  own header comment) deliberately defers applying a found update until the tab is backgrounded, so
+  a real reload doesn't yank a working session out from under someone — but a tab that's simply
+  never switched away from (a single pinned browser tab, or an installed PWA window someone lives in
+  all day) can go arbitrarily long without ever satisfying that condition, during which the OLD,
+  still-controlling service worker keeps serving its OWN precached OLD `index.html`/JS on every
+  single request — including a plain `location.reload()` — because the new worker is only
+  *installed*, never *activated*. That explains "I've reloaded/resigned in multiple times, it keeps
+  happening": reloading was never actually fetching fresh code, just re-running the same stale,
+  already-crashing bundle, on a version of the app old enough to predate whatever bug produces
+  error #310 specifically (a class of bug this codebase has hit and fixed at least once before — see
+  the birth-line-narration entry's "Rendered more hooks" story) and to behave differently around
+  identity than the CURRENT, correct `bindIdentity()` does. A genuinely real gap in the CURRENT code
+  was found and fixed regardless of whether this is the full explanation: the crash-recovery
+  `ErrorBoundary` in `main.jsx` had NO relationship at all to the update mechanism sitting right next
+  to it in the same file — its Reload button was hardcoded to `location.reload()`, which (per the
+  above) cannot break a stuck-service-worker loop even when a newer build has been sitting there,
+  found and ready, the whole time. Fixed by threading a module-level `pendingUpdateSW` reference:
+  `applyUpdateWhenSafe()` (the function that defers an update until backgrounding) now also exposes
+  the pending `updateSW` thunk to the `ErrorBoundary`, which — since a crash already means there's
+  nothing on screen left to protect, exactly the condition the deferral logic exists to wait for —
+  applies it immediately on Reload instead of deferring further, with a 3s `location.reload()`
+  safety net (matching this file's own existing fallback-timer convention) in case the activation
+  itself stalls. Verified live via Playwright that the app still boots cleanly with zero console
+  errors after this change, and `npm run build`/full unit suite passed clean. **Important caveat,
+  stated plainly rather than oversold**: this fix only helps once Jason is running the build that
+  contains it — his device is (per this whole theory) currently stuck on an OLD bundle that doesn't
+  have this fix either, so shipping it cannot by itself unstick his CURRENT session. He likely needs
+  one manual action first to break the loop — the most reliable is clearing site data for
+  myfamilybloodline.com in his browser (or uninstalling and reinstalling the PWA if he uses the
+  installed app), which forces a genuinely fresh fetch outside the service worker entirely. This
+  remains a well-supported hypothesis, not a confirmed root cause — nothing here was reproduced
+  against Jason's actual device.
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);
