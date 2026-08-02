@@ -423,8 +423,8 @@ Every derived module declares one cohort:
 
 | Cohort | Purpose |
 |---|---|
-| `personal` | Primary perimeter plus family halo; default for personal insights |
-| `context` | Partner-context people; visible but normally excluded from personal aggregate statistics |
+| `personal` | Primary perimeter plus family halo plus partner-context people; default for personal insights |
+| `context` | Partner-context people; a subset of `personal`, kept as its own identifier for a caller that specifically wants partner-context people only |
 | `complete` | Administration, archive health, duplicates, export and explicitly complete-tree reporting |
 | `directLine` | Viewer/current-partner direct ancestors and descendants |
 | `temporaryReveal` | Navigation only; never silently changes saved totals |
@@ -434,7 +434,18 @@ Examples:
 - Surnames, occupations, origins, longevity and AI narrative: `personal`.
 - Direct ancestral span and lineage migration: `directLine`.
 - Duplicate review and complete archive export: `complete`.
-- Tree rendering: `personal + context + temporaryReveal`, bounded by rendering policy.
+- Tree rendering: `personal + temporaryReveal`, bounded by rendering policy.
+
+`personal` used to be defined as primary-perimeter-plus-halo only, deliberately
+excluding partner-context people from personal aggregate statistics. That
+produced a real, reported user confusion: the same perimeter level showed a
+different total on the tree canvas/Perimeter Preview (which always counted
+partner-context people, since they're part of `perimeterIds`) than on the
+Insights/Home header pill (which didn't). `personal` now includes
+partner-context people so every surface reports the same count for the same
+perimeter level; `context` is retained as a same-valued, narrower identifier
+rather than removed, in case a future module genuinely wants "partner-context
+people only."
 
 Each insight module must declare and test its cohort. It may not default to `graph.people`.
 
@@ -1281,7 +1292,7 @@ Mitigation:
 - union results but retain bounded canvas working set;
 - show cohort counts before/after setting changes;
 - benchmark multi-anchor cases, including the four-anchor standard budget and eight-anchor stress fixture;
-- keep context people out of personal aggregate insights.
+- partner-context people are folded into `personal` (see §4.4) rather than excluded, so the mitigation here is bounding the primary/halo/context layers themselves (one pass each, no recursion — §3.4), not excluding an already-included layer from aggregate counts after the fact.
 
 ### Risk: stepfamily feels demoted
 
@@ -1337,7 +1348,7 @@ Product owner must approve:
 3. Biological and adoptive relationships propagate lineage identically.
 4. Step relationships belong in the family halo but do not propagate cousin degree.
 5. Partner-context parents, siblings and children are visible but non-recursive.
-6. Personal insights normally exclude context-only people.
+6. Personal insights include context-only people (revised: the original "normally exclude" decision produced a real, reported user-facing inconsistency between the canvas/Perimeter Preview counts and the Insights/Home counts for the same perimeter level — the product owner chose to include them instead of just relabelling the discrepancy away).
 7. Existing users default to Everyone.
 8. New users are recommended Extended family.
 9. Removed cousins are included by cousin degree.

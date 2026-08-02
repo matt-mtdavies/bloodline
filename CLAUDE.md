@@ -2151,6 +2151,48 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   of resting place — reproducing the exact reported shape of the bug via the real UI, not a
   mocked comparison. Full unit suite and `npm run build` passed clean.
 
+- **Fixed: the tree canvas/Perimeter Preview total and the Insights/Home header total disagreed
+  for the same perimeter level** (real user report, with two screenshots: the tree canvas showed
+  "605 people" for "Close family" while the Perimeter Preview sheet showed "Close family: 667" for
+  the identical level). Root-caused via source, not guesswork: `insightCohortIds.personal` (which
+  feeds the topbar stats pill, the Home hub hero, and every `personal`-cohort insight module — 26
+  of the 27 modules in `insightModules.js`) was defined as `primaryIds ∪ haloIds` only, while
+  `perimeterIds` (which feeds the canvas reveal set, search, and the Perimeter Preview sheet) was
+  `primaryIds ∪ haloIds ∪ partnerContextIds` — the same perimeter level, two different people-sets,
+  a 62-person gap that was exactly the partner-context ring (parents/siblings/children of a family
+  halo partner — e.g. a sibling's spouse's own parents). Discussed the two ways to close the gap —
+  relabel the counts for clarity, or change what "personal" means — the user chose the latter: "I
+  don't think the partner context people should be excluded in the insights." `personal` is now
+  `primaryIds ∪ haloIds ∪ partnerContextIds` in both places it's constructed
+  (`src/lib/perspectiveIndex.js`'s `computePerspectiveIndex` and its lighter always-on sibling
+  `computeInsightCohorts`, used when Insights/Home need cohort labels before a perimeter has been
+  deliberately narrowed) — so `personal` and `perimeterIds` are now the same set for the same
+  perimeter level, and the two totals can never disagree again. `context` is deliberately kept,
+  still reporting the same `partnerContextIds` — now a subset of `personal` rather than a disjoint
+  complement — in case a future module genuinely wants "partner-context people only." No change to
+  `MODULE_COHORTS` itself: modules still just declare `'personal'`, only what that cohort resolves
+  to changed, so every personal-aggregate insight (surnames, occupations, records, longevity, the
+  AI narrative digest, etc.) now folds in partner-context people too, matching what the canvas and
+  Perimeter Preview already counted. Updated the stale "meant to stay EXCLUDED... by construction"
+  design rationale in `insightModules.js`'s header comment, `perspectiveIndex.js`'s own docstrings,
+  and `docs/FAMILY-PERIMETER-AND-5000-PERSON-PERFORMANCE.md` (§4.4's cohort table, §12's partner-
+  anchoring risk mitigation, and §13's explicit "product owner must approve" design-decision list —
+  item 6 there used to read "Personal insights normally exclude context-only people," now reversed
+  with the reasoning recorded inline). Covered by 2 tests in `tests/perspectiveIndex.test.mjs`: the
+  existing cohort test was widened to allow partner-context membership, and a new test builds a
+  fixture where a person is reachable ONLY through the partner-context ring (a sibling's partner's
+  own parent — not an ancestor of any primary anchor, so it can't land in `primaryIds` the way a
+  same-shaped existing fixture's `partnerParent` does) and confirms they now appear in `personal`,
+  that `computeInsightCohorts` agrees with `computePerspectiveIndex`'s own `insightCohortIds`, and
+  that `personal` now exactly equals `perimeterIds` for the same inputs — pinning the actual
+  reported bug, not just the mechanism. Full unit suite (45/45 in `perspectiveIndex.test.mjs`, no
+  regressions anywhere else) and `npm run build` passed clean. Not separately re-verified live via
+  Playwright — demo mode has no logged-in viewer (`data.myPersonId` is null, so insight-cohort
+  personalization never engages at all), and reproducing a real narrowed perimeter would need the
+  same kind of throwaway session/route-mocking scaffold used for admin-only surfaces elsewhere in
+  this file; given this is a small, pure two-line data-layer change with both call sites and the
+  exact reported discrepancy directly pinned by unit tests, that scaffold wasn't built for this fix.
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);
