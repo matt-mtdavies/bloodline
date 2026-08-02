@@ -127,32 +127,30 @@
   flex-shrink: 0;
 }
 
-/* Family Perimeter badge — a real gap real feedback pointed at ("we need to
-   make it better known that it's in effect"): shown only when the viewer
-   has narrowed their perimeter below Complete family tree, deliberately
-   SEPARATE from the stats pill above rather than appended text inside it
-   (that pill already truncates on a real, large family — cramming more in
-   would just get cut off). Tapping it jumps straight to the Preview sheet. */
-.perimeter-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  margin-top: 4px;
-  padding: 3px 10px 3px 8px;
-  border-radius: 999px;
-  font-size: 11px;
-  font-weight: 600;
-  border: 1px solid var(--hairline);
-  background: var(--paper-deep);
-  color: var(--ink-soft);
-  transition: background 0.2s var(--ease), color 0.2s var(--ease), border-color 0.2s var(--ease);
-}
-.perimeter-badge:hover { background: color-mix(in srgb, var(--paper-deep) 70%, var(--ink-faint)); }
-.perimeter-badge svg { flex: none; }
-.perimeter-badge__label { white-space: nowrap; }
-.perimeter-badge--first { color: var(--accent, #c2603a); border-color: color-mix(in srgb, var(--accent, #c2603a) 35%, transparent); }
-.perimeter-badge--second { color: var(--sage, #3f5e4e); border-color: color-mix(in srgb, var(--sage, #3f5e4e) 35%, transparent); }
-.perimeter-badge--third { color: var(--gold, #b08642); border-color: color-mix(in srgb, var(--gold, #b08642) 35%, transparent); }
+/* Family Perimeter ring — icon-only, paired with Legend on the left
+   (.topbar__row2-stack--left) rather than living in the center column.
+   Real feedback: the old text-labelled badge plus the "N in the complete
+   family tree" line beside it (see the removed .topbar__stats-complete
+   rule below) stacked the center column up to four lines deep once a
+   perimeter narrowed things — real clutter for information that's one tap
+   away regardless (the Perimeter Preview sheet this same icon opens has
+   its own ring legend naming every level, including Complete family tree,
+   with a live count). The level colour is now the badge's only always-on
+   signal — a faint tinted background (not a solid fill; this is ambient
+   status, not a toggle) plus a coloured ring icon — with the level's full
+   name moved to a hover-tip/the sheet it opens. */
+/* Chained with .perimeter-ring-btn itself (not just the level modifier
+   alone) to out-specificity the later, equal-specificity .topbar__row2-btn
+   base rule it's layered on top of — a single-class modifier selector here
+   would otherwise lose to that base rule's own color/background purely on
+   source order, silently rendering every level in the same neutral grey. */
+.perimeter-ring-btn.perimeter-ring-btn:hover { background: var(--ground); }
+.perimeter-ring-btn.perimeter-ring-btn--first { color: var(--accent, #c2603a); background: color-mix(in srgb, var(--accent, #c2603a) 12%, transparent); }
+.perimeter-ring-btn.perimeter-ring-btn--second { color: var(--sage, #3f5e4e); background: color-mix(in srgb, var(--sage, #3f5e4e) 12%, transparent); }
+.perimeter-ring-btn.perimeter-ring-btn--third { color: var(--gold, #b08642); background: color-mix(in srgb, var(--gold, #b08642) 12%, transparent); }
+.perimeter-ring-btn.perimeter-ring-btn--first:hover { background: color-mix(in srgb, var(--accent, #c2603a) 20%, transparent); }
+.perimeter-ring-btn.perimeter-ring-btn--second:hover { background: color-mix(in srgb, var(--sage, #3f5e4e) 20%, transparent); }
+.perimeter-ring-btn.perimeter-ring-btn--third:hover { background: color-mix(in srgb, var(--gold, #b08642) 20%, transparent); }
 
 /* Logo mark + staggered bubble pop-in */
 .logo { overflow: visible; }
@@ -1936,17 +1934,6 @@
   background: var(--accent-soft) !important;
   border-color: color-mix(in srgb, var(--accent) 28%, transparent) !important;
 }
-/* Supporting "N in the complete family tree" line — same treatment as
-   .home__hero-card-complete / .ti__hero-complete, so the perimeter/total
-   relationship reads identically wherever it appears. */
-.topbar__stats-complete {
-  display: block;
-  font-size: 10px;
-  color: var(--ink-faint, #b0a9a5);
-  text-align: center;
-  margin-top: 2px;
-}
-
 /* ── Stats detail popover ─────────────────────────────────────────────────── */
 .stats-popover {
   position: absolute;

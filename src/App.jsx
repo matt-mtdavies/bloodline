@@ -1006,18 +1006,18 @@ export default function App() {
   // tree, flatly contradicting the filter it's supposed to be summarizing.
   //
   // Also scoped to the viewer's Family Perimeter (Codex design review: "make
-  // the active perimeter unmistakable" — previously this pill ALWAYS showed
-  // the complete-archive total even with a narrower perimeter active, on the
-  // stated reasoning that the pill "already truncates... cramming more text
-  // in would just get cut off." That's still true of the perimeter LEVEL
-  // name, which is why the separate topbar__perimeter-badge below still
-  // carries it — but the plain leading NUMBER has room, and showing the full
-  // archive count as the primary, most prominent figure in the header while
-  // the perimeter (the thing actually governing what's on screen) was a
-  // count-less secondary badge had it backwards. Mirrors the exact
-  // homeStats/TreeInsights convention below: scoped count leads, completeTotal
-  // is the supporting "N in the complete family tree" line, shown only when
-  // the perimeter genuinely narrows things.
+  // the active perimeter unmistakable" — this pill leads with the PERIMETER-
+  // scoped count whenever one is narrower than Everyone, rather than always
+  // showing the complete-archive total while the perimeter sat as a
+  // count-less secondary badge). Real follow-up feedback: the header used to
+  // ALSO carry a "N in the complete family tree" line and the perimeter
+  // level's full name directly below this pill — real clutter, up to four
+  // stacked lines on a narrowed perimeter. Both now live one tap away: the
+  // level name/colour on the icon-only perimeter ring paired with Legend
+  // (topbar__row2-stack--left), and the complete-tree total in that ring's
+  // own Perimeter Preview sheet (its ring legend lists every level,
+  // including Complete family tree, with a live count) — so this stat object
+  // no longer needs to carry `completeTotal` for the header's own sake.
   const familyStats = useMemo(() => {
     const bloodScope = bloodlineOnly ? bloodRelativesOf(graph, data.myPersonId || DEFAULT_FOCUS) : null;
     const personalIds = insightCohorts?.personal;
@@ -1030,8 +1030,7 @@ export default function App() {
     } else if (bloodScope) {
       scopeIds = bloodScope;
     }
-    const base = computeFamilyStatsFor(graph, data, scopeIds);
-    return { ...base, completeTotal: perimeterNarrows ? graph.people.length : null };
+    return computeFamilyStatsFor(graph, data, scopeIds);
   }, [graph, data.photos, data.memories, data.relationships, data.myPersonId, bloodlineOnly, insightCohorts, perimeterActive]);
 
   // Home hub hero stats (PR #91 review): a SEPARATE stat object from
