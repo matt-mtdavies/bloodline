@@ -575,7 +575,7 @@ test('temporary reveal adds the minimum path + local family unit for an outside 
 
 // ── Insight cohorts (§4.4) ──────────────────────────────────────────────────
 
-test('insight cohorts: personal = primary+halo, complete = every person regardless of viewer, context is disjoint-labelled', () => {
+test('insight cohorts: personal = primary+halo+context, complete = every person regardless of viewer', () => {
   const g = buildGraph(
     [person('v'), person('partner'), person('kid'), person('partnerParent'), person('stranger')],
     [
@@ -588,7 +588,51 @@ test('insight cohorts: personal = primary+halo, complete = every person regardle
   assert.equal(idx.insightCohortIds.complete.size, g.people.length);
   assert.ok(idx.insightCohortIds.complete.has('stranger'));
   assert.ok(!idx.insightCohortIds.personal.has('stranger'));
-  for (const id of idx.insightCohortIds.personal) assert.ok(idx.primaryIds.has(id) || idx.familyHaloIds.has(id));
+  for (const id of idx.insightCohortIds.personal) {
+    assert.ok(idx.primaryIds.has(id) || idx.familyHaloIds.has(id) || idx.partnerContextIds.has(id));
+  }
+});
+
+// A real user report: the tree canvas/Perimeter Preview (perimeterIds =
+// primary+halo+context) reported a different total than the Insights/Home
+// header (personal, which used to be primary+halo only) for the SAME
+// perimeter level. The gap was exactly the partner-context people. `personal`
+// now includes them so both surfaces agree — pinned here with a fixture
+// where a person is reachable ONLY via the partner-context ring (a halo
+// sibling's partner's own parent — not an ancestor of any primary anchor,
+// so it can't land in `primaryIds` the way `partnerParent` does above).
+test('insight cohorts: a genuine partner-context-only person is now included in personal, and matches perimeterIds', () => {
+  const g = buildGraph(
+    [
+      person('v'), person('sib'), person('sibPartner'), person('sibPartnerParent'), person('parent'),
+      person('stranger'),
+    ],
+    [
+      parentEdge('parent', 'v'), parentEdge('parent', 'sib'),
+      partnerEdge('sib', 'sibPartner', 'current'),
+      parentEdge('sibPartnerParent', 'sibPartner'),
+    ],
+  );
+  const idx = computePerspectiveIndex(g, { viewerId: 'v', perimeterLevel: 1 });
+  // Sanity: this person is reachable ONLY through the partner-context ring.
+  assert.ok(idx.partnerContextIds.has('sibPartnerParent'));
+  assert.ok(!idx.primaryIds.has('sibPartnerParent'));
+  assert.ok(!idx.familyHaloIds.has('sibPartnerParent'));
+  // The actual fix: personal now includes them, matching perimeterIds.
+  assert.ok(idx.insightCohortIds.personal.has('sibPartnerParent'));
+  assert.ok(idx.perimeterIds.has('sibPartnerParent'));
+  assert.deepEqual([...idx.insightCohortIds.personal].sort(), [...idx.perimeterIds].sort());
+  assert.ok(!idx.insightCohortIds.personal.has('stranger'));
+
+  // The lighter computeInsightCohorts sibling must agree.
+  const cohorts = computeInsightCohorts(g, { viewerId: 'v', perimeterLevel: 1 });
+  assert.ok(cohorts.personal.has('sibPartnerParent'));
+  assert.deepEqual([...cohorts.personal].sort(), [...idx.insightCohortIds.personal].sort());
+
+  // `context` still reports the same partner-context ids on their own —
+  // now a subset of `personal`, not a disjoint complement.
+  assert.ok(idx.insightCohortIds.context.has('sibPartnerParent'));
+  for (const id of idx.insightCohortIds.context) assert.ok(idx.insightCohortIds.personal.has(id));
 });
 
 // ── Determinism / order independence (exit criterion) ─────────────────────

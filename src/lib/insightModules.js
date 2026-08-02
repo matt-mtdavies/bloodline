@@ -41,12 +41,17 @@ import { haversineKm, formatKm } from './geo.js';
  * own line, so tagging them directLine would be dishonest scoping, not
  * genuine correctness — they're `personal`, same as every other whole-family
  * aggregate. `context`/`temporaryReveal` aren't declared by any module here
- * either: `context` (partner-context people) is meant to stay EXCLUDED from
- * personal aggregates, which `personal = primaryIds ∪ haloIds` already does
- * by construction; `temporaryReveal` is a session-only navigation state, not
- * something an aggregate should ever count. Both cohorts remain fully
- * supported by the infrastructure for a future module that genuinely needs
- * one.
+ * either: `context` (partner-context people) is now folded INTO `personal`
+ * (`personal = primaryIds ∪ haloIds ∪ partnerContextIds`) — an earlier
+ * version excluded them, which meant a personal-aggregate module and the
+ * canvas/Perimeter Preview (which both already counted partner-context
+ * people) silently disagreed on how many people were "in" the same perimeter
+ * level, a real reported confusion; `context` is kept as its own identifier
+ * purely so a future caller can still ask for "partner-context people only"
+ * — it's a subset of `personal` now, not a disjoint complement.
+ * `temporaryReveal` is a session-only navigation state, not something an
+ * aggregate should ever count. Both cohorts remain fully supported by the
+ * infrastructure for a future module that genuinely needs one.
  *
  * When `cohortIds` (the 5th positional options object's `cohortIds` field —
  * see computeInsightModules below) is omitted, every module gets the

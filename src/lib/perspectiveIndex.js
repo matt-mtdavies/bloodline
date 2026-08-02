@@ -529,7 +529,7 @@ export function computePerspectiveIndex(graph, options = {}) {
   const bloodlineIds = bloodlineOnly ? computeBloodlineProjection(graph, perimeterIds, anchorIds, viewerId) : null;
 
   const insightCohortIds = {
-    personal: new Set([...primaryIds, ...haloIds]),
+    personal: new Set([...primaryIds, ...haloIds, ...partnerContextIds]),
     context: new Set(partnerContextIds),
     complete: new Set(graph.people.map((p) => p.id)),
     directLine: directLineIds,
@@ -582,6 +582,17 @@ export function computePerspectiveIndex(graph, options = {}) {
  * shape means "nothing is in view yet," which is right for a canvas about
  * to render nothing, and wrong for an insight module about to silently
  * report zero facts about a family that's actually fully populated.
+ *
+ * `personal` = primaryIds ∪ haloIds ∪ partnerContextIds — the same set
+ * `computePerspectiveIndex` calls `perimeterIds` for rendering/search/the
+ * Perimeter Preview. Partner-context people used to be excluded from
+ * `personal` (an earlier, narrower reading of "personal"), which meant the
+ * insights/header counts silently disagreed with what the canvas and the
+ * Perimeter Preview sheet reported for the exact same perimeter level — a
+ * real, reported user confusion ("why are the totals different?"). `context`
+ * still reports the same `partnerContextIds` on its own — now a subset of
+ * `personal` rather than a disjoint complement — kept for any future caller
+ * that specifically wants "partner-context people only."
  */
 export function computeInsightCohorts(graph, options = {}) {
   const { viewerId, perimeterLevel = 'everyone' } = options;
@@ -595,7 +606,7 @@ export function computeInsightCohorts(graph, options = {}) {
   const { haloIds, haloPartnerIds } = computeFamilyHalo(graph, primaryIds, candidatesByPersonId);
   const partnerContextIds = computePartnerContextRing(graph, haloPartnerIds, candidatesByPersonId);
   return {
-    personal: new Set([...primaryIds, ...haloIds]),
+    personal: new Set([...primaryIds, ...haloIds, ...partnerContextIds]),
     context: new Set(partnerContextIds),
     complete,
     directLine: directLineIds,
