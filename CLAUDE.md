@@ -2193,6 +2193,43 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   this file; given this is a small, pure two-line data-layer change with both call sites and the
   exact reported discrepancy directly pinned by unit tests, that scaffold wasn't built for this fix.
 
+- **Tree header decluttered: the perimeter badge lost its text label and left the center column**
+  (real feedback, with a screenshot: on a narrowed perimeter the header stacked up to four lines —
+  family name, the stats pill, a "N in the complete family tree" line, and a text-labelled "Close
+  family" badge — reading as cluttered; suggested a ring-icon-only badge, hover for text, moved
+  under Legend or folded into the view-switcher menu). Discussed direction first: recommended
+  against folding Legend into "Change view" (different mental models — visual-language reference
+  vs. mode switch — and it would bury a frequently-glanced icon a tap deeper for no size win), and
+  proposed pairing the ring icon with Legend as a two-icon stack instead, reusing
+  `topbar__row2-stack` — a flex-column container the right side of this same row already uses for
+  exactly this purpose (today just holding the view-switcher alone, per its own header comment
+  "view-toggle... stack"). Confirmed before removing anything that no information would actually be
+  lost: the Perimeter Preview sheet the badge already opens has its own ring legend listing every
+  level, including "Complete family tree," with a live count — so the header lines were pure
+  redundancy, not the only place that data lived. `TopBar.jsx`: the "N in the complete family tree"
+  line (`.topbar__stats-complete`) is gone outright; the perimeter badge dropped its text label and
+  moved out of the center column into a new `.topbar__row2-stack--left` alongside Legend, keeping
+  its existing per-level colour (terracotta/sage/gold) and its `onClick`/full `aria-label` — a
+  `hover-tip` (the same pattern every other icon in this row already uses) now carries the level
+  name instead of a persistent label. `App.jsx`'s `familyStats` memo no longer computes
+  `completeTotal` at all — it was only ever consumed by the now-removed header line, so continuing
+  to compute it would have been dead weight. Found and fixed one real CSS bug while verifying live:
+  the new `.perimeter-ring-btn--{level}` colour rules were silently losing to the later, equal-
+  specificity `.topbar__row2-btn` base rule purely on source order, rendering every level in flat
+  grey regardless of which one was active — fixed by chaining the selector with the base class
+  itself (`.perimeter-ring-btn.perimeter-ring-btn--first`, etc.) for higher specificity, verified
+  via `getComputedStyle` that all three levels now resolve their real colours. Verified live via
+  Playwright against the real dev server (a temporary `window.__debugSetPerimeterPref` hook mirrored
+  from an earlier session's identical need, reverted before committing — demo mode has no server
+  session to narrow a real perimeter through otherwise): confirmed zero `.topbar__stats-complete`/
+  `.perimeter-badge` elements remain at any state, confirmed the center column now holds exactly 2
+  children (family name + stats pill) whether or not a perimeter is active — one fewer special case
+  than before — confirmed the ring icon's `aria-label` still carries the full "Family Perimeter
+  active: {level}. Tap to see who's included." text for screen readers even with no visible label,
+  confirmed tapping it still opens Perimeter Preview and that sheet still states the complete-tree
+  total, and screenshotted all three level colours distinctly rendered. Full unit suite and
+  `npm run build` passed clean.
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);
