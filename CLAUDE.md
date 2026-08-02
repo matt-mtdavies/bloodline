@@ -2279,6 +2279,41 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   remains a well-supported hypothesis, not a confirmed root cause — nothing here was reproduced
   against Jason's actual device.
 
+- **Duplicate detection: conflicting known relatives now rule a pair out, closing the gap that let
+  a thin stub get flagged against unrelated same-named people** (real report, with a screenshot: a
+  dateless "James Ransom" stub — parents George/Dorothy, nothing else recorded — was flagged as a
+  possible duplicate of two completely different, fully-documented James Ransoms 71 years apart,
+  one with parents John/Margaret, the other Joseph/Lydiah). Root-caused in `lib/duplicates.js`:
+  `findDuplicatePairs` only ever ruled a pair out on a KNOWN, conflicting birth year — every other
+  signal (shared parent/child/partner, matching birth year, "one side is a thin stub") was purely
+  additive, and critically, the thin-stub signal was sufficient corroboration ALL BY ITSELF, with
+  no check for whether anything else recorded actually agreed. Since the stub had no birth date, it
+  could never trip the year-conflict rule, so it matched every same-named person tree-wide as long
+  as nothing else actively disagreed — except nothing else COULD actively disagree, because
+  conflicting relatives were never checked at all, only shared ones. Fixed by extending the exact
+  same "known and conflicting rules the pair out" principle already used for birth year to three
+  more relationship categories — parents, children, and partners — compared by normalized first+last
+  name (the same `nameKey` every other match in this file already uses, not by relationship id,
+  since two records for the same real relative never share an id). A pair is now excluded whenever
+  both sides have at least one NAMED relative in a category and none of those names overlap at all;
+  a one-sided gap (one side simply has nothing recorded to compare) is deliberately NOT a conflict,
+  only an actual, known mismatch is. The thin-stub signal itself is untouched and still works
+  exactly as before when nothing recorded contradicts it — it's a deliberate, tested feature (catches
+  an auto-created placeholder sitting next to the real entry someone later filled in properly), not
+  something this removes, just something that can now be overridden by real, conflicting facts.
+  Covered by 6 new unit tests in `tests/duplicates.test.mjs`: the exact reported scenario (stub vs.
+  two conflicting-parent real records), a sanity check that the stub signal still fires with no
+  conflicting evidence, conflicting children, conflicting partners, a genuinely SHARED parent
+  (same person, not just same name) still corroborating normally, and a one-sided gap NOT counting
+  as a conflict. Verified live via Playwright against the real dev server: temporarily reproduced
+  the exact screenshotted family (stub James Ransom + parents George/Dorothy; a documented James
+  Ransom b.1835 with parents John/Margaret) via a seed.js addition, confirmed the pair no longer
+  appears anywhere in the Possible Duplicates / Archive Care UI (a separate, unrelated integrity
+  check DID correctly flag the synthetic 1835-born test person's own implausible age, confirming
+  the two features are cleanly independent and neither masked the other), then reverted the seed
+  change before committing (confirmed via a clean `git diff`). Full unit suite and `npm run build`
+  passed clean.
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);

@@ -45,6 +45,100 @@ test('two genuinely different people who happen to share a first+last name are s
   assert.equal(pairs.length, 0, 'conflicting known birth years should still rule the pair out');
 });
 
+// ── conflicting known relatives rule a pair out (real report, with a
+// screenshot: a thin dateless stub was flagged against two completely
+// different, fully-documented same-named people 71 years apart) ───────────
+
+test('a thin stub is NOT flagged against a same-named person with a different recorded parent (the reported bug)', () => {
+  const people = [
+    { id: 'george', display_name: 'George Ransom' },
+    { id: 'dorothy', display_name: 'Dorothy Ransom' },
+    { id: 'john', display_name: 'John Ransom' },
+    { id: 'margaret', display_name: 'Margaret Ransom' },
+    { id: 'stub', display_name: 'James Ransom' }, // thin — no birth_date/photo/bio/events
+    { id: 'real', display_name: 'James Ransom', birth_date: '1835-09-25' },
+  ];
+  const relationships = [
+    { type: 'parent', from_person: 'george', to_person: 'stub' },
+    { type: 'parent', from_person: 'dorothy', to_person: 'stub' },
+    { type: 'parent', from_person: 'john', to_person: 'real' },
+    { type: 'parent', from_person: 'margaret', to_person: 'real' },
+  ];
+  const pairs = findDuplicatePairs(people, relationships);
+  assert.equal(
+    pairs.filter((p) => [p.aId, p.bId].sort().join('~') === ['stub', 'real'].sort().join('~')).length,
+    0,
+    'conflicting known parents (George/Dorothy vs John/Margaret) should rule the pair out, even though the stub alone would otherwise corroborate it',
+  );
+});
+
+test('a thin stub IS still flagged against a same-named person when nothing recorded actually conflicts', () => {
+  const people = [
+    { id: 'stub', display_name: 'James Ransom' },
+    { id: 'real', display_name: 'James Ransom', birth_date: '1835-09-25' },
+  ];
+  const pairs = findDuplicatePairs(people, []);
+  assert.equal(pairs.length, 1, 'the stub signal itself is still valid when there is no conflicting evidence to override it');
+});
+
+test('conflicting known children rule a pair out', () => {
+  const people = [
+    { id: 'a', display_name: 'James Ransom', birth_date: '1835' },
+    { id: 'b', display_name: 'James Ransom', birth_date: '1835' },
+    { id: 'rose', display_name: 'Rose Ransom' },
+    { id: 'sarah', display_name: 'Sarah Ransom' },
+  ];
+  const relationships = [
+    { type: 'parent', from_person: 'a', to_person: 'rose' },
+    { type: 'parent', from_person: 'b', to_person: 'sarah' },
+  ];
+  const pairs = findDuplicatePairs(people, relationships);
+  assert.equal(pairs.length, 0, 'different recorded children (Rose vs Sarah) rule the pair out even with a matching birth year');
+});
+
+test('conflicting known partners rule a pair out', () => {
+  const people = [
+    { id: 'a', display_name: 'James Ransom', birth_date: '1835' },
+    { id: 'b', display_name: 'James Ransom', birth_date: '1835' },
+    { id: 'sarah', display_name: 'Sarah Ransom' },
+    { id: 'mariah', display_name: 'Mariah Ransom' },
+  ];
+  const relationships = [
+    { type: 'partner', from_person: 'a', to_person: 'sarah' },
+    { type: 'partner', from_person: 'b', to_person: 'mariah' },
+  ];
+  const pairs = findDuplicatePairs(people, relationships);
+  assert.equal(pairs.length, 0, 'different recorded partners (Sarah vs Mariah) rule the pair out');
+});
+
+test('a genuinely SHARED parent (same person, not just same name) still corroborates normally', () => {
+  const people = [
+    { id: 'george', display_name: 'George Ransom' },
+    { id: 'a', display_name: 'James Ransom' },
+    { id: 'b', display_name: 'James Ransom', birth_date: '1835' },
+  ];
+  const relationships = [
+    { type: 'parent', from_person: 'george', to_person: 'a' },
+    { type: 'parent', from_person: 'george', to_person: 'b' },
+  ];
+  const pairs = findDuplicatePairs(people, relationships);
+  assert.equal(pairs.length, 1, 'sharing the same actual parent record is positive evidence, not a conflict');
+  assert.ok(pairs[0].reasons.some((r) => r.includes('shared parent')));
+});
+
+test('a one-sided known parent (the other side has none recorded) does not count as a conflict', () => {
+  const people = [
+    { id: 'john', display_name: 'John Ransom' },
+    { id: 'a', display_name: 'James Ransom' }, // no recorded parent at all
+    { id: 'b', display_name: 'James Ransom', birth_date: '1835' },
+  ];
+  const relationships = [
+    { type: 'parent', from_person: 'john', to_person: 'b' },
+  ];
+  const pairs = findDuplicatePairs(people, relationships);
+  assert.equal(pairs.length, 1, 'no conflict when one side simply has no recorded parent to compare — only an ACTUAL mismatch rules a pair out');
+});
+
 test('a bare two-word name is unaffected by the suffix-stripping change', () => {
   const people = [
     { id: 'a', display_name: 'Jane Doe' },

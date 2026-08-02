@@ -10,7 +10,29 @@
  * being a thin stub record). People who are directly related (a parent/child or
  * partner edge between them) are never suggested — that's a Sr./Jr. or a couple
  * who happen to share a surname, not a duplicate. Conflicting known birth years
- * rule a pair out entirely.
+ * rule a pair out entirely — and so, per the same principle, does a conflicting
+ * set of known RELATIVES: real report, with a screenshot — a thin, dateless
+ * stub ("James Ransom", parents George/Dorothy, nothing else recorded) was
+ * flagged against two completely different, fully-documented James Ransoms 71
+ * years apart, purely because "one side is a thin stub" was, on its own,
+ * treated as sufficient corroboration — with no check for whether anything
+ * else recorded about them actually agreed. The stub signal itself is kept
+ * (it's real and deliberate — it catches an auto-created placeholder next to
+ * the real entry someone later filled in properly), but it can now be
+ * OVERRIDDEN: if both people have at least one NAMED parent and none of those
+ * names overlap at all, that's exactly as strong a disqualifier as a
+ * mismatched birth year (biologically there are only ever two, same
+ * reasoning). Conflicting partners/children are a softer signal in principle
+ * — unlike parents, a person can genuinely have many across a life, and a
+ * source record is often partial — but ruled out the same way here, matching
+ * this file's own precision-over-recall stance: a person with a wife Sarah
+ * and 8 children on one record and a wife Mariah/Jantge and 12 different
+ * children on another is not a partially-recorded version of the same
+ * family, it's a different person who happens to share a name. All three
+ * conflict checks compare NORMALIZED first+last names (the same `nameKey`
+ * every other match in this file already uses), not raw relationship ids —
+ * two records for the same real relative never share an id (they're
+ * different person rows), so an id-based check could never catch this at all.
  *
  * findDuplicatePairs(people, relationships)
  *   → [{ aId, bId, score, confidence: 'high'|'medium', reasons: string[] }]
@@ -44,6 +66,7 @@ const yearOf = (p) => {
 const isStub = (p) => !p.birth_date && !p.photo && !p.bio && !(p.events || []).length;
 
 export function findDuplicatePairs(people = [], relationships = []) {
+  const byId = new Map(people.map((p) => [p.id, p]));
   const parents = new Map(); // child → Set(parentIds)
   const children = new Map(); // parent → Set(childIds)
   const partners = new Map(); // person → Set(partnerIds)
@@ -59,6 +82,30 @@ export function findDuplicatePairs(people = [], relationships = []) {
     let n = 0; const sa = get(m, a);
     for (const x of get(m, b)) if (sa.has(x)) n++;
     return n;
+  };
+
+  // The set of normalized (first|last) name keys for whoever's related to
+  // `id` through relationship map `m` — id-based, not name-based, since two
+  // records for the same real relative never share an id. Used only for
+  // conflict detection below; unrelated to sharedCount's own id-overlap check.
+  const relativeNameKeys = (m, id) => {
+    const out = new Set();
+    for (const relId of get(m, id)) {
+      const person = byId.get(relId);
+      const key = person && nameKey(person);
+      if (key) out.add(key);
+    }
+    return out;
+  };
+  // True when both sides have at least one NAMED relative in this category
+  // and none of those names overlap at all — real, known facts that
+  // contradict each other, not merely an absence of shared evidence.
+  const conflictingRelatives = (m, aId, bId) => {
+    const na = relativeNameKeys(m, aId);
+    const nb = relativeNameKeys(m, bId);
+    if (!na.size || !nb.size) return false;
+    for (const k of na) if (nb.has(k)) return false;
+    return true;
   };
 
   // Group by name key so we only compare same-named people (cheap, not O(n²)).
@@ -79,6 +126,15 @@ export function findDuplicatePairs(people = [], relationships = []) {
         if (directlyRelated(a.id, b.id)) continue;
         const ya = yearOf(a), yb = yearOf(b);
         if (ya && yb && ya !== yb) continue; // different known birth years → different people
+        // Same principle, extended to named relatives: two known, non-
+        // overlapping parents/children/partners are real, specific evidence
+        // of two different people, not two records of one — this is what
+        // stops a thin stub from being flagged against every unrelated
+        // same-named person purely for being thin (see this function's own
+        // header comment for the real report that motivated it).
+        if (conflictingRelatives(parents, a.id, b.id)) continue;
+        if (conflictingRelatives(children, a.id, b.id)) continue;
+        if (conflictingRelatives(partners, a.id, b.id)) continue;
 
         const reasons = ['Same name'];
         let score = 2;
