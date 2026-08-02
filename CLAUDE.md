@@ -2314,6 +2314,48 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   change before committing (confirmed via a clean `git diff`). Full unit suite and `npm run build`
   passed clean.
 
+- **Jason's crash — ROOT CAUSE FOUND AND FIXED for real this time: a genuine hooks-order bug in
+  `HoverCard.jsx`, introduced the day before he reported it, reproduced and disproven-then-proven
+  with the actual dev-mode error message.** Both earlier hypotheses for this crash (stale service
+  worker, then a corporate-proxy/auth-cookie theory) turned out to be wrong — Jason confirmed the
+  crash persisted even after clearing site data on every browser AND in a fresh Incognito window
+  (ruling out anything cached/stale), and a new screenshot of the crash showed the browser console
+  directly: a `401` on `/api/auth/me` followed immediately by the React error. That `/api/auth/me`
+  401 turned out to be a mostly-unrelated thread (its one call site, `applySession()` in `App.jsx`,
+  already handles a 401 gracefully — `setAuthState('login')`, no crash) — the real lead was simpler:
+  Jason said the crash "was working fine up until yesterday," and `git log` showed a same-day commit
+  (`10e7b68`, "Codex polish... hover-card ticker" — the day before his report) had added a
+  `useLayoutEffect` call to `HoverCard.jsx` **textually after** its existing `if (!person) return
+  null;` early return. `HoverCard` is never remounted per-hover (see its call site in `App.jsx`:
+  `<HoverCard personId={... ? hoveredId : null} .../>`, no `key`) — it stays mounted for the whole
+  tree-browsing session with `personId` (and so `person`) toggling between an id and `null` as the
+  mouse moves. On mount, if nothing is hovered yet, `person` is null, the early return fires, and
+  the `useLayoutEffect` below it is never called — establishing a hook-count baseline that DOESN'T
+  include that hook. The moment `person` next becomes truthy (the very first real hover), the
+  render reaches the `useLayoutEffect` call for the first time on this mounted instance — one more
+  hook than the previous render — which is exactly React's "Rendered more hooks than during the
+  previous render" invariant (error #310), the same bug class already fixed once before in
+  `PersonSheet.jsx`. This is desktop-only in practice (touch devices have no hover state, so
+  `hoveredId` may never go non-null at all there), matching "PC only, never pad or phone" precisely,
+  and explains "worked fine until yesterday" literally — the bug is exactly one day old relative to
+  the report. Proven, not just theorized: stashed just this one file back to the pre-fix version,
+  ran a Playwright script simulating the exact hover transition (empty canvas → a bubble → empty →
+  the bubble again) against the real dev server, and it crashed with the FULL non-minified message
+  in the console — `Error: Rendered more hooks than during the previous render.` — reproducing the
+  bug on demand for the first time this whole investigation. Restored the fix and reran the
+  identical script: zero errors. Fixed by moving `restricted`/`familyRelBits`/`relSummary` (the
+  hook's own dependency chain) and the `useLayoutEffect` itself above the early return, null-safe via
+  `person?.` where needed — the hook and everything it depends on now run unconditionally on every
+  render, exactly the same fix shape as the earlier `PersonSheet.jsx` incident. Added a permanent
+  regression check to `tests/smoke.mjs` (not a throwaway script) exercising the exact transition
+  sequence right after the canvas mounts, asserting zero console/page errors — this is now part of
+  the standard smoke suite CLAUDE.md already says to keep green, not a one-off verification. Full
+  unit suite and `npm run build` passed clean. This account's own tree never triggers it (perimeter
+  'everyone' + whatever hover pattern the owner happens to use never produced the empty→truthy
+  transition in a way that got noticed) — Jason's report was real, reproducible, and now fixed; no
+  further action should be needed from him once this build deploys (no stale-cache dependency this
+  time, since the fix is in the app's own render logic, not the update-delivery mechanism).
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);
