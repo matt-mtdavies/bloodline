@@ -4,9 +4,42 @@ import { registerSW } from 'virtual:pwa-register';
 import './styles/global.css';
 import App from './App.jsx';
 
+// Set only by applyUpdateWhenSafe below, and only to a REAL waiting
+// updateSW() reference — never invented — so the ErrorBoundary's Reload
+// button below can tell "an update is sitting there, deferred until the
+// tab backgrounds" apart from "nothing pending, this is just an ordinary
+// crash." A real report: a crash recurred on every open, on a device that
+// (per its own reported symptoms — a stale identity that only cleared on
+// refresh, never on its own) looked stuck on an old bundle, and plain
+// `location.reload()` alone cannot break that: the still-active OLD
+// service worker keeps serving its own precached OLD index.html/JS on
+// every request until a waiting new worker actually takes over, and this
+// file's own deferred-update design (see applyUpdateWhenSafe) only ever
+// applies one once the tab backgrounds — which never happens for a tab
+// that's simply never switched away from. A crash is exactly the safe
+// moment that deferral exists to wait for (nothing on screen left to
+// yank away), so Reload should apply a pending update immediately here
+// rather than reloading right back onto the same stale, still-crashing
+// bundle.
+let pendingUpdateSW = null;
+
 class ErrorBoundary extends React.Component {
   state = { error: null };
   static getDerivedStateFromError(e) { return { error: e }; }
+  handleReload = () => {
+    if (pendingUpdateSW) {
+      const apply = pendingUpdateSW;
+      pendingUpdateSW = null;
+      apply();
+      // Safety net matching this file's own convention elsewhere: if the
+      // update doesn't actually reload the page on its own (a stalled
+      // activation, a dropped message), don't leave the user stuck on
+      // the crash screen — fall back to a plain reload.
+      setTimeout(() => location.reload(), 3000);
+    } else {
+      location.reload();
+    }
+  };
   render() {
     if (this.state.error) {
       return (
@@ -17,7 +50,7 @@ class ErrorBoundary extends React.Component {
             <circle cx="21" cy="30.6" r="7.8" fill="#c4913f"/>
           </svg>
           <p style={{ color:'#6b5a4e', fontSize:15, margin:0 }}>Something went wrong — please reload.</p>
-          <button onClick={() => location.reload()} style={{ padding:'10px 24px', background:'#c2603a', color:'#fff', borderRadius:999, border:'none', fontSize:15, cursor:'pointer' }}>
+          <button onClick={this.handleReload} style={{ padding:'10px 24px', background:'#c2603a', color:'#fff', borderRadius:999, border:'none', fontSize:15, cursor:'pointer' }}>
             Reload
           </button>
         </div>
@@ -69,9 +102,17 @@ function boot() {
 // with zero arguments, so each call site closes over its own registerSW()
 // result instead.
 function applyUpdateWhenSafe(callUpdateSW) {
+  // Visible to the ErrorBoundary's Reload button (see its own comment
+  // above) for exactly as long as this update is genuinely still waiting
+  // on a backgrounding that hasn't happened yet.
+  pendingUpdateSW = callUpdateSW;
+  const applyNow = () => {
+    pendingUpdateSW = null;
+    callUpdateSW();
+  };
   const confirmHiddenThenUpdate = () => {
     setTimeout(() => {
-      if (document.visibilityState === 'hidden') callUpdateSW();
+      if (document.visibilityState === 'hidden') applyNow();
     }, 1000);
   };
   if (document.visibilityState === 'hidden') {
