@@ -127,42 +127,54 @@
   flex-shrink: 0;
 }
 
-/* Family Perimeter is contextual scope, not a second reference tool. It
-   therefore sits immediately beside the people count it scopes, using a
-   quiet text token rather than a detached, square target button. */
+/* Family Perimeter is contextual scope, not a second reference tool. It is
+   therefore the quiet left-cap of the same archive capsule as the people
+   count it scopes — never its own floating chip or a new header row. */
 .topbar__stats-row {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
   width: 100%;
   min-width: 0;
   margin-top: 3px;
 }
-.perimeter-scope {
-  flex: 0 1 auto;
+.topbar__stats-capsule {
+  display: flex;
+  align-items: stretch;
   min-width: 0;
-  max-width: 122px;
+  max-width: 100%;
+  overflow: hidden;
+  border: 1px solid rgba(139,120,100,0.14);
+  border-radius: 999px;
+  background: rgba(139,120,100,0.07);
+}
+.perimeter-scope {
+  position: relative;
+  flex: 0 0 32px;
+  width: 32px;
+  min-height: 26px;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  height: 24px;
-  padding: 0 8px;
-  border: 1px solid color-mix(in srgb, currentColor 20%, transparent);
-  border-radius: 999px;
-  background: color-mix(in srgb, currentColor 7%, transparent);
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
   color: var(--accent, #c2603a);
-  font: 600 10px/1 var(--body);
-  letter-spacing: 0.02em;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
-  transition: background 0.16s ease, border-color 0.16s ease, transform 0.2s var(--spring);
+  transition: background 0.16s ease, transform 0.2s var(--spring);
 }
-.perimeter-scope svg { flex: 0 0 auto; width: 14px; height: 14px; }
-.perimeter-scope:hover { background: color-mix(in srgb, currentColor 13%, transparent); }
+.perimeter-scope::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: 7px;
+  width: 1px;
+  height: 12px;
+  background: rgba(139,120,100,0.16);
+}
+.perimeter-scope svg { width: 15px; height: 15px; }
+.perimeter-scope:hover { background: color-mix(in srgb, currentColor 8%, transparent); }
 .perimeter-scope:active { transform: scale(0.97); }
 .perimeter-scope--first { color: var(--accent, #c2603a); }
 .perimeter-scope--second { color: var(--sage, #3f5e4e); }
@@ -1933,18 +1945,17 @@
 .topbar__stats--btn {
   flex: 1 1 auto;
   min-width: 0;
-  background: rgba(139,120,100,0.07);
-  border: 1px solid rgba(139,120,100,0.14);
+  background: transparent;
+  border: 0;
   font-family: inherit;
   cursor: pointer;
-  padding: 3px 10px;
-  border-radius: 999px;
+  padding: 5px 10px 5px 8px;
+  border-radius: 0;
   transition: background 0.15s, color 0.15s, border-color 0.15s;
   max-width: 100%;
 }
 .topbar__stats--btn:hover {
-  background: rgba(139,120,100,0.13);
-  border-color: rgba(139,120,100,0.24);
+  background: rgba(139,120,100,0.07);
   color: var(--ink-soft);
 }
 .topbar__stats--active {
@@ -9562,7 +9573,8 @@ button.health-notes {
   .pill:hover .hover-tip, .pill:focus-visible .hover-tip,
   .topbar-avatar:hover .hover-tip, .topbar-avatar:focus-visible .hover-tip,
   .topbar__brand:hover .hover-tip, .topbar__brand:focus-visible .hover-tip,
-  .topbar__row2-btn:hover .hover-tip, .topbar__row2-btn:focus-visible .hover-tip {
+  .topbar__row2-btn:hover .hover-tip, .topbar__row2-btn:focus-visible .hover-tip,
+  .perimeter-scope:hover .hover-tip, .perimeter-scope:focus-visible .hover-tip {
     opacity: 1;
   }
   .pill:hover .hover-tip--down, .pill:focus-visible .hover-tip--down,
