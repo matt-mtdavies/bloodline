@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, forwardRef } from 'react';
 import Logo from './Logo.jsx';
 import { PERIMETER_OPTIONS } from '../lib/familyPerimeter.js';
 
-export default function TopBar({ familyName, stats, view, layout, syncStatus, syncError, onRetrySync, onSetViewMode, onOpenLegend, bloodlineOnly = false, onToggleBloodlineOnly, onOpenActivity, activityCount = 0, user, userPhoto, onOpenProfile, onOpenHome, onSearch, onOpenInsights, onOpenTimeline, onOpenArchiveCare, archiveCareCount = 0, archiveCareHasNew = false, storageWarning, storageNearLimit, treeSizeWarning, syncToast, onDismissSyncToast, recapNudgeCount = 0, onShowRecap, onDismissRecapNudge, perimeterActive = false, perimeterLevel = null, onOpenPerimeterPreview, anyOverlayOpen = false }) {
+export default function TopBar({ familyName, stats, view, layout, syncStatus, syncError, onRetrySync, onSetViewMode, onOpenLegend, bloodlineOnly = false, onToggleBloodlineOnly, onOpenActivity, activityCount = 0, user, userPhoto, onOpenProfile, onOpenHome, onSearch, onOpenInsights, onOpenTimeline, onOpenArchiveCare, archiveCareCount = 0, archiveCareHasNew = false, storageWarning, storageNearLimit, treeSizeWarning, syncToast, onDismissSyncToast, recapNudgeCount = 0, onShowRecap, onDismissRecapNudge, perimeterActive = false, perimeterLevel = null, onOpenPerimeterSettings, anyOverlayOpen = false }) {
   const perimeterLevelLabel = PERIMETER_OPTIONS.find((o) => o.value === perimeterLevel)?.label ?? null;
   const [statsOpen, setStatsOpen] = useState(false);
   const [viewMenuOpen, setViewMenuOpen] = useState(false);
@@ -170,18 +170,18 @@ export default function TopBar({ familyName, stats, view, layout, syncStatus, sy
           <span className="topbar__familyname">{familyName}</span>
           {stats && stats.people > 0 && (
             <div className="topbar__stats-row">
-              {/* One continuous capsule makes the mark read as scope for the
+              {/* One continuous capsule makes the halo read as scope for the
                   count, not as an unrelated toolbar action. Its children are
-                  still sibling buttons, so Perimeter Preview and Family
-                  Overview retain their distinct, accessible destinations. */}
+                  still sibling buttons: the halo opens the setting that owns
+                  the preference, while archive facts open Family Overview. */}
               <div className="topbar__stats-capsule">
-                {perimeterActive && perimeterLevelLabel && onOpenPerimeterPreview && (
+                {perimeterActive && perimeterLevelLabel && onOpenPerimeterSettings && (
                   <button
                     className={`perimeter-scope perimeter-scope--${perimeterLevel}`}
-                    onClick={onOpenPerimeterPreview}
-                    aria-label={`Family Perimeter: ${perimeterLevelLabel}. View who's included.`}
+                    onClick={onOpenPerimeterSettings}
+                    aria-label={`Family Perimeter: ${perimeterLevelLabel}. Open Family Perimeter settings.`}
                   >
-                    <PerimeterRingIcon level={perimeterLevel} />
+                    <PerimeterHaloIcon level={perimeterLevel} />
                     <span className="hover-tip hover-tip--down">{perimeterLevelLabel}</span>
                   </button>
                 )}
@@ -559,24 +559,23 @@ function BellIcon() {
 }
 
 
-// Three concentric rings + a center dot — the same "perimeter" motif the
-// Preview sheet's own diagram uses, at icon scale, so the badge visually
-// rhymes with the sheet it opens rather than introducing a new glyph.
-function PerimeterRingIcon({ level = 'third' }) {
-  // The active rings gently indicate how broad the chosen view is: Close
-  // family lights the inner ring, Extended family adds the middle ring, and
-  // Wider family reaches the outer ring. It reads as an orbit/lineage seal
-  // rather than a location target, without needing header text.
+// An incomplete, fading orbit around one family dot. Keeping the arcs open
+// avoids a target/button silhouette; their reach still quietly explains the
+// chosen perimeter without asking the header to carry a second label.
+function PerimeterHaloIcon({ level = 'third' }) {
+  // Close family lights the inner reach; Extended adds the middle reach; and
+  // Wider carries out to the outer arc. "Everyone" deliberately has no mark:
+  // the full archive is the default, not a scoped view that needs signposting.
   const strength = level === 'first'
-    ? { middle: 0.24, outer: 0.12 }
+    ? { middle: 0.22, outer: 0.08 }
     : level === 'second'
-      ? { middle: 0.72, outer: 0.18 }
-      : { middle: 0.72, outer: 0.52 };
+      ? { middle: 0.68, outer: 0.16 }
+      : { middle: 0.72, outer: 0.5 };
   return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.3" opacity={strength.outer}/>
-      <circle cx="12" cy="12" r="5.8" stroke="currentColor" strokeWidth="1.3" opacity={strength.middle}/>
-      <circle cx="12" cy="12" r="2.8" fill="currentColor" opacity="0.95"/>
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="10" cy="12" r="2.1" fill="currentColor" opacity="0.94"/>
+      <path d="M13.3 7.9a5.25 5.25 0 0 1 0 8.2" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round" opacity={strength.middle}/>
+      <path d="M16.15 5.2a8.95 8.95 0 0 1 0 13.6" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round" opacity={strength.outer}/>
     </svg>
   );
 }

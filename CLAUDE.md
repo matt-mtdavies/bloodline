@@ -56,12 +56,13 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
 ## Status — what's built
 
 - **Perimeter header refinement:** an active Family Perimeter now appears as
-  an icon-only family-orbit mark at the left cap of the same archive capsule
-  as the people count it changes, rather than as a labelled chip or an
-  unlabelled target below the legend. Its lit rings subtly indicate Close /
-  Extended / Wider depth; its accessible/hover label holds the full name.
-  The mark opens Perimeter Preview; the adjacent archive facts still open
-  Family Overview. It is deliberately absent for the complete-tree state.
+  an icon-only, open-arc family halo at the left cap of the same archive
+  capsule as the people count it changes — not as a labelled chip, detached
+  control, or target-like button. Its softly lit inner/middle/outer arcs
+  indicate Close / Extended / Wider depth; its accessible/hover label holds
+  the full name. The halo opens **Your profile** directly at the Family
+  Perimeter setting, while the adjacent archive facts still open Family
+  Overview. It is deliberately absent for the complete-tree state.
 - **Member-management authorization hardening:** the server-side
   `/api/family/members` boundary now treats the target member's role as
   authoritative: a Co-Admin cannot demote a fellow Co-Admin, and the owner

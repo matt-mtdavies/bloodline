@@ -897,13 +897,10 @@ export default function App() {
   const [gedcomOpen, setGedcomOpen] = useState(false);
   const [fsImportOpen, setFsImportOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
-  // "Who's in your perimeter" preview — reachable two ways now: nested under
-  // Settings (opened from a link inside UserProfile, same as Home's
-  // HowItWorks/FamilyTrees nest under Home) OR directly from the new topbar
-  // perimeter badge, which skips Settings entirely. onClose needs to know
-  // which door it came through so it returns to the right place — reopening
-  // Profile after a badge-opened preview would pop up a sheet the user never
-  // asked for.
+  const [profilePerimeterFocus, setProfilePerimeterFocus] = useState(false);
+  // "Who's in your perimeter" preview remains a nested Profile destination.
+  // The compact header halo takes members to the setting itself, where they
+  // can make a deliberate, informed change rather than landing in a preview.
   const [perimeterPreviewOpen, setPerimeterPreviewOpen] = useState(false);
   const [perimeterPreviewFromProfile, setPerimeterPreviewFromProfile] = useState(false);
   useEffect(() => {
@@ -2731,7 +2728,7 @@ export default function App() {
         activityCount={unreadCount}
         user={user}
         userPhoto={userPhoto}
-        onOpenProfile={user ? () => setProfileOpen(true) : null}
+        onOpenProfile={user ? () => { setProfilePerimeterFocus(false); setProfileOpen(true); } : null}
         onOpenHome={() => { setHomeOpen(true); if (showHomeNudge) dismissHomeNudge(); }}
         onSearch={openSearch}
         onOpenInsights={() => setInsightsOpen(true)}
@@ -2750,9 +2747,9 @@ export default function App() {
         perimeterActive={perimeterActive}
         perimeterLevel={perimeterApiLevel}
         anyOverlayOpen={anyOverlayOpen}
-        onOpenPerimeterPreview={() => {
-          setPerimeterPreviewFromProfile(false);
-          setPerimeterPreviewOpen(true);
+        onOpenPerimeterSettings={() => {
+          setProfilePerimeterFocus(true);
+          setProfileOpen(true);
         }}
       />
 
@@ -3561,7 +3558,8 @@ export default function App() {
         <UserProfile
           user={user}
           people={data.people}
-          onClose={() => setProfileOpen(false)}
+          focusPerimeter={profilePerimeterFocus}
+          onClose={() => { setProfilePerimeterFocus(false); setProfileOpen(false); }}
           onLogout={handleLogout}
           onSaved={(updated) => {
             setUser((u) => ({ ...u, ...updated }));
@@ -3570,6 +3568,7 @@ export default function App() {
           onPhoto={handlePhoto}
           onPreviewPerimeter={() => {
             setProfileOpen(false);
+            setProfilePerimeterFocus(false);
             setPerimeterPreviewFromProfile(true);
             setPerimeterPreviewOpen(true);
           }}
