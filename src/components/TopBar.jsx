@@ -154,62 +154,54 @@ export default function TopBar({ familyName, stats, view, layout, syncStatus, sy
       </div>
 
       {/* Row 2: legend (left, alone — it's a reference/help icon) + family
-          name + stats (centre) + view toggle & bloodline-only (right,
+          name + scoped archive context (centre) + view toggle (right,
           stacked — both are "how the tree displays" controls, so they read
           as one cluster and keep the row visually balanced left/right). */}
       <div className="topbar__treerow">
-        {/* Legend + the perimeter ring paired as one "tap for more detail"
-            reference cluster on the left, mirroring the view-switcher stack
-            on the right below. Real feedback: the center column used to
-            stack up to four lines deep once a perimeter narrowed things
-            (family name, stats pill, a "N in the complete family tree"
-            line, and a text-labelled "Close family" badge) — real clutter.
-            Both the complete-tree total and the level's full name are
-            still one tap away in the Perimeter Preview sheet this same
-            icon opens (its own ring legend lists every level, including
-            Complete family tree, with a live count), so nothing is lost —
-            just moved a tap deeper instead of sitting in the header at
-            all times. */}
-        <div className="topbar__row2-stack topbar__row2-stack--left">
-          <button
-            className="topbar__row2-btn"
-            onClick={onOpenLegend}
-            aria-label="Legend — visual guide and display options"
-          >
-            <LegendIcon />
-            <span className="hover-tip hover-tip--right">Legend</span>
-          </button>
-          {perimeterActive && perimeterLevelLabel && onOpenPerimeterPreview && (
-            <button
-              className={`topbar__row2-btn perimeter-ring-btn perimeter-ring-btn--${perimeterLevel}`}
-              onClick={onOpenPerimeterPreview}
-              aria-label={`Family Perimeter active: ${perimeterLevelLabel}. Tap to see who's included.`}
-            >
-              <PerimeterRingIcon />
-              <span className="hover-tip hover-tip--right">{perimeterLevelLabel}</span>
-            </button>
-          )}
-        </div>
+        <button
+          className="topbar__row2-btn"
+          onClick={onOpenLegend}
+          aria-label="Legend — visual guide and display options"
+        >
+          <LegendIcon />
+          <span className="hover-tip hover-tip--right">Legend</span>
+        </button>
         <div className="topbar__treerow__center">
           <span className="topbar__familyname">{familyName}</span>
           {stats && stats.people > 0 && (
-            <button
-              ref={statsRef}
-              className={`topbar__stats topbar__stats--btn${statsOpen ? ' topbar__stats--active' : ''}`}
-              onClick={() => setStatsOpen((s) => !s)}
-              aria-label="View family archive details"
-              aria-expanded={statsOpen}
-            >
-              {/* Leads the string (not trailing) — the pill truncates with an
-                  ellipsis once it runs long on a real family, and a flag
-                  appended at the end would silently never render. */}
-              {bloodlineOnly && <><span className="topbar__stats-flag">Bloodline only</span> · </>}
-              {stats.people} {stats.people === 1 ? 'person' : 'people'}
-              {stats.surnames && <> · {stats.surnames}</>}
-              {stats.yearSpan && <> · {stats.yearSpan}</>}
-              {stats.photos > 0 && <> · {stats.photos} {stats.photos === 1 ? 'photo' : 'photos'}</>}
-              {stats.memories > 0 && <> · {stats.memories} {stats.memories === 1 ? 'memory' : 'memories'}</>}
-            </button>
+            <div className="topbar__stats-row">
+              {/* Perimeter belongs with the scoped count it changes, not as a
+                  free-floating target beside Legend. It is its own sibling
+                  control (not nested in the overview button), so each action
+                  remains clear and keyboard-accessible. */}
+              {perimeterActive && perimeterLevelLabel && onOpenPerimeterPreview && (
+                <button
+                  className={`perimeter-scope perimeter-scope--${perimeterLevel}`}
+                  onClick={onOpenPerimeterPreview}
+                  aria-label={`Family Perimeter: ${perimeterLevelLabel}. View who's included.`}
+                >
+                  <PerimeterRingIcon />
+                  <span>{perimeterLevelLabel}</span>
+                </button>
+              )}
+              <button
+                ref={statsRef}
+                className={`topbar__stats topbar__stats--btn${statsOpen ? ' topbar__stats--active' : ''}`}
+                onClick={() => setStatsOpen((s) => !s)}
+                aria-label="View family archive details"
+                aria-expanded={statsOpen}
+              >
+                {/* The scope token is always first and therefore cannot be
+                    lost to truncation. This button carries only the archive
+                    facts that follow it. */}
+                {bloodlineOnly && <><span className="topbar__stats-flag">Bloodline only</span> · </>}
+                {stats.people} {stats.people === 1 ? 'person' : 'people'}
+                {stats.surnames && <> · {stats.surnames}</>}
+                {stats.yearSpan && <> · {stats.yearSpan}</>}
+                {stats.photos > 0 && <> · {stats.photos} {stats.photos === 1 ? 'photo' : 'photos'}</>}
+                {stats.memories > 0 && <> · {stats.memories} {stats.memories === 1 ? 'memory' : 'memories'}</>}
+              </button>
+            </div>
           )}
         </div>
         <div className="topbar__row2-stack topbar__row2-stack--right">
