@@ -150,8 +150,8 @@
 }
 .perimeter-scope {
   position: relative;
-  flex: 0 0 42px;
-  width: 42px;
+  flex: 0 0 48px;
+  width: 48px;
   min-height: 26px;
   display: inline-flex;
   align-items: center;
@@ -164,12 +164,9 @@
   -webkit-tap-highlight-color: transparent;
   transition: opacity 0.16s ease, transform 0.2s var(--spring);
 }
-.perimeter-scope svg { width: 22px; height: 22px; }
-.perimeter-scope:hover { opacity: 0.78; }
+.perimeter-scope .logo { width: 28px; height: auto; }
+.perimeter-scope:hover { opacity: 0.82; }
 .perimeter-scope:active { transform: scale(0.97); }
-.perimeter-scope--first { color: var(--accent, #c2603a); }
-.perimeter-scope--second { color: var(--sage, #3f5e4e); }
-.perimeter-scope--third { color: var(--gold, #b08642); }
 
 /* Logo mark + staggered bubble pop-in */
 .logo { overflow: visible; }

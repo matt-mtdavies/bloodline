@@ -170,7 +170,7 @@ export default function TopBar({ familyName, stats, view, layout, syncStatus, sy
           <span className="topbar__familyname">{familyName}</span>
           {stats && stats.people > 0 && (
             <div className="topbar__stats-row">
-              {/* One continuous capsule makes the halo read as scope for the
+              {/* One continuous capsule makes the established Bloodline mark read as scope for the
                   count, not as an unrelated toolbar action. Its children are
                   still sibling buttons: the halo opens the setting that owns
                   the preference, while archive facts open Family Overview. */}
@@ -181,7 +181,7 @@ export default function TopBar({ familyName, stats, view, layout, syncStatus, sy
                     onClick={onOpenPerimeterSettings}
                     aria-label={`Family Perimeter: ${perimeterLevelLabel}. Open Family Perimeter settings.`}
                   >
-                    <PerimeterConstellationIcon level={perimeterLevel} />
+                    <Logo size={28} animate={false} />
                     <span className="hover-tip hover-tip--down">{perimeterLevelLabel}</span>
                   </button>
                 )}
@@ -558,23 +558,6 @@ function BellIcon() {
   );
 }
 
-
-// A tiny family constellation held by one intentionally incomplete boundary.
-// Three connected points make this read as people, rather than as a location
-// pin, notification, or an abstract status dot; the open halo supplies the
-// Perimeter meaning without becoming a target or a button-shaped container.
-function PerimeterConstellationIcon({ level = 'third' }) {
-  const reach = level === 'first' ? 0.72 : level === 'second' ? 0.86 : 1;
-  return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path d="M17.05 4.85A8.7 8.7 0 1 0 18.8 17.7" stroke="currentColor" strokeWidth="1.55" strokeLinecap="round" opacity={reach}/>
-      <path d="M9.5 9.9 7.7 13.55m2.85-3.55 3.15 3.5M9.1 15.2h3.7" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round" opacity="0.66"/>
-      <circle cx="9.25" cy="8.25" r="1.65" fill="currentColor"/>
-      <circle cx="7.3" cy="15.1" r="1.45" fill="currentColor" opacity="0.88"/>
-      <circle cx="14.1" cy="15.1" r="1.45" fill="currentColor" opacity="0.88"/>
-    </svg>
-  );
-}
 
 function LegendIcon() {
   return (
