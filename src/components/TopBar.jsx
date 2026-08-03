@@ -170,37 +170,36 @@ export default function TopBar({ familyName, stats, view, layout, syncStatus, sy
           <span className="topbar__familyname">{familyName}</span>
           {stats && stats.people > 0 && (
             <div className="topbar__stats-row">
-              {/* Perimeter belongs with the scoped count it changes, not as a
-                  free-floating target beside Legend. It is its own sibling
-                  control (not nested in the overview button), so each action
-                  remains clear and keyboard-accessible. */}
-              {perimeterActive && perimeterLevelLabel && onOpenPerimeterPreview && (
+              {/* One continuous capsule makes the mark read as scope for the
+                  count, not as an unrelated toolbar action. Its children are
+                  still sibling buttons, so Perimeter Preview and Family
+                  Overview retain their distinct, accessible destinations. */}
+              <div className="topbar__stats-capsule">
+                {perimeterActive && perimeterLevelLabel && onOpenPerimeterPreview && (
+                  <button
+                    className={`perimeter-scope perimeter-scope--${perimeterLevel}`}
+                    onClick={onOpenPerimeterPreview}
+                    aria-label={`Family Perimeter: ${perimeterLevelLabel}. View who's included.`}
+                  >
+                    <PerimeterRingIcon level={perimeterLevel} />
+                    <span className="hover-tip hover-tip--down">{perimeterLevelLabel}</span>
+                  </button>
+                )}
                 <button
-                  className={`perimeter-scope perimeter-scope--${perimeterLevel}`}
-                  onClick={onOpenPerimeterPreview}
-                  aria-label={`Family Perimeter: ${perimeterLevelLabel}. View who's included.`}
+                  ref={statsRef}
+                  className={`topbar__stats topbar__stats--btn${statsOpen ? ' topbar__stats--active' : ''}`}
+                  onClick={() => setStatsOpen((s) => !s)}
+                  aria-label="View family archive details"
+                  aria-expanded={statsOpen}
                 >
-                  <PerimeterRingIcon />
-                  <span>{perimeterLevelLabel}</span>
+                  {bloodlineOnly && <><span className="topbar__stats-flag">Bloodline only</span> · </>}
+                  {stats.people} {stats.people === 1 ? 'person' : 'people'}
+                  {stats.surnames && <> · {stats.surnames}</>}
+                  {stats.yearSpan && <> · {stats.yearSpan}</>}
+                  {stats.photos > 0 && <> · {stats.photos} {stats.photos === 1 ? 'photo' : 'photos'}</>}
+                  {stats.memories > 0 && <> · {stats.memories} {stats.memories === 1 ? 'memory' : 'memories'}</>}
                 </button>
-              )}
-              <button
-                ref={statsRef}
-                className={`topbar__stats topbar__stats--btn${statsOpen ? ' topbar__stats--active' : ''}`}
-                onClick={() => setStatsOpen((s) => !s)}
-                aria-label="View family archive details"
-                aria-expanded={statsOpen}
-              >
-                {/* The scope token is always first and therefore cannot be
-                    lost to truncation. This button carries only the archive
-                    facts that follow it. */}
-                {bloodlineOnly && <><span className="topbar__stats-flag">Bloodline only</span> · </>}
-                {stats.people} {stats.people === 1 ? 'person' : 'people'}
-                {stats.surnames && <> · {stats.surnames}</>}
-                {stats.yearSpan && <> · {stats.yearSpan}</>}
-                {stats.photos > 0 && <> · {stats.photos} {stats.photos === 1 ? 'photo' : 'photos'}</>}
-                {stats.memories > 0 && <> · {stats.memories} {stats.memories === 1 ? 'memory' : 'memories'}</>}
-              </button>
+              </div>
             </div>
           )}
         </div>
@@ -563,13 +562,21 @@ function BellIcon() {
 // Three concentric rings + a center dot — the same "perimeter" motif the
 // Preview sheet's own diagram uses, at icon scale, so the badge visually
 // rhymes with the sheet it opens rather than introducing a new glyph.
-function PerimeterRingIcon() {
+function PerimeterRingIcon({ level = 'third' }) {
+  // The active rings gently indicate how broad the chosen view is: Close
+  // family lights the inner ring, Extended family adds the middle ring, and
+  // Wider family reaches the outer ring. It reads as an orbit/lineage seal
+  // rather than a location target, without needing header text.
+  const strength = level === 'first'
+    ? { middle: 0.24, outer: 0.12 }
+    : level === 'second'
+      ? { middle: 0.72, outer: 0.18 }
+      : { middle: 0.72, outer: 0.52 };
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <circle cx="12" cy="12" r="9.5" stroke="currentColor" strokeWidth="1.3" opacity="0.4"/>
-      <circle cx="12" cy="12" r="6.5" stroke="currentColor" strokeWidth="1.3" opacity="0.65"/>
-      <circle cx="12" cy="12" r="3.5" stroke="currentColor" strokeWidth="1.5"/>
-      <circle cx="12" cy="12" r="1.3" fill="currentColor"/>
+      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.3" opacity={strength.outer}/>
+      <circle cx="12" cy="12" r="5.8" stroke="currentColor" strokeWidth="1.3" opacity={strength.middle}/>
+      <circle cx="12" cy="12" r="2.8" fill="currentColor" opacity="0.95"/>
     </svg>
   );
 }
