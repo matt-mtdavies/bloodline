@@ -6,7 +6,7 @@ import {
 } from '../lib/familyPerimeter.js';
 import ReturnMark from './ReturnMark.jsx';
 
-export default function UserProfile({ user, people = [], onClose, onLogout, onSaved, onPhoto, onPreviewPerimeter }) {
+export default function UserProfile({ user, people = [], onClose, onLogout, onSaved, onPhoto, onPreviewPerimeter, focusPerimeter = false }) {
   const [profile, setProfile] = useState(null);
   // Premium-UX refinement brief: don't show every notification toggle on
   // the main Profile screen — a compact summary row opens this instead,
@@ -23,6 +23,15 @@ export default function UserProfile({ user, people = [], onClose, onLogout, onSa
   const [saveStatus, setSaveStatus] = useState(null); // null | 'saved' | string (error)
   const saveTimer = useRef(null);
   const fileRef = useRef(null);
+  const perimeterSectionRef = useRef(null);
+
+  useEffect(() => {
+    if (!focusPerimeter) return;
+    const timer = setTimeout(() => {
+      perimeterSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [focusPerimeter]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -302,7 +311,7 @@ export default function UserProfile({ user, people = [], onClose, onLogout, onSa
         <p className="fs__section-label">Your view</p>
 
         {/* Family Perimeter — docs/FAMILY-PERIMETER-AND-5000-PERSON-PERFORMANCE.md §3.1 */}
-        <div className="fs__section">
+        <div className="fs__section" ref={perimeterSectionRef}>
           <p className="fs__label">Family Perimeter</p>
           <p className="up__hint">
             How much of your family Bloodline brings forward during everyday browsing —
