@@ -182,7 +182,7 @@ export default function TopBar({ familyName, stats, view, layout, syncStatus, sy
                     aria-label={`Family Perimeter: ${perimeterLevelLabel}. Open Family Perimeter settings.`}
                   >
                     <PerimeterPreviewIcon level={perimeterLevel} />
-                    <span className="hover-tip hover-tip--perimeter">{`Family Perimeter · ${perimeterLevelLabel}`}</span>
+                    <span className="hover-tip hover-tip--down">{`Family Perimeter · ${perimeterLevelLabel}`}</span>
                   </button>
                 )}
                 <button
