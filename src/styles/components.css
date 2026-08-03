@@ -12784,3 +12784,37 @@ button.health-notes {
   text-align: center;
   font-style: italic;
 }
+
+
+/* Desktop profile scrolling should feel like an overlay detail of the reading
+   surface, not a browser-gutter cutting through the sheet's rounded edge.
+   Keep a real, draggable scrollbar (rather than hiding it) for mouse,
+   keyboard, and accessibility users; only its track recedes. */
+@media (min-width: 600px) {
+  .profile {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(74, 65, 57, 0.38) transparent;
+    scrollbar-gutter: stable;
+  }
+  .profile::-webkit-scrollbar { width: 10px; }
+  .profile::-webkit-scrollbar-track {
+    background: transparent;
+    margin: 12px 0;
+  }
+  .profile::-webkit-scrollbar-thumb {
+    min-height: 48px;
+    border: 3px solid transparent;
+    border-radius: 999px;
+    background: rgba(74, 65, 57, 0.28);
+    background-clip: padding-box;
+    transition: background 0.18s ease;
+  }
+  .profile:hover::-webkit-scrollbar-thumb,
+  .profile:focus-within::-webkit-scrollbar-thumb {
+    background-color: rgba(74, 65, 57, 0.48);
+  }
+  .profile::-webkit-scrollbar-thumb:hover { background-color: rgba(74, 65, 57, 0.64); }
+}
+@media (forced-colors: active) {
+  .profile { scrollbar-color: auto; }
+}
