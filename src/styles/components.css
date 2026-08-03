@@ -9556,9 +9556,6 @@ button.health-notes {
    above them, so their labels drop down instead; right-aligned so the
    right-most items (settings, avatar) never clip past the screen edge. */
 .hover-tip--down { top: calc(100% + 8px); right: 0; transform: translateY(-4px); }
-/* Perimeter sits under the family name, so its label rises above the mark
-   rather than colliding with the archive facts below. */
-.hover-tip--perimeter { left: 50%; bottom: calc(100% + 8px); transform: translateX(-50%) translateY(4px); }
 
 @media (hover: hover) and (pointer: fine) {
   .pill:hover .hover-tip, .pill:focus-visible .hover-tip,
@@ -9570,15 +9567,13 @@ button.health-notes {
   }
   .pill:hover .hover-tip--down, .pill:focus-visible .hover-tip--down,
   .topbar-avatar:hover .hover-tip--down, .topbar-avatar:focus-visible .hover-tip--down,
-  .topbar__brand:hover .hover-tip--down, .topbar__brand:focus-visible .hover-tip--down {
+  .topbar__brand:hover .hover-tip--down, .topbar__brand:focus-visible .hover-tip--down,
+  .perimeter-scope:hover .hover-tip--down, .perimeter-scope:focus-visible .hover-tip--down {
     transform: translateY(0);
   }
   .topbar__row2-btn:hover .hover-tip--right, .topbar__row2-btn:focus-visible .hover-tip--right,
   .topbar__row2-btn:hover .hover-tip--left, .topbar__row2-btn:focus-visible .hover-tip--left {
     transform: translateY(-50%) translateX(0);
-  }
-  .perimeter-scope:hover .hover-tip--perimeter, .perimeter-scope:focus-visible .hover-tip--perimeter {
-    transform: translateX(-50%) translateY(0);
   }
 }
 
