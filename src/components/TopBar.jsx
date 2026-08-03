@@ -181,7 +181,7 @@ export default function TopBar({ familyName, stats, view, layout, syncStatus, sy
                     onClick={onOpenPerimeterSettings}
                     aria-label={`Family Perimeter: ${perimeterLevelLabel}. Open Family Perimeter settings.`}
                   >
-                    <PerimeterHaloIcon level={perimeterLevel} />
+                    <PerimeterConstellationIcon level={perimeterLevel} />
                     <span className="hover-tip hover-tip--down">{perimeterLevelLabel}</span>
                   </button>
                 )}
@@ -559,23 +559,19 @@ function BellIcon() {
 }
 
 
-// An incomplete, fading orbit around one family dot. Keeping the arcs open
-// avoids a target/button silhouette; their reach still quietly explains the
-// chosen perimeter without asking the header to carry a second label.
-function PerimeterHaloIcon({ level = 'third' }) {
-  // Close family lights the inner reach; Extended adds the middle reach; and
-  // Wider carries out to the outer arc. "Everyone" deliberately has no mark:
-  // the full archive is the default, not a scoped view that needs signposting.
-  const strength = level === 'first'
-    ? { middle: 0.22, outer: 0.08 }
-    : level === 'second'
-      ? { middle: 0.68, outer: 0.16 }
-      : { middle: 0.72, outer: 0.5 };
+// A tiny family constellation held by one intentionally incomplete boundary.
+// Three connected points make this read as people, rather than as a location
+// pin, notification, or an abstract status dot; the open halo supplies the
+// Perimeter meaning without becoming a target or a button-shaped container.
+function PerimeterConstellationIcon({ level = 'third' }) {
+  const reach = level === 'first' ? 0.72 : level === 'second' ? 0.86 : 1;
   return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <circle cx="10" cy="12" r="2.1" fill="currentColor" opacity="0.94"/>
-      <path d="M13.3 7.9a5.25 5.25 0 0 1 0 8.2" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round" opacity={strength.middle}/>
-      <path d="M16.15 5.2a8.95 8.95 0 0 1 0 13.6" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round" opacity={strength.outer}/>
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M17.05 4.85A8.7 8.7 0 1 0 18.8 17.7" stroke="currentColor" strokeWidth="1.55" strokeLinecap="round" opacity={reach}/>
+      <path d="M9.5 9.9 7.7 13.55m2.85-3.55 3.15 3.5M9.1 15.2h3.7" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round" opacity="0.66"/>
+      <circle cx="9.25" cy="8.25" r="1.65" fill="currentColor"/>
+      <circle cx="7.3" cy="15.1" r="1.45" fill="currentColor" opacity="0.88"/>
+      <circle cx="14.1" cy="15.1" r="1.45" fill="currentColor" opacity="0.88"/>
     </svg>
   );
 }
