@@ -127,30 +127,46 @@
   flex-shrink: 0;
 }
 
-/* Family Perimeter ring — icon-only, paired with Legend on the left
-   (.topbar__row2-stack--left) rather than living in the center column.
-   Real feedback: the old text-labelled badge plus the "N in the complete
-   family tree" line beside it (see the removed .topbar__stats-complete
-   rule below) stacked the center column up to four lines deep once a
-   perimeter narrowed things — real clutter for information that's one tap
-   away regardless (the Perimeter Preview sheet this same icon opens has
-   its own ring legend naming every level, including Complete family tree,
-   with a live count). The level colour is now the badge's only always-on
-   signal — a faint tinted background (not a solid fill; this is ambient
-   status, not a toggle) plus a coloured ring icon — with the level's full
-   name moved to a hover-tip/the sheet it opens. */
-/* Chained with .perimeter-ring-btn itself (not just the level modifier
-   alone) to out-specificity the later, equal-specificity .topbar__row2-btn
-   base rule it's layered on top of — a single-class modifier selector here
-   would otherwise lose to that base rule's own color/background purely on
-   source order, silently rendering every level in the same neutral grey. */
-.perimeter-ring-btn.perimeter-ring-btn:hover { background: var(--ground); }
-.perimeter-ring-btn.perimeter-ring-btn--first { color: var(--accent, #c2603a); background: color-mix(in srgb, var(--accent, #c2603a) 12%, transparent); }
-.perimeter-ring-btn.perimeter-ring-btn--second { color: var(--sage, #3f5e4e); background: color-mix(in srgb, var(--sage, #3f5e4e) 12%, transparent); }
-.perimeter-ring-btn.perimeter-ring-btn--third { color: var(--gold, #b08642); background: color-mix(in srgb, var(--gold, #b08642) 12%, transparent); }
-.perimeter-ring-btn.perimeter-ring-btn--first:hover { background: color-mix(in srgb, var(--accent, #c2603a) 20%, transparent); }
-.perimeter-ring-btn.perimeter-ring-btn--second:hover { background: color-mix(in srgb, var(--sage, #3f5e4e) 20%, transparent); }
-.perimeter-ring-btn.perimeter-ring-btn--third:hover { background: color-mix(in srgb, var(--gold, #b08642) 20%, transparent); }
+/* Family Perimeter is contextual scope, not a second reference tool. It
+   therefore sits immediately beside the people count it scopes, using a
+   quiet text token rather than a detached, square target button. */
+.topbar__stats-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  width: 100%;
+  min-width: 0;
+  margin-top: 3px;
+}
+.perimeter-scope {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 122px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 7%, transparent);
+  color: var(--accent, #c2603a);
+  font: 600 10px/1 var(--body);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.16s ease, border-color 0.16s ease, transform 0.2s var(--spring);
+}
+.perimeter-scope svg { flex: 0 0 auto; width: 14px; height: 14px; }
+.perimeter-scope:hover { background: color-mix(in srgb, currentColor 13%, transparent); }
+.perimeter-scope:active { transform: scale(0.97); }
+.perimeter-scope--first { color: var(--accent, #c2603a); }
+.perimeter-scope--second { color: var(--sage, #3f5e4e); }
+.perimeter-scope--third { color: var(--gold, #b08642); }
 
 /* Logo mark + staggered bubble pop-in */
 .logo { overflow: visible; }
@@ -1909,12 +1925,14 @@
   letter-spacing: 0.04em;
   color: var(--ink-faint);
   text-align: center;
-  margin-top: 3px;
+  margin-top: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .topbar__stats--btn {
+  flex: 1 1 auto;
+  min-width: 0;
   background: rgba(139,120,100,0.07);
   border: 1px solid rgba(139,120,100,0.14);
   font-family: inherit;

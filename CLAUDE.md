@@ -55,6 +55,12 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
 
 ## Status — what's built
 
+- **Perimeter header refinement:** an active Family Perimeter now appears as
+  a named, ring-marked scope token immediately beside the people count it
+  changes (for example, "Extended family" + "670 people"), rather than as
+  an unlabelled target button beneath the legend. The scope token opens
+  Perimeter Preview; the adjacent archive-facts pill still opens Family
+  Overview. It is deliberately absent for the complete-tree state.
 - **Member-management authorization hardening:** the server-side
   `/api/family/members` boundary now treats the target member's role as
   authoritative: a Co-Admin cannot demote a fellow Co-Admin, and the owner
