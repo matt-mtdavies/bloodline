@@ -150,8 +150,8 @@
 }
 .perimeter-scope {
   position: relative;
-  flex: 0 0 36px;
-  width: 36px;
+  flex: 0 0 42px;
+  width: 42px;
   min-height: 26px;
   display: inline-flex;
   align-items: center;
@@ -164,8 +164,8 @@
   -webkit-tap-highlight-color: transparent;
   transition: opacity 0.16s ease, transform 0.2s var(--spring);
 }
-.perimeter-scope svg { width: 18px; height: 18px; }
-.perimeter-scope:hover { opacity: 0.72; }
+.perimeter-scope svg { width: 22px; height: 22px; }
+.perimeter-scope:hover { opacity: 0.78; }
 .perimeter-scope:active { transform: scale(0.97); }
 .perimeter-scope--first { color: var(--accent, #c2603a); }
 .perimeter-scope--second { color: var(--sage, #3f5e4e); }
