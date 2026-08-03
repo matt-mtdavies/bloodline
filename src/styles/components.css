@@ -150,8 +150,8 @@
 }
 .perimeter-scope {
   position: relative;
-  flex: 0 0 48px;
-  width: 48px;
+  flex: 0 0 50px;
+  width: 50px;
   min-height: 26px;
   display: inline-flex;
   align-items: center;
@@ -164,7 +164,7 @@
   -webkit-tap-highlight-color: transparent;
   transition: opacity 0.16s ease, transform 0.2s var(--spring);
 }
-.perimeter-scope .logo { width: 28px; height: auto; }
+.perimeter-scope .perimeter-preview-icon { width: 34px; height: 34px; }
 .perimeter-scope:hover { opacity: 0.82; }
 .perimeter-scope:active { transform: scale(0.97); }
 
