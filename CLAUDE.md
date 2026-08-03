@@ -66,6 +66,11 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   below-icon treatment as the other header controls. The mark opens **Your profile** directly at the Family Perimeter setting, while
   adjacent archive facts still open Family Overview. It is deliberately
   absent for the complete-tree state.
+- **Desktop profile scroll refinement:** Person profiles retain one native,
+  draggable sheet-local scroll surface, but desktop styling now uses a
+  transparent track and a slim rounded warm-grey thumb that strengthens on
+  hover/focus instead of the browser-like white gutter. Forced-colors mode
+  preserves the user agent's accessible scrollbar treatment.
 - **Member-management authorization hardening:** the server-side
   `/api/family/members` boundary now treats the target member's role as
   authoritative: a Co-Admin cannot demote a fellow Co-Admin, and the owner
