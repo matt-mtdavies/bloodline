@@ -55,11 +55,13 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
 
 ## Status — what's built
 
-- **Perimeter header refinement:** an active Family Perimeter uses the
-  established, three-bubble Bloodline mark at a clearly legible 28px scale
-  on the left cap of the same archive capsule as the people count it changes.
-  It does not invent a second glyph, labelled chip, detached control, target,
-  or status dot; its accessible/hover label holds the full scope name. The
+- **Perimeter header refinement:** an active Family Perimeter uses the exact
+  four-ring motif from the Perimeter Preview diagram, at a clearly legible
+  34px scale on the left cap of the same archive capsule as the people count
+  it changes. The selected Close / Extended / Wider ring is heavier, while
+  the other preview-ring levels remain quietly visible; this deliberately
+  avoids inventing a second glyph, a labelled chip, detached control, target,
+  or status dot. Its accessible/hover label holds the full scope name. The
   mark opens **Your profile** directly at the Family Perimeter setting, while
   adjacent archive facts still open Family Overview. It is deliberately
   absent for the complete-tree state.

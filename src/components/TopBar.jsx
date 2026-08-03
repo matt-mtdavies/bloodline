@@ -170,7 +170,7 @@ export default function TopBar({ familyName, stats, view, layout, syncStatus, sy
           <span className="topbar__familyname">{familyName}</span>
           {stats && stats.people > 0 && (
             <div className="topbar__stats-row">
-              {/* One continuous capsule makes the established Bloodline mark read as scope for the
+              {/* One continuous capsule makes the Perimeter Preview's rings read as scope for the
                   count, not as an unrelated toolbar action. Its children are
                   still sibling buttons: the halo opens the setting that owns
                   the preference, while archive facts open Family Overview. */}
@@ -181,7 +181,7 @@ export default function TopBar({ familyName, stats, view, layout, syncStatus, sy
                     onClick={onOpenPerimeterSettings}
                     aria-label={`Family Perimeter: ${perimeterLevelLabel}. Open Family Perimeter settings.`}
                   >
-                    <Logo size={28} animate={false} />
+                    <PerimeterPreviewIcon level={perimeterLevel} />
                     <span className="hover-tip hover-tip--down">{perimeterLevelLabel}</span>
                   </button>
                 )}
@@ -554,6 +554,36 @@ function BellIcon() {
     <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
       <path d="M13.73 21a2 2 0 0 1-3.46 0" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+// Compact form of the exact ring diagram used in PerimeterPreview. Reusing
+// its four levels and selected-ring treatment avoids teaching a different
+// Perimeter glyph in the header.
+function PerimeterPreviewIcon({ level = 'first' }) {
+  const rings = [
+    { value: 'everyone', r: 94, color: 'var(--ink-faint, #a6abb3)' },
+    { value: 'third', r: 76, color: 'var(--gold, #b08642)' },
+    { value: 'second', r: 56, color: 'var(--sage, #3f5e4e)' },
+    { value: 'first', r: 34, color: 'var(--accent, #c2603a)' },
+  ];
+  return (
+    <svg className="perimeter-preview-icon" viewBox="0 0 200 200" aria-hidden="true">
+      {rings.map((ring) => {
+        const selected = level === ring.value;
+        return (
+          <circle
+            key={ring.value}
+            cx="100" cy="100" r={ring.r}
+            fill="none"
+            stroke={ring.color}
+            strokeWidth={selected ? 7 : 4.5}
+            opacity={selected ? 1 : 0.42}
+          />
+        );
+      })}
+      <circle cx="100" cy="100" r="12" fill="var(--accent, #c2603a)" />
     </svg>
   );
 }
