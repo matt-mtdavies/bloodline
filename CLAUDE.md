@@ -55,16 +55,14 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
 
 ## Status — what's built
 
-- **Perimeter header refinement:** an active Family Perimeter now appears as
-  an icon-only family constellation inside one intentionally open boundary
-  at the left cap of the same archive capsule as the people count it changes
-  — not as a labelled chip, detached control, target, or status dot. The
-  three connected family points remain legible at phone scale; a subtly
-  stronger boundary indicates Close / Extended / Wider depth, and the
-  accessible/hover label holds the full name. The constellation opens **Your
-  profile** directly at the Family Perimeter setting, while adjacent archive
-  facts still open Family Overview. It is deliberately absent for the
-  complete-tree state.
+- **Perimeter header refinement:** an active Family Perimeter uses the
+  established, three-bubble Bloodline mark at a clearly legible 28px scale
+  on the left cap of the same archive capsule as the people count it changes.
+  It does not invent a second glyph, labelled chip, detached control, target,
+  or status dot; its accessible/hover label holds the full scope name. The
+  mark opens **Your profile** directly at the Family Perimeter setting, while
+  adjacent archive facts still open Family Overview. It is deliberately
+  absent for the complete-tree state.
 - **Member-management authorization hardening:** the server-side
   `/api/family/members` boundary now treats the target member's role as
   authoritative: a Co-Admin cannot demote a fellow Co-Admin, and the owner
