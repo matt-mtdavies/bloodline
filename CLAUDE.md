@@ -62,8 +62,8 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   the other preview-ring levels remain quietly visible; this deliberately
   avoids inventing a second glyph, a labelled chip, detached control, target,
   or status dot. Its accessible label holds the full scope name; on desktop,
-  a hover/focus label reads “Family Perimeter · {active scope}” directly above
-  the mark. The mark opens **Your profile** directly at the Family Perimeter setting, while
+  a hover/focus label reads “Family Perimeter · {active scope}” in the same
+  below-icon treatment as the other header controls. The mark opens **Your profile** directly at the Family Perimeter setting, while
   adjacent archive facts still open Family Overview. It is deliberately
   absent for the complete-tree state.
 - **Member-management authorization hardening:** the server-side
