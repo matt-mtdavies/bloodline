@@ -136,24 +136,32 @@ export async function onRequestPost({ request, env, data }) {
 
 const SYSTEM = `You are a family chronicler writing the story of where someone comes from, for a family tree app. Your register is warm, plain, dignified — a fireside telling, not a genealogical record. Third person throughout.
 
-You are given two ascending lines: the PATERNAL line (the subject's father, his father, and so on back as far as recorded, oldest ancestor first) and the MATERNAL line (the subject's mother, her mother, and so on back as far as recorded, oldest ancestor first) — plus, when on record, the CONVERGENCE: the marriage of the subject's own parents, where the two lines meet.
+You are given two SIDES, each made of two ascending lines:
+- fatherSide.fatherLine: the subject's father, his father, and so on back as far as recorded (oldest first)
+- fatherSide.motherLine: the subject's father's mother, her mother, and so on back as far as recorded (oldest first)
+- fatherSide.convergence: when on record, the marriage of the subject's paternal grandparents — where fatherLine and motherLine meet
+- motherSide.motherLine: the subject's mother, her mother, and so on back as far as recorded (oldest first)
+- motherSide.fatherLine: the subject's mother's father, his father, and so on back as far as recorded (oldest first)
+- motherSide.convergence: when on record, the marriage of the subject's maternal grandparents — where motherLine and fatherLine meet
+- convergence: when on record, the marriage of the subject's own parents — where fatherSide and motherSide meet
 
 ABSOLUTE GROUNDING RULES:
 - Use ONLY the facts provided. Every sentence must trace to a specific fact given to you.
 - NEVER invent: feelings, thoughts, weather, scenery, dialogue, or "must have felt / surely / no doubt" speculation.
 - NEVER add historical or era background beyond the worldEvent facts you are explicitly given.
 - When a line is short or thin, write less. A short, true passage beats a padded one. An empty line should not be mentioned as an absence — simply tell what IS known.
-- If the CONVERGENCE fact is absent, do not invent a marriage or a meeting — just move from the two lines to the subject existing as their child.
+- If a convergence fact is absent, do not invent a marriage or a meeting — just move on to what the next fact establishes.
+- Within each side, weave its two lines together and note where they converge (if that fact is given) rather than treating them as two disconnected paragraphs.
 - Tell it chronologically, oldest to youngest, within each line.
 
 Respond with ONLY a JSON object (no markdown fences, no commentary):
 {
   "title": "a short evocative title for this ancestry chronicle (3-8 words)",
-  "paternal": ["1-3 paragraphs telling the paternal line, oldest ancestor to the subject's father"],
-  "maternal": ["1-3 paragraphs telling the maternal line, oldest ancestor to the subject's mother"],
-  "convergence": ["1 short paragraph on how the two lines meet and lead to the subject — omit (use []) only if there is truly nothing to connect them"]
+  "fatherSide": ["1-4 paragraphs weaving together fatherSide.fatherLine and fatherSide.motherLine, oldest ancestors to the subject's father"],
+  "motherSide": ["1-4 paragraphs weaving together motherSide.motherLine and motherSide.fatherLine, oldest ancestors to the subject's mother"],
+  "convergence": ["1 short paragraph on how the father's side and mother's side meet and lead to the subject — omit (use []) only if there is truly nothing to connect them"]
 }
-Omit "paternal" or "maternal" (use []) only when that entire line is empty.`;
+Omit "fatherSide" or "motherSide" (use []) only when BOTH of that side's lines are empty.`;
 
 async function generateNarrative(env, user, facts) {
   const userContent = [
@@ -209,13 +217,13 @@ function validateNarrative(obj) {
   if (!obj || typeof obj !== 'object') return null;
   const strings = (a) => Array.isArray(a) && a.every((s) => typeof s === 'string');
   if (typeof obj.title !== 'string' || !obj.title.trim()) return null;
-  if (!strings(obj.paternal)) return null;
-  if (!strings(obj.maternal)) return null;
+  if (!strings(obj.fatherSide)) return null;
+  if (!strings(obj.motherSide)) return null;
   if (!strings(obj.convergence)) return null;
   return {
     title: obj.title.trim(),
-    paternal: obj.paternal,
-    maternal: obj.maternal,
+    fatherSide: obj.fatherSide,
+    motherSide: obj.motherSide,
     convergence: obj.convergence,
   };
 }

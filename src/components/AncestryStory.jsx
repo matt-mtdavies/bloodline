@@ -11,25 +11,37 @@ const COMPILE_TIMEOUT_MS = 90_000;
 
 /*
  * The Ancestry Story — "where you come from," told forward in time from the
- * earliest recorded ancestor down to the subject, on two threads (the direct
- * patrilineal and matrilineal lines — see lib/ancestryStory.js's own header
- * for why not the full doubling pedigree). Same architecture as the Keepsake
- * (a compiled, R2-stored, hash-keyed edition; a quiet banner offers to
- * "weave in the changes" the moment the tree grows past what the last
- * edition was compiled from) but scoped to an inline profile section, not a
- * full-screen reader — there's no per-section manual editing here (v1;
- * PUT /api/ancestry-story exists server-side for a future pass), and, same
- * as the Keepsake's own compile button, any family member may compile or
- * regenerate — this only ever writes a stored narrative, never tree data.
+ * earliest recorded ancestor down to the subject, on four threads grouped
+ * into two sides — Father's side (his father's line + his mother's line)
+ * and Mother's side (her mother's line + her father's line) — switched via a
+ * toggle, since showing all four stacked at once was too long for what's
+ * meant to read as a story (see lib/ancestryStory.js's own header for the
+ * full shape and why not the exponential full pedigree). Real feedback: v1
+ * only ever showed the pure patrilineal + matrilineal pair, "half the
+ * picture" — the other two grandparent lines were added alongside this
+ * toggle. Same architecture as the Keepsake (a compiled, R2-stored,
+ * hash-keyed edition; a quiet banner offers to "weave in the changes" the
+ * moment the tree grows past what the last edition was compiled from) but
+ * scoped to an inline profile section, not a full-screen reader — there's no
+ * per-section manual editing here (v1; PUT /api/ancestry-story exists
+ * server-side for a future pass), and, same as the Keepsake's own compile
+ * button, any family member may compile or regenerate — this only ever
+ * writes a stored narrative, never tree data.
  *
- * The two chains reuse lib/placesTimeline.js's buildTimelineLayout verbatim
- * — the exact same "position encodes chronology only, never distance" wave
+ * Every chain reuses lib/placesTimeline.js's buildTimelineLayout verbatim —
+ * the exact same "position encodes chronology only, never distance" wave
  * timeline Places Lived and Military Service already use, just fed
  * ancestors instead of residences. Waypoints here are read-only (an
  * ancestor isn't a separate editable record the way a residence is).
  */
+const SIDES = [
+  { key: 'father', label: "Father's side" },
+  { key: 'mother', label: "Mother's side" },
+];
+
 export default function AncestryStory({ graph, personId, onCompiled }) {
   const facts = useMemo(() => buildAncestryFacts(graph, personId), [graph, personId]);
+  const [side, setSide] = useState('father');
 
   const [state, setState] = useState('loading'); // loading | ready | unavailable
   const [edition, setEdition] = useState(null);
@@ -41,6 +53,7 @@ export default function AncestryStory({ graph, personId, onCompiled }) {
     setState('loading');
     setEdition(null);
     setCompileError(false);
+    setSide('father');
     (async () => {
       try {
         const r = await fetchWithTimeout(`/api/ancestry-story?personId=${encodeURIComponent(personId)}`, {}, LOAD_TIMEOUT_MS);
@@ -57,14 +70,11 @@ export default function AncestryStory({ graph, personId, onCompiled }) {
     return () => { alive = false; };
   }, [personId]);
 
-  const paternalLayout = useMemo(
-    () => buildTimelineLayout(facts?.paternalLine?.map((a) => ({ id: a.id }))),
-    [facts],
-  );
-  const maternalLayout = useMemo(
-    () => buildTimelineLayout(facts?.maternalLine?.map((a) => ({ id: a.id }))),
-    [facts],
-  );
+  const layoutFor = (line) => buildTimelineLayout(line?.map((a) => ({ id: a.id })));
+  const fatherFatherLayout = useMemo(() => layoutFor(facts?.fatherSide?.fatherLine), [facts]);
+  const fatherMotherLayout = useMemo(() => layoutFor(facts?.fatherSide?.motherLine), [facts]);
+  const motherMotherLayout = useMemo(() => layoutFor(facts?.motherSide?.motherLine), [facts]);
+  const motherFatherLayout = useMemo(() => layoutFor(facts?.motherSide?.fatherLine), [facts]);
 
   if (!facts) return null; // private subject — never generatable, same rule as the Keepsake
   const ready = ancestryReady(facts);
@@ -101,17 +111,53 @@ export default function AncestryStory({ graph, personId, onCompiled }) {
     }
   }
 
+  const activeFatherLine = side === 'father' ? facts.fatherSide.fatherLine : facts.motherSide.fatherLine;
+  const activeMotherLine = side === 'father' ? facts.fatherSide.motherLine : facts.motherSide.motherLine;
+  const sideEmpty = activeFatherLine.length === 0 && activeMotherLine.length === 0;
+  const narrative = edition?.narrative;
+  const activeNarrative = narrative && (side === 'father' ? narrative.fatherSide : narrative.motherSide);
+
   return (
     <section className="profile-section">
       <div className="profile-section__head">
         <h3 className="profile-section__title">Ancestry Story</h3>
       </div>
 
-      {facts.paternalLine.length > 0 && (
-        <AncestryChain label="Paternal line" line={facts.paternalLine} layout={paternalLayout} />
+      <div className="ancestry-side-toggle" role="tablist" aria-label="Which side of the family">
+        {SIDES.map((s) => (
+          <button
+            key={s.key}
+            role="tab"
+            aria-selected={side === s.key}
+            className={`ancestry-side-btn${side === s.key ? ' ancestry-side-btn--on' : ''}`}
+            onClick={() => setSide(s.key)}
+          >
+            {s.label}
+          </button>
+        ))}
+      </div>
+
+      {side === 'father' ? (
+        <>
+          {activeFatherLine.length > 0 && (
+            <AncestryChain label="Father's father's line" line={activeFatherLine} layout={fatherFatherLayout} />
+          )}
+          {activeMotherLine.length > 0 && (
+            <AncestryChain label="Father's mother's line" line={activeMotherLine} layout={fatherMotherLayout} />
+          )}
+        </>
+      ) : (
+        <>
+          {activeMotherLine.length > 0 && (
+            <AncestryChain label="Mother's mother's line" line={activeMotherLine} layout={motherMotherLayout} />
+          )}
+          {activeFatherLine.length > 0 && (
+            <AncestryChain label="Mother's father's line" line={activeFatherLine} layout={motherFatherLayout} />
+          )}
+        </>
       )}
-      {facts.maternalLine.length > 0 && (
-        <AncestryChain label="Maternal line" line={facts.maternalLine} layout={maternalLayout} />
+      {sideEmpty && (
+        <p className="ancestry-chain__empty">No ancestors recorded on this side yet.</p>
       )}
 
       {canCompile && (compiling || compileError || !edition || stale) && (
@@ -141,12 +187,11 @@ export default function AncestryStory({ graph, personId, onCompiled }) {
         </div>
       )}
 
-      {edition?.narrative && (
+      {narrative && (
         <div className="ancestry-narrative">
-          <h4 className="ancestry-narrative__title">{edition.narrative.title}</h4>
-          {edition.narrative.paternal.map((p, i) => <p key={`p${i}`} className="story">{p}</p>)}
-          {edition.narrative.maternal.map((p, i) => <p key={`m${i}`} className="story">{p}</p>)}
-          {edition.narrative.convergence.map((p, i) => <p key={`c${i}`} className="story">{p}</p>)}
+          <h4 className="ancestry-narrative__title">{narrative.title}</h4>
+          {(activeNarrative || []).map((p, i) => <p key={`s${i}`} className="story">{p}</p>)}
+          {(narrative.convergence || []).map((p, i) => <p key={`c${i}`} className="story">{p}</p>)}
         </div>
       )}
     </section>
