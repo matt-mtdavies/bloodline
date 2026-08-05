@@ -55,6 +55,57 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
 
 ## Status — what's built
 
+- **Ancestry Story now traces all four grandparent lines, via a Father's
+  side / Mother's side toggle** (real feedback on a screenshot: "It would be
+  good to be able to see both parent lines on both the mother and father's
+  side to complete the picture" — v1 only ever walked the pure patrilineal
+  thread (father→his father→…) and the pure matrilineal thread (mother→her
+  mother→…), silently dropping the paternal grandmother's and maternal
+  grandfather's own ancestry). Discussed direction first: proposed either a
+  toggle or all four chains stacked at once; the user chose a toggle,
+  specifying the exact grouping — "Father's side" showing both the father's
+  father's line AND the father's mother's line, "Mother's side" showing both
+  the mother's mother's line AND the mother's father's line. `lib/
+  ancestryStory.js`'s `buildAncestryFacts` now returns `fatherSide: {
+  fatherLine, motherLine, convergence }` / `motherSide: { motherLine,
+  fatherLine, convergence }` instead of flat `paternalLine`/`maternalLine` —
+  each cross-gender line reuses the exact same `walkLine` helper, just
+  seeded from the relevant parent's id instead of the subject's own (e.g.
+  `walkLine(graph, fatherId, FEM, region)` = father's mother, her mother, …).
+  New `findKnownParent` gates whether a cross-line and that side's own
+  convergence (the grandparents' marriage) may be revealed at all — mirrors
+  `walkLine`'s own private/summary stop conditions, so a private or
+  summary-only direct parent withholds not just their own line but
+  everything "behind" them on both sides, not only the same-gender thread
+  the original privacy rule literally described. The top-level `convergence`
+  (the subject's own parents' marriage) is unchanged. `AncestryStory.jsx`
+  gained an `.ancestry-side-toggle` segmented control (same visual recipe as
+  Family Settings' `.fs__seg`, declared independently under this
+  component's own class prefix) defaulting to Father's side on every
+  profile open; an empty side (no ancestors recorded on either of its two
+  lines) shows a plain "No ancestors recorded on this side yet." note rather
+  than a blank pane. The AI narrative engine (`functions/api/ancestry-
+  story.js`) was updated in lockstep — the schema's `paternal`/`maternal`
+  fields are now `fatherSide`/`motherSide`, each expected to weave its two
+  lines together rather than narrate them as separate paragraphs, and the
+  system prompt documents all three convergence points (two per-side, one
+  overall). An already-compiled edition from before this change is handled
+  gracefully, not crashed on: its factsHash changes (new fields), so the
+  existing "weave in the changes" staleness banner fires immediately, and
+  the rendering code reads `edition.narrative.fatherSide` via a null-safe
+  fallback so an old-shaped edition just shows nothing under the toggle
+  until recompiled, rather than throwing. Covered by a full rewrite of
+  `tests/ancestryStory.test.mjs` (21 tests, including new cases for both
+  cross-gender lines, the extended privacy-withholding rule, and per-side
+  convergence) and updated `tests/ancestry-story-api.test.mjs` field names.
+  Verified live via Playwright against the real dev server and the seed
+  family: James Mercer's Father's side correctly showed "Father's father's
+  line" (William → Arthur → Robert) alongside the new "Father's mother's
+  line" (Margaret), and Mother's side showed "Mother's mother's line"
+  (Eleanor → Linda) alongside the new "Mother's father's line" (Thomas) —
+  confirmed via screenshot and DOM inspection, zero console/page errors
+  beyond the sandbox's known external-image blocking. Full unit suite and
+  `npm run build` passed clean.
 - **Perimeter header refinement:** an active Family Perimeter uses the exact
   four-ring motif from the Perimeter Preview diagram, at a clearly legible
   34px scale on the left cap of the same archive capsule as the people count

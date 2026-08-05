@@ -12360,6 +12360,45 @@ button.health-notes {
    reused verbatim) but under its own class names — same visual language,
    distinct feature. Waypoints are read-only (title tooltip only), so no
    active/selected state exists here the way .places-waypoint has one. */
+/* Father's side / Mother's side toggle — v2 of this feature added the other
+   two grandparent lines (real feedback: v1's single patrilineal +
+   matrilineal pair was "half the picture"), and showing all four chains
+   stacked at once was too long for what's meant to read as a story, so a
+   toggle switches between the two sides instead. Same segmented-control
+   recipe as .fs__seg/.fs__seg-btn (Family Settings' Members/Invites
+   switch) but declared under this component's own .ancestry- prefix rather
+   than reaching into a different feature's scoped classes. */
+.ancestry-side-toggle {
+  display: flex;
+  gap: 3px;
+  background: var(--ground, #f7f3ec);
+  border-radius: 12px;
+  padding: 3px;
+  margin-bottom: 12px;
+}
+.ancestry-side-btn {
+  flex: 1;
+  padding: 8px 10px;
+  border-radius: 9px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-soft);
+  text-align: center;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s, box-shadow 0.15s;
+}
+.ancestry-side-btn--on {
+  color: var(--ink);
+  background: #fff;
+  box-shadow: var(--shadow-soft, 0 1px 3px rgba(0,0,0,0.08));
+}
+.ancestry-chain__empty {
+  font-size: 13px;
+  font-style: italic;
+  color: var(--ink-faint, #b0a9a5);
+  margin: 4px 0 10px;
+}
+
 .ancestry-chain { margin-bottom: 4px; }
 .ancestry-chain__label {
   margin: 0 0 2px;

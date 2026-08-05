@@ -51,8 +51,8 @@ function fakeR2() {
 
 const NARRATIVE = {
   title: 'From Cardiff to the Hills',
-  paternal: ['William was born in Cardiff in 1847, a stonemason by trade.'],
-  maternal: ['Rita was born in Bristol in 1852.'],
+  fatherSide: ['William was born in Cardiff in 1847, a stonemason by trade.'],
+  motherSide: ['Rita was born in Bristol in 1852.'],
   convergence: ['William and Rita married in 1872 in Cardiff.'],
 };
 
@@ -70,7 +70,12 @@ globalThis.fetch = async () => {
   };
 };
 
-const FACTS = { subject: { name: 'Percy' }, paternalLine: [{ name: 'William' }], maternalLine: [{ name: 'Rita' }], convergence: null };
+const FACTS = {
+  subject: { name: 'Percy' },
+  fatherSide: { fatherLine: [{ name: 'William' }], motherLine: [], convergence: null },
+  motherSide: { motherLine: [{ name: 'Rita' }], fatherLine: [], convergence: null },
+  convergence: null,
+};
 const user = { uid: 'u1' };
 
 function postReq(body) {
@@ -133,7 +138,7 @@ await test('GET returns the latest edition; null when nothing compiled yet', asy
   const res = await onRequestGet({ request: getReq('p'), env: env(docs), data: { user } });
   const body = JSON.parse(await res.text());
   assert.equal(body.editionNumber, 1);
-  assert.equal(body.narrative.paternal.length, 1);
+  assert.equal(body.narrative.fatherSide.length, 1);
 });
 
 await test('malformed AI output gets exactly one repair retry, then succeeds', async () => {
@@ -159,9 +164,9 @@ await test('persistently malformed output → 502 and nothing stored', async () 
   assert.equal(docs.store.size, 0);
 });
 
-await test('a half-shaped narrative (paternal not an array of strings) is rejected by validation', async () => {
+await test('a half-shaped narrative (fatherSide not an array of strings) is rejected by validation', async () => {
   const docs = fakeR2();
-  const bad = { ...NARRATIVE, paternal: [{ not: 'a string' }] };
+  const bad = { ...NARRATIVE, fatherSide: [{ not: 'a string' }] };
   fetchQueue = [{ ok: true, text: JSON.stringify(bad) }, { ok: true, text: JSON.stringify(bad) }];
   const res = await onRequestPost({ request: postReq({ personId: 'p', facts: FACTS }), env: env(docs), data: { user } });
   assert.equal(res.status, 502);
@@ -215,7 +220,7 @@ await test('PUT validates the narrative shape exactly like an AI edition', async
   await onRequestPost({ request: postReq({ personId: 'p', facts: FACTS }), env: env(docs), data: { user } });
   const cases = [
     { personId: 'p', narrative: { ...NARRATIVE, title: '' } },
-    { personId: 'p', narrative: { ...NARRATIVE, paternal: 'not an array' } },
+    { personId: 'p', narrative: { ...NARRATIVE, fatherSide: 'not an array' } },
     { personId: 'p', narrative: { ...NARRATIVE, convergence: [{ not: 'a string' }] } },
     { narrative: NARRATIVE },
     { personId: 'p' },
