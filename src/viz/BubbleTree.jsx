@@ -15,7 +15,7 @@ import { IgniteEffect } from './ignite.js';
 import { FlightComet } from './comet.js';
 import { drawLinks, drawLinksChart } from './links.js';
 import { computeChartLayout } from './chartLayout.js';
-import { buildFamilyStructure, applyFamilyForces, POD_GAP } from './familyLayout.js';
+import { buildFamilyStructure, computeLayoutRows, applyFamilyForces, POD_GAP } from './familyLayout.js';
 import { distancesFrom, relationLabel, computeGenerations } from '../data/graph.js';
 import { Spring } from '../lib/spring.js';
 import { kinTermsStore } from '../lib/kinTerms.js';
@@ -313,8 +313,11 @@ export default function BubbleTree({
       // 1000+-relationship family, re-deriving it every frame would be real,
       // avoidable cost scaling with total family size rather than visible size.
       let familyStructure = { pods: [], podOf: new Map(), childGroups: [] };
+      let layoutRows = new Map();
       const rebuildFamilyStructure = () => {
-        familyStructure = buildFamilyStructure(graphRef.current, (id) => nodeById.has(id));
+        const isTracked = (id) => nodeById.has(id);
+        familyStructure = buildFamilyStructure(graphRef.current, isTracked);
+        layoutRows = computeLayoutRows(graphRef.current, familyStructure, isTracked, gen);
       };
       rebuildFamilyStructure();
 
@@ -323,13 +326,20 @@ export default function BubbleTree({
       // stronger while focused; otherwise it's a gentle organic drift.
       const restingYStrength = () => (focusRef.current ? 0.4 : 0.085);
 
-      // Y-band target generation. A partner with no ancestry of their own (a
-      // childless in-law, including a former partner we deliberately keep out
-      // of generation *leveling*) would otherwise default to gen 0 and float
-      // up to the eldest row. Lift them to sit on their partner's row instead —
-      // layout only; the stored `gen` (chart rows, labels) is untouched. Safe
-      // because a childless person has no descendants to cascade.
+      // Y-band target generation — layout only; the stored `gen` (chart rows,
+      // labels) is untouched.
+      //
+      // computeLayoutRows (familyLayout.js) owns this for anyone currently
+      // tracked: it puts a whole partner pod on one row, former partners
+      // included, and cascades that down to their children. The fallback below
+      // covers anyone it hasn't placed (someone not yet revealed, reached
+      // through a stale target): a partner with no ancestry of their own would
+      // otherwise default to gen 0 and float up to the eldest row, so lift
+      // them to sit on their partner's row. Safe on its own terms, because a
+      // person with no parents on record has nothing above them to invert.
       const layoutGen = (id) => {
+        const row = layoutRows.get(id);
+        if (row != null) return row;
         let g = gen.get(id) ?? 0;
         if (graphRef.current.parents(id).length === 0) {
           for (const p of graphRef.current.partners(id)) {
@@ -923,6 +933,10 @@ export default function BubbleTree({
           lastRelationshipSig = relSig;
           sim.nodes(nodes);
           linkForce.links(buildLinks(g.relationships));
+          // Generations first: the family structure's layout rows are derived
+          // from them, so rebuilding the structure against the OLD generation
+          // map would leave every row a sync behind the data.
+          gen = computeGenerations(g);
           rebuildFamilyStructure();
           updateChargeTheta();
           // Only reheat the simulation when the tree's actual shape changed
@@ -930,7 +944,6 @@ export default function BubbleTree({
           // edit (photo, bio, tags, an R2 migration, an unrelated merge from
           // another editor) shouldn't make every bubble on screen jiggle.
           if (structuralChange) sim.alpha(0.5);
-          gen = computeGenerations(g);
           state.dist = distancesFrom(g, activeRef.current);
           relCache.clear(); // graph changed — relationship labels may differ
           if (state.layoutMode === 'radial' || state.layoutMode === 'weighted') state.relayout();
