@@ -4,8 +4,8 @@
  * Signed-out visitors get a fast, server-rendered marketing homepage (this
  * file). Everyone else — an authenticated session, or a request carrying any
  * of the query-param signals the in-app flows already rely on (?demo, ?new,
- * ?invite, ?pending_invite, ?person, ?auth, ?auth_email, ?start) — falls
- * straight through to the existing untouched SPA via env.ASSETS.fetch().
+ * ?invite, ?pending_invite, ?person, ?auth, ?auth_email, ?start, ?lab) —
+ * falls straight through to the existing untouched SPA via env.ASSETS.fetch().
  *
  * This is deliberately the ONLY behavior change at "/": every existing
  * entry point (magic-link redirect, invite handoff, demo mode, calendar deep
@@ -18,7 +18,7 @@ import { Icons } from './_lib/publicIcons.js';
 // Every query-param signal a currently-shipping in-app flow reads at the
 // SPA root. Any one of these present means "this is a live product flow,
 // not a fresh marketing visit" — fall through unchanged.
-const FLOW_PARAMS = ['demo', 'new', 'invite', 'pending_invite', 'person', 'auth', 'auth_email', 'start', 'otp'];
+const FLOW_PARAMS = ['demo', 'new', 'invite', 'pending_invite', 'person', 'auth', 'auth_email', 'start', 'otp', 'lab'];
 
 export async function onRequestGet({ request, env, data }) {
   const url = new URL(request.url);
