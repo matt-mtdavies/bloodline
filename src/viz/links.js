@@ -39,6 +39,13 @@ function stepEdgeMediated(graph, parentId, childId) {
  */
 const ACCENT = 0xc2603a;
 
+// Parent→child line widths, broadest at the parents and thinnest at the child.
+// A merged sibling trunk passes through JUNCTION_W between the two, so the
+// stem and its branches read as one continuous narrowing rather than a step.
+const PARENT_W = 3.6;
+const JUNCTION_W = 2.3;
+const CHILD_W = 1.1;
+
 // Linear-interpolate two 0xRRGGBB colours.
 function lerpColor(a, b, t) {
   const ar = (a >> 16) & 255, ag = (a >> 8) & 255, ab = a & 255;
@@ -196,22 +203,32 @@ export function drawLinks(
       burnIntensity(grp.p1, childId, [grp.p1, childId].sort().join('|') + 'parent'),
       burnIntensity(grp.p2, childId, [grp.p2, childId].sort().join('|') + 'parent'),
     );
-    const seg = (from, to, burn) =>
+    // Widths along one continuous descent: broadest as the line leaves the
+    // couple, narrowest as it meets each child. A sibling trunk passes through
+    // JUNCTION_W on the way, so stem and branches read as one gradual taper
+    // rather than two differently-weighted lines meeting at a step.
+    const seg = (from, to, burn, w0 = JUNCTION_W) =>
       biological
-        ? curve(g, from, to, litStroke(color, 2, 0.7, burn))
-        : dashedCurve(g, from, to, 14, 0.5, litStroke(color, 2, 0.85, burn));
+        ? curve(g, from, to, { ...litStroke(color, w0, 0.7, burn), endWidth: CHILD_W })
+        : dashedCurve(g, from, to, 14, 0.5, { ...litStroke(color, w0, 0.85, burn), endWidth: CHILD_W });
     const stemSeg = (from, to, burn) =>
       biological
-        ? curve(g, from, to, litStroke(color, 3, 0.7, burn))
-        : dashedCurve(g, from, to, 14, 0.5, litStroke(color, 3, 0.85, burn));
+        ? curve(g, from, to, { ...litStroke(color, PARENT_W, 0.7, burn), endWidth: JUNCTION_W })
+        : dashedCurve(g, from, to, 14, 0.5, { ...litStroke(color, PARENT_W, 0.85, burn), endWidth: JUNCTION_W });
 
-    // Origin: bottom edge of the couple's shaded band.
-    const start = { x: (a1.x + a2.x) / 2, y: (a1.y + a2.y) / 2 + baseRadius * 1.05 };
+    // Origin: the bottom of the couple's shaded capsule, on its centre line —
+    // never inside the shading (reported directly: "lines do start in the
+    // actual shaded zone, this should not happen"). The clearance is derived
+    // from the capsule's real geometry rather than assumed horizontal, so a
+    // couple caught mid-rearrangement at an angle still emits its line from
+    // outside the fill.
+    const start = capsuleBottom(a1, a2, baseRadius * 1.1 + 1.5);
     const kidEntries = grp.kids.map((id) => ({ id, p: pos.get(id) })).filter((e) => e.p);
     if (kidEntries.length === 0) return;
 
     if (kidEntries.length === 1) {
-      seg(start, kidEntries[0].p, branchBurn(kidEntries[0].id));
+      // No junction to pass through, so this one line carries the whole taper.
+      seg(start, kidEntries[0].p, branchBurn(kidEntries[0].id), PARENT_W);
     } else {
       const avgX = kidEntries.reduce((s, e) => s + e.p.x, 0) / kidEntries.length;
       const nearestY = Math.min(...kidEntries.map((e) => e.p.y));
@@ -245,17 +262,22 @@ export function drawLinks(
     if (r.qualifier === 'step') {
       if (stepEdgeMediated(graph, r.from_person, r.to_person)) continue;
       const touched = activeId != null && (r.from_person === activeId || r.to_person === activeId);
-      dashedCurve(g, a, b, 18, 0.5, litStroke(hex('#b6a892'), 2, alpha * (touched ? 0.85 : 0.16), burn));
+      dashedCurve(g, a, b, 18, 0.5, {
+        ...litStroke(hex('#b6a892'), PARENT_W, alpha * (touched ? 0.85 : 0.16), burn),
+        endWidth: CHILD_W,
+      });
       continue;
     }
 
     const biological = r.qualifier === 'biological';
     const color = hex(biological ? '#8a7d6b' : '#b6a892');
 
+    // Same taper as the merged couple lines above — a single parent's line to
+    // their child narrows over its whole length.
     if (biological) {
-      curve(g, a, b, litStroke(color, 2, alpha * 0.7, burn));
+      curve(g, a, b, { ...litStroke(color, PARENT_W, alpha * 0.7, burn), endWidth: CHILD_W });
     } else {
-      dashedCurve(g, a, b, 18, 0.5, litStroke(color, 2, alpha * 0.85, burn));
+      dashedCurve(g, a, b, 18, 0.5, { ...litStroke(color, PARENT_W, alpha * 0.85, burn), endWidth: CHILD_W });
     }
   }
 }
@@ -419,6 +441,29 @@ export function drawLinksChart(g, graph, pos, isVisible, baseRadius, lineagePath
   }
 }
 
+/*
+ * The point on a capsule's outline directly below its midpoint — where a
+ * couple's line to their children should begin.
+ *
+ * The capsule is every point within hw of the segment a–b, so a vertical ray
+ * dropped from the midpoint leaves it either through a long side or, when the
+ * capsule is steep enough that the ray never crosses one, around a lower end
+ * cap. Both cases are cheap to solve exactly, and taking whichever comes first
+ * means the anchor sits on the outline at any angle — including the transient
+ * diagonal a couple passes through while the layout is rearranging.
+ */
+function capsuleBottom(a, b, hw) {
+  const mx = (a.x + b.x) / 2;
+  const my = (a.y + b.y) / 2;
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const len = Math.hypot(dx, dy) || 1;
+  const alongX = Math.abs(dx / len); // 1 = horizontal couple, 0 = vertical
+  const sideExit = alongX > 1e-3 ? hw / alongX : Infinity;
+  const capExit = len / 2 + hw;
+  return { x: mx, y: my + Math.min(sideExit, capExit) };
+}
+
 // Closed capsule (stadium) path from a to b with half-width hw.
 // Traces: one long edge → front arc around b → other long edge → back arc around a.
 // Returns g for chaining .fill() or .stroke().
@@ -486,23 +531,82 @@ function dashedCapsuleBorder(g, a, b, hw, style) {
 }
 
 // A gentle quadratic curve between two points (a slight sag, like a hanging cord).
-function curve(g, a, b, style) {
-  const mx = (a.x + b.x) / 2;
-  const my = (a.y + b.y) / 2 + Math.abs(a.x - b.x) * 0.06;
-  g.moveTo(a.x, a.y).quadraticCurveTo(mx, my, b.x, b.y).stroke(style);
+//
+// Parent→child bonds TAPER: broad where the line leaves the parents, narrowing
+// steadily as it reaches the child, so direction of descent is legible at a
+// glance without reading the layout (asked for directly: "thicker as it leaves
+// the parent relationship and thinner as it enters the child... a gradual
+// reduction not a step in size"). style.width is the width at the parent end
+// and style.endWidth at the child end; a taper is drawn as ONE filled ribbon
+// rather than a stack of progressively-thinner strokes, so a tapered edge
+// still costs a single draw call per link the way the plain stroke did.
+// Omitting endWidth keeps the old uniform stroke exactly as it was.
+const TAPER_STEPS = 12;
+
+function curveControl(a, b) {
+  return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 + Math.abs(a.x - b.x) * 0.06 };
 }
 
+function curve(g, a, b, style) {
+  const c = curveControl(a, b);
+  if (style.endWidth == null || style.endWidth === style.width) {
+    g.moveTo(a.x, a.y).quadraticCurveTo(c.x, c.y, b.x, b.y).stroke(style);
+    return;
+  }
+  taperedRibbon(g, a, c, b, style.width, style.endWidth, style);
+}
+
+// Closed outline of a quadratic curve whose half-width eases from w0 to w1,
+// filled in one pass. The perpendicular at each sample comes from the curve's
+// exact derivative (B'(t) = 2(1-t)(c-a) + 2t(b-c)) rather than sampling
+// neighbouring points, so the sides stay parallel to the curve even where it
+// bends hardest — and, since this runs for every parent link every frame, it
+// costs one cheap expression per sample instead of two extra curve
+// evaluations.
+function taperedRibbon(g, a, c, b, w0, w1, style) {
+  const left = [];
+  const right = [];
+  for (let i = 0; i <= TAPER_STEPS; i++) {
+    const t = i / TAPER_STEPS;
+    const p = quad(a, c, b, t);
+    const u = 1 - t;
+    const tx = 2 * u * (c.x - a.x) + 2 * t * (b.x - c.x);
+    const ty = 2 * u * (c.y - a.y) + 2 * t * (b.y - c.y);
+    const len = Math.hypot(tx, ty) || 1;
+    const hw = (w0 + (w1 - w0) * t) / 2;
+    const nx = (-ty / len) * hw;
+    const ny = (tx / len) * hw;
+    left.push({ x: p.x + nx, y: p.y + ny });
+    right.push({ x: p.x - nx, y: p.y - ny });
+  }
+  g.moveTo(left[0].x, left[0].y);
+  for (let i = 1; i < left.length; i++) g.lineTo(left[i].x, left[i].y);
+  for (let i = right.length - 1; i >= 0; i--) g.lineTo(right[i].x, right[i].y);
+  g.closePath();
+  g.fill({ color: style.color, alpha: style.alpha });
+}
+
+// Dashed sibling of curve(). Tapers the same way when endWidth is given —
+// each dash is stroked at its own width, which is cheap here because a dashed
+// edge is already several draw operations and adoptive/step bonds are a small
+// minority of the lines on screen.
 function dashedCurve(g, a, b, dashes, solidFrac, style) {
-  const mx = (a.x + b.x) / 2;
-  const my = (a.y + b.y) / 2 + Math.abs(a.x - b.x) * 0.06;
+  const c = curveControl(a, b);
+  const tapered = style.endWidth != null && style.endWidth !== style.width;
   let prev = a;
   for (let i = 1; i <= dashes; i++) {
     const t = i / dashes;
-    const pt = quad(a, { x: mx, y: my }, b, t);
-    if (i % 2 === 1) g.moveTo(prev.x, prev.y).lineTo(pt.x, pt.y);
+    const pt = quad(a, c, b, t);
+    if (i % 2 === 1) {
+      g.moveTo(prev.x, prev.y).lineTo(pt.x, pt.y);
+      if (tapered) {
+        const w = style.width + (style.endWidth - style.width) * (t - 0.5 / dashes);
+        g.stroke({ ...style, width: Math.max(0.4, w) });
+      }
+    }
     prev = pt;
   }
-  g.stroke(style);
+  if (!tapered) g.stroke(style);
 }
 
 function dashedSegment(g, a, b, dashes, solidFrac, style) {

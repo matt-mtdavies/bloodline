@@ -55,6 +55,67 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
 
 ## Status — what's built
 
+- **The organic tree is now laid out by family structure, not by whatever fits**
+  (real user report with three screenshots — the current display plus two examples
+  of the wanted arrangement: "There is a real problem with the tree display. I
+  would like all partners and former partners displayed on the same horizontal
+  line... Parents need to be above children. Children should not be too far away
+  from parents and evenly distributed underneath. Siblings should appear on a
+  similar horizontal plane... This should be the display that appears on every
+  click so the tree reorganizes itself based on who is clicked on as opposed to
+  its current model where it just fits the bubbles in where they fit"). Root
+  cause: d3-force only knows "these two are linked, hold roughly this distance"
+  — it has no notion of which DIRECTION a partner belongs in, so charge and
+  collision routinely settled couples stacked vertically and scattered children
+  wherever there was room. The two forces that were supposed to prevent this
+  (`partnerY`, `parentAbove`) were far too gentle to beat charge, and neither
+  said anything about X at all.
+  - New pure module **`src/viz/familyLayout.js`** derives the family STRUCTURE
+    from the data alone — partner pods and ordered sibling sets — and applies it
+    as three extra per-tick forces: (1) a pod's members share one Y and sit at
+    assigned X offsets, so partners AND former partners land on one horizontal
+    line even in a 3+ pod (former partners fan left of the hub, current partners
+    right — a remarried person sits between the two chapters of their life);
+    (2) each sibling set is centred under its parents' midpoint, spread evenly
+    with per-child slot widths (a married sibling's slot is their whole pod's
+    width), and levelled onto one row; (3) parents are held above their children.
+    Deliberately forces rather than fixed positions — the chart view already owns
+    fixed positions (`chartLayout.js`) — so the simulation still breathes and
+    eases between arrangements rather than snapping to a grid.
+  - **A sibling who is in a pod is moved by translating their WHOLE pod**, not by
+    pulling them alone: pulling the individual set rule 2 directly against rule 1
+    for the same person, and (rule 1 being stronger) siblings ended up spaced by
+    whoever won each local fight rather than evenly. The row-levelling half is
+    applied to the sibling alone, since dragging a partner's pod vertically would
+    haul them off their own generation band.
+  - **The partner LINK force is now deliberately slack** (0.9 → 0.12, distance
+    matched to `POD_GAP`). Partner geometry belongs to the pod force now; at its
+    old near-rigid strength the link fought the pod over the same pair, which is
+    a large part of why couples kept settling stacked.
+  - **Every click re-settles the tree around whoever was clicked**: the existing
+    Y-band spike is now paired with `holdActiveDuringSettle()`, so the family
+    reorganises around THEM instead of the whole canvas sliding.
+  - **Parent→child connectors taper** (`links.js`): broad where the line leaves
+    the parents, narrowing steadily into each child, with a merged sibling trunk
+    passing through an intermediate width so stem and branches read as one
+    gradual narrowing rather than two weights meeting at a step. Drawn as a
+    single filled ribbon (exact Bézier derivative for the perpendicular), so a
+    tapered edge still costs one draw call per link the way the plain stroke did.
+  - **The couple's line now starts on the outline of the pod capsule**, not
+    inside the shading — `capsuleBottom()` solves the real geometry (long side vs
+    end cap) rather than assuming the pod is horizontal, so it's still correct
+    for a couple caught mid-rearrangement at an angle.
+  Covered by 12 unit tests (`tests/familyLayout.test.mjs`), two of which
+  reproduce the reported shapes directly (a couple started deliberately STACKED
+  settles side by side one pod gap apart; children started scattered ±900px
+  settle centred under their parents with even gaps). Verified live against the
+  real dev server with a temporary position-probe hook (reverted before commit):
+  all four seed couples measured horizontal (|dy| 2–30px against |dx| 120–163px,
+  versus 102px of vertical stack before), parents above children in every family,
+  siblings centred within ~20px of their parents' midpoint, and 23 of 23 bubbles
+  re-settling on a click. Screenshots confirmed the taper and the pod-bottom
+  anchor at high zoom. Full unit suite, `npm run build`, and the standard smoke
+  test all passed clean.
 - **Ancestry Story now traces all four grandparent lines, via a Father's
   side / Mother's side toggle** (real feedback on a screenshot: "It would be
   good to be able to see both parent lines on both the mother and father's
