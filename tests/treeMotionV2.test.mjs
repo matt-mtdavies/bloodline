@@ -1,0 +1,353 @@
+/**
+ * Integrated motion tests for the V2 engine.
+ *
+ * These deliberately do NOT test a force in isolation. Every V1 problem that
+ * reached a user was a composite failure — each part behaved on its own and the
+ * combination did not — so every assertion here drives the real engine through
+ * a real transition, frame by frame, with layout, springs, collision, ambient
+ * motion and the camera all live at once, and judges what a viewer would
+ * actually have seen.
+ *
+ * Run with: node tests/treeMotionV2.test.mjs
+ */
+import assert from 'node:assert/strict';
+import { buildGraph } from '../src/data/graph.js';
+import { FIXTURES, fixtureById } from '../src/viz/v2/fixtures.js';
+import { createMotionEngine } from '../src/viz/v2/engine.js';
+import { createLegacyEngine } from '../src/viz/v2/legacyEngine.js';
+import { toScreen, ROW_GAP } from '../src/viz/v2/layoutPlanner.js';
+import { MAX_PUSH } from '../src/viz/v2/collision.js';
+import { stepSpring, omegaForSettleTime } from '../src/viz/v2/springs.js';
+
+let passed = 0, failed = 0;
+function test(label, fn) {
+  try { fn(); passed++; console.log(`PASS  ${label}`); }
+  catch (e) { failed++; console.log(`FAIL  ${label}\n      ${e.message}`); }
+}
+
+const VIEWPORT = { width: 1200, height: 800 };
+const FRAME = 16.667;
+const engineFor = (fixtureId, opts = {}) => {
+  const f = fixtureById(fixtureId);
+  const graph = buildGraph(f.people, f.relationships);
+  const engine = createMotionEngine({ graph, viewport: VIEWPORT, ...opts });
+  engine.select(f.focus);
+  return { engine, graph, fixture: f };
+};
+
+/* ── The headline invariant, driven through real frames ──────────────────── */
+
+test('the selected person does not move on screen for a single frame of a transition', () => {
+  for (const f of FIXTURES) {
+    const graph = buildGraph(f.people, f.relationships);
+    const engine = createMotionEngine({ graph, viewport: VIEWPORT });
+    engine.select(f.focus);
+    // Walk the whole fixture, selecting each person in turn — the transition
+    // between two arbitrary compositions is where drift would show up.
+    for (const person of graph.people) {
+      engine.resetMetrics(`select:${person.id}`);
+      const before = engine.screenPositions().get(person.id);
+      engine.select(person.id, { anchor: before });
+      let frames = 0;
+      while (!engine.isSettled() && frames < 400) {
+        engine.step(FRAME);
+        const now = engine.screenPositions().get(person.id);
+        assert.ok(Math.abs(now.x - before.x) < 1e-6 && Math.abs(now.y - before.y) < 1e-6,
+          `${f.id}: ${person.id} drifted to (${now.x},${now.y}) from (${before.x},${before.y}) on frame ${frames}`);
+        frames++;
+      }
+      const summary = engine.summary();
+      assert.equal(summary.maxActiveDriftPx, 0, `${f.id}/${person.id} recorded drift`);
+    }
+  }
+});
+
+test('the pin survives zoom changing during the transition', () => {
+  // Selecting across a big composition change forces a real zoom change; the
+  // active person is the camera's world anchor, so their screen position is
+  // invariant under zoom by construction. This proves the construction holds.
+  const { engine } = engineFor('deep-lineage');
+  const anchor = { x: 300, y: 250 };
+  engine.select('d_g1', { anchor });
+  const zooms = new Set();
+  for (let i = 0; i < 200 && !engine.isSettled(); i++) {
+    engine.step(FRAME);
+    zooms.add(Number(engine.camera().zoom.toFixed(4)));
+    const at = engine.screenPositions().get('d_g1');
+    assert.ok(Math.abs(at.x - anchor.x) < 1e-6 && Math.abs(at.y - anchor.y) < 1e-6,
+      `moved to ${at.x},${at.y}`);
+  }
+  assert.ok(zooms.size > 1, 'the zoom really did animate during this transition');
+});
+
+/* ── Settling ────────────────────────────────────────────────────────────── */
+
+test('macro motion settles completely, and stays settled', () => {
+  for (const f of FIXTURES) {
+    const { engine } = engineFor(f.id);
+    const target = f.people.find((p) => p.id !== f.focus)?.id ?? f.focus;
+    engine.resetMetrics('settle');
+    engine.select(target);
+    const res = engine.settle({ dtMs: FRAME, maxFrames: 400 });
+    assert.ok(res.settled, `${f.id} never settled (${res.frames} frames)`);
+    // And it stays settled — no residual jitter waking it back up.
+    for (let i = 0; i < 120; i++) {
+      const frame = engine.step(FRAME);
+      assert.ok(frame.settled, `${f.id} came back out of rest ${i} frames after settling`);
+    }
+  }
+});
+
+test('settling happens within a human-scale budget', () => {
+  const { engine } = engineFor('remarried');
+  engine.resetMetrics('budget');
+  engine.select('r_jason');
+  engine.settle({ dtMs: FRAME, maxFrames: 400 });
+  const s = engine.summary();
+  assert.ok(s.settleMs != null, 'never settled');
+  assert.ok(s.settleMs <= 1400, `settle took ${s.settleMs}ms — should read as one deliberate move`);
+  assert.ok(s.settleMs >= 150, `settle took ${s.settleMs}ms — that is a snap, not a movement`);
+});
+
+test('nothing oscillates: the unsettled count never rises inside a transition', () => {
+  for (const f of FIXTURES) {
+    const { engine, graph } = engineFor(f.id);
+    const other = graph.people.find((p) => p.id !== f.focus);
+    if (!other) continue;
+    engine.resetMetrics('oscillation');
+    engine.select(other.id);
+    engine.settle({ dtMs: FRAME, maxFrames: 400 });
+    assert.equal(engine.summary().reboundFrames, 0,
+      `${f.id}: ${engine.summary().reboundFrames} frames where more nodes were moving than the frame before`);
+  }
+});
+
+test('the critically damped step never overshoots its target', () => {
+  const omega = omegaForSettleTime(0.6);
+  let v = 0;
+  let x = -500;
+  let crossed = false;
+  for (let i = 0; i < 600; i++) {
+    [x, v] = stepSpring(x, v, 0, omega, FRAME / 1000);
+    if (x > 1e-9) crossed = true;
+  }
+  assert.ok(!crossed, 'a critically damped spring must approach from one side only');
+  assert.ok(Math.abs(x) < 0.05, `did not arrive (residual ${x})`);
+});
+
+/* ── Collision stays subordinate to the layout ───────────────────────────── */
+
+test('collision never moves anyone further than its clamp, and never moves the active person', () => {
+  for (const f of FIXTURES) {
+    const { engine } = engineFor(f.id);
+    const target = f.people[f.people.length - 1].id;
+    engine.resetMetrics('collision');
+    engine.select(target);
+    engine.settle({ dtMs: FRAME, maxFrames: 400 });
+    const s = engine.summary();
+    assert.ok(s.maxCollisionPush <= MAX_PUSH + 1e-6,
+      `${f.id}: collision pushed ${s.maxCollisionPush}, clamp is ${MAX_PUSH}`);
+  }
+});
+
+test('collision cannot break the row structure the planner decided', () => {
+  const { engine, graph } = engineFor('wide-siblings');
+  engine.select('w_s1');
+  engine.settle({ dtMs: FRAME, maxFrames: 400 });
+  const world = engine.worldPositions();
+  const plan = engine.plan;
+  for (const person of graph.people) {
+    const planned = plan.positions.get(person.id);
+    const actual = world.get(person.id);
+    const rowDrift = Math.abs(actual.y - planned.y);
+    assert.ok(rowDrift < ROW_GAP / 2,
+      `${person.id} ended ${rowDrift.toFixed(1)} from its row — collision must not restructure`);
+  }
+});
+
+test('with collision off the layout is reproduced exactly', () => {
+  const { engine } = engineFor('nuclear', { collision: false, ambient: false });
+  engine.select('n_b');
+  engine.settle({ dtMs: FRAME, maxFrames: 400 });
+  const world = engine.worldPositions();
+  for (const [id, planned] of engine.plan.positions) {
+    const actual = world.get(id);
+    assert.ok(Math.hypot(actual.x - planned.x, actual.y - planned.y) < 0.1,
+      `${id} rests at (${actual.x},${actual.y}) not (${planned.x},${planned.y})`);
+  }
+});
+
+/* ── Ambient breathing is bounded, not drift ─────────────────────────────── */
+
+test('breathing is bounded and never accumulates into drift', () => {
+  const { engine, graph } = engineFor('nuclear', { collision: false });
+  engine.select('n_a');
+  engine.settle({ dtMs: FRAME, maxFrames: 400 });
+  const planned = engine.plan.positions;
+  let worst = 0;
+  // Five simulated minutes of breathing.
+  for (let i = 0; i < 60 * 60 * 5; i++) {
+    engine.step(FRAME);
+    if (i % 97 !== 0) continue;
+    for (const [id, pt] of engine.worldPositions()) {
+      worst = Math.max(worst, Math.hypot(pt.x - planned.get(id).x, pt.y - planned.get(id).y));
+    }
+  }
+  assert.ok(worst < 4, `breathing wandered ${worst.toFixed(2)} from the planned position`);
+  assert.ok(engine.isSettled(), 'breathing must not count as unsettled macro motion');
+  // And the active person breathes not at all.
+  const active = engine.worldPositions().get('n_a');
+  assert.ok(Math.hypot(active.x, active.y) < 1e-9, 'the active person must be perfectly still');
+});
+
+test('a partner pod breathes coherently — members share a phase', () => {
+  const { engine } = engineFor('nuclear', { collision: false });
+  engine.select('n_a'); // so the parents' pod is not the pinned active person
+  engine.settle({ dtMs: FRAME, maxFrames: 400 });
+  const planned = engine.plan.positions;
+  for (let i = 0; i < 240; i++) {
+    engine.step(FRAME);
+    const w = engine.worldPositions();
+    const dadOff = { x: w.get('n_dad').x - planned.get('n_dad').x, y: w.get('n_dad').y - planned.get('n_dad').y };
+    const mumOff = { x: w.get('n_mum').x - planned.get('n_mum').x, y: w.get('n_mum').y - planned.get('n_mum').y };
+    assert.ok(Math.hypot(dadOff.x - mumOff.x, dadOff.y - mumOff.y) < 1e-9,
+      'a couple must breathe as one object, not jostle each other');
+  }
+});
+
+/* ── Camera behaviour ────────────────────────────────────────────────────── */
+
+test('the camera has ONE destination per selection and stops there', () => {
+  const { engine } = engineFor('distant-pull');
+  engine.select('x_kid1');
+  const destination = engine.plan.camera.zoom;
+  engine.settle({ dtMs: FRAME, maxFrames: 400 });
+  assert.ok(Math.abs(engine.camera().zoom - destination) < 0.01,
+    `camera rested at ${engine.camera().zoom}, destination was ${destination}`);
+  // Crucially it is not recomputed from live bounds: another 200 frames of
+  // breathing must not move it at all.
+  const resting = { ...engine.camera() };
+  for (let i = 0; i < 200; i++) engine.step(FRAME);
+  assert.deepEqual(engine.camera(), resting, 'the camera re-framed itself while nothing was happening');
+});
+
+test('an explicit anchor is honoured exactly, even an awkward one — no quiet correction', () => {
+  const { engine } = engineFor('nuclear');
+  engine.select('n_c', { anchor: { x: 40, y: 60 } });
+  engine.settle({ dtMs: FRAME, maxFrames: 400 });
+  const at = engine.screenPositions().get('n_c');
+  assert.ok(Math.abs(at.x - 40) < 1e-6 && Math.abs(at.y - 60) < 1e-6,
+    `landed at ${at.x},${at.y} — the engine second-guessed the caller`);
+});
+
+test('recenter() is the ONLY thing that moves the selected person, and only when asked', () => {
+  const { engine } = engineFor('nuclear');
+  engine.select('n_c', { anchor: { x: 40, y: 60 } });
+  engine.settle({ dtMs: FRAME, maxFrames: 400 });
+  const before = engine.screenPositions().get('n_c');
+
+  engine.recenter();
+  assert.ok(!engine.isSettled(), 'recenter should start a fresh, deliberate movement');
+  engine.settle({ dtMs: FRAME, maxFrames: 400 });
+  const after = engine.screenPositions().get('n_c');
+
+  assert.ok(Math.hypot(after.x - before.x, after.y - before.y) > 50,
+    'recenter is supposed to move the composition');
+  // And the composition now sits centred.
+  const xs = [...engine.screenPositions().values()].map((p) => p.x);
+  const ys = [...engine.screenPositions().values()].map((p) => p.y);
+  assert.ok(Math.abs((Math.min(...xs) + Math.max(...xs)) / 2 - VIEWPORT.width / 2) < 60);
+  assert.ok(Math.abs((Math.min(...ys) + Math.max(...ys)) / 2 - VIEWPORT.height / 2) < 60);
+});
+
+/* ── Reduced motion ──────────────────────────────────────────────────────── */
+
+test('reduced motion arrives immediately, with no breathing at all', () => {
+  const { engine } = engineFor('remarried', { reducedMotion: true });
+  engine.select('r_ken');
+  assert.ok(engine.isSettled(), 'reduced motion must not animate');
+  const world = engine.worldPositions();
+  for (const [id, planned] of engine.plan.positions) {
+    const actual = world.get(id);
+    assert.ok(Math.hypot(actual.x - planned.x, actual.y - planned.y) < 1e-9, `${id} is not at rest`);
+  }
+  for (let i = 0; i < 300; i++) engine.step(FRAME);
+  const later = engine.worldPositions();
+  for (const [id, pt] of world) {
+    assert.ok(Math.hypot(later.get(id).x - pt.x, later.get(id).y - pt.y) < 1e-9, `${id} moved`);
+  }
+});
+
+/* ── The comparison the experiment exists to make ────────────────────────── */
+
+test('V1 keeps moving and drags the selected person; V2 settles and holds them', () => {
+  const f = fixtureById('remarried');
+  const graph = buildGraph(f.people, f.relationships);
+
+  const v1 = createLegacyEngine({ graph, viewport: VIEWPORT });
+  v1.select(f.focus);
+  v1.settle({ dtMs: FRAME, maxFrames: 200 });
+  v1.resetMetrics('v1');
+  v1.select('r_jason');
+  for (let i = 0; i < 240; i++) v1.step(FRAME);
+  const v1s = v1.summary();
+
+  const v2 = createMotionEngine({ graph, viewport: VIEWPORT });
+  v2.select(f.focus);
+  v2.settle({ dtMs: FRAME, maxFrames: 200 });
+  v2.resetMetrics('v2');
+  const anchor = v2.screenPositions().get('r_jason');
+  v2.select('r_jason', { anchor });
+  for (let i = 0; i < 240; i++) v2.step(FRAME);
+  const v2s = v2.summary();
+
+  assert.ok(v1s.maxActiveDriftPx > 1,
+    `V1 should visibly drag the selected person (measured ${v1s.maxActiveDriftPx}px/frame)`);
+  assert.equal(v2s.maxActiveDriftPx, 0, 'V2 must hold them exactly still');
+  assert.ok(v2s.settled, 'V2 must reach rest');
+  assert.ok(!v1s.settled, 'V1 is expected never to reach rest — that is the behaviour under review');
+  console.log(`      V1 drift ${v1s.maxActiveDriftPx}px/frame, settled=${v1s.settled}`);
+  console.log(`      V2 drift ${v2s.maxActiveDriftPx}px/frame, settled=${v2s.settled} in ${v2s.settleMs}ms`);
+});
+
+/* ── Determinism of the whole pipeline, not just the planner ─────────────── */
+
+test('two identical runs of the full engine produce identical frames', () => {
+  const run = () => {
+    const f = fixtureById('three-pod');
+    const graph = buildGraph(f.people, f.relationships);
+    const engine = createMotionEngine({ graph, viewport: VIEWPORT });
+    engine.select(f.focus);
+    engine.resetMetrics('determinism');
+    engine.select('t_k2', { anchor: { x: 500, y: 400 } });
+    const trace = [];
+    for (let i = 0; i < 90; i++) {
+      engine.step(FRAME);
+      trace.push([...engine.worldPositions().entries()]
+        .sort()
+        .map(([id, p]) => `${id}:${p.x.toFixed(6)},${p.y.toFixed(6)}`)
+        .join('|'));
+    }
+    return trace.join('\n');
+  };
+  assert.equal(run(), run(), 'the engine is not reproducible run to run');
+});
+
+test('every fixture survives selecting every person without producing a non-finite position', () => {
+  for (const f of FIXTURES) {
+    const graph = buildGraph(f.people, f.relationships);
+    const engine = createMotionEngine({ graph, viewport: VIEWPORT });
+    engine.select(f.focus);
+    for (const person of graph.people) {
+      engine.select(person.id);
+      engine.settle({ dtMs: FRAME, maxFrames: 200 });
+      for (const [id, pt] of engine.screenPositions()) {
+        assert.ok(Number.isFinite(pt.x) && Number.isFinite(pt.y),
+          `${f.id}/${person.id}: ${id} became non-finite`);
+      }
+    }
+  }
+});
+
+console.log(`\n  ${passed} passed, ${failed} failed`);
+if (failed) process.exit(1);

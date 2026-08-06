@@ -1,0 +1,76 @@
+/*
+ * Tree Motion Lab styling — intentionally utilitarian. This is a bench, not a
+ * product surface: nothing here is imported by the app (TreeMotionLab.jsx is
+ * the only importer, and that only mounts behind ?lab=tree-motion), so it uses
+ * its own flat palette rather than the app's tokens and can never leak into
+ * production styling.
+ */
+.lab {
+  font: 13px/1.45 ui-sans-serif, system-ui, -apple-system, sans-serif;
+  color: #1c1d21;
+  background: #fafaf8;
+  min-height: 100vh;
+  padding: 12px 16px 32px;
+  box-sizing: border-box;
+}
+.lab__bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #e4e2dc;
+}
+.lab__title { font-size: 15px; }
+.lab__engine {
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  padding: 3px 8px;
+  border-radius: 999px;
+}
+.lab__engine--v1 { background: #e8e3de; color: #5a5148; }
+.lab__engine--v2 { background: #f6e6dc; color: #a44d2c; }
+.lab__field { display: inline-flex; align-items: center; gap: 6px; }
+.lab__field select { font: inherit; padding: 4px 6px; }
+.lab__seg { display: inline-flex; gap: 2px; background: #eeece7; border-radius: 8px; padding: 2px; }
+.lab__seg button {
+  font: inherit; padding: 5px 10px; border: 0; border-radius: 6px;
+  background: transparent; cursor: pointer; color: #5a5148;
+}
+.lab__seg button.is-on { background: #fff; color: #1c1d21; box-shadow: 0 1px 2px rgba(0,0,0,0.12); }
+.lab__check { display: inline-flex; align-items: center; gap: 5px; }
+.lab__btn {
+  font: inherit; padding: 5px 10px; border: 1px solid #d9d5cd; border-radius: 6px;
+  background: #fff; cursor: pointer;
+}
+.lab__note { color: #6b6f76; margin: 10px 0; max-width: 70ch; }
+
+.lab__stage { position: relative; background: #fff; border: 1px solid #e4e2dc; border-radius: 10px; overflow: hidden; }
+.lab__rowline { stroke: #ecebe6; stroke-width: 1; }
+.lab__rowlabel { fill: #b9b5ac; font-size: 10px; }
+.lab__edge { stroke: #8a7d6b; fill: none; }
+.lab__edge--parent { stroke-width: 1.6; opacity: 0.65; }
+.lab__edge--partner { stroke-width: 3; stroke: #c2603a; opacity: 0.55; }
+.lab__edge--partner.is-former { stroke: #a89280; stroke-dasharray: 6 5; }
+.lab__node circle { fill: #d9dbd4; stroke: #b4b7ae; stroke-width: 1.5; cursor: pointer; }
+.lab__node.is-near circle { fill: #cdd6cd; }
+.lab__node.is-active circle { fill: #c2603a; stroke: #8f3f22; stroke-width: 3; }
+.lab__node.is-active .lab__name { font-weight: 700; }
+.lab__name { text-anchor: middle; font-size: 11px; fill: #3a3c42; pointer-events: none; }
+
+.lab__overlay {
+  position: absolute; top: 10px; right: 10px; width: 230px;
+  background: rgba(255,255,255,0.94); border: 1px solid #e4e2dc; border-radius: 8px;
+  padding: 8px 10px; font-size: 11.5px;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+}
+.lab__ovrow { display: flex; justify-content: space-between; gap: 8px; padding: 1.5px 0; }
+.lab__ovrow span { color: #6b6f76; }
+.lab__ovrow b { font-variant-numeric: tabular-nums; }
+.lab__summary {
+  margin-top: 12px; background: #1c1d21; color: #e8e6e0; padding: 10px 12px;
+  border-radius: 8px; font-size: 11.5px; max-width: 980px; overflow: auto;
+}
+.lab__foot { margin-top: 14px; color: #8a8f97; font-size: 11.5px; }
+.lab__foot code { background: #eeece7; padding: 1px 4px; border-radius: 3px; }

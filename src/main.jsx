@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { registerSW } from 'virtual:pwa-register';
 import './styles/global.css';
 import App from './App.jsx';
+import { isLabOpen } from './lib/treePhysicsFlag.js';
 
 // Set only by applyUpdateWhenSafe below, and only to a REAL waiting
 // updateSW() reference — never invented — so the ErrorBoundary's Reload
@@ -64,6 +65,24 @@ let mounted = false;
 function boot() {
   if (mounted) return; // idempotent — see the safety-net timer below
   mounted = true;
+  // The Tree Motion Lab (?lab=tree-motion) mounts INSTEAD of the app and is
+  // lazy-loaded, so neither it, its fixtures nor the experimental engine are
+  // in the bundle any ordinary visitor downloads. It never touches the store,
+  // the network or localStorage beyond its own engine flag — see
+  // src/lib/treePhysicsFlag.js. Closing the URL is the whole rollback.
+  if (isLabOpen()) {
+    const Lab = React.lazy(() => import('./viz/v2/TreeMotionLab.jsx'));
+    createRoot(document.getElementById('root')).render(
+      <React.StrictMode>
+        <ErrorBoundary>
+          <React.Suspense fallback={null}>
+            <Lab />
+          </React.Suspense>
+        </ErrorBoundary>
+      </React.StrictMode>,
+    );
+    return;
+  }
   createRoot(document.getElementById('root')).render(
     <React.StrictMode>
       <ErrorBoundary>

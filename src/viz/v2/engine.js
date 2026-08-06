@@ -1,0 +1,289 @@
+import { planFamilyLayout, toScreen } from './layoutPlanner.js';
+import { SpringField, Spring1D } from './springs.js';
+import { LocalCollision } from './collision.js';
+import { createAmbient } from './ambient.js';
+import { MotionRecorder } from './metrics.js';
+
+/*
+ * The V2 motion engine — layout, springs, collision and camera as ONE object.
+ *
+ * Deliberately headless: it owns no DOM, no canvas and no renderer, and it is
+ * driven by explicit `step(dtMs)` calls rather than a requestAnimationFrame it
+ * starts itself. That is what lets tests/treeMotionV2.test.mjs drive a real
+ * transition frame by frame and assert on the combination, rather than on a
+ * custom force in isolation — testing the pieces separately is exactly how V1's
+ * problems got through: every part behaved, the composite did not.
+ *
+ * The selection contract, which is the heart of the experiment:
+ *
+ *   select(id, { anchor })
+ *     1. plan ONE layout for the new active person (they land on the origin);
+ *     2. compute ONE camera destination — the origin pinned to `anchor`;
+ *     3. hand both to the springs and stop.
+ *
+ *   There is no reheat, no per-frame re-planning and no live re-framing. The
+ *   destination is fixed the instant you click, and every subsequent frame is
+ *   just easing toward it. `anchor` defaults to wherever the person already is
+ *   on screen, so the thing you tapped does not move while its family
+ *   rearranges around it.
+ */
+
+/*
+ * Why the screen anchor JUMPS on selection while the zoom springs.
+ *
+ * The camera's screen anchor is "where world origin appears", and selecting
+ * somebody re-plans the layout so THEY are the world origin. Springing the
+ * anchor from the old active person's screen point to the new one would
+ * therefore drag the newly selected person across the screen — the precise
+ * thing this experiment exists to eliminate. So the anchor is re-pointed
+ * instantly and exactly, which costs nothing visually because the person it
+ * points at is, by construction, already at that screen position.
+ *
+ * Zoom is different: the active person sits AT the origin, so screen position
+ * = anchor + (world − origin) × zoom = anchor, for any zoom at all. Zoom can
+ * animate as freely as it likes and the selected person still cannot move.
+ * (An integrated test asserts exactly this, with the zoom provably changing.)
+ *
+ * Moving the composition back toward the middle of the screen is therefore a
+ * SEPARATE, deliberate action — recenter() — and never something a transition
+ * does behind your back.
+ */
+
+export function createMotionEngine({
+  graph,
+  viewport = { width: 1200, height: 800 },
+  visibleIds = null,
+  reducedMotion = false,
+  settleSeconds = 0.62,
+  cameraSettleSeconds = 0.72,
+  ambient = true,
+  collision = true,
+  seed = 1234567,
+} = {}) {
+  const springs = new SpringField({ settleSeconds });
+  const collider = new LocalCollision({ seed });
+  const breath = createAmbient({ enabled: ambient && !reducedMotion });
+  const recorder = new MotionRecorder();
+
+  const zoomSpring = new Spring1D(1, { settleSeconds: cameraSettleSeconds });
+  const anchorX = new Spring1D(viewport.width / 2, { settleSeconds: cameraSettleSeconds });
+  const anchorY = new Spring1D(viewport.height / 2, { settleSeconds: cameraSettleSeconds });
+
+  let plan = null;
+  let activeId = null;
+  let elapsed = 0;                 // seconds, for ambient phase
+  let lastActiveScreen = null;
+  let displacement = new Map();
+  let firstSelection = true;
+  let atRest = false;          // true once macro motion has been snapped to its targets
+  let restingMaxPush = 0;
+
+  const camera = () => ({
+    worldX: 0, worldY: 0,
+    screenX: anchorX.value, screenY: anchorY.value,
+    zoom: zoomSpring.value,
+  });
+
+  /** Rendered position = spring + clamped collision relief + ambient breath. */
+  const worldPositions = () => {
+    const base = springs.positions();
+    const out = new Map();
+    for (const [id, pt] of base) {
+      const d = displacement.get(id) ?? { x: 0, y: 0 };
+      const b = id === activeId ? { x: 0, y: 0 } : breath.offsetFor(id, plan?.unitOf, elapsed);
+      out.set(id, { x: pt.x + d.x + b.x, y: pt.y + d.y + b.y });
+    }
+    return out;
+  };
+
+  const screenPositions = () => {
+    const cam = camera();
+    const out = new Map();
+    for (const [id, pt] of worldPositions()) out.set(id, toScreen(cam, pt));
+    return out;
+  };
+
+  function select(nextActiveId, { anchor = null, immediate = false } = {}) {
+    // Where is this person on screen RIGHT NOW? That point becomes the fixed
+    // point of the whole transition unless the caller names another.
+    const currentScreen = activeId && springs.get(nextActiveId)
+      ? toScreen(camera(), worldPositions().get(nextActiveId) ?? { x: 0, y: 0 })
+      : null;
+
+    activeId = nextActiveId;
+    plan = planFamilyLayout({ graph, activeId, visibleIds, viewport, anchor: null });
+
+    // Anchor policy, in order of preference: explicit > wherever the person
+    // already is > the plan's composition-centred default (first paint only).
+    // Honoured EXACTLY — no clamping, no nudging toward the middle — because
+    // any correction here is a correction the selected person would visibly
+    // make on screen, and they are supposed to be the one fixed thing.
+    const raw = anchor ?? currentScreen ?? { x: plan.camera.screenX, y: plan.camera.screenY };
+    const screenAnchor = {
+      x: Number.isFinite(raw.x) ? raw.x : viewport.width / 2,
+      y: Number.isFinite(raw.y) ? raw.y : viewport.height / 2,
+    };
+
+    springs.setTargets(plan.positions, {
+      // A person appearing for the first time grows out of the active person
+      // rather than flying in from wherever the last layout happened to leave
+      // them — new arrivals should read as "revealed", not "thrown".
+      spawnAt: () => ({ x: 0, y: 0 }),
+    });
+    springs.clearPins();
+    springs.pin(activeId);
+
+    zoomSpring.setTarget(plan.camera.zoom);
+    // Re-point, don't travel — see the note at the top of this file.
+    anchorX.jump(screenAnchor.x);
+    anchorY.jump(screenAnchor.y);
+
+    const landImmediately = firstSelection || immediate || reducedMotion;
+    if (landImmediately) {
+      // First paint has nothing to animate FROM, and reduced-motion asks us not
+      // to animate at all: land on the composition directly.
+      springs.snap();
+      zoomSpring.jump(plan.camera.zoom);
+      anchorX.jump(screenAnchor.x);
+      anchorY.jump(screenAnchor.y);
+      firstSelection = false;
+    }
+
+    // Landing immediately IS being at rest — otherwise reduced-motion would
+    // report an animation in progress that is never going to happen, and the
+    // engine would keep integrating springs that are already exactly home.
+    atRest = landImmediately;
+    displacement = collision ? collider.resolve(springs.positions(), activeId) : new Map();
+    lastActiveScreen = toScreen(camera(), worldPositions().get(activeId) ?? { x: 0, y: 0 });
+    recorder.beginTransition(`select:${activeId}`);
+    return plan;
+  }
+
+  function step(dtMs) {
+    const dt = Math.min(0.05, Math.max(0, dtMs / 1000)); // clamp a tab-restore spike
+    elapsed += dt;
+
+    // "Settles completely" has to mean completely. An exponential approach is
+    // never numerically finished — it just gets smaller — and a camera still
+    // creeping by hundredths of a pixel forever is exactly the kind of
+    // never-quite-done motion V2 exists to remove. So the moment the system is
+    // within the visible-motion threshold it is SNAPPED to its targets and
+    // integration stops; from then on every frame is an exact no-op and the
+    // only thing still alive is the bounded ambient breath.
+    if (atRest) {
+      const world = worldPositions();
+      const cam = camera();
+      const activeScreen = toScreen(cam, world.get(activeId) ?? { x: 0, y: 0 });
+      const drift = lastActiveScreen
+        ? Math.hypot(activeScreen.x - lastActiveScreen.x, activeScreen.y - lastActiveScreen.y) : 0;
+      lastActiveScreen = activeScreen;
+      const frame = {
+        dt, peakSpeed: 0, meanSpeed: 0, activeDrift: drift, cameraSpeed: 0,
+        zoom: cam.zoom, unsettled: 0, maxPush: restingMaxPush, settled: true,
+      };
+      recorder.frame(frame);
+      return frame;
+    }
+
+    const peakSpeed = springs.step(dt);
+    zoomSpring.step(dt);
+    anchorX.step(dt);
+    anchorY.step(dt);
+
+    // Collision only while things are actually moving. Once settled the
+    // displacement is frozen, so a resting tree costs nothing and — more
+    // importantly — cannot be nudged around by collision forever.
+    let macroSettled = springs.settled() && zoomSpring.settled() && anchorX.settled() && anchorY.settled();
+    if (collision && !macroSettled) {
+      displacement = collider.resolve(springs.positions(), activeId);
+    }
+    if (macroSettled) {
+      springs.snap();
+      zoomSpring.jump(zoomSpring.target);
+      anchorX.jump(anchorX.target);
+      anchorY.jump(anchorY.target);
+      if (collision) displacement = collider.resolve(springs.positions(), activeId);
+      atRest = true;
+      restingMaxPush = 0;
+      for (const d of displacement.values()) restingMaxPush = Math.max(restingMaxPush, Math.hypot(d.x, d.y));
+    }
+
+    let maxPush = 0;
+    for (const d of displacement.values()) maxPush = Math.max(maxPush, Math.hypot(d.x, d.y));
+
+    const world = worldPositions();
+    const cam = camera();
+    const activeScreen = toScreen(cam, world.get(activeId) ?? { x: 0, y: 0 });
+    const activeDrift = lastActiveScreen
+      ? Math.hypot(activeScreen.x - lastActiveScreen.x, activeScreen.y - lastActiveScreen.y)
+      : 0;
+    lastActiveScreen = activeScreen;
+
+    let unsettled = 0;
+    let speedSum = 0;
+    for (const [id, s] of springs.state) {
+      if (id === activeId) continue;
+      const moving = Math.abs(s.x - s.tx) > 0.05 || Math.abs(s.y - s.ty) > 0.05;
+      if (moving) unsettled++;
+      speedSum += Math.hypot(s.vx, s.vy);
+    }
+
+    const frame = {
+      dt,
+      peakSpeed,
+      meanSpeed: springs.state.size ? speedSum / springs.state.size : 0,
+      activeDrift,
+      cameraSpeed: Math.hypot(anchorX.velocity, anchorY.velocity),
+      zoom: cam.zoom,
+      unsettled,
+      maxPush,
+      settled: macroSettled,
+    };
+    recorder.frame(frame);
+    return frame;
+  }
+
+  /** Run frames until macro motion has genuinely stopped (or the budget runs out). */
+  function settle({ dtMs = 16.667, maxFrames = 600 } = {}) {
+    let frames = 0;
+    let last = null;
+    while (frames < maxFrames) {
+      last = step(dtMs);
+      frames++;
+      if (last.settled) break;
+    }
+    return { frames, ...last };
+  }
+
+  return {
+    select,
+    step,
+    settle,
+    camera,
+    worldPositions,
+    screenPositions,
+    get plan() { return plan; },
+    get activeId() { return activeId; },
+    get elapsedSeconds() { return elapsed; },
+    isSettled: () => atRest,
+    /*
+     * Ease the composition back toward the middle of the screen. Deliberately
+     * NOT part of select(): moving the anchor moves the selected person, so
+     * this is only ever something a caller asks for once a transition has
+     * finished — never something a transition does to you.
+     */
+    recenter() {
+      if (!plan) return;
+      const b = plan.bounds;
+      const z = zoomSpring.target;
+      anchorX.setTarget(viewport.width / 2 - ((b.minX + b.maxX) / 2) * z);
+      anchorY.setTarget(viewport.height / 2 - ((b.minY + b.maxY) / 2) * z);
+      atRest = false;
+    },
+    metrics: () => recorder,
+    summary: () => recorder.summary(),
+    resetMetrics: (label) => recorder.reset(label),
+    /** Advance ambient time only — for verifying breathing never becomes drift. */
+    breatheOnly(seconds) { elapsed += seconds; },
+  };
+}
