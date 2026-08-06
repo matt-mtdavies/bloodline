@@ -26,10 +26,16 @@ import { sortChildren } from '../data/graph.js';
  * Both exports are pure and unit-tested (tests/familyLayout.test.mjs).
  */
 
-// Centre-to-centre spacing between two people in a partner pod. Wide enough
-// that the couple membrane (baseRadius * 1.1 half-width, see links.js) reads
-// as one capsule around two distinct faces rather than an overlap.
-export const POD_GAP = 118;
+// Centre-to-centre spacing between two people in a partner pod.
+//
+// MUST stay at or above twice BubbleTree's collision radius (2 × COLLIDE =
+// 140). Below that, the collision force is permanently unsatisfied by the
+// horizontal spacing this rule asks for, and — since the pod pins the X
+// offsets — the only direction left for it to push a couple apart is
+// VERTICALLY. That was the real reason partners still settled visibly tilted
+// even once they shared a generation row: not a weak pod force, but collision
+// resolving a gap it was never given room for.
+export const POD_GAP = 146;
 // Centre-to-centre spacing between adjacent siblings under the same parents.
 // Chosen to sit near where the tree's own charge repulsion already wants to
 // hold two same-row bubbles, so the even-distribution target cooperates with
@@ -162,6 +168,74 @@ function qualifierOf(graph, parentId, childId) {
   return graph.parents(childId).find((p) => p.id === parentId)?.qualifier || 'biological';
 }
 
+// Bounded because a malformed/cyclic edge could otherwise keep finding a
+// reason to push someone down forever. Rows only ever increase below, so a
+// well-formed family converges in far fewer passes than this.
+const MAX_ROW_PASSES = 12;
+
+/*
+ * computeLayoutRows(graph, structure, isVisible, gen) → Map<personId, row>
+ *
+ * The generation row each visible person should sit on FOR LAYOUT — the whole
+ * pod on one row, and every descendant pushed below whatever their parents
+ * ended up on.
+ *
+ * `computeGenerations` (graph.js) deliberately excludes former partners when
+ * it levels couples, and for good reason: an ex from another branch can have
+ * deeper ancestry, and dragging their generation around cascades into
+ * relationship labels and chart rows for people who have nothing to do with
+ * them. But that leaves a former partner sitting a row off their own couple —
+ * reported directly, with a screenshot: "the former partner... should be at
+ * the level as the current couple (where possible)". Worse, an off-row pod
+ * member makes the couple capsule diagonal, which drags the child line's
+ * anchor out from under the couple with it.
+ *
+ * Doing the levelling HERE keeps the two concerns apart: this is a layout-only
+ * row, the stored `gen` (labels, chart rows, everything else) is untouched —
+ * the same distinction BubbleTree's own `layoutGen` already drew, just applied
+ * to whole pods instead of only childless in-laws.
+ *
+ * Two rules, alternated until stable:
+ *   (a) every member of a pod shares the pod's deepest row;
+ *   (b) every child sits at least one row below all of their visible parents.
+ * Rows only ever move DOWN, so this can't oscillate, and (b) running after (a)
+ * is what carries a levelled couple's shift through to their children — the
+ * other half of the same report ("Jessie and Amie should be on a similar
+ * horizontal plane as Matthew and Jason"): once a step-parent is levelled onto
+ * their partner's row, both sets of children land on the row below together.
+ */
+export function computeLayoutRows(graph, structure, isVisible, gen) {
+  const row = new Map();
+  for (const p of graph.people) {
+    if (isVisible(p.id)) row.set(p.id, gen.get(p.id) ?? 0);
+  }
+
+  for (let pass = 0; pass < MAX_ROW_PASSES; pass++) {
+    let changed = false;
+
+    for (const pod of structure.pods) {
+      const live = pod.ids.filter((id) => row.has(id));
+      if (live.length < 2) continue;
+      const level = Math.max(...live.map((id) => row.get(id)));
+      for (const id of live) {
+        if (row.get(id) !== level) { row.set(id, level); changed = true; }
+      }
+    }
+
+    for (const grp of structure.childGroups) {
+      const parentRows = grp.parents.filter((id) => row.has(id)).map((id) => row.get(id));
+      if (parentRows.length === 0) continue;
+      const need = Math.max(...parentRows) + 1;
+      for (const kid of grp.kids) {
+        if (row.has(kid) && row.get(kid) < need) { row.set(kid, need); changed = true; }
+      }
+    }
+
+    if (!changed) break;
+  }
+  return row;
+}
+
 /*
  * applyFamilyForces(structure, nodeById, alpha, opts) — the per-tick half.
  *
@@ -187,8 +261,18 @@ export function applyFamilyForces(structure, nodeById, alpha, opts = {}) {
     podGap = POD_GAP,
     sibGap = SIB_GAP,
     podStrength = 1,
+    // Sharing one horizontal line is the hard requirement of the two ("all
+    // partners and former partners displayed on the same horizontal line"),
+    // while the sideways spacing can flex a little under crowding — so the
+    // vertical half of the pod rule pulls harder than the horizontal half.
+    podYStrength = 1.6,
     childStrength = 0.34,
-    siblingRowStrength = 0.3,
+    // Deliberately well under podStrength. A married person is pulled by both
+    // rules — their partners want them on the couple's line, their brothers
+    // and sisters want them on the sibling row — and when those disagree the
+    // couple has to win: the ask was partners on the SAME horizontal line but
+    // siblings only on a SIMILAR plane, so this is the one that gives.
+    siblingRowStrength = 0.2,
     parentGap = 120,
     parentStrength = 0.3,
   } = opts;
@@ -202,7 +286,7 @@ export function applyFamilyForces(structure, nodeById, alpha, opts = {}) {
     for (const n of live) {
       const targetX = cx + (pod.offset.get(n.id) ?? 0) * podGap;
       n.vx += (targetX - n.x) * podStrength * alpha;
-      n.vy += (cy - n.y) * podStrength * alpha;
+      n.vy += (cy - n.y) * podYStrength * alpha;
     }
   }
 

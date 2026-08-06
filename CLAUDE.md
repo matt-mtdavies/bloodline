@@ -55,6 +55,56 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
 
 ## Status — what's built
 
+- **Follow-up to the tree-layout work: former partners now sit ON the couple's
+  line, and their children land on one plane** (real report with a screenshot:
+  "the former partner, in case Christopher should be at the level as the current
+  couple (where possible)... Fiona should be level with Jason and Jessie and Amie
+  should be on a similar horizontal plane as Matthew and Jason", plus "the lines
+  going from the couple down to children are not centred at the bottom of the
+  ring"). All three turned out to be the same root cause, and there were two
+  distinct mechanisms underneath it:
+  1. **Pod members each kept their OWN generation row.** `computeGenerations`
+     (graph.js) deliberately excludes former partners when it levels couples —
+     for a good documented reason: an ex from another branch can have deeper
+     ancestry, and moving their generation cascades into relationship labels and
+     chart rows for people unrelated to them. But that left a former partner a
+     row off their own couple, so the band force, the sibling-row force and the
+     pod force each pulled the same person somewhere different. New
+     `computeLayoutRows` (familyLayout.js) resolves this in the LAYOUT layer
+     only — the stored `gen` is untouched, exactly the distinction BubbleTree's
+     `layoutGen` already drew for childless in-laws, just applied to whole pods.
+     It alternates two rules until stable: every pod member takes the pod's
+     deepest row, then every child is pushed at least one row below all their
+     visible parents. Rows only ever move down, so it can't oscillate, and the
+     second rule is what carries a levelled couple's shift through to their
+     children — that's the "Jessie and Amie" half of the report: once a
+     step-parent is levelled onto their partner's row, BOTH sets of children
+     land on the row below together.
+  2. **`POD_GAP` (118) was under twice the collision radius (2 × COLLIDE =
+     140).** Collision could never satisfy that spacing horizontally, and since
+     the pod pins the X offsets, the only direction left to push a couple apart
+     was VERTICALLY. This — not a weak pod force — is why partners still settled
+     visibly tilted. `POD_GAP` is now 146, documented with the constraint so it
+     can't silently drift back under the collision radius.
+  The couple→children anchor needed no further change: `capsuleBottom` was
+  already solving the real geometry, but a TILTED pod has its bottom-centre in a
+  visually odd place, so levelling the pod fixed the anchor too (confirmed on a
+  high-zoom screenshot — the line now drops from the exact bottom-centre of the
+  capsule). Also added `podYStrength` (1.6, above the horizontal 1.0) and
+  lowered `siblingRowStrength` to 0.2, encoding the report's own priority: a
+  married person is pulled by both rules, and partners on the SAME horizontal
+  line has to beat siblings on a SIMILAR plane. One ordering bug fixed while
+  wiring this up: `sync()` rebuilt the family structure BEFORE recomputing
+  `gen`, which would have left every layout row a sync behind the data.
+  Covered by 4 new unit tests (16 total in `tests/familyLayout.test.mjs`) built
+  on a fixture of the exact reported shape — a current couple, a former partner
+  with his own recorded ancestry, and both sides' children — asserting the
+  former partner is levelled, that both child sets land one row below, that no
+  parent ever ends up on or under their own child, and that rows only cover the
+  visible set. Verified live by temporarily giving the demo seed's former
+  partner her own ancestry (reverted before commit): pod vertical spread went
+  180px → 32px (under one bubble radius), children all below the pod. Full unit
+  suite, `npm run build`, and the standard smoke test all passed clean.
 - **The organic tree is now laid out by family structure, not by whatever fits**
   (real user report with three screenshots — the current display plus two examples
   of the wanted arrangement: "There is a real problem with the tree display. I

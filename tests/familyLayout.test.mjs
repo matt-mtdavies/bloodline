@@ -6,8 +6,8 @@
  * Run with: node tests/familyLayout.test.mjs
  */
 import assert from 'node:assert/strict';
-import { buildGraph } from '../src/data/graph.js';
-import { buildFamilyStructure, applyFamilyForces, POD_GAP } from '../src/viz/familyLayout.js';
+import { buildGraph, computeGenerations } from '../src/data/graph.js';
+import { buildFamilyStructure, computeLayoutRows, applyFamilyForces, POD_GAP } from '../src/viz/familyLayout.js';
 
 let passed = 0, failed = 0;
 function test(label, fn) {
@@ -190,6 +190,71 @@ test('people outside the visible set are excluded from every structure', () => {
   const s = buildFamilyStructure(g, (id) => id === 'a');
   assert.equal(s.pods.length, 0, 'a pod needs two visible members');
   assert.equal(s.childGroups.length, 0, 'an unrevealed child contributes no group');
+});
+
+// ── Layout rows ────────────────────────────────────────────────────────────
+// The reported shape: Heather and Ken are a current couple; Christopher is
+// Heather's FORMER partner and has his own recorded ancestry, so
+// computeGenerations (which deliberately skips former partners when levelling)
+// leaves him a row below the couple. Ken has children of his own, Christopher
+// and Heather have children together, and all of them should end up on one
+// row beneath the levelled couple.
+const rowFixture = () => buildGraph(
+  [
+    person('gran'), person('grandad'),          // Christopher's parents
+    person('heather'), person('ken'), person('christopher'),
+    person('matthew', { birth_date: '1980-01-01' }),  // Christopher + Heather
+    person('jason', { birth_date: '1982-01-01' }),    // Christopher + Heather
+    person('jessica', { birth_date: '1981-01-01' }),  // Ken's
+    person('amie', { birth_date: '1983-01-01' }),     // Ken's
+  ],
+  [
+    parentEdge('gran', 'christopher'), parentEdge('grandad', 'christopher'),
+    partnerEdge('heather', 'ken'),
+    partnerEdge('heather', 'christopher', 'former'),
+    parentEdge('christopher', 'matthew'), parentEdge('heather', 'matthew'),
+    parentEdge('christopher', 'jason'), parentEdge('heather', 'jason'),
+    parentEdge('ken', 'jessica'),
+    parentEdge('ken', 'amie'),
+  ],
+);
+
+test('a former partner is levelled onto the current couple\'s row', () => {
+  const g = rowFixture();
+  const s = buildFamilyStructure(g, all);
+  const rows = computeLayoutRows(g, s, all, computeGenerations(g));
+  assert.equal(rows.get('christopher'), rows.get('heather'));
+  assert.equal(rows.get('ken'), rows.get('heather'));
+});
+
+test('levelling a couple cascades: both sets of children land on one row below', () => {
+  const g = rowFixture();
+  const s = buildFamilyStructure(g, all);
+  const rows = computeLayoutRows(g, s, all, computeGenerations(g));
+  const couple = rows.get('heather');
+  for (const kid of ['matthew', 'jason', 'jessica', 'amie']) {
+    assert.equal(rows.get(kid), couple + 1, `${kid} should sit one row below the couple`);
+  }
+});
+
+test('layout rows never put a parent on or below their own child', () => {
+  const g = rowFixture();
+  const s = buildFamilyStructure(g, all);
+  const rows = computeLayoutRows(g, s, all, computeGenerations(g));
+  for (const p of g.people) {
+    for (const c of g.children(p.id)) {
+      assert.ok(rows.get(p.id) < rows.get(c.id), `${p.id} must stay above ${c.id}`);
+    }
+  }
+});
+
+test('layout rows only cover the visible set', () => {
+  const g = rowFixture();
+  const visible = (id) => id !== 'amie';
+  const s = buildFamilyStructure(g, visible);
+  const rows = computeLayoutRows(g, s, visible, computeGenerations(g));
+  assert.ok(!rows.has('amie'));
+  assert.ok(rows.has('jessica'));
 });
 
 test('a missing node is skipped rather than throwing', () => {
