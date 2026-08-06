@@ -15,7 +15,6 @@ import { IgniteEffect } from './ignite.js';
 import { FlightComet } from './comet.js';
 import { drawLinks, drawLinksChart } from './links.js';
 import { computeChartLayout } from './chartLayout.js';
-import { buildFamilyStructure, computeLayoutRows, applyFamilyForces, POD_GAP } from './familyLayout.js';
 import { distancesFrom, relationLabel, computeGenerations } from '../data/graph.js';
 import { Spring } from '../lib/spring.js';
 import { kinTermsStore } from '../lib/kinTerms.js';
@@ -290,56 +289,41 @@ export default function BubbleTree({
           )
           .map((r) => ({ source: r.from_person, target: r.to_person, kind: r.type }));
 
-      // Partner geometry belongs to the family force now (pods: one row, side
-      // by side — see familyLayout.js), so the partner LINK is deliberately
-      // slack: a link force only knows "hold this distance in any direction",
-      // and at its old near-rigid 0.9 it fought the pod for the same pair,
-      // which is a large part of why couples kept settling stacked instead of
-      // side by side. Its distance matches POD_GAP so the two agree rather
-      // than pull against each other, and the low strength leaves it doing
-      // what it's actually good for — keeping a couple's neighbourhood
-      // together — while the pod decides the arrangement.
-      const partnerLinkStrength = 0.12;
       const linkForce = forceLink(buildLinks(graph.relationships))
         .id((d) => d.id)
-        .distance((l) => (l.kind === 'partner' ? POD_GAP : 280))
-        .strength((l) => (l.kind === 'partner' ? partnerLinkStrength : 0.26));
+        .distance((l) => (l.kind === 'partner' ? 112 : 280))
+        .strength((l) => (l.kind === 'partner' ? 0.9 : 0.26));
 
-      // The family STRUCTURE the organic layout arranges itself around —
-      // partner pods and ordered sibling sets (see familyLayout.js). Scoped to
-      // people who are actually tracked right now, and derived from the data
-      // alone, so it's rebuilt at exactly the same three points buildLinks()
-      // is (mount, sync, ensureVisible) and NEVER per tick — for a real
-      // 1000+-relationship family, re-deriving it every frame would be real,
-      // avoidable cost scaling with total family size rather than visible size.
-      let familyStructure = { pods: [], podOf: new Map(), childGroups: [] };
-      let layoutRows = new Map();
-      const rebuildFamilyStructure = () => {
-        const isTracked = (id) => nodeById.has(id);
-        familyStructure = buildFamilyStructure(graphRef.current, isTracked);
-        layoutRows = computeLayoutRows(graphRef.current, familyStructure, isTracked, gen);
+      // partnerY/parentAbove (below) only ever touch relationships where BOTH
+      // endpoints are currently tracked — pre-filtered here, the same way
+      // buildLinks() already filters for linkForce, rather than each force
+      // re-scanning and re-filtering the WHOLE relationships array from
+      // scratch on every single tick. For a real 1000+-relationship family,
+      // that used to mean 1000+ iterations per force per tick regardless of
+      // how many people were actually revealed (most immediately discarded
+      // by the !na/!nb check) — real, avoidable cost that scaled with total
+      // family size, not visible size. Recomputed at the same points
+      // buildLinks() is (mount, sync, ensureVisible).
+      let partnerYRels = [];
+      let parentAboveRels = [];
+      const rebuildForceRelCaches = (rels) => {
+        partnerYRels = rels.filter((r) => r.type === 'partner' && nodeById.has(r.from_person) && nodeById.has(r.to_person));
+        parentAboveRels = rels.filter((r) => r.type === 'parent' && nodeById.has(r.from_person) && nodeById.has(r.to_person));
       };
-      rebuildFamilyStructure();
+      rebuildForceRelCaches(graph.relationships);
 
       // Resting generational pull. Focus Family wants crisp rows — parents
       // clearly above, children clearly below — so the band force is much
       // stronger while focused; otherwise it's a gentle organic drift.
       const restingYStrength = () => (focusRef.current ? 0.4 : 0.085);
 
-      // Y-band target generation — layout only; the stored `gen` (chart rows,
-      // labels) is untouched.
-      //
-      // computeLayoutRows (familyLayout.js) owns this for anyone currently
-      // tracked: it puts a whole partner pod on one row, former partners
-      // included, and cascades that down to their children. The fallback below
-      // covers anyone it hasn't placed (someone not yet revealed, reached
-      // through a stale target): a partner with no ancestry of their own would
-      // otherwise default to gen 0 and float up to the eldest row, so lift
-      // them to sit on their partner's row. Safe on its own terms, because a
-      // person with no parents on record has nothing above them to invert.
+      // Y-band target generation. A partner with no ancestry of their own (a
+      // childless in-law, including a former partner we deliberately keep out
+      // of generation *leveling*) would otherwise default to gen 0 and float
+      // up to the eldest row. Lift them to sit on their partner's row instead —
+      // layout only; the stored `gen` (chart rows, labels) is untouched. Safe
+      // because a childless person has no descendants to cascade.
       const layoutGen = (id) => {
-        const row = layoutRows.get(id);
-        if (row != null) return row;
         let g = gen.get(id) ?? 0;
         if (graphRef.current.parents(id).length === 0) {
           for (const p of graphRef.current.partners(id)) {
@@ -380,25 +364,45 @@ export default function BubbleTree({
         .stop();
       updateChargeTheta();
 
-      // Family structure: partner pods sit on one horizontal line, children
-      // hang centred and evenly spread beneath their parents, and parents stay
-      // above their children (familyLayout.js owns all three rules and the
-      // reasoning). Replaces the pair of much gentler nudges that used to live
-      // here — a plain "pull partners toward the same Y" was never enough to
-      // stop charge/collision settling a couple VERTICALLY instead, which is
-      // exactly what the reported screenshot showed.
-      //
-      // Chart mode uses fixed positions and radial has its own orbit targets —
-      // skip both. It never fights a manually-dragged bubble either: nodes with
-      // fx/fy set are repositioned by the simulation's own tick regardless of
-      // any velocity added here.
-      sim.force('family', (alpha) => {
+      // Partner Y-alignment: pull each partner pair toward the same Y so they
+      // read as a horizontal couple in organic/weighted/hybrid modes. Chart mode
+      // uses fixed positions; radial has its own orbit targets — skip both.
+      sim.force('partnerY', (alpha) => {
         const mode = layoutRef.current;
         if (mode === 'chart' || mode === 'radial') return;
-        applyFamilyForces(familyStructure, nodeById, alpha, {
-          podGap: POD_GAP,
-          parentGap: GEN_GAP * 0.45,
-        });
+        for (const r of partnerYRels) {
+          const na = nodeById.get(r.from_person);
+          const nb = nodeById.get(r.to_person);
+          if (!na || !nb) continue; // belt-and-braces — the cache should already guarantee this
+          const dy = nb.y - na.y;
+          na.vy += dy * 0.20 * alpha;
+          nb.vy -= dy * 0.20 * alpha;
+        }
+      });
+
+      // Parent-above-child correction: the resting Y-band force (restingYStrength)
+      // is deliberately gentle so the organic layout can drift and breathe, which
+      // occasionally lets local crowding (siblings bunching, charge/collision) push
+      // a parent below their own child even though its band target is correctly
+      // above. This only nudges pairs that are ACTUALLY inverted right now — a
+      // correctly-ordered pair is left completely alone, so most of the time this
+      // does nothing at all. It never touches a manually-dragged bubble's resting
+      // spot: nodes with fx/fy set are repositioned by the simulation's own tick
+      // regardless of any vy this adds, so a pinned bubble still doesn't move.
+      sim.force('parentAbove', (alpha) => {
+        const mode = layoutRef.current;
+        if (mode === 'chart' || mode === 'radial') return;
+        const minGap = GEN_GAP * 0.35;
+        for (const r of parentAboveRels) {
+          const parent = nodeById.get(r.from_person);
+          const child = nodeById.get(r.to_person);
+          if (!parent || !child) continue; // belt-and-braces — the cache should already guarantee this
+          const violation = (parent.y + minGap) - child.y; // >0 → parent too low
+          if (violation <= 0) continue;
+          const push = violation * 0.1 * alpha;
+          parent.vy -= push;
+          child.vy += push;
+        }
       });
 
       // Warm the layout so the tree opens already settled, not reorganising.
@@ -691,7 +695,7 @@ export default function BubbleTree({
             sim.force('x', forceX((d) => state.radialTargets.get(d.id)?.x ?? 0).strength(strength));
             sim.force('y', forceY((d) => state.radialTargets.get(d.id)?.y ?? 0).strength(strength));
             linkForce
-              .distance((l) => (l.kind === 'partner' ? POD_GAP : 280))
+              .distance((l) => (l.kind === 'partner' ? 112 : 280))
               .strength((l) => (l.kind === 'partner' ? 0.3 : 0.04));
           } else if (mode === 'weighted') {
             // Relationship-weighted: immediate family pulled close, extended drifts
@@ -718,8 +722,8 @@ export default function BubbleTree({
             sim.force('x', forceX(0).strength(SPREAD_X));
             sim.force('y', forceY(genY).strength(0.22));
             linkForce
-              .distance((l) => (l.kind === 'partner' ? POD_GAP : 280))
-              .strength((l) => (l.kind === 'partner' ? partnerLinkStrength : 0.26));
+              .distance((l) => (l.kind === 'partner' ? 112 : 280))
+              .strength((l) => (l.kind === 'partner' ? 0.9 : 0.26));
           } else if (mode === 'chart') {
             // Traditional hierarchical chart — physics silenced; positions held by fx/fy.
             sim.force('charge', forceManyBody().strength(-30).distanceMax(80));
@@ -735,8 +739,8 @@ export default function BubbleTree({
             sim.force('x', forceX(0).strength(SPREAD_X));
             sim.force('y', forceY(genY).strength(restingYStrength()));
             linkForce
-              .distance((l) => (l.kind === 'partner' ? POD_GAP : 280))
-              .strength((l) => (l.kind === 'partner' ? partnerLinkStrength : 0.26));
+              .distance((l) => (l.kind === 'partner' ? 112 : 280))
+              .strength((l) => (l.kind === 'partner' ? 0.9 : 0.26));
           }
           sim.alpha(0.7);
         },
@@ -784,26 +788,15 @@ export default function BubbleTree({
           state.enterFollow();
           if (!reducedMotion && animate && !alreadyActive) {
             zoom.velocity -= 1.6;
-            // Every click re-settles the tree AROUND whoever was clicked, rather
-            // than leaving everyone wherever they last happened to fit (real
-            // user report, with screenshots). Two halves:
-            //   • the Y-generational force spikes so parents visibly float
-            //     upward and children sink down into clean rows, and
-            //   • the clicked person is held still for the same window, so the
-            //     family reorganises around THEM instead of the whole canvas
-            //     sliding (the same holdActiveDuringSettle already used when a
-            //     tap reveals new neighbours).
-            // The family forces (partner pods, children centred beneath their
-            // parents) do the rest on their own — they're always on, so the
-            // reheat is what makes the rearrangement visible, not a separate
-            // per-click layout.
+            // Briefly spike the Y-generational force so parents visibly float
+            // upward and children sink down, making the clicked person's family
+            // obvious before settling back to the gentle resting drift.
             const mode = state.layoutMode;
             if (mode !== 'chart' && mode !== 'radial') {
               if (reorgTimer) clearTimeout(reorgTimer);
               const genY = genYTarget;
               sim.force('y', forceY(genY).strength(0.45));
               sim.alpha(0.88);
-              state.holdActiveDuringSettle();
               reorgTimer = setTimeout(() => {
                 reorgTimer = null;
                 if (state.layoutMode !== 'chart' && state.layoutMode !== 'radial') {
@@ -933,17 +926,14 @@ export default function BubbleTree({
           lastRelationshipSig = relSig;
           sim.nodes(nodes);
           linkForce.links(buildLinks(g.relationships));
-          // Generations first: the family structure's layout rows are derived
-          // from them, so rebuilding the structure against the OLD generation
-          // map would leave every row a sync behind the data.
-          gen = computeGenerations(g);
-          rebuildFamilyStructure();
+          rebuildForceRelCaches(g.relationships);
           updateChargeTheta();
           // Only reheat the simulation when the tree's actual shape changed
           // (someone added/removed, or a relationship changed) — a cosmetic
           // edit (photo, bio, tags, an R2 migration, an unrelated merge from
           // another editor) shouldn't make every bubble on screen jiggle.
           if (structuralChange) sim.alpha(0.5);
+          gen = computeGenerations(g);
           state.dist = distancesFrom(g, activeRef.current);
           relCache.clear(); // graph changed — relationship labels may differ
           if (state.layoutMode === 'radial' || state.layoutMode === 'weighted') state.relayout();
@@ -969,7 +959,7 @@ export default function BubbleTree({
           if (added) {
             sim.nodes(nodes);
             linkForce.links(buildLinks(graphRef.current.relationships));
-            rebuildFamilyStructure();
+            rebuildForceRelCaches(graphRef.current.relationships);
             updateChargeTheta();
             sim.alpha(Math.max(sim.alpha(), EXPAND_REHEAT_ALPHA));
             state.holdActiveDuringSettle();
