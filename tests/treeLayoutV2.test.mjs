@@ -394,5 +394,47 @@ test('every visible person receives a finite position in every fixture', () => {
   }
 });
 
+test('P2 fix: the planner behaves correctly across mobile/tablet/wide viewports, not just one fixed size', () => {
+  // The lab UI hardcodes one 980x620 stage, and every other test in this
+  // file uses one fixed 1200x800 VIEWPORT — so nothing had ever exercised
+  // planFamilyLayout/the camera at a genuinely different aspect ratio or
+  // size. This proves the PURE layout/camera math (not the lab's CSS,
+  // which is out of scope for a fixture-only bench) holds its invariants
+  // across a real spread: a narrow phone portrait, a tablet, and a wide
+  // desktop.
+  const VIEWPORTS = {
+    'mobile portrait 390x844': { width: 390, height: 844 },
+    'tablet 768x1024': { width: 768, height: 1024 },
+    'wide desktop 1440x900': { width: 1440, height: 900 },
+  };
+  for (const [label, viewport] of Object.entries(VIEWPORTS)) {
+    for (const f of FIXTURES) {
+      const graph = graphOf(f);
+      const plan = planFamilyLayout({ graph, activeId: f.focus, viewport });
+      // Same invariants as "every visible person receives a finite
+      // position" and "the camera frames the near family and clamps zoom"
+      // above, just swept across every viewport instead of one.
+      for (const person of graph.people) {
+        const pt = plan.positions.get(person.id);
+        assert.ok(pt, `${label}/${f.id}: ${person.id} missing`);
+        assert.ok(Number.isFinite(pt.x) && Number.isFinite(pt.y),
+          `${label}/${f.id}: ${person.id} non-finite`);
+      }
+      assert.ok(plan.camera.zoom >= 0.35 - 1e-9 && plan.camera.zoom <= 1.35 + 1e-9,
+        `${label}/${f.id}: zoom ${plan.camera.zoom} out of range`);
+      assert.ok(Number.isFinite(plan.camera.screenX) && Number.isFinite(plan.camera.screenY),
+        `${label}/${f.id}: non-finite camera screen position`);
+      // The active person must always land inside the actual viewport
+      // bounds passed in — a narrow phone width is exactly the case where
+      // a camera computed for a wide desktop would clip the very person
+      // the whole view is supposed to be anchored on.
+      assert.ok(plan.camera.screenX >= 0 && plan.camera.screenX <= viewport.width,
+        `${label}/${f.id}: active person's screenX ${plan.camera.screenX} is outside the ${viewport.width}px-wide viewport`);
+      assert.ok(plan.camera.screenY >= 0 && plan.camera.screenY <= viewport.height,
+        `${label}/${f.id}: active person's screenY ${plan.camera.screenY} is outside the ${viewport.height}px-tall viewport`);
+    }
+  }
+});
+
 console.log(`\n  ${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);
