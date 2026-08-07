@@ -158,6 +158,44 @@ test('a partner pod is rigid — member offsets depend only on the pod', () => {
   }
 });
 
+/* ── P1 fixes from the Codex review of PR #130 ───────────────────────────── */
+
+test('P1 fix: a transitive partner chain does NOT collapse into one pod', () => {
+  // A–B and C–D are direct partnerships; B–C is a separate one. Full
+  // transitive closure over the whole partner graph used to merge all four
+  // into one giant rigid pod just because B and C each have two partners.
+  const f = fixtureById('partner-chain');
+  const plan = planOf(f); // active = ch_a
+  const unitA = plan.unitOf.get('ch_a');
+  const unitC = plan.unitOf.get('ch_c');
+  assert.notEqual(unitA.id, unitC.id, 'ch_a/ch_b and ch_c/ch_d must land in separate pods');
+  assert.deepEqual([...unitA.memberIds].sort(), ['ch_a', 'ch_b']);
+  assert.deepEqual([...unitC.memberIds].sort(), ['ch_c', 'ch_d']);
+});
+
+test('P1 fix: the chain splits the same way regardless of which end is active', () => {
+  const f = fixtureById('partner-chain');
+  const graph = graphOf(f);
+  const planFromA = planFamilyLayout({ graph, activeId: 'ch_a', viewport: VIEWPORT });
+  const planFromD = planFamilyLayout({ graph, activeId: 'ch_d', viewport: VIEWPORT });
+  const membersOf = (plan, id) => [...plan.unitOf.get(id).memberIds].sort();
+  assert.deepEqual(membersOf(planFromA, 'ch_a'), membersOf(planFromD, 'ch_a'));
+  assert.deepEqual(membersOf(planFromA, 'ch_c'), membersOf(planFromD, 'ch_c'));
+});
+
+test('P1 fix: near family includes EVERY pod member\'s own parents and children, not just the active person\'s', () => {
+  // A real report: Christopher's parents and Ken's children were pushed
+  // beyond the near family's span in the very fixture built to show them —
+  // near-family traversal only ever walked out from the active person, not
+  // from their partners too.
+  const f = fixtureById('remarried');
+  const plan = planOf(f); // active = r_heather; pod = {heather, ken, chris}
+  assert.ok(plan.nearIds.has('r_gran'), "Christopher's mother must be near");
+  assert.ok(plan.nearIds.has('r_grandad'), "Christopher's father must be near");
+  assert.ok(plan.nearIds.has('r_jessica'), "Ken's daughter must be near");
+  assert.ok(plan.nearIds.has('r_amie'), "Ken's daughter must be near");
+});
+
 /* ── The composition guard ───────────────────────────────────────────────── */
 
 test('a distant branch cannot move the near family by even a fraction of a pixel', () => {

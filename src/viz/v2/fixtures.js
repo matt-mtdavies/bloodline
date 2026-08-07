@@ -193,7 +193,31 @@ const distantPull = {
   ],
 };
 
-/* ── 7. Degenerate inputs ────────────────────────────────────────────────── */
+/* ── 7. A transitive partner chain: A–B, B–C, C–D ─────────────────────────
+ * A real reported bug: full transitive closure over the whole partner graph
+ * once collapsed a chain like this into one giant rigid pod, purely because
+ * B and C each happen to have two partners. B's partnership with C has
+ * nothing to do with A, and C's with D has nothing to do with B — only
+ * DIRECT partnerships belong in the same rigid pod.                         */
+const partnerChain = {
+  id: 'partner-chain',
+  label: 'Partner chain (non-transitive)',
+  note: "A–B and C–D are direct partnerships; B–C is a separate one. Selecting A must not drag C or D into A's pod.",
+  focus: 'ch_a',
+  people: [
+    p('ch_a', 'Aaron Voss', { born: '1959', gender: 'male' }),
+    p('ch_b', 'Bridget Voss', { born: '1961', gender: 'female' }),
+    p('ch_c', 'Carl Doyle', { born: '1963', gender: 'male' }),
+    p('ch_d', 'Diane Doyle', { born: '1965', gender: 'female' }),
+  ],
+  relationships: [
+    ptn('ch_a', 'ch_b', 'former'),
+    ptn('ch_b', 'ch_c', 'former'),
+    ptn('ch_c', 'ch_d'),
+  ],
+};
+
+/* ── 8. Degenerate inputs ────────────────────────────────────────────────── */
 const singleton = {
   id: 'singleton',
   label: 'One person alone',
@@ -223,7 +247,7 @@ const disconnected = {
 };
 
 export const FIXTURES = [
-  nuclear, remarried, threePod, wideSiblings, deepLineage, distantPull, disconnected, singleton,
+  nuclear, remarried, threePod, wideSiblings, deepLineage, distantPull, partnerChain, disconnected, singleton,
 ];
 
 export const fixtureById = (id) => FIXTURES.find((f) => f.id === id) ?? FIXTURES[0];

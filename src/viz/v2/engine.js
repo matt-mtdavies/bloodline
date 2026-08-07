@@ -104,11 +104,21 @@ export function createMotionEngine({
   };
 
   function select(nextActiveId, { anchor = null, immediate = false } = {}) {
-    // Where is this person on screen RIGHT NOW? That point becomes the fixed
-    // point of the whole transition unless the caller names another.
-    const currentScreen = activeId && springs.get(nextActiveId)
-      ? toScreen(camera(), worldPositions().get(nextActiveId) ?? { x: 0, y: 0 })
-      : null;
+    // Where is this person on screen RIGHT NOW, under the OLD frame and OLD
+    // camera? That point becomes the fixed point of the whole transition
+    // unless the caller names another. Captured before anything below moves.
+    // Deliberately their full RENDERED position — spring value plus whatever
+    // collision displacement and ambient breath they currently carry, not
+    // just the bare spring value — because both the screen anchor AND the
+    // rebase below have to agree on the same reference point. Using only the
+    // raw spring value here was a real bug: it under-counted by exactly this
+    // person's own displacement+breath, so the anchor jumped to where they
+    // "really" were but the rebase shifted everyone else by a slightly
+    // different amount, leaving a several-pixel residual jump for everyone
+    // ELSE even after the coordinate-frame fix below.
+    const hadPrev = activeId && springs.get(nextActiveId);
+    const prevWorld = hadPrev ? worldPositions().get(nextActiveId) : null;
+    const currentScreen = prevWorld ? toScreen(camera(), prevWorld) : null;
 
     activeId = nextActiveId;
     plan = planFamilyLayout({ graph, activeId, visibleIds, viewport, anchor: null });
@@ -123,6 +133,16 @@ export function createMotionEngine({
       x: Number.isFinite(raw.x) ? raw.x : viewport.width / 2,
       y: Number.isFinite(raw.y) ? raw.y : viewport.height / 2,
     };
+
+    // Re-express every already-tracked node in the NEW frame BEFORE handing
+    // out new targets. Without this, a node's numeric spring value still
+    // means "however far from the OLD active person" — the renderer reads it
+    // as "however far from the NEW one" the instant this function returns, a
+    // real on-screen jump that happens before springs.step() is ever called
+    // again, so no per-frame drift metric can see it (a real report: most of
+    // a live "remarried" fixture jumped tens of pixels, one person ~129px,
+    // the instant Matthew was selected, while every metric read "0 drift").
+    if (prevWorld) springs.translate(-prevWorld.x, -prevWorld.y);
 
     springs.setTargets(plan.positions, {
       // A person appearing for the first time grows out of the active person
@@ -153,7 +173,30 @@ export function createMotionEngine({
     // report an animation in progress that is never going to happen, and the
     // engine would keep integrating springs that are already exactly home.
     atRest = landImmediately;
-    displacement = collision ? collider.resolve(springs.positions(), activeId) : new Map();
+    // Collision is only resolved fresh here when landing immediately (nothing
+    // further will animate to smooth it over). Otherwise the PREVIOUS
+    // displacement is left exactly as it was: recomputing it synchronously
+    // against the NEW pinned obstacle would itself be a small discontinuity —
+    // a different person is now immovable, so forceCollide can redistribute
+    // an existing overlap's correction differently even though every node's
+    // position relative to every OTHER node hasn't changed at all. The very
+    // next step() recomputes it naturally once real motion is already
+    // underway, exactly like every other frame does.
+    if (collision) {
+      if (landImmediately) {
+        displacement = collider.resolve(springs.positions(), activeId);
+      } else if (displacement.has(activeId)) {
+        // The newly active person must be displaced by exactly zero — collision
+        // never moves the fixed point — even though a leftover entry from when
+        // THEY weren't the pin may still be sitting in the map. Clear only
+        // theirs; everyone else's stale entry is left exactly as it was, for
+        // the same continuity reason recomputing the whole map here would break.
+        displacement = new Map(displacement);
+        displacement.set(activeId, { x: 0, y: 0 });
+      }
+    } else {
+      displacement = new Map();
+    }
     lastActiveScreen = toScreen(camera(), worldPositions().get(activeId) ?? { x: 0, y: 0 });
     recorder.beginTransition(`select:${activeId}`);
     return plan;

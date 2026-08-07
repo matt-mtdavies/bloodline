@@ -62,6 +62,94 @@ test('the selected person does not move on screen for a single frame of a transi
   }
 });
 
+test('P1 fix: selecting someone new does not jump everyone ELSE on screen', () => {
+  // A real report from live capture: selecting Matthew in the "remarried"
+  // fixture held Matthew within ~0.14px (the pre-existing invariant above)
+  // while most of the rest of the family jumped ~47px and Jason jumped
+  // ~129px — instantly, before a single frame of easing, because the
+  // coordinate frame's own origin moved without rebasing anyone already on
+  // screen. maxActiveDriftPx never saw it: it only ever tracked the ACTIVE
+  // person. This drives the transition with ambient/collision off so the
+  // only thing that can move anyone is the coordinate-frame change itself.
+  for (const f of FIXTURES) {
+    const graph = buildGraph(f.people, f.relationships);
+    const engine = createMotionEngine({ graph, viewport: VIEWPORT, ambient: false, collision: false });
+    engine.select(f.focus);
+    engine.settle({ dtMs: FRAME, maxFrames: 400 });
+    for (const person of graph.people) {
+      if (person.id === f.focus) continue;
+      const before = engine.screenPositions();
+      engine.select(person.id);
+      const after = engine.screenPositions();
+      let checked = 0;
+      for (const [id, pt] of before) {
+        const a2 = after.get(id);
+        if (!a2) continue;
+        checked++;
+        const d = Math.hypot(pt.x - a2.x, pt.y - a2.y);
+        assert.ok(d < 1,
+          `${f.id}: selecting ${person.id} jumped ${id} by ${d.toFixed(2)}px at the instant of selection`);
+      }
+      assert.ok(checked > 0, `${f.id}: nobody to check the jump against`);
+    }
+  }
+});
+
+test('P1 fix: the same holds true with ambient breathing and collision left ON (the real defaults)', () => {
+  // The isolated test above proves the coordinate rebase itself is exact.
+  // This proves it holds up once the OTHER two live pieces are back in the
+  // picture too — a second real bug lived exactly here: the rebase amount
+  // was computed from the newly active person's bare spring value, which
+  // silently dropped their OWN collision displacement and ambient breath
+  // contribution, leaving a several-pixel residual for everyone else even
+  // after the primary coordinate fix above.
+  //
+  // One SEPARATE, genuinely irreducible source of a small jump remains and
+  // is deliberately allowed for here rather than chased further: the person
+  // who was JUST active breathes exactly zero right up until the instant
+  // they stop being active, at which point their suppressed sine phase
+  // (which kept advancing the whole time, only its OUTPUT was held at zero)
+  // can resume at any point in its cycle — up to the full ambient amplitude
+  // away from zero. That is bounded by amplitude, not by this bug class:
+  // hypot(AMBIENT_AMPLITUDE, AMBIENT_AMPLITUDE*0.7) ≈ 1.95 world units, times
+  // up to maxZoom (1.35) ≈ 2.64px worst case. The threshold below (3px) is
+  // that bound with headroom, not a re-opened version of the jump above it.
+  for (const f of FIXTURES) {
+    const graph = buildGraph(f.people, f.relationships);
+    const engine = createMotionEngine({ graph, viewport: VIEWPORT }); // ambient/collision default ON
+    engine.select(f.focus);
+    engine.settle({ dtMs: FRAME, maxFrames: 400 });
+    for (const person of graph.people) {
+      if (person.id === f.focus) continue;
+      const prevPlan = engine.plan;
+      const before = engine.screenPositions();
+      engine.select(person.id);
+      const newPlan = engine.plan;
+      const after = engine.screenPositions();
+      for (const [id, pt] of before) {
+        const a2 = after.get(id);
+        if (!a2) continue;
+        // A person whose POD MEMBERSHIP genuinely changes across this
+        // reselect (e.g. selecting someone with two direct partners folds a
+        // second pod into the active one) is a real recomposition, not a
+        // continuity bug — some motion is inherent to that, same as it would
+        // be for the active person's own family. Only people whose pod is
+        // unchanged are held to the near-zero bar.
+        const oldMembers = prevPlan.unitOf.get(id)?.memberIds?.join('|');
+        const newMembers = newPlan.unitOf.get(id)?.memberIds?.join('|');
+        if (oldMembers !== newMembers) continue;
+        const d = Math.hypot(pt.x - a2.x, pt.y - a2.y);
+        assert.ok(d < 3,
+          `${f.id}: selecting ${person.id} jumped ${id} by ${d.toFixed(2)}px (ambient+collision on)`);
+      }
+      // Let this transition finish before the next selection — a real click
+      // never lands on a family still mid-flight from the last one, and
+      // testing that adversarial pile-up isn't what this test is for.
+      engine.settle({ dtMs: FRAME, maxFrames: 400 });
+    }
+  }
+});
+
 test('the pin survives zoom changing during the transition', () => {
   // Selecting across a big composition change forces a real zoom change; the
   // active person is the camera's world anchor, so their screen position is

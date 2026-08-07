@@ -104,6 +104,25 @@ export class SpringField {
     for (const s of this.state.values()) { s.x = s.tx; s.y = s.ty; s.vx = 0; s.vy = 0; }
   }
 
+  /**
+   * Shift every already-tracked node's CURRENT value (and pending target) by
+   * a constant offset — used when the world coordinate frame's own origin
+   * moves, i.e. a different person becomes "active" and the layout re-plans
+   * around THEM instead. Without this, a node's numeric spring value still
+   * means "however far from the person who used to be active," which the
+   * renderer immediately re-reads as "however far from the new one" — an
+   * instant jump baked into the very first frame, invisible to any per-frame
+   * drift metric because it happens before step() is ever called again.
+   * Velocities are left untouched: a pure translation of the coordinate
+   * frame doesn't change how fast anything is moving relative to it.
+   */
+  translate(dx, dy) {
+    for (const s of this.state.values()) {
+      s.x += dx; s.y += dy;
+      s.tx += dx; s.ty += dy;
+    }
+  }
+
   positions() {
     const out = new Map();
     for (const [id, s] of this.state) out.set(id, { x: s.x, y: s.y });

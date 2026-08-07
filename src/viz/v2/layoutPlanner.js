@@ -49,57 +49,37 @@ const byBirthThenId = (byId) => (a, b) => {
 };
 
 /* ── Partner pods ─────────────────────────────────────────────────────────
- * A pod is a partner-connected component (any status — a former partner is
- * still a co-parent and still belongs on the couple's row). Pods are the
- * unit of layout: they are placed as one rigid object and they move as one.
+ * A pod is a hub plus their DIRECT partners only (any status — a former
+ * partner is still a co-parent and still belongs on the couple's row).
+ * Deliberately NOT the full transitive closure of the partner graph: a real
+ * bug had A–B, B–C, C–D collapse into one giant rigid pod just because B
+ * happens to have two partners and C happens to have two partners — B's
+ * partnership with C has nothing to do with A, and belongs in its own unit.
+ * A pod is the unit of layout: it is placed as one rigid object and moves as
+ * one, so only genuinely DIRECT partnerships should share that rigidity.
  */
 function buildUnits(graph, visible, activeId) {
-  const parent = new Map();
-  const find = (x) => {
-    while (parent.get(x) !== x) { parent.set(x, parent.get(parent.get(x))); x = parent.get(x); }
-    return x;
-  };
-  const union = (a, b) => { const ra = find(a), rb = find(b); if (ra !== rb) parent.set(ra, rb); };
-
-  for (const id of visible) if (!parent.has(id)) parent.set(id, id);
-  for (const id of visible) {
-    for (const pt of graph.partners(id)) {
-      if (visible.has(pt.id)) union(id, pt.id);
-    }
-  }
-
-  const groups = new Map();
-  for (const id of visible) {
-    const root = find(id);
-    if (!groups.has(root)) groups.set(root, []);
-    groups.get(root).push(id);
-  }
-
+  const claimed = new Set();
   const units = [];
   const unitOf = new Map();
-  for (const ids of groups.values()) {
-    ids.sort((a, b) => String(a).localeCompare(String(b)));
-    const unit = { id: `u:${ids[0]}`, memberIds: ids, offsets: new Map(), row: 0, x: 0 };
+  const partnersOf = (id) => graph.partners(id).filter((pt) => visible.has(pt.id)).map((pt) => pt.id);
+
+  const makeUnit = (hub, memberIds) => {
+    const ids = [...new Set(memberIds)].sort((a, b) => String(a).localeCompare(String(b)));
+    for (const id of ids) claimed.add(id);
+    const unit = { id: `u:${ids[0]}`, memberIds: ids, offsets: new Map(), row: 0, x: 0, anchorId: hub };
     if (ids.length === 1) {
       unit.offsets.set(ids[0], 0);
-      unit.anchorId = ids[0];
     } else {
-      // Anchor = the active person if they're in this pod (so the pod composes
-      // around THEM), else the member holding the pod together.
-      const partnerCountIn = (id) => graph.partners(id).filter((pt) => ids.includes(pt.id)).length;
-      const anchor = ids.includes(activeId)
-        ? activeId
-        : [...ids].sort((a, b) => (partnerCountIn(b) - partnerCountIn(a)) || String(a).localeCompare(String(b)))[0];
-      const statusOf = new Map(graph.partners(anchor).map((pt) => [pt.id, pt.status]));
-      const others = ids.filter((id) => id !== anchor).sort(byBirthThenId(graph.byId));
+      const statusOf = new Map(graph.partners(hub).map((pt) => [pt.id, pt.status]));
+      const others = ids.filter((id) => id !== hub).sort(byBirthThenId(graph.byId));
       // Former partners to the left of the anchor, current to the right —
       // a remarried person sits between the two chapters of their life.
       const left = others.filter((id) => statusOf.get(id) === 'former');
       const right = others.filter((id) => statusOf.get(id) !== 'former');
-      unit.offsets.set(anchor, 0);
+      unit.offsets.set(hub, 0);
       left.forEach((id, i) => unit.offsets.set(id, -(i + 1) * POD_GAP));
       right.forEach((id, i) => unit.offsets.set(id, (i + 1) * POD_GAP));
-      unit.anchorId = anchor;
     }
     // Pod width, used when packing units along a row.
     const offs = [...unit.offsets.values()];
@@ -108,7 +88,26 @@ function buildUnits(graph, visible, activeId) {
     unit.width = unit.right - unit.left;
     units.push(unit);
     for (const id of ids) unitOf.set(id, unit);
+  };
+
+  // 1. The active person's own pod forms first, centred on THEM — this is
+  //    what lets the camera hold them still no matter how many partners of
+  //    partners exist elsewhere in the graph.
+  if (visible.has(activeId) && !claimed.has(activeId)) {
+    makeUnit(activeId, [activeId, ...partnersOf(activeId).filter((id) => !claimed.has(id))]);
   }
+
+  // 2. Everyone else: direct-partnership stars only, processed most-partnered
+  //    first so a genuine hub claims its partners before a single-partner
+  //    "leaf" on the same chain can steal one away first. Ties break on id
+  //    for determinism, independent of insertion order.
+  const remaining = [...visible].filter((id) => !claimed.has(id))
+    .sort((a, b) => (partnersOf(b).length - partnersOf(a).length) || String(a).localeCompare(String(b)));
+  for (const id of remaining) {
+    if (claimed.has(id)) continue; // already swept in as someone else's partner
+    makeUnit(id, [id, ...partnersOf(id).filter((pid) => !claimed.has(pid))]);
+  }
+
   units.sort((a, b) => String(a.id).localeCompare(String(b.id)));
   return { units, unitOf };
 }
@@ -179,6 +178,13 @@ function assignRows(graph, visible, activeId, units, unitOf) {
  * packed into leftover space: the active pod, their parents and grandparents,
  * their siblings, their children and grandchildren, and their nieces and
  * nephews — plus the partners of all of those, since a pod is indivisible.
+ *
+ * Computed from EVERY member of the active pod, not just the active person —
+ * a real report: a partner's own parents and children (Christopher's parents,
+ * Ken's children in the "remarried" fixture) were being pushed off the near
+ * family's span entirely, even in the fixture built specifically to show
+ * them. "Near" has to be defined pod-wide and symmetrically, not from one
+ * person's own ancestry/descent alone.
  */
 function collectNear(graph, visible, activeId, unitOf) {
   const near = new Set();
@@ -187,21 +193,31 @@ function collectNear(graph, visible, activeId, unitOf) {
     for (const m of unitOf.get(id)?.memberIds ?? [id]) near.add(m);
   };
   add(activeId);
-  const parents = graph.parents(activeId).filter((q) => visible.has(q.id)).map((q) => q.id);
-  parents.forEach(add);
-  for (const pid of parents) {
-    graph.parents(pid).forEach((q) => add(q.id));      // grandparents
-    graph.children(pid).forEach((q) => add(q.id));      // siblings
+  const podMembers = unitOf.get(activeId)?.memberIds ?? [activeId];
+
+  const parentIds = new Set();
+  for (const pm of podMembers) {
+    add(pm);
+    for (const q of graph.parents(pm)) if (visible.has(q.id)) { add(q.id); parentIds.add(q.id); }
+    for (const s of graph.siblings?.(pm) ?? []) add(s.id);
   }
-  for (const s of graph.siblings?.(activeId) ?? []) add(s.id);
-  const kids = graph.children(activeId).filter((q) => visible.has(q.id)).map((q) => q.id);
-  kids.forEach(add);
-  for (const kid of kids) graph.children(kid).forEach((q) => add(q.id)); // grandchildren
-  // Nieces and nephews: children of the active person's siblings.
+  for (const pid of parentIds) {
+    graph.parents(pid).forEach((q) => add(q.id));   // grandparents
+    graph.children(pid).forEach((q) => add(q.id));  // siblings, via a shared parent
+  }
+
+  const kidIds = new Set();
+  for (const pm of podMembers) {
+    for (const q of graph.children(pm)) if (visible.has(q.id)) { add(q.id); kidIds.add(q.id); }
+  }
+  for (const kid of kidIds) graph.children(kid).forEach((q) => add(q.id)); // grandchildren
+
+  // Nieces and nephews: children of near people whose own parents overlap any
+  // pod member's parents.
   for (const id of [...near]) {
-    if (id === activeId) continue;
-    const r = graph.parents(id).some((q) => parents.includes(q.id));
-    if (r) graph.children(id).forEach((q) => add(q.id));
+    if (podMembers.includes(id)) continue;
+    const isNieceNephew = graph.parents(id).some((q) => parentIds.has(q.id));
+    if (isNieceNephew) graph.children(id).forEach((q) => add(q.id));
   }
   return near;
 }

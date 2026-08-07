@@ -32,7 +32,15 @@ export function createAmbient({ amplitude = AMBIENT_AMPLITUDE, period = AMBIENT_
     /** @param {Map<string,{id}>} unitOf person → unit, so a pod shares a phase */
     offsetFor(id, unitOf, timeSeconds) {
       if (!enabled || amplitude <= 0) return { x: 0, y: 0 };
-      const key = unitOf?.get(id)?.id ?? id;
+      // Keyed on the pod's MEMBER SET, not its `unit.id` — that id encodes
+      // whichever member happens to be the chosen hub/anchor, and the hub can
+      // flip to a different member depending on who's active (a real bug:
+      // selecting a different partner in the same pod changed its `unit.id`,
+      // so the whole pod's breathing phase jumped right at the selection
+      // instant even though the pod itself hadn't changed at all). The member
+      // set — already alphabetically sorted by buildUnits — is stable
+      // regardless of which member is currently the hub.
+      const key = unitOf?.get(id)?.memberIds?.join('|') ?? id;
       if (!phases.has(key)) phases.set(key, phaseOf(key));
       const phase = phases.get(key);
       const t = (timeSeconds / period) * Math.PI * 2;
