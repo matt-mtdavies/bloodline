@@ -158,6 +158,38 @@ export default function TreeMotionLab() {
   const lastTsRef = useRef(0);
   const [activeId, setActiveId] = useState(fixture.focus);
 
+  // Minimal drag-to-pan — the one gesture needed to judge "can I explore
+  // this like a living tree", added deliberately cheaply: a plain
+  // screen-space offset applied only at render time (see renderPos below),
+  // never touching the engine's own camera/world state. Pinch/wheel zoom is
+  // intentionally NOT included in this pass — this is a small, reversible
+  // step to validate the feel before any bigger investment, not a step
+  // toward the full production canvas.
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const dragRef = useRef(null); // { startX, startY, startPanX, startPanY, moved }
+  // Consumed by a bubble's onClick, which (per the DOM's own rules) still
+  // fires on pointerup even after a drag that started on top of that
+  // bubble — without this, dragging the canvas from directly over a
+  // person would ALSO re-select them the instant the drag ends.
+  const justDraggedRef = useRef(false);
+
+  const onStagePointerDown = useCallback((e) => {
+    dragRef.current = { startX: e.clientX, startY: e.clientY, startPanX: pan.x, startPanY: pan.y, moved: false };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  }, [pan]);
+  const onStagePointerMove = useCallback((e) => {
+    const d = dragRef.current;
+    if (!d) return;
+    const dx = e.clientX - d.startX;
+    const dy = e.clientY - d.startY;
+    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) d.moved = true;
+    if (d.moved) setPan({ x: d.startPanX + dx, y: d.startPanY + dy });
+  }, []);
+  const onStagePointerUp = useCallback(() => {
+    if (dragRef.current?.moved) justDraggedRef.current = true;
+    dragRef.current = null;
+  }, []);
+
   // Rebuild the engine whenever the experiment's inputs change.
   useEffect(() => {
     const engine = version === 'v2'
@@ -167,6 +199,7 @@ export default function TreeMotionLab() {
     engineRef.current = engine;
     setActiveId(fixture.focus);
     setSummary(null);
+    setPan({ x: 0, y: 0 });
     lastTsRef.current = 0;
     return () => { engineRef.current = null; };
   }, [graph, version, ambient, fixture.focus]);
@@ -224,8 +257,8 @@ export default function TreeMotionLab() {
     const s = screen.get(id);
     if (!s) return null;
     const j = jitterFor(id, cam.zoom);
-    return { x: s.x + j.x, y: s.y + j.y };
-  }, [screen, cam.zoom]);
+    return { x: s.x + j.x + pan.x, y: s.y + j.y + pan.y };
+  }, [screen, cam.zoom, pan]);
 
   const partnerLinks = useMemo(() => {
     const seen = new Set();
@@ -299,9 +332,16 @@ export default function TreeMotionLab() {
       <p className="lab__note">{fixture.note}</p>
 
       <div className="lab__stage" style={{ width: VIEWPORT.width, height: VIEWPORT.height }}>
-        <svg width={VIEWPORT.width} height={VIEWPORT.height} data-testid="lab-stage">
+        <svg
+          width={VIEWPORT.width} height={VIEWPORT.height} data-testid="lab-stage"
+          className="lab__svg"
+          onPointerDown={onStagePointerDown}
+          onPointerMove={onStagePointerMove}
+          onPointerUp={onStagePointerUp}
+          onPointerCancel={onStagePointerUp}
+        >
           {showGuides && plan && [...new Set([...plan.rows.values()])].sort((a, b) => a - b).map((r) => {
-            const y = cam.screenY + (r * ROW_GAP - cam.worldY) * cam.zoom;
+            const y = cam.screenY + (r * ROW_GAP - cam.worldY) * cam.zoom + pan.y;
             return (
               <g key={r}>
                 <line x1={0} x2={VIEWPORT.width} y1={y} y2={y} className="lab__rowline" />
@@ -353,7 +393,10 @@ export default function TreeMotionLab() {
                 data-x={s.x.toFixed(3)}
                 data-y={s.y.toFixed(3)}
                 className={`lab__node${isActive ? ' is-active' : ''}${isNear ? ' is-near' : ''}${p.is_deceased ? ' is-deceased' : ''}`}
-                onClick={() => select(p.id, s)}
+                onClick={() => {
+                  if (justDraggedRef.current) { justDraggedRef.current = false; return; }
+                  select(p.id, s);
+                }}
               >
                 {p.is_deceased && (
                   <circle className="lab__node-memring" cx={rp.x} cy={rp.y} r={nodeR + 4} />

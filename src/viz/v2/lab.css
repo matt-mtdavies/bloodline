@@ -51,6 +51,8 @@
 .lab__note { color: #6b6f76; margin: 10px 0; max-width: 70ch; }
 
 .lab__stage { position: relative; background: #ffffff; border: 1px solid #ebedf0; border-radius: 16px; overflow: hidden; }
+.lab__svg { cursor: grab; touch-action: none; }
+.lab__svg:active { cursor: grabbing; }
 .lab__rowline { stroke: #ebedf0; stroke-width: 1; }
 .lab__rowlabel { fill: #a6abb3; font-size: 10px; }
 
