@@ -1,0 +1,43 @@
+name: main-app-ci
+
+# The general regression guard for the whole app: the full tests/*.test.mjs
+# suite plus a production build. Runs on EVERY push to main and EVERY pull
+# request — deliberately no `paths:` filter, unlike export-workflow.yml's
+# jobs (which are scoped to that one feature's files). This job used to live
+# inside export-workflow.yml, gated behind that workflow's export-workflow-
+# specific path filter — which meant a PR touching only, say, src/viz/v2/**
+# (the Tree Motion Lab) or any other file outside that filter never ran it
+# at all. `npm run test:lab` (tests/treeLayoutV2.test.mjs +
+# tests/treeMotionV2.test.mjs) is already part of scripts/run-tests-ci.mjs's
+# full sweep, so extracting this job here — with no path filter — is what
+# actually enforces it in CI, per the Tree Motion Lab PR review's own ask
+# ("later physics changes cannot silently invalidate the evidence").
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  main-app-still-builds:
+    name: main app — unit tests + build (regression guard)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+
+      - run: npm ci
+
+      # Tolerates ONLY the one documented pre-existing relations.test.mjs
+      # failure (see scripts/run-tests-ci.mjs's own header) — this guard
+      # exists to catch a regression THIS PR might cause, not to also
+      # gate on an unrelated, already-known issue that predates it. Any
+      # OTHER failure, in any file — including tests/treeLayoutV2.test.mjs
+      # and tests/treeMotionV2.test.mjs — still fails this job.
+      - name: run the existing unit test suite
+        run: node scripts/run-tests-ci.mjs
+
+      - run: npm run build
