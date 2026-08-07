@@ -3,16 +3,32 @@
  *
  * Deliberately synthetic and deliberately shared between the lab UI and the
  * test suite: every motion claim made in the lab is the same input a test can
- * assert on. No real family data ever reaches V2 — the lab is fixture-only.
+ * assert on. No REAL family data ever reaches V2 — the lab is fixture-only.
  *
  * Each fixture is a family SHAPE chosen because it stresses one composition
  * rule. Names are ordinary so screenshots read like a real tree rather than
- * "n1 n2 n3", but nobody here is a real person.
+ * "n1 n2 n3", but nobody here is a real person — except `seedFamily`, which
+ * is the app's own always-shipped, fictional DEMO dataset (src/data/seed.js
+ * — the "James Mercer" family CLAUDE.md's own Status entries constantly
+ * reference), not any real user's data. It's included because every
+ * hand-built fixture above is small and clean by construction (3-14 people,
+ * one composition rule each) — the honest test of whether V2 holds up is a
+ * family nobody designed FOR V2: 23 people, five generations, a divorce and
+ * remarriage, a step-parent, an adopted sibling pair, memorial (deceased)
+ * members. Being a real, shared FIXTURES entry (not a special lab-only case)
+ * means it's exercised by every existing generic test too — "every fixture
+ * survives selecting every person", the composition/collision guards, etc. —
+ * for free.
  *
  * A fixture is `{ id, label, note, focus, people, relationships }` — the same
  * flat shape src/data/graph.js#buildGraph consumes, so the lab and the tests
  * both just call buildGraph(fixture.people, fixture.relationships).
  */
+import {
+  people as seedPeople,
+  relationships as seedRelationships,
+  DEFAULT_FOCUS as SEED_FOCUS,
+} from '../../data/seed.js';
 
 let seq = 0;
 const p = (id, name, opts = {}) => ({
@@ -246,8 +262,20 @@ const disconnected = {
   ],
 };
 
+/* ── 9. The real seed family — see the file header comment for why this
+ * one isn't a synthetic shape. */
+const seedFamily = {
+  id: 'seed-family',
+  label: 'Real seed family (23 people)',
+  note: 'The app’s own demo family, not a hand-built shape: five generations, a divorce + remarriage, a step-parent, an adopted sibling pair, and several deceased/memorial members — the real stress test.',
+  focus: SEED_FOCUS,
+  people: seedPeople,
+  relationships: seedRelationships,
+};
+
 export const FIXTURES = [
   nuclear, remarried, threePod, wideSiblings, deepLineage, distantPull, partnerChain, disconnected, singleton,
+  seedFamily,
 ];
 
 export const fixtureById = (id) => FIXTURES.find((f) => f.id === id) ?? FIXTURES[0];
