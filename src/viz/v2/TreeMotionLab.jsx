@@ -55,6 +55,25 @@ function sagPath(a, b) {
 const isBioAdopt = (q) => !q || q === 'biological' || q === 'adoptive';
 
 /*
+ * Additive reveal — the same `expanded` (tapped ids) ∪ neighbours formula
+ * App.jsx's own visibleIds already uses, so tapping a bubble here means the
+ * same thing it means in the real app: you and everyone directly connected
+ * to you become visible, not just the person you tapped. "Collapse" just
+ * means resetting `expanded` back to the one starting id — see the reset in
+ * the engine-rebuild effect below.
+ */
+function computeVisibleIds(graph, expanded) {
+  const ids = new Set();
+  for (const id of expanded) {
+    ids.add(id);
+    for (const q of graph.parents(id)) ids.add(q.id);
+    for (const q of graph.children(id)) ids.add(q.id);
+    for (const q of graph.partners(id)) ids.add(q.id);
+  }
+  return ids;
+}
+
+/*
  * Parent→child links, merged at the co-parent level exactly like
  * links.js's own `groups`/`divorceGroups` pass: two co-parents (current OR
  * former partners) share one visual origin rather than each drawing an
@@ -63,8 +82,8 @@ const isBioAdopt = (q) => !q || q === 'biological' || q === 'adoptive';
  * same point. `renderPos(id)` already includes the organic jitter, so the
  * curves visually terminate exactly on the (slightly offset) bubble.
  */
-function buildParentChildLinks(graph, renderPos, nodeR) {
-  const links = []; // { path, biological, former }
+function buildParentChildLinks(graph, resolve, nodeR) {
+  const links = []; // { path, biological, former, opacity }
   const merged = new Set();
   const groups = new Map();
   const divorceGroups = new Map();
@@ -90,21 +109,23 @@ function buildParentChildLinks(graph, renderPos, nodeR) {
   }
 
   const drawGroup = (grp) => {
-    const a1 = renderPos(grp.p1), a2 = renderPos(grp.p2);
-    if (!a1 || !a2) return;
+    const r1 = resolve(grp.p1), r2 = resolve(grp.p2);
+    if (!r1 || !r2) return;
+    const parentOpacity = Math.min(r1.opacity, r2.opacity);
     const biological = isBioAdopt(grp.qualifier);
-    const start = { x: (a1.x + a2.x) / 2, y: (a1.y + a2.y) / 2 + nodeR * 1.05 };
-    const kidEntries = grp.kids.map((id) => ({ id, p: renderPos(id) })).filter((e) => e.p);
+    const start = { x: (r1.pos.x + r2.pos.x) / 2, y: (r1.pos.y + r2.pos.y) / 2 + nodeR * 1.05 };
+    const kidEntries = grp.kids.map((id) => ({ id, r: resolve(id) })).filter((e) => e.r);
     if (!kidEntries.length) return;
-    const add = (a, b) => links.push({ path: sagPath(a, b), biological, former: grp.former });
+    const add = (a, b, opacity) => links.push({ path: sagPath(a, b), biological, former: grp.former, opacity });
     if (kidEntries.length === 1) {
-      add(start, kidEntries[0].p);
+      add(start, kidEntries[0].r.pos, Math.min(parentOpacity, kidEntries[0].r.opacity));
     } else {
-      const avgX = kidEntries.reduce((s, e) => s + e.p.x, 0) / kidEntries.length;
-      const nearestY = Math.min(...kidEntries.map((e) => e.p.y));
+      const avgX = kidEntries.reduce((s, e) => s + e.r.pos.x, 0) / kidEntries.length;
+      const nearestY = Math.min(...kidEntries.map((e) => e.r.pos.y));
       const junction = { x: start.x * 0.55 + avgX * 0.45, y: start.y + (nearestY - start.y) * 0.72 };
-      add(start, junction);
-      for (const e of kidEntries) add(junction, e.p);
+      const stemOpacity = Math.max(parentOpacity, ...kidEntries.map((e) => e.r.opacity));
+      add(start, junction, stemOpacity);
+      for (const e of kidEntries) add(junction, e.r.pos, Math.min(parentOpacity, e.r.opacity));
     }
   };
   for (const grp of groups.values()) drawGroup(grp);
@@ -116,9 +137,9 @@ function buildParentChildLinks(graph, renderPos, nodeR) {
     for (const parent of graph.parents(person.id)) {
       const key = `${parent.id}>${person.id}`;
       if (merged.has(key)) continue;
-      const a = renderPos(parent.id), b = renderPos(person.id);
-      if (!a || !b) continue;
-      links.push({ path: sagPath(a, b), biological: isBioAdopt(parent.qualifier), former: false });
+      const ra = resolve(parent.id), rb = resolve(person.id);
+      if (!ra || !rb) continue;
+      links.push({ path: sagPath(ra.pos, rb.pos), biological: isBioAdopt(parent.qualifier), former: false, opacity: Math.min(ra.opacity, rb.opacity) });
     }
   }
   return links;
@@ -167,10 +188,18 @@ export default function TreeMotionLab() {
   const dragRef = useRef(null);
   const justDraggedRef = useRef(false);
 
+  // Additive reveal (expand) / Collapse — V2 only, see computeVisibleIds'
+  // own comment for why `expanded` means the same thing it means in
+  // App.jsx. V1 has no equivalent in this lab; it keeps showing everyone,
+  // exactly as it always has, so the V1/V2 motion comparison stays
+  // apples-to-apples.
+  const [expanded, setExpanded] = useState(() => new Set([fixture.focus]));
+
   // Rebuild the engine whenever the experiment's inputs change.
   useEffect(() => {
+    const initialExpanded = new Set([fixture.focus]);
     const engine = version === 'v2'
-      ? createMotionEngine({ graph, viewport: VIEWPORT, ambient })
+      ? createMotionEngine({ graph, viewport: VIEWPORT, ambient, visibleIds: computeVisibleIds(graph, initialExpanded) })
       : createLegacyEngine({ graph, viewport: VIEWPORT });
     engine.select(fixture.focus);
     engineRef.current = engine;
@@ -178,6 +207,7 @@ export default function TreeMotionLab() {
     setSummary(null);
     setPan({ x: 0, y: 0 });
     setPins(new Map());
+    setExpanded(initialExpanded);
     lastTsRef.current = 0;
     return () => { engineRef.current = null; };
   }, [graph, version, ambient, fixture.focus]);
@@ -206,6 +236,35 @@ export default function TreeMotionLab() {
     setActiveId(id);
     setSummary(null);
   }, []);
+
+  // A bubble tap both selects AND reveals — the same single gesture
+  // production uses (tapping a person makes them active AND brings their
+  // immediate family into view). visibleIds is updated BEFORE select() so
+  // the replan that select() triggers already sees the newly revealed
+  // people — see engine.js's own setVisibleIds() comment for why
+  // reselecting is what actually applies it.
+  const revealAndSelect = useCallback((id, screenPoint) => {
+    const engine = engineRef.current;
+    if (engine && version === 'v2' && !expanded.has(id)) {
+      const nextExpanded = new Set(expanded).add(id);
+      engine.setVisibleIds(computeVisibleIds(graph, nextExpanded));
+      setExpanded(nextExpanded);
+    }
+    select(id, screenPoint);
+  }, [version, expanded, graph, select]);
+
+  // Collapse back down to just the current active person's immediate
+  // family — the inverse of reveal. Reselecting the SAME active person
+  // (no screenPoint override) makes select() default to "wherever they
+  // already are on screen," so collapsing never moves or re-anchors them.
+  const collapse = useCallback(() => {
+    const engine = engineRef.current;
+    if (!engine || version !== 'v2') return;
+    const nextExpanded = new Set([activeId]);
+    engine.setVisibleIds(computeVisibleIds(graph, nextExpanded));
+    setExpanded(nextExpanded);
+    select(activeId);
+  }, [version, activeId, graph, select]);
 
   // Publish the live engine for the capture harness and for manual poking in
   // devtools. Lab-only: nothing in the app reads this.
@@ -300,6 +359,66 @@ export default function TreeMotionLab() {
     return { x: s.x + j.x + pan.x, y: s.y + j.y + pan.y };
   }, [screen, cam.zoom, cam.screenX, cam.screenY, pan, pins]);
 
+  // Smooth expand/collapse ("cinematic", not a pop): SpringField.setTargets
+  // deletes a no-longer-visible person's tracked state the instant
+  // visibleIds shrinks (see springs.js) — collapsing would otherwise make
+  // people vanish on the spot instead of receding. This tracks every
+  // visible person's last known on-screen look each frame; the moment
+  // someone drops out, that look is kept and eased to nothing over
+  // EXIT_MS rather than deleted with the spring state. The mirror case
+  // (someone newly revealed) already gets a smooth ARRIVAL for free from
+  // the spring itself (engine.js's select() spawns new arrivals at the
+  // active person's position and springs them out — "revealed, not
+  // thrown"), so this only adds a brief scale-in on top of that existing
+  // motion, for a matching grow-in read rather than snapping to full size.
+  // All of this is intentionally read from refs and mutated during render:
+  // the component already re-renders on every animation frame (the tick
+  // loop's forceRender), so this diffing runs in lockstep with that clock —
+  // there is no separate timer to coordinate.
+  const ENTER_MS = 320;
+  const EXIT_MS = 380;
+  const lastSeenRef = useRef(new Map()); // personId -> { rp, base, ini, deceased }
+  const enteringRef = useRef(new Map()); // personId -> startedAt
+  const exitingRef = useRef(new Map());  // personId -> { start, from: {...} }
+  const now = performance.now();
+  for (const p of graph.people) {
+    const rp = renderPos(p.id);
+    if (rp) {
+      if (!lastSeenRef.current.has(p.id) && !enteringRef.current.has(p.id)) {
+        enteringRef.current.set(p.id, now);
+      }
+      lastSeenRef.current.set(p.id, {
+        rp, base: monogramColors(p.display_name).base, ini: initials(p.display_name), deceased: p.is_deceased,
+      });
+      exitingRef.current.delete(p.id); // reappeared (e.g. re-expanded) before its exit finished
+    } else if (lastSeenRef.current.has(p.id)) {
+      if (!exitingRef.current.has(p.id)) {
+        exitingRef.current.set(p.id, { start: now, from: lastSeenRef.current.get(p.id) });
+      }
+      lastSeenRef.current.delete(p.id);
+    }
+  }
+  for (const [id, t] of enteringRef.current) if (now - t > ENTER_MS) enteringRef.current.delete(id);
+  for (const [id, ex] of exitingRef.current) if (now - ex.start > EXIT_MS) exitingRef.current.delete(id);
+
+  const enterScale = (id) => {
+    const t = enteringRef.current.get(id);
+    if (t == null) return 1;
+    return Math.min(1, (now - t) / ENTER_MS);
+  };
+  // Position + opacity multiplier for a link endpoint, honouring an exiting
+  // node's last known spot (rather than the link just vanishing the same
+  // frame the node's own circle starts fading) — normal, still-visible
+  // endpoints are completely unaffected (opacity 1, exact renderPos).
+  const posOrExiting = (id) => {
+    const rp = renderPos(id);
+    if (rp) return { pos: rp, opacity: 1 };
+    const ex = exitingRef.current.get(id);
+    if (!ex) return null;
+    const t = Math.min(1, (now - ex.start) / EXIT_MS);
+    return { pos: ex.from.rp, opacity: 1 - t };
+  };
+
   const partnerLinks = useMemo(() => {
     const seen = new Set();
     const out = [];
@@ -314,10 +433,12 @@ export default function TreeMotionLab() {
     return out;
   }, [graph]);
 
-  const parentChildLinks = useMemo(
-    () => buildParentChildLinks(graph, renderPos, nodeR),
-    [graph, renderPos, nodeR],
-  );
+  // Deliberately NOT memoized on a stable dependency list — posOrExiting
+  // reads the live exitingRef every call, and a link touching an exiting
+  // person must re-fade every frame right along with that person's own
+  // circle. `now` (recomputed every render, i.e. every animation frame)
+  // is what actually drives that.
+  const parentChildLinks = buildParentChildLinks(graph, posOrExiting, nodeR);
 
   const live = engine?.metrics()?.summary?.() ?? null;
 
@@ -367,6 +488,21 @@ export default function TreeMotionLab() {
         >
           Snapshot metrics
         </button>
+        {version === 'v2' && (
+          <>
+            <button
+              className="lab__btn"
+              data-testid="collapse-btn"
+              onClick={collapse}
+              disabled={expanded.size <= 1}
+            >
+              Collapse
+            </button>
+            <span className="lab__visible-count" data-testid="visible-count">
+              {screen.size} / {graph.people.length} visible
+            </span>
+          </>
+        )}
       </header>
 
       <p className="lab__note">{fixture.note}</p>
@@ -395,12 +531,13 @@ export default function TreeMotionLab() {
               "current reads warm and solid, former is a faded dashed bond"
               language. */}
           {partnerLinks.map(({ a: aId, b: bId, former }, i) => {
-            const a = renderPos(aId), b = renderPos(bId);
-            if (!a || !b) return null;
+            const ra = posOrExiting(aId), rb = posOrExiting(bId);
+            if (!ra || !rb) return null;
             return (
               <line
                 key={`p${i}`}
-                x1={a.x} y1={a.y} x2={b.x} y2={b.y}
+                x1={ra.pos.x} y1={ra.pos.y} x2={rb.pos.x} y2={rb.pos.y}
+                style={{ opacity: Math.min(ra.opacity, rb.opacity) }}
                 className={`lab__edge lab__edge--partner${former ? ' is-former' : ''}`}
               />
             );
@@ -409,11 +546,14 @@ export default function TreeMotionLab() {
           {/* Parent→child links — merged at the couple level with a
               stem→junction→branches trunk for 2+ children, a gentle
               hanging-cord sag instead of a straight line, exactly like the
-              real canvas (see buildParentChildLinks' own header). */}
+              real canvas (see buildParentChildLinks' own header). Opacity
+              follows a fading endpoint (see posOrExiting) so a link never
+              just vanishes the instant its person does. */}
           {parentChildLinks.map((link, i) => (
             <path
               key={`c${i}`}
               d={link.path}
+              style={{ opacity: link.opacity }}
               className={`lab__edge lab__edge--child${link.biological ? '' : ' is-nonbio'}${link.former ? ' is-former' : ''}`}
             />
           ))}
@@ -425,6 +565,8 @@ export default function TreeMotionLab() {
             const isActive = p.id === activeId;
             const isNear = plan?.nearIds?.has(p.id);
             const { base } = monogramColors(p.display_name);
+            const scale = enterScale(p.id);
+            const r = nodeR * scale;
             return (
               <g
                 key={p.id}
@@ -436,22 +578,41 @@ export default function TreeMotionLab() {
                 onPointerDown={(e) => onBubblePointerDown(e, p.id)}
                 onClick={() => {
                   if (justDraggedRef.current) { justDraggedRef.current = false; return; }
-                  select(p.id, s);
+                  revealAndSelect(p.id, s);
                 }}
               >
                 {p.is_deceased && (
-                  <circle className="lab__node-memring" cx={rp.x} cy={rp.y} r={nodeR + 4} />
+                  <circle className="lab__node-memring" cx={rp.x} cy={rp.y} r={r + 4} style={{ opacity: scale }} />
                 )}
                 <circle
                   className="lab__node-fill"
-                  cx={rp.x} cy={rp.y} r={nodeR}
-                  style={{ fill: base }}
+                  cx={rp.x} cy={rp.y} r={r}
+                  style={{ fill: base, opacity: scale }}
                 />
                 {isActive && (
-                  <circle className="lab__node-activering" cx={rp.x} cy={rp.y} r={nodeR + 2.5} />
+                  <circle className="lab__node-activering" cx={rp.x} cy={rp.y} r={r + 2.5} style={{ opacity: scale }} />
                 )}
-                <text x={rp.x} y={rp.y + nodeR * 0.11} className="lab__initials">{initials(p.display_name)}</text>
-                <text x={rp.x} y={rp.y + nodeR + 16} className="lab__name">{p.display_name}</text>
+                <text x={rp.x} y={rp.y + r * 0.11} className="lab__initials" style={{ opacity: scale, fontSize: 12 * scale }}>{initials(p.display_name)}</text>
+                <text x={rp.x} y={rp.y + r + 16} className="lab__name" style={{ opacity: scale }}>{p.display_name}</text>
+              </g>
+            );
+          })}
+
+          {/* Exiting (collapsed/hidden) people — see the exitingRef comment
+              above renderPos. Shrinks and fades in place at their last
+              known spot rather than the pop a raw springs.setTargets()
+              removal would otherwise produce. */}
+          {[...exitingRef.current.entries()].map(([id, ex]) => {
+            const t = Math.min(1, (now - ex.start) / EXIT_MS);
+            const scale = 1 - t;
+            const r = Math.max(0, nodeR * scale);
+            return (
+              <g key={`exit-${id}`} style={{ pointerEvents: 'none' }}>
+                <circle cx={ex.from.rp.x} cy={ex.from.rp.y} r={r} style={{ fill: ex.from.base, opacity: scale }} />
+                {ex.from.deceased && (
+                  <circle cx={ex.from.rp.x} cy={ex.from.rp.y} r={r + 4} className="lab__node-memring" style={{ opacity: scale }} />
+                )}
+                <text x={ex.from.rp.x} y={ex.from.rp.y + r * 0.11} className="lab__initials" style={{ opacity: scale, fontSize: 12 * scale }}>{ex.from.ini}</text>
               </g>
             );
           })}

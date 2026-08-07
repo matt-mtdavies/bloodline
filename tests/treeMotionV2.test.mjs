@@ -614,5 +614,57 @@ test('P2 fix: acceleration and collision-push-delta are recorded and stay finite
   assert.ok(Number.isFinite(s.maxNodeDisplacementPx) && s.maxNodeDisplacementPx >= 0);
 });
 
+test('setVisibleIds + reselect: expanding/collapsing the visible set never moves the active person, and a collapsed person is fully gone', () => {
+  // Powers the Tree Motion Lab's expand/collapse demo (real user request:
+  // "can we see what expanding and contracting the tree will look like").
+  // setVisibleIds() is deliberately NOT itself a replan (see its own
+  // comment in engine.js) — this proves the documented usage pattern
+  // (update visibleIds, then reselect the SAME active person) actually
+  // works: no jump for the person already anchored, growth/shrinkage
+  // applies cleanly, and someone dropped from the visible set is truly
+  // gone from screenPositions(), not just hidden.
+  const f = fixtureById('wide-siblings');
+  const graph = buildGraph(f.people, f.relationships);
+  const engine = createMotionEngine({ graph, viewport: VIEWPORT });
+
+  // Start narrow: just the focus person.
+  engine.setVisibleIds(new Set(['w_dad']));
+  engine.select('w_dad');
+  engine.settle({ dtMs: FRAME, maxFrames: 400 });
+  assert.ok(!engine.screenPositions().has('w_s1'), 'w_s1 should not be visible yet');
+
+  const beforeExpand = engine.screenPositions().get('w_dad');
+
+  // Expand to everyone.
+  engine.setVisibleIds(new Set(graph.people.map((p) => p.id)));
+  engine.resetMetrics('select:w_dad-expand');
+  engine.select('w_dad'); // reselect the SAME active person to apply it
+  const afterExpandImmediate = engine.screenPositions().get('w_dad');
+  assert.ok(
+    Math.hypot(afterExpandImmediate.x - beforeExpand.x, afterExpandImmediate.y - beforeExpand.y) < 0.01,
+    'the active person must not jump the instant visibleIds grows',
+  );
+  engine.settle({ dtMs: FRAME, maxFrames: 400 });
+  assert.ok(engine.screenPositions().has('w_s1'), 'w_s1 should be visible after expanding');
+  const s1 = engine.summary();
+  assert.equal(s1.passed, true, `expand transition failed thresholds: ${s1.failures.join('; ')}`);
+
+  const beforeCollapse = engine.screenPositions().get('w_dad');
+
+  // Collapse back down.
+  engine.setVisibleIds(new Set(['w_dad']));
+  engine.resetMetrics('select:w_dad-collapse');
+  engine.select('w_dad');
+  const afterCollapseImmediate = engine.screenPositions().get('w_dad');
+  assert.ok(
+    Math.hypot(afterCollapseImmediate.x - beforeCollapse.x, afterCollapseImmediate.y - beforeCollapse.y) < 0.01,
+    'the active person must not jump the instant visibleIds shrinks',
+  );
+  assert.ok(!engine.screenPositions().has('w_s1'), 'w_s1 must be fully gone immediately after collapsing (matches SpringField.setTargets\' own removal semantics — the lab animates this exit itself, cosmetically, on top)');
+  engine.settle({ dtMs: FRAME, maxFrames: 400 });
+  const s2 = engine.summary();
+  assert.equal(s2.passed, true, `collapse transition failed thresholds: ${s2.failures.join('; ')}`);
+});
+
 console.log(`\n  ${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);

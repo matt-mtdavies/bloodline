@@ -456,5 +456,19 @@ export function createMotionEngine({
     resetMetrics: (label) => recorder.reset(label),
     /** Advance ambient time only — for verifying breathing never becomes drift. */
     breatheOnly(seconds) { elapsed += seconds; },
+    /*
+     * Update which people are eligible to be planned/animated at all —
+     * additive reveal / collapse. Deliberately NOT itself a replan: `plan`
+     * only ever changes inside select(), so a caller updates this THEN
+     * calls select(activeId, { anchor: <where they already are on screen> })
+     * to apply it — reselecting the SAME active person is a real, safe,
+     * already-exercised path (select() has no early-return for
+     * nextActiveId === activeId, and that person's own world position is
+     * always exactly the pin target, so the coordinate-frame rebase is a
+     * true no-op translate(0,0)). This mirrors how production's own
+     * `expanded` Set works: a plain membership list the layout consults,
+     * not a special transition of its own.
+     */
+    setVisibleIds(ids) { visibleIds = ids; },
   };
 }
