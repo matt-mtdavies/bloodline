@@ -73,6 +73,11 @@
 .lab__node.is-near .lab__node-fill { filter: brightness(1.04); }
 .lab__node-activering { fill: none; stroke: #c2603a; stroke-width: 2.5; }
 .lab__node-memring { fill: none; stroke: #6b5e7a; stroke-width: 2; opacity: 0.7; stroke-dasharray: 2 4; }
+/* A manually-moved bubble ("pinned" — see TreeMotionLab.jsx's onBubblePointerDown)
+   gets a faint dotted outline, purely so it's discoverable while testing this
+   feature; production's own manual-drag pins (BubbleTree.jsx's fx/fy) carry
+   no such marker, so this is deliberately subtle, not a permanent UI idea. */
+.lab__node.is-pinned .lab__node-fill { stroke: #a6abb3; stroke-width: 2; stroke-dasharray: 3 3; }
 .lab__initials {
   text-anchor: middle; dominant-baseline: middle; font-size: 12px; font-weight: 600;
   fill: #ffffff; pointer-events: none; letter-spacing: 0.01em;

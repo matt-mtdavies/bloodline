@@ -158,37 +158,14 @@ export default function TreeMotionLab() {
   const lastTsRef = useRef(0);
   const [activeId, setActiveId] = useState(fixture.focus);
 
-  // Minimal drag-to-pan — the one gesture needed to judge "can I explore
-  // this like a living tree", added deliberately cheaply: a plain
-  // screen-space offset applied only at render time (see renderPos below),
-  // never touching the engine's own camera/world state. Pinch/wheel zoom is
-  // intentionally NOT included in this pass — this is a small, reversible
-  // step to validate the feel before any bigger investment, not a step
-  // toward the full production canvas.
+  // Pan/pin state itself is declared here (needs to exist before the reset
+  // effect below); the drag handlers that populate it are declared further
+  // down, after the engine's camera/screen positions are available — see
+  // the comment there for why both gestures exist and what each means.
   const [pan, setPan] = useState({ x: 0, y: 0 });
-  const dragRef = useRef(null); // { startX, startY, startPanX, startPanY, moved }
-  // Consumed by a bubble's onClick, which (per the DOM's own rules) still
-  // fires on pointerup even after a drag that started on top of that
-  // bubble — without this, dragging the canvas from directly over a
-  // person would ALSO re-select them the instant the drag ends.
+  const [pins, setPins] = useState(new Map()); // personId -> {x, y} world
+  const dragRef = useRef(null);
   const justDraggedRef = useRef(false);
-
-  const onStagePointerDown = useCallback((e) => {
-    dragRef.current = { startX: e.clientX, startY: e.clientY, startPanX: pan.x, startPanY: pan.y, moved: false };
-    e.currentTarget.setPointerCapture(e.pointerId);
-  }, [pan]);
-  const onStagePointerMove = useCallback((e) => {
-    const d = dragRef.current;
-    if (!d) return;
-    const dx = e.clientX - d.startX;
-    const dy = e.clientY - d.startY;
-    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) d.moved = true;
-    if (d.moved) setPan({ x: d.startPanX + dx, y: d.startPanY + dy });
-  }, []);
-  const onStagePointerUp = useCallback(() => {
-    if (dragRef.current?.moved) justDraggedRef.current = true;
-    dragRef.current = null;
-  }, []);
 
   // Rebuild the engine whenever the experiment's inputs change.
   useEffect(() => {
@@ -200,6 +177,7 @@ export default function TreeMotionLab() {
     setActiveId(fixture.focus);
     setSummary(null);
     setPan({ x: 0, y: 0 });
+    setPins(new Map());
     lastTsRef.current = 0;
     return () => { engineRef.current = null; };
   }, [graph, version, ambient, fixture.focus]);
@@ -250,15 +228,77 @@ export default function TreeMotionLab() {
   const plan = engine?.plan ?? null;
   const nodeR = 30 * cam.zoom;
 
+  // Two drag gestures, mirroring src/viz/BubbleTree.jsx's own drag.type
+  // convention ('pan' vs 'bubble') on purpose — this is meant to feel like
+  // the same interaction that already exists in production, not a new one:
+  //   - drag empty canvas → pan (screen-space offset, render-only).
+  //   - drag a bubble → that person's position becomes a PERSISTENT manual
+  //     override ("pins", world-space), the same real behavior BubbleTree.jsx
+  //     already has via d3-force's fx/fy: the planner's computed position is
+  //     still what everyone ELSE (and this person, if the pin is cleared)
+  //     uses — moving one person is a deliberate, sticky exception, not a
+  //     change to what's "correct". The active person is intentionally not
+  //     draggable this way — they're the camera's own anchor (world origin);
+  //     "moving" them is what panning already means.
+  // Pinch/wheel zoom is still intentionally NOT included — staying minimal.
+
+  // The engine's raw, un-jittered/un-panned/un-pinned world position for a
+  // person — inverts toScreen() using the CURRENT camera, since that's the
+  // only place world coordinates are otherwise available from outside the
+  // engine (camera.worldX/Y are always 0, world origin = the active person).
+  const worldOfPerson = useCallback((id) => {
+    const s = screen.get(id);
+    if (!s) return { x: 0, y: 0 };
+    return { x: (s.x - cam.screenX) / cam.zoom, y: (s.y - cam.screenY) / cam.zoom };
+  }, [screen, cam.screenX, cam.screenY, cam.zoom]);
+
+  const onStagePointerDown = useCallback((e) => {
+    dragRef.current = { type: 'pan', startX: e.clientX, startY: e.clientY, startPanX: pan.x, startPanY: pan.y, moved: false };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  }, [pan]);
+  const onBubblePointerDown = useCallback((e, personId) => {
+    if (personId === activeId) return; // let it fall through to canvas pan
+    e.stopPropagation();
+    const startWorld = pins.get(personId) ?? worldOfPerson(personId);
+    dragRef.current = { type: 'bubble', personId, startWorld, startX: e.clientX, startY: e.clientY, moved: false };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  }, [activeId, pins, worldOfPerson]);
+  const onStagePointerMove = useCallback((e) => {
+    const d = dragRef.current;
+    if (!d) return;
+    const dx = e.clientX - d.startX;
+    const dy = e.clientY - d.startY;
+    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) d.moved = true;
+    if (!d.moved) return;
+    if (d.type === 'pan') {
+      setPan({ x: d.startPanX + dx, y: d.startPanY + dy });
+    } else if (d.type === 'bubble') {
+      const next = { x: d.startWorld.x + dx / cam.zoom, y: d.startWorld.y + dy / cam.zoom };
+      setPins((prev) => new Map(prev).set(d.personId, next));
+    }
+  }, [cam.zoom]);
+  const onStagePointerUp = useCallback(() => {
+    if (dragRef.current?.moved) justDraggedRef.current = true;
+    dragRef.current = null;
+  }, []);
+
   // The organic-jitter render position every node AND every link endpoint
-  // uses — see jitterFor()'s own comment. Falls back to the un-jittered
-  // screen position for anyone the engine hasn't placed yet.
+  // uses — see jitterFor()'s own comment. A manually pinned person (see
+  // above) uses their pinned world position instead, converted through the
+  // SAME camera every unpinned person uses, so a pin stays visually
+  // consistent with everyone else through camera moves/zoom changes.
+  // Falls back to the un-jittered screen position for anyone the engine
+  // hasn't placed yet.
   const renderPos = useCallback((id) => {
+    const pin = pins.get(id);
+    if (pin) {
+      return { x: cam.screenX + pin.x * cam.zoom + pan.x, y: cam.screenY + pin.y * cam.zoom + pan.y };
+    }
     const s = screen.get(id);
     if (!s) return null;
     const j = jitterFor(id, cam.zoom);
     return { x: s.x + j.x + pan.x, y: s.y + j.y + pan.y };
-  }, [screen, cam.zoom, pan]);
+  }, [screen, cam.zoom, cam.screenX, cam.screenY, pan, pins]);
 
   const partnerLinks = useMemo(() => {
     const seen = new Set();
@@ -392,7 +432,8 @@ export default function TreeMotionLab() {
                 data-person={p.id}
                 data-x={s.x.toFixed(3)}
                 data-y={s.y.toFixed(3)}
-                className={`lab__node${isActive ? ' is-active' : ''}${isNear ? ' is-near' : ''}${p.is_deceased ? ' is-deceased' : ''}`}
+                className={`lab__node${isActive ? ' is-active' : ''}${isNear ? ' is-near' : ''}${p.is_deceased ? ' is-deceased' : ''}${pins.has(p.id) ? ' is-pinned' : ''}`}
+                onPointerDown={(e) => onBubblePointerDown(e, p.id)}
                 onClick={() => {
                   if (justDraggedRef.current) { justDraggedRef.current = false; return; }
                   select(p.id, s);
