@@ -5,7 +5,124 @@ import { createMotionEngine } from './engine.js';
 import { createLegacyEngine } from './legacyEngine.js';
 import { treePhysicsVersion, setStoredPhysicsVersion, PHYSICS_PARAM } from '../../lib/treePhysicsFlag.js';
 import { ROW_GAP } from './layoutPlanner.js';
+import { monogramColors, initials } from '../../lib/color.js';
 import './lab.css';
+
+/*
+ * Visual language borrowed from the REAL renderer (src/viz/bubble.js,
+ * src/viz/links.js) — a validation pass, not a redesign: the first version
+ * of this lab was intentionally bare (flat grey circles, straight lines, no
+ * color) because it existed only to prove POSITIONS and MOTION were
+ * correct. Once that was proven, a real product-feel question came up
+ * ("V2 doesn't look very fluid") that a bare bench can't honestly answer —
+ * so this pass borrows the actual monogram-color/curved-link language
+ * production already uses, so the lab can be judged on equal footing.
+ *
+ * JITTER_AMPLITUDE is the one genuinely new idea here, not a port: V2's row
+ * assignment is exact (every person in a generation sits on precisely the
+ * same y — that precision is the whole point of the P1/P2 work, and stays
+ * completely unchanged). A small, deterministic per-person offset is
+ * layered on TOP of that exact position purely for rendering — the same
+ * pattern ambient breathing already uses (see engine.js's worldPositions())
+ * — so a row reads as a family standing together, not a spreadsheet, without
+ * touching a single number the layout/collision/camera math depends on.
+ */
+const JITTER_AMPLITUDE = 6; // px at zoom 1 — small on purpose; this is texture, not re-layout
+
+function hashId(id) {
+  let h = 2166136261;
+  const s = String(id);
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return h >>> 0;
+}
+
+function jitterFor(id, zoom) {
+  const h = hashId(id);
+  const jx = ((h % 1000) / 1000 - 0.5) * 2 * JITTER_AMPLITUDE * zoom;
+  const jy = (((h >>> 10) % 1000) / 1000 - 0.5) * 2 * JITTER_AMPLITUDE * zoom;
+  return { x: jx, y: jy };
+}
+
+// A gentle quadratic sag, like a hanging cord — identical shape to
+// src/viz/links.js's own curve()/dashedCurve(), just emitted as an SVG path
+// instead of a Pixi Graphics call.
+function sagPath(a, b) {
+  const mx = (a.x + b.x) / 2;
+  const my = (a.y + b.y) / 2 + Math.abs(a.x - b.x) * 0.06;
+  return `M ${a.x} ${a.y} Q ${mx} ${my} ${b.x} ${b.y}`;
+}
+
+const isBioAdopt = (q) => !q || q === 'biological' || q === 'adoptive';
+
+/*
+ * Parent→child links, merged at the co-parent level exactly like
+ * links.js's own `groups`/`divorceGroups` pass: two co-parents (current OR
+ * former partners) share one visual origin rather than each drawing an
+ * independent line, and 2+ children under one couple share a single
+ * stem→junction→branches trunk instead of a fan of lines all leaving the
+ * same point. `renderPos(id)` already includes the organic jitter, so the
+ * curves visually terminate exactly on the (slightly offset) bubble.
+ */
+function buildParentChildLinks(graph, renderPos, nodeR) {
+  const links = []; // { path, biological, former }
+  const merged = new Set();
+  const groups = new Map();
+  const divorceGroups = new Map();
+
+  for (const person of graph.people) {
+    const childId = person.id;
+    const parents = graph.parents(childId);
+    if (parents.length < 2) continue;
+    for (let i = 0; i < parents.length; i++) {
+      for (let j = i + 1; j < parents.length; j++) {
+        const p1 = parents[i], p2 = parents[j];
+        if (p1.qualifier !== p2.qualifier) continue;
+        const bond = graph.partners(p1.id).find((x) => x.id === p2.id);
+        if (!bond) continue;
+        const key = `${[p1.id, p2.id].sort().join('|')}|${p1.qualifier}`;
+        const target = bond.status === 'former' ? divorceGroups : groups;
+        if (!target.has(key)) target.set(key, { p1: p1.id, p2: p2.id, qualifier: p1.qualifier, kids: [], former: bond.status === 'former' });
+        target.get(key).kids.push(childId);
+        merged.add(`${p1.id}>${childId}`);
+        merged.add(`${p2.id}>${childId}`);
+      }
+    }
+  }
+
+  const drawGroup = (grp) => {
+    const a1 = renderPos(grp.p1), a2 = renderPos(grp.p2);
+    if (!a1 || !a2) return;
+    const biological = isBioAdopt(grp.qualifier);
+    const start = { x: (a1.x + a2.x) / 2, y: (a1.y + a2.y) / 2 + nodeR * 1.05 };
+    const kidEntries = grp.kids.map((id) => ({ id, p: renderPos(id) })).filter((e) => e.p);
+    if (!kidEntries.length) return;
+    const add = (a, b) => links.push({ path: sagPath(a, b), biological, former: grp.former });
+    if (kidEntries.length === 1) {
+      add(start, kidEntries[0].p);
+    } else {
+      const avgX = kidEntries.reduce((s, e) => s + e.p.x, 0) / kidEntries.length;
+      const nearestY = Math.min(...kidEntries.map((e) => e.p.y));
+      const junction = { x: start.x * 0.55 + avgX * 0.45, y: start.y + (nearestY - start.y) * 0.72 };
+      add(start, junction);
+      for (const e of kidEntries) add(junction, e.p);
+    }
+  };
+  for (const grp of groups.values()) drawGroup(grp);
+  for (const grp of divorceGroups.values()) drawGroup(grp);
+
+  // Everyone else's direct, un-merged parent edges (single parent, or a
+  // step/adoptive line that isn't part of a merged couple pod).
+  for (const person of graph.people) {
+    for (const parent of graph.parents(person.id)) {
+      const key = `${parent.id}>${person.id}`;
+      if (merged.has(key)) continue;
+      const a = renderPos(parent.id), b = renderPos(person.id);
+      if (!a || !b) continue;
+      links.push({ path: sagPath(a, b), biological: isBioAdopt(parent.qualifier), former: false });
+    }
+  }
+  return links;
+}
 
 /*
  * The Tree Motion Lab.
@@ -98,10 +215,36 @@ export default function TreeMotionLab() {
   const screen = engine ? engine.screenPositions() : new Map();
   const cam = engine ? engine.camera() : { zoom: 1, screenX: 0, screenY: 0, worldX: 0, worldY: 0 };
   const plan = engine?.plan ?? null;
+  const nodeR = 30 * cam.zoom;
 
-  const edges = useMemo(() => graph.relationships.filter(
-    (r) => (r.type === 'parent' || r.type === 'partner'),
-  ), [graph]);
+  // The organic-jitter render position every node AND every link endpoint
+  // uses — see jitterFor()'s own comment. Falls back to the un-jittered
+  // screen position for anyone the engine hasn't placed yet.
+  const renderPos = useCallback((id) => {
+    const s = screen.get(id);
+    if (!s) return null;
+    const j = jitterFor(id, cam.zoom);
+    return { x: s.x + j.x, y: s.y + j.y };
+  }, [screen, cam.zoom]);
+
+  const partnerLinks = useMemo(() => {
+    const seen = new Set();
+    const out = [];
+    for (const person of graph.people) {
+      for (const pt of graph.partners(person.id)) {
+        const key = [person.id, pt.id].sort().join('|');
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push({ a: person.id, b: pt.id, former: pt.status === 'former' });
+      }
+    }
+    return out;
+  }, [graph]);
+
+  const parentChildLinks = useMemo(
+    () => buildParentChildLinks(graph, renderPos, nodeR),
+    [graph, renderPos, nodeR],
+  );
 
   const live = engine?.metrics()?.summary?.() ?? null;
 
@@ -167,26 +310,41 @@ export default function TreeMotionLab() {
             );
           })}
 
-          {edges.map((r, i) => {
-            const a = screen.get(r.from_person);
-            const b = screen.get(r.to_person);
+          {/* Partner bond — a soft warm band for current partnerships, a
+              faded dashed line for former ones, matching links.js's own
+              "current reads warm and solid, former is a faded dashed bond"
+              language. */}
+          {partnerLinks.map(({ a: aId, b: bId, former }, i) => {
+            const a = renderPos(aId), b = renderPos(bId);
             if (!a || !b) return null;
             return (
               <line
-                key={i}
+                key={`p${i}`}
                 x1={a.x} y1={a.y} x2={b.x} y2={b.y}
-                className={r.type === 'partner'
-                  ? `lab__edge lab__edge--partner${r.partner_status === 'former' ? ' is-former' : ''}`
-                  : 'lab__edge lab__edge--parent'}
+                className={`lab__edge lab__edge--partner${former ? ' is-former' : ''}`}
               />
             );
           })}
 
+          {/* Parent→child links — merged at the couple level with a
+              stem→junction→branches trunk for 2+ children, a gentle
+              hanging-cord sag instead of a straight line, exactly like the
+              real canvas (see buildParentChildLinks' own header). */}
+          {parentChildLinks.map((link, i) => (
+            <path
+              key={`c${i}`}
+              d={link.path}
+              className={`lab__edge lab__edge--child${link.biological ? '' : ' is-nonbio'}${link.former ? ' is-former' : ''}`}
+            />
+          ))}
+
           {graph.people.map((p) => {
             const s = screen.get(p.id);
-            if (!s) return null;
+            const rp = renderPos(p.id);
+            if (!s || !rp) return null;
             const isActive = p.id === activeId;
             const isNear = plan?.nearIds?.has(p.id);
+            const { base } = monogramColors(p.display_name);
             return (
               <g
                 key={p.id}
@@ -194,11 +352,22 @@ export default function TreeMotionLab() {
                 data-person={p.id}
                 data-x={s.x.toFixed(3)}
                 data-y={s.y.toFixed(3)}
-                className={`lab__node${isActive ? ' is-active' : ''}${isNear ? ' is-near' : ''}`}
+                className={`lab__node${isActive ? ' is-active' : ''}${isNear ? ' is-near' : ''}${p.is_deceased ? ' is-deceased' : ''}`}
                 onClick={() => select(p.id, s)}
               >
-                <circle cx={s.x} cy={s.y} r={30 * cam.zoom} />
-                <text x={s.x} y={s.y + 44 * cam.zoom} className="lab__name">{p.display_name}</text>
+                {p.is_deceased && (
+                  <circle className="lab__node-memring" cx={rp.x} cy={rp.y} r={nodeR + 4} />
+                )}
+                <circle
+                  className="lab__node-fill"
+                  cx={rp.x} cy={rp.y} r={nodeR}
+                  style={{ fill: base }}
+                />
+                {isActive && (
+                  <circle className="lab__node-activering" cx={rp.x} cy={rp.y} r={nodeR + 2.5} />
+                )}
+                <text x={rp.x} y={rp.y + nodeR * 0.11} className="lab__initials">{initials(p.display_name)}</text>
+                <text x={rp.x} y={rp.y + nodeR + 16} className="lab__name">{p.display_name}</text>
               </g>
             );
           })}
