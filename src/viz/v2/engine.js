@@ -77,6 +77,14 @@ export function createMotionEngine({
   let firstSelection = true;
   let atRest = false;          // true once macro motion has been snapped to its targets
   let restingMaxPush = 0;
+  // Per-frame instrumentation state (P2 #6): every-node screen positions,
+  // spring velocities, and collision push magnitudes from the PREVIOUS
+  // frame, so this frame can report the largest CHANGE in each — the
+  // signals a single-number-per-transition metric (like activeDrift) can't
+  // see, because a bug can hide in one node on one frame.
+  let lastAllScreen = null;
+  let lastSpringVel = null;
+  let lastPushMag = null;
 
   const camera = () => ({
     worldX: 0, worldY: 0,
@@ -88,22 +96,37 @@ export function createMotionEngine({
   const worldPositions = () => {
     const base = springs.positions();
     const out = new Map();
+    // The WHOLE active pod holds still, not just the literal active person —
+    // otherwise the active person breathes zero while their own partner
+    // breathes the unit's full amplitude, visibly stretching and squashing
+    // the pod's own rigid spacing every cycle. A pod is supposed to read as
+    // one object; that only holds if none of it moves while it's the one
+    // thing the camera is anchored to.
+    const activeUnitId = plan?.unitOf?.get(activeId)?.id;
     for (const [id, pt] of base) {
       const d = displacement.get(id) ?? { x: 0, y: 0 };
-      const b = id === activeId ? { x: 0, y: 0 } : breath.offsetFor(id, plan?.unitOf, elapsed);
+      const inActivePod = activeUnitId != null && plan?.unitOf?.get(id)?.id === activeUnitId;
+      const b = inActivePod ? { x: 0, y: 0 } : breath.offsetFor(id, plan?.unitOf, elapsed);
       out.set(id, { x: pt.x + d.x + b.x, y: pt.y + d.y + b.y });
     }
     return out;
   };
 
-  const screenPositions = () => {
-    const cam = camera();
+  const toScreenAll = (cam, world) => {
     const out = new Map();
-    for (const [id, pt] of worldPositions()) out.set(id, toScreen(cam, pt));
+    for (const [id, pt] of world) out.set(id, toScreen(cam, pt));
     return out;
   };
 
+  const screenPositions = () => toScreenAll(camera(), worldPositions());
+
   function select(nextActiveId, { anchor = null, immediate = false } = {}) {
+    // For the selection-boundary instrumentation below: everyone's screen
+    // position and pod membership exactly as they were the instant BEFORE
+    // this call does anything at all.
+    const beforeScreen = plan ? screenPositions() : null;
+    const prevPlanForMetrics = plan;
+
     // Where is this person on screen RIGHT NOW, under the OLD frame and OLD
     // camera? That point becomes the fixed point of the whole transition
     // unless the caller names another. Captured before anything below moves.
@@ -184,21 +207,60 @@ export function createMotionEngine({
     // underway, exactly like every other frame does.
     if (collision) {
       if (landImmediately) {
-        displacement = collider.resolve(springs.positions(), activeId);
+        displacement = collider.resolve(springs.positions(), activeId, plan?.unitOf);
       } else if (displacement.has(activeId)) {
-        // The newly active person must be displaced by exactly zero — collision
-        // never moves the fixed point — even though a leftover entry from when
-        // THEY weren't the pin may still be sitting in the map. Clear only
-        // theirs; everyone else's stale entry is left exactly as it was, for
-        // the same continuity reason recomputing the whole map here would break.
+        // The newly active person's WHOLE POD must be displaced by exactly
+        // zero — collision resolves at pod granularity (see collision.js),
+        // so leaving just the active person's own entry zeroed while their
+        // partner's stale entry (from whichever pod THEY were part of a
+        // moment ago) is left untouched would itself violate pod rigidity
+        // for exactly one frame: the fixed point's own pod would visibly
+        // stretch apart until the next step() recomputes it properly.
+        // Everyone else's stale entry is left exactly as it was, for the
+        // same continuity reason recomputing the whole map here would break.
         displacement = new Map(displacement);
-        displacement.set(activeId, { x: 0, y: 0 });
+        const activePodIds = plan?.unitOf?.get(activeId)?.memberIds ?? [activeId];
+        for (const id of activePodIds) displacement.set(id, { x: 0, y: 0 });
       }
     } else {
       displacement = new Map();
     }
     lastActiveScreen = toScreen(camera(), worldPositions().get(activeId) ?? { x: 0, y: 0 });
-    recorder.beginTransition(`select:${activeId}`);
+
+    // Selection-boundary instrumentation: the max screen-space jump of any
+    // node that DIDN'T need to move, at the exact instant of select() —
+    // this is the one class of bug frame-by-frame metrics structurally
+    // cannot see (it happens between two calls, not during a frame). Two
+    // designed exceptions, matching the reasoning above and in
+    // layoutPlanner.js: a node whose POD MEMBERSHIP genuinely changed (a
+    // real recomposition, not a jump) and anyone in the NEWLY active pod
+    // (deliberately reset to the fixed point, not a jump either).
+    let selectionBoundaryJumpPx = 0;
+    if (beforeScreen) {
+      const afterScreen = screenPositions();
+      const newActivePodIds = new Set(plan.unitOf.get(activeId)?.memberIds ?? [activeId]);
+      for (const [id, before] of beforeScreen) {
+        const after = afterScreen.get(id);
+        if (!after || newActivePodIds.has(id)) continue;
+        const oldMembers = prevPlanForMetrics?.unitOf?.get(id)?.memberIds?.join('|');
+        const newMembers = plan.unitOf.get(id)?.memberIds?.join('|');
+        if (oldMembers !== newMembers) continue;
+        const d = Math.hypot(before.x - after.x, before.y - after.y);
+        if (d > selectionBoundaryJumpPx) selectionBoundaryJumpPx = d;
+      }
+    }
+    recorder.beginTransition(`select:${activeId}`, { selectionBoundaryJumpPx });
+
+    // Reset the frame-to-frame instrumentation trackers to the state RIGHT
+    // NOW — the coordinate frame just moved, so comparing against whatever
+    // they held before select() would report a bogus displacement/velocity
+    // change that has nothing to do with real per-frame motion.
+    lastAllScreen = screenPositions();
+    lastSpringVel = new Map();
+    for (const [id, s] of springs.state) lastSpringVel.set(id, { vx: s.vx, vy: s.vy });
+    lastPushMag = new Map();
+    for (const [id, d] of displacement) lastPushMag.set(id, Math.hypot(d.x, d.y));
+
     return plan;
   }
 
@@ -220,9 +282,27 @@ export function createMotionEngine({
       const drift = lastActiveScreen
         ? Math.hypot(activeScreen.x - lastActiveScreen.x, activeScreen.y - lastActiveScreen.y) : 0;
       lastActiveScreen = activeScreen;
+
+      // Ambient breathing keeps moving even at rest, so node displacement is
+      // still worth tracking here — just never speed/acceleration/reversals
+      // (springs themselves are frozen, so those are trivially zero).
+      let maxNodeDisplacementPx = 0;
+      const nowScreen = toScreenAll(cam, world);
+      if (lastAllScreen) {
+        for (const [id, pt] of nowScreen) {
+          const last = lastAllScreen.get(id);
+          if (!last) continue;
+          const d = Math.hypot(pt.x - last.x, pt.y - last.y);
+          if (d > maxNodeDisplacementPx) maxNodeDisplacementPx = d;
+        }
+      }
+      lastAllScreen = nowScreen;
+
       const frame = {
         dt, peakSpeed: 0, meanSpeed: 0, activeDrift: drift, cameraSpeed: 0,
-        zoom: cam.zoom, unsettled: 0, maxPush: restingMaxPush, settled: true,
+        zoom: cam.zoom, zoomVelocity: 0, unsettled: 0, maxPush: restingMaxPush,
+        maxNodeDisplacementPx, maxAcceleration: 0, directionReversals: 0,
+        collisionPushDelta: 0, settled: true,
       };
       recorder.frame(frame);
       return frame;
@@ -238,14 +318,14 @@ export function createMotionEngine({
     // importantly — cannot be nudged around by collision forever.
     let macroSettled = springs.settled() && zoomSpring.settled() && anchorX.settled() && anchorY.settled();
     if (collision && !macroSettled) {
-      displacement = collider.resolve(springs.positions(), activeId);
+      displacement = collider.resolve(springs.positions(), activeId, plan?.unitOf);
     }
     if (macroSettled) {
       springs.snap();
       zoomSpring.jump(zoomSpring.target);
       anchorX.jump(anchorX.target);
       anchorY.jump(anchorY.target);
-      if (collision) displacement = collider.resolve(springs.positions(), activeId);
+      if (collision) displacement = collider.resolve(springs.positions(), activeId, plan?.unitOf);
       atRest = true;
       restingMaxPush = 0;
       for (const d of displacement.values()) restingMaxPush = Math.max(restingMaxPush, Math.hypot(d.x, d.y));
@@ -264,12 +344,55 @@ export function createMotionEngine({
 
     let unsettled = 0;
     let speedSum = 0;
+    let maxAcceleration = 0;
+    let directionReversals = 0;
     for (const [id, s] of springs.state) {
       if (id === activeId) continue;
       const moving = Math.abs(s.x - s.tx) > 0.05 || Math.abs(s.y - s.ty) > 0.05;
       if (moving) unsettled++;
-      speedSum += Math.hypot(s.vx, s.vy);
+      const speed = Math.hypot(s.vx, s.vy);
+      speedSum += speed;
+
+      const last = lastSpringVel?.get(id);
+      if (last) {
+        const lastSpeed = Math.hypot(last.vx, last.vy);
+        const accel = Math.abs(speed - lastSpeed) / dt;
+        if (accel > maxAcceleration) maxAcceleration = accel;
+        // A genuine direction reversal — velocity now pointing meaningfully
+        // opposite to velocity a frame ago — should never happen for a
+        // critically damped spring that never overshoots. Guarded by a small
+        // speed floor so two near-zero vectors (nothing moving) don't count
+        // as a "reversal" from floating-point noise alone.
+        if (speed > 0.5 && lastSpeed > 0.5) {
+          const dot = (s.vx * last.vx + s.vy * last.vy) / (speed * lastSpeed);
+          if (dot < -0.1) directionReversals++;
+        }
+      }
     }
+    lastSpringVel = new Map();
+    for (const [id, s] of springs.state) lastSpringVel.set(id, { vx: s.vx, vy: s.vy });
+
+    let collisionPushDelta = 0;
+    for (const [id, d] of displacement) {
+      const mag = Math.hypot(d.x, d.y);
+      const last = lastPushMag?.get(id) ?? 0;
+      const delta = Math.abs(mag - last);
+      if (delta > collisionPushDelta) collisionPushDelta = delta;
+    }
+    lastPushMag = new Map();
+    for (const [id, d] of displacement) lastPushMag.set(id, Math.hypot(d.x, d.y));
+
+    const nowScreen = toScreenAll(cam, world);
+    let maxNodeDisplacementPx = 0;
+    if (lastAllScreen) {
+      for (const [id, pt] of nowScreen) {
+        const last = lastAllScreen.get(id);
+        if (!last) continue;
+        const d = Math.hypot(pt.x - last.x, pt.y - last.y);
+        if (d > maxNodeDisplacementPx) maxNodeDisplacementPx = d;
+      }
+    }
+    lastAllScreen = nowScreen;
 
     const frame = {
       dt,
@@ -278,8 +401,13 @@ export function createMotionEngine({
       activeDrift,
       cameraSpeed: Math.hypot(anchorX.velocity, anchorY.velocity),
       zoom: cam.zoom,
+      zoomVelocity: zoomSpring.velocity,
       unsettled,
       maxPush,
+      maxNodeDisplacementPx,
+      maxAcceleration,
+      directionReversals,
+      collisionPushDelta,
       settled: macroSettled,
     };
     recorder.frame(frame);

@@ -16,8 +16,9 @@ import { FIXTURES, fixtureById } from '../src/viz/v2/fixtures.js';
 import { createMotionEngine } from '../src/viz/v2/engine.js';
 import { createLegacyEngine } from '../src/viz/v2/legacyEngine.js';
 import { toScreen, ROW_GAP } from '../src/viz/v2/layoutPlanner.js';
-import { MAX_PUSH } from '../src/viz/v2/collision.js';
+import { MAX_PUSH, LocalCollision } from '../src/viz/v2/collision.js';
 import { stepSpring, omegaForSettleTime } from '../src/viz/v2/springs.js';
+import { PASS_FAIL_THRESHOLDS, verdict } from '../src/viz/v2/metrics.js';
 
 let passed = 0, failed = 0;
 function test(label, fn) {
@@ -138,6 +139,14 @@ test('P1 fix: the same holds true with ambient breathing and collision left ON (
         const oldMembers = prevPlan.unitOf.get(id)?.memberIds?.join('|');
         const newMembers = newPlan.unitOf.get(id)?.memberIds?.join('|');
         if (oldMembers !== newMembers) continue;
+        // The newly active person's WHOLE pod is deliberately, correctly
+        // reset to exactly zero collision displacement the instant it
+        // becomes the fixed point (see collision.js and engine.js's own
+        // comments) — a partner who previously carried a real, nonzero
+        // shared pod displacement legitimately loses it right here. That is
+        // a designed consequence of "the whole active pod holds still", not
+        // an instance of the coordinate-jump bug this test otherwise guards.
+        if (newPlan.unitOf.get(person.id)?.memberIds?.includes(id)) continue;
         const d = Math.hypot(pt.x - a2.x, pt.y - a2.y);
         assert.ok(d < 3,
           `${f.id}: selecting ${person.id} jumped ${id} by ${d.toFixed(2)}px (ambient+collision on)`);
@@ -238,6 +247,61 @@ test('collision never moves anyone further than its clamp, and never moves the a
   }
 });
 
+test('P2 fix: LocalCollision resolves per POD, not per person', () => {
+  // Direct check of the mechanism itself, deliberately isolated from the
+  // engine: two people packed on top of each other, sharing a pod, plus a
+  // solo neighbour close enough to force a real overlap correction.
+  // Resolving per person let the two pod members get pushed by DIFFERENT
+  // amounts — visibly stretching or squashing the pod's own fixed spacing —
+  // exactly when the composition packed things tight enough to need a real
+  // correction, which the live overlay showed reaching the clamp routinely.
+  const unitA = { id: 'u:a', memberIds: ['a', 'b'], left: -80, right: 80 };
+  const unitOf = new Map([['a', unitA], ['b', unitA]]);
+  const positions = new Map([
+    ['a', { x: -10, y: 0 }],
+    ['b', { x: 10, y: 0 }],
+    ['c', { x: 5, y: 0 }], // overlaps the pod's own footprint
+  ]);
+  const collider = new LocalCollision({ seed: 42 });
+  const disp = collider.resolve(positions, null, unitOf);
+  assert.deepEqual(disp.get('a'), disp.get('b'), 'pod members a/b must receive the IDENTICAL push');
+  assert.ok(Math.hypot(disp.get('a').x, disp.get('a').y) > 0.01, 'expected a real, non-zero pod-level push');
+});
+
+test('P2 fix: once settled, every pod member carries the identical collision push + ambient breath, in the real engine', () => {
+  // The engine-level counterpart: not mid-transition (where two pod members
+  // can legitimately still be at different points along their OWN spring's
+  // approach — pure easing lag, not a bug) but at REST, where world position
+  // minus planned position reduces to exactly (collision + breath) with no
+  // lag confound at all — the state a viewer spends almost all their time
+  // looking at.
+  for (const f of FIXTURES) {
+    const { engine, graph } = engineFor(f.id);
+    const target = f.people[f.people.length - 1].id;
+    engine.select(target);
+    engine.settle({ dtMs: FRAME, maxFrames: 400 });
+    const plan = engine.plan;
+    const world = engine.worldPositions();
+    const byUnit = new Map();
+    for (const person of graph.people) {
+      const u = plan.unitOf.get(person.id);
+      if (!u || u.memberIds.length < 2) continue;
+      if (!byUnit.has(u.id)) byUnit.set(u.id, []);
+      byUnit.get(u.id).push(person.id);
+    }
+    for (const [uid, ids] of byUnit) {
+      const deltas = ids.map((id) => {
+        const p = plan.positions.get(id), w = world.get(id);
+        return { x: w.x - p.x, y: w.y - p.y };
+      });
+      for (let k = 1; k < deltas.length; k++) {
+        const d = Math.hypot(deltas[k].x - deltas[0].x, deltas[k].y - deltas[0].y);
+        assert.ok(d < 1e-6, `${f.id}: settled pod ${uid} members ${ids} carry different offsets (${d.toFixed(4)})`);
+      }
+    }
+  }
+});
+
 test('collision cannot break the row structure the planner decided', () => {
   const { engine, graph } = engineFor('wide-siblings');
   engine.select('w_s1');
@@ -300,6 +364,23 @@ test('a partner pod breathes coherently — members share a phase', () => {
     const mumOff = { x: w.get('n_mum').x - planned.get('n_mum').x, y: w.get('n_mum').y - planned.get('n_mum').y };
     assert.ok(Math.hypot(dadOff.x - mumOff.x, dadOff.y - mumOff.y) < 1e-9,
       'a couple must breathe as one object, not jostle each other');
+  }
+});
+
+test('P2 fix: the WHOLE active pod holds still, not just the active person — no stretch/squash', () => {
+  // Before this fix, the active person breathed exactly zero while their own
+  // partner breathed the unit's full amplitude, subtly stretching and
+  // squashing the pod's own rigid spacing every cycle even though the pod is
+  // supposed to read as one still, fixed object.
+  const { engine } = engineFor('nuclear', { collision: false }); // active = n_dad, partner = n_mum
+  engine.settle({ dtMs: FRAME, maxFrames: 400 });
+  const planned = engine.plan.positions;
+  for (let i = 0; i < 240; i++) {
+    engine.step(FRAME);
+    const mum = engine.worldPositions().get('n_mum');
+    const plannedMum = planned.get('n_mum');
+    assert.ok(Math.hypot(mum.x - plannedMum.x, mum.y - plannedMum.y) < 1e-9,
+      "the active person's own partner must be exactly still too, not breathing on their own");
   }
 });
 
@@ -435,6 +516,102 @@ test('every fixture survives selecting every person without producing a non-fini
       }
     }
   }
+});
+
+/* ── P2 fix: instrumentation itself is what a reviewer/CI actually judges ── */
+
+test('P2 fix: verdict() passes a clean transition and reports named failures for a bad one', () => {
+  // The whole point of named thresholds is that pass/fail is a computed
+  // fact, not eyeballed off raw numbers — verify both directions of that.
+  const { engine } = engineFor('remarried');
+  engine.select('r_jason');
+  engine.settle({ dtMs: FRAME, maxFrames: 400 });
+  const clean = engine.summary();
+  assert.equal(clean.passed, true, `expected a clean transition to pass: ${clean.failures.join('; ')}`);
+  assert.deepEqual(clean.failures, []);
+
+  const bad = verdict({
+    maxActiveDriftPx: 0, selectionBoundaryJumpPx: 47, maxNodeDisplacementPx: 0,
+    maxCollisionPush: 0, directionReversals: 0, reboundFrames: 0,
+  });
+  assert.equal(bad.passed, false);
+  assert.ok(bad.failures.some((f) => f.startsWith('selectionBoundaryJumpPx')),
+    `expected a named selectionBoundaryJumpPx failure, got: ${bad.failures.join('; ')}`);
+});
+
+test('P2 fix: the OFFICIAL selectionBoundaryJumpPx metric — not just an external test script — catches the P1 jump class', () => {
+  // The earlier P1 tests prove the bug is fixed by comparing screen
+  // positions from OUTSIDE the engine. This proves the engine's OWN
+  // instrumentation — the thing a reviewer actually watches in the dev
+  // overlay, and the thing CI actually asserts on — reports the same clean
+  // result, for every fixture and every selection.
+  for (const f of FIXTURES) {
+    const graph = buildGraph(f.people, f.relationships);
+    const engine = createMotionEngine({ graph, viewport: VIEWPORT });
+    engine.select(f.focus);
+    engine.settle({ dtMs: FRAME, maxFrames: 400 });
+    for (const person of graph.people) {
+      if (person.id === f.focus) continue;
+      engine.resetMetrics(`select:${person.id}`);
+      engine.select(person.id);
+      engine.step(FRAME); // summary() needs at least one recorded frame
+      const s = engine.summary();
+      assert.ok(s.selectionBoundaryJumpPx <= PASS_FAIL_THRESHOLDS.selectionBoundaryJumpPx,
+        `${f.id}: selecting ${person.id} reported selectionBoundaryJumpPx=${s.selectionBoundaryJumpPx}`);
+      engine.settle({ dtMs: FRAME, maxFrames: 400 });
+    }
+  }
+});
+
+test('P2 fix: every real, undisturbed transition in every fixture passes verdict() — the threshold is a usable bar, not a spot check', () => {
+  // The individual metric tests above each pick one illustrative
+  // fixture/person. This is the exhaustive version: every person, in every
+  // fixture, selected from a settled rest state, run to its own natural
+  // settle — the same shape of sweep the dev overlay's verdict badge is
+  // watched against live. A threshold nobody can actually clear on ordinary
+  // fixtures is not a bar, so this is what PASS_FAIL_THRESHOLDS is tuned
+  // against (see maxNodeDisplacementPx's own comment in metrics.js for the
+  // spring-velocity math behind its value).
+  let checked = 0;
+  for (const f of FIXTURES) {
+    const graph = buildGraph(f.people, f.relationships);
+    for (const person of graph.people) {
+      const engine = createMotionEngine({ graph, viewport: VIEWPORT });
+      engine.select(f.focus);
+      engine.settle({ dtMs: FRAME, maxFrames: 400 });
+      engine.resetMetrics(`select:${person.id}`);
+      engine.select(person.id);
+      engine.settle({ dtMs: FRAME, maxFrames: 400 });
+      checked++;
+      const s = engine.summary();
+      assert.equal(s.passed, true,
+        `${f.id}/${person.id}: ${s.failures.join('; ')} (maxNodeDisplacementPx=${s.maxNodeDisplacementPx})`);
+    }
+  }
+  assert.ok(checked >= 70, `expected a substantial sweep, only checked ${checked}`);
+});
+
+test('P2 fix: direction reversals stay at zero for a real, undisturbed spring transition', () => {
+  // A critically damped spring provably never overshoots (see the isolated
+  // stepSpring test above) — this is the INTEGRATED version of that same
+  // claim, watching every node in a real multi-person transition rather
+  // than one spring in isolation.
+  const { engine } = engineFor('wide-siblings', { collision: false });
+  engine.select('w_s8');
+  engine.settle({ dtMs: FRAME, maxFrames: 400 });
+  const s = engine.summary();
+  assert.equal(s.directionReversals, 0, `unexpected reversals: ${s.directionReversals}`);
+});
+
+test('P2 fix: acceleration and collision-push-delta are recorded and stay finite', () => {
+  const { engine } = engineFor('three-pod');
+  engine.select('t_k3');
+  engine.settle({ dtMs: FRAME, maxFrames: 400 });
+  const s = engine.summary();
+  assert.ok(Number.isFinite(s.maxAcceleration) && s.maxAcceleration >= 0);
+  assert.ok(Number.isFinite(s.maxCollisionPushDelta) && s.maxCollisionPushDelta >= 0);
+  assert.ok(Number.isFinite(s.maxZoomVelocity) && s.maxZoomVelocity >= 0);
+  assert.ok(Number.isFinite(s.maxNodeDisplacementPx) && s.maxNodeDisplacementPx >= 0);
 });
 
 console.log(`\n  ${passed} passed, ${failed} failed`);

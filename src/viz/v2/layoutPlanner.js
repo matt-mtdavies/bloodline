@@ -34,6 +34,10 @@ export const POD_GAP = 150;
 export const UNIT_GAP = 210;
 /** Half-width of a person for spacing purposes (bubble radius + breathing room). */
 export const NODE_RADIUS = 62;
+/** Minimum EDGE-TO-EDGE clearance the row de-overlap pass enforces between
+ *  two independently-placed groups sharing a row (e.g. two different sets
+ *  of children under two different couples). */
+export const ROW_GROUP_GAP = 40;
 
 const isBioAdopt = (q) => !q || q === 'biological' || q === 'adoptive' || q === 'adopted';
 
@@ -236,6 +240,32 @@ function packRow(unitList, centreX) {
   return out;
 }
 
+/*
+ * Places every distinct, not-yet-placed unit among `parentIds`' own units,
+ * packed side by side around `centreX` — the shared machinery behind BOTH
+ * "place someone's parents" and "place someone's grandparents", called once
+ * per generation. Two co-parents who were never partnered (no partner edge
+ * between them — a real, legitimate shape) are each their own separate unit;
+ * this packs EVERY distinct one, rather than only the first one winning and
+ * the rest scattering into "everyone else" (a real reported gap — this used
+ * to happen to the remarried fixture's grandparents, Dorothy and Francis,
+ * who are Christopher's parents but were never partnered in the data). The
+ * common case — one real couple, or a single parent — is just one unit.
+ */
+function placeCoParents(unitOf, placed, parentIds, centreX) {
+  const units = [];
+  const seen = new Set();
+  for (const pid of parentIds) {
+    const u = unitOf.get(pid);
+    if (u && !seen.has(u.id)) { seen.add(u.id); units.push(u); }
+  }
+  const unplaced = units.filter((u) => !placed.has(u.id))
+    .sort((a, b) => String(a.id).localeCompare(String(b.id)));
+  if (!unplaced.length) return;
+  const packed = packRow(unplaced, centreX);
+  for (const u of unplaced) placed.set(u.id, packed.get(u.id));
+}
+
 export function planFamilyLayout({
   graph,
   activeId,
@@ -280,19 +310,51 @@ export function planFamilyLayout({
     for (const u of sibUnits) placed.set(u.id, packedRaw.get(u.id) + shift);
   }
 
-  /* 3. The parents' pod, centred over the sibling rank it produced. */
+  /* 3. The parents' pod(s), centred over the sibling rank they produced —
+   *    see placeCoParents' own comment for why this can be more than one
+   *    unit. */
   if (parentIds.length) {
-    const pUnit = unitOf.get(parentIds[0]);
-    if (pUnit && !placed.has(pUnit.id)) {
-      const span = sibUnits.length ? sibUnits.map((u) => placed.get(u.id)) : [0];
-      placed.set(pUnit.id, (Math.min(...span) + Math.max(...span)) / 2);
-    }
-    /* 4. Grandparents, centred over the parent pod. */
+    const span = sibUnits.length ? sibUnits.map((u) => placed.get(u.id)) : [0];
+    placeCoParents(unitOf, placed, parentIds, (Math.min(...span) + Math.max(...span)) / 2);
+
+    /* 4. Grandparents: every distinct unit among ALL parents' own parents,
+     *    centred over wherever the (now-placed) parent units ended up. */
+    const gpIds = [];
     for (const pid of parentIds) {
-      const gps = graph.parents(pid).filter((q) => visible.has(q.id)).map((q) => q.id);
-      if (!gps.length) continue;
-      const gUnit = unitOf.get(gps[0]);
-      if (gUnit && !placed.has(gUnit.id)) placed.set(gUnit.id, placed.get(unitOf.get(pid).id) ?? 0);
+      for (const q of graph.parents(pid)) if (visible.has(q.id)) gpIds.push(q.id);
+    }
+    if (gpIds.length) {
+      const parentXs = parentIds.map((pid) => {
+        const u = unitOf.get(pid);
+        return (placed.get(u.id) ?? 0) + (u.offsets.get(pid) ?? 0);
+      });
+      placeCoParents(unitOf, placed, gpIds, (Math.min(...parentXs) + Math.max(...parentXs)) / 2);
+    }
+  }
+
+  /* 3b. The SAME treatment for every OTHER member of the active pod's own
+   *     parents/grandparents — e.g. Christopher's parents in the "remarried"
+   *     fixture. A partner's own lineage is exactly the contextual family
+   *     the near-family fix above already includes; without this it was
+   *     included but never actually PLACED, so it fell through to "everyone
+   *     else" and could land anywhere. Centred directly over that pod
+   *     member's own x position (not the sibling rank, which is specific to
+   *     the active person's own siblings). */
+  for (const podMemberId of activeUnit.memberIds) {
+    if (podMemberId === activeId) continue; // the active person's own line is step 3/4 above
+    const ppIds = graph.parents(podMemberId).filter((q) => visible.has(q.id) && isBioAdopt(q.qualifier)).map((q) => q.id);
+    if (!ppIds.length) continue;
+    const memberX = (placed.get(activeUnit.id) ?? 0) + (activeUnit.offsets.get(podMemberId) ?? 0);
+    placeCoParents(unitOf, placed, ppIds, memberX);
+
+    const ggIds = [];
+    for (const pid of ppIds) for (const q of graph.parents(pid)) if (visible.has(q.id)) ggIds.push(q.id);
+    if (ggIds.length) {
+      const ppXs = ppIds.map((pid) => {
+        const u = unitOf.get(pid);
+        return (placed.get(u.id) ?? 0) + (u.offsets.get(pid) ?? 0);
+      });
+      placeCoParents(unitOf, placed, ggIds, (Math.min(...ppXs) + Math.max(...ppXs)) / 2);
     }
   }
 
@@ -343,6 +405,52 @@ export function planFamilyLayout({
       const midX = centres.reduce((s, v) => s + v, 0) / centres.length;
       const packedKids = packRow(uniq, midX);
       for (const u of uniq) placed.set(u.id, packedKids.get(u.id));
+    }
+  }
+
+  /* 6b. Residual row de-overlap. Two DIFFERENT child groups on the same row
+   *     (e.g. a blended family's two separate sets of kids, each centred
+   *     under its own parents) are packed independently by step 5/6, with
+   *     nothing checking whether the two independently-chosen centres leave
+   *     enough room between the GROUPS themselves — a real gap: two
+   *     children from different groups could end up closer than a single
+   *     bubble's own diameter even though each group is internally spaced
+   *     correctly. One left-to-right sweep per row, radiating out from
+   *     whichever unit is fixed (the active unit, if this is its row, else
+   *     whichever placed unit is already closest to the composition's own
+   *     centre), enforces at least the same minimum spacing `packRow`
+   *     itself already guarantees within one group — but across all of
+   *     them — without moving anyone who was already comfortably spaced. */
+  const byRow = new Map();
+  for (const unit of units) {
+    if (!placed.has(unit.id)) continue;
+    if (!byRow.has(unit.row)) byRow.set(unit.row, []);
+    byRow.get(unit.row).push(unit);
+  }
+  for (const rowUnits of byRow.values()) {
+    if (rowUnits.length < 2) continue;
+    rowUnits.sort((a, b) => placed.get(a.id) - placed.get(b.id));
+    let anchorIdx = rowUnits.findIndex((u) => u.id === activeUnit.id);
+    if (anchorIdx < 0) {
+      anchorIdx = 0;
+      for (let i = 1; i < rowUnits.length; i++) {
+        if (Math.abs(placed.get(rowUnits[i].id)) < Math.abs(placed.get(rowUnits[anchorIdx].id))) anchorIdx = i;
+      }
+    }
+    // Measured via each unit's REAL edges (placed anchor + its own left/right
+    // extent), not an assumed symmetric half-width — a pod's anchor is not
+    // necessarily at its own bounding-box centre (e.g. a former partner
+    // hangs entirely to one side), so a symmetric estimate under-spaced
+    // exactly the asymmetric pods this pass exists to fix.
+    for (let i = anchorIdx + 1; i < rowUnits.length; i++) {
+      const prev = rowUnits[i - 1], cur = rowUnits[i];
+      const need = placed.get(prev.id) + prev.right + ROW_GROUP_GAP - cur.left;
+      if (placed.get(cur.id) < need) placed.set(cur.id, need);
+    }
+    for (let i = anchorIdx - 1; i >= 0; i--) {
+      const next = rowUnits[i + 1], cur = rowUnits[i];
+      const need = placed.get(next.id) + next.left - ROW_GROUP_GAP - cur.right;
+      if (placed.get(cur.id) > need) placed.set(cur.id, need);
     }
   }
 

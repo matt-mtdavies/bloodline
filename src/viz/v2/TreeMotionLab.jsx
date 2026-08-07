@@ -217,6 +217,17 @@ export default function TreeMotionLab() {
             <Row k="active drift (total px)" v={live?.totalActiveDriftPx ?? '—'} />
             <Row k="rebound frames" v={live?.reboundFrames ?? '—'} testid="ov-rebound" />
             <Row k="max collision push" v={live?.maxCollisionPush ?? '—'} />
+            <Row k="selection-boundary jump (px)" v={live?.selectionBoundaryJumpPx ?? '—'} testid="ov-boundary-jump" />
+            <Row k="max node move/frame (px)" v={live?.maxNodeDisplacementPx ?? '—'} testid="ov-node-move" />
+            <Row k="max acceleration" v={live?.maxAcceleration ?? '—'} />
+            <Row k="direction reversals" v={live?.directionReversals ?? '—'} />
+            <Row k="max collision push Δ" v={live?.maxCollisionPushDelta ?? '—'} />
+            <Row k="max zoom velocity" v={live?.maxZoomVelocity ?? '—'} />
+            {live && (
+              <div className={`lab__verdict lab__verdict--${live.passed ? 'pass' : 'fail'}`} data-testid="ov-verdict">
+                {live.passed ? '✓ within thresholds' : `✗ ${live.failures.length} threshold${live.failures.length === 1 ? '' : 's'} exceeded`}
+              </div>
+            )}
           </div>
         )}
       </div>

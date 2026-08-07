@@ -12,7 +12,7 @@
 import assert from 'node:assert/strict';
 import { buildGraph } from '../src/data/graph.js';
 import { FIXTURES, fixtureById } from '../src/viz/v2/fixtures.js';
-import { planFamilyLayout, ROW_GAP, POD_GAP } from '../src/viz/v2/layoutPlanner.js';
+import { planFamilyLayout, ROW_GAP, POD_GAP, UNIT_GAP, NODE_RADIUS } from '../src/viz/v2/layoutPlanner.js';
 
 let passed = 0, failed = 0;
 function test(label, fn) {
@@ -194,6 +194,106 @@ test('P1 fix: near family includes EVERY pod member\'s own parents and children,
   assert.ok(plan.nearIds.has('r_grandad'), "Christopher's father must be near");
   assert.ok(plan.nearIds.has('r_jessica'), "Ken's daughter must be near");
   assert.ok(plan.nearIds.has('r_amie'), "Ken's daughter must be near");
+});
+
+/* ── P2 fixes from the Codex review of PR #130 ───────────────────────────── */
+
+test('P2 fix: co-parents without a partner edge are packed together, not scattered', () => {
+  // Dorothy and Francis are both Christopher's parents but were never
+  // partnered in the data — a real, legitimate shape. Only the first one
+  // used to get placed at all; the second fell through to "everyone else"
+  // and could land anywhere, including outside the near family's own span.
+  const f = fixtureById('remarried');
+  const plan = planOf(f); // active = r_heather
+  assert.equal(rowOf(plan, 'r_gran'), rowOf(plan, 'r_grandad'), 'both co-parents share a row');
+  const gran = plan.positions.get('r_gran');
+  const grandad = plan.positions.get('r_grandad');
+  const gap = Math.abs(gran.x - grandad.x);
+  assert.ok(gap <= UNIT_GAP + POD_GAP,
+    `co-parents are ${gap}px apart — should be packed side by side, not scattered`);
+  assert.ok(plan.nearIds.has('r_gran') && plan.nearIds.has('r_grandad'), 'both must be near, not outside');
+});
+
+test('P2 fix: three-way co-parent scattering — every distinct unit is actually PLACED near its co-parent, at every generation', () => {
+  // The active person's own two parents are themselves unpartnered
+  // co-parents (the "step 3" case), and each of THEM has a different,
+  // unpartnered co-parent of their own (the "step 4" case) — four distinct
+  // grandparent-generation people, none of them couples. Checks actual
+  // PLACEMENT (not just row/near-membership, which the near-family fix
+  // alone already guarantees regardless of whether this placement fix
+  // exists) — a weaker version of this test that checked only those two
+  // things passed even against the unfixed planner.
+  const f = {
+    id: 'four-way-grandparents',
+    people: [
+      { id: 'z_me', display_name: 'Me', birth_date: '1990' },
+      { id: 'z_dad', display_name: 'Dad', birth_date: '1960' },
+      { id: 'z_mum', display_name: 'Mum', birth_date: '1962' },
+      { id: 'z_gd1', display_name: "Dad's father", birth_date: '1935' },
+      { id: 'z_gd2', display_name: "Dad's mother", birth_date: '1937' },
+      { id: 'z_gm1', display_name: "Mum's father", birth_date: '1934' },
+      { id: 'z_gm2', display_name: "Mum's mother", birth_date: '1936' },
+    ],
+    relationships: [
+      { type: 'parent', from_person: 'z_dad', to_person: 'z_me', qualifier: 'biological', partner_status: null },
+      { type: 'parent', from_person: 'z_mum', to_person: 'z_me', qualifier: 'biological', partner_status: null },
+      { type: 'parent', from_person: 'z_gd1', to_person: 'z_dad', qualifier: 'biological', partner_status: null },
+      { type: 'parent', from_person: 'z_gd2', to_person: 'z_dad', qualifier: 'biological', partner_status: null },
+      { type: 'parent', from_person: 'z_gm1', to_person: 'z_mum', qualifier: 'biological', partner_status: null },
+      { type: 'parent', from_person: 'z_gm2', to_person: 'z_mum', qualifier: 'biological', partner_status: null },
+    ],
+    focus: 'z_me',
+  };
+  const plan = planOf(f);
+  const gapOf = (a, b) => Math.abs(plan.positions.get(a).x - plan.positions.get(b).x);
+
+  // Step 3: the active person's own two unpartnered parents.
+  assert.equal(rowOf(plan, 'z_dad'), rowOf(plan, 'z_mum'));
+  assert.ok(gapOf('z_dad', 'z_mum') <= UNIT_GAP + POD_GAP,
+    `z_dad/z_mum are ${gapOf('z_dad', 'z_mum')}px apart — should be packed together`);
+
+  // Step 4: each parent's own unpartnered co-parent.
+  assert.equal(rowOf(plan, 'z_gd1'), rowOf(plan, 'z_gd2'));
+  assert.ok(gapOf('z_gd1', 'z_gd2') <= UNIT_GAP + POD_GAP,
+    `z_gd1/z_gd2 are ${gapOf('z_gd1', 'z_gd2')}px apart — should be packed together`);
+  assert.equal(rowOf(plan, 'z_gm1'), rowOf(plan, 'z_gm2'));
+  assert.ok(gapOf('z_gm1', 'z_gm2') <= UNIT_GAP + POD_GAP,
+    `z_gm1/z_gm2 are ${gapOf('z_gm1', 'z_gm2')}px apart — should be packed together`);
+
+  for (const id of ['z_gd1', 'z_gd2', 'z_gm1', 'z_gm2']) {
+    assert.ok(plan.nearIds.has(id), `${id} must be near, not scattered outside`);
+  }
+});
+
+test('P2 fix: two independently-packed groups on the same row never overlap', () => {
+  // Ken's kids and Chris+Heather's kids in the "remarried" fixture are two
+  // DIFFERENT groups, each individually well-spaced within itself by
+  // packRow — but nothing checked whether the two independently-chosen
+  // group centres left enough room BETWEEN the groups. A real reported
+  // consequence: two people from different groups ended up close enough to
+  // visually overlap in the settled composition itself, not just during a
+  // transition — the live overlay showed collision routinely maxing out
+  // its clamp trying (and still failing) to fully separate them.
+  for (const f of FIXTURES) {
+    const graph = graphOf(f);
+    for (const person of graph.people) {
+      const plan = planFamilyLayout({ graph, activeId: person.id, viewport: VIEWPORT });
+      const byRow = new Map();
+      for (const [id, pt] of plan.positions) {
+        const r = Math.round(pt.y / ROW_GAP);
+        if (!byRow.has(r)) byRow.set(r, []);
+        byRow.get(r).push({ id, x: pt.x });
+      }
+      for (const [r, entries] of byRow) {
+        entries.sort((a, b) => a.x - b.x);
+        for (let i = 1; i < entries.length; i++) {
+          const gap = entries[i].x - entries[i - 1].x;
+          assert.ok(gap >= 2 * NODE_RADIUS - 1e-6,
+            `${f.id} (active ${person.id}) row ${r}: ${entries[i - 1].id} and ${entries[i].id} only ${gap.toFixed(1)}px apart`);
+        }
+      }
+    }
+  }
 });
 
 /* ── The composition guard ───────────────────────────────────────────────── */
