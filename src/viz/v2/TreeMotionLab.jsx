@@ -52,6 +52,91 @@ function sagPath(a, b) {
   return `M ${a.x} ${a.y} Q ${mx} ${my} ${b.x} ${b.y}`;
 }
 
+function pointOnQuad(a, m, b, t) {
+  const mt = 1 - t;
+  return { x: mt * mt * a.x + 2 * mt * t * m.x + t * t * b.x, y: mt * mt * a.y + 2 * mt * t * m.y + t * t * b.y };
+}
+
+/*
+ * The same gentle hanging-cord sag as sagPath, but bent away from any
+ * bubble it would otherwise pass behind — real, reported example: in the
+ * three-pod fixture, the mediated line from a hub's outer partner down to
+ * that partner's OWN child ran almost diagonally across the whole row and
+ * cut straight through the middle partner's bubble, since nothing about
+ * the plain hanging-cord shape knows other people exist.
+ *
+ * `obstacles` is every OTHER currently-visible person's render position —
+ * never this segment's own two endpoints, which the curve is deliberately
+ * anchored to and must still touch. Checked by sampling points along the
+ * curve rather than solving it analytically (this is a bench, not a
+ * production renderer — a handful of samples is plenty for a family-tree
+ * -sized curve) and nudging the control point sideways, away from
+ * whichever obstacle it's closest to, until clear or a few tries run out.
+ * Best-effort, not a hard constraint solver: a genuinely crowded scene can
+ * still have a rare residual graze, but the common "runs right behind an
+ * unrelated bubble" case is what this fixes.
+ */
+function sagPathAvoiding(a, b, obstacles, clearance) {
+  let mx = (a.x + b.x) / 2;
+  let my = (a.y + b.y) / 2 + Math.abs(a.x - b.x) * 0.06;
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const segLen = Math.hypot(dx, dy);
+  if (segLen < 1 || !obstacles.length) return `M ${a.x} ${a.y} Q ${mx} ${my} ${b.x} ${b.y}`;
+  const px = -dy / segLen, py = dx / segLen; // unit perpendicular to a->b
+
+  for (let iter = 0; iter < 4; iter++) {
+    let worst = null;
+    for (const o of obstacles) {
+      let minD = Infinity;
+      for (let t = 0.15; t <= 0.85; t += 0.1) {
+        const pt = pointOnQuad(a, { x: mx, y: my }, b, t);
+        const d = Math.hypot(pt.x - o.x, pt.y - o.y);
+        if (d < minD) minD = d;
+      }
+      if (minD < clearance && (!worst || minD < worst.minD)) worst = { o, minD };
+    }
+    if (!worst) break;
+    const cross = dx * (worst.o.y - a.y) - dy * (worst.o.x - a.x);
+    const dir = cross > 0 ? -1 : 1; // push the control point to the side AWAY from the obstacle
+    const push = Math.min(clearance * 1.5, clearance - worst.minD + 10);
+    mx += px * push * dir;
+    my += py * push * dir;
+  }
+  return `M ${a.x} ${a.y} Q ${mx} ${my} ${b.x} ${b.y}`;
+}
+
+/*
+ * sagPathAvoiding only ever moves a curve's BELLY (its control point) — the
+ * two endpoints it's handed are treated as fixed anchors, correctly, since
+ * one of them is usually a real person's bubble the line must actually
+ * touch. But a merged co-parent pod's `start` point (below, in drawGroup)
+ * isn't anyone's bubble — it's the midpoint between two parents' positions —
+ * and in a row with 3+ adults, that midpoint can land almost exactly on top
+ * of a THIRD, unrelated person sitting physically between the two parents
+ * (the real three-pod case this whole feature was built for: Peter and
+ * Bianca's midpoint lands on Alice, who sits between them in the row). No
+ * amount of belly-nudging fixes a graze AT the anchor itself, so this pushes
+ * the anchor point directly away from whichever obstacle it's nearest,
+ * before any curve is ever built from it.
+ */
+function nudgePointFromObstacles(point, obstacles, clearance) {
+  let p = { x: point.x, y: point.y };
+  for (let iter = 0; iter < 4; iter++) {
+    let worst = null;
+    for (const o of obstacles) {
+      const d = Math.hypot(p.x - o.x, p.y - o.y);
+      if (d < clearance && (!worst || d < worst.d)) worst = { o, d };
+    }
+    if (!worst) break;
+    const dx = p.x - worst.o.x, dy = p.y - worst.o.y;
+    const len = Math.hypot(dx, dy) || 1;
+    const push = clearance - worst.d + 10;
+    p.x += (dx / len) * push;
+    p.y += (dy / len) * push;
+  }
+  return p;
+}
+
 const isBioAdopt = (q) => !q || q === 'biological' || q === 'adoptive';
 
 /*
@@ -108,21 +193,55 @@ function buildParentChildLinks(graph, resolve, nodeR) {
     }
   }
 
+  // Every currently-visible person's position, for obstacle lookups below —
+  // built once rather than per-segment. See sagPathAvoiding's own comment
+  // for why this matters (a mediated line can otherwise cut straight
+  // through an unrelated bubble in between its two real endpoints).
+  const allPositions = new Map();
+  for (const person of graph.people) {
+    const r = resolve(person.id);
+    if (r) allPositions.set(person.id, r.pos);
+  }
+  const clearance = nodeR + 10;
+  const obstaclesExcept = (...excludeIds) => {
+    const ex = new Set(excludeIds);
+    const out = [];
+    for (const [id, pos] of allPositions) if (!ex.has(id)) out.push(pos);
+    return out;
+  };
+
   const drawGroup = (grp) => {
     const r1 = resolve(grp.p1), r2 = resolve(grp.p2);
     if (!r1 || !r2) return;
     const parentOpacity = Math.min(r1.opacity, r2.opacity);
     const biological = isBioAdopt(grp.qualifier);
-    const start = { x: (r1.pos.x + r2.pos.x) / 2, y: (r1.pos.y + r2.pos.y) / 2 + nodeR * 1.05 };
     const kidEntries = grp.kids.map((id) => ({ id, r: resolve(id) })).filter((e) => e.r);
     if (!kidEntries.length) return;
-    const add = (a, b, opacity) => links.push({ path: sagPath(a, b), biological, former: grp.former, opacity });
+    // Excludes the group's OWN parents/kids from obstacle-avoidance —
+    // siblings fanning out from the same junction naturally pass near each
+    // other, and each branch trying to dodge its own sisters would fight
+    // the others computed independently right beside it. Only genuinely
+    // unrelated bubbles count as obstacles here.
+    const obstacles = obstaclesExcept(grp.p1, grp.p2, ...grp.kids);
+    // The pod midpoint isn't anyone's bubble, so — unlike a curve's real
+    // endpoints — it's free to move. In a 3+-adult row this is exactly
+    // where a third, unrelated person can end up sitting: see
+    // nudgePointFromObstacles' own comment for the real three-pod case
+    // that motivated this.
+    const start = nudgePointFromObstacles(
+      { x: (r1.pos.x + r2.pos.x) / 2, y: (r1.pos.y + r2.pos.y) / 2 + nodeR * 1.05 },
+      obstacles, clearance,
+    );
+    const add = (a, b, opacity) => links.push({ path: sagPathAvoiding(a, b, obstacles, clearance), biological, former: grp.former, opacity });
     if (kidEntries.length === 1) {
       add(start, kidEntries[0].r.pos, Math.min(parentOpacity, kidEntries[0].r.opacity));
     } else {
       const avgX = kidEntries.reduce((s, e) => s + e.r.pos.x, 0) / kidEntries.length;
       const nearestY = Math.min(...kidEntries.map((e) => e.r.pos.y));
-      const junction = { x: start.x * 0.55 + avgX * 0.45, y: start.y + (nearestY - start.y) * 0.72 };
+      const junction = nudgePointFromObstacles(
+        { x: start.x * 0.55 + avgX * 0.45, y: start.y + (nearestY - start.y) * 0.72 },
+        obstacles, clearance,
+      );
       const stemOpacity = Math.max(parentOpacity, ...kidEntries.map((e) => e.r.opacity));
       add(start, junction, stemOpacity);
       for (const e of kidEntries) add(junction, e.r.pos, Math.min(parentOpacity, e.r.opacity));
@@ -139,7 +258,11 @@ function buildParentChildLinks(graph, resolve, nodeR) {
       if (merged.has(key)) continue;
       const ra = resolve(parent.id), rb = resolve(person.id);
       if (!ra || !rb) continue;
-      links.push({ path: sagPath(ra.pos, rb.pos), biological: isBioAdopt(parent.qualifier), former: false, opacity: Math.min(ra.opacity, rb.opacity) });
+      const obstacles = obstaclesExcept(parent.id, person.id);
+      links.push({
+        path: sagPathAvoiding(ra.pos, rb.pos, obstacles, clearance),
+        biological: isBioAdopt(parent.qualifier), former: false, opacity: Math.min(ra.opacity, rb.opacity),
+      });
     }
   }
   return links;
