@@ -15,7 +15,7 @@ import IntegritySheet from './IntegritySheet.jsx';
 export default function ArchiveCareSheet({
   duplicatePairs, integrityIssues, graph,
   onMerge, onDismissDuplicate, onShowInTree,
-  onDismissIntegrity, onOpenPerson,
+  onDismissIntegrity, onMarkDeceased, onOpenPerson,
   onClose,
 }) {
   useEffect(() => {
@@ -55,6 +55,7 @@ export default function ArchiveCareSheet({
               issues={integrityIssues}
               graph={graph}
               onDismiss={onDismissIntegrity}
+              onMarkDeceased={onMarkDeceased}
               onOpenPerson={onOpenPerson}
             />
           </>

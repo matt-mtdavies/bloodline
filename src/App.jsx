@@ -364,6 +364,18 @@ export default function App() {
       return next;
     });
   };
+  // The one-tap fix offered on a 'likely_deceased' integrity issue — same
+  // is_deceased/is_living pair EditPersonSheet's own checkbox sets, with no
+  // death_date/cause_of_death guessed (unknown, left for a human to fill in
+  // later if they want to). No explicit dismissIntegrityIssue call needed:
+  // findLikelyDeceased skips anyone already is_deceased, so the issue simply
+  // stops being produced the next time integrityIssues recomputes.
+  const markPersonDeceased = (id) => {
+    const person = graph.byId.get(id);
+    updatePerson(id, { is_deceased: true, is_living: false }, {
+      type: 'person_updated', personId: id, personName: person?.display_name ?? '', detail: 'deceased status',
+    });
+  };
   // Idle-deferred for the same reason as duplicatePairs above — several of
   // these checks walk every relationship/person and have no reason to block
   // the render thread on every edit.
@@ -3299,6 +3311,7 @@ export default function App() {
           onDismissDuplicate={dismissDuplicatePair}
           onShowInTree={showDuplicatePairInTree}
           onDismissIntegrity={dismissIntegrityIssue}
+          onMarkDeceased={markPersonDeceased}
           onOpenPerson={(id) => { setArchiveCareOpen(false); openPerson(id); }}
           onClose={() => setArchiveCareOpen(false)}
         />

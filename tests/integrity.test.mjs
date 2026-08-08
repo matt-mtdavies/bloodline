@@ -9,7 +9,7 @@
 import assert from 'node:assert/strict';
 import { buildGraph } from '../src/data/graph.js';
 import {
-  computeIntegrityIssues, findConcurrentPartners, findImplausibleAges,
+  computeIntegrityIssues, findConcurrentPartners, findImplausibleAges, findLikelyDeceased,
   findDeathBeforeBirth, findParentChildTimingIssues, findMarriageOutsideLifespan,
   findAncestorCycles, issueKey,
 } from '../src/lib/integrity.js';
@@ -58,12 +58,6 @@ test('flags a deceased person over the plausible-age ceiling', () => {
   assert.equal(issues[0].type, 'implausible_age');
 });
 
-test('flags a living person who would be over the ceiling today', () => {
-  const g = buildGraph([p('a', { birth_date: '1900-01-01' })], []);
-  const issues = findImplausibleAges(g, new Date('2026-01-01').getTime());
-  assert.equal(issues.length, 1);
-});
-
 test('does NOT flag a plausible 100-year-old (just under the ceiling)', () => {
   const g = buildGraph([p('a', { birth_date: '1926-06-01' })], []);
   assert.equal(findImplausibleAges(g, new Date('2026-01-01').getTime()).length, 0);
@@ -72,6 +66,37 @@ test('does NOT flag a plausible 100-year-old (just under the ceiling)', () => {
 test('does NOT flag a deceased person with no death date (can\'t evaluate — silence over a guess)', () => {
   const g = buildGraph([p('a', { birth_date: '1850-01-01', is_deceased: true, death_date: null })], []);
   assert.equal(findImplausibleAges(g, new Date('2026-01-01').getTime()).length, 0);
+});
+
+test('does NOT flag a living person over the ceiling (that\'s findLikelyDeceased\'s job, not this check\'s)', () => {
+  const g = buildGraph([p('a', { birth_date: '1900-01-01' })], []);
+  assert.equal(findImplausibleAges(g, new Date('2026-01-01').getTime()).length, 0);
+});
+
+// ── findLikelyDeceased ────────────────────────────────────────────────────────
+
+test('flags a living person who would be over the plausible-age ceiling today', () => {
+  const g = buildGraph([p('a', { birth_date: '1900-01-01' })], []);
+  const issues = findLikelyDeceased(g, new Date('2026-01-01').getTime());
+  assert.equal(issues.length, 1);
+  assert.equal(issues[0].type, 'likely_deceased');
+  assert.deepEqual(issues[0].personIds, ['a']);
+  assert.match(issues[0].reason, /likely passed away/);
+});
+
+test('does NOT flag a living person just under the ceiling', () => {
+  const g = buildGraph([p('a', { birth_date: '1926-06-01' })], []);
+  assert.equal(findLikelyDeceased(g, new Date('2026-01-01').getTime()).length, 0);
+});
+
+test('does NOT flag someone already marked deceased (that\'s findImplausibleAges\' job, not this check\'s)', () => {
+  const g = buildGraph([p('a', { birth_date: '1850-01-01', is_deceased: true, death_date: '1990-01-01' })], []);
+  assert.equal(findLikelyDeceased(g, new Date('2026-01-01').getTime()).length, 0);
+});
+
+test('does NOT flag a living person with no birth date (can\'t evaluate — silence over a guess)', () => {
+  const g = buildGraph([p('a', { birth_date: null })], []);
+  assert.equal(findLikelyDeceased(g, new Date('2026-01-01').getTime()).length, 0);
 });
 
 // ── findDeathBeforeBirth ─────────────────────────────────────────────────────
@@ -210,11 +235,13 @@ test('issueKey differs by type even with identical personIds', () => {
 test('computeIntegrityIssues aggregates every check', () => {
   const people = [
     p('a', { birth_date: '1990-01-01' }), p('b', { birth_date: '1960-01-01' }), p('c'),
+    p('d', { birth_date: '1900-01-01' }), // over the ceiling, still living
   ];
   const rels = [partnerEdge('a', 'b'), partnerEdge('a', 'c')]; // concurrent partners for a
   const g = buildGraph(people, rels);
   const issues = computeIntegrityIssues(g, new Date('2026-01-01').getTime());
   assert.ok(issues.some((i) => i.type === 'concurrent_partners'));
+  assert.ok(issues.some((i) => i.type === 'likely_deceased'));
 });
 
 test('a completely clean tree produces zero issues', () => {
