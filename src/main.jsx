@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { registerSW } from 'virtual:pwa-register';
 import './styles/global.css';
 import App from './App.jsx';
+import { isLabOpen } from './lib/treePhysicsFlag.js';
 
 // Set only by applyUpdateWhenSafe below, and only to a REAL waiting
 // updateSW() reference — never invented — so the ErrorBoundary's Reload
@@ -64,6 +65,32 @@ let mounted = false;
 function boot() {
   if (mounted) return; // idempotent — see the safety-net timer below
   mounted = true;
+  // The Tree Motion Lab (?lab=tree-motion) mounts INSTEAD of the app and is
+  // lazy-loaded, so neither it, its fixtures nor the experimental engine are
+  // in the bundle any ordinary visitor downloads. It never touches
+  // localStorage beyond its own engine flag — see src/lib/treePhysicsFlag.js.
+  // It never touches src/data/store.js at all (no import, no sync, no
+  // writes) — the one deliberate exception is a single, strictly opt-in,
+  // strictly read-only GET to /api/tree (src/viz/v2/realFamily.js, fired
+  // only by an explicit button press, never on mount) so the real physics
+  // question can be judged against a real family, not just fixtures; that
+  // module's own header and its test suite (tests/realFamily.test.mjs) pin
+  // "never more than one call, always a plain GET" as a mechanical
+  // guarantee, not just a code-review promise. Closing the URL is still the
+  // whole rollback — nothing here can leave a trace in the real tree.
+  if (isLabOpen()) {
+    const Lab = React.lazy(() => import('./viz/v2/TreeMotionLab.jsx'));
+    createRoot(document.getElementById('root')).render(
+      <React.StrictMode>
+        <ErrorBoundary>
+          <React.Suspense fallback={null}>
+            <Lab />
+          </React.Suspense>
+        </ErrorBoundary>
+      </React.StrictMode>,
+    );
+    return;
+  }
   createRoot(document.getElementById('root')).render(
     <React.StrictMode>
       <ErrorBoundary>

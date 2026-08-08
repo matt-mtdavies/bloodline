@@ -5,13 +5,18 @@ name: export-workflow
 # production has always deployed through Cloudflare Pages' own git
 # integration, with no CI gate in front of it. Scoped deliberately to what
 # Phase A can actually prove without a live Cloudflare account: the
-# workers/export-workflow package's own tests, plus a build/test of the
-# main app to catch any accidental breakage. The two steps genuinely
+# workers/export-workflow package's own tests. The two steps genuinely
 # requiring live Cloudflare credentials (D1 migration apply, wrangler
 # deploy --dry-run) are included per §10.2's spec but gated on the
 # CLOUDFLARE_API_TOKEN secret existing — until a human operator adds it
 # (see docs/FULL-ARCHIVE-EXPORT-PHASE-A-RUNBOOK.md), this workflow stays
 # green on every PR rather than failing on a step nobody has configured yet.
+#
+# The general main-app build/test regression guard that used to live in this
+# file as `main-app-still-builds` now lives in its own workflow,
+# main-app-ci.yml, with no path filter — this file's own jobs stay scoped to
+# export-workflow's files, and the general guard runs on every PR regardless
+# of what it touches (see that file's header for why).
 
 on:
   push:
@@ -89,28 +94,6 @@ jobs:
 
       - name: syntax-check the standalone Worker entrypoint
         run: node --check src/entrypoint.js
-
-  main-app-still-builds:
-    name: main app — unit tests + build (regression guard)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version-file: '.nvmrc'
-
-      - run: npm ci
-
-      # Tolerates ONLY the one documented pre-existing relations.test.mjs
-      # failure (see scripts/run-tests-ci.mjs's own header) — this guard
-      # exists to catch a regression THIS PR might cause, not to also
-      # gate on an unrelated, already-known issue that predates it. Any
-      # OTHER failure, in any file, still fails this job.
-      - name: run the existing unit test suite
-        run: node scripts/run-tests-ci.mjs
-
-      - run: npm run build
 
   # ── Phase B only: needs CLOUDFLARE_ACCOUNT_ID / CLOUDFLARE_API_TOKEN as
   # repo secrets, and a real (non-placeholder) database_id in

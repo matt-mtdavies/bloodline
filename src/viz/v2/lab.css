@@ -1,0 +1,111 @@
+/*
+ * Tree Motion Lab styling. Nothing here is imported by the app
+ * (TreeMotionLab.jsx is the only importer, and that only mounts behind
+ * ?lab=tree-motion) — these are hardcoded hex values copied FROM
+ * src/styles/theme.css's tokens, not an import of that file, so this stays
+ * fully isolated and can never leak into or be affected by production
+ * styling. It used to be intentionally flat/utilitarian (a bench purely to
+ * prove positions and motion were correct) — this pass borrows the real
+ * warm palette and monogram-color language so the lab's LOOK can be judged
+ * honestly too, on equal footing with the real canvas.
+ */
+.lab {
+  font: 13px/1.45 ui-sans-serif, system-ui, -apple-system, sans-serif;
+  color: #1c1d21;         /* --ink */
+  background: #f2f3f5;    /* --paper-deep */
+  min-height: 100vh;
+  padding: 12px 16px 32px;
+  box-sizing: border-box;
+}
+.lab__bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #e4e2dc;
+}
+.lab__title { font-size: 15px; }
+.lab__engine {
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  padding: 3px 8px;
+  border-radius: 999px;
+}
+.lab__engine--v1 { background: #e8e3de; color: #5a5148; }
+.lab__engine--v2 { background: #f6e6dc; color: #a44d2c; }
+.lab__field { display: inline-flex; align-items: center; gap: 6px; }
+.lab__field select { font: inherit; padding: 4px 6px; }
+.lab__seg { display: inline-flex; gap: 2px; background: #eeece7; border-radius: 8px; padding: 2px; }
+.lab__seg button {
+  font: inherit; padding: 5px 10px; border: 0; border-radius: 6px;
+  background: transparent; cursor: pointer; color: #5a5148;
+}
+.lab__seg button.is-on { background: #fff; color: #1c1d21; box-shadow: 0 1px 2px rgba(0,0,0,0.12); }
+.lab__check { display: inline-flex; align-items: center; gap: 5px; }
+.lab__btn {
+  font: inherit; padding: 5px 10px; border: 1px solid #d9d5cd; border-radius: 6px;
+  background: #fff; cursor: pointer;
+}
+.lab__note { color: #6b6f76; margin: 10px 0; max-width: 70ch; }
+.lab__btn:disabled { opacity: 0.45; cursor: default; }
+.lab__real-error { color: #a13a24; font-size: 12px; max-width: 32ch; }
+.lab__visible-count { color: #6b6f76; font-variant-numeric: tabular-nums; }
+
+.lab__stage { position: relative; background: #ffffff; border: 1px solid #ebedf0; border-radius: 16px; overflow: hidden; }
+.lab__svg { cursor: grab; touch-action: none; }
+.lab__svg:active { cursor: grabbing; }
+.lab__rowline { stroke: #ebedf0; stroke-width: 1; }
+.lab__rowlabel { fill: #a6abb3; font-size: 10px; }
+
+/* Parent→child links — biological is a quiet warm-taupe cord (--bio), a
+   step/adoptive link is a lighter dashed cord (--nonbio), matching the
+   real canvas exactly. */
+.lab__edge--child { stroke: #8a7d6b; stroke-width: 1.8; fill: none; opacity: 0.72; stroke-linecap: round; }
+.lab__edge--child.is-nonbio { stroke: #b6a892; stroke-dasharray: 6 5; opacity: 0.85; }
+.lab__edge--child.is-former { stroke-dasharray: 6 5; opacity: 0.6; }
+
+/* Partner bond — current reads warm and solid (--bond-current), former
+   fades to a dashed grey (--bond-former). */
+.lab__edge--partner { stroke-width: 4; stroke: #c2603a; opacity: 0.35; stroke-linecap: round; }
+.lab__edge--partner.is-former { stroke: #b9ab98; stroke-width: 2.5; stroke-dasharray: 7 6; opacity: 0.6; }
+
+.lab__node { cursor: pointer; }
+.lab__node-fill { stroke: rgba(255,255,255,0.9); stroke-width: 1.5; transition: filter 0.15s ease; }
+.lab__node.is-near .lab__node-fill { filter: brightness(1.04); }
+.lab__node-activering { fill: none; stroke: #c2603a; stroke-width: 2.5; }
+.lab__node-memring { fill: none; stroke: #6b5e7a; stroke-width: 2; opacity: 0.7; stroke-dasharray: 2 4; }
+/* A manually-moved bubble ("pinned" — see TreeMotionLab.jsx's onBubblePointerDown)
+   gets a faint dotted outline, purely so it's discoverable while testing this
+   feature; production's own manual-drag pins (BubbleTree.jsx's fx/fy) carry
+   no such marker, so this is deliberately subtle, not a permanent UI idea. */
+.lab__node.is-pinned .lab__node-fill { stroke: #a6abb3; stroke-width: 2; stroke-dasharray: 3 3; }
+.lab__initials {
+  text-anchor: middle; dominant-baseline: middle; font-size: 12px; font-weight: 600;
+  fill: #ffffff; pointer-events: none; letter-spacing: 0.01em;
+}
+.lab__node.is-active .lab__name { font-weight: 700; fill: #1c1d21; }
+.lab__name { text-anchor: middle; font-size: 11px; fill: #3a3c42; pointer-events: none; }
+
+.lab__overlay {
+  position: absolute; top: 10px; right: 10px; width: 270px;
+  background: rgba(255,255,255,0.94); border: 1px solid #e4e2dc; border-radius: 8px;
+  padding: 8px 10px; font-size: 11.5px;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+}
+.lab__ovrow { display: flex; justify-content: space-between; gap: 8px; padding: 1.5px 0; }
+.lab__ovrow span { color: #6b6f76; }
+.lab__ovrow b { font-variant-numeric: tabular-nums; }
+.lab__verdict {
+  margin-top: 8px; padding: 5px 8px; border-radius: 6px; font-weight: 600;
+  text-align: center; font-size: 11px;
+}
+.lab__verdict--pass { background: #e4f2e6; color: #2c6a3a; }
+.lab__verdict--fail { background: #fbe6e2; color: #a13a24; }
+.lab__summary {
+  margin-top: 12px; background: #1c1d21; color: #e8e6e0; padding: 10px 12px;
+  border-radius: 8px; font-size: 11.5px; max-width: 980px; overflow: auto;
+}
+.lab__foot { margin-top: 14px; color: #8a8f97; font-size: 11.5px; }
+.lab__foot code { background: #eeece7; padding: 1px 4px; border-radius: 3px; }

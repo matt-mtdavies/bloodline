@@ -54,6 +54,16 @@ await atest('"/?otp=1" response is still marked noindex, like every other flow-p
   assert.equal(res.headers.get('X-Robots-Tag'), 'noindex, nofollow');
 });
 
+await atest('"/?lab=tree-motion" (the Tree Motion Lab entry point) falls through to the SPA, signed out', async () => {
+  const res = await onRequestGet({
+    request: new Request('https://example.com/?lab=tree-motion&treePhysics=v2'),
+    env: { ASSETS: fakeAssets('SPA') },
+    data: {},
+  });
+  const body = await res.text();
+  assert.equal(body, 'SPA');
+});
+
 await atest('an authenticated request always falls through, even with no flow param', async () => {
   const res = await onRequestGet({
     request: new Request('https://example.com/'),

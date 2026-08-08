@@ -55,6 +55,78 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
 
 ## Status — what's built
 
+- **Organic tree: parents now consistently sit above their children, partner
+  pods level with each other, and the reapplied pod-anchor + tapered
+  parent→child lines** (real feedback: "1. The parents are not consistently
+  higher than their children which creates confusion. 2. the partner pod
+  needs to be level... 3. The pod anchoring... and branch thickness that we
+  solved last time was good and should be reapplied"). Context: an earlier
+  attempt at this exact problem (PR #127, "Lay the organic tree out by family
+  structure") replaced d3-force's own Y-band/collision behavior with a
+  bespoke per-tick force system (`familyLayout.js`) and was reverted a day
+  later (PR #129) — "not behaving as wanted on the real tree." This time,
+  scoped deliberately narrower: fix the actual DATA bug behind #1/#2, and
+  reapply only the purely-visual half of #127 (never the force-layout
+  rewrite) for #3.
+  1. **Root cause of #1/#2, found and fixed in `graph.js#computeGenerations`**:
+     partner-levelling (pulling two current partners onto the same row, deeper
+     one wins) and the parent-above-child cascade correction used to run as
+     two separate one-shot passes — level partners once, THEN cascade children
+     below their (possibly just-deepened) parents. A cascade adjustment could
+     deepen someone whose OWN partner was levelled earlier, in the first pass,
+     against that person's now-stale shallower value — that partner is never
+     revisited, so it's left stuck on the wrong row. Reproduced mechanically
+     with a minimal 5-person fixture (P partners Q, Q's own ancestry one
+     generation deeper; P's child K partners R, R has no ancestry of their
+     own) — before the fix, K landed on gen 2 while R stayed on gen 1, a real,
+     visible "partner not level" bug. Fixed by interleaving both rules in one
+     shared convergence loop instead of two sequential ones: each full pass
+     re-levels every partner pair, then re-cascades every child, stopping only
+     once an entire pass changes neither. Both steps only ever move someone
+     DEEPER, never shallower, so the total of every generation index is
+     monotonically non-decreasing and bounded by people.length — guaranteed to
+     converge. `computeGenerations` had zero test coverage before this despite
+     being load-bearing for both invariants; `tests/computeGenerations.test.mjs`
+     (7 tests) now pins "every parent strictly above every child" and "every
+     current partner pair shares a row" across a nuclear family, the exact
+     reported-bug shape (at two different depths), a 5-generation unequal
+     chain, former-partner exclusion staying intact, a 3-way transitive
+     partner chain, and two independent blended-family lines in one call —
+     proven to actually catch the bug by stashing just `graph.js` and
+     confirming 3 of 7 tests fail against the old code, then restoring.
+  2. **#3 reapplied from PR #127's `links.js` diff only** (its
+     `familyLayout.js`/`BubbleTree.jsx` force changes — the part that "wasn't
+     behaving as wanted" — were deliberately NOT brought back; confirmed via
+     `git log` that `links.js` was byte-identical to its pre-#127 state right
+     up to this fix, so the original diff applied cleanly). New `capsuleBottom`
+     helper computes the couple-line's origin as the actual point on the
+     pod's capsule outline directly below its midpoint (exact geometry, not an
+     assumed-horizontal offset) so the line never starts inside the shaded
+     fill, including mid-rearrangement at an angle. Parent→child lines now
+     taper — `PARENT_W` (3.6) at the couple, narrowing through `JUNCTION_W`
+     (2.3) at a sibling trunk's junction, down to `CHILD_W` (1.1) at the
+     child — drawn as one filled ribbon per link (still one draw call) via a
+     new `taperedRibbon`, using the curve's exact derivative for the
+     perpendicular at each sample rather than neighbour-point sampling.
+     Dashed (adoptive/step) links taper the same way, one stroke per dash at
+     its own width. `tests/links.test.mjs` (5 tests) covers `capsuleBottom`'s
+     geometry directly (horizontal/vertical/steep-diagonal/shallow-diagonal
+     couples, and a general "the anchor is never strictly inside the capsule"
+     check); the tapered-ribbon rendering itself is visual (Playwright, not
+     unit-testable — it draws straight into a Pixi Graphics).
+  Verified live against the real seed family (not just fixtures): the full
+  "All" reveal shows all three widowed-couple grandparent pods level with
+  each other on one row, all three current-couple parent pods level with
+  each other on the row below, and children consistently below their
+  parents throughout — a real, previously-latent X-crossing between two
+  grandparent pods and their children (Eleanor/Thomas vs Margaret/Arthur,
+  each connecting to Linda/Robert on the row below) is gone, both pairs now
+  landing on the matching side. A cropped screenshot of the William/Florence
+  pod's line confirms the taper renders visibly, thick at the capsule edge
+  and narrowing toward the child. Full unit suite (including the two new
+  test files), `npm run build`, and the standard smoke test all passed
+  clean.
+
 - **Ancestry Story now traces all four grandparent lines, via a Father's
   side / Mother's side toggle** (real feedback on a screenshot: "It would be
   good to be able to see both parent lines on both the mother and father's
