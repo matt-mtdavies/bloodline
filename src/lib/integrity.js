@@ -96,14 +96,17 @@ export function findConcurrentPartners(graph) {
 }
 
 /*
- * A living or deceased age past MAX_PLAUSIBLE_AGE. Deliberately excludes
- * anyone the plausibility window can't evaluate at all (no birth date, or
- * deceased with no death date) — silence over a guess, same rule every
- * date-derived feature in this app follows.
+ * A DECEASED person whose recorded lifespan exceeds MAX_PLAUSIBLE_AGE.
+ * Deliberately excludes anyone the plausibility window can't evaluate at
+ * all (no birth date, or deceased with no death date) — silence over a
+ * guess, same rule every date-derived feature in this app follows. A
+ * living person past this age is a different, more specific case — see
+ * findLikelyDeceased below, which has its own distinct, actionable fix.
  */
 export function findImplausibleAges(graph, now = Date.now()) {
   const issues = [];
   for (const person of graph.people) {
+    if (!person.is_deceased) continue;
     const age = currentAge(person, now);
     if (age == null || age <= MAX_PLAUSIBLE_AGE) continue;
     issues.push({
@@ -111,9 +114,34 @@ export function findImplausibleAges(graph, now = Date.now()) {
       type: 'implausible_age',
       severity: 'high',
       personIds: [person.id],
-      reason: person.is_deceased
-        ? `${person.display_name} would have been ${age} years old — check the birth and death dates`
-        : `${person.display_name} would be ${age} years old today — check the birth date`,
+      reason: `${person.display_name} would have been ${age} years old — check the birth and death dates`,
+    });
+  }
+  return issues;
+}
+
+/*
+ * A LIVING person (no death date) whose current age has passed
+ * MAX_PLAUSIBLE_AGE. Nobody verified has ever lived this long, so the far
+ * more likely explanation is a missing death date rather than a genuinely
+ * implausible birth date — a different, more specific case than a
+ * deceased person's own bad lifespan (findImplausibleAges above), whose
+ * fix is "check the dates" rather than "mark them deceased." Kept as its
+ * own check so IntegritySheet can offer that specific, one-tap fix
+ * directly from the issue instead of a generic "go check something."
+ */
+export function findLikelyDeceased(graph, now = Date.now()) {
+  const issues = [];
+  for (const person of graph.people) {
+    if (person.is_deceased) continue;
+    const age = currentAge(person, now);
+    if (age == null || age <= MAX_PLAUSIBLE_AGE) continue;
+    issues.push({
+      key: issueKey('likely_deceased', [person.id]),
+      type: 'likely_deceased',
+      severity: 'high',
+      personIds: [person.id],
+      reason: `${person.display_name} would be ${age} years old today — likely passed away`,
     });
   }
   return issues;
@@ -274,6 +302,7 @@ export function computeIntegrityIssues(graph, now = Date.now()) {
   return [
     ...findConcurrentPartners(graph),
     ...findImplausibleAges(graph, now),
+    ...findLikelyDeceased(graph, now),
     ...findDeathBeforeBirth(graph),
     ...findParentChildTimingIssues(graph),
     ...findMarriageOutsideLifespan(graph),

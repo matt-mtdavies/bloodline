@@ -9,6 +9,7 @@ const PAGE_SIZE = 20;
 const TYPE_LABELS = {
   concurrent_partners: 'Overlapping partners',
   implausible_age: 'Implausible age',
+  likely_deceased: 'Likely passed away',
   death_before_birth: 'Death before birth',
   child_before_parent: 'Born before parent',
   child_after_parent_death: "Born after parent's death",
@@ -30,7 +31,7 @@ const TYPE_LABELS = {
  * close, no empty-state message) — used by ArchiveCareSheet.jsx to host
  * this list alongside DuplicatesSheet's, under one shared head.
  */
-export default function IntegritySheet({ issues, graph, onDismiss, onClose, onOpenPerson, embedded = false }) {
+export default function IntegritySheet({ issues, graph, onDismiss, onMarkDeceased, onClose, onOpenPerson, embedded = false }) {
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [bulkConfirming, setBulkConfirming] = useState(false);
 
@@ -125,6 +126,14 @@ export default function IntegritySheet({ issues, graph, onDismiss, onClose, onOp
                   </div>
                   <p className="integrity__reason">{issue.reason}</p>
                   <div className="dups__actions">
+                    {issue.type === 'likely_deceased' && (
+                      <button
+                        className="dups__merge"
+                        onClick={() => onMarkDeceased(issue.people[0].id)}
+                      >
+                        Mark as deceased
+                      </button>
+                    )}
                     <button className="dups__dismiss" onClick={() => onDismiss(issue.key)}>
                       Dismiss
                     </button>
