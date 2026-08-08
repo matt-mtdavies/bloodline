@@ -172,19 +172,21 @@ export function computeGenerations(graph) {
   };
   for (const p of graph.people) visit(p.id, new Set());
 
-  // Two invariants have to hold SIMULTANEOUSLY in the final result:
+  // Three invariants have to hold SIMULTANEOUSLY in the final result:
   //   1. Every parent sits strictly above every one of their children.
   //   2. Active partners share the same row (levelled onto the deeper one).
-  // These used to run as two separate passes — level partners once, THEN
-  // cascade children below their (possibly just-deepened) parents — which
-  // looks right until a cascade adjustment deepens someone whose OWN partner
-  // was leveled earlier, in the first pass, against that person's now-stale
-  // shallower value. That partner is never revisited, so it's left stuck on
-  // the wrong row: a real, reported bug ("the partner pod needs to be level")
-  // reproduced with a minimal chain — P partners Q (whose separate ancestry
-  // is deeper), levelling P down to match; P's child K then gets cascaded
-  // even deeper to stay below P; but K's own partner R, already levelled to
-  // K's OLD (shallower) value in the FIRST pass, never gets a second look.
+  //   3. Siblings (any kind — full/half/step) share the same row.
+  // The first two used to run as two separate passes — level partners once,
+  // THEN cascade children below their (possibly just-deepened) parents —
+  // which looks right until a cascade adjustment deepens someone whose OWN
+  // partner was levelled earlier, in the first pass, against that person's
+  // now-stale shallower value. That partner is never revisited, so it's left
+  // stuck on the wrong row: a real, reported bug ("the partner pod needs to
+  // be level") reproduced with a minimal chain — P partners Q (whose
+  // separate ancestry is deeper), levelling P down to match; P's child K
+  // then gets cascaded even deeper to stay below P; but K's own partner R,
+  // already levelled to K's OLD (shallower) value in the FIRST pass, never
+  // gets a second look.
   //
   // Fixed by interleaving both rules in one shared convergence loop instead:
   // each full pass re-levels every partner pair, then re-cascades every
@@ -195,6 +197,25 @@ export function computeGenerations(graph) {
   // of every generation index is monotonically non-decreasing and bounded by
   // the number of people — guaranteed to converge, defensively bounded below
   // in case of corrupted/cyclic relationship data.
+  //
+  // Invariant 3 was missing entirely until a real report on a 600+ person
+  // tree spanning 1573-2025 (wildly uneven documented depth across
+  // branches): "her siblings sit at the same level as her kids." Two
+  // siblings only ever ended up level as a SIDE EFFECT of both being
+  // cascaded below the same shared parent — which breaks the instant one
+  // sibling partners into a far more deeply-documented branch: rule 1 pulls
+  // THAT sibling (and, via cascade, their own children) many rows deeper,
+  // but nothing ever pulled their UN-partnered siblings down to match, since
+  // siblinghood was never an explicit levelling relationship the way
+  // partnership already was. The un-pulled siblings stayed on their
+  // original, shallow row — which the newly-deepened sibling's own cascaded
+  // children then caught up to, landing siblings and kids on the same row.
+  // Levelled with the identical "only ever move deeper, take the max" rule
+  // as partners, run as its own inner convergence loop right alongside rule
+  // 1 in the same outer pass, for the same reason: a chain of siblings (or a
+  // sibling later revealed to also be levelled via a partner) needs to
+  // converge within one trip through this step, not wait for a stale value
+  // to be revisited on some future pass.
   //
   // Former/ex partners are deliberately EXCLUDED from levelling: an ex from a
   // different family branch may have deeper ancestry, and dragging the
@@ -229,7 +250,30 @@ export function computeGenerations(graph) {
       }
     }
 
-    // 2. Cascade children below their (possibly just-deepened) parents —
+    // 2. Level siblings (any kind) onto the same generation band using MAX —
+    //    same rule and shape as step 1, just over graph.siblings() instead
+    //    of graph.partners(). Unlike partners, sibling-ness carries no
+    //    'former' concept to exclude.
+    let sibLeveling = true;
+    while (sibLeveling) {
+      sibLeveling = false;
+      const seenSib = new Set();
+      for (const p of graph.people) {
+        for (const sib of graph.siblings(p.id)) {
+          const key = [p.id, sib.id].sort().join('|');
+          if (seenSib.has(key)) continue;
+          seenSib.add(key);
+          const a = gen.get(p.id) ?? 0;
+          const b = gen.get(sib.id) ?? 0;
+          if (a === b) continue;
+          const lvl = Math.max(a, b);
+          if (a !== lvl) { gen.set(p.id, lvl);   sibLeveling = true; stable = false; }
+          if (b !== lvl) { gen.set(sib.id, lvl); sibLeveling = true; stable = false; }
+        }
+      }
+    }
+
+    // 3. Cascade children below their (possibly just-deepened) parents —
     //    never the reverse.
     for (const child of graph.people) {
       const childGen = gen.get(child.id) ?? 0;

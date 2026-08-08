@@ -8,6 +8,17 @@
  * levelled earlier against that person's now-stale, shallower value, leaving
  * the partner stuck on the wrong row with no invariant left to fix it.
  *
+ * Extended for a second real report, on a 600+ person tree spanning
+ * 1573-2025 with wildly uneven documented depth across branches: "her
+ * siblings sit at the same level as her kids." Siblings only ever ended up
+ * level as a SIDE EFFECT of both cascading below the same shared parent —
+ * which breaks the moment one sibling partners into a far more deeply-
+ * documented branch and gets pulled many rows deeper by partner-levelling,
+ * with nothing pulling their un-partnered siblings down to match.
+ * Sibling-levelling (any kind — full/half/step) is now a third explicit
+ * invariant, levelled the same "only ever move deeper, take the max" way as
+ * partners.
+ *
  * Previously had ZERO test coverage despite being load-bearing for both
  * complaints — every test here is new. Run with: node tests/computeGenerations.test.mjs
  */
@@ -25,7 +36,8 @@ const par = (from, to, qualifier = 'biological') => ({ type: 'parent', from_pers
 const ptn = (a, b, status = 'current') => ({ type: 'partner', from_person: a, to_person: b, partner_status: status });
 
 // Every parent must be strictly above (smaller gen than) every one of their
-// children, and every CURRENT partner pair must share the same gen.
+// children, every CURRENT partner pair must share the same gen, and every
+// sibling pair (any kind) must share the same gen.
 function assertInvariants(graph, gen, label) {
   for (const child of graph.people) {
     for (const parent of graph.parents(child.id)) {
@@ -42,6 +54,16 @@ function assertInvariants(graph, gen, label) {
       seen.add(key);
       assert.equal(gen.get(p.id), gen.get(partner.id),
         `${label}: current partners ${p.id} (gen ${gen.get(p.id)}) and ${partner.id} (gen ${gen.get(partner.id)}) must be level`);
+    }
+  }
+  const seenSib = new Set();
+  for (const p of graph.people) {
+    for (const sib of graph.siblings(p.id)) {
+      const key = [p.id, sib.id].sort().join('|');
+      if (seenSib.has(key)) continue;
+      seenSib.add(key);
+      assert.equal(gen.get(p.id), gen.get(sib.id),
+        `${label}: siblings ${p.id} (gen ${gen.get(p.id)}) and ${sib.id} (gen ${gen.get(sib.id)}) must be level`);
     }
   }
 }
@@ -147,6 +169,73 @@ test('a blended family with two independently-deepened co-parent lines both casc
   assertInvariants(graph, gen, 'two independent blended lines');
   assert.equal(gen.get('K1'), gen.get('R1'));
   assert.equal(gen.get('K2'), gen.get('R2'));
+});
+
+test('the new reported bug: a sibling pulled deep by their OWN partner\'s ancestry no longer strands their un-partnered sibling on the shallow row', () => {
+  // F has two children, D and S (full siblings, both biological). D partners
+  // DP, whose own separate ancestry (GP1->GP2->GP3->GP4->DP) is far deeper
+  // than F's side. D's own child K exists too. Before sibling-levelling: D
+  // (and DP) get pulled down to DP's deep row by partner-levelling, K
+  // cascades one below D's new row — but S, never partnered to anyone,
+  // stays at F's original shallow row, landing S at or near K's row instead
+  // of D's. That's the exact real report: "her siblings sit at the same
+  // level as her kids."
+  const graph = buildGraph(
+    [
+      person('F'), person('D'), person('S'), person('K'),
+      person('GP1'), person('GP2'), person('GP3'), person('GP4'), person('DP'),
+    ],
+    [
+      par('F', 'D'), par('F', 'S'), par('D', 'K'), ptn('D', 'DP'),
+      par('GP1', 'GP2'), par('GP2', 'GP3'), par('GP3', 'GP4'), par('GP4', 'DP'),
+    ],
+  );
+  const gen = computeGenerations(graph);
+  assertInvariants(graph, gen, 'sibling stranded by partner depth');
+  assert.equal(gen.get('D'), gen.get('S'), 'D and S must be level (siblings)');
+  assert.ok(gen.get('S') < gen.get('K'), 'S must still sit strictly above D\'s child K');
+});
+
+test('sibling-levelling converges transitively across three full siblings when only one partners deep', () => {
+  const graph = buildGraph(
+    [
+      person('F'), person('D'), person('S1'), person('S2'),
+      person('GP1'), person('GP2'), person('GP3'), person('DP'),
+    ],
+    [
+      par('F', 'D'), par('F', 'S1'), par('F', 'S2'), ptn('D', 'DP'),
+      par('GP1', 'GP2'), par('GP2', 'GP3'), par('GP3', 'DP'),
+    ],
+  );
+  const gen = computeGenerations(graph);
+  assertInvariants(graph, gen, 'three siblings, one pulled deep');
+  assert.equal(gen.get('D'), gen.get('S1'));
+  assert.equal(gen.get('D'), gen.get('S2'));
+});
+
+test('half- and step-siblings level the same way as full siblings', () => {
+  // Mum1 and Mum2 both partner Dad; Half is Dad+Mum2's child (half-sibling
+  // of Dad+Mum1's child Full, sharing only Dad); StepKid is Mum2's own child
+  // from a prior relationship (no shared biological/adoptive parent with
+  // Full at all — connected only through the step edge to Dad). Dad's line
+  // is deepened via a separate partner with deep ancestry of their own.
+  const graph = buildGraph(
+    [
+      person('Dad'), person('Mum1'), person('Mum2'), person('Full'), person('Half'), person('StepKid'),
+      person('GP1'), person('GP2'), person('GP3'), person('DeepPartner'),
+    ],
+    [
+      par('Dad', 'Full', 'biological'), par('Mum1', 'Full', 'biological'),
+      par('Dad', 'Half', 'biological'), par('Mum2', 'Half', 'biological'),
+      par('Dad', 'StepKid', 'step'),
+      ptn('Full', 'DeepPartner'),
+      par('GP1', 'GP2'), par('GP2', 'GP3'), par('GP3', 'DeepPartner'),
+    ],
+  );
+  const gen = computeGenerations(graph);
+  assertInvariants(graph, gen, 'half and step siblings');
+  assert.equal(gen.get('Full'), gen.get('Half'), 'half-siblings must be level');
+  assert.equal(gen.get('Full'), gen.get('StepKid'), 'step-siblings must be level');
 });
 
 console.log(`\n  ${passed} passed, ${failed} failed`);
