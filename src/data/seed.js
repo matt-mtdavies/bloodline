@@ -254,6 +254,14 @@ export const people = [
     bio: 'Architect. Started building the family tree after his grandmother passed and the stories started slipping away.',
     photo: face('men', 11),
     confidence: 'confirmed',
+    residences: [
+      { id: 'res_james_1', place: 'Cardiff, Wales', suburb: null, state: 'Wales', country: 'United Kingdom', lat: 51.4816, lon: -3.1791, from_year: 1985, to_year: 2007 },
+      { id: 'res_james_2', place: 'Bristol, England', suburb: null, state: 'England', country: 'United Kingdom', lat: 51.4545, lon: -2.5879, from_year: 2007, to_year: null },
+    ],
+    education: [
+      { id: 'edu_james_1', stage: 'secondary', institution: 'Cardiff High School', field_of_study: null, location: 'Cardiff, Wales', suburb: null, state: 'Wales', country: 'United Kingdom', lat: null, lon: null, from_year: 1996, to_year: 2003, note: null },
+      { id: 'edu_james_2', stage: 'university', institution: 'Cardiff University', field_of_study: 'Architecture', location: 'Cardiff, Wales', suburb: null, state: 'Wales', country: 'United Kingdom', lat: null, lon: null, from_year: 2003, to_year: 2007, note: null },
+    ],
   },
   {
     id: 'rachel',

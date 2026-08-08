@@ -49,7 +49,11 @@ function homeHtml(home) {
       applicationCategory: 'LifestyleApplication',
       operatingSystem: 'Web',
       url: home + '/',
-      offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+      // Deliberately no `offers` block — asserting a $0 price in indexable
+      // structured data (a literal Google "Free" badge) would go stale the
+      // moment any paid tier ships, and the business model isn't decided
+      // yet (design review, marketing-site-review). Add it back only once
+      // there's a real price to declare, whatever that turns out to be.
       description: 'A private family tree, photo, and story archive that families build and keep together.',
     },
   ];
@@ -168,7 +172,7 @@ function trustSection() {
           <div class="pub-trust__icon">${Icons.noAd(18)}</div>
           <div>
             <div class="pub-trust__title">No ads in your family story</div>
-            <div class="pub-trust__desc">Family data is never used to target ads, and never will be while you're in the product. <a href="/privacy">Read our approach &rarr;</a></div>
+            <div class="pub-trust__desc">We don't use your family's data to target advertising &mdash; no third-party ad trackers, no exceptions. <a href="/privacy">Read our approach &rarr;</a></div>
           </div>
         </div>
         <div class="pub-trust__item">
