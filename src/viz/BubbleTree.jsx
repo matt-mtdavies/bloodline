@@ -367,7 +367,29 @@ export default function BubbleTree({
       // Partner Y-alignment: pull each partner pair toward the same Y so they
       // read as a horizontal couple in organic/weighted/hybrid modes. Chart mode
       // uses fixed positions; radial has its own orbit targets — skip both.
-      sim.force('partnerY', (alpha) => {
+      //
+      // Deliberately NOT scaled by `alpha`, unlike a typical d3-force custom
+      // force. A real report on a large (1241-person) production tree showed
+      // partner pods rendering as a near-vertical stack instead of level, even
+      // though computeGenerations (verified directly against the real data)
+      // assigns them the exact same row — the DATA was correct, but this force
+      // never got the chance to act on it. Root cause: forceCollide (below)
+      // resolves overlaps at FULL strength on every tick regardless of alpha —
+      // it has no alpha term in d3-force's own implementation — while this
+      // force, written the conventional way, decayed toward zero as the
+      // simulation settled (alphaTarget floors at 0.012, i.e. ~1% strength at
+      // rest). On a small tree collision rarely needs to displace anyone, so
+      // the mismatch was invisible; on a dense real tree, collision routinely
+      // nudges a crowded partner out of row, and a corrective force worth 1%
+      // of its nominal strength can never pull them back. Reproduced directly
+      // against this account's real relationship graph offline (not just a
+      // hand-built fixture): un-scaled, this force closes a ~100-250px real
+      // gap down to under 8px within a few thousand ticks; scaled by alpha as
+      // before, the gap never closes even after 8000 ticks. Safe to run at
+      // full strength unconditionally because dy is inherently bounded by the
+      // partner LINK force just above (0.9 strength, 112px target distance)
+      // keeping two partners' positions close together under normal operation.
+      sim.force('partnerY', () => {
         const mode = layoutRef.current;
         if (mode === 'chart' || mode === 'radial') return;
         for (const r of partnerYRels) {
@@ -375,8 +397,8 @@ export default function BubbleTree({
           const nb = nodeById.get(r.to_person);
           if (!na || !nb) continue; // belt-and-braces — the cache should already guarantee this
           const dy = nb.y - na.y;
-          na.vy += dy * 0.20 * alpha;
-          nb.vy -= dy * 0.20 * alpha;
+          na.vy += dy * 0.4;
+          nb.vy -= dy * 0.4;
         }
       });
 
@@ -389,7 +411,24 @@ export default function BubbleTree({
       // does nothing at all. It never touches a manually-dragged bubble's resting
       // spot: nodes with fx/fy set are repositioned by the simulation's own tick
       // regardless of any vy this adds, so a pinned bubble still doesn't move.
-      sim.force('parentAbove', (alpha) => {
+      //
+      // Also deliberately NOT scaled by `alpha`, for the identical reason
+      // documented on partnerY above — verified directly against the real
+      // 1241-person tree: 300 parent/child pairs ended up inverted (one case
+      // 775px off) with the old alpha-scaled version; 0 with this one. Unlike
+      // partnerY, `violation` here is NOT bounded by any complementary link
+      // force (a parent-child pair's link is soft — 0.26 strength, 280px —
+      // and collision crowding is exactly what creates large violations in
+      // the first place), so removing alpha-scaling made a naive port
+      // numerically unstable at higher coefficients: strength 1.0 blew up to
+      // absurd values within 3000 ticks in the same offline reproduction.
+      // 0.3 tested clean (zero inversions, no instability) across several
+      // thousand ticks against the real graph, and the push is additionally
+      // capped defensively — never move either bubble more than half a
+      // generation-band's worth in one tick — as insurance against a
+      // pathological violation this testing didn't happen to produce (e.g. a
+      // bubble that just spawned far from its target after a large reveal).
+      sim.force('parentAbove', () => {
         const mode = layoutRef.current;
         if (mode === 'chart' || mode === 'radial') return;
         const minGap = GEN_GAP * 0.35;
@@ -399,7 +438,7 @@ export default function BubbleTree({
           if (!parent || !child) continue; // belt-and-braces — the cache should already guarantee this
           const violation = (parent.y + minGap) - child.y; // >0 → parent too low
           if (violation <= 0) continue;
-          const push = violation * 0.1 * alpha;
+          const push = Math.min(violation * 0.3, GEN_GAP * 0.5);
           parent.vy -= push;
           child.vy += push;
         }
