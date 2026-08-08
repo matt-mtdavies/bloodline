@@ -24,26 +24,64 @@ export default function ArchiveCareSheet({
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  const isEmpty = duplicatePairs.length === 0 && integrityIssues.length === 0;
-
-  // ── Scroll position across a data-driven re-render ────────────────────────
+  // ── Bridge over the transient idle-recompute reset ─────────────────────────
   // duplicatePairs/integrityIssues are both computed off the render path
   // (useIdleValue in App.jsx) and deliberately reset to an EMPTY array the
   // instant the underlying tree data changes — including a change made
-  // right here (Mark as deceased, Dismiss, Merge) — before the real,
+  // right here (Mark as deceased, Merge; Dismiss only touches one of the
+  // two, since dismissal doesn't itself edit tree data) — before the real,
   // recomputed list lands a beat later (App.jsx's own comment on
   // useIdleValue explains why: never show a stale candidate a destructive
-  // action could fire against). That transient empty frame collapses this
-  // sheet's scrollable content, the browser clamps scrollTop to fit, and
-  // nothing ever restores it once the real list repopulates. Real report:
-  // "tapping to mark someone as deceased takes me back to the top of the
-  // list, where I then have to scroll back to where I was." Snapshot the
-  // scroll offset the instant an action fires, then keep re-asserting it on
-  // every subsequent change to either list until it actually "sticks" (the
-  // container is tall enough again) — self-terminating, no timers, and
-  // harmless during the transient empty frame (there's nothing to scroll to
-  // there anyway, so the assignment just gets reclamped like it already
-  // would with no fix at all).
+  // action could fire against). Marking someone deceased edits the person,
+  // which changes `graph`, which is a dependency of BOTH lists — so both go
+  // to `[]` in the very same render. Reacting to that literally (the
+  // original version of this fix did) meant the sheet's own `isEmpty`
+  // branch would fire, swapping the whole content out for the "archive
+  // looks healthy" checkmark screen and unmounting DuplicatesSheet/
+  // IntegritySheet, before the real list landed a moment later — on a
+  // large real family, the recompute can take long enough for that flash to
+  // be genuinely visible. Real report: "it stays where it is for a minute,
+  // then looks like it tries to show a confirmation screen, then bounces me
+  // back to the top" — that "confirmation screen" was this checkmark state,
+  // and the collapse to near-zero height is what forced the scroll to 0.
+  // Fixed at the root rather than papered over with a bigger scroll hack:
+  // hold the last known-good lists on screen through a transient reset, and
+  // only treat the sheet as genuinely empty once it's STAYED empty for a
+  // settle window — long enough for any in-flight idle recompute to land,
+  // short enough that a real "nothing left to review" still reads as
+  // immediate. Safe to display slightly-stale data here (unlike the
+  // Merge-button case useIdleValue's own comment is about): every action a
+  // card can fire operates on the specific person/pair id already captured
+  // at click time, and Merge itself still requires its own explicit
+  // confirm step regardless of how fresh the list behind it is.
+  // Generous on purpose: computeIntegrityIssues/findDuplicatePairs walk every
+  // relationship in the graph, and on a large real family (this account's
+  // own is 1000+ people) that can genuinely take longer than a snappy
+  // debounce window — showing the "looks healthy" success state a beat late
+  // is a much smaller cost than showing it prematurely, mid-recompute.
+  const SETTLE_MS = 1200;
+  const lastGoodRef = useRef({ duplicatePairs, integrityIssues });
+  if (duplicatePairs.length > 0 || integrityIssues.length > 0) {
+    lastGoodRef.current = { duplicatePairs, integrityIssues };
+  }
+  const rawEmpty = duplicatePairs.length === 0 && integrityIssues.length === 0;
+  const [settledEmpty, setSettledEmpty] = useState(rawEmpty);
+  useEffect(() => {
+    if (!rawEmpty) { setSettledEmpty(false); return undefined; }
+    const t = setTimeout(() => setSettledEmpty(true), SETTLE_MS);
+    return () => clearTimeout(t);
+  }, [rawEmpty]);
+  const shownDuplicatePairs = rawEmpty && !settledEmpty ? lastGoodRef.current.duplicatePairs : duplicatePairs;
+  const shownIntegrityIssues = rawEmpty && !settledEmpty ? lastGoodRef.current.integrityIssues : integrityIssues;
+  const isEmpty = settledEmpty;
+
+  // ── Scroll position across a data-driven re-render ────────────────────────
+  // Secondary, defensive layer: the hold-last-good bridge above avoids the
+  // big collapse-to-empty-state jump in the common case, but a genuine
+  // height change (e.g. dismissing the last item in a section) can still
+  // shift the scroll offset a little. Snapshot it the instant an action
+  // fires, then keep re-asserting it on every subsequent change to either
+  // list until it actually "sticks" — self-terminating, no timers.
   const scrollElRef = useRef(null);
   const pendingScrollRef = useRef(null);
   const armScrollRestore = () => {
@@ -54,7 +92,7 @@ export default function ArchiveCareSheet({
     if (pendingScrollRef.current == null || !el) return;
     el.scrollTop = pendingScrollRef.current;
     if (el.scrollTop === pendingScrollRef.current) pendingScrollRef.current = null;
-  }, [duplicatePairs, integrityIssues]);
+  }, [shownDuplicatePairs, shownIntegrityIssues]);
   const withScrollRestore = (fn) => (...args) => { armScrollRestore(); fn(...args); };
 
   // ── Section-nav chips ───────────────────────────────────────────────────
@@ -94,12 +132,12 @@ export default function ArchiveCareSheet({
 
   const typeOrder = [];
   const typeCounts = {};
-  for (const issue of integrityIssues) {
+  for (const issue of shownIntegrityIssues) {
     if (!(issue.type in typeCounts)) { typeOrder.push(issue.type); typeCounts[issue.type] = 0; }
     typeCounts[issue.type]++;
   }
   const chips = [
-    ...(duplicatePairs.length > 0 ? [{ key: 'dup', label: 'Duplicates', count: duplicatePairs.length, onClick: jumpToDuplicates }] : []),
+    ...(shownDuplicatePairs.length > 0 ? [{ key: 'dup', label: 'Duplicates', count: shownDuplicatePairs.length, onClick: jumpToDuplicates }] : []),
     ...typeOrder.map((type) => ({ key: type, label: TYPE_LABELS[type] || type, count: typeCounts[type], onClick: () => jumpToType(type) })),
   ];
 
@@ -135,7 +173,7 @@ export default function ArchiveCareSheet({
             )}
             <DuplicatesSheet
               embedded
-              pairs={duplicatePairs}
+              pairs={shownDuplicatePairs}
               graph={graph}
               onMerge={withScrollRestore(onMerge)}
               onDismiss={withScrollRestore(onDismissDuplicate)}
@@ -144,7 +182,7 @@ export default function ArchiveCareSheet({
             <IntegritySheet
               embedded
               forceShowAll={integrityExpanded}
-              issues={integrityIssues}
+              issues={shownIntegrityIssues}
               graph={graph}
               onDismiss={withScrollRestore(onDismissIntegrity)}
               onMarkDeceased={withScrollRestore(onMarkDeceased)}
