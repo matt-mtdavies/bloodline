@@ -114,7 +114,7 @@ function footerHtml() {
         ${cols}
       </div>
       <div class="pub-footer__bottom">
-        <span>&copy; ${year} Bloodline. Made for families, not advertisers.</span>
+        <span>&copy; ${year} Bloodline. Private by default.</span>
         <span>Private by default. Living people stay protected.</span>
       </div>
     </div>

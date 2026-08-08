@@ -287,6 +287,20 @@ export default function Home({
               </button>
             )}
 
+            {/* Opens in a new tab, deliberately — this leaves the SPA (a
+                server-rendered marketing page, not an in-app route), and a
+                mid-edit tree session shouldn't be interrupted to read an
+                FAQ. /help itself cross-links to the deeper guides, /features,
+                and /import, so one entry point here is enough. */}
+            <a className="home__row-btn" href="/help" target="_blank" rel="noopener noreferrer">
+              <span className="home__row-icon"><HelpIcon /></span>
+              <span className="home__row-text">
+                <span className="home__row-title">Help &amp; guides</span>
+                <span className="home__row-desc">FAQs, and guides for importing and blended families</span>
+              </span>
+              <ArrowIcon />
+            </a>
+
             {user && (
               <button className="home__row-btn" onClick={onOpenAccount}>
                 <span className="home__row-icon"><PersonIcon /></span>
@@ -511,6 +525,16 @@ function PlayIcon() {
     <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.7" />
       <path d="M10 8.5l6 3.5-6 3.5v-7z" fill="currentColor" />
+    </svg>
+  );
+}
+
+function HelpIcon() {
+  return (
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.7" />
+      <path d="M9.3 9.3a2.7 2.7 0 1 1 3.9 2.4c-.75.4-1.2.9-1.2 1.8v.4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx="12" cy="17.2" r="1" fill="currentColor" />
     </svg>
   );
 }

@@ -9301,6 +9301,10 @@ button.health-notes {
   margin-top: 8px;
   box-shadow: var(--shadow-soft);
   transition: transform 0.15s ease, box-shadow 0.15s ease;
+  /* This class is also used on a plain <a> (Help & guides, opens a
+     server-rendered marketing page in a new tab) — reset link defaults
+     so it reads identically to the <button> rows around it. */
+  text-decoration: none;
 }
 .home__row-btn:first-of-type { margin-top: 0; }
 .home__row-btn:hover { box-shadow: 0 4px 18px rgba(36,31,28,0.1); }
