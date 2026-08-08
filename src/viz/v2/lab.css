@@ -50,6 +50,7 @@
 }
 .lab__note { color: #6b6f76; margin: 10px 0; max-width: 70ch; }
 .lab__btn:disabled { opacity: 0.45; cursor: default; }
+.lab__real-error { color: #a13a24; font-size: 12px; max-width: 32ch; }
 .lab__visible-count { color: #6b6f76; font-variant-numeric: tabular-nums; }
 
 .lab__stage { position: relative; background: #ffffff; border: 1px solid #ebedf0; border-radius: 16px; overflow: hidden; }

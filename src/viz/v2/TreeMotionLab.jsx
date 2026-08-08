@@ -6,6 +6,7 @@ import { createLegacyEngine } from './legacyEngine.js';
 import { treePhysicsVersion, setStoredPhysicsVersion, PHYSICS_PARAM } from '../../lib/treePhysicsFlag.js';
 import { ROW_GAP } from './layoutPlanner.js';
 import { monogramColors, initials } from '../../lib/color.js';
+import { fetchRealFamily } from './realFamily.js';
 import './lab.css';
 
 /*
@@ -294,7 +295,36 @@ export default function TreeMotionLab() {
   const [summary, setSummary] = useState(null);
   const [, forceRender] = useState(0);
 
-  const fixture = useMemo(() => fixtureById(fixtureId), [fixtureId]);
+  // The one, strictly opt-in, strictly READ-ONLY door into REAL (not
+  // fixture) family data — see realFamily.js's own header for the safety
+  // properties this leans on. `realFamily` is null until a deliberate
+  // button press succeeds; nothing here ever fires automatically on mount,
+  // and this component never imports src/data/store.js, so there is no
+  // path by which anything in this file can write back to the real tree.
+  // Picking a fixture from the dropdown always returns to fixture mode.
+  const [realFamily, setRealFamily] = useState(null); // { people, relationships, focus } | null
+  const [realFamilyState, setRealFamilyState] = useState('idle'); // idle | loading | error
+  const [realFamilyError, setRealFamilyError] = useState(null);
+  const loadRealFamily = useCallback(async () => {
+    setRealFamilyState('loading');
+    setRealFamilyError(null);
+    try {
+      const result = await fetchRealFamily();
+      setRealFamily(result);
+      setRealFamilyState('idle');
+    } catch (e) {
+      setRealFamily(null);
+      setRealFamilyState('error');
+      setRealFamilyError(e.message || 'Could not load your family.');
+    }
+  }, []);
+
+  const fixture = useMemo(
+    () => (realFamily
+      ? { id: 'real-family', label: 'Your real family (live)', focus: realFamily.focus, people: realFamily.people, relationships: realFamily.relationships }
+      : fixtureById(fixtureId)),
+    [realFamily, fixtureId],
+  );
   const graph = useMemo(() => buildGraph(fixture.people, fixture.relationships), [fixture]);
 
   const engineRef = useRef(null);
@@ -574,13 +604,28 @@ export default function TreeMotionLab() {
         <label className="lab__field">
           Fixture
           <select
-            value={fixtureId}
-            onChange={(e) => setFixtureId(e.target.value)}
+            value={realFamily ? 'real-family' : fixtureId}
+            onChange={(e) => { setRealFamily(null); setRealFamilyState('idle'); setFixtureId(e.target.value); }}
             data-testid="fixture-select"
           >
             {FIXTURES.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
+            {realFamily && <option value="real-family">Your real family (live)</option>}
           </select>
         </label>
+
+        <button
+          type="button"
+          className="lab__btn"
+          data-testid="load-real-family"
+          onClick={loadRealFamily}
+          disabled={realFamilyState === 'loading'}
+          title="Reads your current family tree once, read-only — never writes anything back. Requires being signed in to Bloodline in this browser tab."
+        >
+          {realFamilyState === 'loading' ? 'Loading your family…' : realFamily ? 'Reload your real family' : 'Load your real family (read-only)'}
+        </button>
+        {realFamilyState === 'error' && (
+          <span className="lab__real-error" role="alert" data-testid="real-family-error">{realFamilyError}</span>
+        )}
 
         <div className="lab__seg" role="group" aria-label="Physics engine">
           {['v1', 'v2'].map((v) => (
