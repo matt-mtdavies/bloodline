@@ -113,7 +113,7 @@ export default function DuplicatesSheet({ pairs, graph, onMerge, onDismiss, onCl
         ) : (
           <>
             {embedded && (
-              <h3 className="dups__embedded-heading">Possible duplicates <span className="dups__embedded-count">{visible.length}</span></h3>
+              <h3 id="archivecare-duplicates" className="dups__embedded-heading">Possible duplicates <span className="dups__embedded-count">{visible.length}</span></h3>
             )}
             <p className="dups__intro">
               These people share a name and look like they might be the same person.
