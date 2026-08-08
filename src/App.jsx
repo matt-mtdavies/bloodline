@@ -65,6 +65,7 @@ import {
   setRecapCutoff,
 } from './data/store.js';
 import { groupRecapUpdates, captionForRecapGroup } from './lib/recap.js';
+import { fetchRecapCutoff, pushRecapCutoff } from './lib/recapCutoff.js';
 import { uploadPhoto, generateThumb, uploadDocument, savePhotoToDevice, srcToDataUrl, summarizeDocument } from './lib/image.js';
 import { useImageZoom } from './lib/useImageZoom.js';
 import { buildGraph, pathBetween, pathBetweenOrdered, bloodRelativesOf, distancesFromMany, relationLabel } from './data/graph.js';
@@ -463,6 +464,7 @@ export default function App() {
     // shown to — or overwritten by — the person signing in.
     bindIdentity(u.uid);
     enableServerSync();
+    reconcileRecapCutoff();
 
     // Two invite paths:
     // A) Not logged in → OTP flow → LoginScreen passes joinedViaInvite: true
@@ -1085,7 +1087,45 @@ export default function App() {
     const now = Date.now();
     setRecapCutoffState(now);
     setRecapCutoff(now);
+    // Sync to the account, not just this device (real feedback: watching the
+    // recap on one device still replayed the same updates on another). Fire-
+    // and-forget — see pushRecapCutoff's own doc comment; the local write
+    // above already took effect regardless of network state.
+    pushRecapCutoff(now);
   }, []);
+
+  // Called once on login (see applySession) to reconcile THIS device's local
+  // recap cutoff against the account's server-side one — the other half of
+  // "once per user, not per device." Deliberately fetches the server value
+  // FIRST rather than just pushing local and taking whatever ratchets out:
+  // a brand-new device's local cutoff is just-now-manufactured (see
+  // takeRecapCutoff's own doc comment — "now" is the safe default ONLY
+  // when nothing else is known), and if it were pushed blindly it would
+  // ratchet the server's real, meaningful cutoff forward to "now," silently
+  // marking every account-wide update since the LAST real cutoff as seen —
+  // exactly the kind of update this feature exists to surface. So: adopt
+  // the server's value whenever it's ahead of (or local has none), and only
+  // push local forward when IT is the one that's ahead (the recap was
+  // watched here since the last successful sync). A function declaration,
+  // not a const, so it's hoisted and callable from applySession above even
+  // though it's defined here, next to the rest of the recap cutoff state it
+  // touches.
+  async function reconcileRecapCutoff() {
+    let server;
+    try { server = await fetchRecapCutoff(); } catch { return; }
+    if (server?.unavailable) return; // 503 — table not migrated in this environment yet
+    const serverCutoff = Number.isFinite(server?.cutoffAt) ? server.cutoffAt : null;
+    const local = takeRecapCutoff();
+
+    if (local == null || (serverCutoff != null && serverCutoff > local)) {
+      if (serverCutoff != null) {
+        setRecapCutoffState(serverCutoff);
+        setRecapCutoff(serverCutoff);
+      }
+      return;
+    }
+    if (serverCutoff == null || local > serverCutoff) pushRecapCutoff(local);
+  }
 
   // Proactive nudge: the activity page's "Show me" only pays off for people
   // who already habitually open it, so surface it once, right after a real
@@ -2008,15 +2048,22 @@ export default function App() {
         }),
       );
     };
-    const onDone = (lastId) => {
+    const onDone = () => {
       setRecapQueue((q) => q.map((item) => ({ ...item, status: 'done' })));
       setRecapAllDone(true);
-      // Land the tree's own focus on whoever the tour finished on, rather
-      // than leaving it pointed at whoever was active before it started —
-      // BubbleTree already updated its own internal notion of "active" (see
-      // spotlightTour/spotlightEnd), this is the other half so React's
-      // activeId (the nameplate, "Add relative", etc. all read this) agrees.
-      if (lastId) setActiveId(lastId);
+      // Land back on the viewer's own profile, not whoever the tour
+      // happened to finish on (real feedback: after watching "what
+      // changed," the natural next place to be is yourself, not a
+      // relative's card). BubbleTree already parked its OWN internal
+      // "active" notion on the last-visited person with no camera movement
+      // (see spotlightTour/advanceRecap's setActive(lastId, false)) — this
+      // sets React's activeId to someone DIFFERENT, so the prop-effect that
+      // pushes activeId into the imperative view (BubbleTree.jsx, "React
+      // drives the active person into the imperative camera") fires with
+      // animate defaulting to true, gliding the camera from wherever the
+      // tour ended to the viewer's own bubble with the same easing every
+      // ordinary "activate a person" tap already uses.
+      setActiveId(data.myPersonId || DEFAULT_FOCUS);
     };
 
     const startTour = () => {
