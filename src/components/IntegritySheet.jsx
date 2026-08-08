@@ -6,7 +6,7 @@ const PAGE_SIZE = 20;
 // Short, human labels for each check type — shown as a small badge on every
 // card so "why was this flagged" is legible at a glance, not just buried in
 // the prose reason.
-const TYPE_LABELS = {
+export const TYPE_LABELS = {
   concurrent_partners: 'Overlapping partners',
   implausible_age: 'Implausible age',
   likely_deceased: 'Likely passed away',
@@ -17,6 +17,11 @@ const TYPE_LABELS = {
   marriage_outside_lifespan: 'Marriage outside lifespan',
   ancestor_cycle: 'Circular ancestry',
 };
+
+// DOM id a section-nav chip (ArchiveCareSheet) scrolls to — stamped only on
+// each type's FIRST card in `visible`'s own order, so a chip jump always
+// lands on a real, currently-rendered element regardless of pagination.
+export const typeAnchorId = (type) => `archivecare-type-${type}`;
 
 /*
  * Review data-integrity issues — logically impossible or wildly implausible
@@ -31,7 +36,14 @@ const TYPE_LABELS = {
  * close, no empty-state message) — used by ArchiveCareSheet.jsx to host
  * this list alongside DuplicatesSheet's, under one shared head.
  */
-export default function IntegritySheet({ issues, graph, onDismiss, onMarkDeceased, onClose, onOpenPerson, embedded = false }) {
+export default function IntegritySheet({
+  issues, graph, onDismiss, onMarkDeceased, onClose, onOpenPerson, embedded = false,
+  // Set by ArchiveCareSheet the moment a section-nav chip jumps to an issue
+  // type: bypasses the "Show N more" pagination cutoff below so the jump
+  // target is guaranteed to actually be in the DOM, however far down the
+  // (severity-sorted) list its type first appears.
+  forceShowAll = false,
+}) {
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [bulkConfirming, setBulkConfirming] = useState(false);
 
@@ -54,7 +66,7 @@ export default function IntegritySheet({ issues, graph, onDismiss, onMarkDecease
     [issues, graph],
   );
 
-  const paged = visible.slice(0, visibleCount);
+  const paged = forceShowAll ? visible : visible.slice(0, visibleCount);
 
   if (embedded && visible.length === 0) return null;
 
@@ -104,8 +116,17 @@ export default function IntegritySheet({ issues, graph, onDismiss, onMarkDecease
               </div>
             )}
             <ul className="dups__list">
-              {paged.map((issue) => (
-                <li key={issue.key} className={`dups__pair${issue.severity === 'high' ? ' dups__pair--high' : ''}`}>
+              {(() => { const seenTypes = new Set(); return paged.map((issue) => {
+                // Stamped only on each type's first card — the jump target a
+                // section-nav chip (ArchiveCareSheet) scrolls to.
+                const isFirstOfType = !seenTypes.has(issue.type);
+                seenTypes.add(issue.type);
+                return (
+                <li
+                  key={issue.key}
+                  id={isFirstOfType ? typeAnchorId(issue.type) : undefined}
+                  className={`dups__pair${issue.severity === 'high' ? ' dups__pair--high' : ''}`}
+                >
                   <span className="integrity__type-badge">{TYPE_LABELS[issue.type] || issue.type}</span>
                   <div className="dups__cards">
                     {issue.people.map((person) => (
@@ -139,9 +160,9 @@ export default function IntegritySheet({ issues, graph, onDismiss, onMarkDecease
                     </button>
                   </div>
                 </li>
-              ))}
+              ); }); })()}
             </ul>
-            {visible.length > visibleCount && (
+            {!forceShowAll && visible.length > visibleCount && (
               <button
                 className="dups__more"
                 onClick={() => setVisibleCount((n) => n + PAGE_SIZE)}
