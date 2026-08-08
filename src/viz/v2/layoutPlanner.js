@@ -252,6 +252,23 @@ function packRow(unitList, centreX) {
  * who are Christopher's parents but were never partnered in the data). The
  * common case — one real couple, or a single parent — is just one unit.
  */
+/** A person's own resolved x — their unit's placed centre plus their offset
+ *  within it. Only meaningful once that unit has actually been placed. */
+function resolvedX(unitOf, placed, id) {
+  const u = unitOf.get(id);
+  return (placed.get(u?.id) ?? 0) + (u?.offsets.get(id) ?? 0);
+}
+
+/** Orders a list of already-placed people left-to-right by their resolved x
+ *  (ties broken by id, for determinism). Used to hand placeCoParents a
+ *  grandparent/great-grandparent id list in the SAME left-to-right order as
+ *  the row below it actually resolved to — see placeCoParents' own comment
+ *  for the crossing-lines bug this exists to prevent. */
+function orderByResolvedX(ids, unitOf, placed) {
+  return [...ids].sort((a, b) => resolvedX(unitOf, placed, a) - resolvedX(unitOf, placed, b)
+    || String(a).localeCompare(String(b)));
+}
+
 function placeCoParents(unitOf, placed, parentIds, centreX) {
   const units = [];
   const seen = new Set();
@@ -259,8 +276,18 @@ function placeCoParents(unitOf, placed, parentIds, centreX) {
     const u = unitOf.get(pid);
     if (u && !seen.has(u.id)) { seen.add(u.id); units.push(u); }
   }
-  const unplaced = units.filter((u) => !placed.has(u.id))
-    .sort((a, b) => String(a.id).localeCompare(String(b.id)));
+  // Deliberately NOT re-sorted by unit id. `units` is already in whatever
+  // order `parentIds` was handed to us in, and every call site below now
+  // constructs that order deliberately (birth order, or — for grandparents/
+  // great-grandparents — sorted by the row below's own already-resolved x).
+  // An earlier version re-sorted alphabetically by each unit's own id here,
+  // which silently discarded that order: a real reported bug had a
+  // grandparent group land on the OPPOSITE side from the actual child it
+  // belongs to (decided independently, in buildUnits, by hub-selection and
+  // former/current partner status), producing a crossing "X" of lines
+  // between two adjacent rows purely because one grandparent-pair's id
+  // happened to sort earlier than the other's.
+  const unplaced = units.filter((u) => !placed.has(u.id));
   if (!unplaced.length) return;
   const packed = packRow(unplaced, centreX);
   for (const u of unplaced) placed.set(u.id, packed.get(u.id));
@@ -292,7 +319,14 @@ export function planFamilyLayout({
 
   /* 2. The sibling rank. The active person keeps their birth-order slot, and
    *    the whole rank is then shifted so THEIR slot centre is x = 0. */
-  const parentIds = graph.parents(activeId).filter((q) => visible.has(q.id) && isBioAdopt(q.qualifier)).map((q) => q.id);
+  // Sorted by birth-then-id (not raw graph order) so this list — now used
+  // directly to decide placeCoParents' left-to-right order, see that
+  // function's own comment — is deterministic independent of relationship
+  // insertion order, not just independent of which two co-parents happen to
+  // be genuinely partnered (that case was already covered by buildUnits'
+  // own equally-deterministic hub selection).
+  const parentIds = graph.parents(activeId).filter((q) => visible.has(q.id) && isBioAdopt(q.qualifier))
+    .map((q) => q.id).sort(byBirthThenId(graph.byId));
   const sibUnits = [];
   if (parentIds.length) {
     const sibs = new Set([activeId]);
@@ -318,16 +352,17 @@ export function planFamilyLayout({
     placeCoParents(unitOf, placed, parentIds, (Math.min(...span) + Math.max(...span)) / 2);
 
     /* 4. Grandparents: every distinct unit among ALL parents' own parents,
-     *    centred over wherever the (now-placed) parent units ended up. */
+     *    centred over wherever the (now-placed) parent units ended up.
+     *    `parentIds` is walked in its already-RESOLVED x order (not raw
+     *    graph order) so a grandparent group lands on the same side as the
+     *    parent it belongs to actually ended up on — see placeCoParents'
+     *    own comment for the crossing-lines bug this prevents. */
     const gpIds = [];
-    for (const pid of parentIds) {
-      for (const q of graph.parents(pid)) if (visible.has(q.id)) gpIds.push(q.id);
+    for (const pid of orderByResolvedX(parentIds, unitOf, placed)) {
+      for (const q of [...graph.parents(pid)].sort(byBirthThenId(graph.byId))) if (visible.has(q.id)) gpIds.push(q.id);
     }
     if (gpIds.length) {
-      const parentXs = parentIds.map((pid) => {
-        const u = unitOf.get(pid);
-        return (placed.get(u.id) ?? 0) + (u.offsets.get(pid) ?? 0);
-      });
+      const parentXs = parentIds.map((pid) => resolvedX(unitOf, placed, pid));
       placeCoParents(unitOf, placed, gpIds, (Math.min(...parentXs) + Math.max(...parentXs)) / 2);
     }
   }
@@ -342,18 +377,19 @@ export function planFamilyLayout({
    *     the active person's own siblings). */
   for (const podMemberId of activeUnit.memberIds) {
     if (podMemberId === activeId) continue; // the active person's own line is step 3/4 above
-    const ppIds = graph.parents(podMemberId).filter((q) => visible.has(q.id) && isBioAdopt(q.qualifier)).map((q) => q.id);
+    // Same determinism reasoning as `parentIds` above.
+    const ppIds = graph.parents(podMemberId).filter((q) => visible.has(q.id) && isBioAdopt(q.qualifier))
+      .map((q) => q.id).sort(byBirthThenId(graph.byId));
     if (!ppIds.length) continue;
     const memberX = (placed.get(activeUnit.id) ?? 0) + (activeUnit.offsets.get(podMemberId) ?? 0);
     placeCoParents(unitOf, placed, ppIds, memberX);
 
     const ggIds = [];
-    for (const pid of ppIds) for (const q of graph.parents(pid)) if (visible.has(q.id)) ggIds.push(q.id);
+    for (const pid of orderByResolvedX(ppIds, unitOf, placed)) {
+      for (const q of [...graph.parents(pid)].sort(byBirthThenId(graph.byId))) if (visible.has(q.id)) ggIds.push(q.id);
+    }
     if (ggIds.length) {
-      const ppXs = ppIds.map((pid) => {
-        const u = unitOf.get(pid);
-        return (placed.get(u.id) ?? 0) + (u.offsets.get(pid) ?? 0);
-      });
+      const ppXs = ppIds.map((pid) => resolvedX(unitOf, placed, pid));
       placeCoParents(unitOf, placed, ggIds, (Math.min(...ppXs) + Math.max(...ppXs)) / 2);
     }
   }
