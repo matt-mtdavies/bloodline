@@ -3634,6 +3634,36 @@
   border-radius: var(--radius-lg) var(--radius-lg) 0 0;
   background: var(--paper-deep); /* shows briefly while SmartImg's own photo fades in */
 }
+/* Real user report, with a screenshot: the hero photo looked good on
+   mobile but was "heavily zoomed in" on desktop. Root cause: the base
+   rule's height above is driven by VIEWPORT height (44vh), but .profile
+   itself becomes a fixed-width dialog past this same breakpoint (width:
+   min(680px, 100%), see .profile's own @media(min-width:600px) rule),
+   completely decoupled from that height. On a typical desktop window the
+   two combine into a box far wider than tall (measured live: 670×396,
+   ratio 1.69) — object-fit: cover then has to scale the photo up a lot
+   just to fill that width, cropping hard top-to-bottom. Mobile never had
+   this problem because the sheet is full-width there too, so width and
+   height both track the same device proportions. Tying height to the
+   sheet's OWN (now fixed) width via aspect-ratio instead of raw viewport
+   height fixes it at the source; max-height guards the opposite failure
+   on a very short/wide browser window (the hero swallowing the dialog).
+   Placed after the base rule (not folded into the earlier, shared
+   min-width:600px block above) so it actually wins the cascade — same
+   selector, same specificity, source order decides. */
+@media (min-width: 600px) {
+  .profile__hero {
+    /* A plain height override, not aspect-ratio: tried aspect-ratio +
+       max-height first, but a block with BOTH set is free to shrink its
+       WIDTH too rather than only clamping height (measured live: it
+       shrank the whole hero to 480×480 inside a 680px-wide dialog,
+       leaving a visible gap down both sides). A direct height also
+       sidesteps needing to reason about aspect-ratio at all here — on
+       every realistic desktop window height this value is what actually
+       binds anyway, so the ratio was never really the free variable. */
+    height: min(58vh, 560px);
+  }
+}
 .profile__hero-media {
   position: absolute;
   inset: 0;
