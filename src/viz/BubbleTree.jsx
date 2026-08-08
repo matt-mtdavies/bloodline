@@ -323,7 +323,7 @@ export default function BubbleTree({
       // up to the eldest row. Lift them to sit on their partner's row instead —
       // layout only; the stored `gen` (chart rows, labels) is untouched. Safe
       // because a childless person has no descendants to cascade.
-      const layoutGen = (id) => {
+      const layoutGenRaw = (id) => {
         let g = gen.get(id) ?? 0;
         if (graphRef.current.parents(id).length === 0) {
           for (const p of graphRef.current.partners(id)) {
@@ -333,6 +333,31 @@ export default function BubbleTree({
         }
         return g;
       };
+      // Compacts layoutGenRaw's absolute generation number down to a rank
+      // among only the generations actually represented in the currently
+      // TRACKED (visible) node set — closes empty bands a person's global
+      // generation index can straddle. Real report against a large, richly
+      // blended production tree: an ex-partner's own unrelated remarriage
+      // can drag their shared children's raw generation number many bands
+      // below anyone else in the currently-revealed neighbourhood — nothing
+      // in computeGenerations pulls a parent's row toward their child, only
+      // a child's below a parent's — leaving that parent and child several
+      // empty screen-heights apart even though they're directly related.
+      // This only ever changes on-screen SPACING; the underlying `gen` map
+      // (parent-above-child, partner-leveling, chart rows/labels elsewhere)
+      // is completely untouched, so none of those invariants can break —
+      // this just stops rendering the empty gaps between populated rows.
+      // Rebuilt wherever the tracked set or its generations can change; see
+      // the rebuildGenRank() calls in sync() and ensureVisible() below.
+      let genRank = new Map();
+      const rebuildGenRank = () => {
+        const raw = new Set();
+        for (const n of nodes) raw.add(layoutGenRaw(n.id));
+        const sorted = [...raw].sort((a, b) => a - b);
+        genRank = new Map(sorted.map((g, i) => [g, i]));
+      };
+      rebuildGenRank();
+      const layoutGen = (id) => genRank.get(layoutGenRaw(id)) ?? 0;
       const genYTarget = (d) => layoutGen(d.id) * GEN_GAP - 260;
 
       // Held in a variable so its Barnes-Hut theta can be re-tuned later (see
@@ -973,6 +998,7 @@ export default function BubbleTree({
           // another editor) shouldn't make every bubble on screen jiggle.
           if (structuralChange) sim.alpha(0.5);
           gen = computeGenerations(g);
+          rebuildGenRank();
           state.dist = distancesFrom(g, activeRef.current);
           relCache.clear(); // graph changed — relationship labels may differ
           if (state.layoutMode === 'radial' || state.layoutMode === 'weighted') state.relayout();
@@ -1000,6 +1026,7 @@ export default function BubbleTree({
             linkForce.links(buildLinks(graphRef.current.relationships));
             rebuildForceRelCaches(graphRef.current.relationships);
             updateChargeTheta();
+            rebuildGenRank();
             sim.alpha(Math.max(sim.alpha(), EXPAND_REHEAT_ALPHA));
             state.holdActiveDuringSettle();
           }
