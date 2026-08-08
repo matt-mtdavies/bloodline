@@ -172,57 +172,72 @@ export function computeGenerations(graph) {
   };
   for (const p of graph.people) visit(p.id, new Set());
 
-  // Level active partners onto the same generation band using MAX — the deeper
-  // partner's row wins, pulling the shallower one down to meet them.
+  // Two invariants have to hold SIMULTANEOUSLY in the final result:
+  //   1. Every parent sits strictly above every one of their children.
+  //   2. Active partners share the same row (levelled onto the deeper one).
+  // These used to run as two separate passes — level partners once, THEN
+  // cascade children below their (possibly just-deepened) parents — which
+  // looks right until a cascade adjustment deepens someone whose OWN partner
+  // was leveled earlier, in the first pass, against that person's now-stale
+  // shallower value. That partner is never revisited, so it's left stuck on
+  // the wrong row: a real, reported bug ("the partner pod needs to be level")
+  // reproduced with a minimal chain — P partners Q (whose separate ancestry
+  // is deeper), levelling P down to match; P's child K then gets cascaded
+  // even deeper to stay below P; but K's own partner R, already levelled to
+  // K's OLD (shallower) value in the FIRST pass, never gets a second look.
   //
-  // Former/ex partners are deliberately EXCLUDED: an ex from a different family
-  // branch may have deeper ancestry, and dragging the current family member
-  // down to match would cascade incorrectly (e.g. Jason getting pulled to
-  // Kate's row instead of staying with Matthew).
+  // Fixed by interleaving both rules in one shared convergence loop instead:
+  // each full pass re-levels every partner pair, then re-cascades every
+  // child, and only stops once an entire pass makes zero changes to EITHER
+  // rule. Both steps only ever move someone to a DEEPER row, never shallower
+  // (levelling takes a max; cascading only fires when a parent is at or below
+  // its child, and always sets the child one below the parent), so the total
+  // of every generation index is monotonically non-decreasing and bounded by
+  // the number of people — guaranteed to converge, defensively bounded below
+  // in case of corrupted/cyclic relationship data.
   //
-  // Multi-pass until stable so any chains converge (A=B, B=C → A=B=C).
-  let changed = true;
-  while (changed) {
-    changed = false;
-    const seen = new Set();
-    for (const p of graph.people) {
-      for (const partner of graph.partners(p.id)) {
-        if (partner.status === 'former') continue;
-        const key = [p.id, partner.id].sort().join('|');
-        if (seen.has(key)) continue;
-        seen.add(key);
-        const a = gen.get(p.id) ?? 0;
-        const b = gen.get(partner.id) ?? 0;
-        if (a === b) continue;
-        const lvl = Math.max(a, b);
-        if (a !== lvl) { gen.set(p.id, lvl);           changed = true; }
-        if (b !== lvl) { gen.set(partner.id, lvl);     changed = true; }
+  // Former/ex partners are deliberately EXCLUDED from levelling: an ex from a
+  // different family branch may have deeper ancestry, and dragging the
+  // current family member down to match would cascade incorrectly (e.g.
+  // Jason getting pulled to Kate's row instead of staying with Matthew).
+  let stable = false;
+  let guard = graph.people.length * 4 + 10;
+  while (!stable && guard-- > 0) {
+    stable = true;
+
+    // 1. Level active partners onto the same generation band using MAX — the
+    //    deeper partner's row wins, pulling the shallower one down to meet
+    //    them. Multi-pass within itself too so a chain (A=B, B=C) converges
+    //    in one trip through this step.
+    let leveling = true;
+    while (leveling) {
+      leveling = false;
+      const seen = new Set();
+      for (const p of graph.people) {
+        for (const partner of graph.partners(p.id)) {
+          if (partner.status === 'former') continue;
+          const key = [p.id, partner.id].sort().join('|');
+          if (seen.has(key)) continue;
+          seen.add(key);
+          const a = gen.get(p.id) ?? 0;
+          const b = gen.get(partner.id) ?? 0;
+          if (a === b) continue;
+          const lvl = Math.max(a, b);
+          if (a !== lvl) { gen.set(p.id, lvl);       leveling = true; stable = false; }
+          if (b !== lvl) { gen.set(partner.id, lvl); leveling = true; stable = false; }
+        }
       }
     }
-  }
 
-  // The levelling above can pull a parent DOWN past their own child's row —
-  // a child's generation was fixed in the first pass, before their parent
-  // got dragged deeper to match a partner's separate, deeper ancestry (e.g.
-  // Ray gets levelled to Flo's row, which happens to be at or past a row
-  // Ray's own child from an earlier relationship already occupies). Cascade
-  // children forward until every parent sits strictly above their children,
-  // never the reverse — repeated to convergence so it propagates down
-  // multiple generations if needed.
-  // Bounded defensively: a valid family tree converges in well under
-  // people.length passes, but corrupted/cyclic relationship data shouldn't
-  // be able to hang the tab.
-  let cascading = true;
-  let guard = graph.people.length + 1;
-  while (cascading && guard-- > 0) {
-    cascading = false;
+    // 2. Cascade children below their (possibly just-deepened) parents —
+    //    never the reverse.
     for (const child of graph.people) {
       const childGen = gen.get(child.id) ?? 0;
       for (const parent of graph.parents(child.id)) {
         const parentGen = gen.get(parent.id) ?? 0;
         if (parentGen >= childGen) {
           gen.set(child.id, parentGen + 1);
-          cascading = true;
+          stable = false;
         }
       }
     }
