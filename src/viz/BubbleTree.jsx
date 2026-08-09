@@ -278,6 +278,47 @@ export default function BubbleTree({
       // rebuilds a fresh relationships array even when nothing changed.
       let lastRelationshipSig = relSignature(graph.relationships);
 
+      // A person can carry more than one recorded partner over a lifetime —
+      // widowed then remarried, divorced then remarried, or simply an ex
+      // still on record as a co-parent. Only ONE of a person's partner
+      // relationships is their "primary" pod-mate for the strong row/
+      // proximity forces below; every other one is looser. Without this,
+      // every past union pulls exactly as hard as the present one, and
+      // people who were never simultaneously a couple end up crammed
+      // together into what reads as one continuous multi-person pod — two
+      // real, separate reports, both screenshotted: an ex-husband's own
+      // gray placeholder bubble rendered fused into a widow's couple pod;
+      // an ex-partner and her own separate partner both fused into a man's
+      // pod with his current wife. Ranked current > widowed > former, tied-
+      // broken by array order (first recorded wins) since there's no
+      // reliable "most recent" signal across every relationship shape this
+      // app allows (a marriage date is optional, and separation_date only
+      // exists for exes). Recomputed alongside partnerYRels/parentAboveRels
+      // below, at the same three points (mount, sync, ensureVisible).
+      const STATUS_RANK = { current: 3, widowed: 2, former: 1 };
+      const primaryPartnerOf = new Map(); // personId → that person's one primary partner relationship id
+      const computePrimaryPartners = (rels) => {
+        primaryPartnerOf.clear();
+        const best = new Map(); // personId → { rank, relId }
+        for (const r of rels) {
+          if (r.type !== 'partner') continue;
+          const rank = STATUS_RANK[r.partner_status] ?? 0;
+          for (const pid of [r.from_person, r.to_person]) {
+            const cur = best.get(pid);
+            if (!cur || rank > cur.rank) best.set(pid, { rank, relId: r.id });
+          }
+        }
+        for (const [pid, entry] of best) primaryPartnerOf.set(pid, entry.relId);
+      };
+      // A partner edge is only "primary" — full pull, forced level — when
+      // it's EACH endpoint's own best-ranked partner relationship. If it's
+      // not the top pick for even one side (that person has a better-ranked
+      // partner elsewhere), the edge is secondary for both, since a pod is a
+      // mutual thing.
+      const isPrimaryPartnerRel = (r) =>
+        primaryPartnerOf.get(r.from_person) === r.id && primaryPartnerOf.get(r.to_person) === r.id;
+      computePrimaryPartners(graph.relationships); // populate before the first buildLinks() call below
+
       // Only links between two currently-tracked people are meaningful to the
       // simulation — a relationship reaching an untracked (not-yet-revealed)
       // person would otherwise hand d3-force an unresolvable link id.
@@ -287,12 +328,23 @@ export default function BubbleTree({
             (r) => (r.type === 'partner' || r.type === 'parent')
               && nodeById.has(r.from_person) && nodeById.has(r.to_person),
           )
-          .map((r) => ({ source: r.from_person, target: r.to_person, kind: r.type }));
+          .map((r) => ({
+            source: r.from_person, target: r.to_person, kind: r.type,
+            primary: r.type !== 'partner' || isPrimaryPartnerRel(r),
+          }));
 
+      // A non-primary partner is pulled much more loosely than the primary
+      // couple — see primaryPartnerOf above for why. The dashed/muted
+      // capsule rendering (links.js) already tells a former/secondary union
+      // apart visually once it's not squeezed into the same tight proximity
+      // as the primary couple — this is what actually creates the room for
+      // that to read. Still some pull (not a stranger's distance — they
+      // often still share children and belong somewhere nearby), just
+      // nowhere near a couple's own 112px/0.9.
       const linkForce = forceLink(buildLinks(graph.relationships))
         .id((d) => d.id)
-        .distance((l) => (l.kind === 'partner' ? 112 : 280))
-        .strength((l) => (l.kind === 'partner' ? 0.9 : 0.26));
+        .distance((l) => (l.kind !== 'partner' ? 280 : l.primary ? 112 : 200))
+        .strength((l) => (l.kind !== 'partner' ? 0.26 : l.primary ? 0.9 : 0.35));
 
       // partnerY/parentAbove (below) only ever touch relationships where BOTH
       // endpoints are currently tracked — pre-filtered here, the same way
@@ -307,7 +359,13 @@ export default function BubbleTree({
       let partnerYRels = [];
       let parentAboveRels = [];
       const rebuildForceRelCaches = (rels) => {
-        partnerYRels = rels.filter((r) => r.type === 'partner' && nodeById.has(r.from_person) && nodeById.has(r.to_person));
+        computePrimaryPartners(rels);
+        // Non-primary partners excluded here too — same reasoning as
+        // computeGenerations' own former-partner row-leveling exclusion
+        // (graph.js) and the loosened linkForce distance/strength just
+        // above: a secondary union shouldn't be rigidly pinned to the exact
+        // same row just because it was once (or is elsewhere) a couple.
+        partnerYRels = rels.filter((r) => r.type === 'partner' && isPrimaryPartnerRel(r) && nodeById.has(r.from_person) && nodeById.has(r.to_person));
         parentAboveRels = rels.filter((r) => r.type === 'parent' && nodeById.has(r.from_person) && nodeById.has(r.to_person));
       };
       rebuildForceRelCaches(graph.relationships);
@@ -721,6 +779,46 @@ export default function BubbleTree({
         beginRecapTravel();
       };
 
+      // Defensively clears any transient, self-driving camera mode (a search
+      // flyover or the recap tour) before handing the camera to or back from
+      // the user. Real report: after the recap tour played through, the tree
+      // "seemed frozen... couldn't click on anyone." Root cause is the same
+      // class of bug already fixed once for flight (see endGesture's own
+      // `if (!drag.moved && flight)` guard comment) — but that fix only
+      // covered canvas taps. enterFree()/enterFollow() are called from
+      // several OTHER places that never accounted for `recap` at all: the
+      // pinch/pan drag-start interrupts below, the zoom/recenter buttons
+      // (ZoomControls.jsx — reachable even while nothing on the canvas
+      // itself is), and React's own deselect()/openPerson() handlers. Any of
+      // those flips camMode away from 'recap' without ever clearing the
+      // `recap` variable or calling its onDone — leaving BubbleTree's
+      // internal state pointed at a tour that's already been abandoned, and,
+      // critically, leaving React's `recapOpen` (the full-screen scrim in
+      // RecapTour.jsx) stuck open forever, since nothing ever told it the
+      // tour ended. That scrim is what actually explains "couldn't click on
+      // anyone" — an invisible-seeming but very real `position: fixed;
+      // inset: 0` overlay silently absorbing every tap. Centralizing this in
+      // the two chokepoints every "hand the camera over" path already goes
+      // through means no future entry point can reintroduce the gap.
+      const abortTransientCameraModes = () => {
+        if (flight) {
+          flight.onAbort?.();
+          flight = null;
+          landingFx?.destroy(); landingFx = null;
+          flightComet?.destroy(); flightComet = null;
+        }
+        postFlightIds = null;
+        postFlightEdges = null;
+        postFlightLandedAt = 0;
+        if (recap) {
+          const onDone = recap.onDone;
+          recap = null;
+          for (const [, fx] of recapFx) fx.destroy();
+          recapFx.clear();
+          onDone?.();
+        }
+      };
+
       const state = {
         app,
         world,
@@ -874,6 +972,7 @@ export default function BubbleTree({
         },
         // Hand the camera to the user: pan/zoom now stick where they leave them.
         enterFree() {
+          abortTransientCameraModes();
           if (camMode === 'free') return;
           camMode = 'free';
           vx = vy = 0;
@@ -881,6 +980,7 @@ export default function BubbleTree({
         },
         // Take the camera back: it will spring to frame the active family.
         enterFollow() {
+          abortTransientCameraModes();
           vx = vy = 0;
           camX.velocity = camY.velocity = 0;
           if (camMode === 'follow') return;
@@ -1497,10 +1597,8 @@ export default function BubbleTree({
           pinch.active = true;
           pinch.dist0 = twoFingerDist();
           pinch.zoom0 = screenAnchor().z;
-          if (flight) { flight.onAbort?.(); flight = null; landingFx?.destroy(); landingFx = null; flightComet?.destroy(); flightComet = null; }
-          postFlightIds = null; // the user's taken control — stop lingering on the old route
-          postFlightEdges = null;
-          postFlightLandedAt = 0;
+          // enterFree() itself now clears any in-progress flight/recap (see
+          // abortTransientCameraModes) — the user's taken control.
           state.enterFree();
           return;
         }
@@ -1581,11 +1679,8 @@ export default function BubbleTree({
           if (!reducedMotion) sim.alphaTarget(0.35); // reheat so neighbours react
         } else if (drag.type === 'pan' && drag.moved) {
           // A real drag interrupts the flyover — hand control back to the user
-          // right where the camera is, no jump.
-          if (flight) { flight.onAbort?.(); flight = null; landingFx?.destroy(); landingFx = null; flightComet?.destroy(); flightComet = null; }
-          postFlightIds = null; // the user's taken control — stop lingering on the old route
-          postFlightEdges = null;
-          postFlightLandedAt = 0;
+          // right where the camera is, no jump. enterFree() itself now clears
+          // any in-progress flight/recap (see abortTransientCameraModes).
           state.enterFree();
           app.stage.cursor = 'grabbing';
           const z = screenAnchor().z;
