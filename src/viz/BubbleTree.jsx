@@ -15,7 +15,7 @@ import { IgniteEffect } from './ignite.js';
 import { FlightComet } from './comet.js';
 import { drawLinks, drawLinksChart } from './links.js';
 import { computeChartLayout } from './chartLayout.js';
-import { distancesFrom, relationLabel, computeGenerations } from '../data/graph.js';
+import { distancesFrom, relationLabel, computeGenerations, computeFamilyOrderSlots } from '../data/graph.js';
 import { Spring } from '../lib/spring.js';
 import { kinTermsStore } from '../lib/kinTerms.js';
 
@@ -469,6 +469,25 @@ export default function BubbleTree({
       };
       rebuildForceRelCaches(graph.relationships);
 
+      // Real feedback: "there should be a focus to avoid an immediate family
+      // unit crossing over. If a bubble is selected, the expanded branches
+      // bubbles should align as clearly as possible, reducing any
+      // crossovers." Charge/collision settle wherever is locally
+      // lowest-energy, with no notion of left/right ORDER — that's exactly
+      // what lets a sibling pod's own children interleave with a
+      // neighbouring pod's. computeFamilyOrderSlots (graph.js) assigns an
+      // explicit left-to-right slot to the active person's sibling group
+      // (partners adjacent, each sibling's own children clustered under
+      // their own pod) using the same ordering already shown in the
+      // profile's own Siblings/Children groups. Rebuilt whenever the active
+      // person or the graph's shape changes — see the rebuildFamilyOrderSlots
+      // calls in setActive/sync/ensureVisible below.
+      let familyOrderSlots = new Map();
+      const rebuildFamilyOrderSlots = () => {
+        familyOrderSlots = computeFamilyOrderSlots(graphRef.current, activeRef.current);
+      };
+      rebuildFamilyOrderSlots();
+
       // Resting generational pull. Focus Family wants crisp rows — parents
       // clearly above, children clearly below — so the band force is much
       // stronger while focused; otherwise it's a gentle organic drift.
@@ -681,6 +700,39 @@ export default function BubbleTree({
           const push = Math.min(violation * 0.3, GEN_GAP * 0.5);
           parent.vy -= push;
           child.vy += push;
+        }
+      });
+
+      // Crossing-reduction for the selected person's immediate family — see
+      // rebuildFamilyOrderSlots above. A pure leader/follower pull: every
+      // OTHER id in the slot map eases toward a position relative to the
+      // ACTIVE person's own live (x, y) — never the other way around, so
+      // there's no mutual feedback loop between two moving targets (the
+      // exact shape that caused the real partnerSideLean drift incident —
+      // see that force's own comment). The active person's own motion is
+      // driven entirely by the existing forces above; this one only ever
+      // nudges their relatives to line up beside/below them in the ordered
+      // slots. Deliberately gentle relative to collision/charge — this
+      // breaks left/right ties and discourages crossings, it doesn't
+      // override the rest of the layout. Not scaled by alpha, for the same
+      // reason partnerY/parentAbove above aren't: it needs to keep working
+      // once the simulation is resting, not just while it's still hot.
+      const FAMILY_ORDER_SLOT_PX = 130;
+      const FAMILY_ORDER_STRENGTH = 0.12;
+      sim.force('familyOrder', () => {
+        const mode = layoutRef.current;
+        if (mode === 'chart' || mode === 'radial') return;
+        if (!familyOrderSlots.size) return;
+        const active = activeRef.current;
+        const activeNode = nodeById.get(active);
+        const activeSlot = familyOrderSlots.get(active);
+        if (!activeNode || activeSlot == null) return;
+        for (const [id, slot] of familyOrderSlots) {
+          if (id === active) continue;
+          const n = nodeById.get(id);
+          if (!n) continue;
+          const targetX = activeNode.x + (slot - activeSlot) * FAMILY_ORDER_SLOT_PX;
+          n.vx += (targetX - n.x) * FAMILY_ORDER_STRENGTH;
         }
       });
 
@@ -1113,6 +1165,7 @@ export default function BubbleTree({
           activeRef.current = id;
           state.dist = distancesFrom(graphRef.current, id);
           relCache.clear(); // relationships are relative to the active person
+          rebuildFamilyOrderSlots(); // the ordered group is relative to whoever's now active
           // Anchor the zoom hold at whatever it is right now, before this
           // activation's own framing kicks in — see heldZoom's own comment.
           heldZoom = zoom.value;
@@ -1263,6 +1316,7 @@ export default function BubbleTree({
           sim.nodes(nodes);
           linkForce.links(buildLinks(g.relationships));
           rebuildForceRelCaches(g.relationships);
+          rebuildFamilyOrderSlots(); // the active person's sibling/children set may have changed
           updateChargeTheta();
           // Only reheat the simulation when the tree's actual shape changed
           // (someone added/removed, or a relationship changed) — a cosmetic
@@ -1297,6 +1351,7 @@ export default function BubbleTree({
             sim.nodes(nodes);
             linkForce.links(buildLinks(graphRef.current.relationships));
             rebuildForceRelCaches(graphRef.current.relationships);
+            rebuildFamilyOrderSlots(); // newly-spawned relatives may now be part of the active person's ordered group
             updateChargeTheta();
             rebuildGenRank();
             sim.alpha(Math.max(sim.alpha(), EXPAND_REHEAT_ALPHA));
