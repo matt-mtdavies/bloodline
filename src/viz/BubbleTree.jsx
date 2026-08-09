@@ -310,13 +310,51 @@ export default function BubbleTree({
         }
         for (const [pid, entry] of best) primaryPartnerOf.set(pid, entry.relId);
       };
-      // A partner edge is only "primary" — full pull, forced level — when
-      // it's EACH endpoint's own best-ranked partner relationship. If it's
-      // not the top pick for even one side (that person has a better-ranked
-      // partner elsewhere), the edge is secondary for both, since a pod is a
-      // mutual thing.
-      const isPrimaryPartnerRel = (r) =>
-        primaryPartnerOf.get(r.from_person) === r.id && primaryPartnerOf.get(r.to_person) === r.id;
+      // Real follow-up feedback on a 602-person production tree: "if there
+      // are children from the relationship, the couple should be closer to
+      // level" — a couple who share a child benefits from being level
+      // regardless of current/former/widowed status, since it's their own
+      // merged co-parent line (links.js's drawGroup) that goes to that
+      // child; leaving a childful ex un-leveled just because a later,
+      // childless remarriage outranked them by status was exactly what made
+      // the reported parent→child lines "still appearing quite horizontal"
+      // — an un-leveled co-parent pair's shared line has to travel a long
+      // diagonal to reach children who are still drawn relative to a
+      // different row. Unlike the status-rank pick above (at most one
+      // winner per person), sharing children is not exclusive — a genuinely
+      // blended family can and should level MULTIPLE co-parent pods around
+      // the same person at once, the same way a real family tree would.
+      const coParentPairKeys = new Set(); // "idA|idB" (sorted) for every pair who share ≥1 child
+      const computeCoParentPairs = (rels) => {
+        coParentPairKeys.clear();
+        const parentsOfChild = new Map(); // childId → [parentIds]
+        for (const r of rels) {
+          if (r.type !== 'parent') continue;
+          let arr = parentsOfChild.get(r.to_person);
+          if (!arr) parentsOfChild.set(r.to_person, arr = []);
+          arr.push(r.from_person);
+        }
+        for (const parents of parentsOfChild.values()) {
+          for (let i = 0; i < parents.length; i++) {
+            for (let j = i + 1; j < parents.length; j++) {
+              coParentPairKeys.add([parents[i], parents[j]].sort().join('|'));
+            }
+          }
+        }
+      };
+      const areCoParents = (a, b) => coParentPairKeys.has([a, b].sort().join('|'));
+      // A partner edge is "primary" — full pull, forced level — when the two
+      // share a child (see above, always true regardless of status) OR,
+      // failing that, when it's EACH endpoint's own best-ranked partner
+      // relationship. If neither holds (this person has a better-ranked,
+      // childless partner elsewhere), the edge is secondary for both, since
+      // a pod is a mutual thing.
+      const isPrimaryPartnerRel = (r) => {
+        if (r.type !== 'partner') return false;
+        if (areCoParents(r.from_person, r.to_person)) return true;
+        return primaryPartnerOf.get(r.from_person) === r.id && primaryPartnerOf.get(r.to_person) === r.id;
+      };
+      computeCoParentPairs(graph.relationships);
       computePrimaryPartners(graph.relationships); // populate before the first buildLinks() call below
 
       // Only links between two currently-tracked people are meaningful to the
@@ -358,15 +396,47 @@ export default function BubbleTree({
       // buildLinks() is (mount, sync, ensureVisible).
       let partnerYRels = [];
       let parentAboveRels = [];
+      // Real follow-up feedback: "current and ex's should display on
+      // opposite side when possible" — for anyone with more than one
+      // partner, each 'current' relationship gets a gentle, standing lean
+      // toward the person's +x side and each 'former' relationship toward
+      // -x, so the two don't default to crowding the same side the way
+      // unbiased collision resolution otherwise settles them. One entry per
+      // (personId, partnerId) — built from BOTH directions of every partner
+      // relationship, since either side of a couple can independently have
+      // other partners needing their own lean.
+      let multiPartnerLean = [];
+      const rebuildMultiPartnerLean = (rels) => {
+        multiPartnerLean = [];
+        const byPerson = new Map(); // personId → [{ partnerId, status }]
+        for (const r of rels) {
+          if (r.type !== 'partner') continue;
+          if (!nodeById.has(r.from_person) || !nodeById.has(r.to_person)) continue;
+          const add = (pid, otherId) => {
+            let arr = byPerson.get(pid);
+            if (!arr) byPerson.set(pid, arr = []);
+            arr.push({ partnerId: otherId, status: r.partner_status });
+          };
+          add(r.from_person, r.to_person);
+          add(r.to_person, r.from_person);
+        }
+        for (const [personId, list] of byPerson) {
+          if (list.length < 2) continue; // a single partner has no "side" to disambiguate
+          for (const entry of list) multiPartnerLean.push({ personId, ...entry });
+        }
+      };
       const rebuildForceRelCaches = (rels) => {
+        computeCoParentPairs(rels);
         computePrimaryPartners(rels);
-        // Non-primary partners excluded here too — same reasoning as
-        // computeGenerations' own former-partner row-leveling exclusion
-        // (graph.js) and the loosened linkForce distance/strength just
-        // above: a secondary union shouldn't be rigidly pinned to the exact
-        // same row just because it was once (or is elsewhere) a couple.
+        // Non-primary, non-co-parent partners excluded here too — same
+        // reasoning as computeGenerations' own former-partner row-leveling
+        // exclusion (graph.js) and the loosened linkForce distance/strength
+        // just above: a secondary union shouldn't be rigidly pinned to the
+        // exact same row just because it was once (or is elsewhere) a
+        // couple, unless they actually co-parented a child together.
         partnerYRels = rels.filter((r) => r.type === 'partner' && isPrimaryPartnerRel(r) && nodeById.has(r.from_person) && nodeById.has(r.to_person));
         parentAboveRels = rels.filter((r) => r.type === 'parent' && nodeById.has(r.from_person) && nodeById.has(r.to_person));
+        rebuildMultiPartnerLean(rels);
       };
       rebuildForceRelCaches(graph.relationships);
 
@@ -482,6 +552,39 @@ export default function BubbleTree({
           const dy = nb.y - na.y;
           na.vy += dy * 0.4;
           nb.vy -= dy * 0.4;
+        }
+      });
+
+      // "current and ex's should display on opposite side when possible"
+      // (real follow-up feedback) — a gentle, standing lean, not a hard
+      // rule: a 'current' partner is nudged toward the shared person's own
+      // +x side, a 'former' partner toward -x, so two of someone's partners
+      // don't default to crowding the same side the way unbiased collision
+      // resolution otherwise settles them. 'widowed' (and anything else)
+      // gets no lean either way — it's not "instead of" a current partner
+      // the way an ex reads, so there's no clear opposite side to prefer.
+      // Deliberately weak (0.02, a fraction of partnerY's 0.4 or the link
+      // force's 0.9/0.35) so it never fights the couple forces that already
+      // govern where a partner actually settles — this only breaks a left/
+      // right tie, the same "tie-breaking nudge" role the loosened
+      // secondary-partner linkForce distance already plays for closeness.
+      // Also deliberately NOT scaled by alpha, for the same reason
+      // documented on partnerY above: it needs to keep working once the
+      // simulation is resting, not just while it's still hot.
+      const SIDE_LEAN_TARGET = 90;
+      const SIDE_LEAN_STRENGTH = 0.08;
+      const sideLeanSign = (status) => (status === 'current' ? 1 : status === 'former' ? -1 : 0);
+      sim.force('partnerSideLean', () => {
+        const mode = layoutRef.current;
+        if (mode === 'chart' || mode === 'radial') return;
+        for (const { personId, partnerId, status } of multiPartnerLean) {
+          const sign = sideLeanSign(status);
+          if (!sign) continue;
+          const p = nodeById.get(personId);
+          const q = nodeById.get(partnerId);
+          if (!p || !q) continue;
+          const desired = p.x + sign * SIDE_LEAN_TARGET;
+          q.vx += (desired - q.x) * SIDE_LEAN_STRENGTH;
         }
       });
 
