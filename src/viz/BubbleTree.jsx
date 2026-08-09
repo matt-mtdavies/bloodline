@@ -398,31 +398,53 @@ export default function BubbleTree({
       let parentAboveRels = [];
       // Real follow-up feedback: "current and ex's should display on
       // opposite side when possible" — for anyone with more than one
-      // partner, each 'current' relationship gets a gentle, standing lean
-      // toward the person's +x side and each 'former' relationship toward
-      // -x, so the two don't default to crowding the same side the way
-      // unbiased collision resolution otherwise settles them. One entry per
-      // (personId, partnerId) — built from BOTH directions of every partner
-      // relationship, since either side of a couple can independently have
-      // other partners needing their own lean.
-      let multiPartnerLean = [];
-      const rebuildMultiPartnerLean = (rels) => {
-        multiPartnerLean = [];
-        const byPerson = new Map(); // personId → [{ partnerId, status }]
+      // partner, a 'current' relationship gets a gentle, standing lean to
+      // one side and a 'former' relationship toward the other, so the two
+      // don't default to crowding the same side the way unbiased collision
+      // resolution otherwise settles them.
+      //
+      // REAL PRODUCTION INCIDENT, fixed here: the first version of this
+      // force built one entry per DIRECTION of every relationship (both
+      // "push B relative to A" and "push A relative to B" whenever either
+      // side had multiple partners) and nudged only the non-anchor side
+      // each time — so whenever TWO people mutually qualified (both have
+      // >1 partner AND are partnered with each other, an unremarkable
+      // shape in any real multi-generation family), each pushed the OTHER
+      // toward a target 90px past *its own current, still-moving* position
+      // with no equal-and-opposite reaction. That pair of one-way springs
+      // is not momentum-conserving: the sum of their two x-positions climbs
+      // at a constant, undamped rate every tick forever (worked through
+      // algebraically and confirmed against the real report — "my tree
+      // pulls away continuously to both sides" on a 1249-person production
+      // tree — a small demo family's own few mutually-qualifying pairs
+      // never happened to drift far enough, in the few seconds a manual
+      // check runs, to be visible). partnerY just below never had this bug
+      // because its `na.vy += dy*0.4; nb.vy -= dy*0.4;` shape is exactly
+      // Newton's-third-law paired — the sum na.y+nb.y is invariant under
+      // it. Rewritten the same way: ONE entry per relationship (not two),
+      // applied as a single equal-and-opposite spring toward a target
+      // *separation* rather than each side chasing the other's position
+      // independently — provably can't accumulate net drift, the same
+      // property that already makes partnerY safe to run unscaled by alpha
+      // forever.
+      let sideLeanRels = [];
+      const rebuildSideLeanRels = (rels) => {
+        sideLeanRels = [];
+        const partnerCount = new Map(); // personId → how many partner rels they have
         for (const r of rels) {
           if (r.type !== 'partner') continue;
           if (!nodeById.has(r.from_person) || !nodeById.has(r.to_person)) continue;
-          const add = (pid, otherId) => {
-            let arr = byPerson.get(pid);
-            if (!arr) byPerson.set(pid, arr = []);
-            arr.push({ partnerId: otherId, status: r.partner_status });
-          };
-          add(r.from_person, r.to_person);
-          add(r.to_person, r.from_person);
+          partnerCount.set(r.from_person, (partnerCount.get(r.from_person) ?? 0) + 1);
+          partnerCount.set(r.to_person, (partnerCount.get(r.to_person) ?? 0) + 1);
         }
-        for (const [personId, list] of byPerson) {
-          if (list.length < 2) continue; // a single partner has no "side" to disambiguate
-          for (const entry of list) multiPartnerLean.push({ personId, ...entry });
+        for (const r of rels) {
+          if (r.type !== 'partner') continue;
+          if (!nodeById.has(r.from_person) || !nodeById.has(r.to_person)) continue;
+          // Only relationships that actually need disambiguating — a
+          // person whose only partner is this one has no "other side" to
+          // lean away from.
+          if ((partnerCount.get(r.from_person) ?? 0) < 2 && (partnerCount.get(r.to_person) ?? 0) < 2) continue;
+          sideLeanRels.push(r);
         }
       };
       const rebuildForceRelCaches = (rels) => {
@@ -436,7 +458,7 @@ export default function BubbleTree({
         // couple, unless they actually co-parented a child together.
         partnerYRels = rels.filter((r) => r.type === 'partner' && isPrimaryPartnerRel(r) && nodeById.has(r.from_person) && nodeById.has(r.to_person));
         parentAboveRels = rels.filter((r) => r.type === 'parent' && nodeById.has(r.from_person) && nodeById.has(r.to_person));
-        rebuildMultiPartnerLean(rels);
+        rebuildSideLeanRels(rels);
       };
       rebuildForceRelCaches(graph.relationships);
 
@@ -557,34 +579,45 @@ export default function BubbleTree({
 
       // "current and ex's should display on opposite side when possible"
       // (real follow-up feedback) — a gentle, standing lean, not a hard
-      // rule: a 'current' partner is nudged toward the shared person's own
-      // +x side, a 'former' partner toward -x, so two of someone's partners
-      // don't default to crowding the same side the way unbiased collision
-      // resolution otherwise settles them. 'widowed' (and anything else)
-      // gets no lean either way — it's not "instead of" a current partner
-      // the way an ex reads, so there's no clear opposite side to prefer.
-      // Deliberately weak (0.02, a fraction of partnerY's 0.4 or the link
-      // force's 0.9/0.35) so it never fights the couple forces that already
-      // govern where a partner actually settles — this only breaks a left/
-      // right tie, the same "tie-breaking nudge" role the loosened
-      // secondary-partner linkForce distance already plays for closeness.
-      // Also deliberately NOT scaled by alpha, for the same reason
-      // documented on partnerY above: it needs to keep working once the
-      // simulation is resting, not just while it's still hot.
+      // rule: nudges a relationship's two people toward a target
+      // *separation* along x — positive (to_person right of from_person)
+      // for 'current', negative for 'former' — only for relationships that
+      // actually need disambiguating (see rebuildSideLeanRels above).
+      // 'widowed' (and anything else) gets no lean either way — it's not
+      // "instead of" a current partner the way an ex reads, so there's no
+      // clear opposite side to prefer. Deliberately weak (0.05, well under
+      // partnerY's 0.4 or the link force's 0.9/0.35) so it never fights the
+      // couple forces that already govern where a partner actually settles
+      // — this only breaks a left/right tie. NOT scaled by alpha, for the
+      // same reason documented on partnerY above: it needs to keep working
+      // once the simulation is resting, not just while it's still hot.
+      //
+      // Applied as ONE equal-and-opposite spring per relationship — see
+      // rebuildSideLeanRels's own comment for the real incident this shape
+      // fixes: an earlier version nudged each side toward the OTHER's
+      // current position independently (two one-way springs, not a single
+      // paired one), which for any pair of people who mutually qualify has
+      // no equilibrium and drifts their combined position outward forever.
+      // This shape can't do that: da.vx and db.vx are always exact
+      // opposites, so the sum of the pair's positions is invariant under
+      // this force, precisely like partnerY's own dy split below.
       const SIDE_LEAN_TARGET = 90;
-      const SIDE_LEAN_STRENGTH = 0.08;
+      const SIDE_LEAN_STRENGTH = 0.05;
       const sideLeanSign = (status) => (status === 'current' ? 1 : status === 'former' ? -1 : 0);
       sim.force('partnerSideLean', () => {
         const mode = layoutRef.current;
         if (mode === 'chart' || mode === 'radial') return;
-        for (const { personId, partnerId, status } of multiPartnerLean) {
-          const sign = sideLeanSign(status);
+        for (const r of sideLeanRels) {
+          const sign = sideLeanSign(r.partner_status);
           if (!sign) continue;
-          const p = nodeById.get(personId);
-          const q = nodeById.get(partnerId);
-          if (!p || !q) continue;
-          const desired = p.x + sign * SIDE_LEAN_TARGET;
-          q.vx += (desired - q.x) * SIDE_LEAN_STRENGTH;
+          const a = nodeById.get(r.from_person);
+          const b = nodeById.get(r.to_person);
+          if (!a || !b) continue;
+          const dx = b.x - a.x;
+          const desired = sign * SIDE_LEAN_TARGET;
+          const push = (desired - dx) * SIDE_LEAN_STRENGTH;
+          a.vx -= push;
+          b.vx += push;
         }
       });
 
