@@ -49,64 +49,73 @@ export function sortChildren(children, byId) {
   return sortByTierThenAge(children, byId, (c) => c.qualifier || 'biological', CHILD_QUALIFIER_ORDER);
 }
 
-// Real user feedback on the organic tree: "there should be a focus to avoid
-// an immediate family unit crossing over... if a bubble is selected, the
-// expanded branches bubbles should align as clearly as possible, reducing
-// any crossovers." The force-directed layout has no notion of left/right
-// ORDER — charge/collision settle wherever is locally lowest-energy, which
-// is exactly what lets a sibling pod's children interleave with a
-// neighbouring pod's and cross lines. This assigns an explicit left-to-right
-// slot to the one group most worth ordering deliberately — whoever is
-// selected, their sibling group (including themself), each sibling's own
-// partner immediately alongside them, and each sibling's own children
-// clustered directly under their own pod's centre — using the SAME sibling/
-// child ordering already shown in the profile's own Siblings/Children
-// groups, so the tree's left-to-right order matches what you'd read there.
-// Pure and layout-agnostic: returns a Map<personId, slot> in unitless slot
-// numbers, not pixels — the caller (BubbleTree's force layout) decides the
-// spacing and how strongly to pull toward it. Anyone not in this group is
-// simply absent from the map; the caller leaves them to its own layout.
-const FAMILY_ORDER_SIBLING_STEP = 2;
-const FAMILY_ORDER_PARTNER_OFFSET = 1;
-const FAMILY_ORDER_CHILD_STEP = 0.6;
-export function computeFamilyOrderSlots(graph, activeId) {
-  const slots = new Map();
-  if (!activeId || !graph.byId.has(activeId)) return slots;
-
-  const siblingGroup = sortSiblings(
-    [{ id: activeId, kind: 'full' }, ...graph.siblings(activeId)],
-    graph.byId,
-  );
-
-  siblingGroup.forEach((sib, i) => {
-    const base = i * FAMILY_ORDER_SIBLING_STEP;
-    if (!slots.has(sib.id)) slots.set(sib.id, base);
-
-    // One partner per sibling for ordering purposes — prefer their current
-    // one, else whichever is first on record (the same "pick exactly one"
-    // tie-break BubbleTree's own primary-partner selection already uses).
-    const partners = graph.partners(sib.id);
-    const partner = partners.find((p) => p.status === 'current') || partners[0];
-    let podCenter = base;
-    if (partner && !slots.has(partner.id)) {
-      slots.set(partner.id, base + FAMILY_ORDER_PARTNER_OFFSET);
-      podCenter = base + FAMILY_ORDER_PARTNER_OFFSET / 2;
-    } else if (partner) {
-      podCenter = (base + slots.get(partner.id)) / 2;
-    }
-
-    // This sibling's own children, spread evenly around their own pod's
-    // centre — keeps a family's kids clustered under their own parents
-    // rather than free to drift into a neighbouring pod's own children.
-    const kids = sortChildren(graph.children(sib.id), graph.byId);
-    const n = kids.length;
-    kids.forEach((kid, k) => {
-      if (slots.has(kid.id)) return; // already placed via a co-parent earlier in this same group
-      slots.set(kid.id, podCenter + (k - (n - 1) / 2) * FAMILY_ORDER_CHILD_STEP);
+// Real user feedback on the organic tree, across two rounds:
+// "there should be a focus to avoid an immediate family unit crossing
+// over... if a bubble is selected, the expanded branches bubbles should
+// align as clearly as possible, reducing any crossovers" — then, once
+// shipped scoped to just the selected person: "the crossing reduction
+// hasn't happened... this should apply for everyone visible, not just
+// immediate family of selected person" plus "if there are half siblings,
+// they should try to come down on the same side that their parent sits in
+// the couple pod, not cross over lines of other children."
+//
+// The force-directed layout has no notion of left/right ORDER —
+// charge/collision settle wherever is locally lowest-energy, which is
+// exactly what lets a family's children interleave with a neighbouring
+// family's and cross lines. This computes, for EVERY set of children who
+// share the exact same recorded parent(s) anywhere in the currently
+// visible tree (a "pod" — most commonly two partners' shared kids, or a
+// single parent's), a left-to-right ordering CENTRED ON ZERO — an offset
+// of 0 for an only child, symmetric offsets like -0.5/+0.5 for two, etc. —
+// using the same tiering/age ordering already shown in the profile's own
+// Children group (sortChildren). Deliberately NOT anchored to any single
+// "active" person, and deliberately NOT a separate sibling-level pass:
+// half/step siblings are, by construction, children of a DIFFERENT pod
+// (they share only one parent, never the exact same parent set), so they
+// were never going to land in the same pod's list together — each pod
+// independently centres on its OWN two (or one) parents' live position,
+// and since a shared parent's own single position is common to every pod
+// they're in, their several pods of children naturally cluster near
+// wherever THEY are, diverging only by which OTHER parent (or partner) is
+// on the other side — exactly the "come down on the parent's own side"
+// behaviour asked for, without any special-casing.
+//
+// Pure and layout-agnostic: returns an array of { parentIds, children:
+// [{id, offset}] } — offsets are unitless and always sum to zero within a
+// pod, so a caller pulling each child toward "the pod's own live centre +
+// offset * spacing" can never introduce a net translation of the pod
+// relative to its own parents (the target's own average always equals the
+// parents' centre) — see BubbleTree.jsx's own force for why that matters.
+export function computeChildOrderSlots(graph, visibleIds) {
+  const visible = visibleIds instanceof Set ? visibleIds : new Set(visibleIds ?? []);
+  const podsByKey = new Map(); // "sortedParentIds" -> { parentIds, children: [{id, qualifier}] }
+  for (const person of graph.people) {
+    if (!visible.has(person.id)) continue;
+    const parentEdges = graph.parents(person.id).filter((p) => visible.has(p.id));
+    if (!parentEdges.length) continue;
+    const parentIds = [...new Set(parentEdges.map((p) => p.id))].sort();
+    const key = parentIds.join('|');
+    let pod = podsByKey.get(key);
+    if (!pod) podsByKey.set(key, pod = { parentIds, children: [] });
+    // A child's qualifier can differ per parent (biological to one, step to
+    // another) — use whichever is the "strongest" bond for sortChildren's
+    // own tiering, the same convention CHILD_QUALIFIER_ORDER already ranks.
+    const qualifier = parentEdges.reduce((best, p) => {
+      const q = p.qualifier || 'biological';
+      return (CHILD_QUALIFIER_ORDER[q] ?? 99) < (CHILD_QUALIFIER_ORDER[best] ?? 99) ? q : best;
+    }, 'step');
+    pod.children.push({ id: person.id, qualifier });
+  }
+  const pods = [];
+  for (const { parentIds, children } of podsByKey.values()) {
+    const sorted = sortChildren(children, graph.byId);
+    const n = sorted.length;
+    pods.push({
+      parentIds,
+      children: sorted.map((c, i) => ({ id: c.id, offset: i - (n - 1) / 2 })),
     });
-  });
-
-  return slots;
+  }
+  return pods;
 }
 
 export function buildGraph(people, relationships) {

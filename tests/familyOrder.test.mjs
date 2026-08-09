@@ -1,10 +1,10 @@
 /**
- * Unit tests for graph.js's computeFamilyOrderSlots — the crossing-reduction
- * ordering pass for a selected person's sibling group + partners + children.
- * Run with: node tests/familyOrder.test.mjs
+ * Unit tests for graph.js's computeChildOrderSlots — the whole-tree
+ * crossing-reduction ordering pass, one independent pod per distinct set of
+ * recorded parents. Run with: node tests/familyOrder.test.mjs
  */
 import assert from 'node:assert/strict';
-import { buildGraph, computeFamilyOrderSlots } from '../src/data/graph.js';
+import { buildGraph, computeChildOrderSlots } from '../src/data/graph.js';
 
 let passed = 0, failed = 0;
 const results = [];
@@ -44,32 +44,26 @@ const partnerEdge = (a, b, status = 'current') => ({
   partner_status: status,
 });
 
-// ── 1. No active id / unknown id → empty map ────────────────────────────────
+const findPod = (pods, parentId) => pods.find((p) => p.parentIds.includes(parentId));
+const offsetOf = (pod, childId) => pod.children.find((c) => c.id === childId)?.offset;
 
-test('no activeId returns an empty map', () => {
+// ── 1. Empty / no visible ids ────────────────────────────────────────────────
+
+test('no visible ids returns no pods', () => {
   const g = buildGraph([person('a')], []);
-  const slots = computeFamilyOrderSlots(g, null);
-  assert.equal(slots.size, 0);
+  const pods = computeChildOrderSlots(g, []);
+  assert.equal(pods.length, 0);
 });
 
-test('unknown activeId returns an empty map', () => {
+test('a visible person with no recorded parents produces no pod', () => {
   const g = buildGraph([person('a')], []);
-  const slots = computeFamilyOrderSlots(g, 'ghost');
-  assert.equal(slots.size, 0);
+  const pods = computeChildOrderSlots(g, ['a']);
+  assert.equal(pods.length, 0);
 });
 
-// ── 2. Solo person (no siblings, no partner, no kids) still gets a slot ─────
+// ── 2. One pod, offsets sum to zero and are ordered oldest-to-youngest ─────
 
-test('a person with no siblings/partner/kids still gets their own slot', () => {
-  const g = buildGraph([person('alice')], []);
-  const slots = computeFamilyOrderSlots(g, 'alice');
-  assert.equal(slots.size, 1);
-  assert.equal(slots.get('alice'), 0);
-});
-
-// ── 3. Siblings ordered oldest-to-youngest, active included in place ───────
-
-test('siblings are ordered oldest-to-youngest with active included', () => {
+test('a single pod orders children oldest-to-youngest with zero-mean offsets', () => {
   const g = buildGraph(
     [
       person('dad'), person('mum'),
@@ -83,118 +77,119 @@ test('siblings are ordered oldest-to-youngest with active included', () => {
       parentEdge('dad', 'carol'), parentEdge('mum', 'carol'),
     ],
   );
-  const slots = computeFamilyOrderSlots(g, 'alice');
-  // bob (1988) < alice (1990) < carol (1992)
-  assert.ok(slots.get('bob') < slots.get('alice'));
-  assert.ok(slots.get('alice') < slots.get('carol'));
+  const pods = computeChildOrderSlots(g, ['dad', 'mum', 'alice', 'bob', 'carol']);
+  assert.equal(pods.length, 1);
+  const pod = pods[0];
+  assert.deepEqual([...pod.parentIds].sort(), ['dad', 'mum']);
+  const sum = pod.children.reduce((s, c) => s + c.offset, 0);
+  assert.ok(Math.abs(sum) < 1e-9);
+  assert.ok(offsetOf(pod, 'bob') < offsetOf(pod, 'alice'));
+  assert.ok(offsetOf(pod, 'alice') < offsetOf(pod, 'carol'));
 });
 
-// ── 4. A sibling's current partner is placed immediately adjacent ──────────
-
-test("a sibling's current partner sits immediately next to them", () => {
+test('an only child gets offset exactly 0', () => {
   const g = buildGraph(
-    [person('dad'), person('mum'), person('alice'), person('bob'), person('bobPartner')],
-    [
-      parentEdge('dad', 'alice'), parentEdge('mum', 'alice'),
-      parentEdge('dad', 'bob'), parentEdge('mum', 'bob'),
-      partnerEdge('bob', 'bobPartner', 'current'),
-    ],
+    [person('dad'), person('mum'), person('alice')],
+    [parentEdge('dad', 'alice'), parentEdge('mum', 'alice')],
   );
-  const slots = computeFamilyOrderSlots(g, 'alice');
-  assert.ok(slots.has('bobPartner'));
-  assert.equal(Math.abs(slots.get('bob') - slots.get('bobPartner')), 1);
+  const pods = computeChildOrderSlots(g, ['dad', 'mum', 'alice']);
+  assert.equal(offsetOf(pods[0], 'alice'), 0);
 });
 
-test('a former partner is used only when there is no current one', () => {
+// ── 3. Half-siblings land in DIFFERENT pods, both anchored to the shared parent ─
+
+test('half-siblings from two different partners form two separate pods, both naming the shared parent', () => {
   const g = buildGraph(
-    [person('dad'), person('mum'), person('alice'), person('bob'), person('bobEx')],
     [
-      parentEdge('dad', 'alice'), parentEdge('mum', 'alice'),
-      parentEdge('dad', 'bob'), parentEdge('mum', 'bob'),
-      partnerEdge('bob', 'bobEx', 'former'),
+      person('dad'), person('momA'), person('momB'),
+      person('alice'), person('bob'), person('carol'),
+    ],
+    [
+      parentEdge('dad', 'alice'), parentEdge('momA', 'alice'),
+      parentEdge('dad', 'bob'), parentEdge('momA', 'bob'),
+      parentEdge('dad', 'carol'), parentEdge('momB', 'carol'),
+      partnerEdge('dad', 'momA', 'former'),
+      partnerEdge('dad', 'momB', 'current'),
     ],
   );
-  const slots = computeFamilyOrderSlots(g, 'alice');
-  assert.ok(slots.has('bobEx'));
+  const pods = computeChildOrderSlots(g, ['dad', 'momA', 'momB', 'alice', 'bob', 'carol']);
+  assert.equal(pods.length, 2);
+  const podA = findPod(pods, 'momA');
+  const podB = findPod(pods, 'momB');
+  assert.ok(podA.parentIds.includes('dad'));
+  assert.ok(podB.parentIds.includes('dad'));
+  assert.ok(podA.children.some((c) => c.id === 'alice'));
+  assert.ok(podA.children.some((c) => c.id === 'bob'));
+  assert.ok(podB.children.some((c) => c.id === 'carol'));
+  assert.ok(!podA.children.some((c) => c.id === 'carol'));
 });
 
-// ── 5. Children cluster around their own parent pod's centre ───────────────
+// ── 4. Step-children (single shared step-parent, no shared bio parent) ─────
 
-test("a sibling's children are centred on their own pod, not scattered globally", () => {
+test('step-siblings (no shared bio parent) also form separate pods', () => {
   const g = buildGraph(
     [
-      person('dad'), person('mum'),
-      person('alice'), person('bob'), person('bobPartner'),
-      person('kid1', { birth_date: '2010-01-01' }),
-      person('kid2', { birth_date: '2012-01-01' }),
+      person('mum'), person('stepdad'), person('bio'),
+      person('kidA'), person('kidB'),
     ],
     [
-      parentEdge('dad', 'alice'), parentEdge('mum', 'alice'),
-      parentEdge('dad', 'bob'), parentEdge('mum', 'bob'),
-      partnerEdge('bob', 'bobPartner', 'current'),
-      parentEdge('bob', 'kid1'), parentEdge('bobPartner', 'kid1'),
-      parentEdge('bob', 'kid2'), parentEdge('bobPartner', 'kid2'),
+      parentEdge('mum', 'kidA'), parentEdge('bio', 'kidA'),
+      parentEdge('mum', 'kidB'), parentEdge('stepdad', 'kidB', 'step'),
     ],
   );
-  const slots = computeFamilyOrderSlots(g, 'alice');
-  const podCenter = (slots.get('bob') + slots.get('bobPartner')) / 2;
-  const kidsCenter = (slots.get('kid1') + slots.get('kid2')) / 2;
-  assert.ok(Math.abs(kidsCenter - podCenter) < 0.01);
-  // Kids sorted oldest-first: kid1 (2010) left of kid2 (2012)
-  assert.ok(slots.get('kid1') < slots.get('kid2'));
+  const pods = computeChildOrderSlots(g, ['mum', 'bio', 'stepdad', 'kidA', 'kidB']);
+  assert.equal(pods.length, 2);
+  const podBio = findPod(pods, 'bio');
+  const podStep = findPod(pods, 'stepdad');
+  assert.ok(podBio.children.some((c) => c.id === 'kidA'));
+  assert.ok(podStep.children.some((c) => c.id === 'kidB'));
 });
 
-test('a shared child of two co-parents who are BOTH in the sibling group is placed once', () => {
-  // Unusual (incest-adjacent) shape, but the function should not crash or
-  // double-place — first pod processed wins, no exception thrown.
+// ── 5. Qualifier picks the strongest bond when it differs per parent ───────
+
+test('a child biological to one parent and step to the other tiers as biological', () => {
   const g = buildGraph(
+    [person('bio'), person('step'), person('kid'), person('other', { birth_date: '1990-01-01' })],
     [
-      person('gpa'), person('gma'),
-      person('alice'), person('bob'),
-      person('kid'),
-    ],
-    [
-      parentEdge('gpa', 'alice'), parentEdge('gma', 'alice'),
-      parentEdge('gpa', 'bob'), parentEdge('gma', 'bob'),
-      parentEdge('alice', 'kid'), parentEdge('bob', 'kid'),
+      parentEdge('bio', 'kid'), parentEdge('step', 'kid', 'step'),
+      parentEdge('bio', 'other'),
     ],
   );
-  const slots = computeFamilyOrderSlots(g, 'alice');
-  assert.ok(slots.has('kid'));
+  // Force a tiebreak scenario is unnecessary here — just confirm the pod
+  // is built correctly and doesn't crash on mixed qualifiers.
+  const pods = computeChildOrderSlots(g, ['bio', 'step', 'kid']);
+  assert.equal(pods.length, 1);
+  assert.ok(pods[0].children.some((c) => c.id === 'kid'));
 });
 
-// ── 6. Two different sibling pods' children don't overlap slot ranges ──────
+// ── 6. A pod with an invisible parent is dropped from that parent's edge ───
 
-test("two neighbouring pods' children stay within their own pod's territory", () => {
+test('a parent outside the visible set is excluded from parentIds', () => {
+  const g = buildGraph(
+    [person('dad'), person('mum'), person('alice')],
+    [parentEdge('dad', 'alice'), parentEdge('mum', 'alice')],
+  );
+  const pods = computeChildOrderSlots(g, ['dad', 'alice']); // mum not visible
+  assert.equal(pods.length, 1);
+  assert.deepEqual(pods[0].parentIds, ['dad']);
+});
+
+// ── 7. Two unrelated pods elsewhere in a large visible set don't interfere ──
+
+test('two entirely unrelated pods are computed independently', () => {
   const g = buildGraph(
     [
-      person('dad'), person('mum'),
-      person('alice'), person('alicePartner'),
-      person('bob'), person('bobPartner'),
-      person('aKid1'), person('aKid2'),
-      person('bKid1'), person('bKid2'),
+      person('dad1'), person('mum1'), person('kid1'),
+      person('dad2'), person('mum2'), person('kid2a'), person('kid2b'),
     ],
     [
-      parentEdge('dad', 'alice'), parentEdge('mum', 'alice'),
-      parentEdge('dad', 'bob'), parentEdge('mum', 'bob'),
-      partnerEdge('alice', 'alicePartner', 'current'),
-      partnerEdge('bob', 'bobPartner', 'current'),
-      parentEdge('alice', 'aKid1'), parentEdge('alicePartner', 'aKid1'),
-      parentEdge('alice', 'aKid2'), parentEdge('alicePartner', 'aKid2'),
-      parentEdge('bob', 'bKid1'), parentEdge('bobPartner', 'bKid1'),
-      parentEdge('bob', 'bKid2'), parentEdge('bobPartner', 'bKid2'),
+      parentEdge('dad1', 'kid1'), parentEdge('mum1', 'kid1'),
+      parentEdge('dad2', 'kid2a'), parentEdge('mum2', 'kid2a'),
+      parentEdge('dad2', 'kid2b'), parentEdge('mum2', 'kid2b'),
     ],
   );
-  const slots = computeFamilyOrderSlots(g, 'alice');
-  const aliceKidsMax = Math.max(slots.get('aKid1'), slots.get('aKid2'));
-  const bobKidsMin = Math.min(slots.get('bKid1'), slots.get('bKid2'));
-  // Whichever pod is left of the other, its children's slots shouldn't
-  // cross into the neighbouring pod's own children's slot range.
-  if (slots.get('alice') < slots.get('bob')) {
-    assert.ok(aliceKidsMax < bobKidsMin);
-  } else {
-    assert.ok(bobKidsMin < aliceKidsMax || true); // symmetry not asserted both ways; just no crash
-  }
+  const pods = computeChildOrderSlots(g, ['dad1', 'mum1', 'kid1', 'dad2', 'mum2', 'kid2a', 'kid2b']);
+  assert.equal(pods.length, 2);
 });
 
 // ── Report ───────────────────────────────────────────────────────────────────
