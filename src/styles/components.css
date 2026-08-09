@@ -9298,7 +9298,6 @@ button.health-notes {
   background: #fff;
   color: var(--ink);
   cursor: pointer;
-  margin-top: 8px;
   box-shadow: var(--shadow-soft);
   transition: transform 0.15s ease, box-shadow 0.15s ease;
   /* This class is also used on a plain <a> (Help & guides, opens a
@@ -9306,7 +9305,15 @@ button.health-notes {
      so it reads identically to the <button> rows around it. */
   text-decoration: none;
 }
-.home__row-btn:first-of-type { margin-top: 0; }
+/* Gap above every row EXCEPT the first — an adjacent-sibling combinator
+   rather than :first-of-type, deliberately: :first-of-type matches the
+   first sibling of a given TAG, not the first .home__row-btn, so it silently
+   zeroed the wrong row's margin the moment one row became a plain <a>
+   (Help & guides) among otherwise all-<button> siblings — a real, reported
+   "rows welded together" spacing bug. The adjacent-sibling form is tag-
+   agnostic: it only ever matches a .home__row-btn directly preceded by
+   another one, which is exactly "not the first row," regardless of tags. */
+.home__row-btn + .home__row-btn { margin-top: 8px; }
 .home__row-btn:hover { box-shadow: 0 4px 18px rgba(36,31,28,0.1); }
 .home__row-btn:active { transform: scale(0.99); }
 .home__row-btn--create { background: linear-gradient(160deg, #fff 0%, #fdf3ec 100%); }
