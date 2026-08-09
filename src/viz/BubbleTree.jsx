@@ -704,36 +704,117 @@ export default function BubbleTree({
       });
 
       // Crossing-reduction for the selected person's immediate family — see
-      // rebuildFamilyOrderSlots above. A pure leader/follower pull: every
-      // OTHER id in the slot map eases toward a position relative to the
-      // ACTIVE person's own live (x, y) — never the other way around, so
-      // there's no mutual feedback loop between two moving targets (the
-      // exact shape that caused the real partnerSideLean drift incident —
-      // see that force's own comment). The active person's own motion is
-      // driven entirely by the existing forces above; this one only ever
-      // nudges their relatives to line up beside/below them in the ordered
-      // slots. Deliberately gentle relative to collision/charge — this
-      // breaks left/right ties and discourages crossings, it doesn't
-      // override the rest of the layout. Not scaled by alpha, for the same
-      // reason partnerY/parentAbove above aren't: it needs to keep working
-      // once the simulation is resting, not just while it's still hot.
+      // rebuildFamilyOrderSlots above.
+      //
+      // REAL PRODUCTION REPORT, fixed here: the first version of this force
+      // was a leader/follower pull — every OTHER id in the slot map eased
+      // toward a position relative to the ACTIVE person's own live (x, y),
+      // with the active person's own velocity never touched by this force
+      // at all. That reasoning ("active is unaffected, so it can't runaway
+      // the way partnerSideLean did") missed a real consequence: unless the
+      // active person happens to sit exactly at their sibling group's own
+      // slot MEDIAN, most of the group ends up pulled systematically to one
+      // side of them (e.g. the eldest sibling has every younger sibling —
+      // and everyone's own children — sitting at a strictly HIGHER slot,
+      // never a lower one). Reported live on a real 1239-person tree as "a
+      // persistent slight drift to the right, continuously" — plausible
+      // even though each individual follower's pull toward its target does
+      // converge (unlike the earlier partnerSideLean bug's genuinely
+      // unbounded resonance): the active node's own position is still
+      // gently live (charge/collide from the surrounding tree, the
+      // simulation's own resting alphaTarget never fully stopping), so a
+      // whole side-heavy cluster of followers continuously chasing a
+      // slowly-drifting anchor reads as the visible family group creeping
+      // sideways as a whole, frame after frame.
+      //
+      // Rewritten as a genuine N-body generalisation of the same
+      // equal-and-opposite principle partnerY/parentAbove/partnerSideLean
+      // already use for a pair: every push toward a member's ordered slot
+      // is computed relative to the GROUP'S OWN average position (not one
+      // designated leader), then the group's AVERAGE push is subtracted
+      // back out of every individual one before it's applied. That
+      // de-meaning guarantees the sum (and so the average) of the group's
+      // own positions is exactly invariant under this force every tick —
+      // it can only ever reorder members relative to each other along X,
+      // never translate the whole cluster in any direction, by
+      // construction, regardless of where the active person happens to
+      // fall in the slot order. Deliberately gentle relative to collision/
+      // charge — this breaks left/right ties and discourages crossings, it
+      // doesn't override the rest of the layout. Not scaled by alpha, for
+      // the same reason partnerY/parentAbove aren't: it needs to keep
+      // working once the simulation is resting, not just while it's hot.
       const FAMILY_ORDER_SLOT_PX = 130;
       const FAMILY_ORDER_STRENGTH = 0.12;
       sim.force('familyOrder', () => {
         const mode = layoutRef.current;
         if (mode === 'chart' || mode === 'radial') return;
-        if (!familyOrderSlots.size) return;
-        const active = activeRef.current;
-        const activeNode = nodeById.get(active);
-        const activeSlot = familyOrderSlots.get(active);
-        if (!activeNode || activeSlot == null) return;
+        if (familyOrderSlots.size < 2) return;
+        const members = [];
+        let sumX = 0, sumSlot = 0;
         for (const [id, slot] of familyOrderSlots) {
-          if (id === active) continue;
-          const n = nodeById.get(id);
-          if (!n) continue;
-          const targetX = activeNode.x + (slot - activeSlot) * FAMILY_ORDER_SLOT_PX;
-          n.vx += (targetX - n.x) * FAMILY_ORDER_STRENGTH;
+          const node = nodeById.get(id);
+          if (!node) continue;
+          members.push({ node, slot });
+          sumX += node.x;
+          sumSlot += slot;
         }
+        const n = members.length;
+        if (n < 2) return;
+        const meanX = sumX / n;
+        const meanSlot = sumSlot / n;
+        let sumPush = 0;
+        const pushes = members.map(({ node, slot }) => {
+          const target = meanX + (slot - meanSlot) * FAMILY_ORDER_SLOT_PX;
+          const push = (target - node.x) * FAMILY_ORDER_STRENGTH;
+          sumPush += push;
+          return push;
+        });
+        const avgPush = sumPush / n;
+        members.forEach(({ node }, i) => {
+          node.vx += pushes[i] - avgPush;
+        });
+      });
+
+      // REAL PRODUCTION REPORT: "I feel a persistent slight drift to the
+      // right, continuously" — investigated live and confirmed this is NOT
+      // specific to familyOrder above (it reproduces on the plain seed
+      // family with none of today's crossing-reduction code involved): the
+      // whole node cloud's own average position gently wanders over time
+      // regardless. `forceX(0)` is meant to hold the cloud near the origin,
+      // but at the resting `alphaTarget` (0.012) its own strength (0.004)
+      // is scaled down to a genuinely negligible pull — nowhere near enough
+      // to correct whatever small persistent bias forceManyBody's Barnes-Hut
+      // approximation (deliberately coarsened at scale — see
+      // updateChargeTheta) introduces every tick. Since the simulation is
+      // deliberately kept gently "alive" forever (never truly resting), that
+      // small bias compounds into a real, visible, one-directional creep
+      // over time — worse at scale (theta 1.3 for a 400+-person tree is a
+      // coarser, less symmetric approximation than theta 0.9 for a small
+      // one), matching a large real tree showing this far more than a small
+      // demo one ever would in a quick manual check.
+      //
+      // Rather than chase down exactly which force's approximation is
+      // responsible, this is a general, robust correction: registered LAST
+      // (so it sees the velocity every other force already contributed this
+      // tick), it measures the CURRENT tick's mean velocity across every
+      // currently-tracked node and subtracts it back out of each one. That
+      // guarantees the cloud's own average position can never drift, by
+      // construction, regardless of the source — every node's motion
+      // RELATIVE to the group is completely untouched (this only ever
+      // removes the shared, common component), so nothing about the
+      // existing layout forces changes, only the whole picture's tendency
+      // to wander as a whole. Not scaled by alpha, for the same reason
+      // every other structural force above isn't: the drift is happening
+      // precisely at rest, so the correction has to work there too.
+      sim.force('worldRecenter', () => {
+        const mode = layoutRef.current;
+        if (mode === 'chart' || mode === 'radial') return;
+        if (nodes.length === 0) return;
+        let sumVx = 0, sumVy = 0;
+        for (const n of nodes) { sumVx += n.vx; sumVy += n.vy; }
+        const meanVx = sumVx / nodes.length;
+        const meanVy = sumVy / nodes.length;
+        for (const n of nodes) { n.vx -= meanVx; n.vy -= meanVy; }
       });
 
       // Warm the layout so the tree opens already settled, not reorganising.
