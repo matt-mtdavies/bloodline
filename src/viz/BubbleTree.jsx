@@ -15,22 +15,28 @@ import { IgniteEffect } from './ignite.js';
 import { FlightComet } from './comet.js';
 import { drawLinks, drawLinksChart } from './links.js';
 import { computeChartLayout } from './chartLayout.js';
-import { distancesFrom, relationLabel, computeGenerations, computeFamilyOrderSlots } from '../data/graph.js';
+import { distancesFrom, relationLabel, computeGenerations, computeChildOrderSlots } from '../data/graph.js';
 import { Spring } from '../lib/spring.js';
 import { kinTermsStore } from '../lib/kinTerms.js';
 
 const BASE_RADIUS = 46;
 const COLLIDE = 70;
-// Real feedback on a large production tree: rows read "squashed down" with
-// children shooting off sideways from their sibling trunk's junction — not
-// actually cramped in absolute terms, but disproportionate: GEN_GAP (vertical)
-// was tight next to how far ORGANIC_CHARGE (horizontal) lets siblings fan out,
-// so a branch travels much further sideways than down. Raised GEN_GAP and
-// trimmed the charge magnitude together so parent→child lines read as mostly
-// vertical again, the way "parents roughly above their children" implies.
-const GEN_GAP = 340; // more vertical room between generation bands
+// Real feedback on a large production tree, across two rounds: rows read
+// "squashed down" with children shooting off sideways from their sibling
+// trunk's junction, and — after a first pass that reduced horizontal
+// spread — "the extra spacing should be reducing the vertical squash, not
+// the horizontal squash... some children are close to being at the same
+// level as parents." The actual lever for "parents clearly above children"
+// is vertical: GEN_GAP itself, and how strongly nodes are pulled onto their
+// own generation band at rest (see restingYStrength below) — horizontal
+// spread was never the right knob for that, so ORGANIC_CHARGE is restored
+// most of the way back up (still a little gentler than the original, since
+// some horizontal easing was independently useful) while GEN_GAP and the
+// resting band pull both go up further, the actual fix for "parents above,
+// clearly."
+const GEN_GAP = 420; // real vertical room between generation bands
 // Chart-view layout lives in ./chartLayout.js (tidy descendant tree).
-const ORGANIC_CHARGE = -1450; // less sideways push relative to the taller bands above
+const ORGANIC_CHARGE = -1650; // mostly restored — spacing is a vertical fix, not a horizontal one
 const SPREAD_X = 0.004; // weaker centring lets nodes fan out naturally
 const MAX_ZOOM = 2.0; // auto-fit (follow mode) — higher cap so small focus families fill the screen
 const MIN_ZOOM = 0.16; // free zoom-out: take in a huge tree at a glance (double the old 0.32 floor's field of view)
@@ -469,29 +475,33 @@ export default function BubbleTree({
       };
       rebuildForceRelCaches(graph.relationships);
 
-      // Real feedback: "there should be a focus to avoid an immediate family
-      // unit crossing over. If a bubble is selected, the expanded branches
-      // bubbles should align as clearly as possible, reducing any
-      // crossovers." Charge/collision settle wherever is locally
-      // lowest-energy, with no notion of left/right ORDER — that's exactly
-      // what lets a sibling pod's own children interleave with a
-      // neighbouring pod's. computeFamilyOrderSlots (graph.js) assigns an
-      // explicit left-to-right slot to the active person's sibling group
-      // (partners adjacent, each sibling's own children clustered under
-      // their own pod) using the same ordering already shown in the
-      // profile's own Siblings/Children groups. Rebuilt whenever the active
-      // person or the graph's shape changes — see the rebuildFamilyOrderSlots
-      // calls in setActive/sync/ensureVisible below.
-      let familyOrderSlots = new Map();
-      const rebuildFamilyOrderSlots = () => {
-        familyOrderSlots = computeFamilyOrderSlots(graphRef.current, activeRef.current);
+      // Real feedback, across two rounds: "there should be a focus to avoid
+      // an immediate family unit crossing over" — then, once shipped scoped
+      // to just the selected person, "the crossing reduction hasn't
+      // happened... this should apply for everyone visible, not just
+      // immediate family of selected person" plus half/step-siblings
+      // should land on their shared parent's own side, not cross other
+      // children's lines. computeChildOrderSlots (graph.js) now computes
+      // this for EVERY distinct parent-pod in the currently visible tree at
+      // once, not anchored to any single "active" person — see its own
+      // header comment for why that also solves the half-sibling case for
+      // free. Rebuilt whenever the visible/tracked set changes (sync,
+      // ensureVisible) — no longer tied to selection at all.
+      let childOrderPods = [];
+      const rebuildChildOrderPods = () => {
+        childOrderPods = computeChildOrderSlots(graphRef.current, nodeById.keys());
       };
-      rebuildFamilyOrderSlots();
+      rebuildChildOrderPods();
 
       // Resting generational pull. Focus Family wants crisp rows — parents
       // clearly above, children clearly below — so the band force is much
-      // stronger while focused; otherwise it's a gentle organic drift.
-      const restingYStrength = () => (focusRef.current ? 0.4 : 0.085);
+      // stronger while focused; otherwise it's a gentle organic drift. Real
+      // feedback: even outside Focus mode, "some children are close to
+      // being at the same level as parents" — 0.085 let charge/collision
+      // crowding push people well off their own band before this ever
+      // corrected it. Raised to keep bands legible ambiently too, without
+      // going anywhere near Focus mode's own much crisper 0.4.
+      const restingYStrength = () => (focusRef.current ? 0.4 : 0.15);
 
       // Y-band target generation. A partner with no ancestry of their own (a
       // childless in-law, including a former partner we deliberately keep out
@@ -600,8 +610,11 @@ export default function BubbleTree({
       // most exactly where attention is), loosened everywhere else to a
       // gentle bias that no longer overpowers the rest of the layout for
       // relatives nobody's currently focused on.
-      const PARTNER_Y_ACTIVE = 0.4;
-      const PARTNER_Y_AMBIENT = 0.15;
+      // Real follow-up feedback: "leveling bias could be softened more" —
+      // even after the first round of softening, still noticeably rigid.
+      // Trimmed further on both tiers.
+      const PARTNER_Y_ACTIVE = 0.26;
+      const PARTNER_Y_AMBIENT = 0.08;
       sim.force('partnerY', () => {
         const mode = layoutRef.current;
         if (mode === 'chart' || mode === 'radial') return;
@@ -703,76 +716,42 @@ export default function BubbleTree({
         }
       });
 
-      // Crossing-reduction for the selected person's immediate family — see
-      // rebuildFamilyOrderSlots above.
-      //
-      // REAL PRODUCTION REPORT, fixed here: the first version of this force
-      // was a leader/follower pull — every OTHER id in the slot map eased
-      // toward a position relative to the ACTIVE person's own live (x, y),
-      // with the active person's own velocity never touched by this force
-      // at all. That reasoning ("active is unaffected, so it can't runaway
-      // the way partnerSideLean did") missed a real consequence: unless the
-      // active person happens to sit exactly at their sibling group's own
-      // slot MEDIAN, most of the group ends up pulled systematically to one
-      // side of them (e.g. the eldest sibling has every younger sibling —
-      // and everyone's own children — sitting at a strictly HIGHER slot,
-      // never a lower one). Reported live on a real 1239-person tree as "a
-      // persistent slight drift to the right, continuously" — plausible
-      // even though each individual follower's pull toward its target does
-      // converge (unlike the earlier partnerSideLean bug's genuinely
-      // unbounded resonance): the active node's own position is still
-      // gently live (charge/collide from the surrounding tree, the
-      // simulation's own resting alphaTarget never fully stopping), so a
-      // whole side-heavy cluster of followers continuously chasing a
-      // slowly-drifting anchor reads as the visible family group creeping
-      // sideways as a whole, frame after frame.
-      //
-      // Rewritten as a genuine N-body generalisation of the same
-      // equal-and-opposite principle partnerY/parentAbove/partnerSideLean
-      // already use for a pair: every push toward a member's ordered slot
-      // is computed relative to the GROUP'S OWN average position (not one
-      // designated leader), then the group's AVERAGE push is subtracted
-      // back out of every individual one before it's applied. That
-      // de-meaning guarantees the sum (and so the average) of the group's
-      // own positions is exactly invariant under this force every tick —
-      // it can only ever reorder members relative to each other along X,
-      // never translate the whole cluster in any direction, by
-      // construction, regardless of where the active person happens to
-      // fall in the slot order. Deliberately gentle relative to collision/
-      // charge — this breaks left/right ties and discourages crossings, it
-      // doesn't override the rest of the layout. Not scaled by alpha, for
-      // the same reason partnerY/parentAbove aren't: it needs to keep
-      // working once the simulation is resting, not just while it's hot.
-      const FAMILY_ORDER_SLOT_PX = 130;
-      const FAMILY_ORDER_STRENGTH = 0.12;
-      sim.force('familyOrder', () => {
+      // Crossing-reduction, whole-tree — see rebuildChildOrderPods above.
+      // For every pod independently, each child eases toward "this pod's
+      // own live parent centre + this child's own zero-mean offset". This
+      // is safe WITHOUT the de-meaning trick the previous, active-anchored
+      // version needed: a pod's own children are only ever assigned
+      // zero-mean offsets (see computeChildOrderSlots — offsets are
+      // `i - (n-1)/2`, which always sums to exactly 0 for any n), so the
+      // children's own average TARGET position already equals the pod's
+      // live centre, by construction. The parents themselves are only ever
+      // READ here, never pushed — a one-directional pull from a live
+      // reference toward a fixed-relative-to-it target, exactly like
+      // genYTarget above, not a mutual chase between two independently
+      // moving targets (the shape that caused the earlier partnerSideLean
+      // and familyOrder drift incidents) — so this can't accumulate net
+      // translation of a pod relative to its own parents. Deliberately
+      // gentle relative to collision/charge — this breaks left/right ties
+      // and discourages crossings, it doesn't override the rest of the
+      // layout. Not scaled by alpha, for the same reason partnerY/
+      // parentAbove aren't: it needs to keep working once the simulation is
+      // resting, not just while it's hot.
+      const CHILD_ORDER_SLOT_PX = 130;
+      const CHILD_ORDER_STRENGTH = 0.14;
+      sim.force('childOrder', () => {
         const mode = layoutRef.current;
         if (mode === 'chart' || mode === 'radial') return;
-        if (familyOrderSlots.size < 2) return;
-        const members = [];
-        let sumX = 0, sumSlot = 0;
-        for (const [id, slot] of familyOrderSlots) {
-          const node = nodeById.get(id);
-          if (!node) continue;
-          members.push({ node, slot });
-          sumX += node.x;
-          sumSlot += slot;
+        for (const pod of childOrderPods) {
+          const parentNodes = pod.parentIds.map((pid) => nodeById.get(pid)).filter(Boolean);
+          if (!parentNodes.length) continue;
+          const centerX = parentNodes.reduce((s, n) => s + n.x, 0) / parentNodes.length;
+          for (const { id, offset } of pod.children) {
+            const child = nodeById.get(id);
+            if (!child) continue;
+            const target = centerX + offset * CHILD_ORDER_SLOT_PX;
+            child.vx += (target - child.x) * CHILD_ORDER_STRENGTH;
+          }
         }
-        const n = members.length;
-        if (n < 2) return;
-        const meanX = sumX / n;
-        const meanSlot = sumSlot / n;
-        let sumPush = 0;
-        const pushes = members.map(({ node, slot }) => {
-          const target = meanX + (slot - meanSlot) * FAMILY_ORDER_SLOT_PX;
-          const push = (target - node.x) * FAMILY_ORDER_STRENGTH;
-          sumPush += push;
-          return push;
-        });
-        const avgPush = sumPush / n;
-        members.forEach(({ node }, i) => {
-          node.vx += pushes[i] - avgPush;
-        });
       });
 
       // REAL PRODUCTION REPORT: "I feel a persistent slight drift to the
@@ -884,14 +863,13 @@ export default function BubbleTree({
       let camMode = 'follow'; // 'follow' | 'free'
       let vx = 0, vy = 0; // free-pan inertia, world units / second
       let onModeChange = null;
-      // Real feedback: "when clicking on somebody, do not adjust the zoom
-      // setting, just re-position... the current setting is way too much."
-      // Anchors the zoom level at whatever it was right before the most
-      // recent setActive() — the follow-mode framing below then only eases
-      // TOWARD a tighter fit (zooms out) when the revealed family genuinely
-      // doesn't fit at that level, and never zooms in just because a smaller
-      // family is now showing. null means "no anchor yet" — the ordinary
-      // full auto-fit runs (initial mount, and after an explicit recenter()).
+      // Real feedback, twice now: "when clicking on somebody, do not adjust
+      // the zoom setting, just re-position." Anchors the zoom level at
+      // whatever it was right before the most recent setActive() — the
+      // follow-mode framing below holds it there with NO automatic
+      // adjustment at all, in either direction, on selection. null means
+      // "no anchor yet" — the ordinary full auto-fit runs (initial mount,
+      // and after an explicit recenter()).
       let heldZoom = null;
       // Free mode normally holds zoom.target pinned to zoom.value every frame
       // (wheel/pinch already set both directly — see zoomTo — so there's
@@ -1246,7 +1224,6 @@ export default function BubbleTree({
           activeRef.current = id;
           state.dist = distancesFrom(graphRef.current, id);
           relCache.clear(); // relationships are relative to the active person
-          rebuildFamilyOrderSlots(); // the ordered group is relative to whoever's now active
           // Anchor the zoom hold at whatever it is right now, before this
           // activation's own framing kicks in — see heldZoom's own comment.
           heldZoom = zoom.value;
@@ -1397,7 +1374,7 @@ export default function BubbleTree({
           sim.nodes(nodes);
           linkForce.links(buildLinks(g.relationships));
           rebuildForceRelCaches(g.relationships);
-          rebuildFamilyOrderSlots(); // the active person's sibling/children set may have changed
+          rebuildChildOrderPods(); // the visible tree's pods may have changed
           updateChargeTheta();
           // Only reheat the simulation when the tree's actual shape changed
           // (someone added/removed, or a relationship changed) — a cosmetic
@@ -1432,7 +1409,7 @@ export default function BubbleTree({
             sim.nodes(nodes);
             linkForce.links(buildLinks(graphRef.current.relationships));
             rebuildForceRelCaches(graphRef.current.relationships);
-            rebuildFamilyOrderSlots(); // newly-spawned relatives may now be part of the active person's ordered group
+            rebuildChildOrderPods(); // newly-spawned relatives may now form/complete a pod
             updateChargeTheta();
             rebuildGenRank();
             sim.alpha(Math.max(sim.alpha(), EXPAND_REHEAT_ALPHA));
@@ -2392,18 +2369,17 @@ export default function BubbleTree({
           camX.setTarget(camTX);
           camY.setTarget(camTY);
           const desiredFit = clamp(fit, fitFloor, MAX_ZOOM);
-          // Real feedback: "when clicking on somebody, do not adjust the
-          // zoom setting, just re-position... maybe a slight zoom out if
-          // that helps, but the current setting is way too much." heldZoom
-          // (set in setActive, cleared by an explicit recenter()) anchors
-          // the level from just before the most recent activation — only
-          // ease PAST it toward a tighter fit (zoom OUT) when the revealed
-          // family genuinely doesn't fit at that level; never zoom back IN
-          // just because a smaller family is now showing. Ratcheted down
-          // (never back up on its own) so a later, smaller reveal doesn't
-          // re-open room to zoom in without an explicit new selection.
-          const targetZoom = heldZoom != null ? Math.min(desiredFit, heldZoom) : desiredFit;
-          if (heldZoom != null && targetZoom < heldZoom) heldZoom = targetZoom;
+          // Real feedback, twice now: "when clicking on somebody, do not
+          // adjust the zoom setting, just re-position" — a first pass still
+          // allowed an automatic zoom-OUT whenever a newly revealed family
+          // didn't fit at the held level, and that still read as "the zoom
+          // out on clicking still happens." heldZoom (set in setActive,
+          // cleared by an explicit recenter()) now holds the level from
+          // just before the most recent activation with NO automatic
+          // adjustment in either direction — selecting someone only ever
+          // pans. Anyone revealed outside the current view is reachable by
+          // panning or an explicit recentre, not an automatic zoom change.
+          const targetZoom = heldZoom != null ? heldZoom : desiredFit;
           zoom.setTarget(targetZoom);
           camX.step(dt);
           camY.step(dt);
