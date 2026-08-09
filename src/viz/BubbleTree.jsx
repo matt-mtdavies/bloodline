@@ -21,9 +21,16 @@ import { kinTermsStore } from '../lib/kinTerms.js';
 
 const BASE_RADIUS = 46;
 const COLLIDE = 70;
-const GEN_GAP = 280; // shorter bands so wide screens use horizontal space too
+// Real feedback on a large production tree: rows read "squashed down" with
+// children shooting off sideways from their sibling trunk's junction — not
+// actually cramped in absolute terms, but disproportionate: GEN_GAP (vertical)
+// was tight next to how far ORGANIC_CHARGE (horizontal) lets siblings fan out,
+// so a branch travels much further sideways than down. Raised GEN_GAP and
+// trimmed the charge magnitude together so parent→child lines read as mostly
+// vertical again, the way "parents roughly above their children" implies.
+const GEN_GAP = 340; // more vertical room between generation bands
 // Chart-view layout lives in ./chartLayout.js (tidy descendant tree).
-const ORGANIC_CHARGE = -1800; // stronger repulsion spreads generations sideways
+const ORGANIC_CHARGE = -1450; // less sideways push relative to the taller bands above
 const SPREAD_X = 0.004; // weaker centring lets nodes fan out naturally
 const MAX_ZOOM = 2.0; // auto-fit (follow mode) — higher cap so small focus families fill the screen
 const MIN_ZOOM = 0.16; // free zoom-out: take in a huge tree at a glance (double the old 0.32 floor's field of view)
@@ -564,16 +571,30 @@ export default function BubbleTree({
       // full strength unconditionally because dy is inherently bounded by the
       // partner LINK force just above (0.9 strength, 112px target distance)
       // keeping two partners' positions close together under normal operation.
+      // Real follow-up feedback: "the strict rule of partners level isn't
+      // working as intended, it's creating more issues than it solves" — at
+      // a flat, always-on 0.4 this behaved less like a preference and more
+      // like a hard constraint, fighting collision/side-lean/every other
+      // pod's own layout everywhere in the tree at once, not just wherever
+      // the viewer is actually looking. Kept at full strength ONLY for the
+      // active person's own pod (still reads crisply level, which matters
+      // most exactly where attention is), loosened everywhere else to a
+      // gentle bias that no longer overpowers the rest of the layout for
+      // relatives nobody's currently focused on.
+      const PARTNER_Y_ACTIVE = 0.4;
+      const PARTNER_Y_AMBIENT = 0.15;
       sim.force('partnerY', () => {
         const mode = layoutRef.current;
         if (mode === 'chart' || mode === 'radial') return;
+        const active = activeRef.current;
         for (const r of partnerYRels) {
           const na = nodeById.get(r.from_person);
           const nb = nodeById.get(r.to_person);
           if (!na || !nb) continue; // belt-and-braces — the cache should already guarantee this
+          const strength = (r.from_person === active || r.to_person === active) ? PARTNER_Y_ACTIVE : PARTNER_Y_AMBIENT;
           const dy = nb.y - na.y;
-          na.vy += dy * 0.4;
-          nb.vy -= dy * 0.4;
+          na.vy += dy * strength;
+          nb.vy -= dy * strength;
         }
       });
 
@@ -730,6 +751,15 @@ export default function BubbleTree({
       let camMode = 'follow'; // 'follow' | 'free'
       let vx = 0, vy = 0; // free-pan inertia, world units / second
       let onModeChange = null;
+      // Real feedback: "when clicking on somebody, do not adjust the zoom
+      // setting, just re-position... the current setting is way too much."
+      // Anchors the zoom level at whatever it was right before the most
+      // recent setActive() — the follow-mode framing below then only eases
+      // TOWARD a tighter fit (zooms out) when the revealed family genuinely
+      // doesn't fit at that level, and never zooms in just because a smaller
+      // family is now showing. null means "no anchor yet" — the ordinary
+      // full auto-fit runs (initial mount, and after an explicit recenter()).
+      let heldZoom = null;
       // Free mode normally holds zoom.target pinned to zoom.value every frame
       // (wheel/pinch already set both directly — see zoomTo — so there's
       // nothing to ease toward). The on-screen zoom buttons are the one free-
@@ -1083,9 +1113,11 @@ export default function BubbleTree({
           activeRef.current = id;
           state.dist = distancesFrom(graphRef.current, id);
           relCache.clear(); // relationships are relative to the active person
+          // Anchor the zoom hold at whatever it is right now, before this
+          // activation's own framing kicks in — see heldZoom's own comment.
+          heldZoom = zoom.value;
           state.enterFollow();
           if (!reducedMotion && animate && !alreadyActive) {
-            zoom.velocity -= 1.6;
             // Briefly spike the Y-generational force so parents visibly float
             // upward and children sink down, making the clicked person's family
             // obvious before settling back to the gentle resting drift.
@@ -1133,6 +1165,10 @@ export default function BubbleTree({
         // blocking bubble selection until the state is reset.
         recenter() {
           if (!reducedMotion) zoom.velocity -= 1.2;
+          // The explicit "fit everyone" action — unlike an ordinary select
+          // (see heldZoom's own comment), this really should re-fit freely
+          // in both directions, so clear the hold.
+          heldZoom = null;
           pointers.clear();
           pinch.active = false;
           drag.type = 'none';
@@ -2219,7 +2255,20 @@ export default function BubbleTree({
 
           camX.setTarget(camTX);
           camY.setTarget(camTY);
-          zoom.setTarget(clamp(fit, fitFloor, MAX_ZOOM));
+          const desiredFit = clamp(fit, fitFloor, MAX_ZOOM);
+          // Real feedback: "when clicking on somebody, do not adjust the
+          // zoom setting, just re-position... maybe a slight zoom out if
+          // that helps, but the current setting is way too much." heldZoom
+          // (set in setActive, cleared by an explicit recenter()) anchors
+          // the level from just before the most recent activation — only
+          // ease PAST it toward a tighter fit (zoom OUT) when the revealed
+          // family genuinely doesn't fit at that level; never zoom back IN
+          // just because a smaller family is now showing. Ratcheted down
+          // (never back up on its own) so a later, smaller reveal doesn't
+          // re-open room to zoom in without an explicit new selection.
+          const targetZoom = heldZoom != null ? Math.min(desiredFit, heldZoom) : desiredFit;
+          if (heldZoom != null && targetZoom < heldZoom) heldZoom = targetZoom;
+          zoom.setTarget(targetZoom);
           camX.step(dt);
           camY.step(dt);
           zoom.step(dt);
