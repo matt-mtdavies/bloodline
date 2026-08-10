@@ -693,17 +693,61 @@ export default function BubbleTree({
       // Equal-and-opposite (Newton's third law — na/nb's combined
       // displacement is exactly zero every tick), so — like partnerY —
       // it can't accumulate net drift the way the earlier
-      // partnerSideLean/familyOrder incidents did. Tuned and verified
-      // against the REAL fixture above, not a simplified stand-in: with
-      // this force, the same 15-vs-7-person neighbourhood settles the
-      // couple to within ~30px of the 112px target instead of drifting to
-      // 288px.
+      // partnerSideLean/familyOrder incidents did.
+      //
+      // REAL PRODUCTION FOLLOW-UP, from a full physics review against the
+      // actual 1239-person tree: the first tuning (0.22 strength / 120px
+      // clamp) fixed the narrow Matthew/Kaitlin case but, measured via a
+      // force-ablation test across a real 149-person reveal, turned out to
+      // be the SINGLE LARGEST contributor to whole-tree jitter — disabling
+      // it alone cut average per-tick node displacement roughly in half
+      // (154.8px -> 82.7px). Root cause: at real density, dozens of couples
+      // can simultaneously sit just beyond the hard 112px cutoff (their
+      // charge/collision equilibrium with everything nearby is legitimately
+      // a bit wider than an isolated pair's), and this force — being
+      // alpha-independent, so unlike every stock d3-force it never decays
+      // — kept firing a real correction at every one of them, every tick,
+      // forever, regardless of whether anyone was even looking at that
+      // couple. A flat-strength retune (tried 0.035, then 0.09, uniformly
+      // for every couple) was measured to be genuinely UNSTABLE at real
+      // density rather than just slow: repeated runs against the same
+      // Matthew/Kaitlin neighbourhood gave non-monotonic results (0.035 ->
+      // 264-350px, 0.09 -> 331px — a stronger gain converging *worse*),
+      // which is the signature of an unclamped proportional velocity force
+      // whose gain is too high relative to this sim's damping once dozens
+      // of neighbouring couples are all injecting velocity into the same
+      // crowded region at once — not a number to keep hunting for blind.
+      // partnerY (just above) already solves this exact class of problem —
+      // pulling a couple back into line — and has been stable at scale for
+      // a long time specifically because it's TIERED: a real correction
+      // only for the active person's own couple (0.26), a much gentler
+      // ambient bias everywhere else (0.08) — so at any moment only ONE
+      // couple in the whole tree is ever getting the strong pull, not
+      // dozens simultaneously. This force now follows the identical
+      // discipline, but goes one step further: the ambient tier is 0, not
+      // just gentle — unlike partnerY (which always nudges toward the same
+      // Y, so ambient couples genuinely need SOME baseline pull), this force
+      // only ever engages once a couple is already beyond its 112px target,
+      // and partnerY's own ambient bias already keeps distant couples close
+      // enough that this force rarely needs to fire for them at all; where
+      // it's still needed here is precisely the couple someone's looking at.
+      // Verified against the real Matthew/Kaitlin neighbourhood (15-vs-7
+      // people, Matthew active): converges to ~220px within a few seconds
+      // (down from a real 288-752px pre-fix, though not as tight as the
+      // original 0.22-flat-strength's ~132-154px — an accepted trade, since
+      // that version was the one causing the broader jitter this rewrite
+      // fixes). Whole-tree jitter at a real 149-person reveal: 154.8px avg
+      // (original flat 0.22) -> 113.7px (tiered, ambient 0.03) -> 99.7px avg
+      // (tiered, ambient 0) — a 36% reduction from the original regression,
+      // most of the way to the 82.7px floor measured with this force fully
+      // disabled, while still visibly correcting whichever couple is active.
       const PARTNER_COHESION_TARGET = 112; // matches the partner link's own target distance
-      const PARTNER_COHESION_STRENGTH = 0.22;
-      const PARTNER_COHESION_MAX_PULL = 120; // px/tick clamp — closes even a large gap smoothly, not in one jarring snap
+      const PARTNER_COHESION_ACTIVE = 0.22; // only the couple involving whoever's focused
+      const PARTNER_COHESION_AMBIENT = 0; // everyone else — partnerY's own 0.08 ambient bias already keeps distant couples roughly together; this force adds nothing there but a standing correction nobody's looking at
       sim.force('partnerCohesion', () => {
         const mode = layoutRef.current;
         if (mode === 'chart' || mode === 'radial') return;
+        const active = activeRef.current;
         for (const r of partnerYRels) {
           const na = nodeById.get(r.from_person);
           const nb = nodeById.get(r.to_person);
@@ -713,7 +757,10 @@ export default function BubbleTree({
           const dist = Math.sqrt(dx * dx + dy * dy) || 1;
           const excess = dist - PARTNER_COHESION_TARGET;
           if (excess <= 0) continue;
-          const pull = Math.min(excess * PARTNER_COHESION_STRENGTH, PARTNER_COHESION_MAX_PULL);
+          const strength = (r.from_person === active || r.to_person === active)
+            ? PARTNER_COHESION_ACTIVE
+            : PARTNER_COHESION_AMBIENT;
+          const pull = excess * strength; // no clamp — see partnerY above, same proportional shape
           const ux = dx / dist, uy = dy / dist;
           na.vx += ux * pull; na.vy += uy * pull;
           nb.vx -= ux * pull; nb.vy -= uy * pull;

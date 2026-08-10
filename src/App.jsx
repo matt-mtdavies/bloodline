@@ -68,7 +68,7 @@ import { groupRecapUpdates, captionForRecapGroup } from './lib/recap.js';
 import { fetchRecapCutoff, pushRecapCutoff } from './lib/recapCutoff.js';
 import { uploadPhoto, generateThumb, uploadDocument, savePhotoToDevice, srcToDataUrl, summarizeDocument } from './lib/image.js';
 import { useImageZoom } from './lib/useImageZoom.js';
-import { buildGraph, pathBetween, pathBetweenOrdered, bloodRelativesOf, distancesFromMany, relationLabel } from './data/graph.js';
+import { buildGraph, pathBetween, pathBetweenOrdered, bloodRelativesOf, distancesFromMany, relationLabel, boundedRevealSet } from './data/graph.js';
 import { useKinTerms } from './lib/kinTerms.js';
 import { planPerimeterRecommendationIfUnset, fetchPerimeterPreference, engineLevelFor, isPerimeterActive } from './lib/familyPerimeter.js';
 import { computePerspectiveIndex, computeInsightCohorts } from './lib/perspectiveIndex.js';
@@ -1362,18 +1362,19 @@ export default function App() {
     // "All" of it can never reintroduce an outside person or break an
     // active trace. Byte-identical to before when no perimeter is active.
     const pool = revealAllCandidatePool(perimeterActive, perspective, graph.people.map((p) => p.id), lineageMode, lineagePath);
-    const total = pool.length;
     const dist = distancesFromMany(graph, expanded);
-    let candidateIds;
-    if (total <= MAX_BUBBLE_REVEAL) {
-      candidateIds = pool;
-    } else {
-      candidateIds = pool
-        .map((id) => ({ id, d: dist.get(id) ?? Infinity }))
-        .sort((a, b) => a.d - b.d)
-        .slice(0, MAX_BUBBLE_REVEAL)
-        .map((x) => x.id);
-      setSyncToast(`Showing the ${MAX_BUBBLE_REVEAL} people closest to you — switch to List view to see everyone in a family this size.`);
+    const sortedPool = pool
+      .filter((id) => !expanded.has(id))
+      .map((id) => ({ id, d: dist.get(id) ?? Infinity }))
+      .sort((a, b) => a.d - b.d)
+      .map((x) => x.id);
+    // Bounds the actual RENDERED node count (expanded ∪ its neighbour halo),
+    // not just how many ids get added to `expanded` — see boundedRevealSet's
+    // own comment for why a flat slice() of the candidate list alone isn't
+    // enough to guarantee this cap on the real canvas.
+    const candidateIds = boundedRevealSet(graph, sortedPool, expanded, MAX_BUBBLE_REVEAL);
+    if (candidateIds.length < sortedPool.length) {
+      setSyncToast(`Showing the people closest to you — switch to List view to see everyone in a family this size.`);
       setTimeout(() => setSyncToast(null), 6000);
     }
 
@@ -1454,14 +1455,16 @@ export default function App() {
     // request, not front-loaded.
     const mandatoryIds = desiredMandatoryRevealIds(perspective, lineageMode, lineagePath);
     const dist = distancesFromMany(graph, expanded);
-    let candidateIds = [...mandatoryIds].filter((id) => !expanded.has(id));
-    if (candidateIds.length > MAX_BUBBLE_REVEAL) {
-      candidateIds = candidateIds
-        .map((id) => ({ id, d: dist.get(id) ?? Infinity }))
-        .sort((a, b) => a.d - b.d)
-        .slice(0, MAX_BUBBLE_REVEAL)
-        .map((x) => x.id);
-      setSyncToast(`Showing the ${MAX_BUBBLE_REVEAL} people closest to you — switch to List view to see everyone in a family this size.`);
+    const sortedMandatory = [...mandatoryIds]
+      .filter((id) => !expanded.has(id))
+      .map((id) => ({ id, d: dist.get(id) ?? Infinity }))
+      .sort((a, b) => a.d - b.d)
+      .map((x) => x.id);
+    // See boundedRevealSet's own comment — bounds the actual rendered node
+    // count (expanded ∪ neighbours), not just how many ids get added here.
+    const candidateIds = boundedRevealSet(graph, sortedMandatory, expanded, MAX_BUBBLE_REVEAL);
+    if (candidateIds.length < sortedMandatory.length) {
+      setSyncToast(`Showing the people closest to you — switch to List view to see everyone in a family this size.`);
       setTimeout(() => setSyncToast(null), 6000);
     }
     if (!candidateIds.length) return;

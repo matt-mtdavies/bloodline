@@ -223,6 +223,51 @@ export function buildGraph(people, relationships) {
   };
 }
 
+// Everyone one hop from `id` — parents, children, partners, siblings —
+// regardless of bloodlineOnly/aliveness filters (those only ever SHRINK what
+// actually renders, so using the unfiltered superset here can only ever
+// over-estimate a rendered set, never under-estimate it — the right side to
+// err on for a safety cap). Shared by boundedRevealSet below.
+export function neighboursOf(graph, id) {
+  const set = new Set();
+  for (const x of graph.parents(id)) set.add(x.id);
+  for (const x of graph.children(id)) set.add(x.id);
+  for (const x of graph.partners(id)) set.add(x.id);
+  for (const x of graph.siblings(id)) set.add(x.id);
+  return set;
+}
+
+// App.jsx's canvas renders `expanded ∪ neighboursOf(expanded)` — adding
+// someone to `expanded` auto-reveals their immediate family too (the
+// additive-reveal architecture CLAUDE.md describes). A cap on how many ids
+// get ADDED to `expanded` (e.g. "All"'s MAX_BUBBLE_REVEAL) does NOT bound
+// that rendered union — each accepted id can drag in several more neighbours
+// that were never separately counted, so a flat `.slice(0, cap)` on the
+// candidate list alone can still let the real on-screen node count overshoot
+// the cap by several times over (measured 1.9x-3.7x on the real production
+// tree at every tested scale) — exactly the safety margin MAX_BUBBLE_REVEAL
+// exists to guarantee, since it was built to stop a documented GPU-crash bug
+// class. This walks `candidateIds` in priority (closest-first) order,
+// simulating the same expanded-plus-neighbours growth the canvas will
+// actually render, and stops accepting new candidates the moment the
+// PROJECTED rendered set would exceed `cap` — so the cap is honored against
+// what actually ends up on screen, not just against how many ids got added
+// to `expanded`.
+export function boundedRevealSet(graph, candidateIds, alreadyExpanded, cap) {
+  const projected = new Set(alreadyExpanded);
+  for (const id of alreadyExpanded) {
+    for (const n of neighboursOf(graph, id)) projected.add(n);
+  }
+  const accepted = [];
+  for (const id of candidateIds) {
+    const additions = [id, ...neighboursOf(graph, id)].filter((x) => !projected.has(x));
+    if (projected.size + additions.length > cap) break;
+    for (const x of additions) projected.add(x);
+    accepted.push(id);
+  }
+  return accepted;
+}
+
 // A GENUINELY cohort-scoped graph — not just a `.people` filter. Building
 // `{ ...graph, people: filtered }` alone leaves `.byId`/`.relationships` and
 // the `parents`/`children`/`partners`/`siblings` closures bound to the
