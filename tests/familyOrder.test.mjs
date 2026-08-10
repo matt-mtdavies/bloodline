@@ -192,6 +192,63 @@ test('two entirely unrelated pods are computed independently', () => {
   assert.equal(pods.length, 2);
 });
 
+// ── 8. A couple who are BOTH independently anchorable never both get pulled ─
+// Real report: "When I expand either side of my tree, it pulls Matthew and
+// Kaitlin apart" — each was independently a "child" in their own birth pod,
+// so both got pulled toward two different, distant ancestral anchors.
+
+test('when both partners have their own birth families, only the lower-id one keeps a pull', () => {
+  const g = buildGraph(
+    [
+      person('aDad'), person('aMum'), person('aMatthew'),
+      person('zDad'), person('zMum'), person('zKaitlin'),
+    ],
+    [
+      parentEdge('aDad', 'aMatthew'), parentEdge('aMum', 'aMatthew'),
+      parentEdge('zDad', 'zKaitlin'), parentEdge('zMum', 'zKaitlin'),
+      partnerEdge('aMatthew', 'zKaitlin', 'current'),
+    ],
+  );
+  const visible = ['aDad', 'aMum', 'aMatthew', 'zDad', 'zMum', 'zKaitlin'];
+  const pods = computeChildOrderSlots(g, visible);
+  const allChildIds = pods.flatMap((p) => p.children.map((c) => c.id));
+  assert.ok(allChildIds.includes('aMatthew'));
+  assert.ok(!allChildIds.includes('zKaitlin'));
+});
+
+test('a partner with no recorded parents of their own does not suppress the other partner', () => {
+  const g = buildGraph(
+    [person('dad'), person('mum'), person('matthew'), person('inlaw')],
+    [
+      parentEdge('dad', 'matthew'), parentEdge('mum', 'matthew'),
+      partnerEdge('matthew', 'inlaw', 'current'),
+    ],
+  );
+  const pods = computeChildOrderSlots(g, ['dad', 'mum', 'matthew', 'inlaw']);
+  const allChildIds = pods.flatMap((p) => p.children.map((c) => c.id));
+  assert.ok(allChildIds.includes('matthew'));
+  assert.ok(!allChildIds.includes('inlaw')); // inlaw has no parents, so no pod includes them anyway
+});
+
+test('a former (not current) partner is still recognised as the same couple for this purpose', () => {
+  const g = buildGraph(
+    [
+      person('aDad'), person('aMum'), person('aMatthew'),
+      person('zDad'), person('zMum'), person('zKaitlin'),
+    ],
+    [
+      parentEdge('aDad', 'aMatthew'), parentEdge('aMum', 'aMatthew'),
+      parentEdge('zDad', 'zKaitlin'), parentEdge('zMum', 'zKaitlin'),
+      partnerEdge('aMatthew', 'zKaitlin', 'former'),
+    ],
+  );
+  const visible = ['aDad', 'aMum', 'aMatthew', 'zDad', 'zMum', 'zKaitlin'];
+  const pods = computeChildOrderSlots(g, visible);
+  const allChildIds = pods.flatMap((p) => p.children.map((c) => c.id));
+  assert.ok(allChildIds.includes('aMatthew'));
+  assert.ok(!allChildIds.includes('zKaitlin'));
+});
+
 // ── Report ───────────────────────────────────────────────────────────────────
 
 for (const r of results) {
