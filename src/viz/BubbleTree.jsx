@@ -503,6 +503,40 @@ export default function BubbleTree({
       // going anywhere near Focus mode's own much crisper 0.4.
       const restingYStrength = () => (focusRef.current ? 0.4 : 0.15);
 
+      // REAL PRODUCTION REPORT: "another person's view which feels like a
+      // reversion... too vertical/list-like... lines crossing." Root-caused
+      // with a purpose-built repro (a person whose only recorded parent has
+      // no parents of their own, and who has children — the exact shape of
+      // an in-law's own kids from an earlier relationship, common in a real
+      // blended tree): everyone WITH recorded parents gets a second, strong
+      // pull toward their own row for free — the parent-child link force
+      // (distance 280, strength 0.26) is anchored at parents who are
+      // themselves already sitting on the correct row. Someone with NO
+      // recorded parents (an in-law with no ancestry entered) has only this
+      // weak resting band (0.15) and the even weaker ambient partnerY
+      // (0.08) to find their own row — nowhere near enough to counter
+      // charge/collision/their own children's link force pulling them
+      // around, so they drift and settle well off their generation's row,
+      // dragging their own children (who inherit the same problem one
+      // level down) visibly further off — exactly the mis-banded, crossing
+      // look reported. Boosting the band pull specifically for parentless
+      // nodes (mirroring the SAME `parents(id).length === 0` check
+      // layoutGenRaw above already uses to pick which row to target — this
+      // only changes how HARD they're pulled toward it) gives them the
+      // rough equivalent of the "for free" anchoring everyone else already
+      // has. One-directional pull toward a fixed target per node, exactly
+      // like the rest of this force — can't accumulate drift the way a
+      // mutual/chasing force could.
+      const ANCHORLESS_Y_BOOST = 2.4;
+      let anchorlessIds = new Set();
+      const rebuildAnchorlessIds = () => {
+        anchorlessIds = new Set();
+        for (const n of nodes) {
+          if (graphRef.current.parents(n.id).length === 0) anchorlessIds.add(n.id);
+        }
+      };
+      const yBandStrength = (d) => restingYStrength() * (anchorlessIds.has(d.id) ? ANCHORLESS_Y_BOOST : 1);
+
       // Y-band target generation. A partner with no ancestry of their own (a
       // childless in-law, including a former partner we deliberately keep out
       // of generation *leveling*) would otherwise default to gen 0 and float
@@ -543,6 +577,7 @@ export default function BubbleTree({
         genRank = new Map(sorted.map((g, i) => [g, i]));
       };
       rebuildGenRank();
+      rebuildAnchorlessIds();
       const layoutGen = (id) => genRank.get(layoutGenRaw(id)) ?? 0;
       const genYTarget = (d) => layoutGen(d.id) * GEN_GAP - 260;
 
@@ -568,7 +603,7 @@ export default function BubbleTree({
         .force('charge', chargeForce)
         .force('collide', forceCollide(COLLIDE).strength(0.9))
         .force('x', forceX(0).strength(SPREAD_X))
-        .force('y', forceY(genYTarget).strength(restingYStrength()))
+        .force('y', forceY(genYTarget).strength(yBandStrength))
         .alpha(1)
         .alphaDecay(0.018)
         .alphaTarget(reducedMotion ? 0 : 0.012)
@@ -1176,7 +1211,7 @@ export default function BubbleTree({
             // (stronger generational rows while Focus Family is active).
             sim.force('charge', forceManyBody().strength(ORGANIC_CHARGE).distanceMax(1200));
             sim.force('x', forceX(0).strength(SPREAD_X));
-            sim.force('y', forceY(genY).strength(restingYStrength()));
+            sim.force('y', forceY(genY).strength(yBandStrength));
             linkForce
               .distance((l) => (l.kind === 'partner' ? 112 : 280))
               .strength((l) => (l.kind === 'partner' ? 0.9 : 0.26));
@@ -1241,7 +1276,7 @@ export default function BubbleTree({
               reorgTimer = setTimeout(() => {
                 reorgTimer = null;
                 if (state.layoutMode !== 'chart' && state.layoutMode !== 'radial') {
-                  sim.force('y', forceY(genY).strength(restingYStrength()));
+                  sim.force('y', forceY(genY).strength(yBandStrength));
                 }
               }, 1800);
             }
@@ -1383,6 +1418,7 @@ export default function BubbleTree({
           if (structuralChange) sim.alpha(0.5);
           gen = computeGenerations(g);
           rebuildGenRank();
+          rebuildAnchorlessIds();
           state.dist = distancesFrom(g, activeRef.current);
           relCache.clear(); // graph changed — relationship labels may differ
           if (state.layoutMode === 'radial' || state.layoutMode === 'weighted') state.relayout();
@@ -1412,6 +1448,7 @@ export default function BubbleTree({
             rebuildChildOrderPods(); // newly-spawned relatives may now form/complete a pod
             updateChargeTheta();
             rebuildGenRank();
+            rebuildAnchorlessIds();
             sim.alpha(Math.max(sim.alpha(), EXPAND_REHEAT_ALPHA));
             state.holdActiveDuringSettle();
           }
@@ -1453,7 +1490,7 @@ export default function BubbleTree({
         refreshFocus() {
           relCache.clear();
           if (state.layoutMode !== 'chart' && state.layoutMode !== 'radial') {
-            sim.force('y', forceY(genYTarget).strength(restingYStrength()));
+            sim.force('y', forceY(genYTarget).strength(yBandStrength));
             sim.alpha(0.6);
           }
         },
