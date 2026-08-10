@@ -957,19 +957,41 @@ export default function BubbleTree({
       // (ensureVisible()). Anchored near whichever already-tracked relative
       // connects to them, so they appear to sprout from that person rather
       // than pop in at the world origin.
-      const spawnBubble = (p) => {
+      // Real user report, with screenshots, reproduced against the real
+      // 1239-person tree: opening the app showed several relatives piled up
+      // almost exactly on top of each other for several seconds before
+      // collision/charge slowly untangled them into the intended spread
+      // layout — because every new bubble sharing the same anchor (e.g.
+      // three siblings, all newly spawned in the SAME initial batch) used to
+      // land within a mere ±12px of that anchor AND of each other, so the
+      // very first frame already looked like a broken pile of overlapping
+      // circles rather than a family tree, even though physics did
+      // eventually get it right on its own. `anchorSpawnCounts` (built fresh
+      // by each caller, one per batch — see sync()/ensureVisible() below)
+      // fans new arrivals sharing one anchor out around it at roughly their
+      // eventual resting distance instead: the golden angle (~137.5°) is the
+      // standard way to place points one at a time around a circle so they
+      // stay well-spread regardless of how many end up sharing an anchor,
+      // and the radius matches childOrder's own CHILD_ORDER_SLOT_PX spacing
+      // convention so a freshly-spawned sibling already looks roughly where
+      // it's headed rather than needing a visible untangling animation.
+      const SPAWN_FAN_RADIUS = 130;
+      const SPAWN_GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
+      const spawnBubble = (p, anchorSpawnCounts) => {
         const rel = graphRef.current.relationships.find(
           (r) =>
             (r.from_person === p.id && nodeById.has(r.to_person)) ||
             (r.to_person === p.id && nodeById.has(r.from_person)),
         );
-        const anchor = rel
-          ? nodeById.get(rel.from_person === p.id ? rel.to_person : rel.from_person)
-          : nodeById.get(activeRef.current);
+        const anchorId = rel ? (rel.from_person === p.id ? rel.to_person : rel.from_person) : activeRef.current;
+        const anchor = nodeById.get(anchorId);
+        const n = anchorSpawnCounts.get(anchorId) ?? 0;
+        anchorSpawnCounts.set(anchorId, n + 1);
+        const angle = n * SPAWN_GOLDEN_ANGLE;
         const node = {
           id: p.id,
-          x: (anchor?.x ?? 0) + (Math.random() - 0.5) * 24,
-          y: (anchor?.y ?? 0) + (Math.random() - 0.5) * 24,
+          x: (anchor?.x ?? 0) + Math.cos(angle) * SPAWN_FAN_RADIUS,
+          y: (anchor?.y ?? 0) + Math.sin(angle) * SPAWN_FAN_RADIUS,
         };
         nodes.push(node);
         nodeById.set(p.id, node);
@@ -1472,6 +1494,7 @@ export default function BubbleTree({
         // refresh edited bubbles, drop removed ones, and rewire the links.
         sync(g) {
           let structuralChange = false;
+          const anchorSpawnCounts = new Map(); // one batch — see spawnBubble's own comment
           for (const p of g.people) {
             if (!nodeById.has(p.id)) {
               // Not yet part of the revealed set — stays untracked until the
@@ -1480,7 +1503,7 @@ export default function BubbleTree({
               // of bubbles nobody's looking at yet.
               if (!visibleRef.current?.has(p.id)) continue;
               structuralChange = true;
-              spawnBubble(p);
+              spawnBubble(p, anchorSpawnCounts);
             } else if (bubblePerson.get(p.id) !== p) {
               // The person object changed (an edit / new photo): rebuild in place.
               const node = nodeById.get(p.id);
@@ -1536,11 +1559,12 @@ export default function BubbleTree({
         // holdActiveDuringSettle).
         ensureVisible(ids) {
           let added = false;
+          const anchorSpawnCounts = new Map(); // one batch — see spawnBubble's own comment
           for (const id of ids ?? []) {
             if (nodeById.has(id)) continue;
             const p = graphRef.current.byId.get(id);
             if (!p) continue;
-            spawnBubble(p);
+            spawnBubble(p, anchorSpawnCounts);
             added = true;
           }
           if (added) {
