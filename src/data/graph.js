@@ -86,13 +86,54 @@ export function sortChildren(children, byId) {
 // offset * spacing" can never introduce a net translation of the pod
 // relative to its own parents (the target's own average always equals the
 // parents' centre) — see BubbleTree.jsx's own force for why that matters.
+//
+// REAL PRODUCTION REPORT: "When I expand either side of my tree, it pulls
+// Matthew and Kaitlin apart." Root cause: a married-in person is very often
+// ALSO someone's own child elsewhere in the same tree (they have their own
+// recorded parents) — so BOTH members of a couple can independently qualify
+// as a pod's "child" needing to be pulled toward THEIR OWN birth family's
+// anchor. On a large, sprawling tree those two anchors can be far apart,
+// and nothing here knew the two pulled people were a couple — each pull
+// individually is fine (see the header comment above), but applying BOTH
+// at once to two people the layout otherwise treats as one visual unit
+// tears the couple's pod apart exactly as reported. Fixed by only ever
+// letting ONE member of a couple carry an independent pull: if a child has
+// a partner who is ALSO independently anchorable (has their own visible
+// recorded parents), the higher-id one of the pair is dropped from every
+// pod's children list entirely — they have no anchor of their own to
+// contribute, so they simply ride along with their partner via the
+// existing partner-link/partnerY forces, keeping the couple together as
+// one unit instead of being torn between two different ancestral pulls.
+// The lower-id partner is unaffected either way, still pulled by their own
+// birth pod exactly as before — the fix is purely "never pull the SAME
+// couple toward two different places at once," not a new positioning rule.
 export function computeChildOrderSlots(graph, visibleIds) {
   const visible = visibleIds instanceof Set ? visibleIds : new Set(visibleIds ?? []);
+
+  // A person "has their own anchor" only if at least one of their recorded
+  // parents is also visible — that's the only case computeChildOrderSlots
+  // would otherwise place them in a pod at all.
+  const hasOwnAnchor = (id) => graph.parents(id).some((p) => visible.has(p.id));
+
+  // One partner per person, for "are these two a couple" purposes only —
+  // prefer their current one, else whichever is first on record, the same
+  // "pick exactly one" convention used elsewhere in this codebase.
+  const chosenPartner = (id) => {
+    const partners = graph.partners(id).filter((p) => visible.has(p.id));
+    return partners.find((p) => p.status === 'current') || partners[0] || null;
+  };
+
   const podsByKey = new Map(); // "sortedParentIds" -> { parentIds, children: [{id, qualifier}] }
   for (const person of graph.people) {
     if (!visible.has(person.id)) continue;
     const parentEdges = graph.parents(person.id).filter((p) => visible.has(p.id));
     if (!parentEdges.length) continue;
+
+    // Already spoken for by a partner who will independently anchor this
+    // same couple — skip adding a second, competing pull for them.
+    const partner = chosenPartner(person.id);
+    if (partner && hasOwnAnchor(partner.id) && person.id > partner.id) continue;
+
     const parentIds = [...new Set(parentEdges.map((p) => p.id))].sort();
     const key = parentIds.join('|');
     let pod = podsByKey.get(key);
