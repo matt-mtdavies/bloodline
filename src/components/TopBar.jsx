@@ -4,6 +4,19 @@ import { PERIMETER_OPTIONS } from '../lib/familyPerimeter.js';
 
 export default function TopBar({ familyName, stats, view, layout, syncStatus, syncError, onRetrySync, onSetViewMode, onOpenLegend, bloodlineOnly = false, onToggleBloodlineOnly, onOpenActivity, activityCount = 0, user, userPhoto, onOpenProfile, onOpenHome, onSearch, onOpenInsights, onOpenTimeline, onOpenArchiveCare, archiveCareCount = 0, archiveCareHasNew = false, storageWarning, storageNearLimit, treeSizeWarning, syncToast, onDismissSyncToast, recapNudgeCount = 0, onShowRecap, onDismissRecapNudge, perimeterActive = false, perimeterLevel = null, onOpenPerimeterSettings, anyOverlayOpen = false }) {
   const perimeterLevelLabel = PERIMETER_OPTIONS.find((o) => o.value === perimeterLevel)?.label ?? null;
+  // Real feedback on a screenshot: this had drifted into a plain, oversized
+  // text pill wide enough to wrap onto several lines and overlap the brand
+  // mark on a narrow viewport — "that not saved message should be designed
+  // properly." Collapsed to a single computed { message, retry } shape so
+  // all four error states share ONE compact, icon-only pill (see below),
+  // sized identically to every other topbar pill (search/bloodline-only/
+  // bell) instead of a bespoke wide text chip that had no width bound.
+  const syncErrorInfo =
+    syncStatus === 'error' ? { message: `Not saved${syncError?.code ? ` (${syncError.message})` : ''}`, retry: true }
+    : syncStatus === 'error-auth' ? { message: 'Session expired — please reload', retry: false }
+    : syncStatus === 'error-forbidden' ? { message: syncError?.message || 'Not allowed — ask a co-admin', retry: false }
+    : syncStatus === 'error-toolarge' ? { message: syncError?.message || 'Tree too large to save', retry: false }
+    : null;
   const [statsOpen, setStatsOpen] = useState(false);
   const [viewMenuOpen, setViewMenuOpen] = useState(false);
   const popoverRef = useRef(null);
@@ -80,28 +93,23 @@ export default function TopBar({ familyName, stats, view, layout, syncStatus, sy
           {syncStatus === 'saving' ? 'Saving…' : syncStatus === 'saved' ? 'Saved' : ''}
         </span>
         <div className="topbar__actions">
-          {syncStatus === 'error' && (
-            <button
-              className="sync-status sync-status--error sync-status--retry"
-              aria-live="assertive"
-              onClick={onRetrySync}
-              title="Tap to retry now"
-            >
-              Not saved{syncError?.code ? ` (${syncError.message})` : ''} — tap to retry
-            </button>
-          )}
-          {syncStatus === 'error-auth' && (
-            <span className="sync-status sync-status--error" aria-live="assertive">Session expired — please reload</span>
-          )}
-          {syncStatus === 'error-forbidden' && (
-            <span className="sync-status sync-status--error" aria-live="assertive">
-              {syncError?.message || 'Not allowed — ask a co-admin'}
-            </span>
-          )}
-          {syncStatus === 'error-toolarge' && (
-            <span className="sync-status sync-status--error" aria-live="assertive">
-              {syncError?.message || 'Tree too large to save'}
-            </span>
+          {syncErrorInfo && (
+            syncErrorInfo.retry ? (
+              <button
+                className="pill pill--sync-error"
+                aria-live="assertive"
+                aria-label={`${syncErrorInfo.message} — tap to retry`}
+                onClick={onRetrySync}
+              >
+                <SyncErrorIcon />
+                <span className="hover-tip hover-tip--down">{syncErrorInfo.message} — tap to retry</span>
+              </button>
+            ) : (
+              <span className="pill pill--sync-error" aria-live="assertive" aria-label={syncErrorInfo.message}>
+                <SyncErrorIcon />
+                <span className="hover-tip hover-tip--down">{syncErrorInfo.message}</span>
+              </span>
+            )
           )}
           {onSearch && (
             <button className="pill" onClick={onSearch} aria-label="Search family members">
@@ -495,6 +503,20 @@ function userInitials(user) {
 }
 
 /* ── Icons ──────────────────────────────────────────────────────────────── */
+
+// Same 17px/1.7-stroke line-icon language as every other topbar glyph
+// (TopBarSearchIcon, BellIcon) — a plain caution triangle, restrained rather
+// than alarming (this app has no dedicated error/red token; the pill's own
+// warm terracotta tint below carries the "needs attention" read).
+function SyncErrorIcon() {
+  return (
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M12 3.5 21.5 20H2.5L12 3.5Z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
+      <path d="M12 9.8v4.4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+      <circle cx="12" cy="17.2" r="1" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
 
 function TopBarSearchIcon() {
   return (
