@@ -957,24 +957,42 @@ export default function BubbleTree({
       // (ensureVisible()). Anchored near whichever already-tracked relative
       // connects to them, so they appear to sprout from that person rather
       // than pop in at the world origin.
-      // Real user report, with screenshots, reproduced against the real
-      // 1239-person tree: opening the app showed several relatives piled up
-      // almost exactly on top of each other for several seconds before
-      // collision/charge slowly untangled them into the intended spread
-      // layout — because every new bubble sharing the same anchor (e.g.
-      // three siblings, all newly spawned in the SAME initial batch) used to
-      // land within a mere ±12px of that anchor AND of each other, so the
-      // very first frame already looked like a broken pile of overlapping
-      // circles rather than a family tree, even though physics did
-      // eventually get it right on its own. `anchorSpawnCounts` (built fresh
-      // by each caller, one per batch — see sync()/ensureVisible() below)
-      // fans new arrivals sharing one anchor out around it at roughly their
-      // eventual resting distance instead: the golden angle (~137.5°) is the
-      // standard way to place points one at a time around a circle so they
-      // stay well-spread regardless of how many end up sharing an anchor,
-      // and the radius matches childOrder's own CHILD_ORDER_SLOT_PX spacing
-      // convention so a freshly-spawned sibling already looks roughly where
-      // it's headed rather than needing a visible untangling animation.
+      // REAL USER REPORT, with screenshots, root-caused against the real
+      // 1239-person tree after many rounds of force-tuning had failed:
+      // tapping a person with a lot of relatives produced a permanent
+      // "clustered mess" — everyone piled around them instead of arranging
+      // into generation rows. Measured directly: parent/child pairs were
+      // sitting THREE TO TWENTY-SEVEN pixels apart vertically, when a parent
+      // and child must be a full GEN_GAP (420px) apart.
+      //
+      // Two things combined to cause that, and BOTH are fixed here:
+      //   1. This function used to place new arrivals in a ring around their
+      //      anchor, ignoring generation entirely — so a parent and a child
+      //      revealed in the same batch could easily land on the same row.
+      //   2. The generation-band force that is supposed to migrate them onto
+      //      their proper row (forceY(genYTarget)) is a STOCK d3 force, so it
+      //      scales its correction by the simulation's alpha — and this sim
+      //      deliberately idles at a very low resting alpha forever. At rest
+      //      it is nearly inert, so it could never actually pull a
+      //      badly-placed node hundreds of pixels to its real band. (This is
+      //      the same alpha-scaling trap already documented for partnerY and
+      //      parentAbove further down this file.)
+      // Rather than fight (2) by making yet another force stronger — the
+      // approach that kept failing — new arrivals are now simply BORN on the
+      // structurally correct row, so no migration is needed at all: physics
+      // only has to polish a layout that is already right, which is what it
+      // is good at.
+      //
+      // Y is derived RELATIVE to the anchor (whose own row is already
+      // correct) using the generation delta between the two people, rather
+      // than from an absolute band index. That is deliberate: it stays
+      // correct regardless of whether genRank has been rebuilt yet for a
+      // generation this new node is the first member of, and for the normal
+      // case (parent/child/sibling/partner of the anchor) the delta is
+      // exactly -1 / +1 / 0, which is precisely the offset wanted.
+      // X still fans siblings sharing one anchor apart (golden angle, the
+      // standard way to keep points spread however many arrive), so a row of
+      // newly-revealed siblings arrives spread out rather than stacked.
       const SPAWN_FAN_RADIUS = 130;
       const SPAWN_GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
       const spawnBubble = (p, anchorSpawnCounts) => {
@@ -988,10 +1006,15 @@ export default function BubbleTree({
         const n = anchorSpawnCounts.get(anchorId) ?? 0;
         anchorSpawnCounts.set(anchorId, n + 1);
         const angle = n * SPAWN_GOLDEN_ANGLE;
+        // Rows below/above the anchor, from the real generation structure.
+        const bandDelta = anchor && anchorId
+          ? (layoutGenRaw(p.id) - layoutGenRaw(anchorId))
+          : 0;
+        const baseY = anchor ? anchor.y : (layoutGen(p.id) * GEN_GAP - 260);
         const node = {
           id: p.id,
           x: (anchor?.x ?? 0) + Math.cos(angle) * SPAWN_FAN_RADIUS,
-          y: (anchor?.y ?? 0) + Math.sin(angle) * SPAWN_FAN_RADIUS,
+          y: baseY + bandDelta * GEN_GAP,
         };
         nodes.push(node);
         nodeById.set(p.id, node);
