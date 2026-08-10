@@ -103,18 +103,18 @@
   min-width: 0;
   overflow: hidden;
 }
-/* Sync status pill — appears between brand and action buttons */
-.sync-status {
-  font-size: 11px;
-  font-weight: 500;
-  padding: 3px 8px;
-  border-radius: 20px;
-  transition: opacity 0.4s ease;
+/* Sync error indicator — a real production report: this used to be a wide
+   plain-text chip with no width bound, wrapping onto several lines and
+   overlapping the brand mark on a narrow viewport ("that not saved message
+   should be designed properly"). Now the same compact icon-pill shell as
+   every other topbar control (search/bloodline-only/bell) — 38px, can't
+   wrap or stretch — with the full message revealed via the same hover-tip
+   convention those already use, rather than a bespoke text pill. */
+.pill--sync-error {
+  color: #c2603a;
+  border-color: color-mix(in srgb, #c2603a 35%, var(--hairline));
 }
-.sync-status--error  { color: #c2603a; background: #f5e8e4; }
-
-.sync-status--retry  { cursor: pointer; border: none; font: inherit; letter-spacing: inherit; border-radius: 20px; padding: inherit; }
-.sync-status--retry:hover { background: #edd8d2; }
+.pill--sync-error:hover { background: #f5e8e4; }
 
 .topbar__familyname {
   font-family: var(--body);
