@@ -327,10 +327,12 @@ export function computeGenerations(graph) {
   };
   for (const p of graph.people) visit(p.id, new Set());
 
-  // Three invariants have to hold SIMULTANEOUSLY in the final result:
+  // Four invariants have to hold SIMULTANEOUSLY in the final result:
   //   1. Every parent sits strictly above every one of their children.
   //   2. Active partners share the same row (levelled onto the deeper one).
   //   3. Siblings (any kind — full/half/step) share the same row.
+  //   4. CO-PARENTS (two people sharing a child) share the same row — see
+  //      the rule-3 block below for the real production bug this fixes.
   // The first two used to run as two separate passes — level partners once,
   // THEN cascade children below their (possibly just-deepened) parents —
   // which looks right until a cascade adjustment deepens someone whose OWN
@@ -428,7 +430,62 @@ export function computeGenerations(graph) {
       }
     }
 
-    // 3. Cascade children below their (possibly just-deepened) parents —
+    // 3. Level CO-PARENTS (any two people who share a child) onto the same
+    //    generation band using MAX — same rule and shape as steps 1 and 2.
+    //
+    //    REAL PRODUCTION REPORT, root-caused against the actual 1239-person
+    //    tree after ~20 rounds of force-tuning failed to fix the reported
+    //    "clustered mess": Christopher (a co-parent of Matthew) sat on
+    //    generation 14 while Heather (Matthew's other parent) sat on
+    //    generation 6 — an EIGHT-row gap between two people who, by
+    //    definition, must sit on the same row, since their shared child has
+    //    to be exactly one row below BOTH of them. 44 co-parent pairs across
+    //    that real tree were on different rows.
+    //
+    //    Nothing here levelled them: rule 1 levels PARTNERS but deliberately
+    //    excludes 'former' ones (see its own comment), rule 2 levels
+    //    siblings, and rule 4 below only ever pushes a child BELOW a parent
+    //    — it never pulls two parents of the same child level with each
+    //    other. So a separated/divorced couple whose two ancestries are
+    //    documented to different depths (very common on a real tree — one
+    //    side researched back centuries, the other not at all) ended up many
+    //    bands apart, dragging their child's two parent-lines in from wildly
+    //    different heights. That is a DATA-layer defect, not a physics one:
+    //    the force system was faithfully converging on genuinely wrong
+    //    targets, which is why no amount of force tuning could ever fix it.
+    //
+    //    Co-parenthood is deliberately a STRONGER signal than partnership
+    //    here: two people who had a child together are necessarily the same
+    //    generation relative to that child, whether or not they are still
+    //    together, and whether or not they were ever formally partners at
+    //    all. The rule-1 former-partner exclusion is untouched and still
+    //    correct for its own case — an ex with NO shared child has no
+    //    structural reason to be levelled, and still isn't.
+    let coParentLeveling = true;
+    while (coParentLeveling) {
+      coParentLeveling = false;
+      const seenCo = new Set();
+      for (const child of graph.people) {
+        const parents = graph.parents(child.id);
+        for (let i = 0; i < parents.length; i++) {
+          for (let j = i + 1; j < parents.length; j++) {
+            const a = parents[i].id;
+            const b = parents[j].id;
+            const key = [a, b].sort().join('|');
+            if (seenCo.has(key)) continue;
+            seenCo.add(key);
+            const ga = gen.get(a) ?? 0;
+            const gb = gen.get(b) ?? 0;
+            if (ga === gb) continue;
+            const lvl = Math.max(ga, gb);
+            if (ga !== lvl) { gen.set(a, lvl); coParentLeveling = true; stable = false; }
+            if (gb !== lvl) { gen.set(b, lvl); coParentLeveling = true; stable = false; }
+          }
+        }
+      }
+    }
+
+    // 4. Cascade children below their (possibly just-deepened) parents —
     //    never the reverse.
     for (const child of graph.people) {
       const childGen = gen.get(child.id) ?? 0;

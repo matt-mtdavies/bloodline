@@ -238,5 +238,79 @@ test('half- and step-siblings level the same way as full siblings', () => {
   assert.equal(gen.get('Full'), gen.get('StepKid'), 'step-siblings must be level');
 });
 
+// ── Invariant 4: co-parents share a row ─────────────────────────────────────
+// Regression tests for a REAL production defect: on the owner's own
+// 1239-person tree, two co-parents of the same child sat EIGHT generation
+// rows apart (14 vs 6) because one had deeply-documented ancestry and the
+// other had none, and they were separated (so partner-levelling deliberately
+// skipped them). 44 co-parent pairs tree-wide were affected. See the rule-3
+// block in graph.js#computeGenerations.
+
+test('separated co-parents with unequal ancestry depth are still levelled onto one row', () => {
+  // 'shallow' has no recorded ancestry; 'deep' has three generations of it.
+  // They are FORMER partners, but they share a child — so they must level.
+  const graph = buildGraph(
+    [person('g1'), person('g2'), person('g3'), person('deep'), person('shallow'), person('kid')],
+    [
+      par('g1', 'g2'), par('g2', 'g3'), par('g3', 'deep'),
+      ptn('deep', 'shallow', 'former'),
+      par('deep', 'kid'), par('shallow', 'kid'),
+    ],
+  );
+  const gen = computeGenerations(graph);
+  assertInvariants(graph, gen, 'separated co-parents');
+  assert.equal(gen.get('deep'), gen.get('shallow'), 'co-parents must share a row');
+  assert.ok(gen.get('kid') > gen.get('deep'), 'their child stays strictly below both');
+});
+
+test('co-parents who were never partners at all are still levelled', () => {
+  // No partner edge of any kind between them — co-parenthood alone is
+  // enough, since the shared child must sit one row below both.
+  const graph = buildGraph(
+    [person('g1'), person('g2'), person('deep'), person('shallow'), person('kid')],
+    [
+      par('g1', 'g2'), par('g2', 'deep'),
+      par('deep', 'kid'), par('shallow', 'kid'),
+    ],
+  );
+  const gen = computeGenerations(graph);
+  assertInvariants(graph, gen, 'co-parents, never partnered');
+  assert.equal(gen.get('deep'), gen.get('shallow'), 'co-parents must share a row');
+});
+
+test('levelling co-parents cascades correctly through the rest of the family', () => {
+  // shallow gets pulled deep to match their co-parent; shallow's CURRENT
+  // partner and their other child must follow, not be left stranded.
+  const graph = buildGraph(
+    [
+      person('g1'), person('g2'), person('g3'), person('deep'),
+      person('shallow'), person('newPartner'), person('sharedKid'), person('otherKid'),
+    ],
+    [
+      par('g1', 'g2'), par('g2', 'g3'), par('g3', 'deep'),
+      par('deep', 'sharedKid'), par('shallow', 'sharedKid'),
+      ptn('shallow', 'newPartner', 'current'),
+      par('shallow', 'otherKid'), par('newPartner', 'otherKid'),
+    ],
+  );
+  const gen = computeGenerations(graph);
+  assertInvariants(graph, gen, 'co-parent levelling cascade');
+  assert.equal(gen.get('deep'), gen.get('shallow'), 'co-parents level');
+  assert.equal(gen.get('shallow'), gen.get('newPartner'), 'current partner follows');
+  assert.equal(gen.get('sharedKid'), gen.get('otherKid'), 'both children stay level as siblings');
+});
+
+test('a childless ex with deeper ancestry is STILL not levelled — the exclusion is intact', () => {
+  // Same shape as the earlier former-partner test, restated here explicitly
+  // as the boundary of the new co-parent rule: no shared child, no levelling.
+  const graph = buildGraph(
+    [person('gp1'), person('gp2'), person('exDeep'), person('me')],
+    [par('gp1', 'exDeep'), par('gp2', 'exDeep'), ptn('me', 'exDeep', 'former')],
+  );
+  const gen = computeGenerations(graph);
+  assert.equal(gen.get('me'), 0, 'childless ex must not drag the family member down');
+  assert.equal(gen.get('exDeep'), 1);
+});
+
 console.log(`\n  ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

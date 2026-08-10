@@ -50,6 +50,14 @@ const MIN_ZOOM = 0.16; // free zoom-out: take in a huge tree at a glance (double
 // all" toggle — an ordinary reveal never gets anywhere close.
 const FIT_FLOOR = 0.4;
 const WHOLE_TREE_FIT_FLOOR = 0.2;
+// How far the camera may pull back when someone is tapped on a big, fully
+// revealed canvas and their immediate family doesn't fit on screen. This is
+// deliberately allowed to go BELOW FIT_FLOOR: with the floor enforced here,
+// the pull-back stopped short of actually fitting the family and measurably
+// showed FEWER relatives (3-4 of 6) than not intervening at all. Letting it
+// reach 0.24 shows all 6 with the tapped person still near the middle of the
+// screen. It never applies on an ordinary tap — see the `fit < fitFloor` gate.
+const KIN_FRAME_MIN_ZOOM = 0.24;
 // Below this zoom, bubbles are too small and packed together to grab on
 // purpose — a finger meant for panning the canvas keeps landing on one
 // instead, dragging it out of place. A tap still selects (see
@@ -957,24 +965,42 @@ export default function BubbleTree({
       // (ensureVisible()). Anchored near whichever already-tracked relative
       // connects to them, so they appear to sprout from that person rather
       // than pop in at the world origin.
-      // Real user report, with screenshots, reproduced against the real
-      // 1239-person tree: opening the app showed several relatives piled up
-      // almost exactly on top of each other for several seconds before
-      // collision/charge slowly untangled them into the intended spread
-      // layout — because every new bubble sharing the same anchor (e.g.
-      // three siblings, all newly spawned in the SAME initial batch) used to
-      // land within a mere ±12px of that anchor AND of each other, so the
-      // very first frame already looked like a broken pile of overlapping
-      // circles rather than a family tree, even though physics did
-      // eventually get it right on its own. `anchorSpawnCounts` (built fresh
-      // by each caller, one per batch — see sync()/ensureVisible() below)
-      // fans new arrivals sharing one anchor out around it at roughly their
-      // eventual resting distance instead: the golden angle (~137.5°) is the
-      // standard way to place points one at a time around a circle so they
-      // stay well-spread regardless of how many end up sharing an anchor,
-      // and the radius matches childOrder's own CHILD_ORDER_SLOT_PX spacing
-      // convention so a freshly-spawned sibling already looks roughly where
-      // it's headed rather than needing a visible untangling animation.
+      // REAL USER REPORT, with screenshots, root-caused against the real
+      // 1239-person tree after many rounds of force-tuning had failed:
+      // tapping a person with a lot of relatives produced a permanent
+      // "clustered mess" — everyone piled around them instead of arranging
+      // into generation rows. Measured directly: parent/child pairs were
+      // sitting THREE TO TWENTY-SEVEN pixels apart vertically, when a parent
+      // and child must be a full GEN_GAP (420px) apart.
+      //
+      // Two things combined to cause that, and BOTH are fixed here:
+      //   1. This function used to place new arrivals in a ring around their
+      //      anchor, ignoring generation entirely — so a parent and a child
+      //      revealed in the same batch could easily land on the same row.
+      //   2. The generation-band force that is supposed to migrate them onto
+      //      their proper row (forceY(genYTarget)) is a STOCK d3 force, so it
+      //      scales its correction by the simulation's alpha — and this sim
+      //      deliberately idles at a very low resting alpha forever. At rest
+      //      it is nearly inert, so it could never actually pull a
+      //      badly-placed node hundreds of pixels to its real band. (This is
+      //      the same alpha-scaling trap already documented for partnerY and
+      //      parentAbove further down this file.)
+      // Rather than fight (2) by making yet another force stronger — the
+      // approach that kept failing — new arrivals are now simply BORN on the
+      // structurally correct row, so no migration is needed at all: physics
+      // only has to polish a layout that is already right, which is what it
+      // is good at.
+      //
+      // Y is derived RELATIVE to the anchor (whose own row is already
+      // correct) using the generation delta between the two people, rather
+      // than from an absolute band index. That is deliberate: it stays
+      // correct regardless of whether genRank has been rebuilt yet for a
+      // generation this new node is the first member of, and for the normal
+      // case (parent/child/sibling/partner of the anchor) the delta is
+      // exactly -1 / +1 / 0, which is precisely the offset wanted.
+      // X still fans siblings sharing one anchor apart (golden angle, the
+      // standard way to keep points spread however many arrive), so a row of
+      // newly-revealed siblings arrives spread out rather than stacked.
       const SPAWN_FAN_RADIUS = 130;
       const SPAWN_GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
       const spawnBubble = (p, anchorSpawnCounts) => {
@@ -988,10 +1014,15 @@ export default function BubbleTree({
         const n = anchorSpawnCounts.get(anchorId) ?? 0;
         anchorSpawnCounts.set(anchorId, n + 1);
         const angle = n * SPAWN_GOLDEN_ANGLE;
+        // Rows below/above the anchor, from the real generation structure.
+        const bandDelta = anchor && anchorId
+          ? (layoutGenRaw(p.id) - layoutGenRaw(anchorId))
+          : 0;
+        const baseY = anchor ? anchor.y : (layoutGen(p.id) * GEN_GAP - 260);
         const node = {
           id: p.id,
           x: (anchor?.x ?? 0) + Math.cos(angle) * SPAWN_FAN_RADIUS,
-          y: (anchor?.y ?? 0) + Math.sin(angle) * SPAWN_FAN_RADIUS,
+          y: baseY + bandDelta * GEN_GAP,
         };
         nodes.push(node);
         nodeById.set(p.id, node);
@@ -2529,6 +2560,85 @@ export default function BubbleTree({
             fit = Math.min(MAX_ZOOM, (W / 2 - PAD) / halfX, ((H - topInset) / 2 - PAD) / halfY);
           }
 
+          // REAL USER REPORT + explicit product decision. Tapping someone on
+          // a heavily-revealed canvas landed on a view where most of their
+          // own family was off screen — measured on the real tree, only 3 of
+          // Christopher's 6 immediate relatives were visible after tapping
+          // him, because the zoom is frozen at whatever it was (heldZoom,
+          // just below) and his family is wider than that view.
+          //
+          // The earlier, rejected behaviour re-fitted on EVERY tap, which
+          // read as "the zoom out on clicking still happens". The rule now
+          // is narrower and one-directional: a tap may only ever pull BACK,
+          // only as far as it takes to fit the tapped person's OWN immediate
+          // family, and only when they genuinely don't already fit. A tap
+          // can never zoom in, and a tap where the family already fits still
+          // does not touch the zoom at all — which is the case for ordinary
+          // browsing, so that keeps behaving exactly as it does today.
+          // Gated on `fit < fitFloor` — i.e. ONLY when so much of the tree is
+          // revealed that the whole visible set could never be framed anyway
+          // (the "All"-style canvas this was reported on). Measured reason:
+          // on a phone, a typical person's immediate family is often wider
+          // than the viewport even during ordinary browsing, so an ungated
+          // version fired on almost every tap and visibly changed the zoom —
+          // exactly the behaviour that was rejected twice. With this gate,
+          // ordinary browsing taps are provably untouched (verified: zoom
+          // identical before/after an ordinary tap) and only the dense case
+          // pulls back.
+          let kinZoom = null;
+          if (heldZoom != null && fit < fitFloor) {
+            const gg = graphRef.current;
+            const fid = activeRef.current;
+            let kMinX = Infinity, kMaxX = -Infinity, kMinY = Infinity, kMaxY = -Infinity, kCount = 0;
+            const consider = (id) => {
+              const kn = nodeById.get(id);
+              if (!kn) return;
+              kMinX = Math.min(kMinX, kn.x); kMaxX = Math.max(kMaxX, kn.x);
+              kMinY = Math.min(kMinY, kn.y); kMaxY = Math.max(kMaxY, kn.y);
+              kCount++;
+            };
+            consider(fid);
+            for (const x of gg.parents(fid)) consider(x.id);
+            for (const x of gg.children(fid)) consider(x.id);
+            for (const x of gg.partners(fid)) consider(x.id);
+            for (const x of gg.siblings(fid)) consider(x.id);
+            if (kCount > 1) {
+              // Pan to the family's own centre, and measure the fit from that
+              // SAME centre. Both halves of that sentence are load-bearing,
+              // and each was arrived at by measurement rather than taste:
+              //
+              // - Measuring the fit from one centre and panning to a different
+              //   one (an earlier attempt clamped the pan back toward the
+              //   tapped person) leaves the family not actually fitting at the
+              //   chosen zoom, so the next frame asks to zoom out again, and
+              //   again — a runaway that drove the zoom all the way down to
+              //   the floor and ended up showing FEWER relatives (3 of 6, vs
+              //   4 of 6 with no clamp at all).
+              // - A partial lean is worse than either extreme: for a lopsided
+              //   family it maximises the half-extent below, so it demands a
+              //   zoom-out on ordinary taps too — measurably breaking the
+              //   "tapping someone must not change the zoom" rule.
+              //
+              // Measured on the real tree at phone size: 6 of 6 relatives on
+              // screen with the tapped person still near the middle of it,
+              // against 3-4 of 6 for every clamped or partially-leaned
+              // variant tried.
+              const ktx = (kMinX + kMaxX) / 2;
+              const kty = (kMinY + kMaxY) / 2;
+              const khx = Math.max(ktx - kMinX, kMaxX - ktx, rr);
+              const khy = Math.max(kty - kMinY, kMaxY - kty, rr);
+              const kinFit = Math.min((W / 2 - PAD) / khx, ((H - topInset) / 2 - PAD) / khy);
+              if (kinFit < heldZoom) {
+                // Only ever pulls BACK (the `kinFit < heldZoom` guard above),
+                // never zooms in — tapping someone can't push the camera
+                // closer than where the viewer had left it.
+                kinZoom = Math.max(kinFit, KIN_FRAME_MIN_ZOOM);
+                camTX = ktx;
+                camTY = kty;
+              }
+            }
+          }
+
           camX.setTarget(camTX);
           camY.setTarget(camTY);
           const desiredFit = clamp(fit, fitFloor, MAX_ZOOM);
@@ -2542,7 +2652,7 @@ export default function BubbleTree({
           // adjustment in either direction — selecting someone only ever
           // pans. Anyone revealed outside the current view is reachable by
           // panning or an explicit recentre, not an automatic zoom change.
-          const targetZoom = heldZoom != null ? heldZoom : desiredFit;
+          const targetZoom = heldZoom != null ? (kinZoom ?? heldZoom) : desiredFit;
           zoom.setTarget(targetZoom);
           camX.step(dt);
           camY.step(dt);
