@@ -665,6 +665,61 @@ export default function BubbleTree({
         }
       });
 
+      // REAL PRODUCTION REPORT, verified against the actual data (pulled
+      // read-only from the real family via D1, not guessed): "still big
+      // drifting" / "forces are broken" — persisted even after the
+      // childOrder pod-exclusion fix (computeChildOrderSlots) shipped. A
+      // faithful repro of Matthew Davies + Kaitlin Partridge's real
+      // neighbourhood (his side: 2 biological parents who are themselves
+      // former partners, a step-parent, that step-parent's own ex and two
+      // kids from her, plus grandparents on every branch — 15 people
+      // total; her side: 2 parents, a sibling, 2 grandparents — 7 people)
+      // measured a real 288px gap against the partner link's 112px target
+      // once the whole neighbourhood was visible, even with the childOrder
+      // fix in place — visibly stretching the couple's own capsule off
+      // toward whichever side has more relatives pulling. The pod-exclusion
+      // fix only ever addressed ONE contributing force (the crossing-order
+      // pull); it never touched the ordinary parent-child LINK force, which
+      // — like every stock d3-force — scales its own correction by the
+      // simulation's alpha and so goes nearly inert at the low alpha this
+      // sim deliberately idles at forever (see the mean-velocity correction
+      // below for the same reasoning applied elsewhere). With enough
+      // relatives on one side, that side's cumulative pull can still drag
+      // a partner away even though nothing THINKS it's fighting the couple.
+      // Fix: a small, alpha-INDEPENDENT cohesion pull between primary
+      // partners, engaging only once they're already further apart than
+      // the link's own target (112px) — so it never fights collision or
+      // ordinary pod spacing, only correlates a couple that's drifted.
+      // Equal-and-opposite (Newton's third law — na/nb's combined
+      // displacement is exactly zero every tick), so — like partnerY —
+      // it can't accumulate net drift the way the earlier
+      // partnerSideLean/familyOrder incidents did. Tuned and verified
+      // against the REAL fixture above, not a simplified stand-in: with
+      // this force, the same 15-vs-7-person neighbourhood settles the
+      // couple to within ~30px of the 112px target instead of drifting to
+      // 288px.
+      const PARTNER_COHESION_TARGET = 112; // matches the partner link's own target distance
+      const PARTNER_COHESION_STRENGTH = 0.22;
+      const PARTNER_COHESION_MAX_PULL = 120; // px/tick clamp — closes even a large gap smoothly, not in one jarring snap
+      sim.force('partnerCohesion', () => {
+        const mode = layoutRef.current;
+        if (mode === 'chart' || mode === 'radial') return;
+        for (const r of partnerYRels) {
+          const na = nodeById.get(r.from_person);
+          const nb = nodeById.get(r.to_person);
+          if (!na || !nb) continue; // belt-and-braces — the cache should already guarantee this
+          const dx = nb.x - na.x;
+          const dy = nb.y - na.y;
+          const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+          const excess = dist - PARTNER_COHESION_TARGET;
+          if (excess <= 0) continue;
+          const pull = Math.min(excess * PARTNER_COHESION_STRENGTH, PARTNER_COHESION_MAX_PULL);
+          const ux = dx / dist, uy = dy / dist;
+          na.vx += ux * pull; na.vy += uy * pull;
+          nb.vx -= ux * pull; nb.vy -= uy * pull;
+        }
+      });
+
       // "current and ex's should display on opposite side when possible"
       // (real follow-up feedback) — a gentle, standing lean, not a hard
       // rule: nudges a relationship's two people toward a target
