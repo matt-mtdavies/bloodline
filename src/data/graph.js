@@ -253,6 +253,53 @@ export function neighboursOf(graph, id) {
 // PROJECTED rendered set would exceed `cap` — so the cap is honored against
 // what actually ends up on screen, not just against how many ids got added
 // to `expanded`.
+// The companion to boundedRevealSet, for the OTHER way the canvas fills up.
+//
+// boundedRevealSet bounds one deliberate reveal ("All"). Nothing bounded the
+// slow accumulation of ordinary browsing: every tap adds an anchor to
+// `expanded` and no path ever removes one, so a wander through the family only
+// ever grows the canvas. Measured on the real 1,239-person tree, walking from
+// relative to relative: 11 people on screen at rest, 27 after ten taps, 67
+// after twenty-five — against a phone that can legibly show roughly fifteen.
+// It never came down, because nothing ever took anything away.
+//
+// This returns the anchors worth keeping RIGHT NOW: the ones near whoever you
+// are actually looking at. Two rules, in order of authority:
+//
+//  1. Anything within `keepRadius` hops of the active person is kept, always,
+//     however many that is. The family you are reading is never released —
+//     the bound can only ever drop branches you have wandered away from,
+//     which the renderer has already faded to near-invisible by distance.
+//  2. Beyond that, keep the closest anchors up to `maxAnchors`, breaking ties
+//     toward the most recently given, so the trail behind you fades from its
+//     far end first.
+//
+// Deliberately NOT destructive, and NOT a mutation of `expanded`: the caller
+// passes the result through on the way to deciding what to RENDER. Nothing is
+// forgotten, so stepping back toward a released branch brings it straight
+// back — which is also what keeps this safe to put behind a flag.
+export function boundWorkingSet(graph, anchorIds, activeId, maxAnchors, keepRadius = 2) {
+  const anchors = [...anchorIds];
+  if (anchors.length <= maxAnchors) return new Set(anchors);
+  const dist = distancesFrom(graph, activeId);
+  const far = (id) => (dist.has(id) ? dist.get(id) : Infinity);
+
+  const kept = new Set();
+  if (activeId && anchors.includes(activeId)) kept.add(activeId);
+  // Rule 1 — the family you are reading is not negotiable.
+  for (const id of anchors) if (far(id) <= keepRadius) kept.add(id);
+  // Rule 2 — spend whatever budget is left on the next-closest anchors.
+  const rest = anchors
+    .filter((id) => !kept.has(id))
+    .map((id, i) => ({ id, d: far(id), i }))
+    .sort((a, b) => (a.d - b.d) || (b.i - a.i)); // closest first, then most recent
+  for (const { id } of rest) {
+    if (kept.size >= maxAnchors) break;
+    kept.add(id);
+  }
+  return kept;
+}
+
 export function boundedRevealSet(graph, candidateIds, alreadyExpanded, cap) {
   const projected = new Set(alreadyExpanded);
   for (const id of alreadyExpanded) {

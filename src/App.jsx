@@ -68,7 +68,8 @@ import { groupRecapUpdates, captionForRecapGroup } from './lib/recap.js';
 import { fetchRecapCutoff, pushRecapCutoff } from './lib/recapCutoff.js';
 import { uploadPhoto, generateThumb, uploadDocument, savePhotoToDevice, srcToDataUrl, summarizeDocument } from './lib/image.js';
 import { useImageZoom } from './lib/useImageZoom.js';
-import { buildGraph, pathBetween, pathBetweenOrdered, bloodRelativesOf, distancesFromMany, relationLabel, boundedRevealSet } from './data/graph.js';
+import { buildGraph, pathBetween, pathBetweenOrdered, bloodRelativesOf, distancesFromMany, relationLabel, boundedRevealSet, boundWorkingSet } from './data/graph.js';
+import { isBrowseBoundEnabled, rememberBrowseBoundChoice, maxBrowseAnchorsFor } from './lib/browseBoundFlag.js';
 import { useKinTerms } from './lib/kinTerms.js';
 import { planPerimeterRecommendationIfUnset, fetchPerimeterPreference, engineLevelFor, isPerimeterActive } from './lib/familyPerimeter.js';
 import { computePerspectiveIndex, computeInsightCohorts } from './lib/perspectiveIndex.js';
@@ -1247,10 +1248,48 @@ export default function App() {
     return { min: min - 5, max: thisYear };
   }, [structuralVisibleIds, graph, data.people]);
 
+  /* ── Browse-density experiment (OFF by default) ───────────────────────────
+   * See lib/browseBoundFlag.js for the measurements behind this. Read once at
+   * mount so the flag can never flip mid-session and re-render the canvas out
+   * from under someone. */
+  const [browseBound] = useState(() => {
+    rememberBrowseBoundChoice();
+    return isBrowseBoundEnabled();
+  });
+  const [maxAnchors, setMaxAnchors] = useState(() => maxBrowseAnchorsFor(
+    typeof window === 'undefined' ? 1200 : window.innerWidth,
+  ));
+  useEffect(() => {
+    if (!browseBound) return undefined;
+    const onResize = () => setMaxAnchors(maxBrowseAnchorsFor(window.innerWidth));
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [browseBound]);
+
+  /* `expanded` carries two completely different intents: people you arrived at
+   * one tap at a time, and people a DELIBERATE reveal put there in bulk ("All",
+   * a perimeter reveal, a lineage trace). Only the first should ever be bounded
+   * — bounding the second would gut the feature you just asked for. Distinguish
+   * them by how the set grew: a jump of more than one in a single update is a
+   * bulk reveal, and it stays unbounded until you collapse back down. */
+  const [bulkReveal, setBulkReveal] = useState(false);
+  const prevExpandedSize = useRef(1);
+  useEffect(() => {
+    const grew = expanded.size - prevExpandedSize.current;
+    prevExpandedSize.current = expanded.size;
+    if (expanded.size <= 1) setBulkReveal(false);
+    else if (grew > 1) setBulkReveal(true);
+  }, [expanded]);
+
   const visibleIds = useMemo(() => {
     const alive = (id) => !aliveAtYear || aliveAtYear.has(id);
     const vis = new Set();
-    for (const id of expanded) {
+    // With the flag off this is `expanded` itself — the identical code path
+    // the tree has always taken.
+    const anchors = browseBound && !bulkReveal
+      ? boundWorkingSet(graph, expanded, activeId, maxAnchors)
+      : expanded;
+    for (const id of anchors) {
       // Gate ONLY this anchor's own bubble on its own aliveness — never skip
       // the neighbour traversal below just because the anchor itself hasn't
       // been born yet. Each neighbour has its own alive() check right where
@@ -1294,7 +1333,7 @@ export default function App() {
       }
     }
     return vis;
-  }, [graph, expanded, aliveAtYear, focusFamilyIds, bloodlineOnly, bloodIds]);
+  }, [graph, expanded, activeId, browseBound, bulkReveal, maxAnchors, aliveAtYear, focusFamilyIds, bloodlineOnly, bloodIds]);
 
   // Play animation: life journey = 350 ms/step (cinematic), time mode = 600 ms/step
   // — slowed so each birth's light-arrival animation gets room to land and be felt.
