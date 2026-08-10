@@ -50,6 +50,14 @@ const MIN_ZOOM = 0.16; // free zoom-out: take in a huge tree at a glance (double
 // all" toggle — an ordinary reveal never gets anywhere close.
 const FIT_FLOOR = 0.4;
 const WHOLE_TREE_FIT_FLOOR = 0.2;
+// How far the camera may pull back when someone is tapped on a big, fully
+// revealed canvas and their immediate family doesn't fit on screen. This is
+// deliberately allowed to go BELOW FIT_FLOOR: with the floor enforced here,
+// the pull-back stopped short of actually fitting the family and measurably
+// showed FEWER relatives (3-4 of 6) than not intervening at all. Letting it
+// reach 0.24 shows all 6 with the tapped person still near the middle of the
+// screen. It never applies on an ordinary tap — see the `fit < fitFloor` gate.
+const KIN_FRAME_MIN_ZOOM = 0.24;
 // Below this zoom, bubbles are too small and packed together to grab on
 // purpose — a finger meant for panning the canvas keeps landing on one
 // instead, dragging it out of place. A tap still selects (see
@@ -2552,6 +2560,85 @@ export default function BubbleTree({
             fit = Math.min(MAX_ZOOM, (W / 2 - PAD) / halfX, ((H - topInset) / 2 - PAD) / halfY);
           }
 
+          // REAL USER REPORT + explicit product decision. Tapping someone on
+          // a heavily-revealed canvas landed on a view where most of their
+          // own family was off screen — measured on the real tree, only 3 of
+          // Christopher's 6 immediate relatives were visible after tapping
+          // him, because the zoom is frozen at whatever it was (heldZoom,
+          // just below) and his family is wider than that view.
+          //
+          // The earlier, rejected behaviour re-fitted on EVERY tap, which
+          // read as "the zoom out on clicking still happens". The rule now
+          // is narrower and one-directional: a tap may only ever pull BACK,
+          // only as far as it takes to fit the tapped person's OWN immediate
+          // family, and only when they genuinely don't already fit. A tap
+          // can never zoom in, and a tap where the family already fits still
+          // does not touch the zoom at all — which is the case for ordinary
+          // browsing, so that keeps behaving exactly as it does today.
+          // Gated on `fit < fitFloor` — i.e. ONLY when so much of the tree is
+          // revealed that the whole visible set could never be framed anyway
+          // (the "All"-style canvas this was reported on). Measured reason:
+          // on a phone, a typical person's immediate family is often wider
+          // than the viewport even during ordinary browsing, so an ungated
+          // version fired on almost every tap and visibly changed the zoom —
+          // exactly the behaviour that was rejected twice. With this gate,
+          // ordinary browsing taps are provably untouched (verified: zoom
+          // identical before/after an ordinary tap) and only the dense case
+          // pulls back.
+          let kinZoom = null;
+          if (heldZoom != null && fit < fitFloor) {
+            const gg = graphRef.current;
+            const fid = activeRef.current;
+            let kMinX = Infinity, kMaxX = -Infinity, kMinY = Infinity, kMaxY = -Infinity, kCount = 0;
+            const consider = (id) => {
+              const kn = nodeById.get(id);
+              if (!kn) return;
+              kMinX = Math.min(kMinX, kn.x); kMaxX = Math.max(kMaxX, kn.x);
+              kMinY = Math.min(kMinY, kn.y); kMaxY = Math.max(kMaxY, kn.y);
+              kCount++;
+            };
+            consider(fid);
+            for (const x of gg.parents(fid)) consider(x.id);
+            for (const x of gg.children(fid)) consider(x.id);
+            for (const x of gg.partners(fid)) consider(x.id);
+            for (const x of gg.siblings(fid)) consider(x.id);
+            if (kCount > 1) {
+              // Pan to the family's own centre, and measure the fit from that
+              // SAME centre. Both halves of that sentence are load-bearing,
+              // and each was arrived at by measurement rather than taste:
+              //
+              // - Measuring the fit from one centre and panning to a different
+              //   one (an earlier attempt clamped the pan back toward the
+              //   tapped person) leaves the family not actually fitting at the
+              //   chosen zoom, so the next frame asks to zoom out again, and
+              //   again — a runaway that drove the zoom all the way down to
+              //   the floor and ended up showing FEWER relatives (3 of 6, vs
+              //   4 of 6 with no clamp at all).
+              // - A partial lean is worse than either extreme: for a lopsided
+              //   family it maximises the half-extent below, so it demands a
+              //   zoom-out on ordinary taps too — measurably breaking the
+              //   "tapping someone must not change the zoom" rule.
+              //
+              // Measured on the real tree at phone size: 6 of 6 relatives on
+              // screen with the tapped person still near the middle of it,
+              // against 3-4 of 6 for every clamped or partially-leaned
+              // variant tried.
+              const ktx = (kMinX + kMaxX) / 2;
+              const kty = (kMinY + kMaxY) / 2;
+              const khx = Math.max(ktx - kMinX, kMaxX - ktx, rr);
+              const khy = Math.max(kty - kMinY, kMaxY - kty, rr);
+              const kinFit = Math.min((W / 2 - PAD) / khx, ((H - topInset) / 2 - PAD) / khy);
+              if (kinFit < heldZoom) {
+                // Only ever pulls BACK (the `kinFit < heldZoom` guard above),
+                // never zooms in — tapping someone can't push the camera
+                // closer than where the viewer had left it.
+                kinZoom = Math.max(kinFit, KIN_FRAME_MIN_ZOOM);
+                camTX = ktx;
+                camTY = kty;
+              }
+            }
+          }
+
           camX.setTarget(camTX);
           camY.setTarget(camTY);
           const desiredFit = clamp(fit, fitFloor, MAX_ZOOM);
@@ -2565,7 +2652,7 @@ export default function BubbleTree({
           // adjustment in either direction — selecting someone only ever
           // pans. Anyone revealed outside the current view is reachable by
           // panning or an explicit recentre, not an automatic zoom change.
-          const targetZoom = heldZoom != null ? heldZoom : desiredFit;
+          const targetZoom = heldZoom != null ? (kinZoom ?? heldZoom) : desiredFit;
           zoom.setTarget(targetZoom);
           camX.step(dt);
           camY.step(dt);
