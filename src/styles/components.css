@@ -15,7 +15,15 @@
   display: flex;
   flex-direction: column;
   pointer-events: none;
-  background: linear-gradient(180deg, #ffffff 0%, rgba(255, 255, 255, 0.92) 62%, rgba(255, 255, 255, 0));
+  /* Real-tree UX review: on a tall multi-generation reveal, the camera
+     often frames a generation band right at the top of the viewport, so a
+     bubble's own canvas-rendered nameplate can sit directly behind this
+     header — the old 62% fade point put the family-name/stats row (row 2)
+     already partway into the fade, letting that nameplate ghost through
+     behind it. Kept fully opaque through 82% (covering both header rows in
+     full) so header text always has a solid backdrop; only the thin margin
+     below that still fades out, for a soft edge rather than a hard line. */
+  background: linear-gradient(180deg, #ffffff 0%, #ffffff 82%, rgba(255, 255, 255, 0));
   animation: topbar-in 0.5s var(--ease) both;
 }
 @keyframes topbar-in {
