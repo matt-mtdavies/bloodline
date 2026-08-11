@@ -135,9 +135,6 @@
 .atlas-person__name { fill: #25211f; font-size: 11px; font-weight: 750; }
 .atlas-person--active .atlas-person__name { font: 600 18px Georgia, "Times New Roman", serif; letter-spacing: -.02em; }
 .atlas-person__years { fill: #766e68; font-size: 8px; font-weight: 700; letter-spacing: .055em; text-transform: uppercase; }
-.atlas-person__portal circle { fill: #fffdf9; stroke: #c8bbae; stroke-width: 1; filter: drop-shadow(0 2px 4px rgba(49, 39, 31, .12)); }
-.atlas-person__portal text { fill: #8a6553; font-size: 7px; font-weight: 800; text-anchor: middle; dominant-baseline: middle; }
-
 .atlas-lab--gathering .atlas-person__halo { opacity: .38; }
 .atlas-lab--gathering .atlas-person--active .atlas-person__halo { opacity: 1; }
 .atlas-person--expanded { animation: atlas-arrive 720ms cubic-bezier(.16, 1, .3, 1) both; }
@@ -171,45 +168,30 @@
 .atlas-scene-nav button:disabled { opacity: .35; cursor: default; }
 .atlas-scene-nav span { color: #8a817a; font-size: 9px; }
 
-.atlas-branch-dock {
-  position: absolute;
-  z-index: 7;
-  right: 20px;
-  bottom: 18px;
-  left: 20px;
-  min-height: 70px;
-  padding: 10px 12px;
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  border: 1px solid rgba(88, 71, 58, .12);
-  border-radius: 22px;
-  background: rgba(255, 253, 250, .96);
-  box-shadow: 0 15px 40px rgba(61, 47, 37, .12);
+.atlas-branch-buds { opacity: 1; transition: opacity 280ms ease 340ms; }
+.atlas-lab--gathering .atlas-branch-buds { opacity: 0; transition-delay: 0ms; }
+.atlas-branch-bud { cursor: pointer; outline: none; }
+.atlas-branch-bud-stem {
+  stroke: rgba(178, 111, 78, .46);
+  stroke-width: 1.25;
+  stroke-linecap: round;
+  pointer-events: none;
+  vector-effect: non-scaling-stroke;
 }
-.atlas-branch-dock__person { min-width: 128px; padding-left: 4px; display: grid; gap: 2px; }
-.atlas-branch-dock__person strong { font: 600 16px/1.05 Georgia, "Times New Roman", serif; }
-.atlas-branch-dock__person span { color: #817871; font-size: 9px; }
-.atlas-branch-dock__actions { min-width: 0; display: flex; gap: 7px; overflow-x: auto; scrollbar-width: none; }
-.atlas-branch-dock__actions::-webkit-scrollbar { display: none; }
-.atlas-branch-dock__actions button {
-  min-width: 126px;
-  min-height: 46px;
-  padding: 0 11px 0 14px;
-  display: grid;
-  grid-template-columns: 1fr auto auto;
-  align-items: center;
-  gap: 8px;
-  border: 1px solid rgba(194, 96, 58, .16);
-  border-radius: 15px;
-  color: #3e3935;
-  background: #fbf5ef;
-  font: 700 10px/1 inherit;
-  cursor: pointer;
+.atlas-branch-bud__target { fill: transparent; stroke: transparent; stroke-width: 2; }
+.atlas-branch-bud__surface {
+  fill: rgba(255, 252, 248, .97);
+  stroke: rgba(149, 104, 77, .2);
+  stroke-width: 1;
+  filter: drop-shadow(0 5px 12px rgba(55, 42, 32, .12));
+  transition: fill 180ms ease, stroke 180ms ease;
 }
-.atlas-branch-dock__actions button b { min-width: 21px; height: 21px; display: grid; place-items: center; border-radius: 999px; color: #9f4e31; background: #f0ded3; font-size: 9px; }
-.atlas-branch-dock__actions button i { color: #b46648; font-style: normal; }
-.atlas-branch-dock--complete { right: auto; width: min(300px, calc(100% - 40px)); }
+.atlas-branch-bud > circle { fill: #c96a45; stroke: rgba(255,255,255,.9); stroke-width: 1; }
+.atlas-branch-bud__count { fill: #fff; font-size: 7px; font-weight: 800; text-anchor: middle; dominant-baseline: middle; pointer-events: none; }
+.atlas-branch-bud__label { fill: #5a4d45; font-size: 8px; font-weight: 750; dominant-baseline: middle; pointer-events: none; }
+.atlas-branch-bud:hover .atlas-branch-bud__surface,
+.atlas-branch-bud:focus-visible .atlas-branch-bud__surface { fill: #fff7f0; stroke: rgba(194, 96, 58, .52); }
+.atlas-branch-bud:focus-visible .atlas-branch-bud__target { stroke: #c2603a; }
 
 .atlas-lab__legend {
   position: absolute;
@@ -253,12 +235,6 @@
   .atlas-scene-nav { top: 68px; right: 12px; left: 12px; justify-content: center; }
   .atlas-scene-nav button { min-width: 74px; min-height: 36px; }
   .atlas-scene-nav span { display: none; }
-  .atlas-branch-dock { right: 10px; bottom: 10px; left: 10px; min-height: 64px; padding: 8px 9px; gap: 9px; border-radius: 20px; }
-  .atlas-branch-dock__person { min-width: 92px; max-width: 92px; }
-  .atlas-branch-dock__person strong { overflow: hidden; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
-  .atlas-branch-dock__person span { line-height: 1.25; }
-  .atlas-branch-dock__actions button { min-width: 112px; min-height: 44px; }
-  .atlas-branch-dock--complete { right: auto; width: auto; }
   .atlas-lab__legend { bottom: 12px; gap: 10px; padding: 9px 12px; }
   .atlas-lab__legend span:last-child { display: none; }
   .atlas-person__name { font-size: 9px; }

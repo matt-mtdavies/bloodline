@@ -349,7 +349,9 @@ export function createLivingScene(graph, rootId, viewport, expansions = []) {
 }
 
 export function cameraForScene(scene, viewport, anchorIds = []) {
-  const chosen = anchorIds.map((id) => scene.scenePositions.get(id)).filter(Boolean);
+  const chosen = anchorIds.map((anchor) => (
+    typeof anchor === 'string' ? scene.scenePositions.get(anchor) : anchor
+  )).filter(Boolean);
   const points = chosen.length ? chosen : [...scene.scenePositions.values()];
   if (!points.length) return { x: 0, y: 0, scale: 1 };
   const xs = points.map((point) => point.x);

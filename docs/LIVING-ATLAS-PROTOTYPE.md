@@ -53,9 +53,12 @@ not a new production renderer.
 
 ### Living canvas expansion
 
-- The opening portrait is only the home scene. Hidden relationship groups are
-  explicit labelled branches (Parents, Partners, Children, Siblings), never an
-  unexplained `+N`.
+- The opening portrait is only the home scene. Tapping a portrait selects and
+  centres that person; it never expands relatives implicitly. Remaining
+  relationship groups appear as collision-aware, labelled branch buds growing
+  beside that portrait (Parents, Partners, Children, Siblings), never an
+  unexplained `+N` or a detached bottom action tray. Each bud has a 44px target,
+  keyboard handling and a relationship-specific accessible name.
 - Selecting a visible relative does not reorganize the scene. It exposes that
   person's remaining branches; expanding one adds relatives without moving any
   existing person.
@@ -67,6 +70,8 @@ not a new production renderer.
   location wins (parents remain above, children below, lateral branches to a
   side), while all existing coordinates remain fixed. The camera keeps both
   the branch and the person it grew from in view.
+- A selected partner keeps their full nameplate above the partnership row, so
+  it cannot collide with the other partner's label beneath the row.
 - Full/half siblings and step-siblings are separate labelled branches. A
   parent's partner's other children are shown as read-only inferred
   step-siblings, without writing that inference into the tree. Two people with

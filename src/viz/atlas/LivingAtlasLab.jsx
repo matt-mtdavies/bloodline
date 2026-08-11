@@ -142,6 +142,49 @@ function AtlasMark() {
   );
 }
 
+const BRANCH_ANGLES = {
+  parent: -90,
+  partner: 0,
+  child: 90,
+  sibling: 180,
+  'step-sibling': 140,
+};
+
+function branchBudLayout(branches, selectedPoint, positions) {
+  if (!selectedPoint) return [];
+  const occupied = [...positions.values()].filter((point) => point !== selectedPoint);
+  const placed = [];
+  return branches.map((branch) => {
+    const preferred = BRANCH_ANGLES[branch.type] ?? 0;
+    const angles = [preferred, preferred - 42, preferred + 42, preferred - 84, preferred + 84, preferred + 180];
+    const candidates = [104, 136, 168, 196].flatMap((distance) => angles.map((angle, preference) => {
+      const radians = angle * Math.PI / 180;
+      const offset = { x: Math.cos(radians) * distance, y: Math.sin(radians) * distance };
+      let score = (distance - 100) * 20 + preference * 80;
+      for (const point of occupied) {
+        const relative = { x: point.x - selectedPoint.x, y: point.y - selectedPoint.y };
+        const overlapX = 88 - Math.abs(offset.x - relative.x);
+        const overlapY = 72 - Math.abs(offset.y - relative.y);
+        if (overlapX > 0 && overlapY > 0) score += 1_000_000 + overlapX * overlapY;
+        const lengthSquared = offset.x ** 2 + offset.y ** 2;
+        const along = Math.max(0, Math.min(1, (relative.x * offset.x + relative.y * offset.y) / lengthSquared));
+        const nearest = { x: offset.x * along, y: offset.y * along };
+        const stemDistance = Math.hypot(relative.x - nearest.x, relative.y - nearest.y);
+        if (along > .18 && along < .9 && stemDistance < 42) score += 750_000 + (42 - stemDistance) * 100;
+      }
+      for (const point of placed) {
+        const overlapX = 104 - Math.abs(offset.x - point.x);
+        const overlapY = 50 - Math.abs(offset.y - point.y);
+        if (overlapX > 0 && overlapY > 0) score += 1_000_000 + overlapX * overlapY;
+      }
+      return { ...offset, angle: radians, score };
+    }));
+    const choice = candidates.sort((a, b) => a.score - b.score)[0];
+    placed.push(choice);
+    return { ...branch, ...choice };
+  });
+}
+
 function buildClouds(graph, model) {
   const groups = new Map();
   for (const person of graph.people) {
@@ -187,12 +230,24 @@ export default function LivingAtlasLab() {
   const links = useMemo(() => focusPaths(graph, scene.visibleIds, scene.scenePositions), [graph, scene]);
   const clouds = useMemo(() => buildClouds(graph, scene), [graph, scene]);
   const branches = useMemo(() => branchGroups(graph, selectedId, scene.visibleIds), [graph, selectedId, scene.visibleIds]);
+  const branchBuds = useMemo(
+    () => branchBudLayout(branches, scene.scenePositions.get(selectedId), scene.scenePositions),
+    [branches, scene.scenePositions, selectedId],
+  );
   const selected = graph.byId.get(selectedId);
   const lastExpansion = expansions.at(-1);
+  const selectedPoint = scene.scenePositions.get(selectedId);
+  const localScenePoints = selectedPoint
+    ? [...scene.visibleIds]
+      .map((id) => scene.scenePositions.get(id))
+      .filter((point) => point && Math.hypot(point.x - selectedPoint.x, point.y - selectedPoint.y) <= 210)
+    : [];
   const cameraAnchors = scene.newestIds.length && lastExpansion
     ? [lastExpansion.anchorId, ...scene.newestIds]
-    : [selectedId];
-  const autoCamera = useMemo(() => cameraForScene(scene, viewport, cameraAnchors), [scene, viewport, selectedId, expansions.length]);
+    : branchBuds.length
+      ? [...localScenePoints, ...branchBuds.map((bud) => ({ x: selectedPoint.x + bud.x, y: selectedPoint.y + bud.y }))]
+      : [selectedId];
+  const autoCamera = useMemo(() => cameraForScene(scene, viewport, cameraAnchors), [scene, viewport, selectedId, expansions.length, branchBuds]);
 
   useEffect(() => {
     if (phase !== 'gathering') return undefined;
@@ -382,7 +437,7 @@ export default function LivingAtlasLab() {
               const primary = isSelected ? personName(person) : firstName(person);
               const secondary = isSelected ? years(person) : relationshipLabel(graph, target.anchorId || rootId, person, role);
               const labelWidth = Math.min(162, Math.max(58, primary.length * (isSelected ? 7.2 : 6.4) + 22, secondary.length * 5.6 + 20));
-              const labelY = role === 'partner' && !isSelected ? -(radius + 19) : radius + 17;
+              const labelY = role === 'partner' ? -(radius + 19) : radius + 17;
               return (
                 <g
                   className={`atlas-person atlas-person--${role} ${isSelected ? 'atlas-person--active' : ''} ${target.expanded ? 'atlas-person--expanded' : ''}`}
@@ -404,28 +459,50 @@ export default function LivingAtlasLab() {
                     <text className="atlas-person__name" y="1">{primary}</text>
                     <text className="atlas-person__years" y="15">{secondary}</text>
                   </g>
-                  {isSelected && branches.length > 0 && (
-                    <g className="atlas-person__portal" transform={`translate(${radius * .72} ${-radius * .72})`} aria-hidden="true">
-                      <circle r="11" /><text y="1">+</text>
-                    </g>
-                  )}
                 </g>
               );
             })}
             </g>
+
+            {branchBuds.length > 0 && (() => {
+              const selectedPoint = scene.scenePositions.get(selectedId);
+              return (
+                <g className="atlas-branch-buds" transform={`translate(${selectedPoint.x} ${selectedPoint.y})`}>
+                  {branchBuds.map((branch) => {
+                    const width = Math.min(106, Math.max(76, branch.label.length * 5.6 + 38));
+                    const stemStart = { x: Math.cos(branch.angle) * 56, y: Math.sin(branch.angle) * 56 };
+                    return (
+                      <g className="atlas-branch-bud-wrap" key={branch.type}>
+                        <line className="atlas-branch-bud-stem" x1={stemStart.x} y1={stemStart.y} x2={branch.x} y2={branch.y} />
+                        <g
+                          className={`atlas-branch-bud atlas-branch-bud--${branch.type}`}
+                          transform={`translate(${branch.x} ${branch.y})`}
+                          role="button"
+                          tabIndex="0"
+                          aria-label={`Show ${branch.ids.length} ${branch.label.toLowerCase()} for ${personName(selected)}`}
+                          onPointerDown={(event) => event.stopPropagation()}
+                          onClick={(event) => { event.stopPropagation(); expandBranch(branch.type); }}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter' || event.key === ' ') {
+                              event.preventDefault();
+                              expandBranch(branch.type);
+                            }
+                          }}
+                        >
+                          <rect className="atlas-branch-bud__target" x={-width / 2} y="-22" width={width} height="44" rx="22" />
+                          <rect className="atlas-branch-bud__surface" x={-width / 2} y="-17" width={width} height="34" rx="17" />
+                          <circle cx={-width / 2 + 16} r="9" />
+                          <text className="atlas-branch-bud__count" x={-width / 2 + 16} y="1">+{branch.ids.length}</text>
+                          <text className="atlas-branch-bud__label" x={-width / 2 + 31} y="1">{branch.label}</text>
+                        </g>
+                      </g>
+                    );
+                  })}
+                </g>
+              );
+            })()}
           </g>
         </svg>
-
-        <nav className={`atlas-branch-dock ${branches.length ? '' : 'atlas-branch-dock--complete'}`} aria-label={`Expand ${personName(selected)}'s family`}>
-          <div className="atlas-branch-dock__person"><strong>{firstName(selected)}</strong><span>{branches.length ? 'Choose a branch to grow' : 'Immediate family is open'}</span></div>
-          <div className="atlas-branch-dock__actions">
-            {branches.map((branch) => (
-              <button type="button" key={branch.type} onClick={() => expandBranch(branch.type)}>
-                <span>{branch.label}</span><b>{branch.ids.length}</b><i>→</i>
-              </button>
-            ))}
-          </div>
-        </nav>
         {typeof loadState === 'string' && !['idle', 'loading', 'loaded'].includes(loadState) && <p className="atlas-lab__error">{loadState}</p>}
       </section>
     </main>

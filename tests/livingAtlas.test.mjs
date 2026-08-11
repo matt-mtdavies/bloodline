@@ -26,6 +26,9 @@ const mobile = { width: 390, height: 718 };
   assert.doesNotMatch(prototypeSource, /data\/store/, 'prototype never imports the production store');
   assert.doesNotMatch(prototypeSource, /realFamily/, 'prototype cannot load a session family');
   assert.doesNotMatch(prototypeSource, /className="atlas-context"/, 'each atlas person is rendered once, not duplicated as a second context circle');
+  assert.doesNotMatch(prototypeSource, /atlas-branch-dock/, 'branch expansion is never detached into a bottom dock');
+  assert.match(prototypeSource, /atlas-branch-bud/, 'selected people expose contextual branch buds');
+  assert.match(prototypeSource, /aria-label={`Show /, 'branch buds have a named keyboard and screen-reader action');
 }
 
 function relationIds(entries) {

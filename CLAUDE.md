@@ -66,8 +66,13 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   screens can use remaining capacity for grandparents, grandchildren and
   one-hop partner context without recursive expansion. The next iteration
   replaces fixed-centre regathering with a persistent living canvas: selecting
-  someone exposes labelled Parents/Partners/Children/Siblings branches;
-  expanding a branch adds relatives without moving existing people, and a
+  someone exposes collision-aware labelled Parents/Partners/Children/Siblings
+  branch buds beside their portrait (44px targets, keyboard/accessible names);
+  portrait taps only select/centre and never expand implicitly. This replaces
+  the detached bottom action dock and its ambiguous plus badge. A selected
+  partner's full nameplate stays above the partnership row to avoid colliding
+  with the other partner's label. Expanding a branch adds relatives without
+  moving existing people, and a
   guided camera, canvas pan, Back and Home preserve spatial memory. Sibling
   discovery separates full/half siblings from step-siblings, adds a read-only
   inference for a parent's partner's other children, and treats two shared
