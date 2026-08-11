@@ -15,28 +15,15 @@ import { IgniteEffect } from './ignite.js';
 import { FlightComet } from './comet.js';
 import { drawLinks, drawLinksChart } from './links.js';
 import { computeChartLayout } from './chartLayout.js';
-import { distancesFrom, relationLabel, computeGenerations, computeChildOrderSlots } from '../data/graph.js';
+import { distancesFrom, relationLabel, computeGenerations } from '../data/graph.js';
 import { Spring } from '../lib/spring.js';
 import { kinTermsStore } from '../lib/kinTerms.js';
 
 const BASE_RADIUS = 46;
 const COLLIDE = 70;
-// Real feedback on a large production tree, across two rounds: rows read
-// "squashed down" with children shooting off sideways from their sibling
-// trunk's junction, and — after a first pass that reduced horizontal
-// spread — "the extra spacing should be reducing the vertical squash, not
-// the horizontal squash... some children are close to being at the same
-// level as parents." The actual lever for "parents clearly above children"
-// is vertical: GEN_GAP itself, and how strongly nodes are pulled onto their
-// own generation band at rest (see restingYStrength below) — horizontal
-// spread was never the right knob for that, so ORGANIC_CHARGE is restored
-// most of the way back up (still a little gentler than the original, since
-// some horizontal easing was independently useful) while GEN_GAP and the
-// resting band pull both go up further, the actual fix for "parents above,
-// clearly."
-const GEN_GAP = 420; // real vertical room between generation bands
+const GEN_GAP = 280; // shorter bands so wide screens use horizontal space too
 // Chart-view layout lives in ./chartLayout.js (tidy descendant tree).
-const ORGANIC_CHARGE = -1650; // mostly restored — spacing is a vertical fix, not a horizontal one
+const ORGANIC_CHARGE = -1800; // stronger repulsion spreads generations sideways
 const SPREAD_X = 0.004; // weaker centring lets nodes fan out naturally
 const MAX_ZOOM = 2.0; // auto-fit (follow mode) — higher cap so small focus families fill the screen
 const MIN_ZOOM = 0.16; // free zoom-out: take in a huge tree at a glance (double the old 0.32 floor's field of view)
@@ -50,14 +37,6 @@ const MIN_ZOOM = 0.16; // free zoom-out: take in a huge tree at a glance (double
 // all" toggle — an ordinary reveal never gets anywhere close.
 const FIT_FLOOR = 0.4;
 const WHOLE_TREE_FIT_FLOOR = 0.2;
-// How far the camera may pull back when someone is tapped on a big, fully
-// revealed canvas and their immediate family doesn't fit on screen. This is
-// deliberately allowed to go BELOW FIT_FLOOR: with the floor enforced here,
-// the pull-back stopped short of actually fitting the family and measurably
-// showed FEWER relatives (3-4 of 6) than not intervening at all. Letting it
-// reach 0.24 shows all 6 with the tapped person still near the middle of the
-// screen. It never applies on an ordinary tap — see the `fit < fitFloor` gate.
-const KIN_FRAME_MIN_ZOOM = 0.24;
 // Below this zoom, bubbles are too small and packed together to grab on
 // purpose — a finger meant for panning the canvas keeps landing on one
 // instead, dragging it out of place. A tap still selects (see
@@ -299,85 +278,6 @@ export default function BubbleTree({
       // rebuilds a fresh relationships array even when nothing changed.
       let lastRelationshipSig = relSignature(graph.relationships);
 
-      // A person can carry more than one recorded partner over a lifetime —
-      // widowed then remarried, divorced then remarried, or simply an ex
-      // still on record as a co-parent. Only ONE of a person's partner
-      // relationships is their "primary" pod-mate for the strong row/
-      // proximity forces below; every other one is looser. Without this,
-      // every past union pulls exactly as hard as the present one, and
-      // people who were never simultaneously a couple end up crammed
-      // together into what reads as one continuous multi-person pod — two
-      // real, separate reports, both screenshotted: an ex-husband's own
-      // gray placeholder bubble rendered fused into a widow's couple pod;
-      // an ex-partner and her own separate partner both fused into a man's
-      // pod with his current wife. Ranked current > widowed > former, tied-
-      // broken by array order (first recorded wins) since there's no
-      // reliable "most recent" signal across every relationship shape this
-      // app allows (a marriage date is optional, and separation_date only
-      // exists for exes). Recomputed alongside partnerYRels/parentAboveRels
-      // below, at the same three points (mount, sync, ensureVisible).
-      const STATUS_RANK = { current: 3, widowed: 2, former: 1 };
-      const primaryPartnerOf = new Map(); // personId → that person's one primary partner relationship id
-      const computePrimaryPartners = (rels) => {
-        primaryPartnerOf.clear();
-        const best = new Map(); // personId → { rank, relId }
-        for (const r of rels) {
-          if (r.type !== 'partner') continue;
-          const rank = STATUS_RANK[r.partner_status] ?? 0;
-          for (const pid of [r.from_person, r.to_person]) {
-            const cur = best.get(pid);
-            if (!cur || rank > cur.rank) best.set(pid, { rank, relId: r.id });
-          }
-        }
-        for (const [pid, entry] of best) primaryPartnerOf.set(pid, entry.relId);
-      };
-      // Real follow-up feedback on a 602-person production tree: "if there
-      // are children from the relationship, the couple should be closer to
-      // level" — a couple who share a child benefits from being level
-      // regardless of current/former/widowed status, since it's their own
-      // merged co-parent line (links.js's drawGroup) that goes to that
-      // child; leaving a childful ex un-leveled just because a later,
-      // childless remarriage outranked them by status was exactly what made
-      // the reported parent→child lines "still appearing quite horizontal"
-      // — an un-leveled co-parent pair's shared line has to travel a long
-      // diagonal to reach children who are still drawn relative to a
-      // different row. Unlike the status-rank pick above (at most one
-      // winner per person), sharing children is not exclusive — a genuinely
-      // blended family can and should level MULTIPLE co-parent pods around
-      // the same person at once, the same way a real family tree would.
-      const coParentPairKeys = new Set(); // "idA|idB" (sorted) for every pair who share ≥1 child
-      const computeCoParentPairs = (rels) => {
-        coParentPairKeys.clear();
-        const parentsOfChild = new Map(); // childId → [parentIds]
-        for (const r of rels) {
-          if (r.type !== 'parent') continue;
-          let arr = parentsOfChild.get(r.to_person);
-          if (!arr) parentsOfChild.set(r.to_person, arr = []);
-          arr.push(r.from_person);
-        }
-        for (const parents of parentsOfChild.values()) {
-          for (let i = 0; i < parents.length; i++) {
-            for (let j = i + 1; j < parents.length; j++) {
-              coParentPairKeys.add([parents[i], parents[j]].sort().join('|'));
-            }
-          }
-        }
-      };
-      const areCoParents = (a, b) => coParentPairKeys.has([a, b].sort().join('|'));
-      // A partner edge is "primary" — full pull, forced level — when the two
-      // share a child (see above, always true regardless of status) OR,
-      // failing that, when it's EACH endpoint's own best-ranked partner
-      // relationship. If neither holds (this person has a better-ranked,
-      // childless partner elsewhere), the edge is secondary for both, since
-      // a pod is a mutual thing.
-      const isPrimaryPartnerRel = (r) => {
-        if (r.type !== 'partner') return false;
-        if (areCoParents(r.from_person, r.to_person)) return true;
-        return primaryPartnerOf.get(r.from_person) === r.id && primaryPartnerOf.get(r.to_person) === r.id;
-      };
-      computeCoParentPairs(graph.relationships);
-      computePrimaryPartners(graph.relationships); // populate before the first buildLinks() call below
-
       // Only links between two currently-tracked people are meaningful to the
       // simulation — a relationship reaching an untracked (not-yet-revealed)
       // person would otherwise hand d3-force an unresolvable link id.
@@ -387,23 +287,12 @@ export default function BubbleTree({
             (r) => (r.type === 'partner' || r.type === 'parent')
               && nodeById.has(r.from_person) && nodeById.has(r.to_person),
           )
-          .map((r) => ({
-            source: r.from_person, target: r.to_person, kind: r.type,
-            primary: r.type !== 'partner' || isPrimaryPartnerRel(r),
-          }));
+          .map((r) => ({ source: r.from_person, target: r.to_person, kind: r.type }));
 
-      // A non-primary partner is pulled much more loosely than the primary
-      // couple — see primaryPartnerOf above for why. The dashed/muted
-      // capsule rendering (links.js) already tells a former/secondary union
-      // apart visually once it's not squeezed into the same tight proximity
-      // as the primary couple — this is what actually creates the room for
-      // that to read. Still some pull (not a stranger's distance — they
-      // often still share children and belong somewhere nearby), just
-      // nowhere near a couple's own 112px/0.9.
       const linkForce = forceLink(buildLinks(graph.relationships))
         .id((d) => d.id)
-        .distance((l) => (l.kind !== 'partner' ? 280 : l.primary ? 112 : 200))
-        .strength((l) => (l.kind !== 'partner' ? 0.26 : l.primary ? 0.9 : 0.35));
+        .distance((l) => (l.kind === 'partner' ? 112 : 280))
+        .strength((l) => (l.kind === 'partner' ? 0.9 : 0.26));
 
       // partnerY/parentAbove (below) only ever touch relationships where BOTH
       // endpoints are currently tracked — pre-filtered here, the same way
@@ -417,133 +306,16 @@ export default function BubbleTree({
       // buildLinks() is (mount, sync, ensureVisible).
       let partnerYRels = [];
       let parentAboveRels = [];
-      // Real follow-up feedback: "current and ex's should display on
-      // opposite side when possible" — for anyone with more than one
-      // partner, a 'current' relationship gets a gentle, standing lean to
-      // one side and a 'former' relationship toward the other, so the two
-      // don't default to crowding the same side the way unbiased collision
-      // resolution otherwise settles them.
-      //
-      // REAL PRODUCTION INCIDENT, fixed here: the first version of this
-      // force built one entry per DIRECTION of every relationship (both
-      // "push B relative to A" and "push A relative to B" whenever either
-      // side had multiple partners) and nudged only the non-anchor side
-      // each time — so whenever TWO people mutually qualified (both have
-      // >1 partner AND are partnered with each other, an unremarkable
-      // shape in any real multi-generation family), each pushed the OTHER
-      // toward a target 90px past *its own current, still-moving* position
-      // with no equal-and-opposite reaction. That pair of one-way springs
-      // is not momentum-conserving: the sum of their two x-positions climbs
-      // at a constant, undamped rate every tick forever (worked through
-      // algebraically and confirmed against the real report — "my tree
-      // pulls away continuously to both sides" on a 1249-person production
-      // tree — a small demo family's own few mutually-qualifying pairs
-      // never happened to drift far enough, in the few seconds a manual
-      // check runs, to be visible). partnerY just below never had this bug
-      // because its `na.vy += dy*0.4; nb.vy -= dy*0.4;` shape is exactly
-      // Newton's-third-law paired — the sum na.y+nb.y is invariant under
-      // it. Rewritten the same way: ONE entry per relationship (not two),
-      // applied as a single equal-and-opposite spring toward a target
-      // *separation* rather than each side chasing the other's position
-      // independently — provably can't accumulate net drift, the same
-      // property that already makes partnerY safe to run unscaled by alpha
-      // forever.
-      let sideLeanRels = [];
-      const rebuildSideLeanRels = (rels) => {
-        sideLeanRels = [];
-        const partnerCount = new Map(); // personId → how many partner rels they have
-        for (const r of rels) {
-          if (r.type !== 'partner') continue;
-          if (!nodeById.has(r.from_person) || !nodeById.has(r.to_person)) continue;
-          partnerCount.set(r.from_person, (partnerCount.get(r.from_person) ?? 0) + 1);
-          partnerCount.set(r.to_person, (partnerCount.get(r.to_person) ?? 0) + 1);
-        }
-        for (const r of rels) {
-          if (r.type !== 'partner') continue;
-          if (!nodeById.has(r.from_person) || !nodeById.has(r.to_person)) continue;
-          // Only relationships that actually need disambiguating — a
-          // person whose only partner is this one has no "other side" to
-          // lean away from.
-          if ((partnerCount.get(r.from_person) ?? 0) < 2 && (partnerCount.get(r.to_person) ?? 0) < 2) continue;
-          sideLeanRels.push(r);
-        }
-      };
       const rebuildForceRelCaches = (rels) => {
-        computeCoParentPairs(rels);
-        computePrimaryPartners(rels);
-        // Non-primary, non-co-parent partners excluded here too — same
-        // reasoning as computeGenerations' own former-partner row-leveling
-        // exclusion (graph.js) and the loosened linkForce distance/strength
-        // just above: a secondary union shouldn't be rigidly pinned to the
-        // exact same row just because it was once (or is elsewhere) a
-        // couple, unless they actually co-parented a child together.
-        partnerYRels = rels.filter((r) => r.type === 'partner' && isPrimaryPartnerRel(r) && nodeById.has(r.from_person) && nodeById.has(r.to_person));
+        partnerYRels = rels.filter((r) => r.type === 'partner' && nodeById.has(r.from_person) && nodeById.has(r.to_person));
         parentAboveRels = rels.filter((r) => r.type === 'parent' && nodeById.has(r.from_person) && nodeById.has(r.to_person));
-        rebuildSideLeanRels(rels);
       };
       rebuildForceRelCaches(graph.relationships);
 
-      // Real feedback, across two rounds: "there should be a focus to avoid
-      // an immediate family unit crossing over" — then, once shipped scoped
-      // to just the selected person, "the crossing reduction hasn't
-      // happened... this should apply for everyone visible, not just
-      // immediate family of selected person" plus half/step-siblings
-      // should land on their shared parent's own side, not cross other
-      // children's lines. computeChildOrderSlots (graph.js) now computes
-      // this for EVERY distinct parent-pod in the currently visible tree at
-      // once, not anchored to any single "active" person — see its own
-      // header comment for why that also solves the half-sibling case for
-      // free. Rebuilt whenever the visible/tracked set changes (sync,
-      // ensureVisible) — no longer tied to selection at all.
-      let childOrderPods = [];
-      const rebuildChildOrderPods = () => {
-        childOrderPods = computeChildOrderSlots(graphRef.current, nodeById.keys());
-      };
-      rebuildChildOrderPods();
-
       // Resting generational pull. Focus Family wants crisp rows — parents
       // clearly above, children clearly below — so the band force is much
-      // stronger while focused; otherwise it's a gentle organic drift. Real
-      // feedback: even outside Focus mode, "some children are close to
-      // being at the same level as parents" — 0.085 let charge/collision
-      // crowding push people well off their own band before this ever
-      // corrected it. Raised to keep bands legible ambiently too, without
-      // going anywhere near Focus mode's own much crisper 0.4.
-      const restingYStrength = () => (focusRef.current ? 0.4 : 0.15);
-
-      // REAL PRODUCTION REPORT: "another person's view which feels like a
-      // reversion... too vertical/list-like... lines crossing." Root-caused
-      // with a purpose-built repro (a person whose only recorded parent has
-      // no parents of their own, and who has children — the exact shape of
-      // an in-law's own kids from an earlier relationship, common in a real
-      // blended tree): everyone WITH recorded parents gets a second, strong
-      // pull toward their own row for free — the parent-child link force
-      // (distance 280, strength 0.26) is anchored at parents who are
-      // themselves already sitting on the correct row. Someone with NO
-      // recorded parents (an in-law with no ancestry entered) has only this
-      // weak resting band (0.15) and the even weaker ambient partnerY
-      // (0.08) to find their own row — nowhere near enough to counter
-      // charge/collision/their own children's link force pulling them
-      // around, so they drift and settle well off their generation's row,
-      // dragging their own children (who inherit the same problem one
-      // level down) visibly further off — exactly the mis-banded, crossing
-      // look reported. Boosting the band pull specifically for parentless
-      // nodes (mirroring the SAME `parents(id).length === 0` check
-      // layoutGenRaw above already uses to pick which row to target — this
-      // only changes how HARD they're pulled toward it) gives them the
-      // rough equivalent of the "for free" anchoring everyone else already
-      // has. One-directional pull toward a fixed target per node, exactly
-      // like the rest of this force — can't accumulate drift the way a
-      // mutual/chasing force could.
-      const ANCHORLESS_Y_BOOST = 2.4;
-      let anchorlessIds = new Set();
-      const rebuildAnchorlessIds = () => {
-        anchorlessIds = new Set();
-        for (const n of nodes) {
-          if (graphRef.current.parents(n.id).length === 0) anchorlessIds.add(n.id);
-        }
-      };
-      const yBandStrength = (d) => restingYStrength() * (anchorlessIds.has(d.id) ? ANCHORLESS_Y_BOOST : 1);
+      // stronger while focused; otherwise it's a gentle organic drift.
+      const restingYStrength = () => (focusRef.current ? 0.4 : 0.085);
 
       // Y-band target generation. A partner with no ancestry of their own (a
       // childless in-law, including a former partner we deliberately keep out
@@ -585,7 +357,6 @@ export default function BubbleTree({
         genRank = new Map(sorted.map((g, i) => [g, i]));
       };
       rebuildGenRank();
-      rebuildAnchorlessIds();
       const layoutGen = (id) => genRank.get(layoutGenRaw(id)) ?? 0;
       const genYTarget = (d) => layoutGen(d.id) * GEN_GAP - 260;
 
@@ -611,7 +382,7 @@ export default function BubbleTree({
         .force('charge', chargeForce)
         .force('collide', forceCollide(COLLIDE).strength(0.9))
         .force('x', forceX(0).strength(SPREAD_X))
-        .force('y', forceY(genYTarget).strength(yBandStrength))
+        .force('y', forceY(genYTarget).strength(restingYStrength()))
         .alpha(1)
         .alphaDecay(0.018)
         .alphaTarget(reducedMotion ? 0 : 0.012)
@@ -643,179 +414,16 @@ export default function BubbleTree({
       // full strength unconditionally because dy is inherently bounded by the
       // partner LINK force just above (0.9 strength, 112px target distance)
       // keeping two partners' positions close together under normal operation.
-      // Real follow-up feedback: "the strict rule of partners level isn't
-      // working as intended, it's creating more issues than it solves" — at
-      // a flat, always-on 0.4 this behaved less like a preference and more
-      // like a hard constraint, fighting collision/side-lean/every other
-      // pod's own layout everywhere in the tree at once, not just wherever
-      // the viewer is actually looking. Kept at full strength ONLY for the
-      // active person's own pod (still reads crisply level, which matters
-      // most exactly where attention is), loosened everywhere else to a
-      // gentle bias that no longer overpowers the rest of the layout for
-      // relatives nobody's currently focused on.
-      // Real follow-up feedback: "leveling bias could be softened more" —
-      // even after the first round of softening, still noticeably rigid.
-      // Trimmed further on both tiers.
-      const PARTNER_Y_ACTIVE = 0.26;
-      const PARTNER_Y_AMBIENT = 0.08;
       sim.force('partnerY', () => {
         const mode = layoutRef.current;
         if (mode === 'chart' || mode === 'radial') return;
-        const active = activeRef.current;
         for (const r of partnerYRels) {
           const na = nodeById.get(r.from_person);
           const nb = nodeById.get(r.to_person);
           if (!na || !nb) continue; // belt-and-braces — the cache should already guarantee this
-          const strength = (r.from_person === active || r.to_person === active) ? PARTNER_Y_ACTIVE : PARTNER_Y_AMBIENT;
           const dy = nb.y - na.y;
-          na.vy += dy * strength;
-          nb.vy -= dy * strength;
-        }
-      });
-
-      // REAL PRODUCTION REPORT, verified against the actual data (pulled
-      // read-only from the real family via D1, not guessed): "still big
-      // drifting" / "forces are broken" — persisted even after the
-      // childOrder pod-exclusion fix (computeChildOrderSlots) shipped. A
-      // faithful repro of Matthew Davies + Kaitlin Partridge's real
-      // neighbourhood (his side: 2 biological parents who are themselves
-      // former partners, a step-parent, that step-parent's own ex and two
-      // kids from her, plus grandparents on every branch — 15 people
-      // total; her side: 2 parents, a sibling, 2 grandparents — 7 people)
-      // measured a real 288px gap against the partner link's 112px target
-      // once the whole neighbourhood was visible, even with the childOrder
-      // fix in place — visibly stretching the couple's own capsule off
-      // toward whichever side has more relatives pulling. The pod-exclusion
-      // fix only ever addressed ONE contributing force (the crossing-order
-      // pull); it never touched the ordinary parent-child LINK force, which
-      // — like every stock d3-force — scales its own correction by the
-      // simulation's alpha and so goes nearly inert at the low alpha this
-      // sim deliberately idles at forever (see the mean-velocity correction
-      // below for the same reasoning applied elsewhere). With enough
-      // relatives on one side, that side's cumulative pull can still drag
-      // a partner away even though nothing THINKS it's fighting the couple.
-      // Fix: a small, alpha-INDEPENDENT cohesion pull between primary
-      // partners, engaging only once they're already further apart than
-      // the link's own target (112px) — so it never fights collision or
-      // ordinary pod spacing, only correlates a couple that's drifted.
-      // Equal-and-opposite (Newton's third law — na/nb's combined
-      // displacement is exactly zero every tick), so — like partnerY —
-      // it can't accumulate net drift the way the earlier
-      // partnerSideLean/familyOrder incidents did.
-      //
-      // REAL PRODUCTION FOLLOW-UP, from a full physics review against the
-      // actual 1239-person tree: the first tuning (0.22 strength / 120px
-      // clamp) fixed the narrow Matthew/Kaitlin case but, measured via a
-      // force-ablation test across a real 149-person reveal, turned out to
-      // be the SINGLE LARGEST contributor to whole-tree jitter — disabling
-      // it alone cut average per-tick node displacement roughly in half
-      // (154.8px -> 82.7px). Root cause: at real density, dozens of couples
-      // can simultaneously sit just beyond the hard 112px cutoff (their
-      // charge/collision equilibrium with everything nearby is legitimately
-      // a bit wider than an isolated pair's), and this force — being
-      // alpha-independent, so unlike every stock d3-force it never decays
-      // — kept firing a real correction at every one of them, every tick,
-      // forever, regardless of whether anyone was even looking at that
-      // couple. A flat-strength retune (tried 0.035, then 0.09, uniformly
-      // for every couple) was measured to be genuinely UNSTABLE at real
-      // density rather than just slow: repeated runs against the same
-      // Matthew/Kaitlin neighbourhood gave non-monotonic results (0.035 ->
-      // 264-350px, 0.09 -> 331px — a stronger gain converging *worse*),
-      // which is the signature of an unclamped proportional velocity force
-      // whose gain is too high relative to this sim's damping once dozens
-      // of neighbouring couples are all injecting velocity into the same
-      // crowded region at once — not a number to keep hunting for blind.
-      // partnerY (just above) already solves this exact class of problem —
-      // pulling a couple back into line — and has been stable at scale for
-      // a long time specifically because it's TIERED: a real correction
-      // only for the active person's own couple (0.26), a much gentler
-      // ambient bias everywhere else (0.08) — so at any moment only ONE
-      // couple in the whole tree is ever getting the strong pull, not
-      // dozens simultaneously. This force now follows the identical
-      // discipline, but goes one step further: the ambient tier is 0, not
-      // just gentle — unlike partnerY (which always nudges toward the same
-      // Y, so ambient couples genuinely need SOME baseline pull), this force
-      // only ever engages once a couple is already beyond its 112px target,
-      // and partnerY's own ambient bias already keeps distant couples close
-      // enough that this force rarely needs to fire for them at all; where
-      // it's still needed here is precisely the couple someone's looking at.
-      // Verified against the real Matthew/Kaitlin neighbourhood (15-vs-7
-      // people, Matthew active): converges to ~220px within a few seconds
-      // (down from a real 288-752px pre-fix, though not as tight as the
-      // original 0.22-flat-strength's ~132-154px — an accepted trade, since
-      // that version was the one causing the broader jitter this rewrite
-      // fixes). Whole-tree jitter at a real 149-person reveal: 154.8px avg
-      // (original flat 0.22) -> 113.7px (tiered, ambient 0.03) -> 99.7px avg
-      // (tiered, ambient 0) — a 36% reduction from the original regression,
-      // most of the way to the 82.7px floor measured with this force fully
-      // disabled, while still visibly correcting whichever couple is active.
-      const PARTNER_COHESION_TARGET = 112; // matches the partner link's own target distance
-      const PARTNER_COHESION_ACTIVE = 0.22; // only the couple involving whoever's focused
-      const PARTNER_COHESION_AMBIENT = 0; // everyone else — partnerY's own 0.08 ambient bias already keeps distant couples roughly together; this force adds nothing there but a standing correction nobody's looking at
-      sim.force('partnerCohesion', () => {
-        const mode = layoutRef.current;
-        if (mode === 'chart' || mode === 'radial') return;
-        const active = activeRef.current;
-        for (const r of partnerYRels) {
-          const na = nodeById.get(r.from_person);
-          const nb = nodeById.get(r.to_person);
-          if (!na || !nb) continue; // belt-and-braces — the cache should already guarantee this
-          const dx = nb.x - na.x;
-          const dy = nb.y - na.y;
-          const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-          const excess = dist - PARTNER_COHESION_TARGET;
-          if (excess <= 0) continue;
-          const strength = (r.from_person === active || r.to_person === active)
-            ? PARTNER_COHESION_ACTIVE
-            : PARTNER_COHESION_AMBIENT;
-          const pull = excess * strength; // no clamp — see partnerY above, same proportional shape
-          const ux = dx / dist, uy = dy / dist;
-          na.vx += ux * pull; na.vy += uy * pull;
-          nb.vx -= ux * pull; nb.vy -= uy * pull;
-        }
-      });
-
-      // "current and ex's should display on opposite side when possible"
-      // (real follow-up feedback) — a gentle, standing lean, not a hard
-      // rule: nudges a relationship's two people toward a target
-      // *separation* along x — positive (to_person right of from_person)
-      // for 'current', negative for 'former' — only for relationships that
-      // actually need disambiguating (see rebuildSideLeanRels above).
-      // 'widowed' (and anything else) gets no lean either way — it's not
-      // "instead of" a current partner the way an ex reads, so there's no
-      // clear opposite side to prefer. Deliberately weak (0.05, well under
-      // partnerY's 0.4 or the link force's 0.9/0.35) so it never fights the
-      // couple forces that already govern where a partner actually settles
-      // — this only breaks a left/right tie. NOT scaled by alpha, for the
-      // same reason documented on partnerY above: it needs to keep working
-      // once the simulation is resting, not just while it's still hot.
-      //
-      // Applied as ONE equal-and-opposite spring per relationship — see
-      // rebuildSideLeanRels's own comment for the real incident this shape
-      // fixes: an earlier version nudged each side toward the OTHER's
-      // current position independently (two one-way springs, not a single
-      // paired one), which for any pair of people who mutually qualify has
-      // no equilibrium and drifts their combined position outward forever.
-      // This shape can't do that: da.vx and db.vx are always exact
-      // opposites, so the sum of the pair's positions is invariant under
-      // this force, precisely like partnerY's own dy split below.
-      const SIDE_LEAN_TARGET = 90;
-      const SIDE_LEAN_STRENGTH = 0.05;
-      const sideLeanSign = (status) => (status === 'current' ? 1 : status === 'former' ? -1 : 0);
-      sim.force('partnerSideLean', () => {
-        const mode = layoutRef.current;
-        if (mode === 'chart' || mode === 'radial') return;
-        for (const r of sideLeanRels) {
-          const sign = sideLeanSign(r.partner_status);
-          if (!sign) continue;
-          const a = nodeById.get(r.from_person);
-          const b = nodeById.get(r.to_person);
-          if (!a || !b) continue;
-          const dx = b.x - a.x;
-          const desired = sign * SIDE_LEAN_TARGET;
-          const push = (desired - dx) * SIDE_LEAN_STRENGTH;
-          a.vx -= push;
-          b.vx += push;
+          na.vy += dy * 0.4;
+          nb.vy -= dy * 0.4;
         }
       });
 
@@ -861,86 +469,6 @@ export default function BubbleTree({
         }
       });
 
-      // Crossing-reduction, whole-tree — see rebuildChildOrderPods above.
-      // For every pod independently, each child eases toward "this pod's
-      // own live parent centre + this child's own zero-mean offset". This
-      // is safe WITHOUT the de-meaning trick the previous, active-anchored
-      // version needed: a pod's own children are only ever assigned
-      // zero-mean offsets (see computeChildOrderSlots — offsets are
-      // `i - (n-1)/2`, which always sums to exactly 0 for any n), so the
-      // children's own average TARGET position already equals the pod's
-      // live centre, by construction. The parents themselves are only ever
-      // READ here, never pushed — a one-directional pull from a live
-      // reference toward a fixed-relative-to-it target, exactly like
-      // genYTarget above, not a mutual chase between two independently
-      // moving targets (the shape that caused the earlier partnerSideLean
-      // and familyOrder drift incidents) — so this can't accumulate net
-      // translation of a pod relative to its own parents. Deliberately
-      // gentle relative to collision/charge — this breaks left/right ties
-      // and discourages crossings, it doesn't override the rest of the
-      // layout. Not scaled by alpha, for the same reason partnerY/
-      // parentAbove aren't: it needs to keep working once the simulation is
-      // resting, not just while it's hot.
-      const CHILD_ORDER_SLOT_PX = 130;
-      const CHILD_ORDER_STRENGTH = 0.14;
-      sim.force('childOrder', () => {
-        const mode = layoutRef.current;
-        if (mode === 'chart' || mode === 'radial') return;
-        for (const pod of childOrderPods) {
-          const parentNodes = pod.parentIds.map((pid) => nodeById.get(pid)).filter(Boolean);
-          if (!parentNodes.length) continue;
-          const centerX = parentNodes.reduce((s, n) => s + n.x, 0) / parentNodes.length;
-          for (const { id, offset } of pod.children) {
-            const child = nodeById.get(id);
-            if (!child) continue;
-            const target = centerX + offset * CHILD_ORDER_SLOT_PX;
-            child.vx += (target - child.x) * CHILD_ORDER_STRENGTH;
-          }
-        }
-      });
-
-      // REAL PRODUCTION REPORT: "I feel a persistent slight drift to the
-      // right, continuously" — investigated live and confirmed this is NOT
-      // specific to familyOrder above (it reproduces on the plain seed
-      // family with none of today's crossing-reduction code involved): the
-      // whole node cloud's own average position gently wanders over time
-      // regardless. `forceX(0)` is meant to hold the cloud near the origin,
-      // but at the resting `alphaTarget` (0.012) its own strength (0.004)
-      // is scaled down to a genuinely negligible pull — nowhere near enough
-      // to correct whatever small persistent bias forceManyBody's Barnes-Hut
-      // approximation (deliberately coarsened at scale — see
-      // updateChargeTheta) introduces every tick. Since the simulation is
-      // deliberately kept gently "alive" forever (never truly resting), that
-      // small bias compounds into a real, visible, one-directional creep
-      // over time — worse at scale (theta 1.3 for a 400+-person tree is a
-      // coarser, less symmetric approximation than theta 0.9 for a small
-      // one), matching a large real tree showing this far more than a small
-      // demo one ever would in a quick manual check.
-      //
-      // Rather than chase down exactly which force's approximation is
-      // responsible, this is a general, robust correction: registered LAST
-      // (so it sees the velocity every other force already contributed this
-      // tick), it measures the CURRENT tick's mean velocity across every
-      // currently-tracked node and subtracts it back out of each one. That
-      // guarantees the cloud's own average position can never drift, by
-      // construction, regardless of the source — every node's motion
-      // RELATIVE to the group is completely untouched (this only ever
-      // removes the shared, common component), so nothing about the
-      // existing layout forces changes, only the whole picture's tendency
-      // to wander as a whole. Not scaled by alpha, for the same reason
-      // every other structural force above isn't: the drift is happening
-      // precisely at rest, so the correction has to work there too.
-      sim.force('worldRecenter', () => {
-        const mode = layoutRef.current;
-        if (mode === 'chart' || mode === 'radial') return;
-        if (nodes.length === 0) return;
-        let sumVx = 0, sumVy = 0;
-        for (const n of nodes) { sumVx += n.vx; sumVy += n.vy; }
-        const meanVx = sumVx / nodes.length;
-        const meanVy = sumVy / nodes.length;
-        for (const n of nodes) { n.vx -= meanVx; n.vy -= meanVy; }
-      });
-
       // Warm the layout so the tree opens already settled, not reorganising.
       for (let i = 0; i < 220; i++) sim.tick();
       sim.alpha(0.35); // a little life left to breathe into
@@ -965,64 +493,19 @@ export default function BubbleTree({
       // (ensureVisible()). Anchored near whichever already-tracked relative
       // connects to them, so they appear to sprout from that person rather
       // than pop in at the world origin.
-      // REAL USER REPORT, with screenshots, root-caused against the real
-      // 1239-person tree after many rounds of force-tuning had failed:
-      // tapping a person with a lot of relatives produced a permanent
-      // "clustered mess" — everyone piled around them instead of arranging
-      // into generation rows. Measured directly: parent/child pairs were
-      // sitting THREE TO TWENTY-SEVEN pixels apart vertically, when a parent
-      // and child must be a full GEN_GAP (420px) apart.
-      //
-      // Two things combined to cause that, and BOTH are fixed here:
-      //   1. This function used to place new arrivals in a ring around their
-      //      anchor, ignoring generation entirely — so a parent and a child
-      //      revealed in the same batch could easily land on the same row.
-      //   2. The generation-band force that is supposed to migrate them onto
-      //      their proper row (forceY(genYTarget)) is a STOCK d3 force, so it
-      //      scales its correction by the simulation's alpha — and this sim
-      //      deliberately idles at a very low resting alpha forever. At rest
-      //      it is nearly inert, so it could never actually pull a
-      //      badly-placed node hundreds of pixels to its real band. (This is
-      //      the same alpha-scaling trap already documented for partnerY and
-      //      parentAbove further down this file.)
-      // Rather than fight (2) by making yet another force stronger — the
-      // approach that kept failing — new arrivals are now simply BORN on the
-      // structurally correct row, so no migration is needed at all: physics
-      // only has to polish a layout that is already right, which is what it
-      // is good at.
-      //
-      // Y is derived RELATIVE to the anchor (whose own row is already
-      // correct) using the generation delta between the two people, rather
-      // than from an absolute band index. That is deliberate: it stays
-      // correct regardless of whether genRank has been rebuilt yet for a
-      // generation this new node is the first member of, and for the normal
-      // case (parent/child/sibling/partner of the anchor) the delta is
-      // exactly -1 / +1 / 0, which is precisely the offset wanted.
-      // X still fans siblings sharing one anchor apart (golden angle, the
-      // standard way to keep points spread however many arrive), so a row of
-      // newly-revealed siblings arrives spread out rather than stacked.
-      const SPAWN_FAN_RADIUS = 130;
-      const SPAWN_GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
-      const spawnBubble = (p, anchorSpawnCounts) => {
+      const spawnBubble = (p) => {
         const rel = graphRef.current.relationships.find(
           (r) =>
             (r.from_person === p.id && nodeById.has(r.to_person)) ||
             (r.to_person === p.id && nodeById.has(r.from_person)),
         );
-        const anchorId = rel ? (rel.from_person === p.id ? rel.to_person : rel.from_person) : activeRef.current;
-        const anchor = nodeById.get(anchorId);
-        const n = anchorSpawnCounts.get(anchorId) ?? 0;
-        anchorSpawnCounts.set(anchorId, n + 1);
-        const angle = n * SPAWN_GOLDEN_ANGLE;
-        // Rows below/above the anchor, from the real generation structure.
-        const bandDelta = anchor && anchorId
-          ? (layoutGenRaw(p.id) - layoutGenRaw(anchorId))
-          : 0;
-        const baseY = anchor ? anchor.y : (layoutGen(p.id) * GEN_GAP - 260);
+        const anchor = rel
+          ? nodeById.get(rel.from_person === p.id ? rel.to_person : rel.from_person)
+          : nodeById.get(activeRef.current);
         const node = {
           id: p.id,
-          x: (anchor?.x ?? 0) + Math.cos(angle) * SPAWN_FAN_RADIUS,
-          y: baseY + bandDelta * GEN_GAP,
+          x: (anchor?.x ?? 0) + (Math.random() - 0.5) * 24,
+          y: (anchor?.y ?? 0) + (Math.random() - 0.5) * 24,
         };
         nodes.push(node);
         nodeById.set(p.id, node);
@@ -1053,14 +536,6 @@ export default function BubbleTree({
       let camMode = 'follow'; // 'follow' | 'free'
       let vx = 0, vy = 0; // free-pan inertia, world units / second
       let onModeChange = null;
-      // Real feedback, twice now: "when clicking on somebody, do not adjust
-      // the zoom setting, just re-position." Anchors the zoom level at
-      // whatever it was right before the most recent setActive() — the
-      // follow-mode framing below holds it there with NO automatic
-      // adjustment at all, in either direction, on selection. null means
-      // "no anchor yet" — the ordinary full auto-fit runs (initial mount,
-      // and after an explicit recenter()).
-      let heldZoom = null;
       // Free mode normally holds zoom.target pinned to zoom.value every frame
       // (wheel/pinch already set both directly — see zoomTo — so there's
       // nothing to ease toward). The on-screen zoom buttons are the one free-
@@ -1246,46 +721,6 @@ export default function BubbleTree({
         beginRecapTravel();
       };
 
-      // Defensively clears any transient, self-driving camera mode (a search
-      // flyover or the recap tour) before handing the camera to or back from
-      // the user. Real report: after the recap tour played through, the tree
-      // "seemed frozen... couldn't click on anyone." Root cause is the same
-      // class of bug already fixed once for flight (see endGesture's own
-      // `if (!drag.moved && flight)` guard comment) — but that fix only
-      // covered canvas taps. enterFree()/enterFollow() are called from
-      // several OTHER places that never accounted for `recap` at all: the
-      // pinch/pan drag-start interrupts below, the zoom/recenter buttons
-      // (ZoomControls.jsx — reachable even while nothing on the canvas
-      // itself is), and React's own deselect()/openPerson() handlers. Any of
-      // those flips camMode away from 'recap' without ever clearing the
-      // `recap` variable or calling its onDone — leaving BubbleTree's
-      // internal state pointed at a tour that's already been abandoned, and,
-      // critically, leaving React's `recapOpen` (the full-screen scrim in
-      // RecapTour.jsx) stuck open forever, since nothing ever told it the
-      // tour ended. That scrim is what actually explains "couldn't click on
-      // anyone" — an invisible-seeming but very real `position: fixed;
-      // inset: 0` overlay silently absorbing every tap. Centralizing this in
-      // the two chokepoints every "hand the camera over" path already goes
-      // through means no future entry point can reintroduce the gap.
-      const abortTransientCameraModes = () => {
-        if (flight) {
-          flight.onAbort?.();
-          flight = null;
-          landingFx?.destroy(); landingFx = null;
-          flightComet?.destroy(); flightComet = null;
-        }
-        postFlightIds = null;
-        postFlightEdges = null;
-        postFlightLandedAt = 0;
-        if (recap) {
-          const onDone = recap.onDone;
-          recap = null;
-          for (const [, fx] of recapFx) fx.destroy();
-          recapFx.clear();
-          onDone?.();
-        }
-      };
-
       const state = {
         app,
         world,
@@ -1366,7 +801,7 @@ export default function BubbleTree({
             // (stronger generational rows while Focus Family is active).
             sim.force('charge', forceManyBody().strength(ORGANIC_CHARGE).distanceMax(1200));
             sim.force('x', forceX(0).strength(SPREAD_X));
-            sim.force('y', forceY(genY).strength(yBandStrength));
+            sim.force('y', forceY(genY).strength(restingYStrength()));
             linkForce
               .distance((l) => (l.kind === 'partner' ? 112 : 280))
               .strength((l) => (l.kind === 'partner' ? 0.9 : 0.26));
@@ -1414,11 +849,9 @@ export default function BubbleTree({
           activeRef.current = id;
           state.dist = distancesFrom(graphRef.current, id);
           relCache.clear(); // relationships are relative to the active person
-          // Anchor the zoom hold at whatever it is right now, before this
-          // activation's own framing kicks in — see heldZoom's own comment.
-          heldZoom = zoom.value;
           state.enterFollow();
           if (!reducedMotion && animate && !alreadyActive) {
+            zoom.velocity -= 1.6;
             // Briefly spike the Y-generational force so parents visibly float
             // upward and children sink down, making the clicked person's family
             // obvious before settling back to the gentle resting drift.
@@ -1431,7 +864,7 @@ export default function BubbleTree({
               reorgTimer = setTimeout(() => {
                 reorgTimer = null;
                 if (state.layoutMode !== 'chart' && state.layoutMode !== 'radial') {
-                  sim.force('y', forceY(genY).strength(yBandStrength));
+                  sim.force('y', forceY(genY).strength(restingYStrength()));
                 }
               }, 1800);
             }
@@ -1441,7 +874,6 @@ export default function BubbleTree({
         },
         // Hand the camera to the user: pan/zoom now stick where they leave them.
         enterFree() {
-          abortTransientCameraModes();
           if (camMode === 'free') return;
           camMode = 'free';
           vx = vy = 0;
@@ -1449,7 +881,6 @@ export default function BubbleTree({
         },
         // Take the camera back: it will spring to frame the active family.
         enterFollow() {
-          abortTransientCameraModes();
           vx = vy = 0;
           camX.velocity = camY.velocity = 0;
           if (camMode === 'follow') return;
@@ -1466,10 +897,6 @@ export default function BubbleTree({
         // blocking bubble selection until the state is reset.
         recenter() {
           if (!reducedMotion) zoom.velocity -= 1.2;
-          // The explicit "fit everyone" action — unlike an ordinary select
-          // (see heldZoom's own comment), this really should re-fit freely
-          // in both directions, so clear the hold.
-          heldZoom = null;
           pointers.clear();
           pinch.active = false;
           drag.type = 'none';
@@ -1525,7 +952,6 @@ export default function BubbleTree({
         // refresh edited bubbles, drop removed ones, and rewire the links.
         sync(g) {
           let structuralChange = false;
-          const anchorSpawnCounts = new Map(); // one batch — see spawnBubble's own comment
           for (const p of g.people) {
             if (!nodeById.has(p.id)) {
               // Not yet part of the revealed set — stays untracked until the
@@ -1534,7 +960,7 @@ export default function BubbleTree({
               // of bubbles nobody's looking at yet.
               if (!visibleRef.current?.has(p.id)) continue;
               structuralChange = true;
-              spawnBubble(p, anchorSpawnCounts);
+              spawnBubble(p);
             } else if (bubblePerson.get(p.id) !== p) {
               // The person object changed (an edit / new photo): rebuild in place.
               const node = nodeById.get(p.id);
@@ -1565,7 +991,6 @@ export default function BubbleTree({
           sim.nodes(nodes);
           linkForce.links(buildLinks(g.relationships));
           rebuildForceRelCaches(g.relationships);
-          rebuildChildOrderPods(); // the visible tree's pods may have changed
           updateChargeTheta();
           // Only reheat the simulation when the tree's actual shape changed
           // (someone added/removed, or a relationship changed) — a cosmetic
@@ -1574,7 +999,6 @@ export default function BubbleTree({
           if (structuralChange) sim.alpha(0.5);
           gen = computeGenerations(g);
           rebuildGenRank();
-          rebuildAnchorlessIds();
           state.dist = distancesFrom(g, activeRef.current);
           relCache.clear(); // graph changed — relationship labels may differ
           if (state.layoutMode === 'radial' || state.layoutMode === 'weighted') state.relayout();
@@ -1590,22 +1014,19 @@ export default function BubbleTree({
         // holdActiveDuringSettle).
         ensureVisible(ids) {
           let added = false;
-          const anchorSpawnCounts = new Map(); // one batch — see spawnBubble's own comment
           for (const id of ids ?? []) {
             if (nodeById.has(id)) continue;
             const p = graphRef.current.byId.get(id);
             if (!p) continue;
-            spawnBubble(p, anchorSpawnCounts);
+            spawnBubble(p);
             added = true;
           }
           if (added) {
             sim.nodes(nodes);
             linkForce.links(buildLinks(graphRef.current.relationships));
             rebuildForceRelCaches(graphRef.current.relationships);
-            rebuildChildOrderPods(); // newly-spawned relatives may now form/complete a pod
             updateChargeTheta();
             rebuildGenRank();
-            rebuildAnchorlessIds();
             sim.alpha(Math.max(sim.alpha(), EXPAND_REHEAT_ALPHA));
             state.holdActiveDuringSettle();
           }
@@ -1647,7 +1068,7 @@ export default function BubbleTree({
         refreshFocus() {
           relCache.clear();
           if (state.layoutMode !== 'chart' && state.layoutMode !== 'radial') {
-            sim.force('y', forceY(genYTarget).strength(yBandStrength));
+            sim.force('y', forceY(genYTarget).strength(restingYStrength()));
             sim.alpha(0.6);
           }
         },
@@ -2076,8 +1497,10 @@ export default function BubbleTree({
           pinch.active = true;
           pinch.dist0 = twoFingerDist();
           pinch.zoom0 = screenAnchor().z;
-          // enterFree() itself now clears any in-progress flight/recap (see
-          // abortTransientCameraModes) — the user's taken control.
+          if (flight) { flight.onAbort?.(); flight = null; landingFx?.destroy(); landingFx = null; flightComet?.destroy(); flightComet = null; }
+          postFlightIds = null; // the user's taken control — stop lingering on the old route
+          postFlightEdges = null;
+          postFlightLandedAt = 0;
           state.enterFree();
           return;
         }
@@ -2158,8 +1581,11 @@ export default function BubbleTree({
           if (!reducedMotion) sim.alphaTarget(0.35); // reheat so neighbours react
         } else if (drag.type === 'pan' && drag.moved) {
           // A real drag interrupts the flyover — hand control back to the user
-          // right where the camera is, no jump. enterFree() itself now clears
-          // any in-progress flight/recap (see abortTransientCameraModes).
+          // right where the camera is, no jump.
+          if (flight) { flight.onAbort?.(); flight = null; landingFx?.destroy(); landingFx = null; flightComet?.destroy(); flightComet = null; }
+          postFlightIds = null; // the user's taken control — stop lingering on the old route
+          postFlightEdges = null;
+          postFlightLandedAt = 0;
           state.enterFree();
           app.stage.cursor = 'grabbing';
           const z = screenAnchor().z;
@@ -2560,100 +1986,9 @@ export default function BubbleTree({
             fit = Math.min(MAX_ZOOM, (W / 2 - PAD) / halfX, ((H - topInset) / 2 - PAD) / halfY);
           }
 
-          // REAL USER REPORT + explicit product decision. Tapping someone on
-          // a heavily-revealed canvas landed on a view where most of their
-          // own family was off screen — measured on the real tree, only 3 of
-          // Christopher's 6 immediate relatives were visible after tapping
-          // him, because the zoom is frozen at whatever it was (heldZoom,
-          // just below) and his family is wider than that view.
-          //
-          // The earlier, rejected behaviour re-fitted on EVERY tap, which
-          // read as "the zoom out on clicking still happens". The rule now
-          // is narrower and one-directional: a tap may only ever pull BACK,
-          // only as far as it takes to fit the tapped person's OWN immediate
-          // family, and only when they genuinely don't already fit. A tap
-          // can never zoom in, and a tap where the family already fits still
-          // does not touch the zoom at all — which is the case for ordinary
-          // browsing, so that keeps behaving exactly as it does today.
-          // Gated on `fit < fitFloor` — i.e. ONLY when so much of the tree is
-          // revealed that the whole visible set could never be framed anyway
-          // (the "All"-style canvas this was reported on). Measured reason:
-          // on a phone, a typical person's immediate family is often wider
-          // than the viewport even during ordinary browsing, so an ungated
-          // version fired on almost every tap and visibly changed the zoom —
-          // exactly the behaviour that was rejected twice. With this gate,
-          // ordinary browsing taps are provably untouched (verified: zoom
-          // identical before/after an ordinary tap) and only the dense case
-          // pulls back.
-          let kinZoom = null;
-          if (heldZoom != null && fit < fitFloor) {
-            const gg = graphRef.current;
-            const fid = activeRef.current;
-            let kMinX = Infinity, kMaxX = -Infinity, kMinY = Infinity, kMaxY = -Infinity, kCount = 0;
-            const consider = (id) => {
-              const kn = nodeById.get(id);
-              if (!kn) return;
-              kMinX = Math.min(kMinX, kn.x); kMaxX = Math.max(kMaxX, kn.x);
-              kMinY = Math.min(kMinY, kn.y); kMaxY = Math.max(kMaxY, kn.y);
-              kCount++;
-            };
-            consider(fid);
-            for (const x of gg.parents(fid)) consider(x.id);
-            for (const x of gg.children(fid)) consider(x.id);
-            for (const x of gg.partners(fid)) consider(x.id);
-            for (const x of gg.siblings(fid)) consider(x.id);
-            if (kCount > 1) {
-              // Pan to the family's own centre, and measure the fit from that
-              // SAME centre. Both halves of that sentence are load-bearing,
-              // and each was arrived at by measurement rather than taste:
-              //
-              // - Measuring the fit from one centre and panning to a different
-              //   one (an earlier attempt clamped the pan back toward the
-              //   tapped person) leaves the family not actually fitting at the
-              //   chosen zoom, so the next frame asks to zoom out again, and
-              //   again — a runaway that drove the zoom all the way down to
-              //   the floor and ended up showing FEWER relatives (3 of 6, vs
-              //   4 of 6 with no clamp at all).
-              // - A partial lean is worse than either extreme: for a lopsided
-              //   family it maximises the half-extent below, so it demands a
-              //   zoom-out on ordinary taps too — measurably breaking the
-              //   "tapping someone must not change the zoom" rule.
-              //
-              // Measured on the real tree at phone size: 6 of 6 relatives on
-              // screen with the tapped person still near the middle of it,
-              // against 3-4 of 6 for every clamped or partially-leaned
-              // variant tried.
-              const ktx = (kMinX + kMaxX) / 2;
-              const kty = (kMinY + kMaxY) / 2;
-              const khx = Math.max(ktx - kMinX, kMaxX - ktx, rr);
-              const khy = Math.max(kty - kMinY, kMaxY - kty, rr);
-              const kinFit = Math.min((W / 2 - PAD) / khx, ((H - topInset) / 2 - PAD) / khy);
-              if (kinFit < heldZoom) {
-                // Only ever pulls BACK (the `kinFit < heldZoom` guard above),
-                // never zooms in — tapping someone can't push the camera
-                // closer than where the viewer had left it.
-                kinZoom = Math.max(kinFit, KIN_FRAME_MIN_ZOOM);
-                camTX = ktx;
-                camTY = kty;
-              }
-            }
-          }
-
           camX.setTarget(camTX);
           camY.setTarget(camTY);
-          const desiredFit = clamp(fit, fitFloor, MAX_ZOOM);
-          // Real feedback, twice now: "when clicking on somebody, do not
-          // adjust the zoom setting, just re-position" — a first pass still
-          // allowed an automatic zoom-OUT whenever a newly revealed family
-          // didn't fit at the held level, and that still read as "the zoom
-          // out on clicking still happens." heldZoom (set in setActive,
-          // cleared by an explicit recenter()) now holds the level from
-          // just before the most recent activation with NO automatic
-          // adjustment in either direction — selecting someone only ever
-          // pans. Anyone revealed outside the current view is reachable by
-          // panning or an explicit recentre, not an automatic zoom change.
-          const targetZoom = heldZoom != null ? (kinZoom ?? heldZoom) : desiredFit;
-          zoom.setTarget(targetZoom);
+          zoom.setTarget(clamp(fit, fitFloor, MAX_ZOOM));
           camX.step(dt);
           camY.step(dt);
           zoom.step(dt);
