@@ -70,10 +70,10 @@ let mounted = false;
 function boot() {
   if (mounted) return; // idempotent — see the safety-net timer below
   mounted = true;
-  // The Living Atlas is a separate, read-only concept prototype. It mounts
-  // instead of the application, is lazy-loaded, and does not import the
-  // production store. Its optional real-family button reuses the motion
-  // lab's single authenticated GET helper; no write path exists.
+  // The Living Atlas is a separate, offline-input-only concept prototype. It
+  // mounts instead of the application, is lazy-loaded, and does not import
+  // the production store or call an API. It can use synthetic fixtures or
+  // parse a GEDCOM file selected from this device entirely in the browser.
   if (isLivingAtlasOpen()) {
     const LivingAtlas = React.lazy(() => import('./viz/atlas/LivingAtlasLab.jsx'));
     createRoot(document.getElementById('root')).render(

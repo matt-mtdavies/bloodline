@@ -14,11 +14,13 @@ Run the app locally and visit:
 The normal application is unchanged at every other URL. The prototype is
 lazy-loaded and does not import `src/data/store.js`.
 
-The fixture selector is the default and safest way to review the concept. The
-explicit **Load my family · GET only** button reuses the Tree Motion Lab's
-audited `fetchRealFamily()` helper: one authenticated `GET /api/tree`, only
-after a deliberate click. The prototype has no PUT, sync, mutation or storage
-path. It is a viewing experiment, not a new production renderer.
+The fixture selector is the default and safest way to review the concept. To
+judge a real family shape, **Open GEDCOM · stays on device** reads a `.ged` or
+`.gedcom` file with the existing client-side parser. The selected file never
+leaves the browser: the prototype contains no `fetch`, API, authentication,
+sync, production-store, D1 or R2 path. Its 25 MB input ceiling prevents an
+accidental oversized file from freezing a phone. This is a viewing experiment,
+not a new production renderer.
 
 ## What it tests
 
@@ -66,13 +68,12 @@ bounded.
 ## Deliberate exclusions
 
 - No production `BubbleTree` integration.
-- No editing, persistence, D1/R2 or migration changes.
+- No editing, persistence, authentication, network, D1/R2 or migration changes.
 - No claim that the surname-lane atlas is the final global-map algorithm.
 - No profile sheet, Perimeter, Search, Lineage or Time integration yet.
-- No final photography treatment: fixtures use monograms so composition and
-  choreography can be judged without external image loading.
+- GEDCOM cannot carry Bloodline photos, memories or Keepsakes, so the local
+  real-shape review deliberately uses monograms only.
 
 The prototype should advance only if the family-gathering interaction feels
 calm, legible and emotionally stronger than the current global graph. If that
 does not land, closing the URL is the complete rollback.
-

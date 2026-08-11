@@ -58,6 +58,7 @@
   font: 600 12px/1 inherit;
 }
 .atlas-lab__controls button { cursor: pointer; }
+.atlas-lab__file { position: fixed; width: 1px; height: 1px; overflow: hidden; opacity: 0; pointer-events: none; }
 .atlas-lab__load { color: #fff !important; border-color: transparent !important; background: #3f5e4e !important; }
 .atlas-lab__load:disabled { opacity: .55; }
 

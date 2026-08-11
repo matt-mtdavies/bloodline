@@ -66,9 +66,10 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   remainder without recursive expansion. One SVG identity moves continuously
   between its atlas and stage targets, so nobody exists in both layers;
   shared-parent connectors use a single trunk and sibling branches. It
-  defaults to existing synthetic fixtures. The explicit “Load my family · GET
-  only” control reuses V2's audited one-request `fetchRealFamily()` helper and
-  has no PUT/sync/store import. Model rules live in
+  defaults to existing synthetic fixtures. “Open GEDCOM · stays on device”
+  optionally parses a local file in-browser with the existing pure GEDCOM
+  reader; the prototype has no fetch/API/auth/sync/store import at all. A test
+  mechanically pins that network-and-production-store boundary. Model rules live in
   `src/viz/atlas/model.js`, the visual prototype in `LivingAtlasLab.jsx`, and
   the boundaries in `docs/LIVING-ATLAS-PROTOTYPE.md`. `npm run test:atlas`
   covers all 10 fixtures at desktop/mobile sizes, proves stable atlas
@@ -78,7 +79,7 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   not complete in this sandbox, so an automated phone screenshot is not
   claimed; mobile geometry is covered structurally and still needs a real-
   device feel review before this concept advances. No production renderer,
-  storage, API, migration, editing, Perimeter or profile integration.
+  storage, API, authentication, migration, editing, Perimeter or profile integration.
 
 - **Organic tree: parents now consistently sit above their children, partner
   pods level with each other, and the reapplied pod-anchor + tapered

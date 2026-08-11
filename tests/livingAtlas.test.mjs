@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { performance } from 'node:perf_hooks';
+import { readFileSync } from 'node:fs';
 import { buildGraph } from '../src/data/graph.js';
 import { FIXTURES } from '../src/viz/v2/fixtures.js';
 import {
@@ -12,6 +13,14 @@ import {
 
 const desktop = { width: 1200, height: 760 };
 const mobile = { width: 390, height: 718 };
+
+{
+  const prototypeSource = readFileSync(new URL('../src/viz/atlas/LivingAtlasLab.jsx', import.meta.url), 'utf8');
+  assert.doesNotMatch(prototypeSource, /\bfetch\s*\(/, 'prototype contains no network request');
+  assert.doesNotMatch(prototypeSource, /\/api\//, 'prototype contains no production API path');
+  assert.doesNotMatch(prototypeSource, /data\/store/, 'prototype never imports the production store');
+  assert.doesNotMatch(prototypeSource, /realFamily/, 'prototype cannot load a session family');
+}
 
 function relationIds(entries) {
   return entries.map((entry) => entry.id);
@@ -79,4 +88,3 @@ for (const fixture of FIXTURES) {
 }
 
 console.log(`livingAtlas: ${FIXTURES.length} fixtures × desktop/mobile + stable atlas + 5,000-person scale passed`);
-

@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { buildGraph } from '../../data/graph.js';
 import { initials, monogramColors } from '../../lib/color.js';
+import { gedcomToStore } from '../../lib/gedcom.js';
 import { FIXTURES, fixtureById } from '../v2/fixtures.js';
-import { fetchRealFamily } from '../v2/realFamily.js';
 import { createAtlasModel } from './model.js';
 import './living-atlas.css';
 
@@ -149,6 +149,7 @@ export default function LivingAtlasLab() {
   const [phase, setPhase] = useState('settled');
   const [showAtlas, setShowAtlas] = useState(true);
   const [loadState, setLoadState] = useState('idle');
+  const fileRef = useRef(null);
 
   const graph = useMemo(() => buildGraph(source.people, source.relationships), [source]);
   const model = useMemo(() => createAtlasModel(graph, activeId, viewport), [graph, activeId, viewport]);
@@ -177,17 +178,32 @@ export default function LivingAtlasLab() {
     setPhase('gathering');
   };
 
-  const loadFamily = async () => {
+  const loadGedcom = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    if (file.size > 25 * 1024 * 1024) {
+      setLoadState('That GEDCOM is over the 25 MB prototype limit.');
+      return;
+    }
     setLoadState('loading');
     try {
-      const family = await fetchRealFamily();
-      setSource({ ...family, id: 'real-family', label: 'Your family — read only' });
-      setFixtureId('real-family');
-      setActiveId(family.focus);
+      const parsed = gedcomToStore(await file.text());
+      if (!parsed.people?.length) throw new Error('No people were found in that GEDCOM.');
+      const focus = parsed.people[0].id;
+      setSource({
+        people: parsed.people,
+        relationships: parsed.relationships || [],
+        focus,
+        id: 'local-gedcom',
+        label: `${file.name} · local only`,
+      });
+      setFixtureId('local-gedcom');
+      setActiveId(focus);
       setLoadState('loaded');
       setPhase('gathering');
     } catch (error) {
-      setLoadState(error.message || 'Could not load this family.');
+      setLoadState(error.message || 'That GEDCOM could not be read.');
     }
   };
 
@@ -198,16 +214,17 @@ export default function LivingAtlasLab() {
         <div className="atlas-lab__controls">
           <label>
             <span>Family shape</span>
-            <select value={fixtureId} onChange={(event) => chooseFixture(event.target.value)} disabled={fixtureId === 'real-family'}>
+            <select value={fixtureId} onChange={(event) => chooseFixture(event.target.value)} disabled={fixtureId === 'local-gedcom'}>
               {FIXTURES.map((fixture) => <option value={fixture.id} key={fixture.id}>{fixture.label}</option>)}
-              {fixtureId === 'real-family' && <option value="real-family">Your family — read only</option>}
+              {fixtureId === 'local-gedcom' && <option value="local-gedcom">{source.label}</option>}
             </select>
           </label>
           <button className="atlas-lab__toggle" type="button" aria-pressed={showAtlas} onClick={() => setShowAtlas((value) => !value)}>
             {showAtlas ? 'Atlas visible' : 'Atlas quiet'}
           </button>
-          <button className="atlas-lab__load" type="button" onClick={loadFamily} disabled={loadState === 'loading'}>
-            {loadState === 'loading' ? 'Loading…' : 'Load my family · GET only'}
+          <input ref={fileRef} className="atlas-lab__file" type="file" accept=".ged,.gedcom,text/plain" onChange={loadGedcom} />
+          <button className="atlas-lab__load" type="button" onClick={() => fileRef.current?.click()} disabled={loadState === 'loading'}>
+            {loadState === 'loading' ? 'Reading locally…' : 'Open GEDCOM · stays on device'}
           </button>
         </div>
       </header>
