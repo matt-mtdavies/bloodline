@@ -49,116 +49,6 @@ export function sortChildren(children, byId) {
   return sortByTierThenAge(children, byId, (c) => c.qualifier || 'biological', CHILD_QUALIFIER_ORDER);
 }
 
-// Real user feedback on the organic tree, across two rounds:
-// "there should be a focus to avoid an immediate family unit crossing
-// over... if a bubble is selected, the expanded branches bubbles should
-// align as clearly as possible, reducing any crossovers" — then, once
-// shipped scoped to just the selected person: "the crossing reduction
-// hasn't happened... this should apply for everyone visible, not just
-// immediate family of selected person" plus "if there are half siblings,
-// they should try to come down on the same side that their parent sits in
-// the couple pod, not cross over lines of other children."
-//
-// The force-directed layout has no notion of left/right ORDER —
-// charge/collision settle wherever is locally lowest-energy, which is
-// exactly what lets a family's children interleave with a neighbouring
-// family's and cross lines. This computes, for EVERY set of children who
-// share the exact same recorded parent(s) anywhere in the currently
-// visible tree (a "pod" — most commonly two partners' shared kids, or a
-// single parent's), a left-to-right ordering CENTRED ON ZERO — an offset
-// of 0 for an only child, symmetric offsets like -0.5/+0.5 for two, etc. —
-// using the same tiering/age ordering already shown in the profile's own
-// Children group (sortChildren). Deliberately NOT anchored to any single
-// "active" person, and deliberately NOT a separate sibling-level pass:
-// half/step siblings are, by construction, children of a DIFFERENT pod
-// (they share only one parent, never the exact same parent set), so they
-// were never going to land in the same pod's list together — each pod
-// independently centres on its OWN two (or one) parents' live position,
-// and since a shared parent's own single position is common to every pod
-// they're in, their several pods of children naturally cluster near
-// wherever THEY are, diverging only by which OTHER parent (or partner) is
-// on the other side — exactly the "come down on the parent's own side"
-// behaviour asked for, without any special-casing.
-//
-// Pure and layout-agnostic: returns an array of { parentIds, children:
-// [{id, offset}] } — offsets are unitless and always sum to zero within a
-// pod, so a caller pulling each child toward "the pod's own live centre +
-// offset * spacing" can never introduce a net translation of the pod
-// relative to its own parents (the target's own average always equals the
-// parents' centre) — see BubbleTree.jsx's own force for why that matters.
-//
-// REAL PRODUCTION REPORT: "When I expand either side of my tree, it pulls
-// Matthew and Kaitlin apart." Root cause: a married-in person is very often
-// ALSO someone's own child elsewhere in the same tree (they have their own
-// recorded parents) — so BOTH members of a couple can independently qualify
-// as a pod's "child" needing to be pulled toward THEIR OWN birth family's
-// anchor. On a large, sprawling tree those two anchors can be far apart,
-// and nothing here knew the two pulled people were a couple — each pull
-// individually is fine (see the header comment above), but applying BOTH
-// at once to two people the layout otherwise treats as one visual unit
-// tears the couple's pod apart exactly as reported. Fixed by only ever
-// letting ONE member of a couple carry an independent pull: if a child has
-// a partner who is ALSO independently anchorable (has their own visible
-// recorded parents), the higher-id one of the pair is dropped from every
-// pod's children list entirely — they have no anchor of their own to
-// contribute, so they simply ride along with their partner via the
-// existing partner-link/partnerY forces, keeping the couple together as
-// one unit instead of being torn between two different ancestral pulls.
-// The lower-id partner is unaffected either way, still pulled by their own
-// birth pod exactly as before — the fix is purely "never pull the SAME
-// couple toward two different places at once," not a new positioning rule.
-export function computeChildOrderSlots(graph, visibleIds) {
-  const visible = visibleIds instanceof Set ? visibleIds : new Set(visibleIds ?? []);
-
-  // A person "has their own anchor" only if at least one of their recorded
-  // parents is also visible — that's the only case computeChildOrderSlots
-  // would otherwise place them in a pod at all.
-  const hasOwnAnchor = (id) => graph.parents(id).some((p) => visible.has(p.id));
-
-  // One partner per person, for "are these two a couple" purposes only —
-  // prefer their current one, else whichever is first on record, the same
-  // "pick exactly one" convention used elsewhere in this codebase.
-  const chosenPartner = (id) => {
-    const partners = graph.partners(id).filter((p) => visible.has(p.id));
-    return partners.find((p) => p.status === 'current') || partners[0] || null;
-  };
-
-  const podsByKey = new Map(); // "sortedParentIds" -> { parentIds, children: [{id, qualifier}] }
-  for (const person of graph.people) {
-    if (!visible.has(person.id)) continue;
-    const parentEdges = graph.parents(person.id).filter((p) => visible.has(p.id));
-    if (!parentEdges.length) continue;
-
-    // Already spoken for by a partner who will independently anchor this
-    // same couple — skip adding a second, competing pull for them.
-    const partner = chosenPartner(person.id);
-    if (partner && hasOwnAnchor(partner.id) && person.id > partner.id) continue;
-
-    const parentIds = [...new Set(parentEdges.map((p) => p.id))].sort();
-    const key = parentIds.join('|');
-    let pod = podsByKey.get(key);
-    if (!pod) podsByKey.set(key, pod = { parentIds, children: [] });
-    // A child's qualifier can differ per parent (biological to one, step to
-    // another) — use whichever is the "strongest" bond for sortChildren's
-    // own tiering, the same convention CHILD_QUALIFIER_ORDER already ranks.
-    const qualifier = parentEdges.reduce((best, p) => {
-      const q = p.qualifier || 'biological';
-      return (CHILD_QUALIFIER_ORDER[q] ?? 99) < (CHILD_QUALIFIER_ORDER[best] ?? 99) ? q : best;
-    }, 'step');
-    pod.children.push({ id: person.id, qualifier });
-  }
-  const pods = [];
-  for (const { parentIds, children } of podsByKey.values()) {
-    const sorted = sortChildren(children, graph.byId);
-    const n = sorted.length;
-    pods.push({
-      parentIds,
-      children: sorted.map((c, i) => ({ id: c.id, offset: i - (n - 1) / 2 })),
-    });
-  }
-  return pods;
-}
-
 export function buildGraph(people, relationships) {
   const byId = new Map(people.map((p) => [p.id, p]));
 
@@ -223,98 +113,6 @@ export function buildGraph(people, relationships) {
   };
 }
 
-// Everyone one hop from `id` — parents, children, partners, siblings —
-// regardless of bloodlineOnly/aliveness filters (those only ever SHRINK what
-// actually renders, so using the unfiltered superset here can only ever
-// over-estimate a rendered set, never under-estimate it — the right side to
-// err on for a safety cap). Shared by boundedRevealSet below.
-export function neighboursOf(graph, id) {
-  const set = new Set();
-  for (const x of graph.parents(id)) set.add(x.id);
-  for (const x of graph.children(id)) set.add(x.id);
-  for (const x of graph.partners(id)) set.add(x.id);
-  for (const x of graph.siblings(id)) set.add(x.id);
-  return set;
-}
-
-// App.jsx's canvas renders `expanded ∪ neighboursOf(expanded)` — adding
-// someone to `expanded` auto-reveals their immediate family too (the
-// additive-reveal architecture CLAUDE.md describes). A cap on how many ids
-// get ADDED to `expanded` (e.g. "All"'s MAX_BUBBLE_REVEAL) does NOT bound
-// that rendered union — each accepted id can drag in several more neighbours
-// that were never separately counted, so a flat `.slice(0, cap)` on the
-// candidate list alone can still let the real on-screen node count overshoot
-// the cap by several times over (measured 1.9x-3.7x on the real production
-// tree at every tested scale) — exactly the safety margin MAX_BUBBLE_REVEAL
-// exists to guarantee, since it was built to stop a documented GPU-crash bug
-// class. This walks `candidateIds` in priority (closest-first) order,
-// simulating the same expanded-plus-neighbours growth the canvas will
-// actually render, and stops accepting new candidates the moment the
-// PROJECTED rendered set would exceed `cap` — so the cap is honored against
-// what actually ends up on screen, not just against how many ids got added
-// to `expanded`.
-// The companion to boundedRevealSet, for the OTHER way the canvas fills up.
-//
-// boundedRevealSet bounds one deliberate reveal ("All"). Nothing bounded the
-// slow accumulation of ordinary browsing: every tap adds an anchor to
-// `expanded` and no path ever removes one, so a wander through the family only
-// ever grows the canvas. Measured on the real 1,239-person tree, walking from
-// relative to relative: 11 people on screen at rest, 27 after ten taps, 67
-// after twenty-five — against a phone that can legibly show roughly fifteen.
-// It never came down, because nothing ever took anything away.
-//
-// This returns the anchors worth keeping RIGHT NOW: the ones near whoever you
-// are actually looking at. Two rules, in order of authority:
-//
-//  1. Anything within `keepRadius` hops of the active person is kept, always,
-//     however many that is. The family you are reading is never released —
-//     the bound can only ever drop branches you have wandered away from,
-//     which the renderer has already faded to near-invisible by distance.
-//  2. Beyond that, keep the closest anchors up to `maxAnchors`, breaking ties
-//     toward the most recently given, so the trail behind you fades from its
-//     far end first.
-//
-// Deliberately NOT destructive, and NOT a mutation of `expanded`: the caller
-// passes the result through on the way to deciding what to RENDER. Nothing is
-// forgotten, so stepping back toward a released branch brings it straight
-// back — which is also what keeps this safe to put behind a flag.
-export function boundWorkingSet(graph, anchorIds, activeId, maxAnchors, keepRadius = 2) {
-  const anchors = [...anchorIds];
-  if (anchors.length <= maxAnchors) return new Set(anchors);
-  const dist = distancesFrom(graph, activeId);
-  const far = (id) => (dist.has(id) ? dist.get(id) : Infinity);
-
-  const kept = new Set();
-  if (activeId && anchors.includes(activeId)) kept.add(activeId);
-  // Rule 1 — the family you are reading is not negotiable.
-  for (const id of anchors) if (far(id) <= keepRadius) kept.add(id);
-  // Rule 2 — spend whatever budget is left on the next-closest anchors.
-  const rest = anchors
-    .filter((id) => !kept.has(id))
-    .map((id, i) => ({ id, d: far(id), i }))
-    .sort((a, b) => (a.d - b.d) || (b.i - a.i)); // closest first, then most recent
-  for (const { id } of rest) {
-    if (kept.size >= maxAnchors) break;
-    kept.add(id);
-  }
-  return kept;
-}
-
-export function boundedRevealSet(graph, candidateIds, alreadyExpanded, cap) {
-  const projected = new Set(alreadyExpanded);
-  for (const id of alreadyExpanded) {
-    for (const n of neighboursOf(graph, id)) projected.add(n);
-  }
-  const accepted = [];
-  for (const id of candidateIds) {
-    const additions = [id, ...neighboursOf(graph, id)].filter((x) => !projected.has(x));
-    if (projected.size + additions.length > cap) break;
-    for (const x of additions) projected.add(x);
-    accepted.push(id);
-  }
-  return accepted;
-}
-
 // A GENUINELY cohort-scoped graph — not just a `.people` filter. Building
 // `{ ...graph, people: filtered }` alone leaves `.byId`/`.relationships` and
 // the `parents`/`children`/`partners`/`siblings` closures bound to the
@@ -374,23 +172,19 @@ export function computeGenerations(graph) {
   };
   for (const p of graph.people) visit(p.id, new Set());
 
-  // Four invariants have to hold SIMULTANEOUSLY in the final result:
+  // Two invariants have to hold SIMULTANEOUSLY in the final result:
   //   1. Every parent sits strictly above every one of their children.
   //   2. Active partners share the same row (levelled onto the deeper one).
-  //   3. Siblings (any kind — full/half/step) share the same row.
-  //   4. CO-PARENTS (two people sharing a child) share the same row — see
-  //      the rule-3 block below for the real production bug this fixes.
-  // The first two used to run as two separate passes — level partners once,
-  // THEN cascade children below their (possibly just-deepened) parents —
-  // which looks right until a cascade adjustment deepens someone whose OWN
-  // partner was levelled earlier, in the first pass, against that person's
-  // now-stale shallower value. That partner is never revisited, so it's left
-  // stuck on the wrong row: a real, reported bug ("the partner pod needs to
-  // be level") reproduced with a minimal chain — P partners Q (whose
-  // separate ancestry is deeper), levelling P down to match; P's child K
-  // then gets cascaded even deeper to stay below P; but K's own partner R,
-  // already levelled to K's OLD (shallower) value in the FIRST pass, never
-  // gets a second look.
+  // These used to run as two separate passes — level partners once, THEN
+  // cascade children below their (possibly just-deepened) parents — which
+  // looks right until a cascade adjustment deepens someone whose OWN partner
+  // was leveled earlier, in the first pass, against that person's now-stale
+  // shallower value. That partner is never revisited, so it's left stuck on
+  // the wrong row: a real, reported bug ("the partner pod needs to be level")
+  // reproduced with a minimal chain — P partners Q (whose separate ancestry
+  // is deeper), levelling P down to match; P's child K then gets cascaded
+  // even deeper to stay below P; but K's own partner R, already levelled to
+  // K's OLD (shallower) value in the FIRST pass, never gets a second look.
   //
   // Fixed by interleaving both rules in one shared convergence loop instead:
   // each full pass re-levels every partner pair, then re-cascades every
@@ -401,25 +195,6 @@ export function computeGenerations(graph) {
   // of every generation index is monotonically non-decreasing and bounded by
   // the number of people — guaranteed to converge, defensively bounded below
   // in case of corrupted/cyclic relationship data.
-  //
-  // Invariant 3 was missing entirely until a real report on a 600+ person
-  // tree spanning 1573-2025 (wildly uneven documented depth across
-  // branches): "her siblings sit at the same level as her kids." Two
-  // siblings only ever ended up level as a SIDE EFFECT of both being
-  // cascaded below the same shared parent — which breaks the instant one
-  // sibling partners into a far more deeply-documented branch: rule 1 pulls
-  // THAT sibling (and, via cascade, their own children) many rows deeper,
-  // but nothing ever pulled their UN-partnered siblings down to match, since
-  // siblinghood was never an explicit levelling relationship the way
-  // partnership already was. The un-pulled siblings stayed on their
-  // original, shallow row — which the newly-deepened sibling's own cascaded
-  // children then caught up to, landing siblings and kids on the same row.
-  // Levelled with the identical "only ever move deeper, take the max" rule
-  // as partners, run as its own inner convergence loop right alongside rule
-  // 1 in the same outer pass, for the same reason: a chain of siblings (or a
-  // sibling later revealed to also be levelled via a partner) needs to
-  // converge within one trip through this step, not wait for a stale value
-  // to be revisited on some future pass.
   //
   // Former/ex partners are deliberately EXCLUDED from levelling: an ex from a
   // different family branch may have deeper ancestry, and dragging the
@@ -454,85 +229,7 @@ export function computeGenerations(graph) {
       }
     }
 
-    // 2. Level siblings (any kind) onto the same generation band using MAX —
-    //    same rule and shape as step 1, just over graph.siblings() instead
-    //    of graph.partners(). Unlike partners, sibling-ness carries no
-    //    'former' concept to exclude.
-    let sibLeveling = true;
-    while (sibLeveling) {
-      sibLeveling = false;
-      const seenSib = new Set();
-      for (const p of graph.people) {
-        for (const sib of graph.siblings(p.id)) {
-          const key = [p.id, sib.id].sort().join('|');
-          if (seenSib.has(key)) continue;
-          seenSib.add(key);
-          const a = gen.get(p.id) ?? 0;
-          const b = gen.get(sib.id) ?? 0;
-          if (a === b) continue;
-          const lvl = Math.max(a, b);
-          if (a !== lvl) { gen.set(p.id, lvl);   sibLeveling = true; stable = false; }
-          if (b !== lvl) { gen.set(sib.id, lvl); sibLeveling = true; stable = false; }
-        }
-      }
-    }
-
-    // 3. Level CO-PARENTS (any two people who share a child) onto the same
-    //    generation band using MAX — same rule and shape as steps 1 and 2.
-    //
-    //    REAL PRODUCTION REPORT, root-caused against the actual 1239-person
-    //    tree after ~20 rounds of force-tuning failed to fix the reported
-    //    "clustered mess": Christopher (a co-parent of Matthew) sat on
-    //    generation 14 while Heather (Matthew's other parent) sat on
-    //    generation 6 — an EIGHT-row gap between two people who, by
-    //    definition, must sit on the same row, since their shared child has
-    //    to be exactly one row below BOTH of them. 44 co-parent pairs across
-    //    that real tree were on different rows.
-    //
-    //    Nothing here levelled them: rule 1 levels PARTNERS but deliberately
-    //    excludes 'former' ones (see its own comment), rule 2 levels
-    //    siblings, and rule 4 below only ever pushes a child BELOW a parent
-    //    — it never pulls two parents of the same child level with each
-    //    other. So a separated/divorced couple whose two ancestries are
-    //    documented to different depths (very common on a real tree — one
-    //    side researched back centuries, the other not at all) ended up many
-    //    bands apart, dragging their child's two parent-lines in from wildly
-    //    different heights. That is a DATA-layer defect, not a physics one:
-    //    the force system was faithfully converging on genuinely wrong
-    //    targets, which is why no amount of force tuning could ever fix it.
-    //
-    //    Co-parenthood is deliberately a STRONGER signal than partnership
-    //    here: two people who had a child together are necessarily the same
-    //    generation relative to that child, whether or not they are still
-    //    together, and whether or not they were ever formally partners at
-    //    all. The rule-1 former-partner exclusion is untouched and still
-    //    correct for its own case — an ex with NO shared child has no
-    //    structural reason to be levelled, and still isn't.
-    let coParentLeveling = true;
-    while (coParentLeveling) {
-      coParentLeveling = false;
-      const seenCo = new Set();
-      for (const child of graph.people) {
-        const parents = graph.parents(child.id);
-        for (let i = 0; i < parents.length; i++) {
-          for (let j = i + 1; j < parents.length; j++) {
-            const a = parents[i].id;
-            const b = parents[j].id;
-            const key = [a, b].sort().join('|');
-            if (seenCo.has(key)) continue;
-            seenCo.add(key);
-            const ga = gen.get(a) ?? 0;
-            const gb = gen.get(b) ?? 0;
-            if (ga === gb) continue;
-            const lvl = Math.max(ga, gb);
-            if (ga !== lvl) { gen.set(a, lvl); coParentLeveling = true; stable = false; }
-            if (gb !== lvl) { gen.set(b, lvl); coParentLeveling = true; stable = false; }
-          }
-        }
-      }
-    }
-
-    // 4. Cascade children below their (possibly just-deepened) parents —
+    // 2. Cascade children below their (possibly just-deepened) parents —
     //    never the reverse.
     for (const child of graph.people) {
       const childGen = gen.get(child.id) ?? 0;
