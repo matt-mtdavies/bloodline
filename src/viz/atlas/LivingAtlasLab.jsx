@@ -190,7 +190,7 @@ export default function LivingAtlasLab() {
   const selected = graph.byId.get(selectedId);
   const lastExpansion = expansions.at(-1);
   const cameraAnchors = scene.newestIds.length && lastExpansion
-    ? [lastExpansion.anchorId, ...scene.newestIds]
+    ? scene.newestIds.length > 3 ? scene.newestIds : [lastExpansion.anchorId, ...scene.newestIds]
     : [selectedId];
   const autoCamera = useMemo(() => cameraForScene(scene, viewport, cameraAnchors), [scene, viewport, selectedId, expansions.length]);
 

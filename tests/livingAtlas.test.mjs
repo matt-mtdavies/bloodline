@@ -115,15 +115,30 @@ for (const fixture of FIXTURES) {
   assert.equal(siblings.find((entry) => entry.id === 'r_amie')?.kind, 'step', 'multiple step-siblings remain discoverable');
 
   const opening = createLivingScene(graph, 'r_matthew', mobile);
-  const siblingBranch = branchGroups(graph, 'r_matthew', opening.visibleIds).find((group) => group.type === 'sibling');
-  assert.ok(siblingBranch?.ids.length, 'collapsed sibling branch is explicitly discoverable');
-  const expanded = createLivingScene(graph, 'r_matthew', mobile, [{ anchorId: 'r_matthew', type: 'sibling' }]);
+  const siblingBranch = branchGroups(graph, 'r_matthew', opening.visibleIds).find((group) => group.type === 'step-sibling');
+  assert.equal(siblingBranch?.ids.length, 2, 'collapsed step-sibling branch is explicitly discoverable');
+  const expanded = createLivingScene(graph, 'r_matthew', mobile, [{ anchorId: 'r_matthew', type: 'step-sibling' }]);
   assert.ok(expanded.visibleIds.size > opening.visibleIds.size, 'expanding a branch grows the persistent scene');
   for (const [id, point] of opening.scenePositions) {
     assert.deepEqual(expanded.scenePositions.get(id), point, `${id}: existing position survives branch expansion`);
   }
   const camera = cameraForScene(expanded, mobile, ['r_matthew', ...expanded.newestIds]);
   assert.ok(camera.scale >= 0.76 && camera.scale <= 1, 'mobile camera stays readable while framing the new branch');
+}
+
+{
+  const people = ['focus', 'sibling', 'parent-a', 'parent-b'].map((id) => ({ id, display_name: id }));
+  const relationships = [
+    ...['focus', 'sibling'].flatMap((child) => [
+      { type: 'parent', from_person: 'parent-a', to_person: child, qualifier: 'step' },
+      { type: 'parent', from_person: 'parent-b', to_person: child, qualifier: 'step' },
+    ]),
+  ];
+  const graph = buildGraph(people, relationships);
+  assert.equal(siblingsFor(graph, 'focus')[0]?.kind, 'full', 'two shared parent identities override lossy GEDCOM PEDI qualifiers');
+  const groups = branchGroups(graph, 'focus', new Set(['focus']));
+  assert.deepEqual(groups.find((group) => group.type === 'sibling')?.ids, ['sibling'], 'full sibling remains in the primary sibling branch');
+  assert.equal(groups.some((group) => group.type === 'step-sibling'), false, 'full sibling is never mislabeled as step');
 }
 
 {

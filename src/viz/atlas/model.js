@@ -159,7 +159,24 @@ function spread(count, centre, gap, maxWidth) {
  * step-parent edge. This is a read-only view inference; it never changes data.
  */
 export function siblingsFor(graph, id) {
-  const found = new Map(graph.siblings(id).map((entry) => [entry.id, { ...entry }]));
+  const myParents = graph.parents(id);
+  const found = new Map(graph.siblings(id).map((entry) => {
+    const theirParents = graph.parents(entry.id);
+    const shared = myParents.filter((mine) => theirParents.some((theirs) => theirs.id === mine.id));
+    // GEDCOM PEDI describes the child's relationship to a FAM, not to each
+    // parent independently. Mixed biological/step exports can therefore mark
+    // both imported parent edges as step. Two identical recorded parents are
+    // still an unambiguous full-sibling structure and must win that lossy
+    // qualifier; one shared non-step parent is a half-sibling.
+    let kind = entry.kind;
+    if (shared.length >= 2) kind = 'full';
+    else if (shared.length === 1) {
+      const mine = shared[0];
+      const theirs = theirParents.find((parent) => parent.id === mine.id);
+      if (mine.qualifier !== 'step' && theirs?.qualifier !== 'step') kind = 'half';
+    }
+    return [entry.id, { ...entry, kind }];
+  }));
   for (const parent of graph.parents(id)) {
     for (const partner of graph.partners(parent.id)) {
       for (const child of graph.children(partner.id)) {
@@ -181,7 +198,8 @@ function relatedByType(graph, id, type) {
     ];
   }
   if (type === 'child') return sortedIds(graph, graph.children(id).map((entry) => entry.id));
-  if (type === 'sibling') return sortedIds(graph, siblingsFor(graph, id).map((entry) => entry.id));
+  if (type === 'sibling') return sortedIds(graph, siblingsFor(graph, id).filter((entry) => entry.kind !== 'step').map((entry) => entry.id));
+  if (type === 'step-sibling') return sortedIds(graph, siblingsFor(graph, id).filter((entry) => entry.kind === 'step').map((entry) => entry.id));
   return [];
 }
 
@@ -190,10 +208,11 @@ const BRANCH_LABELS = {
   partner: ['Partner', 'Partners'],
   child: ['Child', 'Children'],
   sibling: ['Sibling', 'Siblings'],
+  'step-sibling': ['Step-sibling', 'Step-siblings'],
 };
 
 export function branchGroups(graph, id, visibleIds) {
-  return ['parent', 'partner', 'child', 'sibling'].map((type) => {
+  return ['parent', 'partner', 'child', 'sibling', 'step-sibling'].map((type) => {
     const ids = relatedByType(graph, id, type).filter((candidate) => !visibleIds.has(candidate));
     const labels = BRANCH_LABELS[type];
     return { type, ids, label: ids.length === 1 ? labels[0] : labels[1] };
@@ -236,16 +255,25 @@ export function createLivingScene(graph, rootId, viewport, expansions = []) {
     if (expansion.type === 'parent') centreY -= vertical;
     if (expansion.type === 'child') centreY += vertical;
     if (expansion.type === 'partner') centreX += anchor.x > 0 ? gap * 1.35 : -gap * 1.35;
-    if (expansion.type === 'sibling') centreX += anchor.x > 0 ? gap * 2.2 : -gap * 2.2;
+    const siblingBranch = expansion.type === 'sibling' || expansion.type === 'step-sibling';
+    if (siblingBranch) {
+      const leftEdge = Math.min(...[...positions.values()].map((point) => point.x));
+      const columns = Math.min(3, candidates.length);
+      const groupHalf = ((columns - 1) * gap) / 2;
+      centreX = leftEdge - (mobile ? 114 : 142) - groupHalf;
+    }
 
+    const columns = siblingBranch ? Math.min(3, candidates.length) : candidates.length;
     const xs = expansion.type === 'partner'
       ? candidates.map((_, index) => centreX + (anchor.x > 0 ? 1 : -1) * index * gap)
-      : sceneSpread(candidates.length, centreX, gap);
+      : siblingBranch
+        ? candidates.map((_, index) => centreX + (index % columns - (columns - 1) / 2) * gap)
+        : sceneSpread(candidates.length, centreX, gap);
     candidates.forEach((id, index) => {
       positions.set(id, {
         x: xs[index],
-        y: centreY + (expansion.type === 'sibling' ? (index % 2) * 16 : 0),
-        role: expansion.type,
+        y: centreY + (siblingBranch ? (Math.floor(index / columns) - (Math.ceil(candidates.length / columns) - 1) / 2) * (mobile ? 108 : 128) : 0),
+        role: siblingBranch ? 'sibling' : expansion.type,
         priority: 3,
         anchorId: expansion.anchorId,
         expanded: true,

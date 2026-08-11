@@ -62,9 +62,11 @@ not a new production renderer.
 - The camera pans and eases to the newly opened branch. Users can drag the
   canvas itself, use Back to retrace expansions, or Home to restore the opening
   portrait. Individual people are never manually draggable.
-- Full/half/recorded-step siblings remain supported. A parent's partner's other
-  children are also shown as read-only inferred step-siblings, without writing
-  that inference into the tree.
+- Full/half siblings and step-siblings are separate labelled branches. A
+  parent's partner's other children are shown as read-only inferred
+  step-siblings, without writing that inference into the tree. Two people with
+  the same two recorded parents remain full siblings even if a lossy GEDCOM
+  PEDI qualifier marked those imported parent edges as step.
 - Reduced-motion users get short 120ms transitions.
 
 ## Verification

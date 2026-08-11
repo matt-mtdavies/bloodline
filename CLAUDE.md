@@ -69,8 +69,10 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   someone exposes labelled Parents/Partners/Children/Siblings branches;
   expanding a branch adds relatives without moving existing people, and a
   guided camera, canvas pan, Back and Home preserve spatial memory. Sibling
-  discovery includes full/half/recorded-step relationships plus a read-only
-  inference for a parent's partner's other children. Shared-parent connectors
+  discovery separates full/half siblings from step-siblings, adds a read-only
+  inference for a parent's partner's other children, and treats two shared
+  parent identities as full siblings even when lossy GEDCOM PEDI qualifiers
+  marked the imported parent edges as step. Shared-parent connectors
   use one trunk and sibling branches. Local archives above 250 people open with
   the atlas quiet (still visible and one-tap reversible). It
   defaults to existing synthetic fixtures. “Open GEDCOM · stays on device”
