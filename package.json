@@ -24,7 +24,8 @@
     "db:seed": "wrangler d1 execute bloodline --local --file=./seed/seed.sql",
     "db:seed:remote": "wrangler d1 execute bloodline --remote --file=./seed/seed.sql",
     "lab:capture": "node tests/lab-capture.mjs",
-    "test:lab": "node tests/treeLayoutV2.test.mjs && node tests/treeMotionV2.test.mjs"
+    "test:lab": "node tests/treeLayoutV2.test.mjs && node tests/treeMotionV2.test.mjs",
+    "test:atlas": "node tests/livingAtlas.test.mjs"
   },
   "dependencies": {
     "@tanstack/react-virtual": "^3.14.5",

@@ -55,6 +55,31 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
 
 ## Status — what's built
 
+- **Living Atlas concept prototype (isolated, read-only):**
+  `/?lab=living-atlas` mounts a lazy-loaded focus-and-context experiment
+  instead of the app; every normal URL still uses the unchanged production
+  `BubbleTree`. The prototype replaces global physics with two explicit
+  layers: a stable, selection-independent surname/generation atlas and a
+  deterministic Family Stage capped at 15 people on phone / 30 on larger
+  screens. Direct partners, parents, children and siblings win the stage
+  budget; grandparents, grandchildren and one-hop partner context fill the
+  remainder without recursive expansion. One SVG identity moves continuously
+  between its atlas and stage targets, so nobody exists in both layers;
+  shared-parent connectors use a single trunk and sibling branches. It
+  defaults to existing synthetic fixtures. The explicit “Load my family · GET
+  only” control reuses V2's audited one-request `fetchRealFamily()` helper and
+  has no PUT/sync/store import. Model rules live in
+  `src/viz/atlas/model.js`, the visual prototype in `LivingAtlasLab.jsx`, and
+  the boundaries in `docs/LIVING-ATLAS-PROTOTYPE.md`. `npm run test:atlas`
+  covers all 10 fixtures at desktop/mobile sizes, proves stable atlas
+  coordinates, and exercises a bounded synthetic 5,000-person model. Full
+  unit suite and production build pass; desktop composition and a person-to-
+  person gather were visually inspected. The pinned Chromium installation did
+  not complete in this sandbox, so an automated phone screenshot is not
+  claimed; mobile geometry is covered structurally and still needs a real-
+  device feel review before this concept advances. No production renderer,
+  storage, API, migration, editing, Perimeter or profile integration.
+
 - **Organic tree: parents now consistently sit above their children, partner
   pods level with each other, and the reapplied pod-anchor + tapered
   parent→child lines** (real feedback: "1. The parents are not consistently
