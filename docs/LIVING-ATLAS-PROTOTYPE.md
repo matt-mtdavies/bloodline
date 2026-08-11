@@ -96,8 +96,11 @@ npm run build
 `test:atlas` runs every structural fixture at desktop and mobile sizes, checks
 the core generation rules, proves atlas positions are selection-independent,
 checks step-sibling discovery and position persistence across expansion, and
-checks first and consecutive expansions against selectable-card overlap, and
+checks first and consecutive expansions against selectable-card overlap, then
 plans a synthetic 5,000-person graph while keeping the staged family bounded.
+The focus/context interaction, multiple branch buds and selected-partner label
+placement were also visually checked at 390×844 with no browser warnings or
+errors.
 
 ## Deliberate exclusions
 
