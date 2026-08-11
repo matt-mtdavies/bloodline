@@ -20,6 +20,7 @@ const mobile = { width: 390, height: 718 };
   assert.doesNotMatch(prototypeSource, /\/api\//, 'prototype contains no production API path');
   assert.doesNotMatch(prototypeSource, /data\/store/, 'prototype never imports the production store');
   assert.doesNotMatch(prototypeSource, /realFamily/, 'prototype cannot load a session family');
+  assert.doesNotMatch(prototypeSource, /className="atlas-context"/, 'each atlas person is rendered once, not duplicated as a second context circle');
 }
 
 function relationIds(entries) {

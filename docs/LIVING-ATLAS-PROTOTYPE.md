@@ -31,6 +31,9 @@ not a new production renderer.
 - Atlas coordinates do not change when another person is selected.
 - At wide scale, individuals become quiet points inside labelled family
   constellations rather than pretending to be readable profile cards.
+- Archives above 250 people open with that atlas in its quiet atmospheric
+  state. Every distant person is drawn once and always behind the staged
+  family; the complete atlas can still be brought forward with one tap.
 - The atlas has no force simulation and no positional ambient motion.
 
 ### Bounded Family Stage

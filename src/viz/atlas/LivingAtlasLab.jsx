@@ -156,6 +156,14 @@ export default function LivingAtlasLab() {
   const model = useMemo(() => createAtlasModel(graph, activeId, viewport), [graph, activeId, viewport]);
   const links = useMemo(() => focusPaths(graph, model.focusIds, model.focusPositions), [graph, model]);
   const clouds = useMemo(() => buildClouds(graph, model), [graph, model]);
+  // Preserve one SVG identity per person while ensuring the family stage is
+  // always painted above the atlas. React keeps the keyed groups alive as a
+  // person is promoted from context to focus, so the gather motion remains a
+  // continuous transition rather than a duplicate or a jump cut.
+  const orderedPeople = useMemo(() => [
+    ...graph.people.filter((person) => !model.focusIds.has(person.id)),
+    ...graph.people.filter((person) => model.focusIds.has(person.id)),
+  ], [graph.people, model.focusIds]);
   const active = graph.byId.get(activeId);
 
   useEffect(() => {
@@ -201,6 +209,9 @@ export default function LivingAtlasLab() {
       });
       setFixtureId('local-gedcom');
       setActiveId(focus);
+      // Dense archives should begin as atmosphere, not a wall of points. The
+      // owner can still bring the complete atlas forward with one tap.
+      setShowAtlas(parsed.people.length <= 250);
       setLoadState('loaded');
       setPhase('gathering');
     } catch (error) {
@@ -209,7 +220,7 @@ export default function LivingAtlasLab() {
   };
 
   return (
-    <main className={`atlas-lab atlas-lab--${phase} ${showAtlas ? '' : 'atlas-lab--quiet'}`}>
+    <main className={`atlas-lab atlas-lab--${phase} ${showAtlas ? '' : 'atlas-lab--quiet'} ${graph.people.length > 250 ? 'atlas-lab--dense' : ''}`}>
       <header className="atlas-lab__header">
         <div className="atlas-lab__brand"><AtlasMark /><div><strong>Living Atlas</strong><span>Concept prototype · read only</span></div></div>
         <div className="atlas-lab__controls">
@@ -239,9 +250,6 @@ export default function LivingAtlasLab() {
 
         <svg className="atlas-lab__canvas" width={viewport.width} height={viewport.height} viewBox={`0 0 ${viewport.width} ${viewport.height}`}>
           <defs>
-            <filter id="atlas-glow" x="-80%" y="-80%" width="260%" height="260%">
-              <feGaussianBlur stdDeviation="10" />
-            </filter>
             <radialGradient id="atlas-stage-glow">
               <stop offset="0" stopColor="#fffaf4" stopOpacity=".98" />
               <stop offset=".55" stopColor="#fffaf4" stopOpacity=".52" />
@@ -260,30 +268,19 @@ export default function LivingAtlasLab() {
             ))}
           </g>
 
-          <g className="atlas-context" aria-hidden="true">
-            {graph.people.map((person) => {
-              const pos = model.positions.get(person.id);
-              if (!pos || model.focusIds.has(person.id)) return null;
-              const colors = monogramColors(personName(person));
-              return (
-                <circle key={`context-${person.id}`} cx={pos.x} cy={pos.y} r={graph.people.length > 250 ? 2.4 : 3.5} fill={colors.base} />
-              );
-            })}
-          </g>
-
           <g className="atlas-focus-links">
             {links.map((link) => <path key={link.key} d={link.d} className={`atlas-link atlas-link--${link.type} ${link.former ? 'atlas-link--former' : ''}`} />)}
           </g>
 
           <g className="atlas-people">
-            {graph.people.map((person) => {
+            {orderedPeople.map((person) => {
               const atlas = model.positions.get(person.id);
               const focused = model.focusIds.has(person.id) && model.focusPositions.has(person.id);
               const target = focused ? model.focusPositions.get(person.id) : atlas;
               if (!target) return null;
               const colors = monogramColors(personName(person));
               const role = focused ? target.role : 'atlas';
-              const radius = focused ? (person.id === activeId ? 42 : role === 'context' ? 24 : 30) : 5;
+              const radius = focused ? (person.id === activeId ? 42 : role === 'context' ? 24 : 30) : graph.people.length > 250 ? 2.4 : 3.5;
               const outside = model.outside.get(person.id);
               return (
                 <g

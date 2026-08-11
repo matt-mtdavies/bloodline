@@ -66,7 +66,10 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   for grandparents, grandchildren and one-hop partner context without
   recursive expansion. One SVG identity moves continuously
   between its atlas and stage targets, so nobody exists in both layers;
-  shared-parent connectors use a single trunk and sibling branches. It
+  shared-parent connectors use a single trunk and sibling branches. Atlas
+  identities are painted first so context cannot show through foreground
+  portraits, and local archives above 250 people open with the atlas quiet
+  (still visible and one-tap reversible). It
   defaults to existing synthetic fixtures. “Open GEDCOM · stays on device”
   optionally parses a local file in-browser with the existing pure GEDCOM
   reader; the prototype has no fetch/API/auth/sync/store import at all. A test
