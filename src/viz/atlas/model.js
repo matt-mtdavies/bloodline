@@ -1,7 +1,7 @@
 import { computeGenerations } from '../../data/graph.js';
 
 export const MAX_FOCUS_DESKTOP = 30;
-export const MAX_FOCUS_MOBILE = 12;
+export const MAX_FOCUS_MOBILE = 8;
 
 function hash(value) {
   let h = 2166136261;
@@ -105,20 +105,33 @@ export function collectFocusIds(graph, activeId, maxPeople = MAX_FOCUS_DESKTOP, 
   };
 
   add([activeId]);
-  const parents = graph.parents(activeId).map((x) => x.id);
-  const partners = graph.partners(activeId).map((x) => x.id);
-  const children = graph.children(activeId).map((x) => x.id);
-  const siblings = graph.siblings(activeId).map((x) => x.id);
+  const parents = sortedIds(graph, graph.parents(activeId).map((x) => x.id));
+  const partnerEdges = graph.partners(activeId);
+  const partners = [
+    ...sortedIds(graph, partnerEdges.filter((x) => x.status !== 'former').map((x) => x.id)),
+    ...sortedIds(graph, partnerEdges.filter((x) => x.status === 'former').map((x) => x.id)),
+  ];
+  const children = sortedIds(graph, graph.children(activeId).map((x) => x.id));
+  const siblings = sortedIds(graph, graph.siblings(activeId).map((x) => x.id));
+
+  // A phone is a portrait, not a compressed desktop canvas. Keep the stage
+  // within explicit row capacities: two partners, two parents, and three
+  // children. Siblings only enter when those core rows leave genuine visual
+  // room. Continuation badges carry everyone else without asking the user to
+  // repair an impossible 12-person composition by dragging portraits around.
+  if (mobile) {
+    add(partners.slice(0, 2));
+    add(parents.slice(0, 2));
+    add(children.slice(0, 3));
+    const siblingSlots = chosen.length <= 5 ? 2 : chosen.length === 6 ? 1 : 0;
+    add(siblings.slice(0, siblingSlots));
+    return new Set(chosen);
+  }
+
   add(partners);
   add(parents);
   add(children);
   add(siblings);
-
-  // A phone is a portrait, not a compressed desktop canvas. Keep the stage
-  // to the active person's direct family; continuation badges carry the
-  // promise of grandparents, grandchildren and in-law branches without
-  // forcing another generation behind the title or off the screen edge.
-  if (mobile) return new Set(chosen);
 
   // Context radiates through the active family unit, never recursively.
   add(parents.flatMap((id) => graph.parents(id).map((x) => x.id)));

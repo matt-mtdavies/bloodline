@@ -5,6 +5,7 @@ import { buildGraph } from '../src/data/graph.js';
 import { FIXTURES } from '../src/viz/v2/fixtures.js';
 import {
   MAX_FOCUS_DESKTOP,
+  MAX_FOCUS_MOBILE,
   collectFocusIds,
   createAtlasModel,
   createAtlasPositions,
@@ -31,7 +32,7 @@ for (const fixture of FIXTURES) {
   const graph = buildGraph(fixture.people, fixture.relationships);
   for (const viewport of [desktop, mobile]) {
     const model = createAtlasModel(graph, fixture.focus, viewport);
-    const cap = viewport.width < 620 ? 12 : MAX_FOCUS_DESKTOP;
+    const cap = viewport.width < 620 ? MAX_FOCUS_MOBILE : MAX_FOCUS_DESKTOP;
     assert.ok(model.focusIds.size <= cap, `${fixture.id}: focus respects viewport budget`);
     assert.ok(model.focusIds.has(fixture.focus), `${fixture.id}: active person is focused`);
     assert.equal(model.focusPositions.get(fixture.focus).x, viewport.width / 2, `${fixture.id}: active centred horizontally`);
@@ -62,7 +63,31 @@ for (const fixture of FIXTURES) {
   const model = createAtlasModel(graph, fixture.focus, mobile);
   const grandparents = graph.parents(fixture.focus).flatMap((parent) => graph.parents(parent.id).map((entry) => entry.id));
   assert.ok(grandparents.every((id) => !model.focusIds.has(id)), 'mobile stage leaves grandparents in the atlas');
-  assert.ok(model.focusIds.size <= 12, 'mobile seed portrait stays intentionally sparse');
+  assert.ok(model.focusIds.size <= MAX_FOCUS_MOBILE, 'mobile seed portrait stays intentionally sparse');
+}
+
+{
+  const people = [
+    'focus', 'parent-a', 'parent-b', 'partner-current', 'partner-former-a', 'partner-former-b',
+    'child-a', 'child-b', 'child-c', 'child-d', 'sibling-a', 'sibling-b',
+  ].map((id) => ({ id, display_name: id.replaceAll('-', ' ') }));
+  const relationships = [
+    { type: 'parent', from_person: 'parent-a', to_person: 'focus' },
+    { type: 'parent', from_person: 'parent-b', to_person: 'focus' },
+    { type: 'parent', from_person: 'parent-a', to_person: 'sibling-a' },
+    { type: 'parent', from_person: 'parent-a', to_person: 'sibling-b' },
+    { type: 'partner', from_person: 'focus', to_person: 'partner-current', partner_status: 'current' },
+    { type: 'partner', from_person: 'focus', to_person: 'partner-former-a', partner_status: 'former' },
+    { type: 'partner', from_person: 'focus', to_person: 'partner-former-b', partner_status: 'former' },
+    ...['child-a', 'child-b', 'child-c', 'child-d'].map((id) => ({ type: 'parent', from_person: 'focus', to_person: id })),
+  ];
+  const graph = buildGraph(people, relationships);
+  const ids = collectFocusIds(graph, 'focus', MAX_FOCUS_MOBILE, { mobile: true });
+  assert.equal(ids.size, 8, 'busy mobile family uses the eight-position spatial budget');
+  assert.ok(ids.has('partner-current'), 'current partner wins a mobile partner position');
+  assert.equal(graph.partners('focus').filter((entry) => ids.has(entry.id)).length, 2, 'mobile stages no more than two partners');
+  assert.equal(graph.children('focus').filter((entry) => ids.has(entry.id)).length, 3, 'mobile stages no more than three children');
+  assert.equal(graph.siblings('focus').filter((entry) => ids.has(entry.id)).length, 0, 'siblings yield when core family rows are full');
 }
 
 {

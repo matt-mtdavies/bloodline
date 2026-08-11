@@ -245,7 +245,7 @@ export default function LivingAtlasLab() {
         <div className="atlas-lab__title">
           <span>Family stage</span>
           <h1>{personName(active)}’s neighbourhood</h1>
-          <p>{model.focusIds.size} relatives gathered from {graph.people.length.toLocaleString()} in the atlas</p>
+          <p>{Math.max(0, model.focusIds.size - 1)} relatives gathered from {graph.people.length.toLocaleString()} in the atlas</p>
         </div>
 
         <svg className="atlas-lab__canvas" width={viewport.width} height={viewport.height} viewBox={`0 0 ${viewport.width} ${viewport.height}`}>
