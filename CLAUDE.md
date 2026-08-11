@@ -71,7 +71,11 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   portrait taps only select/centre and never expand implicitly. This replaces
   the detached bottom action dock and its ambiguous plus badge. A selected
   partner's full nameplate stays above the partnership row to avoid colliding
-  with the other partner's label. Expanding a branch adds relatives without
+  with the other partner's label, while an unselected partner labels below.
+  Selection now creates a visual focus layer without changing coordinates:
+  the selected person's visible parents/partners/children and their just-opened
+  branch stay crisp; accumulated relatives and connectors remain tappable but
+  dim with labels suppressed until promoted. Expanding a branch adds relatives without
   moving existing people, and a
   guided camera, canvas pan, Back and Home preserve spatial memory. Sibling
   discovery separates full/half siblings from step-siblings, adds a read-only

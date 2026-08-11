@@ -62,6 +62,12 @@ not a new production renderer.
 - Selecting a visible relative does not reorganize the scene. It exposes that
   person's remaining branches; expanding one adds relatives without moving any
   existing person.
+- Selection creates a visual—not spatial—focus layer. The selected person,
+  their visible parents, partners and children, plus the branch they just
+  opened remain crisp. Previously explored relatives keep their exact canvas
+  positions but become quiet context with suppressed labels and connectors;
+  tapping any one promotes their neighbourhood immediately. This prevents an
+  accumulated 20-person phone canvas from competing at one visual weight.
 - The camera pans and eases to the newly opened branch. Users can drag the
   canvas itself, use Back to retrace expansions, or Home to restore the opening
   portrait. Individual people are never manually draggable.
@@ -71,7 +77,8 @@ not a new production renderer.
   side), while all existing coordinates remain fixed. The camera keeps both
   the branch and the person it grew from in view.
 - A selected partner keeps their full nameplate above the partnership row, so
-  it cannot collide with the other partner's label beneath the row.
+  it cannot collide with the other partner's label beneath the row; an
+  unselected partner uses the lower label position.
 - Full/half siblings and step-siblings are separate labelled branches. A
   parent's partner's other children are shown as read-only inferred
   step-siblings, without writing that inference into the tree. Two people with

@@ -29,6 +29,7 @@ const mobile = { width: 390, height: 718 };
   assert.doesNotMatch(prototypeSource, /atlas-branch-dock/, 'branch expansion is never detached into a bottom dock');
   assert.match(prototypeSource, /atlas-branch-bud/, 'selected people expose contextual branch buds');
   assert.match(prototypeSource, /aria-label={`Show /, 'branch buds have a named keyboard and screen-reader action');
+  assert.match(prototypeSource, /atlas-person--contextual/, 'accumulated relatives remain as a quiet selectable context layer');
 }
 
 function relationIds(entries) {

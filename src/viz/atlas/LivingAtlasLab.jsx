@@ -76,7 +76,7 @@ function curve(a, b, type) {
   return `M ${a.x} ${a.y} C ${a.x} ${midY}, ${b.x} ${midY}, ${b.x} ${b.y}`;
 }
 
-function focusPaths(graph, focusIds, positions) {
+function focusPaths(graph, focusIds, positions, spotlightIds) {
   const paths = [];
   const seenPartners = new Set();
   const parentGroups = new Map();
@@ -89,7 +89,13 @@ function focusPaths(graph, focusIds, positions) {
       const key = linkKey(a, b, 'partner');
       if (seenPartners.has(key)) continue;
       seenPartners.add(key);
-      paths.push({ key, d: curve(positions.get(a), positions.get(b), 'partner'), type: 'partner', former: rel.partner_status === 'former' });
+      paths.push({
+        key,
+        d: curve(positions.get(a), positions.get(b), 'partner'),
+        type: 'partner',
+        former: rel.partner_status === 'former',
+        contextual: !spotlightIds.has(a) || !spotlightIds.has(b),
+      });
     }
   }
 
@@ -107,25 +113,29 @@ function focusPaths(graph, focusIds, positions) {
 
   for (const [groupKey, group] of parentGroups) {
     const parentPoints = group.parents.map((id) => positions.get(id));
-    const children = group.children.map((id) => positions.get(id)).sort((a, b) => a.x - b.x);
+    const children = group.children
+      .map((id) => ({ id, point: positions.get(id) }))
+      .sort((a, b) => a.point.x - b.point.x);
     const start = {
       x: parentPoints.reduce((sum, point) => sum + point.x, 0) / parentPoints.length,
       y: Math.max(...parentPoints.map((point) => point.y)) + 34,
     };
-    const firstChildY = Math.min(...children.map((child) => child.y)) - 34;
+    const firstChildY = Math.min(...children.map((child) => child.point.y)) - 34;
     const junction = {
-      x: children.reduce((sum, child) => sum + child.x, 0) / children.length,
+      x: children.reduce((sum, child) => sum + child.point.x, 0) / children.length,
       y: start.y + (firstChildY - start.y) * 0.68,
     };
     paths.push({
       key: `parent-stem:${groupKey}`,
       d: `M ${start.x} ${start.y} C ${start.x} ${junction.y}, ${junction.x} ${junction.y}, ${junction.x} ${junction.y}`,
       type: 'parent',
+      contextual: !group.parents.every((id) => spotlightIds.has(id)) || !group.children.some((id) => spotlightIds.has(id)),
     });
-    children.forEach((child, index) => paths.push({
+    children.forEach(({ id, point: child }, index) => paths.push({
       key: `parent-branch:${groupKey}:${index}`,
       d: `M ${junction.x} ${junction.y} C ${junction.x} ${child.y - 48}, ${child.x} ${child.y - 48}, ${child.x} ${child.y - 30}`,
       type: 'parent',
+      contextual: !group.parents.every((id) => spotlightIds.has(id)) || !spotlightIds.has(id),
     }));
   }
 
@@ -227,26 +237,33 @@ export default function LivingAtlasLab() {
 
   const graph = useMemo(() => buildGraph(source.people, source.relationships), [source]);
   const scene = useMemo(() => createLivingScene(graph, rootId, viewport, expansions), [graph, rootId, viewport, expansions]);
-  const links = useMemo(() => focusPaths(graph, scene.visibleIds, scene.scenePositions), [graph, scene]);
+  const selected = graph.byId.get(selectedId);
+  const lastExpansion = expansions.at(-1);
+  const spotlightIds = useMemo(() => {
+    const ids = new Set([selectedId]);
+    [graph.parents(selectedId), graph.partners(selectedId), graph.children(selectedId)]
+      .flat()
+      .forEach((entry) => { if (scene.visibleIds.has(entry.id)) ids.add(entry.id); });
+    if (lastExpansion?.anchorId === selectedId) scene.newestIds.forEach((id) => ids.add(id));
+    return ids;
+  }, [graph, scene, selectedId, lastExpansion?.anchorId]);
+  const links = useMemo(
+    () => focusPaths(graph, scene.visibleIds, scene.scenePositions, spotlightIds),
+    [graph, scene, spotlightIds],
+  );
   const clouds = useMemo(() => buildClouds(graph, scene), [graph, scene]);
   const branches = useMemo(() => branchGroups(graph, selectedId, scene.visibleIds), [graph, selectedId, scene.visibleIds]);
   const branchBuds = useMemo(
     () => branchBudLayout(branches, scene.scenePositions.get(selectedId), scene.scenePositions),
     [branches, scene.scenePositions, selectedId],
   );
-  const selected = graph.byId.get(selectedId);
-  const lastExpansion = expansions.at(-1);
   const selectedPoint = scene.scenePositions.get(selectedId);
-  const localScenePoints = selectedPoint
-    ? [...scene.visibleIds]
-      .map((id) => scene.scenePositions.get(id))
-      .filter((point) => point && Math.hypot(point.x - selectedPoint.x, point.y - selectedPoint.y) <= 210)
-    : [];
+  const spotlightPoints = [...spotlightIds].map((id) => scene.scenePositions.get(id)).filter(Boolean);
   const cameraAnchors = scene.newestIds.length && lastExpansion
     ? [lastExpansion.anchorId, ...scene.newestIds]
     : branchBuds.length
-      ? [...localScenePoints, ...branchBuds.map((bud) => ({ x: selectedPoint.x + bud.x, y: selectedPoint.y + bud.y }))]
-      : [selectedId];
+      ? [...spotlightPoints, ...branchBuds.map((bud) => ({ x: selectedPoint.x + bud.x, y: selectedPoint.y + bud.y }))]
+      : spotlightPoints.length ? spotlightPoints : [selectedId];
   const autoCamera = useMemo(() => cameraForScene(scene, viewport, cameraAnchors), [scene, viewport, selectedId, expansions.length, branchBuds]);
 
   useEffect(() => {
@@ -422,7 +439,7 @@ export default function LivingAtlasLab() {
             }}
           >
             <g className="atlas-focus-links">
-              {links.map((link) => <path key={link.key} d={link.d} className={`atlas-link atlas-link--${link.type} ${link.former ? 'atlas-link--former' : ''}`} />)}
+              {links.map((link) => <path key={link.key} d={link.d} className={`atlas-link atlas-link--${link.type} ${link.former ? 'atlas-link--former' : ''} ${link.contextual ? 'atlas-link--contextual' : ''}`} />)}
             </g>
 
             <g className="atlas-people">
@@ -437,10 +454,11 @@ export default function LivingAtlasLab() {
               const primary = isSelected ? personName(person) : firstName(person);
               const secondary = isSelected ? years(person) : relationshipLabel(graph, target.anchorId || rootId, person, role);
               const labelWidth = Math.min(162, Math.max(58, primary.length * (isSelected ? 7.2 : 6.4) + 22, secondary.length * 5.6 + 20));
-              const labelY = role === 'partner' ? -(radius + 19) : radius + 17;
+              const labelY = role === 'partner' && isSelected ? -(radius + 19) : radius + 17;
+              const isContextual = !spotlightIds.has(person.id);
               return (
                 <g
-                  className={`atlas-person atlas-person--${role} ${isSelected ? 'atlas-person--active' : ''} ${target.expanded ? 'atlas-person--expanded' : ''}`}
+                  className={`atlas-person atlas-person--${role} ${isSelected ? 'atlas-person--active' : ''} ${isContextual ? 'atlas-person--contextual' : ''} ${target.expanded ? 'atlas-person--expanded' : ''}`}
                   key={person.id}
                   style={{ '--atlas-x': `${target.x}px`, '--atlas-y': `${target.y}px`, '--atlas-delay': `${Math.min(target.priority || 0, 4) * 45}ms` }}
                   onPointerDown={(event) => event.stopPropagation()}

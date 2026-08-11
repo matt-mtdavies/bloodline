@@ -102,6 +102,7 @@
 }
 .atlas-link--partner { stroke: #c77857; stroke-width: 2.4; opacity: .78; }
 .atlas-link--former { stroke-dasharray: 7 7; }
+.atlas-link.atlas-link--contextual { opacity: .1; }
 .atlas-lab--gathering .atlas-link { opacity: 0; stroke-dashoffset: 180; transition-delay: 0ms; }
 
 .atlas-person {
@@ -129,8 +130,14 @@
 .atlas-person--active .atlas-person__halo { fill: #fff4e9; stroke: rgba(194, 96, 58, .38); stroke-width: 2; opacity: .96; }
 .atlas-person--context { opacity: .72; }
 .atlas-person--context .atlas-person__disc { filter: saturate(.65) drop-shadow(0 5px 11px rgba(62, 48, 38, .12)); }
+.atlas-person--contextual,
+.atlas-person--expanded.atlas-person--contextual { opacity: .18; animation: none; }
+.atlas-person--contextual .atlas-person__label { opacity: 0; }
+.atlas-person--contextual .atlas-person__disc { filter: saturate(.45) drop-shadow(0 3px 7px rgba(62, 48, 38, .08)); }
+.atlas-person--contextual:hover { opacity: .62; }
+.atlas-person--contextual:hover .atlas-person__label { opacity: 1; }
 
-.atlas-person__label { text-anchor: middle; pointer-events: none; }
+.atlas-person__label { text-anchor: middle; pointer-events: none; transition: opacity 220ms ease; }
 .atlas-person__label rect { fill: rgba(255, 253, 250, .96); stroke: rgba(98, 79, 64, .11); stroke-width: 1; filter: drop-shadow(0 4px 10px rgba(53, 41, 32, .1)); }
 .atlas-person__name { fill: #25211f; font-size: 11px; font-weight: 750; }
 .atlas-person--active .atlas-person__name { font: 600 18px Georgia, "Times New Roman", serif; letter-spacing: -.02em; }
