@@ -14,7 +14,8 @@ function useViewport(ref) {
     if (!ref.current) return undefined;
     const update = () => {
       const box = ref.current.getBoundingClientRect();
-      setViewport({ width: Math.max(320, box.width), height: Math.max(560, box.height) });
+      const mobile = box.width < 620;
+      setViewport({ width: Math.max(320, box.width), height: Math.max(mobile ? 500 : 560, box.height) });
     };
     update();
     const observer = new ResizeObserver(update);

@@ -30,7 +30,7 @@ for (const fixture of FIXTURES) {
   const graph = buildGraph(fixture.people, fixture.relationships);
   for (const viewport of [desktop, mobile]) {
     const model = createAtlasModel(graph, fixture.focus, viewport);
-    const cap = viewport.width < 620 ? 15 : MAX_FOCUS_DESKTOP;
+    const cap = viewport.width < 620 ? 12 : MAX_FOCUS_DESKTOP;
     assert.ok(model.focusIds.size <= cap, `${fixture.id}: focus respects viewport budget`);
     assert.ok(model.focusIds.has(fixture.focus), `${fixture.id}: active person is focused`);
     assert.equal(model.focusPositions.get(fixture.focus).x, viewport.width / 2, `${fixture.id}: active centred horizontally`);
@@ -53,6 +53,15 @@ for (const fixture of FIXTURES) {
       if (model.focusPositions.has(id)) assert.equal(model.focusPositions.get(id).y, activePoint.y, `${fixture.id}: partner shares active row`);
     }
   }
+}
+
+{
+  const fixture = FIXTURES.find((entry) => entry.id === 'seed-family');
+  const graph = buildGraph(fixture.people, fixture.relationships);
+  const model = createAtlasModel(graph, fixture.focus, mobile);
+  const grandparents = graph.parents(fixture.focus).flatMap((parent) => graph.parents(parent.id).map((entry) => entry.id));
+  assert.ok(grandparents.every((id) => !model.focusIds.has(id)), 'mobile stage leaves grandparents in the atlas');
+  assert.ok(model.focusIds.size <= 12, 'mobile seed portrait stays intentionally sparse');
 }
 
 {

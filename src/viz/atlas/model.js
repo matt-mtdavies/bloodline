@@ -1,7 +1,7 @@
 import { computeGenerations } from '../../data/graph.js';
 
 export const MAX_FOCUS_DESKTOP = 30;
-export const MAX_FOCUS_MOBILE = 15;
+export const MAX_FOCUS_MOBILE = 12;
 
 function hash(value) {
   let h = 2166136261;
@@ -93,7 +93,7 @@ export function createAtlasPositions(graph, viewport) {
  * finally partners of children/siblings. The Perimeter remains a separate
  * product preference; this is only the number of people a viewport can stage.
  */
-export function collectFocusIds(graph, activeId, maxPeople = MAX_FOCUS_DESKTOP) {
+export function collectFocusIds(graph, activeId, maxPeople = MAX_FOCUS_DESKTOP, { mobile = false } = {}) {
   const chosen = [];
   const seen = new Set();
   const add = (ids) => {
@@ -113,6 +113,12 @@ export function collectFocusIds(graph, activeId, maxPeople = MAX_FOCUS_DESKTOP) 
   add(parents);
   add(children);
   add(siblings);
+
+  // A phone is a portrait, not a compressed desktop canvas. Keep the stage
+  // to the active person's direct family; continuation badges carry the
+  // promise of grandparents, grandchildren and in-law branches without
+  // forcing another generation behind the title or off the screen edge.
+  if (mobile) return new Set(chosen);
 
   // Context radiates through the active family unit, never recursively.
   add(parents.flatMap((id) => graph.parents(id).map((x) => x.id)));
@@ -138,7 +144,7 @@ export function createFocusLayout(graph, activeId, focusIds, viewport) {
   const cx = viewport.width / 2;
   const cy = viewport.height * (mobile ? 0.5 : 0.57);
   const rowGap = mobile ? 126 : 155;
-  const available = viewport.width - (mobile ? 48 : 150);
+  const available = viewport.width - (mobile ? 120 : 150);
   const positions = new Map([[activeId, { x: cx, y: cy, role: 'active', priority: 0 }]]);
 
   const idsIn = (items) => sortedIds(graph, items.map((x) => x.id).filter((id) => focusIds.has(id)));
@@ -153,7 +159,7 @@ export function createFocusLayout(graph, activeId, focusIds, viewport) {
   partners.forEach((id, index) => {
     const distance = Math.ceil((index + 1) / 2);
     const side = index % 2 === 0 ? 1 : -1;
-    positions.set(id, { x: cx + side * distance * partnerGap, y: cy, role: 'partner', priority: 1 });
+    positions.set(id, { x: Math.max(54, Math.min(viewport.width - 54, cx + side * distance * partnerGap)), y: cy, role: 'partner', priority: 1 });
   });
 
   spread(parents.length, cx, mobile ? 112 : 170, available * 0.65).forEach((x, index) => {
@@ -170,7 +176,7 @@ export function createFocusLayout(graph, activeId, focusIds, viewport) {
     const side = index % 2 === 0 ? -1 : 1;
     const distance = Math.floor(index / 2);
     positions.set(id, {
-      x: cx + side * Math.min(available * 0.46, podHalf + 92 + distance * (mobile ? 74 : 105)),
+      x: Math.max(56, Math.min(viewport.width - 56, cx + side * Math.min(available * 0.46, podHalf + 92 + distance * (mobile ? 74 : 105)))),
       y: cy + (mobile ? 34 : 48),
       role: 'sibling',
       priority: 2,
@@ -195,7 +201,7 @@ export function createFocusLayout(graph, activeId, focusIds, viewport) {
     const h = hash(id);
     const side = h % 2 ? 1 : -1;
     positions.set(id, {
-      x: Math.max(34, Math.min(viewport.width - 34, a.x + side * (mobile ? 68 : 92))),
+      x: Math.max(mobile ? 56 : 34, Math.min(viewport.width - (mobile ? 56 : 34), a.x + side * (mobile ? 68 : 92))),
       y: a.y + (h % 3 - 1) * (mobile ? 52 : 64),
       role: 'context',
       priority: 4,
@@ -217,7 +223,8 @@ export function outsideConnections(graph, focusIds) {
 export function createAtlasModel(graph, activeId, viewport) {
   const atlas = createAtlasPositions(graph, viewport);
   const limit = viewport.width < 620 ? MAX_FOCUS_MOBILE : MAX_FOCUS_DESKTOP;
-  const focusIds = collectFocusIds(graph, activeId, limit);
+  const mobile = viewport.width < 620;
+  const focusIds = collectFocusIds(graph, activeId, limit, { mobile });
   const focus = createFocusLayout(graph, activeId, focusIds, viewport);
   return {
     ...atlas,

@@ -60,10 +60,11 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   instead of the app; every normal URL still uses the unchanged production
   `BubbleTree`. The prototype replaces global physics with two explicit
   layers: a stable, selection-independent surname/generation atlas and a
-  deterministic Family Stage capped at 15 people on phone / 30 on larger
-  screens. Direct partners, parents, children and siblings win the stage
-  budget; grandparents, grandchildren and one-hop partner context fill the
-  remainder without recursive expansion. One SVG identity moves continuously
+  deterministic Family Stage capped at 12 people on phone / 30 on larger
+  screens. Phones intentionally stop at the direct-family portrait (partners,
+  parents, children and siblings); larger screens can use remaining capacity
+  for grandparents, grandchildren and one-hop partner context without
+  recursive expansion. One SVG identity moves continuously
   between its atlas and stage targets, so nobody exists in both layers;
   shared-parent connectors use a single trunk and sibling branches. It
   defaults to existing synthetic fixtures. “Open GEDCOM · stays on device”

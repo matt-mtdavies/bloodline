@@ -35,11 +35,12 @@ not a new production renderer.
 
 ### Bounded Family Stage
 
-- The selected person's neighbourhood is capped at 15 people on phone and 30
+- The selected person's neighbourhood is capped at 12 people on phone and 30
   on larger screens.
 - Direct partners, parents, children and siblings are selected first.
-- Grandparents, grandchildren and immediate partner context fill remaining
-  capacity without recursive family expansion.
+- Phones stop at that direct-family portrait; on larger screens grandparents,
+  grandchildren and immediate partner context fill remaining capacity without
+  recursive family expansion.
 - Parents are above, partners share the selected person's row, siblings flank
   the partnership portrait, and children are below.
 - Shared parents leave through one trunk and branch to siblings, avoiding the
