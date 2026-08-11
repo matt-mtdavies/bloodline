@@ -32,6 +32,19 @@ function relationIds(entries) {
   return entries.map((entry) => entry.id);
 }
 
+function assertNewPeopleClear(previous, next, message) {
+  const newIds = [...next.visibleIds].filter((id) => !previous.visibleIds.has(id));
+  for (const id of newIds) {
+    const point = next.scenePositions.get(id);
+    for (const existingId of previous.visibleIds) {
+      const existing = next.scenePositions.get(existingId);
+      const overlapsSelectableFootprint = Math.abs(point.x - existing.x) < 112
+        && Math.abs(point.y - existing.y) < 116;
+      assert.equal(overlapsSelectableFootprint, false, `${message}: ${id} clears ${existingId}'s portrait and nameplate`);
+    }
+  }
+}
+
 for (const fixture of FIXTURES) {
   const graph = buildGraph(fixture.people, fixture.relationships);
   for (const viewport of [desktop, mobile]) {
@@ -119,11 +132,21 @@ for (const fixture of FIXTURES) {
   assert.equal(siblingBranch?.ids.length, 2, 'collapsed step-sibling branch is explicitly discoverable');
   const expanded = createLivingScene(graph, 'r_matthew', mobile, [{ anchorId: 'r_matthew', type: 'step-sibling' }]);
   assert.ok(expanded.visibleIds.size > opening.visibleIds.size, 'expanding a branch grows the persistent scene');
+  assertNewPeopleClear(opening, expanded, 'first branch expansion');
   for (const [id, point] of opening.scenePositions) {
     assert.deepEqual(expanded.scenePositions.get(id), point, `${id}: existing position survives branch expansion`);
   }
   const camera = cameraForScene(expanded, mobile, ['r_matthew', ...expanded.newestIds]);
   assert.ok(camera.scale >= 0.76 && camera.scale <= 1, 'mobile camera stays readable while framing the new branch');
+
+  const withPartner = createLivingScene(graph, 'r_matthew', mobile, [
+    { anchorId: 'r_matthew', type: 'step-sibling' },
+    { anchorId: 'r_jason', type: 'partner' },
+  ]);
+  assertNewPeopleClear(expanded, withPartner, 'second branch expansion');
+  for (const [id, point] of expanded.scenePositions) {
+    assert.deepEqual(withPartner.scenePositions.get(id), point, `${id}: accumulated scene stays fixed after another expansion`);
+  }
 }
 
 {

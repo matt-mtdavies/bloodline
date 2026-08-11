@@ -62,6 +62,11 @@ not a new production renderer.
 - The camera pans and eases to the newly opened branch. Users can drag the
   canvas itself, use Back to retrace expansions, or Home to restore the opening
   portrait. Individual people are never manually draggable.
+- Every expansion is placed against the accumulated scene's occupied
+  portrait-and-nameplate footprints. The nearest clear, relationship-correct
+  location wins (parents remain above, children below, lateral branches to a
+  side), while all existing coordinates remain fixed. The camera keeps both
+  the branch and the person it grew from in view.
 - Full/half siblings and step-siblings are separate labelled branches. A
   parent's partner's other children are shown as read-only inferred
   step-siblings, without writing that inference into the tree. Two people with
@@ -79,6 +84,7 @@ npm run build
 `test:atlas` runs every structural fixture at desktop and mobile sizes, checks
 the core generation rules, proves atlas positions are selection-independent,
 checks step-sibling discovery and position persistence across expansion, and
+checks first and consecutive expansions against selectable-card overlap, and
 plans a synthetic 5,000-person graph while keeping the staged family bounded.
 
 ## Deliberate exclusions

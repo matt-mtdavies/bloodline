@@ -219,9 +219,90 @@ export function branchGroups(graph, id, visibleIds) {
   }).filter((group) => group.ids.length);
 }
 
-function sceneSpread(count, centre, gap) {
-  if (!count) return [];
-  return Array.from({ length: count }, (_, index) => centre + (index - (count - 1) / 2) * gap);
+function groupPoints(count, columns, centreX, centreY, gapX, gapY) {
+  const rows = Math.ceil(count / columns);
+  return Array.from({ length: count }, (_, index) => ({
+    x: centreX + (index % columns - (Math.min(columns, count) - 1) / 2) * gapX,
+    y: centreY + (Math.floor(index / columns) - (rows - 1) / 2) * gapY,
+  }));
+}
+
+/**
+ * People are selectable, so every coordinate reserves room for the larger
+ * selected portrait and its two-line nameplate—not merely the resting disc.
+ * The score is intentionally deterministic: existing people never move and
+ * the first equally-clear candidate wins.
+ */
+function placementScore(points, positions, mobile, preference) {
+  const clearanceX = mobile ? 112 : 132;
+  const clearanceY = mobile ? 116 : 136;
+  let score = preference;
+  for (const point of points) {
+    for (const existing of positions.values()) {
+      const overlapX = clearanceX - Math.abs(point.x - existing.x);
+      const overlapY = clearanceY - Math.abs(point.y - existing.y);
+      if (overlapX > 0 && overlapY > 0) score += 1_000_000 + overlapX * overlapY;
+    }
+  }
+  return score;
+}
+
+function clearGroupPlacement(positions, anchor, count, type, mobile) {
+  const siblingBranch = type === 'sibling' || type === 'step-sibling';
+  const columns = siblingBranch ? Math.min(3, count) : Math.max(1, count);
+  const rows = Math.ceil(count / columns);
+  const gapX = mobile ? 112 : 140;
+  const gapY = mobile ? 122 : 144;
+  const halfWidth = ((Math.min(columns, count) - 1) * gapX) / 2;
+  const halfHeight = ((rows - 1) * gapY) / 2;
+  const horizontal = halfWidth + (mobile ? 126 : 154);
+  const vertical = halfHeight + (mobile ? 148 : 176);
+  const values = [...positions.values()];
+  const minX = Math.min(...values.map((point) => point.x));
+  const maxX = Math.max(...values.map((point) => point.x));
+  const minY = Math.min(...values.map((point) => point.y));
+  const maxY = Math.max(...values.map((point) => point.y));
+
+  let centres;
+  if (type === 'parent') {
+    centres = [
+      [anchor.x, anchor.y - vertical],
+      [anchor.x - horizontal, anchor.y - vertical],
+      [anchor.x + horizontal, anchor.y - vertical],
+      [anchor.x, minY - vertical],
+      [minX - horizontal, minY - vertical],
+      [maxX + horizontal, minY - vertical],
+    ];
+  } else if (type === 'child') {
+    centres = [
+      [anchor.x, anchor.y + vertical],
+      [anchor.x - horizontal, anchor.y + vertical],
+      [anchor.x + horizontal, anchor.y + vertical],
+      [anchor.x, maxY + vertical],
+      [minX - horizontal, maxY + vertical],
+      [maxX + horizontal, maxY + vertical],
+    ];
+  } else {
+    centres = [
+      [anchor.x - horizontal, anchor.y],
+      [anchor.x + horizontal, anchor.y],
+      [anchor.x - horizontal, anchor.y - vertical],
+      [anchor.x + horizontal, anchor.y - vertical],
+      [anchor.x - horizontal, anchor.y + vertical],
+      [anchor.x + horizontal, anchor.y + vertical],
+      [minX - horizontal, anchor.y],
+      [maxX + horizontal, anchor.y],
+      [minX - horizontal, minY - vertical],
+      [maxX + horizontal, maxY + vertical],
+    ];
+  }
+
+  return centres
+    .map(([x, y], index) => {
+      const points = groupPoints(count, columns, x, y, gapX, gapY);
+      return { points, score: placementScore(points, positions, mobile, index * 100) };
+    })
+    .sort((a, b) => a.score - b.score)[0].points;
 }
 
 /**
@@ -248,31 +329,12 @@ export function createLivingScene(graph, rootId, viewport, expansions = []) {
     if (!candidates.length) continue;
 
     const mobile = viewport.width < 620;
-    const gap = mobile ? 94 : 122;
-    const vertical = mobile ? 175 : 210;
-    let centreX = anchor.x;
-    let centreY = anchor.y;
-    if (expansion.type === 'parent') centreY -= vertical;
-    if (expansion.type === 'child') centreY += vertical;
-    if (expansion.type === 'partner') centreX += anchor.x > 0 ? gap * 1.35 : -gap * 1.35;
     const siblingBranch = expansion.type === 'sibling' || expansion.type === 'step-sibling';
-    if (siblingBranch) {
-      const leftEdge = Math.min(...[...positions.values()].map((point) => point.x));
-      const columns = Math.min(3, candidates.length);
-      const groupHalf = ((columns - 1) * gap) / 2;
-      centreX = leftEdge - (mobile ? 114 : 142) - groupHalf;
-    }
-
-    const columns = siblingBranch ? Math.min(3, candidates.length) : candidates.length;
-    const xs = expansion.type === 'partner'
-      ? candidates.map((_, index) => centreX + (anchor.x > 0 ? 1 : -1) * index * gap)
-      : siblingBranch
-        ? candidates.map((_, index) => centreX + (index % columns - (columns - 1) / 2) * gap)
-        : sceneSpread(candidates.length, centreX, gap);
+    const points = clearGroupPlacement(positions, anchor, candidates.length, expansion.type, mobile);
     candidates.forEach((id, index) => {
       positions.set(id, {
-        x: xs[index],
-        y: centreY + (siblingBranch ? (Math.floor(index / columns) - (Math.ceil(candidates.length / columns) - 1) / 2) * (mobile ? 108 : 128) : 0),
+        x: points[index].x,
+        y: points[index].y,
         role: siblingBranch ? 'sibling' : expansion.type,
         priority: 3,
         anchorId: expansion.anchorId,
@@ -294,8 +356,11 @@ export function cameraForScene(scene, viewport, anchorIds = []) {
   const ys = points.map((point) => point.y);
   const minX = Math.min(...xs), maxX = Math.max(...xs);
   const minY = Math.min(...ys), maxY = Math.max(...ys);
-  const width = Math.max(180, maxX - minX + 170);
-  const height = Math.max(220, maxY - minY + 190);
+  // Portrait/nameplate extents are already reserved by the placement planner.
+  // This smaller camera gutter keeps the newly opened group and its anchor in
+  // one readable phone frame instead of clipping the relationship context.
+  const width = Math.max(180, maxX - minX + 120);
+  const height = Math.max(220, maxY - minY + 160);
   const mobile = viewport.width < 620;
   const scale = Math.max(mobile ? 0.76 : 0.68, Math.min(1, (viewport.width - 34) / width, (viewport.height - 170) / height));
   return {

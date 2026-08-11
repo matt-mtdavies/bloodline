@@ -73,7 +73,12 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   inference for a parent's partner's other children, and treats two shared
   parent identities as full siblings even when lossy GEDCOM PEDI qualifiers
   marked the imported parent edges as step. Shared-parent connectors
-  use one trunk and sibling branches. Local archives above 250 people open with
+  use one trunk and sibling branches. Successive expansions use deterministic
+  occupancy-aware placement: each candidate group reserves the selectable
+  portrait plus its two-line nameplate, tries several relationship-correct
+  locations, and chooses the nearest clear one without moving the accumulated
+  scene. The camera frames the new group together with its anchor. Local
+  archives above 250 people open with
   the atlas quiet (still visible and one-tap reversible). It
   defaults to existing synthetic fixtures. “Open GEDCOM · stays on device”
   optionally parses a local file in-browser with the existing pure GEDCOM
@@ -82,7 +87,8 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   `src/viz/atlas/model.js`, the visual prototype in `LivingAtlasLab.jsx`, and
   the boundaries in `docs/LIVING-ATLAS-PROTOTYPE.md`. `npm run test:atlas`
   covers all 10 fixtures at desktop/mobile sizes, proves stable atlas
-  coordinates and persistent positions across expansion, checks inferred
+  coordinates and persistent positions across expansion, guards first and
+  consecutive expansions against selectable-card overlap, checks inferred
   step-siblings, and exercises a bounded synthetic 5,000-person model. The
   local build was visually inspected at 390×844 and 1280×800, including two
   successive branch expansions, camera movement and canvas panning. No
