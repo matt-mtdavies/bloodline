@@ -2,6 +2,7 @@ import { computeGenerations } from '../../data/graph.js';
 
 export const MAX_FOCUS_DESKTOP = 30;
 export const MAX_FOCUS_MOBILE = 8;
+export const MAX_BRANCH_BATCH = 8;
 
 function hash(value) {
   let h = 2166136261;
@@ -149,6 +150,131 @@ function spread(count, centre, gap, maxWidth) {
   if (!count) return [];
   const actualGap = count === 1 ? 0 : Math.min(gap, maxWidth / (count - 1));
   return Array.from({ length: count }, (_, index) => centre + (index - (count - 1) / 2) * actualGap);
+}
+
+/**
+ * Siblings the product can explain from recorded relationships. `graph.siblings`
+ * supplies full/half/explicit-step siblings. A parent's partner's other child
+ * is also a step-sibling even when the import did not create a synthetic
+ * step-parent edge. This is a read-only view inference; it never changes data.
+ */
+export function siblingsFor(graph, id) {
+  const found = new Map(graph.siblings(id).map((entry) => [entry.id, { ...entry }]));
+  for (const parent of graph.parents(id)) {
+    for (const partner of graph.partners(parent.id)) {
+      for (const child of graph.children(partner.id)) {
+        if (child.id === id || found.has(child.id)) continue;
+        found.set(child.id, { id: child.id, kind: 'step' });
+      }
+    }
+  }
+  return [...found.values()];
+}
+
+function relatedByType(graph, id, type) {
+  if (type === 'parent') return sortedIds(graph, graph.parents(id).map((entry) => entry.id));
+  if (type === 'partner') {
+    const entries = graph.partners(id);
+    return [
+      ...sortedIds(graph, entries.filter((entry) => entry.status !== 'former').map((entry) => entry.id)),
+      ...sortedIds(graph, entries.filter((entry) => entry.status === 'former').map((entry) => entry.id)),
+    ];
+  }
+  if (type === 'child') return sortedIds(graph, graph.children(id).map((entry) => entry.id));
+  if (type === 'sibling') return sortedIds(graph, siblingsFor(graph, id).map((entry) => entry.id));
+  return [];
+}
+
+const BRANCH_LABELS = {
+  parent: ['Parent', 'Parents'],
+  partner: ['Partner', 'Partners'],
+  child: ['Child', 'Children'],
+  sibling: ['Sibling', 'Siblings'],
+};
+
+export function branchGroups(graph, id, visibleIds) {
+  return ['parent', 'partner', 'child', 'sibling'].map((type) => {
+    const ids = relatedByType(graph, id, type).filter((candidate) => !visibleIds.has(candidate));
+    const labels = BRANCH_LABELS[type];
+    return { type, ids, label: ids.length === 1 ? labels[0] : labels[1] };
+  }).filter((group) => group.ids.length);
+}
+
+function sceneSpread(count, centre, gap) {
+  if (!count) return [];
+  return Array.from({ length: count }, (_, index) => centre + (index - (count - 1) / 2) * gap);
+}
+
+/**
+ * Builds a persistent world from the calm opening portrait, then applies
+ * branch expansions in order. Existing coordinates never change; only newly
+ * revealed relatives receive positions. This is the spatial-memory contract
+ * the fixed-centre prototype could not provide.
+ */
+export function createLivingScene(graph, rootId, viewport, expansions = []) {
+  const opening = createAtlasModel(graph, rootId, viewport);
+  const positions = new Map();
+  for (const [id, point] of opening.focusPositions) {
+    positions.set(id, { ...point, x: point.x - opening.centre.x, y: point.y - opening.centre.y, anchorId: rootId });
+  }
+  const visibleIds = new Set(positions.keys());
+  let newestIds = [];
+
+  for (const expansion of expansions) {
+    const anchor = positions.get(expansion.anchorId);
+    if (!anchor) continue;
+    const candidates = relatedByType(graph, expansion.anchorId, expansion.type)
+      .filter((id) => !visibleIds.has(id))
+      .slice(0, MAX_BRANCH_BATCH);
+    if (!candidates.length) continue;
+
+    const mobile = viewport.width < 620;
+    const gap = mobile ? 94 : 122;
+    const vertical = mobile ? 175 : 210;
+    let centreX = anchor.x;
+    let centreY = anchor.y;
+    if (expansion.type === 'parent') centreY -= vertical;
+    if (expansion.type === 'child') centreY += vertical;
+    if (expansion.type === 'partner') centreX += anchor.x > 0 ? gap * 1.35 : -gap * 1.35;
+    if (expansion.type === 'sibling') centreX += anchor.x > 0 ? gap * 2.2 : -gap * 2.2;
+
+    const xs = expansion.type === 'partner'
+      ? candidates.map((_, index) => centreX + (anchor.x > 0 ? 1 : -1) * index * gap)
+      : sceneSpread(candidates.length, centreX, gap);
+    candidates.forEach((id, index) => {
+      positions.set(id, {
+        x: xs[index],
+        y: centreY + (expansion.type === 'sibling' ? (index % 2) * 16 : 0),
+        role: expansion.type,
+        priority: 3,
+        anchorId: expansion.anchorId,
+        expanded: true,
+      });
+      visibleIds.add(id);
+    });
+    newestIds = candidates;
+  }
+
+  return { ...opening, scenePositions: positions, visibleIds, newestIds };
+}
+
+export function cameraForScene(scene, viewport, anchorIds = []) {
+  const chosen = anchorIds.map((id) => scene.scenePositions.get(id)).filter(Boolean);
+  const points = chosen.length ? chosen : [...scene.scenePositions.values()];
+  if (!points.length) return { x: 0, y: 0, scale: 1 };
+  const xs = points.map((point) => point.x);
+  const ys = points.map((point) => point.y);
+  const minX = Math.min(...xs), maxX = Math.max(...xs);
+  const minY = Math.min(...ys), maxY = Math.max(...ys);
+  const width = Math.max(180, maxX - minX + 170);
+  const height = Math.max(220, maxY - minY + 190);
+  const mobile = viewport.width < 620;
+  const scale = Math.max(mobile ? 0.76 : 0.68, Math.min(1, (viewport.width - 34) / width, (viewport.height - 170) / height));
+  return {
+    x: -((minX + maxX) / 2) * scale,
+    y: -((minY + maxY) / 2) * scale + (mobile ? 22 : 28),
+    scale,
+  };
 }
 
 /** A deliberately art-directed family portrait, not a force simulation. */

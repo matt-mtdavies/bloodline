@@ -60,16 +60,19 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   instead of the app; every normal URL still uses the unchanged production
   `BubbleTree`. The prototype replaces global physics with two explicit
   layers: a stable, selection-independent surname/generation atlas and a
-  deterministic Family Stage capped at 8 people on phone / 30 on larger
+  deterministic opening portrait capped at 8 people on phone / 30 on larger
   screens. Phones use explicit row capacity (up to two partners, two parents,
-  three children, with siblings only in genuinely spare positions); larger screens can use remaining capacity
-  for grandparents, grandchildren and one-hop partner context without
-  recursive expansion. One SVG identity moves continuously
-  between its atlas and stage targets, so nobody exists in both layers;
-  shared-parent connectors use a single trunk and sibling branches. Atlas
-  identities are painted first so context cannot show through foreground
-  portraits, and local archives above 250 people open with the atlas quiet
-  (still visible and one-tap reversible). It
+  three children, with siblings only in genuinely spare positions); larger
+  screens can use remaining capacity for grandparents, grandchildren and
+  one-hop partner context without recursive expansion. The next iteration
+  replaces fixed-centre regathering with a persistent living canvas: selecting
+  someone exposes labelled Parents/Partners/Children/Siblings branches;
+  expanding a branch adds relatives without moving existing people, and a
+  guided camera, canvas pan, Back and Home preserve spatial memory. Sibling
+  discovery includes full/half/recorded-step relationships plus a read-only
+  inference for a parent's partner's other children. Shared-parent connectors
+  use one trunk and sibling branches. Local archives above 250 people open with
+  the atlas quiet (still visible and one-tap reversible). It
   defaults to existing synthetic fixtures. “Open GEDCOM · stays on device”
   optionally parses a local file in-browser with the existing pure GEDCOM
   reader; the prototype has no fetch/API/auth/sync/store import at all. A test
@@ -77,13 +80,12 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   `src/viz/atlas/model.js`, the visual prototype in `LivingAtlasLab.jsx`, and
   the boundaries in `docs/LIVING-ATLAS-PROTOTYPE.md`. `npm run test:atlas`
   covers all 10 fixtures at desktop/mobile sizes, proves stable atlas
-  coordinates, and exercises a bounded synthetic 5,000-person model. Full
-  unit suite and production build pass; desktop composition and a person-to-
-  person gather were visually inspected. The pinned Chromium installation did
-  not complete in this sandbox, so an automated phone screenshot is not
-  claimed; mobile geometry is covered structurally and still needs a real-
-  device feel review before this concept advances. No production renderer,
-  storage, API, authentication, migration, editing, Perimeter or profile integration.
+  coordinates and persistent positions across expansion, checks inferred
+  step-siblings, and exercises a bounded synthetic 5,000-person model. The
+  local build was visually inspected at 390×844 and 1280×800, including two
+  successive branch expansions, camera movement and canvas panning. No
+  production renderer, storage, API, authentication, migration, editing,
+  Perimeter or profile integration.
 
 - **Organic tree: parents now consistently sit above their children, partner
   pods level with each other, and the reapplied pod-anchor + tapered

@@ -3,7 +3,7 @@ import { buildGraph } from '../../data/graph.js';
 import { initials, monogramColors } from '../../lib/color.js';
 import { gedcomToStore } from '../../lib/gedcom.js';
 import { FIXTURES, fixtureById } from '../v2/fixtures.js';
-import { createAtlasModel } from './model.js';
+import { branchGroups, cameraForScene, createLivingScene, siblingsFor } from './model.js';
 import './living-atlas.css';
 
 const DEFAULT_VIEWPORT = { width: 1200, height: 760 };
@@ -39,6 +39,31 @@ function years(person) {
   if (birth && death) return `${birth}–${death}`;
   if (birth) return `b. ${birth}`;
   return 'Dates unknown';
+}
+
+function gendered(person, female, male, neutral) {
+  if (person?.gender === 'female') return female;
+  if (person?.gender === 'male') return male;
+  return neutral;
+}
+
+function relationshipLabel(graph, anchorId, person, role) {
+  if (role === 'active') return 'Home';
+  if (role === 'parent') return gendered(person, 'Mother', 'Father', 'Parent');
+  if (role === 'child') return gendered(person, 'Daughter', 'Son', 'Child');
+  if (role === 'partner') {
+    const edge = graph.partners(anchorId).find((entry) => entry.id === person.id);
+    return edge?.status === 'former' ? 'Former partner' : 'Partner';
+  }
+  if (role === 'sibling') {
+    const edge = siblingsFor(graph, anchorId).find((entry) => entry.id === person.id);
+    const base = gendered(person, 'Sister', 'Brother', 'Sibling');
+    if (edge?.kind === 'step') return `Step${base.toLowerCase()}`;
+    if (edge?.kind === 'half') return `Half ${base.toLowerCase()}`;
+    return base;
+  }
+  if (role === 'context') return 'Family branch';
+  return role;
 }
 
 function linkKey(a, b, type) {
@@ -146,43 +171,88 @@ export default function LivingAtlasLab() {
   const viewport = useViewport(stageRef);
   const [fixtureId, setFixtureId] = useState('seed-family');
   const [source, setSource] = useState(() => fixtureById('seed-family'));
-  const [activeId, setActiveId] = useState(() => fixtureById('seed-family').focus);
+  const [rootId, setRootId] = useState(() => fixtureById('seed-family').focus);
+  const [selectedId, setSelectedId] = useState(() => fixtureById('seed-family').focus);
+  const [expansions, setExpansions] = useState([]);
+  const [manualPan, setManualPan] = useState({ x: 0, y: 0 });
+  const [dragging, setDragging] = useState(false);
   const [phase, setPhase] = useState('settled');
   const [showAtlas, setShowAtlas] = useState(true);
   const [loadState, setLoadState] = useState('idle');
   const fileRef = useRef(null);
+  const dragRef = useRef(null);
 
   const graph = useMemo(() => buildGraph(source.people, source.relationships), [source]);
-  const model = useMemo(() => createAtlasModel(graph, activeId, viewport), [graph, activeId, viewport]);
-  const links = useMemo(() => focusPaths(graph, model.focusIds, model.focusPositions), [graph, model]);
-  const clouds = useMemo(() => buildClouds(graph, model), [graph, model]);
-  // Preserve one SVG identity per person while ensuring the family stage is
-  // always painted above the atlas. React keeps the keyed groups alive as a
-  // person is promoted from context to focus, so the gather motion remains a
-  // continuous transition rather than a duplicate or a jump cut.
-  const orderedPeople = useMemo(() => [
-    ...graph.people.filter((person) => !model.focusIds.has(person.id)),
-    ...graph.people.filter((person) => model.focusIds.has(person.id)),
-  ], [graph.people, model.focusIds]);
-  const active = graph.byId.get(activeId);
+  const scene = useMemo(() => createLivingScene(graph, rootId, viewport, expansions), [graph, rootId, viewport, expansions]);
+  const links = useMemo(() => focusPaths(graph, scene.visibleIds, scene.scenePositions), [graph, scene]);
+  const clouds = useMemo(() => buildClouds(graph, scene), [graph, scene]);
+  const branches = useMemo(() => branchGroups(graph, selectedId, scene.visibleIds), [graph, selectedId, scene.visibleIds]);
+  const selected = graph.byId.get(selectedId);
+  const lastExpansion = expansions.at(-1);
+  const cameraAnchors = scene.newestIds.length && lastExpansion
+    ? [lastExpansion.anchorId, ...scene.newestIds]
+    : [selectedId];
+  const autoCamera = useMemo(() => cameraForScene(scene, viewport, cameraAnchors), [scene, viewport, selectedId, expansions.length]);
 
   useEffect(() => {
     if (phase !== 'gathering') return undefined;
     const timer = setTimeout(() => setPhase('settled'), 1150);
     return () => clearTimeout(timer);
-  }, [phase, activeId]);
+  }, [phase, selectedId, expansions.length]);
 
   const choosePerson = (id) => {
-    if (id === activeId) return;
+    setSelectedId(id);
+    setManualPan({ x: 0, y: 0 });
+  };
+
+  const expandBranch = (type) => {
+    setExpansions((current) => [...current, { anchorId: selectedId, type, sequence: current.length }]);
+    setManualPan({ x: 0, y: 0 });
     setPhase('gathering');
-    setActiveId(id);
+  };
+
+  const goBack = () => {
+    const previousAnchor = expansions.at(-1)?.anchorId || rootId;
+    const next = expansions.slice(0, -1);
+    setExpansions(next);
+    setSelectedId(previousAnchor);
+    setManualPan({ x: 0, y: 0 });
+  };
+
+  const goHome = () => {
+    setExpansions([]);
+    setSelectedId(rootId);
+    setManualPan({ x: 0, y: 0 });
+  };
+
+  const beginPan = (event) => {
+    if (event.button !== 0) return;
+    dragRef.current = { x: event.clientX, y: event.clientY, pan: manualPan };
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    setDragging(true);
+  };
+
+  const movePan = (event) => {
+    if (!dragRef.current) return;
+    setManualPan({
+      x: dragRef.current.pan.x + event.clientX - dragRef.current.x,
+      y: dragRef.current.pan.y + event.clientY - dragRef.current.y,
+    });
+  };
+
+  const endPan = () => {
+    dragRef.current = null;
+    setDragging(false);
   };
 
   const chooseFixture = (id) => {
     const next = fixtureById(id);
     setFixtureId(id);
     setSource(next);
-    setActiveId(next.focus);
+    setRootId(next.focus);
+    setSelectedId(next.focus);
+    setExpansions([]);
+    setManualPan({ x: 0, y: 0 });
     setLoadState('idle');
     setPhase('gathering');
   };
@@ -208,7 +278,10 @@ export default function LivingAtlasLab() {
         label: `${file.name} · local only`,
       });
       setFixtureId('local-gedcom');
-      setActiveId(focus);
+      setRootId(focus);
+      setSelectedId(focus);
+      setExpansions([]);
+      setManualPan({ x: 0, y: 0 });
       // Dense archives should begin as atmosphere, not a wall of points. The
       // owner can still bring the complete atlas forward with one tap.
       setShowAtlas(parsed.people.length <= 250);
@@ -220,7 +293,7 @@ export default function LivingAtlasLab() {
   };
 
   return (
-    <main className={`atlas-lab atlas-lab--${phase} ${showAtlas ? '' : 'atlas-lab--quiet'} ${graph.people.length > 250 ? 'atlas-lab--dense' : ''}`}>
+    <main className={`atlas-lab atlas-lab--${phase} ${showAtlas ? '' : 'atlas-lab--quiet'} ${graph.people.length > 250 ? 'atlas-lab--dense' : ''} ${dragging ? 'atlas-lab--dragging' : ''}`}>
       <header className="atlas-lab__header">
         <div className="atlas-lab__brand"><AtlasMark /><div><strong>Living Atlas</strong><span>Concept prototype · read only</span></div></div>
         <div className="atlas-lab__controls">
@@ -243,12 +316,29 @@ export default function LivingAtlasLab() {
 
       <section className="atlas-lab__stage" ref={stageRef} aria-label="Living Family Atlas prototype">
         <div className="atlas-lab__title">
-          <span>Family stage</span>
-          <h1>{personName(active)}’s neighbourhood</h1>
-          <p>{Math.max(0, model.focusIds.size - 1)} relatives gathered from {graph.people.length.toLocaleString()} in the atlas</p>
+          <span>Living family</span>
+          <h1>{personName(graph.byId.get(rootId))}’s family canvas</h1>
+          <p>{scene.visibleIds.size.toLocaleString()} people in view · {graph.people.length.toLocaleString()} in the atlas</p>
         </div>
 
-        <svg className="atlas-lab__canvas" width={viewport.width} height={viewport.height} viewBox={`0 0 ${viewport.width} ${viewport.height}`}>
+        {(expansions.length > 0 || selectedId !== rootId) && (
+          <nav className="atlas-scene-nav" aria-label="Family canvas history">
+            <button type="button" onClick={goBack} disabled={!expansions.length}>← Back</button>
+            <button type="button" onClick={goHome}>⌂ Home</button>
+            <span>Drag the canvas to explore</span>
+          </nav>
+        )}
+
+        <svg
+          className="atlas-lab__canvas"
+          width={viewport.width}
+          height={viewport.height}
+          viewBox={`0 0 ${viewport.width} ${viewport.height}`}
+          onPointerDown={beginPan}
+          onPointerMove={movePan}
+          onPointerUp={endPan}
+          onPointerCancel={endPan}
+        >
           <defs>
             <radialGradient id="atlas-stage-glow">
               <stop offset="0" stopColor="#fffaf4" stopOpacity=".98" />
@@ -257,7 +347,7 @@ export default function LivingAtlasLab() {
             </radialGradient>
           </defs>
 
-          <ellipse className="atlas-stage-glow" cx={model.centre.x} cy={model.centre.y} rx={Math.min(viewport.width * .43, 520)} ry={model.mobile ? 310 : 340} />
+          <ellipse className="atlas-stage-glow" cx={viewport.width / 2} cy={viewport.height / 2} rx={Math.min(viewport.width * .43, 520)} ry={scene.mobile ? 310 : 340} />
 
           <g className="atlas-clouds" aria-hidden="true">
             {clouds.map((cloud) => (
@@ -268,57 +358,74 @@ export default function LivingAtlasLab() {
             ))}
           </g>
 
-          <g className="atlas-focus-links">
-            {links.map((link) => <path key={link.key} d={link.d} className={`atlas-link atlas-link--${link.type} ${link.former ? 'atlas-link--former' : ''}`} />)}
-          </g>
+          <g
+            className="atlas-world"
+            style={{
+              '--camera-x': `${viewport.width / 2 + autoCamera.x + manualPan.x}px`,
+              '--camera-y': `${viewport.height / 2 + autoCamera.y + manualPan.y}px`,
+              '--camera-scale': autoCamera.scale,
+            }}
+          >
+            <g className="atlas-focus-links">
+              {links.map((link) => <path key={link.key} d={link.d} className={`atlas-link atlas-link--${link.type} ${link.former ? 'atlas-link--former' : ''}`} />)}
+            </g>
 
-          <g className="atlas-people">
-            {orderedPeople.map((person) => {
-              const atlas = model.positions.get(person.id);
-              const focused = model.focusIds.has(person.id) && model.focusPositions.has(person.id);
-              const target = focused ? model.focusPositions.get(person.id) : atlas;
-              if (!target) return null;
+            <g className="atlas-people">
+            {[...scene.visibleIds].map((id) => {
+              const person = graph.byId.get(id);
+              const target = scene.scenePositions.get(id);
+              if (!person || !target) return null;
               const colors = monogramColors(personName(person));
-              const role = focused ? target.role : 'atlas';
-              const radius = focused ? (person.id === activeId ? 42 : role === 'context' ? 24 : 30) : graph.people.length > 250 ? 2.4 : 3.5;
-              const outside = model.outside.get(person.id);
+              const role = target.role;
+              const isSelected = person.id === selectedId;
+              const radius = isSelected ? 42 : role === 'context' ? 24 : 30;
+              const primary = isSelected ? personName(person) : firstName(person);
+              const secondary = isSelected ? years(person) : relationshipLabel(graph, target.anchorId || rootId, person, role);
+              const labelWidth = Math.min(162, Math.max(58, primary.length * (isSelected ? 7.2 : 6.4) + 22, secondary.length * 5.6 + 20));
+              const labelY = role === 'partner' && !isSelected ? -(radius + 19) : radius + 17;
               return (
                 <g
-                  className={`atlas-person atlas-person--${role} ${person.id === activeId ? 'atlas-person--active' : ''}`}
+                  className={`atlas-person atlas-person--${role} ${isSelected ? 'atlas-person--active' : ''} ${target.expanded ? 'atlas-person--expanded' : ''}`}
                   key={person.id}
                   style={{ '--atlas-x': `${target.x}px`, '--atlas-y': `${target.y}px`, '--atlas-delay': `${Math.min(target.priority || 0, 4) * 45}ms` }}
-                  onClick={() => choosePerson(person.id)}
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={(event) => { event.stopPropagation(); choosePerson(person.id); }}
                   role="button"
-                  tabIndex={focused ? 0 : -1}
+                  tabIndex="0"
                   onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') choosePerson(person.id); }}
-                  aria-label={`Focus ${personName(person)}`}
+                  aria-label={`Select ${personName(person)}`}
                 >
-                  <circle className="atlas-person__halo" r={radius + (person.id === activeId ? 13 : 7)} />
+                  <circle className="atlas-person__halo" r={radius + (isSelected ? 13 : 7)} />
                   <circle className="atlas-person__disc" r={radius} fill={colors.base} />
                   <circle className="atlas-person__shine" r={radius - 3} fill="none" stroke={colors.light} />
-                  {focused && <text className="atlas-person__initials" y="1">{initials(personName(person))}</text>}
-                  {focused && (
-                    <g className="atlas-person__label" transform={`translate(0 ${radius + 17})`}>
-                      <text className="atlas-person__name">{person.id === activeId ? personName(person) : firstName(person)}</text>
-                      <text className="atlas-person__years" y="16">{person.id === activeId ? years(person) : role}</text>
-                    </g>
-                  )}
-                  {focused && outside > 0 && (
-                    <g className="atlas-person__portal" transform={`translate(${radius * .72} ${-radius * .72})`}>
-                      <circle r="11" /><text y="1">+{outside}</text>
+                  <text className="atlas-person__initials" y="1">{initials(personName(person))}</text>
+                  <g className="atlas-person__label" transform={`translate(0 ${labelY})`}>
+                    <rect x={-labelWidth / 2} y="-11" width={labelWidth} height="32" rx="9" />
+                    <text className="atlas-person__name" y="1">{primary}</text>
+                    <text className="atlas-person__years" y="15">{secondary}</text>
+                  </g>
+                  {isSelected && branches.length > 0 && (
+                    <g className="atlas-person__portal" transform={`translate(${radius * .72} ${-radius * .72})`} aria-hidden="true">
+                      <circle r="11" /><text y="1">+</text>
                     </g>
                   )}
                 </g>
               );
             })}
+            </g>
           </g>
         </svg>
 
-        <aside className="atlas-lab__legend">
-          <span><i className="atlas-lab__legend-focus" />Family stage</span>
-          <span><i className="atlas-lab__legend-context" />Wider family atlas</span>
-          <span>Choose any portrait to gather their neighbourhood</span>
-        </aside>
+        <nav className={`atlas-branch-dock ${branches.length ? '' : 'atlas-branch-dock--complete'}`} aria-label={`Expand ${personName(selected)}'s family`}>
+          <div className="atlas-branch-dock__person"><strong>{firstName(selected)}</strong><span>{branches.length ? 'Choose a branch to grow' : 'Immediate family is open'}</span></div>
+          <div className="atlas-branch-dock__actions">
+            {branches.map((branch) => (
+              <button type="button" key={branch.type} onClick={() => expandBranch(branch.type)}>
+                <span>{branch.label}</span><b>{branch.ids.length}</b><i>→</i>
+              </button>
+            ))}
+          </div>
+        </nav>
         {typeof loadState === 'string' && !['idle', 'loading', 'loaded'].includes(loadState) && <p className="atlas-lab__error">{loadState}</p>}
       </section>
     </main>

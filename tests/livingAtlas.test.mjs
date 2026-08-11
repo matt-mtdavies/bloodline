@@ -6,10 +6,14 @@ import { FIXTURES } from '../src/viz/v2/fixtures.js';
 import {
   MAX_FOCUS_DESKTOP,
   MAX_FOCUS_MOBILE,
+  branchGroups,
+  cameraForScene,
   collectFocusIds,
   createAtlasModel,
   createAtlasPositions,
   createFocusLayout,
+  createLivingScene,
+  siblingsFor,
 } from '../src/viz/atlas/model.js';
 
 const desktop = { width: 1200, height: 760 };
@@ -100,6 +104,26 @@ for (const fixture of FIXTURES) {
   createFocusLayout(graph, 'r_matthew', idsB, desktop);
   const atlasB = createAtlasPositions(graph, desktop);
   assert.deepEqual([...atlasA.positions], [...atlasB.positions], 'atlas coordinates never depend on selection');
+}
+
+{
+  const fixture = FIXTURES.find((entry) => entry.id === 'remarried');
+  const graph = buildGraph(fixture.people, fixture.relationships);
+  const siblings = siblingsFor(graph, 'r_matthew');
+  assert.equal(siblings.find((entry) => entry.id === 'r_jason')?.kind, 'full', 'shared-parent brother remains a full sibling');
+  assert.equal(siblings.find((entry) => entry.id === 'r_jessica')?.kind, 'step', 'parent partner child is inferable as a step-sibling');
+  assert.equal(siblings.find((entry) => entry.id === 'r_amie')?.kind, 'step', 'multiple step-siblings remain discoverable');
+
+  const opening = createLivingScene(graph, 'r_matthew', mobile);
+  const siblingBranch = branchGroups(graph, 'r_matthew', opening.visibleIds).find((group) => group.type === 'sibling');
+  assert.ok(siblingBranch?.ids.length, 'collapsed sibling branch is explicitly discoverable');
+  const expanded = createLivingScene(graph, 'r_matthew', mobile, [{ anchorId: 'r_matthew', type: 'sibling' }]);
+  assert.ok(expanded.visibleIds.size > opening.visibleIds.size, 'expanding a branch grows the persistent scene');
+  for (const [id, point] of opening.scenePositions) {
+    assert.deepEqual(expanded.scenePositions.get(id), point, `${id}: existing position survives branch expansion`);
+  }
+  const camera = cameraForScene(expanded, mobile, ['r_matthew', ...expanded.newestIds]);
+  assert.ok(camera.scale >= 0.76 && camera.scale <= 1, 'mobile camera stays readable while framing the new branch');
 }
 
 {

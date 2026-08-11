@@ -51,13 +51,21 @@ not a new production renderer.
 - Shared parents leave through one trunk and branch to siblings, avoiding the
   mesh of independent parent-child diagonals.
 
-### Gather transition
+### Living canvas expansion
 
-One SVG identity exists per person. Selection changes its target between the
-stable atlas and the deterministic stage; CSS transforms carry that same node
-continuously between the two positions. There is no duplicate interactive
-person and no force reheating. Reduced-motion users get a short 120ms
-recomposition.
+- The opening portrait is only the home scene. Hidden relationship groups are
+  explicit labelled branches (Parents, Partners, Children, Siblings), never an
+  unexplained `+N`.
+- Selecting a visible relative does not reorganize the scene. It exposes that
+  person's remaining branches; expanding one adds relatives without moving any
+  existing person.
+- The camera pans and eases to the newly opened branch. Users can drag the
+  canvas itself, use Back to retrace expansions, or Home to restore the opening
+  portrait. Individual people are never manually draggable.
+- Full/half/recorded-step siblings remain supported. A parent's partner's other
+  children are also shown as read-only inferred step-siblings, without writing
+  that inference into the tree.
+- Reduced-motion users get short 120ms transitions.
 
 ## Verification
 
@@ -68,8 +76,8 @@ npm run build
 
 `test:atlas` runs every structural fixture at desktop and mobile sizes, checks
 the core generation rules, proves atlas positions are selection-independent,
-and plans a synthetic 5,000-person graph while keeping the staged family
-bounded.
+checks step-sibling discovery and position persistence across expansion, and
+plans a synthetic 5,000-person graph while keeping the staged family bounded.
 
 ## Deliberate exclusions
 
