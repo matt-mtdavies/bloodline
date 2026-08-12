@@ -70,14 +70,20 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   branch buds beside their portrait (44px targets, keyboard/accessible names);
   portrait taps only select/centre and never expand implicitly. This replaces
   the detached bottom action dock and its ambiguous plus badge. A selected
-  partner's full nameplate stays above the partnership row to avoid colliding
-  with the other partner's label, while an unselected partner labels below.
-  Selection now creates a visual focus layer without changing coordinates:
-  the selected person's visible parents/partners/children and their just-opened
-  branch stay crisp; accumulated relatives and connectors remain tappable but
-  dim with labels suppressed until promoted. Expanding a branch adds relatives without
-  moving existing people, and a
-  guided camera, canvas pan, Back and Home preserve spatial memory. Sibling
+  partner nameplates sit above the partnership row so the selected person's
+  nameplate can own the centre baseline without collisions.
+  Selection now creates a recomposed spatial foreground: every portrait tap
+  promotes the selected person's visible family into the deterministic family
+  planner, with parents above, partners on the centre row, siblings lateral and
+  children below. The previous portrait returns to its stable atlas
+  coordinates as small, still-tappable constellation points with labels and
+  connectors suppressed. The transition therefore reads as one family rising
+  from a persistent world while the last settles back, rather than forcing a
+  single accumulated layout to be both spatially fixed and semantically clean.
+  Partner nameplates sit above their discs so the selected person's nameplate
+  owns the centre baseline. Expanding a branch grows the accumulated context;
+  a guided camera, canvas pan, selection-aware Back and Home preserve spatial
+  history. Sibling
   discovery separates full/half siblings from step-siblings, adds a read-only
   inference for a parent's partner's other children, and treats two shared
   parent identities as full siblings even when lossy GEDCOM PEDI qualifiers
@@ -96,11 +102,15 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   `src/viz/atlas/model.js`, the visual prototype in `LivingAtlasLab.jsx`, and
   the boundaries in `docs/LIVING-ATLAS-PROTOTYPE.md`. `npm run test:atlas`
   covers all 10 fixtures at desktop/mobile sizes, proves stable atlas
-  coordinates and persistent positions across expansion, guards first and
+  coordinates and persistent positions across expansion, recomposes every
+  visible person in the remarriage fixture to mechanically guard parent/
+  partner/child hierarchy on every selection, guards first and
   consecutive expansions against selectable-card overlap, checks inferred
   step-siblings, and exercises a bounded synthetic 5,000-person model. The
-  local build was visually inspected at 390×844 and 1280×800, including two
-  successive branch expansions, camera movement and canvas panning. No
+  local build was visually inspected at 390×844 and 1440×900, including
+  family-to-family promotion, complex remarriage hierarchy, Back navigation,
+  partner-label clearance and the full multi-generation desktop composition;
+  no browser warnings or errors were observed. No
   production renderer, storage, API, authentication, migration, editing,
   Perimeter or profile integration.
 

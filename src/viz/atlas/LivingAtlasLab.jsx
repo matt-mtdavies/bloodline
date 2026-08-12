@@ -3,7 +3,13 @@ import { buildGraph } from '../../data/graph.js';
 import { initials, monogramColors } from '../../lib/color.js';
 import { gedcomToStore } from '../../lib/gedcom.js';
 import { FIXTURES, fixtureById } from '../v2/fixtures.js';
-import { branchGroups, cameraForScene, createLivingScene, siblingsFor } from './model.js';
+import {
+  branchGroups,
+  cameraForScene,
+  createLivingScene,
+  recomposeLivingScene,
+  siblingsFor,
+} from './model.js';
 import './living-atlas.css';
 
 const DEFAULT_VIEWPORT = { width: 1200, height: 760 };
@@ -226,6 +232,7 @@ export default function LivingAtlasLab() {
   const [source, setSource] = useState(() => fixtureById('seed-family'));
   const [rootId, setRootId] = useState(() => fixtureById('seed-family').focus);
   const [selectedId, setSelectedId] = useState(() => fixtureById('seed-family').focus);
+  const [selectionHistory, setSelectionHistory] = useState(() => [fixtureById('seed-family').focus]);
   const [expansions, setExpansions] = useState([]);
   const [manualPan, setManualPan] = useState({ x: 0, y: 0 });
   const [dragging, setDragging] = useState(false);
@@ -237,34 +244,38 @@ export default function LivingAtlasLab() {
 
   const graph = useMemo(() => buildGraph(source.people, source.relationships), [source]);
   const scene = useMemo(() => createLivingScene(graph, rootId, viewport, expansions), [graph, rootId, viewport, expansions]);
+  const stageScene = useMemo(
+    () => recomposeLivingScene(graph, scene, selectedId, viewport),
+    [graph, scene, selectedId, viewport],
+  );
+  const stagePositions = stageScene.scenePositions;
+  const portraitIds = stageScene.portraitIds;
   const selected = graph.byId.get(selectedId);
   const lastExpansion = expansions.at(-1);
   const spotlightIds = useMemo(() => {
-    const ids = new Set([selectedId]);
-    [graph.parents(selectedId), graph.partners(selectedId), graph.children(selectedId)]
-      .flat()
-      .forEach((entry) => { if (scene.visibleIds.has(entry.id)) ids.add(entry.id); });
+    const ids = new Set(portraitIds);
     if (lastExpansion?.anchorId === selectedId) scene.newestIds.forEach((id) => ids.add(id));
     return ids;
-  }, [graph, scene, selectedId, lastExpansion?.anchorId]);
+  }, [portraitIds, scene, selectedId, lastExpansion?.anchorId]);
   const links = useMemo(
-    () => focusPaths(graph, scene.visibleIds, scene.scenePositions, spotlightIds),
-    [graph, scene, spotlightIds],
+    () => focusPaths(graph, scene.visibleIds, stagePositions, spotlightIds),
+    [graph, scene.visibleIds, stagePositions, spotlightIds],
   );
   const clouds = useMemo(() => buildClouds(graph, scene), [graph, scene]);
   const branches = useMemo(() => branchGroups(graph, selectedId, scene.visibleIds), [graph, selectedId, scene.visibleIds]);
   const branchBuds = useMemo(
-    () => branchBudLayout(branches, scene.scenePositions.get(selectedId), scene.scenePositions),
-    [branches, scene.scenePositions, selectedId],
+    () => branchBudLayout(branches, stagePositions.get(selectedId), stagePositions),
+    [branches, stagePositions, selectedId],
   );
-  const selectedPoint = scene.scenePositions.get(selectedId);
-  const spotlightPoints = [...spotlightIds].map((id) => scene.scenePositions.get(id)).filter(Boolean);
-  const cameraAnchors = scene.newestIds.length && lastExpansion
+  const selectedPoint = stagePositions.get(selectedId);
+  const spotlightPoints = [...spotlightIds].map((id) => stagePositions.get(id)).filter(Boolean);
+  const expansionIsCurrent = scene.newestIds.length && lastExpansion?.anchorId === selectedId;
+  const cameraAnchors = expansionIsCurrent
     ? [lastExpansion.anchorId, ...scene.newestIds]
     : branchBuds.length
       ? [...spotlightPoints, ...branchBuds.map((bud) => ({ x: selectedPoint.x + bud.x, y: selectedPoint.y + bud.y }))]
       : spotlightPoints.length ? spotlightPoints : [selectedId];
-  const autoCamera = useMemo(() => cameraForScene(scene, viewport, cameraAnchors), [scene, viewport, selectedId, expansions.length, branchBuds]);
+  const autoCamera = cameraForScene(stageScene, viewport, cameraAnchors);
 
   useEffect(() => {
     if (phase !== 'gathering') return undefined;
@@ -273,8 +284,14 @@ export default function LivingAtlasLab() {
   }, [phase, selectedId, expansions.length]);
 
   const choosePerson = (id) => {
+    if (id === selectedId) {
+      setManualPan({ x: 0, y: 0 });
+      return;
+    }
+    setSelectionHistory((current) => current.at(-1) === id ? current : [...current, id]);
     setSelectedId(id);
     setManualPan({ x: 0, y: 0 });
+    setPhase('gathering');
   };
 
   const expandBranch = (type) => {
@@ -284,17 +301,30 @@ export default function LivingAtlasLab() {
   };
 
   const goBack = () => {
+    if (selectionHistory.length > 1) {
+      const nextHistory = selectionHistory.slice(0, -1);
+      setSelectionHistory(nextHistory);
+      setSelectedId(nextHistory.at(-1));
+      setManualPan({ x: 0, y: 0 });
+      setPhase('gathering');
+      return;
+    }
+    if (!expansions.length) return;
     const previousAnchor = expansions.at(-1)?.anchorId || rootId;
     const next = expansions.slice(0, -1);
     setExpansions(next);
     setSelectedId(previousAnchor);
+    setSelectionHistory([previousAnchor]);
     setManualPan({ x: 0, y: 0 });
+    setPhase('gathering');
   };
 
   const goHome = () => {
     setExpansions([]);
     setSelectedId(rootId);
+    setSelectionHistory([rootId]);
     setManualPan({ x: 0, y: 0 });
+    setPhase('gathering');
   };
 
   const beginPan = (event) => {
@@ -323,6 +353,7 @@ export default function LivingAtlasLab() {
     setSource(next);
     setRootId(next.focus);
     setSelectedId(next.focus);
+    setSelectionHistory([next.focus]);
     setExpansions([]);
     setManualPan({ x: 0, y: 0 });
     setLoadState('idle');
@@ -352,6 +383,7 @@ export default function LivingAtlasLab() {
       setFixtureId('local-gedcom');
       setRootId(focus);
       setSelectedId(focus);
+      setSelectionHistory([focus]);
       setExpansions([]);
       setManualPan({ x: 0, y: 0 });
       // Dense archives should begin as atmosphere, not a wall of points. The
@@ -371,7 +403,7 @@ export default function LivingAtlasLab() {
         <div className="atlas-lab__controls">
           <label>
             <span>Family shape</span>
-            <select value={fixtureId} onChange={(event) => chooseFixture(event.target.value)} disabled={fixtureId === 'local-gedcom'}>
+            <select aria-label="Family shape" value={fixtureId} onChange={(event) => chooseFixture(event.target.value)} disabled={fixtureId === 'local-gedcom'}>
               {FIXTURES.map((fixture) => <option value={fixture.id} key={fixture.id}>{fixture.label}</option>)}
               {fixtureId === 'local-gedcom' && <option value="local-gedcom">{source.label}</option>}
             </select>
@@ -388,14 +420,14 @@ export default function LivingAtlasLab() {
 
       <section className="atlas-lab__stage" ref={stageRef} aria-label="Living Family Atlas prototype">
         <div className="atlas-lab__title">
-          <span>Living family</span>
-          <h1>{personName(graph.byId.get(rootId))}’s family canvas</h1>
-          <p>{scene.visibleIds.size.toLocaleString()} people in view · {graph.people.length.toLocaleString()} in the atlas</p>
+          <span>Family portrait</span>
+          <h1>{personName(selected)}’s family</h1>
+          <p>{portraitIds.size.toLocaleString()} gathered · {scene.visibleIds.size.toLocaleString()} explored · {graph.people.length.toLocaleString()} in the atlas</p>
         </div>
 
         {(expansions.length > 0 || selectedId !== rootId) && (
           <nav className="atlas-scene-nav" aria-label="Family canvas history">
-            <button type="button" onClick={goBack} disabled={!expansions.length}>← Back</button>
+            <button type="button" onClick={goBack} disabled={selectionHistory.length <= 1 && !expansions.length}>← Back</button>
             <button type="button" onClick={goHome}>⌂ Home</button>
             <span>Drag the canvas to explore</span>
           </nav>
@@ -443,9 +475,11 @@ export default function LivingAtlasLab() {
             </g>
 
             <g className="atlas-people">
-            {[...scene.visibleIds].map((id) => {
+            {[...scene.visibleIds]
+              .sort((a, b) => Number(spotlightIds.has(a)) - Number(spotlightIds.has(b)))
+              .map((id) => {
               const person = graph.byId.get(id);
-              const target = scene.scenePositions.get(id);
+              const target = stagePositions.get(id);
               if (!person || !target) return null;
               const colors = monogramColors(personName(person));
               const role = target.role;
@@ -454,11 +488,15 @@ export default function LivingAtlasLab() {
               const primary = isSelected ? personName(person) : firstName(person);
               const secondary = isSelected ? years(person) : relationshipLabel(graph, target.anchorId || rootId, person, role);
               const labelWidth = Math.min(162, Math.max(58, primary.length * (isSelected ? 7.2 : 6.4) + 22, secondary.length * 5.6 + 20));
-              const labelY = role === 'partner' && isSelected ? -(radius + 19) : radius + 17;
+              // The selected person's nameplate owns the centre-bottom of the
+              // portrait. Partner labels sit above their discs so a horizontal
+              // family pod reads as one composed unit instead of three cards
+              // competing for the same baseline.
+              const labelY = role === 'partner' ? -(radius + 19) : radius + 17;
               const isContextual = !spotlightIds.has(person.id);
               return (
                 <g
-                  className={`atlas-person atlas-person--${role} ${isSelected ? 'atlas-person--active' : ''} ${isContextual ? 'atlas-person--contextual' : ''} ${target.expanded ? 'atlas-person--expanded' : ''}`}
+                  className={`atlas-person atlas-person--${role} ${target.staged ? 'atlas-person--staged' : ''} ${isSelected ? 'atlas-person--active' : ''} ${isContextual ? 'atlas-person--contextual' : ''} ${target.expanded ? 'atlas-person--expanded' : ''}`}
                   key={person.id}
                   style={{ '--atlas-x': `${target.x}px`, '--atlas-y': `${target.y}px`, '--atlas-delay': `${Math.min(target.priority || 0, 4) * 45}ms` }}
                   onPointerDown={(event) => event.stopPropagation()}
@@ -468,6 +506,7 @@ export default function LivingAtlasLab() {
                   onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') choosePerson(person.id); }}
                   aria-label={`Select ${personName(person)}`}
                 >
+                  <circle className="atlas-person__target" r="23" />
                   <circle className="atlas-person__halo" r={radius + (isSelected ? 13 : 7)} />
                   <circle className="atlas-person__disc" r={radius} fill={colors.base} />
                   <circle className="atlas-person__shine" r={radius - 3} fill="none" stroke={colors.light} />
@@ -483,7 +522,7 @@ export default function LivingAtlasLab() {
             </g>
 
             {branchBuds.length > 0 && (() => {
-              const selectedPoint = scene.scenePositions.get(selectedId);
+              const selectedPoint = stagePositions.get(selectedId);
               return (
                 <g className="atlas-branch-buds" transform={`translate(${selectedPoint.x} ${selectedPoint.y})`}>
                   {branchBuds.map((branch) => {

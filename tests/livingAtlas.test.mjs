@@ -13,6 +13,7 @@ import {
   createAtlasPositions,
   createFocusLayout,
   createLivingScene,
+  recomposeLivingScene,
   siblingsFor,
 } from '../src/viz/atlas/model.js';
 
@@ -30,6 +31,47 @@ const mobile = { width: 390, height: 718 };
   assert.match(prototypeSource, /atlas-branch-bud/, 'selected people expose contextual branch buds');
   assert.match(prototypeSource, /aria-label={`Show /, 'branch buds have a named keyboard and screen-reader action');
   assert.match(prototypeSource, /atlas-person--contextual/, 'accumulated relatives remain as a quiet selectable context layer');
+  assert.match(prototypeSource, /recomposeLivingScene/, 'every selection is promoted into a newly composed family portrait');
+  assert.match(prototypeSource, /selectionHistory/, 'Back retraces family selections as well as branch reveals');
+}
+
+{
+  const fixture = FIXTURES.find((entry) => entry.id === 'remarried');
+  const graph = buildGraph(fixture.people, fixture.relationships);
+  const portraitRoot = 'r_matthew';
+  const opening = createLivingScene(graph, portraitRoot, mobile, [
+    { anchorId: portraitRoot, type: 'sibling' },
+    { anchorId: portraitRoot, type: 'step-sibling' },
+  ]);
+
+  for (const selectedId of opening.visibleIds) {
+    const staged = recomposeLivingScene(graph, opening, selectedId, mobile);
+    const active = staged.scenePositions.get(selectedId);
+    assert.equal(active.x, 0, `${selectedId}: selection is horizontally centred in its portrait`);
+    assert.equal(active.y, 0, `${selectedId}: selection is vertically centred in its portrait`);
+    for (const parent of graph.parents(selectedId)) {
+      if (staged.portraitIds.has(parent.id)) {
+        assert.ok(staged.scenePositions.get(parent.id).y < active.y, `${selectedId}: visible parent is rebuilt above the selection`);
+      }
+    }
+    for (const child of graph.children(selectedId)) {
+      if (staged.portraitIds.has(child.id)) {
+        assert.ok(staged.scenePositions.get(child.id).y > active.y, `${selectedId}: visible child is rebuilt below the selection`);
+      }
+    }
+    for (const partner of graph.partners(selectedId)) {
+      if (staged.portraitIds.has(partner.id)) {
+        assert.equal(staged.scenePositions.get(partner.id).y, active.y, `${selectedId}: visible partner shares the selection row`);
+      }
+    }
+  }
+
+  const selectedId = siblingsFor(graph, portraitRoot).find((entry) => entry.kind === 'step')?.id;
+  assert.ok(opening.visibleIds.has(selectedId), 'step-sibling context is available for the stability check');
+  const original = opening.scenePositions.get(portraitRoot);
+  const staged = recomposeLivingScene(graph, opening, selectedId, mobile);
+  assert.equal(staged.portraitIds.has(portraitRoot), false, 'unrelated step-sibling selection leaves the original focus in context');
+  assert.deepEqual(staged.scenePositions.get(portraitRoot), original, 'non-portrait context keeps its stable atlas coordinate');
 }
 
 function relationIds(entries) {

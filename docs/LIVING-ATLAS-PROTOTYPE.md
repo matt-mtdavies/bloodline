@@ -38,6 +38,10 @@ not a new production renderer.
 
 ### Bounded Family Stage
 
+- Every selection now recomposes the selected person's visible family into a
+  deterministic foreground portrait. The previous portrait returns to its
+  stable atlas coordinates as small constellation points, producing one
+  continuous promote/demote transition rather than a jump cut.
 - The selected person's neighbourhood is capped at 8 people on phone and 30
   on larger screens.
 - Phones use explicit spatial capacity—up to two partners, two parents and
@@ -54,23 +58,24 @@ not a new production renderer.
 ### Living canvas expansion
 
 - The opening portrait is only the home scene. Tapping a portrait selects and
-  centres that person; it never expands relatives implicitly. Remaining
+  centres that person and rebuilds their visible family portrait; it never
+  expands relatives implicitly. Remaining
   relationship groups appear as collision-aware, labelled branch buds growing
   beside that portrait (Parents, Partners, Children, Siblings), never an
   unexplained `+N` or a detached bottom action tray. Each bud has a 44px target,
   keyboard handling and a relationship-specific accessible name.
-- Selecting a visible relative does not reorganize the scene. It exposes that
-  person's remaining branches; expanding one adds relatives without moving any
-  existing person.
-- Selection creates a visual—not spatial—focus layer. The selected person,
-  their visible parents, partners and children, plus the branch they just
-  opened remain crisp. Previously explored relatives keep their exact canvas
-  positions but become quiet context with suppressed labels and connectors;
-  tapping any one promotes their neighbourhood immediately. This prevents an
-  accumulated 20-person phone canvas from competing at one visual weight.
-- The camera pans and eases to the newly opened branch. Users can drag the
-  canvas itself, use Back to retrace expansions, or Home to restore the opening
-  portrait. Individual people are never manually draggable.
+- Selection creates a deliberately spatial foreground layer: visible parents
+  rise above, partners share the centre row, siblings flank it, and children
+  settle below. Previously explored relatives outside that portrait keep their
+  exact canvas positions but demote to small, tappable constellation points
+  with suppressed labels and connectors. Tapping any point promotes its
+  neighbourhood while the old portrait settles back into context. This lets
+  semantic clarity belong to the foreground without asking the full atlas to
+  satisfy contradictory layout rules.
+- The camera pans and eases to the newly composed portrait or newly opened
+  branch. Users can drag the canvas itself, use Back to retrace family
+  selections and expansions, or Home to restore the opening portrait.
+  Individual people are never manually draggable.
 - Every expansion is placed against the accumulated scene's occupied
   portrait-and-nameplate footprints. The nearest clear, relationship-correct
   location wins (parents remain above, children below, lateral branches to a
@@ -95,12 +100,15 @@ npm run build
 
 `test:atlas` runs every structural fixture at desktop and mobile sizes, checks
 the core generation rules, proves atlas positions are selection-independent,
-checks step-sibling discovery and position persistence across expansion, and
+recomposes every visible person in the remarriage fixture to prove parents stay
+above, partners stay level and children stay below, checks step-sibling
+discovery and position persistence across expansion, and
 checks first and consecutive expansions against selectable-card overlap, then
 plans a synthetic 5,000-person graph while keeping the staged family bounded.
-The focus/context interaction, multiple branch buds and selected-partner label
-placement were also visually checked at 390×844 with no browser warnings or
-errors.
+The focus/context promotion, Back navigation, partner-label placement and
+complex remarriage hierarchy were visually checked at 390×844; the full
+multi-generation composition was checked at 1440×900. No browser warnings or
+errors were observed.
 
 ## Deliberate exclusions
 

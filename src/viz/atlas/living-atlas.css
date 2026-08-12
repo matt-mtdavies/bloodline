@@ -116,6 +116,7 @@
   outline: none;
 }
 .atlas-person:focus-visible .atlas-person__halo { stroke: #c2603a; stroke-width: 3; opacity: .5; }
+.atlas-person__target { fill: transparent; stroke: none; }
 .atlas-person--atlas { opacity: .14; pointer-events: none; }
 .atlas-person__halo { fill: #fff9f2; opacity: .76; stroke: rgba(194, 96, 58, .12); transition: r 780ms cubic-bezier(.16, 1, .3, 1), opacity 300ms ease; }
 .atlas-person__disc { stroke: rgba(255,255,255,.96); stroke-width: 3; filter: drop-shadow(0 8px 15px rgba(62, 48, 38, .16)); transition: r 780ms cubic-bezier(.16, 1, .3, 1), opacity 300ms ease; }
@@ -131,11 +132,18 @@
 .atlas-person--context { opacity: .72; }
 .atlas-person--context .atlas-person__disc { filter: saturate(.65) drop-shadow(0 5px 11px rgba(62, 48, 38, .12)); }
 .atlas-person--contextual,
-.atlas-person--expanded.atlas-person--contextual { opacity: .18; animation: none; }
+.atlas-person--expanded.atlas-person--contextual { opacity: .34; animation: none; }
 .atlas-person--contextual .atlas-person__label { opacity: 0; }
-.atlas-person--contextual .atlas-person__disc { filter: saturate(.45) drop-shadow(0 3px 7px rgba(62, 48, 38, .08)); }
-.atlas-person--contextual:hover { opacity: .62; }
+.atlas-person--contextual .atlas-person__halo { r: 10px; opacity: .2; }
+.atlas-person--contextual .atlas-person__disc { r: 7px; stroke-width: 1; filter: saturate(.4) drop-shadow(0 2px 4px rgba(62, 48, 38, .08)); }
+.atlas-person--contextual .atlas-person__shine,
+.atlas-person--contextual .atlas-person__initials { opacity: 0; }
+.atlas-person--contextual:hover { opacity: .82; }
+.atlas-person--contextual:hover .atlas-person__halo { r: 22px; opacity: .42; }
+.atlas-person--contextual:hover .atlas-person__disc { r: 17px; }
 .atlas-person--contextual:hover .atlas-person__label { opacity: 1; }
+.atlas-person--staged { opacity: 1; }
+.atlas-person--staged .atlas-person__disc { filter: drop-shadow(0 11px 20px rgba(62, 48, 38, .17)); }
 
 .atlas-person__label { text-anchor: middle; pointer-events: none; transition: opacity 220ms ease; }
 .atlas-person__label rect { fill: rgba(255, 253, 250, .96); stroke: rgba(98, 79, 64, .11); stroke-width: 1; filter: drop-shadow(0 4px 10px rgba(53, 41, 32, .1)); }

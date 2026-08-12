@@ -445,6 +445,37 @@ export function createFocusLayout(graph, activeId, focusIds, viewport) {
   return { positions, centre: { x: cx, y: cy }, mobile };
 }
 
+/**
+ * Promotes the selected person's visible neighbourhood from its stable atlas
+ * coordinates into a freshly composed family portrait. Everyone else keeps
+ * their accumulated world coordinate, so selection creates a clear foreground
+ * without sacrificing the user's spatial history.
+ */
+export function recomposeLivingScene(graph, scene, activeId, viewport) {
+  const mobile = viewport.width < 620;
+  const planned = collectFocusIds(
+    graph,
+    activeId,
+    mobile ? MAX_FOCUS_MOBILE : MAX_FOCUS_DESKTOP,
+    { mobile },
+  );
+  const portraitIds = new Set([...planned].filter((id) => scene.visibleIds.has(id)));
+  const portrait = createFocusLayout(graph, activeId, portraitIds, viewport);
+  const scenePositions = new Map(scene.scenePositions);
+
+  for (const [id, point] of portrait.positions) {
+    scenePositions.set(id, {
+      ...point,
+      x: point.x - portrait.centre.x,
+      y: point.y - portrait.centre.y,
+      anchorId: activeId,
+      staged: true,
+    });
+  }
+
+  return { ...scene, scenePositions, portraitIds, portraitCentre: portrait.centre };
+}
+
 export function outsideConnections(graph, focusIds) {
   const result = new Map();
   for (const id of focusIds) {
