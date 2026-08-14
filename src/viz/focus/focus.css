@@ -1,0 +1,333 @@
+/*
+ * The Focus Layer's visual language.
+ *
+ * The point of this file is that the focus layer must be UNMISTAKABLY a
+ * different mode from the tree you were just in. Same palette — warm paper,
+ * ink, terracotta, sage, gold — but a different treatment: much larger
+ * bubbles, real portraits, names always on, weight that falls off with
+ * distance, and a real cast shadow onto the receded tree beneath. That shadow
+ * is what sells "lifted" more than anything else here.
+ *
+ * Everything that moves does so as a CSS transition on `transform` or
+ * `opacity`. Nothing is driven by a script per frame, so when a transition
+ * ends the element rests at exactly its planned coordinate — zero drift, by
+ * construction. The one continuous animation in the file is the halo's slow
+ * breath, which changes light, not position: the scene stays alive without
+ * anybody moving.
+ */
+
+.fx-stage {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background:
+    radial-gradient(120% 90% at 50% 0%, #fbf7f2 0%, #f4efe8 55%, #ece5db 100%);
+  --fx-travel: 820ms;
+  --fx-spring: cubic-bezier(0.22, 1.28, 0.36, 1);
+  --fx-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+/* ── The context layer ─────────────────────────────────────────────────── */
+
+.fx-context {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+  transform-origin: 50% 50%;
+  transition:
+    opacity 420ms var(--fx-ease),
+    filter 420ms var(--fx-ease),
+    transform 620ms var(--fx-ease);
+}
+
+.fx-context.is-receded {
+  opacity: 0.13;
+  filter: blur(8px) saturate(0.25);
+  transform: scale(0.9);
+  cursor: default;
+}
+
+/* Catches a click anywhere off the family and drops back to the tree. */
+.fx-veil {
+  position: absolute;
+  inset: 0;
+}
+
+/* ── The focus layer ───────────────────────────────────────────────────── */
+
+.fx-pan {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.fx-stage.can-pan { cursor: grab; }
+.fx-stage.can-pan.is-dragging { cursor: grabbing; }
+/* A drag must track the pointer exactly — an easing here would feel like lag,
+   not like polish. The focus nodes keep their own transitions regardless. */
+.fx-stage.is-dragging .fx-pan { transition: none; }
+
+.fx-nodes,
+.fx-lines {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.fx-node {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  transition: transform var(--fx-travel) var(--fx-spring);
+  will-change: transform;
+}
+
+.fx-node.is-leaving {
+  transition: transform 560ms var(--fx-ease), opacity 560ms var(--fx-ease);
+  opacity: 0;
+}
+
+.fx-node__disc {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 200px;   /* the fixed base box — every size is a scale of this, so a
+                     resize rides the compositor and never triggers layout */
+  height: 200px;
+  border: 0;
+  padding: 0;
+  border-radius: 50%;
+  overflow: hidden;
+  cursor: pointer;
+  pointer-events: auto;
+  transform-origin: 50% 50%;
+  background: linear-gradient(150deg, var(--tint-light, #e0d5c6), var(--tint, #b09a80));
+  box-shadow:
+    0 2px 6px rgba(48, 36, 24, 0.10),
+    0 26px 54px -18px rgba(48, 36, 24, 0.45);
+  transition:
+    transform var(--fx-travel) var(--fx-spring),
+    box-shadow 400ms var(--fx-ease);
+  will-change: transform;
+}
+
+.fx-node__disc:hover {
+  box-shadow:
+    0 2px 6px rgba(48, 36, 24, 0.12),
+    0 34px 64px -18px rgba(48, 36, 24, 0.52);
+}
+
+.fx-node__disc:focus-visible {
+  outline: 6px solid var(--accent, #c2603a);
+  outline-offset: 6px;
+}
+
+.fx-node__photo {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.fx-node__initials {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-family: var(--display, Georgia, serif);
+  font-size: 72px;
+  letter-spacing: 0.02em;
+  color: rgba(255, 255, 255, 0.94);
+  text-shadow: 0 2px 10px rgba(40, 28, 18, 0.25);
+}
+
+/* An inner hairline keeps the portrait feeling mounted rather than pasted. */
+.fx-node__ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  box-shadow:
+    inset 0 0 0 6px rgba(255, 255, 255, 0.9),
+    inset 0 0 0 8px rgba(120, 96, 70, 0.16);
+  pointer-events: none;
+}
+
+/* The selected person carries the terracotta accent and a warmer lift. */
+.fx-node--self .fx-node__ring {
+  box-shadow:
+    inset 0 0 0 7px rgba(255, 255, 255, 0.95),
+    inset 0 0 0 11px var(--accent, #c2603a);
+}
+
+.fx-node--self .fx-node__disc {
+  box-shadow:
+    0 2px 8px rgba(48, 36, 24, 0.12),
+    0 34px 70px -18px rgba(140, 60, 26, 0.5);
+}
+
+/* A former partner is quieter — the geometry already says the relationship
+   ended, so the treatment only needs to agree, not announce. */
+.fx-node--ex .fx-node__disc { filter: saturate(0.72); }
+.fx-node--ex .fx-node__ring {
+  box-shadow:
+    inset 0 0 0 5px rgba(255, 255, 255, 0.82),
+    inset 0 0 0 7px rgba(185, 171, 152, 0.75);
+}
+
+.fx-node--grandparent .fx-node__ring {
+  box-shadow:
+    inset 0 0 0 5px rgba(255, 255, 255, 0.88),
+    inset 0 0 0 7px rgba(176, 134, 66, 0.5);
+}
+
+/* ── Names, always on ──────────────────────────────────────────────────── */
+
+.fx-node__plate {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  /* Set per node in JS to ~1.9x its own bubble, so a small grandparent's
+     label can never reach its neighbour's. Overflow ellipses rather than
+     wrapping: a wrapped kin line changes the plate's height and would push
+     the row's optical baseline around. */
+  width: var(--plate-w, 180px);
+  text-align: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 380ms var(--fx-ease), transform var(--fx-travel) var(--fx-spring);
+}
+
+.fx-node.is-there .fx-node__plate { opacity: 1; }
+
+.fx-node__name {
+  font-family: var(--display, Georgia, serif);
+  font-size: 16px;
+  line-height: 1.15;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink, #1c1d21);
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+
+.fx-node--self .fx-node__name { font-size: 19px; }
+
+.fx-node__kin {
+  font-family: var(--body, system-ui, sans-serif);
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink-soft, #6b6f76);
+}
+
+.fx-node--self .fx-node__kin { color: var(--accent, #c2603a); }
+
+/* ── The connective tissue ─────────────────────────────────────────────── */
+
+.fx-line {
+  fill: none;
+  stroke-linecap: round;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  transition: stroke-dashoffset 560ms var(--fx-ease), opacity 240ms linear;
+}
+
+.fx-line.is-drawn { stroke-dashoffset: 0; }
+
+.fx-line--descent {
+  stroke: var(--bio, #8a7d6b);
+  stroke-width: 2.6;
+  opacity: 0.75;
+}
+
+/* A dashed line cannot use the draw-on reveal: its own dash pattern is what
+ * `stroke-dasharray` is for, so it has nothing left to hide behind. Without
+ * this, a step-child's line and a former partner's tie both appeared instantly
+ * — pointing at people who had not arrived yet. They fade in on the same
+ * schedule instead. */
+.fx-line--dashed,
+.fx-line--former {
+  stroke-dashoffset: 0;
+  opacity: 0;
+  transition: opacity 420ms var(--fx-ease);
+}
+
+.fx-line--dashed {
+  stroke: var(--nonbio, #b6a892);
+  stroke-dasharray: 0.012 0.012;
+}
+
+.fx-line--dashed.is-drawn { opacity: 0.8; }
+
+.fx-line--current {
+  stroke: var(--bond-current, #c2603a);
+  stroke-width: 6;
+  opacity: 0.85;
+}
+
+.fx-line--former {
+  stroke: var(--bond-former, #b9ab98);
+  stroke-width: 3;
+  stroke-dasharray: 0.02 0.022;
+}
+
+.fx-line--former.is-drawn { opacity: 0.9; }
+
+/* ── Breathing ─────────────────────────────────────────────────────────────
+ * Deliberately bounded, and deliberately NOT positional: a slow bloom of
+ * light around each disc. The scene stays alive; nobody moves a pixel.
+ */
+@keyframes fx-breathe {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(194, 96, 58, 0); }
+  50%      { box-shadow: 0 0 0 14px rgba(194, 96, 58, 0.055); }
+}
+
+.fx-stage.is-focused .fx-node.is-there .fx-node__disc {
+  animation: fx-breathe 7s ease-in-out infinite;
+}
+
+.fx-node--self.is-there .fx-node__disc { animation-duration: 5.6s; }
+.fx-node--partner.is-there .fx-node__disc { animation-delay: 0.8s; }
+.fx-node--child.is-there .fx-node__disc { animation-delay: 1.6s; }
+.fx-node--sibling.is-there .fx-node__disc { animation-delay: 2.4s; }
+.fx-node--parent.is-there .fx-node__disc { animation-delay: 3.2s; }
+.fx-node--grandparent.is-there .fx-node__disc { animation-delay: 4s; }
+
+/* ── Motion off ────────────────────────────────────────────────────────── */
+
+.fx-stage.is-still .fx-node,
+.fx-stage.is-still .fx-node__disc,
+.fx-stage.is-still .fx-node__plate,
+.fx-stage.is-still .fx-context,
+.fx-stage.is-still .fx-line {
+  transition-duration: 1ms !important;
+  transition-delay: 0ms !important;
+  animation: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fx-node,
+  .fx-node__disc,
+  .fx-node__plate,
+  .fx-context,
+  .fx-line {
+    transition-duration: 1ms !important;
+    transition-delay: 0ms !important;
+    animation: none !important;
+  }
+}

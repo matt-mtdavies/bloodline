@@ -1,0 +1,149 @@
+/* Chrome for the Focus Layer lab. Deliberately quiet — the stage is the
+   subject, and anything competing with it here would be lying to us about how
+   the thing actually reads. */
+
+html, body, #root { height: 100%; margin: 0; }
+
+.fxlab {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  font-family: var(--body, system-ui, sans-serif);
+  color: var(--ink, #1c1d21);
+  background: #ece5db;
+}
+
+/* Sit below the bar rather than under it, so nothing is planned into
+   space the header already occupies. */
+.fxlab .fx-stage { position: relative; flex: 1 1 auto; min-height: 0; }
+
+.fxlab__bar {
+  position: relative;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 16px;
+  background: rgba(255, 255, 255, 0.78);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-bottom: 1px solid rgba(120, 96, 70, 0.14);
+}
+
+.fxlab__title {
+  font-family: var(--display, Georgia, serif);
+  font-size: 17px;
+}
+
+.fxlab__src {
+  font-size: 12px;
+  color: var(--ink-soft, #6b6f76);
+}
+
+.fxlab__search { position: relative; margin-left: auto; }
+
+.fxlab__input {
+  width: 200px;
+  padding: 7px 12px;
+  font: inherit;
+  font-size: 13px;
+  border: 1px solid rgba(120, 96, 70, 0.22);
+  border-radius: 999px;
+  background: #fff;
+  color: inherit;
+}
+
+.fxlab__results {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 6;
+  min-width: 220px;
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 12px 34px rgba(40, 28, 18, 0.18);
+}
+
+.fxlab__results button {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+}
+
+.fxlab__results button:hover { background: #f2f3f5; }
+
+.fxlab__btn {
+  padding: 7px 14px;
+  font: inherit;
+  font-size: 13px;
+  border: 1px solid rgba(120, 96, 70, 0.22);
+  border-radius: 999px;
+  background: #fff;
+  cursor: pointer;
+  color: inherit;
+}
+
+.fxlab__btn:disabled { opacity: 0.55; cursor: default; }
+
+.fxlab__error {
+  position: relative;
+  z-index: 5;
+  margin: 0;
+  padding: 8px 16px;
+  font-size: 13px;
+  color: #8a4a2c;
+  background: #f7e9e0;
+}
+
+.fxlab__hint,
+.fxlab__foot {
+  position: absolute;
+  left: 18px;
+  bottom: 18px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 18px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.86);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: 0 10px 30px rgba(40, 28, 18, 0.14);
+  font-size: 13px;
+  color: var(--ink-soft, #6b6f76);
+  white-space: nowrap;
+}
+
+.fxlab__hint strong { color: var(--ink, #1c1d21); font-weight: 600; }
+
+.fxlab__back {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--accent, #c2603a);
+  cursor: pointer;
+}
+
+.fxlab__stats { font-variant-numeric: tabular-nums; }
+
+@media (max-width: 700px) {
+  .fxlab__bar { flex-wrap: wrap; }
+  .fxlab__search { margin-left: 0; }
+  .fxlab__input { width: 140px; }
+  .fxlab__hint, .fxlab__foot { white-space: normal; max-width: 88vw; }
+}
