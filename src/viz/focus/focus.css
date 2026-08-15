@@ -20,6 +20,12 @@
   position: absolute;
   inset: 0;
   overflow: hidden;
+  /* Without this, iOS Safari claims a drag for page scroll/zoom and fires
+     pointercancel a few frames in — the gesture half-works and then dies,
+     which reads as "hard to move around". Every gesture on this stage is
+     handled in JS, so the browser must not take any of them. */
+  touch-action: none;
+  overscroll-behavior: contain;
   background:
     radial-gradient(120% 90% at 50% 0%, #fbf7f2 0%, #f4efe8 55%, #ece5db 100%);
   --fx-travel: 820ms;
@@ -61,13 +67,40 @@
   position: absolute;
   inset: 0;
   pointer-events: none;
+  /* The gesture maths treats a screen point as `point * k + pan`. That only
+     holds with the origin at the top-left — the default (centre) silently
+     shifts everything by half the stage on every zoom, which showed up as the
+     family sliding off after a pinch. */
+  transform-origin: 0 0;
 }
 
-.fx-stage.can-pan { cursor: grab; }
-.fx-stage.can-pan.is-dragging { cursor: grabbing; }
-/* A drag must track the pointer exactly — an easing here would feel like lag,
-   not like polish. The focus nodes keep their own transitions regardless. */
+.fx-stage.can-move { cursor: grab; }
+.fx-stage.can-move.is-dragging { cursor: grabbing; }
+/* A gesture must track the fingers exactly — an easing here would feel like
+   lag, not like polish. Releasing eases back, so a re-centre still glides.
+   The focus nodes keep their own transitions regardless. */
+.fx-pan { transition: transform 260ms var(--fx-ease); }
 .fx-stage.is-dragging .fx-pan { transition: none; }
+
+/* The way back. Only offered once you have actually moved something, so it
+   never sits there as clutter on a family that fits. */
+.fx-reframe {
+  position: absolute;
+  right: 16px;
+  bottom: 18px;
+  z-index: 6;
+  padding: 9px 16px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--accent, #c2603a);
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(120, 96, 70, 0.16);
+  border-radius: 999px;
+  box-shadow: 0 8px 24px rgba(40, 28, 18, 0.14);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  cursor: pointer;
+}
 
 .fx-nodes,
 .fx-lines {

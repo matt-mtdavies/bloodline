@@ -217,13 +217,20 @@ export default function FocusStage({ graph, personId, onSelect, onExit, insetTop
   const [size, setSize] = useState({ width: 1200, height: 800 });
   const [shown, setShown] = useState(false);
   const [leaving, setLeaving] = useState([]);
-  // Panning exists for the case the planner refuses to solve by shrinking: a
-  // family too wide to fit at MIN_DIAMETER. It is a drag on the focus layer
-  // only — the context layer behind never moves, so the sense of one thing
-  // lifted above another is preserved while you look around.
-  const [pan, setPan] = useState({ x: 0, y: 0 });
+  /* ── Getting around ──────────────────────────────────────────────────────
+   * `view` is the user's own adjustment on top of the planned camera:
+   * a translation in screen pixels and a multiplier on the plan's zoom.
+   * Identity ({0,0,1}) is exactly what the planner chose.
+   *
+   * The legibility floor (MIN_DIAMETER) governs the DEFAULT, not what the
+   * reader is allowed to do. Before this, a family too wide to fit could only
+   * be shoved around — there was no way to pull back and see it whole, which
+   * made a phone feel like looking through a letterbox.
+   */
+  const [view, setView] = useState({ x: 0, y: 0, k: 1 });
   const [dragging, setDragging] = useState(false);
-  const dragFrom = useRef(null);
+  const gesture = useRef(null);
+  const pointers = useRef(new Map());
   const panned = useRef(false);
   const lastPlaces = useRef(new Map()); // id → {x,y,s,plate}, where each node last rested
   const reduced = useMemo(prefersReducedMotion, []);
@@ -339,42 +346,140 @@ export default function FocusStage({ graph, personId, onSelect, onExit, insetTop
     for (const n of plan.nodes) lastPlaces.current.set(n.id, restOf(n));
   });
 
-  // A new selection re-frames from scratch; a stale pan would put the person
-  // you just chose off-centre.
-  useEffect(() => { setPan({ x: 0, y: 0 }); }, [personId]);
+  // A new selection re-frames from scratch; a stale pan or zoom would put the
+  // person you just chose off-centre, or off-screen entirely.
+  useEffect(() => { setView({ x: 0, y: 0, k: 1 }); }, [personId]);
 
   const inFocus = !!plan;
-  const canPan = !!plan?.pannable;
+
+  /* How far out the reader may pull back: far enough to see the whole family
+   * with a little air, whatever the planner decided. `fitK` < 1 exactly when
+   * the plan is pannable, so on a family that already fits this is a no-op. */
+  const fitK = plan?.zoom ? Math.min(1, (plan.fitZoom / plan.zoom) * 0.94) : 1;
+  const minK = Math.min(1, fitK);
+  const maxK = 2.2;
+  const clampK = (k) => Math.min(maxK, Math.max(minK, k));
+
+  /* Keep the family reachable. On an axis where the family is bigger than the
+   * screen the reader may move it freely, but never so far that nothing is
+   * left in view. On an axis where it now FITS — which is exactly what pinching
+   * out is for — it snaps to centred, so pulling back lands on a properly
+   * framed view instead of a correctly-sized one drifting off in a corner. */
+  const clampPan = (next, k) => {
+    if (!plan?.bounds || !focusCamera) return { ...next, k };
+    const b = plan.bounds;
+    const keep = 120; // this much of the family always stays in view
+    const axis = (lo, hi, want, extent) => {
+      const span = hi - lo;
+      if (span <= extent) return (extent - span) / 2 - lo;
+      return Math.min(extent - keep - lo, Math.max(keep - hi, want));
+    };
+    return {
+      x: axis(focusCamera.x(b.minX) * k, focusCamera.x(b.maxX) * k, next.x, size.width),
+      y: axis(focusCamera.y(b.minY) * k, focusCamera.y(b.maxY) * k, next.y, size.height),
+      k,
+    };
+  };
+
+  /** Zoom about a fixed screen point, so what is under the fingers stays put. */
+  const zoomAbout = (nextK, ax, ay) => setView((v) => {
+    const k = clampK(nextK);
+    const ratio = k / v.k;
+    return clampPan({ x: ax - (ax - v.x) * ratio, y: ay - (ay - v.y) * ratio }, k);
+  });
+
+  /* Pointer capture is taken LAZILY, only once a drag genuinely starts moving.
+   * Capturing on pointerdown retargets the subsequent `click` to the capturing
+   * element — which silently broke both tapping a person and the Re-centre
+   * button, since their clicks were delivered to the stage instead. A tap now
+   * never captures at all, so clicks land where they were aimed; a real drag
+   * captures the moment it becomes a drag, and keeps tracking off-element. */
+  const capture = (pointerId) => {
+    try { hostRef.current?.setPointerCapture?.(pointerId); } catch { /* already gone */ }
+  };
+
+  const localPoint = (e) => {
+    const r = hostRef.current?.getBoundingClientRect();
+    return { x: e.clientX - (r?.left ?? 0), y: e.clientY - (r?.top ?? 0) };
+  };
 
   const onPointerDown = (e) => {
-    if (!canPan || e.button === 2) return;
-    dragFrom.current = { x: e.clientX - pan.x, y: e.clientY - pan.y, moved: false };
+    if (!inFocus || e.button === 2) return;
+    if (e.target?.closest?.('.fx-reframe')) return; // a control, not the canvas
+    const p = localPoint(e);
+    pointers.current.set(e.pointerId, p);
+    if (pointers.current.size === 1) {
+      gesture.current = { kind: 'pan', ox: p.x - view.x, oy: p.y - view.y, moved: false };
+    } else if (pointers.current.size === 2) {
+      const [a, b] = [...pointers.current.values()];
+      gesture.current = {
+        kind: 'pinch',
+        dist: Math.hypot(a.x - b.x, a.y - b.y) || 1,
+        k0: view.k,
+        moved: true, // a pinch is never also a tap
+      };
+      capture(e.pointerId);
+    }
     setDragging(true);
-    e.currentTarget.setPointerCapture?.(e.pointerId);
   };
+
   const onPointerMove = (e) => {
-    if (!dragFrom.current) return;
-    const next = { x: e.clientX - dragFrom.current.x, y: e.clientY - dragFrom.current.y };
-    if (Math.abs(next.x - pan.x) + Math.abs(next.y - pan.y) > 2) dragFrom.current.moved = true;
-    setPan(next);
+    if (!gesture.current || !pointers.current.has(e.pointerId)) return;
+    const p = localPoint(e);
+    pointers.current.set(e.pointerId, p);
+    const g = gesture.current;
+    if (g.kind === 'pinch' && pointers.current.size >= 2) {
+      const [a, b] = [...pointers.current.values()];
+      const dist = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+      zoomAbout(g.k0 * (dist / g.dist), (a.x + b.x) / 2, (a.y + b.y) / 2);
+      return;
+    }
+    if (g.kind !== 'pan') return;
+    const next = { x: p.x - g.ox, y: p.y - g.oy };
+    if (!g.moved && Math.abs(next.x - view.x) + Math.abs(next.y - view.y) > 3) {
+      g.moved = true;
+      capture(e.pointerId);
+    }
+    if (!g.moved) return; // still inside the tap slop — do not nudge anything
+    setView((v) => clampPan(next, v.k));
   };
-  const endDrag = () => {
-    // A drag that actually moved must not also register as a backdrop click,
-    // or looking around a large family would drop you out of it.
-    panned.current = !!dragFrom.current?.moved;
-    dragFrom.current = null;
+
+  const endGesture = (e) => {
+    pointers.current.delete(e.pointerId);
+    if (pointers.current.size > 0) return; // still pinching with the other finger
+    // A drag or pinch that actually moved must not also register as a tap, or
+    // looking around a large family would select somebody, or drop you out.
+    panned.current = !!gesture.current?.moved;
+    gesture.current = null;
     setDragging(false);
   };
+
+  const onWheel = (e) => {
+    if (!inFocus) return;
+    const p = localPoint(e);
+    zoomAbout(view.k * Math.exp(-e.deltaY * 0.0016), p.x, p.y);
+  };
+
+  // Tapping a person while looking around must not fire on the release of a
+  // drag — the same guard the backdrop already uses.
+  const selectIfTap = (id) => {
+    if (panned.current) { panned.current = false; return; }
+    onSelect?.(id);
+  };
+
+  const framed = Math.abs(view.x) < 0.5 && Math.abs(view.y) < 0.5 && Math.abs(view.k - 1) < 0.005;
+  const reframe = () => setView({ x: 0, y: 0, k: 1 });
 
   return (
     <div
       ref={hostRef}
       className={`fx-stage${inFocus ? ' is-focused' : ''}${reduced ? ' is-still' : ''}`
-        + `${canPan ? ' can-pan' : ''}${dragging ? ' is-dragging' : ''}`}
+        + `${inFocus ? ' can-move' : ''}${dragging ? ' is-dragging' : ''}`}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
-      onPointerUp={endDrag}
-      onPointerCancel={endDrag}
+      onPointerUp={endGesture}
+      onPointerCancel={endGesture}
+      onWheel={onWheel}
     >
       <ContextCanvas
         graph={graph}
@@ -383,6 +488,12 @@ export default function FocusStage({ graph, personId, onSelect, onExit, insetTop
         dimmed={inFocus}
         onPick={inFocus ? null : onSelect}
       />
+
+      {inFocus && !framed && (
+        <button type="button" className="fx-reframe" onClick={reframe}>
+          Re-centre
+        </button>
+      )}
 
       {inFocus && (
         <div
@@ -395,7 +506,7 @@ export default function FocusStage({ graph, personId, onSelect, onExit, insetTop
       {inFocus && focusCamera && (
         <div
           className="fx-pan"
-          style={{ transform: `translate3d(${pan.x}px, ${pan.y}px, 0)` }}
+          style={{ transform: `translate3d(${view.x}px, ${view.y}px, 0) scale(${view.k})` }}
         >
           <Lines plan={plan} camera={focusCamera} shown={shown} />
           <div className="fx-nodes">
@@ -409,7 +520,7 @@ export default function FocusStage({ graph, personId, onSelect, onExit, insetTop
                   at={shown ? rest : seed}
                   shown={shown}
                   leaving={false}
-                  onSelect={onSelect}
+                  onSelect={selectIfTap}
                 />
               );
             })}
