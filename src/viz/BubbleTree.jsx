@@ -306,35 +306,9 @@ export default function BubbleTree({
       // buildLinks() is (mount, sync, ensureVisible).
       let partnerYRels = [];
       let parentAboveRels = [];
-      // Which side of a pod each visible partner belongs on: [{hubId, otherId,
-      // sign}], sign +1 for a current/widowed partner, -1 for a former one.
-      // Built alongside partnerYRels/parentAboveRels below — see podSide's own
-      // comment on the force for why this only ever fires for a hub with BOTH
-      // a current and a former partner visible at once.
-      let podSideRels = [];
       const rebuildForceRelCaches = (rels) => {
         partnerYRels = rels.filter((r) => r.type === 'partner' && nodeById.has(r.from_person) && nodeById.has(r.to_person));
         parentAboveRels = rels.filter((r) => r.type === 'parent' && nodeById.has(r.from_person) && nodeById.has(r.to_person));
-
-        const byHub = new Map(); // personId -> { current: [ids], former: [ids] }
-        const ensure = (id) => {
-          if (!byHub.has(id)) byHub.set(id, { current: [], former: [] });
-          return byHub.get(id);
-        };
-        for (const r of partnerYRels) {
-          // 'widowed' groups with 'current' here, matching links.js's own
-          // visual treatment (solid capsule ring) — a widowed partner is
-          // still very much part of the union, unlike a former one.
-          const bucket = r.partner_status === 'former' ? 'former' : 'current';
-          ensure(r.from_person)[bucket].push(r.to_person);
-          ensure(r.to_person)[bucket].push(r.from_person);
-        }
-        podSideRels = [];
-        for (const [hubId, { current, former }] of byHub) {
-          if (!current.length || !former.length) continue; // nothing ambiguous to resolve
-          for (const otherId of current) podSideRels.push({ hubId, otherId, sign: 1 });
-          for (const otherId of former) podSideRels.push({ hubId, otherId, sign: -1 });
-        }
       };
       rebuildForceRelCaches(graph.relationships);
 
@@ -450,73 +424,6 @@ export default function BubbleTree({
           const dy = nb.y - na.y;
           na.vy += dy * 0.4;
           nb.vy -= dy * 0.4;
-        }
-      });
-
-      // Pod side: real feedback — "the current couple need to always be
-      // together and the ex partners need to be on the opposite side of the
-      // pod." partnerY above already pulls every partner (current OR former)
-      // onto the same row, and the partner LINK force already pulls each pair
-      // to roughly the same distance apart — but neither says anything about
-      // WHICH side of the hub a partner belongs on, so with more than one
-      // partner visible a former could drift directly between the hub and
-      // their current partner, or land on the same side as them, reading as
-      // one messy three-person cluster instead of two legible unions.
-      //
-      // Only fires for a hub with genuine ambiguity to resolve — BOTH a
-      // current/widowed partner and a former one visible at once (see
-      // podSideRels above). A hub with a single partner, or several partners
-      // all of the same status, has nothing to disambiguate and is left
-      // exactly as before.
-      //
-      // Deliberately NOT scaled by alpha, for the same reason documented on
-      // partnerY just above (forceCollide has no alpha term either, so a
-      // decaying correction can never keep up with it once the sim settles
-      // near rest). A plain spring toward a target horizontal offset,
-      // symmetric and momentum-conserving per relationship exactly like
-      // partnerY's own dy spring, so it only ever redistributes a pod's own
-      // members and cannot inject net drift into the wider layout.
-      // PARTNER_DX (96) is deliberately close to the partner link's own
-      // 112px rest distance so the two forces agree rather than fight —
-      // this force decides which side, the link force still decides how far.
-      //
-      // Strength matches partnerY's own proven-safe 0.4 — a first pass at a
-      // gentler 0.16 with a tight 6px/tick cap looked fine on paper but,
-      // measured directly against the real seed tree across repeated runs,
-      // lost the tug-of-war against the children/charge/collision forces
-      // roughly 1 run in 4 (a current partner with her own shared child
-      // pulls hard enough, via the child link force, to end up on the wrong
-      // side): the exact same failure shape partnerY's own comment already
-      // documents — "the DATA was correct, but this force never got the
-      // chance to act." Raised to match, with the cap raised in proportion
-      // (60px, a safety net rather than an active limiter, in the same
-      // spirit as parentAbove's own "never move more than half a band" cap)
-      // so it can actually win within the settle window instead of being
-      // capped into losing slowly. Re-verified stable at this strength
-      // across 10 repeated runs (see PR description) before shipping.
-      //
-      // One accepted, rare edge case: two people who are each other's CURRENT
-      // partner but who were ALSO each previously married to someone else
-      // still visible (a reconciled couple) each assert an opposing "my
-      // current partner belongs on my right" rule for the very same edge.
-      // Both pulls are bounded and symmetric, so the worst outcome is that
-      // one specific couple settles closer to stacked than clearly offset —
-      // never instability, and never anything reaching beyond that one pair.
-      const PARTNER_DX = 96;
-      const POD_SIDE_STRENGTH = 0.4;
-      const POD_SIDE_MAX_PUSH = 60;
-      sim.force('podSide', () => {
-        const mode = layoutRef.current;
-        if (mode === 'chart' || mode === 'radial') return;
-        for (const { hubId, otherId, sign } of podSideRels) {
-          const hub = nodeById.get(hubId);
-          const other = nodeById.get(otherId);
-          if (!hub || !other) continue; // belt-and-braces, as above
-          const dx = other.x - hub.x;
-          const error = sign * PARTNER_DX - dx;
-          const push = Math.max(-POD_SIDE_MAX_PUSH, Math.min(POD_SIDE_MAX_PUSH, error * POD_SIDE_STRENGTH));
-          hub.vx -= push;
-          other.vx += push;
         }
       });
 
