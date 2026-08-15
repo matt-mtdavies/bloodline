@@ -145,5 +145,6 @@ html, body, #root { height: 100%; margin: 0; }
   .fxlab__bar { flex-wrap: wrap; }
   .fxlab__search { margin-left: 0; }
   .fxlab__input { width: 140px; }
-  .fxlab__hint, .fxlab__foot { white-space: normal; max-width: 88vw; }
+  /* Leave room for the stage's own Re-centre control on the right. */
+  .fxlab__hint, .fxlab__foot { white-space: normal; max-width: calc(100vw - 150px); }
 }
