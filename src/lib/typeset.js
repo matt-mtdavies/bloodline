@@ -110,8 +110,6 @@ export function blocksOf(spreads) {
           s.narrative.flatMap(splitLongText).forEach((text, i) => {
             push({ kind: 'prose', text, dropcap: i === 0 });
           });
-        } else {
-          push({ kind: 'pending', text: 'The story of these beginnings will be written when this edition is compiled.' });
         }
         if (s.parents?.length) push({ kind: 'parents', parents: s.parents });
         break;
@@ -131,8 +129,6 @@ export function blocksOf(spreads) {
             ch.paragraphs.flatMap(splitLongText).forEach((text, j) => {
               push({ kind: 'prose', text, dropcap: j === 0 });
             });
-          } else {
-            push({ kind: 'pending', text: 'This chapter will be written when the edition is compiled.' });
           }
           for (const e of ch.events || []) push({ kind: 'event', event: e });
         });

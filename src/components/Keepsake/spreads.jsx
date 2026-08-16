@@ -19,10 +19,6 @@ function Ornament() {
   );
 }
 
-function ProsePending({ children }) {
-  return <p className="ks-prose-pending">{children}</p>;
-}
-
 // The quiet pencil beside an editable narrative block. Rendered only when
 // KeepsakeView passes onEditSection (edit-capable member + a compiled
 // edition to revise); never prints.
@@ -105,9 +101,9 @@ export function OriginsSpread({ spread, onEditSection }) {
         <p className="ks-label ks-label--accent">Origins<EditPencil onEdit={onEditSection} section="origins" /></p>
         {spread.born.place && <h2 className="ks-origins__place">{spread.born.place}</h2>}
         {spread.born.date && <p className="ks-origins__date">Born {spread.born.date}</p>}
-        {spread.narrative
-          ? <div className="ks-prose ks-prose--dropcap" style={{ marginTop: 22 }}>{spread.narrative.map((p, i) => <p key={i}>{p}</p>)}</div>
-          : <ProsePending>The story of these beginnings will be written when this edition is compiled.</ProsePending>}
+        {spread.narrative && (
+          <div className="ks-prose ks-prose--dropcap" style={{ marginTop: 22 }}>{spread.narrative.map((p, i) => <p key={i}>{p}</p>)}</div>
+        )}
         {spread.parents.length > 0 && (
           <>
             <Ornament />
@@ -160,9 +156,9 @@ export function ChaptersSpread({ spread, onEditSection }) {
                 address the narrative slot, not the page-local position. */}
             <p className="ks-chapter__years">{ch.label}<EditPencil onEdit={onEditSection} section={`chapter:${ch.idx ?? i}`} /></p>
             {ch.narrativeTitle && <h3 className="ks-chapter__title">{ch.narrativeTitle}</h3>}
-            {ch.paragraphs
-              ? <div className={`ks-prose${i === 0 ? ' ks-prose--dropcap' : ''}`}>{ch.paragraphs.map((p, j) => <p key={j}>{p}</p>)}</div>
-              : <ProsePending>This chapter will be written when the edition is compiled.</ProsePending>}
+            {ch.paragraphs && (
+              <div className={`ks-prose${i === 0 ? ' ks-prose--dropcap' : ''}`}>{ch.paragraphs.map((p, j) => <p key={j}>{p}</p>)}</div>
+            )}
             {ch.events.length > 0 && (
               <ul className="ks-chapter__events">
                 {ch.events.map((e, j) => (

@@ -391,8 +391,8 @@ function lifespanLine(person) {
   const d = person.is_deceased ? yearOf(person.death_date) : null;
   if (b && d) return `${b} – ${d}`;
   if (b && person.is_deceased) return `${b} –`;
-  if (b) return `b. ${b}`;
-  return d ? `d. ${d}` : '';
+  if (b) return `Born ${b}`;
+  return d ? `Died ${d}` : '';
 }
 
 export function keepsakeSpreads(graph, personId, extras = {}) {

@@ -117,20 +117,22 @@ export default function TopBar({ familyName, stats, view, layout, syncStatus, sy
               <span className="hover-tip hover-tip--down">Search</span>
             </button>
           )}
-          {/* Bloodline-only — a GLOBAL display filter (it affects every view,
+          {/* Direct kin only — a GLOBAL display filter (it affects every view,
               not just the chart), so it lives with the other global controls
               up here rather than paired with the chart-specific view switcher.
               Circular like its neighbours; its "on" state is a soft accent
               tint, not a solid slab — the stats pill already spells out
-              "Bloodline only", so this need only whisper. */}
+              "Direct kin only", so this need only whisper. Labelled "Direct
+              kin" rather than "Bloodline" to avoid the toggle appearing to
+              refer to itself — "Bloodline" is already the product's own name. */}
           <button
             className={`pill${bloodlineOnly ? ' pill--on' : ''}`}
             onClick={onToggleBloodlineOnly}
-            aria-label="Bloodline only — show only biological and adoptive connections"
+            aria-label="Direct kin only — show only biological and adoptive connections"
             aria-pressed={bloodlineOnly}
           >
             <BloodlineIcon />
-            <span className="hover-tip hover-tip--down">Bloodline only</span>
+            <span className="hover-tip hover-tip--down">Direct kin only</span>
           </button>
           <button
             className="pill pill--bell"
@@ -200,7 +202,7 @@ export default function TopBar({ familyName, stats, view, layout, syncStatus, sy
                   aria-label="View family archive details"
                   aria-expanded={statsOpen}
                 >
-                  {bloodlineOnly && <><span className="topbar__stats-flag">Bloodline only</span> · </>}
+                  {bloodlineOnly && <><span className="topbar__stats-flag">Direct kin only</span> · </>}
                   {stats.people} {stats.people === 1 ? 'person' : 'people'}
                   {stats.surnames && <> · {stats.surnames}</>}
                   {stats.yearSpan && <> · {stats.yearSpan}</>}
@@ -623,7 +625,7 @@ function LegendIcon() {
 }
 
 // A single unbroken line of three generations — no side branches — for the
-// "Bloodline only" toggle, deliberately the quiet opposite of TreeIcon's
+// "Direct kin only" toggle, deliberately the quiet opposite of TreeIcon's
 // branching Y: this is the one straight line of blood the network reduces to
 // once partners, in-laws and step-relatives are filtered out. Threaded as one
 // continuous stroke (not two short disconnected segments) with generations

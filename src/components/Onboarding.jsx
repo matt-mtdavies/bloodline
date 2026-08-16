@@ -213,7 +213,7 @@ function StepParents({ parents, onUpdate }) {
           className="ob__input"
           value={p.name}
           onChange={(e) => onUpdate(i, e.target.value)}
-          placeholder={i === 0 ? "Mum's name" : "Dad's name"}
+          placeholder={i === 0 ? 'Parent 1 name' : 'Parent 2 name'}
           autoComplete="off"
         />
       ))}

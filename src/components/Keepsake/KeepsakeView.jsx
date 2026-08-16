@@ -19,6 +19,7 @@ import {
 } from './spreads.jsx';
 import KeepsakeBook from './KeepsakeBook.jsx';
 import KeepsakePager from './KeepsakePager.jsx';
+import ReturnMark from '../ReturnMark.jsx';
 import '../../styles/keepsake.css';
 
 /*
@@ -313,9 +314,7 @@ export default function KeepsakeView({
           >
             <PrintIcon />
           </button>
-          <button className="ks-chrome__btn" onClick={onClose} aria-label="Close the Keepsake">
-            <CloseIcon />
-          </button>
+          <ReturnMark onClick={onClose} label="Close the Keepsake" />
         </div>
       </div>
 
@@ -470,14 +469,6 @@ function ScrollModeIcon() {
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <path d="M5 5h14M5 10h14M5 15h9" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
       <path d="M17.5 14v6m0 0l-2.4-2.4M17.5 20l2.4-2.4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-function CloseIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
     </svg>
   );
 }
