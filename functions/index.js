@@ -191,10 +191,10 @@ function trustSection() {
 // see the caption under the beats below) replace what used to be four
 // abstract SVG mockups, so a visitor sees the actual app rather than a
 // stand-in for it. Each is a genuine screenshot, not a raw capture of the
-// interface mid-use — a book cover, a compiled tree, a profile page, and
-// the family constellation — chosen to read as a composed scene at this
-// size, per the same "art-directed, not a live canvas" standard the hero
-// image above already follows.
+// interface mid-use — a book cover, a compiled tree, a Keepsake memory
+// page, and the family constellation — chosen to read as a composed scene
+// at this size, per the same "art-directed, not a live canvas" standard
+// the hero image above already follows.
 function beatArt(kind) {
   const img = (src, alt) => `<img src="${src}" alt="${alt}" loading="lazy" width="400" height="240" />`;
   if (kind === 'one-name') {
@@ -204,7 +204,7 @@ function beatArt(kind) {
     return img('/images/story-shape.png', 'A family tree taking shape, with several people connected across two generations');
   }
   if (kind === 'keep') {
-    return img('/images/story-keep.png', 'A person’s profile page, showing their birthplace, birth date, and parents');
+    return img('/images/story-keep.webp', 'A Bloodline Keepsake page pairing a family photo with memories written by relatives');
   }
   return img('/images/story-share.webp', 'A family constellation diagram connecting several generations of one family');
 }
