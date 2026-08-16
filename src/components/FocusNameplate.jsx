@@ -52,5 +52,5 @@ function metaLine(person) {
   }
   const y = yearOf(person.birth_date);
   const age = ageOrAt(person); // "41"
-  return [y && `b. ${y}`, age && `age ${age}`].filter(Boolean).join(' · ');
+  return [y && `Born ${y}`, age && `age ${age}`].filter(Boolean).join(' · ');
 }

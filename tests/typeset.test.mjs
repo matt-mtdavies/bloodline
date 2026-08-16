@@ -66,9 +66,10 @@ test('blocksOf: chapter openers carry their absolute edit-slot index', () => {
   assert.equal(opens[0].num, 1);
 });
 
-test('blocksOf: a chapter without prose gets a pending block, not silence', () => {
+test('blocksOf: a chapter without prose goes straight to its events, no apology placeholder', () => {
   const i = blocks.findIndex((b) => b.section === 'chapter:1');
-  assert.equal(blocks[i + 1].kind, 'pending');
+  assert.equal(blocks[i + 1].kind, 'event');
+  assert.ok(!blocks.some((b) => b.kind === 'pending'));
 });
 
 test('blocksOf: album = one full-bleed hero page + grids of four', () => {

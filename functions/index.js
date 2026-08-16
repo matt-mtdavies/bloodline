@@ -187,18 +187,26 @@ function trustSection() {
   </section>`;
 }
 
+// Real product screenshots (illustrative demo family, not real people —
+// see the caption under the beats below) replace what used to be four
+// abstract SVG mockups, so a visitor sees the actual app rather than a
+// stand-in for it. Each is a genuine screenshot, not a raw capture of the
+// interface mid-use — a book cover, a compiled tree, a profile page, and
+// the family constellation — chosen to read as a composed scene at this
+// size, per the same "art-directed, not a live canvas" standard the hero
+// image above already follows.
 function beatArt(kind) {
-  const wrap = (inner) => `<svg viewBox="0 0 400 240" role="img" aria-hidden="true"><rect width="400" height="240" fill="#faf6ee"/>${inner}</svg>`;
+  const img = (src, alt) => `<img src="${src}" alt="${alt}" loading="lazy" width="400" height="240" />`;
   if (kind === 'one-name') {
-    return wrap(`<circle cx="200" cy="120" r="46" fill="#c2603a"/><text x="200" y="129" font-family="Fraunces, Georgia, serif" font-size="34" font-weight="700" fill="#fff" text-anchor="middle">E</text><rect x="110" y="185" width="180" height="30" rx="15" fill="#fff" stroke="#e8e2d6"/><text x="200" y="204" font-family="Hanken Grotesk, sans-serif" font-size="12" fill="#6b6f76" text-anchor="middle">Just a name, to begin</text>`);
+    return img('/images/story-begin.webp', 'The cover of a Bloodline Keepsake, showing one person’s name and portrait');
   }
   if (kind === 'take-shape') {
-    return wrap(`<g stroke="#c2603a" stroke-width="2" opacity=".4"><line x1="200" y1="70" x2="140" y2="150"/><line x1="200" y1="70" x2="260" y2="150"/><line x1="140" y1="150" x2="110" y2="200"/><line x1="140" y1="150" x2="170" y2="200"/></g><circle cx="200" cy="70" r="28" fill="#3f5e4e"/><circle cx="140" cy="150" r="26" fill="#c2603a"/><circle cx="260" cy="150" r="22" fill="#e0a184"/><circle cx="110" cy="200" r="16" fill="#b08642"/><circle cx="170" cy="200" r="16" fill="#d8b378"/>`);
+    return img('/images/story-shape.png', 'A family tree taking shape, with several people connected across two generations');
   }
   if (kind === 'keep') {
-    return wrap(`<circle cx="150" cy="120" r="40" fill="#c2603a"/><g transform="translate(210,80)"><rect width="130" height="90" rx="12" fill="#fff" stroke="#e8e2d6"/><rect x="12" y="12" width="106" height="42" rx="8" fill="#f0d9cd"/><rect x="12" y="64" width="70" height="8" rx="4" fill="#e8e2d6"/><rect x="12" y="78" width="90" height="8" rx="4" fill="#e8e2d6"/></g>`);
+    return img('/images/story-keep.png', 'A person’s profile page, showing their birthplace, birth date, and parents');
   }
-  return wrap(`<circle cx="120" cy="120" r="34" fill="#c2603a"/><circle cx="220" cy="90" r="26" fill="#3f5e4e"/><circle cx="230" cy="165" r="22" fill="#e0a184"/><g transform="translate(280,140)"><rect width="90" height="56" rx="12" fill="#fff" stroke="#e8e2d6"/><path d="M12 20l33 20 33-20" stroke="#c2603a" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/><rect x="10" y="16" width="70" height="26" rx="4" stroke="#c2603a" stroke-width="1.6" fill="none"/></g>`);
+  return img('/images/story-share.webp', 'A family constellation diagram connecting several generations of one family');
 }
 
 function storySection() {
@@ -225,6 +233,7 @@ function storySection() {
     </div>
     <div class="pub-wrap" style="margin-top:36px;">
       <div class="pub-story">${beatsHtml}</div>
+      <p class="pub-story__caption">Screens shown are an illustrative example family &mdash; not real people.</p>
     </div>
   </section>`;
 }

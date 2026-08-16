@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import Logo from './Logo.jsx';
+import { useReducedMotion } from '../hooks/useReducedMotion.js';
 
 // Duration each phase is shown before auto-advancing (null = stays until user acts)
 const PHASE_MS = [2800, 5200, 3800, 3600, null];
@@ -8,13 +9,18 @@ const LAST = PHASE_MS.length - 1;
 export default function Intro({ onBegin }) {
   const [phase, setPhase] = useState(0);
   const [leaving, setLeaving] = useState(false);
+  const reducedMotion = useReducedMotion();
 
   useEffect(() => {
+    if (reducedMotion) {
+      setPhase(LAST);
+      return;
+    }
     const ms = PHASE_MS[phase];
     if (ms == null) return;
     const t = setTimeout(() => setPhase((p) => p + 1), ms);
     return () => clearTimeout(t);
-  }, [phase]);
+  }, [phase, reducedMotion]);
 
   const skip = (e) => {
     e?.stopPropagation();
