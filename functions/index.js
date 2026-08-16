@@ -99,61 +99,14 @@ function heroSection() {
           </p>
         </div>
         <div>
-          <div class="pub-hero__art">${heroArt()}</div>
+          <div class="pub-hero__art">
+            <img src="/images/hero-tree.png" alt="A Bloodline family tree, with photos, names, and a highlighted couple connected across two generations" loading="eager" width="920" height="740" />
+          </div>
           <p class="pub-hero__caption">An illustrative example family &mdash; not real people.</p>
         </div>
       </div>
     </div>
   </section>`;
-}
-
-// A composed, static "family taking shape" scene: no live canvas, no photos —
-// just circles, connecting lines, and two small story fragments, in the same
-// warm palette as the product itself. Fast (inline SVG, no image requests),
-// understandable at a glance, and legible at any viewport width.
-function heroArt() {
-  return `<svg viewBox="0 0 560 460" role="img" aria-labelledby="heroArtTitle">
-    <title id="heroArtTitle">A small illustrative family tree with photo and story fragments attached to two people</title>
-    <rect width="560" height="460" fill="#faf6ee"/>
-    <g stroke="#c2603a" stroke-width="2" opacity="0.35">
-      <line x1="200" y1="120" x2="150" y2="230"/>
-      <line x1="200" y1="120" x2="260" y2="230"/>
-    </g>
-    <g stroke="#3f5e4e" stroke-width="2" opacity="0.35">
-      <line x1="360" y1="150" x2="260" y2="230"/>
-      <line x1="360" y1="150" x2="410" y2="260"/>
-    </g>
-    <g stroke="#b08642" stroke-width="2" opacity="0.35">
-      <line x1="150" y1="230" x2="150" y2="340"/>
-      <line x1="260" y1="230" x2="230" y2="345"/>
-      <line x1="260" y1="230" x2="300" y2="345"/>
-    </g>
-    <circle cx="200" cy="120" r="34" fill="#c2603a"/>
-    <circle cx="360" cy="150" r="30" fill="#3f5e4e"/>
-    <circle cx="150" cy="230" r="26" fill="#e0a184"/>
-    <circle cx="260" cy="230" r="30" fill="#c2603a"/>
-    <circle cx="410" cy="260" r="24" fill="#8fa895"/>
-    <circle cx="150" cy="340" r="20" fill="#b08642"/>
-    <circle cx="230" cy="345" r="20" fill="#d8b378"/>
-    <circle cx="300" cy="345" r="20" fill="#d8b378"/>
-    <g font-family="Fraunces, Georgia, serif" font-weight="700" fill="#fff" text-anchor="middle">
-      <text x="200" y="127" font-size="24">E</text>
-      <text x="360" y="157" font-size="22">M</text>
-      <text x="260" y="237" font-size="22">J</text>
-    </g>
-    <g transform="translate(330,60)">
-      <rect width="150" height="56" rx="14" fill="#fff" stroke="#e8e2d6"/>
-      <rect x="14" y="14" width="28" height="28" rx="6" fill="#f0d9cd"/>
-      <text x="52" y="28" font-family="Hanken Grotesk, sans-serif" font-size="11.5" font-weight="700" fill="#1c1d21">Married, 1962</text>
-      <text x="52" y="42" font-family="Hanken Grotesk, sans-serif" font-size="10.5" fill="#6b6f76">Cardiff, Wales</text>
-    </g>
-    <g transform="translate(60,380)">
-      <rect width="168" height="56" rx="14" fill="#fff" stroke="#e8e2d6"/>
-      <rect x="14" y="14" width="28" height="28" rx="6" fill="#d8e0d6"/>
-      <text x="52" y="28" font-family="Hanken Grotesk, sans-serif" font-size="11.5" font-weight="700" fill="#1c1d21">&ldquo;She taught us to bake&rdquo;</text>
-      <text x="52" y="42" font-family="Hanken Grotesk, sans-serif" font-size="10.5" fill="#6b6f76">A memory, added by a grandchild</text>
-    </g>
-  </svg>`;
 }
 
 function trustSection() {
@@ -190,23 +143,23 @@ function trustSection() {
 // Real product screenshots (illustrative demo family, not real people —
 // see the caption under the beats below) replace what used to be four
 // abstract SVG mockups, so a visitor sees the actual app rather than a
-// stand-in for it. Each is a genuine screenshot, not a raw capture of the
-// interface mid-use — a book cover, a compiled tree, a Keepsake memory
-// page, and the family constellation — chosen to read as a composed scene
-// at this size, per the same "art-directed, not a live canvas" standard
-// the hero image above already follows.
+// stand-in for it. Each is the actual screen the beat's own copy
+// describes — the onboarding step where a name is typed in, the
+// relationship-and-qualifier picker, a Keepsake page pairing a photo with
+// a family memory, and the invite sheet — rather than a generic stand-in
+// for the idea, so a visitor can see exactly what each step looks like.
 function beatArt(kind) {
   const img = (src, alt) => `<img src="${src}" alt="${alt}" loading="lazy" width="400" height="240" />`;
   if (kind === 'one-name') {
-    return img('/images/story-begin.webp', 'The cover of a Bloodline Keepsake, showing one person’s name and portrait');
+    return img('/images/beat-onboarding.png', 'The "Let\'s start with you" onboarding step, with one name typed in');
   }
   if (kind === 'take-shape') {
-    return img('/images/story-shape.png', 'A family tree taking shape, with several people connected across two generations');
+    return img('/images/beat-relationships.png', 'Adding a son, with Biological, Step, and Adopted relationship options shown');
   }
   if (kind === 'keep') {
     return img('/images/story-keep.webp', 'A Bloodline Keepsake page pairing a family photo with memories written by relatives');
   }
-  return img('/images/story-share.webp', 'A family constellation diagram connecting several generations of one family');
+  return img('/images/beat-invite.png', 'An invitation screen offering Contributor, Editor, or Viewer access to a family member');
 }
 
 function storySection() {
@@ -239,15 +192,22 @@ function storySection() {
 }
 
 function featureProofSection() {
+  // Three of the four cards carry a real, contextual screenshot of the
+  // exact feature they describe (the tree, a Keepsake page, the activity
+  // feed) instead of a generic icon — the icon badge stays only for
+  // "Bring your history with you", since GEDCOM import doesn't have an
+  // equally telling single screen to show at this size.
   const cards = [
-    { icon: Icons.tree(22), title: 'See the connections', desc: 'An immersive tree, a traditional chart, an accessible list, and your own Family Perimeter &mdash; the view that matters to you.', href: '/features#tree' },
-    { icon: Icons.heart(22), title: 'Remember the person', desc: 'Profiles, memories, photographs, documents, a life timeline, and the Keepsake &mdash; an illustrated biography woven from what your family records.', href: '/features#profile' },
-    { icon: Icons.people(22), title: 'Build it together', desc: 'Invitations, roles, an activity feed, and small contributions that add up &mdash; without handing over the whole archive.', href: '/features#collaboration' },
+    { img: '/images/card-tree.png', imgAlt: 'A Bloodline family tree with photos and connecting lines between relatives', icon: Icons.tree(22), title: 'See the connections', desc: 'An immersive tree, a traditional chart, an accessible list, and your own Family Perimeter &mdash; the view that matters to you.', href: '/features#tree' },
+    { img: '/images/card-keepsake.webp', imgAlt: 'The cover of a Bloodline Keepsake, an illustrated family biography', icon: Icons.heart(22), title: 'Remember the person', desc: 'Profiles, memories, photographs, documents, a life timeline, and the Keepsake &mdash; an illustrated biography woven from what your family records.', href: '/features#profile' },
+    { img: '/images/card-activity.png', imgAlt: 'A family activity feed showing memories, photos, and updates added by relatives', icon: Icons.people(22), title: 'Build it together', desc: 'Invitations, roles, an activity feed, and small contributions that add up &mdash; without handing over the whole archive.', href: '/features#collaboration' },
     { icon: Icons.download(22), title: 'Bring your history with you', desc: 'Import a GEDCOM, review every change before it applies, and keep duplicate safeguards on by default.', href: '/features#import' },
   ];
   const cardsHtml = cards.map((c) => `
       <div class="pub-card">
-        <div class="pub-card__icon">${c.icon}</div>
+        ${c.img
+          ? `<div class="pub-card__img"><img src="${c.img}" alt="${c.imgAlt}" loading="lazy" width="320" height="150" /></div>`
+          : `<div class="pub-card__icon">${c.icon}</div>`}
         <h3 class="pub-card__title">${c.title}</h3>
         <p class="pub-card__desc">${c.desc}</p>
         <a class="pub-card__link" href="${c.href}">See how &rarr;</a>
@@ -258,6 +218,7 @@ function featureProofSection() {
       <p class="pub-eyebrow">What's inside</p>
       <h2 class="pub-h2">Built around the person, not the record.</h2>
       <div class="pub-grid pub-grid--4" style="margin-top:32px;">${cardsHtml}</div>
+      <p class="pub-story__caption" style="margin-top:20px;">Screens shown are an illustrative example family &mdash; not real people.</p>
     </div>
   </section>`;
 }
