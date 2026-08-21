@@ -25,6 +25,21 @@ const GEN_GAP = 280; // shorter bands so wide screens use horizontal space too
 // Chart-view layout lives in ./chartLayout.js (tidy descendant tree).
 const ORGANIC_CHARGE = -1800; // stronger repulsion spreads generations sideways
 const SPREAD_X = 0.004; // weaker centring lets nodes fan out naturally
+// Real report, with screenshot: a former partner can settle BETWEEN two
+// CURRENT partners in the same pod ("Ken — Barb — Heather — Christopher",
+// where Ken+Heather are the current couple). Root cause: the partner link
+// force pulls every partner — current or former — toward their shared
+// person with identical strength/distance, so nothing gives the current
+// couple priority for the central slot; it's pure equilibrium, and an ex
+// can just as easily win it. Fixed by weakening (not replacing) that same
+// existing link for a former-partner pair specifically, at every layout
+// mode that configures it, so a current couple's own full-strength mutual
+// pull naturally dominates. Deliberately NOT a new force, and doesn't
+// touch the separate always-on Y-level force (partnerY) — an ex still
+// belongs on the same generational row as their shared family, only the
+// horizontal tug-of-war for the centre changes.
+const FORMER_PARTNER_STRENGTH_FACTOR = 0.55;
+const FORMER_PARTNER_DISTANCE_BUMP = 30; // px, added on top of the base partner distance
 const MAX_ZOOM = 2.0; // auto-fit (follow mode) — higher cap so small focus families fill the screen
 const MIN_ZOOM = 0.16; // free zoom-out: take in a huge tree at a glance (double the old 0.32 floor's field of view)
 // Two different floors for the same follow-mode fit, on purpose: an ordinary
@@ -310,12 +325,14 @@ export default function BubbleTree({
             (r) => (r.type === 'partner' || r.type === 'parent')
               && nodeById.has(r.from_person) && nodeById.has(r.to_person),
           )
-          .map((r) => ({ source: r.from_person, target: r.to_person, kind: r.type }));
+          .map((r) => ({ source: r.from_person, target: r.to_person, kind: r.type, status: r.partner_status }));
+      // See FORMER_PARTNER_STRENGTH_FACTOR's own comment.
+      const isFormerPartnerLink = (l) => l.kind === 'partner' && l.status === 'former';
 
       const linkForce = forceLink(buildLinks(graph.relationships))
         .id((d) => d.id)
-        .distance((l) => (l.kind === 'partner' ? 112 : 280))
-        .strength((l) => (l.kind === 'partner' ? 0.9 : 0.26));
+        .distance((l) => (l.kind === 'partner' ? 112 + (isFormerPartnerLink(l) ? FORMER_PARTNER_DISTANCE_BUMP : 0) : 280))
+        .strength((l) => (l.kind === 'partner' ? 0.9 * (isFormerPartnerLink(l) ? FORMER_PARTNER_STRENGTH_FACTOR : 1) : 0.26));
 
       // partnerY/parentAbove (below) only ever touch relationships where BOTH
       // endpoints are currently tracked — pre-filtered here, the same way
@@ -797,8 +814,8 @@ export default function BubbleTree({
             sim.force('x', forceX((d) => state.radialTargets.get(d.id)?.x ?? 0).strength(strength));
             sim.force('y', forceY((d) => state.radialTargets.get(d.id)?.y ?? 0).strength(strength));
             linkForce
-              .distance((l) => (l.kind === 'partner' ? 112 : 280))
-              .strength((l) => (l.kind === 'partner' ? 0.3 : 0.04));
+              .distance((l) => (l.kind === 'partner' ? 112 + (isFormerPartnerLink(l) ? FORMER_PARTNER_DISTANCE_BUMP : 0) : 280))
+              .strength((l) => (l.kind === 'partner' ? 0.3 * (isFormerPartnerLink(l) ? FORMER_PARTNER_STRENGTH_FACTOR : 1) : 0.04));
           } else if (mode === 'weighted') {
             // Relationship-weighted: immediate family pulled close, extended drifts
             // outward naturally. Stronger gen-band so generations read as rows.
@@ -809,12 +826,12 @@ export default function BubbleTree({
             sim.force('y', forceY(genY).strength(0.22));
             linkForce
               .distance((l) => {
-                if (l.kind === 'partner') return 95;
+                if (l.kind === 'partner') return 95 + (isFormerPartnerLink(l) ? FORMER_PARTNER_DISTANCE_BUMP : 0);
                 const r = Math.min(dist.get(nid(l.source)) ?? 4, dist.get(nid(l.target)) ?? 4);
                 return r <= 1 ? 210 : r <= 2 ? 265 : 320;
               })
               .strength((l) => {
-                if (l.kind === 'partner') return 0.95;
+                if (l.kind === 'partner') return 0.95 * (isFormerPartnerLink(l) ? FORMER_PARTNER_STRENGTH_FACTOR : 1);
                 const r = Math.min(dist.get(nid(l.source)) ?? 4, dist.get(nid(l.target)) ?? 4);
                 return r <= 1 ? 0.48 : r <= 2 ? 0.28 : 0.12;
               });
@@ -824,8 +841,8 @@ export default function BubbleTree({
             sim.force('x', forceX(0).strength(SPREAD_X));
             sim.force('y', forceY(genY).strength(0.22));
             linkForce
-              .distance((l) => (l.kind === 'partner' ? 112 : 280))
-              .strength((l) => (l.kind === 'partner' ? 0.9 : 0.26));
+              .distance((l) => (l.kind === 'partner' ? 112 + (isFormerPartnerLink(l) ? FORMER_PARTNER_DISTANCE_BUMP : 0) : 280))
+              .strength((l) => (l.kind === 'partner' ? 0.9 * (isFormerPartnerLink(l) ? FORMER_PARTNER_STRENGTH_FACTOR : 1) : 0.26));
           } else if (mode === 'chart') {
             // Traditional hierarchical chart — physics silenced; positions held by fx/fy.
             sim.force('charge', forceManyBody().strength(-30).distanceMax(80));
@@ -841,8 +858,8 @@ export default function BubbleTree({
             sim.force('x', forceX(0).strength(SPREAD_X));
             sim.force('y', forceY(genY).strength(restingYStrength()));
             linkForce
-              .distance((l) => (l.kind === 'partner' ? 112 : 280))
-              .strength((l) => (l.kind === 'partner' ? 0.9 : 0.26));
+              .distance((l) => (l.kind === 'partner' ? 112 + (isFormerPartnerLink(l) ? FORMER_PARTNER_DISTANCE_BUMP : 0) : 280))
+              .strength((l) => (l.kind === 'partner' ? 0.9 * (isFormerPartnerLink(l) ? FORMER_PARTNER_STRENGTH_FACTOR : 1) : 0.26));
           }
           sim.alpha(0.7);
         },
