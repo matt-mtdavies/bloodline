@@ -25,6 +25,21 @@ const GEN_GAP = 280; // shorter bands so wide screens use horizontal space too
 // Chart-view layout lives in ./chartLayout.js (tidy descendant tree).
 const ORGANIC_CHARGE = -1800; // stronger repulsion spreads generations sideways
 const SPREAD_X = 0.004; // weaker centring lets nodes fan out naturally
+// Real report, with screenshot: a former partner can settle BETWEEN two
+// CURRENT partners in the same pod ("Ken — Barb — Heather — Christopher",
+// where Ken+Heather are the current couple). Root cause: the partner link
+// force pulls every partner — current or former — toward their shared
+// person with identical strength/distance, so nothing gives the current
+// couple priority for the central slot; it's pure equilibrium, and an ex
+// can just as easily win it. Fixed by weakening (not replacing) that same
+// existing link for a former-partner pair specifically, at every layout
+// mode that configures it, so a current couple's own full-strength mutual
+// pull naturally dominates. Deliberately NOT a new force, and doesn't
+// touch the separate always-on Y-level force (partnerY) — an ex still
+// belongs on the same generational row as their shared family, only the
+// horizontal tug-of-war for the centre changes.
+const FORMER_PARTNER_STRENGTH_FACTOR = 0.55;
+const FORMER_PARTNER_DISTANCE_BUMP = 30; // px, added on top of the base partner distance
 const MAX_ZOOM = 2.0; // auto-fit (follow mode) — higher cap so small focus families fill the screen
 const MIN_ZOOM = 0.16; // free zoom-out: take in a huge tree at a glance (double the old 0.32 floor's field of view)
 // Two different floors for the same follow-mode fit, on purpose: an ordinary
@@ -82,11 +97,35 @@ const ZOOM_LIMIT_EPS = 0.02;
 // separate from its neighbours promptly, but far too gentle to visibly
 // unsettle bubbles that were already at rest.
 const EXPAND_REHEAT_ALPHA = 0.08;
-// How long the just-activated bubble is held perfectly still while its newly
-// -revealed neighbours settle in around it — the direct fix for "the one I
-// clicked on moves too". Long enough to cover the reheat's visible unrest,
-// short enough that it never reads as the bubble being stuck.
-const SETTLE_HOLD_MS = 900;
+// Real user report: clicking someone while the tree is already expanded
+// produced "3 clear waves" of motion instead of one smooth settle. Root
+// cause: the click's Y-band spike, the newly-revealed neighbours' spawn
+// hold, and the later "back to resting strength" reorg used to each be
+// released on their OWN fixed setTimeout (900ms, 1800ms) — independently
+// guessed durations, so the two releases landed at different moments and
+// each one was itself a fresh, discrete kick (an instant strength change,
+// and an instant fx/fy unpin).
+//
+// First attempt: tie the release to the simulation's own alpha decaying
+// near its resting drift, instead of a guessed duration. Measured live and
+// rejected — keeping the elevated Y-force alive for however long real
+// alpha decay takes (several seconds, more on a slower/throttled device,
+// since d3-force's decay is a function of TICK COUNT, not wall-clock time)
+// gives the charge/collision/Y-band system enough time to build its OWN
+// secondary oscillation, reproduced as a genuine ~3-6x totalSpeed bump
+// around 4s in that is completely absent from an idle canvas — trading the
+// old three timer-driven kicks for one new physics-driven one.
+//
+// What's here instead: both are released together, over ONE short, fixed,
+// bounded window — long enough to give a coordinated single glide (like
+// the old 900/1800ms split intended), short enough that the oscillation
+// above never gets a chance to build. The Y-force strength eases smoothly
+// across the whole window (see the tick loop) instead of snapping at the
+// end, so there's no discrete kick at all, and the pin releases at the
+// same moment the ease finishes, replacing two uncoordinated instants with
+// one continuous, synchronised one. No force strength, target, or the end
+// layout changed — only how the transition back to resting is shaped.
+const SETTLE_EASE_MS = 1400;
 
 /*
  * The visualization. Everything that matters in Phase 1 lives here:
@@ -172,7 +211,6 @@ export default function BubbleTree({
     let hoverTimer = null; // shared with the cleanup below, which runs outside the async IIFE
     let onVisibility = null; // ditto — assigned inside the IIFE, removed in the cleanup
     let unsubKinTerms = null; // ditto — assigned inside the IIFE, called in the cleanup
-    let settleHoldTimer = null; // ditto — see holdActiveDuringSettle()
     const host = hostRef.current;
     let app = new Application();
 
@@ -287,12 +325,14 @@ export default function BubbleTree({
             (r) => (r.type === 'partner' || r.type === 'parent')
               && nodeById.has(r.from_person) && nodeById.has(r.to_person),
           )
-          .map((r) => ({ source: r.from_person, target: r.to_person, kind: r.type }));
+          .map((r) => ({ source: r.from_person, target: r.to_person, kind: r.type, status: r.partner_status }));
+      // See FORMER_PARTNER_STRENGTH_FACTOR's own comment.
+      const isFormerPartnerLink = (l) => l.kind === 'partner' && l.status === 'former';
 
       const linkForce = forceLink(buildLinks(graph.relationships))
         .id((d) => d.id)
-        .distance((l) => (l.kind === 'partner' ? 112 : 280))
-        .strength((l) => (l.kind === 'partner' ? 0.9 : 0.26));
+        .distance((l) => (l.kind === 'partner' ? 112 + (isFormerPartnerLink(l) ? FORMER_PARTNER_DISTANCE_BUMP : 0) : 280))
+        .strength((l) => (l.kind === 'partner' ? 0.9 * (isFormerPartnerLink(l) ? FORMER_PARTNER_STRENGTH_FACTOR : 1) : 0.26));
 
       // partnerY/parentAbove (below) only ever touch relationships where BOTH
       // endpoints are currently tracked — pre-filtered here, the same way
@@ -556,9 +596,16 @@ export default function BubbleTree({
       // See holdActiveDuringSettle() — tracks which bubble (if any) is
       // currently held still purely for a post-expand settle, distinct from
       // state.pinnedId (an open profile card's own, longer-lived pin).
-      // settleHoldTimer itself is declared outside the IIFE (with hoverTimer,
-      // above) since the cleanup that clears it runs outside this IIFE too.
+      // Released by the tick loop's settle watcher, in sync with yRelaxFrom
+      // below — see SETTLE_EASE_MS's own comment.
       let settleHoldId = null;
+      let holdArmedAt = 0; // performance.now() when settleHoldId was set; 0 = none pending
+      // Non-zero while the Y-band force is easing back down from its
+      // click-spike strength (see setActive) toward resting, over
+      // SETTLE_EASE_MS — holds the strength it's easing FROM (always 0.45,
+      // the spike's own value; only setActive ever arms this).
+      let yRelaxFrom = 0;
+      let yRelaxArmedAt = 0;
 
       let dist = distancesFrom(graph, activeRef.current);
       // Duplicate-review "Show both in tree": while set, this is folded into
@@ -578,7 +625,6 @@ export default function BubbleTree({
       // way regardless of hover/active state).
       let compareIds = null;
 
-      let reorgTimer = null; // tracks the forceY strength-restore after a tap
       const manualPins = new Set(); // nodes the user has manually repositioned
       let flight = null;      // active search flyover, see state.flyAlong()
       let landingFx = null;   // the flyover's arrival burst (single-slot, self-cleaning)
@@ -768,8 +814,8 @@ export default function BubbleTree({
             sim.force('x', forceX((d) => state.radialTargets.get(d.id)?.x ?? 0).strength(strength));
             sim.force('y', forceY((d) => state.radialTargets.get(d.id)?.y ?? 0).strength(strength));
             linkForce
-              .distance((l) => (l.kind === 'partner' ? 112 : 280))
-              .strength((l) => (l.kind === 'partner' ? 0.3 : 0.04));
+              .distance((l) => (l.kind === 'partner' ? 112 + (isFormerPartnerLink(l) ? FORMER_PARTNER_DISTANCE_BUMP : 0) : 280))
+              .strength((l) => (l.kind === 'partner' ? 0.3 * (isFormerPartnerLink(l) ? FORMER_PARTNER_STRENGTH_FACTOR : 1) : 0.04));
           } else if (mode === 'weighted') {
             // Relationship-weighted: immediate family pulled close, extended drifts
             // outward naturally. Stronger gen-band so generations read as rows.
@@ -780,12 +826,12 @@ export default function BubbleTree({
             sim.force('y', forceY(genY).strength(0.22));
             linkForce
               .distance((l) => {
-                if (l.kind === 'partner') return 95;
+                if (l.kind === 'partner') return 95 + (isFormerPartnerLink(l) ? FORMER_PARTNER_DISTANCE_BUMP : 0);
                 const r = Math.min(dist.get(nid(l.source)) ?? 4, dist.get(nid(l.target)) ?? 4);
                 return r <= 1 ? 210 : r <= 2 ? 265 : 320;
               })
               .strength((l) => {
-                if (l.kind === 'partner') return 0.95;
+                if (l.kind === 'partner') return 0.95 * (isFormerPartnerLink(l) ? FORMER_PARTNER_STRENGTH_FACTOR : 1);
                 const r = Math.min(dist.get(nid(l.source)) ?? 4, dist.get(nid(l.target)) ?? 4);
                 return r <= 1 ? 0.48 : r <= 2 ? 0.28 : 0.12;
               });
@@ -795,8 +841,8 @@ export default function BubbleTree({
             sim.force('x', forceX(0).strength(SPREAD_X));
             sim.force('y', forceY(genY).strength(0.22));
             linkForce
-              .distance((l) => (l.kind === 'partner' ? 112 : 280))
-              .strength((l) => (l.kind === 'partner' ? 0.9 : 0.26));
+              .distance((l) => (l.kind === 'partner' ? 112 + (isFormerPartnerLink(l) ? FORMER_PARTNER_DISTANCE_BUMP : 0) : 280))
+              .strength((l) => (l.kind === 'partner' ? 0.9 * (isFormerPartnerLink(l) ? FORMER_PARTNER_STRENGTH_FACTOR : 1) : 0.26));
           } else if (mode === 'chart') {
             // Traditional hierarchical chart — physics silenced; positions held by fx/fy.
             sim.force('charge', forceManyBody().strength(-30).distanceMax(80));
@@ -812,8 +858,8 @@ export default function BubbleTree({
             sim.force('x', forceX(0).strength(SPREAD_X));
             sim.force('y', forceY(genY).strength(restingYStrength()));
             linkForce
-              .distance((l) => (l.kind === 'partner' ? 112 : 280))
-              .strength((l) => (l.kind === 'partner' ? 0.9 : 0.26));
+              .distance((l) => (l.kind === 'partner' ? 112 + (isFormerPartnerLink(l) ? FORMER_PARTNER_DISTANCE_BUMP : 0) : 280))
+              .strength((l) => (l.kind === 'partner' ? 0.9 * (isFormerPartnerLink(l) ? FORMER_PARTNER_STRENGTH_FACTOR : 1) : 0.26));
           }
           sim.alpha(0.7);
         },
@@ -872,16 +918,12 @@ export default function BubbleTree({
             // obvious before settling back to the gentle resting drift.
             const mode = state.layoutMode;
             if (mode !== 'chart' && mode !== 'radial') {
-              if (reorgTimer) clearTimeout(reorgTimer);
-              const genY = genYTarget;
-              sim.force('y', forceY(genY).strength(0.45));
+              sim.force('y', forceY(genYTarget).strength(0.45));
               sim.alpha(0.88);
-              reorgTimer = setTimeout(() => {
-                reorgTimer = null;
-                if (state.layoutMode !== 'chart' && state.layoutMode !== 'radial') {
-                  sim.force('y', forceY(genY).strength(restingYStrength()));
-                }
-              }, 1800);
+              // Eased back down to resting by the tick loop over
+              // SETTLE_EASE_MS — see that constant's own comment.
+              yRelaxFrom = 0.45;
+              yRelaxArmedAt = performance.now();
             }
           }
           if (state.layoutMode === 'radial' || state.layoutMode === 'weighted') state.relayout();
@@ -1064,15 +1106,18 @@ export default function BubbleTree({
         },
         // Real user report: "expanding the tree is frantic... the profile you
         // clicked on to expand moves as well." Fixes (fx/fy) the active
-        // bubble's position for SETTLE_HOLD_MS so it can never visibly drift
-        // while its newly-revealed neighbours find their places around it —
-        // on top of, not instead of, turning down the reheat itself
-        // (EXPAND_REHEAT_ALPHA) above. Never overrides a REAL profile-card
-        // pin (state.pinnedId, set by pin()/unpin()) — that one has a much
-        // better reason to hold the bubble still and must keep doing so even
-        // after this timer would otherwise have released it. Re-entrant: a
-        // second expand while a hold is already active (fast browsing) moves
-        // the hold to the newly active bubble and releases the stale one.
+        // bubble's position so it can never visibly drift while its newly-
+        // revealed neighbours find their places around it — on top of, not
+        // instead of, turning down the reheat itself (EXPAND_REHEAT_ALPHA)
+        // above. Never overrides a REAL profile-card pin (state.pinnedId,
+        // set by pin()/unpin()) — that one has a much better reason to hold
+        // the bubble still and must keep doing so even after this would
+        // otherwise have released it. Re-entrant: a second expand while a
+        // hold is already active (fast browsing) moves the hold to the
+        // newly active bubble and releases the stale one immediately — the
+        // current hold is itself released by the tick loop after
+        // SETTLE_EASE_MS, in sync with any pending Y-force relax (see that
+        // constant's own comment).
         holdActiveDuringSettle() {
           const id = activeRef.current;
           if (!id || state.pinnedId === id) return;
@@ -1085,14 +1130,7 @@ export default function BubbleTree({
           n.fx = n.x;
           n.fy = n.y;
           settleHoldId = id;
-          clearTimeout(settleHoldTimer);
-          settleHoldTimer = setTimeout(() => {
-            if (settleHoldId === id && state.pinnedId !== id) {
-              const nn = nodeById.get(id);
-              if (nn) { nn.fx = null; nn.fy = null; }
-            }
-            settleHoldId = null;
-          }, SETTLE_HOLD_MS);
+          holdArmedAt = performance.now();
         },
         // Focus Family toggled — re-apply the (now stronger/weaker) generational
         // banding, refresh relationship captions, and reheat so rows re-form.
@@ -1386,6 +1424,7 @@ export default function BubbleTree({
           crumbPulse.set(id, performance.now());
         },
       };
+
       api.current = state;
       if (apiRef) apiRef.current = state;
       state.onCameraMode((free) => onCameraModeRef.current?.(free));
@@ -1813,6 +1852,32 @@ export default function BubbleTree({
           }
         }
         sim.tick();
+        // Post-activation settle — see SETTLE_EASE_MS's own comment. Two
+        // independent watchers sharing one short, fixed window instead of
+        // the old two separately-guessed fixed timers: the Y-force eases
+        // continuously (no discrete kick) across the whole window, and the
+        // position-pin releases in one clean step right as it finishes —
+        // synchronised, so a click that arms both completes them together.
+        if (yRelaxArmedAt) {
+          const mode = state.layoutMode;
+          if (mode === 'chart' || mode === 'radial') {
+            yRelaxArmedAt = 0; // that layout owns its own y-force now; abandon the ease
+          } else {
+            const t = Math.min(1, (performance.now() - yRelaxArmedAt) / SETTLE_EASE_MS);
+            const eased = t * t * (3 - 2 * t); // smoothstep
+            const strength = yRelaxFrom + (restingYStrength() - yRelaxFrom) * eased;
+            sim.force('y', forceY(genYTarget).strength(strength));
+            if (t >= 1) yRelaxArmedAt = 0;
+          }
+        }
+        if (holdArmedAt && performance.now() - holdArmedAt > SETTLE_EASE_MS) {
+          holdArmedAt = 0;
+          if (settleHoldId && state.pinnedId !== settleHoldId) {
+            const n = nodeById.get(settleHoldId);
+            if (n) { n.fx = null; n.fy = null; }
+          }
+          settleHoldId = null;
+        }
         const vis = visibleRef.current;
         // In chart mode we render a scoped subset (±2 generations around the focal
         // person) rather than the full visible set, so 76 people don't collapse to
@@ -2505,7 +2570,6 @@ export default function BubbleTree({
     return () => {
       alive = false;
       clearTimeout(hoverTimer);
-      clearTimeout(settleHoldTimer);
       if (unsubKinTerms) unsubKinTerms();
       if (onVisibility) document.removeEventListener('visibilitychange', onVisibility);
       api.current?.sim?.stop();
