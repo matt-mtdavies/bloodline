@@ -1352,6 +1352,11 @@ export default function App() {
       setExpanded(new Set([activeId]));
       return;
     }
+    // An ordinary click freezes the canvas's auto zoom-to-fit so it only
+    // pans (see BubbleTree.jsx's autoFitZoom) — "All" genuinely wants the
+    // opposite, a camera that zooms out as the reveal grows, so explicitly
+    // re-enable it here even if an earlier click had frozen it.
+    viewApi.current?.enableAutoFit?.();
     // While a perimeter is active, "All" must never silently bypass it by
     // reaching into the complete tree (Codex follow-up review) — the pool
     // is exactly the same desired set the reconciliation effect below
