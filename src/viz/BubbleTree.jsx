@@ -534,6 +534,15 @@ export default function BubbleTree({
       const zoom = new Spring(1, { stiffness: 130, damping: 20 });
       const biasX = new Spring(0, { stiffness: 90, damping: 18 }); // shift on card open
       let camMode = 'follow'; // 'follow' | 'free'
+      // Whether FOLLOW mode is allowed to re-fit the zoom to whatever's
+      // currently visible. True on mount (so the very first framing still
+      // fills the screen) and after an explicit "frame everything" request
+      // (recenter(), the reveal-all button via enableAutoFit()); false the
+      // instant a real navigation activates a different person, so an
+      // ordinary click pans to the newly active person without also
+      // "neatly" re-zooming to fit their newly revealed relatives — see
+      // setActive's freezeZoom param and the FOLLOW branch below.
+      let autoFitZoom = true;
       let vx = 0, vy = 0; // free-pan inertia, world units / second
       let onModeChange = null;
       // Free mode normally holds zoom.target pinned to zoom.value every frame
@@ -837,7 +846,7 @@ export default function BubbleTree({
           state.layoutMode = mode;
           state.relayout();
         },
-        setActive(id, animate = true) {
+        setActive(id, animate = true, freezeZoom = false) {
           // De-dupe: React re-syncs activeId via a prop effect even when this
           // imperative state already made the same person active (e.g. right
           // after a flyover lands) — skip the reorg/zoom kick the second time
@@ -849,6 +858,12 @@ export default function BubbleTree({
           activeRef.current = id;
           state.dist = distancesFrom(graphRef.current, id);
           relCache.clear(); // relationships are relative to the active person
+          // Only a genuine, externally-driven navigation (the React prop
+          // effect passes freezeZoom=true; every internal call — flyover
+          // landing, recap tour — leaves it false and keeps its own zoom
+          // choreography) freezes the FOLLOW zoom fit; never on the initial
+          // mount call, where alreadyActive is already true.
+          if (freezeZoom && !alreadyActive) autoFitZoom = false;
           state.enterFollow();
           if (!reducedMotion && animate && !alreadyActive) {
             zoom.velocity -= 1.6;
@@ -903,7 +918,15 @@ export default function BubbleTree({
           drag.moved = false;
           drag.node = null;
           vx = vy = 0;
+          autoFitZoom = true; // an explicit "frame everything" request re-enables the fit
           state.enterFollow();
+        },
+        // Explicitly re-enables the FOLLOW zoom fit without otherwise
+        // touching the camera — for reveal-all (App.jsx's "All" button),
+        // which genuinely wants the view to zoom out as more people appear,
+        // even if an earlier ordinary click had frozen the zoom since.
+        enableAutoFit() {
+          autoFitZoom = true;
         },
         // Let React mirror the camera mode (to show/hide the recentre control).
         onCameraMode(fn) {
@@ -919,6 +942,14 @@ export default function BubbleTree({
         // button can give "you're at the limit" feedback when a step is a
         // no-op. dir > 0 zooms in, dir < 0 zooms out.
         zoomStep(dir) {
+          if (flight) {
+            // The on-screen zoom buttons are ignored during a flyover too —
+            // same "the flight owns the camera until it lands" rule as the
+            // pointerdown/pointermove/wheel guards. Reports "at limit" so
+            // the button gives quiet, non-committal feedback rather than
+            // silently doing nothing.
+            return { zoom: clamp(zoom.value, MIN_ZOOM, MAX_ZOOM_FREE), atLimit: true };
+          }
           state.enterFree();
           clearHover();
           // "Already at the limit" is checked against the last COMMANDED
@@ -1488,6 +1519,15 @@ export default function BubbleTree({
 
         // Second finger down → begin pinch; abandon any single-finger gesture.
         if (pointers.size === 2) {
+          if (flight) {
+            // A search flyover now runs fully independently of the user's
+            // gestures — pinching mid-flight neither interrupts nor alters
+            // it; it's simply ignored until the flight lands on its own.
+            // See the pan-drag and wheel guards below for the same rule.
+            drag.type = 'none';
+            drag.node = null;
+            return;
+          }
           if (drag.type === 'bubble' && drag.node && drag.id !== state.pinnedId) {
             drag.node.fx = null;
             drag.node.fy = null;
@@ -1497,7 +1537,6 @@ export default function BubbleTree({
           pinch.active = true;
           pinch.dist0 = twoFingerDist();
           pinch.zoom0 = screenAnchor().z;
-          if (flight) { flight.onAbort?.(); flight = null; landingFx?.destroy(); landingFx = null; flightComet?.destroy(); flightComet = null; }
           postFlightIds = null; // the user's taken control — stop lingering on the old route
           postFlightEdges = null;
           postFlightLandedAt = 0;
@@ -1522,9 +1561,15 @@ export default function BubbleTree({
           drag.node = null;
           drag.tapCandidateId = id || null; // too zoomed out to drag it — a clean tap still selects
           vx = vy = 0; // catch the moving tree the instant you touch it
-          // Double-tap empty space → recentre on the active family.
+          // Double-tap empty space → recentre on the active family. Ignored
+          // during a flyover — same "the flight owns the camera until it
+          // lands" rule as every other gesture guard in this handler; a
+          // double-tap that lands mid-flight would otherwise call
+          // recenter()'s enterFollow() without ever clearing `flight`,
+          // freezing the camera exactly like the wheel-during-flight bug
+          // fixed alongside this one.
           const now = performance.now();
-          if (now - lastTap.t < DOUBLE_TAP_MS &&
+          if (!flight && now - lastTap.t < DOUBLE_TAP_MS &&
               Math.hypot(g.x - lastTap.x, g.y - lastTap.y) < 28) {
             state.recenter();
             lastTap = { t: 0, x: 0, y: 0 };
@@ -1580,26 +1625,29 @@ export default function BubbleTree({
           drag.node.fy = local.y;
           if (!reducedMotion) sim.alphaTarget(0.35); // reheat so neighbours react
         } else if (drag.type === 'pan' && drag.moved) {
-          // A real drag interrupts the flyover — hand control back to the user
-          // right where the camera is, no jump.
-          if (flight) { flight.onAbort?.(); flight = null; landingFx?.destroy(); landingFx = null; flightComet?.destroy(); flightComet = null; }
-          postFlightIds = null; // the user's taken control — stop lingering on the old route
-          postFlightEdges = null;
-          postFlightLandedAt = 0;
-          state.enterFree();
-          app.stage.cursor = 'grabbing';
-          const z = screenAnchor().z;
-          const dwx = -(g.x - last.x) / z;
-          const dwy = -(g.y - last.y) / z;
-          camX.value = camX.target = camX.value + dwx;
-          camY.value = camY.target = camY.value + dwy;
-          camX.velocity = camY.velocity = 0;
-          // Track world-space velocity (EMA) so release flicks into inertia.
-          const now = performance.now();
-          const dt = Math.max(now - lastT, 8) / 1000;
-          vx = vx * 0.35 + (dwx / dt) * 0.65;
-          vy = vy * 0.35 + (dwy / dt) * 0.65;
-          lastT = now;
+          if (flight) {
+            // A drag no longer interrupts the flyover — the flight owns the
+            // camera exclusively until it lands on its own; see the pinch
+            // and wheel guards for the same rule applied to those gestures.
+          } else {
+            state.enterFree();
+            postFlightIds = null; // the user's taken control — stop lingering on the old route
+            postFlightEdges = null;
+            postFlightLandedAt = 0;
+            app.stage.cursor = 'grabbing';
+            const z = screenAnchor().z;
+            const dwx = -(g.x - last.x) / z;
+            const dwy = -(g.y - last.y) / z;
+            camX.value = camX.target = camX.value + dwx;
+            camY.value = camY.target = camY.value + dwy;
+            camX.velocity = camY.velocity = 0;
+            // Track world-space velocity (EMA) so release flicks into inertia.
+            const now = performance.now();
+            const dt = Math.max(now - lastT, 8) / 1000;
+            vx = vx * 0.35 + (dwx / dt) * 0.65;
+            vy = vy * 0.35 + (dwy / dt) * 0.65;
+            lastT = now;
+          }
         }
         last = { x: g.x, y: g.y };
       });
@@ -1687,6 +1735,16 @@ export default function BubbleTree({
         'wheel',
         (e) => {
           e.preventDefault();
+          if (flight) {
+            // Scroll/pinch-zoom is ignored entirely during a search flyover —
+            // see the pointerdown/pointermove guards above for the same rule.
+            // (This also incidentally fixed a latent bug: enterFree() below
+            // used to flip camMode away from 'flight' without ever clearing
+            // `flight` itself, freezing the camera mid-glide exactly like the
+            // tap-during-flight lockup this file's own history already fixed
+            // once — see endGesture's guards.)
+            return;
+          }
           state.enterFree();
           clearHover();
           const dy = clamp(e.deltaY, -WHEEL_DELTA_CLAMP, WHEEL_DELTA_CLAMP);
@@ -1949,46 +2007,74 @@ export default function BubbleTree({
           const PAD = 18;
           let halfX = Math.max(camTX - minX, maxX - camTX, rr);
           let halfY = Math.max(camTY - minY, maxY - camTY, rr);
-          let fit = Math.min(MAX_ZOOM, (W / 2 - PAD) / halfX, ((H - topInset) / 2 - PAD) / halfY);
 
-          // Only the deliberate "every person expanded" moment approaches the
-          // deeper floor — an ordinary tap that reveals a handful of relatives
-          // keeps the original, tighter one (see the two constants' comment
-          // above). Real feedback on the ripple reveal: this used to be a
-          // hard flip (tight floor right up until literally the very last
-          // person appeared, then an instant re-snap to the deep floor) —
-          // now it eases in smoothly over the back half of a reveal instead,
-          // so the last few steps of "All" don't cause a visible re-snap.
-          // Only ever engages once past the HALFWAY point of the whole tree
-          // (revealFrac > 0.5) — an ordinary small reveal, or a large tree's
-          // capped nearest-N reveal (which never gets anywhere near 100% of
-          // the WHOLE tree), never reaches far enough for this to matter, so
-          // both keep behaving exactly as before.
-          const g = graphRef.current;
-          const revealFrac = (expandedRef.current && g.people.length > 0)
-            ? expandedRef.current.size / g.people.length
-            : 0;
-          const easeIn = Math.min(1, Math.max(0, (revealFrac - 0.5) / 0.5)) ** 2;
-          const fitFloor = FIT_FLOOR - (FIT_FLOOR - WHOLE_TREE_FIT_FLOOR) * easeIn;
+          if (autoFitZoom) {
+            let fit = Math.min(MAX_ZOOM, (W / 2 - PAD) / halfX, ((H - topInset) / 2 - PAD) / halfY);
 
-          // The revealed family can be wide enough that fitting everyone would
-          // need to zoom out further than the follow-mode floor allows — most
-          // likely right after a search flyover reveals a long path's full
-          // neighbourhoods at once. The zoom clamp below can't stretch to
-          // compensate, so when that happens, re-centre fully on the active
-          // person and re-fit from there: keeping them actually on screen
-          // matters more than fitting every revealed relative.
-          if (fit < fitFloor) {
-            camTX = f.x;
-            camTY = f.y;
-            halfX = Math.max(camTX - minX, maxX - camTX, rr);
-            halfY = Math.max(camTY - minY, maxY - camTY, rr);
-            fit = Math.min(MAX_ZOOM, (W / 2 - PAD) / halfX, ((H - topInset) / 2 - PAD) / halfY);
+            // Only the deliberate "every person expanded" moment approaches the
+            // deeper floor — an ordinary tap that reveals a handful of relatives
+            // keeps the original, tighter one (see the two constants' comment
+            // above). Real feedback on the ripple reveal: this used to be a
+            // hard flip (tight floor right up until literally the very last
+            // person appeared, then an instant re-snap to the deep floor) —
+            // now it eases in smoothly over the back half of a reveal instead,
+            // so the last few steps of "All" don't cause a visible re-snap.
+            // Only ever engages once past the HALFWAY point of the whole tree
+            // (revealFrac > 0.5) — an ordinary small reveal, or a large tree's
+            // capped nearest-N reveal (which never gets anywhere near 100% of
+            // the WHOLE tree), never reaches far enough for this to matter, so
+            // both keep behaving exactly as before.
+            const g = graphRef.current;
+            const revealFrac = (expandedRef.current && g.people.length > 0)
+              ? expandedRef.current.size / g.people.length
+              : 0;
+            const easeIn = Math.min(1, Math.max(0, (revealFrac - 0.5) / 0.5)) ** 2;
+            const fitFloor = FIT_FLOOR - (FIT_FLOOR - WHOLE_TREE_FIT_FLOOR) * easeIn;
+
+            // The revealed family can be wide enough that fitting everyone would
+            // need to zoom out further than the follow-mode floor allows — most
+            // likely right after a search flyover reveals a long path's full
+            // neighbourhoods at once. The zoom clamp below can't stretch to
+            // compensate, so when that happens, re-centre fully on the active
+            // person and re-fit from there: keeping them actually on screen
+            // matters more than fitting every revealed relative.
+            if (fit < fitFloor) {
+              camTX = f.x;
+              camTY = f.y;
+              halfX = Math.max(camTX - minX, maxX - camTX, rr);
+              halfY = Math.max(camTY - minY, maxY - camTY, rr);
+              fit = Math.min(MAX_ZOOM, (W / 2 - PAD) / halfX, ((H - topInset) / 2 - PAD) / halfY);
+            }
+            zoom.setTarget(clamp(fit, fitFloor, MAX_ZOOM));
+          } else {
+            // Zoom frozen: an ordinary click just pans to bring the selected
+            // person near the centre — it never re-fits the zoom to "neatly"
+            // frame their newly revealed relatives (real feedback — the zoom
+            // level a viewer chose should survive normal navigation). If the
+            // zoom already in effect is too tight to keep the active person
+            // on screen at the biased group centre, fall back to centring on
+            // them alone — the same escape hatch the auto-fit branch above
+            // uses, just anchored to the existing zoom instead of a fresh fit.
+            const curZ = clamp(zoom.value, MIN_ZOOM, MAX_ZOOM);
+            const visHalfX = (W / 2 - PAD) / curZ;
+            const visHalfY = ((H - topInset) / 2 - PAD) / curZ;
+            if (halfX > visHalfX || halfY > visHalfY) {
+              camTX = f.x;
+              camTY = f.y;
+            }
+            // Fully pin the zoom spring, not just its target — setActive's
+            // own little "punch" (zoom.velocity -= 1.6, part of the click
+            // feedback) would otherwise still nudge value away from where it
+            // was even with target chasing value every frame, since a
+            // spring's damping decays velocity toward zero rather than
+            // undoing the displacement it already caused. Zeroing velocity
+            // here too keeps zoom genuinely unchanged, not just approximately.
+            zoom.target = zoom.value;
+            zoom.velocity = 0;
           }
 
           camX.setTarget(camTX);
           camY.setTarget(camTY);
-          zoom.setTarget(clamp(fit, fitFloor, MAX_ZOOM));
           camX.step(dt);
           camY.step(dt);
           zoom.step(dt);
@@ -2434,9 +2520,14 @@ export default function BubbleTree({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reducedMotion]);
 
-  // React drives the active person into the imperative camera.
+  // React drives the active person into the imperative camera. freezeZoom=true
+  // here (and only here — every internal setActive call keeps its own zoom
+  // choreography) means an ordinary navigation — a click, a search result, a
+  // "back to me" tap — pans to the newly active person without also
+  // re-fitting the zoom to their newly revealed relatives; see setActive's
+  // own comment and the FOLLOW branch in the frame loop below.
   useEffect(() => {
-    if (api.current) api.current.setActive(activeId);
+    if (api.current) api.current.setActive(activeId, true, true);
     else activeRef.current = activeId;
   }, [activeId]);
 
