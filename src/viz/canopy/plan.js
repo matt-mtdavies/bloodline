@@ -41,7 +41,11 @@
 import { sortSiblings, sortChildren, ancestorsWithDistance, descendantsWithDistance } from '../../data/graph.js';
 
 /** Vertical distance between generation rows. */
-export const ROW_GAP = 265;
+/* Raised from 265 once the trunk was made to start below each person's NAME
+ * rather than at the edge of their portrait (see render.js's trunkSpan): that
+ * left under 100px for a branch to travel, which compressed the curves into
+ * steep, cramped hooks. A branch needs room to read as a sweep. */
+export const ROW_GAP = 310;
 /** Centre-to-centre spacing between two people inside one partner pod. */
 export const POD_GAP = 150;
 /** Minimum centre-to-centre spacing between adjacent units on one row. */

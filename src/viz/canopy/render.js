@@ -13,6 +13,7 @@
  */
 
 import { Container, Graphics, Sprite, Texture, Assets, Text, TextStyle } from 'pixi.js';
+import { softShadowTexture, warmGlowTexture } from '../textures.js';
 import { unitAnchor } from './plan.js';
 import { progressAt, easeBranch, easeBud, bondKey } from './growth.js';
 
@@ -41,13 +42,21 @@ const BAND_ALPHA = { hearth: 1, kin: 0.94, reach: 0.76 };
 const BAND_LABEL_ALPHA = { hearth: 1, kin: 0.92, reach: 0.78 };
 const BAND_LABEL_SIZE = { hearth: 17, kin: 15, reach: 13 };
 const BAND_RING = { hearth: 2.6, kin: 2.1, reach: 1.6 };
+/* How firmly each band sits on the paper — see the shadow note in CanopyNode. */
+const BAND_SHADOW = { hearth: 0.34, kin: 0.24, reach: 0.13 };
 
 /* Ribbon widths — a descent line is wide at the union and narrows to the
  * child, so lineage visibly FLOWS DOWNWARD instead of reading as a wire
  * strung between two dots. */
-const W_UNION = 5.6;
-const W_JUNCTION = 3.2;
-const W_CHILD = 1.7;
+const W_UNION = 6.2;
+const W_TRUNK = 5.0;
+/* Deliberately below W_TRUNK — see descentPath's fork note. */
+const W_BRANCH = 3.1;
+const W_CHILD = 1.9;
+/* Bonds are drawn in a warm bark brown rather than neutral grey. Grey lines
+ * against warm paper read as engineering diagram; the warm tone lets them
+ * sit in the same world as the portraits and the paper they cross. */
+const BRANCH = 0x8a7563;
 
 /* ── geometry helpers ─────────────────────────────────────────────────── */
 
@@ -57,22 +66,85 @@ export function labelDrop(band) {
   return band === 'hearth' ? 52 : band === 'kin' ? 34 : 30;
 }
 
-/** The polyline a descent takes: union → stem → junction bar → child. */
+/* The path a descent takes.
+ *
+ * The first build routed this orthogonally — stem, horizontal bar, drop —
+ * and the render was decisive: right angles read as PLUMBING. Four square
+ * corners per child turned a family into a circuit diagram, and no amount of
+ * palette work was going to rescue that silhouette. A family tree wants a
+ * BOUGH: a short trunk leaving the union, then a branch that sweeps away and
+ * settles onto the child.
+ *
+ * So: a straight trunk down to the fork, then a cubic bezier out to the
+ * child, sampled into a polyline with a width that tapers along its length.
+ * Sampling (rather than drawing a curve primitive) keeps this compatible
+ * with growPolyline and taperedRibbon, so the growth animation and the
+ * tapering come along for free.
+ */
+/* Trunk start, child end, and the fork between them. Shared so descentPath
+ * and drawFork can never disagree about where the fork is — they did while
+ * each computed it independently, and the swelling drifted off the join. */
+function trunkSpan(from, to) {
+  return {
+    startY: from.y + from.r + labelDrop(from.band) + (from.isPod ? 6 : 0),
+    endY: to.y - to.r * 0.94,
+  };
+}
+function forkPoint(from, to, level = 0) {
+  const { startY, endY } = trunkSpan(from, to);
+  return { x: from.x, y: startY + (endY - startY) * (0.34 + level * 0.07) };
+}
+
 function descentPath(from, to, level = 0) {
-  // Each parent unit gets its own junction height (see plan.js) so two
-  // sibling groups sharing a row cannot merge their bars into one line.
-  const junctionY = from.y + (to.y - from.y) * (0.56 + level * 0.07);
-  // Leave from under the capsule for a pod, but from under the NAME for a
-  // lone parent — otherwise the stem is drawn straight through their label.
-  const startY = from.isPod
-    ? from.y + from.r * 0.86
-    : from.y + from.r + labelDrop(from.band);
-  return [
-    { x: from.x, y: startY, w: W_UNION },
-    { x: from.x, y: junctionY, w: W_JUNCTION },
-    { x: to.x, y: junctionY, w: W_JUNCTION },
-    { x: to.x, y: to.y - to.r * 0.9, w: W_CHILD },
-  ];
+  /* Where the trunk may begin. It has to clear BOTH the union capsule and
+   * the names beneath it — a pod's trunk descends from the couple's midpoint,
+   * which is exactly where two centred names meet, so a trunk that started at
+   * the capsule's edge was drawn straight through the focus person's own
+   * name once that name was set larger. Clearing the whole label block is the
+   * only rule that holds for every name length. */
+  const startY = from.y + from.r + labelDrop(from.band) + (from.isPod ? 6 : 0);
+  const endY = to.y - to.r * 0.94;
+  /* The fork is placed along what is ACTUALLY left between the trunk's start
+   * and the child — measuring it from the parent's centre instead put the
+   * fork above the trunk's own start once the start moved down, which drew
+   * the branch backwards. */
+  const forkY = forkPoint(from, to, level).y;
+
+  const pts = [{ x: from.x, y: startY, w: W_UNION }];
+  // The trunk: a short, honest vertical before anything forks.
+  pts.push({ x: from.x, y: forkY, w: W_TRUNK });
+
+  /* A branch leaves the fork NARROWER than the trunk arriving at it. Without
+   * that step change, a child sitting directly beneath the union produced a
+   * branch collinear with the trunk and identical in weight — the two merged
+   * into one long unbroken line and the fork simply did not read. A real
+   * bough is thicker than the limbs it splits into, and that difference is
+   * what makes a fork legible even when one limb continues straight on. */
+  const dy = endY - forkY;
+  const c1 = { x: from.x, y: forkY + dy * 0.42 };
+  const c2 = { x: to.x, y: endY - dy * 0.45 };
+  const STEPS = 16;
+  for (let i = 1; i <= STEPS; i++) {
+    const s = i / STEPS;
+    const m = 1 - s;
+    pts.push({
+      x: m * m * m * from.x + 3 * m * m * s * c1.x + 3 * m * s * s * c2.x + s * s * s * to.x,
+      y: m * m * m * forkY + 3 * m * m * s * c1.y + 3 * m * s * s * c2.y + s * s * s * endY,
+      // Taper continuously along the branch — thick where it leaves the
+      // fork, finest where it meets the child.
+      w: W_BRANCH + (W_CHILD - W_BRANCH) * (s * s * (3 - 2 * s)),
+    });
+  }
+  return pts;
+}
+
+/* The fork itself — a small swelling where limbs leave the bough, drawn once
+ * per parent unit rather than once per child. Botanically true, and it does
+ * real work: it gives the eye a definite point of origin for a sibling group
+ * and hides the seam where several branch ribbons overlap. */
+function drawFork(g, from, to, level, alpha) {
+  const f = forkPoint(from, to, level);
+  g.circle(f.x, f.y, W_TRUNK * 0.62).fill({ color: BRANCH, alpha });
 }
 
 /** Truncate a polyline to the first `u` of its own arc length. */
@@ -161,13 +233,49 @@ function dashedCapsule(g, a, b, hw, color, alpha) {
 
 /* ── Bonds ────────────────────────────────────────────────────────────── */
 
-export function drawBonds(g, frame, schedule, t) {
+/* Where a person actually IS this frame: where the plan puts them, plus any
+ * elastic deflection (a pull, or a sway from someone else being pulled).
+ * Bonds resolve through this rather than reading the plan directly, which is
+ * what makes a branch BEND when its person is pulled instead of detaching
+ * from them — the difference between a living connected thing and a set of
+ * independent counters with lines drawn near them. */
+const ZERO = { x: 0, y: 0 };
+function livePos(frame, id, offsetOf) {
+  const n = frame.nodes.get(id);
+  if (!n) return null;
+  const o = offsetOf ? (offsetOf(id) || ZERO) : ZERO;
+  return { ...n, x: n.x + o.x, y: n.y + o.y };
+}
+/* A union's anchor, following its members' live positions. */
+function liveAnchor(frame, unitId, offsetOf) {
+  const u = frame.units.find((x) => x.id === unitId);
+  if (!u) return null;
+  let sx = 0, sy = 0, n = 0;
+  let lo = Infinity, hi = -Infinity;
+  for (const m of u.memberIds) {
+    const p = livePos(frame, m, offsetOf);
+    if (!p) continue;
+    sx += p.x; sy += p.y; n++;
+    lo = Math.min(lo, p.x); hi = Math.max(hi, p.x);
+  }
+  if (!n) return unitAnchor(frame, unitId);
+  const first = frame.nodes.get(u.memberIds[0]);
+  return {
+    x: (lo + hi) / 2,
+    y: sy / n,
+    r: first.r,
+    band: first.band,
+    isPod: u.memberIds.length > 1,
+  };
+}
+
+export function drawBonds(g, frame, schedule, t, offsetOf) {
   g.clear();
 
   // Unions first, furthest back — the capsule sits behind its members.
   frame.bonds.forEach((b, i) => {
     if (b.kind !== 'union') return;
-    const a = frame.nodes.get(b.a), c = frame.nodes.get(b.b);
+    const a = livePos(frame, b.a, offsetOf), c = livePos(frame, b.b, offsetOf);
     if (!a || !c) return;
     const u = progressAt(schedule.bonds.get(bondKey(b, i)), t);
     if (u <= 0) return;
@@ -193,16 +301,22 @@ export function drawBonds(g, frame, schedule, t) {
       const end = { x: start.x + (endFull.x - start.x) * e, y: start.y + (endFull.y - start.y) * e };
       drawDashedPath(g, [start, end], pal.border, 0.75);
     } else {
-      capsulePath(g, a, to, hw).fill({ color: pal.fill, alpha: 0.55 * e });
-      capsulePath(g, a, to, hw).stroke({ color: pal.border, width: 2.4, alpha: 0.8 * e, cap: 'round' });
+      /* A current union is a warm HOLLOW the couple sits in, not a boxed
+       * outline around them. The first version drew a 2.4px terracotta hoop,
+       * which at pod size read as a selected row in a table — a hard edge
+       * competing with the portraits it was supposed to be supporting.
+       * Two soft washes and no stroke at all: the couple reads as held,
+       * and the eye goes to the faces. */
+      capsulePath(g, a, to, hw + 7).fill({ color: pal.fill, alpha: 0.34 * e });
+      capsulePath(g, a, to, hw + 1).fill({ color: pal.fill, alpha: 0.82 * e });
     }
   });
 
   // Descents on top of the capsules but under the people.
   frame.bonds.forEach((b, i) => {
     if (b.kind !== 'descent') return;
-    const from = unitAnchor(frame, b.parentUnit);
-    const to = frame.nodes.get(b.child);
+    const from = liveAnchor(frame, b.parentUnit, offsetOf);
+    const to = livePos(frame, b.child, offsetOf);
     if (!from || !to) return;
     const u = progressAt(schedule.bonds.get(bondKey(b, i)), t);
     if (u <= 0) return;
@@ -210,12 +324,16 @@ export function drawBonds(g, frame, schedule, t) {
     const full = descentPath(from, to, b.junctionLevel || 0);
     const pts = schedule.reduced ? full : growPolyline(full, e);
     const alpha = (schedule.reduced ? u : 1) * (BAND_ALPHA[to.band] ?? 1) * 0.85;
+    // The swelling where this unit's limbs leave the bough. Drawn per bond
+    // but at the unit's own fork point, so repeated draws land identically
+    // and several siblings simply reinforce the one shape.
+    if (e > 0.06) drawFork(g, from, to, b.junctionLevel || 0, alpha);
     if (b.qualifier === 'step' || b.qualifier === 'adoptive' || b.qualifier === 'adopted') {
       // A step or adoptive descent is dashed, matching the app's existing
       // convention — the bond is real, and it is also not biological.
-      drawDashedPath(g, pts, INK_SOFT, alpha * 0.85);
+      drawDashedPath(g, pts, BRANCH, alpha * 0.85);
     } else {
-      taperedRibbon(g, pts, INK_SOFT, alpha);
+      taperedRibbon(g, pts, BRANCH, alpha);
     }
   });
 }
@@ -305,6 +423,35 @@ export class CanopyNode {
     this.band = node.band;
     this.isFocus = node.isFocus;
 
+    /* Depth. Every disc casts a soft shadow onto the paper, so people SIT ON
+     * the ground rather than floating as flat stickers — the single cheapest
+     * thing that separates "diagram" from "object". Reuses the app's own
+     * pre-rendered shadow texture (one offscreen canvas, shared by every
+     * node) rather than a per-node blur filter. */
+    const shadow = new Sprite(softShadowTexture());
+    shadow.anchor.set(0.5);
+    const shadowScale = (r * 2.42) / shadow.texture.width;
+    this._shadowScale = shadowScale;
+    shadow.scale.set(shadowScale);
+    shadow.position.set(0, r * 0.20);
+    /* Atmospheric perspective: a shadow's weight is how close something is
+     * to the ground it sits on, so distant kin cast almost none and the
+     * frame gains real depth rather than three sizes of the same sticker. */
+    shadow.alpha = node.isFocus ? 0.52 : BAND_SHADOW[node.band] ?? 0.28;
+    this.root.addChild(shadow);
+    this.shadow = shadow;
+
+    /* The focus person carries a warm glow beneath the shadow — the eye
+     * should find them before it reads a single name. */
+    if (node.isFocus) {
+      const glow = new Sprite(warmGlowTexture());
+      glow.anchor.set(0.5);
+      glow.scale.set((r * 4.6) / glow.texture.width);
+      glow.alpha = 0.34;
+      this.root.addChildAt(glow, 0);
+      this.glow = glow;
+    }
+
     // Portrait: a monogram immediately, the photo when (and if) it loads —
     // a face never blocks the frame from being drawn.
     this.portrait = new Container();
@@ -336,9 +483,17 @@ export class CanopyNode {
     // name cannot be set legibly, so it is omitted as a design decision
     // rather than shipped as unreadable three-pixel type.
     if (BAND_LABEL_ALPHA[node.band] > 0) {
+      /* The focus person's name is set larger than anyone else's. The frame
+       * is ABOUT them, and hierarchy in the type is what says so without
+       * another ring, badge or colour — the glow tells the eye where to
+       * land, the type tells it who it landed on. */
       const name = new Text({
         text: shortName(person),
-        style: labelStyle(BAND_LABEL_SIZE[node.band] ?? 15, 600, INK),
+        style: labelStyle(
+          node.isFocus ? 21 : (BAND_LABEL_SIZE[node.band] ?? 15),
+          node.isFocus ? 700 : 600,
+          INK,
+        ),
       });
       name.anchor.set(0.5, 0);
       name.position.set(0, r + 11);
@@ -365,14 +520,23 @@ export class CanopyNode {
     g.clear();
     const w = BAND_RING[node.band] ?? 2;
     if (node.isFocus) {
-      // A faint warm lift so every frame has somewhere for the eye to land.
-      g.circle(0, 0, node.r + 9).stroke({ color: TERRA, width: 1.2, alpha: 0.28 });
-      g.circle(0, 0, node.r + 1).stroke({ color: TERRA, width: w + 0.8, alpha: 0.95 });
+      // The focus reads as focus through the glow and the shadow beneath it;
+      // the ring only needs to define the edge crisply. A heavy terracotta
+      // hoop (the first attempt) read as a UI selection state stamped onto
+      // the portrait rather than as a person being lit.
+      g.circle(0, 0, node.r + 1.5).stroke({ color: PAPER, width: w + 2.2, alpha: 0.9 });
+      g.circle(0, 0, node.r + 1.5).stroke({ color: TERRA, width: w * 0.72, alpha: 0.85 });
     } else {
-      g.circle(0, 0, node.r + 1).stroke({ color: INK, width: w, alpha: 0.16 });
+      // A pale paper rim lifts every portrait off the ground the way a
+      // photographic border does, with the ink hairline just defining the
+      // edge. Warm, not grey.
+      g.circle(0, 0, node.r + 1.5).stroke({ color: PAPER, width: w + 1.6, alpha: 0.75 });
+      g.circle(0, 0, node.r + 1.5).stroke({ color: 0x6f6154, width: w * 0.5, alpha: 0.2 });
     }
     if (this.person.is_deceased) {
-      g.circle(0, 0, node.r + 5).stroke({ color: INK_SOFT, width: 1, alpha: 0.3 });
+      // A quiet second rim, set off from the portrait — remembrance, not a
+      // warning badge.
+      g.circle(0, 0, node.r + 6.5).stroke({ color: INK_SOFT, width: 1, alpha: 0.26 });
     }
   }
 
@@ -408,12 +572,45 @@ export class CanopyNode {
     }
   }
 
-  /** @param {number} open 0..1 bud progress */
-  apply(node, open, ambient, tSeconds) {
-    this.root.position.set(node.x + ambient.x, node.y + ambient.y);
-    const s = node.isFocus ? 1 : open;
+  /** Pointer resting on this person — a small lift, so the tree answers
+   *  when you point at it. Costs nothing structurally and does a great deal
+   *  for whether the thing feels responsive. */
+  setHover(on) {
+    if (this._hover === on) return;
+    this._hover = on;
+    this.hoverAmt = this.hoverAmt ?? 0;
+  }
+
+  /**
+   * @param {object} node    planned position from the frame
+   * @param {number} open    0..1 bud progress
+   * @param {object} ambient {x, y, scale} breathing offset
+   * @param {object} defl    {x, y} elastic deflection (pull / sway)
+   */
+  apply(node, open, ambient, defl) {
+    const d = defl || ZERO;
+    this.root.position.set(node.x + ambient.x + d.x, node.y + ambient.y + d.y);
+
+    // Hover eases rather than snapping — a jump on pointer-over reads as a
+    // glitch, a rise reads as attention.
+    const want = this._hover ? 1 : 0;
+    this.hoverAmt = (this.hoverAmt ?? 0) + (want - (this.hoverAmt ?? 0)) * 0.18;
+
+    const s = (node.isFocus ? 1 : open) * (ambient.scale ?? 1) * (1 + this.hoverAmt * 0.045);
     this.root.scale.set(s);
     this.root.alpha = (BAND_ALPHA[node.band] ?? 1) * Math.min(1, open * 1.3);
+
+    /* Being pulled lifts you off the paper: the shadow drops away and grows,
+     * exactly as a real object's would. This is most of why the drag reads as
+     * physical rather than as a sprite sliding around. */
+    if (this.shadow) {
+      const lift = Math.min(1, Math.hypot(d.x, d.y) / 60) + this.hoverAmt * 0.5;
+      const base = node.isFocus ? 0.52 : (BAND_SHADOW[node.band] ?? 0.28);
+      this.shadow.alpha = base * (1 - lift * 0.34);
+      this.shadow.scale.set(this._shadowScale * (1 + lift * 0.16));
+      this.shadow.position.set(0, node.r * 0.20 + lift * 7);
+    }
+
     // Photos cross-fade in over their monogram once decoded.
     if (this.photoSprite && this.photoSprite.alpha < 1) {
       this.photoSprite.alpha = Math.min(1, this.photoSprite.alpha + 0.06);
@@ -454,7 +651,21 @@ function lifespan(p) {
 
 /* A stable, warm portrait tint per person — never random, so the same face
  * is the same colour every time you meet them. */
-const TINTS = [0x8a6f5c, 0x6f7f68, 0x8c6a72, 0x71708c, 0x9a7f52, 0x5f7a80];
+/* Portrait tints.
+ *
+ * The first set was six saturated hues spread across the wheel — teal,
+ * olive, violet, mauve — and against warm paper they read as a chart of
+ * unrelated entities rather than as one family. Colour was carrying no
+ * meaning and actively fighting the ground.
+ *
+ * These sit deliberately close together: low saturation, one narrow warm
+ * band from taupe through clay to sage-grey, all at similar value so white
+ * initials stay legible on every one. Enough separation to tell two
+ * neighbouring faces apart, not enough for anyone to read as belonging to a
+ * different picture. They are a stand-in for a photograph, and a wall of
+ * family photographs has exactly this quality — varied, but tonally one
+ * thing. */
+const TINTS = [0x9d8570, 0x8b8d76, 0xa8886e, 0x86918b, 0xa38a80, 0x94897d, 0x9c8368, 0x8d8578];
 function tintFor(p) {
   let h = 0;
   const s = String(p.id);

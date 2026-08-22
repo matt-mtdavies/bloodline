@@ -28,7 +28,7 @@ import { Application, Container, Graphics, Text, TextStyle } from 'pixi.js';
 import './canopy.css';
 import { planCanopy } from './plan.js';
 import { scheduleGrowth, progressAt, easeBud } from './growth.js';
-import { Scalar, ambientOffset, composeCamera } from './motion.js';
+import { Scalar, ambientOffset, composeCamera, Deflection, rubberBand, SWAY_POD, SWAY_BRANCH } from './motion.js';
 import { drawBonds, drawHorizons, horizonOffset, CanopyNode } from './render.js';
 
 const TAP_SLOP = 8;
@@ -103,6 +103,16 @@ export default function CanopyTree({
       let currentFocus = null;
       const nodes = new Map();  // id -> CanopyNode
       const hLabels = new Map();
+      /* Elastic deflection per person — see motion.js's Deflection. Kept
+       * beside the nodes rather than on them so bonds can resolve a live
+       * position for someone whose CanopyNode has not been built yet. */
+      const defl = new Map();
+      const deflOf = (id) => defl.get(id)?.value;
+      const deflFor = (id) => {
+        let d = defl.get(id);
+        if (!d) { d = new Deflection(); defl.set(id, d); }
+        return d;
+      };
 
       const zoom = new Scalar(1, 0.7);
       const anchorX = new Scalar(0, 0.9);
@@ -160,6 +170,28 @@ export default function CanopyTree({
         }
       };
 
+      /* Who leans when this person is pulled. A partner shares their pod and
+       * follows most; anyone joined by a branch follows a little. Everyone
+       * else is unaffected — sway is a property of connection, which is the
+       * whole point of showing it. */
+      const swayTargets = (id) => {
+        const out = [];
+        const unit = frame.units.find((u) => u.memberIds.includes(id));
+        if (unit) for (const m of unit.memberIds) if (m !== id) out.push([m, SWAY_POD]);
+        for (const b of frame.bonds) {
+          if (b.kind === 'union') {
+            if (b.a === id) out.push([b.b, SWAY_POD * 0.6]);
+            else if (b.b === id) out.push([b.a, SWAY_POD * 0.6]);
+          } else {
+            const pu = frame.units.find((u) => u.id === b.parentUnit);
+            if (!pu) continue;
+            if (b.child === id) { for (const m of pu.memberIds) out.push([m, SWAY_BRANCH]); }
+            else if (pu.memberIds.includes(id)) out.push([b.child, SWAY_BRANCH]);
+          }
+        }
+        return out;
+      };
+
       const idealCamera = () => composeCamera(frame, {
         width: app.screen.width,
         height: app.screen.height,
@@ -207,7 +239,8 @@ export default function CanopyTree({
        * profile, drag to pan, wheel to zoom. A manual pan or zoom simply
        * offsets the composition until the next selection re-composes it —
        * it never fights the layout, because it cannot change it. */
-      const drag = { active: false, moved: false, x: 0, y: 0 };
+      const drag = { active: false, moved: false, x: 0, y: 0, id: null, startX: 0, startY: 0 };
+      let hoverId = null;
 
       const idFromTarget = (t) => {
         let n = t;
@@ -225,21 +258,56 @@ export default function CanopyTree({
       app.stage.on('pointerdown', (e) => {
         drag.active = true; drag.moved = false;
         drag.x = e.global.x; drag.y = e.global.y;
+        drag.startX = e.global.x; drag.startY = e.global.y;
+        // Pressing ON somebody grabs THEM; pressing on paper pans the camera.
+        drag.id = idFromTarget(e.target);
       });
       app.stage.on('pointermove', (e) => {
-        if (!drag.active) return;
+        // Hover lift, only while nothing is being dragged.
+        if (!drag.active) {
+          const over = idFromTarget(e.target);
+          if (over !== hoverId) {
+            if (hoverId) nodes.get(hoverId)?.setHover(false);
+            hoverId = over;
+            if (hoverId) nodes.get(hoverId)?.setHover(true);
+          }
+          return;
+        }
         const dx = e.global.x - drag.x, dy = e.global.y - drag.y;
         if (!drag.moved && Math.hypot(dx, dy) > TAP_SLOP) drag.moved = true;
-        if (drag.moved) {
+        if (!drag.moved) return;
+
+        if (drag.id) {
+          /* Pulling a person. The displacement is in WORLD units — divided by
+           * zoom — so a pull feels the same distance under the finger at any
+           * scale, and rubber-banded so it resists rather than hitting a wall.
+           * Nothing here writes to the plan: this is a deflection FROM where
+           * they belong, and letting go returns them to it. */
+          const pulled = rubberBand(
+            (e.global.x - drag.startX) / zoom.value,
+            (e.global.y - drag.startY) / zoom.value,
+          );
+          deflFor(drag.id).hold(pulled.x, pulled.y);
+          for (const [id, k] of swayTargets(drag.id)) {
+            deflFor(id).lean(pulled.x * k, pulled.y * k);
+          }
+        } else {
           anchorX.set(anchorX.value + dx);
           anchorY.set(anchorY.value + dy);
           composed = true; // the viewer has taken the camera; stop auto-composing
-          drag.x = e.global.x; drag.y = e.global.y;
         }
+        drag.x = e.global.x; drag.y = e.global.y;
       });
+      const releaseDrag = () => {
+        // Everyone springs home. The plan was always the authority; the pull
+        // was only ever a deflection from it.
+        for (const [, d] of defl) d.release();
+        drag.id = null;
+      };
       const endDrag = (e) => {
         if (!drag.active) return;
         drag.active = false;
+        releaseDrag();
         if (drag.moved) return;
         const hid = horizonHit(e.global.x, e.global.y);
         if (hid) {
@@ -254,7 +322,7 @@ export default function CanopyTree({
         else onActivateRef.current?.(id);
       };
       app.stage.on('pointerup', endDrag);
-      app.stage.on('pointerupoutside', () => { drag.active = false; });
+      app.stage.on('pointerupoutside', () => { drag.active = false; releaseDrag(); });
 
       const onWheel = (e) => {
         e.preventDefault();
@@ -293,6 +361,13 @@ export default function CanopyTree({
         world.scale.set(zoom.value);
         world.position.set(anchorX.value, anchorY.value);
 
+        // Step every elastic deflection, then let it settle out of the map so
+        // an idle frame is not iterating hundreds of resting springs.
+        for (const [id, d] of defl) {
+          d.step(dt);
+          if (d.resting && id !== drag.id) defl.delete(id);
+        }
+
         for (const [id, node] of frame.nodes) {
           const cn = nodes.get(id);
           if (!cn) continue;
@@ -300,12 +375,12 @@ export default function CanopyTree({
           const raw = progressAt(sched, clock);
           const open = schedule.reduced ? raw : (sched?.dur ? easeBud(raw) : 1);
           const amb = node.isFocus || reducedMotion
-            ? { x: 0, y: 0 }
+            ? { x: 0, y: 0, scale: 1 }
             : ambientOffset(node.unitId, tSec);
-          cn.apply(node, open, amb, tSec);
+          cn.apply(node, open, amb, deflOf(id));
         }
 
-        drawBonds(bondLayer, frame, schedule, clock);
+        drawBonds(bondLayer, frame, schedule, clock, deflOf);
         drawHorizons(horizonLayer, frame, schedule, clock, horizonLabels);
         for (const h of frame.horizons) {
           const t = hLabels.get(h.id);
