@@ -71,8 +71,18 @@ export class Scalar {
  * Never applied to the focus person, who must be exactly still — "nearly
  * still" is what made the old view feel unsettled.
  */
-export const AMBIENT_AMP = 1.5;
-export const AMBIENT_PERIOD_S = 7.5;
+/* Amplitude was 1.5 world units over a 7.5s period — which is to say
+ * roughly one pixel of travel, taking four seconds to get there. It was
+ * mathematically present and visually absent, and the view read as dead
+ * paper. Real feedback: "it doesn't feel alive." Raised to something you
+ * can actually perceive, and given a second, slower harmonic plus a
+ * per-unit period jitter so no two families breathe in lockstep — a single
+ * sine at one frequency across everybody reads as a mechanism, not as life. */
+export const AMBIENT_AMP = 4.6;
+export const AMBIENT_PERIOD_S = 6.2;
+/* A whisper of scale on the same clock. Breathing is a change in SIZE as
+ * much as position, and this is what stops the drift reading as sliding. */
+export const AMBIENT_SCALE = 0.012;
 
 function phaseOf(key) {
   let h = 2166136261;
@@ -81,13 +91,30 @@ function phaseOf(key) {
 }
 
 const phaseCache = new Map();
+function phasePair(key) {
+  let p = phaseCache.get(key);
+  if (p === undefined) {
+    const a = phaseOf(key);
+    // A per-unit stretch of ±12% on the period. Without it every unit
+    // returns to the same place at the same moment and the whole frame
+    // pulses together, which reads as one machine rather than many lives.
+    const rate = 0.88 + ((Math.sin(a * 12.9898) * 43758.5453) % 1 + 1) % 1 * 0.24;
+    p = { a, rate };
+    phaseCache.set(key, p);
+  }
+  return p;
+}
+
 export function ambientOffset(unitKey, tSeconds) {
-  let p = phaseCache.get(unitKey);
-  if (p === undefined) { p = phaseOf(unitKey); phaseCache.set(unitKey, p); }
-  const w = (Math.PI * 2) / AMBIENT_PERIOD_S;
+  const { a, rate } = phasePair(unitKey);
+  const w = ((Math.PI * 2) / AMBIENT_PERIOD_S) * rate;
+  const t = tSeconds * w;
   return {
-    x: Math.sin(tSeconds * w + p) * AMBIENT_AMP,
-    y: Math.cos(tSeconds * w * 0.82 + p) * AMBIENT_AMP * 0.7,
+    // Two harmonics rather than one: the second, slower and smaller, keeps
+    // the path from being a clean repeating ellipse.
+    x: (Math.sin(t + a) + Math.sin(t * 0.43 + a * 1.7) * 0.42) * AMBIENT_AMP * 0.72,
+    y: (Math.cos(t * 0.82 + a) + Math.cos(t * 0.37 + a * 2.1) * 0.38) * AMBIENT_AMP * 0.55,
+    scale: 1 + Math.sin(t * 0.61 + a * 0.7) * AMBIENT_SCALE,
   };
 }
 
@@ -195,4 +222,60 @@ export function composeCamera(frame, viewport) {
     - (fitsVertically ? midY : 0) * zoom;
 
   return { zoom, anchorX, anchorY };
+}
+
+/* ── Elastic deflection ───────────────────────────────────────────────────
+ * Real question from the repo owner: "should we be able to move the bubbles
+ * after landing?" Free repositioning is a no — manual positions are exactly
+ * what Canopy exists to get rid of, they have to be stored somewhere, and
+ * they conflict with the next re-plan. They would also feel WORSE: in a
+ * force layout dragging feels alive because the neighbours shove back, but
+ * drag a deterministically-placed node and nothing responds at all. It is a
+ * sticker you peeled off the page.
+ *
+ * So a person can be MOVED without being REPOSITIONED. Pull them and they
+ * follow, against rising resistance; their branch bends, their partner and
+ * their children sway after them; let go and the whole thing springs home.
+ * Nothing is stored, the plan stays the single authority on where anybody
+ * belongs, and the tree reads as connected and living rather than as a set
+ * of independent counters — which is the actual thing that was missing.
+ */
+
+/** How far, in world units, a pull can ever displace someone. */
+export const PULL_MAX = 86;
+/** Fraction of the pull that reaches a pod partner, and a branch neighbour. */
+export const SWAY_POD = 0.5;
+export const SWAY_BRANCH = 0.2;
+
+/* Rubber band: the first few pixels follow the pointer almost exactly, then
+ * resistance rises and the displacement asymptotes toward PULL_MAX. A hard
+ * clamp instead of a curve makes the bubble feel like it hit a wall; this
+ * makes it feel attached to something. */
+export function rubberBand(dx, dy) {
+  const d = Math.hypot(dx, dy);
+  if (d < 0.001) return { x: 0, y: 0 };
+  const eased = (PULL_MAX * d) / (PULL_MAX + d);
+  return { x: (dx / d) * eased, y: (dy / d) * eased };
+}
+
+/** One person's springy offset from where the plan says they belong. */
+export class Deflection {
+  constructor() {
+    // Quick enough to feel like tension rather than syrup, slow enough that
+    // the return reads as a settle rather than a snap.
+    this.x = new Scalar(0, 0.46);
+    this.y = new Scalar(0, 0.46);
+  }
+  /** Held under the pointer — no spring while the finger is down. */
+  hold(x, y) { this.x.set(x); this.y.set(y); }
+  /** Pulled toward a value by something else's movement. */
+  lean(x, y) { this.x.to(x); this.y.to(y); }
+  /** Let go — spring home. */
+  release() { this.x.to(0); this.y.to(0); }
+  step(dt) { this.x.step(dt); this.y.step(dt); }
+  get value() { return { x: this.x.value, y: this.y.value }; }
+  get resting() {
+    return Math.abs(this.x.value) < 0.05 && Math.abs(this.y.value) < 0.05
+      && this.x.target === 0 && this.y.target === 0;
+  }
 }

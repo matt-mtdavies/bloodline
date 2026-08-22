@@ -233,13 +233,49 @@ function dashedCapsule(g, a, b, hw, color, alpha) {
 
 /* ── Bonds ────────────────────────────────────────────────────────────── */
 
-export function drawBonds(g, frame, schedule, t) {
+/* Where a person actually IS this frame: where the plan puts them, plus any
+ * elastic deflection (a pull, or a sway from someone else being pulled).
+ * Bonds resolve through this rather than reading the plan directly, which is
+ * what makes a branch BEND when its person is pulled instead of detaching
+ * from them — the difference between a living connected thing and a set of
+ * independent counters with lines drawn near them. */
+const ZERO = { x: 0, y: 0 };
+function livePos(frame, id, offsetOf) {
+  const n = frame.nodes.get(id);
+  if (!n) return null;
+  const o = offsetOf ? (offsetOf(id) || ZERO) : ZERO;
+  return { ...n, x: n.x + o.x, y: n.y + o.y };
+}
+/* A union's anchor, following its members' live positions. */
+function liveAnchor(frame, unitId, offsetOf) {
+  const u = frame.units.find((x) => x.id === unitId);
+  if (!u) return null;
+  let sx = 0, sy = 0, n = 0;
+  let lo = Infinity, hi = -Infinity;
+  for (const m of u.memberIds) {
+    const p = livePos(frame, m, offsetOf);
+    if (!p) continue;
+    sx += p.x; sy += p.y; n++;
+    lo = Math.min(lo, p.x); hi = Math.max(hi, p.x);
+  }
+  if (!n) return unitAnchor(frame, unitId);
+  const first = frame.nodes.get(u.memberIds[0]);
+  return {
+    x: (lo + hi) / 2,
+    y: sy / n,
+    r: first.r,
+    band: first.band,
+    isPod: u.memberIds.length > 1,
+  };
+}
+
+export function drawBonds(g, frame, schedule, t, offsetOf) {
   g.clear();
 
   // Unions first, furthest back — the capsule sits behind its members.
   frame.bonds.forEach((b, i) => {
     if (b.kind !== 'union') return;
-    const a = frame.nodes.get(b.a), c = frame.nodes.get(b.b);
+    const a = livePos(frame, b.a, offsetOf), c = livePos(frame, b.b, offsetOf);
     if (!a || !c) return;
     const u = progressAt(schedule.bonds.get(bondKey(b, i)), t);
     if (u <= 0) return;
@@ -279,8 +315,8 @@ export function drawBonds(g, frame, schedule, t) {
   // Descents on top of the capsules but under the people.
   frame.bonds.forEach((b, i) => {
     if (b.kind !== 'descent') return;
-    const from = unitAnchor(frame, b.parentUnit);
-    const to = frame.nodes.get(b.child);
+    const from = liveAnchor(frame, b.parentUnit, offsetOf);
+    const to = livePos(frame, b.child, offsetOf);
     if (!from || !to) return;
     const u = progressAt(schedule.bonds.get(bondKey(b, i)), t);
     if (u <= 0) return;
@@ -395,6 +431,7 @@ export class CanopyNode {
     const shadow = new Sprite(softShadowTexture());
     shadow.anchor.set(0.5);
     const shadowScale = (r * 2.42) / shadow.texture.width;
+    this._shadowScale = shadowScale;
     shadow.scale.set(shadowScale);
     shadow.position.set(0, r * 0.20);
     /* Atmospheric perspective: a shadow's weight is how close something is
@@ -535,12 +572,45 @@ export class CanopyNode {
     }
   }
 
-  /** @param {number} open 0..1 bud progress */
-  apply(node, open, ambient, tSeconds) {
-    this.root.position.set(node.x + ambient.x, node.y + ambient.y);
-    const s = node.isFocus ? 1 : open;
+  /** Pointer resting on this person — a small lift, so the tree answers
+   *  when you point at it. Costs nothing structurally and does a great deal
+   *  for whether the thing feels responsive. */
+  setHover(on) {
+    if (this._hover === on) return;
+    this._hover = on;
+    this.hoverAmt = this.hoverAmt ?? 0;
+  }
+
+  /**
+   * @param {object} node    planned position from the frame
+   * @param {number} open    0..1 bud progress
+   * @param {object} ambient {x, y, scale} breathing offset
+   * @param {object} defl    {x, y} elastic deflection (pull / sway)
+   */
+  apply(node, open, ambient, defl) {
+    const d = defl || ZERO;
+    this.root.position.set(node.x + ambient.x + d.x, node.y + ambient.y + d.y);
+
+    // Hover eases rather than snapping — a jump on pointer-over reads as a
+    // glitch, a rise reads as attention.
+    const want = this._hover ? 1 : 0;
+    this.hoverAmt = (this.hoverAmt ?? 0) + (want - (this.hoverAmt ?? 0)) * 0.18;
+
+    const s = (node.isFocus ? 1 : open) * (ambient.scale ?? 1) * (1 + this.hoverAmt * 0.045);
     this.root.scale.set(s);
     this.root.alpha = (BAND_ALPHA[node.band] ?? 1) * Math.min(1, open * 1.3);
+
+    /* Being pulled lifts you off the paper: the shadow drops away and grows,
+     * exactly as a real object's would. This is most of why the drag reads as
+     * physical rather than as a sprite sliding around. */
+    if (this.shadow) {
+      const lift = Math.min(1, Math.hypot(d.x, d.y) / 60) + this.hoverAmt * 0.5;
+      const base = node.isFocus ? 0.52 : (BAND_SHADOW[node.band] ?? 0.28);
+      this.shadow.alpha = base * (1 - lift * 0.34);
+      this.shadow.scale.set(this._shadowScale * (1 + lift * 0.16));
+      this.shadow.position.set(0, node.r * 0.20 + lift * 7);
+    }
+
     // Photos cross-fade in over their monogram once decoded.
     if (this.photoSprite && this.photoSprite.alpha < 1) {
       this.photoSprite.alpha = Math.min(1, this.photoSprite.alpha + 0.06);
