@@ -13,6 +13,7 @@
  */
 
 import { Container, Graphics, Sprite, Texture, Assets, Text, TextStyle } from 'pixi.js';
+import { softShadowTexture, warmGlowTexture } from '../textures.js';
 import { unitAnchor } from './plan.js';
 import { progressAt, easeBranch, easeBud, bondKey } from './growth.js';
 
@@ -45,9 +46,13 @@ const BAND_RING = { hearth: 2.6, kin: 2.1, reach: 1.6 };
 /* Ribbon widths — a descent line is wide at the union and narrows to the
  * child, so lineage visibly FLOWS DOWNWARD instead of reading as a wire
  * strung between two dots. */
-const W_UNION = 5.6;
-const W_JUNCTION = 3.2;
-const W_CHILD = 1.7;
+const W_UNION = 6.2;
+const W_TRUNK = 4.4;
+const W_CHILD = 1.9;
+/* Bonds are drawn in a warm bark brown rather than neutral grey. Grey lines
+ * against warm paper read as engineering diagram; the warm tone lets them
+ * sit in the same world as the portraits and the paper they cross. */
+const BRANCH = 0x8a7563;
 
 /* ── geometry helpers ─────────────────────────────────────────────────── */
 
@@ -57,22 +62,58 @@ export function labelDrop(band) {
   return band === 'hearth' ? 52 : band === 'kin' ? 34 : 30;
 }
 
-/** The polyline a descent takes: union → stem → junction bar → child. */
+/* The path a descent takes.
+ *
+ * The first build routed this orthogonally — stem, horizontal bar, drop —
+ * and the render was decisive: right angles read as PLUMBING. Four square
+ * corners per child turned a family into a circuit diagram, and no amount of
+ * palette work was going to rescue that silhouette. A family tree wants a
+ * BOUGH: a short trunk leaving the union, then a branch that sweeps away and
+ * settles onto the child.
+ *
+ * So: a straight trunk down to the fork, then a cubic bezier out to the
+ * child, sampled into a polyline with a width that tapers along its length.
+ * Sampling (rather than drawing a curve primitive) keeps this compatible
+ * with growPolyline and taperedRibbon, so the growth animation and the
+ * tapering come along for free.
+ */
 function descentPath(from, to, level = 0) {
-  // Each parent unit gets its own junction height (see plan.js) so two
-  // sibling groups sharing a row cannot merge their bars into one line.
-  const junctionY = from.y + (to.y - from.y) * (0.56 + level * 0.07);
+  // Each parent unit forks at its own height (see plan.js) so two sibling
+  // groups sharing a row cannot merge their branches into one line.
+  const forkY = from.y + (to.y - from.y) * (0.42 + level * 0.06);
   // Leave from under the capsule for a pod, but from under the NAME for a
-  // lone parent — otherwise the stem is drawn straight through their label.
+  // lone parent — otherwise the trunk is drawn straight through their label.
+  // Clear the union capsule (half-width r*1.12) before the trunk begins —
+  // starting at r*0.86 drew it emerging from INSIDE the couple's own hollow,
+  // which read as a line escaping through the gap between two people rather
+  // than descending from the pair of them.
   const startY = from.isPod
-    ? from.y + from.r * 0.86
+    ? from.y + from.r * 1.30
     : from.y + from.r + labelDrop(from.band);
-  return [
-    { x: from.x, y: startY, w: W_UNION },
-    { x: from.x, y: junctionY, w: W_JUNCTION },
-    { x: to.x, y: junctionY, w: W_JUNCTION },
-    { x: to.x, y: to.y - to.r * 0.9, w: W_CHILD },
-  ];
+  const endY = to.y - to.r * 0.94;
+
+  const pts = [{ x: from.x, y: startY, w: W_UNION }];
+  // The trunk: a short, honest vertical before anything forks.
+  pts.push({ x: from.x, y: forkY, w: W_TRUNK });
+
+  // The branch: eased out of vertical at the fork, easing into vertical
+  // again as it lands, so it meets the child head-on rather than at a slant.
+  const dy = endY - forkY;
+  const c1 = { x: from.x, y: forkY + dy * 0.42 };
+  const c2 = { x: to.x, y: endY - dy * 0.45 };
+  const STEPS = 14;
+  for (let i = 1; i <= STEPS; i++) {
+    const s = i / STEPS;
+    const m = 1 - s;
+    pts.push({
+      x: m * m * m * from.x + 3 * m * m * s * c1.x + 3 * m * s * s * c2.x + s * s * s * to.x,
+      y: m * m * m * forkY + 3 * m * m * s * c1.y + 3 * m * s * s * c2.y + s * s * s * endY,
+      // Taper continuously along the branch — thick where it leaves the
+      // trunk, finest where it meets the child.
+      w: W_TRUNK + (W_CHILD - W_TRUNK) * (s * s * (3 - 2 * s)),
+    });
+  }
+  return pts;
 }
 
 /** Truncate a polyline to the first `u` of its own arc length. */
@@ -193,8 +234,14 @@ export function drawBonds(g, frame, schedule, t) {
       const end = { x: start.x + (endFull.x - start.x) * e, y: start.y + (endFull.y - start.y) * e };
       drawDashedPath(g, [start, end], pal.border, 0.75);
     } else {
-      capsulePath(g, a, to, hw).fill({ color: pal.fill, alpha: 0.55 * e });
-      capsulePath(g, a, to, hw).stroke({ color: pal.border, width: 2.4, alpha: 0.8 * e, cap: 'round' });
+      /* A current union is a warm HOLLOW the couple sits in, not a boxed
+       * outline around them. The first version drew a 2.4px terracotta hoop,
+       * which at pod size read as a selected row in a table — a hard edge
+       * competing with the portraits it was supposed to be supporting.
+       * Two soft washes and no stroke at all: the couple reads as held,
+       * and the eye goes to the faces. */
+      capsulePath(g, a, to, hw + 5).fill({ color: pal.fill, alpha: 0.30 * e });
+      capsulePath(g, a, to, hw).fill({ color: pal.fill, alpha: 0.62 * e });
     }
   });
 
@@ -213,9 +260,9 @@ export function drawBonds(g, frame, schedule, t) {
     if (b.qualifier === 'step' || b.qualifier === 'adoptive' || b.qualifier === 'adopted') {
       // A step or adoptive descent is dashed, matching the app's existing
       // convention — the bond is real, and it is also not biological.
-      drawDashedPath(g, pts, INK_SOFT, alpha * 0.85);
+      drawDashedPath(g, pts, BRANCH, alpha * 0.85);
     } else {
-      taperedRibbon(g, pts, INK_SOFT, alpha);
+      taperedRibbon(g, pts, BRANCH, alpha);
     }
   });
 }
@@ -305,6 +352,31 @@ export class CanopyNode {
     this.band = node.band;
     this.isFocus = node.isFocus;
 
+    /* Depth. Every disc casts a soft shadow onto the paper, so people SIT ON
+     * the ground rather than floating as flat stickers — the single cheapest
+     * thing that separates "diagram" from "object". Reuses the app's own
+     * pre-rendered shadow texture (one offscreen canvas, shared by every
+     * node) rather than a per-node blur filter. */
+    const shadow = new Sprite(softShadowTexture());
+    shadow.anchor.set(0.5);
+    const shadowScale = (r * 2.42) / shadow.texture.width;
+    shadow.scale.set(shadowScale);
+    shadow.position.set(0, r * 0.20);
+    shadow.alpha = node.isFocus ? 0.5 : 0.30;
+    this.root.addChild(shadow);
+    this.shadow = shadow;
+
+    /* The focus person carries a warm glow beneath the shadow — the eye
+     * should find them before it reads a single name. */
+    if (node.isFocus) {
+      const glow = new Sprite(warmGlowTexture());
+      glow.anchor.set(0.5);
+      glow.scale.set((r * 4.6) / glow.texture.width);
+      glow.alpha = 0.34;
+      this.root.addChildAt(glow, 0);
+      this.glow = glow;
+    }
+
     // Portrait: a monogram immediately, the photo when (and if) it loads —
     // a face never blocks the frame from being drawn.
     this.portrait = new Container();
@@ -365,14 +437,23 @@ export class CanopyNode {
     g.clear();
     const w = BAND_RING[node.band] ?? 2;
     if (node.isFocus) {
-      // A faint warm lift so every frame has somewhere for the eye to land.
-      g.circle(0, 0, node.r + 9).stroke({ color: TERRA, width: 1.2, alpha: 0.28 });
-      g.circle(0, 0, node.r + 1).stroke({ color: TERRA, width: w + 0.8, alpha: 0.95 });
+      // The focus reads as focus through the glow and the shadow beneath it;
+      // the ring only needs to define the edge crisply. A heavy terracotta
+      // hoop (the first attempt) read as a UI selection state stamped onto
+      // the portrait rather than as a person being lit.
+      g.circle(0, 0, node.r + 1.5).stroke({ color: PAPER, width: w + 2.2, alpha: 0.9 });
+      g.circle(0, 0, node.r + 1.5).stroke({ color: TERRA, width: w * 0.72, alpha: 0.85 });
     } else {
-      g.circle(0, 0, node.r + 1).stroke({ color: INK, width: w, alpha: 0.16 });
+      // A pale paper rim lifts every portrait off the ground the way a
+      // photographic border does, with the ink hairline just defining the
+      // edge. Warm, not grey.
+      g.circle(0, 0, node.r + 1.5).stroke({ color: PAPER, width: w + 1.6, alpha: 0.75 });
+      g.circle(0, 0, node.r + 1.5).stroke({ color: 0x6f6154, width: w * 0.5, alpha: 0.2 });
     }
     if (this.person.is_deceased) {
-      g.circle(0, 0, node.r + 5).stroke({ color: INK_SOFT, width: 1, alpha: 0.3 });
+      // A quiet second rim, set off from the portrait — remembrance, not a
+      // warning badge.
+      g.circle(0, 0, node.r + 6.5).stroke({ color: INK_SOFT, width: 1, alpha: 0.26 });
     }
   }
 
@@ -454,7 +535,21 @@ function lifespan(p) {
 
 /* A stable, warm portrait tint per person — never random, so the same face
  * is the same colour every time you meet them. */
-const TINTS = [0x8a6f5c, 0x6f7f68, 0x8c6a72, 0x71708c, 0x9a7f52, 0x5f7a80];
+/* Portrait tints.
+ *
+ * The first set was six saturated hues spread across the wheel — teal,
+ * olive, violet, mauve — and against warm paper they read as a chart of
+ * unrelated entities rather than as one family. Colour was carrying no
+ * meaning and actively fighting the ground.
+ *
+ * These sit deliberately close together: low saturation, one narrow warm
+ * band from taupe through clay to sage-grey, all at similar value so white
+ * initials stay legible on every one. Enough separation to tell two
+ * neighbouring faces apart, not enough for anyone to read as belonging to a
+ * different picture. They are a stand-in for a photograph, and a wall of
+ * family photographs has exactly this quality — varied, but tonally one
+ * thing. */
+const TINTS = [0x9d8570, 0x8b8d76, 0xa8886e, 0x86918b, 0xa38a80, 0x94897d, 0x9c8368, 0x8d8578];
 function tintFor(p) {
   let h = 0;
   const s = String(p.id);

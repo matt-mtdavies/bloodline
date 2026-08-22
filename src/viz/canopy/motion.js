@@ -17,6 +17,8 @@
  * spikes. It also makes any test of this independent of frame pacing.
  */
 
+import { labelDrop } from './render.js';
+
 /** Angular frequency from a "time to visually arrive" in seconds — the knob
  *  is expressed as a duration because nobody can picture a stiffness. */
 export function omegaFor(seconds) {
@@ -109,7 +111,13 @@ export function ambientOffset(unitKey, tSeconds) {
  */
 export const FOCUS_BIAS_Y = 0.08; // fraction of viewport height, below centre
 export const MIN_ZOOM = 0.34;
-export const MAX_ZOOM = 1.15;
+/* How large a SMALL frame is allowed to get. Held at 1.15 initially, which
+ * measured badly: a five-person frame occupied under half the width of a
+ * desktop window and read as a small diagram marooned in a field of paper
+ * rather than as a family you are standing in front of. Canopy deliberately
+ * draws few people, so the few it draws have to earn the space — filling the
+ * frame is the entire compensation for not showing everyone. */
+export const MAX_ZOOM = 1.62;
 /* The scale below which a person stops being recognisable — a face and a
  * name, not a coloured dot. See composeCamera: rather than shrink past this
  * to fit a wide row on a narrow screen, the frame holds this scale and lets
@@ -145,11 +153,15 @@ export function composeCamera(frame, viewport) {
   let lo = Infinity, hi = -Infinity, top = Infinity, bot = -Infinity;
   for (const n of frame.nodes.values()) {
     lo = Math.min(lo, n.x - n.r); hi = Math.max(hi, n.x + n.r);
-    top = Math.min(top, n.y - n.r); bot = Math.max(bot, n.y + n.r);
+    top = Math.min(top, n.y - n.r);
+    // The bottom of a person is their NAME, not their portrait. Framing on
+    // the discs alone clipped the last row's names off the bottom edge once
+    // the zoom cap was raised — the name is part of the person.
+    bot = Math.max(bot, n.y + n.r + labelDrop(n.band));
   }
   if (!isFinite(lo)) return { zoom: 1, anchorX: W / 2, anchorY: H / 2 };
 
-  const PAD = 56;
+  const PAD = 42;
   const zx = (W - PAD * 2) / Math.max(1, hi - lo);
   const zy = (safeH - PAD * 2) / Math.max(1, bot - top);
   let zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, Math.min(zx, zy)));
