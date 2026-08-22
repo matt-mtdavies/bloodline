@@ -55,6 +55,65 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
 
 ## Status — what's built
 
+- **Living Atlas concept prototype (isolated, read-only):**
+  `/?lab=living-atlas` mounts a lazy-loaded focus-and-context experiment
+  instead of the app; every normal URL still uses the unchanged production
+  `BubbleTree`. The prototype replaces global physics with two explicit
+  layers: a stable, selection-independent surname/generation atlas and a
+  deterministic opening portrait capped at 8 people on phone / 30 on larger
+  screens. Phones use explicit row capacity (up to two partners, two parents,
+  three children, with siblings only in genuinely spare positions); larger
+  screens can use remaining capacity for grandparents, grandchildren and
+  one-hop partner context without recursive expansion. The next iteration
+  replaces fixed-centre regathering with a persistent living canvas: selecting
+  someone exposes collision-aware labelled Parents/Partners/Children/Siblings
+  branch buds beside their portrait (44px targets, keyboard/accessible names);
+  portrait taps only select/centre and never expand implicitly. This replaces
+  the detached bottom action dock and its ambiguous plus badge. A selected
+  partner nameplates sit above the partnership row so the selected person's
+  nameplate can own the centre baseline without collisions.
+  Selection now creates a recomposed spatial foreground: every portrait tap
+  promotes the selected person's visible family into the deterministic family
+  planner, with parents above, partners on the centre row, siblings lateral and
+  children below. The previous portrait returns to its stable atlas
+  coordinates as small, still-tappable constellation points with labels and
+  connectors suppressed. The transition therefore reads as one family rising
+  from a persistent world while the last settles back, rather than forcing a
+  single accumulated layout to be both spatially fixed and semantically clean.
+  Partner nameplates sit above their discs so the selected person's nameplate
+  owns the centre baseline. Expanding a branch grows the accumulated context;
+  a guided camera, canvas pan, selection-aware Back and Home preserve spatial
+  history. Sibling
+  discovery separates full/half siblings from step-siblings, adds a read-only
+  inference for a parent's partner's other children, and treats two shared
+  parent identities as full siblings even when lossy GEDCOM PEDI qualifiers
+  marked the imported parent edges as step. Shared-parent connectors
+  use one trunk and sibling branches. Successive expansions use deterministic
+  occupancy-aware placement: each candidate group reserves the selectable
+  portrait plus its two-line nameplate, tries several relationship-correct
+  locations, and chooses the nearest clear one without moving the accumulated
+  scene. The camera frames the new group together with its anchor. Local
+  archives above 250 people open with
+  the atlas quiet (still visible and one-tap reversible). It
+  defaults to existing synthetic fixtures. “Open GEDCOM · stays on device”
+  optionally parses a local file in-browser with the existing pure GEDCOM
+  reader; the prototype has no fetch/API/auth/sync/store import at all. A test
+  mechanically pins that network-and-production-store boundary. Model rules live in
+  `src/viz/atlas/model.js`, the visual prototype in `LivingAtlasLab.jsx`, and
+  the boundaries in `docs/LIVING-ATLAS-PROTOTYPE.md`. `npm run test:atlas`
+  covers all 10 fixtures at desktop/mobile sizes, proves stable atlas
+  coordinates and persistent positions across expansion, recomposes every
+  visible person in the remarriage fixture to mechanically guard parent/
+  partner/child hierarchy on every selection, guards first and
+  consecutive expansions against selectable-card overlap, checks inferred
+  step-siblings, and exercises a bounded synthetic 5,000-person model. The
+  local build was visually inspected at 390×844 and 1440×900, including
+  family-to-family promotion, complex remarriage hierarchy, Back navigation,
+  partner-label clearance and the full multi-generation desktop composition;
+  no browser warnings or errors were observed. No
+  production renderer, storage, API, authentication, migration, editing,
+  Perimeter or profile integration.
+
 - **Organic tree: parents now consistently sit above their children, partner
   pods level with each other, and the reapplied pod-anchor + tapered
   parent→child lines** (real feedback: "1. The parents are not consistently

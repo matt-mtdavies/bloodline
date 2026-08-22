@@ -6,6 +6,11 @@ import App from './App.jsx';
 import { isLabOpen } from './lib/treePhysicsFlag.js';
 import { isFocusLabOpen } from './lib/focusLabFlag.js';
 
+function isLivingAtlasOpen() {
+  if (typeof window === 'undefined') return false;
+  return new URLSearchParams(window.location.search).get('lab') === 'living-atlas';
+}
+
 // Set only by applyUpdateWhenSafe below, and only to a REAL waiting
 // updateSW() reference — never invented — so the ErrorBoundary's Reload
 // button below can tell "an update is sitting there, deferred until the
@@ -66,6 +71,23 @@ let mounted = false;
 function boot() {
   if (mounted) return; // idempotent — see the safety-net timer below
   mounted = true;
+  // The Living Atlas is a separate, offline-input-only concept prototype. It
+  // mounts instead of the application, is lazy-loaded, and does not import
+  // the production store or call an API. It can use synthetic fixtures or
+  // parse a GEDCOM file selected from this device entirely in the browser.
+  if (isLivingAtlasOpen()) {
+    const LivingAtlas = React.lazy(() => import('./viz/atlas/LivingAtlasLab.jsx'));
+    createRoot(document.getElementById('root')).render(
+      <React.StrictMode>
+        <ErrorBoundary>
+          <React.Suspense fallback={null}>
+            <LivingAtlas />
+          </React.Suspense>
+        </ErrorBoundary>
+      </React.StrictMode>,
+    );
+    return;
+  }
   // The Tree Motion Lab (?lab=tree-motion) mounts INSTEAD of the app and is
   // lazy-loaded, so neither it, its fixtures nor the experimental engine are
   // in the bundle any ordinary visitor downloads. It never touches
