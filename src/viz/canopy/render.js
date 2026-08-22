@@ -42,12 +42,16 @@ const BAND_ALPHA = { hearth: 1, kin: 0.94, reach: 0.76 };
 const BAND_LABEL_ALPHA = { hearth: 1, kin: 0.92, reach: 0.78 };
 const BAND_LABEL_SIZE = { hearth: 17, kin: 15, reach: 13 };
 const BAND_RING = { hearth: 2.6, kin: 2.1, reach: 1.6 };
+/* How firmly each band sits on the paper — see the shadow note in CanopyNode. */
+const BAND_SHADOW = { hearth: 0.34, kin: 0.24, reach: 0.13 };
 
 /* Ribbon widths — a descent line is wide at the union and narrows to the
  * child, so lineage visibly FLOWS DOWNWARD instead of reading as a wire
  * strung between two dots. */
 const W_UNION = 6.2;
-const W_TRUNK = 4.4;
+const W_TRUNK = 5.0;
+/* Deliberately below W_TRUNK — see descentPath's fork note. */
+const W_BRANCH = 3.1;
 const W_CHILD = 1.9;
 /* Bonds are drawn in a warm bark brown rather than neutral grey. Grey lines
  * against warm paper read as engineering diagram; the warm tone lets them
@@ -77,31 +81,49 @@ export function labelDrop(band) {
  * with growPolyline and taperedRibbon, so the growth animation and the
  * tapering come along for free.
  */
+/* Trunk start, child end, and the fork between them. Shared so descentPath
+ * and drawFork can never disagree about where the fork is — they did while
+ * each computed it independently, and the swelling drifted off the join. */
+function trunkSpan(from, to) {
+  return {
+    startY: from.y + from.r + labelDrop(from.band) + (from.isPod ? 6 : 0),
+    endY: to.y - to.r * 0.94,
+  };
+}
+function forkPoint(from, to, level = 0) {
+  const { startY, endY } = trunkSpan(from, to);
+  return { x: from.x, y: startY + (endY - startY) * (0.34 + level * 0.07) };
+}
+
 function descentPath(from, to, level = 0) {
-  // Each parent unit forks at its own height (see plan.js) so two sibling
-  // groups sharing a row cannot merge their branches into one line.
-  const forkY = from.y + (to.y - from.y) * (0.42 + level * 0.06);
-  // Leave from under the capsule for a pod, but from under the NAME for a
-  // lone parent — otherwise the trunk is drawn straight through their label.
-  // Clear the union capsule (half-width r*1.12) before the trunk begins —
-  // starting at r*0.86 drew it emerging from INSIDE the couple's own hollow,
-  // which read as a line escaping through the gap between two people rather
-  // than descending from the pair of them.
-  const startY = from.isPod
-    ? from.y + from.r * 1.30
-    : from.y + from.r + labelDrop(from.band);
+  /* Where the trunk may begin. It has to clear BOTH the union capsule and
+   * the names beneath it — a pod's trunk descends from the couple's midpoint,
+   * which is exactly where two centred names meet, so a trunk that started at
+   * the capsule's edge was drawn straight through the focus person's own
+   * name once that name was set larger. Clearing the whole label block is the
+   * only rule that holds for every name length. */
+  const startY = from.y + from.r + labelDrop(from.band) + (from.isPod ? 6 : 0);
   const endY = to.y - to.r * 0.94;
+  /* The fork is placed along what is ACTUALLY left between the trunk's start
+   * and the child — measuring it from the parent's centre instead put the
+   * fork above the trunk's own start once the start moved down, which drew
+   * the branch backwards. */
+  const forkY = forkPoint(from, to, level).y;
 
   const pts = [{ x: from.x, y: startY, w: W_UNION }];
   // The trunk: a short, honest vertical before anything forks.
   pts.push({ x: from.x, y: forkY, w: W_TRUNK });
 
-  // The branch: eased out of vertical at the fork, easing into vertical
-  // again as it lands, so it meets the child head-on rather than at a slant.
+  /* A branch leaves the fork NARROWER than the trunk arriving at it. Without
+   * that step change, a child sitting directly beneath the union produced a
+   * branch collinear with the trunk and identical in weight — the two merged
+   * into one long unbroken line and the fork simply did not read. A real
+   * bough is thicker than the limbs it splits into, and that difference is
+   * what makes a fork legible even when one limb continues straight on. */
   const dy = endY - forkY;
   const c1 = { x: from.x, y: forkY + dy * 0.42 };
   const c2 = { x: to.x, y: endY - dy * 0.45 };
-  const STEPS = 14;
+  const STEPS = 16;
   for (let i = 1; i <= STEPS; i++) {
     const s = i / STEPS;
     const m = 1 - s;
@@ -109,11 +131,20 @@ function descentPath(from, to, level = 0) {
       x: m * m * m * from.x + 3 * m * m * s * c1.x + 3 * m * s * s * c2.x + s * s * s * to.x,
       y: m * m * m * forkY + 3 * m * m * s * c1.y + 3 * m * s * s * c2.y + s * s * s * endY,
       // Taper continuously along the branch — thick where it leaves the
-      // trunk, finest where it meets the child.
-      w: W_TRUNK + (W_CHILD - W_TRUNK) * (s * s * (3 - 2 * s)),
+      // fork, finest where it meets the child.
+      w: W_BRANCH + (W_CHILD - W_BRANCH) * (s * s * (3 - 2 * s)),
     });
   }
   return pts;
+}
+
+/* The fork itself — a small swelling where limbs leave the bough, drawn once
+ * per parent unit rather than once per child. Botanically true, and it does
+ * real work: it gives the eye a definite point of origin for a sibling group
+ * and hides the seam where several branch ribbons overlap. */
+function drawFork(g, from, to, level, alpha) {
+  const f = forkPoint(from, to, level);
+  g.circle(f.x, f.y, W_TRUNK * 0.62).fill({ color: BRANCH, alpha });
 }
 
 /** Truncate a polyline to the first `u` of its own arc length. */
@@ -240,8 +271,8 @@ export function drawBonds(g, frame, schedule, t) {
        * competing with the portraits it was supposed to be supporting.
        * Two soft washes and no stroke at all: the couple reads as held,
        * and the eye goes to the faces. */
-      capsulePath(g, a, to, hw + 5).fill({ color: pal.fill, alpha: 0.30 * e });
-      capsulePath(g, a, to, hw).fill({ color: pal.fill, alpha: 0.62 * e });
+      capsulePath(g, a, to, hw + 7).fill({ color: pal.fill, alpha: 0.34 * e });
+      capsulePath(g, a, to, hw + 1).fill({ color: pal.fill, alpha: 0.82 * e });
     }
   });
 
@@ -257,6 +288,10 @@ export function drawBonds(g, frame, schedule, t) {
     const full = descentPath(from, to, b.junctionLevel || 0);
     const pts = schedule.reduced ? full : growPolyline(full, e);
     const alpha = (schedule.reduced ? u : 1) * (BAND_ALPHA[to.band] ?? 1) * 0.85;
+    // The swelling where this unit's limbs leave the bough. Drawn per bond
+    // but at the unit's own fork point, so repeated draws land identically
+    // and several siblings simply reinforce the one shape.
+    if (e > 0.06) drawFork(g, from, to, b.junctionLevel || 0, alpha);
     if (b.qualifier === 'step' || b.qualifier === 'adoptive' || b.qualifier === 'adopted') {
       // A step or adoptive descent is dashed, matching the app's existing
       // convention — the bond is real, and it is also not biological.
@@ -362,7 +397,10 @@ export class CanopyNode {
     const shadowScale = (r * 2.42) / shadow.texture.width;
     shadow.scale.set(shadowScale);
     shadow.position.set(0, r * 0.20);
-    shadow.alpha = node.isFocus ? 0.5 : 0.30;
+    /* Atmospheric perspective: a shadow's weight is how close something is
+     * to the ground it sits on, so distant kin cast almost none and the
+     * frame gains real depth rather than three sizes of the same sticker. */
+    shadow.alpha = node.isFocus ? 0.52 : BAND_SHADOW[node.band] ?? 0.28;
     this.root.addChild(shadow);
     this.shadow = shadow;
 
@@ -408,9 +446,17 @@ export class CanopyNode {
     // name cannot be set legibly, so it is omitted as a design decision
     // rather than shipped as unreadable three-pixel type.
     if (BAND_LABEL_ALPHA[node.band] > 0) {
+      /* The focus person's name is set larger than anyone else's. The frame
+       * is ABOUT them, and hierarchy in the type is what says so without
+       * another ring, badge or colour — the glow tells the eye where to
+       * land, the type tells it who it landed on. */
       const name = new Text({
         text: shortName(person),
-        style: labelStyle(BAND_LABEL_SIZE[node.band] ?? 15, 600, INK),
+        style: labelStyle(
+          node.isFocus ? 21 : (BAND_LABEL_SIZE[node.band] ?? 15),
+          node.isFocus ? 700 : 600,
+          INK,
+        ),
       });
       name.anchor.set(0.5, 0);
       name.position.set(0, r + 11);
