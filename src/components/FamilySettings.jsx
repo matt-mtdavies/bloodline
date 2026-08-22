@@ -8,6 +8,7 @@ import ReturnMark from './ReturnMark.jsx';
 import ExportArchiveCard from './ExportArchiveCard.jsx';
 import ManageMemberSheet from './ManageMemberSheet.jsx';
 import { clearLocalData } from '../data/store.js';
+import { useCanopyEnabled, setCanopyEnabled } from '../lib/canopyPref.js';
 
 const INVITE_ROLES = ['coadmin', 'editor', 'contributor', 'viewer'];
 // Occasional admin tools, tucked behind "More" rather than sitting as
@@ -22,6 +23,7 @@ export default function FamilySettings({
   myRole, familyName, onUpdateFamilyName, onReset, onLogout, onClose, onImportGedcom, onImportFamilySearch,
   onExportGedcom, people = [], userEmail, onSelectPerson,
 }) {
+  const canopyOn = useCanopyEnabled();
   const [tab, setTab] = useState('members'); // 'members' | 'invite' | 'activity' | 'restore' | 'calendar'
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   const [manageMemberId, setManageMemberId] = useState(null);
@@ -979,6 +981,28 @@ export default function FamilySettings({
             )}
           </>
         )}
+
+        {/* Canopy — a per-viewer display preference, not tree data, so it
+            needs no role gate at all: turning it on changes only what YOU
+            see, never what anyone else in the family sees or what is
+            stored. Kept out of the role-gated blocks for that reason. */}
+        <div className="fs__section">
+          <label className="fs__label">Tree view</label>
+          <label className="fs__calendar-row" style={{ paddingLeft: 0 }}>
+            <input
+              type="checkbox"
+              checked={canopyOn}
+              onChange={(e) => setCanopyEnabled(e.target.checked)}
+            />
+            <span>
+              Use Canopy — the new tree
+              <span className="fs__role-desc">
+                A calmer, cinematic tree that grows around whoever you tap. Just for you;
+                everyone else keeps the current view.
+              </span>
+            </span>
+          </label>
+        </div>
 
         {/* Import — structural change (adds people/relationships), so it
             needs at least editor rank; replacing the whole tree needs

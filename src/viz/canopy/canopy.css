@@ -1,0 +1,51 @@
+/*
+ * Canopy — styles.
+ *
+ * A private `.canopy-*` prefix, in its own stylesheet, imported only by the
+ * Canopy view. No shared class is touched, so this file cannot affect the
+ * organic tree, the chart or the list even while it is loaded.
+ *
+ * The app is hardcoded light (see theme.css — iOS dark mode is opted out of
+ * with `color-scheme: light only`), so these are literal values to match,
+ * not tokens that could resolve differently on someone's phone.
+ */
+
+.canopy-host {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  touch-action: none;
+  overscroll-behavior: none;
+  /* The ground the canopy sits on: a warm paper wash, very slightly deeper
+     at the edges so every frame has a centre for the eye to land in. The
+     vignette lives here rather than in the canvas because a CSS radial
+     costs nothing per frame and never has to be redrawn. */
+  background:
+    radial-gradient(120% 90% at 50% 44%, #fdfbf7 0%, #faf6ef 52%, #f1eae0 100%);
+}
+
+.canopy-host canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* A single soft inner shadow over the whole stage — the frame's edges fall
+   away rather than ending at a hard rectangle. Pointer-events off so it can
+   never intercept a tap meant for a bubble. */
+.canopy-host::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(115% 85% at 50% 46%, rgba(43, 38, 34, 0) 58%, rgba(43, 38, 34, 0.07) 100%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* The growth choreography already collapses to a short fade in
+     growth.js — this only guards any CSS-side transition added later. */
+  .canopy-host * {
+    animation: none !important;
+    transition: none !important;
+  }
+}

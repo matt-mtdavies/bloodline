@@ -89,6 +89,8 @@ import FamilyMomentBanner from './components/FamilyMomentBanner.jsx';
 import { useReducedMotion } from './hooks/useReducedMotion.js';
 import BubbleTree from './viz/BubbleTree.jsx';
 import ChartTree from './viz/ChartTree.jsx';
+import CanopyTree from './viz/canopy/CanopyTree.jsx';
+import { useCanopyEnabled } from './lib/canopyPref.js';
 import TopBar from './components/TopBar.jsx';
 import FocusNameplate from './components/FocusNameplate.jsx';
 import HoverCard from './components/HoverCard.jsx';
@@ -317,6 +319,10 @@ export default function App() {
     [data.people, data.relationships],
   );
   const reducedMotion = useReducedMotion();
+  // Canopy is opt-in, per viewer, default off (see lib/canopyPref.js). When
+  // off, the branch below is never taken and the organic/chart/list paths
+  // run byte-identically to before Canopy existed.
+  const canopyEnabled = useCanopyEnabled();
   const kinTerms = useKinTerms();
 
   // Possible duplicate people (same name + corroborating evidence) to offer for
@@ -2818,7 +2824,18 @@ export default function App() {
       />
 
       {view === 'bubbles' ? (
-        layout === 'chart' ? (
+        /* Canopy — an ADDED branch, never a modified one. It replaces only
+           the organic canvas, and only for a viewer who has opted in; chart
+           and list are untouched in both states. */
+        canopyEnabled && layout !== 'chart' ? (
+          <CanopyTree
+            graph={graph}
+            focusId={activeId}
+            onActivate={activateNormal}
+            onOpenPerson={openPerson}
+            reducedMotion={reducedMotion}
+          />
+        ) : layout === 'chart' ? (
           <ChartTree
             graph={graph}
             activeId={activeId}
