@@ -46,6 +46,15 @@ import { sortSiblings, sortChildren, ancestorsWithDistance, descendantsWithDista
  * left under 100px for a branch to travel, which compressed the curves into
  * steep, cramped hooks. A branch needs room to read as a sweep. */
 export const ROW_GAP = 310;
+/* Vertical spacing on a narrow screen.
+ *
+ * 310 is right on a desktop, where a branch has room to sweep. On a phone it
+ * is a canyon: with Reach dropped there is nothing beside the trunk, so the
+ * band between two rows renders as a long bare line through empty paper and
+ * the whole frame reads as sparse and unfinished — reported as "messy".
+ * A phone also cannot afford the height: the same gap pushes the outer rows
+ * off-screen entirely. */
+export const ROW_GAP_COMPACT = 224;
 /** Centre-to-centre spacing between two people inside one partner pod. */
 export const POD_GAP = 150;
 /** Minimum centre-to-centre spacing between adjacent units on one row. */
@@ -219,6 +228,10 @@ function qualifierForParentSet(refs) {
  * the same size, which is what makes every frame composable.
  */
 export function planCanopy(graph, focusId, opts = {}) {
+  // Narrow frames use the compact row spacing (see ROW_GAP_COMPACT). Tied to
+  // the same flag that drops the Reach band, so a phone gets one coherent
+  // compact composition rather than two independent adjustments.
+  const rowGap = opts.includeReach === false ? ROW_GAP_COMPACT : ROW_GAP;
   const byId = graph.byId;
   const focus = byId.get(focusId);
   const cmp = byBirthThenId(byId);
@@ -748,7 +761,7 @@ export function planCanopy(graph, focusId, opts = {}) {
         id: mid,
         unitId: u.id,
         x: u.x + u.offsets.get(mid),
-        y: u.row * ROW_GAP,
+        y: u.row * rowGap,
         row: u.row,
         band: u.band,
         r: NODE_R * BAND_SCALE[u.band],

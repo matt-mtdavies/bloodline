@@ -243,6 +243,37 @@ export default function CanopyTree({
       const drag = { active: false, moved: false, x: 0, y: 0, id: null, startX: 0, startY: 0 };
       let hoverId = null;
 
+      /* Pinch-to-zoom.
+       *
+       * This was simply missing: the only zoom control was a `wheel`
+       * listener, and a phone has no wheel — so on the device most of this
+       * view is looked at, the frame could not be zoomed at all. Reported
+       * bluntly ("I need to be able to pinch zoom"), and it was a hard
+       * functional gap rather than a tuning problem.
+       *
+       * Every live touch is tracked, because two-finger gestures cannot be
+       * reconstructed from a single pointer stream. Two down starts a pinch;
+       * the zoom follows the ratio of the finger gap to what it was at the
+       * start, anchored so the world point under the midpoint stays under
+       * the midpoint — which is what makes a pinch feel like handling the
+       * page rather than operating a slider. */
+      const pointers = new Map();
+      const pinch = { active: false, dist0: 0, zoom0: 1 };
+      const twoFingers = () => {
+        const [a, b] = [...pointers.values()];
+        return { dist: Math.hypot(b.x - a.x, b.y - a.y), mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 };
+      };
+      /* Zoom about a screen point, keeping the world point beneath it fixed. */
+      const zoomAbout = (nz, sx, sy) => {
+        const clamped = Math.max(0.22, Math.min(1.9, nz));
+        const wx = (sx - anchorX.value) / zoom.value;
+        const wy = (sy - anchorY.value) / zoom.value;
+        zoom.set(clamped);
+        anchorX.set(sx - wx * clamped);
+        anchorY.set(sy - wy * clamped);
+        composed = true; // the viewer has taken the camera
+      };
+
       const idFromTarget = (t) => {
         let n = t;
         while (n && n.__canopyId === undefined) n = n.parent;
@@ -257,6 +288,22 @@ export default function CanopyTree({
       };
 
       app.stage.on('pointerdown', (e) => {
+        pointers.set(e.pointerId, { x: e.global.x, y: e.global.y });
+        if (pointers.size === 2) {
+          // A second finger cancels whatever the first was doing — a pull
+          // half-way through a pinch would fight the gesture — and releases
+          // anyone being held so they spring home rather than freezing.
+          const f = twoFingers();
+          pinch.active = true;
+          pinch.dist0 = f.dist;
+          pinch.zoom0 = zoom.value;
+          drag.active = false;
+          drag.moved = false;
+          releaseDrag();
+          if (hoverId) { nodes.get(hoverId)?.setHover(false); hoverId = null; }
+          return;
+        }
+        if (pointers.size > 2) return;
         drag.active = true; drag.moved = false;
         drag.x = e.global.x; drag.y = e.global.y;
         drag.startX = e.global.x; drag.startY = e.global.y;
@@ -264,6 +311,12 @@ export default function CanopyTree({
         drag.id = idFromTarget(e.target);
       });
       app.stage.on('pointermove', (e) => {
+        if (pointers.has(e.pointerId)) pointers.set(e.pointerId, { x: e.global.x, y: e.global.y });
+        if (pinch.active && pointers.size >= 2) {
+          const f = twoFingers();
+          if (pinch.dist0 > 0) zoomAbout(pinch.zoom0 * (f.dist / pinch.dist0), f.mx, f.my);
+          return;
+        }
         // Hover lift, only while nothing is being dragged.
         if (!drag.active) {
           const over = idFromTarget(e.target);
@@ -306,6 +359,19 @@ export default function CanopyTree({
         drag.id = null;
       };
       const endDrag = (e) => {
+        if (e) pointers.delete(e.pointerId);
+        if (pinch.active && pointers.size < 2) {
+          pinch.active = false;
+          // One finger still down after a pinch → hand straight back to
+          // panning, so the gesture never stutters between the two.
+          if (pointers.size === 1) {
+            const [p] = [...pointers.values()];
+            drag.active = true; drag.moved = true; drag.id = null;
+            drag.x = p.x; drag.y = p.y;
+            drag.startX = p.x; drag.startY = p.y;
+          }
+          return;
+        }
         if (!drag.active) return;
         drag.active = false;
         releaseDrag();
@@ -323,7 +389,12 @@ export default function CanopyTree({
         else onActivateRef.current?.(id);
       };
       app.stage.on('pointerup', endDrag);
-      app.stage.on('pointerupoutside', () => { drag.active = false; releaseDrag(); });
+      app.stage.on('pointerupoutside', (e) => {
+        pointers.delete(e?.pointerId);
+        if (pointers.size < 2) pinch.active = false;
+        drag.active = false;
+        releaseDrag();
+      });
 
       const onWheel = (e) => {
         e.preventDefault();
