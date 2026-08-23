@@ -16,6 +16,7 @@ import { Container, Graphics, Sprite, Texture, Assets, Text, TextStyle } from 'p
 import { softShadowTexture, warmGlowTexture } from '../textures.js';
 import { unitAnchor } from './plan.js';
 import { progressAt, easeBranch, easeBud, bondKey } from './growth.js';
+import { labelDrop } from './geometry.js';
 
 const INK = 0x2b2622;
 const INK_SOFT = 0x6b6259;
@@ -59,12 +60,6 @@ const W_CHILD = 1.9;
 const BRANCH = 0x8a7563;
 
 /* ── geometry helpers ─────────────────────────────────────────────────── */
-
-/* How far below a node its name block extends — a name, plus a lifespan on
- * a hearth node. Descents and horizon marks both have to clear it. */
-export function labelDrop(band) {
-  return band === 'hearth' ? 52 : band === 'kin' ? 34 : 30;
-}
 
 /* The path a descent takes.
  *

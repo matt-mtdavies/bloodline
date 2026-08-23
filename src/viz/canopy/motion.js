@@ -17,7 +17,7 @@
  * spikes. It also makes any test of this independent of frame pacing.
  */
 
-import { labelDrop } from './render.js';
+import { labelDrop } from './geometry.js';
 
 /** Angular frequency from a "time to visually arrive" in seconds — the knob
  *  is expressed as a duration because nobody can picture a stiffness. */
