@@ -17,7 +17,7 @@
  * spikes. It also makes any test of this independent of frame pacing.
  */
 
-import { labelDrop } from './render.js';
+import { labelDrop } from './geometry.js';
 
 /** Angular frequency from a "time to visually arrive" in seconds — the knob
  *  is expressed as a duration because nobody can picture a stiffness. */
@@ -149,7 +149,10 @@ export const MAX_ZOOM = 1.62;
  * name, not a coloured dot. See composeCamera: rather than shrink past this
  * to fit a wide row on a narrow screen, the frame holds this scale and lets
  * the row run off the edges to be panned to. */
-export const MIN_READABLE_ZOOM = 0.48;
+// At 0.48 a 15px kin label landed at barely 7px on a phone — technically in
+// frame, practically unreadable. Canopy is navigated like a map, so preserve
+// legibility and let wide sibling rows extend off-screen for deliberate pan.
+export const MIN_READABLE_ZOOM = 0.70;
 
 /* The x of the family's line of descent through the focus: the focus (always
  * world 0), their parent unit, and the midpoint of their children. Averaged,
@@ -157,7 +160,7 @@ export const MIN_READABLE_ZOOM = 0.48;
 function spineCentre(frame) {
   const xs = [0];
   const rowMid = (row) => {
-    const us = frame.units.filter((u) => u.row === row);
+    const us = frame.units.filter((u) => u.row === row && !u.anchorOnly);
     if (!us.length) return null;
     const lo = Math.min(...us.map((u) => u.x));
     const hi = Math.max(...us.map((u) => u.x));
@@ -179,7 +182,8 @@ export function composeCamera(frame, viewport) {
   // hearth itself is narrow.
   let lo = Infinity, hi = -Infinity, top = Infinity, bot = -Infinity;
   for (const n of frame.nodes.values()) {
-    lo = Math.min(lo, n.x - n.r); hi = Math.max(hi, n.x + n.r);
+    const half = Math.max(n.r, n.labelHalfWidth || 0);
+    lo = Math.min(lo, n.x - half); hi = Math.max(hi, n.x + half);
     top = Math.min(top, n.y - n.r);
     // The bottom of a person is their NAME, not their portrait. Framing on
     // the discs alone clipped the last row's names off the bottom edge once

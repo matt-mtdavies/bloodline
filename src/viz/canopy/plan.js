@@ -60,7 +60,6 @@ export const BAND = { HEARTH: 'hearth', KIN: 'kin', REACH: 'reach' };
 /** Radius multiplier per band. */
 export const BAND_SCALE = { hearth: 1, kin: 0.86, reach: 0.66 };
 
-const isBioAdopt = (q) => !q || q === 'biological' || q === 'adoptive' || q === 'adopted';
 const isCurrent = (status) => status !== 'former';
 
 /* Total ordering. Every comparator in this file ends in an id comparison so
@@ -100,7 +99,22 @@ function makeUnit(id, memberIds, band, opts = {}) {
   // The gap inside a pod tracks the band's own scale. A fixed gap left a
   // Reach-band couple's capsule visibly stretched — two small discs marooned
   // at the ends of a lozenge sized for full-fidelity ones.
-  const gap = POD_GAP * (0.55 + 0.45 * BAND_SCALE[band]);
+  const baseGap = POD_GAP * (0.55 + 0.45 * BAND_SCALE[band]);
+  // A portrait is not the whole visual footprint: the name beneath it is
+  // part of the person too. Long real names were colliding even though the
+  // circles passed every overlap assertion. Reserve the wider of portrait
+  // and label, and widen a pod when two adjacent labels need it.
+  const labelHalfWidths = new Map(memberIds.map((mid) => [
+    mid,
+    labelHalfWidth(opts.byId?.get(mid), band, mid === opts.focusId),
+  ]));
+  let gap = baseGap;
+  for (let i = 1; i < memberIds.length; i++) {
+    gap = Math.max(gap,
+      (labelHalfWidths.get(memberIds[i - 1]) || 0)
+      + (labelHalfWidths.get(memberIds[i]) || 0)
+      + 24);
+  }
   if (opts.anchorFirst) {
     // The focus pod: the FOCUS sits at the unit's own x (and therefore at
     // world origin), not the pod's midpoint. The fixed-point contract is
@@ -114,6 +128,7 @@ function makeUnit(id, memberIds, band, opts = {}) {
     id: `u:${memberIds[0]}`,
     memberIds,
     offsets,
+    labelHalfWidths,
     band,
     gap,
     row: 0,
@@ -123,11 +138,31 @@ function makeUnit(id, memberIds, band, opts = {}) {
   };
 }
 
-/** Half-width of a unit in world units, for spacing and de-overlap. */
-function unitHalfWidth(unit) {
+function displayName(person) {
+  const raw = (person?.display_name || 'Unknown').trim();
+  const parts = raw.split(/\s+/);
+  return parts.length > 2 ? `${parts[0]} ${parts[parts.length - 1]}` : raw;
+}
+
+function labelHalfWidth(person, band, isFocus = false) {
+  const fontSize = isFocus ? 21 : band === BAND.REACH ? 13 : 15;
+  // Pixi's Georgia metrics vary slightly by platform. This conservative
+  // estimate deliberately errs toward air; the cap keeps one extreme name
+  // from making an otherwise intimate family feel empty.
+  return Math.min(154, Math.max(NODE_R * BAND_SCALE[band], displayName(person).length * fontSize * 0.31 + 8));
+}
+
+/** Left/right visual extents, including the names beneath each portrait. */
+function unitExtents(unit) {
   const r = NODE_R * BAND_SCALE[unit.band];
-  const span = (unit.memberIds.length - 1) * unit.gap;
-  return span / 2 + r;
+  let left = Infinity, right = -Infinity;
+  for (const mid of unit.memberIds) {
+    const x = unit.offsets.get(mid) || 0;
+    const hw = Math.max(r, unit.labelHalfWidths?.get(mid) || 0);
+    left = Math.min(left, x - hw);
+    right = Math.max(right, x + hw);
+  }
+  return Number.isFinite(left) ? { left, right } : { left: 0, right: 0 };
 }
 
 /* ── Row de-overlap ───────────────────────────────────────────────────────
@@ -143,8 +178,9 @@ function deOverlapRow(units) {
   units.sort((a, b) => a.x - b.x || String(a.id).localeCompare(String(b.id)));
   for (let i = 1; i < units.length; i++) {
     const prev = units[i - 1], cur = units[i];
-    const need = unitHalfWidth(prev) + unitHalfWidth(cur) + (UNIT_GAP - NODE_R * 2);
-    const have = cur.x - prev.x;
+    const pe = unitExtents(prev), ce = unitExtents(cur);
+    const have = (cur.x + ce.left) - (prev.x + pe.right);
+    const need = 28;
     if (have < need) {
       const push = (need - have) / 2;
       // Shift both halves of the row outward, so the row keeps its centre.
@@ -152,6 +188,18 @@ function deOverlapRow(units) {
       for (let j = i; j < units.length; j++) units[j].x += push;
     }
   }
+}
+
+function parentSet(graph, id, byId, cmp) {
+  return graph.parents(id)
+    .filter((p) => byId.has(p.id))
+    .sort((a, b) => cmp(a.id, b.id));
+}
+
+function qualifierForParentSet(refs) {
+  if (refs.some((p) => p.qualifier === 'step')) return 'step';
+  if (refs.some((p) => p.qualifier === 'adoptive' || p.qualifier === 'adopted')) return 'adoptive';
+  return 'biological';
 }
 
 /* ── The frame ────────────────────────────────────────────────────────────
@@ -176,28 +224,61 @@ export function planCanopy(graph, focusId, opts = {}) {
   }
 
   const claim = (id) => { if (drawn.has(id)) return false; drawn.add(id); return true; };
+  const newUnit = (id, memberIds, band, unitOpts = {}) =>
+    makeUnit(id, memberIds, band, { ...unitOpts, byId, focusId });
   const partnersOf = (id, current) =>
     graph.partners(id).filter((pt) => (current ? isCurrent(pt.status) : !isCurrent(pt.status)) && byId.has(pt.id)).map((pt) => pt.id);
+  const anchors = new Map();
+  const ensureAnchor = (refs, row, band) => {
+    const ids = refs.map((p) => p.id).filter((id) => byId.has(id)).sort(cmp);
+    const key = `${row}:${ids.join('|')}`;
+    if (anchors.has(key)) return anchors.get(key);
+    const u = {
+      id: `a:${key}`,
+      memberIds: [],
+      anchorMemberIds: ids,
+      offsets: new Map(),
+      labelHalfWidths: new Map(),
+      band,
+      row,
+      x: 0,
+      anchorId: ids[0],
+      kind: 'junction',
+      anchorOnly: true,
+    };
+    anchors.set(key, u);
+    units.push(u);
+    return u;
+  };
+  const unionSeen = new Set();
+  const addUnion = (a, b) => {
+    const edge = graph.partners(a).find((p) => p.id === b);
+    if (!edge) return;
+    const key = [a, b].sort().join('|');
+    if (unionSeen.has(key)) return;
+    unionSeen.add(key);
+    bonds.push({ kind: 'union', a, b, status: isCurrent(edge.status) ? 'current' : 'former' });
+  };
 
   /* ROW 0 — the focus pod. The focus person is claimed first and anchors the
    * whole composition at world origin. */
   claim(focusId);
   const focusCurrent = partnersOf(focusId, true).filter(claim).sort(cmp);
-  const focusUnit = makeUnit(focusId, [focusId, ...focusCurrent], BAND.HEARTH, { anchorFirst: true, anchorId: focusId });
+  const focusUnit = newUnit(focusId, [focusId, ...focusCurrent], BAND.HEARTH, { anchorFirst: true, anchorId: focusId });
   focusUnit.row = 0;
   focusUnit.x = 0;
   units.push(focusUnit);
-  for (const pid of focusCurrent) bonds.push({ kind: 'union', a: focusId, b: pid, status: 'current' });
+  for (const pid of focusCurrent) addUnion(focusId, pid);
 
   /* Former partners of the focus: their own units, bonded dashed, ordered
    * outboard by orderRow. */
   const focusFormer = partnersOf(focusId, false).filter(claim).sort(cmp);
   const formerUnits = focusFormer.map((pid) => {
-    const u = makeUnit(pid, [pid], BAND.KIN);
+    const u = newUnit(pid, [pid], BAND.KIN);
     u.row = 0;
     u.outboard = true;
     units.push(u);
-    bonds.push({ kind: 'union', a: focusId, b: pid, status: 'former' });
+    addUnion(focusId, pid);
     return u;
   });
 
@@ -205,16 +286,36 @@ export function planCanopy(graph, focusId, opts = {}) {
    * app's own display order (tier, then age, then name). */
   const childRefs = sortChildren(graph.children(focusId).filter((c) => byId.has(c.id)), byId);
   const childUnits = [];
+  const coParentUnits = [];
+  const childAnchor = new Map();
   for (const c of childRefs) {
+    const refs = parentSet(graph, c.id, byId, cmp);
+    // A child can have a recorded co-parent without a partner edge. The
+    // relationship is still true and must be visible, so include that person
+    // as context instead of silently routing the child through whichever
+    // partner happens to be inside the focus pod.
+    for (const ref of refs) {
+      if (ref.id === focusId || drawn.has(ref.id)) continue;
+      claim(ref.id);
+      const pu = newUnit(ref.id, [ref.id], BAND.KIN);
+      pu.row = 0;
+      pu.coParent = true;
+      units.push(pu);
+      coParentUnits.push(pu);
+      addUnion(focusId, ref.id);
+    }
     if (!claim(c.id)) continue;
-    const u = makeUnit(c.id, [c.id], BAND.HEARTH);
+    const u = newUnit(c.id, [c.id], BAND.HEARTH);
     u.row = 1;
     u.qualifier = c.qualifier || 'biological';
     units.push(u);
     childUnits.push(u);
-    // A child bonds to the union that produced them, so the ribbon starts at
-    // the couple rather than at one member of it.
-    bonds.push({ kind: 'descent', parentUnit: focusUnit.id, child: c.id, qualifier: u.qualifier });
+    // The branch belongs to this child's exact recorded parent set. This is
+    // deliberately child-specific: one broad focus+partners capsule cannot
+    // truthfully represent a blended family.
+    const anchor = ensureAnchor(refs, 0, BAND.HEARTH);
+    childAnchor.set(c.id, anchor);
+    bonds.push({ kind: 'descent', parentUnit: anchor.id, child: c.id, qualifier: qualifierForParentSet(refs) });
   }
 
   /* ROW 0 — siblings, placed across the focus row in birth order. Putting
@@ -225,38 +326,93 @@ export function planCanopy(graph, focusId, opts = {}) {
   const sibUnits = [];
   for (const s of sibRefs) {
     if (!claim(s.id)) continue;
-    const u = makeUnit(s.id, [s.id], BAND.KIN);
+    const u = newUnit(s.id, [s.id], BAND.KIN);
     u.row = 0;
     u.kindOfSibling = s.kind;
     units.push(u);
     sibUnits.push(u);
   }
 
-  /* ROW -1 — parents, as one pod when they are partnered with each other. */
-  const parentRefs = graph.parents(focusId).filter((p) => byId.has(p.id));
-  const parentIds = parentRefs.map((p) => p.id).sort(cmp);
-  let parentUnit = null;
-  if (parentIds.length) {
-    const [a, b] = parentIds;
-    const partnered = b && graph.partners(a).some((pt) => pt.id === b);
-    const members = partnered ? [a, b] : [a];
-    members.forEach(claim);
-    parentUnit = makeUnit(a, members, BAND.KIN);
-    parentUnit.row = -1;
-    units.push(parentUnit);
-    if (partnered) bonds.push({ kind: 'union', a, b, status: 'current' });
-    // The focus and every drawn sibling descend from this unit.
-    bonds.push({ kind: 'descent', parentUnit: parentUnit.id, child: focusId, qualifier: parentRefs.find((p) => p.id === a)?.qualifier || 'biological' });
-    for (const u of sibUnits) bonds.push({ kind: 'descent', parentUnit: parentUnit.id, child: u.memberIds[0], qualifier: 'biological' });
-    // A second parent who is NOT partnered with the first still belongs on
-    // the row — drawn as their own unit rather than forced into a pod that
-    // misrepresents the relationship.
-    if (b && !partnered && claim(b)) {
-      const u2 = makeUnit(b, [b], BAND.KIN);
-      u2.row = -1;
-      units.push(u2);
-      bonds.push({ kind: 'descent', parentUnit: u2.id, child: focusId, qualifier: parentRefs.find((p) => p.id === b)?.qualifier || 'biological' });
+  /* ROW -1 — exact parent sets.
+   *
+   * The previous planner made one parent pod from the focus's first two
+   * parents, then routed EVERY sibling through it. That is how a partner who
+   * was not somebody's mother could visually become their mother. We still
+   * place real partnered parents together, but each child descends from an
+   * exact, child-specific junction derived from their own parent edges. */
+  const parentRefs = parentSet(graph, focusId, byId, cmp);
+  const parentIds = parentRefs.map((p) => p.id);
+  const parentDisplayUnits = [];
+  const parentPersonUnit = new Map();
+
+  const ensureParentPerson = (id) => {
+    if (parentPersonUnit.has(id)) return parentPersonUnit.get(id);
+    // Pedigree collapse and malformed imports can make one person reachable
+    // in more than one role. A portrait is still rendered once: reuse any
+    // existing visual unit and let the exact junction carry the second role.
+    const existing = units.find((u) => !u.anchorOnly && u.memberIds.includes(id));
+    if (existing) { parentPersonUnit.set(id, existing); return existing; }
+    claim(id);
+    const u = newUnit(id, [id], BAND.KIN);
+    u.row = -1;
+    units.push(u);
+    parentDisplayUnits.push(u);
+    parentPersonUnit.set(id, u);
+    return u;
+  };
+
+  // The selected person's own partnered parents form the primary pod. More
+  // than two recorded parents remain separate rather than being swallowed
+  // into one shape that implies a group partnership.
+  const consumedParents = new Set();
+  for (const a of parentIds) {
+    if (consumedParents.has(a)) continue;
+    const alreadyVisible = units.find((u) => !u.anchorOnly && u.memberIds.includes(a));
+    if (alreadyVisible) {
+      consumedParents.add(a);
+      parentPersonUnit.set(a, alreadyVisible);
+      continue;
     }
+    const b = parentIds.find((id) => id !== a && !consumedParents.has(id) && !drawn.has(id)
+      && graph.partners(a).some((pt) => pt.id === id));
+    const members = b ? [a, b].sort(cmp) : [a];
+    members.forEach((id) => { consumedParents.add(id); claim(id); });
+    const u = newUnit(members[0], members, BAND.KIN);
+    u.row = -1;
+    units.push(u);
+    parentDisplayUnits.push(u);
+    for (const id of members) parentPersonUnit.set(id, u);
+    if (b) addUnion(a, b);
+  }
+
+  const focusParentAnchor = parentRefs.length ? ensureAnchor(parentRefs, -1, BAND.KIN) : null;
+  if (focusParentAnchor) {
+    bonds.push({
+      kind: 'descent',
+      parentUnit: focusParentAnchor.id,
+      child: focusId,
+      qualifier: qualifierForParentSet(parentRefs),
+    });
+  }
+
+  // Every sibling is routed through THEIR parents. Half/step siblings can
+  // introduce another co-parent on this row, but never inherit the focus's
+  // other parent merely because it makes a tidier picture.
+  for (const u of sibUnits) {
+    const sid = u.memberIds[0];
+    const refs = parentSet(graph, sid, byId, cmp);
+    for (const ref of refs) ensureParentPerson(ref.id);
+    for (let i = 0; i < refs.length; i++) {
+      for (let j = i + 1; j < refs.length; j++) addUnion(refs[i].id, refs[j].id);
+    }
+    if (!refs.length) continue;
+    const anchor = ensureAnchor(refs, -1, BAND.KIN);
+    bonds.push({
+      kind: 'descent',
+      parentUnit: anchor.id,
+      child: sid,
+      qualifier: qualifierForParentSet(refs),
+    });
   }
 
   /* ROW -2 — grandparents, one pod per parent, at Reach fidelity.
@@ -271,8 +427,8 @@ export function planCanopy(graph, focusId, opts = {}) {
    * mark instead, and the whole navigation model is that you travel to see
    * more. On a phone you simply travel a little more often. */
   const grandUnits = [];
-  if (parentUnit && opts.includeReach !== false) {
-    for (const pid of parentUnit.memberIds) {
+  if (focusParentAnchor && opts.includeReach !== false) {
+    for (const pid of parentIds) {
       const gRefs = graph.parents(pid).filter((g) => byId.has(g.id));
       const gIds = gRefs.map((g) => g.id).sort(cmp);
       if (!gIds.length) continue;
@@ -280,13 +436,15 @@ export function planCanopy(graph, focusId, opts = {}) {
       const partnered = gb && graph.partners(ga).some((pt) => pt.id === gb);
       const members = (partnered ? [ga, gb] : [ga]).filter(claim);
       if (!members.length) continue;
-      const gu = makeUnit(members[0], members, BAND.REACH);
+      const gu = newUnit(members[0], members, BAND.REACH);
       gu.row = -2;
       gu.childId = pid; // centred over the parent they produced
       units.push(gu);
       grandUnits.push(gu);
-      if (members.length > 1) bonds.push({ kind: 'union', a: members[0], b: members[1], status: 'current' });
-      bonds.push({ kind: 'descent', parentUnit: gu.id, child: pid, qualifier: 'biological' });
+      if (members.length > 1) addUnion(members[0], members[1]);
+      const shownGrandparents = gRefs.filter((g) => drawn.has(g.id));
+      const gAnchor = ensureAnchor(shownGrandparents, -2, BAND.REACH);
+      bonds.push({ kind: 'descent', parentUnit: gAnchor.id, child: pid, qualifier: qualifierForParentSet(gRefs) });
     }
   }
 
@@ -298,7 +456,7 @@ export function planCanopy(graph, focusId, opts = {}) {
     const gcRefs = sortChildren(graph.children(cid).filter((g) => byId.has(g.id)), byId);
     for (const gc of gcRefs) {
       if (!claim(gc.id)) continue;
-      const gu = makeUnit(gc.id, [gc.id], BAND.REACH);
+      const gu = newUnit(gc.id, [gc.id], BAND.REACH);
       gu.row = 2;
       gu.parentId = cid;
       units.push(gu);
@@ -328,13 +486,31 @@ export function planCanopy(graph, focusId, opts = {}) {
   // constraint but drew a dissolved-marriage line clean across two unrelated
   // people — technically correct, visually nonsense.
   formerUnits.forEach((u, i) => { u.x = focusRight + (i + 1) * UNIT_GAP; });
-  younger.forEach((u, i) => { u.x = focusRight + (formerUnits.length + i + 1) * UNIT_GAP; });
-  deOverlapRow([focusUnit, ...sibUnits, ...formerUnits]);
+  coParentUnits.forEach((u, i) => {
+    u.x = focusRight + (formerUnits.length + i + 1) * UNIT_GAP;
+  });
+  younger.forEach((u, i) => {
+    u.x = focusRight + (formerUnits.length + coParentUnits.length + i + 1) * UNIT_GAP;
+  });
+  deOverlapRow([focusUnit, ...sibUnits, ...formerUnits, ...coParentUnits]);
 
   // Row +1: children centred under the focus POD's midpoint (not under the
   // focus person alone — a child descends from the union).
-  const podMid = focusUnit.x + focusRight / 2;
-  centreUnder(childUnits, podMid);
+  const childGroups = new Map();
+  for (const cu of childUnits) {
+    const anchor = childAnchor.get(cu.memberIds[0]);
+    if (!anchor) continue;
+    if (!childGroups.has(anchor.id)) childGroups.set(anchor.id, { anchor, units: [] });
+    childGroups.get(anchor.id).units.push(cu);
+  }
+  for (const { anchor, units: group } of childGroups.values()) {
+    const members = anchor.anchorMemberIds.map((id) => {
+      const u = units.find((candidate) => !candidate.anchorOnly && candidate.memberIds.includes(id));
+      return u ? u.x + (u.offsets.get(id) || 0) : null;
+    }).filter(Number.isFinite);
+    const cx = members.length ? members.reduce((sum, x) => sum + x, 0) / members.length : 0;
+    centreUnder(group, cx);
+  }
   deOverlapRow(childUnits);
 
   // Row +2: each grandchild group centred under its own parent.
@@ -353,18 +529,43 @@ export function planCanopy(graph, focusId, opts = {}) {
   // (the focus plus every drawn sibling) — the classic tidy-tree rule, and
   // the one that makes a family read as a family rather than as a list.
   const row1Units = [focusUnit, ...sibUnits];
-  if (parentUnit) {
-    const lo = Math.min(...row1Units.map((u) => u.x));
-    const hi = Math.max(...row1Units.map((u) => u.x + (u.memberIds.length - 1) * u.gap));
-    parentUnit.x = (lo + hi) / 2;
+  if (parentDisplayUnits.length) {
+    const desired = new Map(parentDisplayUnits.map((u) => [u, []]));
+    const childUnitsById = new Map(row1Units.map((u) => [u.memberIds[0], u]));
+    const rowChildren = [focusId, ...sibUnits.map((u) => u.memberIds[0])];
+    for (const cid of rowChildren) {
+      const cu = childUnitsById.get(cid);
+      if (!cu) continue;
+      const refs = parentSet(graph, cid, byId, cmp);
+      for (const ref of refs) {
+        const pu = parentPersonUnit.get(ref.id);
+        if (pu) desired.get(pu)?.push(cu.x);
+      }
+    }
+    for (const [u, xs] of desired) {
+      if (!xs.length) continue;
+      // The selected person's parents belong over the selected person, not
+      // over the midpoint of an arbitrarily wide sibling row. The earlier
+      // tidy-tree centring pushed one or both parents off a phone screen — a
+      // structurally neat diagram that failed the actual navigation task.
+      // Secondary parent units introduced by half-siblings still follow the
+      // children they actually produced.
+      const isFocusParentUnit = u.memberIds.some((id) => parentIds.includes(id));
+      const target = isFocusParentUnit
+        ? focusUnit.x + (focusUnit.offsets.get(focusId) || 0)
+        : xs.reduce((sum, x) => sum + x, 0) / xs.length;
+      const memberMid = u.memberIds.length > 1
+        ? (Math.min(...u.memberIds.map((id) => u.offsets.get(id))) + Math.max(...u.memberIds.map((id) => u.offsets.get(id)))) / 2
+        : 0;
+      u.x = target - memberMid;
+    }
   }
-  deOverlapRow(units.filter((u) => u.row === -1));
+  deOverlapRow(parentDisplayUnits);
 
   // Row -2: each grandparent pod centred over the parent it produced.
   for (const gu of grandUnits) {
-    const target = parentUnit && parentUnit.offsets.has(gu.childId)
-      ? parentUnit.x + parentUnit.offsets.get(gu.childId)
-      : (parentUnit ? parentUnit.x : 0);
+    const pu = parentPersonUnit.get(gu.childId);
+    const target = pu ? pu.x + (pu.offsets.get(gu.childId) || 0) : 0;
     gu.x = target;
   }
   deOverlapRow(grandUnits);
@@ -405,14 +606,14 @@ export function planCanopy(graph, focusId, opts = {}) {
    * ends there. The parent unit takes the whole upward count, and each child
    * takes their own descendants. */
   if (opts.includeReach === false) {
-    if (parentUnit) {
+    if (focusParentAnchor) {
       const beyondIds = new Set();
-      for (const mid of parentUnit.memberIds) {
+      for (const mid of focusParentAnchor.anchorMemberIds) {
         for (const [aid, v] of ancestorsWithDistance(graph, mid, 8)) {
           if (v.distance > 0) beyondIds.add(aid);
         }
       }
-      addHorizon(parentUnit, 'up', beyondIds.size);
+      addHorizon(focusParentAnchor, 'up', beyondIds.size);
     }
     for (const cu of childUnits) {
       let beyond = 0;
@@ -421,6 +622,18 @@ export function planCanopy(graph, focusId, opts = {}) {
       }
       addHorizon(cu, 'down', beyond);
     }
+  }
+
+  // Junction units do not render people of their own. Resolve their planned
+  // x from the visible members only after every row has completed its
+  // de-overlap pass, so junction ordering and camera composition reflect the
+  // picture the user will actually see.
+  for (const anchor of anchors.values()) {
+    const xs = anchor.anchorMemberIds.map((id) => {
+      const u = units.find((candidate) => !candidate.anchorOnly && candidate.memberIds.includes(id));
+      return u ? u.x + (u.offsets.get(id) || 0) : null;
+    }).filter(Number.isFinite);
+    if (xs.length) anchor.x = xs.reduce((sum, x) => sum + x, 0) / xs.length;
   }
 
   /* ── Junction levels ────────────────────────────────────────────────────
@@ -454,6 +667,7 @@ export function planCanopy(graph, focusId, opts = {}) {
   /* ── Resolve to node positions ──────────────────────────────────────── */
   const nodes = new Map();
   for (const u of units) {
+    if (u.anchorOnly) continue;
     for (const mid of u.memberIds) {
       nodes.set(mid, {
         id: mid,
@@ -463,6 +677,7 @@ export function planCanopy(graph, focusId, opts = {}) {
         row: u.row,
         band: u.band,
         r: NODE_R * BAND_SCALE[u.band],
+        labelHalfWidth: u.labelHalfWidths?.get(mid) || 0,
         isFocus: mid === focusId,
       });
     }
@@ -470,14 +685,15 @@ export function planCanopy(graph, focusId, opts = {}) {
 
   const xs = [...nodes.values()];
   const bounds = xs.length ? {
-    minX: Math.min(...xs.map((n) => n.x - n.r)),
-    maxX: Math.max(...xs.map((n) => n.x + n.r)),
+    minX: Math.min(...xs.map((n) => n.x - Math.max(n.r, n.labelHalfWidth || 0))),
+    maxX: Math.max(...xs.map((n) => n.x + Math.max(n.r, n.labelHalfWidth || 0))),
     minY: Math.min(...xs.map((n) => n.y - n.r)),
     maxY: Math.max(...xs.map((n) => n.y + n.r)),
   } : { minX: 0, maxX: 0, minY: 0, maxY: 0 };
 
   const rows = new Map();
   for (const u of units) {
+    if (u.anchorOnly) continue;
     if (!rows.has(u.row)) rows.set(u.row, []);
     rows.get(u.row).push(u);
   }
@@ -500,17 +716,21 @@ function centreUnder(group, cx) {
 export function unitAnchor(frame, unitId) {
   const u = frame.units.find((x) => x.id === unitId);
   if (!u) return null;
-  const offs = u.memberIds.map((m) => u.offsets.get(m));
-  const mid = (Math.min(...offs) + Math.max(...offs)) / 2;
+  const anchorIds = u.anchorMemberIds?.length ? u.anchorMemberIds : u.memberIds;
+  const positions = anchorIds.map((id) => frame.nodes.get(id)).filter(Boolean);
+  if (!positions.length) return null;
+  const lo = Math.min(...positions.map((n) => n.x));
+  const hi = Math.max(...positions.map((n) => n.x));
+  const y = positions.reduce((sum, n) => sum + n.y, 0) / positions.length;
   return {
-    x: u.x + mid,
-    y: u.row * ROW_GAP,
-    r: NODE_R * BAND_SCALE[u.band],
+    x: (lo + hi) / 2,
+    y,
+    r: Math.max(...positions.map((n) => n.r)),
     // A pod's anchor is the empty midpoint between two people, so a descent
     // can leave from just under the capsule. A LONE parent's anchor is the
     // person themselves, and their name sits directly below — a descent
     // leaving at the same height draws a line straight through it.
-    isPod: u.memberIds.length > 1,
+    isPod: anchorIds.length > 1,
     band: u.band,
   };
 }

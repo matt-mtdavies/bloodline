@@ -16,6 +16,7 @@ import { Container, Graphics, Sprite, Texture, Assets, Text, TextStyle } from 'p
 import { softShadowTexture, warmGlowTexture } from '../textures.js';
 import { unitAnchor } from './plan.js';
 import { progressAt, easeBranch, easeBud, bondKey } from './growth.js';
+import { labelDrop } from './geometry.js';
 
 const INK = 0x2b2622;
 const INK_SOFT = 0x6b6259;
@@ -59,12 +60,6 @@ const W_CHILD = 1.9;
 const BRANCH = 0x8a7563;
 
 /* ── geometry helpers ─────────────────────────────────────────────────── */
-
-/* How far below a node its name block extends — a name, plus a lifespan on
- * a hearth node. Descents and horizon marks both have to clear it. */
-export function labelDrop(band) {
-  return band === 'hearth' ? 52 : band === 'kin' ? 34 : 30;
-}
 
 /* The path a descent takes.
  *
@@ -252,20 +247,22 @@ function liveAnchor(frame, unitId, offsetOf) {
   if (!u) return null;
   let sx = 0, sy = 0, n = 0;
   let lo = Infinity, hi = -Infinity;
-  for (const m of u.memberIds) {
+  const anchorIds = u.anchorMemberIds?.length ? u.anchorMemberIds : u.memberIds;
+  for (const m of anchorIds) {
     const p = livePos(frame, m, offsetOf);
     if (!p) continue;
     sx += p.x; sy += p.y; n++;
     lo = Math.min(lo, p.x); hi = Math.max(hi, p.x);
   }
   if (!n) return unitAnchor(frame, unitId);
-  const first = frame.nodes.get(u.memberIds[0]);
+  const first = anchorIds.map((id) => frame.nodes.get(id)).find(Boolean);
+  if (!first) return unitAnchor(frame, unitId);
   return {
     x: (lo + hi) / 2,
     y: sy / n,
     r: first.r,
     band: first.band,
-    isPod: u.memberIds.length > 1,
+    isPod: anchorIds.length > 1,
   };
 }
 
