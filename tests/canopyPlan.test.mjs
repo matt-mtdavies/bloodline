@@ -158,6 +158,39 @@ test('grandparents sit two rows up, as pods, one per parent', () => {
   assert.notEqual(at('GA').unitId, at('GC').unitId);
 });
 
+test('a step-parent’s own parents are not drawn as the focus’s grandparents', () => {
+  // Real, reported bug: a step-father recorded on the focus's parent row is
+  // correct and wanted — but his OWN parents are his blood family, not the
+  // focus's, and the row -2 loop used to cascade through every parent
+  // regardless of qualifier, drawing a stranger's grandparents as if they
+  // were the focus's own. Every other place in this codebase that walks
+  // outward from a parent (bloodRelativesOf, relationshipCategories) already
+  // stops at a step edge; Canopy had not.
+  const g = buildGraph(
+    [
+      P('MUM'), P('MGA'), P('MGB'), // mum + her real parents
+      P('STEPDAD'), P('SGA'), P('SGB'), // step-dad + HIS parents
+      P('KID'),
+    ],
+    [
+      partner('MGA', 'MGB'), parent('MGA', 'MUM'), parent('MGB', 'MUM'),
+      partner('SGA', 'SGB'), parent('SGA', 'STEPDAD'), parent('SGB', 'STEPDAD'),
+      partner('MUM', 'STEPDAD'),
+      parent('MUM', 'KID', 'biological'),
+      parent('STEPDAD', 'KID', 'step'),
+    ],
+  );
+  const f = planCanopy(g, 'KID');
+  const grandparentRow = [...f.units].filter((u) => u.row === -2 && !u.anchorOnly);
+  const shown = new Set(grandparentRow.flatMap((u) => u.memberIds));
+  assert.ok(shown.has('MGA') && shown.has('MGB'), 'the real, blood grandparents still show');
+  assert.ok(!shown.has('SGA') && !shown.has('SGB'), 'the step-parent’s own parents are not drawn as grandparents');
+  // The step-parent themself still belongs on the parent row — that
+  // relationship is real, only their own ancestry stops propagating.
+  const parentRow = [...f.units].filter((u) => u.row === -1 && !u.anchorOnly);
+  assert.ok(parentRow.some((u) => u.memberIds.includes('STEPDAD')), 'the step-parent still shows on the parent row');
+});
+
 test('units on a row never overlap', () => {
   for (const [, rowUnits] of frame.rows) {
     const sorted = [...rowUnits].sort((a, b) => a.x - b.x);

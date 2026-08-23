@@ -78,19 +78,18 @@ export function buildGraph(people, relationships) {
   //   full  — share 2+ biological/adoptive parents
   //   half  — share exactly 1 biological/adoptive parent
   //   step  — connected only through a step-parent (no shared bio/adoptive parent)
-  const isBioAdopt = (q) => !q || q === 'biological' || q === 'adoptive';
   const siblingsOf = new Map();
   for (const person of people) {
     const myParents = parentsOf.get(person.id) || []; // [{id, qualifier}]
     if (!myParents.length) continue;
-    const myBioIds = new Set(myParents.filter((p) => isBioAdopt(p.qualifier)).map((p) => p.id));
+    const myBioIds = new Set(myParents.filter((p) => isBioOrAdoptive(p.qualifier)).map((p) => p.id));
     const seen = new Set();
     for (const { id: parentId } of myParents) {
       for (const child of childrenOf.get(parentId) || []) {
         if (child.id === person.id || seen.has(child.id)) continue;
         seen.add(child.id);
         const theirParents = parentsOf.get(child.id) || [];
-        const theirBioIds = theirParents.filter((p) => isBioAdopt(p.qualifier)).map((p) => p.id);
+        const theirBioIds = theirParents.filter((p) => isBioOrAdoptive(p.qualifier)).map((p) => p.id);
         const sharedBio = theirBioIds.filter((pid) => myBioIds.has(pid)).length;
         const kind = sharedBio >= 2 ? 'full' : sharedBio === 1 ? 'half' : 'step';
         ensure(siblingsOf, person.id).push({ id: child.id, kind });
@@ -306,6 +305,19 @@ export function distancesFromMany(graph, startIds) {
   return dist;
 }
 
+// A step-parent's own relationship to the focus is real and shown at the
+// immediate tier — but their OWN parents, siblings, etc. are their blood
+// family, not the focus's, and must never propagate outward as if they were.
+// One shared predicate for that boundary: this rule had been copy-pasted
+// inline in three places (relationshipCategories below, PersonSheet.jsx, and
+// a local closure inside the siblings derivation) before a fourth, silent
+// copy — Canopy's own ancestor walk — simply omitted it, drawing a real
+// production family's step-father's own parents as if they were the focus's
+// grandparents. One function, so that gap can't reopen anywhere it's used.
+export function isBioOrAdoptive(qualifier) {
+  return !qualifier || qualifier === 'biological' || qualifier === 'adoptive';
+}
+
 // Every ancestor, descendant, and collateral relative (sibling, aunt/uncle,
 // cousin, …) connected to focusId by an unbroken chain of biological/adoptive
 // parent-child links — the actual "blood or adoptive relative" the
@@ -332,7 +344,7 @@ export function bloodRelativesOf(graph, focusId) {
     const next = [];
     for (const cur of frontier) {
       for (const p of graph.parents(cur)) {
-        if (p.qualifier === 'step' || ancestors.has(p.id)) continue;
+        if (!isBioOrAdoptive(p.qualifier) || ancestors.has(p.id)) continue;
         ancestors.add(p.id);
         next.push(p.id);
       }
@@ -346,7 +358,7 @@ export function bloodRelativesOf(graph, focusId) {
   while (qi < queue.length) {
     const cur = queue[qi++];
     for (const c of graph.children(cur)) {
-      if (c.qualifier === 'step' || blood.has(c.id)) continue;
+      if (!isBioOrAdoptive(c.qualifier) || blood.has(c.id)) continue;
       blood.add(c.id);
       queue.push(c.id);
     }
@@ -379,9 +391,7 @@ export function relationshipCategories(graph, viewerId) {
 
   // Only bio/adoptive lines propagate outward — step lines stop at the
   // immediate tier, same convention used for grandparents/aunts elsewhere.
-  const upwardParents = parents.filter(
-    (p) => !p.qualifier || p.qualifier === 'biological' || p.qualifier === 'adoptive',
-  );
+  const upwardParents = parents.filter((p) => isBioOrAdoptive(p.qualifier));
   const grandparentIds = upwardParents.flatMap((p) => graph.parents(p.id).map((gp) => gp.id));
   const greatGrandparentIds = grandparentIds.flatMap((id) => graph.parents(id).map((gp) => gp.id));
   for (const id of [...grandparentIds, ...greatGrandparentIds]) if (!cat.has(id)) cat.set(id, 'grandparents');

@@ -4,7 +4,7 @@ import SmartImg from './SmartImg.jsx';
 import { initials, monogramColors } from '../lib/color.js';
 import { formatDate, yearOf, humanLifeSummary } from '../lib/dates.js';
 import { detectRegion, birthEraContext } from '../lib/worldEvents.js';
-import { relationLabel, sortSiblings, sortChildren } from '../data/graph.js';
+import { relationLabel, sortSiblings, sortChildren, isBioOrAdoptive } from '../data/graph.js';
 import { useKinTerms } from '../lib/kinTerms.js';
 import { profileCompleteness, lifeEvents } from '../lib/profile.js';
 import { fileToDataUrl, uploadPhoto, uploadDocument, suggestDocumentTitle, imageSrcToDataUrl } from '../lib/image.js';
@@ -381,9 +381,7 @@ export default function PersonSheet({
   // Only bio/adoptive lines propagate upward — step-parent lines stop at the
   // immediate tier. Step grandparents/aunts are reachable by tapping the
   // step-parent's bubble, which keeps the extended section from exploding.
-  const upwardParents = parents.filter(
-    (p) => !p.qualifier || p.qualifier === 'biological' || p.qualifier === 'adoptive',
-  );
+  const upwardParents = parents.filter((p) => isBioOrAdoptive(p.qualifier));
   // Keep raw grandparent IDs (before dedup) so great-grandparents can be
   // derived from the full set even if some grandparents were deduped into
   // another group — same pattern as rawGrandchildIds below, going up
