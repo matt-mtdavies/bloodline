@@ -90,10 +90,12 @@ export function scheduleGrowth(frame, opts = {}) {
 
   frame.bonds.forEach((b, i) => {
     const key = bondKey(b, i);
-    if (b.kind === 'union') {
-      const target = b.a === frame.focusId ? b.b : b.a === frame.focusId ? b.a : b.b;
+    // A 'thread' (two people linked by a shared child, never partnered) is
+    // scheduled exactly like a union — it is the same kind of "connects two
+    // already-placed people" bond, just drawn differently.
+    if (b.kind === 'union' || b.kind === 'thread') {
       const other = b.a === frame.focusId ? b.b : b.a;
-      const node = frame.nodes.get(other) || frame.nodes.get(target);
+      const node = frame.nodes.get(other);
       const row = node?.row ?? 0;
       // A union involving the focus leads the whole score: their partner is
       // the first thing to arrive, so the frame opens from the couple.
@@ -152,7 +154,9 @@ function assign(nodes, id, bondDelay, bondDur, focusId) {
 }
 
 export function bondKey(b, i) {
-  return b.kind === 'union' ? `b:u:${b.a}:${b.b}` : `b:d:${b.parentUnit}:${b.child}:${i}`;
+  if (b.kind === 'union') return `b:u:${b.a}:${b.b}`;
+  if (b.kind === 'thread') return `b:t:${b.a}:${b.b}`;
+  return `b:d:${b.parentUnit}:${b.child}:${i}`;
 }
 
 /** Normalised 0..1 progress of one scheduled item at time `t` (ms). */

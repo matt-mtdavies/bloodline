@@ -241,7 +241,16 @@ function livePos(frame, id, offsetOf) {
   const o = offsetOf ? (offsetOf(id) || ZERO) : ZERO;
   return { ...n, x: n.x + o.x, y: n.y + o.y };
 }
-/* A union's anchor, following its members' live positions. */
+/* A union's anchor, following its members' live positions.
+ *
+ * Y is taken from each member's row BASELINE (plus any live deflection),
+ * never their fully-resolved y — a satellite's own dot is structurally
+ * lifted (see plan.js), but a child descending from a pod that happens to
+ * include one still has to branch from the row's true line, or the trunk
+ * would visibly originate from nowhere between the two. Live deflection
+ * (a hover/drag nudge) still flows through normally; only the permanent
+ * structural lift is excluded. Ordinary units carry no lift at all, so this
+ * is exactly today's value for every anchor that isn't touching a satellite. */
 function liveAnchor(frame, unitId, offsetOf) {
   const u = frame.units.find((x) => x.id === unitId);
   if (!u) return null;
@@ -249,10 +258,12 @@ function liveAnchor(frame, unitId, offsetOf) {
   let lo = Infinity, hi = -Infinity;
   const anchorIds = u.anchorMemberIds?.length ? u.anchorMemberIds : u.memberIds;
   for (const m of anchorIds) {
-    const p = livePos(frame, m, offsetOf);
-    if (!p) continue;
-    sx += p.x; sy += p.y; n++;
-    lo = Math.min(lo, p.x); hi = Math.max(hi, p.x);
+    const node = frame.nodes.get(m);
+    if (!node) continue;
+    const o = offsetOf ? (offsetOf(m) || ZERO) : ZERO;
+    const x = node.x + o.x;
+    sx += x; sy += (node.rowBaselineY ?? node.y) + o.y; n++;
+    lo = Math.min(lo, x); hi = Math.max(hi, x);
   }
   if (!n) return unitAnchor(frame, unitId);
   const first = anchorIds.map((id) => frame.nodes.get(id)).find(Boolean);
@@ -286,49 +297,11 @@ export function drawBonds(g, frame, schedule, t, offsetOf) {
       /* A dissolved union is a broken THREAD between two people, not a
        * capsule around them. A capsule says "these two are one unit", which
        * is precisely what a former partnership is not — and because a former
-       * partner is placed outboard rather than inside the pod, a capsule
+       * partner is a lifted satellite rather than inside the pod, a capsule
        * also had to stretch far enough to swallow whoever sat between. Drawn
        * edge to edge so it reads as a link, and dashed so it reads as
-       * dissolved without relying on colour alone. */
-      const dx = c.x - a.x, dy = c.y - a.y;
-      const len = Math.hypot(dx, dy) || 1;
-      const ux = dx / len, uy = dy / len;
-      const start = { x: a.x + ux * (a.r + 3), y: a.y + uy * (a.r + 3) };
-      const endFull = { x: c.x - ux * (c.r + 3), y: c.y - uy * (c.r + 3) };
-      const end = { x: start.x + (endFull.x - start.x) * e, y: start.y + (endFull.y - start.y) * e };
-      /* A long thread BOWS beneath the row.
-       *
-       * Two people whose partnership ended can end up far apart — an ex with
-       * a co-parent between them, or two parents each centred over their own
-       * children. Drawn as a straight chord, that thread cuts through every
-       * face and name in between, and on a dense frame it reads as a stray
-       * rule ruled across the picture rather than as a relationship. Bowed
-       * below the name block, it reads as passing BEHIND the people it spans,
-       * which is what it is doing. Short threads — the ordinary ex sitting
-       * next to their former partner — stay straight, because a bow there
-       * would be an affectation. */
-      const span = Math.abs(dx);
-      const sag = span > (a.r + c.r) * 2.4
-        ? Math.min(96, 26 + (span - (a.r + c.r) * 2.4) * 0.11)
-        : 0;
-      if (sag > 0) {
-        const drop = Math.max(a.r, c.r) + labelDrop(a.band || 'kin');
-        const pts = [];
-        const STEPS = 18;
-        for (let s = 0; s <= STEPS; s++) {
-          const f = s / STEPS;
-          const m = 1 - f;
-          // Quadratic through a control point below the midpoint of the row.
-          const ctlY = (start.y + endFull.y) / 2 + drop + sag;
-          pts.push({
-            x: m * m * start.x + 2 * m * f * ((start.x + endFull.x) / 2) + f * f * endFull.x,
-            y: m * m * start.y + 2 * m * f * ctlY + f * f * endFull.y,
-          });
-        }
-        drawDashedPath(g, pts.slice(0, Math.max(2, Math.ceil(pts.length * e))), pal.border, 0.75);
-      } else {
-        drawDashedPath(g, [start, end], pal.border, 0.75);
-      }
+       * dissolved without relying on colour alone. See drawThread. */
+      drawThread(g, a, c, e, { color: pal.border, dashed: true, alpha: 0.75 });
     } else {
       /* A current union is a warm HOLLOW the couple sits in, not a boxed
        * outline around them. The first version drew a 2.4px terracotta hoop,
@@ -339,6 +312,20 @@ export function drawBonds(g, frame, schedule, t, offsetOf) {
       capsulePath(g, a, to, hw + 7).fill({ color: pal.fill, alpha: 0.34 * e });
       capsulePath(g, a, to, hw + 1).fill({ color: pal.fill, alpha: 0.82 * e });
     }
+  });
+
+  /* Two people who share a child but were never partners — a co-parent
+   * without a partner edge — get the plainest possible connective mark, not
+   * the dashed thread a dissolved partnership carries. Dashing would wrongly
+   * say "these two used to be a couple," which is not this relationship. */
+  frame.bonds.forEach((b, i) => {
+    if (b.kind !== 'thread') return;
+    const a = livePos(frame, b.a, offsetOf), c = livePos(frame, b.b, offsetOf);
+    if (!a || !c) return;
+    const u = progressAt(schedule.bonds.get(bondKey(b, i)), t);
+    if (u <= 0) return;
+    const e = schedule.reduced ? u : easeBranch(u);
+    drawThread(g, a, c, e, { color: BRANCH, dashed: false, alpha: 0.42 });
   });
 
   // Descents on top of the capsules but under the people.
@@ -365,6 +352,58 @@ export function drawBonds(g, frame, schedule, t, offsetOf) {
       taperedRibbon(g, pts, BRANCH, alpha);
     }
   });
+}
+
+/* A relationship THREAD between two people who are not a current union — a
+ * dissolved partnership (dashed) or two people linked only by a shared child
+ * (plain) — never a capsule (see the "current union" note above: a capsule
+ * says "these two are one unit," which is true of neither).
+ *
+ * Bows beneath the row on a long span so it reads as passing BEHIND the
+ * people between its ends, rather than as a stray rule drawn across the
+ * picture — a real failure mode once satellites are commonly some distance
+ * from what they connect to. Short spans stay a plain straight line, because
+ * a bow there would be an affectation. The two endpoints are very often at
+ * different heights now that a satellite is lifted off its row, which this
+ * makes no special case for: the same quadratic reaches for wherever the
+ * other end actually is. */
+function drawThread(g, a, c, e, { color, dashed, alpha }) {
+  const dx = c.x - a.x, dy = c.y - a.y;
+  const len = Math.hypot(dx, dy) || 1;
+  const ux = dx / len, uy = dy / len;
+  const start = { x: a.x + ux * (a.r + 3), y: a.y + uy * (a.r + 3) };
+  const endFull = { x: c.x - ux * (c.r + 3), y: c.y - uy * (c.r + 3) };
+  const end = { x: start.x + (endFull.x - start.x) * e, y: start.y + (endFull.y - start.y) * e };
+  const span = Math.abs(dx);
+  const sag = span > (a.r + c.r) * 2.4
+    ? Math.min(96, 26 + (span - (a.r + c.r) * 2.4) * 0.11)
+    : 0;
+  const draw = dashed ? drawDashedPath : drawSolidPath;
+  if (sag > 0) {
+    const drop = Math.max(a.r, c.r) + labelDrop(a.band || 'kin');
+    const pts = [];
+    const STEPS = 18;
+    for (let s = 0; s <= STEPS; s++) {
+      const f = s / STEPS;
+      const m = 1 - f;
+      // Quadratic through a control point below the midpoint of the span.
+      const ctlY = (start.y + endFull.y) / 2 + drop + sag;
+      pts.push({
+        x: m * m * start.x + 2 * m * f * ((start.x + endFull.x) / 2) + f * f * endFull.x,
+        y: m * m * start.y + 2 * m * f * ctlY + f * f * endFull.y,
+      });
+    }
+    draw(g, pts.slice(0, Math.max(2, Math.ceil(pts.length * e))), color, alpha);
+  } else {
+    draw(g, [start, end], color, alpha);
+  }
+}
+
+function drawSolidPath(g, pts, color, alpha) {
+  if (pts.length < 2) return;
+  g.moveTo(pts[0].x, pts[0].y);
+  for (let i = 1; i < pts.length; i++) g.lineTo(pts[i].x, pts[i].y);
+  g.stroke({ color, width: 1.6, alpha, cap: 'round' });
 }
 
 function drawDashedPath(g, pts, color, alpha) {

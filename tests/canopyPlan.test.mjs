@@ -11,7 +11,8 @@
  */
 import assert from 'node:assert/strict';
 import { buildGraph } from '../src/data/graph.js';
-import { planCanopy, unitAnchor, labelTextFor, ROW_GAP, POD_GAP, MAX_CLUSTER_RANKS, CLUSTER_CLEAR } from '../src/viz/canopy/plan.js';
+import { planCanopy, unitAnchor, labelTextFor, ROW_GAP, ROW_GAP_COMPACT, POD_GAP, UNIT_GAP, NODE_R, BAND_SCALE, MAX_CLUSTER_RANKS, CLUSTER_CLEAR } from '../src/viz/canopy/plan.js';
+import { labelDrop } from '../src/viz/canopy/geometry.js';
 
 let passed = 0, failed = 0;
 function test(label, fn) {
@@ -413,8 +414,15 @@ test('a narrow frame STATES what it dropped rather than just stopping', () => {
 });
 
 test('a narrow frame is genuinely narrower than a wide one', () => {
-  const wide = planCanopy(graph, 'ME');
-  const narrow = planCanopy(graph, 'ME', { includeReach: false });
+  /* Focused on SIB1 rather than ME: ME carries a satellite (EX), and a
+   * satellite's own required clearance is a genuinely separate, orthogonal
+   * effect (see the satellite tests below) — on compact spacing there is not
+   * enough vertical room left to clear a nearby sibling row without also
+   * widening past it, which can legitimately make THAT one frame wider, not
+   * narrower. SIB1 shares the same grandparents without a satellite of their
+   * own, so this isolates what the test is actually about: dropping Reach. */
+  const wide = planCanopy(graph, 'SIB1');
+  const narrow = planCanopy(graph, 'SIB1', { includeReach: false });
   const w = (f) => f.bounds.maxX - f.bounds.minX;
   const h = (f) => f.bounds.maxY - f.bounds.minY;
   assert.ok(w(narrow) <= w(wide), 'no wider');
@@ -601,6 +609,116 @@ test('a reach descendant is named by first name; an ancestor keeps their surname
   assert.equal(labelTextFor({ display_name: 'Sarah Chynoweth' }, f.nodes.get('GRAN').band, f.nodes.get('GRAN').row), 'Sarah Chynoweth');
 });
 
+
+/* ── Satellites ────────────────────────────────────────────────────────────
+ * A former partner or an unpartnered co-parent lifts off the row it relates
+ * to instead of queuing along it — the direct answer to a hand-drawn
+ * reference of the owner's real tree, and the reason organic's own
+ * arrangement read as "communities, not a hierarchy": a peripheral relation
+ * was never pinned to the same strict line as the people it relates to.
+ */
+const maxLiftFor = (rowGap) => {
+  const kinR = NODE_R * BAND_SCALE.kin;
+  return Math.max(48, rowGap - 2 * kinR - labelDrop('kin') - 24);
+};
+
+test('a satellite lifts toward the ancestor direction, capped short of the row above', () => {
+  const ex = at('EX');
+  assert.ok(ex.satellite, 'a former partner is flagged as a satellite');
+  assert.equal(ex.rowBaselineY, 0, 'their structural row is still row 0');
+  assert.ok(ex.y < 0, 'their rendered y lifts above the row-0 baseline');
+  const lift = ex.rowBaselineY - ex.y;
+  assert.ok(lift > 0 && lift <= maxLiftFor(ROW_GAP) + 1e-9,
+    `lift ${lift} must be positive and within the geometry-derived cap`);
+  // And the cap actually clears the row above, with real margin — not just
+  // arithmetic that happens to work out.
+  const pa = at('PA');
+  const exNearEdge = ex.y - ex.r;
+  const parentNearEdge = pa.y + pa.r + labelDrop('kin');
+  assert.ok(exNearEdge > parentNearEdge, 'the satellite never visually reaches into the row above');
+});
+
+test('the satellite lift respects the compact row gap too, not just the standard one', () => {
+  const compact = planCanopy(graph, 'ME', { compact: true });
+  const ex = compact.nodes.get('EX');
+  const lift = ex.rowBaselineY - ex.y;
+  assert.ok(lift <= maxLiftFor(ROW_GAP_COMPACT) + 1e-9,
+    'a phone-width lift must obey the tighter compact cap, not the desktop one');
+  const pa = compact.nodes.get('PA');
+  assert.ok(ex.y - ex.r > pa.y + pa.r + labelDrop('kin'),
+    'clearance holds under the compact row gap too');
+});
+
+test('two satellites never overlap, and lift no further once at the safe ceiling', () => {
+  /* The lift needed to clear a hearth-band focus pod (see hearthClearLift in
+   * plan.js) is generous enough that it commonly hits the row-above cap on
+   * its own, before any per-satellite stagger is even added — so a SECOND
+   * satellite often shares the exact same, already-maximal height as the
+   * first, rather than fanning higher still. That is correct: there is no
+   * safe room left to fan into, and the two stay visually distinct by their
+   * horizontal gap instead. What must always hold is monotonicity (a later
+   * satellite is never LOWER than an earlier one) and the shared safe cap. */
+  const g = buildGraph(
+    [P('ME'), P('EX1', { birth_date: '1980-01-01' }), P('EX2', { birth_date: '1982-01-01' })],
+    [partner('ME', 'EX1', 'former'), partner('ME', 'EX2', 'former')],
+  );
+  const f = planCanopy(g, 'ME');
+  const y1 = f.nodes.get('EX1').y, y2 = f.nodes.get('EX2').y;
+  assert.ok(y2 <= y1, 'a later satellite lifts at least as high as an earlier one, never less');
+  assert.ok(f.nodes.get('EX2').x !== f.nodes.get('EX1').x, 'and stay horizontally distinct too');
+});
+
+test('siblings sit tight to the focus — unaffected by how many satellites there are', () => {
+  // SIB1 is the only elder sibling here; ME also has a former partner (EX).
+  // Before satellites were lifted off the row, a sibling's offset was pushed
+  // out by however many satellites preceded it on the same line.
+  assert.ok(Math.abs(at('SIB1').x - -UNIT_GAP) < 1e-6);
+});
+
+test('a co-parent with no partner edge is still visibly linked, by a plain thread', () => {
+  const g = buildGraph(
+    [P('ME'), P('COP'), P('KID', { birth_date: '2005-01-01' })],
+    [parent('ME', 'KID'), parent('COP', 'KID')],
+  );
+  const f = planCanopy(g, 'ME');
+  const thread = f.bonds.find((b) => b.kind === 'thread');
+  assert.ok(thread, 'the co-parent gets a connecting bond even with no partner edge');
+  const ends = [thread.a, thread.b].sort();
+  assert.deepEqual(ends, ['COP', 'ME']);
+  assert.ok(f.nodes.get('COP').satellite, 'the co-parent is a satellite, not a pod member');
+  assert.ok(f.nodes.get('COP').y < 0, 'and is lifted off the row like any other satellite');
+});
+
+test('a shared child’s branch starts at the true row baseline, never pulled up by a lifted co-parent', () => {
+  const g = buildGraph(
+    [P('ME'), P('COP'), P('KID', { birth_date: '2005-01-01' })],
+    [parent('ME', 'KID'), parent('COP', 'KID')],
+  );
+  const f = planCanopy(g, 'ME');
+  const bond = f.bonds.find((b) => b.kind === 'descent' && b.child === 'KID');
+  const anchor = unitAnchor(f, bond.parentUnit);
+  assert.equal(anchor.y, 0, 'the anchor sits at the row-0 baseline, not averaged with COP’s lifted y');
+});
+
+test('a satellite never overlaps a sibling, even on compact spacing where full vertical clearance is not possible', () => {
+  /* Reproduces a real bug found against a dense fixture: a satellite's own
+   * label overlapped a sibling positioned nearby, because clearance was only
+   * ever measured against the focus pod. On compact row spacing there is
+   * provably not enough vertical room to clear a hearth-band focus pod AND
+   * stay off row -1 (see hearthClearLift vs satelliteMaxLift in plan.js) —
+   * the satellite's own footprint dips back down into row 0's own band no
+   * matter how it's tuned, so ANY nearby sibling needs horizontal clearance
+   * instead. This pins the actual guarantee (no overlap), not a specific
+   * width — the compact frame is legitimately allowed to be wider here. */
+  const f = planCanopy(graph, 'ME', { compact: true });
+  const ex = f.nodes.get('EX'), sib1 = f.nodes.get('SIB1');
+  const exRight = ex.x + Math.max(ex.r, ex.labelHalfWidth);
+  const sib1Left = sib1.x - Math.max(sib1.r, sib1.labelHalfWidth);
+  const exTop = ex.y - ex.r, exBottom = ex.y + ex.r + 34; // labelDrop('kin')
+  const sib1Top = sib1.y - sib1.r, sib1Bottom = sib1.y + sib1.r + 34;
+  const yOverlaps = exTop < sib1Bottom && exBottom > sib1Top;
+  if (yOverlaps) assert.ok(exRight < sib1Left, 'their y-bands overlap, so they must not overlap in x either');
+});
 
 console.log(`\n  ${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
