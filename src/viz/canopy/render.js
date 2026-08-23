@@ -262,7 +262,7 @@ function liveAnchor(frame, unitId, offsetOf) {
     if (!node) continue;
     const o = offsetOf ? (offsetOf(m) || ZERO) : ZERO;
     const x = node.x + o.x;
-    sx += x; sy += (node.rowBaselineY ?? node.y) + o.y; n++;
+    sx += x; sy += (node.anchorY ?? node.y) + o.y; n++;
     lo = Math.min(lo, x); hi = Math.max(hi, x);
   }
   if (!n) return unitAnchor(frame, unitId);
