@@ -46,6 +46,15 @@ import { sortSiblings, sortChildren, ancestorsWithDistance, descendantsWithDista
  * left under 100px for a branch to travel, which compressed the curves into
  * steep, cramped hooks. A branch needs room to read as a sweep. */
 export const ROW_GAP = 310;
+/* Vertical spacing on a narrow screen.
+ *
+ * 310 is right on a desktop, where a branch has room to sweep. On a phone it
+ * is a canyon: with Reach dropped there is nothing beside the trunk, so the
+ * band between two rows renders as a long bare line through empty paper and
+ * the whole frame reads as sparse and unfinished — reported as "messy".
+ * A phone also cannot afford the height: the same gap pushes the outer rows
+ * off-screen entirely. */
+export const ROW_GAP_COMPACT = 224;
 /** Centre-to-centre spacing between two people inside one partner pod. */
 export const POD_GAP = 150;
 /** Minimum centre-to-centre spacing between adjacent units on one row. */
@@ -60,6 +69,38 @@ export const UNIT_GAP = 208;
 export const BLOCK_GAP = 96;
 /** Nominal person radius at full fidelity — spacing and hit-testing use this. */
 export const NODE_R = 54;
+
+/* ── Reach clusters ───────────────────────────────────────────────────────
+ * Measured against a Victorian-density tree (sibships of 3–9, which is what
+ * a real 1,200-person tree actually contains, not the mean-2.2 benchmark
+ * fixture): a person with nine children and fifty-one grandchildren planned
+ * to a frame 8,946px wide and 1,311px tall. Every one of those grandchildren
+ * was on ONE flat row, so nine fans of branches crossed each other into an
+ * undifferentiated mat along the bottom edge — the "still looks wrong and
+ * messy" report, reproduced exactly.
+ *
+ * The width of that row was governed by the number of GRANDCHILDREN, which
+ * grows quadratically down the tree, when it should be governed by the number
+ * of CHILDREN, which does not. So a reach-band descendant group no longer
+ * spreads along the row: it hangs beneath its own parent as a compact
+ * CLUSTER, a few across and a few deep. Nothing is dropped and nothing is
+ * summarised — the same people are drawn, in the same order, in a shape whose
+ * width is bounded. It also states the family better: each child's own family
+ * reads as one bunch rather than as an anonymous stretch of the row.
+ */
+export const REACH_GAP = 128;
+/* Vertical step between stacked ranks inside one cluster.
+ *
+ * Sized so a rank's horizon chip clears the rank beneath it: a grandchild
+ * with descendants of their own carries a "+N" mark 96px below their centre
+ * (see render.js's horizonOffset — radius, name block, then the chip), and at
+ * the first value tried, 122, that chip landed on the forehead of the person
+ * on the next rank down. */
+export const RANK_GAP = 152;
+/** A cluster grows across before it grows down, to this depth, then across. */
+export const MAX_CLUSTER_RANKS = 3;
+/** Clear space between one child's cluster and the next child's. */
+export const CLUSTER_CLEAR = 56;
 
 /** Fidelity bands. Size, saturation and opacity all fall off together with
  *  this, so one gradient does three jobs and reads as depth rather than as
@@ -114,7 +155,7 @@ function makeUnit(id, memberIds, band, opts = {}) {
   // and label, and widen a pod when two adjacent labels need it.
   const labelHalfWidths = new Map(memberIds.map((mid) => [
     mid,
-    labelHalfWidth(opts.byId?.get(mid), band, mid === opts.focusId),
+    labelHalfWidth(opts.byId?.get(mid), band, mid === opts.focusId, opts.row || 0),
   ]));
   let gap = baseGap;
   for (let i = 1; i < memberIds.length; i++) {
@@ -146,18 +187,38 @@ function makeUnit(id, memberIds, band, opts = {}) {
   };
 }
 
-function displayName(person) {
+/* The name a person is drawn with, at a given fidelity.
+ *
+ * Exported and used by the RENDERER too, so the space the planner reserves and
+ * the text the canvas sets can never disagree — they are the same string.
+ *
+ * A reach-band DESCENDANT is drawn with their first name only. That is a
+ * fidelity decision of the same kind as the band's smaller radius, lighter
+ * shadow and lower opacity: down there you are reading the SHAPE of the
+ * family, a grandchild's surname is almost always the one already legible on
+ * the parent directly above them, and dropping it is what lets a cluster stay
+ * a cluster instead of spreading back into a mat. The full name is one tap
+ * away, the moment you travel to them.
+ *
+ * Ancestors keep theirs. A great-grandparent's surname is not redundant with
+ * anything — it is the name of the line itself, often the whole reason you
+ * looked up — and there are only ever two of them per pod, so it costs no
+ * width to keep. The rule is about what the width is buying, not about the
+ * band as such.
+ */
+export function labelTextFor(person, band, row = 0) {
   const raw = (person?.display_name || 'Unknown').trim();
   const parts = raw.split(/\s+/);
+  if (band === BAND.REACH && row > 0) return parts[0] || raw;
   return parts.length > 2 ? `${parts[0]} ${parts[parts.length - 1]}` : raw;
 }
 
-function labelHalfWidth(person, band, isFocus = false) {
+function labelHalfWidth(person, band, isFocus = false, row = 0) {
   const fontSize = isFocus ? 21 : band === BAND.REACH ? 13 : 15;
   // Pixi's Georgia metrics vary slightly by platform. This conservative
   // estimate deliberately errs toward air; the cap keeps one extreme name
   // from making an otherwise intimate family feel empty.
-  return Math.min(154, Math.max(NODE_R * BAND_SCALE[band], displayName(person).length * fontSize * 0.31 + 8));
+  return Math.min(154, Math.max(NODE_R * BAND_SCALE[band], labelTextFor(person, band, row).length * fontSize * 0.31 + 8));
 }
 
 /** Left/right visual extents, including the names beneath each portrait. */
@@ -219,6 +280,14 @@ function qualifierForParentSet(refs) {
  * the same size, which is what makes every frame composable.
  */
 export function planCanopy(graph, focusId, opts = {}) {
+  // Narrow frames use the compact row spacing (see ROW_GAP_COMPACT). Tied to
+  // the same flag that drops the Reach band, so a phone gets one coherent
+  // compact composition rather than two independent adjustments.
+  /* Compact row spacing is asked for either by a narrow frame (a phone
+   * cannot afford the canyon) or explicitly by the caller, when the standard
+   * spacing would make the composition taller than the screen it has to be
+   * legible on. Same spacing, two reasons to want it. */
+  const rowGap = (opts.compact || opts.includeReach === false) ? ROW_GAP_COMPACT : ROW_GAP;
   const byId = graph.byId;
   const focus = byId.get(focusId);
   const cmp = byBirthThenId(byId);
@@ -459,16 +528,33 @@ export function planCanopy(graph, focusId, opts = {}) {
   /* ROW +2 — grandchildren, at Reach fidelity, grouped under their own
    * parent so the descent reads correctly rather than as a flat row. */
   const grandChildUnits = [];
-  for (const cu of (opts.includeReach === false ? [] : childUnits)) {
+  /* Grouped as they are created, because the CHILD row's spacing depends on
+   * how wide each child's cluster will be (see childSpacing below) and that
+   * row is placed first. */
+  const byParent = new Map();
+  /* Descendants are drawn on a narrow frame TOO.
+   *
+   * Reach used to be dropped wholesale below REACH_MIN_WIDTH, and the reason
+   * given was width: a grandchild row spread along the row made the frame
+   * five units wide and drove the zoom to its floor. Clusters removed that
+   * reason — a cluster hangs beneath its own parent and adds no width at all.
+   * What the drop left behind was a phone screen with two rows of content and
+   * a third of it empty paper, which is the "sparse and unfinished" half of
+   * the same report. Ancestors are still dropped on a narrow frame: a second
+   * pod per parent DOES widen the row, and it widens it upward, away from the
+   * direction a phone is usually travelling. */
+  for (const cu of childUnits) {
     const cid = cu.memberIds[0];
     const gcRefs = sortChildren(graph.children(cid).filter((g) => byId.has(g.id)), byId);
     for (const gc of gcRefs) {
       if (!claim(gc.id)) continue;
-      const gu = newUnit(gc.id, [gc.id], BAND.REACH);
+      const gu = newUnit(gc.id, [gc.id], BAND.REACH, { row: 2 });
       gu.row = 2;
       gu.parentId = cid;
       units.push(gu);
       grandChildUnits.push(gu);
+      if (!byParent.has(cid)) byParent.set(cid, []);
+      byParent.get(cid).push(gu);
       bonds.push({ kind: 'descent', parentUnit: cu.id, child: gc.id, qualifier: gc.qualifier || 'biological' });
     }
   }
@@ -557,10 +643,38 @@ export function planCanopy(graph, focusId, opts = {}) {
     const e = unitExtents(u);
     return side === 'left' ? -e.left : e.right;
   };
+  /* A child is spaced by what hangs BENEATH them, not only by their own
+   * portrait and name.
+   *
+   * The first cut of the cluster rework bounded each cluster's width but
+   * still spaced the children above them at a flat UNIT_GAP — so a cluster
+   * three across sat wider than its parent's own slot, and eight clusters ran
+   * together into a single unbroken line of twenty grandchildren with the
+   * branches crossing over each other to reach them. Bounding the cluster is
+   * only half the job: the row above has to leave room for it, or the
+   * grouping the cluster exists to express is invisible.
+   *
+   * This is one level of the classic tidy-tree contour rule, which is all
+   * that is needed here — the frame is exactly two generations deep below the
+   * focus, so a child's subtree is its cluster and nothing more. */
+  const clusterHalfWidth = (u) => {
+    const group = byParent.get(u.memberIds[0]);
+    if (!group?.length) return 0;
+    const cols = group.length <= 2 ? group.length : Math.max(2, Math.ceil(group.length / MAX_CLUSTER_RANKS));
+    const widest = Math.max(...group.map((gu) => halfOf(gu, 'right')), 0);
+    return ((cols - 1) * REACH_GAP) / 2 + widest;
+  };
+  const childSpacing = (a, b) => Math.max(
+    UNIT_GAP,
+    halfOf(a, 'right') + halfOf(b, 'left') + 28,
+    clusterHalfWidth(a) + clusterHalfWidth(b) + CLUSTER_CLEAR,
+  );
   const blockWidth = (g) => {
     const n = g.units.length;
     if (!n) return 0;
-    return (n - 1) * UNIT_GAP + halfOf(g.units[0], 'left') + halfOf(g.units[n - 1], 'right');
+    let w = halfOf(g.units[0], 'left') + halfOf(g.units[n - 1], 'right');
+    for (let i = 1; i < n; i++) w += childSpacing(g.units[i - 1], g.units[i]);
+    return w;
   };
 
   let prevRight = -Infinity;
@@ -568,8 +682,11 @@ export function planCanopy(graph, focusId, opts = {}) {
     const w = blockWidth(g);
     let left = g.cx - w / 2;
     if (left < prevRight + BLOCK_GAP) left = prevRight + BLOCK_GAP;
-    const start = left + halfOf(g.units[0], 'left');
-    g.units.forEach((u, i) => { u.x = start + i * UNIT_GAP; });
+    let x = left + halfOf(g.units[0], 'left');
+    g.units.forEach((u, i) => {
+      if (i) x += childSpacing(g.units[i - 1], g.units[i]);
+      u.x = x;
+    });
     prevRight = left + w;
     g._left = left;
     g._width = w;
@@ -588,17 +705,19 @@ export function planCanopy(graph, focusId, opts = {}) {
 
   deOverlapRow(childUnits);
 
-  // Row +2: each grandchild group centred under its own parent.
-  const byParent = new Map();
-  for (const gu of grandChildUnits) {
-    if (!byParent.has(gu.parentId)) byParent.set(gu.parentId, []);
-    byParent.get(gu.parentId).push(gu);
-  }
+  // Row +2: each grandchild group hangs beneath its own parent as a compact
+  // cluster (see REACH_GAP) rather than spreading along the row.
   for (const [pid, group] of byParent) {
     const pu = childUnits.find((u) => u.memberIds[0] === pid);
-    centreUnder(group, pu ? pu.x : 0);
+    clusterUnder(group, pu ? pu.x : 0);
   }
-  deOverlapRow(grandChildUnits);
+  // Two people on different ranks of a cluster are already a rank apart
+  // vertically and cannot collide, so de-overlap runs per rank. Doing it
+  // across the whole row would treat a deliberate stack as a pile-up and
+  // shove the clusters out into exactly the flat row they exist to avoid.
+  for (const rank of new Set(grandChildUnits.map((u) => u.rank || 0))) {
+    deOverlapRow(grandChildUnits.filter((u) => (u.rank || 0) === rank));
+  }
 
   // Row -1: the parent unit is centred over the span of its drawn children
   // (the focus plus every drawn sibling) — the classic tidy-tree rule, and
@@ -690,7 +809,11 @@ export function planCanopy(graph, focusId, opts = {}) {
       }
       addHorizon(focusParentAnchor, 'up', beyondIds.size);
     }
+    /* A childless child is still the end of its own line on a narrow frame;
+     * one WITH children now draws them, and each of those carries its own
+     * horizon in the shared pass above. */
     for (const cu of childUnits) {
+      if (byParent.get(cu.memberIds[0])?.length) continue;
       let beyond = 0;
       for (const [, v] of descendantsWithDistance(graph, cu.memberIds[0], 6)) {
         if (v.distance > 0) beyond++;
@@ -748,8 +871,9 @@ export function planCanopy(graph, focusId, opts = {}) {
         id: mid,
         unitId: u.id,
         x: u.x + u.offsets.get(mid),
-        y: u.row * ROW_GAP,
+        y: u.row * rowGap + (u.rank || 0) * RANK_GAP,
         row: u.row,
+        rank: u.rank || 0,
         band: u.band,
         r: NODE_R * BAND_SCALE[u.band],
         labelHalfWidth: u.labelHalfWidths?.get(mid) || 0,
@@ -776,11 +900,27 @@ export function planCanopy(graph, focusId, opts = {}) {
   return { focusId, nodes, units, bonds, horizons, rows, bounds };
 }
 
-/** Spread a group of single-person units evenly, centred on `cx`. */
-function centreUnder(group, cx) {
-  if (!group.length) return;
-  const span = (group.length - 1) * UNIT_GAP;
-  group.forEach((u, i) => { u.x = cx - span / 2 + i * UNIT_GAP; });
+/* Hang a reach-band group beneath `cx` as a compact cluster.
+ *
+ * Grows ACROSS first, then down, to MAX_CLUSTER_RANKS deep, then across
+ * again — so a family of three is one tidy line and a family of nine is a
+ * three-by-three bunch rather than a nine-wide stretch of row. Each rank is
+ * centred on `cx` in its own right, including a partial last rank, so the
+ * cluster reads as a bunch hanging from the branch rather than as a ragged
+ * left-aligned grid. Order is preserved exactly: reading across then down is
+ * still birth order, which is what the growth choreography staggers on.
+ */
+function clusterUnder(group, cx) {
+  const k = group.length;
+  if (!k) return;
+  const cols = k <= 2 ? k : Math.max(2, Math.ceil(k / MAX_CLUSTER_RANKS));
+  group.forEach((u, i) => {
+    const rank = Math.floor(i / cols);
+    const col = i % cols;
+    const inRank = Math.min(cols, k - rank * cols);
+    u.x = cx - ((inRank - 1) * REACH_GAP) / 2 + col * REACH_GAP;
+    u.rank = rank;
+  });
 }
 
 /* The union midpoint a descent ribbon starts from. Computed from the unit's

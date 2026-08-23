@@ -28,7 +28,7 @@ import { Application, Container, Graphics, Text, TextStyle } from 'pixi.js';
 import './canopy.css';
 import { planCanopy, unitAnchor } from './plan.js';
 import { scheduleGrowth, progressAt, easeBud } from './growth.js';
-import { Scalar, ambientOffset, composeCamera, Deflection, rubberBand, SWAY_POD, SWAY_BRANCH } from './motion.js';
+import { Scalar, ambientOffset, composeCamera, Deflection, rubberBand, MIN_READABLE_ZOOM, SWAY_POD, SWAY_BRANCH } from './motion.js';
 import { drawBonds, drawHorizons, horizonOffset, CanopyNode } from './render.js';
 
 const TAP_SLOP = 8;
@@ -208,12 +208,31 @@ export default function CanopyTree({
         const priorScreenX = prior ? anchorX.value + prior.x * zoom.value : null;
         const priorScreenY = prior ? anchorY.value + prior.y * zoom.value : null;
 
-        // 2 — plan the new frame; they become world origin. The Reach band
-        // is dropped on a narrow screen (see plan.js) — a phone cannot hold
+        // 2 — plan the new frame; they become world origin. Reach ANCESTORS
+        // are dropped on a narrow screen (see plan.js) — a phone cannot hold
         // a five-unit row at a readable size, and pretending otherwise is
         // what leaves the family stranded as a postage stamp.
         currentFocus = id;
-        frame = planCanopy(g, id, { includeReach: app.screen.width >= REACH_MIN_WIDTH });
+        const opts = { includeReach: app.screen.width >= REACH_MIN_WIDTH };
+        frame = planCanopy(g, id, opts);
+        /* A composition too tall for the screen at a legible scale gets the
+         * COMPACT row spacing rather than being cropped.
+         *
+         * Measured on the 23-person demo tree at 1440x900: four generations
+         * at the standard row gap need more height than a browser window has
+         * once the top bar and dock are subtracted, so the grandparents were
+         * cut off — while forty per cent of the window's WIDTH sat empty,
+         * because the family is narrower than it is tall. The screen had the
+         * room; the layout was just spending it in the wrong direction.
+         *
+         * The planner is pure and cheap, so this simply asks it a second
+         * question rather than trying to predict the answer to the first. */
+        const insets = insetRef.current;
+        const usableH = app.screen.height - insets.topInset - insets.bottomInset;
+        const planned = frame.bounds.maxY - frame.bounds.minY + 120;
+        if (planned * MIN_READABLE_ZOOM > usableH) {
+          frame = planCanopy(g, id, { ...opts, compact: true });
+        }
         schedule = scheduleGrowth(frame, { reducedMotion });
         clock = 0;
         composed = false;
@@ -243,6 +262,37 @@ export default function CanopyTree({
       const drag = { active: false, moved: false, x: 0, y: 0, id: null, startX: 0, startY: 0 };
       let hoverId = null;
 
+      /* Pinch-to-zoom.
+       *
+       * This was simply missing: the only zoom control was a `wheel`
+       * listener, and a phone has no wheel — so on the device most of this
+       * view is looked at, the frame could not be zoomed at all. Reported
+       * bluntly ("I need to be able to pinch zoom"), and it was a hard
+       * functional gap rather than a tuning problem.
+       *
+       * Every live touch is tracked, because two-finger gestures cannot be
+       * reconstructed from a single pointer stream. Two down starts a pinch;
+       * the zoom follows the ratio of the finger gap to what it was at the
+       * start, anchored so the world point under the midpoint stays under
+       * the midpoint — which is what makes a pinch feel like handling the
+       * page rather than operating a slider. */
+      const pointers = new Map();
+      const pinch = { active: false, dist0: 0, zoom0: 1 };
+      const twoFingers = () => {
+        const [a, b] = [...pointers.values()];
+        return { dist: Math.hypot(b.x - a.x, b.y - a.y), mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 };
+      };
+      /* Zoom about a screen point, keeping the world point beneath it fixed. */
+      const zoomAbout = (nz, sx, sy) => {
+        const clamped = Math.max(0.22, Math.min(1.9, nz));
+        const wx = (sx - anchorX.value) / zoom.value;
+        const wy = (sy - anchorY.value) / zoom.value;
+        zoom.set(clamped);
+        anchorX.set(sx - wx * clamped);
+        anchorY.set(sy - wy * clamped);
+        composed = true; // the viewer has taken the camera
+      };
+
       const idFromTarget = (t) => {
         let n = t;
         while (n && n.__canopyId === undefined) n = n.parent;
@@ -257,6 +307,22 @@ export default function CanopyTree({
       };
 
       app.stage.on('pointerdown', (e) => {
+        pointers.set(e.pointerId, { x: e.global.x, y: e.global.y });
+        if (pointers.size === 2) {
+          // A second finger cancels whatever the first was doing — a pull
+          // half-way through a pinch would fight the gesture — and releases
+          // anyone being held so they spring home rather than freezing.
+          const f = twoFingers();
+          pinch.active = true;
+          pinch.dist0 = f.dist;
+          pinch.zoom0 = zoom.value;
+          drag.active = false;
+          drag.moved = false;
+          releaseDrag();
+          if (hoverId) { nodes.get(hoverId)?.setHover(false); hoverId = null; }
+          return;
+        }
+        if (pointers.size > 2) return;
         drag.active = true; drag.moved = false;
         drag.x = e.global.x; drag.y = e.global.y;
         drag.startX = e.global.x; drag.startY = e.global.y;
@@ -264,6 +330,12 @@ export default function CanopyTree({
         drag.id = idFromTarget(e.target);
       });
       app.stage.on('pointermove', (e) => {
+        if (pointers.has(e.pointerId)) pointers.set(e.pointerId, { x: e.global.x, y: e.global.y });
+        if (pinch.active && pointers.size >= 2) {
+          const f = twoFingers();
+          if (pinch.dist0 > 0) zoomAbout(pinch.zoom0 * (f.dist / pinch.dist0), f.mx, f.my);
+          return;
+        }
         // Hover lift, only while nothing is being dragged.
         if (!drag.active) {
           const over = idFromTarget(e.target);
@@ -306,6 +378,19 @@ export default function CanopyTree({
         drag.id = null;
       };
       const endDrag = (e) => {
+        if (e) pointers.delete(e.pointerId);
+        if (pinch.active && pointers.size < 2) {
+          pinch.active = false;
+          // One finger still down after a pinch → hand straight back to
+          // panning, so the gesture never stutters between the two.
+          if (pointers.size === 1) {
+            const [p] = [...pointers.values()];
+            drag.active = true; drag.moved = true; drag.id = null;
+            drag.x = p.x; drag.y = p.y;
+            drag.startX = p.x; drag.startY = p.y;
+          }
+          return;
+        }
         if (!drag.active) return;
         drag.active = false;
         releaseDrag();
@@ -323,7 +408,12 @@ export default function CanopyTree({
         else onActivateRef.current?.(id);
       };
       app.stage.on('pointerup', endDrag);
-      app.stage.on('pointerupoutside', () => { drag.active = false; releaseDrag(); });
+      app.stage.on('pointerupoutside', (e) => {
+        pointers.delete(e?.pointerId);
+        if (pointers.size < 2) pinch.active = false;
+        drag.active = false;
+        releaseDrag();
+      });
 
       const onWheel = (e) => {
         e.preventDefault();

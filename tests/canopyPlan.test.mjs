@@ -11,7 +11,7 @@
  */
 import assert from 'node:assert/strict';
 import { buildGraph } from '../src/data/graph.js';
-import { planCanopy, unitAnchor, ROW_GAP, POD_GAP } from '../src/viz/canopy/plan.js';
+import { planCanopy, unitAnchor, labelTextFor, ROW_GAP, POD_GAP, MAX_CLUSTER_RANKS, CLUSTER_CLEAR } from '../src/viz/canopy/plan.js';
 
 let passed = 0, failed = 0;
 function test(label, fn) {
@@ -374,11 +374,20 @@ test('planned visual footprints on a row do not overlap', () => {
 
 /* ── The narrow frame (phone) ──────────────────────────────────────────── */
 
-test('dropping Reach removes grandparents and grandchildren, nothing else', () => {
+/* A narrow frame drops Reach ANCESTORS only.
+ *
+ * It used to drop the whole band, for a reason that was about width: a
+ * grandchild row spread along the row and drove the zoom to its floor. Once
+ * grandchildren became clusters hanging under their own parent they stopped
+ * costing width at all, and dropping them only left a phone screen a third
+ * empty. Grandparents still cost width — a second pod per parent, side by
+ * side, above the focus — so they stay behind the horizon on a phone. */
+test('a narrow frame drops Reach ancestors, and keeps descendants', () => {
   const f = planCanopy(graph, 'ME', { includeReach: false });
-  for (const id of ['GA', 'GB', 'GC', 'GD', 'GC1']) {
+  for (const id of ['GA', 'GB', 'GC', 'GD']) {
     assert.ok(!f.nodes.has(id), `${id} should not be drawn in a narrow frame`);
   }
+  assert.ok(f.nodes.has('GC1'), 'a grandchild costs no width and is still drawn');
   // Everything Hearth and Kin is still there.
   for (const id of ['ME', 'SP', 'EX', 'SIB1', 'SIB2', 'PA', 'PB', 'C1', 'C2']) {
     assert.ok(f.nodes.has(id), `${id} must still be drawn`);
@@ -393,10 +402,14 @@ test('a narrow frame STATES what it dropped rather than just stopping', () => {
   const up = f.horizons.find((h) => h.unitId === parentUnit?.id && h.dir === 'up');
   assert.ok(up, 'the parent unit carries an upward horizon');
   assert.equal(up.count, 4, 'all four grandparents are accounted for');
-  // C1 has a child (GC1) who is no longer drawn — that must be stated too.
+  // C1's own child IS drawn now, so the horizon that states what lies beyond
+  // belongs to the grandchild, not to C1 — otherwise the frame would claim to
+  // be hiding someone it is in fact showing.
   const c1Unit = f.nodes.get('C1').unitId;
-  const down = f.horizons.find((h) => h.unitId === c1Unit && h.dir === 'down');
-  assert.ok(down && down.count === 1, 'C1 carries a downward horizon for GC1');
+  assert.ok(
+    !f.horizons.some((h) => h.unitId === c1Unit && h.dir === 'down'),
+    'C1 does not claim to hide a child it is drawing',
+  );
 });
 
 test('a narrow frame is genuinely narrower than a wide one', () => {
@@ -502,6 +515,92 @@ test('blocks stay deterministic', () => {
   const ser = (f) => JSON.stringify([...f.nodes.entries()].map(([k, v]) => [k, v.x, v.y]).sort());
   assert.equal(ser(a), ser(b));
 });
+
+/* ── Reach clusters ────────────────────────────────────────────────────────
+ * A Victorian-density family — nine children, five or six grandchildren each
+ * — is the shape that broke this view: fifty-one grandchildren strung along
+ * one row, nine fans of branches crossing into a mat. These pin the bounds
+ * that stop it happening, not the specific numbers of the layout.
+ */
+const broodPeople = [P('ME', { birth_date: '1870-01-01' })];
+const broodRels = [];
+for (let c = 0; c < 9; c++) {
+  const cid = `C${c}`;
+  broodPeople.push(P(cid, { birth_date: `19${String(c).padStart(2, '0')}-01-01` }));
+  broodRels.push(parent('ME', cid));
+  for (let g = 0; g < 6; g++) {
+    const gid = `G${c}_${g}`;
+    broodPeople.push(P(gid, { birth_date: `193${g}-01-01` }));
+    broodRels.push(parent(cid, gid));
+  }
+}
+const brood = buildGraph(broodPeople, broodRels);
+
+test('a big brood of grandchildren is bounded in width, not strung along a row', () => {
+  const f = planCanopy(brood, 'ME');
+  for (let c = 0; c < 9; c++) {
+    for (let g = 0; g < 6; g++) assert.ok(f.nodes.has(`G${c}_${g}`), `G${c}_${g} is still drawn`);
+  }
+  const w = f.bounds.maxX - f.bounds.minX;
+  const h = f.bounds.maxY - f.bounds.minY;
+  // 54 people must compose, not form a ribbon. The old flat row planned this
+  // exact family at over 8,000px wide against 1,300 tall.
+  assert.ok(w < 4200, `frame is ${Math.round(w)}px wide; a bounded composition should be far narrower`);
+  assert.ok(w / h < 3, `aspect ${(w / h).toFixed(2)} reads as a ribbon rather than a canopy`);
+});
+
+test('a cluster stacks rather than spreading, and never merges with its neighbour', () => {
+  const f = planCanopy(brood, 'ME');
+  const ranksUsed = new Set();
+  for (let c = 0; c < 9; c++) {
+    const xs = [], ys = [];
+    for (let g = 0; g < 6; g++) {
+      const n = f.nodes.get(`G${c}_${g}`);
+      xs.push(n.x); ys.push(n.y); ranksUsed.add(n.rank);
+    }
+    assert.ok(new Set(ys).size > 1, `cluster ${c} is stacked, not one flat line`);
+    assert.ok(new Set(ys).size <= MAX_CLUSTER_RANKS, `cluster ${c} is no deeper than ${MAX_CLUSTER_RANKS}`);
+    // Each cluster owns a clear horizontal span of its own.
+    if (c > 0) {
+      const prev = [];
+      for (let g = 0; g < 6; g++) prev.push(f.nodes.get(`G${c - 1}_${g}`).x);
+      assert.ok(Math.min(...xs) > Math.max(...prev),
+        `cluster ${c} overlaps cluster ${c - 1} — the grouping would be invisible`);
+    }
+  }
+  assert.ok(ranksUsed.size > 1, 'clusters actually use their ranks');
+});
+
+test('a child is spaced by what hangs beneath them, not only by their own name', () => {
+  // One child with a large family, one with none: the gap either side of the
+  // big one has to open up, or its cluster runs under its neighbours.
+  const g = buildGraph(
+    [P('ME'), P('A', { birth_date: '1900-01-01' }), P('B', { birth_date: '1901-01-01' }), P('C', { birth_date: '1902-01-01' }),
+      ...Array.from({ length: 6 }, (_, i) => P(`B${i}`, { birth_date: `193${i}-01-01` }))],
+    [parent('ME', 'A'), parent('ME', 'B'), parent('ME', 'C'),
+      ...Array.from({ length: 6 }, (_, i) => parent('B', `B${i}`))],
+  );
+  const f = planCanopy(g, 'ME');
+  const kidXs = ['B0', 'B1', 'B2', 'B3', 'B4', 'B5'].map((id) => f.nodes.get(id).x);
+  const gapLeft = f.nodes.get('B').x - f.nodes.get('A').x;
+  assert.ok(gapLeft > Math.max(...kidXs) - f.nodes.get('B').x + CLUSTER_CLEAR / 2,
+    'B sits far enough from A that B’s cluster cannot reach under A');
+  // A and C have no children, so nothing forces them apart beyond the norm.
+  assert.ok(f.nodes.get('A').x < f.nodes.get('B').x && f.nodes.get('B').x < f.nodes.get('C').x,
+    'birth order is untouched by the extra spacing');
+});
+
+test('a reach descendant is named by first name; an ancestor keeps their surname', () => {
+  const g = buildGraph(
+    [P('ME'), P('KID'), P('GKID', { display_name: 'Frederick Lancaster' }),
+      P('MUM'), P('GRAN', { display_name: 'Sarah Chynoweth' })],
+    [parent('ME', 'KID'), parent('KID', 'GKID'), parent('MUM', 'ME'), parent('GRAN', 'MUM')],
+  );
+  const f = planCanopy(g, 'ME');
+  assert.equal(labelTextFor({ display_name: 'Frederick Lancaster' }, f.nodes.get('GKID').band, f.nodes.get('GKID').row), 'Frederick');
+  assert.equal(labelTextFor({ display_name: 'Sarah Chynoweth' }, f.nodes.get('GRAN').band, f.nodes.get('GRAN').row), 'Sarah Chynoweth');
+});
+
 
 console.log(`\n  ${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
