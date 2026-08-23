@@ -14,7 +14,7 @@
 
 import { Container, Graphics, Sprite, Texture, Assets, Text, TextStyle } from 'pixi.js';
 import { softShadowTexture, warmGlowTexture } from '../textures.js';
-import { unitAnchor } from './plan.js';
+import { unitAnchor, labelTextFor } from './plan.js';
 import { progressAt, easeBranch, easeBud, bondKey } from './growth.js';
 import { labelDrop } from './geometry.js';
 
@@ -296,7 +296,39 @@ export function drawBonds(g, frame, schedule, t, offsetOf) {
       const start = { x: a.x + ux * (a.r + 3), y: a.y + uy * (a.r + 3) };
       const endFull = { x: c.x - ux * (c.r + 3), y: c.y - uy * (c.r + 3) };
       const end = { x: start.x + (endFull.x - start.x) * e, y: start.y + (endFull.y - start.y) * e };
-      drawDashedPath(g, [start, end], pal.border, 0.75);
+      /* A long thread BOWS beneath the row.
+       *
+       * Two people whose partnership ended can end up far apart — an ex with
+       * a co-parent between them, or two parents each centred over their own
+       * children. Drawn as a straight chord, that thread cuts through every
+       * face and name in between, and on a dense frame it reads as a stray
+       * rule ruled across the picture rather than as a relationship. Bowed
+       * below the name block, it reads as passing BEHIND the people it spans,
+       * which is what it is doing. Short threads — the ordinary ex sitting
+       * next to their former partner — stay straight, because a bow there
+       * would be an affectation. */
+      const span = Math.abs(dx);
+      const sag = span > (a.r + c.r) * 2.4
+        ? Math.min(96, 26 + (span - (a.r + c.r) * 2.4) * 0.11)
+        : 0;
+      if (sag > 0) {
+        const drop = Math.max(a.r, c.r) + labelDrop(a.band || 'kin');
+        const pts = [];
+        const STEPS = 18;
+        for (let s = 0; s <= STEPS; s++) {
+          const f = s / STEPS;
+          const m = 1 - f;
+          // Quadratic through a control point below the midpoint of the row.
+          const ctlY = (start.y + endFull.y) / 2 + drop + sag;
+          pts.push({
+            x: m * m * start.x + 2 * m * f * ((start.x + endFull.x) / 2) + f * f * endFull.x,
+            y: m * m * start.y + 2 * m * f * ctlY + f * f * endFull.y,
+          });
+        }
+        drawDashedPath(g, pts.slice(0, Math.max(2, Math.ceil(pts.length * e))), pal.border, 0.75);
+      } else {
+        drawDashedPath(g, [start, end], pal.border, 0.75);
+      }
     } else {
       /* A current union is a warm HOLLOW the couple sits in, not a boxed
        * outline around them. The first version drew a 2.4px terracotta hoop,
@@ -381,7 +413,14 @@ export function drawHorizons(g, frame, schedule, t, labelLayer) {
     if (!anchor) continue;
     const dir = h.dir === 'up' ? -1 : 1;
     const y = anchor.y + dir * horizonOffset(anchor.r, dir, anchor.band);
-    g.moveTo(anchor.x, anchor.y + dir * anchor.r * 0.9);
+    /* A downward mark's stem starts BELOW the name block, not at the edge of
+     * the portrait: starting at the disc drew a gold rule straight down
+     * through the person's own name on its way to the chip. The chip already
+     * clears the label (see horizonOffset); the line has to as well. */
+    const stemStart = dir < 0
+      ? anchor.y - anchor.r * 0.9
+      : anchor.y + anchor.r + labelDrop(anchor.band) - 4;
+    g.moveTo(anchor.x, stemStart);
     g.lineTo(anchor.x, y - dir * 11);
     g.stroke({ color: GOLD, width: 1.6, alpha: 0.5 * u });
     g.roundRect(anchor.x - 26, y - 11, 52, 22, 11);
@@ -485,7 +524,7 @@ export class CanopyNode {
        * another ring, badge or colour — the glow tells the eye where to
        * land, the type tells it who it landed on. */
       const name = new Text({
-        text: shortName(person),
+        text: labelTextFor(person, node.band, node.row),
         style: labelStyle(
           node.isFocus ? 21 : (BAND_LABEL_SIZE[node.band] ?? 15),
           node.isFocus ? 700 : 600,
@@ -631,12 +670,6 @@ function monogram(p) {
   const first = parts[0]?.[0] || '';
   const last = parts.length > 1 ? parts[parts.length - 1][0] : '';
   return (first + last).toUpperCase();
-}
-
-function shortName(p) {
-  const n = (p.display_name || 'Unknown').trim();
-  const parts = n.split(/\s+/);
-  return parts.length > 2 ? `${parts[0]} ${parts[parts.length - 1]}` : n;
 }
 
 function lifespan(p) {

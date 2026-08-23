@@ -173,6 +173,58 @@ function spineCentre(frame) {
   return xs.reduce((s, x) => s + x, 0) / xs.length;
 }
 
+/* Never slice a person.
+ *
+ * A composition too tall for the screen has to leave something out — that is
+ * arithmetic, not a design failure, and the horizon marks are there to say
+ * what. What IS a design failure is leaving something HALF out: a row of
+ * grandparents cropped through the eyes at the top edge, thirty pixels shy of
+ * being properly present, reads as a rendering bug rather than as an edge.
+ *
+ * So the view is nudged to the nearest position at which neither edge falls
+ * through a row: either that row is fully shown, or it is fully beyond the
+ * edge and its branch runs off cleanly. Candidates are enumerated rather than
+ * solved for — there are at most a handful of rows — and the one closest to
+ * the composed centre wins, so this only ever refines the framing above by a
+ * few dozen pixels. If no candidate clears both edges (rows packed tighter
+ * than the viewport), the composed centre stands unchanged.
+ */
+function clearOfRows(cy, halfView, frame) {
+  const bands = new Map();
+  for (const n of frame.nodes.values()) {
+    const key = Math.round(n.y);
+    const b = bands.get(key) || { top: Infinity, bot: -Infinity };
+    b.top = Math.min(b.top, n.y - n.r);
+    b.bot = Math.max(b.bot, n.y + n.r + labelDrop(n.band));
+    bands.set(key, b);
+  }
+  const rows = [...bands.values()].sort((a, b) => a.top - b.top);
+  const straddles = (c) => {
+    const vt = c - halfView, vb = c + halfView;
+    let n = 0;
+    for (const r of rows) {
+      if (vt > r.top && vt < r.bot) n++;
+      if (vb > r.top && vb < r.bot) n++;
+    }
+    return n;
+  };
+  if (straddles(cy) === 0) return cy;
+  const CLEAR = 6;
+  const candidates = [cy];
+  for (const r of rows) {
+    candidates.push(r.top - CLEAR + halfView, r.bot + CLEAR + halfView);
+    candidates.push(r.top - CLEAR - halfView, r.bot + CLEAR - halfView);
+  }
+  let best = cy, bestScore = [straddles(cy), 0];
+  for (const c of candidates) {
+    const score = [straddles(c), Math.abs(c - cy)];
+    if (score[0] < bestScore[0] || (score[0] === bestScore[0] && score[1] < bestScore[1])) {
+      best = c; bestScore = score;
+    }
+  }
+  return best;
+}
+
 export function composeCamera(frame, viewport) {
   const { width: W, height: H, topInset = 0, bottomInset = 0 } = viewport;
   const safeH = Math.max(120, H - topInset - bottomInset);
@@ -206,8 +258,16 @@ export function composeCamera(frame, viewport) {
    * legible scale, and centres on the FOCUS so the people that matter most
    * are the ones on screen; the row simply extends past both edges and is
    * panned to, exactly as a map does. */
-  const centreOnFocusX = zoom < MIN_READABLE_ZOOM && zx < zy;
-  if (centreOnFocusX) zoom = Math.min(MAX_ZOOM, MIN_READABLE_ZOOM);
+  /* The floor applies whichever axis is binding. It used to be conditional on
+   * the WIDTH being the tighter of the two (`zx < zy`), which meant a frame
+   * that was merely tall — five rows of a family with no unusually wide row —
+   * sailed straight past it: measured at 1440x900, a five-row frame fits to
+   * zoom 0.51 vertically, so every face and every name was rendered at half
+   * the size deemed legible, with empty paper down both sides. Height is no
+   * more of a reason to render people unreadably than width is. */
+  const belowReadable = zoom < MIN_READABLE_ZOOM;
+  if (belowReadable) zoom = Math.min(MAX_ZOOM, MIN_READABLE_ZOOM);
+  const centreOnFocusX = belowReadable && (hi - lo) * zoom > W - PAD;
 
   /* What to centre on when the row runs off the edges. Not the focus alone:
    * a parent unit is centred over the span of ALL its children, so on a wide
@@ -220,10 +280,31 @@ export function composeCamera(frame, viewport) {
   const anchorX = centreOnFocusX
     ? W / 2 - spine * zoom
     : W / 2 - ((lo + hi) / 2) * zoom;
-  const midY = (top + bot) / 2;
-  const fitsVertically = (bot - top) * zoom <= safeH - PAD;
-  const anchorY = topInset + safeH / 2 + safeH * FOCUS_BIAS_Y
-    - (fitsVertically ? midY : 0) * zoom;
+  /* Vertical composition.
+   *
+   * The old rule was binary: if the whole frame fits, centre it; if it does
+   * not, pin the FOCUS at a fixed height and let everything else fall where
+   * it may. Measured on a phone against a person with no recorded parents,
+   * that pinned an empty upper half on screen — nothing above the focus
+   * exists to draw — while pushing their own children off the bottom edge.
+   * Dead space above, content lost below, on a screen that had room for it.
+   *
+   * So: centre the CONTENT, then shift toward the focus, then clamp so the
+   * view never travels past what there is to see. When everything fits, the
+   * clamp collapses to a plain centring and this behaves exactly as before.
+   */
+  const halfView = safeH / (2 * zoom);
+  const contentMid = (top + bot) / 2;
+  let cy = contentMid;
+  if (bot - top > safeH / zoom) {
+    // Taller than the screen: sit the focus a little above centre — the
+    // family opens downward more often than upward — then pull back inside
+    // the content so no edge of the composition shows empty paper.
+    cy = -safeH * FOCUS_BIAS_Y / zoom;
+    cy = Math.max(top + halfView, Math.min(bot - halfView, cy));
+    cy = clearOfRows(cy, halfView, frame);
+  }
+  const anchorY = topInset + safeH / 2 - cy * zoom;
 
   return { zoom, anchorX, anchorY };
 }

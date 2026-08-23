@@ -28,7 +28,7 @@ import { Application, Container, Graphics, Text, TextStyle } from 'pixi.js';
 import './canopy.css';
 import { planCanopy, unitAnchor } from './plan.js';
 import { scheduleGrowth, progressAt, easeBud } from './growth.js';
-import { Scalar, ambientOffset, composeCamera, Deflection, rubberBand, SWAY_POD, SWAY_BRANCH } from './motion.js';
+import { Scalar, ambientOffset, composeCamera, Deflection, rubberBand, MIN_READABLE_ZOOM, SWAY_POD, SWAY_BRANCH } from './motion.js';
 import { drawBonds, drawHorizons, horizonOffset, CanopyNode } from './render.js';
 
 const TAP_SLOP = 8;
@@ -208,12 +208,31 @@ export default function CanopyTree({
         const priorScreenX = prior ? anchorX.value + prior.x * zoom.value : null;
         const priorScreenY = prior ? anchorY.value + prior.y * zoom.value : null;
 
-        // 2 — plan the new frame; they become world origin. The Reach band
-        // is dropped on a narrow screen (see plan.js) — a phone cannot hold
+        // 2 — plan the new frame; they become world origin. Reach ANCESTORS
+        // are dropped on a narrow screen (see plan.js) — a phone cannot hold
         // a five-unit row at a readable size, and pretending otherwise is
         // what leaves the family stranded as a postage stamp.
         currentFocus = id;
-        frame = planCanopy(g, id, { includeReach: app.screen.width >= REACH_MIN_WIDTH });
+        const opts = { includeReach: app.screen.width >= REACH_MIN_WIDTH };
+        frame = planCanopy(g, id, opts);
+        /* A composition too tall for the screen at a legible scale gets the
+         * COMPACT row spacing rather than being cropped.
+         *
+         * Measured on the 23-person demo tree at 1440x900: four generations
+         * at the standard row gap need more height than a browser window has
+         * once the top bar and dock are subtracted, so the grandparents were
+         * cut off — while forty per cent of the window's WIDTH sat empty,
+         * because the family is narrower than it is tall. The screen had the
+         * room; the layout was just spending it in the wrong direction.
+         *
+         * The planner is pure and cheap, so this simply asks it a second
+         * question rather than trying to predict the answer to the first. */
+        const insets = insetRef.current;
+        const usableH = app.screen.height - insets.topInset - insets.bottomInset;
+        const planned = frame.bounds.maxY - frame.bounds.minY + 120;
+        if (planned * MIN_READABLE_ZOOM > usableH) {
+          frame = planCanopy(g, id, { ...opts, compact: true });
+        }
         schedule = scheduleGrowth(frame, { reducedMotion });
         clock = 0;
         composed = false;
