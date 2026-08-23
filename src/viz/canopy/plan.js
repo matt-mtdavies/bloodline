@@ -50,6 +50,14 @@ export const ROW_GAP = 310;
 export const POD_GAP = 150;
 /** Minimum centre-to-centre spacing between adjacent units on one row. */
 export const UNIT_GAP = 208;
+/* Extra clear space between two different unions' children.
+ *
+ * Reported against the owner's real tree: with a father's sons and a
+ * step-mother's daughters on one row, the row read as one undifferentiated
+ * set of four and the branches crossed. The children of one union have to
+ * read as a SET — visibly a family within the family — and the cheapest way
+ * to say that is a gap wider than the one between siblings. */
+export const BLOCK_GAP = 96;
 /** Nominal person radius at full fidelity — spacing and hit-testing use this. */
 export const NODE_R = 54;
 
@@ -470,32 +478,56 @@ export function planCanopy(graph, focusId, opts = {}) {
    * Order within a row is decided before any x is assigned, so de-overlap
    * can only ever widen gaps — it can never reorder anybody. */
 
-  // Row 0: focus at origin; siblings spread outward in birth order, elder
-  // to the left. Former partners sit outboard of everything.
+  /* Row 0 — the focus, their partners, and their siblings.
+   *
+   * PAST TO THE LEFT, PRESENT TO THE RIGHT. Former partners and other
+   * co-parents are placed on the opposite side of the focus from the current
+   * pod, not outboard of it.
+   *
+   * This is not a stylistic choice — it is the fix for a real defect. A
+   * child's branch is anchored on the midpoint between their two actual
+   * parents. With an ex placed OUTBOARD of the current partner, that midpoint
+   * lands squarely on the current partner, and the trunk carrying two boys
+   * down to their own mother and father appeared to descend out of their
+   * mother's new husband instead (reported on the owner's tree: the line to
+   * Matthew and Jason seemed to come from Ken). Putting each partner on their
+   * own side of the focus puts each union's midpoint on its own side too, so
+   * a union anchor can never land on a third person.
+   *
+   * Siblings sit outside the partners on both sides, so the people the focus
+   * actually formed families with stay nearest to them.
+   */
   const focusRight = (focusUnit.memberIds.length - 1) * focusUnit.gap; // right edge of the focus pod
+  const pastUnits = [...formerUnits, ...coParentUnits];
+  pastUnits.forEach((u, i) => { u.x = -(i + 1) * UNIT_GAP; });
+
   const elder = [], younger = [];
   for (const u of sibUnits) (cmp(u.memberIds[0], focusId) < 0 ? elder : younger).push(u);
   elder.sort((a, b) => cmp(b.memberIds[0], a.memberIds[0])); // nearest-in-age first, going left
   younger.sort((a, b) => cmp(a.memberIds[0], b.memberIds[0]));
-  elder.forEach((u, i) => { u.x = -(i + 1) * UNIT_GAP; });
-  // A former partner sits immediately OUTBOARD of the current pod — past the
-  // last current partner, before the siblings. Two things fall out of that:
-  // they can never land between the focus and a current partner (the actual
-  // reported bug), and the bond to them stays SHORT. An earlier pass put
-  // them beyond the outermost sibling instead, which satisfied the same
-  // constraint but drew a dissolved-marriage line clean across two unrelated
-  // people — technically correct, visually nonsense.
-  formerUnits.forEach((u, i) => { u.x = focusRight + (i + 1) * UNIT_GAP; });
-  coParentUnits.forEach((u, i) => {
-    u.x = focusRight + (formerUnits.length + i + 1) * UNIT_GAP;
-  });
-  younger.forEach((u, i) => {
-    u.x = focusRight + (formerUnits.length + coParentUnits.length + i + 1) * UNIT_GAP;
-  });
+  elder.forEach((u, i) => { u.x = -(pastUnits.length + i + 1) * UNIT_GAP; });
   deOverlapRow([focusUnit, ...sibUnits, ...formerUnits, ...coParentUnits]);
 
-  // Row +1: children centred under the focus POD's midpoint (not under the
-  // focus person alone — a child descends from the union).
+  /* Row +1 — UNION BLOCKS.
+   *
+   * The rework this view needed. Each union's children are laid out as ONE
+   * CONTIGUOUS BLOCK, and blocks are ordered by their own anchor's position,
+   * so two unions' children can never interleave.
+   *
+   * The previous pass centred every group independently on its own anchor and
+   * then de-overlapped the whole row. That is subtly but fatally different:
+   * two anchors close together produced two groups occupying the same span,
+   * and de-overlap only widens gaps between neighbours — it cannot un-shuffle
+   * an already-interleaved row. Reported on the owner's real tree as
+   * "Jessica, Matthew, Amie, Jason" — step-daughter, son, step-daughter, son
+   * — with branches crossing over each other. No amount of line-drawing
+   * fixes that; the order itself was wrong.
+   *
+   * Blocks are placed by a single left-to-right sweep: each starts where it
+   * wants to be (under its own parents) and is pushed right only far enough
+   * to clear the block before it. Order is therefore decided before any x is
+   * assigned and can never be disturbed by the spacing pass.
+   */
   const childGroups = new Map();
   for (const cu of childUnits) {
     const anchor = childAnchor.get(cu.memberIds[0]);
@@ -503,14 +535,57 @@ export function planCanopy(graph, focusId, opts = {}) {
     if (!childGroups.has(anchor.id)) childGroups.set(anchor.id, { anchor, units: [] });
     childGroups.get(anchor.id).units.push(cu);
   }
-  for (const { anchor, units: group } of childGroups.values()) {
-    const members = anchor.anchorMemberIds.map((id) => {
+
+  const anchorX = (anchor) => {
+    const xs = anchor.anchorMemberIds.map((id) => {
       const u = units.find((candidate) => !candidate.anchorOnly && candidate.memberIds.includes(id));
       return u ? u.x + (u.offsets.get(id) || 0) : null;
     }).filter(Number.isFinite);
-    const cx = members.length ? members.reduce((sum, x) => sum + x, 0) / members.length : 0;
-    centreUnder(group, cx);
+    return xs.length ? xs.reduce((sum, x) => sum + x, 0) / xs.length : 0;
+  };
+
+  const blocks = [...childGroups.values()]
+    .map((g) => ({ ...g, cx: anchorX(g.anchor) }))
+    // Ordered by where their parents actually are, so a block never has to
+    // reach across another to find its own union.
+    .sort((a, b) => a.cx - b.cx || String(a.anchor.id).localeCompare(String(b.anchor.id)));
+
+  // Uses the units' real visual footprint (portrait OR name, whichever is
+  // wider — see unitExtents), so a block of long-named children reserves the
+  // space its labels actually occupy rather than the space its discs do.
+  const halfOf = (u, side) => {
+    const e = unitExtents(u);
+    return side === 'left' ? -e.left : e.right;
+  };
+  const blockWidth = (g) => {
+    const n = g.units.length;
+    if (!n) return 0;
+    return (n - 1) * UNIT_GAP + halfOf(g.units[0], 'left') + halfOf(g.units[n - 1], 'right');
+  };
+
+  let prevRight = -Infinity;
+  for (const g of blocks) {
+    const w = blockWidth(g);
+    let left = g.cx - w / 2;
+    if (left < prevRight + BLOCK_GAP) left = prevRight + BLOCK_GAP;
+    const start = left + halfOf(g.units[0], 'left');
+    g.units.forEach((u, i) => { u.x = start + i * UNIT_GAP; });
+    prevRight = left + w;
+    g._left = left;
+    g._width = w;
   }
+  /* The sweep only ever pushes RIGHT, so a crowded row drifts off its
+   * parents. Slide the whole run back so its centre sits under the mean of
+   * the unions that produced it — a rigid shift, so it cannot reorder or
+   * re-overlap anything the sweep just resolved. */
+  if (blocks.length) {
+    const runLeft = blocks[0]._left;
+    const runRight = blocks[blocks.length - 1]._left + blocks[blocks.length - 1]._width;
+    const wantCentre = blocks.reduce((sum, g) => sum + g.cx, 0) / blocks.length;
+    const shift = wantCentre - (runLeft + runRight) / 2;
+    if (shift !== 0) for (const g of blocks) for (const u of g.units) u.x += shift;
+  }
+
   deOverlapRow(childUnits);
 
   // Row +2: each grandchild group centred under its own parent.
