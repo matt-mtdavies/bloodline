@@ -22,8 +22,9 @@
  *   • the focus person is always exactly at world origin (0, 0);
  *   • a parent's row is strictly above every one of their children's;
  *   • current partners are members of ONE rigid pod and cannot be separated;
- *   • a former partner is its own unit, bonded, and ordered outboard of the
- *     current pod — by rule, not by anything pushing on anything;
+ *   • a former partner, and anyone who co-parented a child without ever
+ *     partnering, is its own SATELLITE unit — bonded, lifted clear of the
+ *     row it relates to, and never a candidate for the space inside a pod;
  *   • siblings share the focus row, in birth order across it;
  *   • a parent unit is centred over the span of its drawn children;
  *   • units on a row never overlap (a symmetric de-overlap pass);
@@ -39,9 +40,12 @@
  */
 
 import { sortSiblings, sortChildren, ancestorsWithDistance, descendantsWithDistance } from '../../data/graph.js';
+import { labelDrop } from './geometry.js';
 
-/** Vertical distance between generation rows. */
-/* Raised from 265 once the trunk was made to start below each person's NAME
+/** Vertical distance between generation rows — also the minimum clearance
+ *  between a parent and their children: nothing on this row is ever placed
+ *  closer to the row above or below it than this.
+ * Raised from 265 once the trunk was made to start below each person's NAME
  * rather than at the edge of their portrait (see render.js's trunkSpan): that
  * left under 100px for a branch to travel, which compressed the curves into
  * steep, cramped hooks. A branch needs room to read as a sweep. */
@@ -101,6 +105,32 @@ export const RANK_GAP = 152;
 export const MAX_CLUSTER_RANKS = 3;
 /** Clear space between one child's cluster and the next child's. */
 export const CLUSTER_CLEAR = 56;
+
+/* ── Satellites ───────────────────────────────────────────────────────────
+ * A former partner, or someone who co-parented a child with the focus
+ * without ever partnering them, is not a queued extra on the row — it is a
+ * SATELLITE: lifted toward the ancestor direction and gathered near the pod
+ * it relates to, rather than lined up flat with everyone else. That is the
+ * direct answer to a real reference — a hand-drawn arrangement of the
+ * owner's own tree — where an ex sits elevated and to one side of a couple's
+ * pod, reading as one household with a nearby satellite relation, not as a
+ * row of equally-weighted entries. This is also why organic's own arrangement
+ * felt like "communities, not a hierarchy": a peripheral relation was never
+ * pinned to the same strict line as the people it is peripheral TO.
+ *
+ * The lift is capped well short of the row above (see satelliteMaxLift in
+ * planCanopy, computed from the real geometry rather than guessed), so a
+ * satellite can never be mistaken for that row's own content, on a phone's
+ * compact spacing as much as on desktop's.
+ */
+/** Extra lift per satellite beyond the first, so two or three fan upward at
+ *  slightly different heights rather than stacking flat. */
+export const SATELLITE_STEP = 30;
+/** Clear space kept between a lifted satellite and the row above it. */
+export const SATELLITE_MARGIN = 24;
+/** Clear space kept between a satellite and whatever it sits beside — the
+ *  focus pod, or the next satellite out. */
+export const SATELLITE_GAP = 30;
 
 /** Fidelity bands. Size, saturation and opacity all fall off together with
  *  this, so one gradient does three jobs and reads as depth rather than as
@@ -328,13 +358,17 @@ export function planCanopy(graph, focusId, opts = {}) {
     return u;
   };
   const unionSeen = new Set();
+  // Returns whether a real partner edge was found and (first time) drawn —
+  // the co-parent loop below needs to know when it must fall back to a plain
+  // link instead, for two people who share a child but never partnered.
   const addUnion = (a, b) => {
     const edge = graph.partners(a).find((p) => p.id === b);
-    if (!edge) return;
+    if (!edge) return false;
     const key = [a, b].sort().join('|');
-    if (unionSeen.has(key)) return;
+    if (unionSeen.has(key)) return true;
     unionSeen.add(key);
     bonds.push({ kind: 'union', a, b, status: isCurrent(edge.status) ? 'current' : 'former' });
+    return true;
   };
 
   /* ROW 0 — the focus pod. The focus person is claimed first and anchors the
@@ -354,6 +388,7 @@ export function planCanopy(graph, focusId, opts = {}) {
     const u = newUnit(pid, [pid], BAND.KIN);
     u.row = 0;
     u.outboard = true;
+    u.satellite = true;
     units.push(u);
     addUnion(focusId, pid);
     return u;
@@ -377,9 +412,13 @@ export function planCanopy(graph, focusId, opts = {}) {
       const pu = newUnit(ref.id, [ref.id], BAND.KIN);
       pu.row = 0;
       pu.coParent = true;
+      pu.satellite = true;
       units.push(pu);
       coParentUnits.push(pu);
-      addUnion(focusId, ref.id);
+      // A real partner edge (current or former) draws its own union bond.
+      // With none, they are still visibly linked — just never as a former
+      // COUPLE, which is not what this relationship is.
+      if (!addUnion(focusId, ref.id)) bonds.push({ kind: 'thread', a: focusId, b: ref.id });
     }
     if (!claim(c.id)) continue;
     const u = newUnit(c.id, [c.id], BAND.HEARTH);
@@ -566,9 +605,9 @@ export function planCanopy(graph, focusId, opts = {}) {
 
   /* Row 0 — the focus, their partners, and their siblings.
    *
-   * PAST TO THE LEFT, PRESENT TO THE RIGHT. Former partners and other
-   * co-parents are placed on the opposite side of the focus from the current
-   * pod, not outboard of it.
+   * PAST TO THE LEFT of the focus, PRESENT TO THE RIGHT — former partners
+   * and other co-parents (together, the SATELLITES) go on the opposite side
+   * from the current pod, never outboard of it.
    *
    * This is not a stylistic choice — it is the fix for a real defect. A
    * child's branch is anchored on the midpoint between their two actual
@@ -580,19 +619,72 @@ export function planCanopy(graph, focusId, opts = {}) {
    * own side of the focus puts each union's midpoint on its own side too, so
    * a union anchor can never land on a third person.
    *
-   * Siblings sit outside the partners on both sides, so the people the focus
-   * actually formed families with stay nearest to them.
+   * Satellites are LIFTED off the row rather than queued along it — see the
+   * "Satellites" note above — so they no longer consume row-width the way a
+   * same-row unit would: siblings sit exactly as close to the focus as their
+   * own count requires, not pushed out by however many satellites there are.
+   * The lift is capped from the real geometry, not guessed, so it clears the
+   * row above with margin on both the standard and the compact spacing.
+   *
+   * Horizontal placement is measured against the focus pod's REAL footprint
+   * (portrait or name, whichever is wider — unitExtents, same measure the
+   * rest of this file already trusts), not a fixed multiple of UNIT_GAP. A
+   * fixed multiple was tried first and put a long-named ex's own label
+   * overlapping a long-named focus's — two names that happen to be short
+   * left a wide, arbitrary gap; two names that happen to be long collided
+   * outright. Measuring the actual space each name needs is what a hard-coded
+   * fraction can never get right for every name in a real tree.
    */
   const focusRight = (focusUnit.memberIds.length - 1) * focusUnit.gap; // right edge of the focus pod
-  const pastUnits = [...formerUnits, ...coParentUnits];
-  pastUnits.forEach((u, i) => { u.x = -(i + 1) * UNIT_GAP; });
 
   const elder = [], younger = [];
   for (const u of sibUnits) (cmp(u.memberIds[0], focusId) < 0 ? elder : younger).push(u);
   elder.sort((a, b) => cmp(b.memberIds[0], a.memberIds[0])); // nearest-in-age first, going left
   younger.sort((a, b) => cmp(a.memberIds[0], b.memberIds[0]));
-  elder.forEach((u, i) => { u.x = -(pastUnits.length + i + 1) * UNIT_GAP; });
-  deOverlapRow([focusUnit, ...sibUnits, ...formerUnits, ...coParentUnits]);
+  elder.forEach((u, i) => { u.x = -(i + 1) * UNIT_GAP; });
+  younger.forEach((u, i) => { u.x = focusRight + (i + 1) * UNIT_GAP; });
+  deOverlapRow([focusUnit, ...sibUnits]);
+
+  /* Satellites are placed only NOW, once the row above has fully settled —
+   * de-overlapping the focus against its siblings can itself shift the focus
+   * pod's own x (a younger sibling's initial guess can overlap it before
+   * resolution), and a satellite has to gather next to where the row ACTUALLY
+   * ended up, not where it started.
+   *
+   * The lift is computed to clear row 0's TALLEST content — the hearth-band
+   * focus pod, which reaches further up than a kin-band sibling does — so
+   * once a satellite clears the pod it has, for free, also cleared every
+   * sibling beside it, at ANY horizontal distance: their vertical extent is
+   * strictly smaller. That is what actually lets a satellite sit close, the
+   * way the reference does, rather than needing to be pushed out past
+   * whichever siblings happen to be nearby.
+   *
+   * It cannot always reach that far, though: the same lift is capped short of
+   * row -1 above (satelliteMaxLift), and on a phone's compact spacing the two
+   * requirements can genuinely conflict — there is not enough vertical room
+   * between the rows to fully clear a tall focus pod AND stay off row -1. In
+   * that one case, and only that case, horizontal clearance is measured
+   * against the WHOLE settled row (every sibling, not just the pod) instead
+   * of the pod alone — the fallback a fixed lift can't buy its way out of. */
+  // The focus's UPWARD extent has no label reservation — nothing sits above
+  // a portrait — so clearing it needs only its own radius, not its
+  // labelDrop too (that guards its bottom edge, a different comparison).
+  const kinR = NODE_R * BAND_SCALE[BAND.KIN];
+  const hearthClearLift = NODE_R * BAND_SCALE[BAND.HEARTH] + SATELLITE_MARGIN + kinR + labelDrop(BAND.KIN);
+  const satelliteMaxLift = Math.max(48, rowGap - 2 * kinR - labelDrop(BAND.KIN) - SATELLITE_MARGIN);
+  const baseLift = Math.min(hearthClearLift, satelliteMaxLift);
+  const liftClearsWholeRow = baseLift >= hearthClearLift - 1e-6;
+  const satellites = [...formerUnits, ...coParentUnits];
+  const clearanceUnits = liftClearsWholeRow ? [focusUnit] : [focusUnit, ...sibUnits];
+  const row0LeftEdge = Math.min(...clearanceUnits.map((u) => u.x + unitExtents(u).left));
+  let satelliteEdge = row0LeftEdge - SATELLITE_GAP;
+  satellites.forEach((u, i) => {
+    const halfWidth = Math.max(NODE_R * BAND_SCALE[u.band], u.labelHalfWidths.get(u.memberIds[0]) || 0);
+    satelliteEdge -= halfWidth;
+    u.x = satelliteEdge;
+    satelliteEdge -= halfWidth + SATELLITE_GAP; // clear space before the next one, too
+    u.satelliteLift = Math.min(baseLift + i * SATELLITE_STEP, satelliteMaxLift);
+  });
 
   /* Row +1 — UNION BLOCKS.
    *
@@ -866,18 +958,23 @@ export function planCanopy(graph, focusId, opts = {}) {
   const nodes = new Map();
   for (const u of units) {
     if (u.anchorOnly) continue;
+    const rowBaselineY = u.row * rowGap + (u.rank || 0) * RANK_GAP;
     for (const mid of u.memberIds) {
       nodes.set(mid, {
         id: mid,
         unitId: u.id,
         x: u.x + u.offsets.get(mid),
-        y: u.row * rowGap + (u.rank || 0) * RANK_GAP,
+        // A satellite's OWN dot is lifted; the row's BASELINE is not — see
+        // rowBaselineY below and unitAnchor's use of it.
+        y: rowBaselineY - (u.satelliteLift || 0),
+        rowBaselineY,
         row: u.row,
         rank: u.rank || 0,
         band: u.band,
         r: NODE_R * BAND_SCALE[u.band],
         labelHalfWidth: u.labelHalfWidths?.get(mid) || 0,
         isFocus: mid === focusId,
+        satellite: !!u.satellite,
       });
     }
   }
@@ -936,7 +1033,12 @@ export function unitAnchor(frame, unitId) {
   if (!positions.length) return null;
   const lo = Math.min(...positions.map((n) => n.x));
   const hi = Math.max(...positions.map((n) => n.x));
-  const y = positions.reduce((sum, n) => sum + n.y, 0) / positions.length;
+  // A satellite's structural LIFT is about where its own dot sits, not about
+  // where a descent line should start — a child with one lifted parent must
+  // still branch from the row's true baseline, or the trunk would visibly
+  // originate from nowhere. rowBaselineY excludes the lift; ordinary units
+  // have no lift at all, so this is exactly today's value for everyone else.
+  const y = positions.reduce((sum, n) => sum + (n.rowBaselineY ?? n.y), 0) / positions.length;
   return {
     x: (lo + hi) / 2,
     y,
