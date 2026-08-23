@@ -117,7 +117,10 @@ export function scheduleGrowth(frame, opts = {}) {
       bonds.set(key, { delay, dur: BOND_MS });
       // Whichever end is not already scheduled opens at this branch's tip.
       assign(nodes, b.child, delay, BOND_MS, frame.focusId);
-      for (const m of parentUnit.memberIds) assign(nodes, m, delay, BOND_MS, frame.focusId);
+      const parentIds = parentUnit.anchorMemberIds?.length
+        ? parentUnit.anchorMemberIds
+        : parentUnit.memberIds;
+      for (const m of parentIds) assign(nodes, m, delay, BOND_MS, frame.focusId);
     }
   });
 

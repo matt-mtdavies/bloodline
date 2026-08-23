@@ -26,7 +26,7 @@
 import { useEffect, useRef } from 'react';
 import { Application, Container, Graphics, Text, TextStyle } from 'pixi.js';
 import './canopy.css';
-import { planCanopy } from './plan.js';
+import { planCanopy, unitAnchor } from './plan.js';
 import { scheduleGrowth, progressAt, easeBud } from './growth.js';
 import { Scalar, ambientOffset, composeCamera, Deflection, rubberBand, SWAY_POD, SWAY_BRANCH } from './motion.js';
 import { drawBonds, drawHorizons, horizonOffset, CanopyNode } from './render.js';
@@ -185,8 +185,9 @@ export default function CanopyTree({
           } else {
             const pu = frame.units.find((u) => u.id === b.parentUnit);
             if (!pu) continue;
-            if (b.child === id) { for (const m of pu.memberIds) out.push([m, SWAY_BRANCH]); }
-            else if (pu.memberIds.includes(id)) out.push([b.child, SWAY_BRANCH]);
+            const parentIds = pu.anchorMemberIds?.length ? pu.anchorMemberIds : pu.memberIds;
+            if (b.child === id) { for (const m of parentIds) out.push([m, SWAY_BRANCH]); }
+            else if (parentIds.includes(id)) out.push([b.child, SWAY_BRANCH]);
           }
         }
         return out;
@@ -387,11 +388,10 @@ export default function CanopyTree({
           if (!t) continue;
           const u = frame.units.find((x) => x.id === h.unitId);
           if (!u) continue;
-          const offs = u.memberIds.map((m) => u.offsets.get(m));
-          const mid = (Math.min(...offs) + Math.max(...offs)) / 2;
-          const n = frame.nodes.get(u.memberIds[0]);
+          const anchor = unitAnchor(frame, u.id);
+          if (!anchor) continue;
           const dir = h.dir === 'up' ? -1 : 1;
-          t.position.set(u.x + mid, n.y + dir * horizonOffset(n.r, dir, u.band));
+          t.position.set(anchor.x, anchor.y + dir * horizonOffset(anchor.r, dir, anchor.band));
         }
       });
 

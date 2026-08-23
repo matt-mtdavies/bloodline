@@ -248,9 +248,102 @@ test('every bond references people who are actually in the frame', () => {
         assert.ok(f.nodes.has(b.a) && f.nodes.has(b.b), `union bond to someone off-frame (focus ${focusId})`);
       } else {
         assert.ok(f.nodes.has(b.child), `descent bond to an undrawn child (focus ${focusId})`);
-        assert.ok(f.units.some((u) => u.id === b.parentUnit), `descent bond from an undrawn unit (focus ${focusId})`);
+        const unit = f.units.find((u) => u.id === b.parentUnit);
+        assert.ok(unit, `descent bond from an undrawn unit (focus ${focusId})`);
+        const parentIds = unit.anchorMemberIds?.length ? unit.anchorMemberIds : unit.memberIds;
+        for (const id of parentIds) {
+          assert.ok(f.nodes.has(id), `descent anchor references undrawn parent ${id} (focus ${focusId})`);
+        }
       }
     }
+  }
+});
+
+const parentIdsForBond = (f, childId) => {
+  const bond = f.bonds.find((b) => b.kind === 'descent' && b.child === childId);
+  assert.ok(bond, `expected a descent bond for ${childId}`);
+  const unit = f.units.find((u) => u.id === bond.parentUnit);
+  assert.ok(unit, `expected parent junction ${bond.parentUnit}`);
+  return [...(unit.anchorMemberIds?.length ? unit.anchorMemberIds : unit.memberIds)].sort();
+};
+
+test('a selected child shows both exact parents, never a parent’s new partner', () => {
+  const g = buildGraph(
+    [P('CHRIS'), P('HEATHER'), P('DENISE'), P('MATTHEW'), P('JASON')],
+    [
+      partner('CHRIS', 'HEATHER', 'former'),
+      partner('CHRIS', 'DENISE'),
+      parent('CHRIS', 'MATTHEW'), parent('HEATHER', 'MATTHEW'),
+      parent('CHRIS', 'JASON'), parent('HEATHER', 'JASON'),
+    ],
+  );
+  const f = planCanopy(g, 'JASON', { includeReach: false });
+  assert.ok(f.nodes.has('CHRIS') && f.nodes.has('HEATHER'), 'both recorded parents are visible');
+  assert.deepEqual(parentIdsForBond(f, 'JASON'), ['CHRIS', 'HEATHER']);
+  assert.ok(!parentIdsForBond(f, 'JASON').includes('DENISE'), 'the new partner is not promoted to parent');
+});
+
+test('half siblings descend from their own exact parent set', () => {
+  const g = buildGraph(
+    [P('A'), P('B'), P('C'), P('ME'), P('HALF')],
+    [
+      partner('A', 'B'), partner('A', 'C', 'former'),
+      parent('A', 'ME'), parent('B', 'ME'),
+      parent('A', 'HALF'), parent('C', 'HALF'),
+    ],
+  );
+  const f = planCanopy(g, 'ME', { includeReach: false });
+  assert.deepEqual(parentIdsForBond(f, 'ME'), ['A', 'B']);
+  assert.deepEqual(parentIdsForBond(f, 'HALF'), ['A', 'C']);
+  assert.ok(f.nodes.has('C'), 'the half sibling’s other parent is visible as context');
+});
+
+test('children from different partners use different parental junctions', () => {
+  const g = buildGraph(
+    [P('ME'), P('P1'), P('P2'), P('C1'), P('C2')],
+    [
+      partner('ME', 'P1'), partner('ME', 'P2'),
+      parent('ME', 'C1'), parent('P1', 'C1'),
+      parent('ME', 'C2'), parent('P2', 'C2'),
+    ],
+  );
+  const f = planCanopy(g, 'ME', { includeReach: false });
+  assert.deepEqual(parentIdsForBond(f, 'C1'), ['ME', 'P1']);
+  assert.deepEqual(parentIdsForBond(f, 'C2'), ['ME', 'P2']);
+  const bonds = f.bonds.filter((b) => b.kind === 'descent' && ['C1', 'C2'].includes(b.child));
+  assert.notEqual(bonds[0].parentUnit, bonds[1].parentUnit, 'each partnership owns its own branch');
+});
+
+test('every visible descent is backed by the child’s recorded parent edges', () => {
+  const shapes = [frame, planCanopy(graph, 'PA'), planCanopy(graph, 'C1')];
+  for (const f of shapes) {
+    for (const b of f.bonds.filter((x) => x.kind === 'descent')) {
+      const actual = new Set(graph.parents(b.child).map((p) => p.id));
+      const u = f.units.find((x) => x.id === b.parentUnit);
+      const shown = u.anchorMemberIds?.length ? u.anchorMemberIds : u.memberIds;
+      for (const id of shown) assert.ok(actual.has(id), `${id} is not a recorded parent of ${b.child}`);
+    }
+  }
+});
+
+test('planned visual footprints on a row do not overlap', () => {
+  const long = buildGraph(
+    [
+      P('A', { display_name: 'Christopher Monish-Davies' }),
+      P('B', { display_name: 'Denise Sutcliffe-Montgomery' }),
+      P('C', { display_name: 'Jason Alexander Davies' }),
+    ],
+    [partner('A', 'B'), parent('A', 'C'), parent('B', 'C')],
+  );
+  const f = planCanopy(long, 'A', { includeReach: false });
+  const row = [...f.nodes.values()].filter((n) => n.row === 0).sort((a, b) => a.x - b.x);
+  for (let i = 1; i < row.length; i++) {
+    const prev = row[i - 1], cur = row[i];
+    assert.ok(
+      prev.x + Math.max(prev.r, prev.labelHalfWidth) + 20
+        <= cur.x - Math.max(cur.r, cur.labelHalfWidth),
+      `${prev.id} and ${cur.id} label footprints overlap`,
+    );
   }
 });
 
@@ -271,8 +364,8 @@ test('dropping Reach removes grandparents and grandchildren, nothing else', () =
 
 test('a narrow frame STATES what it dropped rather than just stopping', () => {
   const f = planCanopy(graph, 'ME', { includeReach: false });
-  const parentUnitId = f.nodes.get('PA').unitId;
-  const up = f.horizons.find((h) => h.unitId === parentUnitId && h.dir === 'up');
+  const parentUnit = f.units.find((u) => u.anchorMemberIds?.includes('PA') && u.anchorMemberIds?.includes('PB'));
+  const up = f.horizons.find((h) => h.unitId === parentUnit?.id && h.dir === 'up');
   assert.ok(up, 'the parent unit carries an upward horizon');
   assert.equal(up.count, 4, 'all four grandparents are accounted for');
   // C1 has a child (GC1) who is no longer drawn — that must be stated too.

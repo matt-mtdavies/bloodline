@@ -252,20 +252,22 @@ function liveAnchor(frame, unitId, offsetOf) {
   if (!u) return null;
   let sx = 0, sy = 0, n = 0;
   let lo = Infinity, hi = -Infinity;
-  for (const m of u.memberIds) {
+  const anchorIds = u.anchorMemberIds?.length ? u.anchorMemberIds : u.memberIds;
+  for (const m of anchorIds) {
     const p = livePos(frame, m, offsetOf);
     if (!p) continue;
     sx += p.x; sy += p.y; n++;
     lo = Math.min(lo, p.x); hi = Math.max(hi, p.x);
   }
   if (!n) return unitAnchor(frame, unitId);
-  const first = frame.nodes.get(u.memberIds[0]);
+  const first = anchorIds.map((id) => frame.nodes.get(id)).find(Boolean);
+  if (!first) return unitAnchor(frame, unitId);
   return {
     x: (lo + hi) / 2,
     y: sy / n,
     r: first.r,
     band: first.band,
-    isPod: u.memberIds.length > 1,
+    isPod: anchorIds.length > 1,
   };
 }
 

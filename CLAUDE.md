@@ -55,6 +55,34 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
 
 ## Status — what's built
 
+- **Canopy now composes truthful blended-family units and readable mobile
+  frames, without changing any existing tree view.** The first Canopy planner
+  routed every sibling through the selected person's first parent pod and
+  every child through the selected person's whole current-partner pod. That
+  could omit a real parent, turn a parent's new partner into an apparent
+  mother/father, and imply that every current partner co-parented every child.
+  `src/viz/canopy/plan.js` now creates a deterministic, child-specific junction
+  from each person's exact recorded parent edges. Full siblings can reuse a
+  junction; half/step siblings introduce their actual other parent on the
+  parent row; children from different partnerships receive distinct descent
+  anchors; an unrecorded partner edge is never fabricated. The selected
+  person's own parents stay centred over the selected person rather than the
+  midpoint of an off-screen sibling row, so both remain present in the mobile
+  composition. Layout spacing now reserves the rendered name as well as the
+  portrait, widens long-name pods, and carries those footprints into bounds;
+  phone framing holds a legible 0.70 minimum zoom and lets secondary context
+  extend for panning instead of shrinking the core family into unreadable
+  dots. Anchor-only junctions were threaded through Canopy's renderer,
+  choreography, sway and horizon positioning. `tests/canopyPlan.test.mjs`
+  includes the reported shape (Chris + Heather are Matthew/Jason's parents;
+  Denise is Chris's new partner but not their parent), half-siblings, two
+  child partnerships, a mechanical "every drawn parent is a real parent
+  edge" invariant, and long-name footprint clearance. Verified with all unit
+  tests, `npm run build`, the standard Chromium smoke test, and an opt-in demo
+  screenshot pass at 390x844. The opt-in remains off by default. The diff is
+  confined to `src/viz/canopy/**`, Canopy tests, and this status note; organic,
+  Chart, List, Lineage and shared graph/layout code are untouched.
+
 - **Organic tree: parents now consistently sit above their children, partner
   pods level with each other, and the reapplied pod-anchor + tapered
   parent→child lines** (real feedback: "1. The parents are not consistently
