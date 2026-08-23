@@ -25,7 +25,9 @@
  *   • a former partner, and anyone who co-parented a child without ever
  *     partnering, is its own SATELLITE unit — bonded, lifted clear of the
  *     row it relates to, and never a candidate for the space inside a pod;
- *   • siblings share the focus row, in birth order across it;
+ *   • siblings share the focus GENERATION, in birth order across it, fanned
+ *     along a circular arc below the shared baseline rather than sitting
+ *     dead level — the focus and their current partner never move;
  *   • a parent unit is centred over the span of its drawn children;
  *   • units on a row never overlap (a symmetric de-overlap pass);
  *   • no Math.random, and every sort ends in an id comparison, so two
@@ -131,6 +133,64 @@ export const SATELLITE_MARGIN = 24;
 /** Clear space kept between a satellite and whatever it sits beside — the
  *  focus pod, or the next satellite out. */
 export const SATELLITE_GAP = 30;
+
+/* ── The peer arc ─────────────────────────────────────────────────────────
+ * A sibling row sitting dead level reads as a LIST. The reference — the
+ * owner's own hand-drawn tree — showed a couple's children fanning out in a
+ * circle: a bowl CRADLED beneath the pod, deepest near the centre and
+ * rising back toward the baseline at the outer edges — a "U", not an "n".
+ * Two earlier attempts got the shape wrong before this one, both corrected
+ * from direct visual feedback rather than guessed right the first time: a
+ * sine wave produced repeated up-down bumps instead of one smooth curve;
+ * then a plain circular arc had the curvature backwards — shallow at the
+ * centre and deepest at the edges, a dome arching AWAY from the pod rather
+ * than a bowl hanging FROM it. This is the corrected shape: an actual
+ * circular arc (peerArcDip), computed from each sibling's real resolved x
+ * (after de-overlap has settled it, not a rank index), fed the distance
+ * from the row's own CENTRE rather than from its edge. The circle's radius
+ * is chosen so the row's own widest sibling reaches exactly the safe
+ * amplitude, whatever that width turns out to be — a family of three fans
+ * gently, a family of nine fans the same shape, just reaching further out
+ * to do it.
+ *
+ * The focus themself never moves — the fixed-point contract pins them at
+ * world origin exactly — and neither does their current partner, who is
+ * level with them by construction (a rigid pod). Only the siblings gathered
+ * around that pod fan.
+ *
+ * Always downward, never up. A downward dip can only ever travel into empty
+ * space: Canopy never draws a sibling's own children, so nothing sits below
+ * a sibling to collide with. Upward would reach into exactly the band a
+ * satellite's own lift was carefully budgeted to keep clear (see the
+ * Satellites note above) — one direction was free, the other already spoken
+ * for.
+ */
+/** Deepest a sibling ever dips below the row-0 baseline — reached only by
+ *  the row's own widest member, whatever their actual distance turns out
+ *  to be. A TARGET, not a guarantee: see siblingArcMaxAmp in planCanopy,
+ *  which can clamp this down on compact spacing.
+ *
+ * Two rounds of live feedback moved this, both because a smaller value
+ * mathematically WAS a genuine curve but read as a flat line once the
+ * camera did its job: 26px (under a third of a kin portrait's own ~93px
+ * diameter) was invisible on a real dense family once zoomed out to fit;
+ * 80px, reached only in theory at a row's exact centre, meant the row's
+ * actual nearest sibling (never AT the centre) still only reached ~59px in
+ * practice — still read as "tiny". The fan has to survive the zoom-out a
+ * wide family actually invites, since that is exactly when it matters most,
+ * so this is deliberately bold: comfortably more than a full portrait's own
+ * diameter. */
+export const SIBLING_ARC_AMP = 150;
+
+/** A circular arc through the origin (0, 0) and (±xmax, amp), open
+ *  downward: shallow near the centre, deepening smoothly toward the edges.
+ *  `xmax` is the row's own widest sibling's |x| — the arc always spans
+ *  exactly the row it's drawn for, never a fixed, arbitrary reach. */
+export function peerArcDip(x, xmax, amp) {
+  if (xmax <= 0) return 0;
+  const r = (xmax * xmax + amp * amp) / (2 * amp);
+  return r - Math.sqrt(Math.max(0, r * r - x * x));
+}
 
 /** Fidelity bands. Size, saturation and opacity all fall off together with
  *  this, so one gradient does three jobs and reads as depth rather than as
@@ -644,6 +704,37 @@ export function planCanopy(graph, focusId, opts = {}) {
   elder.forEach((u, i) => { u.x = -(i + 1) * UNIT_GAP; });
   younger.forEach((u, i) => { u.x = focusRight + (i + 1) * UNIT_GAP; });
   deOverlapRow([focusUnit, ...sibUnits]);
+  /* The arc is computed from each sibling's REAL, final x — only known once
+   * de-overlap has settled the row — not a rank index. A long name pushing
+   * its neighbours further apart changes actual on-screen distance, and the
+   * arc has to answer to that, or a wide name would sit on a curve meant for
+   * a narrower one. */
+  if (sibUnits.length) {
+    const xmax = Math.max(...sibUnits.map((u) => Math.abs(u.x)));
+    /* The bold target amplitude is capped from real geometry, not trusted
+     * blind — a deeply-dipping sibling near the centre sits close to where
+     * the FOCUS's own children are anchored one row down, and on compact
+     * spacing (a short ROW_GAP_COMPACT) that headroom is genuinely tight.
+     * A HEARTH-band child's own top edge (no label above it, same reasoning
+     * as the focus pod's in the Satellites note) is the nearest thing below
+     * to stay clear of. */
+    const hearthR = NODE_R * BAND_SCALE[BAND.HEARTH];
+    const kinR = NODE_R * BAND_SCALE[BAND.KIN];
+    const siblingArcMaxAmp = Math.max(
+      24,
+      rowGap - hearthR - kinR - labelDrop(BAND.KIN) - SATELLITE_MARGIN,
+    );
+    const amp = Math.min(SIBLING_ARC_AMP, siblingArcMaxAmp);
+    // A bowl CRADLED under the pod, not a dome rising over it: deepest
+    // near the centre (directly under where the parent pod sits — see the
+    // row -1 centring rule below, which lands them close to here) and
+    // rising back toward the row-0 baseline at the outer edges, the same
+    // way the reference's fanned children read as hanging FROM their
+    // parents rather than arching away from them. peerArcDip already
+    // measures "how deep at this distance from an edge" — feeding it the
+    // distance from the CENTRE instead flips which end is deepest.
+    for (const u of sibUnits) u.arcDip = peerArcDip(xmax - Math.abs(u.x), xmax, amp);
+  }
 
   /* Satellites are placed only NOW, once the row above has fully settled —
    * de-overlapping the focus against its siblings can itself shift the focus
@@ -959,15 +1050,27 @@ export function planCanopy(graph, focusId, opts = {}) {
   for (const u of units) {
     if (u.anchorOnly) continue;
     const rowBaselineY = u.row * rowGap + (u.rank || 0) * RANK_GAP;
+    // What a descent anchor should average over when THIS unit is one of
+    // several drawn parents: the arc dip is real (a sibling's own horizon
+    // chip has to follow it — see unitAnchor's own note on this), but a
+    // satellite's structural lift is not — that exclusion is the whole
+    // point of rowBaselineY (see the Satellites note above). Arc dip is
+    // never actually set on a row -1 parent unit in the first place (only
+    // row 0 siblings wave), so this only ever differs from rowBaselineY on
+    // exactly the unit it is meant to differ on.
+    const anchorY = rowBaselineY + (u.arcDip || 0);
     for (const mid of u.memberIds) {
       nodes.set(mid, {
         id: mid,
         unitId: u.id,
         x: u.x + u.offsets.get(mid),
-        // A satellite's OWN dot is lifted; the row's BASELINE is not — see
-        // rowBaselineY below and unitAnchor's use of it.
-        y: rowBaselineY - (u.satelliteLift || 0),
+        // A satellite's OWN dot is lifted, and a sibling's own dot waves —
+        // the row's BASELINE is neither. See anchorY below and
+        // unitAnchor's use of it: a descent's start point must stay put
+        // regardless of how the child at its far end happens to be drawn.
+        y: rowBaselineY - (u.satelliteLift || 0) + (u.arcDip || 0),
         rowBaselineY,
+        anchorY,
         row: u.row,
         rank: u.rank || 0,
         band: u.band,
@@ -1036,9 +1139,10 @@ export function unitAnchor(frame, unitId) {
   // A satellite's structural LIFT is about where its own dot sits, not about
   // where a descent line should start — a child with one lifted parent must
   // still branch from the row's true baseline, or the trunk would visibly
-  // originate from nowhere. rowBaselineY excludes the lift; ordinary units
-  // have no lift at all, so this is exactly today's value for everyone else.
-  const y = positions.reduce((sum, n) => sum + (n.rowBaselineY ?? n.y), 0) / positions.length;
+  // originate from nowhere. anchorY excludes the satellite lift but keeps a
+  // sibling's own peer-arc dip, so a sibling's horizon chip anchors at their
+  // real dipped position rather than snapping back to an undipped baseline.
+  const y = positions.reduce((sum, n) => sum + (n.anchorY ?? n.y), 0) / positions.length;
   return {
     x: (lo + hi) / 2,
     y,

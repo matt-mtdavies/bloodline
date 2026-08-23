@@ -11,7 +11,7 @@
  */
 import assert from 'node:assert/strict';
 import { buildGraph } from '../src/data/graph.js';
-import { planCanopy, unitAnchor, labelTextFor, ROW_GAP, ROW_GAP_COMPACT, POD_GAP, UNIT_GAP, NODE_R, BAND_SCALE, MAX_CLUSTER_RANKS, CLUSTER_CLEAR } from '../src/viz/canopy/plan.js';
+import { planCanopy, unitAnchor, labelTextFor, ROW_GAP, ROW_GAP_COMPACT, POD_GAP, UNIT_GAP, NODE_R, BAND_SCALE, MAX_CLUSTER_RANKS, CLUSTER_CLEAR, SIBLING_ARC_AMP, peerArcDip } from '../src/viz/canopy/plan.js';
 import { labelDrop } from '../src/viz/canopy/geometry.js';
 
 let passed = 0, failed = 0;
@@ -118,9 +118,11 @@ test('a union anchor never lands on a third person', () => {
   }
 });
 
-test('siblings share the focus row, in birth order across it', () => {
-  assert.equal(at('SIB1').y, at('ME').y);
-  assert.equal(at('SIB2').y, at('ME').y);
+test('siblings share the focus GENERATION, in birth order across it', () => {
+  /* Same structural row (see the peer-arc tests below for why their
+   * rendered y is no longer required to be byte-identical to the focus's). */
+  assert.equal(at('SIB1').row, at('ME').row);
+  assert.equal(at('SIB2').row, at('ME').row);
   // SIB1 (1980) is elder → left of ME; SIB2 (1990) is younger → right.
   assert.ok(at('SIB1').x < at('ME').x, 'the elder sibling is to the left');
   assert.ok(at('SIB2').x > at('ME').x, 'the younger sibling is to the right');
@@ -718,6 +720,103 @@ test('a satellite never overlaps a sibling, even on compact spacing where full v
   const sib1Top = sib1.y - sib1.r, sib1Bottom = sib1.y + sib1.r + 34;
   const yOverlaps = exTop < sib1Bottom && exBottom > sib1Top;
   if (yOverlaps) assert.ok(exRight < sib1Left, 'their y-bands overlap, so they must not overlap in x either');
+});
+
+/* ── The peer arc ─────────────────────────────────────────────────────────
+ * A couple's children fanning at genuinely varied heights, not queued on
+ * one ruler-straight line — the direct answer to the owner's own hand-drawn
+ * reference. */
+const bigFamily = (() => {
+  const people = [P('ME', { birth_date: '1985-01-01' }), P('SP', { birth_date: '1986-01-01' })];
+  const rels = [partner('ME', 'SP')];
+  const sibs = [];
+  for (let i = 0; i < 4; i++) {
+    const id = `ELDER${i}`;
+    people.push(P(id, { birth_date: `${1975 - i}-01-01` }));
+    rels.push(parent('PA', id), parent('PB', id));
+    sibs.push(id);
+  }
+  for (let i = 0; i < 4; i++) {
+    const id = `YOUNGER${i}`;
+    people.push(P(id, { birth_date: `${1988 + i}-01-01` }));
+    rels.push(parent('PA', id), parent('PB', id));
+    sibs.push(id);
+  }
+  people.push(P('PA', { birth_date: '1950-01-01' }), P('PB', { birth_date: '1952-01-01' }));
+  rels.push(parent('PA', 'ME'), parent('PB', 'ME'));
+  return { graph: buildGraph(people, rels), sibs };
+})();
+
+test('the focus and their current partner never wave — only siblings do', () => {
+  const f = planCanopy(bigFamily.graph, 'ME');
+  assert.equal(f.nodes.get('ME').y, 0);
+  assert.equal(f.nodes.get('SP').y, 0, 'a rigid pod is level by construction, arc or not');
+});
+
+test('a sibling only ever dips DOWN, and never past the safe amplitude', () => {
+  const f = planCanopy(bigFamily.graph, 'ME');
+  for (const id of bigFamily.sibs) {
+    const y = f.nodes.get(id).y;
+    assert.ok(y >= -1e-9, `${id} at y=${y} must never rise above the row-0 baseline`);
+    assert.ok(y <= SIBLING_ARC_AMP + 1e-9, `${id} at y=${y} must never exceed the safe amplitude`);
+  }
+});
+
+test('the arc is a genuine circle — smooth and monotonic, deepest near the centre', () => {
+  /* Two earlier attempts got this shape wrong: a sine wave produced
+   * repeated up-down bumps; a plain (uninverted) circular arc had the
+   * curvature backwards, domed AWAY from the focus rather than cradled
+   * beneath it. The real reference is a bowl — deepest near the centre,
+   * rising smoothly and steadily back toward the baseline at the edge. */
+  const f = planCanopy(bigFamily.graph, 'ME');
+  const elderYs = ['ELDER0', 'ELDER1', 'ELDER2', 'ELDER3'].map((id) => f.nodes.get(id).y);
+  for (let i = 1; i < elderYs.length; i++) {
+    assert.ok(elderYs[i] < elderYs[i - 1] - 1e-9,
+      `expected a smooth rise back toward the baseline going outward, got: ${elderYs}`);
+  }
+});
+
+test('the row’s own widest sibling returns exactly to the baseline', () => {
+  /* The circle's radius is solved so it passes through (0, amp) at the
+   * centre and (xmax, 0) at the row's own widest point — pin the far end
+   * of that solve directly, not just "somewhere near the baseline". */
+  const f = planCanopy(bigFamily.graph, 'ME');
+  const ys = bigFamily.sibs.map((id) => f.nodes.get(id).y);
+  assert.ok(Math.abs(Math.min(...ys)) < 1e-6);
+});
+
+test('the dip is a pure function of distance from the focus — same |x|, same depth', () => {
+  const f = planCanopy(bigFamily.graph, 'ME');
+  const xmax = Math.max(...bigFamily.sibs.map((id) => Math.abs(f.nodes.get(id).x)));
+  for (const id of bigFamily.sibs) {
+    const n = f.nodes.get(id);
+    const expected = peerArcDip(xmax - Math.abs(n.x), xmax, SIBLING_ARC_AMP);
+    assert.ok(Math.abs(n.y - expected) < 1e-6,
+      `${id}'s dip should match the closed-form circle exactly`);
+  }
+});
+
+test('the bold target amplitude is clamped short of the children row on compact spacing', () => {
+  /* SIBLING_ARC_AMP (150) is a target, not a guarantee — a nearby child, one
+   * row down, is real geometry the fan must not reach into. Standard spacing
+   * has room for the full target; compact does not. No sibling ever sits
+   * exactly at the row's true centre, so even the uncapped depth never quite
+   * equals the raw constant — the real, checkable guarantee is that compact
+   * genuinely delivers a SMALLER depth than standard does, not an identical
+   * one silently reaching for a target it has no room for. */
+  const wide = planCanopy(bigFamily.graph, 'ME');
+  const narrow = planCanopy(bigFamily.graph, 'ME', { compact: true });
+  const deepestWide = Math.max(...bigFamily.sibs.map((id) => wide.nodes.get(id).y));
+  const deepestNarrow = Math.max(...bigFamily.sibs.map((id) => narrow.nodes.get(id).y));
+  assert.ok(deepestNarrow < deepestWide - 1, `compact (${deepestNarrow}) must be genuinely shallower than standard (${deepestWide})`);
+  assert.ok(deepestNarrow > 0, 'and still a real, visible dip — not clamped to nothing');
+});
+
+test('peer-arc output stays deterministic', () => {
+  const a = planCanopy(bigFamily.graph, 'ME');
+  const b = planCanopy(bigFamily.graph, 'ME');
+  const ys = (f) => bigFamily.sibs.map((id) => f.nodes.get(id).y);
+  assert.deepEqual(ys(a), ys(b));
 });
 
 console.log(`\n  ${passed} passed, ${failed} failed`);
