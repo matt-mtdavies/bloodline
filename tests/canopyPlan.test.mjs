@@ -83,13 +83,38 @@ test('a former partner is a separate unit, never between the current couple', ()
   assert.ok(ex.x < lo || ex.x > hi, `ex at ${ex.x} must be outside the couple's span ${lo}..${hi}`);
 });
 
-test('the ex sits immediately outboard of the pod, not out past the siblings', () => {
-  // Outboard of the whole current couple...
-  const ex = at('EX').x;
-  assert.ok(ex > Math.max(at('ME').x, at('SP').x), 'the ex is beyond the last current partner');
-  // ...but nearer than the younger sibling, so the dissolved-marriage bond
-  // stays short instead of being drawn across unrelated people.
-  assert.ok(ex < at('SIB2').x, 'the ex is inboard of the younger sibling');
+test('a former partner sits on the OPPOSITE side of the focus from the current one', () => {
+  /* Supersedes an earlier rule that put the ex outboard of the current pod.
+   * That satisfied "never between the couple" but created a worse defect: a
+   * child's branch anchors on the midpoint between their two real parents,
+   * and with the ex outboard that midpoint landed squarely on the current
+   * partner — so two boys' line to their own mother and father appeared to
+   * descend out of their mother's new husband. Past on one side, present on
+   * the other, gives every union its own side and its own midpoint. */
+  const me = at('ME').x, sp = at('SP').x, ex = at('EX').x;
+  assert.ok(Math.sign(ex - me) !== Math.sign(sp - me),
+    `ex at ${ex} and current partner at ${sp} must be on opposite sides of the focus at ${me}`);
+  // Still never between the focus and their current partner.
+  const lo = Math.min(me, sp), hi = Math.max(me, sp);
+  assert.ok(ex < lo || ex > hi, 'the ex is never inside the current couple');
+});
+
+test('a union anchor never lands on a third person', () => {
+  /* The mechanical version of the bug above: for every descent, the midpoint
+   * of the real parents must not sit on top of somebody else on that row. */
+  const f = planCanopy(graph, 'ME');
+  for (const b of f.bonds.filter((x) => x.kind === 'descent')) {
+    const via = (b.viaIds && b.viaIds.length ? b.viaIds : [])
+      .map((id) => f.nodes.get(id)).filter(Boolean);
+    if (via.length < 2) continue;
+    const mid = (Math.min(...via.map((n) => n.x)) + Math.max(...via.map((n) => n.x))) / 2;
+    const row = via[0].row;
+    for (const n of f.nodes.values()) {
+      if (n.row !== row || via.some((v) => v.id === n.id)) continue;
+      assert.ok(Math.abs(n.x - mid) > n.r,
+        `${n.id} sits on the union anchor for ${b.child} (anchor ${mid.toFixed(0)}, them ${n.x.toFixed(0)})`);
+    }
+  }
 });
 
 test('siblings share the focus row, in birth order across it', () => {
@@ -389,6 +414,93 @@ test('a narrow frame is deterministic too', () => {
     ser(planCanopy(graph, 'ME', { includeReach: false })),
     ser(planCanopy(graph, 'ME', { includeReach: false })),
   );
+});
+
+/* ── Union blocks ─────────────────────────────────────────────────────────
+ * The exact shape reported against the owner's real tree: Heather's sons are
+ * by Chris; her step-daughters are Ken's. All four sat on one row as
+ * "Jessica, Matthew, Amie, Jason" — interleaved, with branches crossing.
+ */
+const blended = buildGraph(
+  [
+    P('HEATHER', { display_name: 'Heather Davies', birth_date: '1959-01-01' }),
+    P('CHRIS', { display_name: 'Christopher Monish-Davies', birth_date: '1958-01-01' }),
+    P('KEN', { display_name: 'Ken Threlfall', birth_date: '1956-01-01' }),
+    P('MATT', { display_name: 'Matthew Davies', birth_date: '1980-01-01' }),
+    P('JASON', { display_name: 'Jason Davies', birth_date: '1982-01-01' }),
+    P('JESS', { display_name: 'Jessica Lamb', birth_date: '1983-01-01' }),
+    P('AMIE', { display_name: 'Amie Franklin', birth_date: '1985-01-01' }),
+  ],
+  [
+    partner('CHRIS', 'HEATHER', 'former'), partner('HEATHER', 'KEN'),
+    parent('CHRIS', 'MATT'), parent('HEATHER', 'MATT'),
+    parent('CHRIS', 'JASON'), parent('HEATHER', 'JASON'),
+    parent('KEN', 'JESS'), parent('HEATHER', 'JESS', 'step'),
+    parent('KEN', 'AMIE'), parent('HEATHER', 'AMIE', 'step'),
+  ],
+);
+
+test("two unions' children never interleave — each union is one block", () => {
+  const f = planCanopy(blended, 'HEATHER');
+  const groupOf = (id) => f.bonds.find((b) => b.kind === 'descent' && b.child === id)?.parentUnit;
+  const row = ['MATT', 'JASON', 'JESS', 'AMIE']
+    .map((id) => ({ id, x: f.nodes.get(id).x, g: groupOf(id) }))
+    .sort((a, b) => a.x - b.x);
+  // Walking the row left to right, each union's block must appear once and
+  // then be finished with — never returned to.
+  const seen = [];
+  for (const p of row) if (seen[seen.length - 1] !== p.g) seen.push(p.g);
+  assert.equal(new Set(seen).size, seen.length,
+    `blocks interleave: ${row.map((p) => p.id).join(', ')}`);
+});
+
+test('siblings from one union stay adjacent to each other', () => {
+  const f = planCanopy(blended, 'HEATHER');
+  const row = ['MATT', 'JASON', 'JESS', 'AMIE']
+    .map((id) => ({ id, x: f.nodes.get(id).x }))
+    .sort((a, b) => a.x - b.x)
+    .map((p) => p.id);
+  const iMatt = row.indexOf('MATT'), iJason = row.indexOf('JASON');
+  const iJess = row.indexOf('JESS'), iAmie = row.indexOf('AMIE');
+  assert.equal(Math.abs(iMatt - iJason), 1, `the brothers are split: ${row.join(', ')}`);
+  assert.equal(Math.abs(iJess - iAmie), 1, `the sisters are split: ${row.join(', ')}`);
+});
+
+test('a block is separated from its neighbour by more than a sibling gap', () => {
+  /* The gap is the only thing that says "these four are two families". */
+  const f = planCanopy(blended, 'HEATHER');
+  const row = ['MATT', 'JASON', 'JESS', 'AMIE']
+    .map((id) => ({ id, x: f.nodes.get(id).x }))
+    .sort((a, b) => a.x - b.x);
+  const groupOf = (id) => f.bonds.find((b) => b.kind === 'descent' && b.child === id)?.parentUnit;
+  let withinMax = 0, betweenMin = Infinity;
+  for (let i = 1; i < row.length; i++) {
+    const d = row[i].x - row[i - 1].x;
+    if (groupOf(row[i].id) === groupOf(row[i - 1].id)) withinMax = Math.max(withinMax, d);
+    else betweenMin = Math.min(betweenMin, d);
+  }
+  assert.ok(betweenMin > withinMax,
+    `between-block gap ${betweenMin.toFixed(0)} must exceed within-block ${withinMax.toFixed(0)}`);
+});
+
+test('the blocks sit under the unions that produced them, not off to one side', () => {
+  const f = planCanopy(blended, 'HEATHER');
+  const centre = (ids) => ids.reduce((s, id) => s + f.nodes.get(id).x, 0) / ids.length;
+  // Chris's block and Ken's block must land on opposite sides of each other
+  // in the same order their parents do.
+  const chrisSide = f.nodes.get('CHRIS').x;
+  const kenSide = f.nodes.get('KEN').x;
+  const boys = centre(['MATT', 'JASON']);
+  const girls = centre(['JESS', 'AMIE']);
+  assert.equal(Math.sign(boys - girls), Math.sign(chrisSide - kenSide),
+    'the blocks are ordered the same way their parents are — otherwise branches cross');
+});
+
+test('blocks stay deterministic', () => {
+  const a = planCanopy(blended, 'HEATHER');
+  const b = planCanopy(blended, 'HEATHER');
+  const ser = (f) => JSON.stringify([...f.nodes.entries()].map(([k, v]) => [k, v.x, v.y]).sort());
+  assert.equal(ser(a), ser(b));
 });
 
 console.log(`\n  ${passed} passed, ${failed} failed`);
