@@ -41,7 +41,7 @@
  * carrying a real count rather than simply stopping.
  */
 
-import { sortSiblings, sortChildren, ancestorsWithDistance, descendantsWithDistance } from '../../data/graph.js';
+import { sortSiblings, sortChildren, ancestorsWithDistance, descendantsWithDistance, isBioOrAdoptive } from '../../data/graph.js';
 import { labelDrop } from './geometry.js';
 
 /** Vertical distance between generation rows — also the minimum clearance
@@ -604,7 +604,17 @@ export function planCanopy(graph, focusId, opts = {}) {
    * more. On a phone you simply travel a little more often. */
   const grandUnits = [];
   if (focusParentAnchor && opts.includeReach !== false) {
-    for (const pid of parentIds) {
+    // A step-parent belongs on the parent row — that relationship is real and
+    // worth showing. Their OWN parents are a different matter: that is the
+    // step-parent's blood family, not the focus's, and drawing them with the
+    // same weight as a real grandparent pod is exactly how a stranger's
+    // ancestry can read as your own. isBioOrAdoptive is the one shared rule
+    // bloodRelativesOf, relationshipCategories, and PersonSheet already
+    // apply for exactly this boundary — Canopy calls the same function
+    // rather than keeping its own copy that can silently fall out of step.
+    for (const pRef of parentRefs) {
+      if (!isBioOrAdoptive(pRef.qualifier)) continue;
+      const pid = pRef.id;
       const gRefs = graph.parents(pid).filter((g) => byId.has(g.id));
       const gIds = gRefs.map((g) => g.id).sort(cmp);
       if (!gIds.length) continue;
