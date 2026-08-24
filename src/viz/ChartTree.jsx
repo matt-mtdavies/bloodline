@@ -657,7 +657,7 @@ function PlateCard({ card, graph, horizontal, isFocal, selectedId, onOpenPerson,
               onPointerEnter={(e) => { if (e.pointerType === 'mouse') onHoverEnter?.(personId); }}
               onPointerLeave={(e) => { if (e.pointerType === 'mouse') onHoverLeave?.(); }}
             >
-              <Avatar person={person} size={32} />
+              <Avatar person={person} size={42} shape="squircle" />
               <span className="pplate__text">
                 <span className="pplate__name">
                   <span className="pplate__name-text">{person.display_name}</span>
@@ -774,17 +774,24 @@ function capitalize(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
 
 // ── Icons ────────────────────────────────────────────────────────────────────
 
+// A chevron's drawn ink isn't optically centred just because its coordinate
+// bounding box is: the two strokes visually converge and overlap at the
+// point, giving the vertex more apparent weight than the open end — the same
+// correction type-designers make on triangular glyphs. Measured directly
+// against a real render (a zoomed pixel crop of the button) rather than
+// guessed: the point-first end read ~4% off-centre toward the point. Each
+// path below is shifted one unit (of 24) away from its point to balance it.
 function ChevronUpIcon() {
-  return <svg width="11" height="11" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 15l7-7 7 7" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" /></svg>;
+  return <svg width="11" height="11" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 16l7-7 7 7" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" /></svg>;
 }
 function ChevronDownIcon() {
-  return <svg width="11" height="11" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 9l7 7 7-7" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" /></svg>;
+  return <svg width="11" height="11" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 8l7 7 7-7" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" /></svg>;
 }
 function ChevronLeftIcon() {
-  return <svg width="11" height="11" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M15 5l-7 7 7 7" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" /></svg>;
+  return <svg width="11" height="11" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M16 5l-7 7 7 7" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" /></svg>;
 }
 function ChevronRightIcon() {
-  return <svg width="11" height="11" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9 5l7 7-7 7" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" /></svg>;
+  return <svg width="11" height="11" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M8 5l7 7-7 7" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" /></svg>;
 }
 function ArrowRightIcon() {
   return <svg width="11" height="11" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" /></svg>;
