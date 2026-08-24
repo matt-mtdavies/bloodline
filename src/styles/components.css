@@ -11186,9 +11186,11 @@ button.health-notes {
    thing a card exists to let you read. */
 .pcard--recede1 .pplate:not(.pplate--selected) {
   background: color-mix(in srgb, var(--paper-deep) 60%, var(--card));
+  box-shadow: 0 1px 2px rgba(36, 31, 28, 0.03);
 }
 .pcard--recede2 .pplate:not(.pplate--selected) {
   background: color-mix(in srgb, var(--ink-faint) 30%, var(--paper-deep));
+  box-shadow: none;
 }
 .pcard--recede1:hover .pplate:not(.pplate--selected),
 .pcard--recede2:hover .pplate:not(.pplate--selected) {
@@ -11227,9 +11229,17 @@ button.health-notes {
   cursor: pointer;
   text-align: left;
   font-family: var(--body);
+  /* A soft resting lift — every other card surface in the app (sheets,
+     popovers, the topbar's own pills) has one; a pedigree card was the one
+     flat, purely-outlined exception. */
+  box-shadow: 0 1px 2px rgba(36, 31, 28, 0.05), 0 4px 12px rgba(36, 31, 28, 0.06);
   transition: border-color 0.15s ease, box-shadow 0.2s var(--ease), background 0.15s ease, transform 0.2s var(--ease);
 }
-.pplate:hover { border-color: #d8d2c8; background: var(--paper-deep); }
+.pplate:hover {
+  border-color: #d8d2c8;
+  background: var(--paper-deep);
+  box-shadow: 0 2px 5px rgba(36, 31, 28, 0.07), 0 8px 18px rgba(36, 31, 28, 0.09);
+}
 .pplate__text { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .pplate__name {
   display: flex; align-items: center; gap: 6px;
@@ -11305,6 +11315,23 @@ button.health-notes {
   border-radius: 15px;
   box-shadow: 0 12px 32px rgba(36, 31, 28, 0.18), inset 0 0 0 0.5px rgba(255, 255, 255, 0.8);
   animation: pbar-in 0.18s var(--ease) both;
+}
+/* A small pointing caret ties the pill to the card it belongs to — without
+   one, a floating pill above open canvas reads as arbitrary rather than
+   clearly anchored to the selected person (real feedback: "not arranged
+   properly"). Always centred under the bar regardless of how far above the
+   card it's had to float to clear the card's own nav pip. */
+.pbar::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: -5px;
+  width: 10px;
+  height: 10px;
+  background: rgba(255, 255, 255, 0.94);
+  transform: translateX(-50%) rotate(45deg);
+  border-radius: 2px;
+  box-shadow: 2px 2px 3px rgba(36, 31, 28, 0.08);
 }
 @keyframes pbar-in { from { opacity: 0; transform: translate(-50%, 5px); } to { opacity: 1; transform: translate(-50%, 0); } }
 .pbar__btn {

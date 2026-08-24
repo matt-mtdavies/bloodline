@@ -438,9 +438,20 @@ export default function ChartTree({ graph, activeId, viewerId, bloodlineOnly = f
     const rect = viewportRef.current.getBoundingClientRect();
     const sx = view.panX + selInfo.plateCx * view.zoom;
     const sy = view.panY + selInfo.plateTop * view.zoom;
+    // The bar itself lives in screen space (a constant ~53px tall regardless
+    // of zoom — see .pbar), but the card's own "up" nav pip pokes out above
+    // the card by 11 WORLD units, so its on-screen protrusion scales with
+    // zoom. A fixed pixel offset only ever clears the pip at one specific
+    // zoom; at any other zoom the bar's own bottom edge cut straight through
+    // it (reported, with a screenshot: the bar visibly covered the pip).
+    // Clear the pip's actual, zoom-scaled position instead of a guess — and
+    // only when a pip is even rendered (a person with no recorded parents
+    // has none, per hasMoreUp, so nothing to clear).
+    const hasUpPip = !selInfo.slot || selInfo.slot.hasMoreUp;
+    const pipClearance = hasUpPip ? 11 * view.zoom + 10 : 0;
     return {
       left: Math.min(Math.max(sx, 130), rect.width - 130),
-      top: Math.max(sy - 54, 8),
+      top: Math.max(sy - pipClearance - 53, 8),
     };
   })() : null;
   const selPerson = barId ? graph.byId.get(barId) : null;
