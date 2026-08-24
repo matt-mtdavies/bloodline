@@ -29,11 +29,20 @@ export default function Avatar({ person, size = 56, shape = 'circle' }) {
         <span
           className="avatar__mono"
           style={{
-            background: `linear-gradient(160deg, ${light}, ${base})`,
+            background: `linear-gradient(165deg, ${light}, ${base})`,
             fontSize: size * 0.4,
           }}
         >
-          {initials(person.display_name)}
+          {/* An echo of the profile hero's own no-portrait treatment — an
+              oversized, translucent ghost of the same initials bleeding off
+              the top edge — scaled down to a size that still reads as
+              "rich, not just a label" without crowding a small avatar. Only
+              at sizes where it can actually breathe; a 26px menu avatar
+              stays the plain two letters, same as it always was. */}
+          {size >= 32 && (
+            <span className="avatar__mono-ghost" aria-hidden="true">{initials(person.display_name)}</span>
+          )}
+          <span className="avatar__mono-text">{initials(person.display_name)}</span>
         </span>
       )}
     </span>

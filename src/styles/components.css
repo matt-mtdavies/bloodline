@@ -1068,6 +1068,24 @@
   color: #fffdf9;
   font-family: var(--display);
   font-weight: 500;
+  font-style: italic;
+}
+.avatar__mono-text { position: relative; z-index: 1; }
+/* An echo of the profile hero's own signature no-portrait treatment (see
+   .profile__hero-wash-mono) at avatar scale: the same initials, oversized
+   and bled off the top edge (clipped by .avatar's own overflow: hidden),
+   translucent behind the legible pair in front — so a placeholder reads as
+   a considered object, not a flat colour chip with two bold letters on it. */
+.avatar__mono-ghost {
+  position: absolute;
+  top: -20%;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 1.7em;
+  line-height: 1;
+  color: rgba(255, 252, 245, 0.32);
+  white-space: nowrap;
+  pointer-events: none;
 }
 /* A fine warm hatch over the flat per-person gradient — "honest about being
    empty" texture (like the tissue interleaf in an album) so a monogram
@@ -11297,6 +11315,29 @@ button.health-notes {
 .pnav:hover { color: var(--accent-deep); border-color: var(--accent); background: var(--accent-soft); }
 .pnav:active { transform: scale(0.88); }
 .pnav--on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-deep); }
+/* A plain CSS corner, not an SVG path — see the comment above NavChevron in
+   ChartTree.jsx for why. box-sizing:border-box keeps the 9x9 box (and so its
+   rotation centre) exactly what it says, independent of the border. A
+   right-angle corner's own bounding-box centre sits toward the vertex, not
+   the box centre it rotates around (measured directly, pixel-for-pixel,
+   against a real render — not assumed): each direction below carries a
+   `top`/`left` offset, in the PRE-rotation frame (not `transform`, which is
+   order-sensitive and rotation-relative), shifting the box opposite its own
+   vertex so the drawn chevron's own bounding box — not just its container —
+   ends up centred in the circle. */
+.pnav__chev {
+  box-sizing: border-box;
+  position: relative;
+  width: 9px;
+  height: 9px;
+  border-right: 1.4px solid currentColor;
+  border-bottom: 1.4px solid currentColor;
+  border-radius: 0 0 1px 0;
+}
+.pnav__chev--down { top: -2.5px; transform: rotate(45deg); }
+.pnav__chev--up { top: 2.5px; transform: rotate(225deg); }
+.pnav__chev--left { left: 2.5px; transform: rotate(135deg); }
+.pnav__chev--right { left: -2.5px; transform: rotate(-45deg); }
 
 /* On-select contextual action bar — the only editing chrome, screen-space so
    it stays crisp at any zoom. A calm frosted pill floating above the plate. */
