@@ -516,7 +516,7 @@ export default function ChartTree({ graph, activeId, viewerId, bloodlineOnly = f
                     if (!person) return null;
                     return (
                       <button key={row.id} className="ped-pop__row" onClick={() => { setChildrenFor(null); onActivate?.(row.id); }}>
-                        <Avatar person={person} size={30} />
+                        <Avatar person={person} size={30} shape="squircle" />
                         <span className="ped-pop__rowtext">
                           <span className="ped-pop__rowname">{person.display_name}</span>
                           <span className="ped-pop__rowdates">{lifespan(person)}</span>
@@ -735,7 +735,7 @@ function SpouseMenu({ graph, memberId, card, partnerChoice, bloodlineOnly = fals
           : c.status === 'former' ? 'Former partner' : c.status === 'widowed' ? 'Widowed' : 'Partner';
         return (
           <button key={c.id} className="ped-spouse-menu__row" onClick={() => onChoose(memberId, c.id)} role="menuitem">
-            <Avatar person={p} size={26} />
+            <Avatar person={p} size={26} shape="squircle" />
             <span className="ped-spouse-menu__text">
               <span>{p.display_name}</span>
               <span className="ped-spouse-menu__note">{note}</span>
