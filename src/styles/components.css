@@ -1054,6 +1054,10 @@
   overflow: hidden;
   box-shadow: 0 0 0 2px #fffdf9, 0 2px 8px rgba(44, 38, 34, 0.16);
 }
+/* App-icon rounded square, opt-in per call site (see Avatar.jsx). 22% is the
+   standard web approximation of iOS's own continuous-corner superellipse —
+   close enough at these sizes that a true squircle path isn't worth it. */
+.avatar--squircle { border-radius: 22%; }
 .avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .avatar__mono {
   position: relative;
@@ -11167,18 +11171,30 @@ button.health-notes {
    Two flat plates side by side, joined across the seam by the partner-link.
    Calm by default: editing chrome lives in the on-select action bar; the
    resting card carries only navigation pips. */
-.pcard { position: absolute; transition: opacity 0.25s var(--ease); }
+.pcard { position: absolute; }
 /* Emphasis tiers — deep ancestors recede; hover or selection restores full
-   presence so nothing interactive ever reads as disabled. Deepened from an
-   earlier 0.9/0.76 (real design feedback: Chart View should share Tree
-   View's "selected person is unmistakably the centre of the story"
-   principle — the old tiers were nearly imperceptible next to Tree View's
-   own 1/0.62/0.38/0.2 hierarchy). Kept short of Tree's own floor on
-   purpose: unlike a bubble, a card still carries a name someone may need
-   to actually read, so legibility sets the limit, not parity with Tree. */
-.pcard--recede1 { opacity: 0.7; }
-.pcard--recede2 { opacity: 0.48; }
-.pcard:hover, .pcard:has(.pplate--selected) { opacity: 1; }
+   presence so nothing interactive ever reads as disabled.
+   Real report: a blanket opacity on the whole card (a prior pass, 0.7/0.48,
+   deepened from an even softer 0.9/0.76 for more visual hierarchy) faded the
+   NAME AND DATES text along with the card chrome — and .pplate__dates was
+   already the tertiary --ink-faint token, itself under WCAG's 4.5:1 floor
+   even at full strength (2.3:1). Stacking a 0.7/0.48 opacity on top measured
+   out to 1.75:1 / 1.44:1 — the actual, measurable "hard to read" the report
+   named, not a taste complaint. Recede now lives entirely on the card's
+   FRAME (border, background) via .pplate below, never on its text, so the
+   card still visibly sits back a generation without ever degrading the one
+   thing a card exists to let you read. */
+.pcard--recede1 .pplate:not(.pplate--selected) {
+  background: color-mix(in srgb, var(--paper-deep) 60%, var(--card));
+}
+.pcard--recede2 .pplate:not(.pplate--selected) {
+  background: color-mix(in srgb, var(--ink-faint) 30%, var(--paper-deep));
+}
+.pcard--recede1:hover .pplate:not(.pplate--selected),
+.pcard--recede2:hover .pplate:not(.pplate--selected) {
+  border-color: #d8d2c8;
+  background: var(--paper-deep);
+}
 .pcard__row { display: flex; gap: 18px; height: 100%; align-items: stretch; }
 /* Landscape: the couple's plates stack vertically (member over member), joined
    by the vertical partner-link at the seam. The 18px gap MUST equal LINK_GAP so

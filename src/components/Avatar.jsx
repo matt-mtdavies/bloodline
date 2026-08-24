@@ -4,13 +4,16 @@ import { monogramColors, initials } from '../lib/color.js';
 // A DOM avatar that mirrors the canvas bubbles: real face when we have one,
 // otherwise a warm deterministic monogram. Used in the sheet and the list view.
 // If a photo fails to load we fall back to the monogram — never a broken glyph.
-export default function Avatar({ person, size = 56 }) {
+// `shape` defaults to the circle every existing caller already expects;
+// 'squircle' is opt-in per call site (Chart View's cards specifically asked
+// for an app-icon-style rounded square) so nothing else in the app changes.
+export default function Avatar({ person, size = 56, shape = 'circle' }) {
   const { base, light } = monogramColors(person.display_name);
   const memorial = person.is_deceased;
   const [failed, setFailed] = useState(false);
   return (
     <span
-      className={'avatar' + (memorial ? ' avatar--memorial' : '')}
+      className={'avatar' + (shape === 'squircle' ? ' avatar--squircle' : '') + (memorial ? ' avatar--memorial' : '')}
       style={{ width: size, height: size }}
       aria-hidden="true"
     >
