@@ -11297,7 +11297,6 @@ button.health-notes {
 .pnav:hover { color: var(--accent-deep); border-color: var(--accent); background: var(--accent-soft); }
 .pnav:active { transform: scale(0.88); }
 .pnav--on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-deep); }
-.pnav--on.pnav--up svg { transform: rotate(180deg); }
 
 /* On-select contextual action bar — the only editing chrome, screen-space so
    it stays crisp at any zoom. A calm frosted pill floating above the plate. */

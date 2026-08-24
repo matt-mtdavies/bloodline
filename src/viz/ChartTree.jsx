@@ -700,7 +700,9 @@ function PlateCard({ card, graph, horizontal, isFocal, selectedId, onOpenPerson,
             title={slot.expanded ? `Hide ${person?.display_name.split(' ')[0]}’s parents` : `Show ${person?.display_name.split(' ')[0]}’s parents`}
             aria-expanded={slot.expanded}
           >
-            {horizontal ? <ChevronLeftIcon /> : <ChevronUpIcon />}
+            {horizontal
+              ? (slot.expanded ? <ChevronRightIcon /> : <ChevronLeftIcon />)
+              : (slot.expanded ? <ChevronDownIcon /> : <ChevronUpIcon />)}
           </button>
         );
       })}
