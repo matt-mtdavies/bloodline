@@ -11189,29 +11189,49 @@ button.health-notes {
    Two flat plates side by side, joined across the seam by the partner-link.
    Calm by default: editing chrome lives in the on-select action bar; the
    resting card carries only navigation pips. */
-.pcard { position: absolute; }
-/* Emphasis tiers — deep ancestors recede; hover or selection restores full
-   presence so nothing interactive ever reads as disabled.
+/* A couple is now ONE unified pod — a single background/border/shadow on
+   .pcard itself, not two individually-tinted .pplate tiles glued together
+   with a visible gap between them (real feedback: "the couples should be
+   in an orange or grey pod, not both tiles individually orange"). Each
+   .pplate inside is just a transparent, borderless click target for layout
+   — see below. */
+.pcard {
+  position: absolute;
+  border: 1px solid var(--hairline);
+  border-radius: 15px;
+  background: var(--card);
+  box-shadow: 0 1px 2px rgba(36, 31, 28, 0.05), 0 4px 12px rgba(36, 31, 28, 0.06);
+  transition: border-color 0.15s ease, box-shadow 0.2s var(--ease), background 0.15s ease, transform 0.2s var(--ease);
+}
+/* Hovering either person's plate highlights the whole pod as one shape —
+   :has() lets the pod itself react to an inner element's hover state. */
+.pcard:has(.pplate:hover) {
+  border-color: #d8d2c8;
+  background: var(--paper-deep);
+  box-shadow: 0 2px 5px rgba(36, 31, 28, 0.07), 0 8px 18px rgba(36, 31, 28, 0.09);
+}
+/* Emphasis tiers — deep ancestors recede; hover restores full presence so
+   nothing interactive ever reads as disabled.
    Real report: a blanket opacity on the whole card (a prior pass, 0.7/0.48,
    deepened from an even softer 0.9/0.76 for more visual hierarchy) faded the
    NAME AND DATES text along with the card chrome — and .pplate__dates was
    already the tertiary --ink-faint token, itself under WCAG's 4.5:1 floor
    even at full strength (2.3:1). Stacking a 0.7/0.48 opacity on top measured
    out to 1.75:1 / 1.44:1 — the actual, measurable "hard to read" the report
-   named, not a taste complaint. Recede now lives entirely on the card's
-   FRAME (border, background) via .pplate below, never on its text, so the
-   card still visibly sits back a generation without ever degrading the one
-   thing a card exists to let you read. */
-.pcard--recede1 .pplate:not(.pplate--selected) {
+   named, not a taste complaint. Recede now lives entirely on the pod's own
+   FRAME (border, background), never on its text, so the card still visibly
+   sits back a generation without ever degrading the one thing a card
+   exists to let you read. */
+.pcard--recede1 {
   background: color-mix(in srgb, var(--paper-deep) 60%, var(--card));
   box-shadow: 0 1px 2px rgba(36, 31, 28, 0.03);
 }
-.pcard--recede2 .pplate:not(.pplate--selected) {
+.pcard--recede2 {
   background: color-mix(in srgb, var(--ink-faint) 30%, var(--paper-deep));
   box-shadow: none;
 }
-.pcard--recede1:hover .pplate:not(.pplate--selected),
-.pcard--recede2:hover .pplate:not(.pplate--selected) {
+.pcard--recede1:has(.pplate:hover),
+.pcard--recede2:has(.pplate:hover) {
   border-color: #d8d2c8;
   background: var(--paper-deep);
 }
@@ -11235,28 +11255,19 @@ button.health-notes {
 @media (prefers-reduced-motion: reduce) {
   .pcard, .ped-link, .ped-partnerlink { animation: none; }
 }
+/* Just a click target and text/avatar layout now — every frame, tint and
+   shadow lives one level up on .pcard so a couple reads as one pod. */
 .pplate {
   display: flex;
   align-items: center;
   gap: 10px;
   height: 100%;
   padding: 0 11px;
-  border: 1px solid var(--hairline);
-  border-radius: 15px;
-  background: var(--card);
+  border: none;
+  background: none;
   cursor: pointer;
   text-align: left;
   font-family: var(--body);
-  /* A soft resting lift — every other card surface in the app (sheets,
-     popovers, the topbar's own pills) has one; a pedigree card was the one
-     flat, purely-outlined exception. */
-  box-shadow: 0 1px 2px rgba(36, 31, 28, 0.05), 0 4px 12px rgba(36, 31, 28, 0.06);
-  transition: border-color 0.15s ease, box-shadow 0.2s var(--ease), background 0.15s ease, transform 0.2s var(--ease);
-}
-.pplate:hover {
-  border-color: #d8d2c8;
-  background: var(--paper-deep);
-  box-shadow: 0 2px 5px rgba(36, 31, 28, 0.07), 0 8px 18px rgba(36, 31, 28, 0.09);
 }
 .pplate__text { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .pplate__name {
@@ -11274,23 +11285,18 @@ button.health-notes {
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .pplate--passed .pplate__name { color: color-mix(in srgb, var(--ink) 74%, var(--paper)); }
-/* The focal card — "this is the person we're exploring" — reads as
-   unmistakably the centre now, not just a thin border: a warm tint, a
-   soft accent glow, and a touch larger, the same "selected person pops"
-   principle Tree View's ego-camera already gives its active bubble. */
-.pcard--focal .pplate {
+/* The focal pod — "this is the person we're exploring" — reads as
+   unmistakably the centre now, not just a thin border: a warm tint, a soft
+   accent glow, and a touch larger AS ONE WHOLE UNIT (not each plate
+   individually scaling around its own centre), the same "selected person
+   pops" principle Tree View's ego-camera already gives its active bubble. */
+.pcard--focal {
   border-color: var(--accent);
   background: var(--accent-soft);
   box-shadow: 0 0 0 1.5px var(--accent-soft), 0 10px 24px rgba(194, 96, 58, 0.16);
   transform: scale(1.045);
 }
-.pcard--focal .pplate:hover { background: var(--accent-soft); }
-.pplate--selected,
-.pplate--selected:hover {
-  border-color: var(--accent);
-  background: var(--card);
-  box-shadow: 0 0 0 2.5px var(--accent-soft), 0 10px 26px rgba(36, 31, 28, 0.12);
-}
+.pcard--focal:has(.pplate:hover) { background: var(--accent-soft); }
 
 /* Partner-link across the couple's seam — status by style, drawn in SVG. */
 .ped-partnerlink { stroke: var(--bond-current, #c2603a); stroke-width: 2.4; fill: none; opacity: 0.9; stroke-linecap: round; }
@@ -11315,6 +11321,10 @@ button.health-notes {
 .pnav:hover { color: var(--accent-deep); border-color: var(--accent); background: var(--accent-soft); }
 .pnav:active { transform: scale(0.88); }
 .pnav--on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-deep); }
+/* The swap pip is always visible (not on-select) whenever that member has a
+   recorded alternate partner — a small, permanent affordance rather than
+   chrome that only appears after tapping the person first. */
+.pnav--swap { color: var(--ink-faint); }
 /* A plain CSS corner, not an SVG path — see the comment above NavChevron in
    ChartTree.jsx for why. box-sizing:border-box keeps the 9x9 box (and so its
    rotation centre) exactly what it says, independent of the border. A
@@ -11339,63 +11349,12 @@ button.health-notes {
 .pnav__chev--left { left: 2.5px; transform: rotate(135deg); }
 .pnav__chev--right { left: -2.5px; transform: rotate(-45deg); }
 
-/* On-select contextual action bar — the only editing chrome, screen-space so
-   it stays crisp at any zoom. A calm frosted pill floating above the plate. */
-.pbar {
-  position: absolute;
-  transform: translateX(-50%);
-  z-index: 24;
-  display: flex;
-  align-items: stretch;
-  gap: 2px;
-  padding: 5px;
-  background: rgba(255, 255, 255, 0.94);
-  backdrop-filter: blur(20px) saturate(1.5);
-  -webkit-backdrop-filter: blur(20px) saturate(1.5);
-  border-radius: 15px;
-  box-shadow: 0 12px 32px rgba(36, 31, 28, 0.18), inset 0 0 0 0.5px rgba(255, 255, 255, 0.8);
-  animation: pbar-in 0.18s var(--ease) both;
-}
-/* A small pointing caret ties the pill to the card it belongs to — without
-   one, a floating pill above open canvas reads as arbitrary rather than
-   clearly anchored to the selected person (real feedback: "not arranged
-   properly"). Always centred under the bar regardless of how far above the
-   card it's had to float to clear the card's own nav pip. */
-.pbar::after {
-  content: '';
-  position: absolute;
-  left: 50%;
-  bottom: -5px;
-  width: 10px;
-  height: 10px;
-  background: rgba(255, 255, 255, 0.94);
-  transform: translateX(-50%) rotate(45deg);
-  border-radius: 2px;
-  box-shadow: 2px 2px 3px rgba(36, 31, 28, 0.08);
-}
+/* Spouse-switcher popover — opened by a card's own always-visible swap pip.
+   Screen-space so it stays crisp at any zoom. */
 @keyframes pbar-in { from { opacity: 0; transform: translate(-50%, 5px); } to { opacity: 1; transform: translate(-50%, 0); } }
-.pbar__btn {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 3px;
-  min-width: 54px;
-  padding: 7px 9px 6px;
-  border: none;
-  border-radius: 11px;
-  background: none;
-  color: var(--ink-soft);
-  cursor: pointer;
-  font-family: var(--body);
-  font-size: 10.5px;
-  font-weight: 600;
-  transition: background 0.14s ease, color 0.14s ease;
-}
-.pbar__btn:hover { background: var(--paper-deep); color: var(--accent-deep); }
-.pbar__btn--on { background: var(--accent-soft); color: var(--accent-deep); }
 .pbar-menu { position: absolute; transform: translateX(-50%); z-index: 24; }
 .pbar-menu .ped-spouse-menu { position: static; animation: pbar-in 0.18s var(--ease) both; }
-@media (prefers-reduced-motion: reduce) { .pbar, .pbar-menu .ped-spouse-menu { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .pbar-menu .ped-spouse-menu { animation: none; } }
 
 /* ── Pedigree cards ─────────────────────────────────────────────────────── */
 .ped-card {
