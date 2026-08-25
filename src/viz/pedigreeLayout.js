@@ -331,17 +331,47 @@ export function computePedigree(graph, focusId, { expandedUp, partnerChoice, ori
     card._span = s;
     return s;
   }
+  // A member's own plate sits at a fixed offset from its card's centre — the
+  // same geometry ChartTree.jsx's plateGeom draws from. A parent branch's
+  // IDEAL cross-centre is directly above (portrait) / level with (landscape)
+  // that specific plate, not the card as a whole.
+  function slotCrossOffset(card, i) {
+    if (card.members.length < 2) return 0;
+    const step = (portrait ? PLATE_W : PLATE_H) + LINK_GAP;
+    return (i - (card.members.length - 1) / 2) * step;
+  }
   function place(card, crossCenter) {
     card._cross = crossCenter;
-    const upCards = card.slots.map((s) => (s._parentCardId ? byId.get(s._parentCardId) : null)).filter(Boolean);
-    if (!upCards.length) return;
-    const total = upCards.reduce((sum, c, i) => sum + span(c) + (i ? PAIR_GAP : 0), 0);
-    let cursor = crossCenter - total / 2;
-    for (const c of upCards) {
-      const s = span(c);
-      place(c, cursor + s / 2);
-      cursor += s + PAIR_GAP;
+    const upEntries = card.slots
+      .map((s, i) => (s._parentCardId ? { card: byId.get(s._parentCardId), ideal: crossCenter + slotCrossOffset(card, i) } : null))
+      .filter(Boolean);
+    if (!upEntries.length) return;
+    if (upEntries.length === 1) {
+      place(upEntries[0].card, upEntries[0].ideal);
+      return;
     }
+    // Two branches: anchor each directly above/level with its OWN member by
+    // default; only push them apart when their spans would otherwise
+    // overlap — and split that push by each branch's OWN size, not evenly.
+    // A real report, with a screenshot: with the OLD "always sum the spans
+    // and centre the pair as one block" placement, a person with a narrow,
+    // unexpanded parent branch (2 people, no further ancestors) got dragged
+    // far out to the side purely because their PARTNER's own ancestry
+    // (expanded several generations deep) was wide — the narrow branch ended
+    // up nowhere near the person it actually belongs to. Anchoring to each
+    // member's real plate position first, then letting the WIDE branch (the
+    // one that actually needs the extra room around its own centre) absorb
+    // nearly all of any necessary push while the narrow one barely moves,
+    // means a lopsided family reads as "one deep branch, one shallow one
+    // sitting right where it belongs" rather than two branches dragged to
+    // opposite extremes.
+    const [e0, e1] = upEntries;
+    const s0 = span(e0.card), s1 = span(e1.card);
+    const minGap = s0 / 2 + PAIR_GAP + s1 / 2;
+    const deficit = Math.max(0, minGap - (e1.ideal - e0.ideal));
+    const totalSpan = s0 + s1 || 1;
+    place(e0.card, e0.ideal - deficit * (s0 / totalSpan));
+    place(e1.card, e1.ideal + deficit * (s1 / totalSpan));
   }
   span(focal);
   place(focal, 0);
