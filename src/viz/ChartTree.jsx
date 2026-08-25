@@ -45,17 +45,6 @@ export default function ChartTree({ graph, activeId, viewerId, bloodlineOnly = f
   const [partnerChoice, setPartnerChoice] = useState(() => new Map());
   const [childrenFor, setChildrenFor] = useState(null); // cardId with open children popover
   const [switcherFor, setSwitcherFor] = useState(null); // memberId with open spouse menu
-  const [selectedId, setSelectedId] = useState(null); // personId selected → contextual action bar
-  const [hoveredId, setHoveredId] = useState(null);   // desktop hover-preview of the action bar
-  const hoverClear = useRef(null);
-  // Desktop only: hover previews a person's action bar; a short grace lets the
-  // pointer travel from the plate up into the bar without it closing.
-  const hoverEnter = useCallback((id) => { clearTimeout(hoverClear.current); setHoveredId(id); }, []);
-  const hoverLeave = useCallback(() => {
-    clearTimeout(hoverClear.current);
-    hoverClear.current = setTimeout(() => setHoveredId(null), 130);
-  }, []);
-  useEffect(() => () => clearTimeout(hoverClear.current), []);
   const [view, setView] = useState({ zoom: 0.9, panX: 0, panY: 0 });
   const [gliding, setGliding] = useState(false);
   const viewportRef = useRef(null);
@@ -126,7 +115,6 @@ export default function ChartTree({ graph, activeId, viewerId, bloodlineOnly = f
     setPartnerChoice(new Map());
     setChildrenFor(null);
     setSwitcherFor(null);
-    setSelectedId(null);
     centerOnFocal(
       computePedigree(graph, activeId, { expandedUp: nextExpanded, partnerChoice: new Map(), orientation, bloodlineOnly }),
       orientation,
@@ -195,14 +183,13 @@ export default function ChartTree({ graph, activeId, viewerId, bloodlineOnly = f
   const onPointerDown = (e) => {
     if (pointersRef.current.size === 0 && (
       e.target.closest('.ped-card') || e.target.closest('.pcard') || e.target.closest('.pnav')
-      || e.target.closest('.pbar') || e.target.closest('.pbar-menu') || e.target.closest('.chart-controls')
+      || e.target.closest('.pbar-menu') || e.target.closest('.chart-controls')
       || e.target.closest('.ped-pop') || e.target.closest('.ped-backchip')
     )) return;
     try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* synthetic pointers */ }
     setGliding(false);
     setChildrenFor(null);
-    setSwitcherFor(null);
-    setSelectedId(null); // tap empty canvas dismisses the selection
+    setSwitcherFor(null); // tap empty canvas dismisses the open spouse menu
     pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     const rect = viewportRef.current?.getBoundingClientRect();
     if (pointersRef.current.size === 2 && rect) {
@@ -243,7 +230,7 @@ export default function ChartTree({ graph, activeId, viewerId, bloodlineOnly = f
 
   useEffect(() => {
     const onKey = (e) => {
-      if (e.key === 'Escape') { setChildrenFor(null); setSwitcherFor(null); setSelectedId(null); }
+      if (e.key === 'Escape') { setChildrenFor(null); setSwitcherFor(null); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -414,48 +401,29 @@ export default function ChartTree({ graph, activeId, viewerId, bloodlineOnly = f
     };
   })() : null;
 
-  // ── Selection / hover → contextual action bar (Direction B) ──────────────
-  // The bar targets the selected person, or (desktop) the hovered one as a
-  // preview. Positioned in screen space so it stays crisp at any zoom.
-  const barId = selectedId || hoveredId;
-  const selInfo = (() => {
-    if (!barId) return null;
-    const card = layout.cards.find((c) => c.members.includes(barId));
-    if (!card) return null;
-    const i = card.members.indexOf(barId);
-    // The plate's centre-x and top edge, for anchoring the action bar just
-    // above it. Portrait plates offset along X; landscape plates offset along Y.
-    const plateCx = portrait
-      ? (card.members.length === 2 ? card.x - card.w / 2 + PLATE_W / 2 + i * (PLATE_W + LINK_GAP) : card.x)
-      : card.x;
-    const plateTop = portrait
-      ? card.y - card.h / 2
-      : card.y - card.h / 2 + i * (PLATE_H + LINK_GAP);
-    const slot = card.slots?.find((s) => s.id === barId) ?? null;
-    return { card, plateCx, plateTop, slot };
-  })();
-  const selScreen = selInfo && viewportRef.current ? (() => {
+  // ── Spouse-switcher popover position ──────────────────────────────────────
+  // The swap pip (per-member, always visible when that member has recorded
+  // alternate partners) opens this menu right where it was tapped, in screen
+  // space so it stays crisp at any zoom — same anchoring idea the old
+  // hover-bar used, just keyed on `switcherFor` (a slot id) instead of a
+  // selected/hovered person.
+  const switcherCard = switcherFor ? layout.cards.find((c) => c.members.includes(switcherFor)) : null;
+  const switcherScreen = switcherCard && viewportRef.current ? (() => {
     const rect = viewportRef.current.getBoundingClientRect();
-    const sx = view.panX + selInfo.plateCx * view.zoom;
-    const sy = view.panY + selInfo.plateTop * view.zoom;
-    // The bar itself lives in screen space (a constant ~53px tall regardless
-    // of zoom — see .pbar), but the card's own "up" nav pip pokes out above
-    // the card by 11 WORLD units, so its on-screen protrusion scales with
-    // zoom. A fixed pixel offset only ever clears the pip at one specific
-    // zoom; at any other zoom the bar's own bottom edge cut straight through
-    // it (reported, with a screenshot: the bar visibly covered the pip).
-    // Clear the pip's actual, zoom-scaled position instead of a guess — and
-    // only when a pip is even rendered (a person with no recorded parents
-    // has none, per hasMoreUp, so nothing to clear).
-    const hasUpPip = !selInfo.slot || selInfo.slot.hasMoreUp;
-    const pipClearance = hasUpPip ? 11 * view.zoom + 10 : 0;
+    const i = switcherCard.members.indexOf(switcherFor);
+    const g = plateGeom(switcherCard, i);
+    // Portrait: the pip sits at the card's outer bottom edge, so the menu
+    // opens just below it. Landscape: the pip sits at the outer right edge,
+    // so the menu opens just to the right.
+    const worldX = portrait ? g.cx : switcherCard.x + switcherCard.w / 2 + 16;
+    const worldY = portrait ? switcherCard.y + switcherCard.h / 2 + 16 : g.cy;
+    const sx = view.panX + worldX * view.zoom;
+    const sy = view.panY + worldY * view.zoom;
     return {
       left: Math.min(Math.max(sx, 130), rect.width - 130),
-      top: Math.max(sy - pipClearance - 53, 8),
+      top: Math.min(Math.max(sy, 8), rect.height - 130),
     };
   })() : null;
-  const selPerson = barId ? graph.byId.get(barId) : null;
-  const dismissSel = () => { setSelectedId(null); setHoveredId(null); };
 
   return (
     <div className="chart-tree">
@@ -488,15 +456,8 @@ export default function ChartTree({ graph, activeId, viewerId, bloodlineOnly = f
               onOpenPerson={onOpenPerson}
               onActivate={onActivate}
               onToggleUp={toggleUp}
-              onAddRelative={onAddRelative}
               onOpenChildren={(id) => { setSwitcherFor(null); setChildrenFor((cur) => (cur === id ? null : id)); }}
               onOpenSwitcher={(memberId) => { setChildrenFor(null); setSwitcherFor((cur) => (cur === memberId ? null : memberId)); }}
-              onChooseSpouse={chooseSpouse}
-              partnerChoice={partnerChoice}
-              selectedId={selectedId}
-              onSelect={(id) => { setChildrenFor(null); setSelectedId((cur) => (cur === id ? null : id)); }}
-              onHoverEnter={hoverEnter}
-              onHoverLeave={hoverLeave}
             />
           ))}
         </div>
@@ -537,45 +498,14 @@ export default function ChartTree({ graph, activeId, viewerId, bloodlineOnly = f
           </div>
         )}
 
-        {/* Contextual action bar — the ONLY editing chrome, and only for the
-            selected person. Everything else stays calm. */}
-        {selInfo && selScreen && selPerson && (
-          <div
-            className="pbar"
-            style={{ left: selScreen.left, top: selScreen.top }}
-            role="toolbar"
-            aria-label={`Actions for ${selPerson.display_name}`}
-            onPointerEnter={(e) => { if (e.pointerType === 'mouse') hoverEnter(barId); }}
-            onPointerLeave={(e) => { if (e.pointerType === 'mouse') hoverLeave(); }}
-          >
-            <button className="pbar__btn" onClick={() => { dismissSel(); onOpenPerson?.(barId); }}>
-              <ProfileIcon /><span>Profile</span>
-            </button>
-            {activeId !== barId && (
-              <button className="pbar__btn" onClick={() => { dismissSel(); onActivate?.(barId); }}>
-                <CentreIcon /><span>Centre</span>
-              </button>
-            )}
-            <button className="pbar__btn" onClick={() => { dismissSel(); onAddRelative?.(barId); }}>
-              <PlusIcon /><span>Add</span>
-            </button>
-            {selInfo.slot?.altPartnerIds?.length > 0 && (
-              <button
-                className={'pbar__btn' + (switcherFor === barId ? ' pbar__btn--on' : '')}
-                onClick={() => { setSelectedId(barId); setSwitcherFor((cur) => (cur === barId ? null : barId)); }}
-                aria-expanded={switcherFor === barId}
-              >
-                <SwapIcon /><span>Partner</span>
-              </button>
-            )}
-          </div>
-        )}
-        {selInfo && selScreen && switcherFor === barId && (
-          <div className="pbar-menu" style={{ left: selScreen.left, top: selScreen.top + 46 }}>
+        {/* Spouse switcher — the only floating popover chrome left. Opened by
+            a card's own always-visible swap pip, never by selection/hover. */}
+        {switcherCard && switcherScreen && (
+          <div className="pbar-menu" style={{ left: switcherScreen.left, top: switcherScreen.top }}>
             <SpouseMenu
               graph={graph}
-              memberId={barId}
-              card={selInfo.card}
+              memberId={switcherFor}
+              card={switcherCard}
               partnerChoice={partnerChoice}
               bloodlineOnly={bloodlineOnly}
               onChoose={chooseSpouse}
@@ -634,9 +564,13 @@ function PedCard(props) {
 // A couple is two flat plates joined across the LINK_GAP seam: side by side in
 // portrait, stacked in landscape. Ancestry leaves each member's own plate
 // (top in portrait, left in landscape); children leave the union's centre
-// (bottom / right). Editing chrome is deferred to the on-select action bar —
-// the resting card carries only navigation pips.
-function PlateCard({ card, graph, horizontal, isFocal, selectedId, onOpenPerson, onSelect, onActivate, onToggleUp, onOpenChildren, onHoverEnter, onHoverLeave }) {
+// (bottom / right). Tapping a plate mirrors Tree View exactly: tapping
+// someone who ISN'T already the centred/focal person re-roots the chart on
+// them; tapping the person already at the centre opens their profile — no
+// separate action bar, no double-tap. A small always-visible swap pip per
+// member (when they have a recorded alternate partner) opens the spouse
+// switcher directly.
+function PlateCard({ card, graph, horizontal, isFocal, activeId, switcherFor, onOpenPerson, onActivate, onToggleUp, onOpenChildren, onOpenSwitcher }) {
   const isChild = card.kind === 'child';
   // Emphasis tiers — the eye follows the active family. Focal + immediate
   // (parents, children) at full strength; each generation further up recedes
@@ -659,14 +593,9 @@ function PlateCard({ card, graph, horizontal, isFocal, selectedId, onOpenPerson,
           return (
             <button
               key={personId}
-              className={'pplate'
-                + (person.is_deceased ? ' pplate--passed' : '')
-                + (personId === selectedId ? ' pplate--selected' : '')}
+              className={'pplate' + (person.is_deceased ? ' pplate--passed' : '')}
               style={{ width: PLATE_W }}
-              onClick={() => onSelect?.(personId)}
-              onDoubleClick={() => onOpenPerson?.(personId)}
-              onPointerEnter={(e) => { if (e.pointerType === 'mouse') onHoverEnter?.(personId); }}
-              onPointerLeave={(e) => { if (e.pointerType === 'mouse') onHoverLeave?.(); }}
+              onClick={() => { if (personId === activeId) onOpenPerson?.(personId); else onActivate?.(personId); }}
             >
               <Avatar person={person} size={42} shape="squircle" />
               <span className="pplate__text">
@@ -681,10 +610,9 @@ function PlateCard({ card, graph, horizontal, isFocal, selectedId, onOpenPerson,
         })}
       </div>
 
-      {/* Navigation pips (viewing state): expand a member's ancestry, or drop
-          into this card's children. Editing actions live in the action bar.
-          Portrait: ancestry up, children down. Landscape: ancestry left,
-          children right. */}
+      {/* Navigation pips: expand a member's ancestry, or drop into this
+          card's children. Portrait: ancestry up, children down. Landscape:
+          ancestry left, children right. */}
       {!isChild && card.slots.map((slot, i) => {
         if (!slot.hasMoreUp) return null;
         const person = graph.byId.get(slot.id);
@@ -703,6 +631,30 @@ function PlateCard({ card, graph, horizontal, isFocal, selectedId, onOpenPerson,
             {horizontal
               ? (slot.expanded ? <ChevronRightIcon /> : <ChevronLeftIcon />)
               : (slot.expanded ? <ChevronDownIcon /> : <ChevronUpIcon />)}
+          </button>
+        );
+      })}
+
+      {/* Swap pip — per member, always visible when that member has a
+          recorded alternate partner. Opposite side from the up pip so the
+          two never collide: portrait puts it at the plate's own outer
+          bottom edge, landscape at the card's outer right edge. */}
+      {!isChild && card.slots.map((slot, i) => {
+        if (!slot.altPartnerIds?.length) return null;
+        const person = graph.byId.get(slot.id);
+        const style = horizontal
+          ? { left: card.w - 11, top: PLATE_H / 2 + i * (PLATE_H + LINK_GAP) - 11 }
+          : { left: (card.members.length === 2 ? PLATE_W / 2 + i * (PLATE_W + LINK_GAP) : card.w / 2) - 11, top: card.h - 11 };
+        return (
+          <button
+            key={'swap_' + slot.id}
+            className={'pnav pnav--swap' + (switcherFor === slot.id ? ' pnav--on' : '')}
+            style={style}
+            onClick={(e) => { e.stopPropagation(); onOpenSwitcher(slot.id); }}
+            title={`Show ${person?.display_name.split(' ')[0]} with a different partner`}
+            aria-expanded={switcherFor === slot.id}
+          >
+            <SwapIcon />
           </button>
         );
       })}
@@ -808,12 +760,6 @@ function ArrowRightIcon() {
 }
 function ArrowDownIcon() {
   return <svg width="11" height="11" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5v14M6 13l6 6 6-6" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" /></svg>;
-}
-function ProfileIcon() {
-  return <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="8.5" r="3.6" stroke="currentColor" strokeWidth="1.7" /><path d="M5 19.5c1.3-3.3 4-5 7-5s5.7 1.7 7 5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" /></svg>;
-}
-function CentreIcon() {
-  return <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="3.2" stroke="currentColor" strokeWidth="1.7" /><path d="M12 3v3.2M12 17.8V21M3 12h3.2M17.8 12H21" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" /></svg>;
 }
 function PlusIcon() {
   return <svg width="11" height="11" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" /></svg>;
