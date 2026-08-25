@@ -269,8 +269,9 @@ export function computePedigree(graph, focusId, { expandedUp, partnerChoice, ori
   const cards = [];
   const connectors = [];
 
-  // Focal union: the focus person plus their displayed partner. A stale
-  // social-partner choice is ignored in bloodline mode (see displayedPairForSlot).
+  // Focal union: the focus person plus their displayed (primary) partner. A
+  // stale social-partner choice is ignored in bloodline mode (see
+  // displayedPairForSlot).
   const chosenFocalPartner = partnerChoice.get(focusId);
   const focalChoiceValid = chosenFocalPartner !== undefined
     && (!bloodlineOnly || chosenFocalPartner == null || bioCoParentIds(graph, focusId).includes(chosenFocalPartner));
@@ -280,10 +281,36 @@ export function computePedigree(graph, focusId, { expandedUp, partnerChoice, ori
   const focal = makeUnionCard(graph, [focusId], focalPartner ? [focusId, focalPartner] : [focusId], 'focal', opts);
   cards.push(focal);
 
+  // Extra co-parent pods — real feedback: forcing a choice of ONE partner via
+  // the swap pip silently hides every OTHER partnership the focus had
+  // children with. Every OTHER partner the focus shares at least one
+  // biological/adopted child with now gets its own sibling pod beside the
+  // primary one, each with its own honest descent line to just its own
+  // shared kids — a person with only one partnership (by far the common
+  // case) never gets an extra pod, so this collapses to exactly today's
+  // single-card shape.
+  const extraCoParents = focalPartner == null ? [] : unionCandidates(graph, focusId, bloodlineOnly)
+    .filter((c) => c.id !== focalPartner && c.sharedChildren > 0)
+    .sort((a, b) => b.sharedChildren - a.sharedChildren || String(a.id).localeCompare(String(b.id)));
+  const extraCards = extraCoParents.map((cp) => {
+    const card = makeUnionCard(graph, [focusId], [focusId, cp.id], 'extra', opts);
+    // Scope this pod to ONLY the children genuinely shared by focus and THIS
+    // co-parent — childrenOfUnion(focus, cp) otherwise returns every child of
+    // EITHER of them, including focus's kids from someone else entirely,
+    // which belong on a different pod (or the primary one), not this one.
+    card.childRows = card.childRows.filter((row) => row.aQualifier != null && row.bQualifier != null);
+    card.childrenCount = card.childRows.length;
+    return card;
+  });
+  for (const c of extraCards) cards.push(c);
+
   // ── Ancestors: recursive, expansion-driven. Returns the branch's span
   //    along the cross axis, placing cards into `cards` at (crossCenter,
-  //    gen). A member's branch exists only while `expandedUp` says so. ──────
+  //    gen). A member's branch exists only while `expandedUp` says so. Runs
+  //    for the focal pod AND every extra pod — each partnership can grow its
+  //    own ancestry independently. ─────────────────────────────────────────
   const seen = new Set(focal.members);
+  for (const c of extraCards) for (const m of c.members) seen.add(m);
 
   function buildAncestors(card, gen) {
     if (gen > MAX_GENERATIONS) return;
@@ -307,6 +334,7 @@ export function computePedigree(graph, focusId, { expandedUp, partnerChoice, ori
   }
   focal._gen = 0;
   buildAncestors(focal, 0);
+  for (const c of extraCards) { c._gen = 0; buildAncestors(c, 0); }
 
   // ── Cross-axis placement: classic pedigree spans, bottom-up. ─────────────
   const byId = new Map(cards.map((c) => [c.id, c]));
@@ -335,10 +363,19 @@ export function computePedigree(graph, focusId, { expandedUp, partnerChoice, ori
   }
   span(focal);
   place(focal, 0);
+  // Extra pods sit beside focal — left to right (portrait) / top to bottom
+  // (landscape) — each spanning its own ancestor branch if one is expanded.
+  let extraCursor = span(focal) / 2 + BRANCH_GAP;
+  for (const c of extraCards) {
+    const s = span(c);
+    place(c, extraCursor + s / 2);
+    extraCursor += s + BRANCH_GAP;
+  }
 
   // ── Generation (main-axis) placement: each generation row sits clear of
   //    the tallest card in the previous one, so mixed solo/couple rows never
-  //    collide vertically. gen 0 = focal at 0; ancestors negative-up. ───────
+  //    collide vertically. gen 0 = focal (and every extra pod) at 0;
+  //    ancestors negative-up. ────────────────────────────────────────────
   const maxGen = Math.max(...cards.map((c) => c._gen));
   const rowHeight = [];
   for (let g = 0; g <= maxGen; g++) {
@@ -350,56 +387,63 @@ export function computePedigree(graph, focusId, { expandedUp, partnerChoice, ori
   }
   for (const c of cards) { c._main = genOffset[c._gen]; }
 
-  // ── Focal children row: drawn cards one step below, honest connectors —
-  //    a child linked to only ONE displayed member hangs from that member's
-  //    half of the card, not from the couple's shared middle. ───────────────
+  // ── Children rows — one per pod (focal + every extra), each hanging off
+  //    its OWN card, honest per-side connectors: a child linked to only one
+  //    displayed member hangs from that member's own half of the pod, not
+  //    the couple's shared middle. ────────────────────────────────────────
   const childCards = [];
-  {
-    const rows = focal.childRows;
-    if (rows.length) {
-      const sideOf = (row) => {
-        const linkedA = row.aQualifier != null, linkedB = row.bQualifier != null;
-        return linkedA && linkedB ? 'both' : linkedA ? 'a' : 'b';
+  const sideOf = (row) => {
+    const linkedA = row.aQualifier != null, linkedB = row.bQualifier != null;
+    return linkedA && linkedB ? 'both' : linkedA ? 'a' : 'b';
+  };
+  function buildChildrenRow(unionCard, rows) {
+    if (!rows.length) return;
+    const ordered = [
+      ...rows.filter((r) => sideOf(r) === 'a'),
+      ...rows.filter((r) => sideOf(r) === 'both'),
+      ...rows.filter((r) => sideOf(r) === 'b'),
+    ];
+    const childW = CHILD_PW;
+    const totalW = ordered.length * childW + (ordered.length - 1) * CHILD_GAP;
+    let cursor = unionCard._cross - totalW / 2;
+    for (const row of ordered) {
+      const grandkids = childrenOfUnion(graph, row.id, null, bloodlineOnly).length;
+      const cc = {
+        id: 'c_' + row.id,
+        kind: 'child',
+        members: [row.id],
+        lineMemberIds: [row.id],
+        slots: [],
+        marriage: null,
+        childrenCount: grandkids,
+        side: sideOf(row),
+        qualifiers: { a: row.aQualifier, b: row.bQualifier },
+        w: childW,
+        h: PLATE_H,
+        _cross: cursor + childW / 2,
+        _gen: -1,
+        _podId: unionCard.id,
       };
-      const ordered = [
-        ...rows.filter((r) => sideOf(r) === 'a'),
-        ...rows.filter((r) => sideOf(r) === 'both'),
-        ...rows.filter((r) => sideOf(r) === 'b'),
-      ];
-      const childW = CHILD_PW;
-      const totalW = ordered.length * childW + (ordered.length - 1) * CHILD_GAP;
-      let cursor = -totalW / 2;
-      for (const row of ordered) {
-        const grandkids = childrenOfUnion(graph, row.id, null, bloodlineOnly).length;
-        const cc = {
-          id: 'c_' + row.id,
-          kind: 'child',
-          members: [row.id],
-          lineMemberIds: [row.id],
-          slots: [],
-          marriage: null,
-          childrenCount: grandkids,
-          side: sideOf(row),
-          qualifiers: { a: row.aQualifier, b: row.bQualifier },
-          w: childW,
-          h: PLATE_H,
-          _cross: cursor + childW / 2,
-          _gen: -1,
-        };
-        cc._main = -(focal.h / 2 + CHILD_DROP + cc.h / 2);
-        cursor += childW + CHILD_GAP;
-        childCards.push(cc);
-        cards.push(cc);
-        connectors.push({
-          id: `down_${focal.id}_${cc.id}`,
-          kind: 'down',
-          fromCardId: focal.id,
-          toCardId: cc.id,
-          side: cc.side,
-        });
-      }
+      cc._main = -(unionCard.h / 2 + CHILD_DROP + cc.h / 2);
+      cursor += childW + CHILD_GAP;
+      childCards.push(cc);
+      cards.push(cc);
+      connectors.push({
+        id: `down_${unionCard.id}_${cc.id}`,
+        kind: 'down',
+        fromCardId: unionCard.id,
+        toCardId: cc.id,
+        side: cc.side,
+      });
     }
   }
+  // A child claimed by an extra pod (it's genuinely shared with that OTHER
+  // co-parent) is drawn only there — never duplicated under the primary pod
+  // too, even though it's still one of focus's own biological children.
+  const claimedByExtra = new Set();
+  for (const c of extraCards) for (const row of c.childRows) claimedByExtra.add(row.id);
+  buildChildrenRow(focal, focal.childRows.filter((r) => !claimedByExtra.has(r.id)));
+  for (const c of extraCards) buildChildrenRow(c, c.childRows);
 
   // Ancestor connectors — one per expanded member slot, anchored to that
   // member's half of the card so the two lines out of a couple visibly
@@ -428,14 +472,24 @@ export function computePedigree(graph, focusId, { expandedUp, partnerChoice, ori
     else { c.x = c._cross; c.y = -c._main; }
   }
   // In horizontal mode the drawn children (negative main) stack better with
-  // a tighter cross: re-stack them vertically beside the focal card.
+  // a tighter cross: re-stack them vertically beside THEIR OWN pod (not
+  // always focal — an extra pod's children stack beside the extra pod).
   if (horizontal && childCards.length) {
-    const totalH = childCards.reduce((s, c) => s + c.h, 0) + (childCards.length - 1) * CHILD_GAP;
-    let cursor = -totalH / 2;
+    const byPod = new Map();
     for (const c of childCards) {
-      c.x = focal.w / 2 + CHILD_DROP + c.w / 2 + 40;
-      c.y = cursor + c.h / 2;
-      cursor += c.h + CHILD_GAP;
+      if (!byPod.has(c._podId)) byPod.set(c._podId, []);
+      byPod.get(c._podId).push(c);
+    }
+    for (const [podId, kids] of byPod) {
+      const podCard = byId.get(podId);
+      if (!podCard) continue;
+      const totalH = kids.reduce((s, c) => s + c.h, 0) + (kids.length - 1) * CHILD_GAP;
+      let cursor = podCard.y - totalH / 2;
+      for (const c of kids) {
+        c.x = podCard.x + podCard.w / 2 + CHILD_DROP + c.w / 2 + 40;
+        c.y = cursor + c.h / 2;
+        cursor += c.h + CHILD_GAP;
+      }
     }
   }
 
