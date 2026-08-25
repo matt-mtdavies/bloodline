@@ -157,39 +157,15 @@ t('horizontal couple card is one plate wide, two plates tall', () => {
   assert.equal(focal.h, 138);
 });
 
-// ── Extra co-parent pods: show every partnership with real shared children
-//    at once, instead of forcing a choice via the swap pip. allen already
-//    has two, in this same gauntlet family: current partner nancy (their
-//    child heather) and former partner shirley (their child marjorie). ─────
-
-t('a person with only one partnership never gets an extra pod (matthew+kaitlin)', () => {
-  const { cards } = computePedigree(graph, 'matthew', { expandedUp: new Set() });
-  assert.equal(cards.filter((c) => c.kind === 'extra').length, 0);
-});
-
-t('rooted on allen: nancy is primary (current beats former), shirley becomes an extra pod', () => {
-  const { cards, focalCardId } = computePedigree(graph, 'allen', { expandedUp: new Set() });
-  const focal = cards.find((c) => c.id === focalCardId);
-  assert.deepEqual(focal.members.slice().sort(), ['allen', 'nancy']);
-  const extras = cards.filter((c) => c.kind === 'extra');
-  assert.equal(extras.length, 1);
-  assert.deepEqual(extras[0].members.slice().sort(), ['allen', 'shirley']);
-});
-
-t('each partnership draws its own child, from its own pod, never duplicated', () => {
-  const { cards, connectors } = computePedigree(graph, 'allen', { expandedUp: new Set() });
-  const extra = cards.find((c) => c.kind === 'extra');
-  const heatherCard = cards.find((c) => c.kind === 'child' && c.members[0] === 'heather');
-  const marjorieCard = cards.find((c) => c.kind === 'child' && c.members[0] === 'marjorie');
-  assert.ok(heatherCard, 'heather (allen+nancy\'s child) is drawn');
-  assert.ok(marjorieCard, 'marjorie (allen+shirley\'s child) is drawn');
-  // Marjorie hangs from the EXTRA pod, not the primary one.
-  const marjorieConn = connectors.find((c) => c.toCardId === marjorieCard.id);
-  assert.equal(marjorieConn.fromCardId, extra.id);
-  // Nobody is drawn twice across the whole layout.
-  const childIds = cards.filter((c) => c.kind === 'child').map((c) => c.id);
-  assert.equal(childIds.length, new Set(childIds).size, 'no child card id repeats');
-});
+// ── Descent connector origin: a child linked to only one displayed member
+//    hangs from that member's own plate, not the couple's shared middle
+//    (real feedback: "if steps, then the line comes from the middle of the
+//    parents tile, not the middle of the couple"). A second design — showing
+//    every partnership with shared children as its own sibling pod at once —
+//    was tried and reverted (real feedback on the live result: two pods for
+//    the same person, with no visual link between them, read as two
+//    unrelated couples) — see git history if revisited. Only one partnership
+//    is ever displayed at a time now, exactly as before that experiment. ───
 
 t('a child linked to only the non-focus member of a pod is side "b" — a dashed, dedicated connector', () => {
   // A small dedicated fixture: focus person "sam" partners "robin" (no shared
