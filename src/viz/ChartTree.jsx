@@ -59,6 +59,34 @@ export default function ChartTree({ graph, activeId, viewerId, bloodlineOnly = f
   );
   const cardById = useMemo(() => new Map(layout.cards.map((c) => [c.id, c])), [layout]);
 
+  // Entry stagger — borrowing Canopy's own "grows outward from what's
+  // already there" principle for this DOM-rendered chart: rows further from
+  // the focal row lead in later, and within a row, cards further along lag
+  // slightly behind their neighbour, so a re-root or expansion reads as the
+  // family opening outward rather than the whole picture flashing in as one
+  // flat batch. A card that's already mounted keeps its animation-delay
+  // recomputed on every render, but since its CSS animation already played
+  // (see .pcard's `backwards` fill-mode note in components.css) a changed
+  // delay on an already-finished animation is inert — this only ever
+  // affects cards genuinely mounting for the first time.
+  const entryDelayById = useMemo(() => {
+    const byGen = new Map();
+    for (const c of layout.cards) {
+      const g = c._gen ?? 0;
+      if (!byGen.has(g)) byGen.set(g, []);
+      byGen.get(g).push(c);
+    }
+    const out = new Map();
+    for (const row of byGen.values()) {
+      row.sort((a, b) => (a._cross ?? 0) - (b._cross ?? 0));
+      row.forEach((c, i) => {
+        const dist = Math.abs(c._gen ?? 0);
+        out.set(c.id, Math.min(420, dist * 90 + i * 45));
+      });
+    }
+    return out;
+  }, [layout]);
+
   // Smooth programmatic camera moves: the world glides via a CSS transform
   // transition that is ONLY enabled around deliberate moves (re-root, fit,
   // zoom buttons) — never during a drag or pinch, where it would lag the
@@ -275,6 +303,15 @@ export default function ChartTree({ graph, activeId, viewerId, bloodlineOnly = f
     const g = plateGeom(card, i);
     return portrait ? { x: g.cx, y: card.y - card.h / 2 } : { x: card.x - card.w / 2, y: g.cy };
   };
+  // The mirror of upAnchor for descent: a member's OWN plate — its
+  // bottom-centre in portrait, its right-centre in landscape — so a child
+  // linked to only one half of a pod visibly hangs from that person, not
+  // the couple's shared middle.
+  const downAnchor = (card, memberId) => {
+    const i = card.members.indexOf(memberId);
+    const g = plateGeom(card, i);
+    return portrait ? { x: g.cx, y: card.y + card.h / 2 } : { x: card.x + card.w / 2, y: g.cy };
+  };
 
   // Rounded orthogonal elbow between two points. axis 'v' turns on the Y run,
   // 'h' on the X run. `turnAt` (0..1, v-axis) places the horizontal jog along
@@ -314,77 +351,104 @@ export default function ChartTree({ graph, activeId, viewerId, bloodlineOnly = f
       const x = card.x, seam = card.y - card.h / 2 + PLATE_H + LINK_GAP / 2;
       d = `M ${x} ${seam - LINK_GAP / 2 - 1} L ${x} ${seam + LINK_GAP / 2 + 1}`;
     }
-    paths.push(<path key={'plink_' + card.id} d={d} className={cls} />);
+    paths.push(<path key={'plink_' + card.id} d={d} className={cls} style={{ animationDelay: `${entryDelayById.get(card.id) ?? 0}ms` }} />);
   }
 
-  // Ancestry (up) connectors.
+  // Ancestry (up) connectors — timed to the ARRIVING ancestor card, so the
+  // branch and the person at its tip appear together rather than the line
+  // reaching a target that already popped in a beat earlier.
   for (const conn of layout.connectors) {
     if (conn.kind !== 'up') continue;
     const from = cardById.get(conn.fromCardId);
     const to = cardById.get(conn.toCardId);
     if (!from || !to) continue;
+    const linkDelay = { animationDelay: `${entryDelayById.get(to.id) ?? 0}ms` };
     const a = upAnchor(from, conn.fromMemberId);
     if (portrait) {
       const b = { x: to.x, y: to.y + to.h / 2 };
       // Rise straight up in the child's own column, then jog into the parent
       // near the top — ancestry reads as belonging to that person.
-      paths.push(<path key={conn.id} d={elbow(a.x, a.y, b.x, b.y, 'v', 0.72)} className="ped-link" />);
+      paths.push(<path key={conn.id} d={elbow(a.x, a.y, b.x, b.y, 'v', 0.72)} className="ped-link" style={linkDelay} />);
     } else {
       // Landscape: leave the member's plate leftward, jog into the parent
       // union's right-centre.
       const b = { x: to.x + to.w / 2, y: to.y };
-      paths.push(<path key={conn.id} d={elbow(a.x, a.y, b.x, b.y, 'h')} className="ped-link" />);
+      paths.push(<path key={conn.id} d={elbow(a.x, a.y, b.x, b.y, 'h')} className="ped-link" style={linkDelay} />);
     }
   }
 
-  // Children — portrait draws ONE sibling bus from the union's bottom-centre:
-  // a stem down to a shared horizontal bar, then a drop into each child's
-  // top-centre. The classic sibling bracket the eye reads instantly.
+  // Children — portrait draws ONE sibling bus per side-group from its own
+  // origin: a stem to a shared bar, then a drop into each child's top-centre
+  // — the classic sibling bracket the eye reads instantly. A pod can have up
+  // to three such buses at once: 'a' and 'b' each hang from that ONE
+  // member's own plate (a child who is only that person's, not their
+  // partner's — most often a step-child, drawn dashed and low-emphasis for
+  // 'b' since it's the non-focus member's own line), 'both' hangs from the
+  // pod's shared middle exactly as before. Every pod (the focal union AND
+  // any extra co-parent pods) draws its own set independently.
   const downConns = layout.connectors.filter((c) => c.kind === 'down');
-  if (downConns.length) {
-    const from = cardById.get(downConns[0].fromCardId);
-    const kids = downConns.map((c) => cardById.get(c.toCardId)).filter(Boolean);
-    if (from && kids.length) {
-      if (portrait) {
-        const stemX = from.x, stemTop = from.y + from.h / 2;
-        const kidTop = Math.min(...kids.map((k) => k.y - k.h / 2));
-        const busY = stemTop + (kidTop - stemTop) * 0.5;
-        const r = 8;
-        const xs = kids.map((k) => k.x);
-        const minX = Math.min(...xs, stemX), maxX = Math.max(...xs, stemX);
-        paths.push(<path key="bus_stem" d={`M ${stemX} ${stemTop} L ${stemX} ${busY}`} className="ped-link" />);
-        if (kids.length > 1) paths.push(<path key="bus_bar" d={`M ${minX} ${busY} L ${maxX} ${busY}`} className="ped-link" />);
-        for (const k of kids) {
-          const kx = k.x, ky = k.y - k.h / 2;
-          const dx = kx > stemX ? 1 : kx < stemX ? -1 : 0;
-          const rr = Math.min(r, Math.abs(ky - busY) / 2, dx ? Math.abs(kx - stemX) / 2 : r);
-          const d = dx === 0
-            ? `M ${kx} ${busY} L ${kx} ${ky}`
-            : `M ${kx - rr * dx} ${busY} Q ${kx} ${busY} ${kx} ${busY + rr} L ${kx} ${ky}`;
-          paths.push(<path key={'kid_' + k.id} d={d} className="ped-link" />);
-        }
-      } else {
-        // Landscape: ONE sibling bus to the RIGHT — a stem out of the union's
-        // right-centre to a shared vertical bar, then a branch into each
-        // child's left-centre. The portrait bus, transposed.
-        const stemY = from.y, stemLeft = from.x + from.w / 2;
-        const kidLeft = Math.min(...kids.map((k) => k.x - k.w / 2));
-        const busX = stemLeft + (kidLeft - stemLeft) * 0.5;
-        const r = 8;
-        const ys = kids.map((k) => k.y);
-        const minY = Math.min(...ys, stemY), maxY = Math.max(...ys, stemY);
-        paths.push(<path key="bus_stem" d={`M ${stemLeft} ${stemY} L ${busX} ${stemY}`} className="ped-link" />);
-        if (kids.length > 1) paths.push(<path key="bus_bar" d={`M ${busX} ${minY} L ${busX} ${maxY}`} className="ped-link" />);
-        for (const k of kids) {
-          const kx = k.x - k.w / 2, ky = k.y;
-          const dy = ky > stemY ? 1 : ky < stemY ? -1 : 0;
-          const rr = Math.min(r, Math.abs(kx - busX) / 2, dy ? Math.abs(ky - stemY) / 2 : r);
-          const d = dy === 0
-            ? `M ${busX} ${ky} L ${kx} ${ky}`
-            : `M ${busX} ${ky - rr * dy} Q ${busX} ${ky} ${busX + rr} ${ky} L ${kx} ${ky}`;
-          paths.push(<path key={'kid_' + k.id} d={d} className="ped-link" />);
-        }
+  const downByFrom = new Map();
+  for (const c of downConns) {
+    if (!downByFrom.has(c.fromCardId)) downByFrom.set(c.fromCardId, []);
+    downByFrom.get(c.fromCardId).push(c);
+  }
+  const drawBus = (origin, kids, dashed, keyBase) => {
+    const cls = 'ped-link' + (dashed ? ' ped-link--step' : '');
+    const r = 8;
+    // The stem+bar lead with the EARLIEST child in the group (the branch
+    // starts drawing before any single child's own arrival); each branch
+    // down to a specific child carries that child's own delay, so kids
+    // within the same bus still arrive staggered rather than all at once.
+    const kidDelay = (k) => entryDelayById.get(k.id) ?? 0;
+    const busDelay = { animationDelay: `${Math.min(...kids.map(kidDelay))}ms` };
+    if (portrait) {
+      const stemX = origin.x, stemTop = origin.y;
+      const kidTop = Math.min(...kids.map((k) => k.y - k.h / 2));
+      const busY = stemTop + (kidTop - stemTop) * 0.5;
+      const xs = kids.map((k) => k.x);
+      const minX = Math.min(...xs, stemX), maxX = Math.max(...xs, stemX);
+      paths.push(<path key={keyBase + '_stem'} d={`M ${stemX} ${stemTop} L ${stemX} ${busY}`} className={cls} style={busDelay} />);
+      if (kids.length > 1) paths.push(<path key={keyBase + '_bar'} d={`M ${minX} ${busY} L ${maxX} ${busY}`} className={cls} style={busDelay} />);
+      for (const k of kids) {
+        const kx = k.x, ky = k.y - k.h / 2;
+        const dx = kx > stemX ? 1 : kx < stemX ? -1 : 0;
+        const rr = Math.min(r, Math.abs(ky - busY) / 2, dx ? Math.abs(kx - stemX) / 2 : r);
+        const d = dx === 0
+          ? `M ${kx} ${busY} L ${kx} ${ky}`
+          : `M ${kx - rr * dx} ${busY} Q ${kx} ${busY} ${kx} ${busY + rr} L ${kx} ${ky}`;
+        paths.push(<path key={keyBase + '_kid_' + k.id} d={d} className={cls} style={{ animationDelay: `${kidDelay(k)}ms` }} />);
       }
+    } else {
+      // Landscape: ONE sibling bus to the RIGHT — a stem out of the origin to
+      // a shared vertical bar, then a branch into each child's left-centre.
+      const stemY = origin.y, stemLeft = origin.x;
+      const kidLeft = Math.min(...kids.map((k) => k.x - k.w / 2));
+      const busX = stemLeft + (kidLeft - stemLeft) * 0.5;
+      const ys = kids.map((k) => k.y);
+      const minY = Math.min(...ys, stemY), maxY = Math.max(...ys, stemY);
+      paths.push(<path key={keyBase + '_stem'} d={`M ${stemLeft} ${stemY} L ${busX} ${stemY}`} className={cls} style={busDelay} />);
+      if (kids.length > 1) paths.push(<path key={keyBase + '_bar'} d={`M ${busX} ${minY} L ${busX} ${maxY}`} className={cls} style={busDelay} />);
+      for (const k of kids) {
+        const kx = k.x - k.w / 2, ky = k.y;
+        const dy = ky > stemY ? 1 : ky < stemY ? -1 : 0;
+        const rr = Math.min(r, Math.abs(kx - busX) / 2, dy ? Math.abs(ky - stemY) / 2 : r);
+        const d = dy === 0
+          ? `M ${busX} ${ky} L ${kx} ${ky}`
+          : `M ${busX} ${ky - rr * dy} Q ${busX} ${ky} ${busX + rr} ${ky} L ${kx} ${ky}`;
+        paths.push(<path key={keyBase + '_kid_' + k.id} d={d} className={cls} style={{ animationDelay: `${kidDelay(k)}ms` }} />);
+      }
+    }
+  };
+  for (const [fromCardId, conns] of downByFrom) {
+    const from = cardById.get(fromCardId);
+    if (!from) continue;
+    for (const side of ['both', 'a', 'b']) {
+      const kids = conns.filter((c) => c.side === side).map((c) => cardById.get(c.toCardId)).filter(Boolean);
+      if (!kids.length) continue;
+      const origin = side === 'both'
+        ? (portrait ? { x: from.x, y: from.y + from.h / 2 } : { x: from.x + from.w / 2, y: from.y })
+        : downAnchor(from, from.members[side === 'a' ? 0 : from.members.length - 1]);
+      drawBus(origin, kids, side === 'b', `bus_${fromCardId}_${side}`);
     }
   }
 
@@ -452,6 +516,7 @@ export default function ChartTree({ graph, activeId, viewerId, bloodlineOnly = f
               activeId={activeId}
               horizontal={horizontal}
               isFocal={card.id === layout.focalCardId}
+              entryDelayMs={entryDelayById.get(card.id) ?? 0}
               switcherFor={switcherFor}
               onOpenPerson={onOpenPerson}
               onActivate={onActivate}
@@ -570,7 +635,7 @@ function PedCard(props) {
 // separate action bar, no double-tap. A small always-visible swap pip per
 // member (when they have a recorded alternate partner) opens the spouse
 // switcher directly.
-function PlateCard({ card, graph, horizontal, isFocal, activeId, switcherFor, onOpenPerson, onActivate, onToggleUp, onOpenChildren, onOpenSwitcher }) {
+function PlateCard({ card, graph, horizontal, isFocal, entryDelayMs = 0, activeId, switcherFor, onOpenPerson, onActivate, onToggleUp, onOpenChildren, onOpenSwitcher }) {
   const isChild = card.kind === 'child';
   // Emphasis tiers — the eye follows the active family. Focal + immediate
   // (parents, children) at full strength; each generation further up recedes
@@ -580,7 +645,7 @@ function PlateCard({ card, graph, horizontal, isFocal, activeId, switcherFor, on
   return (
     <div
       className={'pcard' + (horizontal ? ' pcard--land' : '') + (isFocal ? ' pcard--focal' : '') + (isChild ? ' pcard--child' : '') + recede}
-      style={{ left: card.x - card.w / 2, top: card.y - card.h / 2, width: card.w, height: card.h }}
+      style={{ left: card.x - card.w / 2, top: card.y - card.h / 2, width: card.w, height: card.h, animationDelay: `${entryDelayMs}ms` }}
     >
       <div className="pcard__row">
         {card.members.map((personId) => {
@@ -588,7 +653,11 @@ function PlateCard({ card, graph, horizontal, isFocal, activeId, switcherFor, on
           if (!person) return null;
           const age = !person.is_minor || person.is_deceased ? ageOrAt(person) : null;
           const dates = age ? `${lifespan(person)} · ${person.is_deceased ? age : `age ${age}`}` : lifespan(person);
-          const stepChip = isChild && (card.qualifiers?.a === 'step' || card.qualifiers?.b === 'step') ? 'Step'
+          // side 'b' means this child is linked to the pod's non-focus member
+          // only — relationally a step-child of the focus-side line even
+          // when no edge is explicitly qualified 'step' (there IS no edge to
+          // focus at all in that case), so it labels the same way.
+          const stepChip = isChild && (card.qualifiers?.a === 'step' || card.qualifiers?.b === 'step' || card.side === 'b') ? 'Step'
             : isChild && ['adopted', 'adoptive'].includes(card.qualifiers?.a) ? 'Adopted' : null;
           return (
             <button
@@ -659,7 +728,9 @@ function PlateCard({ card, graph, horizontal, isFocal, activeId, switcherFor, on
         );
       })}
 
-      {card.childrenCount > 0 && !isFocal && (
+      {/* An 'extra' co-parent pod draws its own children row directly, same
+          as the focal pod — it never needs the down-pip's popover either. */}
+      {card.childrenCount > 0 && !isFocal && card.kind !== 'extra' && (
         <button
           className="pnav pnav--down"
           style={horizontal ? { left: card.w - 11, top: card.h / 2 - 11 } : { left: card.w / 2 - 11, top: card.h - 11 }}
