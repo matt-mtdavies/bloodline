@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { buildGraph } from '../src/data/graph.js';
 import { computePedigree, primaryUnionPartner, childrenOfUnion, unionCandidates } from '../src/viz/pedigreeLayout.js';
+import { PLATE_W, LINK_GAP } from '../src/viz/pedigreeMetrics.js';
 
 const person = (id) => ({ id, display_name: id, gender: null, is_deceased: false });
 const par = (p, c, q = 'biological') => ({ type: 'parent', from_person: p, to_person: c, qualifier: q, partner_status: null });
@@ -155,6 +156,42 @@ t('horizontal couple card is one plate wide, two plates tall', () => {
   // One plate wide (PLATE_W=192), two plates + the seam gap tall (60*2+18=138).
   assert.equal(focal.w, 192);
   assert.equal(focal.h, 138);
+});
+
+t('a lopsided ancestor branch stays near its own member, not dragged toward its partner\'s wide branch', () => {
+  // "kid"'s parents: "wide" (whose own ancestry expands 2 more generations
+  // deep) and "narrow" (whose parents are recorded but have no further
+  // ancestors of their own — a real, common shape: one side of a family is
+  // well researched, the other barely). Real report, with a screenshot: the
+  // narrow side's parent card rendered "far to the right" of the person it
+  // actually belongs to, dragged out by how wide the OTHER side's branch was.
+  const p2 = ['kid', 'wide', 'narrow', 'wA', 'wB', 'wAp1', 'wAp2', 'wBp1', 'wBp2', 'nA', 'nB'].map(person);
+  const r2 = [
+    ptn('wide', 'narrow'),
+    par('wide', 'kid'), par('narrow', 'kid'),
+    par('wA', 'wide'), par('wB', 'wide'),
+    par('wAp1', 'wA'), par('wAp2', 'wA'),
+    par('wBp1', 'wB'), par('wBp2', 'wB'),
+    par('nA', 'narrow'), par('nB', 'narrow'),
+  ];
+  const g2 = buildGraph(p2, r2);
+  const expandedUp = new Set(['kid', 'wide', 'narrow', 'wA', 'wB']); // expand every available generation
+  const { cards } = computePedigree(g2, 'kid', { expandedUp });
+  // kid's own parent card: wide (member 0, left) + narrow (member 1, right).
+  const parentCard = cards.find((c) => c.kind === 'ancestor' && c.members.includes('wide') && c.members.includes('narrow'));
+  // narrow's OWN parents (nA+nB) — one generation further up, un-expandable
+  // (a real, common shape: one side of the family well researched, the
+  // other barely) — vs. wide's own parents (wA+wB), which keep going another
+  // generation deeper still.
+  const narrowGrandCard = cards.find((c) => c.kind === 'ancestor' && c.members.includes('nA'));
+  const wideGrandCard = cards.find((c) => c.kind === 'ancestor' && c.members.includes('wA'));
+  assert.ok(narrowGrandCard && wideGrandCard, 'both grandparent cards drawn');
+  // narrow's own plate sits on the right half of the wide+narrow card — its
+  // OWN parents should land close to that x, not dragged out toward wide's
+  // much wider (one generation deeper) branch.
+  const narrowPlateX = parentCard.x + PLATE_W / 2 + LINK_GAP / 2;
+  assert.ok(Math.abs(narrowGrandCard.x - narrowPlateX) < PLATE_W,
+    `narrow's own parents (x=${narrowGrandCard.x}) should stay near narrow's own plate (x≈${narrowPlateX}), not drift toward wide's branch (x=${wideGrandCard.x})`);
 });
 
 // ── Descent connector origin: a child linked to only one displayed member
