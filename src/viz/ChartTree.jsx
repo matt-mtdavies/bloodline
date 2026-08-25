@@ -379,13 +379,12 @@ export default function ChartTree({ graph, activeId, viewerId, bloodlineOnly = f
 
   // Children — portrait draws ONE sibling bus per side-group from its own
   // origin: a stem to a shared bar, then a drop into each child's top-centre
-  // — the classic sibling bracket the eye reads instantly. A pod can have up
-  // to three such buses at once: 'a' and 'b' each hang from that ONE
-  // member's own plate (a child who is only that person's, not their
+  // — the classic sibling bracket the eye reads instantly. The focal card
+  // can have up to three such buses at once: 'a' and 'b' each hang from that
+  // ONE member's own plate (a child who is only that person's, not their
   // partner's — most often a step-child, drawn dashed and low-emphasis for
   // 'b' since it's the non-focus member's own line), 'both' hangs from the
-  // pod's shared middle exactly as before. Every pod (the focal union AND
-  // any extra co-parent pods) draws its own set independently.
+  // pod's shared middle exactly as before.
   const downConns = layout.connectors.filter((c) => c.kind === 'down');
   const downByFrom = new Map();
   for (const c of downConns) {
@@ -728,9 +727,7 @@ function PlateCard({ card, graph, horizontal, isFocal, entryDelayMs = 0, activeI
         );
       })}
 
-      {/* An 'extra' co-parent pod draws its own children row directly, same
-          as the focal pod — it never needs the down-pip's popover either. */}
-      {card.childrenCount > 0 && !isFocal && card.kind !== 'extra' && (
+      {card.childrenCount > 0 && !isFocal && (
         <button
           className="pnav pnav--down"
           style={horizontal ? { left: card.w - 11, top: card.h / 2 - 11 } : { left: card.w / 2 - 11, top: card.h - 11 }}
