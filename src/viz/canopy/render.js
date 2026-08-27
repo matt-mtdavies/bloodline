@@ -14,7 +14,7 @@
 
 import { Container, Graphics, Sprite, Texture, Assets, Text, TextStyle } from 'pixi.js';
 import { softShadowTexture, warmGlowTexture } from '../textures.js';
-import { unitAnchor, labelTextFor } from './plan.js';
+import { unitAnchor, labelTextFor, POD_GAP } from './plan.js';
 import { progressAt, easeBranch, easeBud, bondKey } from './growth.js';
 import { labelDrop } from './geometry.js';
 
@@ -23,6 +23,11 @@ const INK_SOFT = 0x6b6259;
 const PAPER = 0xfdfbf7;
 const TERRA = 0xc2603a;
 const GOLD = 0xc4913f;
+/* How close two ends of a 'former' union have to be to read as an adjacent
+ * pod (plan.js's formerPartner/adjacentAnchor placement) rather than a
+ * genuinely distant satellite thread. Comfortably above a real pod's own
+ * gap, comfortably below how far a lifted co-parent satellite ever sits. */
+const ADJACENT_MAX = POD_GAP * 2.5;
 
 const POD = {
   current: { fill: 0xf6e6dc, border: 0xc2603a },
@@ -293,14 +298,24 @@ export function drawBonds(g, frame, schedule, t, offsetOf) {
     // The capsule grows from the anchored member outward to the partner, so
     // the union appears to reach for them rather than blink into being.
     const to = { x: a.x + (c.x - a.x) * e, y: a.y + (c.y - a.y) * e };
-    if (b.status === 'former') {
-      /* A dissolved union is a broken THREAD between two people, not a
-       * capsule around them. A capsule says "these two are one unit", which
-       * is precisely what a former partnership is not — and because a former
-       * partner is a lifted satellite rather than inside the pod, a capsule
-       * also had to stretch far enough to swallow whoever sat between. Drawn
-       * edge to edge so it reads as a link, and dashed so it reads as
-       * dissolved without relying on colour alone. See drawThread. */
+    if (b.status === 'former' && Math.hypot(c.x - a.x, c.y - a.y) <= ADJACENT_MAX) {
+      /* A genuine ex placed directly beside the person they used to partner
+       * (see plan.js's formerPartner/adjacentAnchor placement) reads as a
+       * "was a couple" pod, not a queued extra: the same capsule shape a
+       * current union gets, styled as historical — a muted grey wash and a
+       * broken outline instead of the solid warm one, so it says "this was
+       * a unit" without claiming it still is. Real feedback: a dashed line
+       * reaching off to a distant, elevated ex read as unrelated rather than
+       * as part of the family, and made a parent's real ex look associated
+       * with the wrong person once its path crossed another couple's lines. */
+      capsulePath(g, a, to, hw + 1).fill({ color: pal.fill, alpha: 0.4 * e });
+      dashedCapsule(g, a, to, hw + 1, pal.border, 0.8 * e);
+    } else if (b.status === 'former') {
+      /* A co-parent's own further-flung past union (or any former union that
+       * genuinely ends up far from its partner) stays a broken THREAD rather
+       * than a capsule — a capsule says "these two are one unit", stretched
+       * across a real gap that would say the opposite of what a dissolved,
+       * distant relationship should. See drawThread. */
       drawThread(g, a, c, e, { color: pal.border, dashed: true, alpha: 0.75 });
     } else {
       /* A current union is a warm HOLLOW the couple sits in, not a boxed

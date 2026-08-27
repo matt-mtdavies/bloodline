@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, forwardRef } from 'react';
 import Logo from './Logo.jsx';
 import { PERIMETER_OPTIONS } from '../lib/familyPerimeter.js';
 
-export default function TopBar({ familyName, stats, view, layout, syncStatus, syncError, onRetrySync, onSetViewMode, onOpenLegend, bloodlineOnly = false, onToggleBloodlineOnly, onOpenActivity, activityCount = 0, user, userPhoto, onOpenProfile, onOpenHome, onSearch, onOpenInsights, onOpenTimeline, onOpenArchiveCare, archiveCareCount = 0, archiveCareHasNew = false, storageWarning, storageNearLimit, treeSizeWarning, syncToast, onDismissSyncToast, recapNudgeCount = 0, onShowRecap, onDismissRecapNudge, perimeterActive = false, perimeterLevel = null, onOpenPerimeterSettings, anyOverlayOpen = false }) {
+export default function TopBar({ familyName, stats, view, layout, syncStatus, syncError, onRetrySync, onSetViewMode, onOpenLegend, bloodlineOnly = false, onToggleBloodlineOnly, onOpenActivity, activityCount = 0, user, userPhoto, onOpenProfile, onOpenHome, onSearch, onOpenInsights, onOpenTimeline, onOpenArchiveCare, archiveCareCount = 0, archiveCareHasNew = false, storageWarning, storageNearLimit, treeSizeWarning, syncToast, onDismissSyncToast, recapNudgeCount = 0, onShowRecap, onDismissRecapNudge, perimeterActive = false, perimeterLevel = null, onOpenPerimeterSettings, anyOverlayOpen = false, canopyEnabled = false }) {
   const perimeterLevelLabel = PERIMETER_OPTIONS.find((o) => o.value === perimeterLevel)?.label ?? null;
   // Real feedback on a screenshot: this had drifted into a plain, oversized
   // text pill wide enough to wrap onto several lines and overlap the brand
@@ -24,11 +24,13 @@ export default function TopBar({ familyName, stats, view, layout, syncStatus, sy
   const viewMenuRef = useRef(null);
   const viewMenuBtnRef = useRef(null);
 
-  // The three ways of seeing the family — tree is the default, chart trades
-  // the organic camera for a traditional static chart, list drops canvas
-  // entirely for a screen-reader-friendly directory. Layout (organic/chart)
-  // only means anything while view === 'bubbles', hence the nesting here.
-  const viewMode = view !== 'bubbles' ? 'list' : layout === 'chart' ? 'chart' : 'tree';
+  // The ways of seeing the family — tree is the default, chart trades the
+  // organic camera for a traditional static chart, list drops canvas
+  // entirely for a screen-reader-friendly directory, and canopy (opt-in —
+  // see canopyPref.js) is a fourth, deliberately-scoped composition. Layout
+  // (organic/chart/canopy) only means anything while view === 'bubbles',
+  // hence the nesting here.
+  const viewMode = view !== 'bubbles' ? 'list' : layout === 'chart' ? 'chart' : layout === 'canopy' ? 'canopy' : 'tree';
 
   useEffect(() => {
     if (!statsOpen) return;
@@ -236,6 +238,7 @@ export default function TopBar({ familyName, stats, view, layout, syncStatus, sy
               ref={viewMenuRef}
               mode={viewMode}
               onSelect={(m) => { onSetViewMode(m); setViewMenuOpen(false); }}
+              canopyEnabled={canopyEnabled}
             />
           )}
         </div>
@@ -447,10 +450,15 @@ const VIEW_MODES = [
   { id: 'chart', label: 'Chart', desc: 'Traditional family tree chart' },
   { id: 'list', label: 'List', desc: 'Accessible, searchable directory' },
 ];
+// Canopy only appears once a viewer has opted in (canopyPref.js) — it stays
+// off the switcher entirely for everyone else, same as it stays entirely
+// unrendered for them today.
+const CANOPY_MODE = { id: 'canopy', label: 'Canopy', desc: 'A focused, hand-composed view' };
 
 function viewModeIcon(mode) {
   if (mode === 'chart') return <ChartModeIcon />;
   if (mode === 'list') return <ListIcon />;
+  if (mode === 'canopy') return <CanopyModeIcon />;
   return <TreeIcon />;
 }
 
@@ -474,10 +482,11 @@ function ViewSwitcherIcon() {
 // segmented control buried in the Legend sheet — a primary navigation choice
 // belongs in the header next to the thing it switches, not inside a
 // reference sheet for what the colours and lines mean.
-const ViewModeMenu = forwardRef(function ViewModeMenu({ mode, onSelect }, ref) {
+const ViewModeMenu = forwardRef(function ViewModeMenu({ mode, onSelect, canopyEnabled }, ref) {
+  const modes = canopyEnabled ? [...VIEW_MODES, CANOPY_MODE] : VIEW_MODES;
   return (
     <div ref={ref} className="viewmode-popover" role="menu" aria-label="Change how the family is shown">
-      {VIEW_MODES.map((m) => (
+      {modes.map((m) => (
         <button
           key={m.id}
           className={`viewmode-popover__option${mode === m.id ? ' viewmode-popover__option--active' : ''}`}
@@ -685,6 +694,19 @@ function ChartModeIcon() {
       <rect x="2" y="16" width="8" height="5" rx="1.2" stroke="currentColor" strokeWidth="1.6"/>
       <rect x="14" y="16" width="8" height="5" rx="1.2" stroke="currentColor" strokeWidth="1.6"/>
       <path d="M12 8v4M12 12H6v4M12 12h6v4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+    </svg>
+  );
+}
+
+// A bowl-shaped canopy arcing over one central pair, distinct from both
+// TreeIcon's loose circles and ChartModeIcon's rigid boxes — the fanned
+// "cradled beneath the pod" shape Canopy's own siblings arc into.
+function CanopyModeIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{flexShrink:0}}>
+      <path d="M3 8c3 6 15 6 18 0" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
+      <circle cx="9" cy="17" r="2.3" fill="currentColor" opacity="0.55"/>
+      <circle cx="15" cy="17" r="2.6" fill="currentColor" opacity="0.85"/>
     </svg>
   );
 }

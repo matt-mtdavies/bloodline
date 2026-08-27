@@ -878,6 +878,15 @@ export default function App() {
   const [treeSizeWarning, setTreeSizeWarning] = useState(null); // { bytes, limitBytes } | null
   const [syncToast, setSyncToast] = useState(null);
   const [layout, setLayout] = useState('organic'); // 'organic' | 'weighted' | 'hybrid'
+  // True only when CanopyTree is actually the thing mounted. layout==='canopy'
+  // alone isn't enough — if canopyEnabled is turned off (FamilySettings) while
+  // layout is still 'canopy' from an earlier selection, the render below falls
+  // back to mounting BubbleTree as a safety net (see its own comment), and
+  // that fallback is a fully working organic tree with a live viewApi — every
+  // BubbleTree-only UI piece (nameplates, hover card, zoom controls, the
+  // flyover) should keep working there, not be disabled just because the
+  // layout label hasn't caught up yet.
+  const canopyActive = layout === 'canopy' && canopyEnabled;
   const [timeMode, setTimeMode] = useState(false);
   const [timeYear, setTimeYear] = useState(new Date().getFullYear());
   const [timePlaying, setTimePlaying] = useState(false);
@@ -1758,13 +1767,14 @@ export default function App() {
   // is trivial, or motion is reduced.
   const flyToSearchResult = useCallback((targetId) => {
     setSearchOpen(false);
-    // Chart layout has no canvas to fly — the flight API belongs to
-    // BubbleTree, which isn't even MOUNTED in chart mode, so flyAlong would
-    // silently no-op and activeId (only ever set in the flight's onLand
-    // callback) would never change: picking a search result would do
-    // nothing at all. Activate directly instead; ChartTree recomputes its
-    // pod tree around the new focal person and centres on them itself.
-    if (layout === 'chart') {
+    // Chart (and Canopy) layout has no canvas to fly — the flight API
+    // belongs to BubbleTree, which isn't even MOUNTED in either mode, so
+    // flyAlong would silently no-op and activeId (only ever set in the
+    // flight's onLand callback) would never change: picking a search result
+    // would do nothing at all. Activate directly instead; ChartTree/
+    // CanopyTree each recompute their own tree around the new focal person
+    // and centre on them itself.
+    if (layout === 'chart' || canopyActive) {
       activateNormal(targetId);
       return;
     }
@@ -1807,7 +1817,7 @@ export default function App() {
       // with no Done button and no way to dismiss it short of searching again.
       onAbort: () => setFlightCaption(null),
     });
-  }, [graph, data.myPersonId, reducedMotion, activateNormal, layout]);
+  }, [graph, data.myPersonId, reducedMotion, activateNormal, layout, canopyActive]);
 
   // Search, while tracing a lineage, needs to feed the SAME "tap another
   // relative" logic activate() uses in that mode — not flyToSearchResult,
@@ -1832,16 +1842,16 @@ export default function App() {
     // Real user report: search in List view "just runs a tree search you
     // can't see" — flyToSearchResult flies the camera along BubbleTree's own
     // canvas, which isn't even mounted in List view (view === 'list') or
-    // meaningfully flyable in Chart layout, so the flight silently never
-    // lands (the crumb-trail caption can get stuck forever, and the profile
-    // may not open at all for a multi-hop result). List and Chart already
-    // have a real "open this profile now, no animation" primitive —
-    // openPerson(), the exact thing tapping a List row or double-tapping a
-    // Chart card already does — so search there uses that instead, matching
-    // the fastest path to actually editing a profile. Only the organic Tree
-    // view keeps the cinematic flyover below; that's the one place the
-    // "journey" is the actual point of the feature.
-    if (view === 'list' || layout === 'chart') {
+    // meaningfully flyable in Chart/Canopy layout, so the flight silently
+    // never lands (the crumb-trail caption can get stuck forever, and the
+    // profile may not open at all for a multi-hop result). List, Chart and
+    // Canopy already have a real "open this profile now, no animation"
+    // primitive — openPerson(), the exact thing tapping a List row or
+    // double-tapping a Chart card already does — so search there uses that
+    // instead, matching the fastest path to actually editing a profile.
+    // Only the organic Tree view keeps the cinematic flyover below; that's
+    // the one place the "journey" is the actual point of the feature.
+    if (view === 'list' || layout === 'chart' || canopyActive) {
       if (isOutside) { exploreBranch(targetId); return; }
       openPerson(targetId);
       return;
@@ -1886,7 +1896,7 @@ export default function App() {
     // — the camera catching up to wherever they actually are is all that
     // was ever needed.
     viewApi.current?.recenter();
-  }, [view, layout, lineageMode, activeId, graph, flyToSearchResult, openPerson, perimeterActive, perspective, exploreBranch]);
+  }, [view, layout, canopyActive, lineageMode, activeId, graph, flyToSearchResult, openPerson, perimeterActive, perspective, exploreBranch]);
 
   // Same flight as flyToSearchResult, but callable from anywhere — the
   // profile page's "Show in tree" and the list view's per-row action, not
@@ -1895,12 +1905,13 @@ export default function App() {
   // browsing the list view. Also forces layout back to 'organic': every
   // caller of this means "fly to them in the organic tree" (it's the literal
   // TreeIcon action, paired with the list view's separate "view in chart"
-  // circle) — without this, a layout left on 'chart' from an earlier switch
-  // (topbar Chart mode, or the list view's own chart circle) silently
-  // stranded the flight, since BubbleTree never mounts under chart layout
-  // and viewApi.current would just never populate.
+  // circle) — without this, a layout left on 'chart' or 'canopy' from an
+  // earlier switch (topbar Chart/Canopy mode, or the list view's own chart
+  // circle) silently stranded the flight, since BubbleTree never mounts
+  // under either of those layouts and viewApi.current would just never
+  // populate.
   const flyToPersonFromAnywhere = useCallback((targetId) => {
-    if (view !== 'bubbles' || layout === 'chart') {
+    if (view !== 'bubbles' || layout === 'chart' || canopyActive) {
       setView('bubbles');
       setLayout('organic');
       // BubbleTree mounts fresh here (a real PIXI/WebGL setup, not just a
@@ -1917,7 +1928,7 @@ export default function App() {
     } else {
       flyToSearchResult(targetId);
     }
-  }, [view, layout, flyToSearchResult]);
+  }, [view, layout, canopyActive, flyToSearchResult]);
 
   // The list view's per-row "view in chart" action, paired with the tree
   // circle above. Chart re-roots itself off activeId (see ChartTree's own
@@ -2685,16 +2696,16 @@ export default function App() {
   // Keyboard zoom shortcuts (Cmd/Ctrl +/-/0) — parity with the new on-screen
   // zoom controls (ZoomControls.jsx), standard in every canvas app in this
   // category. Scoped to exactly when the BubbleTree canvas is mounted
-  // (view === 'bubbles' && layout !== 'chart' — the same condition
-  // flyToSearchResult already uses to know whether viewApi is live) and
-  // nothing else is open, so it never fights the browser's own native
-  // page-zoom shortcut while looking at List/Chart view or any sheet. No
-  // activeElement/focused-input guard needed here (unlike the bare-letter
-  // shortcut above) — Cmd/Ctrl are never part of ordinary text editing, so
-  // there's no legitimate typing context this could hijack.
+  // (view === 'bubbles' && layout !== 'chart' && layout !== 'canopy' — the
+  // same condition flyToSearchResult already uses to know whether viewApi
+  // is live) and nothing else is open, so it never fights the browser's own
+  // native page-zoom shortcut while looking at List/Chart/Canopy view or any
+  // sheet. No activeElement/focused-input guard needed here (unlike the
+  // bare-letter shortcut above) — Cmd/Ctrl are never part of ordinary
+  // typing, so there's no legitimate typing context this could hijack.
   useEffect(() => {
     function onZoomKeydown(e) {
-      if (anyOverlayOpen || view !== 'bubbles' || layout === 'chart') return;
+      if (anyOverlayOpen || view !== 'bubbles' || layout === 'chart' || canopyActive) return;
       if (!(e.metaKey || e.ctrlKey)) return;
       if (e.key === '=' || e.key === '+') { e.preventDefault(); viewApi.current?.zoomStep(1); }
       else if (e.key === '-' || e.key === '_') { e.preventDefault(); viewApi.current?.zoomStep(-1); }
@@ -2702,7 +2713,7 @@ export default function App() {
     }
     window.addEventListener('keydown', onZoomKeydown);
     return () => window.removeEventListener('keydown', onZoomKeydown);
-  }, [anyOverlayOpen, view, layout]);
+  }, [anyOverlayOpen, view, layout, canopyActive]);
 
   // Photo of the person the logged-in user has claimed as their own bubble.
   const userPhoto = useMemo(() => {
@@ -2778,14 +2789,15 @@ export default function App() {
         onSetViewMode={(mode) => {
           if (mode === 'list') { setView('list'); return; }
           setView('bubbles');
-          setLayout(mode === 'chart' ? 'chart' : 'organic');
+          setLayout(mode === 'chart' ? 'chart' : mode === 'canopy' ? 'canopy' : 'organic');
           // Chart is a pedigree — bloodline-only is its natural default.
-          // Tree's is everyone. Each switch between the two resets to that
-          // view's own default; List is untouched (mode === 'list' already
-          // returned above), and the manual toggle still works freely
-          // within whichever view you're in.
+          // Tree and Canopy default to everyone. Each switch between these
+          // resets to that view's own default; List is untouched (mode ===
+          // 'list' already returned above), and the manual toggle still
+          // works freely within whichever view you're in.
           setBloodlineOnly(mode === 'chart');
         }}
+        canopyEnabled={canopyEnabled}
         onOpenLegend={() => setLegendOpen(true)}
         bloodlineOnly={bloodlineOnly}
         onToggleBloodlineOnly={() => setBloodlineOnly((v) => !v)}
@@ -2824,10 +2836,16 @@ export default function App() {
       />
 
       {view === 'bubbles' ? (
-        /* Canopy — an ADDED branch, never a modified one. It replaces only
-           the organic canvas, and only for a viewer who has opted in; chart
-           and list are untouched in both states. */
-        canopyEnabled && layout !== 'chart' ? (
+        /* Canopy — an ADDED branch, never a modified one. It's now a real,
+           explicit mode in the view switcher (gated on canopyEnabled, same
+           opt-in as before) rather than something that silently replaced
+           Tree whenever the preference was on — so a viewer who has it on
+           can freely jump between Tree and Canopy rather than losing access
+           to organic tree entirely. The canopyEnabled re-check here is a
+           safety net for a stale persisted 'canopy' layout after the
+           preference is later turned off; chart and list are untouched
+           either way. */
+        canopyActive ? (
           <CanopyTree
             graph={graph}
             focusId={activeId}
@@ -2885,7 +2903,7 @@ export default function App() {
             fact={activeFact}
             getPos={() => viewApi.current?.getScreenPos(activeId)}
             hidden={
-              anyOverlayOpen || browse || layout === 'chart'
+              anyOverlayOpen || browse || layout === 'chart' || canopyActive
               || (hoveredId === activeId && !(comparePairIds && comparePairIds[0] === activeId))
             }
           />
@@ -2903,14 +2921,14 @@ export default function App() {
               fact={null}
               getPos={() => viewApi.current?.getScreenPos(comparePairIds[1])}
               hidden={
-                anyOverlayOpen || browse || layout === 'chart'
+                anyOverlayOpen || browse || layout === 'chart' || canopyActive
                 || activeId !== comparePairIds[0]
               }
             />
           )}
           <HoverCard
             graph={graph}
-            personId={!anyOverlayOpen && layout !== 'chart' ? hoveredId : null}
+            personId={!anyOverlayOpen && layout !== 'chart' && !canopyActive ? hoveredId : null}
             viewerId={data.myPersonId || DEFAULT_FOCUS}
             getPos={() => viewApi.current?.getScreenPos(hoveredId)}
             photos={data.photos}
