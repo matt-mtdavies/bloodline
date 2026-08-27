@@ -11,7 +11,7 @@
  */
 import assert from 'node:assert/strict';
 import { buildGraph } from '../src/data/graph.js';
-import { planCanopy, unitAnchor, labelTextFor, ROW_GAP, ROW_GAP_COMPACT, POD_GAP, UNIT_GAP, NODE_R, BAND_SCALE, MAX_CLUSTER_RANKS, CLUSTER_CLEAR, SIBLING_ARC_AMP, peerArcDip } from '../src/viz/canopy/plan.js';
+import { planCanopy, unitAnchor, labelTextFor, ROW_GAP, ROW_GAP_COMPACT, POD_GAP, UNIT_GAP, NODE_R, BAND_SCALE, MAX_CLUSTER_RANKS, CLUSTER_CLEAR, SIBLING_ARC_AMP, peerArcDip, FOCUS_Y_DROP, FOCUS_SCALE } from '../src/viz/canopy/plan.js';
 import { labelDrop } from '../src/viz/canopy/geometry.js';
 
 let passed = 0, failed = 0;
@@ -57,9 +57,21 @@ const graph = buildGraph(people, rels);
 const frame = planCanopy(graph, 'ME');
 const at = (id) => frame.nodes.get(id);
 
-test('the focus person is exactly at world origin', () => {
+test('the focus person is exactly at world origin — x=0, and a fixed, deterministic y drop below it', () => {
+  // The camera's fixed-point re-pointing trick (CanopyTree.jsx's setFocus)
+  // only ever needed the focus at a KNOWN, unchanging point across a
+  // re-root — that's still true at (0, FOCUS_Y_DROP), a constant, just not
+  // literally (0, 0) any more (real feedback: the selected person should
+  // sit visibly below their siblings, not level with them).
   assert.equal(at('ME').x, 0);
-  assert.equal(at('ME').y, 0);
+  assert.equal(at('ME').y, FOCUS_Y_DROP);
+});
+
+test('the focus is drawn visibly larger than everyone else, including their own current partner', () => {
+  const me = at('ME'), sp = at('SP');
+  assert.equal(me.r, NODE_R * FOCUS_SCALE);
+  assert.equal(sp.r, NODE_R, 'the partner stays at the ordinary hearth-band size');
+  assert.ok(me.r > sp.r, 'the selected person specifically pops, the way organic\'s active bubble does');
 });
 
 test('every parent sits strictly above every one of their children', () => {
@@ -191,6 +203,36 @@ test('a step-parent’s own parents are not drawn as the focus’s grandparents'
   assert.ok(parentRow.some((u) => u.memberIds.includes('STEPDAD')), 'the step-parent still shows on the parent row');
 });
 
+test('a parent\'s own former partner (relevant to a half-sibling) sits directly beside them, not wherever "centred over their own children" happens to land', () => {
+  // Real, reported bug, with a screenshot: NANCY's own former partner
+  // REGINALD (father of her other children, half-siblings of the focus) is
+  // introduced here for the first time via a half-sibling's own parent set —
+  // he used to land wherever "centred over REGINALD's own children" put him,
+  // which could cross NANCY+ALLEN's own pod lines and read as belonging to
+  // the wrong parent. He now sits directly beside NANCY, opposite ALLEN.
+  const g = buildGraph(
+    [P('NANCY'), P('ALLEN'), P('REGINALD'), P('HEATHER'), P('HALFSIB')],
+    [
+      partner('NANCY', 'ALLEN'), partner('NANCY', 'REGINALD', 'former'),
+      parent('NANCY', 'HEATHER'), parent('ALLEN', 'HEATHER'),
+      parent('NANCY', 'HALFSIB'), parent('REGINALD', 'HALFSIB'),
+    ],
+  );
+  const f = planCanopy(g, 'HEATHER');
+  const nancy = f.nodes.get('NANCY'), allen = f.nodes.get('ALLEN'), reg = f.nodes.get('REGINALD');
+  assert.equal(reg.rowBaselineY, allen.rowBaselineY, 'reginald sits on the same row as the real parent pod');
+  const nancyToAllen = allen.x - nancy.x;
+  const nancyToReg = reg.x - nancy.x;
+  assert.ok(Math.sign(nancyToReg) !== Math.sign(nancyToAllen) || nancyToAllen === 0,
+    'reginald sits on the OPPOSITE side of nancy from allen');
+  assert.ok(Math.abs(nancyToReg) < POD_GAP * 2, 'reginald is genuinely adjacent to nancy, not off across the row');
+  // And the half-sibling's own descent line still comes from the true
+  // nancy+reginald midpoint, now that reginald is actually beside her.
+  const bond = f.bonds.find((b) => b.kind === 'descent' && b.child === 'HALFSIB');
+  const anchor = unitAnchor(f, bond.parentUnit);
+  assert.ok(Math.abs(anchor.x - (nancy.x + reg.x) / 2) < 1e-6, 'the junction sits at the real nancy+reginald midpoint');
+});
+
 test('units on a row never overlap', () => {
   for (const [, rowUnits] of frame.rows) {
     const sorted = [...rowUnits].sort((a, b) => a.x - b.x);
@@ -241,7 +283,7 @@ test('a person with no relationships at all still plans a valid frame', () => {
   const f = planCanopy(g, 'ALONE');
   assert.equal(f.nodes.size, 1);
   assert.equal(f.nodes.get('ALONE').x, 0);
-  assert.equal(f.nodes.get('ALONE').y, 0);
+  assert.equal(f.nodes.get('ALONE').y, FOCUS_Y_DROP);
 });
 
 test('an unknown focus id returns an empty frame rather than throwing', () => {
@@ -297,7 +339,7 @@ test('nobody is ever drawn twice, in any shape', () => {
       }
     }
     assert.equal(f.nodes.get(focusId).x, 0, `focus ${focusId} must be at origin`);
-    assert.equal(f.nodes.get(focusId).y, 0);
+    assert.equal(f.nodes.get(focusId).y, FOCUS_Y_DROP);
   }
 });
 
@@ -429,7 +471,7 @@ test('a narrow frame drops Reach ancestors, and keeps descendants', () => {
     assert.ok(f.nodes.has(id), `${id} must still be drawn`);
   }
   assert.equal(f.nodes.get('ME').x, 0);
-  assert.equal(f.nodes.get('ME').y, 0);
+  assert.equal(f.nodes.get('ME').y, FOCUS_Y_DROP);
 });
 
 test('a narrow frame STATES what it dropped rather than just stopping', () => {
@@ -657,34 +699,58 @@ const maxLiftFor = (rowGap) => {
   return Math.max(48, rowGap - 2 * kinR - labelDrop('kin') - 24);
 };
 
-test('a satellite lifts toward the ancestor direction, capped short of the row above', () => {
+test('a genuine former partner sits AT the row-0 baseline, no lift — beside the focus, not above them', () => {
+  // Real feedback: an ex read as a queued extra floating above the row
+  // rather than a person who was actually part of the household. A genuine
+  // ex-partner (a real, recorded partner edge) now sits directly beside the
+  // focus at the same height as everyone else on row 0.
   const ex = at('EX');
-  assert.ok(ex.satellite, 'a former partner is flagged as a satellite');
-  assert.equal(ex.rowBaselineY, 0, 'their structural row is still row 0');
-  assert.ok(ex.y < 0, 'their rendered y lifts above the row-0 baseline');
-  const lift = ex.rowBaselineY - ex.y;
+  assert.ok(ex.satellite, 'a former partner is still flagged as a satellite (its own unit, not pod)');
+  assert.equal(ex.rowBaselineY, 0, 'their structural row is row 0');
+  assert.equal(ex.y, 0, 'and their rendered y matches the baseline exactly — no lift');
+});
+
+test('a co-parent with no partner edge still lifts toward the ancestor direction, capped short of the row above', () => {
+  // Unlike a genuine ex, someone who shares a child with the focus but was
+  // never actually partnered is a genuinely more peripheral relationship —
+  // it keeps the original lift, and stays a plain thread rather than a pod
+  // (see the render-side "'these two were never a couple' rule).
+  const g = buildGraph(
+    [...people, P('COP', { birth_date: '1984-01-01' })],
+    [...rels, parent('COP', 'C1')],
+  );
+  const f = planCanopy(g, 'ME');
+  const cop = f.nodes.get('COP');
+  assert.ok(cop.satellite, 'a co-parent with no partner edge is flagged as a satellite');
+  assert.equal(cop.rowBaselineY, 0, 'their structural row is still row 0');
+  assert.ok(cop.y < 0, 'their rendered y lifts above the row-0 baseline');
+  const lift = cop.rowBaselineY - cop.y;
   assert.ok(lift > 0 && lift <= maxLiftFor(ROW_GAP) + 1e-9,
     `lift ${lift} must be positive and within the geometry-derived cap`);
   // And the cap actually clears the row above, with real margin — not just
   // arithmetic that happens to work out.
-  const pa = at('PA');
-  const exNearEdge = ex.y - ex.r;
+  const pa = f.nodes.get('PA');
+  const copNearEdge = cop.y - cop.r;
   const parentNearEdge = pa.y + pa.r + labelDrop('kin');
-  assert.ok(exNearEdge > parentNearEdge, 'the satellite never visually reaches into the row above');
+  assert.ok(copNearEdge > parentNearEdge, 'the satellite never visually reaches into the row above');
 });
 
-test('the satellite lift respects the compact row gap too, not just the standard one', () => {
-  const compact = planCanopy(graph, 'ME', { compact: true });
-  const ex = compact.nodes.get('EX');
-  const lift = ex.rowBaselineY - ex.y;
+test('the co-parent satellite lift respects the compact row gap too, not just the standard one', () => {
+  const g = buildGraph(
+    [...people, P('COP', { birth_date: '1984-01-01' })],
+    [...rels, parent('COP', 'C1')],
+  );
+  const compact = planCanopy(g, 'ME', { compact: true });
+  const cop = compact.nodes.get('COP');
+  const lift = cop.rowBaselineY - cop.y;
   assert.ok(lift <= maxLiftFor(ROW_GAP_COMPACT) + 1e-9,
     'a phone-width lift must obey the tighter compact cap, not the desktop one');
   const pa = compact.nodes.get('PA');
-  assert.ok(ex.y - ex.r > pa.y + pa.r + labelDrop('kin'),
+  assert.ok(cop.y - cop.r > pa.y + pa.r + labelDrop('kin'),
     'clearance holds under the compact row gap too');
 });
 
-test('two satellites never overlap, and lift no further once at the safe ceiling', () => {
+test('two co-parent satellites never overlap, and lift no further once at the safe ceiling', () => {
   /* The lift needed to clear a hearth-band focus pod (see hearthClearLift in
    * plan.js) is generous enough that it commonly hits the row-above cap on
    * its own, before any per-satellite stagger is even added — so a SECOND
@@ -694,13 +760,30 @@ test('two satellites never overlap, and lift no further once at the safe ceiling
    * horizontal gap instead. What must always hold is monotonicity (a later
    * satellite is never LOWER than an earlier one) and the shared safe cap. */
   const g = buildGraph(
-    [P('ME'), P('EX1', { birth_date: '1980-01-01' }), P('EX2', { birth_date: '1982-01-01' })],
-    [partner('ME', 'EX1', 'former'), partner('ME', 'EX2', 'former')],
+    [P('ME'), P('COP1', { birth_date: '1980-01-01' }), P('COP2', { birth_date: '1982-01-01' }),
+      P('K1', { birth_date: '2010-01-01' }), P('K2', { birth_date: '2012-01-01' })],
+    [parent('ME', 'K1'), parent('COP1', 'K1'), parent('ME', 'K2'), parent('COP2', 'K2')],
   );
   const f = planCanopy(g, 'ME');
-  const y1 = f.nodes.get('EX1').y, y2 = f.nodes.get('EX2').y;
+  const y1 = f.nodes.get('COP1').y, y2 = f.nodes.get('COP2').y;
   assert.ok(y2 <= y1, 'a later satellite lifts at least as high as an earlier one, never less');
-  assert.ok(f.nodes.get('EX2').x !== f.nodes.get('EX1').x, 'and stay horizontally distinct too');
+  assert.ok(f.nodes.get('COP2').x !== f.nodes.get('COP1').x, 'and stay horizontally distinct too');
+});
+
+test('two former partners of the focus sit adjacent, opposite the current partner, never overlapping', () => {
+  const g = buildGraph(
+    [P('ME'), P('SP', { birth_date: '1986-01-01' }),
+      P('EX1', { birth_date: '1980-01-01' }), P('EX2', { birth_date: '1982-01-01' })],
+    [partner('ME', 'SP'), partner('ME', 'EX1', 'former'), partner('ME', 'EX2', 'former')],
+  );
+  const f = planCanopy(g, 'ME');
+  const me = f.nodes.get('ME'), sp = f.nodes.get('SP');
+  const ex1 = f.nodes.get('EX1'), ex2 = f.nodes.get('EX2');
+  assert.equal(ex1.y, 0, 'a genuine ex still sits at the row baseline with more than one of them present');
+  assert.equal(ex2.y, 0);
+  assert.ok(ex1.x < me.x && ex2.x < me.x, 'both exes sit on the opposite side from the current partner');
+  assert.ok(sp.x > me.x, 'the current partner is on the other side');
+  assert.notEqual(ex1.x, ex2.x, 'the two exes stay horizontally distinct');
 });
 
 test('siblings sit tight to the focus — unaffected by how many satellites there are', () => {
@@ -732,7 +815,9 @@ test('a shared child’s branch starts at the true row baseline, never pulled up
   const f = planCanopy(g, 'ME');
   const bond = f.bonds.find((b) => b.kind === 'descent' && b.child === 'KID');
   const anchor = unitAnchor(f, bond.parentUnit);
-  assert.equal(anchor.y, 0, 'the anchor sits at the row-0 baseline, not averaged with COP’s lifted y');
+  // ME's own anchorY now includes the focus's fixed drop; COP's is the plain
+  // row-0 baseline (0) — the average of the two, not COP's lifted dot.
+  assert.equal(anchor.y, FOCUS_Y_DROP / 2, 'the anchor averages ME and COP’s true row positions, not COP’s lifted y');
 });
 
 test('a satellite never overlaps a sibling, even on compact spacing where full vertical clearance is not possible', () => {
@@ -781,9 +866,12 @@ const bigFamily = (() => {
 })();
 
 test('the focus and their current partner never wave — only siblings do', () => {
+  // Both sit at the SAME fixed y (the focus's own drop below baseline) —
+  // level with each other by construction (a rigid pod), just not level
+  // with the row-0 baseline itself any more.
   const f = planCanopy(bigFamily.graph, 'ME');
-  assert.equal(f.nodes.get('ME').y, 0);
-  assert.equal(f.nodes.get('SP').y, 0, 'a rigid pod is level by construction, arc or not');
+  assert.equal(f.nodes.get('ME').y, FOCUS_Y_DROP);
+  assert.equal(f.nodes.get('SP').y, FOCUS_Y_DROP, 'a rigid pod is level by construction, arc or not');
 });
 
 test('a sibling only ever dips DOWN, and never past the safe amplitude', () => {

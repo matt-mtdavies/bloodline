@@ -198,6 +198,20 @@ export function peerArcDip(x, xmax, amp) {
 export const BAND = { HEARTH: 'hearth', KIN: 'kin', REACH: 'reach' };
 /** Radius multiplier per band. */
 export const BAND_SCALE = { hearth: 1, kin: 0.86, reach: 0.66 };
+/* The literal focus reads bigger than even their own current partner —
+ * hearth band alone (focus and partner share it) already reads as "this
+ * couple", but real feedback wanted the selected PERSON specifically to pop
+ * the way the organic tree's own active bubble does. Applied only to the
+ * one node whose id === focusId, not to the whole pod. */
+export const FOCUS_SCALE = 1.16;
+/* How far below the row-0 baseline the focus (and, since a pod is rigid,
+ * their current partner) sits — real feedback: differentiate "this is the
+ * anchor couple" from "these are peers arranged around them" the way a
+ * slight vertical offset already helps the eye separate rows elsewhere.
+ * Deliberately modest: siblings nearest the pod already dip toward it via
+ * the peer arc below, and this only needs to read clearly for the common
+ * case, not force every possible sibling arrangement into a strict order. */
+export const FOCUS_Y_DROP = NODE_R * 0.65;
 
 const isCurrent = (status) => status !== 'former';
 
@@ -441,14 +455,18 @@ export function planCanopy(graph, focusId, opts = {}) {
   units.push(focusUnit);
   for (const pid of focusCurrent) addUnion(focusId, pid);
 
-  /* Former partners of the focus: their own units, bonded dashed, ordered
-   * outboard by orderRow. */
+  /* Former partners of the focus: their own units, ordered outboard by
+   * orderRow. A genuine ex sits directly beside the focus — same row
+   * baseline, no lift — so they read as a "was a couple" pod adjacent to the
+   * person, not a queued extra floating above the row. formerPartner marks
+   * this for the satellite-lift pass below. */
   const focusFormer = partnersOf(focusId, false).filter(claim).sort(cmp);
   const formerUnits = focusFormer.map((pid) => {
     const u = newUnit(pid, [pid], BAND.KIN);
     u.row = 0;
     u.outboard = true;
     u.satellite = true;
+    u.formerPartner = true;
     units.push(u);
     addUnion(focusId, pid);
     return u;
@@ -577,9 +595,30 @@ export function planCanopy(graph, focusId, opts = {}) {
   for (const u of sibUnits) {
     const sid = u.memberIds[0];
     const refs = parentSet(graph, sid, byId, cmp);
-    for (const ref of refs) ensureParentPerson(ref.id);
+    const refUnits = refs.map((ref) => ensureParentPerson(ref.id));
     for (let i = 0; i < refs.length; i++) {
       for (let j = i + 1; j < refs.length; j++) addUnion(refs[i].id, refs[j].id);
+    }
+    // A sibling's OTHER parent — introduced here for the first time, and not
+    // one of the focus's own two — belongs directly beside whichever of the
+    // focus's own parents they actually share a union with, on the opposite
+    // side from that parent's own drawn partner. The same "adjacent, opposite
+    // side" rule row 0 already applies to the focus's own former partners,
+    // extended to this row. Without it, a parent's former partner lands
+    // wherever "centred over my own children" happens to put them, which can
+    // cross the real pod's own lines and read as belonging to the wrong
+    // parent — a real report, with a screenshot.
+    for (let i = 0; i < refs.length; i++) {
+      const rid = refs[i].id;
+      if (parentIds.includes(rid)) continue;
+      const ru = refUnits[i];
+      if (!ru || ru._adjacentAnchor) continue;
+      const anchorParentId = parentIds.find((pid) => pid !== rid
+        && graph.partners(pid).some((pt) => pt.id === rid));
+      if (!anchorParentId) continue;
+      const anchorUnit = parentPersonUnit.get(anchorParentId);
+      if (!anchorUnit || anchorUnit === ru) continue;
+      ru._adjacentAnchor = { unit: anchorUnit, memberId: anchorParentId };
     }
     if (!refs.length) continue;
     const anchor = ensureAnchor(refs, -1, BAND.KIN);
@@ -784,7 +823,12 @@ export function planCanopy(graph, focusId, opts = {}) {
     satelliteEdge -= halfWidth;
     u.x = satelliteEdge;
     satelliteEdge -= halfWidth + SATELLITE_GAP; // clear space before the next one, too
-    u.satelliteLift = Math.min(baseLift + i * SATELLITE_STEP, satelliteMaxLift);
+    // A genuine former partner (formerPartner) sits directly beside the
+    // focus at the row's own baseline — no lift — so the render's adjacent
+    // dashed-pod treatment (see render.js) reads as "beside", not "above and
+    // apart". A co-parent who never partnered keeps the lift: that
+    // relationship really is more peripheral, and stays a plain thread.
+    u.satelliteLift = u.formerPartner ? 0 : Math.min(baseLift + i * SATELLITE_STEP, satelliteMaxLift);
   });
 
   /* Row +1 — UNION BLOCKS.
@@ -947,6 +991,19 @@ export function planCanopy(graph, focusId, opts = {}) {
       u.x = target - memberMid;
     }
   }
+  // Snap any "adjacent former partner" unit into position now that the
+  // primary parent pods have their final x — placed opposite the anchor's
+  // own drawn partner, overriding the generic "centred over my own children"
+  // position just assigned above (see the sibling loop that tagged this).
+  for (const pu of parentDisplayUnits) {
+    if (!pu._adjacentAnchor) continue;
+    const { unit: anchorUnit, memberId } = pu._adjacentAnchor;
+    const anchorX = anchorUnit.x + (anchorUnit.offsets.get(memberId) || 0);
+    const otherMemberId = anchorUnit.memberIds.find((id) => id !== memberId);
+    const otherX = otherMemberId != null ? anchorUnit.x + (anchorUnit.offsets.get(otherMemberId) || 0) : null;
+    const direction = otherX != null ? (Math.sign(anchorX - otherX) || -1) : -1;
+    pu.x = anchorX + direction * Math.max(anchorUnit.gap || POD_GAP, POD_GAP);
+  }
   deOverlapRow(parentDisplayUnits);
 
   // Row -2: each grandparent pod centred over the parent it produced.
@@ -1059,7 +1116,13 @@ export function planCanopy(graph, focusId, opts = {}) {
   const nodes = new Map();
   for (const u of units) {
     if (u.anchorOnly) continue;
-    const rowBaselineY = u.row * rowGap + (u.rank || 0) * RANK_GAP;
+    // The focus (and, since a pod is rigid, their current partner with them)
+    // sits FOCUS_Y_DROP below the row-0 baseline everyone else measures from
+    // — a fixed, deterministic constant, not data-dependent, so the camera's
+    // own fixed-point re-pointing trick (see CanopyTree.jsx's setFocus) still
+    // works exactly as before: it only ever needed the focus at a KNOWN,
+    // unchanging point, which this still is — just not literally (0, 0).
+    const rowBaselineY = u.row * rowGap + (u.rank || 0) * RANK_GAP + (u === focusUnit ? FOCUS_Y_DROP : 0);
     // What a descent anchor should average over when THIS unit is one of
     // several drawn parents: the arc dip is real (a sibling's own horizon
     // chip has to follow it — see unitAnchor's own note on this), but a
@@ -1084,7 +1147,7 @@ export function planCanopy(graph, focusId, opts = {}) {
         row: u.row,
         rank: u.rank || 0,
         band: u.band,
-        r: NODE_R * BAND_SCALE[u.band],
+        r: NODE_R * BAND_SCALE[u.band] * (mid === focusId ? FOCUS_SCALE : 1),
         labelHalfWidth: u.labelHalfWidths?.get(mid) || 0,
         isFocus: mid === focusId,
         satellite: !!u.satellite,
