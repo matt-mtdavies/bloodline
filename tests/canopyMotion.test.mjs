@@ -16,7 +16,26 @@ import assert from 'node:assert/strict';
 import {
   Scalar, step1D, omegaFor, ambientOffset, rubberBand, Deflection,
   PULL_MAX, AMBIENT_AMP, AMBIENT_PERIOD_S,
+  composeCamera, MIN_READABLE_ZOOM, MAX_ZOOM,
 } from '../src/viz/canopy/motion.js';
+
+/* A minimal composeCamera fixture: nodes spread across `rows`, each row a
+ * list of x positions at y = row * rowGap. Mirrors just enough of a real
+ * frame's shape (nodes Map + units array) for composeCamera's own math,
+ * without needing a real planCanopy call. */
+function fakeFrame(rowsOfX, rowGap = 310) {
+  const nodes = new Map();
+  const units = [];
+  let i = 0;
+  for (const [row, xs] of rowsOfX) {
+    for (const x of xs) {
+      const id = `p${i++}`;
+      nodes.set(id, { x, y: row * rowGap, r: 54, labelHalfWidth: 40, band: 'kin' });
+      units.push({ row, x, anchorOnly: false });
+    }
+  }
+  return { nodes, units };
+}
 
 let passed = 0, failed = 0;
 function test(label, fn) {
@@ -158,6 +177,50 @@ test('a lean settles toward its share of the pull, then home again', () => {
 test('a deflection at rest is reported so idle frames cost nothing', () => {
   const d = new Deflection();
   assert.ok(d.resting, 'a fresh deflection is already at rest');
+});
+
+/* ── composeCamera's readable-zoom floor ─────────────────────────────────
+ * Real report, with a screenshot, against a 1,200-person tree: a wide row of
+ * satellites forced the width-fit zoom down, the legibility floor caught it
+ * and set zoom to exactly MIN_READABLE_ZOOM — discarding what the frame's
+ * actual HEIGHT could have supported, even though the content was only three
+ * rows tall. The composition read as a thin band of content marooned in a
+ * sea of empty paper. */
+
+test('a wide-but-short frame climbs past the bare floor to use the height it actually has', () => {
+  // Two rows only (short vertically), but row -1 spans 3000px (wide) — the
+  // "wide satellite row, few rows tall" shape from the report, on a tall
+  // enough viewport that height genuinely has room to spare.
+  const frame = fakeFrame([
+    [-1, [-1500, -750, 0, 750, 1500]],
+    [0, [0]],
+  ], 310);
+  const { zoom } = composeCamera(frame, { width: 390, height: 1400, topInset: 96, bottomInset: 104 });
+  assert.ok(zoom > MIN_READABLE_ZOOM + 0.01,
+    `expected zoom to climb above the bare floor (${MIN_READABLE_ZOOM}), got ${zoom}`);
+});
+
+test('a frame that is ALSO tight vertically still floors at MIN_READABLE_ZOOM, never below', () => {
+  // Both wide AND tall — six generations, each row also wide. Neither axis
+  // can support more than the floor, so the floor itself must still hold.
+  const rows = [];
+  for (let r = -3; r <= 3; r++) rows.push([r, [-1200, -600, 0, 600, 1200]]);
+  const frame = fakeFrame(rows, 310);
+  const { zoom } = composeCamera(frame, { width: 390, height: 700, topInset: 96, bottomInset: 104 });
+  assert.ok(Math.abs(zoom - MIN_READABLE_ZOOM) < 1e-9 || zoom > MIN_READABLE_ZOOM,
+    `zoom should never fall below the readable floor, got ${zoom}`);
+  assert.ok(zoom <= MAX_ZOOM + 1e-9);
+});
+
+test('a frame that already fits comfortably is unaffected by the floor at all', () => {
+  const frame = fakeFrame([
+    [-1, [-150, 150]],
+    [0, [0]],
+    [1, [-100, 100]],
+  ], 310);
+  const { zoom } = composeCamera(frame, { width: 1280, height: 900, topInset: 96, bottomInset: 104 });
+  assert.ok(zoom <= MAX_ZOOM + 1e-9 && zoom >= MIN_READABLE_ZOOM,
+    `a small, comfortably-fitting frame should never need the floor, got ${zoom}`);
 });
 
 console.log(`\n  ${passed} passed, ${failed} failed`);

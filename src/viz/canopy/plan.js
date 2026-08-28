@@ -578,6 +578,19 @@ export function planCanopy(graph, focusId, opts = {}) {
     for (const id of members) parentPersonUnit.set(id, u);
     if (b) addUnion(a, b);
   }
+  // Two of the focus's own recorded parents who never partnered (co-parents
+  // without a partnership — the same relationship the child row and the
+  // sibling row both already draw a plain thread for) still have to read as
+  // CONNECTED, not as two strangers who happen to share a row. Pairwise
+  // rather than a single check, since more than two recorded parents is a
+  // real, if rare, shape this file already accounts for above.
+  for (let i = 0; i < parentIds.length; i++) {
+    for (let j = i + 1; j < parentIds.length; j++) {
+      if (!addUnion(parentIds[i], parentIds[j])) {
+        bonds.push({ kind: 'thread', a: parentIds[i], b: parentIds[j] });
+      }
+    }
+  }
 
   const focusParentAnchor = parentRefs.length ? ensureAnchor(parentRefs, -1, BAND.KIN) : null;
   if (focusParentAnchor) {
@@ -597,28 +610,49 @@ export function planCanopy(graph, focusId, opts = {}) {
     const refs = parentSet(graph, sid, byId, cmp);
     const refUnits = refs.map((ref) => ensureParentPerson(ref.id));
     for (let i = 0; i < refs.length; i++) {
-      for (let j = i + 1; j < refs.length; j++) addUnion(refs[i].id, refs[j].id);
+      for (let j = i + 1; j < refs.length; j++) {
+        // A real partner edge draws its own union bond. Without one — two
+        // people who co-parented this sibling but never partnered — they
+        // still have to read as CONNECTED, or the render is simply missing a
+        // line between two people the data plainly relates. The child row
+        // already draws this same fallback (see the co-parent loop above);
+        // row -1 sharing a sibling instead of a child is not a reason to
+        // drop it.
+        if (!addUnion(refs[i].id, refs[j].id)) {
+          bonds.push({ kind: 'thread', a: refs[i].id, b: refs[j].id });
+        }
+      }
     }
     // A sibling's OTHER parent — introduced here for the first time, and not
-    // one of the focus's own two — belongs directly beside whichever of the
-    // focus's own parents they actually share a union with, on the opposite
-    // side from that parent's own drawn partner. The same "adjacent, opposite
-    // side" rule row 0 already applies to the focus's own former partners,
-    // extended to this row. Without it, a parent's former partner lands
-    // wherever "centred over my own children" happens to put them, which can
-    // cross the real pod's own lines and read as belonging to the wrong
-    // parent — a real report, with a screenshot.
+    // one of the focus's own two — belongs directly beside whichever
+    // already-drawn row -1 person they actually share a UNION with (a real
+    // partner edge, current or former), on the opposite side from that
+    // person's own drawn partner. The same "adjacent, opposite side" rule
+    // row 0 already applies to the focus's own former partners, extended to
+    // this row. The anchor search used to be scoped to literally the focus's
+    // own two recorded parents, which missed a real shape: a step-parent's
+    // own partner, introduced via a DIFFERENT sibling, who never happens to
+    // union with the focus's own parent directly. Any already-drawn row -1
+    // person is a valid anchor now, not just those two. Deliberately still
+    // gated on a genuine partner edge (addUnion having actually drawn a
+    // union bond) — a pure co-parent with no partnership is a real but
+    // different relationship (see the thread fallback just above) and
+    // snapping them "beside, opposite the partner" would visually claim a
+    // couple that never existed. Without this rule at all, a parent's former
+    // partner lands wherever "centred over my own children" happens to put
+    // them, which can cross the real pod's own lines and read as belonging
+    // to the wrong parent — a real report, with a screenshot.
     for (let i = 0; i < refs.length; i++) {
       const rid = refs[i].id;
       if (parentIds.includes(rid)) continue;
       const ru = refUnits[i];
       if (!ru || ru._adjacentAnchor) continue;
-      const anchorParentId = parentIds.find((pid) => pid !== rid
+      const anchorId = [...parentPersonUnit.keys()].find((pid) => pid !== rid
         && graph.partners(pid).some((pt) => pt.id === rid));
-      if (!anchorParentId) continue;
-      const anchorUnit = parentPersonUnit.get(anchorParentId);
+      if (!anchorId) continue;
+      const anchorUnit = parentPersonUnit.get(anchorId);
       if (!anchorUnit || anchorUnit === ru) continue;
-      ru._adjacentAnchor = { unit: anchorUnit, memberId: anchorParentId };
+      ru._adjacentAnchor = { unit: anchorUnit, memberId: anchorId };
     }
     if (!refs.length) continue;
     const anchor = ensureAnchor(refs, -1, BAND.KIN);
@@ -628,6 +662,51 @@ export function planCanopy(graph, focusId, opts = {}) {
       child: sid,
       qualifier: qualifierForParentSet(refs),
     });
+  }
+
+  /* Any already-drawn row -1 person's OWN partners — current or former —
+   * belong beside them too, not only the ones discovered because they
+   * co-parented a displayed sibling. The rule above only pulls in a parent's
+   * ex when that ex ALSO shares a rendered child; a person connected purely
+   * by a past or present partnership, with no shared child on screen at all,
+   * never made it onto the canvas at all. Real report, with a screenshot,
+   * against a real 1,200-person tree: several of exactly this shape, each
+   * left to its own independently-computed position and joined after the
+   * fact by a line that has to travel however far apart the two ended up —
+   * "the lines are hard to read."
+   *
+   * A fixed snapshot of the row taken BEFORE this loop starts (`[...
+   * parentDisplayUnits]`) — newly-added satellites are not themselves
+   * searched for further partners. One level only, deliberately: chasing a
+   * satellite's own further exes would let one prolifically-married ancestor
+   * pull in an unbounded, ever-deepening fan, which is exactly the kind of
+   * runaway growth Canopy's whole banded-frame design exists to avoid.
+   *
+   * The cap is PER PERSON, not per pod: it started as one shared budget
+   * across a pod's two members, and a pod's FIRST member alone could then
+   * exhaust it, silently hiding the SECOND member's own, completely
+   * unrelated ex — one real person's history erased by another's. Each
+   * member of a pod gets their own budget. */
+  const MAX_EXTRA_PARTNERS_PER_ANCHOR = 2;
+  for (const anchorUnit of [...parentDisplayUnits]) {
+    for (const memberId of anchorUnit.memberIds) {
+      let added = 0;
+      const extras = graph.partners(memberId)
+        .filter((pt) => byId.has(pt.id) && !drawn.has(pt.id))
+        .sort((a, b) => cmp(a.id, b.id));
+      for (const pt of extras) {
+        if (added >= MAX_EXTRA_PARTNERS_PER_ANCHOR) break;
+        claim(pt.id);
+        const pu = newUnit(pt.id, [pt.id], BAND.KIN);
+        pu.row = -1;
+        units.push(pu);
+        parentDisplayUnits.push(pu);
+        parentPersonUnit.set(pt.id, pu);
+        addUnion(memberId, pt.id);
+        pu._adjacentAnchor = { unit: anchorUnit, memberId };
+        added++;
+      }
+    }
   }
 
   /* ROW -2 — grandparents, one pod per parent, at Reach fidelity.

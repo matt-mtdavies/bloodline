@@ -233,6 +233,112 @@ test('a parent\'s own former partner (relevant to a half-sibling) sits directly 
   assert.ok(Math.abs(anchor.x - (nancy.x + reg.x) / 2) < 1e-6, 'the junction sits at the real nancy+reginald midpoint');
 });
 
+test('a parent\'s own former partner with NO shared displayed child still gets pulled in and sits adjacent', () => {
+  // Real, reported bug on a real 1,200-person tree: the old rule ONLY drew a
+  // parent's own ex when that ex ALSO co-parented a currently-displayed
+  // sibling. BARB has no children at all with NANCY here — under the old
+  // code she would never appear on the canvas in the first place. She now
+  // gets pulled in as NANCY's own recorded former partner and drawn beside
+  // her, opposite ALLEN.
+  const g = buildGraph(
+    [P('NANCY'), P('ALLEN'), P('BARB'), P('KID')],
+    [
+      partner('NANCY', 'ALLEN'), partner('NANCY', 'BARB', 'former'),
+      parent('NANCY', 'KID'), parent('ALLEN', 'KID'),
+    ],
+  );
+  const f = planCanopy(g, 'KID');
+  const nancy = f.nodes.get('NANCY'), allen = f.nodes.get('ALLEN'), barb = f.nodes.get('BARB');
+  assert.ok(barb, 'barb is drawn at all, despite sharing no child with nancy');
+  assert.equal(barb.rowBaselineY, nancy.rowBaselineY, 'barb sits on the parent row, not lifted or hidden');
+  const nancyToAllen = allen.x - nancy.x;
+  const nancyToBarb = barb.x - nancy.x;
+  assert.ok(Math.sign(nancyToBarb) !== Math.sign(nancyToAllen) || nancyToAllen === 0,
+    'barb sits on the OPPOSITE side of nancy from allen');
+  assert.ok(Math.abs(nancyToBarb) < POD_GAP * 2, 'barb is genuinely adjacent to nancy');
+  const bond = f.bonds.find((b) => b.kind === 'union' && [b.a, b.b].includes('BARB'));
+  assert.ok(bond, 'a real union bond is drawn between nancy and barb');
+  assert.equal(bond.status, 'former');
+});
+
+test('extra partners pulled in this way are capped, so one prolifically-married ancestor cannot pull in an unbounded fan', () => {
+  const g = buildGraph(
+    [P('NANCY'), P('ALLEN'), P('EX1'), P('EX2'), P('EX3'), P('KID')],
+    [
+      partner('NANCY', 'ALLEN'),
+      partner('NANCY', 'EX1', 'former'), partner('NANCY', 'EX2', 'former'), partner('NANCY', 'EX3', 'former'),
+      parent('NANCY', 'KID'), parent('ALLEN', 'KID'),
+    ],
+  );
+  const f = planCanopy(g, 'KID');
+  const shown = ['EX1', 'EX2', 'EX3'].filter((id) => f.nodes.has(id));
+  assert.equal(shown.length, 2, `expected exactly 2 of nancy's 3 exes to be drawn, got ${shown.length}`);
+});
+
+test('the cap is per PERSON, not shared across a pod — one member\'s own exes cannot crowd out the other member\'s', () => {
+  // NANCY's three exes alone would already exhaust a shared budget of 2 —
+  // if the cap were shared across the pod, ALLEN's own single, completely
+  // unrelated ex (BETH) would never be drawn at all, even though ALLEN's
+  // history has nothing to do with how many times NANCY was married.
+  const g = buildGraph(
+    [P('NANCY'), P('ALLEN'), P('EX1'), P('EX2'), P('EX3'), P('BETH'), P('KID')],
+    [
+      partner('NANCY', 'ALLEN'),
+      partner('NANCY', 'EX1', 'former'), partner('NANCY', 'EX2', 'former'), partner('NANCY', 'EX3', 'former'),
+      partner('ALLEN', 'BETH', 'former'),
+      parent('NANCY', 'KID'), parent('ALLEN', 'KID'),
+    ],
+  );
+  const f = planCanopy(g, 'KID');
+  assert.ok(f.nodes.has('BETH'), 'allen\'s own ex is drawn regardless of how many nancy has');
+  const nancyExesShown = ['EX1', 'EX2', 'EX3'].filter((id) => f.nodes.has(id));
+  assert.equal(nancyExesShown.length, 2, 'nancy is still capped at 2 of her own, independently of allen');
+});
+
+test('two row -1 co-parents with NO partner edge still draw a plain thread, not nothing', () => {
+  // The child row already had this fallback (a real co-parent without a
+  // partnership still has to read as connected); row -1's sibling-introduced
+  // co-parents lacked the equivalent, so two people the data plainly
+  // relates could end up with no line between them at all.
+  const g = buildGraph(
+    [P('NANCY'), P('ALLEN'), P('OTHERDAD'), P('HALFSIB')],
+    [
+      partner('NANCY', 'ALLEN'),
+      parent('NANCY', 'HALFSIB'), parent('OTHERDAD', 'HALFSIB'),
+    ],
+  );
+  const f = planCanopy(g, 'HALFSIB');
+  const bond = f.bonds.find((b) => b.kind === 'thread' && [b.a, b.b].sort().join('|') === ['NANCY', 'OTHERDAD'].sort().join('|'));
+  assert.ok(bond, 'a plain thread connects nancy and otherdad even with no recorded partnership');
+});
+
+test('the adjacent-anchor rule works against ANY already-drawn row -1 person, not only the focus\'s own two parents', () => {
+  // STEP is DAD's current partner, introduced via a step-sibling — not one
+  // of FOCUS's own two recorded parents (MOM, DAD). STEPEX is STEP's OWN
+  // former partner, introduced via a second, separate step-sibling. STEPEX
+  // never partnered DAD or MOM directly, only STEP — the old anchor search
+  // (scoped to literally the focus's own two parentIds) could never place
+  // her; the widened search can.
+  const g = buildGraph(
+    [P('MOM'), P('DAD'), P('STEP'), P('STEPEX'), P('FOCUS'), P('STEPKID', { birth_date: '1990-01-01' }), P('STEPKID2', { birth_date: '1992-01-01' })],
+    [
+      partner('MOM', 'DAD'), partner('DAD', 'STEP'), partner('STEP', 'STEPEX', 'former'),
+      parent('MOM', 'FOCUS'), parent('DAD', 'FOCUS'),
+      parent('DAD', 'STEPKID'), parent('STEP', 'STEPKID'),
+      parent('STEP', 'STEPKID2'), parent('STEPEX', 'STEPKID2'),
+    ],
+  );
+  const f = planCanopy(g, 'FOCUS');
+  const step = f.nodes.get('STEP'), stepex = f.nodes.get('STEPEX'), dad = f.nodes.get('DAD');
+  assert.ok(step && stepex, 'both step and her own ex are drawn');
+  assert.equal(stepex.rowBaselineY, step.rowBaselineY, 'stepex sits on the parent row beside step');
+  const stepToDad = dad.x - step.x;
+  const stepToStepex = stepex.x - step.x;
+  assert.ok(Math.sign(stepToStepex) !== Math.sign(stepToDad) || stepToDad === 0,
+    'stepex sits on the OPPOSITE side of step from dad');
+  assert.ok(Math.abs(stepToStepex) < POD_GAP * 2, 'stepex is genuinely adjacent to step');
+});
+
 test('units on a row never overlap', () => {
   for (const [, rowUnits] of frame.rows) {
     const sorted = [...rowUnits].sort((a, b) => a.x - b.x);

@@ -266,7 +266,19 @@ export function composeCamera(frame, viewport) {
    * the size deemed legible, with empty paper down both sides. Height is no
    * more of a reason to render people unreadably than width is. */
   const belowReadable = zoom < MIN_READABLE_ZOOM;
-  if (belowReadable) zoom = Math.min(MAX_ZOOM, MIN_READABLE_ZOOM);
+  /* Real report, with a screenshot, against a real 1,200-person tree: a wide
+   * satellite row forced zx down, the floor caught it and set zoom to exactly
+   * MIN_READABLE_ZOOM — discarding zy entirely, even when the frame's actual
+   * height (three rows, nowhere near as tall as the row was wide) could
+   * support a noticeably bigger zoom. The result was a thin horizontal band
+   * of content marooned in a sea of empty paper top and bottom: correct
+   * per-person legibility, but a composition that read as sparse rather than
+   * as filling the screen. The floor only needs to guarantee "at least
+   * readable" — it was never supposed to mean "never bigger than the bare
+   * minimum." Climbing to whatever height actually allows (still capped at
+   * MAX_ZOOM, still never below the floor if height is ALSO tight) uses the
+   * space that's really there instead of leaving it as margin. */
+  if (belowReadable) zoom = Math.min(MAX_ZOOM, Math.max(MIN_READABLE_ZOOM, zy));
   const centreOnFocusX = belowReadable && (hi - lo) * zoom > W - PAD;
 
   /* What to centre on when the row runs off the edges. Not the focus alone:
