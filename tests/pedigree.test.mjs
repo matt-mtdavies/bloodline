@@ -82,10 +82,44 @@ t('drawn children include the step-child, hung from kaitlin\'s side only', () =>
   const { cards, connectors } = computePedigree(graph, 'matthew', { expandedUp: new Set() });
   const step = cards.find((c) => c.id === 'c_stepkid');
   assert.ok(step, 'stepkid drawn');
-  // matthew is member A (line member first): step edge to A, bio to B.
-  assert.equal(step.side, 'both' /* linked to both, one step */, 'linked to both members');
+  // matthew is member A (line member first): step edge to A, bio to B. A
+  // step edge to the OTHER member no longer counts toward "both" for
+  // connector-origin purposes — only two REAL (bio/adoptive) edges do — so
+  // this hangs from kaitlin's (B's) own plate specifically, matching what
+  // this test's own title always said. Real report, with a screenshot: the
+  // old 'both' behaviour drew this from the couple's shared middle instead.
+  assert.equal(step.side, 'b', 'hangs from kaitlin\'s own plate, not the shared middle');
   const conn = connectors.find((c) => c.toCardId === 'c_stepkid');
   assert.ok(conn);
+  assert.equal(conn.side, 'b');
+});
+
+t('a blended couple where BOTH members bring their own kids, each cross-recorded step to the other, splits into two separate buses', () => {
+  // The exact reported shape: "the lines coming from Ken and Heather should
+  // be individual. Matthew and Jason, being Heather's children, should come
+  // off her card, and Jessica and Amie, Ken's biological daughters, should
+  // come off Ken's card." Heather's kids carry an explicit step edge to Ken
+  // (and vice versa) — the courtesy record for "my partner's kids are my
+  // step-kids" — which must NOT pull them into the shared middle.
+  const bp = ['heather', 'ken', 'matthewK', 'jasonK', 'jessica', 'amie'].map(person);
+  const brel = [
+    ptn('heather', 'ken', 'current'),
+    par('heather', 'matthewK'), par('ken', 'matthewK', 'step'),
+    par('heather', 'jasonK'), par('ken', 'jasonK', 'step'),
+    par('ken', 'jessica'), par('heather', 'jessica', 'step'),
+    par('ken', 'amie'), par('heather', 'amie', 'step'),
+  ];
+  const bg = buildGraph(bp, brel);
+  const { cards, connectors } = computePedigree(bg, 'heather', { expandedUp: new Set() });
+  const byName = (id) => cards.find((c) => c.kind === 'child' && c.members[0] === id);
+  // heather is the focus (member A); ken is her displayed partner (member B).
+  assert.equal(byName('matthewK').side, 'a', 'heather\'s own child hangs from her side');
+  assert.equal(byName('jasonK').side, 'a');
+  assert.equal(byName('jessica').side, 'b', 'ken\'s own child hangs from his side');
+  assert.equal(byName('amie').side, 'b');
+  const sideOfConn = (id) => connectors.find((c) => c.toCardId === byName(id).id).side;
+  assert.equal(sideOfConn('matthewK'), 'a');
+  assert.equal(sideOfConn('jessica'), 'b');
 });
 
 t('childrenOfUnion groups a cross-union child with its outside co-parent', () => {
@@ -207,9 +241,10 @@ t('a lopsided ancestor branch stays near its own member, not dragged toward its 
 t('a child linked to only the non-focus member of a pod is side "b" — a dashed, dedicated connector', () => {
   // A small dedicated fixture: focus person "sam" partners "robin" (no shared
   // kids), and robin separately has a child "kim" with someone with NO
-  // recorded edge to sam at all — a genuine "only robin's" case, distinct
-  // from the gauntlet family's stepkid (which IS linked to matthew, just via
-  // a 'step' qualifier, and so is correctly side 'both' not 'b').
+  // recorded edge to sam at all — kim ends up side 'b' for a different
+  // reason than the gauntlet family's stepkid just above (no edge to sam at
+  // all here, vs. a real 'step' edge to matthew there) but the same visual
+  // result either way: hung from robin's own plate, not the couple's middle.
   const p2 = ['sam', 'robin', 'kim', 'other'].map(person);
   const r2 = [ptn('sam', 'robin', 'current'), par('robin', 'kim'), par('other', 'kim')];
   const g2 = buildGraph(p2, r2);

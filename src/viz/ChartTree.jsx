@@ -646,18 +646,9 @@ function PlateCard({ card, graph, horizontal, isFocal, entryDelayMs = 0, activeI
   // it stays plain and lets its one .pplate read as an ordinary individual
   // card with nothing competing behind it.
   const isPod = card.members.length === 2;
-  // Real feedback: "there should be a different shading color for current
-  // vs. former partner" — the wash now reads by the pod's own recorded
-  // status, the same distinction the partner-link (SVG, between the two
-  // plates) already draws (solid terracotta / dashed greige / violet
-  // widowed), rather than every pod sharing one neutral tint regardless of
-  // status. A bio co-parent with no recorded partner edge at all (card.
-  // marriage is null) has no romantic status to represent, so it keeps its
-  // own plain neutral wash.
-  const podStatus = isPod ? (card.marriage?.status ?? 'coparent') : null;
   return (
     <div
-      className={'pcard' + (horizontal ? ' pcard--land' : '') + (isChild ? ' pcard--child' : '') + (isPod ? ' pcard--pod pcard--pod-' + podStatus : '') + recede}
+      className={'pcard' + (horizontal ? ' pcard--land' : '') + (isChild ? ' pcard--child' : '') + (isPod ? ' pcard--pod' : '') + recede}
       style={{ left: card.x - card.w / 2, top: card.y - card.h / 2, width: card.w, height: card.h, animationDelay: `${entryDelayMs}ms` }}
     >
       <div className="pcard__row">
