@@ -11207,18 +11207,38 @@ button.health-notes {
 .pcard {
   position: absolute;
   border-radius: 22px;
-  transition: background 0.2s ease;
 }
 /* The wash only exists for an actual COUPLE (two plates to unify) — a solo
    card (a lone ancestor, or a drawn child) has nothing to unify and stays
    fully transparent, letting its one .pplate read as a plain individual
-   card with no shape competing behind it. */
-.pcard--pod {
-  background: color-mix(in srgb, var(--paper-deep) 65%, transparent);
+   card with no shape competing behind it.
+   Real follow-up feedback: "the shading should be a little bigger and
+   cover beyond the cards borders" — drawn as a ::before rather than as
+   .pcard's own background, so it can extend past .pcard's own box (inset:
+   a NEGATIVE margin) without touching .pcard's actual left/top/width/height,
+   which pedigreeLayout.js computed to match the plates' real positions and
+   which the connector lines (SVG, drawn separately) anchor to exactly —
+   growing the wash itself must never shift where a line meets a card. */
+.pcard--pod::before {
+  content: '';
+  position: absolute;
+  inset: -13px;
+  border-radius: 28px;
+  background: color-mix(in srgb, var(--pod-hue, var(--paper-deep)) var(--pod-alpha, 65%), transparent);
+  transition: background 0.2s ease;
+  z-index: -1;
+  pointer-events: none;
 }
-.pcard--pod:has(.pplate:hover) {
-  background: color-mix(in srgb, var(--paper-deep) 100%, transparent);
-}
+/* Status hue — every pod reads by its own recorded partnership status, not
+   just the one the camera happens to be centred on (see ChartTree.jsx's
+   podStatus). Alpha is tuned per hue rather than shared: --bond-current is
+   a saturated terracotta and --paper-deep is nearly white, so the SAME
+   alpha would read as a loud colour block on one and be invisible on the
+   other. */
+.pcard--pod-coparent { --pod-hue: var(--paper-deep); --pod-alpha: 65%; --pod-alpha-hover: 100%; }
+.pcard--pod-current { --pod-hue: var(--bond-current); --pod-alpha: 24%; --pod-alpha-hover: 42%; }
+.pcard--pod-former { --pod-hue: var(--bond-former); --pod-alpha: 45%; --pod-alpha-hover: 70%; }
+.pcard--pod-widowed { --pod-hue: var(--memorial); --pod-alpha: 22%; --pod-alpha-hover: 38%; }
 .pcard__row { display: flex; gap: 18px; height: 100%; align-items: stretch; }
 /* Landscape: the couple's plates stack vertically (member over member), joined
    by the vertical partner-link at the seam. The 18px gap MUST equal LINK_GAP so
@@ -11316,21 +11336,20 @@ button.health-notes {
   background: var(--paper-deep);
 }
 /* The wash fades right along with its plates, so a receded pod doesn't sit
-   in a wash sized for full-strength content. */
-.pcard--pod.pcard--recede1 { background: color-mix(in srgb, var(--paper-deep) 40%, transparent); }
-.pcard--pod.pcard--recede2 { background: color-mix(in srgb, var(--paper-deep) 22%, transparent); }
+   in a wash sized for full-strength content — overriding the alpha custom
+   property (not the background directly) so this works for every status
+   hue with two rules total, instead of one rule per status × tier. Higher
+   specificity than any single .pcard--pod-* status class (two classes vs
+   one), so it always wins regardless of source order. */
+.pcard--pod.pcard--recede1 { --pod-alpha: 16%; }
+.pcard--pod.pcard--recede2 { --pod-alpha: 9%; }
+/* Hover restores full presence even on a receded pod — placed AFTER the
+   recede overrides above (equal specificity: a class + :has() vs. two
+   classes resolve by source order) so a receded pod's wash still brightens
+   under the pointer, matching the "nothing interactive ever reads as
+   disabled" rule the plates themselves already follow. */
+.pcard--pod:has(.pplate:hover) { --pod-alpha: var(--pod-alpha-hover, 100%); }
 
-/* The focal POD — "this is the couple we're exploring" — a warm wash
-   behind them, same idea as any other pod's wash, just tinted with the
-   accent instead of neutral paper. Deliberately does NOT resize the pod or
-   either plate — see .pplate--active below, which is where "the person we
-   are exploring, specifically" actually shows up now. */
-.pcard--focal.pcard--pod {
-  background: color-mix(in srgb, var(--accent-soft) 55%, transparent);
-}
-.pcard--focal.pcard--pod:has(.pplate:hover) {
-  background: color-mix(in srgb, var(--accent-soft) 80%, transparent);
-}
 /* The active person, specifically — not their partner, not the pod as a
    whole. Real feedback: the focal pod scaling up AS ONE UNIT (the previous
    design) didn't distinguish "this couple" from "this person, right now";
