@@ -395,8 +395,32 @@ export function computePedigree(graph, focusId, { expandedUp, partnerChoice, ori
   //    that member's own half of the card, not the couple's shared middle
   //    (e.g. a step-child, drawn dashed — see ChartTree.jsx's downAnchor). ──
   const childCards = [];
+  // Real report, with a screenshot: a couple where one member's children are
+  // ALSO explicitly recorded with a courtesy 'step' edge to the other member
+  // (the correct, deliberate way to record "my partner's kids from before us
+  // are my step-kids" — see the qualifier system) were drawing from the
+  // COUPLE'S SHARED MIDDLE, because "linked at all" (any edge, any
+  // qualifier) was all "both" ever checked. That is right for the STEP CHIP
+  // (a step relationship is real and worth labelling — untouched, still
+  // reads qualifiers.a/b === 'step' directly) but wrong for which card a
+  // line originates from: "Matthew and Jason, being Heather's children,
+  // should come off her card, and Jessica and Amie, Ken's biological
+  // daughters, should come off Ken's card" — the connector has to follow
+  // BLOOD (or adoption), not merely "is there any recorded edge at all". A
+  // step edge to the other member no longer promotes a child into the
+  // shared 'both' bus; only two REAL (biological/adoptive) edges do.
   const sideOf = (row) => {
     const linkedA = row.aQualifier != null, linkedB = row.bQualifier != null;
+    // isBioAdopt's own `!q` branch means "an edge exists with no qualifier
+    // set, which defaults to biological" — right for an existing edge, but
+    // row.aQualifier/bQualifier is also null simply when NO edge exists at
+    // all, which is a different fact. Only ask isBioAdopt when there's
+    // actually an edge to ask about, or "no relationship at all" would
+    // wrongly count as "biological".
+    const realA = linkedA && isBioAdopt(row.aQualifier), realB = linkedB && isBioAdopt(row.bQualifier);
+    if (realA && realB) return 'both';
+    if (linkedA && !realA && linkedB && realB) return 'b';
+    if (linkedB && !realB && linkedA && realA) return 'a';
     return linkedA && linkedB ? 'both' : linkedA ? 'a' : 'b';
   };
   function buildChildrenRow(unionCard, rows) {
