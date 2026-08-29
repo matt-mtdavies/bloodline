@@ -11193,51 +11193,31 @@ button.health-notes {
    Two flat plates side by side, joined across the seam by the partner-link.
    Calm by default: editing chrome lives in the on-select action bar; the
    resting card carries only navigation pips. */
-/* A couple is now ONE unified pod — a single background/border/shadow on
-   .pcard itself, not two individually-tinted .pplate tiles glued together
-   with a visible gap between them (real feedback: "the couples should be
-   in an orange or grey pod, not both tiles individually orange"). Each
-   .pplate inside is just a transparent, borderless click target for layout
-   — see below. */
+/* A couple is two real, individually-carded people again — real follow-up
+   feedback on the merged pod: "the pod shading should be back shading,
+   like the way canopy does it" — reverting the OTHER way, to two
+   individually-tinted tiles glued together with a visible gap (the shape
+   this replaced, see git history), would just trade one complaint for the
+   one before it. Canopy's own resolution is the model: two real portraits,
+   unified by a loose, soft wash BEHIND them, never a hard box of its own.
+   .pcard is now that wash — a positioning wrapper carrying only a soft
+   background, no border or shadow of its own — and .pplate below is the
+   real card: its own background, border and shadow, exactly as before the
+   merge. See .pcard--pod for the wash itself. */
 .pcard {
   position: absolute;
-  border: 1px solid var(--hairline);
-  border-radius: 15px;
-  background: var(--card);
-  box-shadow: 0 1px 2px rgba(36, 31, 28, 0.05), 0 4px 12px rgba(36, 31, 28, 0.06);
-  transition: border-color 0.15s ease, box-shadow 0.2s var(--ease), background 0.15s ease, transform 0.2s var(--ease);
+  border-radius: 22px;
+  transition: background 0.2s ease;
 }
-/* Hovering either person's plate highlights the whole pod as one shape —
-   :has() lets the pod itself react to an inner element's hover state. */
-.pcard:has(.pplate:hover) {
-  border-color: #d8d2c8;
-  background: var(--paper-deep);
-  box-shadow: 0 2px 5px rgba(36, 31, 28, 0.07), 0 8px 18px rgba(36, 31, 28, 0.09);
+/* The wash only exists for an actual COUPLE (two plates to unify) — a solo
+   card (a lone ancestor, or a drawn child) has nothing to unify and stays
+   fully transparent, letting its one .pplate read as a plain individual
+   card with no shape competing behind it. */
+.pcard--pod {
+  background: color-mix(in srgb, var(--paper-deep) 65%, transparent);
 }
-/* Emphasis tiers — deep ancestors recede; hover restores full presence so
-   nothing interactive ever reads as disabled.
-   Real report: a blanket opacity on the whole card (a prior pass, 0.7/0.48,
-   deepened from an even softer 0.9/0.76 for more visual hierarchy) faded the
-   NAME AND DATES text along with the card chrome — and .pplate__dates was
-   already the tertiary --ink-faint token, itself under WCAG's 4.5:1 floor
-   even at full strength (2.3:1). Stacking a 0.7/0.48 opacity on top measured
-   out to 1.75:1 / 1.44:1 — the actual, measurable "hard to read" the report
-   named, not a taste complaint. Recede now lives entirely on the pod's own
-   FRAME (border, background), never on its text, so the card still visibly
-   sits back a generation without ever degrading the one thing a card
-   exists to let you read. */
-.pcard--recede1 {
-  background: color-mix(in srgb, var(--paper-deep) 60%, var(--card));
-  box-shadow: 0 1px 2px rgba(36, 31, 28, 0.03);
-}
-.pcard--recede2 {
-  background: color-mix(in srgb, var(--ink-faint) 30%, var(--paper-deep));
-  box-shadow: none;
-}
-.pcard--recede1:has(.pplate:hover),
-.pcard--recede2:has(.pplate:hover) {
-  border-color: #d8d2c8;
-  background: var(--paper-deep);
+.pcard--pod:has(.pplate:hover) {
+  background: color-mix(in srgb, var(--paper-deep) 100%, transparent);
 }
 .pcard__row { display: flex; gap: 18px; height: 100%; align-items: stretch; }
 /* Landscape: the couple's plates stack vertically (member over member), joined
@@ -11268,19 +11248,29 @@ button.health-notes {
 @media (prefers-reduced-motion: reduce) {
   .pcard, .ped-link, .ped-partnerlink { animation: none; }
 }
-/* Just a click target and text/avatar layout now — every frame, tint and
-   shadow lives one level up on .pcard so a couple reads as one pod. */
+/* The real card — its own background, border and shadow, exactly what
+   .pcard carried before the merge, just moved down one level so each
+   person is genuinely their own card again, sitting on top of .pcard's
+   soft pod wash rather than being absorbed into it. */
 .pplate {
   display: flex;
   align-items: center;
   gap: 10px;
   height: 100%;
   padding: 0 11px;
-  border: none;
-  background: none;
+  border: 1px solid var(--hairline);
+  border-radius: 14px;
+  background: var(--card);
+  box-shadow: 0 1px 2px rgba(36, 31, 28, 0.05), 0 4px 12px rgba(36, 31, 28, 0.06);
   cursor: pointer;
   text-align: left;
   font-family: var(--body);
+  transition: border-color 0.15s ease, box-shadow 0.2s var(--ease), background 0.15s ease, transform 0.2s var(--ease);
+}
+.pplate:hover {
+  border-color: #d8d2c8;
+  background: var(--paper-deep);
+  box-shadow: 0 2px 5px rgba(36, 31, 28, 0.07), 0 8px 18px rgba(36, 31, 28, 0.09);
 }
 .pplate__text { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .pplate__name {
@@ -11298,18 +11288,64 @@ button.health-notes {
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .pplate--passed .pplate__name { color: color-mix(in srgb, var(--ink) 74%, var(--paper)); }
-/* The focal pod — "this is the person we're exploring" — reads as
-   unmistakably the centre now, not just a thin border: a warm tint, a soft
-   accent glow, and a touch larger AS ONE WHOLE UNIT (not each plate
-   individually scaling around its own centre), the same "selected person
-   pops" principle Tree View's ego-camera already gives its active bubble. */
-.pcard--focal {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-  box-shadow: 0 0 0 1.5px var(--accent-soft), 0 10px 24px rgba(194, 96, 58, 0.16);
-  transform: scale(1.045);
+/* Emphasis tiers — deep ancestors recede; hover restores full presence so
+   nothing interactive ever reads as disabled. Lives on .pplate now (the
+   card that's actually visible for a solo ancestor too, not just a pod's
+   own wash) rather than on .pcard.
+   Real report: a blanket opacity on the whole card (a prior pass, 0.7/0.48,
+   deepened from an even softer 0.9/0.76 for more visual hierarchy) faded the
+   NAME AND DATES text along with the card chrome — and .pplate__dates was
+   already the tertiary --ink-faint token, itself under WCAG's 4.5:1 floor
+   even at full strength (2.3:1). Stacking a 0.7/0.48 opacity on top measured
+   out to 1.75:1 / 1.44:1 — the actual, measurable "hard to read" the report
+   named, not a taste complaint. Recede lives entirely on the card's own
+   FRAME (border, background), never on its text, so it still visibly sits
+   back a generation without ever degrading the one thing a card exists to
+   let you read. */
+.pcard--recede1 .pplate {
+  background: color-mix(in srgb, var(--paper-deep) 60%, var(--card));
+  box-shadow: 0 1px 2px rgba(36, 31, 28, 0.03);
 }
-.pcard--focal:has(.pplate:hover) { background: var(--accent-soft); }
+.pcard--recede2 .pplate {
+  background: color-mix(in srgb, var(--ink-faint) 30%, var(--paper-deep));
+  box-shadow: none;
+}
+.pcard--recede1 .pplate:hover,
+.pcard--recede2 .pplate:hover {
+  border-color: #d8d2c8;
+  background: var(--paper-deep);
+}
+/* The wash fades right along with its plates, so a receded pod doesn't sit
+   in a wash sized for full-strength content. */
+.pcard--pod.pcard--recede1 { background: color-mix(in srgb, var(--paper-deep) 40%, transparent); }
+.pcard--pod.pcard--recede2 { background: color-mix(in srgb, var(--paper-deep) 22%, transparent); }
+
+/* The focal POD — "this is the couple we're exploring" — a warm wash
+   behind them, same idea as any other pod's wash, just tinted with the
+   accent instead of neutral paper. Deliberately does NOT resize the pod or
+   either plate — see .pplate--active below, which is where "the person we
+   are exploring, specifically" actually shows up now. */
+.pcard--focal.pcard--pod {
+  background: color-mix(in srgb, var(--accent-soft) 55%, transparent);
+}
+.pcard--focal.pcard--pod:has(.pplate:hover) {
+  background: color-mix(in srgb, var(--accent-soft) 80%, transparent);
+}
+/* The active person, specifically — not their partner, not the pod as a
+   whole. Real feedback: the focal pod scaling up AS ONE UNIT (the previous
+   design) didn't distinguish "this couple" from "this person, right now";
+   only the literal active plate pops, 10% larger, the same "selected
+   person specifically pops" principle Canopy's own FOCUS_SCALE and Tree
+   View's ego-camera both already give their one active bubble. z-index
+   lifts it clear of its neighbour plate at the seam once scaled — flex
+   items respect z-index without needing position:relative of their own. */
+.pplate--active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1.5px var(--accent-soft), 0 10px 24px rgba(194, 96, 58, 0.16);
+  transform: scale(1.1);
+  z-index: 2;
+}
+.pplate--active:hover { background: var(--card); }
 
 /* Partner-link across the couple's seam — status by style, drawn in SVG. */
 .ped-partnerlink { stroke: var(--bond-current, #c2603a); stroke-width: 2.4; fill: none; opacity: 0.9; stroke-linecap: round; }

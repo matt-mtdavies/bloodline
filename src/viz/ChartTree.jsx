@@ -641,9 +641,14 @@ function PlateCard({ card, graph, horizontal, isFocal, entryDelayMs = 0, activeI
   // a step, so deep ancestors settle quietly into the past.
   const depth = Math.abs(card._gen ?? 0);
   const recede = depth <= 1 ? '' : depth === 2 ? ' pcard--recede1' : ' pcard--recede2';
+  // The soft back-shading wash only makes sense behind an actual COUPLE —
+  // a solo card (lone ancestor, or a drawn child) has nothing to unify, so
+  // it stays plain and lets its one .pplate read as an ordinary individual
+  // card with nothing competing behind it.
+  const isPod = card.members.length === 2;
   return (
     <div
-      className={'pcard' + (horizontal ? ' pcard--land' : '') + (isFocal ? ' pcard--focal' : '') + (isChild ? ' pcard--child' : '') + recede}
+      className={'pcard' + (horizontal ? ' pcard--land' : '') + (isFocal ? ' pcard--focal' : '') + (isChild ? ' pcard--child' : '') + (isPod ? ' pcard--pod' : '') + recede}
       style={{ left: card.x - card.w / 2, top: card.y - card.h / 2, width: card.w, height: card.h, animationDelay: `${entryDelayMs}ms` }}
     >
       <div className="pcard__row">
@@ -661,7 +666,7 @@ function PlateCard({ card, graph, horizontal, isFocal, entryDelayMs = 0, activeI
           return (
             <button
               key={personId}
-              className={'pplate' + (person.is_deceased ? ' pplate--passed' : '')}
+              className={'pplate' + (person.is_deceased ? ' pplate--passed' : '') + (personId === activeId ? ' pplate--active' : '')}
               style={{ width: PLATE_W }}
               onClick={() => { if (personId === activeId) onOpenPerson?.(personId); else onActivate?.(personId); }}
             >
