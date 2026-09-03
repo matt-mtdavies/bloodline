@@ -127,7 +127,7 @@ export default function AtlasLab() {
           <button
             key={c.key}
             type="button"
-            className="atlab__edge"
+            className="atlas-edge"
             style={{ left: c.x, top: c.y }}
             onClick={() => setFocusId(c.ids[0])}
             aria-label={`Fly to ${c.label}`}

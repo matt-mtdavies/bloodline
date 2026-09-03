@@ -115,10 +115,33 @@ html, body, #root { height: 100%; margin: 0; }
 .atlab__link { padding: 0; border: 0; background: none; font: inherit; font-size: 13px; color: var(--accent, #c2603a); cursor: pointer; }
 .atlab__corner { position: absolute; z-index: 5; right: 16px; top: 16px; display: flex; gap: 8px; }
 
+/* The app-mounted view (AtlasTree). The lab lays the stage out as a flex
+   child under its own bar; in the app it is the whole canvas behind the real
+   top bar, exactly as .canopy-host is. */
+.atlas-view { position: fixed; inset: 0; z-index: 0; }
+.atlas-view .atlas-host { position: absolute; inset: 0; }
+
+/* "Whole family" — the one control the app-mounted view adds, and only once
+   you have travelled somewhere to come back from. Bottom-centre, clear of
+   the profile sheet's own edges. */
+.atlas-wide {
+  position: absolute; z-index: 5; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 9px 16px; border: 1px solid rgba(120, 96, 70, 0.2); border-radius: 999px;
+  background: rgba(255, 252, 246, 0.92); color: var(--ink, #1c1d21);
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  font: inherit; font-size: 13px; white-space: nowrap; cursor: pointer;
+  box-shadow: 0 10px 30px rgba(40, 28, 18, 0.14);
+  animation: atlas-edge-in 260ms ease-out both;
+}
+.atlas-wide svg { color: var(--accent, #c2603a); flex: none; }
+.atlas-wide:hover { background: #fff; }
+
 /* Edge markers: the selected person's off-screen relatives, pinned to the
    edge of the view in the true direction, the way a map marks the next town
    off the page. Warm paper, terracotta arrow, one tap to fly. */
-.atlab__edge {
+.atlas-edge {
   position: absolute; z-index: 4; transform: translate(-50%, -50%);
   display: inline-flex; align-items: center; gap: 6px;
   padding: 5px 10px 5px 8px; border: 1px solid rgba(194, 96, 58, 0.35); border-radius: 999px;
@@ -126,11 +149,11 @@ html, body, #root { height: 100%; margin: 0; }
   font: inherit; font-size: 12px; white-space: nowrap; cursor: pointer;
   max-width: 48vw; overflow: hidden; text-overflow: ellipsis;
   box-shadow: 0 6px 18px rgba(40, 28, 18, 0.12);
-  animation: atlab-edge-in 260ms ease-out both;
+  animation: atlas-edge-in 260ms ease-out both;
 }
-.atlab__edge svg { color: var(--accent, #c2603a); flex: none; }
-.atlab__edge:hover { background: #fff; }
-@keyframes atlab-edge-in { from { opacity: 0; transform: translate(-50%, -50%) scale(0.92); } to { opacity: 1; transform: translate(-50%, -50%) scale(1); } }
+.atlas-edge svg { color: var(--accent, #c2603a); flex: none; }
+.atlas-edge:hover { background: #fff; }
+@keyframes atlas-edge-in { from { opacity: 0; transform: translate(-50%, -50%) scale(0.92); } to { opacity: 1; transform: translate(-50%, -50%) scale(1); } }
 
 @media (max-width: 700px) {
   /* A phone gives the lab bar two short rows, not a third of the screen. */

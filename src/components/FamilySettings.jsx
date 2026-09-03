@@ -9,6 +9,7 @@ import ExportArchiveCard from './ExportArchiveCard.jsx';
 import ManageMemberSheet from './ManageMemberSheet.jsx';
 import { clearLocalData } from '../data/store.js';
 import { useCanopyEnabled, setCanopyEnabled } from '../lib/canopyPref.js';
+import { useAtlasEnabled, setAtlasEnabled } from '../lib/atlasPref.js';
 
 const INVITE_ROLES = ['coadmin', 'editor', 'contributor', 'viewer'];
 // Occasional admin tools, tucked behind "More" rather than sitting as
@@ -24,6 +25,7 @@ export default function FamilySettings({
   onExportGedcom, people = [], userEmail, onSelectPerson,
 }) {
   const canopyOn = useCanopyEnabled();
+  const atlasOn = useAtlasEnabled();
   const [tab, setTab] = useState('members'); // 'members' | 'invite' | 'activity' | 'restore' | 'calendar'
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   const [manageMemberId, setManageMemberId] = useState(null);
@@ -999,6 +1001,21 @@ export default function FamilySettings({
               <span className="fs__role-desc">
                 A calmer, cinematic tree that grows around whoever you tap. Just for you;
                 everyone else keeps the current view.
+              </span>
+            </span>
+          </label>
+          <label className="fs__calendar-row" style={{ paddingLeft: 0 }}>
+            <input
+              type="checkbox"
+              checked={atlasOn}
+              onChange={(e) => setAtlasEnabled(e.target.checked)}
+            />
+            <span>
+              Use Atlas — the whole family as a map
+              <span className="fs__role-desc">
+                Everyone laid out at once, generation by generation. Zoom out for the shape
+                of the whole family, tap anyone to fly to them and light their line. Just
+                for you; everyone else keeps the current view.
               </span>
             </span>
           </label>

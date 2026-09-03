@@ -64,7 +64,17 @@ const smooth = (p) => p * p * (3 - 2 * p);
 const firstName = (p) => (p?.display_name || '').trim().split(/\s+/)[0] || '';
 const byGender = (p, f, m, other) => (p?.gender === 'female' ? f : p?.gender === 'male' ? m : other);
 
-export default function AtlasStage({ graph, focusId, year = null, onSelect, onOpen, onLayout, onEdge, apiRef, reducedMotion = false }) {
+export default function AtlasStage({
+  graph, focusId, year = null, onSelect, onOpen, onLayout, onEdge, apiRef,
+  reducedMotion = false,
+  /* Chrome the map must stay clear of: the app mounts this behind a real top
+   * bar, the lab behind its own thin one. Everything that has to sit inside
+   * the readable band — the framing, where a flight lands, the era axis, the
+   * name layer, the edge markers — measures from these rather than from the
+   * raw canvas edges. Same convention (and same reason) as CanopyTree's. */
+  topInset = 0,
+  bottomInset = 0,
+}) {
   const hostRef = useRef(null);
   const graphRef = useRef(graph); graphRef.current = graph;
   const onSelectRef = useRef(onSelect); onSelectRef.current = onSelect;
@@ -72,6 +82,16 @@ export default function AtlasStage({ graph, focusId, year = null, onSelect, onOp
   const onLayoutRef = useRef(onLayout); onLayoutRef.current = onLayout;
   const onEdgeRef = useRef(onEdge); onEdgeRef.current = onEdge;
   const yearRef = useRef(year); yearRef.current = year;
+  /* The stage initialises asynchronously (Pixi's own `app.init`), so the
+   * mount-time `focusId`/`graph` effects below run while `innerApi` is still
+   * null and no-op. The lab never noticed — it opens with no focus and sets
+   * one on a timer — but the app mounts this view with someone already in
+   * focus, and without this ref that person was silently never travelled to.
+   * Read once initialisation finishes; see the arrival at the end of the
+   * effect. */
+  const focusIdRef = useRef(focusId); focusIdRef.current = focusId;
+  const insetRef = useRef({ topInset, bottomInset });
+  insetRef.current = { topInset, bottomInset };
   const innerApi = useRef(null);
 
   useEffect(() => {
@@ -289,7 +309,11 @@ export default function AtlasStage({ graph, focusId, year = null, onSelect, onOp
         farBonds.clear();
         const W = app.screen.width, H = app.screen.height;
         const bw = frame.bounds.maxX - frame.bounds.minX, bh = frame.bounds.maxY - frame.bounds.minY;
-        fitZoom = Math.max(0.003, Math.min(1.2, Math.min((W - 60 - ERA_MARGIN_PX) / Math.max(1, bw), (H - 150) / Math.max(1, bh))));
+        const { topInset: ti, bottomInset: bi } = insetRef.current;
+        fitZoom = Math.max(0.003, Math.min(1.2, Math.min(
+          (W - 60 - ERA_MARGIN_PX) / Math.max(1, bw),
+          (H - 60 - ti - bi) / Math.max(1, bh),
+        )));
         const width = 1.1 / fitZoom;
         const byId = unitById();
         for (const b of frame.bonds) {
@@ -349,7 +373,9 @@ export default function AtlasStage({ graph, focusId, year = null, onSelect, onOp
         const cx = (frame.bounds.minX + frame.bounds.maxX) / 2;
         const cy = (frame.bounds.minY + frame.bounds.maxY) / 2;
         const z = fitZoom;
-        const ax = W / 2 - cx * z + ERA_MARGIN_PX / 2, ay = H / 2 - cy * z + 10;
+        const { topInset: ti, bottomInset: bi } = insetRef.current;
+        const ax = W / 2 - cx * z + ERA_MARGIN_PX / 2;
+        const ay = ti + (H - ti - bi) / 2 - cy * z;
         if (instant) { zoom.set(z); anchorX.set(ax); anchorY.set(ay); }
         else { zoom.to(z); anchorX.to(ax); anchorY.to(ay); }
       };
@@ -363,7 +389,8 @@ export default function AtlasStage({ graph, focusId, year = null, onSelect, onOp
         const W = app.screen.width, H = app.screen.height;
         const z1 = Math.max(fitZoom, Math.min(1.4, targetZoom));
         const z0 = zoom.value;
-        const lx = W / 2, ly = H * LAND_Y;
+        const { topInset: ti, bottomInset: bi } = insetRef.current;
+        const lx = W / 2, ly = ti + (H - ti - bi) * LAND_Y;
         const c0 = { x: (lx - anchorX.value) / z0, y: (ly - anchorY.value) / z0 };
         const c1 = { x: n.x, y: n.y };
         const d = Math.hypot(c1.x - c0.x, c1.y - c0.y);
@@ -427,7 +454,8 @@ export default function AtlasStage({ graph, focusId, year = null, onSelect, onOp
           for (const s of g.siblings(currentFocus)) add(s.id, byGender(g.byId.get(s.id), 'Sister', 'Brother', 'Sibling'));
           // Insets keep a whole pill on screen, clear of the corner buttons
           // above and the foot below.
-          const inset = Math.min(120, W * 0.26), top = 64, bottom = 96;
+          const { topInset: ti, bottomInset: bi } = insetRef.current;
+          const inset = Math.min(120, W * 0.26), top = ti + 22, bottom = bi + 26;
           const cx = W / 2, cy = (top + (H - bottom)) / 2;
           for (const r of rels) {
             const n = frame.nodes.get(r.id);
@@ -636,6 +664,7 @@ export default function AtlasStage({ graph, focusId, year = null, onSelect, onOp
         bgLayer.alpha = entrance;
 
         const W = app.screen.width, H = app.screen.height;
+        const { topInset: topInsetPx, bottomInset: bottomInsetPx } = insetRef.current;
         const margin = 180;
         const yr = yearRef.current;
         const presence = (id, person) => {
@@ -693,7 +722,7 @@ export default function AtlasStage({ graph, focusId, year = null, onSelect, onOp
               const node = frame.nodes.get(id), cn = nodes.get(id);
               if (!node || !cn) continue;
               const sx = anchorX.value + node.x * z, sy = anchorY.value + node.y * z;
-              if (sx < -60 || sx > W + 60 || sy < -20 || sy > H + 20) continue;
+              if (sx < -60 || sx > W + 60 || sy < topInsetPx || sy > H - bottomInsetPx) continue;
               cands.push({ id, person: cn.person, sx, sy, rPx, row: node.row, pri: node.isFocus ? 0 : 1, alpha: 0.9 * entrance });
             }
           }
@@ -715,7 +744,9 @@ export default function AtlasStage({ graph, focusId, year = null, onSelect, onOp
             cn.root.alpha *= pres;
             if (z > PHOTO_ZOOM && cn.pendingPhoto) { cn.person = { ...cn.person, photo: cn.pendingPhoto }; cn.pendingPhoto = null; cn.loadPhoto(cn.baseR); }
             const lit = !lineage || lineage.has(id);
-            if ((z > NAME_ZOOM || lit) && open > 0.5 && sx > -80 && sx < W + 80 && sy > -40 && sy < H + 40) {
+            // A name is culled against the READABLE band, not the canvas —
+            // one drawn under the app's top bar is not a label, it is litter.
+            if ((z > NAME_ZOOM || lit) && open > 0.5 && sx > -80 && sx < W + 80 && sy > topInsetPx - 10 && sy < H - bottomInsetPx) {
               const rPx = NODE_R * z * cn.root.scale.x;
               cands.push({ id, person: cn.person, sx, sy, rPx, row: node.row, pri: node.isFocus ? 0 : lit && lineage ? 1 : 2, alpha: (lit && lineage ? 1 : nameFade) * pres * Math.min(1, open * 1.3) });
             }
@@ -736,7 +767,7 @@ export default function AtlasStage({ graph, focusId, year = null, onSelect, onOp
         for (let i = 0; i < eraTexts.length; i++) {
           const t = eraTexts[i];
           const sy = anchorY.value + t.__y * z - tuck;
-          const on = i % step === 0 && sy > 54 && sy < H - 72;
+          const on = i % step === 0 && sy > topInsetPx + 14 && sy < H - bottomInsetPx - 14;
           t.visible = on;
           if (on) { t.position.set(12, sy); t.alpha = axisAlpha; }
         }
@@ -747,15 +778,35 @@ export default function AtlasStage({ graph, focusId, year = null, onSelect, onOp
       });
       let lastDotKey = '';
 
+      /* Arrival: the family blooms as a whole, then the camera travels to
+       * whoever is in focus and lights their line — the map first, then
+       * where you are on it. A rebuild (the graph changed under an edit)
+       * re-applies the same focus rather than stranding the camera at the
+       * fit view, since positions may have moved. */
+      let arrival = null;
+      const arriveAt = (id, delay) => {
+        clearTimeout(arrival);
+        if (!id || !frame?.nodes.has(id)) return;
+        setFocus(id);
+        if (!delay) { flyTo(id); return; }
+        arrival = setTimeout(() => { if (alive) flyTo(id); }, delay);
+      };
+
       innerApi.current = {
         build, fitAll, flyTo, setFocus,
-        rebuild: () => { build(); fitAll({ instant: true }); },
+        rebuild: () => { build(); fitAll({ instant: true }); arriveAt(focusIdRef.current, 700); },
         get stats() { return frame?.stats; },
-        destroy: () => { app.canvas.removeEventListener('wheel', onWheel); for (const [, n] of nodes) n.destroy(); nodes.clear(); },
+        destroy: () => {
+          clearTimeout(arrival);
+          app.canvas.removeEventListener('wheel', onWheel);
+          for (const [, n] of nodes) n.destroy();
+          nodes.clear();
+        },
       };
       if (apiRef) apiRef.current = innerApi.current;
       build();
       fitAll({ instant: true });
+      arriveAt(focusIdRef.current, reducedMotion ? 0 : 1400);
     })();
 
     return () => {
