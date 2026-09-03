@@ -150,19 +150,88 @@ test('a couple\'s children are centred under the couple, and the couple over its
   assert.ok(Math.abs(pod.x - kidsMid) < 1e-6, `pod at ${pod.x}, children midpoint ${kidsMid}`);
 });
 
-test('a step edge to the other partner does not pull a child into the shared junction', () => {
-  // Heather's own child, cross-recorded step to Ken: descends from Heather.
+// Every connector must name exactly the parents it reaches, and every
+// recorded parent edge must get a connector. Shared by the cases below.
+function connectors(frame, childId) {
+  return frame.bonds
+    .filter((b) => b.kind === 'descent' && b.child === childId)
+    .map((b) => {
+      const u = frame.units.find((x) => x.id === b.parentUnit);
+      const ids = (u.anchorMemberIds?.length ? u.anchorMemberIds : u.memberIds).slice().sort();
+      return { qualifier: b.qualifier, ids };
+    })
+    .sort((a, b) => (a.qualifier < b.qualifier ? -1 : a.qualifier > b.qualifier ? 1 : 0));
+}
+
+test('a step-parent keeps their own connector to a child who also has blood parents', () => {
+  // Heather's own child, cross-recorded step to Ken. The child descends from
+  // Heather's line, and Ken's step relationship is still drawn — the first
+  // build dropped it entirely whenever any blood parent existed.
   const g = buildGraph(
     [P('H'), P('K'), P('M')],
     [partner('H', 'K'), parent('H', 'M'), parent('K', 'M', 'step')],
   );
   const f = planAtlas(g);
-  const d = f.bonds.find((b) => b.kind === 'descent' && b.child === 'M');
-  const pu = f.units.find((u) => u.id === d.parentUnit);
-  assert.ok(pu.anchorOnly, 'a single-parent descent inside a pod goes through a junction on that parent');
-  assert.deepEqual(pu.anchorMemberIds, ['H']);
-  assert.equal(d.qualifier, 'biological');
+  assert.deepEqual(connectors(f, 'M'), [
+    { qualifier: 'biological', ids: ['H'] },
+    { qualifier: 'step', ids: ['K'] },
+  ]);
+  // The blood connector still goes through a junction on Heather alone, not
+  // the shared pod — it must not imply Ken is a biological parent.
+  const bio = f.bonds.find((b) => b.kind === 'descent' && b.child === 'M' && b.qualifier === 'biological');
+  assert.ok(f.units.find((u) => u.id === bio.parentUnit).anchorOnly);
 });
+
+test('a couple with mixed qualifiers gets one connector per qualifier, each reaching only its own parents', () => {
+  const g = buildGraph(
+    [P('MUM'), P('DAD'), P('KID')],
+    [partner('MUM', 'DAD'), parent('MUM', 'KID', 'biological'), parent('DAD', 'KID', 'adoptive')],
+  );
+  const f = planAtlas(g);
+  assert.deepEqual(connectors(f, 'KID'), [
+    { qualifier: 'adoptive', ids: ['DAD'] },
+    { qualifier: 'biological', ids: ['MUM'] },
+  ]);
+});
+
+test('a plain couple is still one connector, not one per parent', () => {
+  const g = buildGraph(
+    [P('MUM'), P('DAD'), P('KID')],
+    [partner('MUM', 'DAD'), parent('MUM', 'KID'), parent('DAD', 'KID')],
+  );
+  const f = planAtlas(g);
+  assert.deepEqual(connectors(f, 'KID'), [{ qualifier: 'biological', ids: ['DAD', 'MUM'] }]);
+});
+
+for (const [label, graph, frame] of [['demo', seedGraph, seedFrame], ['1,200-person fixture', bigGraph, bigFrame]]) {
+  test(`${label}: every drawn connector names exactly the parents recorded with its qualifier`, () => {
+    const norm = (q) => (q === 'adopted' ? 'adoptive' : !q || q === 'biological' || q === 'adoptive' ? (q || 'biological') : q);
+    // What the data says.
+    const expected = new Map(); // `${child}|${qualifier}` -> sorted parent ids
+    for (const r of graph.relationships) {
+      if (r.type !== 'parent') continue;
+      if (!frame.nodes.has(r.from_person) || !frame.nodes.has(r.to_person)) continue;
+      const k = `${r.to_person}|${norm(r.qualifier)}`;
+      if (!expected.has(k)) expected.set(k, []);
+      expected.get(k).push(r.from_person);
+    }
+    // What the map draws.
+    const drawn = new Map();
+    for (const b of frame.bonds) {
+      if (b.kind !== 'descent') continue;
+      const u = frame.units.find((x) => x.id === b.parentUnit);
+      const ids = u.anchorMemberIds?.length ? u.anchorMemberIds : u.memberIds;
+      const k = `${b.child}|${b.qualifier}`;
+      assert.ok(!drawn.has(k), `two connectors for ${k}`);
+      drawn.set(k, ids.slice().sort());
+    }
+    for (const [k, ids] of expected) {
+      assert.ok(drawn.has(k), `no connector drawn for ${k}`);
+      assert.deepEqual(drawn.get(k), ids.slice().sort(), `connector ${k} reaches the wrong people`);
+    }
+    for (const k of drawn.keys()) assert.ok(expected.has(k), `connector ${k} has no recorded edge`);
+  });
+}
 
 test('a former partner is a lateral link, and the count is reported', () => {
   const g = buildGraph(

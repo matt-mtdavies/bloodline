@@ -69,6 +69,14 @@ html, body, #root { height: 100%; margin: 0; }
   border-radius: 999px; background: #fff; cursor: pointer; color: inherit; white-space: nowrap;
 }
 .atlab__btn:disabled { opacity: 0.55; cursor: default; }
+/* Same 44px rule for the lab's own controls — it is a dev surface, but it is
+   the surface every judgement about this view gets made on, including on a
+   phone. */
+.atlab__btn, .atlab__link, .atlab__seg button { position: relative; }
+.atlab__btn::before, .atlab__link::before, .atlab__seg button::before {
+  content: ''; position: absolute; left: 0; right: 0; top: 50%;
+  height: 44px; transform: translateY(-50%);
+}
 .atlab__btn--accent { background: var(--accent, #c2603a); border-color: var(--accent, #c2603a); color: #fff; }
 
 .atlab__error {
@@ -136,6 +144,13 @@ html, body, #root { height: 100%; margin: 0; }
   animation: atlas-edge-in 260ms ease-out both;
 }
 .atlas-wide svg { color: var(--accent, #c2603a); flex: none; }
+/* A comfortable finger target without a chunkier capsule: the visual pill
+   stays as designed and an invisible pseudo-element brings the touch area up
+   to 44px, the size a thumb actually needs. */
+.atlas-wide::before, .atlas-edge::before {
+  content: ''; position: absolute; left: 0; right: 0; top: 50%;
+  height: 44px; transform: translateY(-50%); min-width: 44px;
+}
 .atlas-wide:hover { background: #fff; }
 
 /* Edge markers: the selected person's off-screen relatives, pinned to the
@@ -147,11 +162,14 @@ html, body, #root { height: 100%; margin: 0; }
   padding: 5px 10px 5px 8px; border: 1px solid rgba(194, 96, 58, 0.35); border-radius: 999px;
   background: rgba(255, 252, 246, 0.92); color: var(--ink, #1c1d21);
   font: inherit; font-size: 12px; white-space: nowrap; cursor: pointer;
-  max-width: 48vw; overflow: hidden; text-overflow: ellipsis;
+  /* The label truncates, the BUTTON does not clip: an overflow:hidden here
+     would crop the 44px touch target below back to the visual capsule. */
+  max-width: 48vw;
   box-shadow: 0 6px 18px rgba(40, 28, 18, 0.12);
   animation: atlas-edge-in 260ms ease-out both;
 }
 .atlas-edge svg { color: var(--accent, #c2603a); flex: none; }
+.atlas-edge span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .atlas-edge:hover { background: #fff; }
 @keyframes atlas-edge-in { from { opacity: 0; transform: translate(-50%, -50%) scale(0.92); } to { opacity: 1; transform: translate(-50%, -50%) scale(1); } }
 

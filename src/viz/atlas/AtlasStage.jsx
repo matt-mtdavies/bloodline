@@ -141,6 +141,9 @@ export default function AtlasStage({
       const anchorX = new Scalar(0, 1.15);
       const anchorY = new Scalar(0, 1.15);
       let flight = null;           // an arc in progress (see flyTo)
+      /* What the viewer last asked to see — 'all' or 'person'. Resize and
+       * orientation re-apply this rather than guessing from the camera. */
+      let framing = 'all';
 
       // Map type carries a paper halo so it stays legible across a line.
       const labelStyle = new TextStyle({ fontFamily: 'Georgia, "Times New Roman", serif', fontSize: 14, fontWeight: '600', fill: INK, align: 'center', stroke: { color: 0xfdfbf7, width: 3, join: 'round' } });
@@ -230,6 +233,30 @@ export default function AtlasStage({
       /* Reaches: a far-reaching link is drawn whole only while both ends are
        * on screen. Re-split when the camera has moved; redraw only when the
        * membership actually changed. */
+      /* Resize and orientation. Pixi resizes its own canvas, but the fit
+        * zoom and the composition are computed from the viewport and would
+        * otherwise stay at whatever the last size implied — rotate a phone
+        * and the map is framed for the old shape. Debounced so a desktop
+        * drag-resize recomposes once it settles rather than every frame. */
+      let lastW = 0, lastH = 0, resizeAt = 0;
+      const noteViewport = () => {
+        const W = app.screen.width, H = app.screen.height;
+        if (W === lastW && H === lastH) return;
+        lastW = W; lastH = H;
+        resizeAt = performance.now();
+      };
+      const applyResize = () => {
+        if (!resizeAt || performance.now() - resizeAt < 180) return;
+        resizeAt = 0;
+        drawFar();           // fitZoom is derived from the viewport
+        drawAllBonds(null);
+        // Re-apply the framing the viewer ASKED for, not whatever the camera
+        // happens to hold: rotating after "Whole family" must re-fit the
+        // whole family, not silently swap it for a close-up of one person.
+        if (framing === 'person' && currentFocus) flyTo(currentFocus, zoom.value);
+        else fitAll();
+      };
+
       let lastViewKey = '', lastSplitSig = null, lastSplitAt = 0;
       const drawReaches = (offsetOf, force = false) => {
         if (!frame) return;
@@ -369,6 +396,7 @@ export default function AtlasStage({
       const fitAll = ({ instant = false } = {}) => {
         if (!frame) return;
         flight = null;
+        framing = 'all';
         const W = app.screen.width, H = app.screen.height;
         const cx = (frame.bounds.minX + frame.bounds.maxX) / 2;
         const cy = (frame.bounds.minY + frame.bounds.maxY) / 2;
@@ -386,6 +414,7 @@ export default function AtlasStage({
       const flyTo = (id, targetZoom = FLY_ZOOM) => {
         const n = frame?.nodes.get(id);
         if (!n) return;
+        framing = 'person';
         const W = app.screen.width, H = app.screen.height;
         const z1 = Math.max(fitZoom, Math.min(1.4, targetZoom));
         const z0 = zoom.value;
@@ -602,7 +631,7 @@ export default function AtlasStage({
       /* Candidates are placed in priority order — the focus, then the lit
        * line, then everyone else by row and x — and a name that would sit on
        * another takes a second tier beneath it or waits for more zoom. */
-      const placeLabels = (cands, z, scale) => {
+      const placeLabels = (cands, z, scale, W) => {
         const placed = new Set();
         cands.sort((a, b) => a.pri - b.pri || a.row - b.row || a.sx - b.sx);
         // Collisions are checked in SCREEN bands, not layout rows: from orbit
@@ -614,11 +643,17 @@ export default function AtlasStage({
         for (const c of cands) {
           const t = labelFor(c.id, c.person);
           const hw = (t.width * scale) / 2 + 4;
+          // Nudged inside the viewport rather than clipped at its edge: a
+          // surname sliced in half by the screen edge is worse than a name
+          // sitting a few pixels off its person. A name too wide for the
+          // screen is skipped instead of being pinned meaninglessly.
+          if (hw * 2 > W - 12) continue;
+          const x = Math.max(hw + 6, Math.min(W - hw - 6, c.sx));
           let placedTier = -1;
           for (let k = 0; k < 2 && placedTier < 0; k++) {
             const y = c.sy + c.rPx + 5 + k * lineH;
             const band = Math.round(y / lineH);
-            if (free(band, c.sx - hw, c.sx + hw)) { take(band, c.sx - hw, c.sx + hw); placedTier = k; t.position.set(c.sx, y); }
+            if (free(band, x - hw, x + hw)) { take(band, x - hw, x + hw); placedTier = k; t.position.set(x, y); }
           }
           if (placedTier < 0) continue;
           t.scale.set(scale);
@@ -640,6 +675,8 @@ export default function AtlasStage({
         clock += dtMs;
         const dt = dtMs / 1000;
         const tSec = performance.now() / 1000;
+        noteViewport();
+        applyResize();
         if (flight) stepFlight();
         else { zoom.step(dt); anchorX.step(dt); anchorY.step(dt); }
         const z = zoom.value;
@@ -753,7 +790,7 @@ export default function AtlasStage({
           }
         }
         labelEase = Math.min(1, dt * 14); // settle in ~150ms regardless of frame rate
-        placeLabels(cands, z, nameScale);
+        placeLabels(cands, z, nameScale, W);
 
         /* The era axis: a graticule. Labels sit at the left edge of the
          * viewport, tucked just under the top edge of their generation's
