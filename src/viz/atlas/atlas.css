@@ -1,0 +1,129 @@
+/*
+ * Atlas — styles. A private `.atlas-*` / `.atlab-*` prefix in its own
+ * stylesheet, imported only by the Atlas lab. No shared class is touched.
+ * The app is hardcoded light (theme.css opts out of dark mode), so these are
+ * literal values to match, not tokens that could resolve differently.
+ */
+
+html, body, #root { height: 100%; margin: 0; }
+
+.atlab {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  font-family: var(--body, system-ui, sans-serif);
+  color: var(--ink, #1c1d21);
+  background: #f6f1e8;
+  overflow: hidden;
+}
+
+.atlab__bar {
+  position: relative;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 14px;
+  background: rgba(255, 255, 255, 0.78);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-bottom: 1px solid rgba(120, 96, 70, 0.14);
+}
+
+.atlab__title {
+  font-family: var(--display, Georgia, serif);
+  font-size: 17px;
+  letter-spacing: 0.01em;
+}
+
+.atlab__src { font-size: 12px; color: var(--ink-soft, #6b6f76); white-space: nowrap; }
+
+.atlab__seg { display: inline-flex; border: 1px solid rgba(120, 96, 70, 0.22); border-radius: 999px; overflow: hidden; background: #fff; }
+.atlab__seg button {
+  padding: 6px 12px; border: 0; background: none; font: inherit; font-size: 12.5px; cursor: pointer; color: inherit;
+}
+.atlab__seg button + button { border-left: 1px solid rgba(120, 96, 70, 0.14); }
+.atlab__seg button.is-on { background: var(--accent, #c2603a); color: #fff; }
+.atlab__seg button:disabled { opacity: 0.5; cursor: default; }
+
+.atlab__search { position: relative; margin-left: auto; }
+.atlab__input {
+  width: 210px; padding: 7px 12px; font: inherit; font-size: 13px;
+  border: 1px solid rgba(120, 96, 70, 0.22); border-radius: 999px; background: #fff; color: inherit;
+}
+.atlab__results {
+  position: absolute; top: calc(100% + 6px); right: 0; z-index: 6; min-width: 240px;
+  margin: 0; padding: 6px; list-style: none; background: #fff; border-radius: 12px;
+  box-shadow: 0 12px 34px rgba(40, 28, 18, 0.18);
+}
+.atlab__results button {
+  display: block; width: 100%; padding: 8px 10px; border: 0; border-radius: 8px; background: none;
+  font: inherit; font-size: 13px; text-align: left; cursor: pointer; color: inherit;
+}
+.atlab__results button:hover { background: #f2f3f5; }
+.atlab__results small { color: var(--ink-soft, #6b6f76); margin-left: 6px; }
+
+.atlab__btn {
+  padding: 7px 14px; font: inherit; font-size: 13px; border: 1px solid rgba(120, 96, 70, 0.22);
+  border-radius: 999px; background: #fff; cursor: pointer; color: inherit; white-space: nowrap;
+}
+.atlab__btn:disabled { opacity: 0.55; cursor: default; }
+.atlab__btn--accent { background: var(--accent, #c2603a); border-color: var(--accent, #c2603a); color: #fff; }
+
+.atlab__error {
+  position: relative; z-index: 5; margin: 0; padding: 8px 16px; font-size: 13px;
+  color: #8a4a2c; background: #f7e9e0;
+}
+
+/* The stage host — a warm paper ground with a soft vignette, the same
+   ground Canopy sits on, so a face reads the same wherever you meet it. */
+.atlas-host {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  touch-action: none;
+  overscroll-behavior: none;
+  background: radial-gradient(120% 90% at 50% 44%, #fdfbf7 0%, #faf6ef 52%, #efe7dc 100%);
+}
+.atlas-host canvas { display: block; width: 100%; height: 100%; }
+.atlas-host::after {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(115% 85% at 50% 46%, rgba(43, 38, 34, 0) 58%, rgba(43, 38, 34, 0.08) 100%);
+}
+
+/* Floating chrome over the stage. */
+.atlab__hint, .atlab__foot, .atlab__stats, .atlab__time {
+  position: absolute; z-index: 5;
+  display: flex; align-items: center; gap: 12px;
+  padding: 9px 16px; border-radius: 999px;
+  background: rgba(255, 255, 255, 0.86);
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  box-shadow: 0 10px 30px rgba(40, 28, 18, 0.14);
+  font-size: 13px; color: var(--ink-soft, #6b6f76); white-space: nowrap;
+}
+.atlab__hint { left: 16px; bottom: 16px; }
+.atlab__hint strong { color: var(--ink, #1c1d21); font-weight: 600; }
+.atlab__foot { left: 16px; bottom: 16px; }
+.atlab__foot .name { font-family: var(--display, Georgia, serif); font-size: 15px; color: var(--ink, #1c1d21); }
+/* Under the corner buttons, out of the way of the time scrubber, which
+ * shares the bottom edge with the hint/foot. */
+.atlab__stats { right: 16px; top: 62px; font-variant-numeric: tabular-nums; font-size: 12px; }
+.atlab__time { left: 50%; bottom: 16px; transform: translateX(-50%); min-width: 320px; }
+.atlab__time input[type="range"] { flex: 1 1 auto; accent-color: var(--accent, #c2603a); }
+.atlab__time .year { font-family: var(--display, Georgia, serif); font-size: 16px; color: var(--ink, #1c1d21); min-width: 46px; text-align: right; font-variant-numeric: tabular-nums; }
+.atlab__link { padding: 0; border: 0; background: none; font: inherit; font-size: 13px; color: var(--accent, #c2603a); cursor: pointer; }
+.atlab__corner { position: absolute; z-index: 5; right: 16px; top: 16px; display: flex; gap: 8px; }
+
+@media (max-width: 700px) {
+  .atlab__bar { flex-wrap: wrap; }
+  .atlab__search { margin-left: 0; }
+  .atlab__input { width: 150px; }
+  .atlab__stats { display: none; }
+  .atlab__time { min-width: 0; left: 16px; right: 16px; transform: none; }
+  .atlab__hint, .atlab__foot { white-space: normal; max-width: calc(100vw - 32px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .atlas-host * { animation: none !important; transition: none !important; }
+}
