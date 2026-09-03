@@ -11,44 +11,66 @@
  * portraits, springs, breathing and elastic pull — because that motion layer
  * was always the asset. Only the planner was the keyhole.
  *
+ * Map conventions this stage follows, each of which the first real-tree
+ * review found missing:
+ *   - Names are labels on a map, not part of the marker: they live in
+ *     SCREEN space at a constant size, are decluttered per generation row
+ *     (a colliding name drops to a second tier or waits), and the lit
+ *     bloodline's names show at every zoom, even from orbit.
+ *   - The time axis is a graticule: era labels stick to the viewport edge
+ *     rather than sitting at the far left of the world where a phone never
+ *     sees them.
+ *   - A flight is an arc — out, over, and in — so you see where you are
+ *     going, with names settling in on landing.
+ *   - Off-screen relatives of the selected person are edge markers you can
+ *     tap, never lines drawn through someone else's name.
+ *   - Lighting a bloodline lights its LINES, and steps everyone else back a
+ *     little; it never ghosts the rest of the family into a rendering fault.
+ *
  * Level of detail is what makes 1,200 people affordable: no simulation runs,
- * bonds are drawn ONCE into a static layer, portraits load lazily only once
- * you're close enough to see them, names appear only once they'd be legible,
- * and off-screen nodes are simply not updated.
+ * bonds are drawn once into static layers, portraits load lazily, and from
+ * orbit everyone is one flat layer of dots.
  */
 
 import { useEffect, useRef } from 'react';
 import { Application, Container, Graphics, Text, TextStyle } from 'pixi.js';
 import { planAtlas, isFarReach, NODE_R, ROW_GAP } from './layout.js';
 import { Scalar, ambientOffset, Deflection, rubberBand, SWAY_POD, SWAY_BRANCH } from '../canopy/motion.js';
-import { drawBonds, CanopyNode, easeBud, progressAt, tintFor } from '../canopy/render.js';
-import { ancestorsWithDistance, descendantsWithDistance } from '../../data/graph.js';
+import { drawBonds, CanopyNode, easeBud, progressAt, tintFor, descentPath, liveAnchor, livePos } from '../canopy/render.js';
+import { ancestorsWithDistance, descendantsWithDistance, isBioOrAdoptive } from '../../data/graph.js';
 
 const TAP_SLOP = 8;
 const MIN_DOT_PX = 3.4;          // a person never shrinks below a visible dot
-const NAME_ZOOM = 0.44;          // names appear once they'd be legible
+const NAME_ZOOM = 0.22;          // names once a portrait is ~24px across
 const SUB_ZOOM = 0.82;           // dates a little later
-const PHOTO_ZOOM = 0.30;         // portraits load once you're this close
+const PHOTO_ZOOM = 0.26;         // portraits load once you're this close
 const DOT_ZOOM = 0.16;           // below this a person is a dot: one flat layer, not 1,200 portrait containers
-const ERA_ZOOM = 0.62;           // era labels fade out as faces take over
 const FLY_ZOOM = 0.9;
-const ERA_MARGIN_PX = 110;       // screen pixels reserved for the era axis at the fit zoom
+const LAND_Y = 0.42;             // where a flight lands its person (a little above centre: children stay clear of the foot)
+const ERA_MARGIN_PX = 96;        // screen pixels reserved for the era axis at the fit zoom
 const BRANCH = 0x8a7563;
+const TERRA = 0xc2603a;
 const GOLD = 0xb0802f;
-const INK_SOFT = 0x6b6259;
+const INK = 0x2b2622;
+const DIM = 0.42;                // everyone outside a lit bloodline
 const FULLY_GROWN = { bonds: new Map(), nodes: new Map(), reduced: false };
 
 function yearOf(s) {
   const m = String(s || '').match(/\d{4}/);
   return m ? Number(m[0]) : null;
 }
+const clamp01 = (v) => Math.max(0, Math.min(1, v));
+const smooth = (p) => p * p * (3 - 2 * p);
+const firstName = (p) => (p?.display_name || '').trim().split(/\s+/)[0] || '';
+const byGender = (p, f, m, other) => (p?.gender === 'female' ? f : p?.gender === 'male' ? m : other);
 
-export default function AtlasStage({ graph, focusId, year = null, onSelect, onOpen, onLayout, apiRef, reducedMotion = false }) {
+export default function AtlasStage({ graph, focusId, year = null, onSelect, onOpen, onLayout, onEdge, apiRef, reducedMotion = false }) {
   const hostRef = useRef(null);
   const graphRef = useRef(graph); graphRef.current = graph;
   const onSelectRef = useRef(onSelect); onSelectRef.current = onSelect;
   const onOpenRef = useRef(onOpen); onOpenRef.current = onOpen;
   const onLayoutRef = useRef(onLayout); onLayoutRef.current = onLayout;
+  const onEdgeRef = useRef(onEdge); onEdgeRef.current = onEdge;
   const yearRef = useRef(year); yearRef.current = year;
   const innerApi = useRef(null);
 
@@ -64,18 +86,22 @@ export default function AtlasStage({ graph, focusId, year = null, onSelect, onOp
       if (!alive) { app.destroy(true); return; }
       host.appendChild(app.canvas);
 
+      /* World space: the map itself. */
       const world = new Container();
       const bgLayer = new Graphics();
-      const farBonds = new Graphics();
-      const longBonds = new Graphics();    // descents spanning several rows — faint, honest
-      const lateralBonds = new Graphics(); // ex-partners and extra partners — only up close
-      const reachStubs = new Graphics();   // the leads of reaches that leave the screen
+      const farBonds = new Graphics();     // the silhouette's veins, for the far view
+      const longBonds = new Graphics();    // far-reaching descents with both ends on screen — thin, plain
+      const lateralBonds = new Graphics(); // ex-partners and extra partners with both ends on screen
       const nearBonds = new Graphics();    // pods and one-row descents — Canopy's ribbons
+      const litBonds = new Graphics();     // the selected bloodline's own lines, full strength and warm
       const dotLayer = new Graphics();     // everyone as a dot, for the far view
       const nodeLayer = new Container();
-      const eraLayer = new Container();
-      world.addChild(bgLayer, farBonds, reachStubs, longBonds, lateralBonds, nearBonds, dotLayer, nodeLayer, eraLayer);
-      app.stage.addChild(world);
+      world.addChild(bgLayer, farBonds, longBonds, lateralBonds, nearBonds, litBonds, dotLayer, nodeLayer);
+      /* Screen space: labels and the axis hold a constant size and stick to
+       * the viewport, the way a map's type and graticule do. */
+      const labelLayer = new Container();
+      const axisLayer = new Container();
+      app.stage.addChild(world, labelLayer, axisLayer);
       app.stage.eventMode = 'static';
       app.stage.hitArea = { contains: () => true };
 
@@ -83,10 +109,10 @@ export default function AtlasStage({ graph, focusId, year = null, onSelect, onOp
       let fitZoom = 0.05;
       let currentFocus = null;
       let lineage = null;          // Set of ids lit when someone is selected
+      let lineageVersion = 0;
       let clock = 0;               // ms since the current world was born
       let schedule = new Map();    // id -> { delay, dur } entrance
       const nodes = new Map();     // id -> CanopyNode
-      const eras = [];
       const defl = new Map();
       const deflOf = (id) => defl.get(id)?.value;
       const deflFor = (id) => { let d = defl.get(id); if (!d) { d = new Deflection(); defl.set(id, d); } return d; };
@@ -94,17 +120,24 @@ export default function AtlasStage({ graph, focusId, year = null, onSelect, onOp
       const zoom = new Scalar(0.05, 1.1);
       const anchorX = new Scalar(0, 1.15);
       const anchorY = new Scalar(0, 1.15);
+      let flight = null;           // an arc in progress (see flyTo)
 
-      const eraStyle = new TextStyle({ fontFamily: 'Georgia, "Times New Roman", serif', fontSize: 15, fontWeight: '600', fill: GOLD, align: 'right', letterSpacing: 1 });
-      const eraSubStyle = new TextStyle({ fontFamily: 'Georgia, "Times New Roman", serif', fontSize: 11, fill: INK_SOFT, align: 'right' });
+      // Map type carries a paper halo so it stays legible across a line.
+      const labelStyle = new TextStyle({ fontFamily: 'Georgia, "Times New Roman", serif', fontSize: 14, fontWeight: '600', fill: INK, align: 'center', stroke: { color: 0xfdfbf7, width: 3, join: 'round' } });
+      const eraStyle = new TextStyle({ fontFamily: 'Georgia, "Times New Roman", serif', fontSize: 12, fontWeight: '600', fill: GOLD, letterSpacing: 1.2, stroke: { color: 0xfdfbf7, width: 3, join: 'round' } });
 
       /* ── build the world ─────────────────────────────────────────────── */
+      const labels = new Map();    // id -> Text (screen-space name)
+      const eraTexts = [];
       const build = () => {
         const g = graphRef.current;
         frame = planAtlas(g);
         for (const [, n] of nodes) n.destroy();
         nodes.clear();
         nodeLayer.removeChildren();
+        for (const [, t] of labels) t.destroy();
+        labels.clear();
+        labelLayer.removeChildren();
         for (const [id, node] of frame.nodes) {
           const person = g.byId.get(id);
           if (!person) continue;
@@ -113,29 +146,35 @@ export default function AtlasStage({ graph, focusId, year = null, onSelect, onOp
           const cn = new CanopyNode({ ...person, photo: null }, node);
           cn.pendingPhoto = person.photo || null;
           cn.person = person;
+          // Names are drawn by the label layer, not by the node.
+          if (cn.name) cn.name.visible = false;
           nodes.set(id, cn);
           nodeLayer.addChild(cn.root);
         }
-        // Static bonds: drawn once. Nothing about them changes until a drag.
         splitBonds();
         drawAllBonds(null);
         drawFar();
         drawEras();
+        drawLit();
         scheduleEntrance(null);
         onLayoutRef.current?.(frame.stats, frame);
       };
 
       const unitById = () => new Map(frame.units.map((u) => [u.id, u]));
+      const anchorOf = (u) => {
+        const ids = u.anchorMemberIds?.length ? u.anchorMemberIds : u.memberIds;
+        let sx = 0, sy = 0, n = 0;
+        for (const m of ids) { const nd = frame.nodes.get(m); if (nd) { sx += nd.x; sy += nd.y; n++; } }
+        return n ? { x: sx / n, y: sy / n } : null;
+      };
 
-      // Bonds are split by what they mean at scale. A pod and a child hanging
-      // one row beneath its parents are the family's own shape and stay full
-      // strength. A descent spanning several rows (a partner levelled down
-      // to a spouse's deeper generation) is true but would read as a rope
-      // through the whole picture — kept, faint. A lateral link (an ex, an
-      // extra partner) is only useful up close, where it is a short dashed
-      // thread between two people you can see — from orbit it is a slash
-      // across strangers, so it fades out entirely.
-      let nearFrame = null, longFrame = null, lateralFrame = null;
+      /* Bonds are split by what they mean at scale. A pod and a child hanging
+       * one row beneath its parents are the family's own shape. A descent
+       * spanning several rows, or reaching a long way along one, is true but
+       * would read as a rope; it is drawn thin and plain, and only when both
+       * of its ends are on screen. A lateral link (an ex, an extra partner)
+       * likewise. */
+      let nearFrame = null, longFrame = null, lateralFrame = null, nearSet = new Set();
       const splitBonds = () => {
         const byId = unitById();
         const near = [], long = [], lateral = [];
@@ -143,8 +182,6 @@ export default function AtlasStage({ graph, focusId, year = null, onSelect, onOp
           if (b.kind === 'descent') {
             const pu = byId.get(b.parentUnit), c = frame.nodes.get(b.child);
             const a = pu ? anchorOf(pu) : null;
-            // Several rows down, or a long reach across the row (a spouse's
-            // own parents standing far away): true, kept, but faint.
             (a && c && isFarReach(c.x - a.x, c.y - a.y) ? long : near).push(b);
           } else if (b.kind === 'thread') {
             lateral.push(b);
@@ -156,56 +193,24 @@ export default function AtlasStage({ graph, focusId, year = null, onSelect, onOp
         nearFrame = { ...frame, bonds: near };
         longFrame = { ...frame, bonds: long };
         lateralFrame = { ...frame, bonds: lateral };
+        nearSet = new Set(near);
       };
-      /* A far-reaching link — a descent to a child standing under their
-       * other parent thousands of pixels away, an ex three families over —
-       * is never drawn end to end up close. On a map you don't draw the
-       * whole road to the next city; you draw the road LEAVING town. Each
-       * end gets a short dashed lead that sets off in the true direction of
-       * the other end and fades, so the fact of the connection is honest and
-       * findable (follow it, and the camera will get you there) without a
-       * rope crossing everyone in between. The full curve only exists in the
-       * far silhouette, where it is one hairline among the veins. */
-      const STUB_FRAC = 0.2;
-      const curvePts = (p0, p1, p2, p3, n = 36) => {
-        const pts = [];
-        for (let i = 0; i <= n; i++) {
-          const t = i / n, s = 1 - t;
-          pts.push({
-            x: s * s * s * p0.x + 3 * s * s * t * p1.x + 3 * s * t * t * p2.x + t * t * t * p3.x,
-            y: s * s * s * p0.y + 3 * s * s * t * p1.y + 3 * s * t * t * p2.y + t * t * t * p3.y,
-          });
-        }
-        return pts;
-      };
-      const fadingDashes = (g, pts, color, alpha, width) => {
-        // Alternate segments drawn, each fainter than the last, so the lead
-        // trails off toward the far end rather than stopping dead.
-        for (let i = 0; i + 1 < pts.length; i += 2) {
-          const k = 1 - i / pts.length;
-          g.moveTo(pts[i].x, pts[i].y).lineTo(pts[i + 1].x, pts[i + 1].y)
-            .stroke({ color, width, alpha: alpha * k * k, cap: 'round' });
-        }
-      };
-      const drawStubs = (g, pts, color, alpha, width = 2.2) => {
-        const k = Math.max(4, Math.round(pts.length * STUB_FRAC));
-        fadingDashes(g, pts.slice(0, k), color, alpha, width);
-        fadingDashes(g, pts.slice(pts.length - k).reverse(), color, alpha, width);
-      };
+
       const livePoint = (id, offsetOf) => {
         const n = frame.nodes.get(id);
         if (!n) return null;
         const o = (offsetOf && offsetOf(id)) || { x: 0, y: 0 };
         return { x: n.x + o.x, y: n.y + o.y };
       };
-      /* The rule is about the VIEW, not the bond: a reach whose both ends are
-       * on screen is a family line you can see whole, and is drawn exactly
-       * like any other (a parent two rows up, levelled down beside a spouse,
-       * must not lose the line to their own child). Only a reach that leaves
-       * the screen is reduced to its leads. Re-split whenever the camera has
-       * moved; a few hundred bonds, so cheap. */
+      const reachCurve = (g, a, c) => {
+        const midY = a.y + (c.y - a.y) * 0.55;
+        g.moveTo(a.x, a.y + NODE_R).bezierCurveTo(a.x, midY, c.x, midY, c.x, c.y - NODE_R);
+      };
+
+      /* Reaches: a far-reaching link is drawn whole only while both ends are
+       * on screen. Re-split when the camera has moved; redraw only when the
+       * membership actually changed. */
       let lastViewKey = '', lastSplitSig = null, lastSplitAt = 0;
-      let lastDotKey = '', lineageVersion = 0;
       const drawReaches = (offsetOf, force = false) => {
         if (!frame) return;
         const W = app.screen.width, H = app.screen.height, z = zoom.value;
@@ -217,137 +222,112 @@ export default function AtlasStage({ graph, focusId, year = null, onSelect, onOp
         lastViewKey = key;
         const inside = (p) => p.x >= vx0 && p.x <= vx1 && p.y >= vy0 && p.y <= vy1;
         const byId = unitById();
-        // First decide which reaches are whole in this view. Everything drawn
-        // lives in world space, so unless that membership changed there is
-        // nothing to redraw — a camera flight is a few membership changes,
-        // not a redraw per frame.
-        const geom = [];
         const wholeLong = [], wholeLateral = [];
         let sig = '';
         longFrame.bonds.forEach((b, i) => {
           const pu = byId.get(b.parentUnit), c = livePoint(b.child, offsetOf);
           const a = pu ? anchorOf(pu) : null;
-          if (!a || !c) return;
-          if (inside(a) && inside(c)) { wholeLong.push(b); sig += `L${i},`; return; }
-          geom.push({ a, c, kind: 'descent' });
+          if (a && c && inside(a) && inside(c)) { wholeLong.push({ b, a, c }); sig += `L${i},`; }
         });
         lateralFrame.bonds.forEach((b, i) => {
           const p = livePoint(b.a, offsetOf), q = livePoint(b.b, offsetOf);
-          if (!p || !q) return;
-          if (inside(p) && inside(q)) { wholeLateral.push(b); sig += `T${i},`; return; }
-          geom.push({ a: p, c: q, kind: b.kind === 'union' && b.status === 'former' ? 'former' : 'thread' });
+          if (p && q && inside(p) && inside(q)) { wholeLateral.push(b); sig += `T${i},`; }
         });
         if (!force && sig === lastSplitSig) return;
-        // During a flight the membership changes every frame; redrawing a
-        // few hundred curves at 60Hz is wasted on a picture in motion.
         const now = performance.now();
         if (!force && now - lastSplitAt < 120) return;
         lastSplitAt = now;
         lastSplitSig = sig;
-        reachStubs.clear();
-        for (const { a, c, kind } of geom) {
-          if (kind === 'descent') {
-            const midY = a.y + (c.y - a.y) * 0.55;
-            drawStubs(reachStubs, curvePts({ x: a.x, y: a.y + NODE_R }, { x: a.x, y: midY }, { x: c.x, y: midY }, { x: c.x, y: c.y - NODE_R }), BRANCH, 0.9);
-          } else {
-            // Bows beneath the row, the way Canopy's threads pass behind the
-            // people between their ends.
-            const dip = Math.max(a.y, c.y) + Math.min(ROW_GAP * 0.4, Math.abs(c.x - a.x) * 0.12);
-            drawStubs(reachStubs, curvePts({ x: a.x, y: a.y + NODE_R }, { x: a.x, y: dip }, { x: c.x, y: dip }, { x: c.x, y: c.y + NODE_R }), kind === 'former' ? 0x9a8f86 : BRANCH, 0.8, 1.8);
-          }
-        }
-        // A whole reach is a thin, plain curve — visibly a link, not one of
-        // the family's own limbs (those are the tapered ribbons), and one
-        // stroke for the lot rather than a ribbon and a fork each.
         longBonds.clear();
-        for (const b of wholeLong) {
-          const pu = byId.get(b.parentUnit), c = livePoint(b.child, offsetOf);
-          const a = pu ? anchorOf(pu) : null;
-          if (!a || !c) continue;
-          const midY = a.y + (c.y - a.y) * 0.55;
-          longBonds.moveTo(a.x, a.y + NODE_R).bezierCurveTo(a.x, midY, c.x, midY, c.x, c.y - NODE_R);
-        }
+        for (const { a, c } of wholeLong) reachCurve(longBonds, a, c);
         longBonds.stroke({ color: BRANCH, width: 1.6, alpha: 0.4, cap: 'round' });
         drawBonds(lateralBonds, { ...frame, bonds: wholeLateral }, FULLY_GROWN, 1e9, offsetOf);
       };
       const drawAllBonds = (offsetOf) => {
         drawBonds(nearBonds, nearFrame, FULLY_GROWN, 1e9, offsetOf);
         drawReaches(offsetOf, true);
-      };
-      const anchorOf = (u) => {
-        const ids = u.anchorMemberIds?.length ? u.anchorMemberIds : u.memberIds;
-        let sx = 0, sy = 0, n = 0;
-        for (const m of ids) { const nd = frame.nodes.get(m); if (nd) { sx += nd.x; sy += nd.y; n++; } }
-        return n ? { x: sx / n, y: sy / n } : null;
+        if (offsetOf) drawLit(offsetOf);
       };
 
-      // The far layer: one hairline per descent, sized to read at the
-      // fit-to-family zoom — the silhouette's veins. Cross-faded against the
-      // near layer (Canopy's ribbons) as the camera closes in.
+      /* The lit bloodline: its own pods and descents drawn again on top at
+       * full strength, plus a warm thread along every descent in the line —
+       * near ones along Canopy's bough, far ones whole regardless of view,
+       * because the line you are following must never disappear. */
+      const drawLit = (offsetOf = null) => {
+        litBonds.clear();
+        if (!lineage || !frame) return;
+        const byId = unitById();
+        const inL = (id) => lineage.has(id);
+        const mine = frame.bonds.filter((b) => {
+          if (b.kind === 'union') return inL(b.a) && inL(b.b);
+          if (b.kind !== 'descent') return false;
+          const pu = byId.get(b.parentUnit);
+          if (!pu) return false;
+          const ids = pu.anchorMemberIds?.length ? pu.anchorMemberIds : pu.memberIds;
+          return inL(b.child) && ids.some(inL);
+        });
+        drawBonds(litBonds, { ...frame, bonds: mine.filter((b) => nearSet.has(b)) }, FULLY_GROWN, 1e9, offsetOf);
+        for (const b of mine) {
+          if (b.kind !== 'descent') continue;
+          const from = liveAnchor(frame, b.parentUnit, offsetOf), to = livePos(frame, b.child, offsetOf);
+          if (!from || !to) continue;
+          if (nearSet.has(b)) {
+            const pts = descentPath(from, to, b.junctionLevel || 0);
+            litBonds.moveTo(pts[0].x, pts[0].y);
+            for (let i = 1; i < pts.length; i++) litBonds.lineTo(pts[i].x, pts[i].y);
+            litBonds.stroke({ color: TERRA, width: 2.2, alpha: 0.55, cap: 'round', join: 'round' });
+          } else {
+            reachCurve(litBonds, { x: from.x, y: from.y }, to);
+            litBonds.stroke({ color: TERRA, width: 2, alpha: 0.6, cap: 'round' });
+          }
+        }
+      };
+
+      /* The far layer: one hairline per descent, sized to read at the fit
+       * zoom — the silhouette's veins. */
       const drawFar = () => {
         farBonds.clear();
         const W = app.screen.width, H = app.screen.height;
         const bw = frame.bounds.maxX - frame.bounds.minX, bh = frame.bounds.maxY - frame.bounds.minY;
-        // Room on the left for the era axis (its labels hold a constant
-        // on-screen size, so they need screen pixels, not world units).
-        fitZoom = Math.max(0.003, Math.min(1.2, Math.min((W - 90 - ERA_MARGIN_PX) / Math.max(1, bw), (H - 140) / Math.max(1, bh))));
-        // One screen pixel at the fit zoom — the veins of the silhouette. They
-        // are faded out (see the loop) long before the camera is close enough
-        // for that width to read as rope.
-        const width = 0.9 / fitZoom;
+        fitZoom = Math.max(0.003, Math.min(1.2, Math.min((W - 60 - ERA_MARGIN_PX) / Math.max(1, bw), (H - 150) / Math.max(1, bh))));
+        const width = 1.1 / fitZoom;
         const byId = unitById();
         for (const b of frame.bonds) {
           if (b.kind !== 'descent') continue;
           const pu = byId.get(b.parentUnit), c = frame.nodes.get(b.child);
           if (!pu || !c) continue;
           const a = anchorOf(pu);
-          if (!a) continue;
-          // A descent that spans several rows is drawn faint up close (see
-          // splitBonds) and not at all in the silhouette — it would cut a
-          // rope through the whole shape.
-          if (Math.abs(c.y - a.y) > ROW_GAP * 1.5) continue;
-          const midY = a.y + (c.y - a.y) * 0.55;
-          farBonds.moveTo(a.x, a.y + NODE_R);
-          farBonds.bezierCurveTo(a.x, midY, c.x, midY, c.x, c.y - NODE_R);
+          if (!a || Math.abs(c.y - a.y) > ROW_GAP * 1.5) continue;
+          reachCurve(farBonds, a, c);
         }
-        farBonds.stroke({ color: BRANCH, width, alpha: 0.5, cap: 'round' });
-        // Pods as short strokes so a couple still reads as a couple from orbit.
+        farBonds.stroke({ color: BRANCH, width, alpha: 0.55, cap: 'round' });
         for (const b of frame.bonds) {
           if (b.kind !== 'union' || b.status === 'former') continue;
           const p = frame.nodes.get(b.a), q = frame.nodes.get(b.b);
           if (!p || !q) continue;
           farBonds.moveTo(p.x, p.y).lineTo(q.x, q.y);
         }
-        farBonds.stroke({ color: 0xc2603a, width: width * 1.6, alpha: 0.35, cap: 'round' });
+        farBonds.stroke({ color: TERRA, width: width * 1.6, alpha: 0.35, cap: 'round' });
       };
 
-      // Generation strata: alternating bands behind the rows, and an era
-      // label in the left margin — the time axis, read off the shape itself.
+      /* Generation strata in the world; the era labels are screen-space and
+       * positioned every frame (see the loop). */
       const drawEras = () => {
         bgLayer.clear();
-        for (const t of eras) t.destroy();
-        eras.length = 0;
-        eraLayer.removeChildren();
-        const x0 = frame.bounds.minX - 900, x1 = frame.bounds.maxX + 900;
+        for (const t of eraTexts) t.destroy();
+        eraTexts.length = 0;
+        axisLayer.removeChildren();
+        const x0 = frame.bounds.minX - 4000, x1 = frame.bounds.maxX + 4000;
         frame.eras.forEach((e, i) => {
-          if (i % 2 === 0) {
-            bgLayer.rect(x0, e.y - ROW_GAP / 2, x1 - x0, ROW_GAP).fill({ color: 0x2b2622, alpha: 0.03 });
-          }
-          const label = new Text({ text: e.label || '·', style: eraStyle });
-          label.anchor.set(1, 1);
-          label.position.set(frame.bounds.minX - 120, e.y);
-          const sub = new Text({ text: `${e.count} ${e.count === 1 ? 'person' : 'people'}`, style: eraSubStyle });
-          sub.anchor.set(1, 0);
-          sub.position.set(frame.bounds.minX - 120, e.y + 4);
-          label.__sub = sub;
-          eraLayer.addChild(label, sub);
-          eras.push(label, sub);
+          if (i % 2 === 0) bgLayer.rect(x0, e.y - ROW_GAP / 2, x1 - x0, ROW_GAP).fill({ color: 0x2b2622, alpha: 0.03 });
+          const t = new Text({ text: e.label || '·', style: eraStyle });
+          t.anchor.set(0, 0.5);
+          t.__y = e.y;
+          axisLayer.addChild(t);
+          eraTexts.push(t);
         });
       };
 
-      // Entrance: the world blooms outward from the focus row (or the
-      // middle), a generation at a time, each row rippling outward from its
-      // centre — the same "unfolding, not fading" idea Canopy grows by.
       const scheduleEntrance = (fromId) => {
         schedule = new Map();
         clock = 0;
@@ -364,6 +344,7 @@ export default function AtlasStage({ graph, focusId, year = null, onSelect, onOp
       /* ── camera ─────────────────────────────────────────────────────── */
       const fitAll = ({ instant = false } = {}) => {
         if (!frame) return;
+        flight = null;
         const W = app.screen.width, H = app.screen.height;
         const cx = (frame.bounds.minX + frame.bounds.maxX) / 2;
         const cy = (frame.bounds.minY + frame.bounds.maxY) / 2;
@@ -372,14 +353,38 @@ export default function AtlasStage({ graph, focusId, year = null, onSelect, onOp
         if (instant) { zoom.set(z); anchorX.set(ax); anchorY.set(ay); }
         else { zoom.to(z); anchorX.to(ax); anchorY.to(ay); }
       };
+      /* A flight is an arc: the camera rises as it travels and settles as it
+       * arrives, so a long journey reads as a journey rather than a cut. The
+       * rise is sized to the distance — across a family, up to the far view;
+       * to the next pod over, hardly at all. */
       const flyTo = (id, targetZoom = FLY_ZOOM) => {
         const n = frame?.nodes.get(id);
         if (!n) return;
         const W = app.screen.width, H = app.screen.height;
-        const z = Math.max(fitZoom, Math.min(1.4, targetZoom));
-        zoom.to(z);
-        anchorX.to(W / 2 - n.x * z);
-        anchorY.to(H * 0.47 - n.y * z);
+        const z1 = Math.max(fitZoom, Math.min(1.4, targetZoom));
+        const z0 = zoom.value;
+        const lx = W / 2, ly = H * LAND_Y;
+        const c0 = { x: (lx - anchorX.value) / z0, y: (ly - anchorY.value) / z0 };
+        const c1 = { x: n.x, y: n.y };
+        const d = Math.hypot(c1.x - c0.x, c1.y - c0.y);
+        const screens = (d * z1) / Math.max(W, H);
+        const zPeak = screens > 0.8 ? Math.max(fitZoom, Math.min(z1, (1.3 * Math.max(W, H)) / d)) : Math.min(z0, z1);
+        const midLog = (Math.log(z0) + Math.log(z1)) / 2;
+        const bump = Math.max(0, midLog - Math.log(zPeak));
+        const dur = reducedMotion ? 1 : 700 + Math.min(1200, 380 * bump + screens * 90);
+        flight = { t0: performance.now(), dur, z0, z1, c0, c1, bump, lx, ly };
+      };
+      // Wall-clock, not frame deltas: a dropped frame must not slow a flight.
+      const stepFlight = () => {
+        if (!flight) return;
+        const p = clamp01((performance.now() - flight.t0) / flight.dur);
+        const e = smooth(p);
+        const zLog = Math.log(flight.z0) + (Math.log(flight.z1) - Math.log(flight.z0)) * e - flight.bump * Math.sin(Math.PI * e);
+        const z = Math.exp(zLog);
+        const cx = flight.c0.x + (flight.c1.x - flight.c0.x) * e;
+        const cy = flight.c0.y + (flight.c1.y - flight.c0.y) * e;
+        zoom.set(z); anchorX.set(flight.lx - cx * z); anchorY.set(flight.ly - cy * z);
+        if (p >= 1) flight = null;
       };
 
       const setFocus = (id) => {
@@ -391,7 +396,7 @@ export default function AtlasStage({ graph, focusId, year = null, onSelect, onOp
           if (cn.isFocus !== isFocus) { cn.isFocus = isFocus; cn.drawRing(node); }
         }
         lineageVersion++;
-        if (!currentFocus) { lineage = null; return; }
+        if (!currentFocus) { lineage = null; drawLit(); return; }
         const g = graphRef.current;
         const set = new Set([currentFocus]);
         for (const [aid] of ancestorsWithDistance(g, currentFocus, 60)) set.add(aid);
@@ -399,6 +404,57 @@ export default function AtlasStage({ graph, focusId, year = null, onSelect, onOp
         const u = frame.units.find((x) => !x.anchorOnly && x.memberIds.includes(currentFocus));
         if (u) for (const m of u.memberIds) set.add(m);
         lineage = set;
+        drawLit();
+      };
+
+      /* ── edge markers: the selected person's off-screen relatives ───── */
+      let lastEdgeKey = '', lastEdgeAt = 0;
+      const reportEdges = () => {
+        const cb = onEdgeRef.current;
+        if (!cb || !frame) return;
+        const now = performance.now();
+        if (now - lastEdgeAt < 120) return;
+        lastEdgeAt = now;
+        const z = zoom.value, W = app.screen.width, H = app.screen.height;
+        let chips = [];
+        if (currentFocus && z >= 0.3 && !flight) {
+          const g = graphRef.current;
+          const rels = [];
+          const add = (id, relation) => { if (id !== currentFocus && frame.nodes.has(id)) rels.push({ id, relation }); };
+          for (const p of g.parents(currentFocus)) add(p.id, isBioOrAdoptive(p.qualifier) ? byGender(g.byId.get(p.id), 'Mother', 'Father', 'Parent') : 'Step-parent');
+          for (const c of g.children(currentFocus)) add(c.id, byGender(g.byId.get(c.id), 'Daughter', 'Son', 'Child'));
+          for (const pt of g.partners(currentFocus)) add(pt.id, pt.status === 'former' ? 'Former partner' : 'Partner');
+          for (const s of g.siblings(currentFocus)) add(s.id, byGender(g.byId.get(s.id), 'Sister', 'Brother', 'Sibling'));
+          // Insets keep a whole pill on screen, clear of the corner buttons
+          // above and the foot below.
+          const inset = Math.min(120, W * 0.26), top = 64, bottom = 96;
+          const cx = W / 2, cy = (top + (H - bottom)) / 2;
+          for (const r of rels) {
+            const n = frame.nodes.get(r.id);
+            const sx = anchorX.value + n.x * z, sy = anchorY.value + n.y * z;
+            if (sx > -NODE_R * z && sx < W + NODE_R * z && sy > -NODE_R * z && sy < H + NODE_R * z) continue;
+            const dx = sx - cx, dy = sy - cy;
+            const kx = dx ? (W / 2 - inset) / Math.abs(dx) : Infinity;
+            const ky = dy ? (cy - top - 8) / Math.abs(dy) : Infinity;
+            const k = Math.min(1, kx, ky);
+            const x = cx + dx * k, y = cy + dy * k;
+            const near = chips.find((c) => Math.hypot(c.x - x, c.y - y) < 48);
+            if (near) { near.ids.push(r.id); near.relations.push(r.relation); continue; }
+            chips.push({ ids: [r.id], relations: [r.relation], x, y, angle: Math.atan2(dy, dx) });
+          }
+          chips = chips.slice(0, 8).map((c) => ({
+            key: c.ids.join('+'),
+            ids: c.ids,
+            label: c.ids.length === 1 ? `${c.relations[0]} · ${firstName(g.byId.get(c.ids[0]))}`
+              : c.ids.length === 2 ? c.relations.join(' & ')
+              : `${c.ids.length} relatives`,
+            x: Math.round(c.x), y: Math.round(c.y), angle: c.angle,
+          }));
+        }
+        const key = chips.map((c) => `${c.key}@${c.x},${c.y}`).join('|');
+        if (key === lastEdgeKey) return;
+        lastEdgeKey = key;
+        cb(chips);
       };
 
       /* ── interaction: pan, pinch, wheel, tap, pull ───────────────────── */
@@ -408,6 +464,7 @@ export default function AtlasStage({ graph, focusId, year = null, onSelect, onOp
       const pinch = { active: false, dist0: 0, zoom0: 1 };
       const twoFingers = () => { const [a, b] = [...pointers.values()]; return { dist: Math.hypot(b.x - a.x, b.y - a.y), mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 }; };
       const zoomAbout = (nz, sx, sy) => {
+        flight = null;
         const clamped = Math.max(fitZoom * 0.6, Math.min(1.6, nz));
         const wx = (sx - anchorX.value) / zoom.value, wy = (sy - anchorY.value) / zoom.value;
         zoom.set(clamped); anchorX.set(sx - wx * clamped); anchorY.set(sy - wy * clamped);
@@ -431,6 +488,7 @@ export default function AtlasStage({ graph, focusId, year = null, onSelect, onOp
       const releaseDrag = () => { for (const [, d] of defl) d.release(); drag.id = null; };
 
       app.stage.on('pointerdown', (e) => {
+        flight = null;
         pointers.set(e.pointerId, { x: e.global.x, y: e.global.y });
         if (pointers.size === 2) {
           const f = twoFingers();
@@ -441,8 +499,6 @@ export default function AtlasStage({ graph, focusId, year = null, onSelect, onOp
         if (pointers.size > 2) return;
         drag.active = true; drag.moved = false;
         drag.x = drag.startX = e.global.x; drag.y = drag.startY = e.global.y;
-        // Pressing ON somebody grabs them (only once they're big enough to
-        // be a thing you can hold); pressing on paper pans the map.
         drag.id = zoom.value > 0.35 ? idFromTarget(e.target) : null;
       });
       app.stage.on('pointermove', (e) => {
@@ -503,6 +559,52 @@ export default function AtlasStage({ graph, focusId, year = null, onSelect, onOp
       };
       app.canvas.addEventListener('wheel', onWheel, { passive: false });
 
+      /* ── labels: a decluttered, screen-space layer ───────────────────── */
+      const labelFor = (id, person) => {
+        let t = labels.get(id);
+        if (!t) {
+          t = new Text({ text: person.display_name || '', style: labelStyle });
+          t.anchor.set(0.5, 0);
+          t.alpha = 0; t.visible = false;
+          labelLayer.addChild(t);
+          labels.set(id, t);
+        }
+        return t;
+      };
+      /* Candidates are placed in priority order — the focus, then the lit
+       * line, then everyone else by row and x — and a name that would sit on
+       * another takes a second tier beneath it or waits for more zoom. */
+      const placeLabels = (cands, z, scale) => {
+        const placed = new Set();
+        cands.sort((a, b) => a.pri - b.pri || a.row - b.row || a.sx - b.sx);
+        // Collisions are checked in SCREEN bands, not layout rows: from orbit
+        // several generations share a few pixels of height.
+        const lineH = 15 * scale;
+        const bands = new Map(); // band -> intervals
+        const free = (band, l, r) => !(bands.get(band) || []).some(([a, b]) => r > a && l < b);
+        const take = (band, l, r) => { if (!bands.has(band)) bands.set(band, []); bands.get(band).push([l, r]); };
+        for (const c of cands) {
+          const t = labelFor(c.id, c.person);
+          const hw = (t.width * scale) / 2 + 4;
+          let placedTier = -1;
+          for (let k = 0; k < 2 && placedTier < 0; k++) {
+            const y = c.sy + c.rPx + 5 + k * lineH;
+            const band = Math.round(y / lineH);
+            if (free(band, c.sx - hw, c.sx + hw)) { take(band, c.sx - hw, c.sx + hw); placedTier = k; t.position.set(c.sx, y); }
+          }
+          if (placedTier < 0) continue;
+          t.scale.set(scale);
+          t.__target = c.alpha;
+          placed.add(c.id);
+        }
+        for (const [id, t] of labels) {
+          const target = placed.has(id) ? t.__target : 0;
+          t.alpha += (target - t.alpha) * labelEase;
+          t.visible = t.alpha > 0.02;
+        }
+      };
+      let labelEase = 0.22;
+
       /* ── the loop ────────────────────────────────────────────────────── */
       app.ticker.add((ticker) => {
         if (!frame) return;
@@ -510,7 +612,8 @@ export default function AtlasStage({ graph, focusId, year = null, onSelect, onOp
         clock += dtMs;
         const dt = dtMs / 1000;
         const tSec = performance.now() / 1000;
-        zoom.step(dt); anchorX.step(dt); anchorY.step(dt);
+        if (flight) stepFlight();
+        else { zoom.step(dt); anchorX.step(dt); anchorY.step(dt); }
         const z = zoom.value;
         world.scale.set(z);
         world.position.set(anchorX.value, anchorY.value);
@@ -519,19 +622,17 @@ export default function AtlasStage({ graph, focusId, year = null, onSelect, onOp
 
         // Level of detail, all derived from one number.
         const dotScale = Math.max(1, MIN_DOT_PX / (NODE_R * z));
-        const shadowFade = Math.max(0, Math.min(1, (z - 0.09) / 0.2));
-        const showNames = z > NAME_ZOOM, showSub = z > SUB_ZOOM;
+        const shadowFade = clamp01((z - 0.09) / 0.2);
+        const showSub = z > SUB_ZOOM;
         const entrance = Math.min(1, clock / 900);
-        const nearAlpha = Math.max(0, Math.min(1, (z - fitZoom * 1.6) / (fitZoom * 3)));
-        const farAlpha = z < fitZoom * 1.8 ? 1 : Math.max(0, 1 - (z - fitZoom * 1.8) / (fitZoom * 2.4));
-        nearBonds.alpha = nearAlpha * entrance;
-        // Reach stubs are a close-range device: they only mean something
-        // once the person they leave from is big enough to be someone.
-        const reachAlpha = Math.max(0, Math.min(1, (z - 0.3) / 0.3)) * entrance;
-        reachStubs.alpha = reachAlpha * 0.7;
-        longBonds.alpha = nearAlpha * 0.8 * entrance;
-        lateralBonds.alpha = nearAlpha * 0.8 * entrance;
-        farBonds.alpha = farAlpha * entrance;
+        const nearAlpha = clamp01((z - fitZoom * 1.6) / (fitZoom * 3));
+        const farAlpha = z < fitZoom * 1.8 ? 1 : clamp01(1 - (z - fitZoom * 1.8) / (fitZoom * 2.4));
+        const dimBonds = lineage ? DIM : 1;
+        nearBonds.alpha = nearAlpha * entrance * dimBonds;
+        longBonds.alpha = nearAlpha * 0.8 * entrance * dimBonds;
+        lateralBonds.alpha = nearAlpha * 0.8 * entrance * dimBonds;
+        litBonds.alpha = nearAlpha * entrance;
+        farBonds.alpha = farAlpha * entrance * (lineage ? 0.6 : 1);
         bgLayer.alpha = entrance;
 
         const W = app.screen.width, H = app.screen.height;
@@ -539,10 +640,7 @@ export default function AtlasStage({ graph, focusId, year = null, onSelect, onOp
         const yr = yearRef.current;
         const presence = (id, person) => {
           let a = 1;
-          // Lineage: when someone is selected, their whole bloodline stays lit
-          // through the entire shape and everyone else steps back.
-          if (lineage && !lineage.has(id)) a *= 0.18;
-          // Time: scrub a year and the family alive that year is who you see.
+          if (lineage && !lineage.has(id)) a *= DIM;
           if (yr != null) {
             const b = yearOf(person.birth_date), d = yearOf(person.death_date);
             if (b != null && b > yr) a *= 0.05;
@@ -552,24 +650,22 @@ export default function AtlasStage({ graph, focusId, year = null, onSelect, onOp
           return a;
         };
 
-        /* The far view. From orbit a person is a dot a few pixels across; a
-         * masked portrait container per person — shadow, disc, mask, ring,
-         * two texts — is the single biggest cost in the whole stage at that
-         * range, for nothing anyone can see. Below DOT_ZOOM the node layer
-         * is switched off and everyone is drawn into ONE graphics object,
-         * redrawn only when the picture would actually differ (zoom step,
-         * lineage, year, or the entrance still playing). */
         const far = z < DOT_ZOOM;
         nodeLayer.visible = !far;
         dotLayer.visible = far;
+        const cands = [];
+        const nameScale = 0.78 + 0.22 * clamp01((z - NAME_ZOOM) / (0.9 - NAME_ZOOM));
+        const nameFade = clamp01((z - NAME_ZOOM) / 0.08);
+
         if (far) {
+          /* From orbit everyone is one flat layer of dots, redrawn only when
+           * the picture would actually differ. The lit line gets a halo and
+           * carries its names. */
           const opening = clock < 2600;
           const key = `${Math.round(z * 600)}|${lineageVersion}|${yr}|${opening ? clock : 'x'}`;
           if (key !== lastDotKey) {
             lastDotKey = key;
             dotLayer.clear();
-            // A little finer than the node floor: from orbit a thousand
-            // people need to read as a texture, not a pile of coins.
             const r = Math.max(NODE_R, (MIN_DOT_PX * 0.7) / z);
             for (const [id, node] of frame.nodes) {
               const cn = nodes.get(id);
@@ -578,62 +674,78 @@ export default function AtlasStage({ graph, focusId, year = null, onSelect, onOp
               if (open <= 0) continue;
               const a = presence(id, cn.person) * Math.min(1, open * 1.3) * entrance;
               dotLayer.circle(node.x, node.y, r * open).fill({ color: tintFor(cn.person), alpha: a });
-              if (node.isFocus) dotLayer.circle(node.x, node.y, r * open + 2.4 / z).stroke({ color: 0xc2603a, width: 1.6 / z, alpha: 0.9 });
+              if (node.isFocus) dotLayer.circle(node.x, node.y, r * open + 2.4 / z).stroke({ color: TERRA, width: 1.6 / z, alpha: 0.9 });
             }
             if (lineage) {
-              // The lit bloodline gets a hairline halo so it reads from orbit.
               for (const id of lineage) {
                 const node = frame.nodes.get(id);
-                if (node) dotLayer.circle(node.x, node.y, r + 1.2 / z).stroke({ color: 0xc2603a, width: 0.9 / z, alpha: 0.5 });
+                if (node) dotLayer.circle(node.x, node.y, r + 1.2 / z).stroke({ color: TERRA, width: 0.9 / z, alpha: 0.5 });
               }
             }
           }
-        }
-
-        for (const [id, node] of frame.nodes) {
-          if (far) break;
-          const cn = nodes.get(id);
-          if (!cn) continue;
-          const sx = anchorX.value + node.x * z, sy = anchorY.value + node.y * z;
-          const onScreen = sx > -margin && sx < W + margin && sy > -margin && sy < H + margin;
-          cn.root.visible = onScreen;
-          if (!onScreen) continue;
-          const open = easeBud(progressAt(schedule.get(id), clock));
-          const amb = node.isFocus || reducedMotion ? { x: 0, y: 0, scale: 1 } : ambientOffset(node.unitId, tSec);
-          cn.apply(node, open, amb, deflOf(id));
-          if (dotScale > 1) cn.root.scale.set(cn.root.scale.x * dotScale);
-          if (cn.shadow) cn.shadow.alpha *= shadowFade;
-          if (cn.name) cn.name.visible = showNames;
-          if (cn.sub) cn.sub.visible = showSub;
-          cn.root.alpha *= presence(id, cn.person);
-          if (z > PHOTO_ZOOM && cn.pendingPhoto) { cn.person = { ...cn.person, photo: cn.pendingPhoto }; cn.pendingPhoto = null; cn.loadPhoto(cn.baseR); }
-        }
-
-        // Era labels hold a constant on-screen size, and give way to faces.
-        const eraAlpha = Math.max(0, Math.min(1, (ERA_ZOOM - z) / 0.3)) * entrance;
-        eraLayer.alpha = eraAlpha;
-        eraLayer.visible = eraAlpha > 0.01;
-        if (eraLayer.visible) {
-          const s = 1 / z;
-          // Rows are ROW_GAP apart in the world but only ROW_GAP·z on screen:
-          // when that's tighter than a label, show every Nth row's label so
-          // the axis thins rather than piling into an unreadable stack.
-          const rowPx = ROW_GAP * z;
-          const step = Math.max(1, Math.ceil(24 / rowPx));
-          const showCounts = rowPx > 44;
-          for (let i = 0; i < eras.length; i += 2) {
-            const rowIndex = i / 2;
-            const on = rowIndex % step === 0;
-            eras[i].visible = on;
-            eras[i].scale.set(s);
-            eras[i + 1].visible = on && showCounts;
-            eras[i + 1].scale.set(s);
+          if (lineage) {
+            // Names along the lit line, once generations are far enough
+            // apart on screen to carry a line of type each; otherwise only
+            // the person themselves.
+            const rPx = Math.max(NODE_R * z, MIN_DOT_PX * 0.7);
+            const roomy = ROW_GAP * z >= 15;
+            for (const id of roomy ? lineage : [currentFocus]) {
+              const node = frame.nodes.get(id), cn = nodes.get(id);
+              if (!node || !cn) continue;
+              const sx = anchorX.value + node.x * z, sy = anchorY.value + node.y * z;
+              if (sx < -60 || sx > W + 60 || sy < -20 || sy > H + 20) continue;
+              cands.push({ id, person: cn.person, sx, sy, rPx, row: node.row, pri: node.isFocus ? 0 : 1, alpha: 0.9 * entrance });
+            }
           }
+        } else {
+          for (const [id, node] of frame.nodes) {
+            const cn = nodes.get(id);
+            if (!cn) continue;
+            const sx = anchorX.value + node.x * z, sy = anchorY.value + node.y * z;
+            const onScreen = sx > -margin && sx < W + margin && sy > -margin && sy < H + margin;
+            cn.root.visible = onScreen;
+            if (!onScreen) continue;
+            const open = easeBud(progressAt(schedule.get(id), clock));
+            const amb = node.isFocus || reducedMotion ? { x: 0, y: 0, scale: 1 } : ambientOffset(node.unitId, tSec);
+            cn.apply(node, open, amb, deflOf(id));
+            if (dotScale > 1) cn.root.scale.set(cn.root.scale.x * dotScale);
+            if (cn.shadow) cn.shadow.alpha *= shadowFade;
+            if (cn.sub) cn.sub.visible = showSub;
+            const pres = presence(id, cn.person);
+            cn.root.alpha *= pres;
+            if (z > PHOTO_ZOOM && cn.pendingPhoto) { cn.person = { ...cn.person, photo: cn.pendingPhoto }; cn.pendingPhoto = null; cn.loadPhoto(cn.baseR); }
+            const lit = !lineage || lineage.has(id);
+            if ((z > NAME_ZOOM || lit) && open > 0.5 && sx > -80 && sx < W + 80 && sy > -40 && sy < H + 40) {
+              const rPx = NODE_R * z * cn.root.scale.x;
+              cands.push({ id, person: cn.person, sx, sy, rPx, row: node.row, pri: node.isFocus ? 0 : lit && lineage ? 1 : 2, alpha: (lit && lineage ? 1 : nameFade) * pres * Math.min(1, open * 1.3) });
+            }
+          }
+        }
+        labelEase = Math.min(1, dt * 14); // settle in ~150ms regardless of frame rate
+        placeLabels(cands, z, nameScale);
+
+        /* The era axis: a graticule. Labels sit at the left edge of the
+         * viewport, tucked just under the top edge of their generation's
+         * band — the quiet strip between rows, where a portrait at the left
+         * edge never sits — and thinned when rows are tighter on screen
+         * than a label. */
+        const rowPx = ROW_GAP * z;
+        const step = Math.max(1, Math.ceil(22 / rowPx));
+        const axisAlpha = entrance * (lineage ? 0.7 : 0.85);
+        const tuck = rowPx > 40 ? rowPx * 0.5 - 12 : 0;
+        for (let i = 0; i < eraTexts.length; i++) {
+          const t = eraTexts[i];
+          const sy = anchorY.value + t.__y * z - tuck;
+          const on = i % step === 0 && sy > 54 && sy < H - 72;
+          t.visible = on;
+          if (on) { t.position.set(12, sy); t.alpha = axisAlpha; }
         }
 
         if (defl.size) drawAllBonds(deflOf);
         else drawReaches(null);
+        reportEdges();
       });
+      let lastDotKey = '';
 
       innerApi.current = {
         build, fitAll, flyTo, setFocus,

@@ -50,7 +50,7 @@
 
 import { isBioOrAdoptive } from '../../data/graph.js';
 
-export const ROW_GAP = 560;     // vertical distance between generations (tall: a 1,000-person family is wide, and the fit view needs height to read as a shape)
+export const ROW_GAP = 340;     // vertical distance between generations — Canopy density, so the close view fills instead of floating in paper
 export const NODE_R = 54;       // person radius, same as Canopy's
 export const POD_GAP = 124;     // centre-to-centre inside a couple
 export const UNIT_GAP = 30;     // clear space between neighbouring units

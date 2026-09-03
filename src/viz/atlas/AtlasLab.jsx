@@ -49,6 +49,7 @@ export default function AtlasLab() {
   const [error, setError] = useState('');
   const [query, setQuery] = useState('');
   const [stats, setStats] = useState(null);
+  const [edges, setEdges] = useState([]);
   const api = useRef(null);
 
   const graph = useMemo(() => buildGraph(source.people, source.relationships), [source]);
@@ -116,8 +117,27 @@ export default function AtlasLab() {
           onSelect={setFocusId}
           onOpen={() => {}}
           onLayout={setStats}
+          onEdge={setEdges}
           apiRef={api}
         />
+
+        {/* Off-screen relatives of the selected person, as map markers at the
+            edge of the view: tap one to fly there. */}
+        {edges.map((c) => (
+          <button
+            key={c.key}
+            type="button"
+            className="atlab__edge"
+            style={{ left: c.x, top: c.y }}
+            onClick={() => setFocusId(c.ids[0])}
+            aria-label={`Fly to ${c.label}`}
+          >
+            <svg viewBox="0 0 12 12" width="10" height="10" aria-hidden="true" style={{ transform: `rotate(${c.angle}rad)` }}>
+              <path d="M2 6h7M6 2.5L9.5 6 6 9.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            <span>{c.label}</span>
+          </button>
+        ))}
 
         <div className="atlab__corner">
           <button className="atlab__btn" type="button" onClick={() => api.current?.fitAll()}>Whole family</button>

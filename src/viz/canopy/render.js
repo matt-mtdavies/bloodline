@@ -95,7 +95,7 @@ function forkPoint(from, to, level = 0) {
   return { x: from.x, y: startY + (endY - startY) * (0.34 + level * 0.07) };
 }
 
-function descentPath(from, to, level = 0) {
+export function descentPath(from, to, level = 0) {
   /* Where the trunk may begin. It has to clear BOTH the union capsule and
    * the names beneath it — a pod's trunk descends from the couple's midpoint,
    * which is exactly where two centred names meet, so a trunk that started at
@@ -240,7 +240,7 @@ function dashedCapsule(g, a, b, hw, color, alpha) {
  * from them — the difference between a living connected thing and a set of
  * independent counters with lines drawn near them. */
 const ZERO = { x: 0, y: 0 };
-function livePos(frame, id, offsetOf) {
+export function livePos(frame, id, offsetOf) {
   const n = frame.nodes.get(id);
   if (!n) return null;
   const o = offsetOf ? (offsetOf(id) || ZERO) : ZERO;
@@ -256,7 +256,7 @@ function livePos(frame, id, offsetOf) {
  * (a hover/drag nudge) still flows through normally; only the permanent
  * structural lift is excluded. Ordinary units carry no lift at all, so this
  * is exactly today's value for every anchor that isn't touching a satellite. */
-function liveAnchor(frame, unitId, offsetOf) {
+export function liveAnchor(frame, unitId, offsetOf) {
   const u = frame.units.find((x) => x.id === unitId);
   if (!u) return null;
   let sx = 0, sy = 0, n = 0;
