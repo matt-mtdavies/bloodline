@@ -230,29 +230,64 @@ export function planAtlas(graph, opts = {}) {
     units.push(u);
   }
 
-  /* ── Parentage, at the unit level ──────────────────────────────────────── */
-  const childParents = new Map(); // childId -> { ids: [parentId], qualifier }
+  /* ── Parentage ─────────────────────────────────────────────────────────────
+   *
+   * Two different questions, deliberately answered separately, because
+   * conflating them made the map tell a lie.
+   *
+   * WHAT IS DRAWN (parentGroups) must be exact. Every recorded parent edge
+   * is represented, grouped by its own qualifier, so a child with two
+   * biological parents and a step-parent gets a solid connector to the
+   * couple AND a dashed one to the step-parent. The first build kept only
+   * the biological edges whenever any existed, which meant a step-parent
+   * silently had no line to their step-child at all — a real relationship
+   * the rest of the app draws (dashed) everywhere else, vanishing here.
+   * Grouping by qualifier rather than emitting one line per edge keeps a
+   * plain couple as one connector; a mixed couple (one biological parent,
+   * one adoptive) honestly gets one line per qualifier, each reaching only
+   * the parents actually recorded that way. No connector ever implies a
+   * parent who is not recorded, and no recorded parent loses their line.
+   *
+   * WHERE A CHILD SITS (structuralParents) is a layout choice, not a claim:
+   * a child hangs beneath the line they descend from, so blood is preferred
+   * and step is used only when there is nothing else. That preference moves
+   * nobody's connector — it only decides which subtree owns the child. */
+  const normQualifier = (q) => (q === 'adopted' ? 'adoptive' : isBioOrAdoptive(q) ? (q || 'biological') : q);
+  const parentGroups = new Map(); // childId -> [{ ids: [parentId], qualifier }]
+  const structuralParents = new Map(); // childId -> { ids: [parentId] }
   for (const p of graph.people) {
     const all = graph.parents(p.id).filter((x) => byId.has(x.id));
     if (!all.length) continue;
+    const byQualifier = new Map();
+    for (const x of all) {
+      const q = normQualifier(x.qualifier);
+      if (!byQualifier.has(q)) byQualifier.set(q, []);
+      byQualifier.get(q).push(x.id);
+    }
+    const groups = [...byQualifier.entries()]
+      .map(([qualifier, ids]) => ({ qualifier, ids: ids.slice().sort(cmpId) }))
+      .sort((a, b) => cmpId(a.qualifier, b.qualifier));
+    parentGroups.set(p.id, groups);
     const blood = all.filter((x) => isBioOrAdoptive(x.qualifier));
     const use = blood.length ? blood : all;
-    const qualifier = blood.length
-      ? (blood.some((x) => x.qualifier === 'adoptive' || x.qualifier === 'adopted') ? 'adoptive' : 'biological')
-      : 'step';
-    childParents.set(p.id, { ids: use.map((x) => x.id).sort(cmpId), qualifier });
+    structuralParents.set(p.id, { ids: use.map((x) => x.id).sort(cmpId) });
   }
+  /* Ordering minimises crossings among the lines actually DRAWN, so it reads
+   * every group — a step connector crossing the picture is exactly as ugly
+   * as a biological one. */
   const upUnits = new Map();
   const downUnits = new Map();
-  for (const [cid, { ids: pids }] of childParents) {
+  for (const [cid, groups] of parentGroups) {
     const cu = unitOf.get(cid);
-    for (const pid of pids) {
-      const pu = unitOf.get(pid);
-      if (!pu || pu === cu) continue;
-      if (!upUnits.has(cu)) upUnits.set(cu, new Set());
-      if (!downUnits.has(pu)) downUnits.set(pu, new Set());
-      upUnits.get(cu).add(pu);
-      downUnits.get(pu).add(cu);
+    for (const g of groups) {
+      for (const pid of g.ids) {
+        const pu = unitOf.get(pid);
+        if (!pu || pu === cu) continue;
+        if (!upUnits.has(cu)) upUnits.set(cu, new Set());
+        if (!downUnits.has(pu)) downUnits.set(pu, new Set());
+        upUnits.get(cu).add(pu);
+        downUnits.get(pu).add(cu);
+      }
     }
   }
 
@@ -301,7 +336,7 @@ export function planAtlas(graph, opts = {}) {
   const primaryParent = new Map();
   for (const u of units) {
     for (const m of u.memberIds) {
-      const cp = childParents.get(m);
+      const cp = structuralParents.get(m);
       if (!cp) continue;
       const pu = unitOf.get(cp.ids[0]);
       if (pu && pu !== u && pu.row < u.row) { primaryParent.set(u, pu); break; }
@@ -394,13 +429,19 @@ export function planAtlas(graph, opts = {}) {
       else bonds.push({ kind: 'thread', a: p.id, b: pt.id });
     }
   }
-  for (const [cid, { ids: pids, qualifier }] of childParents) {
-    const pu = unitOf.get(pids[0]);
-    if (!pu) continue;
-    const sameUnit = pids.every((id) => unitOf.get(id) === pu);
-    const exact = sameUnit && pids.length === pu.memberIds.length;
-    const parentUnit = exact ? pu : ensureAnchor(pids, Math.max(...pids.map((id) => gen.get(id) ?? 0)));
-    bonds.push({ kind: 'descent', parentUnit: parentUnit.id, child: cid, qualifier });
+  for (const [cid, groups] of parentGroups) {
+    for (const { ids: pids, qualifier } of groups) {
+      const pu = unitOf.get(pids[0]);
+      if (!pu) continue;
+      // A connector may anchor on a whole unit only when the group IS that
+      // unit — otherwise it gets a junction on exactly the parents recorded
+      // with this qualifier, so the line never reaches through someone who
+      // holds a different relationship to the child (or none at all).
+      const sameUnit = pids.every((id) => unitOf.get(id) === pu);
+      const exact = sameUnit && pids.length === pu.memberIds.length;
+      const parentUnit = exact ? pu : ensureAnchor(pids, Math.max(...pids.map((id) => gen.get(id) ?? 0)));
+      bonds.push({ kind: 'descent', parentUnit: parentUnit.id, child: cid, qualifier });
+    }
   }
   const descentParents = [...new Set(bonds.filter((b) => b.kind === 'descent').map((b) => b.parentUnit))].sort(cmpId);
   const level = new Map(descentParents.map((id, i) => [id, i % 3]));
