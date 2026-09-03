@@ -5,6 +5,7 @@ import './styles/global.css';
 import App from './App.jsx';
 import { isLabOpen } from './lib/treePhysicsFlag.js';
 import { isFocusLabOpen } from './lib/focusLabFlag.js';
+import { isAtlasLabOpen } from './lib/atlasLabFlag.js';
 
 // Set only by applyUpdateWhenSafe below, and only to a REAL waiting
 // updateSW() reference — never invented — so the ErrorBoundary's Reload
@@ -103,6 +104,23 @@ function boot() {
         <ErrorBoundary>
           <React.Suspense fallback={null}>
             <FocusLab />
+          </React.Suspense>
+        </ErrorBoundary>
+      </React.StrictMode>,
+    );
+    return;
+  }
+  // The Atlas prototype (?lab=atlas) — the whole family as one navigable
+  // world. Same lab contract as the two above: its own lazy chunk, no store
+  // import, and the only network call it can make is the same read-only GET
+  // to /api/tree — see src/lib/atlasLabFlag.js.
+  if (isAtlasLabOpen()) {
+    const AtlasLab = React.lazy(() => import('./viz/atlas/AtlasLab.jsx'));
+    createRoot(document.getElementById('root')).render(
+      <React.StrictMode>
+        <ErrorBoundary>
+          <React.Suspense fallback={null}>
+            <AtlasLab />
           </React.Suspense>
         </ErrorBoundary>
       </React.StrictMode>,
