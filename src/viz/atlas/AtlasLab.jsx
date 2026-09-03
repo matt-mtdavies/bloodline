@@ -52,7 +52,14 @@ export default function AtlasLab() {
   const api = useRef(null);
 
   const graph = useMemo(() => buildGraph(source.people, source.relationships), [source]);
-  useEffect(() => { setFocusId(null); setYear(null); setTimeOn(false); }, [source]);
+  // Arrival: the whole family blooms first, then the camera flies to you
+  // and lights your line through it — the map, then where you are on it.
+  useEffect(() => {
+    setFocusId(null); setYear(null); setTimeOn(false);
+    if (!source.focus) return undefined;
+    const t = setTimeout(() => setFocusId(source.focus), 1600);
+    return () => clearTimeout(t);
+  }, [source]);
 
   const years = useMemo(() => {
     const ys = source.people.map((p) => Number(String(p.birth_date || '').slice(0, 4))).filter((y) => y > 1000);
@@ -119,7 +126,7 @@ export default function AtlasLab() {
 
         {!active && !timeOn && (
           <p className="atlab__hint">
-            This is everyone, laid out once. <strong>Scroll to zoom</strong>, drag to pan, <strong>tap anyone</strong> to fly to them and light their bloodline.
+            This is everyone, laid out once. <strong>Zoom in</strong>, drag to pan, <strong>tap anyone</strong> to fly to them and light their bloodline.
           </p>
         )}
         {!!active && (

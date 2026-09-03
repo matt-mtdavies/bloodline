@@ -21,7 +21,7 @@ import { useEffect, useRef } from 'react';
 import { Application, Container, Graphics, Text, TextStyle } from 'pixi.js';
 import { planAtlas, isFarReach, NODE_R, ROW_GAP } from './layout.js';
 import { Scalar, ambientOffset, Deflection, rubberBand, SWAY_POD, SWAY_BRANCH } from '../canopy/motion.js';
-import { drawBonds, CanopyNode, easeBud, progressAt } from '../canopy/render.js';
+import { drawBonds, CanopyNode, easeBud, progressAt, tintFor } from '../canopy/render.js';
 import { ancestorsWithDistance, descendantsWithDistance } from '../../data/graph.js';
 
 const TAP_SLOP = 8;
@@ -29,6 +29,7 @@ const MIN_DOT_PX = 3.4;          // a person never shrinks below a visible dot
 const NAME_ZOOM = 0.44;          // names appear once they'd be legible
 const SUB_ZOOM = 0.82;           // dates a little later
 const PHOTO_ZOOM = 0.30;         // portraits load once you're this close
+const DOT_ZOOM = 0.16;           // below this a person is a dot: one flat layer, not 1,200 portrait containers
 const ERA_ZOOM = 0.62;           // era labels fade out as faces take over
 const FLY_ZOOM = 0.9;
 const ERA_MARGIN_PX = 110;       // screen pixels reserved for the era axis at the fit zoom
@@ -70,9 +71,10 @@ export default function AtlasStage({ graph, focusId, year = null, onSelect, onOp
       const lateralBonds = new Graphics(); // ex-partners and extra partners — only up close
       const reachStubs = new Graphics();   // the leads of reaches that leave the screen
       const nearBonds = new Graphics();    // pods and one-row descents — Canopy's ribbons
+      const dotLayer = new Graphics();     // everyone as a dot, for the far view
       const nodeLayer = new Container();
       const eraLayer = new Container();
-      world.addChild(bgLayer, farBonds, reachStubs, longBonds, lateralBonds, nearBonds, nodeLayer, eraLayer);
+      world.addChild(bgLayer, farBonds, reachStubs, longBonds, lateralBonds, nearBonds, dotLayer, nodeLayer, eraLayer);
       app.stage.addChild(world);
       app.stage.eventMode = 'static';
       app.stage.hitArea = { contains: () => true };
@@ -202,7 +204,8 @@ export default function AtlasStage({ graph, focusId, year = null, onSelect, onOp
        * must not lose the line to their own child). Only a reach that leaves
        * the screen is reduced to its leads. Re-split whenever the camera has
        * moved; a few hundred bonds, so cheap. */
-      let lastViewKey = '', lastSplitSig = null;
+      let lastViewKey = '', lastSplitSig = null, lastSplitAt = 0;
+      let lastDotKey = '', lineageVersion = 0;
       const drawReaches = (offsetOf, force = false) => {
         if (!frame) return;
         const W = app.screen.width, H = app.screen.height, z = zoom.value;
@@ -235,6 +238,11 @@ export default function AtlasStage({ graph, focusId, year = null, onSelect, onOp
           geom.push({ a: p, c: q, kind: b.kind === 'union' && b.status === 'former' ? 'former' : 'thread' });
         });
         if (!force && sig === lastSplitSig) return;
+        // During a flight the membership changes every frame; redrawing a
+        // few hundred curves at 60Hz is wasted on a picture in motion.
+        const now = performance.now();
+        if (!force && now - lastSplitAt < 120) return;
+        lastSplitAt = now;
         lastSplitSig = sig;
         reachStubs.clear();
         for (const { a, c, kind } of geom) {
@@ -248,7 +256,18 @@ export default function AtlasStage({ graph, focusId, year = null, onSelect, onOp
             drawStubs(reachStubs, curvePts({ x: a.x, y: a.y + NODE_R }, { x: a.x, y: dip }, { x: c.x, y: dip }, { x: c.x, y: c.y + NODE_R }), kind === 'former' ? 0x9a8f86 : BRANCH, 0.8, 1.8);
           }
         }
-        drawBonds(longBonds, { ...frame, bonds: wholeLong }, FULLY_GROWN, 1e9, offsetOf);
+        // A whole reach is a thin, plain curve — visibly a link, not one of
+        // the family's own limbs (those are the tapered ribbons), and one
+        // stroke for the lot rather than a ribbon and a fork each.
+        longBonds.clear();
+        for (const b of wholeLong) {
+          const pu = byId.get(b.parentUnit), c = livePoint(b.child, offsetOf);
+          const a = pu ? anchorOf(pu) : null;
+          if (!a || !c) continue;
+          const midY = a.y + (c.y - a.y) * 0.55;
+          longBonds.moveTo(a.x, a.y + NODE_R).bezierCurveTo(a.x, midY, c.x, midY, c.x, c.y - NODE_R);
+        }
+        longBonds.stroke({ color: BRANCH, width: 1.6, alpha: 0.4, cap: 'round' });
         drawBonds(lateralBonds, { ...frame, bonds: wholeLateral }, FULLY_GROWN, 1e9, offsetOf);
       };
       const drawAllBonds = (offsetOf) => {
@@ -271,7 +290,7 @@ export default function AtlasStage({ graph, focusId, year = null, onSelect, onOp
         const bw = frame.bounds.maxX - frame.bounds.minX, bh = frame.bounds.maxY - frame.bounds.minY;
         // Room on the left for the era axis (its labels hold a constant
         // on-screen size, so they need screen pixels, not world units).
-        fitZoom = Math.max(0.006, Math.min(1.2, Math.min((W - 90 - ERA_MARGIN_PX) / Math.max(1, bw), (H - 140) / Math.max(1, bh))));
+        fitZoom = Math.max(0.003, Math.min(1.2, Math.min((W - 90 - ERA_MARGIN_PX) / Math.max(1, bw), (H - 140) / Math.max(1, bh))));
         // One screen pixel at the fit zoom — the veins of the silhouette. They
         // are faded out (see the loop) long before the camera is close enough
         // for that width to read as rope.
@@ -371,6 +390,7 @@ export default function AtlasStage({ graph, focusId, year = null, onSelect, onOp
           node.isFocus = isFocus;
           if (cn.isFocus !== isFocus) { cn.isFocus = isFocus; cn.drawRing(node); }
         }
+        lineageVersion++;
         if (!currentFocus) { lineage = null; return; }
         const g = graphRef.current;
         const set = new Set([currentFocus]);
@@ -456,7 +476,20 @@ export default function AtlasStage({ graph, focusId, year = null, onSelect, onOp
         drag.active = false;
         releaseDrag();
         if (drag.moved) return;
-        const id = idFromTarget(e.target);
+        let id = idFromTarget(e.target);
+        if (!id && zoom.value < DOT_ZOOM && frame) {
+          // From orbit there is nothing to hit-test, so a tap is a map tap:
+          // the nearest dot within reach is the person you meant; otherwise
+          // dive in about the point you touched.
+          const z = zoom.value;
+          let best = null, bestD = 14;
+          for (const [nid, n] of frame.nodes) {
+            const d = Math.hypot(anchorX.value + n.x * z - e.global.x, anchorY.value + n.y * z - e.global.y);
+            if (d < bestD) { bestD = d; best = nid; }
+          }
+          if (!best) { zoomAbout(Math.min(FLY_ZOOM, z * 2.6), e.global.x, e.global.y); return; }
+          id = best;
+        }
         if (!id) return;
         if (id === currentFocus) onOpenRef.current?.(id);
         else onSelectRef.current?.(id);
@@ -504,8 +537,61 @@ export default function AtlasStage({ graph, focusId, year = null, onSelect, onOp
         const W = app.screen.width, H = app.screen.height;
         const margin = 180;
         const yr = yearRef.current;
+        const presence = (id, person) => {
+          let a = 1;
+          // Lineage: when someone is selected, their whole bloodline stays lit
+          // through the entire shape and everyone else steps back.
+          if (lineage && !lineage.has(id)) a *= 0.18;
+          // Time: scrub a year and the family alive that year is who you see.
+          if (yr != null) {
+            const b = yearOf(person.birth_date), d = yearOf(person.death_date);
+            if (b != null && b > yr) a *= 0.05;
+            else if (d != null && d < yr) a *= 0.22;
+            else if (b == null) a *= 0.5;
+          }
+          return a;
+        };
+
+        /* The far view. From orbit a person is a dot a few pixels across; a
+         * masked portrait container per person — shadow, disc, mask, ring,
+         * two texts — is the single biggest cost in the whole stage at that
+         * range, for nothing anyone can see. Below DOT_ZOOM the node layer
+         * is switched off and everyone is drawn into ONE graphics object,
+         * redrawn only when the picture would actually differ (zoom step,
+         * lineage, year, or the entrance still playing). */
+        const far = z < DOT_ZOOM;
+        nodeLayer.visible = !far;
+        dotLayer.visible = far;
+        if (far) {
+          const opening = clock < 2600;
+          const key = `${Math.round(z * 600)}|${lineageVersion}|${yr}|${opening ? clock : 'x'}`;
+          if (key !== lastDotKey) {
+            lastDotKey = key;
+            dotLayer.clear();
+            // A little finer than the node floor: from orbit a thousand
+            // people need to read as a texture, not a pile of coins.
+            const r = Math.max(NODE_R, (MIN_DOT_PX * 0.7) / z);
+            for (const [id, node] of frame.nodes) {
+              const cn = nodes.get(id);
+              if (!cn) continue;
+              const open = opening ? easeBud(progressAt(schedule.get(id), clock)) : 1;
+              if (open <= 0) continue;
+              const a = presence(id, cn.person) * Math.min(1, open * 1.3) * entrance;
+              dotLayer.circle(node.x, node.y, r * open).fill({ color: tintFor(cn.person), alpha: a });
+              if (node.isFocus) dotLayer.circle(node.x, node.y, r * open + 2.4 / z).stroke({ color: 0xc2603a, width: 1.6 / z, alpha: 0.9 });
+            }
+            if (lineage) {
+              // The lit bloodline gets a hairline halo so it reads from orbit.
+              for (const id of lineage) {
+                const node = frame.nodes.get(id);
+                if (node) dotLayer.circle(node.x, node.y, r + 1.2 / z).stroke({ color: 0xc2603a, width: 0.9 / z, alpha: 0.5 });
+              }
+            }
+          }
+        }
 
         for (const [id, node] of frame.nodes) {
+          if (far) break;
           const cn = nodes.get(id);
           if (!cn) continue;
           const sx = anchorX.value + node.x * z, sy = anchorY.value + node.y * z;
@@ -519,18 +605,7 @@ export default function AtlasStage({ graph, focusId, year = null, onSelect, onOp
           if (cn.shadow) cn.shadow.alpha *= shadowFade;
           if (cn.name) cn.name.visible = showNames;
           if (cn.sub) cn.sub.visible = showSub;
-          // Lineage: when someone is selected, their whole bloodline stays lit
-          // through the entire shape and everyone else steps back.
-          let a = 1;
-          if (lineage && !lineage.has(id)) a *= 0.18;
-          // Time: scrub a year and the family alive that year is who you see.
-          if (yr != null) {
-            const b = yearOf(cn.person.birth_date), d = yearOf(cn.person.death_date);
-            if (b != null && b > yr) a *= 0.05;
-            else if (d != null && d < yr) a *= 0.22;
-            else if (b == null) a *= 0.5;
-          }
-          cn.root.alpha *= a;
+          cn.root.alpha *= presence(id, cn.person);
           if (z > PHOTO_ZOOM && cn.pendingPhoto) { cn.person = { ...cn.person, photo: cn.pendingPhoto }; cn.pendingPhoto = null; cn.loadPhoto(cn.baseR); }
         }
 
