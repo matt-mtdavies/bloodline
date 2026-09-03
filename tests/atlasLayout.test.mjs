@@ -95,6 +95,40 @@ for (const [label, graph, frame] of [['demo', seedGraph, seedFrame], ['1,200-per
   });
 }
 
+test('a partner\'s deeply researched line never drags someone rows below their own parents', () => {
+  // The real-tree shape: Heather → Matthew and Jason. Matthew partners
+  // Kaitlin, whose line is recorded six generations back; Jason partners
+  // someone with no recorded ancestry. Depth from the eldest root would put
+  // Matthew six rows under Heather and five under his brother.
+  const people = [P('H'), P('M', { birth_date: '1980' }), P('J', { birth_date: '1982' }), P('K'), P('JP')];
+  const rels = [parent('H', 'M'), parent('H', 'J'), partner('M', 'K'), partner('J', 'JP')];
+  let prev = 'K';
+  for (let i = 1; i <= 6; i++) { const id = `KA${i}`; people.push(P(id)); rels.push(parent(id, prev)); prev = id; }
+  const g = buildGraph(people, rels);
+  const f = planAtlas(g);
+  const row = (id) => f.nodes.get(id).row;
+  assert.equal(row('M'), row('H') + 1, 'Matthew one row under his mother');
+  assert.equal(row('J'), row('M'), 'brothers on one row');
+  assert.equal(row('K'), row('M'), 'the pod is level');
+  assert.equal(row('KA1'), row('M') - 1, "Kaitlin's parent one row up");
+  assert.equal(row('KA6'), 0, "Kaitlin's eldest ancestor is the eldest row");
+  for (const r of rels) if (r.type === 'parent') assert.ok(row(r.from_person) < row(r.to_person));
+});
+
+test('a genuine generational skew is repaired locally, not by re-ranking the family', () => {
+  // A cousin marriage a generation apart: C1 (child of A) partners G2
+  // (grandchild of A's sibling B). Both invariants must still hold.
+  const g = buildGraph(
+    [P('R'), P('A'), P('B'), P('C1'), P('B1'), P('G2')],
+    [parent('R', 'A'), parent('R', 'B'), parent('A', 'C1'), parent('B', 'B1'), parent('B1', 'G2'), partner('C1', 'G2')],
+  );
+  const f = planAtlas(g);
+  const row = (id) => f.nodes.get(id).row;
+  assert.equal(row('C1'), row('G2'));
+  assert.ok(row('A') < row('C1') && row('B1') < row('G2') && row('R') < row('A'));
+  assert.equal(row('R'), 0);
+});
+
 test('siblings under one parent unit read left-to-right in birth order', () => {
   const g = buildGraph(
     [P('MA'), P('PA'), P('C3', { birth_date: '1990-01-01' }), P('C1', { birth_date: '1980-01-01' }), P('C2', { birth_date: '1985-01-01' })],

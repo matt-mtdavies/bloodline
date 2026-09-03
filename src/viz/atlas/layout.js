@@ -19,9 +19,11 @@
  * doesn't refuse to draw the whole tree.
  *
  * Layout, in four steps:
- *   1. rows  — computeGenerations (graph.js), the same corrected, converged
- *              generation index the organic tree relies on: every parent
- *              strictly above every child, current partners levelled.
+ *   1. rows  — rankRows: generation RELATIVE to a root (a breadth-first walk
+ *              over parent/child/partner edges), repaired so every parent is
+ *              strictly above every child and current partners are level.
+ *              Not depth-from-the-eldest-root, which measures how far back a
+ *              line happens to be researched (see rankRows).
  *   2. units — a person appears exactly ONCE. Current partners on the same
  *              row share a rigid pod (the partner they share most children
  *              with, when there are several). Everyone else is a solo unit.
@@ -46,7 +48,7 @@
  * output (every sort ends in an id comparison). Fast: linear in people.
  */
 
-import { computeGenerations, isBioOrAdoptive } from '../../data/graph.js';
+import { isBioOrAdoptive } from '../../data/graph.js';
 
 export const ROW_GAP = 560;     // vertical distance between generations (tall: a 1,000-person family is wide, and the fit view needs height to read as a shape)
 export const NODE_R = 54;       // person radius, same as Canopy's
@@ -79,13 +81,97 @@ function yearOf(s) {
   return m ? Number(m[0]) : null;
 }
 
+/* Rows are RELATIVE generations, not depth from the eldest recorded root.
+ *
+ * computeGenerations (graph.js) counts each person's row as the longest
+ * chain of recorded ancestors above them, then levels partners onto the
+ * deeper one. Right for the ego-centred organic tree; wrong for a whole
+ * family map. On the real tree it put Matthew (b. 1980) ten rows below his
+ * own mother: Kaitlin's line is researched ten generations back and his is
+ * researched three, so she was ranked ten deep, he was levelled down to
+ * her, and the line from Heather to her son became a rope through six empty
+ * generation bands while his brother stayed up beside her. Depth of
+ * research is not a fact about the family.
+ *
+ * Instead every person's row is their generation RELATIVE to a root: a
+ * breadth-first walk from one well-connected person over parent (−1),
+ * child (+1) and current-partner (0) edges, so a parent is one row up
+ * whether their own line is recorded for two generations or twenty. The
+ * two invariants the layout promises are then repaired exactly the way
+ * computeGenerations does — level current partners, cascade children
+ * strictly below parents, until nothing moves — but starting from labels
+ * that are already consistent almost everywhere, so a repair is a local
+ * nudge around a genuine generational skew (a cousin marriage, a second
+ * family a generation late), never a cascade. Rows are normalised so the
+ * eldest row is 0. Deterministic: the root is chosen by degree then id,
+ * and the walk visits neighbours in the graph's own stable order. */
+export function rankRows(graph, rootId = null) {
+  const rank = new Map();
+  if (!graph.people.length) return rank;
+  const has = (id) => graph.byId.has(id);
+  const degree = (id) => graph.parents(id).length + graph.children(id).length + graph.partners(id).filter((pt) => pt.status !== 'former').length;
+  const ids = graph.people.map((p) => p.id).sort(cmpId);
+  let root = rootId && has(rootId) ? rootId : null;
+  if (!root) {
+    let best = -1;
+    for (const id of ids) { const d = degree(id); if (d > best) { best = d; root = id; } }
+  }
+  const walk = (seed) => {
+    rank.set(seed, 0);
+    const queue = [seed];
+    for (let qi = 0; qi < queue.length; qi++) {
+      const id = queue[qi], r = rank.get(id);
+      const step = (nid, d) => { if (has(nid) && !rank.has(nid)) { rank.set(nid, r + d); queue.push(nid); } };
+      for (const p of graph.parents(id)) step(p.id, -1);
+      for (const c of graph.children(id)) step(c.id, 1);
+      for (const pt of graph.partners(id)) if (pt.status !== 'former') step(pt.id, 0);
+    }
+  };
+  walk(root);
+  for (const id of ids) if (!rank.has(id)) walk(id);
+
+  // Repair, exactly as computeGenerations: both rules only ever move a person
+  // DEEPER, so the sum of ranks is monotone and bounded — it converges.
+  let stable = false;
+  let guard = graph.people.length * 4 + 10;
+  while (!stable && guard-- > 0) {
+    stable = true;
+    let leveling = true;
+    while (leveling) {
+      leveling = false;
+      for (const id of ids) {
+        for (const pt of graph.partners(id)) {
+          if (pt.status === 'former' || !has(pt.id)) continue;
+          const a = rank.get(id), b = rank.get(pt.id);
+          if (a === b) continue;
+          const lvl = Math.max(a, b);
+          if (a !== lvl) rank.set(id, lvl);
+          if (b !== lvl) rank.set(pt.id, lvl);
+          leveling = true; stable = false;
+        }
+      }
+    }
+    for (const id of ids) {
+      const r = rank.get(id);
+      for (const c of graph.children(id)) {
+        if (!has(c.id)) continue;
+        if (rank.get(c.id) <= r) { rank.set(c.id, r + 1); stable = false; }
+      }
+    }
+  }
+  let min = Infinity;
+  for (const r of rank.values()) min = Math.min(min, r);
+  for (const [id, r] of rank) rank.set(id, r - min);
+  return rank;
+}
+
 export function planAtlas(graph, opts = {}) {
   const started = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
   const byId = graph.byId;
   const empty = { focusId: null, nodes: new Map(), units: [], bonds: [], rows: new Map(), bounds: { minX: 0, maxX: 0, minY: 0, maxY: 0 }, eras: [], stats: { people: 0, units: 0, generations: 0, lateralUnions: 0, longDescents: 0, crossings: 0, layoutMs: 0 } };
   if (!graph.people.length) return empty;
 
-  const gen = computeGenerations(graph);
+  const gen = rankRows(graph, opts.rootId);
   const birth = (id) => byId.get(id)?.birth_date || '';
   const byBirthThenId = (a, b) => {
     const da = birth(a), db = birth(b);

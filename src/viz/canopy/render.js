@@ -750,7 +750,7 @@ function lifespan(p) {
  * family photographs has exactly this quality — varied, but tonally one
  * thing. */
 const TINTS = [0x9d8570, 0x8b8d76, 0xa8886e, 0x86918b, 0xa38a80, 0x94897d, 0x9c8368, 0x8d8578];
-function tintFor(p) {
+export function tintFor(p) {
   let h = 0;
   const s = String(p.id);
   for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;

@@ -102,7 +102,7 @@ html, body, #root { height: 100%; margin: 0; }
   box-shadow: 0 10px 30px rgba(40, 28, 18, 0.14);
   font-size: 13px; color: var(--ink-soft, #6b6f76); white-space: nowrap;
 }
-.atlab__hint { left: 16px; bottom: 16px; }
+.atlab__hint { left: 16px; bottom: 16px; display: block; line-height: 1.45; }
 .atlab__hint strong { color: var(--ink, #1c1d21); font-weight: 600; }
 .atlab__foot { left: 16px; bottom: 16px; }
 .atlab__foot .name { font-family: var(--display, Georgia, serif); font-size: 15px; color: var(--ink, #1c1d21); }
@@ -116,9 +116,15 @@ html, body, #root { height: 100%; margin: 0; }
 .atlab__corner { position: absolute; z-index: 5; right: 16px; top: 16px; display: flex; gap: 8px; }
 
 @media (max-width: 700px) {
-  .atlab__bar { flex-wrap: wrap; }
-  .atlab__search { margin-left: 0; }
-  .atlab__input { width: 150px; }
+  /* A phone gives the lab bar two short rows, not a third of the screen. */
+  .atlab__bar { flex-wrap: wrap; gap: 6px 8px; padding: 7px 10px; }
+  .atlab__title { font-size: 15px; }
+  .atlab__src { display: none; }
+  .atlab__search { margin-left: auto; }
+  .atlab__input { width: 128px; padding: 5px 10px; font-size: 12.5px; }
+  .atlab__seg button { padding: 5px 9px; font-size: 12px; }
+  .atlab__btn { padding: 5px 10px; font-size: 12.5px; }
+  .atlab__corner { top: 10px; right: 10px; }
   .atlab__stats { display: none; }
   .atlab__time { min-width: 0; left: 16px; right: 16px; transform: none; }
   .atlab__hint, .atlab__foot { white-space: normal; max-width: calc(100vw - 32px); }
