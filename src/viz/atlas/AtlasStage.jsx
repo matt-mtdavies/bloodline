@@ -35,6 +35,7 @@
 import { useEffect, useRef } from 'react';
 import { Application, Container, Graphics, Text, TextStyle } from 'pixi.js';
 import { planAtlas, isFarReach, NODE_R, ROW_GAP } from './layout.js';
+import { composePortrait } from './portrait.js';
 import { Scalar, ambientOffset, Deflection, rubberBand, SWAY_POD, SWAY_BRANCH } from '../canopy/motion.js';
 import { drawBonds, CanopyNode, easeBud, progressAt, tintFor, descentPath, liveAnchor, livePos } from '../canopy/render.js';
 import { ancestorsWithDistance, descendantsWithDistance, isBioOrAdoptive } from '../../data/graph.js';
@@ -64,6 +65,15 @@ const GOLD = 0xb0802f;
 const INK = 0x2b2622;
 const INK_SOFT = 0x6b6259;
 const DIM = 0.42;                // everyone outside a lit bloodline
+/* The portrait lens: the selected person's immediate family, composed and
+ * lifted into the foreground. It only makes sense once the camera is close
+ * enough for a face to be a face — from orbit the map IS the picture. That
+ * threshold is measured in SCREEN PIXELS PER PERSON, not in zoom: a phone
+ * frames the same composition at roughly half a desktop's zoom, so an
+ * absolute cutoff left the lens permanently half-risen on a small screen. */
+const LENS_MIN_PX = 34;          // disc diameter at which the lens starts to rise
+const LENS_FULL_PX = 50;         // ...and at which it is fully up
+const PORTRAIT_MAP_DIM = 0.3;    // the map, while a portrait is held over it
 const FULLY_GROWN = { bonds: new Map(), nodes: new Map(), reduced: false };
 
 function yearOf(s) {
@@ -128,7 +138,14 @@ export default function AtlasStage({
       const territoryLayer = new Graphics(); // branch regions, for the whole-family view
       const dotLayer = new Graphics();     // everyone as a dot, for the far view
       const nodeLayer = new Container();
-      world.addChild(bgLayer, territoryLayer, farBonds, longBonds, lateralBonds, nearBonds, litBonds, dotLayer, nodeLayer);
+      /* The lens sits over the map, in world space, so it pans and zooms with
+       * the geography rather than floating over it as a panel. */
+      const portraitLayer = new Container();
+      const portraitBonds = new Graphics();
+      const portraitNodes = new Container();
+      portraitLayer.addChild(portraitBonds, portraitNodes);
+      portraitLayer.visible = false;
+      world.addChild(bgLayer, territoryLayer, farBonds, longBonds, lateralBonds, nearBonds, litBonds, dotLayer, nodeLayer, portraitLayer);
       /* Screen space: labels and the axis hold a constant size and stick to
        * the viewport, the way a map's type and graticule do. */
       const labelLayer = new Container();
@@ -171,6 +188,7 @@ export default function AtlasStage({
       const eraTexts = [];
       const build = () => {
         const g = graphRef.current;
+        disposePortrait();
         frame = planAtlas(g);
         for (const [, n] of nodes) n.destroy();
         nodes.clear();
@@ -307,11 +325,13 @@ export default function AtlasStage({
         const wholeLong = [], wholeLateral = [];
         let sig = '';
         longFrame.bonds.forEach((b, i) => {
+          if (bondHeld(b)) return;
           const pu = byId.get(b.parentUnit), c = livePoint(b.child, offsetOf);
           const a = pu ? anchorOf(pu) : null;
           if (a && c && inside(a) && inside(c)) { wholeLong.push({ b, a, c }); sig += `L${i},`; }
         });
         lateralFrame.bonds.forEach((b, i) => {
+          if (bondHeld(b)) return;
           const p = livePoint(b.a, offsetOf), q = livePoint(b.b, offsetOf);
           if (p && q && inside(p) && inside(q)) { wholeLateral.push(b); sig += `T${i},`; }
         });
@@ -325,10 +345,29 @@ export default function AtlasStage({
         longBonds.stroke({ color: BRANCH, width: 1.6, alpha: 0.4, cap: 'round' });
         drawBonds(lateralBonds, { ...frame, bonds: wholeLateral }, FULLY_GROWN, 1e9, offsetOf);
       };
+      /* While the lens holds a family, the map's own drawing of the links
+       * BETWEEN those same people comes out too — otherwise a couple's pod
+       * capsule stays behind as a smudge under the composed one, and the rule
+       * that nobody appears twice would hold for the faces but not the lines
+       * joining them. Everything with even one end still out on the map is
+       * left exactly as it is: the lens is a foreground, not a hole. */
+      let heldFrame = null;
+      const bondHeld = (b) => {
+        const held = heldFrame?.nodes;
+        if (!held) return false;
+        if (b.kind === 'descent') {
+          if (!held.has(b.child)) return false;
+          const pu = unitById().get(b.parentUnit);
+          const ids = pu ? (pu.anchorMemberIds?.length ? pu.anchorMemberIds : pu.memberIds) : [];
+          return ids.length > 0 && ids.every((m) => held.has(m));
+        }
+        return held.has(b.a) && held.has(b.b);
+      };
+      const unheld = (f) => (heldFrame ? { ...f, bonds: f.bonds.filter((b) => !bondHeld(b)) } : f);
       const drawAllBonds = (offsetOf) => {
-        drawBonds(nearBonds, nearFrame, FULLY_GROWN, 1e9, offsetOf);
+        drawBonds(nearBonds, unheld(nearFrame), FULLY_GROWN, 1e9, offsetOf);
         drawReaches(offsetOf, true);
-        if (offsetOf) drawLit(offsetOf);
+        drawLit(offsetOf);
       };
 
       /* The lit bloodline: its own pods and descents drawn again on top at
@@ -341,6 +380,7 @@ export default function AtlasStage({
         const byId = unitById();
         const inL = (id) => lineage.has(id);
         const mine = frame.bonds.filter((b) => {
+          if (bondHeld(b)) return false;
           if (b.kind === 'union') return inL(b.a) && inL(b.b);
           if (b.kind !== 'descent') return false;
           const pu = byId.get(b.parentUnit);
@@ -487,12 +527,23 @@ export default function AtlasStage({
         if (!n) return;
         framing = 'person';
         const W = app.screen.width, H = app.screen.height;
-        const z1 = Math.max(fitZoom, Math.min(1.4, targetZoom));
-        const z0 = zoom.value;
         const { topInset: ti, bottomInset: bi } = insetRef.current;
-        const lx = W / 2, ly = ti + (H - ti - bi) * LAND_Y;
+        /* A flight to the selected person is really a flight to their FAMILY:
+         * the lens gathers a generation above and below them, so the camera
+         * frames that whole composition rather than landing on the person and
+         * leaving their parents under the top bar. */
+        const lens = id === currentFocus && portrait ? portrait.frame.bounds : null;
+        const band = Math.max(120, H - ti - bi);
+        const fitLens = lens
+          ? Math.min((W - 90) / Math.max(1, lens.maxX - lens.minX), (band - 90) / Math.max(1, lens.maxY - lens.minY))
+          : Infinity;
+        // Never land so far out that the lens can only half-rise: fitting the
+        // whole composition matters less than the composition being readable.
+        const z1 = Math.max(fitZoom, Math.min(1.4, targetZoom, Math.max(LENS_FULL_PX / (NODE_R * 2), fitLens)));
+        const z0 = zoom.value;
+        const lx = W / 2, ly = ti + band * (lens ? 0.5 : LAND_Y);
         const c0 = { x: (lx - anchorX.value) / z0, y: (ly - anchorY.value) / z0 };
-        const c1 = { x: n.x, y: n.y };
+        const c1 = { x: n.x + (lens ? (lens.minX + lens.maxX) / 2 : 0), y: n.y + (lens ? (lens.minY + lens.maxY) / 2 : 0) };
         const d = Math.hypot(c1.x - c0.x, c1.y - c0.y);
         const screens = (d * z1) / Math.max(W, H);
         const zPeak = screens > 0.8 ? Math.max(fitZoom, Math.min(z1, (1.3 * Math.max(W, H)) / d)) : Math.min(z0, z1);
@@ -514,6 +565,49 @@ export default function AtlasStage({
         if (p >= 1) flight = null;
       };
 
+      /* ── the portrait lens ───────────────────────────────────────────── */
+      /* A map is not a family. Landing on someone in a thousand-person tree
+       * leaves the people who actually matter to them scattered by the
+       * layout's own logic — a mother two screens left because that is where
+       * her line runs. So selection gathers them: composePortrait builds the
+       * immediate family around the person, in world offsets from their own
+       * place, and it is drawn in the foreground while the map settles back.
+       * Everyone lifted fades out of their permanent place for exactly as
+       * long as they are held here, so nobody is ever on screen twice. */
+      let portrait = null;         // { frame, nodes: Map<id, CanopyNode> }
+      let portraitT = 0;           // 0..1 how present the lens is
+      const disposePortrait = () => {
+        if (portrait) for (const [, cn] of portrait.nodes) cn.destroy();
+        portrait = null;
+        // A new family gathers as you LAND on them, rather than the old
+        // composition teleporting across the map mid-flight at full strength.
+        portraitT = 0;
+        portraitNodes.removeChildren();
+        portraitBonds.clear();
+      };
+      const buildPortrait = () => {
+        disposePortrait();
+        const base = currentFocus ? frame?.nodes.get(currentFocus) : null;
+        if (!base) return;
+        const p = composePortrait(graphRef.current, currentFocus);
+        // One person alone is not a gathering — the map already says it
+        // better than a composed group of one would.
+        if (!p || p.count < 2) return;
+        portraitLayer.position.set(base.x, base.y);
+        const cns = new Map();
+        for (const [id, node] of p.nodes) {
+          const person = graphRef.current.byId.get(id);
+          if (!person) continue;
+          const cn = new CanopyNode(person, node);
+          cn.person = person;
+          cn.apply(node, 1, { x: 0, y: 0, scale: 1 }, null);
+          cns.set(id, cn);
+          portraitNodes.addChild(cn.root);
+        }
+        drawBonds(portraitBonds, p, FULLY_GROWN, 1e9, null);
+        portrait = { frame: p, nodes: cns };
+      };
+
       const setFocus = (id) => {
         currentFocus = id && frame?.nodes.has(id) ? id : null;
         for (const [nid, cn] of nodes) {
@@ -523,6 +617,7 @@ export default function AtlasStage({
           if (cn.isFocus !== isFocus) { cn.isFocus = isFocus; cn.drawRing(node); }
         }
         lineageVersion++;
+        buildPortrait();
         if (!currentFocus) { lineage = null; drawLit(); return; }
         const g = graphRef.current;
         const set = new Set([currentFocus]);
@@ -547,7 +642,12 @@ export default function AtlasStage({
         if (currentFocus && z >= 0.3 && !flight) {
           const g = graphRef.current;
           const rels = [];
-          const add = (id, relation) => { if (id !== currentFocus && frame.nodes.has(id)) rels.push({ id, relation }); };
+          /* An edge marker points at a relative the map has pushed off
+           * screen. Once the lens is up they are not off screen — they are
+           * gathered in it — so pointing away at them would be both wrong
+           * and drawn straight over the composition. */
+          const held = portraitT > 0.5 ? portrait?.frame.nodes : null;
+          const add = (id, relation) => { if (id !== currentFocus && frame.nodes.has(id) && !held?.has(id)) rels.push({ id, relation }); };
           for (const p of g.parents(currentFocus)) add(p.id, isBioOrAdoptive(p.qualifier) ? byGender(g.byId.get(p.id), 'Mother', 'Father', 'Parent') : 'Step-parent');
           for (const c of g.children(currentFocus)) add(c.id, byGender(g.byId.get(c.id), 'Daughter', 'Son', 'Child'));
           for (const pt of g.partners(currentFocus)) add(pt.id, pt.status === 'former' ? 'Former partner' : 'Partner');
@@ -763,11 +863,24 @@ export default function AtlasStage({
         const entrance = Math.min(1, clock / 900);
         const nearAlpha = clamp01((z - fitZoom * 1.6) / (fitZoom * 3));
         const farAlpha = z < fitZoom * 1.8 ? 1 : clamp01(1 - (z - fitZoom * 1.8) / (fitZoom * 2.4));
-        const dimBonds = lineage ? DIM : 1;
+        /* The lens rises as you arrive and settles away as you pull back out
+         * — one number, eased, so the map never snaps between two states. */
+        const wantPortrait = portrait ? clamp01((NODE_R * 2 * z - LENS_MIN_PX) / (LENS_FULL_PX - LENS_MIN_PX)) : 0;
+        portraitT += (wantPortrait - portraitT) * (reducedMotion ? 1 : Math.min(1, dt * 7));
+        if (portraitT < 0.002) portraitT = 0;
+        portraitLayer.visible = portraitT > 0.01;
+        portraitLayer.alpha = portraitT;
+        // The map's own lines between held people come out once the lens has
+        // clearly taken over, and go back the moment it lets go.
+        const heldNow = portrait && portraitT > 0.5 ? portrait.frame : null;
+        if (heldNow !== heldFrame) { heldFrame = heldNow; drawAllBonds(null); }
+        const behind = 1 - portraitT * (1 - PORTRAIT_MAP_DIM);
+
+        const dimBonds = (lineage ? DIM : 1) * behind;
         nearBonds.alpha = nearAlpha * entrance * dimBonds;
         longBonds.alpha = nearAlpha * 0.8 * entrance * dimBonds;
         lateralBonds.alpha = nearAlpha * 0.8 * entrance * dimBonds;
-        litBonds.alpha = nearAlpha * entrance;
+        litBonds.alpha = nearAlpha * entrance * behind;
         farBonds.alpha = farAlpha * entrance * (lineage ? 0.6 : 1);
         bgLayer.alpha = entrance;
 
@@ -861,13 +974,19 @@ export default function AtlasStage({
             if (dotScale > 1) cn.root.scale.set(cn.root.scale.x * dotScale);
             if (cn.shadow) cn.shadow.alpha *= shadowFade;
             if (cn.sub) cn.sub.visible = showSub;
-            const pres = presence(id, cn.person);
+            // Held in the lens: fade out of the permanent place, so a lifted
+            // person is in exactly one spot on screen at any moment.
+            const held = portraitT > 0 && portrait.frame.nodes.has(id) ? 1 - portraitT : 1;
+            const pres = presence(id, cn.person) * behind * held;
             cn.root.alpha *= pres;
             if (z > PHOTO_ZOOM && cn.pendingPhoto) { cn.person = { ...cn.person, photo: cn.pendingPhoto }; cn.pendingPhoto = null; cn.loadPhoto(cn.baseR); }
             const lit = !lineage || lineage.has(id);
             // A name is culled against the READABLE band, not the canvas —
             // one drawn under the app's top bar is not a label, it is litter.
-            if ((z > NAME_ZOOM || lit) && open > 0.5 && sx > -80 && sx < W + 80 && sy > topInsetPx - 10 && sy < H - bottomInsetPx) {
+            /* Under a risen lens the map keeps its faces as geography but
+             * hands the TYPE over: a background name colliding with a
+             * composed one is the worst of both. */
+            if ((z > NAME_ZOOM || lit) && open > 0.5 && pres > 0.06 + portraitT * 0.3 && sx > -80 && sx < W + 80 && sy > topInsetPx - 10 && sy < H - bottomInsetPx) {
               const rPx = NODE_R * z * cn.root.scale.x;
               cands.push({ id, person: cn.person, sx, sy, rPx, row: node.row, pri: node.isFocus ? 0 : lit && lineage ? 1 : 2, alpha: (lit && lineage ? 1 : nameFade) * pres * Math.min(1, open * 1.3) });
             }
@@ -950,6 +1069,7 @@ export default function AtlasStage({
         destroy: () => {
           clearTimeout(arrival);
           app.canvas.removeEventListener('wheel', onWheel);
+          disposePortrait();
           for (const [, n] of nodes) n.destroy();
           nodes.clear();
         },
