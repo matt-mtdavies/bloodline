@@ -233,6 +233,56 @@ for (const [label, graph, frame] of [['demo', seedGraph, seedFrame], ['1,200-per
   });
 }
 
+for (const [label, graph, frame] of [['demo', seedGraph, seedFrame], ['1,200-person fixture', bigGraph, bigFrame]]) {
+  test(`${label}: every person belongs to exactly one branch territory`, () => {
+    const seen = new Set();
+    for (const b of frame.branches) {
+      for (const m of b.memberIds) {
+        assert.ok(!seen.has(m), `${m} is in two territories`);
+        seen.add(m);
+      }
+    }
+    assert.equal(seen.size, frame.nodes.size, 'someone has no territory at all');
+  });
+
+  test(`${label}: a territory's bands cover exactly the rows its people occupy`, () => {
+    for (const b of frame.branches) {
+      const rows = new Set(b.memberIds.map((m) => frame.nodes.get(m).row));
+      assert.deepEqual(
+        b.bands.map((z) => z.row).sort((p, q) => p - q),
+        [...rows].sort((p, q) => p - q),
+        `${b.id} bands do not match its people's rows`,
+      );
+      for (const band of b.bands) {
+        assert.ok(band.x1 >= band.x0, 'a band must have width');
+        for (const m of b.memberIds) {
+          const n = frame.nodes.get(m);
+          if (n.row !== band.row) continue;
+          assert.ok(n.x >= band.x0 - 1 && n.x <= band.x1 + 1, `${m} sits outside their own territory's band`);
+        }
+      }
+    }
+  });
+}
+
+test('a big family is divided into territories nobody could call one branch', () => {
+  // The point of the split: on the representative fixture a single founding
+  // couple owns most of the family, which is one territory and no map.
+  const major = bigFrame.branches.filter((b) => !b.minor);
+  assert.ok(major.length >= 6, `only ${major.length} named territories`);
+  const biggest = Math.max(...major.map((b) => b.people));
+  assert.ok(biggest < bigFrame.nodes.size * 0.35, `one territory holds ${biggest} of ${bigFrame.nodes.size}`);
+  assert.ok(major.every((b) => b.surname), 'a named territory needs a surname');
+});
+
+test('a small family is left whole rather than carved up', () => {
+  // 23 people is a family, not a map — subdividing it would invent branches
+  // nobody would recognise.
+  const major = seedFrame.branches.filter((b) => !b.minor);
+  assert.equal(major.length, 1);
+  assert.ok(major[0].people >= 20, `the demo family split into ${major[0].people}`);
+});
+
 test('a former partner is a lateral link, and the count is reported', () => {
   const g = buildGraph(
     [P('A'), P('B'), P('C')],
