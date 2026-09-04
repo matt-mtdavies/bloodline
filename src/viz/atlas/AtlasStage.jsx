@@ -174,6 +174,7 @@ export default function AtlasStage({
           nodes.set(id, cn);
           nodeLayer.addChild(cn.root);
         }
+        buildUnitMaps();
         splitBonds();
         drawAllBonds(null);
         drawFar();
@@ -183,7 +184,23 @@ export default function AtlasStage({
         onLayoutRef.current?.(frame.stats, frame);
       };
 
-      const unitById = () => new Map(frame.units.map((u) => [u.id, u]));
+      /* One id->unit lookup per frame, shared by every consumer and handed
+        * to Canopy's renderer (see liveAnchor), plus a member->unit lookup.
+        * Rebuilding these per call — or scanning the array — is O(units)
+        * inside loops that are already O(bonds), which is what made this view
+        * hang at 2,000 people and crash the tab at 3,000. */
+      let unitsById = new Map();
+      let unitOfMember = new Map();
+      const unitById = () => unitsById;
+      const buildUnitMaps = () => {
+        unitsById = new Map(frame.units.map((u) => [u.id, u]));
+        frame.unitById = unitsById;
+        unitOfMember = new Map();
+        for (const u of frame.units) {
+          if (u.anchorOnly) continue;
+          for (const m of u.memberIds) unitOfMember.set(m, u);
+        }
+      };
       const anchorOf = (u) => {
         const ids = u.anchorMemberIds?.length ? u.anchorMemberIds : u.memberIds;
         let sx = 0, sy = 0, n = 0;
@@ -457,7 +474,7 @@ export default function AtlasStage({
         const set = new Set([currentFocus]);
         for (const [aid] of ancestorsWithDistance(g, currentFocus, 60)) set.add(aid);
         for (const [did] of descendantsWithDistance(g, currentFocus, 60)) set.add(did);
-        const u = frame.units.find((x) => !x.anchorOnly && x.memberIds.includes(currentFocus));
+        const u = unitOfMember.get(currentFocus);
         if (u) for (const m of u.memberIds) set.add(m);
         lineage = set;
         drawLit();
@@ -529,11 +546,11 @@ export default function AtlasStage({
       const idFromTarget = (t) => { let n = t; while (n && n.__canopyId === undefined) n = n.parent; return n ? n.__canopyId : null; };
       const swayTargets = (id) => {
         const out = [];
-        const unit = frame.units.find((u) => !u.anchorOnly && u.memberIds.includes(id));
+        const unit = unitOfMember.get(id);
         if (unit) for (const m of unit.memberIds) if (m !== id) out.push([m, SWAY_POD]);
         for (const b of frame.bonds) {
           if (b.kind === 'descent') {
-            const pu = frame.units.find((u) => u.id === b.parentUnit);
+            const pu = unitsById.get(b.parentUnit);
             if (!pu) continue;
             const pids = pu.anchorMemberIds?.length ? pu.anchorMemberIds : pu.memberIds;
             if (b.child === id) { for (const m of pids) out.push([m, SWAY_BRANCH]); }
