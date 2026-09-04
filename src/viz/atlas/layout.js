@@ -66,6 +66,11 @@ export function isFarReach(dx, dy) {
   return Math.abs(dy) > ROW_GAP * 1.5 || Math.abs(dx) > FAR_REACH_X;
 }
 const ORDER_SWEEPS = 4;
+/* How many branches the overview names. Above this the map stops being a
+ * map and becomes a legend; below the people threshold a "branch" is a
+ * couple and a child, which is not a territory anyone recognises. */
+export const MAX_BRANCHES = 10;
+export const MIN_BRANCH_PEOPLE = 6;
 
 const cmpId = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
 
@@ -168,7 +173,7 @@ export function rankRows(graph, rootId = null) {
 export function planAtlas(graph, opts = {}) {
   const started = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
   const byId = graph.byId;
-  const empty = { focusId: null, nodes: new Map(), units: [], bonds: [], rows: new Map(), bounds: { minX: 0, maxX: 0, minY: 0, maxY: 0 }, eras: [], stats: { people: 0, units: 0, generations: 0, lateralUnions: 0, longDescents: 0, crossings: 0, layoutMs: 0 } };
+  const empty = { focusId: null, nodes: new Map(), units: [], bonds: [], rows: new Map(), bounds: { minX: 0, maxX: 0, minY: 0, maxY: 0 }, eras: [], branches: [], stats: { people: 0, units: 0, generations: 0, lateralUnions: 0, longDescents: 0, crossings: 0, branches: 0, layoutMs: 0 } };
   if (!graph.people.length) return empty;
 
   const gen = rankRows(graph, opts.rootId);
@@ -480,6 +485,126 @@ export function planAtlas(graph, opts = {}) {
   for (const u of units) u.x -= shift;
   minX -= shift; maxX -= shift;
 
+  /* ── Branch territories ────────────────────────────────────────────────
+   *
+   * The overview's geography. Drawing every person at orbit gives a texture
+   * that proves everyone exists and tells you nothing about the family —
+   * and at five thousand people, more shapes than a canvas can hold. A
+   * BRANCH is the natural unit of that map, and the layout has already
+   * built it: the tidy tree places each subtree in its own contiguous span,
+   * so a territory is just that region measured per row. Nothing is
+   * clustered, guessed or invented.
+   *
+   * The one real decision is WHERE TO CUT. Whole root subtrees are useless —
+   * on the representative fixture a single founding couple owns 92% of the
+   * family, which is one territory and no map. So the largest branch is
+   * split into its own child branches, repeatedly, until there are enough
+   * territories to read: a heavily populated line subdivides into the
+   * branches you would actually name, a thin one stays whole, and the cut
+   * lands at a different depth for each. Every person belongs to exactly
+   * one territory — their nearest selected ancestor — so nobody vanishes
+   * from their own family's map. */
+  const ownPeople = (u) => (u.anchorOnly ? 0 : u.memberIds.length);
+  const subtreeTotal = new Map();
+  const totalOf = (u) => {
+    if (subtreeTotal.has(u)) return subtreeTotal.get(u);
+    let n = ownPeople(u);
+    for (const c of kids.get(u) || []) n += totalOf(c);
+    subtreeTotal.set(u, n);
+    return n;
+  };
+  const roots = units.filter((u) => !u.anchorOnly && !primaryParent.has(u));
+  const headSize = new Map();
+  for (const r of roots) headSize.set(r, totalOf(r));
+  const splittable = (h) => (kids.get(h) || []).length > 0;
+  /* Split by SIZE, not by count. A big family already has dozens of roots
+   * (anyone with no recorded parents starts one), so a "have we got ten
+   * heads yet" loop never fires while one of them still owns most of the
+   * family. The rule that actually produces a map: no territory may hold
+   * more than its fair share, so the dominant line keeps subdividing and
+   * the thin ones are left alone. */
+  const totalPeople = units.reduce((n, u) => n + ownPeople(u), 0);
+  const target = Math.max(MIN_BRANCH_PEOPLE * 3, Math.ceil(totalPeople / MAX_BRANCHES));
+  // Small families are not a map — they are a family, drawn as people.
+  let guard = totalPeople > 150 ? units.length + 50 : 0;
+  while (guard-- > 0) {
+    let biggest = null;
+    for (const [h, n] of headSize) {
+      if (n <= target || !splittable(h)) continue;
+      if (!biggest || n > headSize.get(biggest) || (n === headSize.get(biggest) && cmpId(h.id, biggest.id) < 0)) biggest = h;
+    }
+    if (!biggest) break;
+    headSize.set(biggest, ownPeople(biggest));
+    for (const c of kids.get(biggest) || []) headSize.set(c, totalOf(c));
+  }
+  const heads = new Set(headSize.keys());
+  const headOf = new Map();
+  const findHead = (u) => {
+    if (headOf.has(u)) return headOf.get(u);
+    const chain = [];
+    let cur = u;
+    while (cur && !heads.has(cur) && !headOf.has(cur)) { chain.push(cur); cur = primaryParent.get(cur); }
+    const h = cur ? (headOf.get(cur) ?? cur) : null;
+    for (const c of chain) headOf.set(c, h);
+    if (cur) headOf.set(cur, h);
+    return h;
+  };
+  const surnameOf = (id) => {
+    const p = byId.get(id);
+    const fam = (p?.family_name || '').trim();
+    if (fam) return fam;
+    const parts = (p?.display_name || '').trim().split(/\s+/);
+    return parts.length > 1 ? parts[parts.length - 1] : '';
+  };
+  const nowYear = new Date().getFullYear() + 1;
+  const branchOf = new Map();
+  for (const u of units) {
+    if (u.anchorOnly || !u.memberIds.length) continue;
+    const head = findHead(u);
+    if (!head) continue;
+    let b = branchOf.get(head);
+    if (!b) {
+      b = { head, memberIds: [], bandByRow: new Map(), surnames: new Map(), years: [] };
+      branchOf.set(head, b);
+    }
+    const band = b.bandByRow.get(u.row) || { row: u.row, y: u.row * ROW_GAP, x0: Infinity, x1: -Infinity };
+    band.x0 = Math.min(band.x0, u.x - u.halfW);
+    band.x1 = Math.max(band.x1, u.x + u.halfW);
+    b.bandByRow.set(u.row, band);
+    for (const m of u.memberIds) {
+      b.memberIds.push(m);
+      const sn = surnameOf(m);
+      if (sn) b.surnames.set(sn, (b.surnames.get(sn) || 0) + 1);
+      const y = yearOf(birth(m));
+      if (y && y > 1000 && y <= nowYear) b.years.push(y);
+    }
+  }
+  const branches = [...branchOf.values()]
+    .map((b) => {
+      const bands = [...b.bandByRow.values()].sort((p, q) => p.row - q.row);
+      let top = null;
+      for (const [name, n] of b.surnames) if (!top || n > top.n || (n === top.n && name < top.name)) top = { name, n };
+      b.years.sort((p, q) => p - q);
+      const x0 = Math.min(...bands.map((z) => z.x0)), x1 = Math.max(...bands.map((z) => z.x1));
+      return {
+        id: `b:${b.head.id}`,
+        headUnitId: b.head.id,
+        people: b.memberIds.length,
+        memberIds: b.memberIds.slice().sort(cmpId),
+        surname: top ? top.name : '',
+        from: b.years.length ? b.years[0] : null,
+        to: b.years.length ? b.years[b.years.length - 1] : null,
+        bands,
+        x: (x0 + x1) / 2,
+        y: bands[0].y,
+        minor: false,
+      };
+    })
+    // Largest first, then oldest, then id: deterministic, and the eye meets
+    // the branches carrying the most family first.
+    .sort((a, z) => z.people - a.people || (a.from ?? 9999) - (z.from ?? 9999) || cmpId(a.id, z.id));
+  branches.forEach((b) => { b.minor = b.people < MIN_BRANCH_PEOPLE; });
+
   /* ── Eras: one label per generation row (median birth decade) ────────── */
   // The axis speaks one language: decades when every dated row carries a
   // plausible one, generation numbers otherwise — never a mix of the two
@@ -527,7 +652,8 @@ export function planAtlas(graph, opts = {}) {
     lateralUnions,
     longDescents,
     crossings,
+    branches: branches.filter((b) => !b.minor).length,
     layoutMs: Math.round(ended - started),
   };
-  return { focusId: opts.focusId ?? null, nodes, units, bonds, rows, bounds: { minX, maxX, minY, maxY }, eras, stats };
+  return { focusId: opts.focusId ?? null, nodes, units, bonds, rows, bounds: { minX, maxX, minY, maxY }, eras, branches, stats };
 }

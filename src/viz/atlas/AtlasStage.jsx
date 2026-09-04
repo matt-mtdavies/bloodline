@@ -44,7 +44,17 @@ const MIN_DOT_PX = 3.4;          // a person never shrinks below a visible dot
 const NAME_ZOOM = 0.22;          // names once a portrait is ~24px across
 const SUB_ZOOM = 0.82;           // dates a little later
 const PHOTO_ZOOM = 0.26;         // portraits load once you're this close
-const DOT_ZOOM = 0.16;           // below this a person is a dot: one flat layer, not 1,200 portrait containers
+const DOT_ZOOM = 0.16;           // below this a person is a dot, not a portrait container
+/* And below THIS the map shows territories rather than people at all: soft
+ * bounded regions for the branches, named. The progression is the family as
+ * geography, then as individuals, then as faces. */
+/* Above this many people the whole-family view stops drawing individuals
+ * and draws named branch territories instead. Not a preference: a canvas
+ * cannot hold thousands of per-person shapes at orbit — that is what took
+ * the renderer down at 5,000 — and a thousand identical dots was never
+ * geography anyway. Below it, nothing changes: the silhouette of dots is
+ * affordable and reads as the family's own shape. */
+const FAR_DOT_BUDGET = 2500;
 const FLY_ZOOM = 0.9;
 const LAND_Y = 0.42;             // where a flight lands its person (a little above centre: children stay clear of the foot)
 const ERA_MARGIN_PX = 96;        // screen pixels reserved for the era axis at the fit zoom
@@ -52,6 +62,7 @@ const BRANCH = 0x8a7563;
 const TERRA = 0xc2603a;
 const GOLD = 0xb0802f;
 const INK = 0x2b2622;
+const INK_SOFT = 0x6b6259;
 const DIM = 0.42;                // everyone outside a lit bloodline
 const FULLY_GROWN = { bonds: new Map(), nodes: new Map(), reduced: false };
 
@@ -114,14 +125,18 @@ export default function AtlasStage({
       const lateralBonds = new Graphics(); // ex-partners and extra partners with both ends on screen
       const nearBonds = new Graphics();    // pods and one-row descents — Canopy's ribbons
       const litBonds = new Graphics();     // the selected bloodline's own lines, full strength and warm
+      const territoryLayer = new Graphics(); // branch regions, for the whole-family view
       const dotLayer = new Graphics();     // everyone as a dot, for the far view
       const nodeLayer = new Container();
-      world.addChild(bgLayer, farBonds, longBonds, lateralBonds, nearBonds, litBonds, dotLayer, nodeLayer);
+      world.addChild(bgLayer, territoryLayer, farBonds, longBonds, lateralBonds, nearBonds, litBonds, dotLayer, nodeLayer);
       /* Screen space: labels and the axis hold a constant size and stick to
        * the viewport, the way a map's type and graticule do. */
       const labelLayer = new Container();
       const axisLayer = new Container();
-      app.stage.addChild(world, labelLayer, axisLayer);
+      // Branch names get their own layer: drawEras clears the axis layer, and
+      // territory labels are rebuilt on a different schedule entirely.
+      const branchLayer = new Container();
+      app.stage.addChild(world, branchLayer, labelLayer, axisLayer);
       app.stage.eventMode = 'static';
       app.stage.hitArea = { contains: () => true };
 
@@ -148,6 +163,8 @@ export default function AtlasStage({
       // Map type carries a paper halo so it stays legible across a line.
       const labelStyle = new TextStyle({ fontFamily: 'Georgia, "Times New Roman", serif', fontSize: 14, fontWeight: '600', fill: INK, align: 'center', stroke: { color: 0xfdfbf7, width: 3, join: 'round' } });
       const eraStyle = new TextStyle({ fontFamily: 'Georgia, "Times New Roman", serif', fontSize: 12, fontWeight: '600', fill: GOLD, letterSpacing: 1.2, stroke: { color: 0xfdfbf7, width: 3, join: 'round' } });
+      const branchStyle = new TextStyle({ fontFamily: 'Georgia, "Times New Roman", serif', fontSize: 15, fontWeight: '600', fill: INK, letterSpacing: 0.6, align: 'center', stroke: { color: 0xfdfbf7, width: 4, join: 'round' } });
+      const branchSubStyle = new TextStyle({ fontFamily: 'Georgia, "Times New Roman", serif', fontSize: 11.5, fill: INK_SOFT, align: 'center', stroke: { color: 0xfdfbf7, width: 3, join: 'round' } });
 
       /* ── build the world ─────────────────────────────────────────────── */
       const labels = new Map();    // id -> Text (screen-space name)
@@ -178,6 +195,7 @@ export default function AtlasStage({
         splitBonds();
         drawAllBonds(null);
         drawFar();
+        drawTerritories();
         drawEras();
         drawLit();
         scheduleEntrance(null);
@@ -376,6 +394,42 @@ export default function AtlasStage({
           farBonds.moveTo(p.x, p.y).lineTo(q.x, q.y);
         }
         farBonds.stroke({ color: TERRA, width: width * 1.6, alpha: 0.35, cap: 'round' });
+      };
+
+      /* Branch territories — the whole-family view's geography.
+       *
+       * Each branch already occupies a contiguous span per generation (the
+       * tidy tree put it there), so a territory is that span drawn as a
+       * soft region: no clustering, no invented boundaries. Warm washes at
+       * very low alpha, rotating through a few hues so neighbours separate
+       * without the map turning into a chart. A dozen-odd regions of a few
+       * rows each is a handful of shapes, where the people they stand for
+       * were thousands. */
+      const TERRITORY_TINTS = [0xc2603a, 0x7d8a72, 0xb0802f, 0x8a7563, 0x9a8570, 0x79837f];
+      const branchLabels = [];
+      const drawTerritories = () => {
+        territoryLayer.clear();
+        for (const t of branchLabels) t.destroy();
+        branchLabels.length = 0;
+        branchLayer.removeChildren();
+        const list = frame.branches || [];
+        list.forEach((b, i) => {
+          const tint = TERRITORY_TINTS[i % TERRITORY_TINTS.length];
+          const pad = ROW_GAP * 0.34;
+          for (const band of b.bands) {
+            territoryLayer.roundRect(band.x0 - pad, band.y - ROW_GAP * 0.42, (band.x1 - band.x0) + pad * 2, ROW_GAP * 0.84, ROW_GAP * 0.3)
+              .fill({ color: tint, alpha: b.minor ? 0.05 : 0.16 });
+          }
+          if (b.minor || !b.surname) return;
+          const name = new Text({ text: b.surname, style: branchStyle });
+          name.anchor.set(0.5, 1);
+          const span = b.from && b.to && b.from !== b.to ? `${b.people} people · ${b.from}–${b.to}` : `${b.people} people`;
+          const sub = new Text({ text: span, style: branchSubStyle });
+          sub.anchor.set(0.5, 0);
+          name.__branch = b; sub.__branch = b; sub.__isSub = true;
+          branchLayer.addChild(name, sub);
+          branchLabels.push(name, sub);
+        });
       };
 
       /* Generation strata in the world; the era labels are screen-space and
@@ -733,9 +787,22 @@ export default function AtlasStage({
           return a;
         };
 
+        /* The far view is either everyone as dots, or the branches as named
+         * territories — whichever the family's size can actually carry. Both
+         * hand over to portraits at DOT_ZOOM. Thresholds are relative to the
+         * fit zoom, since "zoomed out" means something different for a
+         * hundred people and for five thousand. */
         const far = z < DOT_ZOOM;
+        const aggregated = (frame.stats?.people || 0) > FAR_DOT_BUDGET;
+        const territoryAlpha = aggregated
+          ? clamp01((fitZoom * 3.2 - z) / (fitZoom * 2.2)) * entrance
+          : 0;
+        territoryLayer.alpha = territoryAlpha * (lineage ? 0.55 : 1);
+        territoryLayer.visible = territoryAlpha > 0.01;
         nodeLayer.visible = !far;
-        dotLayer.visible = far;
+        const dotAlpha = aggregated ? clamp01((z - fitZoom * 1.6) / (fitZoom * 1.8)) : 1;
+        dotLayer.visible = far && dotAlpha > 0.01;
+        dotLayer.alpha = dotAlpha;
         const cands = [];
         const nameScale = 0.78 + 0.22 * clamp01((z - NAME_ZOOM) / (0.9 - NAME_ZOOM));
         const nameFade = clamp01((z - NAME_ZOOM) / 0.08);
@@ -808,6 +875,36 @@ export default function AtlasStage({
         }
         labelEase = Math.min(1, dt * 14); // settle in ~150ms regardless of frame rate
         placeLabels(cands, z, nameScale, W);
+
+        /* Branch names sit over their own territory, at a constant size,
+         * and only while the territories are the picture. */
+        if (branchLabels.length) {
+          const on = territoryAlpha > 0.02;
+          /* A branch is named only where its territory actually is. Clamping
+           * an off-screen branch's label to the viewport edge stacked every
+           * one of them in the same corner — a pile of names belonging to
+           * regions you cannot see. Off-screen branches simply go unnamed,
+           * and the ones that remain are decluttered largest-first, so the
+           * biggest territory always keeps its name. */
+          const taken = [];
+          const free = (l, r, t0, b0) => !taken.some(([a, b, c, d]) => r > a && l < b && b0 > c && t0 < d);
+          for (const t of branchLabels) t.visible = false;
+          for (let i = 0; i < branchLabels.length; i += 2) {
+            if (!on) break;
+            const name = branchLabels[i], sub = branchLabels[i + 1];
+            const b = name.__branch;
+            const sx = anchorX.value + b.x * z, sy = anchorY.value + b.y * z;
+            if (sx < 60 || sx > W - 60) continue;
+            const y = Math.max(topInsetPx + 20, Math.min(H - bottomInsetPx - 24, sy));
+            const hw = Math.max(name.width, sub.width) / 2 + 8;
+            if (!free(sx - hw, sx + hw, y - 20, y + 20)) continue;
+            taken.push([sx - hw, sx + hw, y - 20, y + 20]);
+            name.visible = true; sub.visible = true;
+            name.alpha = territoryAlpha; sub.alpha = territoryAlpha * 0.85;
+            name.position.set(sx, y - 3);
+            sub.position.set(sx, y + 3);
+          }
+        }
 
         /* The era axis: a graticule. Labels sit at the left edge of the
          * viewport, tucked just under the top edge of their generation's
