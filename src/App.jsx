@@ -1866,6 +1866,25 @@ export default function App() {
     // Only the organic Tree view keeps the cinematic flyover below; that's
     // the one place the "journey" is the actual point of the feature.
     if (view === 'list' || layout === 'chart' || composedView) {
+      /* Atlas is the exception among these, twice over.
+       *
+       * It is a MAP OF THE WHOLE FAMILY — planAtlas lays out every person in
+       * the graph, unfiltered — so a result "outside the active perimeter"
+       * is already on it and needs no temporary reveal at all.
+       *
+       * And it has a real arrival: the camera flies there and the person's
+       * immediate family gathers into the portrait lens. Opening the profile
+       * sheet on top covered the one thing that had just happened, so search
+       * read as broken in Atlas ("it doesn't move") even though the map had
+       * travelled correctly the whole time, behind the sheet. The organic
+       * tree has never opened the sheet on a search either — it flies, lands,
+       * and leaves the profile one tap away. Atlas now matches it.
+       *
+       * The other three keep the plain open, for the reasons below: List has
+       * no camera at all, Chart re-roots instantly with nothing to watch, and
+       * Canopy composes a destination around the person rather than
+       * travelling to one. */
+      if (atlasActive) { activateNormal(targetId); return; }
       if (isOutside) { exploreBranch(targetId); return; }
       // A self-composing canvas (Canopy, Atlas) recentres on whoever is in
       // FOCUS, and openPerson only opens the sheet — it moves the camera
@@ -1918,7 +1937,7 @@ export default function App() {
     // — the camera catching up to wherever they actually are is all that
     // was ever needed.
     viewApi.current?.recenter();
-  }, [view, layout, composedView, lineageMode, activeId, graph, flyToSearchResult, openPerson, activateNormal, perimeterActive, perspective, exploreBranch]);
+  }, [view, layout, composedView, atlasActive, lineageMode, activeId, graph, flyToSearchResult, openPerson, activateNormal, perimeterActive, perspective, exploreBranch]);
 
   // Same flight as flyToSearchResult, but callable from anywhere — the
   // profile page's "Show in tree" and the list view's per-row action, not
