@@ -318,8 +318,10 @@ export default function AtlasStage({
         // Re-apply the framing the viewer ASKED for, not whatever the camera
         // happens to hold: rotating after "Whole family" must re-fit the
         // whole family, not silently swap it for a close-up of one person.
+        // Instant: a window resize is not a journey, and animating one would
+        // read as the map wandering off on its own.
         if (framing === 'person' && currentFocus) flyTo(currentFocus, zoom.value);
-        else fitAll();
+        else fitAll({ instant: true });
       };
 
       let lastViewKey = '', lastSplitSig = null, lastSplitAt = 0;
@@ -516,19 +518,45 @@ export default function AtlasStage({
       };
 
       /* ── camera ─────────────────────────────────────────────────────── */
+      /* Back out to the whole family.
+       *
+       * This used to hand the camera's own springs a target and let them
+       * ease there — which works for a nudge and fails completely for the
+       * journey this actually is. Backing out of a landed portrait on a
+       * 1,200-person tree is a SIXTY-FOLD zoom change (0.9 → ~0.015), and a
+       * spring eases linearly in zoom VALUE: measured, it covered barely a
+       * sixth of that in three seconds, and was still visibly short — the
+       * family cropped, the framing wrong — six seconds after the tap. The
+       * one control that says "show me everything" was the slowest thing in
+       * the view.
+       *
+       * A flight already solves this: stepFlight interpolates zoom in LOG
+       * space, so each frame covers a constant RATIO rather than a constant
+       * amount, which is how a zoom is actually perceived. Reusing it here
+       * lands the whole family in about a second and a half, exactly framed,
+       * instead of drifting toward it. No arc (`bump: 0`) — we are already
+       * travelling outward, so rising first would be a rise to nowhere. */
       const fitAll = ({ instant = false } = {}) => {
         if (!frame) return;
-        flight = null;
         framing = 'all';
         const W = app.screen.width, H = app.screen.height;
+        const { topInset: ti, bottomInset: bi } = insetRef.current;
         const cx = (frame.bounds.minX + frame.bounds.maxX) / 2;
         const cy = (frame.bounds.minY + frame.bounds.maxY) / 2;
-        const z = fitZoom;
-        const { topInset: ti, bottomInset: bi } = insetRef.current;
-        const ax = W / 2 - cx * z + ERA_MARGIN_PX / 2;
-        const ay = ti + (H - ti - bi) / 2 - cy * z;
-        if (instant) { zoom.set(z); anchorX.set(ax); anchorY.set(ay); }
-        else { zoom.to(z); anchorX.to(ax); anchorY.to(ay); }
+        const z1 = fitZoom;
+        // The era axis owns a strip down the left, so the family sits just
+        // right of true centre — the same offset the old anchor maths baked
+        // in, expressed as the screen point the map's centre lands on.
+        const lx = W / 2 + ERA_MARGIN_PX / 2, ly = ti + (H - ti - bi) / 2;
+        if (instant || reducedMotion) {
+          flight = null;
+          zoom.set(z1); anchorX.set(lx - cx * z1); anchorY.set(ly - cy * z1);
+          return;
+        }
+        const z0 = zoom.value;
+        const c0 = { x: (lx - anchorX.value) / z0, y: (ly - anchorY.value) / z0 };
+        const dur = 700 + Math.min(800, Math.abs(Math.log(z1 / z0)) * 190);
+        flight = { t0: performance.now(), dur, z0, z1, c0, c1: { x: cx, y: cy }, bump: 0, lx, ly };
       };
       /* A flight is an arc: the camera rises as it travels and settles as it
        * arrives, so a long journey reads as a journey rather than a cut. The
@@ -627,29 +655,20 @@ export default function AtlasStage({
           // favour of ITS OWN label layer (see build(), above).
           if (cn.name) cn.name.visible = false;
           if (cn.sub) cn.sub.visible = false;
-          const { container: pill, halfWidth } = buildNamePill(person);
+          // The focus carries their dates; everyone else is a name. The
+          // caption is part of the pill now (see nameplate.js) rather than
+          // Canopy's own serif `sub` left stranded beneath it.
+          const { container: pill, halfWidth } = buildNamePill(person, { withDates: id === currentFocus });
           pills.set(id, pill);
           labelDefs.push({ id, x: node.x, y: node.y + node.r + LABEL_GAP, halfWidth });
         }
         const placed = layoutLabels(labelDefs);
         for (const [id, pill] of pills) {
-          const pos = placed.get(id) || { x: p.nodes.get(id).x, y: p.nodes.get(id).y + p.nodes.get(id).r + LABEL_GAP };
+          const own = p.nodes.get(id);
+          const pos = placed.get(id) || { x: own.x, y: own.y + own.r + LABEL_GAP };
           pill.position.set(pos.x, pos.y);
           portraitLabels.addChild(pill);
           portraitLabelNodes.set(id, pill);
-          // The focus keeps their lifespan line (CanopyNode's own `sub`,
-          // "b. 1980") — the one thing organic's own label never shows but
-          // is worth keeping here — settled just under wherever the pill
-          // actually landed rather than a fixed offset from the portrait
-          // (`sub` is a CHILD of the person's own root, so its position is
-          // relative to them, not the world), since collision packing only
-          // ever moves a pill sideways, never up or down.
-          const cn = cns.get(id);
-          const ownNode = p.nodes.get(id);
-          if (cn?.sub && ownNode) {
-            cn.sub.visible = true;
-            cn.sub.position.set(pos.x - ownNode.x, pos.y - ownNode.y + 22);
-          }
         }
         drawBonds(portraitBonds, p, FULLY_GROWN, 1e9, null);
         portrait = { frame: p, nodes: cns };
@@ -1127,7 +1146,11 @@ export default function AtlasStage({
          * edge never sits — and thinned when rows are tighter on screen
          * than a label. */
         const rowPx = ROW_GAP * z;
-        const step = Math.max(1, Math.ceil(22 / rowPx));
+        // 22px between labels was the label's own height, which is not a gap
+        // at all: nineteen generations came out as a cramped stack of type
+        // with nothing between the lines. A graticule is meant to be quiet;
+        // it needs real air, so thin harder and let more rows go unlabelled.
+        const step = Math.max(1, Math.ceil(30 / rowPx));
         const axisAlpha = entrance * (lineage ? 0.7 : 0.85);
         const tuck = rowPx > 40 ? rowPx * 0.5 - 12 : 0;
         for (let i = 0; i < eraTexts.length; i++) {
