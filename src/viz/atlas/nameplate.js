@@ -22,12 +22,11 @@
  */
 
 import { Container, Graphics, Text } from 'pixi.js';
-import { layoutLabels } from './nameplateLayout.js';
-export { layoutLabels, packRow } from './nameplateLayout.js';
 
 const TREE_FONT = 'Hanken Grotesk, system-ui, sans-serif';
 const GAP = 5;
 const PILL_H = 20;
+const ROW_MARGIN = 4; // clear air between two adjacent pills, not edge-to-edge
 
 // Same "last token of display_name, else family_name" convention as
 // bubble.js's own surnameOf — reads the name someone actually keeps
@@ -120,3 +119,47 @@ export function buildNamePill(person, { withDates = false } = {}) {
   return { container, halfWidth: pillW / 2 };
 }
 
+/** One row of labels, packed left to right with no overlap, then re-centred
+ *  on the mean of what every label actually wanted — the identical
+ *  separate-then-recentre shape portrait.js already uses for a child block
+ *  that outgrows its own row, applied here to pill width instead of a
+ *  child's KID_GAP slot. Input/output are both `{ id, x, halfWidth }`
+ *  triples (x is the WANTED centre); only x changes. */
+export function packRow(items) {
+  if (items.length < 2) return items.map((it) => ({ id: it.id, x: it.x }));
+  const sorted = [...items].sort((a, b) => a.x - b.x || (a.id < b.id ? -1 : 1));
+  let prevRight = -Infinity;
+  let drift = 0;
+  const placed = sorted.map((it) => {
+    const wantLeft = it.x - it.halfWidth;
+    const left = Math.max(wantLeft, prevRight);
+    const x = left + it.halfWidth;
+    prevRight = left + it.halfWidth * 2 + ROW_MARGIN;
+    drift += it.x - x;
+    return { id: it.id, x };
+  });
+  const recentre = drift / placed.length;
+  return placed.map((p) => ({ id: p.id, x: p.x + recentre }));
+}
+
+/** The whole lens's labels at once. Only people whose labels plausibly
+ *  compete for the same horizontal space can collide, so items are grouped
+ *  by y first — generations sit GEN world-units apart (hundreds of units),
+ *  utterly unlike a pill's own ~20-unit height, so rounding y is a safe,
+ *  cheap way to find "the same row" without a person-by-person distance
+ *  check. A wrapped second row of siblings or partners already sits a full
+ *  ROW_STACK below the first (see portrait.js) — comfortably its own
+ *  bucket, not a false collision with row 0. */
+export function layoutLabels(items) {
+  const byRow = new Map();
+  for (const it of items) {
+    const key = Math.round(it.y / 20);
+    if (!byRow.has(key)) byRow.set(key, []);
+    byRow.get(key).push(it);
+  }
+  const out = new Map();
+  for (const row of byRow.values()) {
+    for (const p of packRow(row)) out.set(p.id, { x: p.x, y: row.find((r) => r.id === p.id).y });
+  }
+  return out;
+}
