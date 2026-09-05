@@ -26,8 +26,15 @@ export default function AtlasTree({
   onActivate,
   onOpenPerson,
   reducedMotion = false,
+  // Optional: lets the app reach the stage's camera from outside (the
+  // desktop zoom controls, ZoomControls.jsx, need zoomStep/recenter the
+  // same way they already reach BubbleTree's). Falls back to a purely
+  // internal ref — used only by this component's own "Whole family" button
+  // below — for every caller that doesn't need that, the lab included.
+  apiRef,
 }) {
-  const api = useRef(null);
+  const localApi = useRef(null);
+  const api = apiRef || localApi;
   const [edges, setEdges] = useState([]);
 
   const select = useCallback((id) => onActivate?.(id), [onActivate]);

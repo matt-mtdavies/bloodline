@@ -75,6 +75,13 @@ const LENS_MIN_PX = 34;          // disc diameter at which the lens starts to ri
 const LENS_FULL_PX = 50;         // ...and at which it is fully up
 const PORTRAIT_MAP_DIM = 0.3;    // the map, while a portrait is held over it
 const FULLY_GROWN = { bonds: new Map(), nodes: new Map(), reduced: false };
+const ZERO_AMBIENT = { x: 0, y: 0, scale: 1 }; // a lens portrait's fixed pose: no drift, no hover
+// The desktop on-screen zoom controls (ZoomControls.jsx) step by this factor
+// per click — the exact figure BubbleTree's own zoom buttons use, so the two
+// views feel like the same control rather than two different ones that
+// happen to look alike.
+const ZOOM_BUTTON_FACTOR = 1.35;
+const ZOOM_LIMIT_EPS = 0.02;
 
 function yearOf(s) {
   const m = String(s || '').match(/\d{4}/);
@@ -600,7 +607,7 @@ export default function AtlasStage({
           if (!person) continue;
           const cn = new CanopyNode(person, node);
           cn.person = person;
-          cn.apply(node, 1, { x: 0, y: 0, scale: 1 }, null);
+          cn.apply(node, 1, ZERO_AMBIENT, null);
           cns.set(id, cn);
           portraitNodes.addChild(cn.root);
         }
@@ -697,6 +704,39 @@ export default function AtlasStage({
         const wx = (sx - anchorX.value) / zoom.value, wy = (sy - anchorY.value) / zoom.value;
         zoom.set(clamped); anchorX.set(sx - wx * clamped); anchorY.set(sy - wy * clamped);
       };
+      /* The desktop on-screen zoom buttons (ZoomControls.jsx) — a discrete
+       * step anchored on the middle of the readable band, since a button
+       * click has no cursor position of its own to anchor on. Mirrors
+       * BubbleTree's own zoomStep almost exactly (same factor, same
+       * "already at the limit" check against the last COMMANDED target
+       * rather than the live easing value, for the same reason: a click
+       * fired the instant after reaching the floor would otherwise report
+       * "still moving" for several frames while the ease catches up) —
+       * eased via the same Scalar springs a flight already uses, rather
+       * than zoomAbout's instant `.set()`, so a click reads as a deliberate
+       * step, not a snap. */
+      const zoomStep = (dir) => {
+        if (flight) return { zoom: zoom.value, atLimit: true };
+        const lo = fitZoom * 0.6, hi = 1.6;
+        const priorTarget = zoom.target;
+        const alreadyAtLimit = dir > 0 ? priorTarget >= hi - ZOOM_LIMIT_EPS : priorTarget <= lo + ZOOM_LIMIT_EPS;
+        const before = Math.max(lo, Math.min(hi, zoom.value));
+        const nz = Math.max(lo, Math.min(hi, before * (dir > 0 ? ZOOM_BUTTON_FACTOR : 1 / ZOOM_BUTTON_FACTOR)));
+        const W = app.screen.width, H = app.screen.height;
+        const { topInset: ti, bottomInset: bi } = insetRef.current;
+        const sx = W / 2, sy = ti + (H - ti - bi) / 2;
+        const wx = (sx - anchorX.value) / zoom.value, wy = (sy - anchorY.value) / zoom.value;
+        if (reducedMotion) { zoom.set(nz); anchorX.set(sx - wx * nz); anchorY.set(sy - wy * nz); }
+        else { zoom.to(nz); anchorX.to(sx - wx * nz); anchorY.to(sy - wy * nz); }
+        return { zoom: nz, atLimit: alreadyAtLimit };
+      };
+      // The ZoomControls "fit" button: back to wherever you actually are —
+      // the person in focus if there is one (the same framing a flight
+      // already lands on, lens included), the whole family otherwise. A
+      // second, identically-behaving door onto the exact same two actions
+      // the view already offers (arriveAt/flyTo and the "Whole family"
+      // pill) rather than a third distinct camera behaviour.
+      const recenter = () => (currentFocus ? flyTo(currentFocus) : fitAll());
       const idFromTarget = (t) => { let n = t; while (n && n.__canopyId === undefined) n = n.parent; return n ? n.__canopyId : null; };
       const swayTargets = (id) => {
         const out = [];
@@ -870,6 +910,22 @@ export default function AtlasStage({
         if (portraitT < 0.002) portraitT = 0;
         portraitLayer.visible = portraitT > 0.01;
         portraitLayer.alpha = portraitT;
+        /* A lens portrait is built once and never re-laid-out — nobody in
+         * it moves — so `apply()` was only ever called at construction, a
+         * single frame before an async photo even has a chance to decode.
+         * The cross-fade from monogram to photo lives entirely INSIDE
+         * apply() (see CanopyNode, above), gated on `photoSprite.alpha < 1`
+         * — the map's own portraits get this for free because their apply()
+         * runs every tick already; a lens portrait never got a second call
+         * at all, so a photo that finished loading sat at its own initial
+         * alpha of 0 forever, invisible behind an untouched monogram. This
+         * is the fix: run the same call every tick here too, with the exact
+         * fixed pose it was built with (no ambient drift, no hover) — cheap
+         * regardless, since a portrait is at most a few dozen people. */
+        if (portrait) for (const [id, cn] of portrait.nodes) {
+          const node = portrait.frame.nodes.get(id);
+          if (node) cn.apply(node, 1, ZERO_AMBIENT, null);
+        }
         // The map's own lines between held people come out once the lens has
         // clearly taken over, and go back the moment it lets go.
         const heldNow = portrait && portraitT > 0.5 ? portrait.frame : null;
@@ -1063,7 +1119,7 @@ export default function AtlasStage({
       };
 
       innerApi.current = {
-        build, fitAll, flyTo, setFocus,
+        build, fitAll, flyTo, setFocus, zoomStep, recenter,
         rebuild: () => { build(); fitAll({ instant: true }); arriveAt(focusIdRef.current, 700); },
         get stats() { return frame?.stats; },
         destroy: () => {
