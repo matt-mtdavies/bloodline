@@ -25,13 +25,19 @@ await test('classifies human-readable type and area, with structured labels taki
   );
 });
 
-await test('maps only Cloudflare Pages status to deployment truth', () => {
-  assert.equal(_test.deploymentFromStatus({ statuses: [{ context: 'tests', state: 'success' }] }).state, 'unverified');
+await test('maps only the Cloudflare Pages check run to deployment truth', () => {
+  // Cloudflare Pages reports via a CHECK RUN (the Checks API), never the
+  // legacy combined-status API — a real call against this repo's own merged
+  // PRs confirmed /commits/{sha}/status returns `{ statuses: [] }` for a
+  // commit whose Checks API entry showed a real "Cloudflare Pages" run, so
+  // these fixtures deliberately mirror the check-runs shape, not statuses.
+  assert.equal(_test.deploymentFromCheckRuns({ check_runs: [{ name: 'tests', status: 'completed', conclusion: 'success' }] }).state, 'unverified');
   assert.deepEqual(
-    _test.deploymentFromStatus({ statuses: [{ context: 'Cloudflare Pages', state: 'success', target_url: 'https://preview.example.test' }] }),
+    _test.deploymentFromCheckRuns({ check_runs: [{ name: 'Cloudflare Pages', status: 'completed', conclusion: 'success', html_url: 'https://preview.example.test' }] }),
     { state: 'deployed', label: 'Deployed', url: 'https://preview.example.test' },
   );
-  assert.equal(_test.deploymentFromStatus({ statuses: [{ context: 'Cloudflare Pages', state: 'failure' }] }).state, 'failed');
+  assert.equal(_test.deploymentFromCheckRuns({ check_runs: [{ name: 'Cloudflare Pages', status: 'completed', conclusion: 'failure' }] }).state, 'failed');
+  assert.equal(_test.deploymentFromCheckRuns({ check_runs: [{ name: 'Cloudflare Pages', status: 'in_progress', conclusion: null }] }).state, 'pending');
 });
 
 await test('returns a small safe projection of merged PRs and never exposes PR bodies or patches', async () => {
@@ -54,7 +60,7 @@ await test('returns a small safe projection of merged PRs and never exposes PR b
       },
       { number: 41, title: 'Closed but not merged', merged_at: null },
     ]), { status: 200 });
-    if (String(url).includes('/commits/abc123/status')) return new Response(JSON.stringify({ statuses: [{ context: 'Cloudflare Pages', state: 'success' }] }), { status: 200 });
+    if (String(url).includes('/commits/abc123/check-runs')) return new Response(JSON.stringify({ check_runs: [{ name: 'Cloudflare Pages', status: 'completed', conclusion: 'success' }] }), { status: 200 });
     throw new Error(`Unexpected URL: ${url}`);
   };
   try {

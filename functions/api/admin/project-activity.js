@@ -46,13 +46,27 @@ function classify(labels, title) {
   return { type, area, risk };
 }
 
-function deploymentFromStatus(body) {
-  const statuses = Array.isArray(body?.statuses) ? body.statuses : [];
-  const cloudflare = statuses.find((status) => /cloudflare pages/i.test(status.context || ''));
+/*
+ * Cloudflare Pages reports build/deploy state to GitHub via a CHECK RUN
+ * (the modern Checks API — the same "Cloudflare Pages" entry you see as a
+ * check on any PR), never via the legacy combined-status API this once
+ * queried. That's not a matter of preference: a live call against this
+ * repo's own merged PRs returned `{ total_count: 0, statuses: [] }` from
+ * `/commits/{sha}/status` for a commit whose Checks API entry showed
+ * `name: "Cloudflare Pages", conclusion: "success"` — the two are simply
+ * different GitHub object models, and Cloudflare only ever populates one
+ * of them. Querying the wrong one means every single entry reads "Deploy
+ * unverified" forever, with a correctly-scoped token and no visible error
+ * anywhere — exactly what a real deployment of this endpoint hit.
+ */
+function deploymentFromCheckRuns(body) {
+  const runs = Array.isArray(body?.check_runs) ? body.check_runs : [];
+  const cloudflare = runs.find((run) => /cloudflare pages/i.test(run.name || ''));
   if (!cloudflare) return { state: 'unverified', label: 'Deploy unverified', url: null };
-  if (cloudflare.state === 'success') return { state: 'deployed', label: 'Deployed', url: cloudflare.target_url || null };
-  if (cloudflare.state === 'pending') return { state: 'pending', label: 'Deploying', url: cloudflare.target_url || null };
-  return { state: 'failed', label: 'Deploy failed', url: cloudflare.target_url || null };
+  const link = cloudflare.html_url || cloudflare.details_url || null;
+  if (cloudflare.status !== 'completed') return { state: 'pending', label: 'Deploying', url: link };
+  if (cloudflare.conclusion === 'success') return { state: 'deployed', label: 'Deployed', url: link };
+  return { state: 'failed', label: 'Deploy failed', url: link };
 }
 
 async function fetchJson(url, headers) {
@@ -87,7 +101,7 @@ async function loadActivity(env) {
       .sort((a, b) => new Date(b.merged_at) - new Date(a.merged_at))
       .slice(0, MAX_ENTRIES);
 
-    // Commit-status calls are deliberately token-gated. An unauthenticated
+    // Check-run calls are deliberately token-gated. An unauthenticated
     // GitHub client only receives 60 requests/hour; spending 30 of them on a
     // single dashboard load would make the feed brittle. The merged feed is
     // fully useful without the optional token and labels deployment truthfully
@@ -95,8 +109,8 @@ async function loadActivity(env) {
     const deploymentBySha = new Map();
     if (token) {
       const results = await Promise.allSettled(merged.map(async (pull) => {
-        const status = await fetchJson(`${apiRoot}/commits/${encodeURIComponent(pull.merge_commit_sha)}/status`, headers);
-        return [pull.merge_commit_sha, deploymentFromStatus(status)];
+        const status = await fetchJson(`${apiRoot}/commits/${encodeURIComponent(pull.merge_commit_sha)}/check-runs`, headers);
+        return [pull.merge_commit_sha, deploymentFromCheckRuns(status)];
       }));
       for (const result of results) {
         if (result.status === 'fulfilled') deploymentBySha.set(...result.value);
@@ -136,7 +150,7 @@ async function loadActivity(env) {
       deployment_verification: {
         configured: Boolean(token),
         note: token
-          ? 'Cloudflare Pages commit statuses are checked for each merged PR.'
+          ? 'Cloudflare Pages check runs are verified for each merged PR.'
           : 'Add the optional GITHUB_READ_TOKEN secret to verify Cloudflare Pages deployment statuses.',
       },
       entries,
@@ -181,4 +195,4 @@ export async function onRequestGet({ env, data, request }) {
   return json(payload);
 }
 
-export const _test = { classify, deploymentFromStatus, loadActivity };
+export const _test = { classify, deploymentFromCheckRuns, loadActivity };

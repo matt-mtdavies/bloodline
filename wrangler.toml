@@ -38,9 +38,12 @@ EXPORT_ADMIN_EMAILS = ""
 #
 # GITHUB_READ_TOKEN — optional, read-only fine-grained token for the public
 # Bloodline repository. /admin-project.html can list merged pull requests without
-# it; configuring it additionally verifies the Cloudflare Pages commit status
-# for each change without consuming GitHub's very small unauthenticated rate
-# limit. The token is server-side only and is never returned to the browser.
+# it; configuring it additionally verifies the Cloudflare Pages check run for
+# each change without consuming GitHub's very small unauthenticated rate
+# limit. Needs "Checks: Read-only" repository permission — Cloudflare Pages
+# reports via GitHub's Checks API, not the legacy commit-status API, so
+# "Commit statuses" alone (an easy, reasonable-looking first guess) returns
+# nothing. The token is server-side only and is never returned to the browser.
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Cloudflare D1 — already created and migrated (Western Europe).
