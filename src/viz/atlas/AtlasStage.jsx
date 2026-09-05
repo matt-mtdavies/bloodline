@@ -33,10 +33,11 @@
  */
 
 import { useEffect, useRef } from 'react';
-import { Application, Container, Graphics, Text, TextStyle } from 'pixi.js';
+import { Application, Container, Graphics, Sprite, Text, TextStyle } from 'pixi.js';
 import { planAtlas, isFarReach, NODE_R, ROW_GAP } from './layout.js';
 import { composePortrait } from './portrait.js';
 import { buildNamePill, layoutLabels } from './nameplate.js';
+import { warmGlowTexture } from '../textures.js';
 import { Scalar, ambientOffset, Deflection, rubberBand, SWAY_POD, SWAY_BRANCH } from '../canopy/motion.js';
 import { drawBonds, CanopyNode, easeBud, progressAt, tintFor, descentPath, liveAnchor, livePos } from '../canopy/render.js';
 import { ancestorsWithDistance, descendantsWithDistance, isBioOrAdoptive } from '../../data/graph.js';
@@ -58,7 +59,11 @@ const DOT_ZOOM = 0.16;           // below this a person is a dot, not a portrait
  * geography anyway. Below it, nothing changes: the silhouette of dots is
  * affordable and reads as the family's own shape. */
 const FAR_DOT_BUDGET = 2500;
-const FLY_ZOOM = 0.9;
+// A closer default landing than the map's first cut — the focus spotlight
+// and the lens both read better with the pod filling more of the frame.
+// Still self-limiting: flyTo's own fitLens clamp keeps a wide gathered
+// family from overflowing the viewport regardless of this target.
+const FLY_ZOOM = 1.05;
 const LAND_Y = 0.42;             // where a flight lands its person (a little above centre: children stay clear of the foot)
 const ERA_MARGIN_PX = 96;        // screen pixels reserved for the era axis at the fit zoom
 const BRANCH = 0x8a7563;
@@ -147,6 +152,22 @@ export default function AtlasStage({
       const litBonds = new Graphics();     // the selected bloodline's own lines, full strength and warm
       const territoryLayer = new Graphics(); // branch regions, for the whole-family view
       const dotLayer = new Graphics();     // everyone as a dot, for the far view
+      /* The focus spotlight — a soft, slowly breathing warm glow gathered
+       * under whoever you've travelled to (the whole pod, not just the one
+       * tapped person), so the eye finds them before it reads a single name.
+       * Deliberately NOT built by strengthening the shared CanopyNode glow
+       * every focus person already carries (see canopy/render.js) — that
+       * file is shared with Canopy, and a change there would silently
+       * reshape Canopy's own look too. This is Atlas's own addition,
+       * layered underneath the real faces, never touching what they render
+       * with. Sized to the composed lens's own bounds when one is up, so a
+       * couple or a small gathered family reads as ONE embraced group
+       * rather than a spotlight sized for a single person. */
+      const focusGlow = new Sprite(warmGlowTexture());
+      focusGlow.anchor.set(0.5);
+      focusGlow.blendMode = 'add';
+      focusGlow.alpha = 0;
+      focusGlow.eventMode = 'none';
       const nodeLayer = new Container();
       const fxLayer = new Container();     // Time mode's birth-arrival celebrations
       /* The lens sits over the map, in world space, so it pans and zooms with
@@ -159,7 +180,7 @@ export default function AtlasStage({
       const portraitLabels = new Container();
       portraitLayer.addChild(portraitBonds, portraitNodes, portraitLabels);
       portraitLayer.visible = false;
-      world.addChild(bgLayer, territoryLayer, farBonds, longBonds, lateralBonds, nearBonds, litBonds, dotLayer, nodeLayer, portraitLayer, fxLayer);
+      world.addChild(bgLayer, territoryLayer, farBonds, longBonds, lateralBonds, nearBonds, litBonds, dotLayer, focusGlow, nodeLayer, portraitLayer, fxLayer);
       /* Screen space: labels and the axis hold a constant size and stick to
        * the viewport, the way a map's type and graticule do. */
       const labelLayer = new Container();
@@ -1022,6 +1043,36 @@ export default function AtlasStage({
         if (portraitT < 0.002) portraitT = 0;
         portraitLayer.visible = portraitT > 0.01;
         portraitLayer.alpha = portraitT;
+
+        /* The focus spotlight (see its own declaration, above, for why this
+         * is a separate Atlas-only layer rather than a change to Canopy's
+         * shared glow). Sized to the composed lens's own bounds once one is
+         * risen — a couple or small gathered family reads as one embraced
+         * group, not a spotlight sized for a single person — or a fixed
+         * radius around the focus alone before the lens has anything to
+         * compose. Fades on the SAME nearAlpha curve the rest of the
+         * near-view detail layer already uses, so it settles in and out in
+         * step with everything else rather than popping independently. */
+        if (currentFocus && frame.nodes.has(currentFocus)) {
+          let cx, cy, span;
+          if (portrait && portraitT > 0.01) {
+            const b = portrait.frame.bounds;
+            cx = portraitLayer.position.x + (b.minX + b.maxX) / 2;
+            cy = portraitLayer.position.y + (b.minY + b.maxY) / 2;
+            span = Math.max(b.maxX - b.minX, b.maxY - b.minY, NODE_R * 2);
+          } else {
+            const fn = frame.nodes.get(currentFocus);
+            cx = fn.x; cy = fn.y; span = NODE_R * 2;
+          }
+          const breathe = reducedMotion ? 1 : 0.85 + 0.15 * Math.sin(tSec * 0.9);
+          focusGlow.position.set(cx, cy);
+          focusGlow.width = focusGlow.height = span * 2.3;
+          focusGlow.alpha = 0.3 * nearAlpha * breathe;
+          focusGlow.visible = focusGlow.alpha > 0.01;
+        } else {
+          focusGlow.visible = false;
+        }
+
         /* A lens portrait is built once and never re-laid-out — nobody in
          * it moves — so `apply()` was only ever called at construction, a
          * single frame before an async photo even has a chance to decode.
