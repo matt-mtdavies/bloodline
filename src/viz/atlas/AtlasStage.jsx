@@ -1002,7 +1002,22 @@ export default function AtlasStage({
          * regardless, since a portrait is at most a few dozen people. */
         if (portrait) for (const [id, cn] of portrait.nodes) {
           const node = portrait.frame.nodes.get(id);
-          if (node) cn.apply(node, 1, ZERO_AMBIENT, null);
+          if (!node) continue;
+          cn.apply(node, 1, ZERO_AMBIENT, null);
+          // Time mode reaches the lens too: someone gathered into a
+          // composed family group is still a person on the SAME map, and
+          // should fade the same way their own map dot would if you pulled
+          // back out. Same rule as presence() below, year-only — the lens
+          // deliberately never dims for the lit bloodline, only for time.
+          const yr = yearRef.current;
+          if (yr != null) {
+            const b = yearOf(cn.person.birth_date), d = yearOf(cn.person.death_date);
+            let a = 1;
+            if (b != null && b > yr) a = 0.05;
+            else if (d != null && d < yr) a = 0.22;
+            else if (b == null) a = 0.5;
+            cn.root.alpha *= a;
+          }
         }
         // The map's own lines between held people come out once the lens has
         // clearly taken over, and go back the moment it lets go.

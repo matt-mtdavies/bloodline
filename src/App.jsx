@@ -1690,6 +1690,25 @@ export default function App() {
   // Shared exit for Time mode — the dock's own time-toggle button (tapped a
   // second time) and the ReturnToTreePill below both need to leave Time mode
   // exactly the same way, so there's one place that does it.
+  /* Atlas's own year range for Time mode — deliberately NOT the organic
+   * tree's `yearRange` above, which is scoped to `structuralVisibleIds`
+   * (whatever's currently expanded in the organic reveal). Atlas always
+   * shows literally everyone, so reusing that scoped range would silently
+   * cut the slider off at whatever the organic tree happens to have
+   * revealed rather than the family's real earliest generation. Mirrors
+   * the standalone lab's own plausibility filter (a synthetic fixture can
+   * carry birth years centuries in the future) rather than trusting every
+   * four-digit number in the data; null — not a slider with nothing sound
+   * to scrub — when fewer than two people have a usable one. */
+  const atlasYearRange = useMemo(() => {
+    const thisYear = new Date().getFullYear();
+    const ys = data.people
+      .map((p) => (p.birth_date ? parseInt(p.birth_date, 10) : null))
+      .filter((y) => Number.isFinite(y) && y >= 1000 && y <= thisYear + 1);
+    if (ys.length < 2) return null;
+    return { min: Math.min(...ys), max: Math.max(...ys, thisYear) };
+  }, [data.people]);
+
   const exitTimeMode = useCallback(() => {
     setTimePlaying(false);
     setLifeJourneyId(null);
@@ -2933,6 +2952,28 @@ export default function App() {
               onOpenPerson={openPerson}
               reducedMotion={reducedMotion}
               apiRef={atlasViewApi}
+              /* Time mode — the general "watch the whole family through
+                 time" half only (see AtlasTree.jsx's own header comment for
+                 why "life journey" stays organic-only). Same app-level
+                 state and world-event lookup the organic dock already
+                 drives; this is a second door onto it, not a second copy. */
+              timeMode={timeMode}
+              timeYear={timeYear}
+              timePlaying={timePlaying}
+              yearRange={atlasYearRange}
+              worldEvent={worldEvent}
+              onToggleTimeMode={() => {
+                if (timeMode) { exitTimeMode(); return; }
+                setTimeYear(atlasYearRange ? atlasYearRange.max : new Date().getFullYear());
+                setTimePlaying(false);
+                setTimeMode(true);
+              }}
+              onScrubYear={(y) => { setTimePlaying(false); setTimeYear(y); }}
+              onTogglePlay={() => {
+                const starting = !timePlaying;
+                if (starting && atlasYearRange && timeYear >= atlasYearRange.max) setTimeYear(atlasYearRange.min);
+                setTimePlaying((p) => !p);
+              }}
             />
             {/* Desktop trackpad users get the same discoverable zoom
                 alternative here as the organic tree already offers —
