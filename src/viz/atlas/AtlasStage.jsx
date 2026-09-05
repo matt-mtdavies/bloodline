@@ -1129,21 +1129,43 @@ export default function AtlasStage({
           }
           // `far` is skipped — from orbit there is no individual node to land
           // the mote on, and a family big enough to still be a dot silhouette
-          // at this zoom is exactly the case organic's own `births.size < 14`
-          // gate exists to protect against anyway.
-          if (lastYearChecked !== 'unset' && yr != null && !far && !reducedMotion && birthFx.size < 14) {
+          // at this zoom is exactly the case the concurrent-effect cap below
+          // exists to protect against anyway.
+          if (lastYearChecked !== 'unset' && yr != null && !far && !reducedMotion) {
             const g = graphRef.current;
             // A birthday person gathered into the lens is composed at the
             // lens's own local position, not the raw map position their
             // node quietly keeps underneath — land the mote where they are
             // actually seen, same as the lens's own per-frame override does.
             const posOf = (pid) => (portrait?.frame.nodes.has(pid) ? portrait.frame.nodes.get(pid) : frame.nodes.get(pid));
+            // Real report on a large (1,200+ person) family: the birth
+            // celebration "only seemed to happen for out of focus people,
+            // not the main ones in focus." Root cause — the concurrent-
+            // effect cap (mirrors organic's own `births.size < 14`, there
+            // to protect a dense simultaneous cluster from becoming visual
+            // noise) used to gate the WHOLE creation pass at once: whichever
+            // ids happened to iterate first claimed the 14 slots, so on a
+            // busy year a background stranger sharing that birth year could
+            // fill every slot before the person actually being watched —
+            // the one who's ACTIVE, or gathered into their own lens — ever
+            // got a turn. Sorting candidates so the focus/lens always go
+            // first, and checking the cap per person rather than upfront,
+            // guarantees whoever you're actually looking at is never the
+            // one left out.
+            const inFocus = (id) => id === currentFocus || !!portrait?.frame.nodes.has(id);
+            const candidates = [];
             for (const id of nowAliveIds) {
               if (wasAliveIds.has(id) || birthFx.has(id)) continue;
-              const cn = nodes.get(id), node = posOf(id);
-              if (!cn || !node) continue;
-              const born = yearOf(cn.person.birth_date);
-              if (born !== yr) continue; // only a true birth, not "alive again" from rewinding past a death
+              const cn = nodes.get(id);
+              if (!cn || yearOf(cn.person.birth_date) !== yr) continue; // only a true birth, not "alive again" from rewinding past a death
+              candidates.push(id);
+            }
+            candidates.sort((a, b) => Number(inFocus(b)) - Number(inFocus(a)));
+            for (const id of candidates) {
+              if (birthFx.size >= 14) break;
+              const node = posOf(id);
+              if (!node) continue;
+              const born = yearOf(nodes.get(id).person.birth_date);
               const vps = g.parents(id).map((p) => posOf(p.id)).filter(Boolean);
               const origin = vps.length
                 ? { x: vps.reduce((s, p) => s + p.x, 0) / vps.length, y: vps.reduce((s, p) => s + p.y, 0) / vps.length }
