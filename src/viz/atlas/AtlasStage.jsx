@@ -338,8 +338,19 @@ export default function AtlasStage({
         const byId = unitById();
         const wholeLong = [], wholeLateral = [];
         let sig = '';
+        /* A link between two PLATES is held back until you are close enough
+         * to be inside one. Only ~5-7% of parent links span plates, but each
+         * is enormous, and drawn from the overview they sweep right across
+         * the atlas and bury the structure inside every plate — measurably
+         * worse than the smear plating exists to fix. An atlas does not draw
+         * the roads between its plates either; it marks where they continue,
+         * which is what the edge markers already do. Your own lit bloodline
+         * is the deliberate exception (see drawLit) — lighting it threads
+         * your line through whichever plates it actually runs through. */
+        const platesQuiet = zoom.value < fitZoom * 3;
         longFrame.bonds.forEach((b, i) => {
           if (bondHeld(b)) return;
+          if (b.crossPlate && platesQuiet) return;
           const pu = byId.get(b.parentUnit), c = livePoint(b.child, offsetOf);
           const a = pu ? anchorOf(pu) : null;
           if (a && c && inside(a) && inside(c)) { wholeLong.push({ b, a, c }); sig += `L${i},`; }
@@ -426,14 +437,20 @@ export default function AtlasStage({
         const W = app.screen.width, H = app.screen.height;
         const bw = frame.bounds.maxX - frame.bounds.minX, bh = frame.bounds.maxY - frame.bounds.minY;
         const { topInset: ti, bottomInset: bi } = insetRef.current;
+        /* The era axis owns a strip down the left — but only when there IS
+         * one. A plated atlas has no global generation rows to label and
+         * publishes no eras (see plates.js), and reserving the strip anyway
+         * threw away 96px of a 390px phone: a quarter of the width, for a
+         * margin holding nothing. */
+        const eraMargin = frame.eras.length ? ERA_MARGIN_PX : 0;
         fitZoom = Math.max(0.003, Math.min(1.2, Math.min(
-          (W - 60 - ERA_MARGIN_PX) / Math.max(1, bw),
+          (W - 60 - eraMargin) / Math.max(1, bw),
           (H - 60 - ti - bi) / Math.max(1, bh),
         )));
         const width = 1.1 / fitZoom;
         const byId = unitById();
         for (const b of frame.bonds) {
-          if (b.kind !== 'descent') continue;
+          if (b.kind !== 'descent' || b.crossPlate) continue;
           const pu = byId.get(b.parentUnit), c = frame.nodes.get(b.child);
           if (!pu || !c) continue;
           const a = anchorOf(pu);
@@ -546,8 +563,10 @@ export default function AtlasStage({
         const z1 = fitZoom;
         // The era axis owns a strip down the left, so the family sits just
         // right of true centre — the same offset the old anchor maths baked
-        // in, expressed as the screen point the map's centre lands on.
-        const lx = W / 2 + ERA_MARGIN_PX / 2, ly = ti + (H - ti - bi) / 2;
+        // in, expressed as the screen point the map's centre lands on. With
+        // no axis (a plated atlas) there is nothing to make room for, and
+        // the family sits dead centre.
+        const lx = W / 2 + (frame.eras.length ? ERA_MARGIN_PX / 2 : 0), ly = ti + (H - ti - bi) / 2;
         if (instant || reducedMotion) {
           flight = null;
           zoom.set(z1); anchorX.set(lx - cx * z1); anchorY.set(ly - cy * z1);

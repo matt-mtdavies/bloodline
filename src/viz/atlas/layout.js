@@ -48,7 +48,8 @@
  * output (every sort ends in an id comparison). Fast: linear in people.
  */
 
-import { isBioOrAdoptive } from '../../data/graph.js';
+import { isBioOrAdoptive, buildGraph } from '../../data/graph.js';
+import { plateFrame } from './plates.js';
 
 export const ROW_GAP = 340;     // vertical distance between generations — Canopy density, so the close view fills instead of floating in paper
 export const NODE_R = 54;       // person radius, same as Canopy's
@@ -655,5 +656,29 @@ export function planAtlas(graph, opts = {}) {
     branches: branches.filter((b) => !b.minor).length,
     layoutMs: Math.round(ended - started),
   };
-  return { focusId: opts.focusId ?? null, nodes, units, bonds, rows, bounds: { minX, maxX, minY, maxY }, eras, branches, stats };
+  const flat = { focusId: opts.focusId ?? null, nodes, units, bonds, rows, bounds: { minX, maxX, minY, maxY }, eras, branches, stats };
+
+  /* A tidy tree of a growing family is a triangle: one generation ends up
+   * holding hundreds of people in a single row, and that row alone sets the
+   * width while the generation count sets the height — 15:1 at a thousand
+   * people, 50:1 at five. Above TRIGGER_ASPECT the family is cut into plates
+   * and packed into the shape of a screen (see plates.js). Below it nothing
+   * happens at all and this returns exactly what it always has.
+   *
+   * `opts.plates === false` is how plates.js re-lays-out each plate without
+   * the pass recursing into itself. */
+  if (opts.plates !== false) {
+    const plated = plateFrame(flat, graph, {
+      layout: planAtlas,
+      buildGraph,
+      rowGap: ROW_GAP,
+      minBranchPeople: MIN_BRANCH_PEOPLE,
+      norm: (q) => (q === 'adopted' ? 'adoptive' : isBioOrAdoptive(q) ? (q || 'biological') : q),
+    });
+    if (plated) {
+      plated.stats.layoutMs = Math.round(((typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now()) - started);
+      return plated;
+    }
+  }
+  return flat;
 }
