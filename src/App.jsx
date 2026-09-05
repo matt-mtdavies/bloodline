@@ -966,6 +966,19 @@ export default function App() {
   // (BubbleTree debounces this itself; see onHover).
   const [hoveredId, setHoveredId] = useState(null);
   const viewApi = useRef(null);
+  // Atlas's own camera ref, kept separate from BubbleTree's viewApi above —
+  // deliberately, not an oversight: viewApi is read in ~30 places across this
+  // file with plain optional chaining, on the standing assumption that while
+  // Canopy/Atlas (composedView) is active it is stale/absent, and every one
+  // of those call sites already guards on composedView rather than on the
+  // ref itself. Pointing viewApi at Atlas's much smaller API surface instead
+  // would make all of those calls stop silently no-op-ing and start actually
+  // firing BubbleTree-shaped methods Atlas doesn't have the same meaning
+  // for. A second, dedicated ref for exactly the one thing Atlas needs
+  // reachable from outside — the desktop zoom controls — avoids that risk
+  // entirely rather than auditing every one of those 30 call sites to prove
+  // it's safe.
+  const atlasViewApi = useRef(null);
   // Tracks which pair, if any, is currently wearing the duplicate-compare
   // gold ring (see showDuplicatePairInTree below) so a later call for a
   // different pair can clear the previous one instead of leaving it lit.
@@ -2734,27 +2747,28 @@ export default function App() {
     return () => window.removeEventListener('keydown', onGlobalKeydown);
   }, [anyOverlayOpen]);
 
-  // Keyboard zoom shortcuts (Cmd/Ctrl +/-/0) — parity with the new on-screen
+  // Keyboard zoom shortcuts (Cmd/Ctrl +/-/0) — parity with the on-screen
   // zoom controls (ZoomControls.jsx), standard in every canvas app in this
-  // category. Scoped to exactly when the BubbleTree canvas is mounted
-  // (view === 'bubbles' && layout !== 'chart' && layout !== 'canopy' — the
-  // same condition flyToSearchResult already uses to know whether viewApi
-  // is live) and nothing else is open, so it never fights the browser's own
-  // native page-zoom shortcut while looking at List/Chart/Canopy view or any
-  // sheet. No activeElement/focused-input guard needed here (unlike the
-  // bare-letter shortcut above) — Cmd/Ctrl are never part of ordinary
-  // typing, so there's no legitimate typing context this could hijack.
+  // category. Scoped to exactly when a camera-driven canvas is mounted
+  // (BubbleTree, or Atlas — Chart re-roots instantly with no camera to step,
+  // and Canopy has no zoomStep/recenter of its own) and nothing else is
+  // open, so it never fights the browser's own native page-zoom shortcut
+  // while looking at List/Chart/Canopy view or any sheet. No
+  // activeElement/focused-input guard needed here (unlike the bare-letter
+  // shortcut above) — Cmd/Ctrl are never part of ordinary typing, so
+  // there's no legitimate typing context this could hijack.
   useEffect(() => {
     function onZoomKeydown(e) {
-      if (anyOverlayOpen || view !== 'bubbles' || layout === 'chart' || composedView) return;
+      if (anyOverlayOpen || view !== 'bubbles' || layout === 'chart' || canopyActive) return;
       if (!(e.metaKey || e.ctrlKey)) return;
-      if (e.key === '=' || e.key === '+') { e.preventDefault(); viewApi.current?.zoomStep(1); }
-      else if (e.key === '-' || e.key === '_') { e.preventDefault(); viewApi.current?.zoomStep(-1); }
-      else if (e.key === '0') { e.preventDefault(); viewApi.current?.recenter(); }
+      const api = (atlasActive ? atlasViewApi : viewApi).current;
+      if (e.key === '=' || e.key === '+') { e.preventDefault(); api?.zoomStep(1); }
+      else if (e.key === '-' || e.key === '_') { e.preventDefault(); api?.zoomStep(-1); }
+      else if (e.key === '0') { e.preventDefault(); api?.recenter(); }
     }
     window.addEventListener('keydown', onZoomKeydown);
     return () => window.removeEventListener('keydown', onZoomKeydown);
-  }, [anyOverlayOpen, view, layout, composedView]);
+  }, [anyOverlayOpen, view, layout, canopyActive, atlasActive]);
 
   // Photo of the person the logged-in user has claimed as their own bubble.
   const userPhoto = useMemo(() => {
@@ -2902,13 +2916,21 @@ export default function App() {
              follows the app's contract (activate, then a second tap opens
              the profile), so search, the person sheet and the top bar all
              work here unchanged. */
-          <AtlasTree
-            graph={graph}
-            focusId={activeId}
-            onActivate={activateNormal}
-            onOpenPerson={openPerson}
-            reducedMotion={reducedMotion}
-          />
+          <>
+            <AtlasTree
+              graph={graph}
+              focusId={activeId}
+              onActivate={activateNormal}
+              onOpenPerson={openPerson}
+              reducedMotion={reducedMotion}
+              apiRef={atlasViewApi}
+            />
+            {/* Desktop trackpad users get the same discoverable zoom
+                alternative here as the organic tree already offers —
+                ZoomControls' own CSS keeps it desktop/trackpad-only
+                (`pointer: fine`), so this is a no-op addition on touch. */}
+            <ZoomControls viewApi={atlasViewApi} />
+          </>
         ) : layout === 'chart' ? (
           <ChartTree
             graph={graph}
