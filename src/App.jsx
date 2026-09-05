@@ -2621,6 +2621,15 @@ export default function App() {
   const goHome = useCallback(() => {
     if (data.myPersonId) flyToPersonFromAnywhere(data.myPersonId);
   }, [data.myPersonId, flyToPersonFromAnywhere]);
+  // Atlas's own "back to you" — flyToPersonFromAnywhere forces the canvas
+  // back to organic/'bubbles', which would fight the whole point of being
+  // in Atlas. Atlas already has the right primitive for "travel to this
+  // person" (the same activateNormal a search result or an edge marker
+  // uses), so going home here means staying put and flying within the map,
+  // not leaving it.
+  const goHomeInAtlas = useCallback(() => {
+    if (data.myPersonId) activateNormal(data.myPersonId);
+  }, [data.myPersonId, activateNormal]);
 
   // Family Moments slices 3/4 (docs/FAMILY-MOMENTS.md) — the two pieces of
   // async data computeInsightModules needs for nearbyRelatives/
@@ -2930,6 +2939,17 @@ export default function App() {
                 ZoomControls' own CSS keeps it desktop/trackpad-only
                 (`pointer: fine`), so this is a no-op addition on touch. */}
             <ZoomControls viewApi={atlasViewApi} />
+            {/* "Back to you" — the same locate-me control the organic tree
+                offers, wired to goHomeInAtlas so a tap flies to you INSIDE
+                Atlas (see its own comment) instead of leaving the view.
+                Atlas has no lineage/time/recap-tour modes of its own to
+                guard against; only a sheet on top and the recap tour
+                (a cross-view flag) can legitimately hide it. */}
+            <HomeToMe
+              person={mePerson}
+              visible={!!mePerson && activeId !== data.myPersonId && !anyOverlayOpen && recapQueue.length === 0}
+              onGoHome={goHomeInAtlas}
+            />
           </>
         ) : layout === 'chart' ? (
           <ChartTree
