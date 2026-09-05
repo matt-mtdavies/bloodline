@@ -231,11 +231,20 @@ const MAX_BUBBLE_REVEAL = 250;
 // reveal — see that module's own header for the reasoning.
 
 // How far Atlas's own Time-mode year range reaches from the active person
-// when deciding "what's on screen" (see atlasYearRange below) — generous
-// enough to reach great-grandparents/great-grandchildren and first cousins,
-// not so generous it drifts back toward the whole-family default this exists
-// to avoid.
-const ATLAS_TIME_NEAR_DEPTH = 4;
+// when deciding "what's on screen" (see atlasYearRange below) — reaches
+// grandparents/grandchildren and siblings, not so far it drifts back toward
+// the whole-family default this exists to avoid. Real feedback, twice, on a
+// real 1,200+ person family: depth 4 still opened "way too far back" —
+// a thoroughly-researched line can be documented many hops deep in a large
+// family without any of it being what's actually on screen. Depth 2 is
+// paired with ATLAS_TIME_MAX_LOOKBACK_YEARS below as a hard backstop, since
+// no fixed hop count is safe against every family's own research depth.
+const ATLAS_TIME_NEAR_DEPTH = 2;
+// However far the BFS above reaches, the computed start year is never
+// allowed more than this many years before the anchor's OWN birth — roughly
+// two generations. A hop count is a proxy for "on screen," not a promise;
+// this is the actual guarantee.
+const ATLAS_TIME_MAX_LOOKBACK_YEARS = 60;
 
 // Shared by familyStats (the topbar stats pill, scoped by "Bloodline only"
 // AND the viewer's Family Perimeter together) and homeStats (the Home hub
@@ -1713,14 +1722,18 @@ export default function App() {
    * above, scoped to `structuralVisibleIds`) — Atlas has no equivalent
    * "currently revealed" set to scope from (it always shows everyone), so
    * this scopes to the ACTIVE person's own near family instead — the actual
-   * "what's on screen" a map has, out to ATLAS_TIME_NEAR_DEPTH hops (a
-   * generous few generations either way, via the same distancesFromMany
-   * BFS used elsewhere). Falls back to the whole family's own earliest
-   * birth only when the anchor has no near relative with a usable one at
-   * all. Mirrors the standalone lab's own plausibility filter (a synthetic
-   * fixture can carry birth years centuries in the future) rather than
-   * trusting every four-digit number in the data; null — not a slider with
-   * nothing sound to scrub — when fewer than two people have a usable one. */
+   * "what's on screen" a map has, out to ATLAS_TIME_NEAR_DEPTH hops via the
+   * same distancesFromMany BFS used elsewhere, further capped to never
+   * start more than ATLAS_TIME_MAX_LOOKBACK_YEARS before the anchor's own
+   * birth (real feedback, twice: even a few hops still opened "way too far
+   * back" on a large, thoroughly-researched family — a hop count is only a
+   * proxy for what's on screen, not a promise). Falls back to the whole
+   * family's own earliest birth only when the anchor has no near relative
+   * with a usable one at all. Mirrors the standalone lab's own plausibility
+   * filter (a synthetic fixture can carry birth years centuries in the
+   * future) rather than trusting every four-digit number in the data; null
+   * — not a slider with nothing sound to scrub — when fewer than two people
+   * have a usable one. */
   const atlasYearRange = useMemo(() => {
     const thisYear = new Date().getFullYear();
     const plausible = (y) => Number.isFinite(y) && y >= 1000 && y <= thisYear + 1;
@@ -1741,6 +1754,13 @@ export default function App() {
       }
     }
     if (min == null) min = Math.min(...ys);
+    // Hard backstop: never more than ATLAS_TIME_MAX_LOOKBACK_YEARS before the
+    // anchor's own birth, however far the BFS above reached. A hop count is
+    // only a proxy for "on screen" — a single well-documented line can carry
+    // it many hops deep in a large family without that ancestor being
+    // remotely close to what's actually in view.
+    const anchorBirth = graph.byId.get(anchor)?.birth_date ? parseInt(graph.byId.get(anchor).birth_date, 10) : null;
+    if (plausible(anchorBirth)) min = Math.max(min, anchorBirth - ATLAS_TIME_MAX_LOOKBACK_YEARS);
     return { min: min - 5, max };
   }, [data.people, data.myPersonId, graph, activeId]);
 
