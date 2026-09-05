@@ -48,7 +48,8 @@
  * output (every sort ends in an id comparison). Fast: linear in people.
  */
 
-import { isBioOrAdoptive } from '../../data/graph.js';
+import { isBioOrAdoptive, buildGraph } from '../../data/graph.js';
+import { plateFrame } from './plates.js';
 
 export const ROW_GAP = 340;     // vertical distance between generations — Canopy density, so the close view fills instead of floating in paper
 export const NODE_R = 54;       // person radius, same as Canopy's
@@ -66,6 +67,11 @@ export function isFarReach(dx, dy) {
   return Math.abs(dy) > ROW_GAP * 1.5 || Math.abs(dx) > FAR_REACH_X;
 }
 const ORDER_SWEEPS = 4;
+/* How many branches the overview names. Above this the map stops being a
+ * map and becomes a legend; below the people threshold a "branch" is a
+ * couple and a child, which is not a territory anyone recognises. */
+export const MAX_BRANCHES = 10;
+export const MIN_BRANCH_PEOPLE = 6;
 
 const cmpId = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
 
@@ -168,7 +174,7 @@ export function rankRows(graph, rootId = null) {
 export function planAtlas(graph, opts = {}) {
   const started = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
   const byId = graph.byId;
-  const empty = { focusId: null, nodes: new Map(), units: [], bonds: [], rows: new Map(), bounds: { minX: 0, maxX: 0, minY: 0, maxY: 0 }, eras: [], stats: { people: 0, units: 0, generations: 0, lateralUnions: 0, longDescents: 0, crossings: 0, layoutMs: 0 } };
+  const empty = { focusId: null, nodes: new Map(), units: [], bonds: [], rows: new Map(), bounds: { minX: 0, maxX: 0, minY: 0, maxY: 0 }, eras: [], branches: [], stats: { people: 0, units: 0, generations: 0, lateralUnions: 0, longDescents: 0, crossings: 0, branches: 0, layoutMs: 0 } };
   if (!graph.people.length) return empty;
 
   const gen = rankRows(graph, opts.rootId);
@@ -230,29 +236,64 @@ export function planAtlas(graph, opts = {}) {
     units.push(u);
   }
 
-  /* ── Parentage, at the unit level ──────────────────────────────────────── */
-  const childParents = new Map(); // childId -> { ids: [parentId], qualifier }
+  /* ── Parentage ─────────────────────────────────────────────────────────────
+   *
+   * Two different questions, deliberately answered separately, because
+   * conflating them made the map tell a lie.
+   *
+   * WHAT IS DRAWN (parentGroups) must be exact. Every recorded parent edge
+   * is represented, grouped by its own qualifier, so a child with two
+   * biological parents and a step-parent gets a solid connector to the
+   * couple AND a dashed one to the step-parent. The first build kept only
+   * the biological edges whenever any existed, which meant a step-parent
+   * silently had no line to their step-child at all — a real relationship
+   * the rest of the app draws (dashed) everywhere else, vanishing here.
+   * Grouping by qualifier rather than emitting one line per edge keeps a
+   * plain couple as one connector; a mixed couple (one biological parent,
+   * one adoptive) honestly gets one line per qualifier, each reaching only
+   * the parents actually recorded that way. No connector ever implies a
+   * parent who is not recorded, and no recorded parent loses their line.
+   *
+   * WHERE A CHILD SITS (structuralParents) is a layout choice, not a claim:
+   * a child hangs beneath the line they descend from, so blood is preferred
+   * and step is used only when there is nothing else. That preference moves
+   * nobody's connector — it only decides which subtree owns the child. */
+  const normQualifier = (q) => (q === 'adopted' ? 'adoptive' : isBioOrAdoptive(q) ? (q || 'biological') : q);
+  const parentGroups = new Map(); // childId -> [{ ids: [parentId], qualifier }]
+  const structuralParents = new Map(); // childId -> { ids: [parentId] }
   for (const p of graph.people) {
     const all = graph.parents(p.id).filter((x) => byId.has(x.id));
     if (!all.length) continue;
+    const byQualifier = new Map();
+    for (const x of all) {
+      const q = normQualifier(x.qualifier);
+      if (!byQualifier.has(q)) byQualifier.set(q, []);
+      byQualifier.get(q).push(x.id);
+    }
+    const groups = [...byQualifier.entries()]
+      .map(([qualifier, ids]) => ({ qualifier, ids: ids.slice().sort(cmpId) }))
+      .sort((a, b) => cmpId(a.qualifier, b.qualifier));
+    parentGroups.set(p.id, groups);
     const blood = all.filter((x) => isBioOrAdoptive(x.qualifier));
     const use = blood.length ? blood : all;
-    const qualifier = blood.length
-      ? (blood.some((x) => x.qualifier === 'adoptive' || x.qualifier === 'adopted') ? 'adoptive' : 'biological')
-      : 'step';
-    childParents.set(p.id, { ids: use.map((x) => x.id).sort(cmpId), qualifier });
+    structuralParents.set(p.id, { ids: use.map((x) => x.id).sort(cmpId) });
   }
+  /* Ordering minimises crossings among the lines actually DRAWN, so it reads
+   * every group — a step connector crossing the picture is exactly as ugly
+   * as a biological one. */
   const upUnits = new Map();
   const downUnits = new Map();
-  for (const [cid, { ids: pids }] of childParents) {
+  for (const [cid, groups] of parentGroups) {
     const cu = unitOf.get(cid);
-    for (const pid of pids) {
-      const pu = unitOf.get(pid);
-      if (!pu || pu === cu) continue;
-      if (!upUnits.has(cu)) upUnits.set(cu, new Set());
-      if (!downUnits.has(pu)) downUnits.set(pu, new Set());
-      upUnits.get(cu).add(pu);
-      downUnits.get(pu).add(cu);
+    for (const g of groups) {
+      for (const pid of g.ids) {
+        const pu = unitOf.get(pid);
+        if (!pu || pu === cu) continue;
+        if (!upUnits.has(cu)) upUnits.set(cu, new Set());
+        if (!downUnits.has(pu)) downUnits.set(pu, new Set());
+        upUnits.get(cu).add(pu);
+        downUnits.get(pu).add(cu);
+      }
     }
   }
 
@@ -301,7 +342,7 @@ export function planAtlas(graph, opts = {}) {
   const primaryParent = new Map();
   for (const u of units) {
     for (const m of u.memberIds) {
-      const cp = childParents.get(m);
+      const cp = structuralParents.get(m);
       if (!cp) continue;
       const pu = unitOf.get(cp.ids[0]);
       if (pu && pu !== u && pu.row < u.row) { primaryParent.set(u, pu); break; }
@@ -394,13 +435,19 @@ export function planAtlas(graph, opts = {}) {
       else bonds.push({ kind: 'thread', a: p.id, b: pt.id });
     }
   }
-  for (const [cid, { ids: pids, qualifier }] of childParents) {
-    const pu = unitOf.get(pids[0]);
-    if (!pu) continue;
-    const sameUnit = pids.every((id) => unitOf.get(id) === pu);
-    const exact = sameUnit && pids.length === pu.memberIds.length;
-    const parentUnit = exact ? pu : ensureAnchor(pids, Math.max(...pids.map((id) => gen.get(id) ?? 0)));
-    bonds.push({ kind: 'descent', parentUnit: parentUnit.id, child: cid, qualifier });
+  for (const [cid, groups] of parentGroups) {
+    for (const { ids: pids, qualifier } of groups) {
+      const pu = unitOf.get(pids[0]);
+      if (!pu) continue;
+      // A connector may anchor on a whole unit only when the group IS that
+      // unit — otherwise it gets a junction on exactly the parents recorded
+      // with this qualifier, so the line never reaches through someone who
+      // holds a different relationship to the child (or none at all).
+      const sameUnit = pids.every((id) => unitOf.get(id) === pu);
+      const exact = sameUnit && pids.length === pu.memberIds.length;
+      const parentUnit = exact ? pu : ensureAnchor(pids, Math.max(...pids.map((id) => gen.get(id) ?? 0)));
+      bonds.push({ kind: 'descent', parentUnit: parentUnit.id, child: cid, qualifier });
+    }
   }
   const descentParents = [...new Set(bonds.filter((b) => b.kind === 'descent').map((b) => b.parentUnit))].sort(cmpId);
   const level = new Map(descentParents.map((id, i) => [id, i % 3]));
@@ -438,6 +485,126 @@ export function planAtlas(graph, opts = {}) {
   for (const n of nodes.values()) n.x -= shift;
   for (const u of units) u.x -= shift;
   minX -= shift; maxX -= shift;
+
+  /* ── Branch territories ────────────────────────────────────────────────
+   *
+   * The overview's geography. Drawing every person at orbit gives a texture
+   * that proves everyone exists and tells you nothing about the family —
+   * and at five thousand people, more shapes than a canvas can hold. A
+   * BRANCH is the natural unit of that map, and the layout has already
+   * built it: the tidy tree places each subtree in its own contiguous span,
+   * so a territory is just that region measured per row. Nothing is
+   * clustered, guessed or invented.
+   *
+   * The one real decision is WHERE TO CUT. Whole root subtrees are useless —
+   * on the representative fixture a single founding couple owns 92% of the
+   * family, which is one territory and no map. So the largest branch is
+   * split into its own child branches, repeatedly, until there are enough
+   * territories to read: a heavily populated line subdivides into the
+   * branches you would actually name, a thin one stays whole, and the cut
+   * lands at a different depth for each. Every person belongs to exactly
+   * one territory — their nearest selected ancestor — so nobody vanishes
+   * from their own family's map. */
+  const ownPeople = (u) => (u.anchorOnly ? 0 : u.memberIds.length);
+  const subtreeTotal = new Map();
+  const totalOf = (u) => {
+    if (subtreeTotal.has(u)) return subtreeTotal.get(u);
+    let n = ownPeople(u);
+    for (const c of kids.get(u) || []) n += totalOf(c);
+    subtreeTotal.set(u, n);
+    return n;
+  };
+  const roots = units.filter((u) => !u.anchorOnly && !primaryParent.has(u));
+  const headSize = new Map();
+  for (const r of roots) headSize.set(r, totalOf(r));
+  const splittable = (h) => (kids.get(h) || []).length > 0;
+  /* Split by SIZE, not by count. A big family already has dozens of roots
+   * (anyone with no recorded parents starts one), so a "have we got ten
+   * heads yet" loop never fires while one of them still owns most of the
+   * family. The rule that actually produces a map: no territory may hold
+   * more than its fair share, so the dominant line keeps subdividing and
+   * the thin ones are left alone. */
+  const totalPeople = units.reduce((n, u) => n + ownPeople(u), 0);
+  const target = Math.max(MIN_BRANCH_PEOPLE * 3, Math.ceil(totalPeople / MAX_BRANCHES));
+  // Small families are not a map — they are a family, drawn as people.
+  let guard = totalPeople > 150 ? units.length + 50 : 0;
+  while (guard-- > 0) {
+    let biggest = null;
+    for (const [h, n] of headSize) {
+      if (n <= target || !splittable(h)) continue;
+      if (!biggest || n > headSize.get(biggest) || (n === headSize.get(biggest) && cmpId(h.id, biggest.id) < 0)) biggest = h;
+    }
+    if (!biggest) break;
+    headSize.set(biggest, ownPeople(biggest));
+    for (const c of kids.get(biggest) || []) headSize.set(c, totalOf(c));
+  }
+  const heads = new Set(headSize.keys());
+  const headOf = new Map();
+  const findHead = (u) => {
+    if (headOf.has(u)) return headOf.get(u);
+    const chain = [];
+    let cur = u;
+    while (cur && !heads.has(cur) && !headOf.has(cur)) { chain.push(cur); cur = primaryParent.get(cur); }
+    const h = cur ? (headOf.get(cur) ?? cur) : null;
+    for (const c of chain) headOf.set(c, h);
+    if (cur) headOf.set(cur, h);
+    return h;
+  };
+  const surnameOf = (id) => {
+    const p = byId.get(id);
+    const fam = (p?.family_name || '').trim();
+    if (fam) return fam;
+    const parts = (p?.display_name || '').trim().split(/\s+/);
+    return parts.length > 1 ? parts[parts.length - 1] : '';
+  };
+  const nowYear = new Date().getFullYear() + 1;
+  const branchOf = new Map();
+  for (const u of units) {
+    if (u.anchorOnly || !u.memberIds.length) continue;
+    const head = findHead(u);
+    if (!head) continue;
+    let b = branchOf.get(head);
+    if (!b) {
+      b = { head, memberIds: [], bandByRow: new Map(), surnames: new Map(), years: [] };
+      branchOf.set(head, b);
+    }
+    const band = b.bandByRow.get(u.row) || { row: u.row, y: u.row * ROW_GAP, x0: Infinity, x1: -Infinity };
+    band.x0 = Math.min(band.x0, u.x - u.halfW);
+    band.x1 = Math.max(band.x1, u.x + u.halfW);
+    b.bandByRow.set(u.row, band);
+    for (const m of u.memberIds) {
+      b.memberIds.push(m);
+      const sn = surnameOf(m);
+      if (sn) b.surnames.set(sn, (b.surnames.get(sn) || 0) + 1);
+      const y = yearOf(birth(m));
+      if (y && y > 1000 && y <= nowYear) b.years.push(y);
+    }
+  }
+  const branches = [...branchOf.values()]
+    .map((b) => {
+      const bands = [...b.bandByRow.values()].sort((p, q) => p.row - q.row);
+      let top = null;
+      for (const [name, n] of b.surnames) if (!top || n > top.n || (n === top.n && name < top.name)) top = { name, n };
+      b.years.sort((p, q) => p - q);
+      const x0 = Math.min(...bands.map((z) => z.x0)), x1 = Math.max(...bands.map((z) => z.x1));
+      return {
+        id: `b:${b.head.id}`,
+        headUnitId: b.head.id,
+        people: b.memberIds.length,
+        memberIds: b.memberIds.slice().sort(cmpId),
+        surname: top ? top.name : '',
+        from: b.years.length ? b.years[0] : null,
+        to: b.years.length ? b.years[b.years.length - 1] : null,
+        bands,
+        x: (x0 + x1) / 2,
+        y: bands[0].y,
+        minor: false,
+      };
+    })
+    // Largest first, then oldest, then id: deterministic, and the eye meets
+    // the branches carrying the most family first.
+    .sort((a, z) => z.people - a.people || (a.from ?? 9999) - (z.from ?? 9999) || cmpId(a.id, z.id));
+  branches.forEach((b) => { b.minor = b.people < MIN_BRANCH_PEOPLE; });
 
   /* ── Eras: one label per generation row (median birth decade) ────────── */
   // The axis speaks one language: decades when every dated row carries a
@@ -486,7 +653,32 @@ export function planAtlas(graph, opts = {}) {
     lateralUnions,
     longDescents,
     crossings,
+    branches: branches.filter((b) => !b.minor).length,
     layoutMs: Math.round(ended - started),
   };
-  return { focusId: opts.focusId ?? null, nodes, units, bonds, rows, bounds: { minX, maxX, minY, maxY }, eras, stats };
+  const flat = { focusId: opts.focusId ?? null, nodes, units, bonds, rows, bounds: { minX, maxX, minY, maxY }, eras, branches, stats };
+
+  /* A tidy tree of a growing family is a triangle: one generation ends up
+   * holding hundreds of people in a single row, and that row alone sets the
+   * width while the generation count sets the height — 15:1 at a thousand
+   * people, 50:1 at five. Above TRIGGER_ASPECT the family is cut into plates
+   * and packed into the shape of a screen (see plates.js). Below it nothing
+   * happens at all and this returns exactly what it always has.
+   *
+   * `opts.plates === false` is how plates.js re-lays-out each plate without
+   * the pass recursing into itself. */
+  if (opts.plates !== false) {
+    const plated = plateFrame(flat, graph, {
+      layout: planAtlas,
+      buildGraph,
+      rowGap: ROW_GAP,
+      minBranchPeople: MIN_BRANCH_PEOPLE,
+      norm: (q) => (q === 'adopted' ? 'adoptive' : isBioOrAdoptive(q) ? (q || 'biological') : q),
+    });
+    if (plated) {
+      plated.stats.layoutMs = Math.round(((typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now()) - started);
+      return plated;
+    }
+  }
+  return flat;
 }

@@ -69,6 +69,14 @@ html, body, #root { height: 100%; margin: 0; }
   border-radius: 999px; background: #fff; cursor: pointer; color: inherit; white-space: nowrap;
 }
 .atlab__btn:disabled { opacity: 0.55; cursor: default; }
+/* Same 44px rule for the lab's own controls — it is a dev surface, but it is
+   the surface every judgement about this view gets made on, including on a
+   phone. */
+.atlab__btn, .atlab__link, .atlab__seg button { position: relative; }
+.atlab__btn::before, .atlab__link::before, .atlab__seg button::before {
+  content: ''; position: absolute; left: 0; right: 0; top: 50%;
+  height: 44px; transform: translateY(-50%);
+}
 .atlab__btn--accent { background: var(--accent, #c2603a); border-color: var(--accent, #c2603a); color: #fff; }
 
 .atlab__error {
@@ -115,22 +123,99 @@ html, body, #root { height: 100%; margin: 0; }
 .atlab__link { padding: 0; border: 0; background: none; font: inherit; font-size: 13px; color: var(--accent, #c2603a); cursor: pointer; }
 .atlab__corner { position: absolute; z-index: 5; right: 16px; top: 16px; display: flex; gap: 8px; }
 
+/* The app-mounted view (AtlasTree). The lab lays the stage out as a flex
+   child under its own bar; in the app it is the whole canvas behind the real
+   top bar, exactly as .canopy-host is. */
+.atlas-view { position: fixed; inset: 0; z-index: 0; }
+.atlas-view .atlas-host { position: absolute; inset: 0; }
+
+/* Bottom controls — "Whole family" (only once you have travelled somewhere
+   to come back from) and Time mode's toggle (always present), side by side,
+   bottom-centre, clear of the profile sheet's own edges. A single pill used
+   to own this exact position alone; the row is now what's centred, and each
+   pill inside it is a plain flex child. */
+.atlas-bottom-row {
+  position: absolute; z-index: 5; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  display: flex; align-items: center; gap: 10px;
+}
+.atlas-wide {
+  position: relative;
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 9px 16px; border: 1px solid rgba(120, 96, 70, 0.2); border-radius: 999px;
+  background: rgba(255, 252, 246, 0.92); color: var(--ink, #1c1d21);
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  font: inherit; font-size: 13px; white-space: nowrap; cursor: pointer;
+  box-shadow: 0 10px 30px rgba(40, 28, 18, 0.14);
+  animation: atlas-edge-in 260ms ease-out both;
+}
+.atlas-wide svg { color: var(--accent, #c2603a); flex: none; }
+/* A comfortable finger target without a chunkier capsule: the visual pill
+   stays as designed and an invisible pseudo-element brings the touch area up
+   to 44px, the size a thumb actually needs. */
+.atlas-wide::before, .atlas-edge::before {
+  content: ''; position: absolute; left: 0; right: 0; top: 50%;
+  height: 44px; transform: translateY(-50%); min-width: 44px;
+}
+.atlas-wide:hover { background: #fff; }
+.atlas-wide:disabled { opacity: 0.45; cursor: default; }
+.atlas-wide:disabled:hover { background: rgba(255, 252, 246, 0.92); }
+
+/* Time mode's own bar — replaces the bottom row while active (see
+   AtlasTree.jsx), same warm-paper card language as every other Atlas
+   control. A world-event caption rides above the slider when the scrubbed
+   year lands near one; "Done" doubles as the year readout so nothing extra
+   has to be found to leave. */
+.atlas-time {
+  position: absolute; z-index: 5; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  width: min(92vw, 420px);
+  padding: 12px 18px; border: 1px solid rgba(120, 96, 70, 0.2); border-radius: 20px;
+  background: rgba(255, 252, 246, 0.94); color: var(--ink, #1c1d21);
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  box-shadow: 0 10px 30px rgba(40, 28, 18, 0.14);
+  animation: atlas-edge-in 260ms ease-out both;
+}
+.atlas-time__event {
+  margin: 0; font-size: 12.5px; font-style: italic; color: var(--ink-soft, #6b6259);
+  display: flex; align-items: center; gap: 5px; text-align: center;
+}
+.atlas-time__event svg { color: var(--accent, #c2603a); flex: none; }
+.atlas-time__row { display: flex; align-items: center; gap: 10px; width: 100%; }
+.atlas-time__play {
+  flex: none; width: 30px; height: 30px; border-radius: 999px; border: none; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--accent, #c2603a); color: #fff;
+}
+.atlas-time__play:hover { filter: brightness(1.08); }
+.atlas-time__bound { flex: none; font-size: 11px; color: var(--ink-soft, #6b6259); font-variant-numeric: tabular-nums; }
+.atlas-time__slider { flex: 1 1 auto; accent-color: var(--accent, #c2603a); }
+.atlas-time__year {
+  border: none; background: none; padding: 0; margin: 0; cursor: pointer;
+  font: inherit; font-size: 13px; font-weight: 600; color: var(--accent, #c2603a);
+}
+.atlas-time__year:hover { text-decoration: underline; }
+
 /* Edge markers: the selected person's off-screen relatives, pinned to the
    edge of the view in the true direction, the way a map marks the next town
    off the page. Warm paper, terracotta arrow, one tap to fly. */
-.atlab__edge {
+.atlas-edge {
   position: absolute; z-index: 4; transform: translate(-50%, -50%);
   display: inline-flex; align-items: center; gap: 6px;
   padding: 5px 10px 5px 8px; border: 1px solid rgba(194, 96, 58, 0.35); border-radius: 999px;
   background: rgba(255, 252, 246, 0.92); color: var(--ink, #1c1d21);
   font: inherit; font-size: 12px; white-space: nowrap; cursor: pointer;
-  max-width: 48vw; overflow: hidden; text-overflow: ellipsis;
+  /* The label truncates, the BUTTON does not clip: an overflow:hidden here
+     would crop the 44px touch target below back to the visual capsule. */
+  max-width: 48vw;
   box-shadow: 0 6px 18px rgba(40, 28, 18, 0.12);
-  animation: atlab-edge-in 260ms ease-out both;
+  animation: atlas-edge-in 260ms ease-out both;
 }
-.atlab__edge svg { color: var(--accent, #c2603a); flex: none; }
-.atlab__edge:hover { background: #fff; }
-@keyframes atlab-edge-in { from { opacity: 0; transform: translate(-50%, -50%) scale(0.92); } to { opacity: 1; transform: translate(-50%, -50%) scale(1); } }
+.atlas-edge svg { color: var(--accent, #c2603a); flex: none; }
+.atlas-edge span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.atlas-edge:hover { background: #fff; }
+@keyframes atlas-edge-in { from { opacity: 0; transform: translate(-50%, -50%) scale(0.92); } to { opacity: 1; transform: translate(-50%, -50%) scale(1); } }
 
 @media (max-width: 700px) {
   /* A phone gives the lab bar two short rows, not a third of the screen. */

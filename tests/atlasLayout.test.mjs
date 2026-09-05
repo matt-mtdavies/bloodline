@@ -35,7 +35,20 @@ const bigMs = Date.now() - t0;
 const seedGraph = buildGraph(seedPeople, seedRels);
 const seedFrame = planAtlas(seedGraph);
 
-for (const [label, graph, frame] of [['demo', seedGraph, seedFrame], ['1,200-person fixture', bigGraph, bigFrame]]) {
+/* The 1,200-person fixture is wide enough to trigger plating (see
+ * plates.js), so it is exercised BOTH ways: the flat tidy tree it has
+ * always been, which every structural invariant below still holds
+ * absolutely, and the plated atlas the renderer actually gets, where two
+ * of those invariants legitimately change shape and are asserted in their
+ * new form rather than quietly dropped. */
+const bigFlat = planAtlas(bigGraph, { plates: false });
+
+for (const [label, graph, frame] of [
+  ['demo', seedGraph, seedFrame],
+  ['1,200-person fixture (flat)', bigGraph, bigFlat],
+  ['1,200-person fixture (plated)', bigGraph, bigFrame],
+]) {
+  const plated = !!frame.stats.plates;
   test(`${label}: everyone is drawn exactly once`, () => {
     assert.equal(frame.nodes.size, graph.people.length);
     const seen = new Set();
@@ -46,11 +59,27 @@ for (const [label, graph, frame] of [['demo', seedGraph, seedFrame], ['1,200-per
   });
 
   test(`${label}: every parent sits strictly above every one of their children`, () => {
+    /* Plating gives this up as a GLOBAL guarantee and cannot do otherwise:
+     * two people on different plates share no row to be compared on. What
+     * it must still hold is the part a reader actually feels — inside a
+     * plate it is absolute, and packing orders plates oldest-first so that
+     * cross-plate links point downward too, all but a handful of times. */
+    let crossViolations = 0, crossTotal = 0;
     for (const r of graph.relationships) {
       if (r.type !== 'parent') continue;
       const p = frame.nodes.get(r.from_person), c = frame.nodes.get(r.to_person);
       if (!p || !c) continue;
+      if (plated && p.plate !== c.plate) {
+        crossTotal++;
+        if (p.y >= c.y) crossViolations++;
+        continue;
+      }
       assert.ok(p.y < c.y, `${r.from_person} (y=${p.y}) must be above ${r.to_person} (y=${c.y})`);
+    }
+    if (plated) {
+      assert.ok(crossTotal > 0, 'a plated frame should have some cross-plate links to check');
+      assert.ok(crossViolations / crossTotal < 0.1,
+        `${crossViolations} of ${crossTotal} cross-plate links point the wrong way`);
     }
   });
 
@@ -87,7 +116,7 @@ for (const [label, graph, frame] of [['demo', seedGraph, seedFrame], ['1,200-per
   });
 
   test(`${label}: deterministic — same graph yields byte-identical output`, () => {
-    const again = planAtlas(graph);
+    const again = planAtlas(graph, { plates: plated ? undefined : false });
     for (const [id, n] of frame.nodes) {
       const m = again.nodes.get(id);
       assert.equal(n.x, m.x); assert.equal(n.y, m.y);
@@ -150,18 +179,148 @@ test('a couple\'s children are centred under the couple, and the couple over its
   assert.ok(Math.abs(pod.x - kidsMid) < 1e-6, `pod at ${pod.x}, children midpoint ${kidsMid}`);
 });
 
-test('a step edge to the other partner does not pull a child into the shared junction', () => {
-  // Heather's own child, cross-recorded step to Ken: descends from Heather.
+// Every connector must name exactly the parents it reaches, and every
+// recorded parent edge must get a connector. Shared by the cases below.
+function connectors(frame, childId) {
+  return frame.bonds
+    .filter((b) => b.kind === 'descent' && b.child === childId)
+    .map((b) => {
+      const u = frame.units.find((x) => x.id === b.parentUnit);
+      const ids = (u.anchorMemberIds?.length ? u.anchorMemberIds : u.memberIds).slice().sort();
+      return { qualifier: b.qualifier, ids };
+    })
+    .sort((a, b) => (a.qualifier < b.qualifier ? -1 : a.qualifier > b.qualifier ? 1 : 0));
+}
+
+test('a step-parent keeps their own connector to a child who also has blood parents', () => {
+  // Heather's own child, cross-recorded step to Ken. The child descends from
+  // Heather's line, and Ken's step relationship is still drawn — the first
+  // build dropped it entirely whenever any blood parent existed.
   const g = buildGraph(
     [P('H'), P('K'), P('M')],
     [partner('H', 'K'), parent('H', 'M'), parent('K', 'M', 'step')],
   );
   const f = planAtlas(g);
-  const d = f.bonds.find((b) => b.kind === 'descent' && b.child === 'M');
-  const pu = f.units.find((u) => u.id === d.parentUnit);
-  assert.ok(pu.anchorOnly, 'a single-parent descent inside a pod goes through a junction on that parent');
-  assert.deepEqual(pu.anchorMemberIds, ['H']);
-  assert.equal(d.qualifier, 'biological');
+  assert.deepEqual(connectors(f, 'M'), [
+    { qualifier: 'biological', ids: ['H'] },
+    { qualifier: 'step', ids: ['K'] },
+  ]);
+  // The blood connector still goes through a junction on Heather alone, not
+  // the shared pod — it must not imply Ken is a biological parent.
+  const bio = f.bonds.find((b) => b.kind === 'descent' && b.child === 'M' && b.qualifier === 'biological');
+  assert.ok(f.units.find((u) => u.id === bio.parentUnit).anchorOnly);
+});
+
+test('a couple with mixed qualifiers gets one connector per qualifier, each reaching only its own parents', () => {
+  const g = buildGraph(
+    [P('MUM'), P('DAD'), P('KID')],
+    [partner('MUM', 'DAD'), parent('MUM', 'KID', 'biological'), parent('DAD', 'KID', 'adoptive')],
+  );
+  const f = planAtlas(g);
+  assert.deepEqual(connectors(f, 'KID'), [
+    { qualifier: 'adoptive', ids: ['DAD'] },
+    { qualifier: 'biological', ids: ['MUM'] },
+  ]);
+});
+
+test('a plain couple is still one connector, not one per parent', () => {
+  const g = buildGraph(
+    [P('MUM'), P('DAD'), P('KID')],
+    [partner('MUM', 'DAD'), parent('MUM', 'KID'), parent('DAD', 'KID')],
+  );
+  const f = planAtlas(g);
+  assert.deepEqual(connectors(f, 'KID'), [{ qualifier: 'biological', ids: ['DAD', 'MUM'] }]);
+});
+
+for (const [label, graph, frame] of [
+  ['demo', seedGraph, seedFrame],
+  ['1,200-person fixture (flat)', bigGraph, bigFlat],
+  ['1,200-person fixture (plated)', bigGraph, bigFrame],
+]) {
+  const plated = !!frame.stats.plates;
+  test(`${label}: every drawn connector names exactly the parents recorded with its qualifier`, () => {
+    const norm = (q) => (q === 'adopted' ? 'adoptive' : !q || q === 'biological' || q === 'adoptive' ? (q || 'biological') : q);
+    // What the data says.
+    const expected = new Map(); // `${child}|${qualifier}` -> sorted parent ids
+    for (const r of graph.relationships) {
+      if (r.type !== 'parent') continue;
+      if (!frame.nodes.has(r.from_person) || !frame.nodes.has(r.to_person)) continue;
+      const k = `${r.to_person}|${norm(r.qualifier)}`;
+      if (!expected.has(k)) expected.set(k, []);
+      expected.get(k).push(r.from_person);
+    }
+    // What the map draws.
+    /* One connector per child+qualifier — EXCEPT on a plated frame, where a
+     * child's two parents can sit on different plates and genuinely cannot
+     * share one connector. There the rule is the same one stated
+     * differently: however many connectors a child has, between them they
+     * name exactly the parents recorded, and no connector ever names anyone
+     * who is not one. */
+    const drawn = new Map();
+    for (const b of frame.bonds) {
+      if (b.kind !== 'descent') continue;
+      const u = frame.units.find((x) => x.id === b.parentUnit);
+      const ids = u.anchorMemberIds?.length ? u.anchorMemberIds : u.memberIds;
+      const k = `${b.child}|${b.qualifier}`;
+      if (!plated) assert.ok(!drawn.has(k), `two connectors for ${k}`);
+      drawn.set(k, [...(drawn.get(k) || []), ...ids].sort());
+    }
+    for (const [k, ids] of expected) {
+      assert.ok(drawn.has(k), `no connector drawn for ${k}`);
+      assert.deepEqual(drawn.get(k), ids.slice().sort(), `connector ${k} reaches the wrong people`);
+    }
+    for (const k of drawn.keys()) assert.ok(expected.has(k), `connector ${k} has no recorded edge`);
+  });
+}
+
+for (const [label, graph, frame] of [['demo', seedGraph, seedFrame], ['1,200-person fixture', bigGraph, bigFrame]]) {
+  test(`${label}: every person belongs to exactly one branch territory`, () => {
+    const seen = new Set();
+    for (const b of frame.branches) {
+      for (const m of b.memberIds) {
+        assert.ok(!seen.has(m), `${m} is in two territories`);
+        seen.add(m);
+      }
+    }
+    assert.equal(seen.size, frame.nodes.size, 'someone has no territory at all');
+  });
+
+  test(`${label}: a territory's bands cover exactly the rows its people occupy`, () => {
+    for (const b of frame.branches) {
+      const rows = new Set(b.memberIds.map((m) => frame.nodes.get(m).row));
+      assert.deepEqual(
+        b.bands.map((z) => z.row).sort((p, q) => p - q),
+        [...rows].sort((p, q) => p - q),
+        `${b.id} bands do not match its people's rows`,
+      );
+      for (const band of b.bands) {
+        assert.ok(band.x1 >= band.x0, 'a band must have width');
+        for (const m of b.memberIds) {
+          const n = frame.nodes.get(m);
+          if (n.row !== band.row) continue;
+          assert.ok(n.x >= band.x0 - 1 && n.x <= band.x1 + 1, `${m} sits outside their own territory's band`);
+        }
+      }
+    }
+  });
+}
+
+test('a big family is divided into territories nobody could call one branch', () => {
+  // The point of the split: on the representative fixture a single founding
+  // couple owns most of the family, which is one territory and no map.
+  const major = bigFrame.branches.filter((b) => !b.minor);
+  assert.ok(major.length >= 6, `only ${major.length} named territories`);
+  const biggest = Math.max(...major.map((b) => b.people));
+  assert.ok(biggest < bigFrame.nodes.size * 0.35, `one territory holds ${biggest} of ${bigFrame.nodes.size}`);
+  assert.ok(major.every((b) => b.surname), 'a named territory needs a surname');
+});
+
+test('a small family is left whole rather than carved up', () => {
+  // 23 people is a family, not a map — subdividing it would invent branches
+  // nobody would recognise.
+  const major = seedFrame.branches.filter((b) => !b.minor);
+  assert.equal(major.length, 1);
+  assert.ok(major[0].people >= 20, `the demo family split into ${major[0].people}`);
 });
 
 test('a former partner is a lateral link, and the count is reported', () => {
@@ -178,40 +337,44 @@ test('a former partner is a lateral link, and the count is reported', () => {
 });
 
 test('rows are ROW_GAP apart and the world is centred on x = 0', () => {
-  const ys = [...new Set([...bigFrame.nodes.values()].map((n) => n.y))].sort((a, b) => a - b);
+  // Properties of the FLAT tidy tree. A plated atlas deliberately has
+  // neither: each plate keeps its own rows, and the packing runs from the
+  // origin outward rather than about it.
+  const ys = [...new Set([...bigFlat.nodes.values()].map((n) => n.y))].sort((a, b) => a - b);
   for (let i = 1; i < ys.length; i++) assert.equal(ys[i] - ys[i - 1], ROW_GAP);
-  assert.ok(Math.abs((bigFrame.bounds.minX + bigFrame.bounds.maxX) / 2) < 1e-6);
+  assert.ok(Math.abs((bigFlat.bounds.minX + bigFlat.bounds.maxX) / 2) < 1e-6);
 });
 
 test('the 1,200-person fixture lays out fast, and the stats say what the data actually is', () => {
   assert.ok(bigMs < 3000, `layout took ${bigMs}ms`);
   const s = bigFrame.stats;
   assert.equal(s.people, 1200);
+  assert.equal(bigFrame.nodes.size, 1200);
   assert.ok(s.generations >= 5, `only ${s.generations} generations`);
   assert.ok(Number.isInteger(s.lateralUnions) && Number.isInteger(s.crossings) && Number.isInteger(s.longDescents));
   console.log(`      1,200 people → ${s.units} units, ${s.generations} generations, ${s.lateralUnions} lateral unions, ${s.crossings} crossings, ${s.longDescents} long descents, ${bigMs}ms`);
 });
 
 test('one era label per generation, carrying the row\'s median birth decade', () => {
-  assert.equal(bigFrame.eras.length, bigFrame.stats.generations);
-  assert.ok(bigFrame.eras.every((e) => /^\d{4}s$/.test(e.label) || /^Gen \d+$/.test(e.label)));
+  assert.equal(bigFlat.eras.length, bigFlat.stats.generations);
+  assert.ok(bigFlat.eras.every((e) => /^\d{4}s$/.test(e.label) || /^Gen \d+$/.test(e.label)));
   // The demo family carries real, plausible dates — its rows must read as decades.
   assert.ok(seedFrame.eras.some((e) => /^\d{4}s$/.test(e.label)));
   // The axis never mixes languages: a family with any implausible row
   // (the fixture's synthetic dates run past 2300) numbers every generation.
-  const kinds = new Set(bigFrame.eras.map((e) => (/^\d{4}s$/.test(e.label) ? 'decade' : 'gen')));
+  const kinds = new Set(bigFlat.eras.map((e) => (/^\d{4}s$/.test(e.label) ? 'decade' : 'gen')));
   assert.equal(kinds.size, 1, `mixed era labels: ${[...kinds].join(',')}`);
 });
 
 test('the far-reach count in the stats is the same rule the renderer draws by', () => {
-  const byId = new Map(bigFrame.units.map((u) => [u.id, u]));
+  const byId = new Map(bigFlat.units.map((u) => [u.id, u]));
   let n = 0;
-  for (const b of bigFrame.bonds) {
+  for (const b of bigFlat.bonds) {
     if (b.kind !== 'descent') continue;
-    const pu = byId.get(b.parentUnit), c = bigFrame.nodes.get(b.child);
+    const pu = byId.get(b.parentUnit), c = bigFlat.nodes.get(b.child);
     if (isFarReach(c.x - pu.x, c.y - pu.y)) n++;
   }
-  assert.equal(n, bigFrame.stats.longDescents);
+  assert.equal(n, bigFlat.stats.longDescents);
 });
 
 console.log(`\n  ${passed} passed, ${failed} failed`);

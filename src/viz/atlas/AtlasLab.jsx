@@ -15,6 +15,7 @@ import { buildGraph } from '../../data/graph.js';
 import { people as seedPeople, relationships as seedRels, DEFAULT_FOCUS } from '../../data/seed.js';
 import { generateFamilyFixture } from '../../lib/fixtureGenerator.js';
 import { fetchRealFamily } from '../v2/realFamily.js';
+import { useReducedMotion } from '../../hooks/useReducedMotion.js';
 import AtlasStage from './AtlasStage.jsx';
 import '../../styles/theme.css';
 import './atlas.css';
@@ -28,10 +29,14 @@ function portrait(i) {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160"><rect width="160" height="160" fill="${g}"/><circle cx="80" cy="64" r="30" fill="rgba(255,252,246,0.86)"/><path d="M21 160c0-35 27-56 59-56s59 21 59 56z" fill="rgba(255,252,246,0.86)"/></svg>`;
   return 'data:image/svg+xml;base64,' + btoa(svg);
 }
-function representative() {
-  const { tree } = generateFamilyFixture({ size: 1200, seed: 7 });
+/* The fixture sizes this view is judged against — the demo family, a
+ * representative thousand-person tree, and the 5,000-person target the whole
+ * programme aims at. Having all three a tap apart is what makes a scale
+ * ceiling something you MEASURE rather than assume. */
+function representative(size = 1200) {
+  const { tree } = generateFamilyFixture({ size, seed: 7 });
   tree.people.forEach((p, i) => { p.photo = i % 4 === 3 ? null : portrait(i); });
-  return { label: 'Representative family', people: tree.people, relationships: tree.relationships, focus: tree.myPersonId };
+  return { label: `${size.toLocaleString()} people`, people: tree.people, relationships: tree.relationships, focus: tree.myPersonId };
 }
 
 function lifespan(p) {
@@ -51,6 +56,7 @@ export default function AtlasLab() {
   const [stats, setStats] = useState(null);
   const [edges, setEdges] = useState([]);
   const api = useRef(null);
+  const reducedMotion = useReducedMotion();
 
   const graph = useMemo(() => buildGraph(source.people, source.relationships), [source]);
   // Arrival: the whole family blooms first, then the camera flies to you
@@ -62,9 +68,23 @@ export default function AtlasLab() {
     return () => clearTimeout(t);
   }, [source]);
 
+  /* The time domain is validated, not inferred from whatever four-digit
+   * numbers the data happens to contain. A malformed or synthetic date can
+   * sit centuries in the future (the representative fixture runs past 2300),
+   * and scrubbing to a year nobody has lived in is meaningless. Years outside
+   * a plausible range are excluded; if too few survive, time is unavailable
+   * and says so rather than offering a nonsense slider. */
   const years = useMemo(() => {
-    const ys = source.people.map((p) => Number(String(p.birth_date || '').slice(0, 4))).filter((y) => y > 1000);
-    return ys.length ? { min: Math.min(...ys), max: Math.max(...ys, new Date().getFullYear()) } : { min: 1800, max: 2026 };
+    const thisYear = new Date().getFullYear();
+    const ys = source.people
+      .map((p) => Number(String(p.birth_date || '').slice(0, 4)))
+      .filter((y) => Number.isFinite(y) && y >= 1000 && y <= thisYear + 1);
+    const dropped = source.people.filter((p) => {
+      const y = Number(String(p.birth_date || '').slice(0, 4));
+      return Number.isFinite(y) && (y < 1000 || y > thisYear + 1);
+    }).length;
+    if (ys.length < 2) return { usable: false, dropped, min: 1800, max: thisYear };
+    return { usable: true, dropped, min: Math.min(...ys), max: Math.max(...ys, thisYear) };
   }, [source]);
 
   const loadReal = async () => {
@@ -83,7 +103,7 @@ export default function AtlasLab() {
   const active = focusId ? graph.byId.get(focusId) : null;
   const toggleTime = () => {
     if (timeOn) { setTimeOn(false); setYear(null); }
-    else { setTimeOn(true); setYear(Math.round((years.min + years.max) / 2)); }
+    else if (years.usable) { setTimeOn(true); setYear(Math.round((years.min + years.max) / 2)); }
   };
 
   return (
@@ -92,8 +112,10 @@ export default function AtlasLab() {
         <span className="atlab__title">Atlas</span>
         <span className="atlab__src">{source.label} · {source.people.length.toLocaleString()} people</span>
         <div className="atlab__seg" role="group" aria-label="Family source">
-          <button type="button" className={source.label === 'Representative family' ? 'is-on' : ''} onClick={() => setSource(representative())}>1,200 people</button>
           <button type="button" className={source.label === 'Demo family' ? 'is-on' : ''} onClick={() => setSource({ label: 'Demo family', people: seedPeople, relationships: seedRels, focus: DEFAULT_FOCUS })}>Demo</button>
+          {[1200, 5000].map((n) => (
+            <button key={n} type="button" className={source.people.length === n ? 'is-on' : ''} onClick={() => setSource(representative(n))}>{n.toLocaleString()}</button>
+          ))}
         </div>
         <div className="atlab__search">
           <input className="atlab__input" value={query} placeholder="Fly to someone…" onChange={(e) => setQuery(e.target.value)} aria-label="Find someone to fly to" />
@@ -119,6 +141,7 @@ export default function AtlasLab() {
           onLayout={setStats}
           onEdge={setEdges}
           apiRef={api}
+          reducedMotion={reducedMotion}
         />
 
         {/* Off-screen relatives of the selected person, as map markers at the
@@ -127,7 +150,7 @@ export default function AtlasLab() {
           <button
             key={c.key}
             type="button"
-            className="atlab__edge"
+            className="atlas-edge"
             style={{ left: c.x, top: c.y }}
             onClick={() => setFocusId(c.ids[0])}
             aria-label={`Fly to ${c.label}`}
@@ -141,7 +164,13 @@ export default function AtlasLab() {
 
         <div className="atlab__corner">
           <button className="atlab__btn" type="button" onClick={() => api.current?.fitAll()}>Whole family</button>
-          <button className={'atlab__btn' + (timeOn ? ' atlab__btn--accent' : '')} type="button" onClick={toggleTime}>{timeOn ? 'Time on' : 'Time'}</button>
+          <button
+            className={'atlab__btn' + (timeOn ? ' atlab__btn--accent' : '')}
+            type="button"
+            onClick={toggleTime}
+            disabled={!years.usable}
+            title={years.usable ? undefined : 'No usable birth years in this family'}
+          >{timeOn ? 'Time on' : 'Time'}</button>
         </div>
 
         {!active && !timeOn && (
@@ -167,6 +196,7 @@ export default function AtlasLab() {
         {!!stats && (
           <div className="atlab__stats">
             {stats.people.toLocaleString()} people · {stats.generations} generations · {stats.lateralUnions} lateral unions · {stats.longDescents} far-reaching links · laid out in {stats.layoutMs}ms
+            {years.dropped > 0 && <> · <strong>{years.dropped}</strong> implausible birth {years.dropped === 1 ? 'year' : 'years'} excluded from time</>}
           </div>
         )}
       </div>

@@ -257,7 +257,11 @@ export function livePos(frame, id, offsetOf) {
  * structural lift is excluded. Ordinary units carry no lift at all, so this
  * is exactly today's value for every anchor that isn't touching a satellite. */
 export function liveAnchor(frame, unitId, offsetOf) {
-  const u = frame.units.find((x) => x.id === unitId);
+  /* A frame may carry a prebuilt id->unit map. Canopy's frames hold a few
+   * dozen units and never bother; Atlas's hold thousands, and this lookup
+   * runs once per BOND — at 2,000 people the product of the two was enough
+   * to hang the tab, and at 3,000 to crash it. */
+  const u = frame.unitById ? frame.unitById.get(unitId) : frame.units.find((x) => x.id === unitId);
   if (!u) return null;
   let sx = 0, sy = 0, n = 0;
   let lo = Infinity, hi = -Infinity;

@@ -90,7 +90,9 @@ import { useReducedMotion } from './hooks/useReducedMotion.js';
 import BubbleTree from './viz/BubbleTree.jsx';
 import ChartTree from './viz/ChartTree.jsx';
 import CanopyTree from './viz/canopy/CanopyTree.jsx';
+import AtlasTree from './viz/atlas/AtlasTree.jsx';
 import { useCanopyEnabled } from './lib/canopyPref.js';
+import { useAtlasEnabled } from './lib/atlasPref.js';
 import TopBar from './components/TopBar.jsx';
 import FocusNameplate from './components/FocusNameplate.jsx';
 import HoverCard from './components/HoverCard.jsx';
@@ -323,6 +325,9 @@ export default function App() {
   // off, the branch below is never taken and the organic/chart/list paths
   // run byte-identically to before Canopy existed.
   const canopyEnabled = useCanopyEnabled();
+  // Atlas is opt-in on exactly the same terms (see lib/atlasPref.js) — off,
+  // AtlasTree is never rendered and no other path changes at all.
+  const atlasEnabled = useAtlasEnabled();
   const kinTerms = useKinTerms();
 
   // Possible duplicate people (same name + corroborating evidence) to offer for
@@ -887,6 +892,15 @@ export default function App() {
   // flyover) should keep working there, not be disabled just because the
   // layout label hasn't caught up yet.
   const canopyActive = layout === 'canopy' && canopyEnabled;
+  const atlasActive = layout === 'atlas' && atlasEnabled;
+  /* Canopy and Atlas are both SELF-COMPOSING canvases: each mounts its own
+   * PIXI stage, owns its own camera, and re-centres on whoever becomes the
+   * focus. BubbleTree — and therefore `viewApi`, the flyover, the floating
+   * nameplates, the hover card, the zoom shortcuts — is not mounted under
+   * either. Everywhere the app has to ask "is the bubble canvas the thing on
+   * screen right now?", this is the flag, so a third such view can never be
+   * added by touching a list of `||`s scattered through the file. */
+  const composedView = canopyActive || atlasActive;
   const [timeMode, setTimeMode] = useState(false);
   const [timeYear, setTimeYear] = useState(new Date().getFullYear());
   const [timePlaying, setTimePlaying] = useState(false);
@@ -952,6 +966,19 @@ export default function App() {
   // (BubbleTree debounces this itself; see onHover).
   const [hoveredId, setHoveredId] = useState(null);
   const viewApi = useRef(null);
+  // Atlas's own camera ref, kept separate from BubbleTree's viewApi above —
+  // deliberately, not an oversight: viewApi is read in ~30 places across this
+  // file with plain optional chaining, on the standing assumption that while
+  // Canopy/Atlas (composedView) is active it is stale/absent, and every one
+  // of those call sites already guards on composedView rather than on the
+  // ref itself. Pointing viewApi at Atlas's much smaller API surface instead
+  // would make all of those calls stop silently no-op-ing and start actually
+  // firing BubbleTree-shaped methods Atlas doesn't have the same meaning
+  // for. A second, dedicated ref for exactly the one thing Atlas needs
+  // reachable from outside — the desktop zoom controls — avoids that risk
+  // entirely rather than auditing every one of those 30 call sites to prove
+  // it's safe.
+  const atlasViewApi = useRef(null);
   // Tracks which pair, if any, is currently wearing the duplicate-compare
   // gold ring (see showDuplicatePairInTree below) so a later call for a
   // different pair can clear the previous one instead of leaving it lit.
@@ -1663,6 +1690,25 @@ export default function App() {
   // Shared exit for Time mode — the dock's own time-toggle button (tapped a
   // second time) and the ReturnToTreePill below both need to leave Time mode
   // exactly the same way, so there's one place that does it.
+  /* Atlas's own year range for Time mode — deliberately NOT the organic
+   * tree's `yearRange` above, which is scoped to `structuralVisibleIds`
+   * (whatever's currently expanded in the organic reveal). Atlas always
+   * shows literally everyone, so reusing that scoped range would silently
+   * cut the slider off at whatever the organic tree happens to have
+   * revealed rather than the family's real earliest generation. Mirrors
+   * the standalone lab's own plausibility filter (a synthetic fixture can
+   * carry birth years centuries in the future) rather than trusting every
+   * four-digit number in the data; null — not a slider with nothing sound
+   * to scrub — when fewer than two people have a usable one. */
+  const atlasYearRange = useMemo(() => {
+    const thisYear = new Date().getFullYear();
+    const ys = data.people
+      .map((p) => (p.birth_date ? parseInt(p.birth_date, 10) : null))
+      .filter((y) => Number.isFinite(y) && y >= 1000 && y <= thisYear + 1);
+    if (ys.length < 2) return null;
+    return { min: Math.min(...ys), max: Math.max(...ys, thisYear) };
+  }, [data.people]);
+
   const exitTimeMode = useCallback(() => {
     setTimePlaying(false);
     setLifeJourneyId(null);
@@ -1774,7 +1820,7 @@ export default function App() {
     // would do nothing at all. Activate directly instead; ChartTree/
     // CanopyTree each recompute their own tree around the new focal person
     // and centre on them itself.
-    if (layout === 'chart' || canopyActive) {
+    if (layout === 'chart' || composedView) {
       activateNormal(targetId);
       return;
     }
@@ -1817,7 +1863,7 @@ export default function App() {
       // with no Done button and no way to dismiss it short of searching again.
       onAbort: () => setFlightCaption(null),
     });
-  }, [graph, data.myPersonId, reducedMotion, activateNormal, layout, canopyActive]);
+  }, [graph, data.myPersonId, reducedMotion, activateNormal, layout, composedView]);
 
   // Search, while tracing a lineage, needs to feed the SAME "tap another
   // relative" logic activate() uses in that mode — not flyToSearchResult,
@@ -1851,8 +1897,35 @@ export default function App() {
     // instead, matching the fastest path to actually editing a profile.
     // Only the organic Tree view keeps the cinematic flyover below; that's
     // the one place the "journey" is the actual point of the feature.
-    if (view === 'list' || layout === 'chart' || canopyActive) {
+    if (view === 'list' || layout === 'chart' || composedView) {
+      /* Atlas is the exception among these, twice over.
+       *
+       * It is a MAP OF THE WHOLE FAMILY — planAtlas lays out every person in
+       * the graph, unfiltered — so a result "outside the active perimeter"
+       * is already on it and needs no temporary reveal at all.
+       *
+       * And it has a real arrival: the camera flies there and the person's
+       * immediate family gathers into the portrait lens. Opening the profile
+       * sheet on top covered the one thing that had just happened, so search
+       * read as broken in Atlas ("it doesn't move") even though the map had
+       * travelled correctly the whole time, behind the sheet. The organic
+       * tree has never opened the sheet on a search either — it flies, lands,
+       * and leaves the profile one tap away. Atlas now matches it.
+       *
+       * The other three keep the plain open, for the reasons below: List has
+       * no camera at all, Chart re-roots instantly with nothing to watch, and
+       * Canopy composes a destination around the person rather than
+       * travelling to one. */
+      if (atlasActive) { activateNormal(targetId); return; }
       if (isOutside) { exploreBranch(targetId); return; }
+      // A self-composing canvas (Canopy, Atlas) recentres on whoever is in
+      // FOCUS, and openPerson only opens the sheet — it moves the camera
+      // through viewApi, which those views don't have. Without activating
+      // too, picking a search result opened the profile over a map still
+      // sitting wherever it was, and closing the sheet left you nowhere
+      // near the person you just searched for. List and Chart keep the
+      // plain open (List has no camera; Chart re-roots on its own).
+      if (composedView) activateNormal(targetId);
       openPerson(targetId);
       return;
     }
@@ -1896,7 +1969,7 @@ export default function App() {
     // — the camera catching up to wherever they actually are is all that
     // was ever needed.
     viewApi.current?.recenter();
-  }, [view, layout, canopyActive, lineageMode, activeId, graph, flyToSearchResult, openPerson, perimeterActive, perspective, exploreBranch]);
+  }, [view, layout, composedView, atlasActive, lineageMode, activeId, graph, flyToSearchResult, openPerson, activateNormal, perimeterActive, perspective, exploreBranch]);
 
   // Same flight as flyToSearchResult, but callable from anywhere — the
   // profile page's "Show in tree" and the list view's per-row action, not
@@ -1911,7 +1984,7 @@ export default function App() {
   // under either of those layouts and viewApi.current would just never
   // populate.
   const flyToPersonFromAnywhere = useCallback((targetId) => {
-    if (view !== 'bubbles' || layout === 'chart' || canopyActive) {
+    if (view !== 'bubbles' || layout === 'chart' || composedView) {
       setView('bubbles');
       setLayout('organic');
       // BubbleTree mounts fresh here (a real PIXI/WebGL setup, not just a
@@ -1928,7 +2001,7 @@ export default function App() {
     } else {
       flyToSearchResult(targetId);
     }
-  }, [view, layout, canopyActive, flyToSearchResult]);
+  }, [view, layout, composedView, flyToSearchResult]);
 
   // The list view's per-row "view in chart" action, paired with the tree
   // circle above. Chart re-roots itself off activeId (see ChartTree's own
@@ -2567,6 +2640,15 @@ export default function App() {
   const goHome = useCallback(() => {
     if (data.myPersonId) flyToPersonFromAnywhere(data.myPersonId);
   }, [data.myPersonId, flyToPersonFromAnywhere]);
+  // Atlas's own "back to you" — flyToPersonFromAnywhere forces the canvas
+  // back to organic/'bubbles', which would fight the whole point of being
+  // in Atlas. Atlas already has the right primitive for "travel to this
+  // person" (the same activateNormal a search result or an edge marker
+  // uses), so going home here means staying put and flying within the map,
+  // not leaving it.
+  const goHomeInAtlas = useCallback(() => {
+    if (data.myPersonId) activateNormal(data.myPersonId);
+  }, [data.myPersonId, activateNormal]);
 
   // Family Moments slices 3/4 (docs/FAMILY-MOMENTS.md) — the two pieces of
   // async data computeInsightModules needs for nearbyRelatives/
@@ -2693,27 +2775,28 @@ export default function App() {
     return () => window.removeEventListener('keydown', onGlobalKeydown);
   }, [anyOverlayOpen]);
 
-  // Keyboard zoom shortcuts (Cmd/Ctrl +/-/0) — parity with the new on-screen
+  // Keyboard zoom shortcuts (Cmd/Ctrl +/-/0) — parity with the on-screen
   // zoom controls (ZoomControls.jsx), standard in every canvas app in this
-  // category. Scoped to exactly when the BubbleTree canvas is mounted
-  // (view === 'bubbles' && layout !== 'chart' && layout !== 'canopy' — the
-  // same condition flyToSearchResult already uses to know whether viewApi
-  // is live) and nothing else is open, so it never fights the browser's own
-  // native page-zoom shortcut while looking at List/Chart/Canopy view or any
-  // sheet. No activeElement/focused-input guard needed here (unlike the
-  // bare-letter shortcut above) — Cmd/Ctrl are never part of ordinary
-  // typing, so there's no legitimate typing context this could hijack.
+  // category. Scoped to exactly when a camera-driven canvas is mounted
+  // (BubbleTree, or Atlas — Chart re-roots instantly with no camera to step,
+  // and Canopy has no zoomStep/recenter of its own) and nothing else is
+  // open, so it never fights the browser's own native page-zoom shortcut
+  // while looking at List/Chart/Canopy view or any sheet. No
+  // activeElement/focused-input guard needed here (unlike the bare-letter
+  // shortcut above) — Cmd/Ctrl are never part of ordinary typing, so
+  // there's no legitimate typing context this could hijack.
   useEffect(() => {
     function onZoomKeydown(e) {
       if (anyOverlayOpen || view !== 'bubbles' || layout === 'chart' || canopyActive) return;
       if (!(e.metaKey || e.ctrlKey)) return;
-      if (e.key === '=' || e.key === '+') { e.preventDefault(); viewApi.current?.zoomStep(1); }
-      else if (e.key === '-' || e.key === '_') { e.preventDefault(); viewApi.current?.zoomStep(-1); }
-      else if (e.key === '0') { e.preventDefault(); viewApi.current?.recenter(); }
+      const api = (atlasActive ? atlasViewApi : viewApi).current;
+      if (e.key === '=' || e.key === '+') { e.preventDefault(); api?.zoomStep(1); }
+      else if (e.key === '-' || e.key === '_') { e.preventDefault(); api?.zoomStep(-1); }
+      else if (e.key === '0') { e.preventDefault(); api?.recenter(); }
     }
     window.addEventListener('keydown', onZoomKeydown);
     return () => window.removeEventListener('keydown', onZoomKeydown);
-  }, [anyOverlayOpen, view, layout, canopyActive]);
+  }, [anyOverlayOpen, view, layout, canopyActive, atlasActive]);
 
   // Photo of the person the logged-in user has claimed as their own bubble.
   const userPhoto = useMemo(() => {
@@ -2789,15 +2872,16 @@ export default function App() {
         onSetViewMode={(mode) => {
           if (mode === 'list') { setView('list'); return; }
           setView('bubbles');
-          setLayout(mode === 'chart' ? 'chart' : mode === 'canopy' ? 'canopy' : 'organic');
+          setLayout(mode === 'chart' ? 'chart' : mode === 'canopy' ? 'canopy' : mode === 'atlas' ? 'atlas' : 'organic');
           // Chart is a pedigree — bloodline-only is its natural default.
-          // Tree and Canopy default to everyone. Each switch between these
+          // Tree, Canopy and Atlas default to everyone. Each switch between these
           // resets to that view's own default; List is untouched (mode ===
           // 'list' already returned above), and the manual toggle still
           // works freely within whichever view you're in.
           setBloodlineOnly(mode === 'chart');
         }}
         canopyEnabled={canopyEnabled}
+        atlasEnabled={atlasEnabled}
         onOpenLegend={() => setLegendOpen(true)}
         bloodlineOnly={bloodlineOnly}
         onToggleBloodlineOnly={() => setBloodlineOnly((v) => !v)}
@@ -2853,6 +2937,80 @@ export default function App() {
             onOpenPerson={openPerson}
             reducedMotion={reducedMotion}
           />
+        ) : atlasActive ? (
+          /* Atlas — the whole family as one map, laid out once. Same
+             added-branch, same opt-in shape as Canopy above: it owns its own
+             camera and composes nothing about the other views. Selection
+             follows the app's contract (activate, then a second tap opens
+             the profile), so search, the person sheet and the top bar all
+             work here unchanged. */
+          <>
+            <AtlasTree
+              graph={graph}
+              focusId={activeId}
+              onActivate={activateNormal}
+              onOpenPerson={openPerson}
+              reducedMotion={reducedMotion}
+              apiRef={atlasViewApi}
+              /* Time mode — the general "watch the whole family through
+                 time" half only (see AtlasTree.jsx's own header comment for
+                 why "life journey" stays organic-only). Same app-level
+                 state and world-event lookup the organic dock already
+                 drives; this is a second door onto it, not a second copy. */
+              timeMode={timeMode}
+              timeYear={timeYear}
+              timePlaying={timePlaying}
+              yearRange={atlasYearRange}
+              worldEvent={worldEvent}
+              onToggleTimeMode={() => {
+                if (timeMode) { exitTimeMode(); return; }
+                setTimeYear(atlasYearRange ? atlasYearRange.max : new Date().getFullYear());
+                setTimePlaying(false);
+                setTimeMode(true);
+              }}
+              onScrubYear={(y) => { setTimePlaying(false); setTimeYear(y); }}
+              onTogglePlay={() => {
+                const starting = !timePlaying;
+                if (starting && atlasYearRange && timeYear >= atlasYearRange.max) setTimeYear(atlasYearRange.min);
+                setTimePlaying((p) => !p);
+              }}
+            />
+            {/* Desktop trackpad users get the same discoverable zoom
+                alternative here as the organic tree already offers —
+                ZoomControls' own CSS keeps it desktop/trackpad-only
+                (`pointer: fine`), so this is a no-op addition on touch. */}
+            <ZoomControls viewApi={atlasViewApi} />
+            {/* "Back to you" — the same locate-me control the organic tree
+                offers, wired to goHomeInAtlas so a tap flies to you INSIDE
+                Atlas (see its own comment) instead of leaving the view.
+                Atlas has no lineage/time/recap-tour modes of its own to
+                guard against; only a sheet on top and the recap tour
+                (a cross-view flag) can legitimately hide it. */}
+            <HomeToMe
+              person={mePerson}
+              visible={!!mePerson && activeId !== data.myPersonId && !anyOverlayOpen && recapQueue.length === 0}
+              onGoHome={goHomeInAtlas}
+            />
+            {/* Family Moments — the same always-on-open "it's Keira's
+                birthday today" banner the organic tree shows, reused as-is:
+                it's pure overlay with no viewApi dependency at all, and
+                familyMoments is already computed regardless of which view
+                is mounted. activateNormal in place of organic's activate()
+                for the same reason as everywhere else in this branch — Atlas
+                has no lineage mode to branch on. */}
+            <FamilyMomentBanner
+              moments={familyMoments}
+              firstName={mePerson?.display_name ? mePerson.display_name.trim().split(/\s+/)[0] : null}
+              visible={!timeMode && !anyOverlayOpen && recapQueue.length === 0}
+              onOpen={(moment) => {
+                logMomentEngagement(moment?.key, 'tapped');
+                activateNormal(moment.personId);
+                openPerson(moment.personId);
+              }}
+              onDismiss={() => {}}
+              onShown={(key) => logMomentEngagement(key, 'shown')}
+            />
+          </>
         ) : layout === 'chart' ? (
           <ChartTree
             graph={graph}
@@ -2903,7 +3061,7 @@ export default function App() {
             fact={activeFact}
             getPos={() => viewApi.current?.getScreenPos(activeId)}
             hidden={
-              anyOverlayOpen || browse || layout === 'chart' || canopyActive
+              anyOverlayOpen || browse || layout === 'chart' || composedView
               || (hoveredId === activeId && !(comparePairIds && comparePairIds[0] === activeId))
             }
           />
@@ -2921,14 +3079,14 @@ export default function App() {
               fact={null}
               getPos={() => viewApi.current?.getScreenPos(comparePairIds[1])}
               hidden={
-                anyOverlayOpen || browse || layout === 'chart' || canopyActive
+                anyOverlayOpen || browse || layout === 'chart' || composedView
                 || activeId !== comparePairIds[0]
               }
             />
           )}
           <HoverCard
             graph={graph}
-            personId={!anyOverlayOpen && layout !== 'chart' && !canopyActive ? hoveredId : null}
+            personId={!anyOverlayOpen && layout !== 'chart' && !composedView ? hoveredId : null}
             viewerId={data.myPersonId || DEFAULT_FOCUS}
             getPos={() => viewApi.current?.getScreenPos(hoveredId)}
             photos={data.photos}
