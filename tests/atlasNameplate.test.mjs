@@ -9,7 +9,7 @@
  * Run with: node tests/atlasNameplate.test.mjs
  */
 import assert from 'node:assert/strict';
-import { packRow, layoutLabels } from '../src/viz/atlas/nameplate.js';
+import { packRow, layoutLabels } from '../src/viz/atlas/nameplateGeometry.js';
 
 let passed = 0, failed = 0;
 function test(label, fn) {

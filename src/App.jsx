@@ -2991,6 +2991,25 @@ export default function App() {
               visible={!!mePerson && activeId !== data.myPersonId && !anyOverlayOpen && recapQueue.length === 0}
               onGoHome={goHomeInAtlas}
             />
+            {/* Family Moments — the same always-on-open "it's Keira's
+                birthday today" banner the organic tree shows, reused as-is:
+                it's pure overlay with no viewApi dependency at all, and
+                familyMoments is already computed regardless of which view
+                is mounted. activateNormal in place of organic's activate()
+                for the same reason as everywhere else in this branch — Atlas
+                has no lineage mode to branch on. */}
+            <FamilyMomentBanner
+              moments={familyMoments}
+              firstName={mePerson?.display_name ? mePerson.display_name.trim().split(/\s+/)[0] : null}
+              visible={!timeMode && !anyOverlayOpen && recapQueue.length === 0}
+              onOpen={(moment) => {
+                logMomentEngagement(moment?.key, 'tapped');
+                activateNormal(moment.personId);
+                openPerson(moment.personId);
+              }}
+              onDismiss={() => {}}
+              onShown={(key) => logMomentEngagement(key, 'shown')}
+            />
           </>
         ) : layout === 'chart' ? (
           <ChartTree
