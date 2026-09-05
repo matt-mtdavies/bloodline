@@ -230,6 +230,13 @@ const MAX_BUBBLE_REVEAL = 250;
 // lib/staggeredReveal.js, shared by toggleExpandAll and the perimeter
 // reveal — see that module's own header for the reasoning.
 
+// How far Atlas's own Time-mode year range reaches from the active person
+// when deciding "what's on screen" (see atlasYearRange below) — generous
+// enough to reach great-grandparents/great-grandchildren and first cousins,
+// not so generous it drifts back toward the whole-family default this exists
+// to avoid.
+const ATLAS_TIME_NEAR_DEPTH = 4;
+
 // Shared by familyStats (the topbar stats pill, scoped by "Bloodline only"
 // AND the viewer's Family Perimeter together) and homeStats (the Home hub
 // hero, scoped by the Family Perimeter personal cohort alone — see homeStats
@@ -1338,12 +1345,19 @@ export default function App() {
     return vis;
   }, [graph, expanded, aliveAtYear, focusFamilyIds, bloodlineOnly, bloodIds]);
 
-  // Play animation: life journey = 350 ms/step (cinematic), time mode = 600 ms/step
-  // — slowed so each birth's light-arrival animation gets room to land and be felt.
+  // Play animation: life journey = 350 ms/step (cinematic), organic time mode
+  // = 600 ms/step — slowed so each birth's light-arrival animation gets room
+  // to land and be felt. Atlas gets its own, slower still (1000 ms/step):
+  // its "near family" scope (atlasYearRange) still typically spans more
+  // simultaneous relatives per year than organic's own progressively-
+  // revealed subset ever does, and the birth celebration itself (descent +
+  // bloom + embers + year reveal) runs ~3.4s end to end — real feedback
+  // ("it should be slowed down") after 600ms let new arrivals visibly stack
+  // up mid-animation.
   useEffect(() => {
     clearInterval(playRef.current);
     if (!timePlaying) return;
-    const interval = lifeJourneyId ? 350 : 600;
+    const interval = lifeJourneyId ? 350 : atlasActive ? 1000 : 600;
     playRef.current = setInterval(() => {
       setTimeYear((y) => {
         if (y >= yearRange.max) { setTimePlaying(false); return y; }
@@ -1351,7 +1365,7 @@ export default function App() {
       });
     }, interval);
     return () => clearInterval(playRef.current);
-  }, [timePlaying, yearRange.max, lifeJourneyId]);
+  }, [timePlaying, yearRange.max, lifeJourneyId, atlasActive]);
 
   const allExpanded = expanded.size >= graph.people.length && graph.people.length > 0;
   // Show the collapse button whenever MORE than one person is expanded (not just all-or-nothing).
@@ -1690,24 +1704,45 @@ export default function App() {
   // Shared exit for Time mode — the dock's own time-toggle button (tapped a
   // second time) and the ReturnToTreePill below both need to leave Time mode
   // exactly the same way, so there's one place that does it.
-  /* Atlas's own year range for Time mode — deliberately NOT the organic
-   * tree's `yearRange` above, which is scoped to `structuralVisibleIds`
-   * (whatever's currently expanded in the organic reveal). Atlas always
-   * shows literally everyone, so reusing that scoped range would silently
-   * cut the slider off at whatever the organic tree happens to have
-   * revealed rather than the family's real earliest generation. Mirrors
-   * the standalone lab's own plausibility filter (a synthetic fixture can
-   * carry birth years centuries in the future) rather than trusting every
-   * four-digit number in the data; null — not a slider with nothing sound
-   * to scrub — when fewer than two people have a usable one. */
+  /* Atlas's own year range for Time mode. Real feedback: entering Time mode
+   * and hitting play started "way too far back" — because this used to span
+   * the WHOLE family (deliberately, at the time — see the git history for
+   * the original reasoning), so playback on a 100+ year-old tree dragged
+   * through decades before anyone currently on screen even existed. Organic
+   * hit this exact problem first and already fixed it (see `yearRange`
+   * above, scoped to `structuralVisibleIds`) — Atlas has no equivalent
+   * "currently revealed" set to scope from (it always shows everyone), so
+   * this scopes to the ACTIVE person's own near family instead — the actual
+   * "what's on screen" a map has, out to ATLAS_TIME_NEAR_DEPTH hops (a
+   * generous few generations either way, via the same distancesFromMany
+   * BFS used elsewhere). Falls back to the whole family's own earliest
+   * birth only when the anchor has no near relative with a usable one at
+   * all. Mirrors the standalone lab's own plausibility filter (a synthetic
+   * fixture can carry birth years centuries in the future) rather than
+   * trusting every four-digit number in the data; null — not a slider with
+   * nothing sound to scrub — when fewer than two people have a usable one. */
   const atlasYearRange = useMemo(() => {
     const thisYear = new Date().getFullYear();
+    const plausible = (y) => Number.isFinite(y) && y >= 1000 && y <= thisYear + 1;
     const ys = data.people
       .map((p) => (p.birth_date ? parseInt(p.birth_date, 10) : null))
-      .filter((y) => Number.isFinite(y) && y >= 1000 && y <= thisYear + 1);
+      .filter(plausible);
     if (ys.length < 2) return null;
-    return { min: Math.min(...ys), max: Math.max(...ys, thisYear) };
-  }, [data.people]);
+    const max = Math.max(...ys, thisYear);
+
+    const anchor = activeId && graph.byId.has(activeId) ? activeId : (data.myPersonId || DEFAULT_FOCUS);
+    let min = null;
+    if (anchor && graph.byId.has(anchor)) {
+      const dist = distancesFromMany(graph, [anchor]);
+      for (const [id, d] of dist) {
+        if (d > ATLAS_TIME_NEAR_DEPTH) continue;
+        const y = graph.byId.get(id)?.birth_date ? parseInt(graph.byId.get(id).birth_date, 10) : null;
+        if (plausible(y) && (min == null || y < min)) min = y;
+      }
+    }
+    if (min == null) min = Math.min(...ys);
+    return { min: min - 5, max };
+  }, [data.people, data.myPersonId, graph, activeId]);
 
   const exitTimeMode = useCallback(() => {
     setTimePlaying(false);
@@ -2967,6 +3002,12 @@ export default function App() {
                 setTimeYear(atlasYearRange ? atlasYearRange.max : new Date().getFullYear());
                 setTimePlaying(false);
                 setTimeMode(true);
+                // Land close enough that a birth-arrival celebration
+                // (AtlasStage's own BirthEffect) actually has an individual
+                // node to land on — from the far/orbit "everyone as one dot"
+                // view there is nothing for it to animate onto at all, the
+                // same cutoff the map's own performance budget uses.
+                atlasViewApi.current?.flyTo(activeId || data.myPersonId || DEFAULT_FOCUS);
               }}
               onScrubYear={(y) => { setTimePlaying(false); setTimeYear(y); }}
               onTogglePlay={() => {
