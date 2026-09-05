@@ -31,7 +31,7 @@ comments, secrets, and family data are not copied into the feed.
 
 - Pull-request titles and labels need to be written for humans.
 - Contributor GitHub identities must remain distinct for attribution.
-- Deployment truth is shown only when a Cloudflare Pages commit status can be
+- Deployment truth is shown only when a Cloudflare Pages check run can be
   verified. Otherwise the UI explicitly says it is unverified.
 - The page remains useful if GitHub is temporarily unavailable because the
   architecture and runbook library is bundled with the application.
