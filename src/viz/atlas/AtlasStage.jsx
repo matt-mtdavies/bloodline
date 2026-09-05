@@ -1134,10 +1134,22 @@ export default function AtlasStage({
           if (lastYearChecked !== 'unset' && yr != null && !far && !reducedMotion) {
             const g = graphRef.current;
             // A birthday person gathered into the lens is composed at the
-            // lens's own local position, not the raw map position their
-            // node quietly keeps underneath — land the mote where they are
-            // actually seen, same as the lens's own per-frame override does.
-            const posOf = (pid) => (portrait?.frame.nodes.has(pid) ? portrait.frame.nodes.get(pid) : frame.nodes.get(pid));
+            // lens's own LOCAL position (an offset from the focus, not a
+            // world coordinate — see buildPortrait's own
+            // `portraitLayer.position.set(base.x, base.y)`, which is what
+            // actually places the lens in the world; fxLayer is a sibling
+            // of the lens, not a child of it, so it never inherits that
+            // offset for free). Real, confirmed bug: without adding it back
+            // in here, a lens member's birth mote landed wherever their
+            // small local offset happened to fall when misread as a WORLD
+            // coordinate — nowhere near them, and nowhere near anyone in
+            // particular. Land the mote where they are actually seen,
+            // same as the lens's own per-frame override does.
+            const posOf = (pid) => {
+              const n = portrait?.frame.nodes.get(pid);
+              if (n) return { x: portraitLayer.position.x + n.x, y: portraitLayer.position.y + n.y };
+              return frame.nodes.get(pid);
+            };
             // Real report on a large (1,200+ person) family: the birth
             // celebration "only seemed to happen for out of focus people,
             // not the main ones in focus." Root cause — the concurrent-
