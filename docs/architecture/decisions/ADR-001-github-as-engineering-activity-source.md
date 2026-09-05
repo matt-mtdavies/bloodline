@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-09-05
-- Pull request: pending
+- Pull request: #206
 
 ## Context
 
@@ -35,4 +35,3 @@ comments, secrets, and family data are not copied into the feed.
   verified. Otherwise the UI explicitly says it is unverified.
 - The page remains useful if GitHub is temporarily unavailable because the
   architecture and runbook library is bundled with the application.
-
