@@ -53,7 +53,24 @@ const SIB_GAP = POD_GAP * 1.34;  // siblings out to the sides
 const SIB_LIFT = ROW_GAP * 0.13; // ...on a shallow arc, so they read as beside rather than in line
 const KID_GAP = POD_GAP * 1.2;
 
+/* A row that just keeps growing sideways is the one shape this composer
+ * cannot make legible: a blended family with several ex-partners, a large
+ * sibling group, or a big family under one couple all reach for the same
+ * fix — wrap. Measured against the real fixtures this is built for (not
+ * just imagined): the widest portrait in a 1,200-person family is someone
+ * with eight recorded current partners in one straight line, 2,684 units
+ * across — wider than a phone AND a desktop at the lens's own minimum
+ * readable zoom. Capping every arm at a few per row and stacking the rest
+ * keeps the group together without any one row outrunning the frame.
+ * ROW_STACK is kept well short of GEN, so even a few wrapped rows land
+ * short of the next generation's own row rather than colliding with it. */
+const MAX_ARM = 4;               // partners/siblings per row before wrapping
+const MAX_KID_ROW = 4;           // children per row within one couple's group
+const ROW_STACK = NODE_R * 2.4;
+
 const cmpId = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+const armCols = (n) => Math.min(Math.max(n, 1), MAX_ARM);
+const gridRC = (i, cols) => ({ col: i % cols, row: Math.floor(i / cols) });
 
 function byBirth(graph) {
   return (a, b) => {
@@ -108,10 +125,22 @@ export function composePortrait(graph, focusId) {
   const place = (id, x, y, r) => { if (!at.has(id)) { at.set(id, { x, y }); role.set(id, r); } };
 
   place(focusId, 0, 0, 'focus');
-  current.forEach((id, i) => place(id, MATE * (i + 1), 0, 'partner'));
+  // Beyond MAX_ARM, a partner arm stops reaching further out and starts a
+  // new row instead — for the ordinary case (four or fewer) this is exactly
+  // the single straight line it always was; row/col both collapse to the
+  // old i+1 formula.
+  const currentCols = armCols(current.length);
+  current.forEach((id, i) => {
+    const { col, row } = gridRC(i, currentCols);
+    place(id, MATE * (col + 1), row * ROW_STACK, 'partner');
+  });
   // A former partner sits on the other side, so the two sides of a life read
   // as two sides rather than a queue.
-  formers.forEach((id, i) => place(id, -EX - MATE * i, 0, 'former-partner'));
+  const formerCols = armCols(formers.length);
+  formers.forEach((id, i) => {
+    const { col, row } = gridRC(i, formerCols);
+    place(id, -EX - MATE * col, row * ROW_STACK, 'former-partner');
+  });
 
   // Parents: centred over the focus as a couple. Step-parents stand just
   // outside them — present, and visibly not the same relationship.
@@ -145,33 +174,59 @@ export function composePortrait(graph, focusId) {
   /* Each group WANTS to sit under its own couple; two groups wanting the
    * same stretch of row would otherwise overlap (a child of a former partner
    * and a child of the current one both reaching for the middle). So every
-   * child asks for a place, the row is separated left to right, and the
-   * whole run is re-centred on what it collectively asked for — near the
-   * right parents, and never one portrait on top of another. */
-  const wants = [];
+   * GROUP — not every child — asks for a block of space, the blocks are
+   * separated left to right, and the whole run is re-centred on what it
+   * collectively asked for — near the right parents, and never one
+   * portrait on top of another. A group past MAX_KID_ROW wraps into further
+   * rows under the SAME block rather than widening it, so a big family
+   * still reads as one group instead of spilling into its neighbour's
+   * space; for a group at or under that size this is exactly the old
+   * single centred row. */
+  const blocks = [];
   for (const [mate, kids] of groups) {
-    const anchorX = mate ? (at.get(mate).x + 0) / 2 : 0;
-    kids.sort(order).forEach((cid, i) => {
-      wants.push({ id: cid, want: anchorX + (i - (kids.length - 1) / 2) * KID_GAP });
+    const sorted = kids.slice().sort(order);
+    const cols = Math.min(sorted.length, MAX_KID_ROW);
+    const anchorX = mate ? at.get(mate).x / 2 : 0;
+    blocks.push({ kids: sorted, cols, anchorX, halfWidth: (cols * KID_GAP) / 2 });
+  }
+  blocks.sort((a, b) => a.anchorX - b.anchorX || cmpId(a.kids[0], b.kids[0]));
+  let prevRight = -Infinity, drift = 0;
+  for (const b of blocks) {
+    const wantLeft = b.anchorX - b.halfWidth;
+    const left = Math.max(wantLeft, prevRight);
+    b.centerX = left + b.halfWidth;
+    prevRight = left + b.halfWidth * 2;
+    drift += b.anchorX - b.centerX;
+  }
+  const recentre = blocks.length ? drift / blocks.length : 0;
+  for (const b of blocks) {
+    const cx = b.centerX + recentre;
+    b.kids.forEach((cid, i) => {
+      const { col, row } = gridRC(i, b.cols);
+      const colsInRow = Math.min(b.kids.length - row * b.cols, b.cols);
+      place(cid, cx + (col - (colsInRow - 1) / 2) * KID_GAP, GEN + row * ROW_STACK, 'child');
     });
   }
-  wants.sort((a, b) => a.want - b.want || cmpId(a.id, b.id));
-  let prevX = -Infinity, drift = 0;
-  for (const s of wants) {
-    s.x = Math.max(s.want, prevX + KID_GAP);
-    prevX = s.x;
-    drift += s.want - s.x;
-  }
-  const recentre = wants.length ? drift / wants.length : 0;
-  for (const s of wants) place(s.id, s.x + recentre, GEN, 'child');
 
   // Siblings out to the sides on a shallow arc, alternating so the group
-  // stays balanced around the person it belongs to.
-  const partnerReach = MATE * Math.max(current.length, formers.length, 1);
-  siblingIds.forEach((id, i) => {
-    const side = i % 2 === 0 ? -1 : 1;
-    const rank = Math.floor(i / 2) + 1;
-    place(id, side * (partnerReach + SIB_GAP * rank), -SIB_LIFT * Math.min(rank, 2), 'sibling');
+  // stays balanced around the person it belongs to. They start clear of
+  // whichever partner arm reaches furthest — bounded by MAX_ARM now, not by
+  // the raw partner count, so a large blended family doesn't push the
+  // siblings an ever-further, ever-thinner distance from the person they
+  // actually belong to.
+  const armReach = (cols) => cols * MATE;
+  const partnerReach = Math.max(armReach(currentCols), formers.length ? EX + MATE * (formerCols - 1) : 0, MATE);
+  const sideOf = [[], []]; // 0: left, 1: right — alternating keeps both sides balanced
+  siblingIds.forEach((id, i) => sideOf[i % 2].push(id));
+  sideOf.forEach((list, sideIdx) => {
+    const side = sideIdx === 0 ? -1 : 1;
+    const cols = armCols(list.length);
+    list.forEach((id, i) => {
+      const { col, row } = gridRC(i, cols);
+      const x = side * (partnerReach + SIB_GAP * (col + 1));
+      const y = -SIB_LIFT - ROW_STACK * row;
+      place(id, x, y, 'sibling');
+    });
   });
 
   /* ── The frame Canopy's renderer draws ───────────────────────────────── */

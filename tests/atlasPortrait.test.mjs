@@ -105,6 +105,83 @@ test('several partners: current on one side, former on the other, all drawn as w
   assertTruthful(g, f, 'ME');
 });
 
+/* This is the fix for a real measured failure: the widest portrait in a
+ * 1,200-person fixture was someone with eight recorded current partners in
+ * one straight line, 2,684 units across — wider than a phone AND a desktop
+ * at the lens's own minimum readable zoom. A group past a few per row must
+ * wrap into further rows rather than keep reaching sideways forever. */
+test('a large partner group wraps into rows instead of reaching sideways forever', () => {
+  const g = buildGraph(
+    [P('ME'), ...Array.from({ length: 9 }, (_, i) => P(`P${i}`))],
+    Array.from({ length: 9 }, (_, i) => partner('ME', `P${i}`)),
+  );
+  const f = composePortrait(g, 'ME');
+  const xs = Array.from({ length: 9 }, (_, i) => f.nodes.get(`P${i}`).x);
+  const ys = Array.from({ length: 9 }, (_, i) => f.nodes.get(`P${i}`).y);
+  assert.ok(Math.max(...xs) < 700, `nine partners should not still be in one line (widest x: ${Math.max(...xs)})`);
+  assert.ok(new Set(ys).size > 1, 'a group this large must use more than one row');
+  assertTruthful(g, f, 'ME');
+});
+
+test('a large sibling group wraps too, and stays balanced on both sides', () => {
+  const g = buildGraph(
+    [P('ME'), P('MUM'), ...Array.from({ length: 10 }, (_, i) => P(`S${i}`))],
+    [
+      parent('MUM', 'ME'),
+      ...Array.from({ length: 10 }, (_, i) => parent('MUM', `S${i}`)),
+    ],
+  );
+  const f = composePortrait(g, 'ME');
+  const xs = Array.from({ length: 10 }, (_, i) => f.nodes.get(`S${i}`).x);
+  assert.ok(xs.some((x) => x < 0) && xs.some((x) => x > 0), 'ten siblings still split across both sides');
+  assert.ok(Math.max(...xs.map(Math.abs)) < 1200, `should not reach further out just because there are more of them (widest: ${Math.max(...xs.map(Math.abs))})`);
+  assertTruthful(g, f, 'ME');
+});
+
+test('a large sibling group wraps upward across several rows and still clears the parent row', () => {
+  // 16, split across two sides, forces each side past MAX_ARM (4) into a
+  // second row — the actual shape this bound exists to protect: rows
+  // stacking toward the parents must still land short of them.
+  const g = buildGraph(
+    [P('ME'), P('MUM'), P('DAD'), ...Array.from({ length: 16 }, (_, i) => P(`S${i}`))],
+    [
+      parent('MUM', 'ME'), parent('DAD', 'ME'), partner('MUM', 'DAD'),
+      ...Array.from({ length: 16 }, (_, i) => [parent('MUM', `S${i}`), parent('DAD', `S${i}`)]).flat(),
+    ],
+  );
+  const f = composePortrait(g, 'ME');
+  const parentY = f.nodes.get('MUM').y;
+  const sibYs = new Set();
+  for (let i = 0; i < 16; i++) {
+    const sib = f.nodes.get(`S${i}`);
+    assert.ok(sib.y > parentY, `sibling ${i} must stay below the parent row, not level with or above it`);
+    sibYs.add(sib.y);
+  }
+  assert.ok(sibYs.size > 1, 'a group this large must actually use more than one row');
+  assertTruthful(g, f, 'ME');
+});
+
+test('a large group of children under one couple wraps as one block, never spilling into a sibling group', () => {
+  const g = buildGraph(
+    [P('ME'), P('SPOUSE'), ...Array.from({ length: 9 }, (_, i) => P(`K${i}`))],
+    [
+      partner('ME', 'SPOUSE'),
+      ...Array.from({ length: 9 }, (_, i) => [parent('ME', `K${i}`), parent('SPOUSE', `K${i}`)]).flat(),
+    ],
+  );
+  const f = composePortrait(g, 'ME');
+  const xs = Array.from({ length: 9 }, (_, i) => f.nodes.get(`K${i}`).x);
+  const ys = Array.from({ length: 9 }, (_, i) => f.nodes.get(`K${i}`).y);
+  assert.ok(Math.max(...xs) - Math.min(...xs) < 700, `nine children should not still be in one wide row (span: ${Math.max(...xs) - Math.min(...xs)})`);
+  assert.ok(new Set(ys).size > 1, 'a group this large must use more than one row');
+  for (const cid of [...Array.from({ length: 9 }, (_, i) => `K${i}`)]) {
+    const b = f.bonds.find((x) => x.kind === 'descent' && x.child === cid);
+    const u = f.unitById.get(b.parentUnit);
+    assert.deepEqual((u.anchorMemberIds?.length ? u.anchorMemberIds : u.memberIds).slice().sort(), ['ME', 'SPOUSE'], `${cid} must still descend from exactly the right couple once wrapped`);
+  }
+  assertTruthful(g, f, 'ME');
+});
+
 test('children from different partnerships hang from the right parents, never the wrong couple', () => {
   const g = buildGraph(
     [P('ME'), P('NOW'), P('EX'), P('KID_NOW'), P('KID_EX'), P('KID_ALONE')],
@@ -228,6 +305,27 @@ test('truthful across a representative 1,200-person family, and never unbounded'
   // tree is — that is what makes it affordable to draw in the foreground.
   assert.ok(biggest < 40, `a portrait grew to ${biggest} people`);
   console.log(`      largest portrait in 1,200 people: ${biggest}`);
+});
+
+/* The count staying small doesn't mean the SHAPE stays legible — the real
+ * bug this was built to catch was one person with eight recorded current
+ * partners in a straight line, 2,684 units wide, found only by actually
+ * measuring width across a real fixture rather than eyeballing a handful of
+ * hand-built cases. Checked at both the size this composer was tuned
+ * against and the programme's actual 5,000-person target, so a width bound
+ * that happens to hold at one scale isn't mistaken for one that holds at
+ * both. */
+test('no portrait grows wider than the lens can actually show, at either scale', () => {
+  for (const size of [1200, 5000]) {
+    const { tree } = generateFamilyFixture({ size, seed: 7 });
+    const g = buildGraph(tree.people, tree.relationships);
+    let widest = 0;
+    for (const p of g.people) {
+      const f = composePortrait(g, p.id);
+      widest = Math.max(widest, f.bounds.maxX - f.bounds.minX);
+    }
+    assert.ok(widest < 2000, `${size}-person family: widest portrait was ${Math.round(widest)} units`);
+  }
 });
 
 /* Two portraits drawn on top of each other is the one composition failure a
