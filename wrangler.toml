@@ -35,6 +35,12 @@ EXPORT_ADMIN_EMAILS = ""
 # a token at dash.cloudflare.com/profile/api-tokens with the "Zone Analytics"
 # → Read permission scoped to this zone; the Zone ID is on the zone's
 # Overview page. Both secrets — set via wrangler pages secret put.
+#
+# GITHUB_READ_TOKEN — optional, read-only fine-grained token for the public
+# Bloodline repository. /admin-project.html can list merged pull requests without
+# it; configuring it additionally verifies the Cloudflare Pages commit status
+# for each change without consuming GitHub's very small unauthenticated rate
+# limit. The token is server-side only and is never returned to the browser.
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Cloudflare D1 — already created and migrated (Western Europe).

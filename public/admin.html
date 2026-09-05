@@ -176,6 +176,7 @@
     .privacy-toggle[aria-pressed="true"] .dot { background: var(--accent); }
 
     .topbar-refresh { font-weight: 600; }
+    .product-ops-link__short { display: none; }
     .spin-icon-inline {
       width: 13px; height: 13px; border: 2px solid rgba(255,255,255,0.4);
       border-top-color: currentColor; border-radius: 50%; animation: spin 0.7s linear infinite; flex: none;
@@ -186,6 +187,8 @@
       .topbar-title--full { display: none; }
       .topbar-title--short { display: inline; }
       .topbar-ts { flex-basis: 100%; order: 5; }
+      .product-ops-link__full { display: none; }
+      .product-ops-link__short { display: inline; }
     }
 
     /* ── Page head ────────────────────────────────────────────────────── */
@@ -546,6 +549,10 @@
       <span class="topbar-title--short">Admin</span>
     </span>
     <div class="topbar-spacer"></div>
+    <a class="btn product-ops-link" href="/admin-project.html" aria-label="Open Product Operations">
+      <span class="product-ops-link__full">Product Operations</span>
+      <span class="product-ops-link__short" aria-hidden="true">Product</span>
+    </a>
     <button class="privacy-toggle" id="btn-privacy" type="button" aria-pressed="false" aria-describedby="privacy-desc">
       <span class="dot" aria-hidden="true"></span>
       <span id="privacy-label">Privacy mode: off</span>

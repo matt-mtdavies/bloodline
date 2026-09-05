@@ -55,6 +55,40 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
 
 ## Status — what's built
 
+- **Product Operations now gives multiple contributors one trustworthy,
+  admin-only view of engineering change and system knowledge without
+  conflating it with a family's own audit log.** `/admin-project.html` is a
+  dedicated, responsive workspace linked from the existing platform admin
+  dashboard. Its Activity view treats one merged GitHub pull request as one
+  human-scale product change, with search, contributor and product-area
+  filters, inferred or label-driven type/area/risk, a details dialog, and
+  explicit merged-versus-deployed state. GitHub remains authoritative: the
+  new read-only `/api/admin/project-activity` endpoint reuses the existing
+  `ADMIN_EMAILS` server boundary and returns only an allowlisted projection
+  (title, PR, contributor, merge metadata, labels, and shipping state) —
+  never PR bodies, comments, patches, secrets, or family data. The merged
+  feed works against the public repository without configuration; exact
+  Cloudflare Pages commit-status verification is deliberately optional and
+  token-gated via a server-only `GITHUB_READ_TOKEN`, avoiding the 30
+  per-entry calls against GitHub's small unauthenticated rate limit and
+  labelling every unresolved state “Deploy unverified” rather than guessing.
+  A five-minute server cache limits upstream traffic, while an intentional
+  admin refresh bypasses it. GitHub failure degrades to an honest empty feed
+  while the bundled Architecture, Decisions, Environments, and Runbooks
+  sections remain available. The new `docs/architecture/` source-of-truth
+  library adds system-context, family-data-lifecycle, and isolated tree-view
+  maps plus an ADR convention and ADR-001 (GitHub as the engineering activity
+  source). No D1 migration, family-data access, production mutation, or
+  required Cloudflare setting is involved. Covered by endpoint security,
+  sanitization, classification, deployment, rate-limit, and failure tests;
+  static page boundary/accessibility guards; the full unit suite; and
+  `npm run build`. Visually inspected with fixture-only data in the in-app
+  browser at 1280×720 and 390×844: activity, architecture, filters, and the
+  detail dialog were checked; the phone view had no horizontal overflow and
+  no visible control below 44px. The standalone Playwright CLI could not
+  launch Chromium in this managed macOS sandbox, so the documented in-app
+  browser fallback was used and that CLI smoke run is not claimed.
+
 - **Canopy now composes truthful blended-family units and readable mobile
   frames, without changing any existing tree view.** The first Canopy planner
   routed every sibling through the selected person's first parent pod and
