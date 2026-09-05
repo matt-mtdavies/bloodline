@@ -36,6 +36,7 @@ import { useEffect, useRef } from 'react';
 import { Application, Container, Graphics, Text, TextStyle } from 'pixi.js';
 import { planAtlas, isFarReach, NODE_R, ROW_GAP } from './layout.js';
 import { composePortrait } from './portrait.js';
+import { buildNamePill, layoutLabels } from './nameplate.js';
 import { Scalar, ambientOffset, Deflection, rubberBand, SWAY_POD, SWAY_BRANCH } from '../canopy/motion.js';
 import { drawBonds, CanopyNode, easeBud, progressAt, tintFor, descentPath, liveAnchor, livePos } from '../canopy/render.js';
 import { ancestorsWithDistance, descendantsWithDistance, isBioOrAdoptive } from '../../data/graph.js';
@@ -76,6 +77,7 @@ const LENS_FULL_PX = 50;         // ...and at which it is fully up
 const PORTRAIT_MAP_DIM = 0.3;    // the map, while a portrait is held over it
 const FULLY_GROWN = { bonds: new Map(), nodes: new Map(), reduced: false };
 const ZERO_AMBIENT = { x: 0, y: 0, scale: 1 }; // a lens portrait's fixed pose: no drift, no hover
+const LABEL_GAP = 16; // matches organic's own baseRadius+16 pill placement
 // The desktop on-screen zoom controls (ZoomControls.jsx) step by this factor
 // per click — the exact figure BubbleTree's own zoom buttons use, so the two
 // views feel like the same control rather than two different ones that
@@ -150,7 +152,10 @@ export default function AtlasStage({
       const portraitLayer = new Container();
       const portraitBonds = new Graphics();
       const portraitNodes = new Container();
-      portraitLayer.addChild(portraitBonds, portraitNodes);
+      // Labels get their own top layer so a name is never clipped under a
+      // neighbouring portrait in a tightly packed row.
+      const portraitLabels = new Container();
+      portraitLayer.addChild(portraitBonds, portraitNodes, portraitLabels);
       portraitLayer.visible = false;
       world.addChild(bgLayer, territoryLayer, farBonds, longBonds, lateralBonds, nearBonds, litBonds, dotLayer, nodeLayer, portraitLayer);
       /* Screen space: labels and the axis hold a constant size and stick to
@@ -583,6 +588,7 @@ export default function AtlasStage({
        * long as they are held here, so nobody is ever on screen twice. */
       let portrait = null;         // { frame, nodes: Map<id, CanopyNode> }
       let portraitT = 0;           // 0..1 how present the lens is
+      const portraitLabelNodes = new Map(); // id -> pill Container, so dispose can destroy them
       const disposePortrait = () => {
         if (portrait) for (const [, cn] of portrait.nodes) cn.destroy();
         portrait = null;
@@ -591,6 +597,9 @@ export default function AtlasStage({
         portraitT = 0;
         portraitNodes.removeChildren();
         portraitBonds.clear();
+        for (const [, pill] of portraitLabelNodes) pill.destroy({ children: true });
+        portraitLabelNodes.clear();
+        portraitLabels.removeChildren();
       };
       const buildPortrait = () => {
         disposePortrait();
@@ -602,6 +611,8 @@ export default function AtlasStage({
         if (!p || p.count < 2) return;
         portraitLayer.position.set(base.x, base.y);
         const cns = new Map();
+        const labelDefs = [];
+        const pills = new Map();
         for (const [id, node] of p.nodes) {
           const person = graphRef.current.byId.get(id);
           if (!person) continue;
@@ -610,6 +621,35 @@ export default function AtlasStage({
           cn.apply(node, 1, ZERO_AMBIENT, null);
           cns.set(id, cn);
           portraitNodes.addChild(cn.root);
+          // The lens gets its own compact pill name (see nameplate.js) —
+          // Canopy's own stacked serif label, built into every CanopyNode,
+          // is hidden here the same way the main map already hides it in
+          // favour of ITS OWN label layer (see build(), above).
+          if (cn.name) cn.name.visible = false;
+          if (cn.sub) cn.sub.visible = false;
+          const { container: pill, halfWidth } = buildNamePill(person);
+          pills.set(id, pill);
+          labelDefs.push({ id, x: node.x, y: node.y + node.r + LABEL_GAP, halfWidth });
+        }
+        const placed = layoutLabels(labelDefs);
+        for (const [id, pill] of pills) {
+          const pos = placed.get(id) || { x: p.nodes.get(id).x, y: p.nodes.get(id).y + p.nodes.get(id).r + LABEL_GAP };
+          pill.position.set(pos.x, pos.y);
+          portraitLabels.addChild(pill);
+          portraitLabelNodes.set(id, pill);
+          // The focus keeps their lifespan line (CanopyNode's own `sub`,
+          // "b. 1980") — the one thing organic's own label never shows but
+          // is worth keeping here — settled just under wherever the pill
+          // actually landed rather than a fixed offset from the portrait
+          // (`sub` is a CHILD of the person's own root, so its position is
+          // relative to them, not the world), since collision packing only
+          // ever moves a pill sideways, never up or down.
+          const cn = cns.get(id);
+          const ownNode = p.nodes.get(id);
+          if (cn?.sub && ownNode) {
+            cn.sub.visible = true;
+            cn.sub.position.set(pos.x - ownNode.x, pos.y - ownNode.y + 22);
+          }
         }
         drawBonds(portraitBonds, p, FULLY_GROWN, 1e9, null);
         portrait = { frame: p, nodes: cns };
