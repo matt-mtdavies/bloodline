@@ -28,9 +28,43 @@
  * slider) — this wrapper only ever hands it a year.
  */
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import AtlasStage from './AtlasStage.jsx';
 import './atlas.css';
+
+/* A single, gentle nudge on first arrival — same mechanism as the organic
+ * tree's own IntroHint (fades itself out, gone the moment you touch
+ * anything), reused as a PATTERN rather than as that component directly:
+ * IntroHint's actual copy ("Tap a face to grow your family") describes
+ * organic's progressive-reveal gesture, which Atlas doesn't have — Atlas
+ * already shows everyone, and a tap flies rather than expands. A separate
+ * sessionStorage key means seeing one view's hint never suppresses the
+ * other's; `.intro-hint` itself is a generic, fixed-position pill with no
+ * organic-specific assumptions baked in, so the visual language is free to
+ * reuse as-is. This is the one piece of onboarding the app-mounted Atlas
+ * view had NONE of at all before this — even the standalone lab's own
+ * static hint text never made it across when Atlas was added to the app. */
+function AtlasIntroHint() {
+  const [visible, setVisible] = useState(() => {
+    try { return sessionStorage.getItem('bl_atlas_hint_seen') !== '1'; } catch { return true; }
+  });
+  useEffect(() => {
+    if (!visible) return undefined;
+    const hide = () => {
+      try { sessionStorage.setItem('bl_atlas_hint_seen', '1'); } catch { /* private mode */ }
+      setVisible(false);
+    };
+    const t = setTimeout(hide, 5200);
+    window.addEventListener('pointerdown', hide, { once: true });
+    return () => { clearTimeout(t); window.removeEventListener('pointerdown', hide); };
+  }, [visible]);
+  if (!visible) return null;
+  return (
+    <div className="intro-hint" role="status">
+      Zoom in, drag to pan, tap anyone to fly to them
+    </div>
+  );
+}
 
 function ClockIcon() {
   return (
@@ -94,6 +128,7 @@ export default function AtlasTree({
 
   return (
     <div className="atlas-view">
+      <AtlasIntroHint />
       <AtlasStage
         graph={graph}
         focusId={focusId}
