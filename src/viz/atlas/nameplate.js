@@ -38,13 +38,33 @@ function surnameOf(person) {
   return (person?.family_name || '').trim();
 }
 
+/** A person's dates, in the app's own wording: a span for someone who has
+ *  died, "b. YYYY" for someone living, nothing at all when there is no date
+ *  to show. Matches Canopy's own lifespan() so the same person reads the
+ *  same way wherever you meet them. */
+function lifespanOf(person) {
+  const b = (person?.birth_date || '').slice(0, 4);
+  const d = (person?.death_date || '').slice(0, 4);
+  if (person?.is_deceased) return b || d ? `${b || '?'}–${d || '?'}` : 'In memory';
+  return b ? `b. ${b}` : '';
+}
+
 /** The actual pill: a rounded white card, a bold dark first name, and — when
  *  it says something the first name doesn't — a lighter, smaller surname
  *  beside it. Returns the Pixi Container plus the half-width the collision
  *  pass needs, measured from the real, just-built Text objects rather than
  *  an estimate: this runs once per lens member, not once per frame, so
- *  exact metrics cost nothing here the way they would in a hot loop. */
-export function buildNamePill(person) {
+ *  exact metrics cost nothing here the way they would in a hot loop.
+ *
+ *  `withDates` adds the person's years as a caption beneath the card — the
+ *  focus of a portrait gets one. It lives INSIDE this container on purpose:
+ *  it was previously Canopy's own serif `sub`, left behind when the pill
+ *  replaced the label above it, so the most important person in the frame
+ *  carried two different typefaces stacked on each other, one of them
+ *  carded and one floating. Built here, it shares the pill's typeface and
+ *  its lighter ink, and it follows the pill wherever collision packing
+ *  moves it. */
+export function buildNamePill(person, { withDates = false } = {}) {
   const firstName = (person?.display_name || 'Unknown').trim().split(/\s+/)[0] || 'Unknown';
   const lastName = surnameOf(person);
   const showLast = !!lastName && lastName !== firstName;
@@ -83,6 +103,18 @@ export function buildNamePill(person) {
   container.eventMode = 'none'; // a label is decoration, not a second hit target for the person beneath it
   container.addChild(bg, firstText);
   if (lastText) { lastText.position.set(startX + firstText.width + GAP, 0); container.addChild(lastText); }
+
+  const dates = withDates ? lifespanOf(person) : '';
+  if (dates) {
+    const sub = new Text({
+      text: dates,
+      style: { fontFamily: TREE_FONT, fontSize: 11, fontWeight: '500', fill: '#a4988b', letterSpacing: 0.4 },
+    });
+    sub.resolution = 2.5;
+    sub.anchor.set(0.5, 0);
+    sub.position.set(0, PILL_H / 2 + 5);
+    container.addChild(sub);
+  }
 
   return { container, halfWidth: pillW / 2 };
 }
