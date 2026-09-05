@@ -40,6 +40,7 @@ import { buildNamePill, layoutLabels } from './nameplate.js';
 import { Scalar, ambientOffset, Deflection, rubberBand, SWAY_POD, SWAY_BRANCH } from '../canopy/motion.js';
 import { drawBonds, CanopyNode, easeBud, progressAt, tintFor, descentPath, liveAnchor, livePos } from '../canopy/render.js';
 import { ancestorsWithDistance, descendantsWithDistance, isBioOrAdoptive } from '../../data/graph.js';
+import { BirthEffect } from '../birth.js';
 
 const TAP_SLOP = 8;
 const MIN_DOT_PX = 3.4;          // a person never shrinks below a visible dot
@@ -147,6 +148,7 @@ export default function AtlasStage({
       const territoryLayer = new Graphics(); // branch regions, for the whole-family view
       const dotLayer = new Graphics();     // everyone as a dot, for the far view
       const nodeLayer = new Container();
+      const fxLayer = new Container();     // Time mode's birth-arrival celebrations
       /* The lens sits over the map, in world space, so it pans and zooms with
        * the geography rather than floating over it as a panel. */
       const portraitLayer = new Container();
@@ -157,7 +159,7 @@ export default function AtlasStage({
       const portraitLabels = new Container();
       portraitLayer.addChild(portraitBonds, portraitNodes, portraitLabels);
       portraitLayer.visible = false;
-      world.addChild(bgLayer, territoryLayer, farBonds, longBonds, lateralBonds, nearBonds, litBonds, dotLayer, nodeLayer, portraitLayer);
+      world.addChild(bgLayer, territoryLayer, farBonds, longBonds, lateralBonds, nearBonds, litBonds, dotLayer, nodeLayer, portraitLayer, fxLayer);
       /* Screen space: labels and the axis hold a constant size and stick to
        * the viewport, the way a map's type and graticule do. */
       const labelLayer = new Container();
@@ -180,6 +182,26 @@ export default function AtlasStage({
       const defl = new Map();
       const deflOf = (id) => defl.get(id)?.value;
       const deflFor = (id) => { let d = defl.get(id); if (!d) { d = new Deflection(); defl.set(id, d); } return d; };
+      /* Time mode's birth-arrival celebration — the same BirthEffect the
+       * organic tree plays when its own progressive reveal crosses someone's
+       * birth year, ported as an overlay rather than copied: Atlas keeps the
+       * whole family laid out permanently (see the file header) and only
+       * DIMS someone who isn't born yet, it never removes their node the way
+       * organic's structural reveal does — so there is no "a bubble just
+       * appeared" moment to hang the effect on here. Instead this tracks who
+       * reads as truly alive at the scrubbed year (`wasAliveIds`, mirroring
+       * App.jsx's own `aliveAtYear`) and fires the effect the exact tick a
+       * newcomer's OWN birth year is reached, at their permanent map
+       * position — the mote still descends from their parents' fixed spot,
+       * it just lands on a face that was already dimly there rather than one
+       * that didn't exist a moment ago. `lastYearChecked` is a sentinel
+       * (not `null`, since `null` is Time mode's own "off" value) so the
+       * very first tick after Time mode turns on — or after a rebuild —
+       * only seeds the baseline, exactly like organic's `fxSeeded`: nothing
+       * fireworks for a family that was simply already mid-timeline. */
+      const birthFx = new Map();   // id -> BirthEffect, in flight
+      let wasAliveIds = new Set();
+      let lastYearChecked = 'unset';
 
       const zoom = new Scalar(0.05, 1.1);
       const anchorX = new Scalar(0, 1.15);
@@ -205,6 +227,10 @@ export default function AtlasStage({
         for (const [, n] of nodes) n.destroy();
         nodes.clear();
         nodeLayer.removeChildren();
+        for (const [, fx] of birthFx) fx.destroy();
+        birthFx.clear();
+        wasAliveIds = new Set();
+        lastYearChecked = 'unset';
         for (const [, t] of labels) t.destroy();
         labels.clear();
         labelLayer.removeChildren();
@@ -974,6 +1000,14 @@ export default function AtlasStage({
 
         for (const [id, d] of defl) { d.step(dt); if (d.resting && id !== drag.id) defl.delete(id); }
 
+        // ── Birth celebrations in flight (Time mode) ──────────────────────
+        if (birthFx.size) {
+          for (const [id, fx] of birthFx) {
+            fx.update(dt);
+            if (fx.done) { fx.destroy(); birthFx.delete(id); }
+          }
+        }
+
         // Level of detail, all derived from one number.
         const dotScale = Math.max(1, MIN_DOT_PX / (NODE_R * z));
         const shadowFade = clamp01((z - 0.09) / 0.2);
@@ -1004,6 +1038,7 @@ export default function AtlasStage({
           const node = portrait.frame.nodes.get(id);
           if (!node) continue;
           cn.apply(node, 1, ZERO_AMBIENT, null);
+          const settledScale = cn.root.scale.x;
           // Time mode reaches the lens too: someone gathered into a
           // composed family group is still a person on the SAME map, and
           // should fade the same way their own map dot would if you pulled
@@ -1017,6 +1052,18 @@ export default function AtlasStage({
             else if (d != null && d < yr) a = 0.22;
             else if (b == null) a = 0.5;
             cn.root.alpha *= a;
+          }
+          // A birth celebration reaches into the lens too — the birthday
+          // person is often exactly who you composed the lens around, or
+          // one of the family gathered alongside them, and it would look
+          // like a bug for the map's own bubble to celebrate an arrival
+          // while their lens portrait, right next to it, just sits there
+          // already fully formed. Same override as the map's own loop.
+          const birth = birthFx.get(id);
+          if (birth && !birth.bubbleSettled) {
+            const ent = birth.bubbleEntrance();
+            cn.root.scale.set(settledScale * ent.scale);
+            cn.root.alpha *= ent.alpha;
           }
         }
         // The map's own lines between held people come out once the lens has
@@ -1062,6 +1109,54 @@ export default function AtlasStage({
         territoryLayer.alpha = territoryAlpha * (lineage ? 0.55 : 1);
         territoryLayer.visible = territoryAlpha > 0.01;
         nodeLayer.visible = !far;
+        fxLayer.visible = !far;
+
+        /* Birth arrivals: who just crossed into life this scrub. Checked
+         * only on an actual year change — a scrub or a play tick, not every
+         * animation frame at a year that's just sitting still — the same
+         * boundary App.jsx's own `aliveAtYear` memo draws for organic,
+         * re-derived here per tick since this stage owns no React state of
+         * its own to memoize against. */
+        if (yr !== lastYearChecked) {
+          const nowAliveIds = new Set();
+          if (yr != null) {
+            for (const [id] of frame.nodes) {
+              const cn = nodes.get(id);
+              if (!cn) continue;
+              const b = yearOf(cn.person.birth_date), d = yearOf(cn.person.death_date);
+              if ((b == null || b <= yr) && (d == null || d >= yr)) nowAliveIds.add(id);
+            }
+          }
+          // `far` is skipped — from orbit there is no individual node to land
+          // the mote on, and a family big enough to still be a dot silhouette
+          // at this zoom is exactly the case organic's own `births.size < 14`
+          // gate exists to protect against anyway.
+          if (lastYearChecked !== 'unset' && yr != null && !far && !reducedMotion && birthFx.size < 14) {
+            const g = graphRef.current;
+            // A birthday person gathered into the lens is composed at the
+            // lens's own local position, not the raw map position their
+            // node quietly keeps underneath — land the mote where they are
+            // actually seen, same as the lens's own per-frame override does.
+            const posOf = (pid) => (portrait?.frame.nodes.has(pid) ? portrait.frame.nodes.get(pid) : frame.nodes.get(pid));
+            for (const id of nowAliveIds) {
+              if (wasAliveIds.has(id) || birthFx.has(id)) continue;
+              const cn = nodes.get(id), node = posOf(id);
+              if (!cn || !node) continue;
+              const born = yearOf(cn.person.birth_date);
+              if (born !== yr) continue; // only a true birth, not "alive again" from rewinding past a death
+              const vps = g.parents(id).map((p) => posOf(p.id)).filter(Boolean);
+              const origin = vps.length
+                ? { x: vps.reduce((s, p) => s + p.x, 0) / vps.length, y: vps.reduce((s, p) => s + p.y, 0) / vps.length }
+                : { x: node.x, y: node.y - NODE_R * 5 };
+              const fx = new BirthEffect({ x: node.x, y: node.y }, origin, NODE_R, born);
+              fxLayer.addChild(fx.root);
+              birthFx.set(id, fx);
+            }
+          }
+          wasAliveIds = nowAliveIds;
+          lastYearChecked = yr;
+        }
+
         const dotAlpha = aggregated ? clamp01((z - fitZoom * 1.6) / (fitZoom * 1.8)) : 1;
         dotLayer.visible = far && dotAlpha > 0.01;
         dotLayer.alpha = dotAlpha;
@@ -1120,6 +1215,7 @@ export default function AtlasStage({
             const open = easeBud(progressAt(schedule.get(id), clock));
             const amb = node.isFocus || reducedMotion ? { x: 0, y: 0, scale: 1 } : ambientOffset(node.unitId, tSec);
             cn.apply(node, open, amb, deflOf(id));
+            const settledScale = cn.root.scale.x; // before the far-zoom dot boost, below
             if (dotScale > 1) cn.root.scale.set(cn.root.scale.x * dotScale);
             if (cn.shadow) cn.shadow.alpha *= shadowFade;
             if (cn.sub) cn.sub.visible = showSub;
@@ -1128,6 +1224,20 @@ export default function AtlasStage({
             const held = portraitT > 0 && portrait.frame.nodes.has(id) ? 1 - portraitT : 1;
             const pres = presence(id, cn.person) * behind * held;
             cn.root.alpha *= pres;
+            // While a birth celebration hasn't yet handed the bubble back
+            // (see BirthEffect's own phase A/B), the EFFECT owns how the
+            // node looks — invisible while its mote is still falling, then
+            // popping in with an elastic overshoot exactly as it does for
+            // the organic tree. Multiplies on top of the ordinary dimming
+            // above rather than replacing it outright, so a birth landing
+            // on someone in a dimmed lineage, or mid-lens-hold, still comes
+            // in at the right final brightness once it settles.
+            const birth = birthFx.get(id);
+            if (birth && !birth.bubbleSettled) {
+              const ent = birth.bubbleEntrance();
+              cn.root.scale.set(settledScale * ent.scale * (dotScale > 1 ? dotScale : 1));
+              cn.root.alpha *= ent.alpha;
+            }
             if (z > PHOTO_ZOOM && cn.pendingPhoto) { cn.person = { ...cn.person, photo: cn.pendingPhoto }; cn.pendingPhoto = null; cn.loadPhoto(cn.baseR); }
             const lit = !lineage || lineage.has(id);
             // A name is culled against the READABLE band, not the canvas —
