@@ -4385,6 +4385,17 @@
   color: var(--ink-soft);
   margin-bottom: 6px;
 }
+/* The collapse toggle for a large extended group. Styled to be visually
+   identical to a plain .rel-group__label at rest, so a collapsible and a
+   non-collapsible group heading read the same — only the chevron says one
+   of them opens. 44px min-height because it's a real touch target. */
+.rel-group__toggle {
+  display: flex; align-items: center; gap: 6px;
+  width: 100%; min-height: 44px; margin: -11px 0; padding: 0;
+  border: 0; background: none; cursor: pointer;
+  font: inherit; color: inherit; text-align: left;
+}
+.rel-group__toggle:hover { color: var(--ink); }
 .rel-group__list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
 .rel-chip__chev { margin-left: auto; color: var(--ink-faint); flex: none; }
 /* Extended family groups sit below a subtle rule */
@@ -11058,6 +11069,23 @@ button.health-notes {
 }
 .enrich-trigger:hover { background: color-mix(in srgb, var(--accent, #c2603a) 13%, transparent); }
 .enrich-trigger:active { transform: scale(0.98); }
+
+/* The "add more" step that reveals every empty section at once. Deliberately
+   QUIETER than .enrich-trigger directly above it — neutral hairline, ink-soft
+   text, no accent — because two full-strength terracotta CTAs stacked would
+   break the One Accent rule and leave neither reading as primary. Enrich is
+   the marquee action here; this is plumbing. */
+.add-more-trigger {
+  display: flex; align-items: center; justify-content: center; gap: 7px;
+  width: 100%; margin: -10px 0 18px; padding: 10px 14px;
+  border-radius: var(--radius); border: 1px solid var(--hairline);
+  background: transparent; color: var(--ink-soft);
+  font-size: 13px; font-weight: 600; cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.add-more-trigger:hover { background: var(--paper-deep); color: var(--ink); }
+.add-more-trigger:active { transform: scale(0.98); }
+.add-more-trigger > svg { width: 15px; height: 15px; }
 
 .enrich { max-height: 88vh; overflow-y: auto; padding-bottom: calc(var(--safe-bottom) + 24px); }
 .enrich__head {
