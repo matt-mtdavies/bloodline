@@ -2885,6 +2885,72 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   not just a small-demo-family pass, even when the change is framed as a narrow, low-risk audit
   finding.
 
+- **A SECOND, DIFFERENT overlap bug on the same real 478-person tree, reported immediately after
+  the hotfix above shipped — a genuine, pre-existing math error in `pedigreeLayout.js`'s core
+  overlap-avoidance, unrelated to either Chart-view PR this week.** User screenshot showed ancestor
+  cards genuinely occupying the same screen position several rows up (e.g. a card's monogram
+  avatar reading as a garbled "LHAB" — two different people's 2-letter monograms rendered on top of
+  each other). Investigated properly rather than guessing from the screenshot again: reproduced
+  directly against the PURE `computePedigree(graph, focusId, opts)` function in a plain Node
+  script (no browser at all — much faster and fully deterministic than driving Chart view via
+  Playwright, which this investigation tried first and lost significant time to before switching:
+  a persistent `.home-nudge` toast was silently covering the up-expand buttons mid-script, making
+  every click land on the toast instead and produce zero layout change for dozens of iterations
+  before that was noticed and worked around). Built a synthetic, deliberately MESSY ancestor tree
+  (mixed solo/couple branches — some ancestors have only one recorded parent, a real and common
+  genealogy gap — at uneven depth per branch, unlike a clean symmetric tree) and called
+  `computePedigree` directly with every branch expanded, then checked every pair of returned
+  cards' `{x,y,w,h}` rectangles for actual overlap. Reproduced immediately and consistently.
+  **Root cause**: `span(card)` tracked a single SYMMETRIC half-width radius per card, but
+  `place()`'s own push distributes any needed separation between two sibling branches by each
+  branch's SIZE, not evenly — anchoring each branch directly above its own member's plate and
+  letting the WIDER branch absorb nearly all of the push (a deliberate, correct design from an
+  earlier fix — see that fix's own comment, still preserved verbatim in the new code — for a
+  different complaint: a narrow branch getting needlessly dragged far from where it belongs).
+  Once that push is asymmetric, a card's TRUE rendered footprint is no longer symmetric around the
+  centre `place()` assigns it either — but `span()` kept assuming it was, and continuing to report
+  one radius. Proven with a worked, hand-computed example: a 2000-unit-wide branch pushed against
+  a 224-unit branch computed a claimed `span/2` of 1132, while the wide branch's ACTUAL left edge
+  sat 1939.5 units out — an 807-unit underestimate. Every ancestor further up the tree that relied
+  on that undersized span to keep ITS OWN two branches apart then had far too little room, and two
+  ENTIRELY UNRELATED "cousin" branches — one parent's whole ancestry vs the other parent's, several
+  generations up, sharing no card in common closer than a distant mutual ancestor — collided.
+  This is a **real bug that predates both of this week's Chart-view PRs** (it lives in the pure
+  layout math, untouched by either the P1 touch-target fix or its revert) and simply never
+  surfaced before: it only manifests with genuinely ASYMMETRIC branch depth (one lineage traced
+  back much further, or with much richer data, than its sibling lineage) — the ~23-person demo
+  family's ancestry is small and roughly even-depth on every side, so this exact shape never
+  occurred there, and it apparently hadn't been hit at the reporting account's scale until this
+  session's touch-target crash-fix (see the entry above) let them actually reach and explore deep
+  ancestor branches in Chart view for the first time. **Fixed** by replacing the single symmetric
+  `span()` with a proper `extentOf(card)` returning separate `{ left, right }` distances from the
+  card's own centre — computed via the EXACT SAME final push offsets `place()` itself uses (cached
+  on the card during the bottom-up extent pass, then reused verbatim by the top-down placement pass,
+  so the two passes can never compute slightly different numbers and drift apart). This is the
+  standard fix for this class of tree-layout bug: once a placement algorithm can push branches
+  asymmetrically, only an asymmetric extent (not a symmetric radius) can correctly bound what it
+  produces. Covered by a new, permanent `tests/pedigreeLayout.test.mjs` (not a throwaway script):
+  a small symmetric-tree sanity check (confirms zero behavior change for the common, already-
+  working case), the exact reported shape (one branch six generations deep, its sibling branch
+  only two), a 90-configuration randomized sweep across varying solo-parent probability and
+  branch-depth unevenness (a seeded, fully reproducible PRNG — any failure names its exact seed),
+  and the same asymmetric shape in landscape orientation. Confirmed the new tests actually catch
+  the bug, not just describe it: stashed only `pedigreeLayout.js` back to its pre-fix state and
+  reran — 2 of the 4 new tests failed (72 of 90 sweep configurations overlapping, plus the
+  landscape case), then restored the fix and reran clean. Also re-ran the earlier throwaway
+  180-configuration stress sweep from this investigation directly (broader parameter ranges than
+  the permanent test's 90): 5,459 overlaps found against the old code, 0 against the fix, across
+  every configuration. Verified live against the real dev server too: expanded every reachable
+  ancestor branch in the demo family's Chart view and confirmed zero overlapping `.pcard` rectangles
+  (the demo family is too small/even to have ever shown this bug, but this confirms the fix doesn't
+  regress the common case visually, on top of the unit tests proving the fix on data shaped to
+  actually trigger it). Full unit suite (88/88, including the 4 new tests), `npm run build`, and
+  `tests/smoke.mjs` all passed clean. Not yet confirmed against the REPORTING ACCOUNT'S actual real
+  tree data (no access to it from this sandbox) — the fix is verified against a faithful synthetic
+  reconstruction of the reported failure mode (asymmetric, incompletely-recorded, multi-generation
+  ancestry), not the literal production family, so if a still-different shape of overlap turns up
+  there, treat it as a new report rather than assuming this fix was incomplete.
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);
