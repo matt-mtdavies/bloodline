@@ -196,14 +196,34 @@ export default function ChartTree({ graph, activeId, viewerId, bloodlineOnly = f
   // the much lower FIT_MIN_ZOOM deliberately). See focalCenteredBox's own
   // header comment for why the box is sized around the focal card rather
   // than the raw bounding box.
+  //
+  // Real follow-up report, with a screenshot: on a narrow enough phone, the
+  // FOCAL couple's own card — the exact thing this whole frame exists to
+  // show — was itself clipped on both edges. A union card has a fixed
+  // physical width (UNION_W, ~466px) regardless of zoom target; on a narrow
+  // viewport, OPEN_MIN_ZOOM's flat floor can still render that card WIDER
+  // than the available safe area, since the floor only knows "don't go
+  // below a comfortable reading size," not "don't exceed what this specific
+  // device can show." `focalCap` closes that gap: an upper bound (zoom must
+  // NEVER be larger than this — raising zoom only makes the card BIGGER,
+  // never smaller, so this is a ceiling here, the opposite role from
+  // OPEN_MIN_ZOOM's floor) on whatever zoom keeps the actual focal card's
+  // own rendered footprint inside the safe area. It sits alongside the 0.92
+  // legibility cap and can, on a genuinely tiny viewport, win out over
+  // OPEN_MIN_ZOOM too — never rendering the primary subject of this whole
+  // view in a visibly broken, overflowing state is worth more than hitting
+  // the comfortable-zoom target exactly.
   const centerOnFocal = useCallback((lay, orient) => {
     const vp = viewportRef.current;
     if (!vp || !lay.cards.length) return;
     const rect = vp.getBoundingClientRect();
     const PAD = { top: 170, bottom: 150, side: 36 };
     const { boxW, boxH, cx, cy } = focalCenteredBox(lay.bounds, orient);
-    const zoom = Math.min(0.92, Math.max(OPEN_MIN_ZOOM,
-      Math.min((rect.width - PAD.side * 2) / boxW, (rect.height - PAD.top - PAD.bottom) / boxH)));
+    const focalCard = lay.cards.find((c) => c.id === lay.focalCardId);
+    const availW = rect.width - PAD.side * 2;
+    const availH = rect.height - PAD.top - PAD.bottom;
+    const focalCap = focalCard ? Math.min(availW / focalCard.w, availH / focalCard.h) : Infinity;
+    const zoom = Math.min(0.92, focalCap, Math.max(OPEN_MIN_ZOOM, Math.min(availW / boxW, availH / boxH)));
     glideTo({
       zoom,
       panX: rect.width / 2 - cx * zoom,
