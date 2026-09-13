@@ -106,6 +106,8 @@ export default function EditPersonSheet({ person, onClose, onSave, onRemove, sta
   const [militaryOpen, setMilitaryOpen] = useState(
     !!(person.military_branch || person.military_nation || person.military_rank || person.military_service_number),
   );
+  const privacyMounted = useDelayedUnmount(privacyOpen);
+  const militaryMounted = useDelayedUnmount(militaryOpen);
   const [confirmRemove, setConfirmRemove] = useState(false);
 
   useEffect(() => {
@@ -458,46 +460,50 @@ export default function EditPersonSheet({ person, onClose, onSave, onRemove, sta
               <span className="privacy-section__caret"><ChevronIcon open={militaryOpen} /></span>
             </button>
 
-            {militaryOpen && (
-              <div className="privacy-section__body">
-                <div className="field">
-                  <span className="field__label">Military branch</span>
-                  <div className="pill-pick">
-                    {BRANCH_OPTIONS.map((o) => (
-                      <button
-                        key={o.value}
-                        type="button"
-                        className={`pill-pick__opt${f.military_branch === o.value ? ' pill-pick__opt--on' : ''}`}
-                        onClick={() => pick('military_branch')(o.value)}
-                      >
-                        {o.label}
-                      </button>
-                    ))}
+            <div className={`privacy-section__reveal${militaryOpen ? ' is-open' : ''}`} aria-hidden={!militaryOpen}>
+              <div className="privacy-section__reveal-inner">
+                {militaryMounted && (
+                  <div className="privacy-section__body">
+                    <div className="field">
+                      <span className="field__label">Military branch</span>
+                      <div className="pill-pick">
+                        {BRANCH_OPTIONS.map((o) => (
+                          <button
+                            key={o.value}
+                            type="button"
+                            className={`pill-pick__opt${f.military_branch === o.value ? ' pill-pick__opt--on' : ''}`}
+                            onClick={() => pick('military_branch')(o.value)}
+                          >
+                            {o.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <label className="field">
+                      <span className="field__label">Served with</span>
+                      <div className="input-wrap">
+                        <input className="field__input" value={f.military_nation} onChange={set('military_nation')} placeholder="e.g. Australia" />
+                        {f.military_nation && <button type="button" className="input-clear" onClick={clear('military_nation')} aria-label="Clear" tabIndex={-1}>×</button>}
+                      </div>
+                    </label>
+                    <label className="field">
+                      <span className="field__label">Rank</span>
+                      <div className="input-wrap">
+                        <input className="field__input" value={f.military_rank} onChange={set('military_rank')} placeholder="e.g. Corporal" />
+                        {f.military_rank && <button type="button" className="input-clear" onClick={clear('military_rank')} aria-label="Clear" tabIndex={-1}>×</button>}
+                      </div>
+                    </label>
+                    <label className="field">
+                      <span className="field__label">Service number</span>
+                      <div className="input-wrap">
+                        <input className="field__input" value={f.military_service_number} onChange={set('military_service_number')} placeholder="e.g. NX12345" />
+                        {f.military_service_number && <button type="button" className="input-clear" onClick={clear('military_service_number')} aria-label="Clear" tabIndex={-1}>×</button>}
+                      </div>
+                    </label>
                   </div>
-                </div>
-                <label className="field">
-                  <span className="field__label">Served with</span>
-                  <div className="input-wrap">
-                    <input className="field__input" value={f.military_nation} onChange={set('military_nation')} placeholder="e.g. Australia" />
-                    {f.military_nation && <button type="button" className="input-clear" onClick={clear('military_nation')} aria-label="Clear" tabIndex={-1}>×</button>}
-                  </div>
-                </label>
-                <label className="field">
-                  <span className="field__label">Rank</span>
-                  <div className="input-wrap">
-                    <input className="field__input" value={f.military_rank} onChange={set('military_rank')} placeholder="e.g. Corporal" />
-                    {f.military_rank && <button type="button" className="input-clear" onClick={clear('military_rank')} aria-label="Clear" tabIndex={-1}>×</button>}
-                  </div>
-                </label>
-                <label className="field">
-                  <span className="field__label">Service number</span>
-                  <div className="input-wrap">
-                    <input className="field__input" value={f.military_service_number} onChange={set('military_service_number')} placeholder="e.g. NX12345" />
-                    {f.military_service_number && <button type="button" className="input-clear" onClick={clear('military_service_number')} aria-label="Clear" tabIndex={-1}>×</button>}
-                  </div>
-                </label>
+                )}
               </div>
-            )}
+            </div>
           </div>
 
           {/* ── Email ── */}
@@ -619,42 +625,46 @@ export default function EditPersonSheet({ person, onClose, onSave, onRemove, sta
               <span className="privacy-section__caret"><ChevronIcon open={privacyOpen} /></span>
             </button>
 
-            {privacyOpen && (
-              <div className="privacy-section__body">
-                <p className="field__hint" style={{ marginBottom: 12 }}>
-                  Controls what family members with Viewer or Contributor roles can see.
-                  Owners and Co-Admins always see everything.
-                </p>
-                <div className="vis-opts">
-                  {Object.entries(VISIBILITY_LABELS).map(([val, label]) => (
-                    <button
-                      key={val}
-                      type="button"
-                      className={`vis-opt${f.visibility === val ? ' vis-opt--on' : ''}`}
-                      onClick={() => setF((s) => ({ ...s, visibility: val }))}
-                    >
-                      <span className="vis-opt__label">{label}</span>
-                      <span className="vis-opt__desc">{VISIBILITY_DESCS[val]}</span>
-                    </button>
-                  ))}
-                </div>
-                {f.visibility === 'full' && (
-                  <div className="section-vis">
-                    <p className="field__label" style={{ marginBottom: 8 }}>Section visibility</p>
-                    {SECTIONS.map(({ key, label }) => (
-                      <label key={key} className="toggle">
-                        <input
-                          type="checkbox"
-                          checked={f.sectionVisibility[key] !== false}
-                          onChange={() => toggleSection(key)}
-                        />
-                        <span>{label}</span>
-                      </label>
-                    ))}
+            <div className={`privacy-section__reveal${privacyOpen ? ' is-open' : ''}`} aria-hidden={!privacyOpen}>
+              <div className="privacy-section__reveal-inner">
+                {privacyMounted && (
+                  <div className="privacy-section__body">
+                    <p className="field__hint" style={{ marginBottom: 12 }}>
+                      Controls what family members with Viewer or Contributor roles can see.
+                      Owners and Co-Admins always see everything.
+                    </p>
+                    <div className="vis-opts">
+                      {Object.entries(VISIBILITY_LABELS).map(([val, label]) => (
+                        <button
+                          key={val}
+                          type="button"
+                          className={`vis-opt${f.visibility === val ? ' vis-opt--on' : ''}`}
+                          onClick={() => setF((s) => ({ ...s, visibility: val }))}
+                        >
+                          <span className="vis-opt__label">{label}</span>
+                          <span className="vis-opt__desc">{VISIBILITY_DESCS[val]}</span>
+                        </button>
+                      ))}
+                    </div>
+                    {f.visibility === 'full' && (
+                      <div className="section-vis">
+                        <p className="field__label" style={{ marginBottom: 8 }}>Section visibility</p>
+                        {SECTIONS.map(({ key, label }) => (
+                          <label key={key} className="toggle">
+                            <input
+                              type="checkbox"
+                              checked={f.sectionVisibility[key] !== false}
+                              onChange={() => toggleSection(key)}
+                            />
+                            <span>{label}</span>
+                          </label>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
-            )}
+            </div>
           </div>
         </div>
 
@@ -723,4 +733,22 @@ function ChevronIcon({ open }) {
       <path d="M6 9l6 6 6-6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
     </svg>
   );
+}
+
+// Keeps a disclosure's content mounted for `delayMs` after it closes, so the
+// CSS grid-rows collapse (see .privacy-section__reveal) has something to
+// animate shut instead of vanishing instantly — the same "mount now, unmount
+// later" shape as every sheet's own open/close transition, just applied to
+// an inline panel instead of a whole screen.
+function useDelayedUnmount(active, delayMs = 260) {
+  const [mounted, setMounted] = useState(active);
+  useEffect(() => {
+    if (active) {
+      setMounted(true);
+      return undefined;
+    }
+    const t = setTimeout(() => setMounted(false), delayMs);
+    return () => clearTimeout(t);
+  }, [active, delayMs]);
+  return mounted;
 }

@@ -147,7 +147,7 @@ export default function TopBar({ familyName, stats, view, layout, syncStatus, sy
           >
             <BellIcon />
             {activityCount > 0 && (
-              <span className="activity-badge" aria-hidden="true">
+              <span key={activityCount} className="activity-badge" aria-hidden="true">
                 {activityCount > 9 ? '9+' : activityCount}
               </span>
             )}

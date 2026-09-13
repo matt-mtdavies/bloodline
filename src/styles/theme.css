@@ -31,6 +31,24 @@
   --memorial: #6b5e7a;     /* a dignified violet for those who've passed */
   --memorial-soft: #e6dff0;
 
+  /* Validation / destructive-action red — one deliberate shade, standing in
+     for what used to be four near-identical ad hoc reds scattered across
+     form errors, delete buttons and the danger zone (#c0392b, #b94040,
+     #fff5f5/#fef2f2/#fef5f5, #f5b7b1/#ffd0d0 — genuinely no reason any of
+     them differed from the others). Kept OUT of the Keepsake banner on
+     purpose — that surface deliberately favours a desaturated ink-gray
+     over red for its own curated, editorial tone, and that decision
+     stands untouched here. `--error-border-strong` stays a visibly
+     stronger red than the gentle field-validation border, on purpose —
+     the one place that distinction is real is guarding an irreversible
+     action (erase tree, remove a member), which earns more visual weight
+     than a mistyped email address. */
+  --error: #c0392b;
+  --error-deep: #b94040;
+  --error-soft: #fef2f2;
+  --error-border: #f5b7b1;
+  --error-border-strong: #e57373;
+
   /* Type */
   --display: 'Fraunces', Georgia, 'Times New Roman', serif;
   --body: 'Hanken Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
