@@ -3413,7 +3413,6 @@ export default function App() {
         <AccessibleTree
           graph={graph}
           focusId={activeId}
-          onFocus={activate}
           onOpenPerson={openPerson}
           onShowOnMap={flyToPersonFromAnywhere}
           onShowInChart={showPersonInChart}

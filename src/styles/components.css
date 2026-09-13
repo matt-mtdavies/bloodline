@@ -1140,7 +1140,7 @@
   margin: 0;
   padding: 0;
   display: grid;
-  gap: 6px;
+  gap: 0;
 }
 /* Grid items (and flex items) default their own minimum size to `auto`, not
    `0` — WebKit follows this strictly, so a row's two action circles plus its
@@ -1152,9 +1152,36 @@
 .listview__group ul > li,
 .listview__directory ul > li {
   min-width: 0;
+  border-bottom: 1px solid var(--hairline);
+}
+.listview__group ul > li:last-child,
+.listview__directory ul > li:last-child {
+  border-bottom: none;
 }
 .listview__directory { max-width: 620px; margin: 30px auto 0; }
-.filter-pills { display: flex; gap: 6px; margin: 10px 0; }
+/* Sticky so search stays reachable without scrolling past a large family's
+   entire immediate-family group stack first (measured: 1,078px down a
+   2,783px scroll on a 23-person demo alone). Opaque background since real
+   rows scroll underneath it once stuck. */
+.listview__directory-head {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: var(--paper);
+  padding-top: 4px;
+  margin: 0 -2px;
+}
+.listview__sort select {
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink-soft);
+  background: var(--paper-deep);
+  border: 1.5px solid transparent;
+}
+.filter-pills { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
 .filter-pill {
   padding: 5px 14px;
   border-radius: 999px;
@@ -1174,32 +1201,39 @@
 }
 .listview__empty { padding: 16px 12px; font-size: 14.5px; color: var(--ink-faint); }
 
-/* Card container. The standalone "centred here" row (person-row--focus) is
-   still a single <button> with avatar+text direct inside it, so this keeps
-   the original padding/gap/press-scale for that case; the group/directory
-   rows below wrap TWO independent buttons in here instead (a <button> can't
-   nest another <button>), each styled separately below. */
+/* Flat by default — a resting row is separated from its neighbours by the
+   hairline border on its parent <li> (see .listview__group/__directory ul >
+   li above), never a shadow: DESIGN.md's Float-Only Rule reserves elevation
+   for things genuinely above the page. The one exception is the standalone
+   "you are here" hero row (person-row--focus, a single <button> with
+   avatar+text direct inside it, outside any <ul>) which keeps its own card
+   treatment below — it's the one row that IS above the page. Group/directory
+   rows instead wrap TWO independent buttons in here (a <button> can't nest
+   another <button>), each styled separately below. */
 .person-row {
   display: flex;
   align-items: center;
   gap: 13px;
   width: 100%;
   min-width: 0;
-  padding: 9px 12px;
-  border-radius: 16px;
+  padding: 11px 6px;
+  border-radius: 14px;
   text-align: left;
-  background: var(--card);
-  box-shadow: var(--shadow-soft);
+  background: transparent;
   overflow: hidden;
-  transition: transform 0.4s var(--spring), box-shadow 0.25s var(--ease);
+  transition: transform 0.4s var(--spring), background 0.2s var(--ease);
 }
-.person-row:hover { box-shadow: var(--shadow-lift); }
+.person-row:hover { background: var(--paper-deep); }
 .person-row:active { transform: scale(0.985); }
 .person-row--focus {
   background: linear-gradient(160deg, #fffdf9, var(--accent-soft));
   padding: 14px;
+  border-radius: 18px;
+  box-shadow: var(--shadow-soft);
+  transition: transform 0.4s var(--spring), box-shadow 0.25s var(--ease);
 }
-.person-row--current { outline: 2px solid var(--accent-soft); }
+.person-row--focus:hover { background: linear-gradient(160deg, #fffdf9, var(--accent-soft)); box-shadow: var(--shadow-lift); }
+.person-row--current { outline: 2px solid var(--accent-soft); border-radius: 14px; }
 
 /* The row's main tap target (avatar + name/meta) — grows to fill the row,
    no background/shadow of its own (the div or button carrying .person-row
@@ -1224,12 +1258,19 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.person-row__meta { font-size: 12.5px; color: var(--ink-soft); }
+.person-row__meta {
+  font-size: 12.5px;
+  color: var(--ink-soft);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .person-row--focus .person-row__name { font-family: var(--display); font-size: 21px; font-weight: 600; }
 
 /* "Show in tree" — the flight-across-the-tree flourish (same engine as
-   search), as a per-row action distinct from the row's own tap-to-centre.
-   A hairline outline ring at rest (not a filled circle — this repeats down
+   search), as a per-row action distinct from the row's own tap-to-open
+   (which opens the profile sheet directly). A hairline outline ring at
+   rest (not a filled circle — this repeats down
    a list that can run to hundreds of rows, so a solid tint would get heavy)
    marks it as a discrete control even before touch, since :hover alone
    never fires on a phone; warms to a filled accent circle on hover/press
@@ -1239,8 +1280,8 @@
   flex: none;
   display: grid;
   place-items: center;
-  width: 34px;
-  height: 34px;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
   color: var(--ink-soft);
   background: transparent;
@@ -1267,6 +1308,12 @@
 }
 .search::placeholder { color: var(--ink-faint); }
 .search:focus { outline: none; border-color: var(--accent); }
+/* The custom .input-clear circle sits inside .search-wrap (not .input-wrap,
+   whose own padding-right compensation at 42px therefore never applied
+   here) — a typed query used to run under both the native cancel glyph and
+   this button. */
+.search-wrap > .search { padding-right: 42px; }
+.search::-webkit-search-cancel-button { display: none; }
 
 /* ── Legend ──────────────────────────────────────────────────────────────── */
 .sheet--legend { max-width: 480px; }

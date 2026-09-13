@@ -185,23 +185,33 @@ try {
   await page.keyboard.press('Escape');
   await page.waitForTimeout(500);
 
-  // Re-centre deterministically through the accessible view. View mode lives
-  // behind a small menu now (Tree/Chart/List), not a direct toggle button.
+  // List view. A row's main tap opens that person's profile directly — the
+  // destination, per the product's own "tree is navigation, the profile is
+  // the destination" thesis — rather than just re-centring the list in
+  // place as it once did.
   await page.locator('[aria-label="Change how the family is shown"]').click();
   await page.locator('.viewmode-popover__option', { has: page.locator('.viewmode-popover__label', { hasText: 'List' }) }).click();
   await page.waitForSelector('.listview', { timeout: 5000 });
   await page.screenshot({ path: shot('03-list.png') });
   const firstRel = page.locator('.listview__group .person-row').first();
   const relName = (await firstRel.locator('.person-row__name').textContent()) || '';
-  await firstRel.click();
-  await page.locator('[aria-label="Change how the family is shown"]').click();
-  await page.locator('.viewmode-popover__option', { has: page.locator('.viewmode-popover__label', { hasText: 'Tree' }) }).click();
+  await firstRel.locator('.person-row__main').click();
+  await page.waitForSelector('[role="dialog"]', { timeout: 8000 });
+  const listOpenedName = (await page.textContent('.profile__name').catch(() => '')) || '';
+  check(listOpenedName.trim() === relName.trim(), `tapping a List row opens their profile (${listOpenedName.trim()})`);
+
+  // "Show in tree" flies the canvas to them and switches back to Tree view —
+  // confirms the list-to-canvas handoff still re-centres a relative, just via
+  // an explicit action now rather than the row tap itself.
+  await page.locator('[role="dialog"] .action--map').first().click();
   await page.waitForTimeout(1600); // watch the glide settle
   const focus2 = (await page.textContent('.nameplate__name').catch(() => '')) || '';
   check(
     focus2.includes(relName.trim()) && focus2 !== focus1,
-    `re-centres on a relative (${focus2.trim()})`,
+    `"Show in tree" re-centres on a relative (${focus2.trim()})`,
   );
+  await page.keyboard.press('Escape'); // close the profile opened from the list row
+  await page.waitForTimeout(300);
   await page.screenshot({ path: shot('04-recentred.png') });
 
   // Fling the active bubble with a press-drag and confirm it physically moves.
