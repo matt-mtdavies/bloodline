@@ -11,6 +11,14 @@ import { useKinTerms } from '../lib/kinTerms.js';
 // stay plain, always-visible headers — nothing to hide.
 const COLLAPSE_THRESHOLD = 6;
 
+// A group past THIS many people skips the smooth animated collapse and
+// unmounts its rows outright while closed, instead of just CSS-hiding them
+// (audit finding: extended-family groups aren't virtualized like the main
+// directory, so a large one stayed fully mounted in the DOM regardless of
+// collapse state). Below this, the row count is small enough that keeping
+// them mounted for the smooth grid-rows animation costs nothing real.
+const UNMOUNT_THRESHOLD = 40;
+
 // Just an initial estimate for the virtualizer's own scroll-math bootstrap —
 // `rowVirtualizer.measureElement` (wired on each row below) re-measures the
 // real rendered height immediately after mount and self-corrects, so this
@@ -89,6 +97,12 @@ export default function AccessibleTree({ graph, focusId, onOpenPerson, onShowOnM
   const [scrubY, setScrubY] = useState(0);
   const azRef = useRef(null);
   const lastScrubLetterRef = useRef(null);
+  // Throttles handleScrubMove's own elementFromPoint + scrollToIndex work to
+  // once per animation frame — pointermove can fire far faster than that
+  // during a real drag, and neither hit-testing nor a virtualizer scroll
+  // needs to run more often than the screen can actually repaint.
+  const scrubFrameRef = useRef(null);
+  const scrubPointRef = useRef(null);
 
   // This view stays mounted across a re-focus (same component, new focusId —
   // see App.jsx), so the scrollable .listview never reset on its own: tapping
@@ -260,21 +274,35 @@ export default function AccessibleTree({ graph, focusId, onOpenPerson, onShowOnM
     const btn = el?.closest?.('[data-letter]');
     return btn?.dataset.letter || null;
   };
-  const handleScrubStart = (e) => {
-    azRef.current?.setPointerCapture(e.pointerId);
-    handleScrubMove(e);
-  };
-  const handleScrubMove = (e) => {
-    const letter = letterAtPoint(e.clientX, e.clientY);
+  const processScrubFrame = () => {
+    scrubFrameRef.current = null;
+    const pt = scrubPointRef.current;
+    if (!pt) return;
+    const letter = letterAtPoint(pt.x, pt.y);
     if (!letter) return;
     setScrubLetter(letter);
-    setScrubY(e.clientY);
+    setScrubY(pt.y);
     if (letter !== lastScrubLetterRef.current) {
       lastScrubLetterRef.current = letter;
       jumpToLetter(letter);
     }
   };
+  const handleScrubStart = (e) => {
+    azRef.current?.setPointerCapture(e.pointerId);
+    handleScrubMove(e);
+  };
+  const handleScrubMove = (e) => {
+    scrubPointRef.current = { x: e.clientX, y: e.clientY };
+    if (scrubFrameRef.current == null) {
+      scrubFrameRef.current = requestAnimationFrame(processScrubFrame);
+    }
+  };
   const handleScrubEnd = () => {
+    if (scrubFrameRef.current != null) {
+      cancelAnimationFrame(scrubFrameRef.current);
+      scrubFrameRef.current = null;
+    }
+    scrubPointRef.current = null;
     lastScrubLetterRef.current = null;
     setScrubLetter(null);
   };
@@ -301,7 +329,12 @@ export default function AccessibleTree({ graph, focusId, onOpenPerson, onShowOnM
         {groups.map((g) => {
           const collapsible = g.items.length > COLLAPSE_THRESHOLD;
           const isOpen = !collapsible || !collapsedGroups.has(g.title);
-          const rows = (
+          // A group large enough to matter for DOM size skips the smooth
+          // animated collapse and unmounts its rows outright while closed —
+          // see UNMOUNT_THRESHOLD above. Below it, rows stay mounted (CSS
+          // grid-rows animates the reveal) since the DOM cost is trivial.
+          const large = g.items.length > UNMOUNT_THRESHOLD;
+          const rows = large && !isOpen ? null : (
             <ul>
               {g.items.map((item) => {
                 const p = graph.byId.get(item.id);
@@ -355,12 +388,14 @@ export default function AccessibleTree({ graph, focusId, onOpenPerson, onShowOnM
               ) : (
                 <h3>{g.title} ({g.items.length})</h3>
               )}
-              {collapsible ? (
+              {!collapsible ? (
+                rows
+              ) : large ? (
+                rows
+              ) : (
                 <div className={`privacy-section__reveal${isOpen ? ' is-open' : ''}`} aria-hidden={!isOpen}>
                   <div className="privacy-section__reveal-inner">{rows}</div>
                 </div>
-              ) : (
-                rows
               )}
             </div>
           );
@@ -522,6 +557,14 @@ export default function AccessibleTree({ graph, focusId, onOpenPerson, onShowOnM
                 data-letter={letter}
                 className="listview__az-btn"
                 aria-disabled={!available}
+                // aria-disabled alone (deliberately not the native `disabled`
+                // attribute — see the comment above on elementFromPoint hit
+                // testing) leaves the element focusable, so an unavailable
+                // letter would otherwise sit in the Tab order doing nothing.
+                // tabIndex has no bearing on elementFromPoint, so this keeps
+                // the drag gesture working while removing the dead stop for
+                // keyboard/switch users.
+                tabIndex={available ? 0 : -1}
                 onClick={() => jumpToLetter(letter)}
                 aria-label={`Jump to ${letter}`}
               >
