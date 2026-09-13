@@ -5,6 +5,12 @@ import { lifespan } from '../lib/dates.js';
 import { relationLabel, sortSiblings, sortChildren, distancesFrom } from '../data/graph.js';
 import { useKinTerms } from '../lib/kinTerms.js';
 
+// A group past this many people gets a collapse toggle (the critique's own
+// "unnavigable at scale" finding — nine non-collapsible headers, some
+// growing with every cousin/grandchild). Small groups (partners, parents)
+// stay plain, always-visible headers — nothing to hide.
+const COLLAPSE_THRESHOLD = 6;
+
 // Just an initial estimate for the virtualizer's own scroll-math bootstrap —
 // `rowVirtualizer.measureElement` (wired on each row below) re-measures the
 // real rendered height immediately after mount and self-corrects, so this
@@ -54,6 +60,21 @@ export default function AccessibleTree({ graph, focusId, onOpenPerson, onShowOnM
   // distancesFrom already used elsewhere — parents/children surface before
   // distant in-laws instead of an arbitrary alphabetical starting point).
   const [sortMode, setSortMode] = useState('name');
+  // Titles of extended-family groups the viewer has collapsed. Keyed by
+  // title (stable across a re-focus) rather than reset per-person — a
+  // once-collapsed "Grandparents" stays collapsed browsing to the next
+  // relative too, same as any other persistent disclosure in the app.
+  // Empty by default: nothing starts collapsed, so an existing view of a
+  // small family looks byte-identical to before this feature existed.
+  const [collapsedGroups, setCollapsedGroups] = useState(() => new Set());
+  const toggleGroup = (title) => {
+    setCollapsedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(title)) next.delete(title);
+      else next.add(title);
+      return next;
+    });
+  };
   const kinTerms = useKinTerms();
   const focus = graph.byId.get(focusId);
   const listRef = useRef(null);
@@ -190,6 +211,23 @@ export default function AccessibleTree({ graph, focusId, onOpenPerson, onShowOnM
     return filtered.sort((a, b) => a.display_name.localeCompare(b.display_name));
   }, [graph, q, filter, sortMode, focusId]);
 
+  // A–Z jump rail: only coherent for the two alphabetical sorts — "closest
+  // to you" isn't ordered by letter at all, so the rail hides itself there
+  // rather than jumping to a position that has nothing to do with the tapped
+  // letter. Maps each present starting letter to the first directory index
+  // it appears at (in the CURRENT sort/filter), so a tap can jump straight
+  // there via the virtualizer.
+  const letterIndex = useMemo(() => {
+    if (sortMode === 'closeness') return null;
+    const map = new Map();
+    directory.forEach((p, i) => {
+      const key = sortMode === 'surname' ? surnameOf(p) : p.display_name;
+      const letter = (key[0] || '').toUpperCase();
+      if (letter >= 'A' && letter <= 'Z' && !map.has(letter)) map.set(letter, i);
+    });
+    return map;
+  }, [directory, sortMode]);
+
   const rowVirtualizer = useVirtualizer({
     count: directory.length,
     getScrollElement: () => listRef.current,
@@ -217,9 +255,10 @@ export default function AccessibleTree({ graph, focusId, onOpenPerson, onShowOnM
           </span>
         </button>
 
-        {groups.map((g) => (
-          <div className="listview__group" key={g.title}>
-            <h3>{g.title} ({g.items.length})</h3>
+        {groups.map((g) => {
+          const collapsible = g.items.length > COLLAPSE_THRESHOLD;
+          const isOpen = !collapsible || !collapsedGroups.has(g.title);
+          const rows = (
             <ul>
               {g.items.map((item) => {
                 const p = graph.byId.get(item.id);
@@ -255,8 +294,34 @@ export default function AccessibleTree({ graph, focusId, onOpenPerson, onShowOnM
                 );
               })}
             </ul>
-          </div>
-        ))}
+          );
+          return (
+            <div className="listview__group" key={g.title}>
+              {collapsible ? (
+                <h3>
+                  <button
+                    type="button"
+                    className="listview__group-toggle"
+                    onClick={() => toggleGroup(g.title)}
+                    aria-expanded={isOpen}
+                  >
+                    <span>{g.title} ({g.items.length})</span>
+                    <ChevronIcon open={isOpen} />
+                  </button>
+                </h3>
+              ) : (
+                <h3>{g.title} ({g.items.length})</h3>
+              )}
+              {collapsible ? (
+                <div className={`privacy-section__reveal${isOpen ? ' is-open' : ''}`} aria-hidden={!isOpen}>
+                  <div className="privacy-section__reveal-inner">{rows}</div>
+                </div>
+              ) : (
+                rows
+              )}
+            </div>
+          );
+        })}
       </section>
 
       <section className="listview__directory">
@@ -378,7 +443,44 @@ export default function AccessibleTree({ graph, focusId, onOpenPerson, onShowOnM
           )}
         </ul>
       </section>
+
+      {/* Jump-to-letter rail — only shown for the two sorts it can actually
+          honor (First name / Surname); "Closest to you" isn't alphabetical,
+          so a rail there would jump to a position unrelated to the tapped
+          letter. Fixed to the viewport (not `.listview`'s own scroll), so
+          it stays reachable from anywhere in the list, not just once
+          scrolled down to the directory. */}
+      {letterIndex && (
+        <nav className="listview__az" aria-label="Jump to letter">
+          {ALPHABET.map((letter) => {
+            const idx = letterIndex.get(letter);
+            return (
+              <button
+                key={letter}
+                type="button"
+                className="listview__az-btn"
+                disabled={idx == null}
+                onClick={() => idx != null && rowVirtualizer.scrollToIndex(idx, { align: 'start' })}
+                aria-label={`Jump to ${letter}`}
+              >
+                {letter}
+              </button>
+            );
+          })}
+        </nav>
+      )}
     </main>
+  );
+}
+
+const ALPHABET = Array.from({ length: 26 }, (_, i) => String.fromCharCode(65 + i));
+
+function ChevronIcon({ open }) {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"
+      style={{ flexShrink: 0, transition: 'transform 0.2s', transform: open ? 'rotate(180deg)' : 'none' }}>
+      <path d="M6 9l6 6 6-6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
   );
 }
 

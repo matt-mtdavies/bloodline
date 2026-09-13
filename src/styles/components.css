@@ -1134,6 +1134,25 @@
   font-weight: 600;
   margin-bottom: 8px;
 }
+/* A collapsible group's <h3> wraps this button instead of plain text, so the
+   heading itself stays screen-reader-navigable while its label becomes
+   interactive. Mirrors the plain h3's own eyebrow type exactly — only a
+   flex layout + the caret are new — so a collapsible and a non-collapsible
+   group header read identically at rest. */
+.listview__group-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  font-family: var(--body);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--ink-faint);
+  font-weight: 600;
+  text-align: left;
+}
+.listview__group-toggle svg { margin-left: auto; }
 .listview__group ul,
 .listview__directory ul {
   list-style: none;
@@ -1200,6 +1219,32 @@
   border-color: color-mix(in srgb, var(--accent) 30%, transparent);
 }
 .listview__empty { padding: 16px 12px; font-size: 14.5px; color: var(--ink-faint); }
+
+/* Jump-to-letter rail. Fixed to the viewport (not `.listview`'s own scroll)
+   so it's reachable from anywhere in the list, iOS-Contacts-style — a thin
+   column of single letters, dimmed to near-invisible when nothing in the
+   current sort/filter starts with them rather than being removed (removing
+   letters would shift every other letter's tap target while scrolling). */
+.listview__az {
+  position: fixed;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 4px 2px;
+}
+.listview__az-btn {
+  font-size: 9.5px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--accent);
+  padding: 0 4px;
+}
+.listview__az-btn:disabled { color: var(--ink-faint); opacity: 0.5; cursor: default; }
+.listview__az-btn:active:not(:disabled) { transform: scale(1.3); }
 
 /* Flat by default — a resting row is separated from its neighbours by the
    hairline border on its parent <li> (see .listview__group/__directory ul >
