@@ -2569,6 +2569,71 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   further action should be needed from him once this build deploys (no stale-cache dependency this
   time, since the fix is in the app's own render logic, not the update-delivery mechanism).
 
+- **List view (`AccessibleTree.jsx`) critique + fix pass** (Impeccable's dual-agent `critique`,
+  the natural next surface after the ChartTree.jsx pass: DOM-rendered so the detector can inspect
+  it, several unrelated patches accumulated over time with no holistic pass, a primary navigation
+  surface). Design review scored it 16/40 on Nielsen's heuristics — the focused-person hero and
+  immediate-family groups are unmistakably Bloodline (kin terms, the Serif-Means-Someone rule,
+  correct `aria-hidden` avatar naming), but the "Everyone" directory read as a generic contact
+  list, and a real functional bug sat underneath it. User approved fixing all 5 priority issues,
+  with the P0 re-centre-on-tap behavior dropped outright (not kept as a separate action) since the
+  profile sheet's own "Show in tree" already covers it. Fixes, all scoped to `AccessibleTree.jsx`
+  + its `components.css` rules + `App.jsx`'s one prop-wiring line:
+  1. **P0 — tapping a row now opens the profile, not re-centres.** Every row's main tap (group AND
+     directory rows) now calls `onOpenPerson` instead of `onFocus`/`activate` — previously only the
+     top hero row could open a profile at all; every other row silently re-centred the ego camera
+     and reset scroll to 0 with no transition and no announcement. The now-unused `onFocus` prop
+     was removed from the component's signature and from its one call site in `App.jsx`.
+  2. **P1 — the directory now shows kin terms, not just lifespan/job.** `relationLabel(graph,
+     focusId, p.id, kinTerms)` — already imported and already used for the immediate-family groups
+     108 lines above — is now rendered in directory rows too ("Cousin", "Paternal Uncle (by
+     marriage)", "You" for the viewer's own row), falling back to nothing extra when the relation
+     is genuinely just "Relative" (the function's own always-a-string worst case).
+  3. **P1 — unnavigable at real family scale.** The search/filter row (`listview__directory-head`)
+     is now `position: sticky` within the scroll container instead of sitting ~1,000px+ down the
+     page behind the immediate-family group stack; a new sort control (First name / Surname /
+     Closest to you, the last via the existing `distancesFrom` BFS) sits beside the status pills;
+     every group `<h3>` now shows its item count. Full letter-index rail and group collapsing were
+     deliberately left out of this pass as a disclosed scope trim, not silently dropped.
+  4. **P1 — flattened the card/shadow rows to match DESIGN.md's Float-Only Rule.** `--card` and
+     `--paper` are both white, so the old per-row `box-shadow` was the *only* thing separating rows
+     from the page — sheet-level elevation applied to something that was never above the page.
+     `.person-row` is now flat (transparent background, hairline `border-bottom` on each `<li>`,
+     a `--paper-deep` tint on hover) everywhere except `.person-row--focus` (the one row that
+     genuinely floats above the page), which keeps its own card + shadow + hover-lift explicitly.
+  5. **P2 — touch targets raised to 44×44px** (`.person-row__map`/`__chart`, up from 34px, below
+     PRODUCT.md's own named floor); `.person-row__meta` gained `white-space: nowrap` + ellipsis so
+     it can no longer wrap to 2–3 lines while the name stays single-line, the exact "uneven row
+     height" the critique flagged.
+  Also fixed two adjacent, cheaply-fixable bugs the critique's Minor Observations surfaced: the
+  search clear button's `tabIndex={-1}` (unreachable by keyboard) was removed, and a real CSS
+  selector mismatch (`.input-wrap > .search`'s 42px padding compensation never matched the actual
+  `.search-wrap` parent, so a typed query ran under the clear button) was fixed alongside
+  suppressing the native `::-webkit-search-cancel-button` so only one clear glyph ever renders.
+  **A real regression was found and fixed during verification, not just claimed passing**: the
+  P0 fix broke `tests/smoke.mjs`'s own List-view step, which used to tap a directory row expecting
+  a silent re-centre (no overlay) and then immediately click the view-switcher again — now that a
+  tap opens the profile sheet, that second click hung on the sheet's scrim for the full 30s
+  timeout. Root-caused via bisection (isolated to JSX-only vs. CSS-only vs. the trivial `App.jsx`
+  prop removal) rather than guessed, confirmed against a byte-for-byte reverted baseline both with
+  and without the changes, and against a completely fresh (non-HMR) dev server to rule out
+  dev-server staleness before concluding it was real. `smoke.mjs` was rewritten to match the
+  correct new interaction model: tap a row → assert the right profile opens → use that profile's
+  own "Show in tree" action (`.action--map`) to fly back to Tree view and confirm re-centring still
+  works end-to-end, then close the sheet before the drag test that follows. Verified live via
+  Playwright at 1280×900 and 390×844 against the real dev server (`?demo`, seeded Mercer family):
+  kin terms render correctly in the directory including "You" for the viewer's own row; the sticky
+  search/sort header stays pinned while directory rows scroll underneath it; tapping a directory
+  row (confirmed on "Arthur Mercer") opens exactly that profile; flat hairline rows and the
+  `--paper-deep` hover tint render as designed; and the rewritten `tests/smoke.mjs` passes clean
+  end-to-end. `npm run build` passed clean throughout. Full unit suite not re-run for this pass —
+  the changes are scoped to one component + its CSS + a one-line prop removal, none of which any
+  unit test covers directly, and the smoke test (which does exercise this exact component) was the
+  regression signal that actually caught the real bug here. Deliberately out of scope for this
+  pass, disclosed at the time rather than silently dropped: the A–Z letter-index rail and
+  collapsible extended-family groups (both part of the critique's "unnavigable at scale" finding,
+  but each carries enough of its own design/testing surface to warrant a separate pass).
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);

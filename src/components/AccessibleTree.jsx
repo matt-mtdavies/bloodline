@@ -2,14 +2,22 @@ import { useState, useMemo, useEffect, useLayoutEffect, useRef } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import Avatar from './Avatar.jsx';
 import { lifespan } from '../lib/dates.js';
-import { relationLabel, sortSiblings, sortChildren } from '../data/graph.js';
+import { relationLabel, sortSiblings, sortChildren, distancesFrom } from '../data/graph.js';
 import { useKinTerms } from '../lib/kinTerms.js';
 
-// Measured from a live render (390px viewport): a person-row is 62px tall,
-// the directory <ul> has a 6px row gap — 68px is the fixed stride the
-// virtualizer positions rows at. Kept in sync with .person-row / gap in
-// components.css; if those change, update this too.
-const DIRECTORY_ROW_HEIGHT = 68;
+// Just an initial estimate for the virtualizer's own scroll-math bootstrap —
+// `rowVirtualizer.measureElement` (wired on each row below) re-measures the
+// real rendered height immediately after mount and self-corrects, so this
+// doesn't need to track components.css exactly.
+const DIRECTORY_ROW_HEIGHT = 60;
+
+// Simple last-token surname for the directory's "Surname" sort — deliberately
+// not lib/duplicates.js's own nameKey() (that one strips Jr./Sr./II suffixes
+// for duplicate-matching precision, a different job than an at-a-glance sort).
+function surnameOf(p) {
+  const parts = p.display_name.trim().split(/\s+/).filter(Boolean);
+  return parts.length > 1 ? parts[parts.length - 1] : parts[0] || '';
+}
 
 // Per-person cache of the lowercased fields the directory filter searches —
 // keyed by object identity (see lib/search.js's identical rationale: store.js
@@ -38,9 +46,14 @@ function normalizedDirectoryFields(p) {
  * pixel of canvas. It mirrors the ego model: the focused person, then the people
  * immediately around them, then a searchable directory of everyone.
  */
-export default function AccessibleTree({ graph, focusId, onFocus, onOpenPerson, onShowOnMap, onShowInChart, perimeterActive = false, perimeterCount = null }) {
+export default function AccessibleTree({ graph, focusId, onOpenPerson, onShowOnMap, onShowInChart, perimeterActive = false, perimeterCount = null }) {
   const [q, setQ] = useState('');
   const [filter, setFilter] = useState('all');
+  // 'name' (first-name alphabetical, the long-standing default) / 'surname' /
+  // 'closeness' (nearest-to-the-focused-person first, via the same BFS
+  // distancesFrom already used elsewhere — parents/children surface before
+  // distant in-laws instead of an arbitrary alphabetical starting point).
+  const [sortMode, setSortMode] = useState('name');
   const kinTerms = useKinTerms();
   const focus = graph.byId.get(focusId);
   const listRef = useRef(null);
@@ -150,22 +163,32 @@ export default function AccessibleTree({ graph, focusId, onFocus, onOpenPerson, 
 
   const directory = useMemo(() => {
     const term = q.trim().toLowerCase();
-    return graph.people
-      .filter((p) => {
-        if (filter === 'living' && p.is_deceased) return false;
-        if (filter === 'deceased' && !p.is_deceased) return false;
-        if (!term) return true;
-        const f = normalizedDirectoryFields(p);
-        return (
-          f.name.includes(term) ||
-          f.occupation.includes(term) ||
-          f.birthPlace.includes(term) ||
-          f.residence.includes(term) ||
-          f.tags.some((t) => t.includes(term))
-        );
-      })
-      .sort((a, b) => a.display_name.localeCompare(b.display_name));
-  }, [graph, q, filter]);
+    const filtered = graph.people.filter((p) => {
+      if (filter === 'living' && p.is_deceased) return false;
+      if (filter === 'deceased' && !p.is_deceased) return false;
+      if (!term) return true;
+      const f = normalizedDirectoryFields(p);
+      return (
+        f.name.includes(term) ||
+        f.occupation.includes(term) ||
+        f.birthPlace.includes(term) ||
+        f.residence.includes(term) ||
+        f.tags.some((t) => t.includes(term))
+      );
+    });
+    if (sortMode === 'surname') {
+      return filtered.sort((a, b) => surnameOf(a).localeCompare(surnameOf(b)) || a.display_name.localeCompare(b.display_name));
+    }
+    if (sortMode === 'closeness') {
+      const dist = distancesFrom(graph, focusId);
+      return filtered.sort((a, b) => {
+        const da = dist.has(a.id) ? dist.get(a.id) : Infinity;
+        const db = dist.has(b.id) ? dist.get(b.id) : Infinity;
+        return da - db || a.display_name.localeCompare(b.display_name);
+      });
+    }
+    return filtered.sort((a, b) => a.display_name.localeCompare(b.display_name));
+  }, [graph, q, filter, sortMode, focusId]);
 
   const rowVirtualizer = useVirtualizer({
     count: directory.length,
@@ -190,13 +213,13 @@ export default function AccessibleTree({ graph, focusId, onFocus, onOpenPerson, 
           <Avatar person={focus} size={64} />
           <span className="person-row__text">
             <span className="person-row__name">{focus.display_name}</span>
-            <span className="person-row__meta">{lifespan(focus)} · centred here</span>
+            <span className="person-row__meta">{lifespan(focus)}</span>
           </span>
         </button>
 
         {groups.map((g) => (
           <div className="listview__group" key={g.title}>
-            <h3>{g.title}</h3>
+            <h3>{g.title} ({g.items.length})</h3>
             <ul>
               {g.items.map((item) => {
                 const p = graph.byId.get(item.id);
@@ -204,7 +227,7 @@ export default function AccessibleTree({ graph, focusId, onFocus, onOpenPerson, 
                 return (
                   <li key={item.id}>
                     <div className="person-row">
-                      <button className="person-row__main" onClick={() => onFocus(item.id)}>
+                      <button className="person-row__main" onClick={() => onOpenPerson(item.id)}>
                         <Avatar person={p} size={46} />
                         <span className="person-row__text">
                           <span className="person-row__name">{p.display_name}</span>
@@ -252,36 +275,50 @@ export default function AccessibleTree({ graph, focusId, onFocus, onOpenPerson, 
               ? ` · ${perimeterCount} within your Family Perimeter · ${graph.people.length} in the complete family tree`
               : ''}
         </h3>
-        <div className="search-wrap">
-          <input
-            className="search"
-            type="search"
-            placeholder="Search by name, occupation, location, tag…"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            aria-label="Search the family"
-          />
-          {q && (
-            <button className="input-clear" onClick={() => setQ('')} aria-label="Clear search" tabIndex={-1}>
-              ×
-            </button>
-          )}
-        </div>
-        <div className="filter-pills" role="group" aria-label="Filter by status">
-          {[
-            { key: 'all', label: 'All' },
-            { key: 'living', label: 'Living' },
-            { key: 'deceased', label: 'Passed away' },
-          ].map(({ key, label }) => (
-            <button
-              key={key}
-              className={`filter-pill${filter === key ? ' filter-pill--active' : ''}`}
-              onClick={() => setFilter(key)}
-              aria-pressed={filter === key}
-            >
-              {label}
-            </button>
-          ))}
+        {/* Sticky within .listview's own scroll: at a real family's scale this
+            is otherwise a long scroll below the immediate-family groups
+            (which grow with every aunt, cousin and grandchild), so search
+            stays reachable without hunting for it. */}
+        <div className="listview__directory-head">
+          <div className="search-wrap">
+            <input
+              className="search"
+              type="search"
+              placeholder="Search by name, occupation, location, tag…"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              aria-label="Search the family"
+            />
+            {q && (
+              <button className="input-clear" onClick={() => setQ('')} aria-label="Clear search">
+                ×
+              </button>
+            )}
+          </div>
+          <div className="filter-pills" role="group" aria-label="Filter by status">
+            {[
+              { key: 'all', label: 'All' },
+              { key: 'living', label: 'Living' },
+              { key: 'deceased', label: 'Passed away' },
+            ].map(({ key, label }) => (
+              <button
+                key={key}
+                className={`filter-pill${filter === key ? ' filter-pill--active' : ''}`}
+                onClick={() => setFilter(key)}
+                aria-pressed={filter === key}
+              >
+                {label}
+              </button>
+            ))}
+            <label className="listview__sort">
+              <span className="visually-hidden">Sort by</span>
+              <select value={sortMode} onChange={(e) => setSortMode(e.target.value)}>
+                <option value="name">First name</option>
+                <option value="surname">Surname</option>
+                <option value="closeness">Closest to you</option>
+              </select>
+            </label>
+          </div>
         </div>
         <ul
           ref={directoryListRef}
@@ -304,21 +341,16 @@ export default function AccessibleTree({ graph, focusId, onFocus, onOpenPerson, 
                     top: 0,
                     left: 0,
                     width: '100%',
-                    // Bakes the directory ul's 6px row gap (see components.css)
-                    // into each row's own measured box, since absolute
-                    // positioning takes rows out of the grid flow that used
-                    // to supply it.
-                    paddingBottom: 6,
                     transform: `translateY(${vRow.start - scrollMargin}px)`,
                   }}
                 >
                   <div className={'person-row' + (p.id === focusId ? ' person-row--current' : '')}>
-                    <button className="person-row__main" onClick={() => onFocus(p.id)}>
+                    <button className="person-row__main" onClick={() => onOpenPerson(p.id)}>
                       <Avatar person={p} size={42} />
                       <span className="person-row__text">
                         <span className="person-row__name">{p.display_name}</span>
                         <span className="person-row__meta">
-                          {lifespan(p)}
+                          {relationLabel(graph, focusId, p.id, kinTerms)} · {lifespan(p)}
                           {p.occupation ? ` · ${p.occupation}` : ''}
                         </span>
                       </span>
@@ -353,7 +385,8 @@ export default function AccessibleTree({ graph, focusId, onFocus, onOpenPerson, 
 // Same glyph as the topbar's tree/list view toggle and the profile page's
 // "Show in tree" — the flight-across-the-tree flourish (see App.jsx's
 // flyToPersonFromAnywhere), reused here as a per-row action distinct from
-// the row's own tap-to-centre.
+// the row's own tap-to-open (which opens the profile sheet directly; "show
+// in tree"/"show in chart" fly the canvas camera to them instead).
 function TreeIcon() {
   return (
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
