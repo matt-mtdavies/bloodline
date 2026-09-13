@@ -22,20 +22,72 @@ import Avatar from '../components/Avatar.jsx';
 
 const MIN_ZOOM = 0.28;
 const FIT_MIN_ZOOM = 0.06;
+// Floor for the AUTOMATIC opening/re-root frame only (never fitToView's own
+// explicit "fit everything" button, which keeps FIT_MIN_ZOOM) — real user
+// feedback: a fresh Chart open shouldn't ever start smaller than a
+// comfortable reading zoom, even for a wide family. Content beyond the
+// frame is reachable by panning rather than being force-fit onto screen.
+const OPEN_MIN_ZOOM = 0.55;
 const MAX_ZOOM = 1.6;
 const FIT_PADDING = 72;
-const isBioAdopt = (q) => !q || q === 'biological' || q === 'adoptive' || q === 'adopted';
+
+// The framing box for a layout's bounds, sized so the FOCAL card (always at
+// local (0,0) — see place(focal, 0) in pedigreeLayout.js) lands exactly at
+// screen centre once panned, rather than the raw bounding box's own midpoint.
+// A real family's ancestor branches almost never sprawl equally on both
+// sides of the focal couple (one partner's line recorded three generations
+// deep, the other only one), and children rarely spread evenly around zero
+// either — centring on the true midpoint of an asymmetric box visibly drags
+// the focal person off-centre (a real production report: the couple's own
+// connecting line rendered nowhere near the middle of the screen). Sizing
+// each axis symmetrically around 0 (using whichever side reaches furthest)
+// keeps "you" fixed in the middle at the cost of some empty margin on the
+// shorter side — the same trade-off this file's horizontal/landscape
+// orientation already made deliberately; this extends it to vertical
+// orientation's cross axis (X — ancestor/sibling spread), which never had
+// it. Vertical's OTHER axis (Y — purely generational: ancestors above,
+// descendants below) keeps the true midpoint: there's no single "row" that
+// needs to stay visually fixed the way the focal card's column does.
+function focalCenteredBox(bounds, orient) {
+  const { minX, maxX, minY, maxY } = bounds;
+  if (orient === 'horizontal') {
+    return {
+      boxW: Math.max(1, Math.max(Math.abs(minX), Math.abs(maxX)) * 2),
+      boxH: Math.max(1, Math.max(Math.abs(minY), Math.abs(maxY)) * 2),
+      cx: 0,
+      cy: 0,
+    };
+  }
+  return {
+    boxW: Math.max(1, Math.max(Math.abs(minX), Math.abs(maxX)) * 2),
+    boxH: Math.max(1, maxY - minY),
+    cx: 0,
+    cy: (minY + maxY) / 2,
+  };
+}
 
 // The opening state for a fresh root: the focal couple's own parents
-// revealed (one generation up both sides), plus the focal person's
-// grandparents' slots ready behind their arrows — focused, not sprawling.
+// revealed (one generation up both sides), with the grandparents' slots
+// ready behind their own arrows, not pre-expanded — focused, not sprawling.
+//
+// Real production report: a fresh Chart open looked "way too zoomed out."
+// Root cause was here, not in the camera math — this function used to ALSO
+// add the focal person's own PARENTS' ids to the set (`for (const p of
+// graph.parents(focusId))`), which doesn't just reveal the parents (already
+// covered by `focusId` itself being in the set) — it marks THEIR slots
+// expanded too, silently pulling in a second generation (grandparents) on
+// the focal's own line only, never the partner's. That's a real, asymmetric,
+// deeper-than-documented default this comment never actually described —
+// exactly what made a fresh open both needlessly wide (forcing a smaller
+// fit-to-screen zoom) and asymmetric (the very drift the vertical-centering
+// fix above has to correct for). Fixed by expanding only `focusId` and
+// `partner` themselves — their own parents' cards render (one generation up,
+// symmetric on both sides), and those parents' own up-arrows stay present
+// but un-toggled, exactly matching this comment's original wording.
 function initialExpandedUp(graph, focusId) {
   const set = new Set([focusId]);
   const partner = primaryUnionPartner(graph, focusId);
   if (partner) set.add(partner);
-  for (const p of graph.parents(focusId)) {
-    if (isBioAdopt(p.qualifier)) set.add(p.id);
-  }
   return set;
 }
 
@@ -136,32 +188,21 @@ export default function ChartTree({ graph, activeId, viewerId, bloodlineOnly = f
 
   // Opening frame: fit the (small, focused) initial layout inside the safe
   // area — real clearance for the topbar above and the dock below — capped
-  // at a fully-legible zoom so a compact family isn't blown up huge.
-  //
-  // Horizontal mode additionally guarantees the focal card sits exactly at
-  // the viewport's horizontal centre (it's always at local x=0 — see
-  // place(focal, 0) in pedigreeLayout.js): ancestor branches usually sprawl
-  // wider than the children row, so centring on the bounding box's own
-  // midpoint would otherwise drift focal off-centre. Sizing the box
-  // symmetrically around 0 (using whichever side reaches furthest) keeps
-  // "you" fixed in the middle at the cost of some empty margin on the
-  // shorter side — the intended trade-off, not a bug.
+  // at a fully-legible zoom so a compact family isn't blown up huge, and
+  // floored at OPEN_MIN_ZOOM so a wide reveal never starts smaller than a
+  // comfortable reading size — pan reaches whatever doesn't fit, rather than
+  // the frame shrinking indefinitely to show all of it at once (that's what
+  // the explicit "fit to screen" button, fitToView below, is for — it keeps
+  // the much lower FIT_MIN_ZOOM deliberately). See focalCenteredBox's own
+  // header comment for why the box is sized around the focal card rather
+  // than the raw bounding box.
   const centerOnFocal = useCallback((lay, orient) => {
     const vp = viewportRef.current;
     if (!vp || !lay.cards.length) return;
     const rect = vp.getBoundingClientRect();
     const PAD = { top: 170, bottom: 150, side: 36 };
-    const { minX, maxX, minY, maxY } = lay.bounds;
-    let boxW, boxH, cx, cy;
-    if (orient === 'horizontal') {
-      boxW = Math.max(1, Math.max(Math.abs(minX), Math.abs(maxX)) * 2);
-      boxH = Math.max(1, Math.max(Math.abs(minY), Math.abs(maxY)) * 2);
-      cx = 0; cy = 0;
-    } else {
-      boxW = Math.max(1, maxX - minX); boxH = Math.max(1, maxY - minY);
-      cx = (minX + maxX) / 2; cy = (minY + maxY) / 2;
-    }
-    const zoom = Math.min(0.92, Math.max(FIT_MIN_ZOOM,
+    const { boxW, boxH, cx, cy } = focalCenteredBox(lay.bounds, orient);
+    const zoom = Math.min(0.92, Math.max(OPEN_MIN_ZOOM,
       Math.min((rect.width - PAD.side * 2) / boxW, (rect.height - PAD.top - PAD.bottom) / boxH)));
     glideTo({
       zoom,
@@ -215,16 +256,7 @@ export default function ChartTree({ graph, activeId, viewerId, bloodlineOnly = f
     const vp = viewportRef.current;
     if (!vp || !layout.cards.length) return;
     const rect = vp.getBoundingClientRect();
-    const { minX, maxX, minY, maxY } = layout.bounds;
-    let boxW, boxH, cx, cy;
-    if (orientation === 'horizontal') {
-      boxW = Math.max(1, Math.max(Math.abs(minX), Math.abs(maxX)) * 2);
-      boxH = Math.max(1, Math.max(Math.abs(minY), Math.abs(maxY)) * 2);
-      cx = 0; cy = 0;
-    } else {
-      boxW = Math.max(1, maxX - minX); boxH = Math.max(1, maxY - minY);
-      cx = (minX + maxX) / 2; cy = (minY + maxY) / 2;
-    }
+    const { boxW, boxH, cx, cy } = focalCenteredBox(layout.bounds, orientation);
     const zoom = Math.min(MAX_ZOOM, Math.max(FIT_MIN_ZOOM,
       Math.min((rect.width - FIT_PADDING * 2) / boxW, (rect.height - FIT_PADDING * 2) / boxH)));
     glideTo({ zoom, panX: rect.width / 2 - cx * zoom, panY: rect.height / 2 - cy * zoom });
