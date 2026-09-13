@@ -11554,26 +11554,45 @@ button.health-notes {
 
 /* Navigation pips — subtle, outlined, calm. Never the dark filled circles of
    the old chart. Expand a member's ancestry (up) or drop into children (down). */
+/* Audit finding, confirmed via live measurement: at the Chart's natural
+   mobile opening zoom (~0.55), a 22px pip rendered at just 12x12px — this
+   card lives inside .chart-tree__world's own scale(), so the pip shrinks
+   right along with everything else. A full 44px floor isn't reachable
+   without visual absurdity across this view's whole 0.28–1.6 zoom range
+   (inverting the scale completely would make a pip bigger than the card
+   itself at the extreme zoomed-out end) — --pnav-cscale instead computes
+   just enough counter-scale to reach ~32px in the REALISTIC zoom band
+   (the auto-opening frame, now floored higher by MIN_TAP_ZOOM above),
+   clamped so it never shrinks below native size at high zoom (min 1) or
+   grows past 2x at extreme zoom-out (avoiding that absurdity). --zoom is
+   set on .chart-tree__world's own inline style, one level up. */
 .pnav {
+  --pnav-cscale: clamp(1, calc(32 / (22 * var(--zoom, 1))), 2);
   position: absolute;
   width: 22px; height: 22px;
   display: grid; place-items: center;
   border-radius: 50%;
   border: 1px solid var(--hairline);
   background: var(--card);
-  color: var(--ink-faint);
+  color: var(--ink-soft);
   cursor: pointer;
   box-shadow: 0 1px 4px rgba(36, 31, 28, 0.08);
-  transition: transform 0.2s var(--spring), background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  transform: scale(var(--pnav-cscale));
+  /* transform is deliberately NOT in this transition: --zoom (and so
+     --pnav-cscale) can change many times a second during a live pinch, and
+     transitioning that would make the pip visibly lag behind the gesture.
+     :active below gives the press-feedback scale its own short transition
+     instead, scoped to just that state change. */
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
   z-index: 3;
 }
 .pnav:hover { color: var(--accent-deep); border-color: var(--accent); background: var(--accent-soft); }
-.pnav:active { transform: scale(0.88); }
+.pnav:active { transform: scale(calc(var(--pnav-cscale) * 0.88)); transition: transform 0.1s ease; }
 .pnav--on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-deep); }
 /* The swap pip is always visible (not on-select) whenever that member has a
    recorded alternate partner — a small, permanent affordance rather than
    chrome that only appears after tapping the person first. */
-.pnav--swap { color: var(--ink-faint); }
+.pnav--swap { color: var(--ink-soft); }
 /* A plain CSS corner, not an SVG path — see the comment above NavChevron in
    ChartTree.jsx for why. box-sizing:border-box keeps the 9x9 box (and so its
    rotation centre) exactly what it says, independent of the border. A
@@ -11606,154 +11625,16 @@ button.health-notes {
 @media (prefers-reduced-motion: reduce) { .pbar-menu .ped-spouse-menu { animation: none; } }
 
 /* ── Pedigree cards ─────────────────────────────────────────────────────── */
-.ped-card {
-  position: absolute;
-  display: flex;
-  flex-direction: column;
-  background: var(--card);
-  border: 1px solid var(--hairline);
-  border-radius: 15px;
-  box-shadow: var(--shadow-soft);
-}
-.ped-card--focal {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2.5px var(--accent-soft), 0 10px 30px rgba(36, 31, 28, 0.12);
-}
-.ped-row-wrap { display: contents; }
-.ped-row { position: relative; height: 48px; display: flex; align-items: center; }
-.ped-row__main {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  flex: 1;
-  min-width: 0;
-  height: 100%;
-  padding: 0 10px;
-  border: none;
-  background: none;
-  cursor: pointer;
-  text-align: left;
-  font-family: var(--body);
-  border-radius: 14px;
-}
-.ped-row__main:hover { background: var(--paper-deep); }
-.ped-row__text { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
-.ped-row__name {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13.5px;
-  font-weight: 700;
-  color: var(--ink);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.ped-row__dates {
-  font-size: 11px;
-  color: var(--ink-soft);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.ped-row--passed .ped-row__name { color: color-mix(in srgb, var(--ink) 78%, var(--paper)); }
-
-/* The marriage strip between a couple's rows — a quiet centre line naming
-   the union (date/place when recorded); bio co-parents with no partner
-   edge get just the hairline, asserting co-parenthood without inventing a
-   marriage. Height must equal MARRIAGE_H in pedigreeMetrics.js. */
-.ped-marriage {
-  height: 22px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  position: relative;
-}
-.ped-marriage::before {
-  content: '';
-  position: absolute;
-  left: 10px; right: 10px; top: 50%;
-  border-top: 1px solid var(--hairline);
-}
-.ped-marriage__text {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 0 8px;
-  background: var(--card);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  color: var(--ink-soft);
-  white-space: nowrap;
-  max-width: 92%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.ped-marriage__text svg { color: var(--gold); flex-shrink: 0; }
-
-/* Children footer — count + affordance. Height = FOOTER_H. */
-.ped-footer {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  height: 27px;
-  border: none;
-  border-top: 1px solid var(--hairline);
-  background: var(--paper-deep);
-  border-radius: 0 0 14px 14px;
-  color: var(--ink-soft);
-  font-size: 10.5px;
-  font-weight: 600;
-  cursor: pointer;
-  font-family: var(--body);
-}
-.ped-footer:hover { background: var(--accent-soft); color: var(--accent-deep); }
-
-/* Per-member up-line buttons riding the card edge: expand/collapse a
-   member's parents, or (dashed) add them where none are recorded yet. */
-.ped-up {
-  position: absolute;
-  width: 26px;
-  height: 26px;
-  display: grid;
-  place-items: center;
-  border-radius: 50%;
-  border: 1px solid var(--hairline);
-  background: var(--card);
-  color: var(--ink-soft);
-  cursor: pointer;
-  box-shadow: 0 2px 8px rgba(36, 31, 28, 0.10);
-  transition: transform 0.25s var(--spring), background 0.15s ease, color 0.15s ease;
-  z-index: 2;
-}
-.ped-up:hover { background: var(--accent-soft); color: var(--accent-deep); }
-.ped-up:active { transform: scale(0.9); }
-.ped-up--open { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-deep); }
-.ped-up--open:hover { background: var(--accent-soft); color: var(--accent-deep); }
-.ped-up--open svg { transform: rotate(180deg); }
+/* .ped-up--add is the ONLY survivor of this section's original renderer —
+   audit finding: everything else that used to live here (.ped-card,
+   .ped-row*, .ped-marriage*, .ped-footer*, the plain .ped-up/.ped-up--open
+   toggle, .ped-switch*) was dead CSS, confirmed via a live DOM query
+   matching zero elements — all superseded by the "Direction B" flat-plate
+   cards (.pcard/.pplate/.pnav) above. This dashed "add a parent" style is
+   still real: ChartTree.jsx combines it as a modifier onto .pnav/.pnav--up
+   (`className="pnav pnav--up ped-up--add"`), not used standalone. */
 .ped-up--add { border-style: dashed; color: var(--ink-faint); box-shadow: none; }
 .ped-up--add:hover { border-color: var(--accent); color: var(--accent-deep); background: var(--accent-soft); }
-
-/* Spouse switcher — appears only for members with other recorded partners
-   or co-parents; flips the displayed union, FamilySearch-style. */
-.ped-switch {
-  flex-shrink: 0;
-  width: 24px;
-  height: 24px;
-  margin-right: 6px;
-  display: grid;
-  place-items: center;
-  border-radius: 50%;
-  border: none;
-  background: var(--paper-deep);
-  color: var(--ink-faint);
-  cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
-}
-.ped-switch:hover, .ped-switch--on { background: var(--accent-soft); color: var(--accent-deep); }
 
 .ped-spouse-menu {
   position: absolute;

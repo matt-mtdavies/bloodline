@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
+import { useEffect, useMemo, useRef, useState, useCallback, memo } from 'react';
 import { computePedigree, primaryUnionPartner, unionCandidates } from './pedigreeLayout.js';
 import { PLATE_W, PLATE_H, LINK_GAP } from './pedigreeMetrics.js';
 import { lifespan, ageOrAt } from '../lib/dates.js';
@@ -28,6 +28,18 @@ const FIT_MIN_ZOOM = 0.06;
 // comfortable reading zoom, even for a wide family. Content beyond the
 // frame is reachable by panning rather than being force-fit onto screen.
 const OPEN_MIN_ZOOM = 0.55;
+// Audit finding, confirmed via live measurement: at OPEN_MIN_ZOOM alone, a
+// plate (PLATE_H=60 at zoom 1) rendered at just 36px tall on a real mobile
+// viewport — below PRODUCT.md's own 44px touch-target floor, on the single
+// most important tap target on the whole surface (it opens the profile or
+// re-roots the chart). Purely mechanical from PLATE_H and the floor, not a
+// second hand-picked number that could drift out of sync with either.
+// Scoped the exact same way as OPEN_MIN_ZOOM above — the automatic frame
+// only; `fitToView`'s explicit "show everything" button and manual
+// pinch/wheel zoom (MIN_ZOOM) are unaffected, matching how OPEN_MIN_ZOOM
+// itself is already scoped.
+const TAP_TARGET_PX = 44;
+const MIN_TAP_ZOOM = TAP_TARGET_PX / PLATE_H;
 const MAX_ZOOM = 1.6;
 const FIT_PADDING = 72;
 
@@ -139,6 +151,13 @@ export default function ChartTree({ graph, activeId, viewerId, bloodlineOnly = f
   const pointersRef = useRef(new Map());
   const pinchRef = useRef(null);
   const glideTimer = useRef(null);
+  // Throttles onPointerMove's own setView work to once per animation frame
+  // — raw pointermove can fire far faster than that during a real drag/
+  // pinch, and there's no benefit to computing (or rendering) a new camera
+  // position more often than the screen can actually repaint.
+  const moveFrameRef = useRef(null);
+  const childrenPopRef = useRef(null);
+  const lastFocusBeforePopRef = useRef(null);
 
   const layout = useMemo(
     () => computePedigree(graph, activeId, { expandedUp, partnerChoice, orientation, bloodlineOnly }),
@@ -185,6 +204,7 @@ export default function ChartTree({ graph, activeId, viewerId, bloodlineOnly = f
     glideTimer.current = setTimeout(() => setGliding(false), 620);
   }, []);
   useEffect(() => () => clearTimeout(glideTimer.current), []);
+  useEffect(() => () => { if (moveFrameRef.current != null) cancelAnimationFrame(moveFrameRef.current); }, []);
 
   // Opening frame: fit the (small, focused) initial layout inside the safe
   // area — real clearance for the topbar above and the dock below — capped
@@ -223,7 +243,7 @@ export default function ChartTree({ graph, activeId, viewerId, bloodlineOnly = f
     const availW = rect.width - PAD.side * 2;
     const availH = rect.height - PAD.top - PAD.bottom;
     const focalCap = focalCard ? Math.min(availW / focalCard.w, availH / focalCard.h) : Infinity;
-    const zoom = Math.min(0.92, focalCap, Math.max(OPEN_MIN_ZOOM, Math.min(availW / boxW, availH / boxH)));
+    const zoom = Math.min(0.92, focalCap, Math.max(OPEN_MIN_ZOOM, MIN_TAP_ZOOM, Math.min(availW / boxW, availH / boxH)));
     // Vertical/portrait mode's generational axis is Y (ancestors above,
     // descendants below) — a WIDE family forces zoom down to fit its width,
     // and that same small zoom, applied to the family's actual (often much
@@ -336,7 +356,7 @@ export default function ChartTree({ graph, activeId, viewerId, bloodlineOnly = f
   };
   const onPointerDown = (e) => {
     if (pointersRef.current.size === 0 && (
-      e.target.closest('.ped-card') || e.target.closest('.pcard') || e.target.closest('.pnav')
+      e.target.closest('.pcard') || e.target.closest('.pnav')
       || e.target.closest('.pbar-menu') || e.target.closest('.chart-controls')
       || e.target.closest('.ped-pop') || e.target.closest('.ped-backchip')
     )) return;
@@ -353,9 +373,13 @@ export default function ChartTree({ graph, activeId, viewerId, bloodlineOnly = f
       dragRef.current = { startX: e.clientX, startY: e.clientY, panX: view.panX, panY: view.panY };
     }
   };
-  const onPointerMove = (e) => {
-    if (!pointersRef.current.has(e.pointerId)) return;
-    pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  // The actual camera-position work, deferred to run at most once per
+  // frame — reads pointersRef/pinchRef/dragRef fresh (all refs, always
+  // current) rather than anything captured at schedule time, so it's always
+  // acting on the latest pointer positions regardless of how many raw
+  // pointermove events arrived since the last frame.
+  const flushPointerMove = () => {
+    moveFrameRef.current = null;
     if (pointersRef.current.size >= 2 && pinchRef.current) {
       const pts = [...pointersRef.current.values()].slice(0, 2);
       const rect = viewportRef.current?.getBoundingClientRect();
@@ -370,10 +394,23 @@ export default function ChartTree({ graph, activeId, viewerId, bloodlineOnly = f
     }
     if (dragRef.current) {
       const { startX, startY, panX, panY } = dragRef.current;
-      setView((v) => ({ ...v, panX: panX + (e.clientX - startX), panY: panY + (e.clientY - startY) }));
+      const pt = [...pointersRef.current.values()][0];
+      if (!pt) return;
+      setView((v) => ({ ...v, panX: panX + (pt.x - startX), panY: panY + (pt.y - startY) }));
+    }
+  };
+  const onPointerMove = (e) => {
+    if (!pointersRef.current.has(e.pointerId)) return;
+    pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (moveFrameRef.current == null) {
+      moveFrameRef.current = requestAnimationFrame(flushPointerMove);
     }
   };
   const onPointerUp = (e) => {
+    if (moveFrameRef.current != null) {
+      cancelAnimationFrame(moveFrameRef.current);
+      moveFrameRef.current = null;
+    }
     pointersRef.current.delete(e.pointerId);
     pinchRef.current = null;
     const remaining = [...pointersRef.current.values()];
@@ -390,14 +427,51 @@ export default function ChartTree({ graph, activeId, viewerId, bloodlineOnly = f
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  const toggleUp = (memberId) => {
+  // Audit finding: the children popover has role="dialog" but never
+  // actually behaved like one — no aria-modal, and nothing moved focus into
+  // it on open or back out on close. Reachable via ordinary Tab order and
+  // Escape already closed it, so this wasn't a hard block, just an
+  // incomplete pattern. Saves whatever had focus (the "N children" pip that
+  // opened it) before moving focus to the popover's own close button, and
+  // restores it once the popover closes — as long as that original element
+  // is still in the document (a re-root or expand/collapse elsewhere could
+  // have removed it).
+  useEffect(() => {
+    if (childrenFor) {
+      lastFocusBeforePopRef.current = document.activeElement;
+      childrenPopRef.current?.querySelector('.ped-pop__close')?.focus();
+    } else if (lastFocusBeforePopRef.current && document.contains(lastFocusBeforePopRef.current)) {
+      lastFocusBeforePopRef.current.focus();
+      lastFocusBeforePopRef.current = null;
+    }
+  }, [childrenFor]);
+
+  // useCallback (empty deps — every update below is a functional setState,
+  // so there's no stale-closure risk) so this stays reference-stable across
+  // renders: it's passed straight down to every PedCard, which is now
+  // React.memo'd specifically so a drag/pinch's rapid setView renders don't
+  // re-render every card — an unstable callback prop would silently defeat
+  // that memoization on every single one.
+  const toggleUp = useCallback((memberId) => {
     setSwitcherFor(null);
     setExpandedUp((prev) => {
       const next = new Set(prev);
       if (next.has(memberId)) next.delete(memberId); else next.add(memberId);
       return next;
     });
-  };
+  }, []);
+
+  // Same reference-stability reasoning as toggleUp above — these are handed
+  // to every PedCard as onOpenChildren/onOpenSwitcher, which used to be
+  // inline arrow functions recreated fresh on every single render.
+  const openChildren = useCallback((id) => {
+    setSwitcherFor(null);
+    setChildrenFor((cur) => (cur === id ? null : id));
+  }, []);
+  const openSwitcher = useCallback((memberId) => {
+    setChildrenFor(null);
+    setSwitcherFor((cur) => (cur === memberId ? null : memberId));
+  }, []);
 
   const chooseSpouse = (lineMemberId, partnerId) => {
     setSwitcherFor(null);
@@ -628,7 +702,10 @@ export default function ChartTree({ graph, activeId, viewerId, bloodlineOnly = f
       >
         <div
           className={'chart-tree__world' + (gliding ? ' chart-tree__world--glide' : '')}
-          style={{ transform: `translate(${view.panX}px, ${view.panY}px) scale(${view.zoom})` }}
+          // --zoom feeds .pnav's own counter-scale (see components.css) so
+          // its nav pips can claw back some of the touch-target size the
+          // world transform otherwise shrinks along with everything else.
+          style={{ transform: `translate(${view.panX}px, ${view.panY}px) scale(${view.zoom})`, '--zoom': view.zoom }}
         >
           <svg className="chart-tree__lines" width="1" height="1" style={{ overflow: 'visible' }}>
             {paths}
@@ -646,15 +723,15 @@ export default function ChartTree({ graph, activeId, viewerId, bloodlineOnly = f
               onOpenPerson={onOpenPerson}
               onActivate={onActivate}
               onToggleUp={toggleUp}
-              onOpenChildren={(id) => { setSwitcherFor(null); setChildrenFor((cur) => (cur === id ? null : id)); }}
-              onOpenSwitcher={(memberId) => { setChildrenFor(null); setSwitcherFor((cur) => (cur === memberId ? null : memberId)); }}
+              onOpenChildren={openChildren}
+              onOpenSwitcher={openSwitcher}
               onAddRelative={onAddRelative}
             />
           ))}
         </div>
 
         {popover && popoverScreen && (
-          <div className="ped-pop" style={{ left: popoverScreen.left, top: popoverScreen.top }} role="dialog" aria-label="Children">
+          <div ref={childrenPopRef} className="ped-pop" style={{ left: popoverScreen.left, top: popoverScreen.top }} role="dialog" aria-modal="true" aria-label="Children">
             <div className="ped-pop__head">
               <span>{popover.total} {popover.total === 1 ? 'child' : 'children'}</span>
               <button className="ped-pop__close" onClick={() => setChildrenFor(null)} aria-label="Close">×</button>
@@ -747,9 +824,18 @@ export default function ChartTree({ graph, activeId, viewerId, bloodlineOnly = f
 
 // ── One card ─────────────────────────────────────────────────────────────────
 
-function PedCard(props) {
+// Audit finding: a raw pointermove during a pan/pinch drag re-renders
+// ChartTree (via setView), which re-executes `layout.cards.map(...)` and
+// creates a fresh element for every card on every single frame — with
+// nothing memoized, React re-renders every PedCard too, not just diffs an
+// unchanged tree. `layout` itself doesn't depend on `view`, so `card`
+// objects are reference-stable during a drag; combined with every callback
+// prop below now being useCallback'd (see toggleUp/openChildren/
+// openSwitcher above), a plain shallow-prop memo here means an ordinary
+// drag/pinch skips re-rendering every card entirely, not just cheapens it.
+const PedCard = memo(function PedCard(props) {
   return <PlateCard {...props} />;
-}
+});
 
 // ── Flat-plate card (Direction B) — one renderer, both orientations ───────────
 // A couple is two flat plates joined across the LINK_GAP seam: side by side in
@@ -910,12 +996,36 @@ function PlateCard({ card, graph, horizontal, isFocal, entryDelayMs = 0, activeI
   );
 }
 
+// Audit finding: role="menu"/role="menuitem" implies the ARIA menu keyboard
+// pattern (arrow keys move between items, focus lands on the first item on
+// open) — neither existed; the menu was only reachable one Tab stop at a
+// time like an ordinary list of buttons. Escape already closes it (handled
+// by ChartTree's own window keydown listener, one level up) and ordinary
+// Tab order still reaches every row, so this was an incomplete pattern
+// rather than a hard block.
 function SpouseMenu({ graph, memberId, card, partnerChoice, bloodlineOnly = false, onChoose }) {
   const current = card.members.find((m) => m !== memberId) ?? null;
   const candidates = unionCandidates(graph, memberId, bloodlineOnly).filter((c) => c.id !== current);
   const hasChoice = partnerChoice.get(memberId) !== undefined;
+  const menuRef = useRef(null);
+
+  useEffect(() => {
+    menuRef.current?.querySelector('.ped-spouse-menu__row')?.focus();
+  }, []);
+
+  const onMenuKeyDown = (e) => {
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+    e.preventDefault();
+    const rows = [...menuRef.current.querySelectorAll('.ped-spouse-menu__row')];
+    const i = rows.indexOf(document.activeElement);
+    const next = e.key === 'ArrowDown'
+      ? rows[(i + 1) % rows.length]
+      : rows[(i - 1 + rows.length) % rows.length];
+    next?.focus();
+  };
+
   return (
-    <div className="ped-spouse-menu" role="menu" aria-label="Show with which partner">
+    <div ref={menuRef} className="ped-spouse-menu" role="menu" aria-label="Show with which partner" onKeyDown={onMenuKeyDown}>
       {candidates.map((c) => {
         const p = graph.byId.get(c.id);
         if (!p) return null;
