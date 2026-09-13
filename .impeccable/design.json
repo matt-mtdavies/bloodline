@@ -1,0 +1,124 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-13T01:55:30Z",
+  "title": "Design System: Bloodline",
+  "extensions": {
+    "colorMeta": {
+      "accent": { "role": "primary", "displayName": "Terracotta", "canonical": "#c2603a" },
+      "accent-deep": { "role": "primary", "displayName": "Terracotta Deep", "canonical": "#a44d2c" },
+      "accent-soft": { "role": "primary", "displayName": "Terracotta Soft", "canonical": "#f0d9cd" },
+      "sage": { "role": "secondary", "displayName": "Sage", "canonical": "#3f5e4e" },
+      "sage-soft": { "role": "secondary", "displayName": "Sage Soft", "canonical": "#d8e0d6" },
+      "gold": { "role": "tertiary", "displayName": "Gold (odd-one-out accent)", "canonical": "#b08642" },
+      "paper": { "role": "neutral", "displayName": "Paper", "canonical": "#ffffff" },
+      "paper-deep": { "role": "neutral", "displayName": "Paper Deep", "canonical": "#f2f3f5" },
+      "ink": { "role": "neutral", "displayName": "Ink", "canonical": "#1c1d21" },
+      "ink-soft": { "role": "neutral", "displayName": "Ink Soft", "canonical": "#6b6f76" },
+      "ink-faint": { "role": "neutral", "displayName": "Ink Faint", "canonical": "#a6abb3" },
+      "hairline": { "role": "neutral", "displayName": "Hairline", "canonical": "#ebedf0" },
+      "bond-current": { "role": "semantic", "displayName": "Current Partnership", "canonical": "#c2603a" },
+      "bond-former": { "role": "semantic", "displayName": "Former Partnership", "canonical": "#b9ab98" },
+      "bio": { "role": "semantic", "displayName": "Biological Link", "canonical": "#8a7d6b" },
+      "nonbio": { "role": "semantic", "displayName": "Adopted / Step / Foster Link", "canonical": "#b6a892" },
+      "memorial": { "role": "semantic", "displayName": "Memorial Violet", "canonical": "#6b5e7a" },
+      "memorial-soft": { "role": "semantic", "displayName": "Memorial Violet Soft", "canonical": "#e6dff0" },
+      "error": { "role": "semantic", "displayName": "Error", "canonical": "#c0392b" },
+      "error-deep": { "role": "semantic", "displayName": "Error Deep", "canonical": "#b94040" },
+      "error-soft": { "role": "semantic", "displayName": "Error Soft", "canonical": "#fef2f2" },
+      "error-border": { "role": "semantic", "displayName": "Error Border", "canonical": "#f5b7b1" },
+      "error-border-strong": { "role": "semantic", "displayName": "Error Border Strong", "canonical": "#e57373" }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Fraunces", "purpose": "Names, headings, narrative moments. Never buttons, labels, or data values." },
+      "body": { "displayName": "Hanken Grotesk", "purpose": "Everything functional: facts, instructions, UI chrome, form values." }
+    },
+    "shadows": [
+      { "name": "soft", "value": "0 1px 2px rgba(20,22,28,0.04), 0 6px 20px rgba(20,22,28,0.07)", "purpose": "Light ambient lift for pills, chips on hover, hover-preview cards." },
+      { "name": "lift", "value": "0 2px 8px rgba(20,22,28,0.06), 0 20px 50px rgba(20,22,28,0.14)", "purpose": "Stronger elevation for full sheets and anything that should read as clearly above the interface." }
+    ],
+    "motion": [
+      { "name": "spring", "value": "cubic-bezier(0.34, 1.56, 0.64, 1)", "purpose": "Bouncy — arrivals, confirmations, attention moments (sheet-up, card-in, button press-release)." },
+      { "name": "ease", "value": "cubic-bezier(0.22, 0.61, 0.36, 1)", "purpose": "Smooth, non-bouncy — simple state transitions, shakes, fades." }
+    ],
+    "breakpoints": [
+      { "name": "xs", "value": "320px" },
+      { "name": "mobile", "value": "390px" },
+      { "name": "tablet", "value": "768px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Full-width or flexed footer action button (e.g. Save).",
+      "html": "<button class=\"ds-btn-primary\">Save</button>",
+      "css": ".ds-btn-primary { height: 50px; padding: 0 24px; border-radius: 16px; background: #c2603a; color: #fffdf9; font-size: 15.5px; font-weight: 600; border: none; transition: transform 0.4s cubic-bezier(0.34,1.56,0.64,1), filter 0.25s cubic-bezier(0.22,0.61,0.36,1); } .ds-btn-primary:hover { filter: brightness(1.05); } .ds-btn-primary:active { transform: scale(0.97); } .ds-btn-primary:focus-visible { outline: 2px solid #c2603a; outline-offset: 3px; border-radius: 6px; }"
+    },
+    {
+      "name": "Neutral Button",
+      "kind": "button",
+      "refersTo": "button-neutral",
+      "description": "Secondary/cancel footer action button.",
+      "html": "<button class=\"ds-btn-neutral\">Cancel</button>",
+      "css": ".ds-btn-neutral { height: 50px; padding: 0 24px; border-radius: 16px; background: #f2f3f5; color: #1c1d21; font-size: 15.5px; font-weight: 600; border: none; transition: transform 0.4s cubic-bezier(0.34,1.56,0.64,1), filter 0.25s cubic-bezier(0.22,0.61,0.36,1); } .ds-btn-neutral:hover { filter: brightness(0.97); } .ds-btn-neutral:active { transform: scale(0.97); }"
+    },
+    {
+      "name": "Icon Pill",
+      "kind": "button",
+      "refersTo": "pill",
+      "description": "Topbar circular icon button (search, notifications, filters).",
+      "html": "<button class=\"ds-pill\" aria-label=\"Search\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\"><circle cx=\"11\" cy=\"11\" r=\"7\" stroke=\"currentColor\" stroke-width=\"2\"/><path d=\"M21 21l-4.3-4.3\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\"/></svg></button>",
+      "css": ".ds-pill { height: 38px; min-width: 38px; padding: 0 12px; display: inline-flex; align-items: center; justify-content: center; border-radius: 999px; background: #ffffff; border: 1px solid #ebedf0; color: #1c1d21; box-shadow: 0 1px 2px rgba(20,22,28,0.04), 0 6px 20px rgba(20,22,28,0.07); transition: transform 0.4s cubic-bezier(0.34,1.56,0.64,1), background 0.2s cubic-bezier(0.22,0.61,0.36,1); } .ds-pill:hover { background: #f2f3f5; } .ds-pill:active { transform: scale(0.94); } .ds-pill:focus-visible { outline: 2px solid #c2603a; outline-offset: 3px; }"
+    },
+    {
+      "name": "Chip (unselected / selected)",
+      "kind": "chip",
+      "refersTo": "chip",
+      "description": "Relationship-type or filter chip, e.g. in Add Relative or search filters.",
+      "html": "<div style=\"display:flex;gap:8px;\"><button class=\"ds-chip\">Sibling</button><button class=\"ds-chip ds-chip--on\">Partner</button></div>",
+      "css": ".ds-chip { padding: 9px 16px; border-radius: 999px; background: #f2f3f5; color: #1c1d21; font-size: 14.5px; font-weight: 500; border: 1px solid transparent; transition: transform 0.3s cubic-bezier(0.34,1.56,0.64,1), background 0.2s, box-shadow 0.2s; } .ds-chip:hover { box-shadow: 0 1px 2px rgba(20,22,28,0.04), 0 6px 20px rgba(20,22,28,0.07); } .ds-chip:active { transform: scale(0.95); } .ds-chip--on { background: #c2603a; color: #fff; box-shadow: 0 6px 16px rgba(194,96,58,0.28); }"
+    },
+    {
+      "name": "Text Field (default / error)",
+      "kind": "input",
+      "refersTo": "field-input",
+      "description": "Standard labeled text input, with the invalid/error state.",
+      "html": "<div style=\"display:flex;flex-direction:column;gap:16px;max-width:320px;\"><input class=\"ds-field\" placeholder=\"their@email.com\"/><div><input class=\"ds-field ds-field--err\" value=\"not-an-email\"/><div class=\"ds-field-err\">Enter a valid email address</div></div></div>",
+      "css": ".ds-field { width: 100%; height: 50px; border-radius: 14px; border: 1px solid #ebedf0; background: #fff; padding: 0 15px; font-size: 16px; color: #1c1d21; transition: border-color 0.2s cubic-bezier(0.22,0.61,0.36,1), box-shadow 0.2s; } .ds-field:focus { outline: none; border-color: #c2603a; box-shadow: 0 0 0 3px rgba(194,96,58,0.14); } .ds-field--err { border-color: #f5b7b1; background: #fef2f2; } .ds-field-err { font-size: 12px; color: #c0392b; margin-top: 6px; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "Warm, editorial, human — heirloom photo album meets a living interface.",
+    "overview": "Bloodline reads as a physical, cared-for object (paper, ink, a warm accent, generous type) that happens to move and breathe, rather than as software chrome. It is deliberately not enterprise SaaS, not a dashboard, and not a research database with a UI bolted on. Distinctiveness is spent deliberately, not evenly: the tree visualizations and the Keepsake are where the product is allowed to be bold; forms, settings, and management surfaces stay calm and unshowy by comparison.",
+    "keyCharacteristics": [
+      "One warm terracotta accent against a near-white paper ground; a quiet sage companion; a small, sparingly-used supporting cast (gold, memorial violet)",
+      "Fraunces (serif) for headings and emotionally-weighted moments; Hanken Grotesk (sans) for everything functional",
+      "Pill shapes (999px) for small tappable controls; soft 12-16px radii for panels/fields/buttons; 24px for full sheets",
+      "Spring-eased arrivals and confirmations; quieter ease for simple state changes; reduced-motion respected everywhere",
+      "Flat by default; a soft ambient shadow only on things genuinely floating above the page"
+    ],
+    "rules": [
+      { "name": "The One Accent Rule", "body": "Terracotta is the only color that means primary action or active state. Sage, gold, and memorial violet each have one narrow job and are never substituted for the primary accent's role.", "section": "colors" },
+      { "name": "The No Dark Mode Rule", "body": "Every color is a hardcoded hex value and color-scheme is forced to light only, on purpose (iOS Safari must not invert these colors). Never add a prefers-color-scheme: dark branch without revisiting this decision explicitly.", "section": "colors" },
+      { "name": "The Error-Is-Not-Everywhere Rule", "body": "A dedicated error palette exists for validation/destructive-action states, but the Keepsake deliberately avoids red in favor of a desaturated ink-gray to preserve its editorial tone. Follow whichever convention the surface already uses.", "section": "colors" },
+      { "name": "The Serif-Means-Someone Rule", "body": "Fraunces is reserved for names, headings, and narrative — never for buttons, labels, or numeric/tabular content.", "section": "typography" },
+      { "name": "The Float-Only Rule", "body": "A shadow means this is physically above the surface right now (a sheet, a floating nameplate, a hover card). Never apply it to a resting, in-flow element just to add visual weight.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do keep terracotta as the only color meaning primary/active",
+      "Do use Fraunces only for names, headings, and narrative",
+      "Do default to pill radius for small tappable controls",
+      "Do use a shadow only on something genuinely floating above the page",
+      "Do spring-ease arrivals and confirmations; use plain ease for simple transitions; respect prefers-reduced-motion",
+      "Do match the nearest existing sibling's font-size/spacing value rather than inventing a new round number"
+    ],
+    "donts": [
+      "Don't introduce a generic .card grid/dashboard layout — none exists in this codebase on purpose",
+      "Don't add a second, unrelated brand color for variety",
+      "Don't simplify the bespoke tree visualizations (organic/Bubble, Chart, Canopy, Atlas) or the Keepsake into ordinary DOM component patterns",
+      "Don't add dark-mode support or a prefers-color-scheme branch",
+      "Don't treat the internal ?lab= motion/layout experimentation harnesses as shipped UI needing design polish"
+    ]
+  }
+}

@@ -4,7 +4,8 @@
 
 1. Update from `main` and create a short-lived branch.
 2. Read `AGENTS.md`, `docs/OPERATING-SYSTEM.md`, and the relevant architecture or
-   storage document.
+   storage document. For any UI/UX change, also read `PRODUCT.md` and `DESIGN.md`
+   (repo root) — Bloodline's product truth and visual/interaction system.
 3. Inspect the current implementation, tests, migrations, and recent relevant history.
 4. Classify the change's risk and identify affected family data, authorization paths,
    external services, and recovery options.

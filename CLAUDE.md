@@ -9,6 +9,18 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
 
 - Follow `AGENTS.md` and `docs/OPERATING-SYSTEM.md`; those shared repository rules
   supersede model-specific habits in this project-memory file.
+- **Design language:** `PRODUCT.md` and `DESIGN.md` (repo root) hold durable product
+  truth and Bloodline's visual/interaction system — read them before any UI change,
+  per `AGENTS.md`'s "Product and design intelligence" section. They're maintained with
+  the **Impeccable** plugin (project-scoped via `.claude/settings.json`; run
+  `/impeccable audit`, `/impeccable polish`, etc.). Impeccable is a design-QUALITY
+  layer that helps execute Bloodline's own direction better — it does not own or
+  replace that direction, and its general heuristics never override a documented
+  Bloodline convention or an intentionally bespoke surface (the tree visualizations,
+  the Keepsake). Any Impeccable session must stay on the demo/seed family only — see
+  `PRODUCT.md`'s Evidence-on-Hand rule and `AGENTS.md` point 4. This Status section
+  remains the detailed, dated log of what changed and why; `PRODUCT.md`/`DESIGN.md`
+  are the distilled, durable reference, not a duplicate of it.
 - Start from current protected `main`, use a short-lived branch, and open a pull
   request for review. Never assume an old agent branch is still the integration branch.
 - Keep attribution and model/session metadata out of commits and repository artifacts

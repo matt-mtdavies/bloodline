@@ -9,3 +9,5 @@ tests/screenshots
 tests/_*.mjs
 tests/_large-family.json
 tests/lab-capture/
+.impeccable/config.local.json
+.impeccable/live/
