@@ -26,6 +26,41 @@ const MAX_ZOOM = 1.6;
 const FIT_PADDING = 72;
 const isBioAdopt = (q) => !q || q === 'biological' || q === 'adoptive' || q === 'adopted';
 
+// The framing box for a layout's bounds, sized so the FOCAL card (always at
+// local (0,0) — see place(focal, 0) in pedigreeLayout.js) lands exactly at
+// screen centre once panned, rather than the raw bounding box's own midpoint.
+// A real family's ancestor branches almost never sprawl equally on both
+// sides of the focal couple (one partner's line recorded three generations
+// deep, the other only one), and children rarely spread evenly around zero
+// either — centring on the true midpoint of an asymmetric box visibly drags
+// the focal person off-centre (a real production report: the couple's own
+// connecting line rendered nowhere near the middle of the screen). Sizing
+// each axis symmetrically around 0 (using whichever side reaches furthest)
+// keeps "you" fixed in the middle at the cost of some empty margin on the
+// shorter side — the same trade-off this file's horizontal/landscape
+// orientation already made deliberately; this extends it to vertical
+// orientation's cross axis (X — ancestor/sibling spread), which never had
+// it. Vertical's OTHER axis (Y — purely generational: ancestors above,
+// descendants below) keeps the true midpoint: there's no single "row" that
+// needs to stay visually fixed the way the focal card's column does.
+function focalCenteredBox(bounds, orient) {
+  const { minX, maxX, minY, maxY } = bounds;
+  if (orient === 'horizontal') {
+    return {
+      boxW: Math.max(1, Math.max(Math.abs(minX), Math.abs(maxX)) * 2),
+      boxH: Math.max(1, Math.max(Math.abs(minY), Math.abs(maxY)) * 2),
+      cx: 0,
+      cy: 0,
+    };
+  }
+  return {
+    boxW: Math.max(1, Math.max(Math.abs(minX), Math.abs(maxX)) * 2),
+    boxH: Math.max(1, maxY - minY),
+    cx: 0,
+    cy: (minY + maxY) / 2,
+  };
+}
+
 // The opening state for a fresh root: the focal couple's own parents
 // revealed (one generation up both sides), plus the focal person's
 // grandparents' slots ready behind their arrows — focused, not sprawling.
@@ -136,31 +171,15 @@ export default function ChartTree({ graph, activeId, viewerId, bloodlineOnly = f
 
   // Opening frame: fit the (small, focused) initial layout inside the safe
   // area — real clearance for the topbar above and the dock below — capped
-  // at a fully-legible zoom so a compact family isn't blown up huge.
-  //
-  // Horizontal mode additionally guarantees the focal card sits exactly at
-  // the viewport's horizontal centre (it's always at local x=0 — see
-  // place(focal, 0) in pedigreeLayout.js): ancestor branches usually sprawl
-  // wider than the children row, so centring on the bounding box's own
-  // midpoint would otherwise drift focal off-centre. Sizing the box
-  // symmetrically around 0 (using whichever side reaches furthest) keeps
-  // "you" fixed in the middle at the cost of some empty margin on the
-  // shorter side — the intended trade-off, not a bug.
+  // at a fully-legible zoom so a compact family isn't blown up huge. See
+  // focalCenteredBox's own header comment for why the box is sized around
+  // the focal card rather than the raw bounding box.
   const centerOnFocal = useCallback((lay, orient) => {
     const vp = viewportRef.current;
     if (!vp || !lay.cards.length) return;
     const rect = vp.getBoundingClientRect();
     const PAD = { top: 170, bottom: 150, side: 36 };
-    const { minX, maxX, minY, maxY } = lay.bounds;
-    let boxW, boxH, cx, cy;
-    if (orient === 'horizontal') {
-      boxW = Math.max(1, Math.max(Math.abs(minX), Math.abs(maxX)) * 2);
-      boxH = Math.max(1, Math.max(Math.abs(minY), Math.abs(maxY)) * 2);
-      cx = 0; cy = 0;
-    } else {
-      boxW = Math.max(1, maxX - minX); boxH = Math.max(1, maxY - minY);
-      cx = (minX + maxX) / 2; cy = (minY + maxY) / 2;
-    }
+    const { boxW, boxH, cx, cy } = focalCenteredBox(lay.bounds, orient);
     const zoom = Math.min(0.92, Math.max(FIT_MIN_ZOOM,
       Math.min((rect.width - PAD.side * 2) / boxW, (rect.height - PAD.top - PAD.bottom) / boxH)));
     glideTo({
@@ -215,16 +234,7 @@ export default function ChartTree({ graph, activeId, viewerId, bloodlineOnly = f
     const vp = viewportRef.current;
     if (!vp || !layout.cards.length) return;
     const rect = vp.getBoundingClientRect();
-    const { minX, maxX, minY, maxY } = layout.bounds;
-    let boxW, boxH, cx, cy;
-    if (orientation === 'horizontal') {
-      boxW = Math.max(1, Math.max(Math.abs(minX), Math.abs(maxX)) * 2);
-      boxH = Math.max(1, Math.max(Math.abs(minY), Math.abs(maxY)) * 2);
-      cx = 0; cy = 0;
-    } else {
-      boxW = Math.max(1, maxX - minX); boxH = Math.max(1, maxY - minY);
-      cx = (minX + maxX) / 2; cy = (minY + maxY) / 2;
-    }
+    const { boxW, boxH, cx, cy } = focalCenteredBox(layout.bounds, orientation);
     const zoom = Math.min(MAX_ZOOM, Math.max(FIT_MIN_ZOOM,
       Math.min((rect.width - FIT_PADDING * 2) / boxW, (rect.height - FIT_PADDING * 2) / boxH)));
     glideTo({ zoom, panX: rect.width / 2 - cx * zoom, panY: rect.height / 2 - cy * zoom });
