@@ -2721,6 +2721,51 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   build`, the full unit suite, and `tests/smoke.mjs` all passed clean (the smoke test's own List-view
   step never touches the rail, so this was purely additive to its existing coverage).
 
+- **`/impeccable audit` on List view — 5 real findings, all fixed** (14/20, "Good"; first
+  application of the new higher-bar/no-shortcuts standing directive above). The detector's own
+  file-level scan of `AccessibleTree.jsx` was clean; scoping its whole-stylesheet CSS scan to just
+  the List-view block (1117–1393) surfaced 4 genuine hits, and live measurement with real CDP
+  `Input.dispatchTouchEvent` touch (not mouse-shaped events) surfaced a fifth the detector
+  couldn't see at all.
+  1. **[P1, real regression]** Unavailable A–Z letters stayed in the keyboard tab order.
+     Swapping the native `disabled` attribute for `aria-disabled` (done for the drag-scrub fix
+     above, so `elementFromPoint` wouldn't skip unavailable letters mid-drag) traded away
+     `disabled`'s other effect — removing a control from Tab order — which nobody had checked for.
+     Confirmed live before the fix: all 12 unavailable demo letters at `tabIndex: 0`. Fixed with
+     `tabIndex={available ? 0 : -1}` — `tabIndex` has no bearing on `elementFromPoint`, so the drag
+     gesture is unaffected; confirmed after: 0/12 unavailable letters tabbable, 0 available letters
+     wrongly removed.
+  2. **[P2] Extended-family groups weren't virtualized — a large one stayed fully mounted in the
+     DOM regardless of collapse state.** The collapse feature two entries back only ever
+     CSS-hid content (`grid-template-rows: 0fr`), never unmounted it. New `UNMOUNT_THRESHOLD`
+     (40): a group at or below it keeps the existing smooth animated collapse (DOM cost is
+     trivial at that size); above it, closing genuinely unmounts the rows instead of just hiding
+     them, trading the smooth animation for not holding dozens+ of hidden rows in memory.
+     Verified with a forced 47-person "Nieces & Nephews" (45 synthetic people temporarily added to
+     `seed.js`, reverted before committing — confirmed via clean `git diff`): 47 `.person-row`
+     elements mounted while open, exactly 0 while closed, back to 47 on reopen.
+  3. **[P2] Three hardcoded `border-radius` values (14px/18px) drifted off DESIGN.md's actual
+     token scale** (`--radius: 16px`, `--radius-lg: 24px`, both already used 8 times elsewhere in
+     the same stylesheet) — introduced during the card-flattening fix two entries back without
+     checking the token values, exactly the kind of drift the new standing directive exists to
+     catch. All three (`.person-row`, `.person-row--focus`, `.person-row--current`, `.search`)
+     now reference `var(--radius)` directly; confirmed via `getComputedStyle` that every one
+     resolves to the real 16px token post-fix, and the detector's in-scope CSS findings dropped
+     from 4 to 0.
+  4. **[P3] The drag magnifier used plain `#fff` instead of the app's own established
+     off-white-on-terracotta convention (`#fffdf9`, documented in DESIGN.md's Buttons section)** —
+     now matches; confirmed via the live stylesheet rule (`rgb(255, 253, 249)`).
+  5. **[P3] `elementFromPoint` (a forced layout/hit-test) ran on every raw `pointermove` during a
+     drag, unthrottled.** No jank was ever observed, but a very fast drag on a low-end device had
+     no guard. Added a `requestAnimationFrame`-based throttle (`scrubFrameRef`/`scrubPointRef`) so
+     the hit-test and any `scrollToIndex` call run at most once per repaint regardless of how fast
+     pointermove fires; re-verified the exact same real-CDP-touch drag test from the entry above
+     still tracks A→Z correctly and the page still never scrolls (`touch-action: none` unaffected).
+  Full unit suite, `npm run build`, and `tests/smoke.mjs` all passed clean after every fix. As
+  disclosed in the audit itself, mobile Safari-specific behavior (VoiceOver's actual announcement
+  of the new `tabIndex`/`aria-disabled` pairing, `position: fixed` under iOS's collapsing URL bar)
+  remains unverified on the real engine — this sandbox still can't download WebKit.
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);
