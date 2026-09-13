@@ -36,6 +36,22 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   queue the content and create it the instant it reconnects — never drop it. This is a convention
   I follow each turn, not a harness hook (settings.json hooks run shell, not MCP calls, so they
   can't create ClickUp tasks).
+- **Higher design/QA bar, no shortcuts (standing directive, user-requested):** prompted by a real
+  gap — the List view A–Z rail was named/modeled on "iOS Contacts-style" and shipped tap-only,
+  because tap was the interaction that was easiest to verify with a click; a real user then had to
+  report that dragging (the actual point of that pattern) did nothing. Going forward:
+  1. When a feature is described or visually modeled after a known pattern, identify and build the
+     FULL interaction that pattern implies — not just whichever subset is easiest to automate or
+     screenshot. "iOS Contacts-style" means drag-to-scrub, not a button that happens to look like one.
+  2. Before calling anything done or verified, actually exercise the hardest/most-realistic path
+     live — a real simulated drag/gesture, not just a `.click()`; production-like scale, not just
+     the 23-person demo; the actual target device class (mobile Safari/PWA) when the feature is
+     mobile-first, not just headless Chromium, when that's reachable — and say so plainly when it
+     isn't (e.g., this sandbox cannot download WebKit; a real iPhone check is a disclosed gap, not
+     an assumed pass).
+  3. If a design/perf/accessibility corner is deliberately cut for time, disclose it explicitly in
+     the same turn rather than letting a clean-looking checklist imply full completeness.
+  4. Prefer catching a gap myself, in the same pass, over a user reporting it back as a follow-up.
 
 ### Run / verify (no human can see the screen — self-verify with screenshots)
 - Dev server: `npm run dev` (run in background; picks the first free port, usually 5173).
