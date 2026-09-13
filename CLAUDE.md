@@ -2634,6 +2634,46 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   collapsible extended-family groups (both part of the critique's "unnavigable at scale" finding,
   but each carries enough of its own design/testing surface to warrant a separate pass).
 
+- **List view: the two items deferred from the critique pass above are now done.**
+  1. **A–Z jump rail** (`AccessibleTree.jsx`) — a slim, fixed-position column of letters along the
+     right edge, iOS-Contacts-style, reachable from anywhere in the list (not just once scrolled
+     down to the directory). A `letterIndex` memo maps each present starting letter to the first
+     matching index in the CURRENT sort+filter, keyed off whichever field actually drives that
+     sort (`display_name` for "First name", the existing `surnameOf` helper for "Surname"); a
+     letter with no match renders dimmed and `disabled` rather than being removed, so tapping
+     doesn't shift every other letter's position mid-scroll. Deliberately hidden for the
+     "Closest to you" sort — that order has nothing to do with the alphabet, so a rail there would
+     jump to a position unrelated to the tapped letter. Tapping a letter calls the existing
+     `rowVirtualizer.scrollToIndex(idx, { align: 'start' })` — no new scroll-math needed, since the
+     virtualizer's own `scrollMargin` (already wired for the shared focus+directory scroll
+     container) accounts for the offset automatically.
+  2. **Collapsible extended-family groups** — any group over `COLLAPSE_THRESHOLD` (6) people now
+     gets a disclosure toggle; smaller groups (Partners, Parents — nothing to hide) stay plain,
+     always-visible headers exactly as before. Reuses the app's existing generic `.privacy-section__
+     reveal`/`__reveal-inner` grid-rows (0fr → 1fr) disclosure mechanics verbatim — the same classes
+     already shared by EditPersonSheet's Privacy and Military-service sections — rather than
+     inventing a second collapse animation; only the toggle's own typography is new
+     (`.listview__group-toggle`, styled to match the existing plain `<h3>` eyebrow treatment
+     exactly, so a collapsible and non-collapsible group header look identical at rest). The toggle
+     button lives INSIDE the `<h3>` (not replacing it) so the group stays screen-reader-navigable
+     by heading, addressing the critique's own "nine `<h3>`s, all inert" observation rather than
+     making it worse by turning some into non-heading buttons. Defaults fully expanded (an empty
+     `collapsedGroups` Set) so an existing view of a small family — including every seed/demo
+     family — renders byte-identical to before this feature; collapse state is keyed by group
+     title, not by focused person, so a once-collapsed "Grandparents" stays collapsed browsing to
+     the next relative too, matching every other persistent disclosure in the app.
+  Verified live via Playwright against the real dev server (`?demo`): the A–Z rail correctly
+  showed only the letters actually present ("ACDEFJLMNORSTW" for the demo's 23 people), tapping
+  "W" scrolled the shared container to William Mercer, and switching to "Closest to you" made the
+  rail disappear (confirmed via element count). Collapsible groups needed a forced repro since no
+  seed-data group naturally exceeds 6 in the demo family — temporarily added 5 synthetic nieces/
+  nephews to `seed.js` to push "Nieces & Nephews" to 7, confirmed the toggle appears only on that
+  group (not on the smaller ones), confirmed `aria-expanded` flips and the reveal's own measured
+  height collapses to 0px on click, and confirmed the "Everyone" directory shifts up to fill the
+  reclaimed space — then reverted the seed change before committing (confirmed via a clean
+  `git diff` on `seed.js`). `npm run build`, the full unit suite (all 87 `tests/*.test.mjs` files),
+  and `tests/smoke.mjs` all passed clean.
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);
