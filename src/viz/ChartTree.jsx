@@ -22,9 +22,14 @@ import Avatar from '../components/Avatar.jsx';
 
 const MIN_ZOOM = 0.28;
 const FIT_MIN_ZOOM = 0.06;
+// Floor for the AUTOMATIC opening/re-root frame only (never fitToView's own
+// explicit "fit everything" button, which keeps FIT_MIN_ZOOM) — real user
+// feedback: a fresh Chart open shouldn't ever start smaller than a
+// comfortable reading zoom, even for a wide family. Content beyond the
+// frame is reachable by panning rather than being force-fit onto screen.
+const OPEN_MIN_ZOOM = 0.55;
 const MAX_ZOOM = 1.6;
 const FIT_PADDING = 72;
-const isBioAdopt = (q) => !q || q === 'biological' || q === 'adoptive' || q === 'adopted';
 
 // The framing box for a layout's bounds, sized so the FOCAL card (always at
 // local (0,0) — see place(focal, 0) in pedigreeLayout.js) lands exactly at
@@ -62,15 +67,27 @@ function focalCenteredBox(bounds, orient) {
 }
 
 // The opening state for a fresh root: the focal couple's own parents
-// revealed (one generation up both sides), plus the focal person's
-// grandparents' slots ready behind their arrows — focused, not sprawling.
+// revealed (one generation up both sides), with the grandparents' slots
+// ready behind their own arrows, not pre-expanded — focused, not sprawling.
+//
+// Real production report: a fresh Chart open looked "way too zoomed out."
+// Root cause was here, not in the camera math — this function used to ALSO
+// add the focal person's own PARENTS' ids to the set (`for (const p of
+// graph.parents(focusId))`), which doesn't just reveal the parents (already
+// covered by `focusId` itself being in the set) — it marks THEIR slots
+// expanded too, silently pulling in a second generation (grandparents) on
+// the focal's own line only, never the partner's. That's a real, asymmetric,
+// deeper-than-documented default this comment never actually described —
+// exactly what made a fresh open both needlessly wide (forcing a smaller
+// fit-to-screen zoom) and asymmetric (the very drift the vertical-centering
+// fix above has to correct for). Fixed by expanding only `focusId` and
+// `partner` themselves — their own parents' cards render (one generation up,
+// symmetric on both sides), and those parents' own up-arrows stay present
+// but un-toggled, exactly matching this comment's original wording.
 function initialExpandedUp(graph, focusId) {
   const set = new Set([focusId]);
   const partner = primaryUnionPartner(graph, focusId);
   if (partner) set.add(partner);
-  for (const p of graph.parents(focusId)) {
-    if (isBioAdopt(p.qualifier)) set.add(p.id);
-  }
   return set;
 }
 
@@ -171,16 +188,21 @@ export default function ChartTree({ graph, activeId, viewerId, bloodlineOnly = f
 
   // Opening frame: fit the (small, focused) initial layout inside the safe
   // area — real clearance for the topbar above and the dock below — capped
-  // at a fully-legible zoom so a compact family isn't blown up huge. See
-  // focalCenteredBox's own header comment for why the box is sized around
-  // the focal card rather than the raw bounding box.
+  // at a fully-legible zoom so a compact family isn't blown up huge, and
+  // floored at OPEN_MIN_ZOOM so a wide reveal never starts smaller than a
+  // comfortable reading size — pan reaches whatever doesn't fit, rather than
+  // the frame shrinking indefinitely to show all of it at once (that's what
+  // the explicit "fit to screen" button, fitToView below, is for — it keeps
+  // the much lower FIT_MIN_ZOOM deliberately). See focalCenteredBox's own
+  // header comment for why the box is sized around the focal card rather
+  // than the raw bounding box.
   const centerOnFocal = useCallback((lay, orient) => {
     const vp = viewportRef.current;
     if (!vp || !lay.cards.length) return;
     const rect = vp.getBoundingClientRect();
     const PAD = { top: 170, bottom: 150, side: 36 };
     const { boxW, boxH, cx, cy } = focalCenteredBox(lay.bounds, orient);
-    const zoom = Math.min(0.92, Math.max(FIT_MIN_ZOOM,
+    const zoom = Math.min(0.92, Math.max(OPEN_MIN_ZOOM,
       Math.min((rect.width - PAD.side * 2) / boxW, (rect.height - PAD.top - PAD.bottom) / boxH)));
     glideTo({
       zoom,
