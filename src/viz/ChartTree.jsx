@@ -224,10 +224,32 @@ export default function ChartTree({ graph, activeId, viewerId, bloodlineOnly = f
     const availH = rect.height - PAD.top - PAD.bottom;
     const focalCap = focalCard ? Math.min(availW / focalCard.w, availH / focalCard.h) : Infinity;
     const zoom = Math.min(0.92, focalCap, Math.max(OPEN_MIN_ZOOM, Math.min(availW / boxW, availH / boxH)));
+    // Vertical/portrait mode's generational axis is Y (ancestors above,
+    // descendants below) — a WIDE family forces zoom down to fit its width,
+    // and that same small zoom, applied to the family's actual (often much
+    // shorter) vertical extent, used to always centre the resulting short
+    // band in the middle of the whole safe area. Real, directly-observed
+    // report: on a wide family this stranded the tree in a thin strip with
+    // huge empty margins above AND below — reading as broken/tiny rather
+    // than as "a wide family, zoomed to fit." When the content's rendered
+    // height comfortably fits the safe area, anchor it near the TOP instead
+    // (matching how the rest of the app opens — content starts under the
+    // header, not floating mid-screen) and let any slack fall below, where
+    // panning down reveals nothing anyway. Only fall back to true vertical
+    // centring when the content is actually taller than the safe area (an
+    // expanded, many-generation view) — there, centring still leaves the
+    // least total cropped either direction. Horizontal/landscape mode is
+    // unaffected: its own cross axis (Y here) already gets the symmetric
+    // "keep the focal card fixed" treatment focalCenteredBox applies.
+    const TOP_BREATH = 24;
+    const contentH = boxH * zoom;
+    const panY = orient === 'horizontal' || contentH > availH
+      ? PAD.top + availH / 2 - cy * zoom
+      : PAD.top + TOP_BREATH - lay.bounds.minY * zoom;
     glideTo({
       zoom,
       panX: rect.width / 2 - cx * zoom,
-      panY: PAD.top + (rect.height - PAD.top - PAD.bottom) / 2 - cy * zoom,
+      panY,
     });
   }, [glideTo]);
 
