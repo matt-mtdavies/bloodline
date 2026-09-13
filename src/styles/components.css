@@ -11335,8 +11335,18 @@ button.health-notes {
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .pplate__dates {
-  font-size: 11px; color: var(--ink-faint);
+  font-size: 11px; color: var(--ink-soft);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* The active plate's name gets the display serif — the exact same "one
+   highlighted instance in an otherwise-dense, repeated row list" pattern
+   List view's own .person-row--focus .person-row__name already uses; every
+   OTHER plate stays in the body font, matching how List view, search
+   results, and the existing-person picker all keep repeated name rows in
+   body type and reserve the serif for the one that's actually focused. */
+.pplate--active .pplate__name {
+  font-family: var(--display);
+  font-weight: 600;
 }
 .pplate--passed .pplate__name { color: color-mix(in srgb, var(--ink) 74%, var(--paper)); }
 /* Emphasis tiers — deep ancestors recede; hover restores full presence so

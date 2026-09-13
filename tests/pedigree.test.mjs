@@ -187,8 +187,8 @@ t('horizontal couple card is one plate wide, two plates tall', () => {
   const { cards, focalCardId } = computePedigree(graph, 'matthew', { expandedUp: new Set(), orientation: 'horizontal' });
   const focal = cards.find((c) => c.id === focalCardId);
   assert.equal(focal.members.length, 2);
-  // One plate wide (PLATE_W=192), two plates + the seam gap tall (60*2+18=138).
-  assert.equal(focal.w, 192);
+  // One plate wide, two plates + the seam gap tall (60*2+18=138).
+  assert.equal(focal.w, PLATE_W);
   assert.equal(focal.h, 138);
 });
 

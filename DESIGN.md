@@ -222,6 +222,18 @@ and narrative — never for buttons, labels, or numeric/tabular content. If a
 string is a person's name or a heading, it earns the display font; if it's
 an instruction, a value, or UI chrome, it stays in Hanken Grotesk.
 
+**Refinement, confirmed against precedent (List view's `.person-row__name`,
+search results, the existing-person picker):** this rule governs a *hero* or
+*singled-out* name, not every repeated instance in a dense list. When the
+same name role appears many times in one view (a directory row, a search
+result, a chart full of person cards), the established pattern keeps the
+whole repeated set in Hanken Grotesk for scanability and density, and
+reserves Fraunces for the ONE instance that's actually focused/active/
+selected — exactly `.person-row--focus .person-row__name`'s own existing
+treatment, and now `.pplate--active .pplate__name`'s too (Chart view's
+active person). Don't set every row's name to Fraunces just because it's a
+name; check whether it's the singled-out one first.
+
 ## Layout
 
 No CSS grid system or spacing-token scale exists (`theme.css` tokenizes
