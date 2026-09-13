@@ -102,6 +102,16 @@ export default function ChartTree({ graph, activeId, viewerId, bloodlineOnly = f
   // unmounted (e.g. re-rooted via List view), that's a genuine re-root, not a
   // resumed session, and everything below falls back to the normal fresh-open
   // behavior — byte-identical to before this fix in that case.
+  // TEMPORARY diagnostic aid — ?chartdebug in the URL shows a live readout
+  // of the camera-fit math on screen. Added specifically to investigate a
+  // real report (a family's own cards clipped on both edges on an iPhone 13
+  // Pro, Safari) that repeated, careful reproduction against demo data and
+  // synthetic fixtures matching the reported family shape could not turn
+  // up — this captures real numbers from the real device/data instead of
+  // guessing further. Remove once that's resolved; never gated behind
+  // anything but an explicit opt-in query param, so it's inert for every
+  // ordinary user.
+  const chartDebug = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('chartdebug');
   const saved = persistRef?.current;
   const resumed = saved?.activeId === activeId;
   const [orientation, setOrientation] = useState(() => saved?.orientation ?? 'vertical');
@@ -111,6 +121,7 @@ export default function ChartTree({ graph, activeId, viewerId, bloodlineOnly = f
   const [switcherFor, setSwitcherFor] = useState(null); // memberId with open spouse menu
   const [view, setView] = useState(() => (resumed && saved.view ? saved.view : { zoom: 0.9, panX: 0, panY: 0 }));
   const [gliding, setGliding] = useState(false);
+  const [debugOverflow, setDebugOverflow] = useState(null); // TEMPORARY — see chartDebug above
   // The three mount-time effects below (re-root / orientation / bloodlineOnly)
   // each recompute the camera — needed on an ordinary fresh open (nothing has
   // positioned the camera yet), but on a RESUMED mount all three would each
@@ -271,6 +282,37 @@ export default function ChartTree({ graph, activeId, viewerId, bloodlineOnly = f
   useEffect(() => {
     if (persistRef) persistRef.current = { activeId, orientation, expandedUp, partnerChoice, view };
   });
+
+  // TEMPORARY — see chartDebug above. Measures every actually-rendered
+  // .pcard against the actual viewport rect after each settle, so the
+  // on-screen readout reflects real DOM geometry, not just the intended
+  // math — the two could differ for reasons the math alone wouldn't show
+  // (a CSS quirk, a stale rect, a native browser zoom).
+  useEffect(() => {
+    if (!chartDebug) return;
+    const id = setTimeout(() => {
+      const vp = viewportRef.current;
+      if (!vp) return;
+      const vpRect = vp.getBoundingClientRect();
+      const cards = [...document.querySelectorAll('.pcard')].map((el) => {
+        const r = el.getBoundingClientRect();
+        return { left: Math.round(r.left), right: Math.round(r.right), overflowL: r.left < -0.5, overflowR: r.right > vpRect.width + 0.5 };
+      });
+      setDebugOverflow({
+        vpRectW: Math.round(vpRect.width),
+        vpRectH: Math.round(vpRect.height),
+        innerWidth: window.innerWidth,
+        innerHeight: window.innerHeight,
+        visualViewportW: window.visualViewport?.width,
+        visualViewportH: window.visualViewport?.height,
+        dpr: window.devicePixelRatio,
+        cardCount: cards.length,
+        anyOverflow: cards.some((c) => c.overflowL || c.overflowR),
+        cards,
+      });
+    }, 700);
+    return () => clearTimeout(id);
+  }, [chartDebug, view, layout]);
 
   const fitToView = useCallback(() => {
     const vp = viewportRef.current;
@@ -719,6 +761,35 @@ export default function ChartTree({ graph, activeId, viewerId, bloodlineOnly = f
           <FitIcon />
         </button>
       </div>
+
+      {/* TEMPORARY — see chartDebug above. */}
+      {chartDebug && (
+        <pre
+          style={{
+            position: 'fixed', left: 8, right: 8, bottom: 92, zIndex: 99999,
+            margin: 0, padding: '8px 10px', maxHeight: '46vh', overflow: 'auto',
+            background: 'rgba(10,10,10,0.88)', color: '#7CFC7C',
+            fontSize: 10, lineHeight: 1.4, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+            borderRadius: 10, pointerEvents: 'none', whiteSpace: 'pre-wrap',
+          }}
+        >
+          {JSON.stringify(
+            {
+              activeId, orientation, view,
+              boxBounds: layout.bounds,
+              focalCardId: layout.focalCardId,
+              focalCardWH: (() => {
+                const f = layout.cards.find((c) => c.id === layout.focalCardId);
+                return f ? [f.w, f.h] : null;
+              })(),
+              cardCount: layout.cards.length,
+              ...debugOverflow,
+            },
+            null,
+            1,
+          )}
+        </pre>
+      )}
     </div>
   );
 }

@@ -1,0 +1,14 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "design-system-font",
+        "value": "sfmono-regular",
+        "createdAt": "2026-09-13T13:48:50.235Z",
+        "reason": "Temporary ?chartdebug-only diagnostic JSON overlay in ChartTree.jsx, gated behind an explicit query param and never shown to real users — intentionally monospace for a raw data dump, not part of the app's real typography system, and slated for removal once the underlying report is diagnosed."
+      }
+    ]
+  }
+}
