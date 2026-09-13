@@ -318,19 +318,34 @@ export function computePedigree(graph, focusId, { expandedUp, partnerChoice, ori
   focal._gen = 0;
   buildAncestors(focal, 0);
 
-  // ── Cross-axis placement: classic pedigree spans, bottom-up. ─────────────
+  // ── Cross-axis placement: asymmetric-extent pedigree spans, bottom-up. ───
+  // REAL BUG, found and fixed after a live report of overlapping ancestor
+  // cards on a large production tree (478 people): the previous version
+  // tracked one SYMMETRIC `span` (a single half-width radius) per card, but
+  // `place()`'s own push distributes a deficit by each branch's SIZE, not
+  // evenly — anchoring each branch to its own member's plate and letting the
+  // wider one absorb nearly all of the push (see the placement comment
+  // below; that anchoring behavior itself is correct and deliberate, fixed
+  // in an earlier pass). Once a highly asymmetric push is applied (a deeply
+  // expanded branch beside a shallow/unexpanded one), the WIDE branch's
+  // actual rendered edge lands much farther from its card's centre than a
+  // simple symmetric `span/2` accounts for — proven with a worked example:
+  // a 2000-unit-wide branch beside a 224-unit one computed a claimed span/2
+  // of 1132, while the wide branch's TRUE left edge sat 1939.5 units out —
+  // an 807-unit underestimate. Every ancestor further up the tree that
+  // relied on that undersized span to keep ITS OWN siblings apart then had
+  // too little room, and two unrelated "cousin" branches (e.g. one parent's
+  // ancestry vs the other parent's) collided several generations up. Fixed
+  // by tracking separate LEFT/RIGHT extents (distance from the card's own
+  // centre to its subtree's actual left/right edge) instead of one
+  // symmetric radius, computed via the exact same final offsets `place()`
+  // uses — reproduced against a synthetic, deliberately asymmetric ancestor
+  // tree (mixed solo/couple branches, uneven depth per branch, matching how
+  // real, incompletely-recorded genealogy actually looks) via
+  // `computePedigree` called directly, confirmed overlapping before this
+  // fix and clean after, across 7 generations of random asymmetric
+  // branching. See `tests/pedigreeLayout.test.mjs`.
   const byId = new Map(cards.map((c) => [c.id, c]));
-  function span(card) {
-    if (card._span != null) return card._span;
-    const upIds = card.slots.map((s) => s._parentCardId).filter(Boolean);
-    let s = crossSize(card);
-    if (upIds.length) {
-      const upSpan = upIds.reduce((sum, id, i) => sum + span(byId.get(id)) + (i ? PAIR_GAP : 0), 0);
-      s = Math.max(s, upSpan);
-    }
-    card._span = s;
-    return s;
-  }
   // A member's own plate sits at a fixed offset from its card's centre — the
   // same geometry ChartTree.jsx's plateGeom draws from. A parent branch's
   // IDEAL cross-centre is directly above (portrait) / level with (landscape)
@@ -340,40 +355,72 @@ export function computePedigree(graph, focusId, { expandedUp, partnerChoice, ori
     const step = (portrait ? PLATE_W : PLATE_H) + LINK_GAP;
     return (i - (card.members.length - 1) / 2) * step;
   }
+  function upEntriesOf(card) {
+    return card.slots
+      .map((s, i) => (s._parentCardId ? { upCard: byId.get(s._parentCardId), off: slotCrossOffset(card, i) } : null))
+      .filter(Boolean);
+  }
+  // Returns { left, right }: how far this card's actual rendered subtree
+  // extends from ITS OWN centre in each direction — not assumed symmetric,
+  // since an asymmetric push (below) makes a card's true footprint lopsided
+  // around the centre `place()` later assigns it. For a 2-upEntries card,
+  // this also computes and caches the exact final push offsets so `place()`
+  // (the top-down pass) reuses the identical numbers rather than
+  // recomputing them and risking drift between the two passes.
+  function extentOf(card) {
+    if (card._extent) return card._extent;
+    let left = crossSize(card) / 2, right = crossSize(card) / 2;
+    const upEntries = upEntriesOf(card);
+    if (upEntries.length === 1) {
+      const { upCard, off } = upEntries[0];
+      const ue = extentOf(upCard);
+      left = Math.max(left, ue.left - off);
+      right = Math.max(right, off + ue.right);
+    } else if (upEntries.length === 2) {
+      const [e0, e1] = upEntries;
+      const ue0 = extentOf(e0.upCard), ue1 = extentOf(e1.upCard);
+      // Anchor each branch directly above/level with its OWN member by
+      // default; only push them apart when they'd otherwise overlap — and
+      // split that push by each branch's OWN size, not evenly. A real
+      // report, with a screenshot: with an older "always sum the spans and
+      // centre the pair as one block" placement, a person with a narrow,
+      // unexpanded parent branch (2 people, no further ancestors) got
+      // dragged far out to the side purely because their PARTNER's own
+      // ancestry (expanded several generations deep) was wide — the narrow
+      // branch ended up nowhere near the person it actually belongs to.
+      // Anchoring to each member's real plate position first, then letting
+      // the WIDE branch (the one that actually needs the extra room around
+      // its own centre) absorb nearly all of any necessary push while the
+      // narrow one barely moves, means a lopsided family reads as "one deep
+      // branch, one shallow one sitting right where it belongs" rather than
+      // two branches dragged to opposite extremes.
+      const idealGap = e1.off - e0.off;
+      const minGap = ue0.right + PAIR_GAP + ue1.left;
+      const deficit = Math.max(0, minGap - idealGap);
+      const w0 = ue0.left + ue0.right, w1 = ue1.left + ue1.right;
+      const total = w0 + w1 || 1;
+      const foff0 = e0.off - deficit * (w0 / total);
+      const foff1 = e1.off + deficit * (w1 / total);
+      card._finalOffsets = [foff0, foff1];
+      left = Math.max(left, ue0.left - foff0, ue1.left - foff1);
+      right = Math.max(right, foff0 + ue0.right, foff1 + ue1.right);
+    }
+    card._extent = { left, right };
+    return card._extent;
+  }
   function place(card, crossCenter) {
     card._cross = crossCenter;
-    const upEntries = card.slots
-      .map((s, i) => (s._parentCardId ? { card: byId.get(s._parentCardId), ideal: crossCenter + slotCrossOffset(card, i) } : null))
-      .filter(Boolean);
+    const upEntries = upEntriesOf(card);
     if (!upEntries.length) return;
     if (upEntries.length === 1) {
-      place(upEntries[0].card, upEntries[0].ideal);
+      place(upEntries[0].upCard, crossCenter + upEntries[0].off);
       return;
     }
-    // Two branches: anchor each directly above/level with its OWN member by
-    // default; only push them apart when their spans would otherwise
-    // overlap — and split that push by each branch's OWN size, not evenly.
-    // A real report, with a screenshot: with the OLD "always sum the spans
-    // and centre the pair as one block" placement, a person with a narrow,
-    // unexpanded parent branch (2 people, no further ancestors) got dragged
-    // far out to the side purely because their PARTNER's own ancestry
-    // (expanded several generations deep) was wide — the narrow branch ended
-    // up nowhere near the person it actually belongs to. Anchoring to each
-    // member's real plate position first, then letting the WIDE branch (the
-    // one that actually needs the extra room around its own centre) absorb
-    // nearly all of any necessary push while the narrow one barely moves,
-    // means a lopsided family reads as "one deep branch, one shallow one
-    // sitting right where it belongs" rather than two branches dragged to
-    // opposite extremes.
-    const [e0, e1] = upEntries;
-    const s0 = span(e0.card), s1 = span(e1.card);
-    const minGap = s0 / 2 + PAIR_GAP + s1 / 2;
-    const deficit = Math.max(0, minGap - (e1.ideal - e0.ideal));
-    const totalSpan = s0 + s1 || 1;
-    place(e0.card, e0.ideal - deficit * (s0 / totalSpan));
-    place(e1.card, e1.ideal + deficit * (s1 / totalSpan));
+    const [foff0, foff1] = card._finalOffsets;
+    place(upEntries[0].upCard, crossCenter + foff0);
+    place(upEntries[1].upCard, crossCenter + foff1);
   }
-  span(focal);
+  extentOf(focal);
   place(focal, 0);
 
   // ── Generation (main-axis) placement: each generation row sits clear of
