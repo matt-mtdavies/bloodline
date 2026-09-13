@@ -60,23 +60,28 @@ export default function ChartTree({ graph, activeId, viewerId, bloodlineOnly = f
   const [view, setView] = useState(() => (resumed && saved.view ? saved.view : { zoom: 0.9, panX: 0, panY: 0 }));
   const [gliding, setGliding] = useState(false);
   // The three mount-time effects below (re-root / orientation / bloodlineOnly)
-  // each recompute the camera — correct on an ordinary fresh open, but on a
-  // RESUMED mount all three fire once during the same initial render and
-  // would each stomp the just-restored `view` in turn. Each ref below starts
-  // pre-seeded with the CURRENT value of its own effect's dependency, so the
-  // mount-time invocation always sees "nothing changed yet" and skips — this
-  // works identically whether resumed (the value came from `saved`) or fresh
-  // (the value came from the ordinary default), so there's no separate
-  // resumed-only branch to get wrong. Critically, this is also safe under
-  // React 18 StrictMode's dev-only double-invoke of effects: a SHARED flag
-  // that the last effect clears is NOT safe there (the second pass sees an
-  // already-cleared flag and fires for real) — a real bug this shipped with
-  // and caught live before merging. Comparing against "the value I already
-  // handled" instead of a one-shot boolean is idempotent: re-running with an
-  // unchanged dependency is always a no-op, no matter how many times.
-  const lastRootedIdRef = useRef(activeId);
-  const lastOrientationRef = useRef(orientation);
-  const lastBloodlineOnlyRef = useRef(bloodlineOnly);
+  // each recompute the camera — needed on an ordinary fresh open (nothing has
+  // positioned the camera yet), but on a RESUMED mount all three would each
+  // stomp the just-restored `view` in turn. Each ref below is seeded with a
+  // sentinel `null` on a fresh mount, guaranteed to differ from any real
+  // activeId/orientation/bloodlineOnly value, so that mount's first effect
+  // pass actually runs and performs the real initial centering (a REAL
+  // regression this shipped with and had to be hotfixed: seeding the ref with
+  // the CURRENT value unconditionally made even a genuinely fresh mount look
+  // "unchanged" and silently skip centering altogether, leaving the camera at
+  // the raw uncentered default). On a RESUMED mount, the ref is seeded with
+  // the actual current value instead, so it correctly looks "unchanged" and
+  // skips, preserving the restored `view`. Either way, this is also safe
+  // under React 18 StrictMode's dev-only double-invoke of effects: a SHARED
+  // flag that the last effect clears is NOT safe there (the second pass sees
+  // an already-cleared flag and fires for real) — a real bug this also
+  // shipped with. Comparing against "the value I already handled" instead of
+  // a one-shot boolean is idempotent: once an effect's first real pass sets
+  // its own ref to the current value, any further invocation with the same
+  // dependency is always a no-op, no matter how many times it re-runs.
+  const lastRootedIdRef = useRef(resumed ? activeId : null);
+  const lastOrientationRef = useRef(resumed ? orientation : null);
+  const lastBloodlineOnlyRef = useRef(resumed ? bloodlineOnly : null);
   const viewportRef = useRef(null);
   const dragRef = useRef(null);
   const pointersRef = useRef(new Map());
