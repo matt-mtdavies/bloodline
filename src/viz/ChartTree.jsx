@@ -39,14 +39,44 @@ function initialExpandedUp(graph, focusId) {
   return set;
 }
 
-export default function ChartTree({ graph, activeId, viewerId, bloodlineOnly = false, onOpenPerson, onAddRelative, onActivate }) {
-  const [orientation, setOrientation] = useState('vertical');
-  const [expandedUp, setExpandedUp] = useState(() => initialExpandedUp(graph, activeId));
-  const [partnerChoice, setPartnerChoice] = useState(() => new Map());
+export default function ChartTree({ graph, activeId, viewerId, bloodlineOnly = false, onOpenPerson, onAddRelative, onActivate, persistRef }) {
+  // Switching to List/organic/Canopy/Atlas and back unmounts and remounts
+  // this component (App.jsx renders exactly one canvas at a time) — real
+  // user report: expanded ancestor branches, orientation, and pan/zoom all
+  // silently reset on a round trip that never actually left the same person.
+  // `persistRef` (a plain ref App.jsx owns and never reads itself) lets THIS
+  // instance hand its own state to whichever instance mounts next. Restoring
+  // is keyed on activeId matching: if the focal person changed while this was
+  // unmounted (e.g. re-rooted via List view), that's a genuine re-root, not a
+  // resumed session, and everything below falls back to the normal fresh-open
+  // behavior — byte-identical to before this fix in that case.
+  const saved = persistRef?.current;
+  const resumed = saved?.activeId === activeId;
+  const [orientation, setOrientation] = useState(() => saved?.orientation ?? 'vertical');
+  const [expandedUp, setExpandedUp] = useState(() => (resumed ? saved.expandedUp : initialExpandedUp(graph, activeId)));
+  const [partnerChoice, setPartnerChoice] = useState(() => (resumed ? saved.partnerChoice : new Map()));
   const [childrenFor, setChildrenFor] = useState(null); // cardId with open children popover
   const [switcherFor, setSwitcherFor] = useState(null); // memberId with open spouse menu
-  const [view, setView] = useState({ zoom: 0.9, panX: 0, panY: 0 });
+  const [view, setView] = useState(() => (resumed && saved.view ? saved.view : { zoom: 0.9, panX: 0, panY: 0 }));
   const [gliding, setGliding] = useState(false);
+  // The three mount-time effects below (re-root / orientation / bloodlineOnly)
+  // each recompute the camera — correct on an ordinary fresh open, but on a
+  // RESUMED mount all three fire once during the same initial render and
+  // would each stomp the just-restored `view` in turn. Each ref below starts
+  // pre-seeded with the CURRENT value of its own effect's dependency, so the
+  // mount-time invocation always sees "nothing changed yet" and skips — this
+  // works identically whether resumed (the value came from `saved`) or fresh
+  // (the value came from the ordinary default), so there's no separate
+  // resumed-only branch to get wrong. Critically, this is also safe under
+  // React 18 StrictMode's dev-only double-invoke of effects: a SHARED flag
+  // that the last effect clears is NOT safe there (the second pass sees an
+  // already-cleared flag and fires for real) — a real bug this shipped with
+  // and caught live before merging. Comparing against "the value I already
+  // handled" instead of a one-shot boolean is idempotent: re-running with an
+  // unchanged dependency is always a no-op, no matter how many times.
+  const lastRootedIdRef = useRef(activeId);
+  const lastOrientationRef = useRef(orientation);
+  const lastBloodlineOnlyRef = useRef(bloodlineOnly);
   const viewportRef = useRef(null);
   const dragRef = useRef(null);
   const pointersRef = useRef(new Map());
@@ -136,8 +166,12 @@ export default function ChartTree({ graph, activeId, viewerId, bloodlineOnly = f
   }, [glideTo]);
 
   // Re-root: reset expansion + choices to the fresh opening state and glide
-  // the camera to the new focal card.
+  // the camera to the new focal card. Skipped when activeId hasn't actually
+  // changed since we last handled it (an ordinary mount — resumed or fresh —
+  // or a StrictMode duplicate invoke both look like "unchanged" here).
   useEffect(() => {
+    if (lastRootedIdRef.current === activeId) return;
+    lastRootedIdRef.current = activeId;
     const nextExpanded = initialExpandedUp(graph, activeId);
     setExpandedUp(nextExpanded);
     setPartnerChoice(new Map());
@@ -151,13 +185,26 @@ export default function ChartTree({ graph, activeId, viewerId, bloodlineOnly = f
     // not discard expansion state; orientation has its own effect below.
   }, [activeId]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
+    if (lastOrientationRef.current === orientation) return;
+    lastOrientationRef.current = orientation;
     centerOnFocal(computePedigree(graph, activeId, { expandedUp, partnerChoice, orientation, bloodlineOnly }), orientation);
   }, [orientation]); // eslint-disable-line react-hooks/exhaustive-deps
   // Toggling Bloodline mode re-fits: children appear/disappear, so re-frame
   // the (now differently-shaped) tree rather than leaving it half off-screen.
   useEffect(() => {
+    if (lastBloodlineOnlyRef.current === bloodlineOnly) return;
+    lastBloodlineOnlyRef.current = bloodlineOnly;
     centerOnFocal(computePedigree(graph, activeId, { expandedUp, partnerChoice, orientation, bloodlineOnly }), orientation);
   }, [bloodlineOnly]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Hand this instance's exploration state to whichever ChartTree mounts next
+  // (App.jsx owns `persistRef` but never reads it itself — see the header
+  // comment on the ref's creation above). Runs on every render, deliberately
+  // with no dependency array, so a plain camera drag/pan (which only touches
+  // `view` and shouldn't force its own dedicated effect) is captured too.
+  useEffect(() => {
+    if (persistRef) persistRef.current = { activeId, orientation, expandedUp, partnerChoice, view };
+  });
 
   const fitToView = useCallback(() => {
     const vp = viewportRef.current;
@@ -522,6 +569,7 @@ export default function ChartTree({ graph, activeId, viewerId, bloodlineOnly = f
               onToggleUp={toggleUp}
               onOpenChildren={(id) => { setSwitcherFor(null); setChildrenFor((cur) => (cur === id ? null : id)); }}
               onOpenSwitcher={(memberId) => { setChildrenFor(null); setSwitcherFor((cur) => (cur === memberId ? null : memberId)); }}
+              onAddRelative={onAddRelative}
             />
           ))}
         </div>
@@ -634,7 +682,7 @@ function PedCard(props) {
 // separate action bar, no double-tap. A small always-visible swap pip per
 // member (when they have a recorded alternate partner) opens the spouse
 // switcher directly.
-function PlateCard({ card, graph, horizontal, isFocal, entryDelayMs = 0, activeId, switcherFor, onOpenPerson, onActivate, onToggleUp, onOpenChildren, onOpenSwitcher }) {
+function PlateCard({ card, graph, horizontal, isFocal, entryDelayMs = 0, activeId, switcherFor, onOpenPerson, onActivate, onToggleUp, onOpenChildren, onOpenSwitcher, onAddRelative }) {
   const isChild = card.kind === 'child';
   // Emphasis tiers — the eye follows the active family. Focal + immediate
   // (parents, children) at full strength; each generation further up recedes
@@ -687,11 +735,29 @@ function PlateCard({ card, graph, horizontal, isFocal, entryDelayMs = 0, activeI
           card's children. Portrait: ancestry up, children down. Landscape:
           ancestry left, children right. */}
       {!isChild && card.slots.map((slot, i) => {
-        if (!slot.hasMoreUp) return null;
         const person = graph.byId.get(slot.id);
         const style = horizontal
           ? { left: -11, top: PLATE_H / 2 + i * (PLATE_H + LINK_GAP) - 11 }
           : { left: (card.members.length === 2 ? PLATE_W / 2 + i * (PLATE_W + LINK_GAP) : card.w / 2) - 11, top: -11 };
+        if (!slot.hasMoreUp) {
+          // No recorded parents at all for this member — offer to add one
+          // right here rather than leaving the chart silently dead-end.
+          // Reuses the same generic "open Add Relative" entry point as the
+          // existing "+ Add a child" popover button below: no relationship-
+          // type pre-selection, matching that established precedent.
+          if (!slot.canAddParent) return null;
+          return (
+            <button
+              key={'addup_' + slot.id}
+              className="pnav pnav--up ped-up--add"
+              style={style}
+              onClick={(e) => { e.stopPropagation(); onAddRelative?.(slot.id); }}
+              title={`Add ${person?.display_name.split(' ')[0]}’s parent`}
+            >
+              <PlusIcon />
+            </button>
+          );
+        }
         return (
           <button
             key={'up_' + slot.id}
@@ -740,6 +806,25 @@ function PlateCard({ card, graph, horizontal, isFocal, entryDelayMs = 0, activeI
           title={isChild ? 'Focus the chart here' : `Show ${card.childrenCount} ${card.childrenCount === 1 ? 'child' : 'children'}`}
         >
           {isChild ? (horizontal ? <ArrowRightIcon /> : <ArrowDownIcon />) : (horizontal ? <ChevronRightIcon /> : <ChevronDownIcon />)}
+        </button>
+      )}
+
+      {/* No recorded children at all for this ancestor/couple card — offer
+          to add the first one, same "add" pip language as the parent-side
+          gap above. Deliberately not offered on a drawn child card itself
+          (that's what the arrow-to-refocus pip above already does) — but
+          IS offered on the focal card despite the ordinary children-popover
+          pip being suppressed there: a childless focal person is exactly
+          where this affordance matters most, and there's no popover to
+          collide with when childrenCount is already 0. */}
+      {!isChild && card.childrenCount === 0 && (
+        <button
+          className="pnav pnav--down ped-up--add"
+          style={horizontal ? { left: card.w - 11, top: card.h / 2 - 11 } : { left: card.w / 2 - 11, top: card.h - 11 }}
+          onClick={(e) => { e.stopPropagation(); onAddRelative?.(card.members[0]); }}
+          title="Add a child"
+        >
+          <PlusIcon />
         </button>
       )}
     </div>
