@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { savePhotoToDevice } from '../lib/image.js';
 import { useImageZoom } from '../lib/useImageZoom.js';
+import { useDialogFocus } from '../lib/useDialogFocus.js';
 
 /*
  * Full-screen photo viewer. Step through a person's gallery, caption a photo,
@@ -21,6 +22,11 @@ export default function Lightbox({ photos, startIndex = 0, onClose, onSetCaption
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   const { xf, stageRef, draggedRef, reset, handlers } = useImageZoom();
+  const boxRef = useRef(null);
+  // Arrow keys already page through photos (see the keydown effect below),
+  // so land on Close rather than a nav arrow — the one action that can't be
+  // reached any other way once focus is inside.
+  useDialogFocus(boxRef, true, { initialFocus: '.lightbox__icon', contentKey: photo?.id });
 
   const go = (d) => setI((n) => (n + d + photos.length) % photos.length);
 
@@ -67,7 +73,7 @@ export default function Lightbox({ photos, startIndex = 0, onClose, onSetCaption
   if (!photo) return null;
 
   return (
-    <div className="lightbox" role="dialog" aria-modal="true" aria-label="Photo viewer">
+    <div ref={boxRef} className="lightbox" role="dialog" aria-modal="true" aria-label="Photo viewer">
       <div className="lightbox__bar lightbox__bar--top">
         <span className="lightbox__count">
           {i + 1} / {photos.length}

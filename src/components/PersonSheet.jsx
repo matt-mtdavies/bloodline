@@ -21,6 +21,7 @@ import { VISIBILITY_LABELS, VISIBILITY_DESCS } from '../lib/visibility.js';
 import { HEALTH_CATEGORIES, HEALTH_CONDITIONS, HEALTH_STATUSES, colorFor } from '../lib/health.js';
 import { formatPhone, isPhoneValid } from '../lib/phone.js';
 import { militaryDocuments } from '../lib/military.js';
+import { useDialogFocus } from '../lib/useDialogFocus.js';
 import { dayLabel } from './ActivityFeed.jsx';
 
 // How many facts (events, medals, profile fields) a document still owns on
@@ -168,6 +169,7 @@ export default function PersonSheet({
   const [storyEditDraft, setStoryEditDraft] = useState('');
   const [relMenuId, setRelMenuId] = useState(null);       // rel-chip whose ⋯ menu is open
   const [confirmUnlinkId, setConfirmUnlinkId] = useState(null); // rel-chip awaiting unlink confirm
+  const [confirmChange, setConfirmChange] = useState(null); // { itemId, kind, label } awaiting a structural-change confirm
   const [editingDocId, setEditingDocId] = useState(null);
   const [editingDocTitle, setEditingDocTitle] = useState('');
   const [confirmDeleteDocId, setConfirmDeleteDocId] = useState(null); // awaiting "remove this document?" confirm
@@ -199,6 +201,17 @@ export default function PersonSheet({
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [person, onClose, lockEscape, enrichOpen]);
+
+  // Move focus into the sheet on open, keep Tab inside it, and hand focus
+  // back on close. Suspended while a stacked overlay (Enrich, or anything
+  // App.jsx reports via lockEscape) owns the foreground, so the two traps
+  // never fight over the same Tab press. `contentKey` is the person id
+  // because this sheet stays mounted and swaps people in place when you tap
+  // a relationship chip — that swap can orphan focus onto <body>.
+  useDialogFocus(profileRef, !!person && !lockEscape && !enrichOpen, {
+    initialFocus: '.profile__close',
+    contentKey: person?.id,
+  });
 
   // Reset generation + health state whenever the viewed person changes.
   // Switching from a relationship chip swaps `person` in place (this sheet
@@ -901,7 +914,12 @@ export default function PersonSheet({
               Profile
             </button>
           )}
-          {!person.invited_at && (
+          {/* !is_deceased matters as much as !invited_at: without it this
+              offered to email a person who had died — reported on a profile
+              badged "In loving memory" with "Passed away 2011" right above
+              it. The "Manage access" link further down was already gated
+              this way; this button simply never got the same check. */}
+          {!person.invited_at && !person.is_deceased && (
             <button className="action action--invite" onClick={() => onInvite?.(person.id)} aria-label={`Invite ${person.display_name.split(' ')[0]}`}>
               <EnvelopeIcon />
               Invite
@@ -1951,7 +1969,27 @@ export default function PersonSheet({
                               : [];
                         const isMenuOpen = relMenuId === item.id;
                         const isConfirming = confirmUnlinkId === item.id;
-                        const closeMenu = () => { setRelMenuId(null); setConfirmUnlinkId(null); };
+                        const closeMenu = () => { setRelMenuId(null); setConfirmUnlinkId(null); setConfirmChange(null); };
+                        // A partner <-> ex-partner flip is symmetric and
+                        // cheap to undo (the other option is right there in
+                        // the same menu), so it still commits on one tap.
+                        // Everything else in this menu moves someone a
+                        // generation and rewires the tree around both people
+                        // — that got NO confirm at all, while "Remove
+                        // relationship" 40px below it did. Same hazard class
+                        // as the accidental ex-partner report this menu
+                        // already carries a fix for, with the guard rail on
+                        // the wrong control.
+                        const isStructural = (kind) => !(g.relType === 'partner' && (kind === 'partner' || kind === 'ex_partner'));
+                        const personFirst = person.display_name.split(' ')[0];
+                        const itemFirst = (rel.display_name || '').split(' ')[0];
+                        const changeConsequence = (kind) => (
+                          kind === 'child_of'
+                            ? `Make ${itemFirst} ${personFirst}'s parent? This moves ${itemFirst} a generation above ${personFirst} and rewires the tree around them both.`
+                            : kind === 'parent_of'
+                              ? `Make ${itemFirst} ${personFirst}'s child? This moves ${itemFirst} a generation below ${personFirst} and rewires the tree around them both.`
+                              : `Make ${itemFirst} ${personFirst}'s partner? This moves ${itemFirst} onto the same generation as ${personFirst}.`
+                        );
                         // Same fields the "· Married {year}" / "· Separated {year}"
                         // sub-label above checks — when NEITHER is set, the only
                         // way in is the plain "⋮" icon, which gives no hint that
@@ -2034,17 +2072,35 @@ export default function PersonSheet({
                                 {changeOptions.length > 0 && (
                                   <div className="rel-menu__group">
                                     <span className="rel-menu__label">Change to</span>
-                                    <div className="rel-menu__opts">
-                                      {changeOptions.map((o) => (
-                                        <button
-                                          key={o.kind}
-                                          className="qual-opt"
-                                          onClick={() => { onChangeRelationship?.(person.id, item.id, o.kind); closeMenu(); }}
-                                        >
-                                          {o.label}
-                                        </button>
-                                      ))}
-                                    </div>
+                                    {confirmChange?.itemId === item.id ? (
+                                      <div className="rel-menu__confirm">
+                                        <span>{changeConsequence(confirmChange.kind)}</span>
+                                        <div className="rel-menu__confirm-btns">
+                                          <button
+                                            className="rel-menu__remove"
+                                            onClick={() => { onChangeRelationship?.(person.id, item.id, confirmChange.kind); closeMenu(); }}
+                                          >
+                                            {confirmChange.label}
+                                          </button>
+                                          <button className="rel-menu__cancel" onClick={() => setConfirmChange(null)}>Cancel</button>
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      <div className="rel-menu__opts">
+                                        {changeOptions.map((o) => (
+                                          <button
+                                            key={o.kind}
+                                            className="qual-opt"
+                                            onClick={() => {
+                                              if (isStructural(o.kind)) setConfirmChange({ itemId: item.id, kind: o.kind, label: o.label });
+                                              else { onChangeRelationship?.(person.id, item.id, o.kind); closeMenu(); }
+                                            }}
+                                          >
+                                            {o.label}
+                                          </button>
+                                        ))}
+                                      </div>
+                                    )}
                                   </div>
                                 )}
                                 {unlinkArgs && (
