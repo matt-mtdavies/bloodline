@@ -762,34 +762,61 @@ export default function ChartTree({ graph, activeId, viewerId, bloodlineOnly = f
         </button>
       </div>
 
-      {/* TEMPORARY — see chartDebug above. */}
-      {chartDebug && (
-        <pre
-          style={{
-            position: 'fixed', left: 8, right: 8, bottom: 92, zIndex: 99999,
-            margin: 0, padding: '8px 10px', maxHeight: '46vh', overflow: 'auto',
-            background: 'rgba(10,10,10,0.88)', color: '#7CFC7C',
-            fontSize: 10, lineHeight: 1.4, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-            borderRadius: 10, pointerEvents: 'none', whiteSpace: 'pre-wrap',
-          }}
-        >
-          {JSON.stringify(
-            {
-              activeId, orientation, view,
-              boxBounds: layout.bounds,
-              focalCardId: layout.focalCardId,
-              focalCardWH: (() => {
-                const f = layout.cards.find((c) => c.id === layout.focalCardId);
-                return f ? [f.w, f.h] : null;
-              })(),
-              cardCount: layout.cards.length,
-              ...debugOverflow,
-            },
-            null,
-            1,
-          )}
-        </pre>
-      )}
+      {/* TEMPORARY — see chartDebug above. Fixed a real usability bug in this
+          overlay itself: pointerEvents:'none' made it impossible to touch
+          or scroll on a real device (a desktop mouse can still scroll a
+          non-interactive element under the cursor; a phone's finger cannot)
+          — the one report this shipped to investigate couldn't even be
+          read. Now interactive, with the single most load-bearing number
+          (how far panX truly is from dead-center, in px) pinned above the
+          scrollable full dump so it's never hidden behind a scroll the
+          reporter can't perform. */}
+      {chartDebug && (() => {
+        const vpRectW = debugOverflow?.vpRectW ?? viewportRef.current?.getBoundingClientRect()?.width ?? null;
+        const centerOffsetPx = vpRectW != null ? Math.round((view.panX - vpRectW / 2) * 100) / 100 : null;
+        return (
+          <div
+            style={{
+              position: 'fixed', left: 8, right: 8, bottom: 92, zIndex: 99999,
+              maxHeight: '55vh', display: 'flex', flexDirection: 'column',
+              background: 'rgba(10,10,10,0.92)', color: '#7CFC7C',
+              fontSize: 11, lineHeight: 1.4, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+              borderRadius: 10, overflow: 'hidden',
+            }}
+          >
+            <div style={{ padding: '10px 10px 8px', borderBottom: '1px solid rgba(124,252,124,0.35)', flex: '0 0 auto' }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: centerOffsetPx != null && Math.abs(centerOffsetPx) > 5 ? '#FF6B6B' : '#7CFC7C' }}>
+                center offset: {centerOffsetPx == null ? '…' : `${centerOffsetPx}px`}
+              </div>
+              <div style={{ fontSize: 11, opacity: 0.85 }}>
+                zoom {view.zoom.toFixed(3)} · any card overflowing: {String(debugOverflow?.anyOverflow ?? '…')}
+              </div>
+            </div>
+            <pre
+              style={{
+                margin: 0, padding: '8px 10px', flex: '1 1 auto', overflow: 'auto',
+                WebkitOverflowScrolling: 'touch', whiteSpace: 'pre-wrap',
+              }}
+            >
+              {JSON.stringify(
+                {
+                  activeId, orientation, view, centerOffsetPx,
+                  boxBounds: layout.bounds,
+                  focalCardId: layout.focalCardId,
+                  focalCardWH: (() => {
+                    const f = layout.cards.find((c) => c.id === layout.focalCardId);
+                    return f ? [f.w, f.h] : null;
+                  })(),
+                  cardCount: layout.cards.length,
+                  ...debugOverflow,
+                },
+                null,
+                1,
+              )}
+            </pre>
+          </div>
+        );
+      })()}
     </div>
   );
 }
