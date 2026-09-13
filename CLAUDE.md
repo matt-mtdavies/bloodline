@@ -2766,6 +2766,85 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   of the new `tabIndex`/`aria-disabled` pairing, `position: fixed` under iOS's collapsing URL bar)
   remains unverified on the real engine — this sandbox still can't download WebKit.
 
+- **`/impeccable audit` on Chart view (`src/viz/ChartTree.jsx`), then all 6 findings fixed** (2 P1,
+  2 P2, 2 P3 — user: "Re run the Audit on chart view" then "Fix the issues."). Verified per the
+  standing directive above: real CDP-dispatched touch events (`Input.dispatchTouchEvent`, not
+  mouse-shaped Pointer Events) for every drag/pinch check, live measurement rather than assumption
+  for every size/contrast claim, and a temporary `seed.js` addition (reverted before committing) to
+  force a code path the real demo family doesn't naturally reach.
+  1. **[P1, real bug] Touch targets below the 44px floor at low zoom.** `.pplate` cards open at
+     `OPEN_MIN_ZOOM` (0.55); measured live on a real mobile viewport, a `PLATE_H=60`-at-zoom-1 card
+     rendered at just 36px tall — clearly tappable-looking but under PRODUCT.md's own touch-target
+     floor. Fixed by introducing `MIN_TAP_ZOOM = 44 / PLATE_H` and folding it into `centerOnFocal`'s
+     zoom clamp (`Math.max(OPEN_MIN_ZOOM, MIN_TAP_ZOOM, ...)`) — the opening zoom can still go
+     higher for a tight family, but never lower than the tap-target floor. `.pnav` (the small
+     circular up/down/swap pips, fixed at 22px regardless of the card's own scale) had the inverse
+     problem — it shrinks in lockstep with `.chart-tree__world`'s ancestor `scale()` transform, so
+     at extreme zoom-out it could get smaller than a real target even though the card around it was
+     now compliant. Fixed with a clamped CSS counter-scale (`--pnav-cscale`, a `clamp()` against the
+     new `--zoom` custom property threaded onto `.chart-tree__world`'s inline style) — deliberately
+     bounded, not a full inverse-scale, since fully counteracting an ancestor transform at extreme
+     zoom-out would make the pip visually absurd (larger than the card it sits on).
+  2. **[P1, real bug] ~150 lines of confirmed-dead CSS** — a whole legacy card renderer
+     (`.ped-card`, `.ped-row*`, `.ped-marriage`, `.ped-footer`, `.ped-up`/`.ped-switch` and their
+     hover/active states) superseded by the "Direction B" flat-plate rewrite (`.pcard`/`.pplate`/
+     `.pnav`) but never removed. Confirmed dead by cross-referencing every `.ped-*` selector against
+     actual JSX usage and a live DOM query matching zero elements for each. Removed, while carefully
+     keeping the two genuinely live survivors hiding in the same block: `.ped-up--add` (the "+ add
+     parent" dashed-border modifier) and the separate, unrelated `.ped-spouse-menu*` block sitting
+     immediately after it.
+  3. **[P2] No React performance guards on a canvas that re-renders every pointer frame.** `PedCard`
+     had no memoization, `onOpenChildren`/`onOpenSwitcher` were fresh inline arrows on every render
+     (defeating any future memoization downstream), and pointer-move handling called `setView`
+     directly on every native `pointermove` event with no throttle. Fixed with `React.memo(PedCard)`,
+     `useCallback`-wrapped `openChildren`/`openSwitcher`/`toggleUp`, and a `requestAnimationFrame`
+     throttle on the pointer-move handler (`moveFrameRef`, `flushPointerMove`) shared by both the
+     single-pointer drag-pan and the two-pointer pinch-zoom paths. A first verification pass
+     appeared to show pinch-zoom broken post-refactor (`before === after` transform across a full
+     gesture); root-caused via temporary debug logging to a test-methodology artifact, not a real
+     regression — my own P1 fix above raised the opening zoom, which made cards bigger, so my
+     original hardcoded test touch-points (chosen against the old, smaller pre-fix cards) now landed
+     ON a card, correctly triggering the pre-existing, unchanged "ignore gesture-starts on a card"
+     guard. Re-verified with touch points confirmed via `document.elementFromPoint()` to land on
+     empty canvas: pinch-zoom scaled smoothly and progressively across 8 steps (0.682→1.257) with
+     real CDP touch events, zero console errors during extended drag/pinch sequences.
+  4. **[P2, real bug] No focus management on the children popover.** `.ped-pop` (opened via a
+     card's child-count badge) had no `aria-modal`, never moved focus in on open, and never restored
+     it on close — a keyboard/screen-reader user landed nowhere and lost their place entirely.
+     Fixed with a mount-effect (`childrenPopRef`/`lastFocusBeforePopRef`) that stores
+     `document.activeElement` before opening, moves focus to the popover's own close button, and
+     restores the original focus on close (guarded by `document.contains()` in case that element is
+     gone). Verified live end-to-end: opens with `aria-modal: true`, focus lands on `.ped-pop__close`,
+     and Escape restores focus to the exact element that had it before.
+  5. **[P3] The `SpouseMenu` (the "⇄" swap-partner popover) had no ARIA menu semantics or keyboard
+     navigation at all** — a plain, unlabelled div with click-only rows. Added `role="menu"` +
+     `aria-label="Show with which partner"` on the container (already present, just undocumented in
+     the audit until now) plus a mount-effect focusing the first `.ped-spouse-menu__row` and an
+     `onMenuKeyDown` handler doing wrap-around ArrowUp/ArrowDown navigation across
+     `querySelectorAll('.ped-spouse-menu__row')`. The real demo family's default-focal-person union
+     (James, bloodline-only mode) genuinely has zero alt-partner candidates once traced through
+     `unionCandidates()` — his one bio-co-parent (Rachel) is already the displayed bloodline union,
+     and his other partner (Megan) has no shared bio/adopted children with him, so bloodline
+     filtering drops her from the candidate list entirely; turning bloodline-only off surfaces a
+     real single-candidate menu (verified live: opens, correct `role`/`aria-label`, initial focus
+     lands on the row), but the demo has no reachable person with 2+ non-displayed alt partners to
+     exercise the wrap-around navigation. Rather than ship that path unverified, temporarily added
+     two synthetic former-partner edges to Robert Mercer in `seed.js` (reverted before committing,
+     confirmed via clean `git diff`) and confirmed live: ArrowDown moves focus row-to-row, a second
+     ArrowDown from the last row wraps to the first, ArrowUp from the first wraps to the last, and
+     Escape closes the menu — the full interaction, not just the easiest-to-reach subset.
+  6. **[P3] `.pnav--swap`'s resting color (`--ink-faint`) sat below the icon-button contrast bar**
+     the rest of the app's shared `.icon-btn`/`.pnav` conventions already clear — changed to
+     `--ink-soft` (DESIGN.md's own documented secondary-icon token), matching `.pnav`'s own default
+     `color`.
+  Full unit suite (`node --test tests/*.test.mjs`, 87/87 passed), `npm run build`, and `tests/
+  smoke.mjs` (via the same sandbox Chromium workaround used throughout this session, reverted from
+  `smoke.mjs` immediately after) all passed clean. Disclosed rather than hidden: mobile Safari/
+  VoiceOver-specific behavior remains unverified on the real engine (this sandbox still can't
+  download WebKit), and the swap-menu's live verification above required a temporary synthetic
+  seed addition rather than a naturally-reachable demo path — the underlying feature itself needed
+  no seed change to work correctly, only its live verification did.
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);
