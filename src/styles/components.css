@@ -1235,6 +1235,10 @@
   flex-direction: column;
   align-items: center;
   padding: 4px 2px;
+  /* This column is a drag surface, not scrollable content — without this,
+     a touch-drag down it is captured by the browser as a page scroll
+     instead of reaching our pointermove handler. */
+  touch-action: none;
 }
 .listview__az-btn {
   font-size: 9.5px;
@@ -1243,8 +1247,34 @@
   color: var(--accent);
   padding: 0 4px;
 }
-.listview__az-btn:disabled { color: var(--ink-faint); opacity: 0.5; cursor: default; }
-.listview__az-btn:active:not(:disabled) { transform: scale(1.3); }
+/* `aria-disabled`, not the native `disabled` attribute — see the JSX
+   comment: a real `disabled` button can drop out of `elementFromPoint` hit
+   testing, which would break the drag-scrub gesture on unavailable
+   letters. Click is still a no-op for these (guarded in JS). */
+.listview__az-btn[aria-disabled="true"] { color: var(--ink-faint); opacity: 0.5; }
+.listview__az-btn:active { transform: scale(1.3); }
+
+/* The magnified current-letter preview shown while dragging the rail — at
+   9.5px the letter under a thumb is otherwise invisible. Vertically tracks
+   the pointer; horizontally fixed just to the left of the rail. */
+.listview__az-magnifier {
+  position: fixed;
+  right: 34px;
+  transform: translateY(-50%);
+  z-index: 5;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  display: grid;
+  place-items: center;
+  font-family: var(--display);
+  font-size: 26px;
+  font-weight: 600;
+  box-shadow: var(--shadow-lift);
+  pointer-events: none;
+}
 
 /* Flat by default — a resting row is separated from its neighbours by the
    hairline border on its parent <li> (see .listview__group/__directory ul >

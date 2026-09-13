@@ -81,6 +81,14 @@ export default function AccessibleTree({ graph, focusId, onOpenPerson, onShowOnM
   const focusSectionRef = useRef(null);
   const directoryListRef = useRef(null);
   const [scrollMargin, setScrollMargin] = useState(0);
+  // The letter currently under the finger while dragging the A–Z rail (null
+  // when not dragging) — drives both the magnified-letter preview and which
+  // letter counts as "current" so a drag across several letters only jumps
+  // once per newly-entered letter, not once per pointermove event.
+  const [scrubLetter, setScrubLetter] = useState(null);
+  const [scrubY, setScrubY] = useState(0);
+  const azRef = useRef(null);
+  const lastScrubLetterRef = useRef(null);
 
   // This view stays mounted across a re-focus (same component, new focusId —
   // see App.jsx), so the scrollable .listview never reset on its own: tapping
@@ -235,6 +243,41 @@ export default function AccessibleTree({ graph, focusId, onOpenPerson, onShowOnM
     overscan: 10,
     scrollMargin,
   });
+
+  const jumpToLetter = (letter) => {
+    const idx = letterIndex?.get(letter);
+    if (idx != null) rowVirtualizer.scrollToIndex(idx, { align: 'start' });
+  };
+
+  // Press-and-drag scrubbing along the rail (the whole point of an A–Z index
+  // — precisely tapping a 9.5px letter is hard, dragging your thumb down the
+  // column and feeling it jump letter-by-letter is the actual iOS Contacts
+  // interaction this rail is modelled on). Pointer Events cover touch and
+  // mouse in one path; `setPointerCapture` keeps delivering move events to
+  // this element even once the finger drifts off its narrow hit area.
+  const letterAtPoint = (x, y) => {
+    const el = document.elementFromPoint(x, y);
+    const btn = el?.closest?.('[data-letter]');
+    return btn?.dataset.letter || null;
+  };
+  const handleScrubStart = (e) => {
+    azRef.current?.setPointerCapture(e.pointerId);
+    handleScrubMove(e);
+  };
+  const handleScrubMove = (e) => {
+    const letter = letterAtPoint(e.clientX, e.clientY);
+    if (!letter) return;
+    setScrubLetter(letter);
+    setScrubY(e.clientY);
+    if (letter !== lastScrubLetterRef.current) {
+      lastScrubLetterRef.current = letter;
+      jumpToLetter(letter);
+    }
+  };
+  const handleScrubEnd = () => {
+    lastScrubLetterRef.current = null;
+    setScrubLetter(null);
+  };
 
   if (!focus) return null;
 
@@ -449,18 +492,37 @@ export default function AccessibleTree({ graph, focusId, onOpenPerson, onShowOnM
           so a rail there would jump to a position unrelated to the tapped
           letter. Fixed to the viewport (not `.listview`'s own scroll), so
           it stays reachable from anywhere in the list, not just once
-          scrolled down to the directory. */}
+          scrolled down to the directory. Supports both a plain tap (the
+          button's own onClick, so keyboard/switch access still works with
+          no pointer involved at all) and a press-and-drag scrub down the
+          whole column (the pointer handlers below) — whichever the visitor
+          reaches for. `disabled` is deliberately NOT used on the letter
+          buttons: a real `disabled` element is invisible to
+          `elementFromPoint` in some browsers, which would make the drag
+          gesture silently skip every unavailable letter instead of just
+          ignoring it; `aria-disabled` + the dimmed CSS give the same visual
+          and keyboard-activation result without that hit-testing gap. */}
       {letterIndex && (
-        <nav className="listview__az" aria-label="Jump to letter">
+        <nav
+          ref={azRef}
+          className="listview__az"
+          aria-label="Jump to letter"
+          onPointerDown={handleScrubStart}
+          onPointerMove={(e) => e.buttons === 1 && handleScrubMove(e)}
+          onPointerUp={handleScrubEnd}
+          onPointerCancel={handleScrubEnd}
+        >
           {ALPHABET.map((letter) => {
             const idx = letterIndex.get(letter);
+            const available = idx != null;
             return (
               <button
                 key={letter}
                 type="button"
+                data-letter={letter}
                 className="listview__az-btn"
-                disabled={idx == null}
-                onClick={() => idx != null && rowVirtualizer.scrollToIndex(idx, { align: 'start' })}
+                aria-disabled={!available}
+                onClick={() => jumpToLetter(letter)}
                 aria-label={`Jump to ${letter}`}
               >
                 {letter}
@@ -468,6 +530,14 @@ export default function AccessibleTree({ graph, focusId, onOpenPerson, onShowOnM
             );
           })}
         </nav>
+      )}
+
+      {/* The magnified current-letter preview while scrubbing — without it,
+          the letter under a thumb is hidden by the thumb itself at 9.5px. */}
+      {scrubLetter && (
+        <div className="listview__az-magnifier" style={{ top: scrubY }} aria-hidden="true">
+          {scrubLetter}
+        </div>
       )}
     </main>
   );

@@ -2674,6 +2674,37 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   `git diff` on `seed.js`). `npm run build`, the full unit suite (all 87 `tests/*.test.mjs` files),
   and `tests/smoke.mjs` all passed clean.
 
+- **List view: the A–Z rail now actually scrubs** (real user report against a live 1,239-person
+  family, with a screenshot: "Should I be able to scrub through the a-z on the side?" — the rail
+  shipped in the entry above only supported a discrete tap per letter; dragging a finger down the
+  column, the interaction the visual pattern itself promises, did nothing, since a browser doesn't
+  fire `click` across elements a drag passes over). `AccessibleTree.jsx`'s rail now handles Pointer
+  Events directly: `onPointerDown` calls `setPointerCapture` (so move events keep reaching the rail
+  even once the finger drifts slightly off its narrow 22px hit column) and jumps immediately, then
+  `onPointerMove` re-samples `document.elementFromPoint(x, y)` on every move and jumps again only
+  when the letter under the finger actually changes — not once per pointermove event, which would
+  otherwise call `scrollToIndex` dozens of times a second. A `Set`-free `lastScrubLetterRef` tracks
+  that de-dupe; `scrubLetter`/`scrubY` state drives a new magnified letter-preview bubble
+  (`.listview__az-magnifier`, a 52px filled terracotta circle, `pointer-events: none` so it can
+  never itself block the next `elementFromPoint` hit) that tracks the pointer vertically — without
+  it the letter under a real thumb is invisible at 9.5px, the same reason Apple's own Contacts app
+  has always shown one. One real gotcha found and fixed before it could reach production: the
+  letter buttons initially used the native `disabled` attribute for unavailable letters, which in
+  some browsers drops an element out of `elementFromPoint` hit-testing entirely — dragging over a
+  disabled letter would have silently skipped straight through to whatever's behind the rail. Swapped
+  to `aria-disabled` + a dimmed CSS class instead (click already no-ops for these via a JS guard,
+  so nothing about keyboard/AT behavior changed) — every letter, available or not, stays hit-testable
+  so the drag never skips a step. `touch-action: none` on the rail stops iOS/Android from treating
+  the drag as a page-scroll gesture instead of delivering it to the pointer handlers. The existing
+  plain-tap path (each button's own `onClick`) is untouched and still works standalone for
+  keyboard/switch access with no pointer involved at all. Verified live via Playwright with a real
+  simulated mouse drag (not just a click) from the top to the bottom of the rail on the demo family:
+  the magnifier read "A" at the drag's start and "Z" near its end, `.listview`'s `scrollTop` measurably
+  changed partway through the drag (confirming letter-by-letter jumps actually fired, not just a
+  single jump at drag-start), and the magnifier bubble correctly disappeared on release. `npm run
+  build`, the full unit suite, and `tests/smoke.mjs` all passed clean (the smoke test's own List-view
+  step never touches the rail, so this was purely additive to its existing coverage).
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);
