@@ -1311,6 +1311,34 @@
   outline: 2px dotted var(--ink-faint); outline-offset: -2px;
 }
 
+/* Chart-view-specific swatches (Legend's Chart section) — Chart has no pods,
+   only lines between flat plate cards, so these mirror .swatch--bio's plain
+   centred-line shape rather than the organic tree's filled-pod shapes above.
+   Colors match ChartTree.jsx's own SVG stroke vars exactly (.ped-partnerlink/
+   .ped-link in components.css) — never invent a color Chart doesn't draw. */
+.swatch--chart-current { background: var(--paper-deep); }
+.swatch--chart-current::after {
+  content: ''; position: absolute; inset: 0; margin: auto; height: 2px; background: var(--bond-current);
+}
+.swatch--chart-widowed { background: var(--paper-deep); }
+.swatch--chart-widowed::after {
+  content: ''; position: absolute; inset: 0; margin: auto; height: 2px; background: var(--memorial);
+}
+.swatch--chart-step { background: var(--paper-deep); }
+.swatch--chart-step::after {
+  content: ''; position: absolute; inset: 0; margin: auto; height: 2px; opacity: 0.6;
+  background-image: repeating-linear-gradient(90deg, var(--bio) 0 5px, transparent 5px 10px);
+}
+.swatch--chart-add {
+  background: var(--paper-deep);
+  border: 1.5px dashed var(--ink-faint);
+  border-radius: 999px;
+  display: grid; place-items: center;
+  color: var(--ink-faint);
+  font-size: 15px;
+  line-height: 1;
+}
+
 /* ── Bottom bar — centered floating dock ─────────────────────────────────────── */
 .bottom-bar {
   position: fixed;

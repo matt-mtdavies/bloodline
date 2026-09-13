@@ -999,6 +999,12 @@ export default function App() {
   // gold ring (see showDuplicatePairInTree below) so a later call for a
   // different pair can clear the previous one instead of leaving it lit.
   const compareGlowIdsRef = useRef(null);
+  // Chart view's own exploration state (expanded ancestor branches,
+  // orientation, pan/zoom) — App.jsx never reads this itself, it's purely a
+  // handoff slot ChartTree writes to and reads from across an unmount/
+  // remount (switching to List/organic/Canopy/Atlas and back). See
+  // ChartTree.jsx's own comment on its `persistRef` prop for the mechanism.
+  const chartStateRef = useRef(null);
   // Same pair, but as real state (not just a ref) — needed to render a
   // SECOND FocusNameplate for the non-active duplicate candidate (see the
   // extra <FocusNameplate> below): only one person can ever be the literal
@@ -3081,6 +3087,7 @@ export default function App() {
             onOpenPerson={openPerson}
             onAddRelative={setAddAnchorId}
             onActivate={activateNormal}
+            persistRef={chartStateRef}
           />
         ) : (
         <>
@@ -3824,6 +3831,7 @@ export default function App() {
       <Legend
         open={legendOpen}
         onClose={() => setLegendOpen(false)}
+        chartMode={layout === 'chart'}
       />
 
       {activityOpen && (
