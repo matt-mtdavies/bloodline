@@ -1478,12 +1478,18 @@
 /* Brief shake — the only feedback for "you're already at the zoom limit",
    deliberately not a persistent disabled state (that would need polling the
    live zoom value every frame just to dim two buttons that are at their
-   limit a small fraction of the time). */
-.zoom-controls__btn--limit { animation: zoom-limit-shake 0.22s var(--ease); }
-@keyframes zoom-limit-shake {
+   limit a small fraction of the time). Shares `shake-x` with invalid form
+   fields below — one "no, try again" gesture, reused rather than
+   reinvented per surface. */
+.zoom-controls__btn--limit { animation: shake-x 0.22s var(--ease); }
+@keyframes shake-x {
   0%, 100% { transform: translateX(0); }
-  25% { transform: translateX(-2px); }
-  75% { transform: translateX(2px); }
+  25% { transform: translateX(-3px); }
+  75% { transform: translateX(3px); }
+}
+@keyframes error-text-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 .zoom-controls__divider {
   width: 22px;
@@ -2469,7 +2475,7 @@
   border-radius: 50%;
   flex: none;
 }
-.doc-card__del:hover { color: #b94040; background: #b9404014; }
+.doc-card__del:hover { color: var(--error-deep); background: color-mix(in srgb, var(--error-deep) 8%, transparent); }
 .doc-card__confirm { display: flex; flex-direction: column; gap: 8px; font-size: 13.5px; color: var(--ink); margin-top: auto; padding-top: 6px; }
 .doc-card__confirm-btns { display: flex; gap: 8px; }
 .doc-card__confirm-remove {
@@ -2535,7 +2541,7 @@
   cursor: pointer;
   border-radius: 50%;
 }
-.media-item__del:hover { color: #b94040; background: #b9404014; }
+.media-item__del:hover { color: var(--error-deep); background: color-mix(in srgb, var(--error-deep) 8%, transparent); }
 
 /* ── Contact card ────────────────────────────────────────────────────────── */
 .contact-card {
@@ -3301,8 +3307,20 @@
   color-scheme: light;
 }
 .field__label-sub { font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--ink-faint); font-size: 11px; }
-.field__err { font-size: 12px; color: #c0392b; }
-.input-wrap--err .field__input { border-color: #f5b7b1; background: #fff5f5; }
+.field__err {
+  font-size: 12px;
+  color: var(--error);
+  animation: error-text-in 0.22s var(--ease) both;
+}
+.input-wrap--err .field__input {
+  border-color: var(--error-border);
+  background: var(--error-soft);
+  animation: shake-x 0.22s var(--ease);
+}
+@media (prefers-reduced-motion: reduce) {
+  .field__err { animation: none; }
+  .input-wrap--err .field__input { animation: none; }
+}
 
 /* ── Pill picker (gender, hair, eye) ── */
 .pill-pick {
@@ -5186,13 +5204,15 @@ button.health-notes {
 .story-error {
   padding: 13px 15px;
   border-radius: 14px;
-  background: #fff5f5;
-  border: 1px solid #ffd0d0;
-  color: #b94040;
+  background: var(--error-soft);
+  border: 1px solid var(--error-border);
+  color: var(--error-deep);
   font-size: 14px;
   line-height: 1.45;
   margin-bottom: 10px;
+  animation: error-text-in 0.24s var(--ease) both;
 }
+@media (prefers-reduced-motion: reduce) { .story-error { animation: none; } }
 
 @media (prefers-reduced-motion: reduce) {
   .profile, .profile-scrim, .meter__fill { animation-duration: 0.001ms !important; transition-duration: 0.12s !important; }
@@ -5734,13 +5754,15 @@ button.health-notes {
 .login-card__legal a:hover { color: var(--ink-soft); }
 .login-card__err {
   font-size: 14px;
-  color: #c0392b;
-  background: #fef5f5;
+  color: var(--error);
+  background: var(--error-soft);
   border-radius: 8px;
   padding: 10px 14px;
   margin-bottom: 16px;
   line-height: 1.4;
+  animation: error-text-in 0.22s var(--ease) both;
 }
+@media (prefers-reduced-motion: reduce) { .login-card__err { animation: none; } }
 /* Sent / confirmation state */
 .login-card__sent {
   text-align: center;
@@ -6103,7 +6125,7 @@ button.health-notes {
   transition: background 0.15s, color 0.15s;
   flex-shrink: 0;
 }
-.fs__remove:hover { background: #fef2f2; color: #c0392b; }
+.fs__remove:hover { background: var(--error-soft); color: var(--error); }
 .fs__resend-btn {
   flex-shrink: 0;
   padding: 4px 10px;
@@ -6121,7 +6143,7 @@ button.health-notes {
 .fs__resend-btn:hover:not(:disabled) { background: var(--surface); color: var(--ink); border-color: var(--ink-soft); }
 .fs__resend-btn:disabled { opacity: 0.5; cursor: default; }
 .fs__resend-btn--sent { background: #f0faf0; color: #2d7d3a; border-color: #a8d5ab; }
-.fs__resend-btn--err  { background: #fef2f2; color: #c0392b; border-color: #f5b7b1; }
+.fs__resend-btn--err  { background: var(--error-soft); color: var(--error); border-color: var(--error-border); }
 .fs__section-label {
   font-size: 11px;
   font-weight: 600;
@@ -6200,7 +6222,8 @@ button.health-notes {
   color: #3a8a4a;
   padding: 16px;
 }
-.fs__err { font-size: 13px; color: #c0392b; text-align: center; }
+.fs__err { font-size: 13px; color: var(--error); text-align: center; animation: error-text-in 0.22s var(--ease) both; }
+@media (prefers-reduced-motion: reduce) { .fs__err { animation: none; } }
 
 /* Family name rename row */
 .fs__section { padding: 16px 20px 12px; border-bottom: 1px solid var(--hairline); }
@@ -6238,15 +6261,15 @@ button.health-notes {
   width: 100%;
   padding: 12px;
   border-radius: 10px;
-  border: 1.5px solid #e57373;
+  border: 1.5px solid var(--error-border-strong);
   background: transparent;
-  color: #c0392b;
+  color: var(--error);
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
   transition: background 0.15s;
 }
-.fs__danger-btn:hover { background: #fef2f2; }
+.fs__danger-btn:hover { background: var(--error-soft); }
 .fs__danger-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 .fs__danger-btn:disabled:hover { background: transparent; }
 .fs__danger-note { font-size: 12.5px; color: var(--ink-faint, #a09590); text-align: center; }
@@ -6261,9 +6284,11 @@ button.health-notes {
   gap: 10px;
   padding: 14px;
   border-radius: 12px;
-  border: 1.5px solid #e57373;
-  background: #fef2f2;
+  border: 1.5px solid var(--error-border-strong);
+  background: var(--error-soft);
+  animation: error-text-in 0.24s var(--ease) both;
 }
+@media (prefers-reduced-motion: reduce) { .fs__reset-confirm { animation: none; } }
 .fs__reset-warning { font-size: 13px; line-height: 1.5; color: var(--ink); margin: 0; }
 .fs__reset-label { font-size: 12.5px; color: var(--ink-soft); }
 .fs__reset-input {
@@ -6275,7 +6300,7 @@ button.health-notes {
   font-size: 14px;
   color: var(--ink);
 }
-.fs__reset-input:focus { outline: none; border-color: #e57373; }
+.fs__reset-input:focus { outline: none; border-color: var(--error-border-strong); }
 .fs__reset-btns { display: flex; gap: 8px; }
 .fs__reset-btns .fs__danger-btn { flex: 1; }
 .fs__reset-cancel {
@@ -6313,7 +6338,25 @@ button.health-notes {
 }
 .privacy-section__label { display: flex; align-items: center; gap: 6px; }
 .privacy-section__caret { color: var(--ink-soft); margin-left: auto; }
+/* Auto-height reveal via the CSS grid-rows trick (0fr → 1fr) — animates
+   open/closed without ever measuring pixel height in JS, so it works for
+   both the fixed Military fields and Privacy's own variable-height body
+   (the extra Section-visibility toggles that only appear for `visibility:
+   full`). The inner wrapper clips the collapsing content and its
+   `min-height: 0` keeps a grid row from refusing to shrink below its
+   child's intrinsic size — the same default-minimum-size quirk fixed
+   elsewhere in this file for `.person-row`. */
+.privacy-section__reveal {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.28s var(--ease);
+}
+.privacy-section__reveal.is-open { grid-template-rows: 1fr; }
+.privacy-section__reveal-inner { overflow: hidden; min-height: 0; }
 .privacy-section__body { margin-top: 12px; }
+@media (prefers-reduced-motion: reduce) {
+  .privacy-section__reveal { transition: none; }
+}
 .vis-opts { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
 .vis-opt {
   border: 1.5px solid var(--hairline);
@@ -6406,9 +6449,11 @@ button.health-notes {
 }
 .mw__error {
   font-size: 13px;
-  color: #c0392b;
+  color: var(--error);
   margin: 0 0 16px;
+  animation: error-text-in 0.22s var(--ease) both;
 }
+@media (prefers-reduced-motion: reduce) { .mw__error { animation: none; } }
 .mw__fine {
   font-size: 12px;
   color: var(--ink-soft);
@@ -6799,8 +6844,10 @@ button.health-notes {
 .invite-sheet__error {
   margin: 0 24px 12px;
   font-size: 13px;
-  color: #b94040;
+  color: var(--error-deep);
+  animation: error-text-in 0.22s var(--ease) both;
 }
+@media (prefers-reduced-motion: reduce) { .invite-sheet__error { animation: none; } }
 .invite-sheet__send {
   display: block;
   width: calc(100% - 48px);
@@ -6949,6 +6996,7 @@ button.health-notes {
   from { transform: scale(0); opacity: 0; }
   to   { transform: scale(1); opacity: 1; }
 }
+@media (prefers-reduced-motion: reduce) { .activity-badge { animation: none; } }
 
 /* ── Activity panel ──────────────────────────────────────────────────────── */
 .activity-scrim {
@@ -8481,7 +8529,8 @@ button.health-notes {
   font-weight: 500;
 }
 .up__save-status--ok { color: #3a8a5a; }
-.up__save-status--err { color: #c0392b; }
+.up__save-status--err { color: var(--error); animation: error-text-in 0.22s var(--ease) both; }
+@media (prefers-reduced-motion: reduce) { .up__save-status--err { animation: none; } }
 
 .up__hint {
   font-size: 12px;
@@ -9807,13 +9856,15 @@ button.health-notes {
 
 .save-nudge__err {
   font-size: 14px;
-  color: #c0392b;
-  background: #fef5f5;
+  color: var(--error);
+  background: var(--error-soft);
   border-radius: 8px;
   padding: 10px 14px;
   margin-bottom: 16px;
   line-height: 1.4;
+  animation: error-text-in 0.22s var(--ease) both;
 }
+@media (prefers-reduced-motion: reduce) { .save-nudge__err { animation: none; } }
 
 @media (max-width: 480px) {
   .save-nudge {
@@ -10841,10 +10892,10 @@ button.health-notes {
 .mms__remove-btn {
   width: 100%; padding: 12px 14px; min-height: 44px; border-radius: 12px;
   background: transparent; border: 1px solid var(--hairline);
-  color: #c0392b; font-size: 14px; font-weight: 600;
+  color: var(--error); font-size: 14px; font-weight: 600;
   transition: background 0.15s;
 }
-.mms__remove-btn:hover { background: #fef2f2; }
+.mms__remove-btn:hover { background: var(--error-soft); }
 .mms__remove-confirm { margin: 0; }
 
 /* Enrich this profile */
