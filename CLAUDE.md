@@ -2845,6 +2845,46 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   seed addition rather than a naturally-reachable demo path — the underlying feature itself needed
   no seed change to work correctly, only its live verification did.
 
+- **REAL REGRESSION, same-day, from the Chart-view audit fix above — reverted the two touch-target
+  changes that broke a real production tree at scale.** User report, with a screenshot of their own
+  478-person "Direct kin only" Chart view: cards and nav circles overlapping badly across the whole
+  canvas ("You made it worse. Overlapping all over the place."). Root-caused directly against the
+  screenshot, not guessed: the P1 "touch targets below 44px" fix from the entry above shipped two
+  changes, both tuned and verified only against the ~23-person demo family, neither of which
+  generalizes to a real, large tree:
+  1. `.pnav`'s `--pnav-cscale` counter-scale (`clamp(1, calc(32 / (22 * var(--zoom, 1))), 2)`) was
+     meant to claw back touch-target size at low zoom, but the clamp saturates at its 2x ceiling
+     well before reaching the very low zoom a several-hundred-person tree actually sits at (e.g.
+     `view.zoom` ≈ 0.28, the app's own `MIN_ZOOM` floor) — at that point the pip renders at a fixed
+     2x its normal footprint regardless of how much further the surrounding cards keep shrinking,
+     so the once-proportionate clearance around each pip collapses and it visibly overlaps
+     neighbouring cards and other pips. This is exactly what the screenshot showed.
+  2. `centerOnFocal`'s new `MIN_TAP_ZOOM` floor (44/`PLATE_H` ≈ 0.73) forces the auto-opening zoom
+     for a large family well above what the bounding-box fit math actually asked for, so the frame
+     opens more zoomed-in than the family fits on screen — pushing distant ancestors off-frame and
+     leaving the large blank gaps visible in the same screenshot, on top of the pip overlap above.
+  Both were reverted outright rather than re-tuned under time pressure — `.pnav` is back to a plain
+  fixed 22px circle with no counter-scale, and `centerOnFocal`'s zoom clamp is back to
+  `Math.max(OPEN_MIN_ZOOM, Math.min(availW / boxW, availH / boxH))` with no `MIN_TAP_ZOOM` term —
+  restoring exactly the pre-audit-PR geometry byte-for-byte (`.pnav`'s rendered size is now purely
+  `22px × zoom`, the identical proportion to its parent card the app has always used, so the
+  specific overlap this caused is now structurally impossible, not just less likely). The other 5
+  Chart-view audit fixes from the same PR (dead CSS removal, `React.memo`/`useCallback`/rAF-
+  throttled pointer handling, children-popover focus management, the spouse-switcher's ARIA menu +
+  keyboard nav, and the `.pnav--swap` `--ink-soft` contrast fix) are untouched — none of them
+  touch zoom/scale geometry, so none of them are implicated in this regression. Verified live: at
+  `view.zoom` = 0.28 (reached via repeated wheel-zoom-out in Chart view), `.pnav` now measures
+  6.16×6.16px — exactly `22 × 0.28`, confirming the counter-scale is fully gone and the pip once
+  again shrinks in lockstep with its card, with zero console/page errors. Full unit suite (87/87),
+  `npm run build`, and `tests/smoke.mjs` all passed clean. **Lesson for next time, since this is
+  the second same-week incident this standing directive was meant to prevent**: a touch-target or
+  framing fix verified only against the ~23-person demo family is not verified at all for a real
+  account's actual scale — CLAUDE.md's own tree-storage doc already notes real accounts run into
+  the thousands of people. A large-family repro (synthetic seed data, hundreds of generations/
+  people, forced low zoom) should be part of verifying ANY Chart/Tree geometry change from now on,
+  not just a small-demo-family pass, even when the change is framed as a narrow, low-risk audit
+  finding.
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);

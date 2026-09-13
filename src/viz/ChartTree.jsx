@@ -28,18 +28,16 @@ const FIT_MIN_ZOOM = 0.06;
 // comfortable reading zoom, even for a wide family. Content beyond the
 // frame is reachable by panning rather than being force-fit onto screen.
 const OPEN_MIN_ZOOM = 0.55;
-// Audit finding, confirmed via live measurement: at OPEN_MIN_ZOOM alone, a
-// plate (PLATE_H=60 at zoom 1) rendered at just 36px tall on a real mobile
-// viewport — below PRODUCT.md's own 44px touch-target floor, on the single
-// most important tap target on the whole surface (it opens the profile or
-// re-roots the chart). Purely mechanical from PLATE_H and the floor, not a
-// second hand-picked number that could drift out of sync with either.
-// Scoped the exact same way as OPEN_MIN_ZOOM above — the automatic frame
-// only; `fitToView`'s explicit "show everything" button and manual
-// pinch/wheel zoom (MIN_ZOOM) are unaffected, matching how OPEN_MIN_ZOOM
-// itself is already scoped.
-const TAP_TARGET_PX = 44;
-const MIN_TAP_ZOOM = TAP_TARGET_PX / PLATE_H;
+// A prior fix here forced the auto-fit zoom up to a 44px-touch-target floor
+// (MIN_TAP_ZOOM = 44/PLATE_H). Reverted: on a real, large family (hundreds
+// of people) that floor overrides the fit-driven zoom the bounding-box math
+// actually needs, so the frame opens more zoomed-in than the family fits —
+// pushing far ancestors off-screen and, combined with the matching .pnav
+// counter-scale fix (also reverted, see components.css), visibly inflating
+// nav pips well past their card's own footprint at the low zoom a big
+// family sits at, overlapping neighbouring cards. The 44px-target finding
+// was real but only measured against a small/demo-scale family; a safer fix
+// needs to account for family size, not just re-add this floor.
 const MAX_ZOOM = 1.6;
 const FIT_PADDING = 72;
 
@@ -243,7 +241,7 @@ export default function ChartTree({ graph, activeId, viewerId, bloodlineOnly = f
     const availW = rect.width - PAD.side * 2;
     const availH = rect.height - PAD.top - PAD.bottom;
     const focalCap = focalCard ? Math.min(availW / focalCard.w, availH / focalCard.h) : Infinity;
-    const zoom = Math.min(0.92, focalCap, Math.max(OPEN_MIN_ZOOM, MIN_TAP_ZOOM, Math.min(availW / boxW, availH / boxH)));
+    const zoom = Math.min(0.92, focalCap, Math.max(OPEN_MIN_ZOOM, Math.min(availW / boxW, availH / boxH)));
     // Vertical/portrait mode's generational axis is Y (ancestors above,
     // descendants below) — a WIDE family forces zoom down to fit its width,
     // and that same small zoom, applied to the family's actual (often much
@@ -702,10 +700,7 @@ export default function ChartTree({ graph, activeId, viewerId, bloodlineOnly = f
       >
         <div
           className={'chart-tree__world' + (gliding ? ' chart-tree__world--glide' : '')}
-          // --zoom feeds .pnav's own counter-scale (see components.css) so
-          // its nav pips can claw back some of the touch-target size the
-          // world transform otherwise shrinks along with everything else.
-          style={{ transform: `translate(${view.panX}px, ${view.panY}px) scale(${view.zoom})`, '--zoom': view.zoom }}
+          style={{ transform: `translate(${view.panX}px, ${view.panY}px) scale(${view.zoom})` }}
         >
           <svg className="chart-tree__lines" width="1" height="1" style={{ overflow: 'visible' }}>
             {paths}

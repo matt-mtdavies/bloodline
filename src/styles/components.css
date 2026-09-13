@@ -11554,20 +11554,16 @@ button.health-notes {
 
 /* Navigation pips — subtle, outlined, calm. Never the dark filled circles of
    the old chart. Expand a member's ancestry (up) or drop into children (down). */
-/* Audit finding, confirmed via live measurement: at the Chart's natural
-   mobile opening zoom (~0.55), a 22px pip rendered at just 12x12px — this
-   card lives inside .chart-tree__world's own scale(), so the pip shrinks
-   right along with everything else. A full 44px floor isn't reachable
-   without visual absurdity across this view's whole 0.28–1.6 zoom range
-   (inverting the scale completely would make a pip bigger than the card
-   itself at the extreme zoomed-out end) — --pnav-cscale instead computes
-   just enough counter-scale to reach ~32px in the REALISTIC zoom band
-   (the auto-opening frame, now floored higher by MIN_TAP_ZOOM above),
-   clamped so it never shrinks below native size at high zoom (min 1) or
-   grows past 2x at extreme zoom-out (avoiding that absurdity). --zoom is
-   set on .chart-tree__world's own inline style, one level up. */
+/* A prior fix here added a --pnav-cscale counter-scale (clamped 1x-2x
+   against .chart-tree__world's own --zoom) so this pip could claw back some
+   of the touch-target size the world transform shrinks along with
+   everything else. Reverted: on a real, large family sitting at a much
+   lower zoom than this was tuned against, the clamp saturated at its 2x
+   ceiling — doubling the pip's rendered footprint at exactly the zoom level
+   where cards themselves are already tightly packed, visibly overlapping
+   neighbouring cards and pips. Fixed size for now; a real fix needs to
+   scale with how far out the view actually goes, not just a flat 2x cap. */
 .pnav {
-  --pnav-cscale: clamp(1, calc(32 / (22 * var(--zoom, 1))), 2);
   position: absolute;
   width: 22px; height: 22px;
   display: grid; place-items: center;
@@ -11577,17 +11573,11 @@ button.health-notes {
   color: var(--ink-soft);
   cursor: pointer;
   box-shadow: 0 1px 4px rgba(36, 31, 28, 0.08);
-  transform: scale(var(--pnav-cscale));
-  /* transform is deliberately NOT in this transition: --zoom (and so
-     --pnav-cscale) can change many times a second during a live pinch, and
-     transitioning that would make the pip visibly lag behind the gesture.
-     :active below gives the press-feedback scale its own short transition
-     instead, scoped to just that state change. */
-  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  transition: transform 0.2s var(--spring), background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
   z-index: 3;
 }
 .pnav:hover { color: var(--accent-deep); border-color: var(--accent); background: var(--accent-soft); }
-.pnav:active { transform: scale(calc(var(--pnav-cscale) * 0.88)); transition: transform 0.1s ease; }
+.pnav:active { transform: scale(0.88); }
 .pnav--on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-deep); }
 /* The swap pip is always visible (not on-select) whenever that member has a
    recorded alternate partner — a small, permanent affordance rather than
