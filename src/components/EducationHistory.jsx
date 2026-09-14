@@ -342,12 +342,22 @@ function StageIcon({ stage }) {
   return <SatchelIcon />;
 }
 
+/*
+ * A satchel, drawn so it cannot be read as a padlock. The previous version
+ * was EditPersonSheet's own LockIcon (same body rect, same shackle arc) with
+ * a keyhole stroke added — so the primary-school rung wore the exact glyph
+ * this product uses for privacy, and read as "this entry is locked".
+ * The separating cues here: a narrow handle rather than a wide shackle, a
+ * flap edge running the FULL width of the body (a padlock never has one),
+ * and a clasp hanging off it instead of a keyhole.
+ */
 function SatchelIcon() {
   return (
     <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <rect x="4" y="9" width="16" height="11" rx="2.5" stroke="currentColor" strokeWidth="1.6" />
-      <path d="M8 9V7a4 4 0 0 1 8 0v2" stroke="currentColor" strokeWidth="1.6" />
-      <path d="M12 13v3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      <rect x="3.5" y="8" width="17" height="12" rx="2.5" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M10 8V6.8a2 2 0 0 1 4 0V8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <path d="M3.5 13.2h17" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M10.6 13.2v2.2h2.8v-2.2" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
     </svg>
   );
 }

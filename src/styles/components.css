@@ -4372,11 +4372,27 @@
   font-variant-numeric: tabular-nums;
   padding-top: 1px;
 }
+/* The dot cell stretches to the FULL height of its row, and the circle is
+   drawn by ::before inside it. That matters because the connector below is
+   measured against this element: it used to be `height: calc(100% + 18px)`
+   on a box that was itself only 11px tall, so it resolved to a fixed 29px
+   no matter how tall the entry was. Any event with more than a line of
+   detail (a birthplace plus an era note runs past 200px) drew a short stub
+   and left a visible break before the next dot. */
 .timeline__dot {
   position: relative;
+  align-self: stretch;
+  min-height: 15px;
+  margin: 0;
+}
+.timeline__dot::before {
+  content: '';
+  position: absolute;
+  top: 4px;
+  left: 50%;
+  transform: translateX(-50%);
   width: 11px;
   height: 11px;
-  margin: 4px auto 0;
   border-radius: 50%;
   background: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
@@ -4385,10 +4401,14 @@
   content: '';
   position: absolute;
   left: 50%;
-  top: 14px;
   transform: translateX(-50%);
+  /* Anchored top AND bottom rather than given a height, so it spans
+     whatever the row turns out to be. Starts clear of the circle's 3px
+     ring and runs the row's own 18px padding-bottom plus 4px, landing
+     exactly on the next circle. */
+  top: 19px;
+  bottom: -22px;
   width: 2px;
-  height: calc(100% + 18px);
   background: var(--hairline);
 }
 .timeline__body { display: flex; flex-direction: column; gap: 2px; }
@@ -4564,7 +4584,7 @@
   font: inherit;
   font-size: 14px;
   padding: 9px 12px;
-  border: 1px solid var(--line, #e7ddd4);
+  border: 1px solid var(--hairline);
   border-radius: 10px;
   background: var(--paper, #fff);
   color: var(--ink);
@@ -4639,7 +4659,7 @@
   justify-content: space-between;
   gap: 12px;
   padding: 12px 14px;
-  border: 1px solid var(--line, #e7ddd4);
+  border: 1px solid var(--hairline);
   border-radius: 12px;
   background: var(--paper-soft, #fbf6f0);
 }
@@ -11130,13 +11150,18 @@ button.health-notes {
 .enrich-trigger:active { transform: scale(0.98); }
 
 /* The "add more" step that reveals every empty section at once. Deliberately
-   QUIETER than .enrich-trigger directly above it — neutral hairline, ink-soft
-   text, no accent — because two full-strength terracotta CTAs stacked would
-   break the One Accent rule and leave neither reading as primary. Enrich is
-   the marquee action here; this is plumbing. */
+   quieter than .enrich-trigger — neutral hairline, ink-soft text, no accent —
+   because two full-strength terracotta CTAs on one profile would break the
+   One Accent rule and leave neither reading as primary. Enrich is the marquee
+   action; this is plumbing. */
 .add-more-trigger {
   display: flex; align-items: center; justify-content: center; gap: 7px;
-  width: 100%; margin: -10px 0 18px; padding: 10px 14px;
+  /* Follows a .profile-section, so it takes that section's own 26px top
+     rhythm. It previously carried -10px, written when this was expected to
+     sit directly under .enrich-trigger; in the real layout it lands after
+     the relationship list and that negative margin pulled it flush onto the
+     last row. */
+  width: 100%; margin: 26px 0 18px; padding: 10px 14px;
   border-radius: var(--radius); border: 1px solid var(--hairline);
   background: transparent; color: var(--ink-soft);
   font-size: 13px; font-weight: 600; cursor: pointer;
@@ -12475,7 +12500,7 @@ button.health-notes {
   font: inherit;
   font-size: 14px;
   padding: 9px 12px;
-  border: 1px solid var(--line, #e7ddd4);
+  border: 1px solid var(--hairline);
   border-radius: 10px;
   background: var(--paper, #fff);
   color: var(--ink);
@@ -12492,7 +12517,7 @@ button.health-notes {
   font: inherit;
   font-size: 14px;
   padding: 9px 10px;
-  border: 1px solid var(--line, #e7ddd4);
+  border: 1px solid var(--hairline);
   border-radius: 10px;
   background: var(--paper, #fff);
   color: var(--ink);
@@ -12675,20 +12700,32 @@ button.health-notes {
 }
 .education-rung__photo { background: var(--paper-deep); }
 .education-rung__photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+/* An empty slot INSIDE an already-recessed card, so it is drawn as an
+   outline and nothing else. It used to be a solid white `--paper` tile,
+   which was invisible while the rung card was also white — flattening that
+   card onto `--paper-deep` left a white chip sitting proud of a grey card,
+   reading as a pasted-on control rather than a space waiting to be filled.
+   (`--line` is not a declared token; the real hairline is `--hairline`, and
+   the #e7ddd4 it was falling back to is a warm cream outside the palette.) */
 .education-rung__photo-add {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--paper, #fff);
-  border: 1px dashed var(--line, #e7ddd4);
+  background: transparent;
+  border: 1px dashed var(--hairline);
   color: var(--ink-faint);
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
 }
-.education-rung__photo-add:hover { color: var(--accent, #c2603a); border-color: var(--accent, #c2603a); }
+.education-rung__photo-add:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+}
 .education-form__stages { display: flex; flex-wrap: wrap; gap: 6px; }
 .education-form__stage {
   padding: 6px 12px;
   border-radius: 999px;
-  border: 1px solid var(--line, #e7ddd4);
+  border: 1px solid var(--hairline);
   background: var(--paper, #fff);
   color: var(--ink-soft);
   font-size: 12.5px;
