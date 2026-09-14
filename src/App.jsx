@@ -3432,7 +3432,7 @@ export default function App() {
         canEdit={canEditTree}
         canContribute={canContributeTree}
         isAdmin={canManageTreeStructure}
-        lockEscape={!!(addAnchorId || editId || timelineId || memoryId || lightbox || crop || invitePersonId || duplicatesOpen || archiveCareOpen || keepsakeId || troveSearchPersonId)}
+        lockEscape={!!(addAnchorId || editId || timelineId || memoryId || lightbox || crop || invitePersonId || duplicatesOpen || archiveCareOpen || keepsakeId || troveSearchPersonId || docViewer)}
         onClose={closePerson}
         onFocus={(id) => {
           closePersonForTreeAction();

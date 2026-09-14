@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useDialogFocus } from '../lib/useDialogFocus.js';
 
 /*
  * Add a memory. The little things — a habit, a phrase, a Sunday ritual — that
@@ -12,12 +13,16 @@ import { useEffect, useState } from 'react';
 export default function MemorySheet({ person, viewerName, onClose, onAdd }) {
   const [text, setText] = useState('');
   const [anonymous, setAnonymous] = useState(false);
+  const sheetRef = useRef(null);
 
   useEffect(() => {
     const onKey = (e) => e.key === 'Escape' && onClose();
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
+
+  // One field, one job — land in the textarea.
+  useDialogFocus(sheetRef, true, { initialFocus: 'textarea' });
 
   const save = () => {
     if (!text.trim()) return;
@@ -27,6 +32,7 @@ export default function MemorySheet({ person, viewerName, onClose, onAdd }) {
   return (
     <div className="sheet-scrim sheet-scrim--modal" onClick={onClose}>
       <section
+        ref={sheetRef}
         className="sheet sheet--form"
         role="dialog"
         aria-modal="true"

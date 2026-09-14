@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { VISIBILITY_LABELS, VISIBILITY_DESCS, SECTIONS } from '../lib/visibility.js';
 import { formatPhone } from '../lib/phone.js';
 import { formatDate } from '../lib/dates.js';
 import { normalizeGender, genderLabel } from '../lib/gender.js';
 import { buildRestingPlacePatch } from '../lib/profile.js';
+import { useDialogFocus } from '../lib/useDialogFocus.js';
 import Avatar from './Avatar.jsx';
 import PhoneField from './PhoneField.jsx';
 import DateField from './DateField.jsx';
@@ -120,6 +121,13 @@ export default function EditPersonSheet({ person, onClose, onSave, onRemove, sta
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose, mode]);
 
+  // View and edit render two different dialog roots, but only ever one at a
+  // time, so they share this ref. `contentKey` is the mode: stepping
+  // view -> edit replaces the whole subtree, which would otherwise orphan
+  // focus onto <body>.
+  const sheetRef = useRef(null);
+  useDialogFocus(sheetRef, true, { contentKey: mode });
+
   const set  = (k) => (e) => setF((s) => ({ ...s, [k]: e.target.value }));
   const clear = (k) => () => setF((s) => ({ ...s, [k]: '' }));
   const pick  = (k) => (v) => setF((s) => ({ ...s, [k]: s[k] === v ? '' : v }));
@@ -223,6 +231,7 @@ export default function EditPersonSheet({ person, onClose, onSave, onRemove, sta
     return (
       <div className="sheet-scrim sheet-scrim--modal" onClick={onClose}>
         <section
+          ref={sheetRef}
           className="sheet sheet--form"
           role="dialog"
           aria-modal="true"
@@ -290,6 +299,7 @@ export default function EditPersonSheet({ person, onClose, onSave, onRemove, sta
   return (
     <div className="sheet-scrim sheet-scrim--modal" onClick={onClose}>
       <section
+        ref={sheetRef}
         className="sheet sheet--form"
         role="dialog"
         aria-modal="true"

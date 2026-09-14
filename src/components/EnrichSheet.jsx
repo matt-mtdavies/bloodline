@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { computeEnrichment } from '../lib/enrich.js';
+import { useDialogFocus } from '../lib/useDialogFocus.js';
 
 const TIER_LABEL = {
   detected: 'Worth a second look',
@@ -110,11 +111,14 @@ export default function EnrichSheet({
   const [placeState, setPlaceState] = useState('idle'); // idle|loading|done|unavailable|error
   const [placeSuggestions, setPlaceSuggestions] = useState([]);
   const [resolvedKeys, setResolvedKeys] = useState(() => new Set());
+  const sheetRef = useRef(null);
   const triedRef = useRef(null);
   // Dismissing a document- or relationship-derived finding marks it consumed
   // (never re-offered) — the same one-way step as accepting, so it gets the
   // same confirm every other dismiss surface in the app uses.
   const [confirmDismissKey, setConfirmDismissKey] = useState(null);
+
+  useDialogFocus(sheetRef, true);
 
   useEffect(() => {
     if (!places.length || triedRef.current === person.id) return;
@@ -166,7 +170,7 @@ export default function EnrichSheet({
 
   return (
     <div className="sheet-scrim" role="dialog" aria-modal="true" aria-label={`Enrich ${person.display_name}'s profile`} onClick={onClose}>
-      <div className="sheet enrich" onClick={(e) => e.stopPropagation()}>
+      <div ref={sheetRef} className="sheet enrich" onClick={(e) => e.stopPropagation()}>
         <div className="sheet__grip" />
         <div className="enrich__head">
           <h2 className="enrich__title"><SparkIcon /> Enrich this profile</h2>

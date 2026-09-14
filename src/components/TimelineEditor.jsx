@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { yearOf } from '../lib/dates.js';
+import { useDialogFocus } from '../lib/useDialogFocus.js';
 
 // Swaps just the leading year of a partial date ('YYYY' | 'YYYY-MM' |
 // 'YYYY-MM-DD'), keeping whatever month/day precision was already there.
@@ -57,6 +58,7 @@ export default function TimelineEditor({ person, onClose, onSave }) {
       .sort((a, b) => Number(a.year) - Number(b.year)),
   );
   const [draggingKey, setDraggingKey] = useState(null);
+  const sheetRef = useRef(null);
   const dragRef = useRef(null); // { key, pointerId } while a handle drag is live
   const rowElsRef = useRef(new Map()); // _key -> row DOM node, for live midpoint checks
   const listRef = useRef(null); // the never-reordered .tl-edit container — see onHandleDown
@@ -80,6 +82,8 @@ export default function TimelineEditor({ person, onClose, onSave }) {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
+
+  useDialogFocus(sheetRef, true);
 
   // Armed by index, not id — rows have none. remove() always clears it
   // (not just on its own confirm) so a stale index from a row above never
@@ -200,6 +204,7 @@ export default function TimelineEditor({ person, onClose, onSave }) {
   return (
     <div className="sheet-scrim sheet-scrim--modal" onClick={onClose}>
       <section
+        ref={sheetRef}
         className="sheet sheet--form"
         role="dialog"
         aria-modal="true"

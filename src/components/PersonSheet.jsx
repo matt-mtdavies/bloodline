@@ -21,7 +21,13 @@ import { VISIBILITY_LABELS, VISIBILITY_DESCS } from '../lib/visibility.js';
 import { HEALTH_CATEGORIES, HEALTH_CONDITIONS, HEALTH_STATUSES, colorFor } from '../lib/health.js';
 import { formatPhone, isPhoneValid } from '../lib/phone.js';
 import { militaryDocuments } from '../lib/military.js';
+import { useDialogFocus } from '../lib/useDialogFocus.js';
 import { dayLabel } from './ActivityFeed.jsx';
+
+// Extended relationship groups (Cousins, Nieces & Nephews, ...) collapse
+// above this many people — the same number List view uses for its own
+// groups, so the two surfaces behave identically on the same family.
+const REL_COLLAPSE_THRESHOLD = 6;
 
 // How many facts (events, medals, profile fields) a document still owns on
 // this person — see store.js's retractDocumentContributions, which this
@@ -168,6 +174,20 @@ export default function PersonSheet({
   const [storyEditDraft, setStoryEditDraft] = useState('');
   const [relMenuId, setRelMenuId] = useState(null);       // rel-chip whose ⋯ menu is open
   const [confirmUnlinkId, setConfirmUnlinkId] = useState(null); // rel-chip awaiting unlink confirm
+  const [confirmChange, setConfirmChange] = useState(null); // { itemId, kind, label } awaiting a structural-change confirm
+  // Empty sections are collapsed behind one explicit "add" step rather than
+  // rendered as a standing column of grey prompts. Measured before this:
+  // 13 sections rendered unconditionally, so a living person's profile
+  // OPENED on an empty Contact prompt and a memorial profile carried an
+  // empty Health history — 5,075px / 6.4 screens on a phone, with the first
+  // fact about the person 860px down. Editing stays always-on (this is not
+  // a read mode); the add affordances just stop competing with the content
+  // for the whole length of the page.
+  const [showEmptySections, setShowEmptySections] = useState(false);
+  // Keyed by group title, not by person, so a collapsed "Cousins" stays
+  // collapsed as you browse from relative to relative — matching every
+  // other persistent disclosure in the app.
+  const [collapsedRelGroups, setCollapsedRelGroups] = useState(() => new Set());
   const [editingDocId, setEditingDocId] = useState(null);
   const [editingDocTitle, setEditingDocTitle] = useState('');
   const [confirmDeleteDocId, setConfirmDeleteDocId] = useState(null); // awaiting "remove this document?" confirm
@@ -199,6 +219,17 @@ export default function PersonSheet({
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [person, onClose, lockEscape, enrichOpen]);
+
+  // Move focus into the sheet on open, keep Tab inside it, and hand focus
+  // back on close. Suspended while a stacked overlay (Enrich, or anything
+  // App.jsx reports via lockEscape) owns the foreground, so the two traps
+  // never fight over the same Tab press. `contentKey` is the person id
+  // because this sheet stays mounted and swaps people in place when you tap
+  // a relationship chip — that swap can orphan focus onto <body>.
+  useDialogFocus(profileRef, !!person && !lockEscape && !enrichOpen, {
+    initialFocus: '.profile__close',
+    contentKey: person?.id,
+  });
 
   // Reset generation + health state whenever the viewed person changes.
   // Switching from a relationship chip swaps `person` in place (this sheet
@@ -464,6 +495,34 @@ export default function PersonSheet({
   const militaryDocIds = new Set(militaryDocuments(personDocs).map((d) => d.id));
   const visibleDocs = personDocs.filter((d) => !militaryDocIds.has(d.id) || showMilitaryDocs);
   const completeness = restricted ? null : profileCompleteness(person, graph, personMemories.length);
+
+  // Which sections actually have something to show. A section with nothing
+  // in it is collapsed behind the single "add" step below rather than
+  // rendering its own standing empty prompt — see showEmptySections.
+  const hasContact = !!(person.email || person.phone);
+  const hasEvents = events.length > 0;
+  const hasMemories = personMemories.length > 0;
+  const hasPhotos = personPhotos.length > 0;
+  const hasDocs = personDocs.length > 0;
+  const hasMedia = personMedia.length > 0;
+  const hasHealth = (person.conditions?.length || 0) > 0;
+  const hasStory = !!person.story;
+  // The same "has anything?" question for the sections that live in their
+  // own components. Each renders its own .profile-section with its own
+  // empty prompt, so without these they'd keep standing open on a sparse
+  // profile while every section above them collapsed.
+  const hasRestingPlace = !!(person.resting_place?.place || person.resting_place?.cemetery);
+  const hasPlaces = (person.residences?.length || 0) > 0;
+  const hasEducation = (person.education?.length || 0) > 0;
+  // Contact is living-people-only, so it only counts as a gap for them.
+  const emptySectionCount = [
+    !person.is_deceased && !hasContact,
+    !hasEvents, !hasMemories, !hasPhotos, !hasDocs, !hasMedia, !hasHealth, !hasStory,
+    // Resting place only counts as a gap for someone who has died — it is
+    // not a hole in a living person's profile.
+    person.is_deceased && !hasRestingPlace,
+    !hasPlaces, !hasEducation,
+  ].filter(Boolean).length;
 
   // Legacy memories (added before authorId existed) fall back to their old
   // free-text `author` string for display; only an admin can manage those,
@@ -901,7 +960,12 @@ export default function PersonSheet({
               Profile
             </button>
           )}
-          {!person.invited_at && (
+          {/* !is_deceased matters as much as !invited_at: without it this
+              offered to email a person who had died — reported on a profile
+              badged "In loving memory" with "Passed away 2011" right above
+              it. The "Manage access" link further down was already gated
+              this way; this button simply never got the same check. */}
+          {!person.invited_at && !person.is_deceased && (
             <button className="action action--invite" onClick={() => onInvite?.(person.id)} aria-label={`Invite ${person.display_name.split(' ')[0]}`}>
               <EnvelopeIcon />
               Invite
@@ -1005,8 +1069,9 @@ export default function PersonSheet({
               </button>
             )}
 
+
             {/* Contact — living people only */}
-            {!person.is_deceased && (
+            {!person.is_deceased && (hasContact || showEmptySections) && (
               <section className="profile-section">
                 <div className="profile-section__head">
                   <h3 className="profile-section__title">Contact</h3>
@@ -1054,6 +1119,7 @@ export default function PersonSheet({
             )}
 
             {/* Key life events */}
+            {(hasEvents || showEmptySections) && (
             <section className="profile-section">
               <div className="profile-section__head">
                 <h3 className="profile-section__title">Key life events</h3>
@@ -1095,14 +1161,18 @@ export default function PersonSheet({
                 <p className="profile-section__empty">No life events yet</p>
               )}
             </section>
+            )}
 
+            {(hasRestingPlace || showEmptySections) && (
             <RestingPlace
               person={person}
               canEdit={canEdit}
               onSet={(fields) => onSetRestingPlace?.(person.id, fields)}
               onClear={() => onClearRestingPlace?.(person.id)}
             />
+            )}
 
+            {(hasPlaces || showEmptySections) && (
             <PlacesLived
               person={person}
               canEdit={canEdit}
@@ -1110,7 +1180,9 @@ export default function PersonSheet({
               onUpdateResidence={(id, fields) => onUpdateResidence?.(person.id, id, fields)}
               onRemoveResidence={(id) => onRemoveResidence?.(person.id, id)}
             />
+            )}
 
+            {(hasEducation || showEmptySections) && (
             <EducationHistory
               person={person}
               canEdit={canEdit}
@@ -1122,8 +1194,10 @@ export default function PersonSheet({
               onAddPhoto={onAddPhoto}
               onOpenLightbox={onOpenLightbox}
             />
+            )}
 
             {/* Memories — the heart of the profile. */}
+            {(hasMemories || showEmptySections) && (
             <section className="profile-section">
               <div className="profile-section__head">
                 <h3 className="profile-section__title">
@@ -1254,8 +1328,10 @@ export default function PersonSheet({
                 <p className="profile-section__empty">No memories yet</p>
               )}
             </section>
+            )}
 
             {/* Photos */}
+            {(hasPhotos || showEmptySections) && (
             <section className="profile-section">
               <div className="profile-section__head">
                 <h3 className="profile-section__title">
@@ -1298,6 +1374,7 @@ export default function PersonSheet({
                 <p className="profile-section__empty">No photos yet</p>
               )}
             </section>
+            )}
 
             <MilitaryService
               person={person}
@@ -1311,6 +1388,7 @@ export default function PersonSheet({
             />
 
             {/* Documents */}
+            {(hasDocs || showEmptySections) && (
             <section className="profile-section">
               <div className="profile-section__head">
                 <h3 className="profile-section__title">
@@ -1464,8 +1542,10 @@ export default function PersonSheet({
                 <p className="profile-section__empty">No documents yet</p>
               )}
             </section>
+            )}
 
             {/* Voice & Video */}
+            {(hasMedia || showEmptySections) && (
             <section className="profile-section">
               <div className="profile-section__head">
                 <h3 className="profile-section__title">
@@ -1571,8 +1651,10 @@ export default function PersonSheet({
                 <p className="profile-section__empty">No voice or video yet</p>
               )}
             </section>
+            )}
 
             {/* Health history */}
+            {(hasHealth || showEmptySections) && (
             <section className="profile-section">
               <div className="profile-section__head">
                 <h3 className="profile-section__title">
@@ -1751,9 +1833,10 @@ export default function PersonSheet({
                 Health details are shared within your family only
               </p>
             </section>
+            )}
 
             {/* Life Story — AI-generated from the person's timeline + memories. */}
-            {(canEdit || person.story) && (
+            {(hasStory || (canEdit && showEmptySections)) && (
             <section className="profile-section">
               <div className="profile-section__head">
                 <h3 className="profile-section__title">Life Story</h3>
@@ -1895,6 +1978,7 @@ export default function PersonSheet({
               )}
             </section>
             )}
+            )}
 
             {/* Ancestry Story — the patrilineal + matrilineal ascending chains,
                 told forward in time. Not gated on canEdit: compiling only ever
@@ -1951,7 +2035,27 @@ export default function PersonSheet({
                               : [];
                         const isMenuOpen = relMenuId === item.id;
                         const isConfirming = confirmUnlinkId === item.id;
-                        const closeMenu = () => { setRelMenuId(null); setConfirmUnlinkId(null); };
+                        const closeMenu = () => { setRelMenuId(null); setConfirmUnlinkId(null); setConfirmChange(null); };
+                        // A partner <-> ex-partner flip is symmetric and
+                        // cheap to undo (the other option is right there in
+                        // the same menu), so it still commits on one tap.
+                        // Everything else in this menu moves someone a
+                        // generation and rewires the tree around both people
+                        // — that got NO confirm at all, while "Remove
+                        // relationship" 40px below it did. Same hazard class
+                        // as the accidental ex-partner report this menu
+                        // already carries a fix for, with the guard rail on
+                        // the wrong control.
+                        const isStructural = (kind) => !(g.relType === 'partner' && (kind === 'partner' || kind === 'ex_partner'));
+                        const personFirst = person.display_name.split(' ')[0];
+                        const itemFirst = (rel.display_name || '').split(' ')[0];
+                        const changeConsequence = (kind) => (
+                          kind === 'child_of'
+                            ? `Make ${itemFirst} ${personFirst}'s parent? This moves ${itemFirst} a generation above ${personFirst} and rewires the tree around them both.`
+                            : kind === 'parent_of'
+                              ? `Make ${itemFirst} ${personFirst}'s child? This moves ${itemFirst} a generation below ${personFirst} and rewires the tree around them both.`
+                              : `Make ${itemFirst} ${personFirst}'s partner? This moves ${itemFirst} onto the same generation as ${personFirst}.`
+                        );
                         // Same fields the "· Married {year}" / "· Separated {year}"
                         // sub-label above checks — when NEITHER is set, the only
                         // way in is the plain "⋮" icon, which gives no hint that
@@ -2034,17 +2138,35 @@ export default function PersonSheet({
                                 {changeOptions.length > 0 && (
                                   <div className="rel-menu__group">
                                     <span className="rel-menu__label">Change to</span>
-                                    <div className="rel-menu__opts">
-                                      {changeOptions.map((o) => (
-                                        <button
-                                          key={o.kind}
-                                          className="qual-opt"
-                                          onClick={() => { onChangeRelationship?.(person.id, item.id, o.kind); closeMenu(); }}
-                                        >
-                                          {o.label}
-                                        </button>
-                                      ))}
-                                    </div>
+                                    {confirmChange?.itemId === item.id ? (
+                                      <div className="rel-menu__confirm">
+                                        <span>{changeConsequence(confirmChange.kind)}</span>
+                                        <div className="rel-menu__confirm-btns">
+                                          <button
+                                            className="rel-menu__remove"
+                                            onClick={() => { onChangeRelationship?.(person.id, item.id, confirmChange.kind); closeMenu(); }}
+                                          >
+                                            {confirmChange.label}
+                                          </button>
+                                          <button className="rel-menu__cancel" onClick={() => setConfirmChange(null)}>Cancel</button>
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      <div className="rel-menu__opts">
+                                        {changeOptions.map((o) => (
+                                          <button
+                                            key={o.kind}
+                                            className="qual-opt"
+                                            onClick={() => {
+                                              if (isStructural(o.kind)) setConfirmChange({ itemId: item.id, kind: o.kind, label: o.label });
+                                              else { onChangeRelationship?.(person.id, item.id, o.kind); closeMenu(); }
+                                            }}
+                                          >
+                                            {o.label}
+                                          </button>
+                                        ))}
+                                      </div>
+                                    )}
                                   </div>
                                 )}
                                 {unlinkArgs && (
@@ -2072,32 +2194,90 @@ export default function PersonSheet({
                 ))}
 
                 {/* Extended family — derived, read-only, tap to navigate */}
-                {extendedGroups.map((g) => (
-                  <div className="rel-group rel-group--extended" key={g.title}>
-                    <h4 className="rel-group__label">{g.title}</h4>
-                    <ul className="rel-group__list">
-                      {g.items.map((item) => {
-                        const rel = graph.byId.get(item.id);
-                        if (!rel) return null;
-                        return (
-                          <li key={item.id} className="rel-chip">
-                            <button className="rel-chip__nav" onClick={() => onOpenPerson(item.id)}>
-                              <Avatar person={rel} size={40} />
-                              <span className="rel-chip__text">
-                                <span className="rel-chip__name">{rel.display_name}</span>
-                                <span className="rel-chip__kind">
-                                  {relationLabel(graph, person.id, item.id, kinTerms)}
-                                </span>
-                              </span>
-                              <RelChevronIcon />
-                            </button>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  </div>
-                ))}
+                {/* Extended groups (Cousins, Nieces & Nephews, ...) collapse
+                    above REL_COLLAPSE_THRESHOLD, the same treatment List
+                    view's own groups already ship. On a real family these
+                    are the unbounded ones — Cousins alone can run to dozens
+                    of rows on a page that was already 6+ screens long. The
+                    close relationships above (Partners/Parents/Children/
+                    Siblings) are deliberately never collapsed: they're the
+                    reason most people open a profile at all. */}
+                {extendedGroups.map((g) => {
+                  const collapsible = g.items.length > REL_COLLAPSE_THRESHOLD;
+                  const isOpen = !collapsible || !collapsedRelGroups.has(g.title);
+                  const rows = g.items.map((item) => {
+                    const rel = graph.byId.get(item.id);
+                    if (!rel) return null;
+                    return (
+                      <li key={item.id} className="rel-chip">
+                        <button className="rel-chip__nav" onClick={() => onOpenPerson(item.id)}>
+                          <Avatar person={rel} size={40} />
+                          <span className="rel-chip__text">
+                            <span className="rel-chip__name">{rel.display_name}</span>
+                            <span className="rel-chip__kind">
+                              {relationLabel(graph, person.id, item.id, kinTerms)}
+                            </span>
+                          </span>
+                          <RelChevronIcon />
+                        </button>
+                      </li>
+                    );
+                  });
+                  return (
+                    <div className="rel-group rel-group--extended" key={g.title}>
+                      {/* The toggle lives INSIDE the heading so the group
+                          stays screen-reader-navigable by heading — same
+                          reasoning as List view's own group toggles. */}
+                      <h4 className="rel-group__label">
+                        {collapsible ? (
+                          <button
+                            type="button"
+                            className="rel-group__toggle"
+                            aria-expanded={isOpen}
+                            onClick={() => setCollapsedRelGroups((prev) => {
+                              const next = new Set(prev);
+                              if (next.has(g.title)) next.delete(g.title); else next.add(g.title);
+                              return next;
+                            })}
+                          >
+                            {g.title} · {g.items.length}
+                            <ChevronIcon open={isOpen} />
+                          </button>
+                        ) : g.title}
+                      </h4>
+                      {collapsible ? (
+                        <div className={`privacy-section__reveal${isOpen ? ' is-open' : ''}`} aria-hidden={!isOpen}>
+                          <div className="privacy-section__reveal-inner">
+                            <ul className="rel-group__list">{rows}</ul>
+                          </div>
+                        </div>
+                      ) : (
+                        <ul className="rel-group__list">{rows}</ul>
+                      )}
+                    </div>
+                  );
+                })}
               </section>
+            )}
+
+            {/* The one door to every empty section, instead of each one
+                standing open all the way down the page. Sits BELOW the
+                content on purpose: it's a gap-filling action, and measured
+                above the sections it pushed the first real fact about the
+                person a further 45px down a page whose whole problem was
+                how long it took to reach one. Only appears when there's
+                actually a gap, and never on a profile you can't edit. */}
+            {canEdit && emptySectionCount > 0 && (
+              <button
+                className="add-more-trigger"
+                onClick={() => setShowEmptySections((v) => !v)}
+                aria-expanded={showEmptySections}
+              >
+                <PlusIcon />
+                {showEmptySections
+                  ? 'Hide what’s still empty'
+                  : `Add more about ${person.display_name.split(' ')[0]}`}
+              </button>
             )}
 
             {/* Family Perimeter (§3.9) — an honest, non-numeric boundary
@@ -2451,6 +2631,18 @@ function CheckedIcon() {
   return (
     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{ marginLeft: 4 }}>
       <path d="M20 6L9 17l-5-5" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+// Local copy of List view's group chevron — that one isn't exported, and a
+// shared icon module for a single 6-line svg would be more indirection than
+// it saves.
+function ChevronIcon({ open }) {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"
+      style={{ flexShrink: 0, transition: 'transform 0.2s', transform: open ? 'rotate(180deg)' : 'none' }}>
+      <path d="M6 9l6 6 6-6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }

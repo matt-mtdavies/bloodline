@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useDialogFocus } from '../lib/useDialogFocus.js';
 
 /*
  * The "add photo smarts": once an image is picked, frame it inside the circle.
@@ -11,6 +12,7 @@ import { useEffect, useRef, useState } from 'react';
 const OUT = 512; // output resolution
 
 export default function PhotoCropper({ src, onCancel, onConfirm }) {
+  const cropperRef = useRef(null);
   const stageRef = useRef(null);
   const imgRef = useRef(null);
   const m = useRef({ iw: 0, ih: 0, D: 300, min: 1, zoom: 1, ox: 0, oy: 0 });
@@ -22,6 +24,8 @@ export default function PhotoCropper({ src, onCancel, onConfirm }) {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [onCancel]);
+
+  useDialogFocus(cropperRef, true);
 
   const apply = () => {
     const { zoom: z, min, ox, oy } = m.current;
@@ -111,7 +115,7 @@ export default function PhotoCropper({ src, onCancel, onConfirm }) {
   };
 
   return (
-    <div className="cropper" role="dialog" aria-modal="true" aria-label="Position photo">
+    <div ref={cropperRef} className="cropper" role="dialog" aria-modal="true" aria-label="Position photo">
       <div
         className="cropper__stage"
         ref={stageRef}

@@ -2951,6 +2951,112 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   ancestry), not the literal production family, so if a still-different shape of overlap turns up
   there, treat it as a new report rather than assuming this fix was incomplete.
 
+- **`/impeccable critique` on the profile view and its dialogs — 6 findings, all fixed**
+  (user: "Ok now let's run the review on the actual profile view and its dialogs", then
+  "I don't think I want a read mode. Please make the fixes." — explicitly rejecting the one
+  open question I'd raised, and choosing P0s first / unify the dialogs with the hero's
+  visual language / all 6 issues). The dual-agent run scored `PersonSheet.jsx` and the eight
+  sheets it opens. **A process failure worth recording so it isn't repeated: I called
+  `AskUserQuestion` BEFORE delivering the report**, violating critique.md's own hard
+  invariant that the closing question must come last — the user answered three questions
+  without having seen a single finding. Acknowledged openly at the time rather than papered
+  over; their answers happened to still hold once the report landed.
+  1. **[P0, real bug] `role="dialog" aria-modal="true"` with no focus management anywhere.**
+     Opening a profile left `document.activeElement` on `<body>`, and eight consecutive Tab
+     presses landed on the zoom controls and the bottom dock — every one of them OUTSIDE the
+     dialog. Because `aria-modal="true"` tells assistive tech the rest of the page does not
+     exist, the only elements a keyboard user could reach were precisely the ones AT had been
+     told to ignore: 76 controls in the sheet, none reachable, Escape the only available
+     action. Fixed with a new shared `src/lib/useDialogFocus.js` — store-on-open,
+     restore-on-close, initial focus, and a Tab trap registered in the **capture phase**
+     (several sheets `stopPropagation` on their own keydown handlers and would otherwise
+     swallow it) — generalizing the same fix already proven on ChartTree's children popover
+     rather than leaving eight copies to drift. Wired into PersonSheet plus EditPersonSheet,
+     AddRelativeSheet, MemorySheet, TimelineEditor, Lightbox, EnrichSheet and PhotoCropper.
+     Deliberately NOT marking the rest of the page `inert`: `aria-modal` plus the trap already
+     cover it, and inerting ancestors where the sheet renders as a sibling of the canvas is a
+     much larger change with real regression surface. **Two real bugs surfaced building it**:
+     (a) two effects raced for initial focus — the contentKey effect fired synchronously on
+     mount, grabbed the container, and the open effect then saw focus already inside and
+     returned early, so `initialFocus` never applied (measured: the profile landed on
+     `.profile`, not `.profile__close`, and MemorySheet/AddRelativeSheet opened without a
+     caret in the field their whole job is typing into) — fixed with a `lastContentKey` ref
+     that skips the first run per open; (b) AddRelativeSheet fell back to the container
+     because the selector `input[type="text"]` didn't match — its input has no explicit
+     `type` attribute — fixed by using the component's own existing `nameRef`/`searchRef`.
+  2. **[P0] Invite was offered on deceased people.** Gated on `!person.invited_at &&
+     !person.is_deceased`.
+  3. **[P1] Structural relationship changes committed on first tap.** The "⋮" menu's
+     "Change to" list rewires the actual graph — turning a partner into a parent moves every
+     derived sibling, kin label and tree line — with no confirm step, in a sheet where every
+     other destructive action already has one. Added `isStructural(kind)`/
+     `changeConsequence(kind)` and a `confirmChange` swap stating the consequence, reusing
+     the existing `confirmUnlinkId` inline-confirm pattern rather than new interaction UI.
+  4. **[P1] Every section rendered for every person, empty or not**, so a sparse profile was
+     a wall of blank headings. Content predicates now gate Contact, Events, Memories, Photos,
+     Documents, Media, Health, Story, Resting place, Places and Education; an editor gets one
+     explicit `.add-more-trigger` to reveal all empty sections at once, placed **below** the
+     content (a first attempt above it pushed the first real section 860→905px down —
+     measured, then moved). Extended relationship groups over 6 people collapse behind a
+     toggle inside their own `<h4>`. Deliberately **no** deceased gate on Health history:
+     ancestors' conditions are exactly what a family health history is for.
+  5. **[P2] Design-system drift.** Three card recipes (`.doc-card`, `.places-detail`,
+     `.education-rung__card`) carried `var(--card)` + `box-shadow` — but `--card` and
+     `--paper` are both white, so the shadow was the only thing separating them from the
+     page: sheet-level elevation on something never above the page, against DESIGN.md's
+     Float-Only Rule. Flattened onto `--paper-deep` + hairline. `.memory__del:hover` used
+     `--memorial` (the violet reserved for those who've passed) for a delete action —
+     swapped to the real `--error`/`--error-deep` tokens that already existed.
+     `.profile-section__title` sat on `--ink-faint` (~2.3:1) — raised to `--ink-soft`
+     (measured 5.05:1). **EnrichSheet carried an entire second palette** — a violet, a green
+     and a blue picked by hand and used nowhere else in the product — so the one dialog that
+     appears mid-task looked like a different app; its five finding tiers now map onto the
+     documented three (terracotta = detected fact, sage = document, gold = relationship,
+     recessed neutral = the rest), since the tag text and icon already say which tier a row
+     is and colour only has to group them. Token fallbacks across `components.css` had also
+     drifted from the values they fall back to (`var(--ink, #241f1c)` against a real
+     `#1c1d21`, and the same for `--ink-soft`/`--ink-faint`) — corrected in place; a no-op at
+     render time, but the file no longer gives a wrong answer about what the palette is. The
+     five standalone uses of the old hex on the splash/intro/onboarding screens were left
+     alone: different surface, and changing them unverified would be scope creep.
+  6. **[P2] Touch targets, type scale, topbar overflow.** `.rel-chip__menu-btn` (34px),
+     `.input-clear` (21px) and `.places-detail__edit`/`__del` (30px) all sat under
+     PRODUCT.md's 44px floor. Each keeps its designed visible size and gains a centred
+     `::after` overlay for the hit area, so nothing moves visually — with the places actions'
+     gap raised 8px→16px FIRST, because two 44px overlays only 38px apart would have
+     overlapped and a tap landing between them must not be ambiguous when one of the two
+     deletes something. The clear dot's overlay was measured to stop 1px clear of the input's
+     own text area (it fits inside the 42px right padding), so it never steals a tap meant
+     for the text. Two uppercase labels under the 11px floor (TimelineEditor's `PROFILE`
+     badge at 10px, EnrichSheet's tier tag at 10.5px) went to 11.5px — inside the 11–12px
+     band DESIGN.md documents for labels. The topbar archive line measured **402px of text in
+     a 296px box at 390px wide**, so every phone saw it cut mid-word ("… · 1905–2018 · 8
+     ph…"); the photo/memory counts — the least identifying part, and listed in full in the
+     popover that button opens — now step aside below 460px rather than being truncated
+     (measured after: 263/263 on mobile, no truncation at all; desktop unchanged at 402px).
+  **One finding deliberately NOT "fixed", and disclosed rather than silently dropped**: the
+  detector's `flat-type-hierarchy` complaint (h3 12px against 16px body) is a false positive
+  against a documented Bloodline convention — DESIGN.md specifies section headers
+  "uppercase-and-tracked rather than sized up" at 11–12px, so sizing them up would break the
+  system rather than fix it. Per CLAUDE.md's own rule, Impeccable's general heuristics never
+  override a documented convention. Also flagged to the user rather than decided unilaterally:
+  the 342px action block / Keepsake overflow is a product decision, not a cleanup; and
+  DocViewer has zero critique coverage (it renders inline in `App.jsx` and the seed ships no
+  documents, so reviewing it needs temporary seed data).
+  Verified live at 390×844 and 1280×900 against the real dev server, measuring rather than
+  eyeballing: every new hit area measured 44×44 with its visible control unchanged at
+  34/21/30px, the clear dot's overlay measured 1px clear of the input text area, both labels
+  measured 11.5px, the enrich tier icon measured on `--paper-deep` and its tag on
+  `--ink-soft` (was violet), section titles measured `#6b6f76`, the mobile stats line measured
+  263/263 after against 402/296 before, and zero page errors throughout. Full unit suite
+  (88/88), `npm run build`, and `tests/smoke.mjs` all passed clean.
+  **Found while fixing, not fixed here** (a real, separate bug worth its own pass): `--ground`
+  is a **ghost token** — referenced 35 times across Family Settings, the topbar and onboarding
+  but never declared in `theme.css`. The 22 uses with a fallback silently render a warm cream
+  that isn't in the palette; the 13 with no fallback compute to `transparent`, so those
+  backgrounds currently do nothing at all. Out of scope for the profile surface, but it means
+  several Family Settings hover states are invisible today.
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);

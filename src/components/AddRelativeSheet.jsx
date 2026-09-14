@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useMemo } from 'react';
 import { RELATIONSHIPS, QUALIFIER_KEYS, bioParentGendersFilled } from '../data/store.js';
 import { normalizeGender } from '../lib/gender.js';
+import { useDialogFocus } from '../lib/useDialogFocus.js';
 import DateField from './DateField.jsx';
 
 const QUALIFIERS = [
@@ -73,6 +74,7 @@ export default function AddRelativeSheet({ anchor, people = [], relationships = 
   const [siblingOtherParentId, setSiblingOtherParentId] = useState(null);
   const [siblingOtherParentGiven, setSiblingOtherParentGiven] = useState('');
   const [siblingOtherParentFamily, setSiblingOtherParentFamily] = useState('');
+  const sheetRef = useRef(null);
   const nameRef = useRef(null);
   const searchRef = useRef(null);
 
@@ -81,6 +83,20 @@ export default function AddRelativeSheet({ anchor, people = [], relationships = 
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
+
+  // Land on the field this sheet actually exists to fill (its own header
+  // comment: "the only required answer is who they are and their name").
+  // The trap runs on the dialog root; this second effect places the caret in
+  // the right field per mode, using the refs the component already keeps on
+  // exactly those two inputs rather than guessing at a selector.
+  useDialogFocus(sheetRef, true);
+  useEffect(() => {
+    const el = mode === 'new' ? nameRef.current : searchRef.current;
+    if (!el) return;
+    // Next frame, so it wins over the trap's own container fallback.
+    const raf = requestAnimationFrame(() => el.focus?.());
+    return () => cancelAnimationFrame(raf);
+  }, [mode]);
 
   // Reset mode to 'new' when relationship type changes.
   const pickRel = (key) => {
@@ -293,6 +309,7 @@ export default function AddRelativeSheet({ anchor, people = [], relationships = 
   return (
     <div className="sheet-scrim sheet-scrim--modal" onClick={onClose}>
       <section
+        ref={sheetRef}
         className="sheet sheet--form"
         role="dialog"
         aria-modal="true"
