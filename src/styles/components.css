@@ -11149,27 +11149,65 @@ button.health-notes {
 .enrich-trigger:hover { background: color-mix(in srgb, var(--accent, #c2603a) 13%, transparent); }
 .enrich-trigger:active { transform: scale(0.98); }
 
-/* The "add more" step that reveals every empty section at once. Deliberately
-   quieter than .enrich-trigger — neutral hairline, ink-soft text, no accent —
-   because two full-strength terracotta CTAs on one profile would break the
-   One Accent rule and leave neither reading as primary. Enrich is the marquee
-   action; this is plumbing. */
-.add-more-trigger {
-  display: flex; align-items: center; justify-content: center; gap: 7px;
-  /* Follows a .profile-section, so it takes that section's own 26px top
-     rhythm. It previously carried -10px, written when this was expected to
-     sit directly under .enrich-trigger; in the real layout it lands after
-     the relationship list and that negative margin pulled it flush onto the
-     last row. */
-  width: 100%; margin: 26px 0 18px; padding: 10px 14px;
-  border-radius: var(--radius); border: 1px solid var(--hairline);
-  background: transparent; color: var(--ink-soft);
-  font-size: 13px; font-weight: 600; cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
+/* "Still to add" — the contribution prompt, sitting under the completeness
+   meter near the top of the profile.
+
+   This replaces a single "Add more about X" button that used to sit at the
+   very bottom of the page. Deliberately quiet: neutral hairline chips, ink
+   text, terracotta reserved for the small plus glyph only, so it never
+   competes with .enrich-trigger (the marquee action) and does not break the
+   One Accent rule. The chips name what is missing, so there is one decision
+   to make instead of two. */
+.profile-gaps { margin: 14px 0 2px; }
+.profile-gaps__label {
+  display: block;
+  font-family: var(--body);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-weight: 600;
+  color: var(--ink-soft);
+  margin-bottom: 8px;
 }
-.add-more-trigger:hover { background: var(--paper-deep); color: var(--ink); }
-.add-more-trigger:active { transform: scale(0.98); }
-.add-more-trigger > svg { width: 15px; height: 15px; }
+.profile-gaps__chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.profile-gaps__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  /* Real 44px targets, met by the control itself rather than an overlay —
+     there is room here, unlike the icon buttons elsewhere on this sheet. */
+  min-height: 44px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid var(--hairline);
+  background: transparent;
+  color: var(--ink);
+  font-family: var(--body);
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+.profile-gaps__chip > svg { width: 14px; height: 14px; color: var(--accent); }
+.profile-gaps__chip:hover { background: var(--paper-deep); border-color: var(--ink-faint); }
+.profile-gaps__chip:active { transform: scale(0.97); }
+.profile-gaps__chip--more { color: var(--ink-soft); font-weight: 500; }
+.profile-gaps__chip--more > svg { display: none; }
+.profile-gaps__hide {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  color: var(--ink-soft);
+  font-family: var(--body);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+}
+.profile-gaps__hide:hover { color: var(--ink); }
 
 .enrich { max-height: 88vh; overflow-y: auto; padding-bottom: calc(var(--safe-bottom) + 24px); }
 .enrich__head {
@@ -12690,8 +12728,43 @@ button.health-notes {
    addPhoto), not a separate photo system. Sized to sit inside the compact
    rung card rather than the full-width .gallery grid the main Photos
    section uses. */
+/* Kicker on the left, the card's actions on the right. Negative margins pull
+   the 44px buttons back into the card's own padding so full-size touch
+   targets do not inflate the header's visual height. */
+.education-rung__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 6px;
+}
+/* min-width:0 so a long stage label ("Trade & Vocational", "Elementary
+   School") wraps inside its own cell instead of forcing the header wider
+   than the card — a flex item's default min-width is auto, not 0. */
+.education-rung__head > .education-rung__kicker { flex: 1 1 auto; min-width: 0; }
+.education-rung__actions {
+  display: flex;
+  flex: none;
+  margin: -11px -10px 0 0;
+}
+.education-rung__action {
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: transparent;
+  border-radius: 50%;
+  color: var(--ink-faint);
+  cursor: pointer;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+.education-rung__action > svg { width: 16px; height: 16px; }
+.education-rung__action:hover { color: var(--ink); background: var(--hairline); }
+.education-rung__action:active { transform: scale(0.94); }
+
 .education-rung__photos { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 0; }
-.education-rung__photo, .education-rung__photo-add {
+.education-rung__photo {
   width: 46px;
   height: 46px;
   flex: none;
@@ -12700,27 +12773,6 @@ button.health-notes {
 }
 .education-rung__photo { background: var(--paper-deep); }
 .education-rung__photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
-/* An empty slot INSIDE an already-recessed card, so it is drawn as an
-   outline and nothing else. It used to be a solid white `--paper` tile,
-   which was invisible while the rung card was also white — flattening that
-   card onto `--paper-deep` left a white chip sitting proud of a grey card,
-   reading as a pasted-on control rather than a space waiting to be filled.
-   (`--line` is not a declared token; the real hairline is `--hairline`, and
-   the #e7ddd4 it was falling back to is a warm cream outside the palette.) */
-.education-rung__photo-add {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  border: 1px dashed var(--hairline);
-  color: var(--ink-faint);
-  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
-}
-.education-rung__photo-add:hover {
-  color: var(--accent);
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 6%, transparent);
-}
 .education-form__stages { display: flex; flex-wrap: wrap; gap: 6px; }
 .education-form__stage {
   padding: 6px 12px;

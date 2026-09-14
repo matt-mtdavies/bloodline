@@ -524,6 +524,54 @@ export default function PersonSheet({
     !hasPlaces, !hasEducation,
   ].filter(Boolean).length;
 
+  /*
+   * What's actually missing, as a list a contributor can act on.
+   *
+   * Ordered by what a family member is most likely to be able to answer and
+   * by what most changes the profile — NOT alphabetically and not in section
+   * order. A face and a story are worth more than a phone number, so they
+   * lead. Only the first few are ever shown.
+   *
+   * `anchor` is the section to reveal and scroll to. A gap with no anchor is
+   * a plain field that lives in the edit form rather than a section of its
+   * own, so it opens that form instead.
+   */
+  const gaps = !canEdit ? [] : [
+    [!person.photo, 'Photo', null],
+    [!hasStory, 'Life story', 'ps-story'],
+    [!hasPhotos, 'Photos', 'ps-photos'],
+    [!hasMemories, 'Memories', 'ps-memories'],
+    [!hasEvents, 'Life events', 'ps-events'],
+    [!hasEducation, 'Education', 'ps-education'],
+    [!hasPlaces, 'Places lived', 'ps-places'],
+    [!(person.bio && person.bio.trim()), 'Biography', null],
+    [!hasDocs, 'Documents', 'ps-docs'],
+    [!person.occupation, 'Occupation', null],
+    [!person.birth_date, 'Birth date', null],
+    [!person.birth_place, 'Birthplace', null],
+    [!person.is_deceased && !hasContact, 'Contact', 'ps-contact'],
+    [person.is_deceased && !hasRestingPlace, 'Resting place', 'ps-resting'],
+    [!hasHealth, 'Health history', 'ps-health'],
+    [!hasMedia, 'Voice & video', 'ps-media'],
+  ].filter(([missing]) => missing).map(([, label, anchor]) => ({ label, anchor }));
+
+  // Reveal the empty sections, then take the contributor to the one they
+  // asked for. The section usually does not exist in the DOM yet — the state
+  // change above is what creates it — so the scroll waits for React to
+  // commit rather than firing into a document that has not changed.
+  const revealGap = (gap) => {
+    setShowEmptySections(true);
+    if (!gap) return;
+    if (!gap.anchor) { onEdit?.(person.id); return; }
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        document
+          .getElementById(gap.anchor)
+          ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    });
+  };
+
   // Legacy memories (added before authorId existed) fall back to their old
   // free-text `author` string for display; only an admin can manage those,
   // since there's no reliable way to attribute them to anyone specific.
@@ -1063,6 +1111,55 @@ export default function PersonSheet({
               </div>
             )}
 
+            {/* The ask, where people actually look.
+                This used to be a single "Add more about X" button at the very
+                BOTTOM of the profile — past every relationship row — labelled
+                with nothing about what was missing. Two problems: you had to
+                decide to go looking before you could learn there was a gap,
+                and once the empty sections stopped standing open the profile
+                lost the one mechanism it had for telling a relative "here is
+                a specific thing only you might know". Naming the gaps, near
+                the top, restores the prompt without the wall of empty
+                headings. Deliberately NOT gated on the meter's own
+                `score < 100`: a profile can score 100 on those nine checks
+                and still have no education, places or documents recorded. */}
+            {canEdit && gaps.length > 0 && (
+              <div className="profile-gaps">
+                {showEmptySections ? (
+                  <button
+                    className="profile-gaps__hide"
+                    onClick={() => setShowEmptySections(false)}
+                  >
+                    Hide what’s still empty
+                  </button>
+                ) : (
+                  <>
+                    <span className="profile-gaps__label">Still to add</span>
+                    <div className="profile-gaps__chips">
+                      {gaps.slice(0, 3).map((gap) => (
+                        <button
+                          key={gap.label}
+                          className="profile-gaps__chip"
+                          onClick={() => revealGap(gap)}
+                        >
+                          <PlusIcon />
+                          {gap.label}
+                        </button>
+                      ))}
+                      {gaps.length > 3 && (
+                        <button
+                          className="profile-gaps__chip profile-gaps__chip--more"
+                          onClick={() => revealGap(null)}
+                        >
+                          {gaps.length - 3} more
+                        </button>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+
             {canEdit && (
               <button className="enrich-trigger" onClick={() => setEnrichOpen(true)}>
                 <SparkleIcon /> Enrich this profile
@@ -1072,7 +1169,7 @@ export default function PersonSheet({
 
             {/* Contact — living people only */}
             {!person.is_deceased && (hasContact || showEmptySections) && (
-              <section className="profile-section">
+              <section className="profile-section" id="ps-contact">
                 <div className="profile-section__head">
                   <h3 className="profile-section__title">Contact</h3>
                   <button className="section-edit" onClick={() => onEdit?.(person.id)}>Edit</button>
@@ -1120,7 +1217,7 @@ export default function PersonSheet({
 
             {/* Key life events */}
             {(hasEvents || showEmptySections) && (
-            <section className="profile-section">
+            <section className="profile-section" id="ps-events">
               <div className="profile-section__head">
                 <h3 className="profile-section__title">Key life events</h3>
                 {canEdit && (
@@ -1164,15 +1261,18 @@ export default function PersonSheet({
             )}
 
             {(hasRestingPlace || showEmptySections) && (
+            <div id="ps-resting">
             <RestingPlace
               person={person}
               canEdit={canEdit}
               onSet={(fields) => onSetRestingPlace?.(person.id, fields)}
               onClear={() => onClearRestingPlace?.(person.id)}
             />
+            </div>
             )}
 
             {(hasPlaces || showEmptySections) && (
+            <div id="ps-places">
             <PlacesLived
               person={person}
               canEdit={canEdit}
@@ -1180,9 +1280,11 @@ export default function PersonSheet({
               onUpdateResidence={(id, fields) => onUpdateResidence?.(person.id, id, fields)}
               onRemoveResidence={(id) => onRemoveResidence?.(person.id, id)}
             />
+            </div>
             )}
 
             {(hasEducation || showEmptySections) && (
+            <div id="ps-education">
             <EducationHistory
               person={person}
               canEdit={canEdit}
@@ -1194,11 +1296,12 @@ export default function PersonSheet({
               onAddPhoto={onAddPhoto}
               onOpenLightbox={onOpenLightbox}
             />
+            </div>
             )}
 
             {/* Memories — the heart of the profile. */}
             {(hasMemories || showEmptySections) && (
-            <section className="profile-section">
+            <section className="profile-section" id="ps-memories">
               <div className="profile-section__head">
                 <h3 className="profile-section__title">
                   Memories{personMemories.length > 0 ? ` · ${personMemories.length}` : ''}
@@ -1332,7 +1435,7 @@ export default function PersonSheet({
 
             {/* Photos */}
             {(hasPhotos || showEmptySections) && (
-            <section className="profile-section">
+            <section className="profile-section" id="ps-photos">
               <div className="profile-section__head">
                 <h3 className="profile-section__title">
                   Photos{personPhotos.length > 0 ? ` · ${personPhotos.length}` : ''}
@@ -1389,7 +1492,7 @@ export default function PersonSheet({
 
             {/* Documents */}
             {(hasDocs || showEmptySections) && (
-            <section className="profile-section">
+            <section className="profile-section" id="ps-docs">
               <div className="profile-section__head">
                 <h3 className="profile-section__title">
                   Documents{personDocs.length > 0 ? ` · ${personDocs.length}` : ''}
@@ -1546,7 +1649,7 @@ export default function PersonSheet({
 
             {/* Voice & Video */}
             {(hasMedia || showEmptySections) && (
-            <section className="profile-section">
+            <section className="profile-section" id="ps-media">
               <div className="profile-section__head">
                 <h3 className="profile-section__title">
                   Voice &amp; Video{personMedia.length > 0 ? ` · ${personMedia.length}` : ''}
@@ -1655,7 +1758,7 @@ export default function PersonSheet({
 
             {/* Health history */}
             {(hasHealth || showEmptySections) && (
-            <section className="profile-section">
+            <section className="profile-section" id="ps-health">
               <div className="profile-section__head">
                 <h3 className="profile-section__title">
                   Health history{(person.conditions?.length || 0) > 0 ? ` · ${person.conditions.length}` : ''}
@@ -1837,7 +1940,7 @@ export default function PersonSheet({
 
             {/* Life Story — AI-generated from the person's timeline + memories. */}
             {(hasStory || (canEdit && showEmptySections)) && (
-            <section className="profile-section">
+            <section className="profile-section" id="ps-story">
               <div className="profile-section__head">
                 <h3 className="profile-section__title">Life Story</h3>
                 {!storyEditing && (
@@ -2258,26 +2361,6 @@ export default function PersonSheet({
                   );
                 })}
               </section>
-            )}
-
-            {/* The one door to every empty section, instead of each one
-                standing open all the way down the page. Sits BELOW the
-                content on purpose: it's a gap-filling action, and measured
-                above the sections it pushed the first real fact about the
-                person a further 45px down a page whose whole problem was
-                how long it took to reach one. Only appears when there's
-                actually a gap, and never on a profile you can't edit. */}
-            {canEdit && emptySectionCount > 0 && (
-              <button
-                className="add-more-trigger"
-                onClick={() => setShowEmptySections((v) => !v)}
-                aria-expanded={showEmptySections}
-              >
-                <PlusIcon />
-                {showEmptySections
-                  ? 'Hide what’s still empty'
-                  : `Add more about ${person.display_name.split(' ')[0]}`}
-              </button>
             )}
 
             {/* Family Perimeter (§3.9) — an honest, non-numeric boundary
