@@ -137,7 +137,47 @@ export default function EducationHistory({ person, canEdit, canContribute = true
                 </div>
               ) : (
                 <div className="education-rung__card">
-                  <p className="education-rung__kicker">{resolveStageLabel(entry.stage, entry.country)}</p>
+                  {/* Kicker and the administrative actions share the top line,
+                      so the record itself — school, place, years — is the last
+                      thing read and the card ends with content rather than
+                      with controls floating in dead space. */}
+                  <div className="education-rung__head">
+                    <p className="education-rung__kicker">{resolveStageLabel(entry.stage, entry.country)}</p>
+                    {confirmRemoveId !== entry.id && (canEdit || canContribute) && (
+                      <div className="education-rung__actions">
+                        {canContribute && (
+                          <button
+                            type="button"
+                            className="education-rung__action"
+                            onClick={() => pickPhotoFor(entry.id)}
+                            aria-label={`Add a photo to ${entry.institution}`}
+                          >
+                            <CameraIcon />
+                          </button>
+                        )}
+                        {canEdit && (
+                          <>
+                            <button
+                              type="button"
+                              className="education-rung__action"
+                              onClick={() => { setEditingId(entry.id); setAdding(false); }}
+                              aria-label={`Edit ${entry.institution}`}
+                            >
+                              <PencilIcon />
+                            </button>
+                            <button
+                              type="button"
+                              className="education-rung__action"
+                              onClick={() => setConfirmRemoveId(entry.id)}
+                              aria-label={`Remove ${entry.institution}`}
+                            >
+                              <CloseIcon />
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </div>
                   <p className="education-rung__institution">{entry.institution}</p>
                   {entry.field_of_study && <p className="education-rung__field">{entry.field_of_study}</p>}
                   <p className="education-rung__meta">
@@ -146,29 +186,16 @@ export default function EducationHistory({ person, canEdit, canContribute = true
                   {entry.note && <p className="education-rung__note">{entry.note}</p>}
                   <EducationPhotos
                     photos={photos.filter((p) => p.education_id === entry.id)}
-                    canContribute={canContribute}
-                    onAddPhoto={() => pickPhotoFor(entry.id)}
                     onOpenLightbox={(idx) => onOpenLightbox?.(person.id, idx, { educationId: entry.id })}
                   />
-                  {canEdit && (
-                    confirmRemoveId === entry.id ? (
-                      <div className="places-detail__confirm">
-                        <span>Remove this stage?</span>
-                        <div className="places-detail__confirm-btns">
-                          <button className="doc-card__confirm-remove" onClick={() => handleRemove(entry.id)}>Remove</button>
-                          <button className="doc-card__confirm-cancel" onClick={() => setConfirmRemoveId(null)}>Cancel</button>
-                        </div>
+                  {canEdit && confirmRemoveId === entry.id && (
+                    <div className="places-detail__confirm">
+                      <span>Remove this stage?</span>
+                      <div className="places-detail__confirm-btns">
+                        <button className="doc-card__confirm-remove" onClick={() => handleRemove(entry.id)}>Remove</button>
+                        <button className="doc-card__confirm-cancel" onClick={() => setConfirmRemoveId(null)}>Cancel</button>
                       </div>
-                    ) : (
-                      <div className="places-detail__actions">
-                        <button className="places-detail__edit" onClick={() => { setEditingId(entry.id); setAdding(false); }} aria-label={`Edit ${entry.institution}`}>
-                          <PencilIcon />
-                        </button>
-                        <button className="places-detail__del" onClick={() => setConfirmRemoveId(entry.id)} aria-label={`Remove ${entry.institution}`}>
-                          <CloseIcon />
-                        </button>
-                      </div>
-                    )
+                    </div>
                   )}
                 </div>
               )}
@@ -203,8 +230,8 @@ export default function EducationHistory({ person, canEdit, canContribute = true
 // they can't structurally edit the stage record itself, which stays gated
 // on canEdit above). Tapping a thumbnail opens the shared Lightbox scoped to
 // just this entry's photos (App.jsx's onOpenLightbox with educationId set).
-function EducationPhotos({ photos, canContribute, onAddPhoto, onOpenLightbox }) {
-  if (!photos.length && !canContribute) return null;
+function EducationPhotos({ photos, onOpenLightbox }) {
+  if (!photos.length) return null;
   return (
     <div className="education-rung__photos">
       {photos.map((p, idx) => (
@@ -218,11 +245,6 @@ function EducationPhotos({ photos, canContribute, onAddPhoto, onOpenLightbox }) 
           <SmartImg src={p.src} alt={p.caption || ''} />
         </button>
       ))}
-      {canContribute && (
-        <button type="button" className="education-rung__photo-add" onClick={onAddPhoto} aria-label="Add a photo">
-          <CameraIcon />
-        </button>
-      )}
     </div>
   );
 }
@@ -342,12 +364,22 @@ function StageIcon({ stage }) {
   return <SatchelIcon />;
 }
 
+/*
+ * A satchel, drawn so it cannot be read as a padlock. The previous version
+ * was EditPersonSheet's own LockIcon (same body rect, same shackle arc) with
+ * a keyhole stroke added — so the primary-school rung wore the exact glyph
+ * this product uses for privacy, and read as "this entry is locked".
+ * The separating cues here: a narrow handle rather than a wide shackle, a
+ * flap edge running the FULL width of the body (a padlock never has one),
+ * and a clasp hanging off it instead of a keyhole.
+ */
 function SatchelIcon() {
   return (
     <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <rect x="4" y="9" width="16" height="11" rx="2.5" stroke="currentColor" strokeWidth="1.6" />
-      <path d="M8 9V7a4 4 0 0 1 8 0v2" stroke="currentColor" strokeWidth="1.6" />
-      <path d="M12 13v3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      <rect x="3.5" y="8" width="17" height="12" rx="2.5" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M10 8V6.8a2 2 0 0 1 4 0V8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <path d="M3.5 13.2h17" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M10.6 13.2v2.2h2.8v-2.2" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
     </svg>
   );
 }
