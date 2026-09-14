@@ -790,6 +790,14 @@
   background: var(--paper-deep, #f1ece4);
   transition: color 0.15s, background 0.15s, transform 0.1s;
 }
+/* 34px reads right against the chip's density; PRODUCT.md's floor is 44px.
+   An overlay grows only what the finger hits, so the visible circle is
+   unchanged. Same trick below for .input-clear and the places actions. */
+.rel-chip__menu-btn { position: relative; }
+.rel-chip__menu-btn::after {
+  content: ''; position: absolute; top: 50%; left: 50%;
+  width: 44px; height: 44px; transform: translate(-50%, -50%);
+}
 .rel-chip__menu-btn:active { transform: scale(0.92); }
 .rel-chip__menu-btn:hover { color: var(--accent); background: rgba(194,96,58,0.12); }
 .rel-chip__menu-btn--on { color: #fff; background: var(--accent); }
@@ -819,7 +827,7 @@
 .rel-menu__group { display: flex; flex-direction: column; gap: 6px; }
 .rel-menu__label {
   font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
-  color: var(--ink-faint, #a09590);
+  color: var(--ink-faint, #a6abb3);
 }
 .rel-menu__opts { display: flex; flex-wrap: wrap; gap: 6px; }
 .marriage-edit { display: flex; flex-direction: column; gap: 6px; }
@@ -1567,7 +1575,7 @@
 .bottom-dock .expand-btn--on,
 .bottom-dock .browse-btn--on {
   background: rgba(139, 120, 100, 0.12);
-  color: var(--ink, #241f1c);
+  color: var(--ink, #1c1d21);
 }
 .bottom-dock .focus-btn--on:hover,
 .bottom-dock .time-toggle--on:hover,
@@ -1623,7 +1631,7 @@
   padding: 0;
   transition: background 0.14s, color 0.14s, transform 0.14s var(--spring);
 }
-.zoom-controls__btn:hover { background: rgba(139, 120, 100, 0.07); color: var(--ink, #241f1c); }
+.zoom-controls__btn:hover { background: rgba(139, 120, 100, 0.07); color: var(--ink, #1c1d21); }
 .zoom-controls__btn:active { transform: scale(0.88); }
 /* Brief shake — the only feedback for "you're already at the zoom limit",
    deliberately not a persistent disabled state (that would need polling the
@@ -1711,7 +1719,7 @@
   pointer-events: none;
   padding: 7px 13px;
   border-radius: 999px;
-  background: var(--ink, #241f1c);
+  background: var(--ink, #1c1d21);
   color: #fff;
   font-size: 13px;
   font-weight: 600;
@@ -1971,7 +1979,7 @@
   background: transparent;
   font-size: 17px;
   font-family: inherit;
-  color: var(--ink, #241f1c);
+  color: var(--ink, #1c1d21);
   outline: none;
   min-width: 0;
 }
@@ -1987,7 +1995,7 @@
   align-items: center;
   flex-shrink: 0;
 }
-.search-clear:hover { color: var(--ink-soft, #6b6260); }
+.search-clear:hover { color: var(--ink-soft, #6b6f76); }
 
 /* ── Relationship filter chips ────────────────────────────────────────────────
    Quick shortcuts to a shortlist when you don't remember a name — not a
@@ -2050,7 +2058,7 @@
 .search-result__name {
   font-size: 15px;
   font-weight: 500;
-  color: var(--ink, #241f1c);
+  color: var(--ink, #1c1d21);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2115,6 +2123,12 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+/* Secondary archive counts — see the comment at this button's call site in
+   TopBar.jsx. Hidden rather than ellipsised below the width where the full
+   line stops fitting. */
+@media (max-width: 460px) {
+  .topbar__stats-opt { display: none; }
 }
 .topbar__stats--btn {
   flex: 1 1 auto;
@@ -2506,9 +2520,14 @@
   display: flex;
   gap: 14px;
   padding: 12px;
-  background: var(--card);
-  border-radius: 16px;
-  box-shadow: var(--shadow-soft);
+  /* Float-Only Rule (DESIGN.md): --card and --paper are both #ffffff, so a
+     shadow on a resting, in-flow card is the ONLY thing defining it —
+     sheet-level elevation applied to something that never leaves the page.
+     Flat tint + hairline instead, matching .memory, which already had the
+     correct recipe two sections up the same profile. */
+  background: var(--paper-deep);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
   min-width: 0;
 }
 /* A real, legible preview — big enough to actually recognise the document
@@ -3160,17 +3179,17 @@
 .profile-view__section .profile-view__row:last-child { border-bottom: none; }
 .profile-view__label {
   font-size: 13px;
-  color: var(--ink-soft, #6b6260);
+  color: var(--ink-soft, #6b6f76);
   flex-shrink: 0;
 }
 .profile-view__value {
   font-size: 14.5px;
-  color: var(--ink, #241f1c);
+  color: var(--ink, #1c1d21);
   font-weight: 500;
   text-align: right;
   white-space: pre-wrap;
 }
-.profile-view__empty { color: var(--ink-soft, #6b6260); font-size: 14px; padding: 12px 0; }
+.profile-view__empty { color: var(--ink-soft, #6b6f76); font-size: 14px; padding: 12px 0; }
 
 /* Relationship chips */
 .chipgrid { display: flex; flex-wrap: wrap; gap: 8px; list-style: none; margin: 0; padding: 0; }
@@ -3425,6 +3444,13 @@
   opacity: 0.6;
   flex: none;
   transition: opacity 0.15s;
+}
+/* The visible dot stays 21px — a bigger one would crowd the field — but the
+   hit area reaches the 44px floor. It stays inside the input's own 42px
+   right padding, so it never steals a tap meant for the text. */
+.input-clear::after {
+  content: ''; position: absolute; top: 50%; left: 50%;
+  width: 44px; height: 44px; transform: translate(-50%, -50%);
 }
 .input-clear:active { opacity: 0.35; transform: scale(0.92); }
 
@@ -4309,7 +4335,14 @@
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  color: var(--ink-faint);
+  /* Was --ink-faint (#a6abb3) = ~2.3:1 on white — below even the 3:1
+     large-text floor, on every section heading of the app's most important
+     surface. --ink-faint is documented for "tertiary text and
+     placeholders", not for the labels that structure a page. --ink-soft
+     measures 5.05:1 and is what the rest of the app uses for secondary
+     text. This is also why the page read as an undifferentiated wall: the
+     headings organising it were the faintest thing on it. */
+  color: var(--ink-soft);
   font-weight: 600;
   margin-bottom: 12px;
 }
@@ -4461,7 +4494,7 @@
 .profile-section__head .profile-section__title { margin-bottom: 0; }
 .profile-section__empty {
   font-size: 13.5px;
-  color: var(--ink-faint, #a09590);
+  color: var(--ink-faint, #a6abb3);
   font-style: italic;
   margin: 2px 0 0;
 }
@@ -4469,7 +4502,14 @@
   font-size: 13.5px;
   font-weight: 600;
   color: var(--accent);
-  padding: 2px 2px;
+  /* 34x20px measured; PRODUCT.md names a 44px floor. Padding grows the hit
+     area without moving the text — negative margin keeps the heading row's
+     own rhythm unchanged. */
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  margin: -12px -8px -12px 0;
   flex: none;
 }
 .section-edit:empty { display: none; }
@@ -4582,7 +4622,7 @@
   margin: 16px 20px;
   font-size: 13.5px;
   font-style: italic;
-  color: var(--ink-faint, #a09590);
+  color: var(--ink-faint, #a6abb3);
 }
 .trove-search__results {
   list-style: none;
@@ -4676,7 +4716,7 @@
 .trove-search__other-note {
   margin: 4px 0 18px;
   font-size: 12px;
-  color: var(--ink-faint, #a09590);
+  color: var(--ink-faint, #a6abb3);
   font-style: italic;
 }
 .trove-search__group { margin-bottom: 20px; }
@@ -4991,12 +5031,29 @@ button.health-notes {
   font-weight: 500;
 }
 .memory__edit:hover { color: var(--accent); }
+/* Remove is destructive and permanent, and sat at 12.5px --ink-faint —
+   typographically identical to Edit beside it, and measured at 63x17px.
+   Now: the documented --error token (violet is reserved for people who have
+   died; it was standing in for a danger colour the palette already has),
+   a real 44px hit area, and enough separation from Edit to tell them apart
+   under a thumb. */
 .memory__del {
   font-size: 12.5px;
-  color: var(--ink-faint);
+  color: var(--error);
   font-weight: 500;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  padding-inline: 6px;
+  margin-inline-start: 4px;
 }
-.memory__del:hover { color: var(--memorial); }
+.memory__del:hover { color: var(--error-deep); }
+.memory__edit {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  padding-inline: 6px;
+}
 .memory__editing { display: flex; flex-direction: column; gap: 10px; }
 .memory__editing-actions { display: flex; justify-content: flex-end; gap: 10px; }
 .memory__author-picker { display: flex; flex-direction: column; gap: 4px; }
@@ -5092,7 +5149,9 @@ button.health-notes {
   margin-left: 8px;
   flex: none;
   white-space: nowrap;
-  font-size: 10px;
+  /* 10px uppercase bold sat under the legibility floor; 11.5px is the
+     smallest size the rest of the product uses for a label like this. */
+  font-size: 11.5px;
   font-weight: 700;
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -5896,14 +5955,14 @@ button.health-notes {
 .login-card__spam {
   margin: 0 0 22px;
   font-size: 12.5px;
-  color: var(--ink-soft, #6b6260);
+  color: var(--ink-soft, #6b6f76);
   text-align: center;
   line-height: 1.5;
   background: var(--ground, #f7f3ec);
   border-radius: 10px;
   padding: 9px 12px;
 }
-.login-card__spam strong { color: var(--ink, #241f1c); }
+.login-card__spam strong { color: var(--ink, #1c1d21); }
 .login-card__legal {
   margin-top: 12px;
   font-size: 11.5px;
@@ -6145,14 +6204,14 @@ button.health-notes {
 .fs__invite-privacy {
   font-size: 12.5px;
   line-height: 1.5;
-  color: var(--ink-faint, #a09590);
+  color: var(--ink-faint, #a6abb3);
   margin: 8px 2px 4px;
 }
 
 .fs__audit { display: flex; flex-direction: column; gap: 2px; }
 .fs__audit-note {
   font-size: 12.5px;
-  color: var(--ink-faint, #a09590);
+  color: var(--ink-faint, #a6abb3);
   line-height: 1.5;
   margin-bottom: 16px;
 }
@@ -6433,7 +6492,7 @@ button.health-notes {
 .fs__danger-btn:hover { background: var(--error-soft); }
 .fs__danger-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 .fs__danger-btn:disabled:hover { background: transparent; }
-.fs__danger-note { font-size: 12.5px; color: var(--ink-faint, #a09590); text-align: center; }
+.fs__danger-note { font-size: 12.5px; color: var(--ink-faint, #a6abb3); text-align: center; }
 
 /* Type-the-family-name confirm for "Start over — erase tree" — a plainer
    Yes/No like the member-remove confirm above would be too easy to clear
@@ -7048,7 +7107,7 @@ button.health-notes {
 .invite-sheet__or {
   display: flex; align-items: center; gap: 12px;
   margin: 18px 24px 14px;
-  color: var(--ink-faint, #a09590);
+  color: var(--ink-faint, #a6abb3);
   font-size: 12.5px;
 }
 .invite-sheet__or::before, .invite-sheet__or::after {
@@ -7746,7 +7805,7 @@ button.health-notes {
 
 .gedcom__merge-note {
   font-size: 12.5px;
-  color: var(--ink-faint, #a09590);
+  color: var(--ink-faint, #a6abb3);
   margin: 0;
 }
 
@@ -8062,7 +8121,7 @@ button.health-notes {
 .gedcom__stat-num-of {
   font-size: 14px;
   font-weight: 500;
-  color: var(--ink-faint, #a09590);
+  color: var(--ink-faint, #a6abb3);
   letter-spacing: normal;
 }
 
@@ -8709,7 +8768,7 @@ button.health-notes {
   border-radius: 12px;
   border: 1px solid var(--hairline, #ebedf0);
   background: var(--ground, #f7f3ec);
-  color: var(--ink, #241f1c);
+  color: var(--ink, #1c1d21);
   text-decoration: none;
   transition: background 0.15s, border-color 0.15s;
 }
@@ -8729,7 +8788,7 @@ button.health-notes {
   padding: 4px 0;
   border: none;
   background: none;
-  color: var(--ink, #241f1c);
+  color: var(--ink, #1c1d21);
   cursor: pointer;
   text-align: left;
   min-height: 44px;
@@ -8763,7 +8822,7 @@ button.health-notes {
   background: var(--ground, #f7f3ec);
   padding: 10px 12px;
   font-size: 16px; /* not smaller — see the note on .doc-row__title-input */
-  color: var(--ink-soft, #6b6260);
+  color: var(--ink-soft, #6b6f76);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   text-overflow: ellipsis;
 }
@@ -8786,7 +8845,7 @@ button.health-notes {
 .sharelink__btn:active { opacity: 0.8; }
 .sharelink__btn--share {
   background: var(--ground, #f7f3ec);
-  color: var(--ink, #241f1c);
+  color: var(--ink, #1c1d21);
   border: 1px solid var(--hairline, #ebedf0);
 }
 .sharelink--compact .sharelink__url { padding: 8px 10px; font-size: 16px; } /* not smaller — see the note on .doc-row__title-input */
@@ -8837,7 +8896,7 @@ button.health-notes {
 .fs__or {
   display: flex; align-items: center; gap: 12px;
   margin: 18px 0 14px;
-  color: var(--ink-faint, #a09590);
+  color: var(--ink-faint, #a6abb3);
   font-size: 12.5px;
 }
 .fs__or::before, .fs__or::after { content: ''; flex: 1; height: 1px; background: var(--hairline, #ebedf0); }
@@ -10074,7 +10133,7 @@ button.health-notes {
 .ti__title {
   display: flex; align-items: center; gap: 9px;
   font-family: 'Fraunces', Georgia, serif;
-  font-size: 22px; font-weight: 700; color: var(--ink, #241f1c); margin: 0;
+  font-size: 22px; font-weight: 700; color: var(--ink, #1c1d21); margin: 0;
 }
 .ti__title .ti__spark { color: var(--accent, #c2603a); }
 .ti__spark { animation: ti-twinkle 2.6s ease-in-out infinite; transform-origin: 12px 10px; }
@@ -10106,13 +10165,13 @@ button.health-notes {
   font-size: 56px; font-weight: 700; line-height: 1; color: var(--accent, #c2603a);
   letter-spacing: -0.03em;
 }
-.ti__hero-label { font-size: 14px; color: var(--ink-soft, #6b6260); margin-top: 4px; }
+.ti__hero-label { font-size: 14px; color: var(--ink-soft, #6b6f76); margin-top: 4px; }
 /* §4.3 "show both" convention — a small secondary line under the (now
    perimeter-scoped) hero number naming the complete-tree total, only ever
    rendered when a real narrow perimeter is active and the two numbers
    actually differ. */
 .ti__hero-complete { position: relative; margin-top: 2px; font-size: 12px; color: var(--ink-faint, #b0a9a5); }
-.ti__hero-sub { position: relative; margin-top: 12px; font-size: 13px; color: var(--ink-soft, #6b6260); }
+.ti__hero-sub { position: relative; margin-top: 12px; font-size: 13px; color: var(--ink-soft, #6b6f76); }
 
 /* AI story */
 .ti__story {
@@ -10125,13 +10184,13 @@ button.health-notes {
 }
 .ti__story-text {
   margin: 0;
-  font-size: 15.5px; line-height: 1.6; color: var(--ink, #241f1c);
+  font-size: 15.5px; line-height: 1.6; color: var(--ink, #1c1d21);
   animation: ti-fade 0.6s ease both;
 }
 .ti__story-loading { display: flex; flex-direction: column; gap: 9px; }
 .ti__shimmer {
   height: 12px; border-radius: 6px;
-  background: linear-gradient(90deg, #efe8e1 25%, #f7f1ea 50%, #efe8e1 75%);
+  background: linear-gradient(90deg, var(--paper-deep) 25%, color-mix(in srgb, var(--paper-deep) 45%, var(--paper)) 50%, var(--paper-deep) 75%);
   background-size: 200% 100%;
   animation: ti-shimmer 1.3s linear infinite;
 }
@@ -10166,8 +10225,8 @@ button.health-notes {
   color: var(--accent, #c2603a); background: rgba(194, 96, 58, 0.10);
 }
 .ti__fact-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.ti__fact-title { font-size: 14.5px; font-weight: 600; color: var(--ink, #241f1c); }
-.ti__fact-detail { font-size: 12.5px; color: var(--ink-soft, #6b6260); line-height: 1.4; }
+.ti__fact-title { font-size: 14.5px; font-weight: 600; color: var(--ink, #1c1d21); }
+.ti__fact-detail { font-size: 12.5px; color: var(--ink-soft, #6b6f76); line-height: 1.4; }
 .ti__fact-go { margin-left: auto; color: var(--ink-faint, #c0b8b4); flex-shrink: 0; }
 
 /* Nudges */
@@ -10177,7 +10236,7 @@ button.health-notes {
   color: var(--ink-soft, #8a8480); margin: 0 0 12px;
 }
 .ti__nudge { margin-bottom: 14px; }
-.ti__nudge-label { margin: 0 0 8px; font-size: 14px; color: var(--ink, #241f1c); }
+.ti__nudge-label { margin: 0 0 8px; font-size: 14px; color: var(--ink, #1c1d21); }
 .ti__nudge-label strong { color: var(--accent, #c2603a); }
 .ti__nudge-chips { display: flex; flex-wrap: wrap; gap: 7px; }
 .ti__chip {
@@ -10195,7 +10254,7 @@ button.health-notes {
   background: transparent;
   border-color: var(--hairline, #ebedf0);
 }
-.ti__chip--more:hover { background: var(--paper-deep, #f2f3f5); border-color: #d8d2c8; color: var(--ink, #241f1c); }
+.ti__chip--more:hover { background: var(--paper-deep, #f2f3f5); border-color: #d8d2c8; color: var(--ink, #1c1d21); }
 
 .ti__foot {
   margin: 18px 0 4px; text-align: center;
@@ -10222,12 +10281,12 @@ button.health-notes {
 }
 .tim__title {
   font-family: var(--display, Georgia, serif); font-weight: 600; font-size: 16.5px;
-  line-height: 1.25; color: var(--ink, #241f1c); letter-spacing: -0.005em;
+  line-height: 1.25; color: var(--ink, #1c1d21); letter-spacing: -0.005em;
 }
-.tim__sub { font-size: 12.5px; color: var(--ink-soft, #6b6260); margin-top: 2px; line-height: 1.4; }
+.tim__sub { font-size: 12.5px; color: var(--ink-soft, #6b6f76); margin-top: 2px; line-height: 1.4; }
 .tim__body { margin-top: 12px; }
 .tim__caption { margin: 10px 0 0; font-size: 12.5px; color: var(--ink-faint, #b0a9a5); line-height: 1.5; }
-.tim__caption b { color: var(--ink-soft, #6b6260); font-weight: 600; }
+.tim__caption b { color: var(--ink-soft, #6b6f76); font-weight: 600; }
 .tim svg text { font-variant-numeric: tabular-nums; }
 
 /* Share-as-image button (see InsightModules.jsx's ShareButton) — excluded
@@ -10249,12 +10308,12 @@ button.health-notes {
 .tim-strata { display: grid; gap: 4px; }
 .tim-strata__row { display: grid; grid-template-columns: 28px 1fr 34px; align-items: center; gap: 8px; }
 .tim-strata__g { font-size: 10.5px; color: var(--ink-faint, #b0a9a5); text-align: right; }
-.tim-strata__n { font-size: 11px; color: var(--ink-soft, #6b6260); font-variant-numeric: tabular-nums; }
+.tim-strata__n { font-size: 11px; color: var(--ink-soft, #6b6f76); font-variant-numeric: tabular-nums; }
 .tim-strata__track { display: flex; justify-content: center; gap: 2px; height: 14px; }
 .tim-strata__seg { height: 100%; border-radius: 4px; min-width: 3px; }
 .tim-strata__seg--rem { background: var(--memorial, #6b5e7a); }
 .tim-strata__seg--liv { background: var(--accent, #c2603a); }
-.tim-legend { display: flex; gap: 16px; margin-top: 12px; font-size: 12px; color: var(--ink-soft, #6b6260); }
+.tim-legend { display: flex; gap: 16px; margin-top: 12px; font-size: 12px; color: var(--ink-soft, #6b6f76); }
 .tim-legend i { display: inline-block; width: 9px; height: 9px; border-radius: 3px; margin-right: 6px; }
 
 /* pictogram (brood record — tappable, flies to the parents) */
@@ -10269,13 +10328,13 @@ button.health-notes {
 .tim-names { display: flex; flex-direction: column; gap: 9px; }
 .tim-names__row { display: grid; grid-template-columns: 88px 1fr 24px; align-items: center; gap: 10px; }
 .tim-names__name {
-  font-family: var(--display, Georgia, serif); font-size: 16px; color: var(--ink, #241f1c);
+  font-family: var(--display, Georgia, serif); font-size: 16px; color: var(--ink, #1c1d21);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .tim-names__name--place { font-size: 14.5px; }
 .tim-names__track { height: 12px; border-radius: 6px; background: var(--accent-soft, #f7efe9); overflow: hidden; }
 .tim-names__fill { height: 100%; border-radius: 6px 4px 4px 6px; background: var(--accent, #c2603a); }
-.tim-names__count { font-size: 12.5px; color: var(--ink-soft, #6b6260); text-align: right; font-variant-numeric: tabular-nums; }
+.tim-names__count { font-size: 12.5px; color: var(--ink-soft, #6b6f76); text-align: right; font-variant-numeric: tabular-nums; }
 .tim-thread { display: flex; align-items: center; gap: 6px; margin-top: 13px; }
 .tim-thread i { width: 11px; height: 11px; border-radius: 50%; border: 1.5px solid var(--ink-faint, #c0b8b4); }
 .tim-thread i.on { background: var(--accent, #c2603a); border-color: var(--accent, #c2603a); }
@@ -10284,7 +10343,7 @@ button.health-notes {
 .tim-mig { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 6px; margin-top: 13px; font-size: 12.5px; color: var(--ink-faint, #b0a9a5); }
 .tim-mig__step { display: inline-flex; align-items: center; gap: 6px; }
 .tim-mig__step b {
-  font-weight: 600; color: var(--ink, #241f1c); background: var(--accent-soft, #f7efe9);
+  font-weight: 600; color: var(--ink, #1c1d21); background: var(--accent-soft, #f7efe9);
   border-radius: 999px; padding: 3px 10px;
 }
 .tim-mig__step em { font-style: normal; font-size: 11px; }
@@ -10297,10 +10356,10 @@ button.health-notes {
 .tim-hs__row { display: grid; grid-template-columns: 104px 1fr; align-items: center; gap: 8px; margin-top: 6px; }
 .tim-hs__name {
   border: 0; background: transparent; padding: 0; cursor: pointer;
-  font-size: 11.5px; color: var(--ink-soft, #6b6260); text-align: right; line-height: 1.25;
+  font-size: 11.5px; color: var(--ink-soft, #6b6f76); text-align: right; line-height: 1.25;
   font-variant-numeric: tabular-nums;
 }
-.tim-hs__name b { display: block; color: var(--ink, #241f1c); font-weight: 600; font-size: 12.5px; }
+.tim-hs__name b { display: block; color: var(--ink, #1c1d21); font-weight: 600; font-size: 12.5px; }
 .tim-hs__name:hover b { color: var(--accent, #c2603a); }
 .tim-hs__track { position: relative; height: 18px; }
 .tim-hs__bar {
@@ -10348,7 +10407,7 @@ button.health-notes {
 }
 .tim-era__tags { display: flex; flex-wrap: wrap; gap: 5px; }
 .tim-era__tags span {
-  font-size: 11.5px; background: var(--paper-deep, #f4f5f7); color: var(--ink-soft, #6b6260);
+  font-size: 11.5px; background: var(--paper-deep, #f4f5f7); color: var(--ink-soft, #6b6f76);
   border-radius: 999px; padding: 2px 9px;
 }
 
@@ -10366,8 +10425,8 @@ button.health-notes {
   display: grid; place-items: center;
 }
 .tim-ms__body { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
-.tim-ms__t { font-weight: 600; font-size: 13.5px; color: var(--ink, #241f1c); line-height: 1.3; }
-.tim-ms__d { font-size: 12px; color: var(--ink-soft, #6b6260); line-height: 1.35; }
+.tim-ms__t { font-weight: 600; font-size: 13.5px; color: var(--ink, #1c1d21); line-height: 1.3; }
+.tim-ms__d { font-size: 12px; color: var(--ink-soft, #6b6f76); line-height: 1.35; }
 
 /* inline person link inside a caption (birthday twins) */
 .tim-linky {
@@ -10390,7 +10449,7 @@ button.health-notes {
 .tim-tap--on:hover { background: var(--accent-soft, #f7efe9); }
 
 .tim-petal { cursor: pointer; }
-.tim-petal:focus-visible path { stroke: var(--ink, #241f1c); stroke-width: 1.8; }
+.tim-petal:focus-visible path { stroke: var(--ink, #1c1d21); stroke-width: 1.8; }
 
 .tim-drawer {
   margin-top: 12px; border: 1px solid var(--hairline, #ebedf0); border-radius: 14px;
@@ -10399,14 +10458,14 @@ button.health-notes {
 .tim-drawer__head {
   display: flex; align-items: center; justify-content: space-between;
   padding: 9px 13px; background: var(--paper-deep, #f7f5f1);
-  font-size: 12px; font-weight: 600; color: var(--ink-soft, #6b6260);
+  font-size: 12px; font-weight: 600; color: var(--ink-soft, #6b6f76);
   letter-spacing: 0.04em;
 }
 .tim-drawer__close {
   border: 0; background: transparent; padding: 0 2px; cursor: pointer;
   font-size: 17px; line-height: 1; color: var(--ink-faint, #b0a9a5);
 }
-.tim-drawer__close:hover { color: var(--ink, #241f1c); }
+.tim-drawer__close:hover { color: var(--ink, #1c1d21); }
 .tim-drawer__list { max-height: 300px; overflow-y: auto; overscroll-behavior: contain; }
 .tim-drawer__row {
   display: flex; align-items: center; gap: 10px; width: 100%;
@@ -10416,7 +10475,7 @@ button.health-notes {
 .tim-drawer__row:first-child { border-top: 0; }
 .tim-drawer__row:hover { background: var(--paper-deep, #f7f5f1); }
 .tim-drawer__name {
-  flex: 1; min-width: 0; font-size: 13.5px; font-weight: 500; color: var(--ink, #241f1c);
+  flex: 1; min-width: 0; font-size: 13.5px; font-weight: 500; color: var(--ink, #1c1d21);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .tim-drawer__tag {
@@ -10438,7 +10497,7 @@ button.health-notes {
 .tim-shared:first-child { border-top: 0; }
 .tim-shared__date {
   flex-shrink: 0; width: 92px; font-size: 12px; font-weight: 600;
-  color: var(--ink-soft, #6b6260); font-variant-numeric: tabular-nums;
+  color: var(--ink-soft, #6b6f76); font-variant-numeric: tabular-nums;
 }
 .tim-shared__names { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 13px; }
 .tim-shared__names .tim-linky { font-size: 13px; }
@@ -10448,7 +10507,7 @@ button.health-notes {
 .tim-explore input {
   width: 100%; padding: 9px 13px; border-radius: 12px;
   border: 1px solid var(--hairline, #ebedf0); background: var(--paper-deep, #f7f5f1);
-  font: inherit; font-size: 13.5px; color: var(--ink, #241f1c);
+  font: inherit; font-size: 13.5px; color: var(--ink, #1c1d21);
 }
 .tim-explore input:focus { outline: none; border-color: var(--accent, #c2603a); background: #fff; }
 .tim-explore input::placeholder { color: var(--ink-faint, #b0a9a5); }
@@ -10457,7 +10516,7 @@ button.health-notes {
 .tim-chiprow--center { justify-content: center; margin-top: 4px; }
 .tim-chipbtn {
   border: 1px solid var(--hairline, #ebedf0); background: transparent; cursor: pointer;
-  font: inherit; font-size: 12px; font-weight: 600; color: var(--ink-soft, #6b6260);
+  font: inherit; font-size: 12px; font-weight: 600; color: var(--ink-soft, #6b6f76);
   border-radius: 999px; padding: 5px 12px; transition: all 0.15s ease;
 }
 .tim-chipbtn:hover { border-color: var(--accent, #c2603a); color: var(--accent-deep, #a44d2c); }
@@ -10470,7 +10529,7 @@ button.health-notes {
 .tim-scrub:focus-visible { outline: 2px solid var(--accent, #c2603a); outline-offset: 3px; border-radius: 8px; }
 .tim-eratag {
   border: 0; cursor: pointer; font: inherit;
-  font-size: 11.5px; background: var(--paper-deep, #f4f5f7); color: var(--ink-soft, #6b6260);
+  font-size: 11.5px; background: var(--paper-deep, #f4f5f7); color: var(--ink-soft, #6b6f76);
   border-radius: 999px; padding: 2px 9px; transition: background 0.15s, color 0.15s;
 }
 .tim-eratag:hover { background: var(--accent-soft, #f7efe9); color: var(--accent-deep, #a44d2c); }
@@ -10482,7 +10541,7 @@ button.health-notes {
 .tim-service-branches { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0 2px; }
 .tim-service-branch {
   display: inline-flex; align-items: center; gap: 5px;
-  font-size: 11.5px; color: var(--ink-soft, #6b6260);
+  font-size: 11.5px; color: var(--ink-soft, #6b6f76);
   background: var(--paper-deep, #f4f5f7); border-radius: 999px; padding: 3px 10px 3px 8px;
 }
 .tim-service-branch svg { flex-shrink: 0; }
@@ -10504,7 +10563,7 @@ button.health-notes {
   overflow: hidden; animation: ti-fade 0.25s ease both;
 }
 .tim-hs-panel__lede { margin: 12px 13px 4px; font-size: 12.5px; color: var(--ink-faint, #b0a9a5); line-height: 1.5; }
-.tim-hs-panel__lede b { color: var(--ink-soft, #6b6260); font-weight: 600; }
+.tim-hs-panel__lede b { color: var(--ink-soft, #6b6f76); font-weight: 600; }
 .tim-hs-panel .tim-hs { padding: 4px 13px 13px; }
 @media (prefers-reduced-motion: reduce) { .tim-hs-panel { animation: none; } }
 
@@ -10547,13 +10606,13 @@ button.health-notes {
   display: grid; place-items: center;
   color: var(--accent, #c2603a); background: rgba(194, 96, 58, 0.10);
 }
-.lineage-banner__text { margin: 0; flex: 1; font-size: 13.5px; line-height: 1.4; color: var(--ink-soft, #6b6260); }
-.lineage-banner__text strong { color: var(--ink, #241f1c); }
+.lineage-banner__text { margin: 0; flex: 1; font-size: 13.5px; line-height: 1.4; color: var(--ink-soft, #6b6f76); }
+.lineage-banner__text strong { color: var(--ink, #1c1d21); }
 
 .lineage-banner__result { display: flex; flex-direction: column; gap: 8px; }
 .lineage-banner__chain { display: flex; align-items: center; justify-content: center; gap: 6px; }
 .lineage-banner__node { display: flex; flex-direction: column; align-items: center; gap: 3px; }
-.lineage-banner__node-name { font-size: 12px; font-weight: 600; color: var(--ink, #241f1c); }
+.lineage-banner__node-name { font-size: 12px; font-weight: 600; color: var(--ink, #1c1d21); }
 .lineage-banner__connector {
   position: relative; flex: 1; max-width: 120px; height: 2px;
   background: linear-gradient(90deg, var(--accent, #c2603a), #d2814f);
@@ -10576,7 +10635,7 @@ button.health-notes {
   position: absolute; top: calc(50% + 13px); left: 50%; transform: translate(-50%, 0);
   width: 22px; height: 22px; border-radius: 50%;
   border: 1px solid var(--hairline, #ebedf0); background: #fff;
-  color: var(--ink-soft, #6b6260);
+  color: var(--ink-soft, #6b6f76);
   display: flex; align-items: center; justify-content: center;
   cursor: pointer; padding: 0; -webkit-tap-highlight-color: transparent;
   box-shadow: 0 2px 6px rgba(36, 31, 28, 0.1);
@@ -10585,7 +10644,7 @@ button.health-notes {
 .lineage-banner__swap:hover { color: var(--accent, #c2603a); border-color: var(--accent, #c2603a); }
 .lineage-banner__swap:active { transform: translate(-50%, 0) scale(0.9); }
 .lineage-banner__rel {
-  margin: 0; text-align: center; font-size: 13px; color: var(--ink-soft, #6b6260);
+  margin: 0; text-align: center; font-size: 13px; color: var(--ink-soft, #6b6f76);
 }
 .lineage-banner__rel strong { color: var(--accent, #c2603a); }
 .lineage-banner__muted { color: var(--ink-faint, #b0a9a5); }
@@ -10610,7 +10669,7 @@ button.health-notes {
   font: inherit;
   font-size: 12px;
   font-weight: 600;
-  color: var(--ink-soft, #6b6260);
+  color: var(--ink-soft, #6b6f76);
   cursor: pointer;
   transition: color 0.15s ease;
 }
@@ -10620,7 +10679,7 @@ button.health-notes {
 .lineage-banner__clear, .lineage-banner__exit {
   border: 1px solid var(--hairline, #ebedf0); background: var(--ground, #f7f3ec);
   border-radius: 999px; padding: 6px 16px; font-size: 13px; font-weight: 600;
-  color: var(--ink, #241f1c); cursor: pointer; transition: background 0.15s;
+  color: var(--ink, #1c1d21); cursor: pointer; transition: background 0.15s;
 }
 .lineage-banner__exit { background: var(--accent, #c2603a); color: #fff; border-color: transparent; }
 .lineage-banner__clear:hover { background: #fff; }
@@ -10634,7 +10693,7 @@ button.health-notes {
   border: 1px solid var(--hairline, #ebedf0);
   background: var(--ground, #f7f3ec);
   border-radius: 50%;
-  color: var(--ink-soft, #6b6260);
+  color: var(--ink-soft, #6b6f76);
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
 }
@@ -10690,7 +10749,7 @@ button.health-notes {
 .flight-card__node-name {
   font-size: 12px;
   font-weight: 600;
-  color: var(--ink, #241f1c);
+  color: var(--ink, #1c1d21);
   min-height: 15px;
 }
 .flight-card__node-name--pending { opacity: 0; }
@@ -10750,7 +10809,7 @@ button.health-notes {
   margin: 0;
   text-align: center;
   font-size: 13px;
-  color: var(--ink-soft, #6b6260);
+  color: var(--ink-soft, #6b6f76);
 }
 .flight-card__rel strong { color: var(--accent, #c2603a); }
 
@@ -10792,10 +10851,10 @@ button.health-notes {
   transition: opacity 0.3s var(--ease, ease), transform 0.3s var(--ease, ease), color 0.3s ease;
   cursor: default;
 }
-.flight-card__crumb--visible { opacity: 1; transform: translateY(0); color: var(--ink-soft, #6b6260); }
+.flight-card__crumb--visible { opacity: 1; transform: translateY(0); color: var(--ink-soft, #6b6f76); }
 .flight-card--landed .flight-card__crumb--visible {
   cursor: pointer;
-  color: var(--ink, #241f1c);
+  color: var(--ink, #1c1d21);
 }
 .flight-card--landed .flight-card__crumb--visible:hover { color: var(--accent, #c2603a); }
 
@@ -10830,7 +10889,7 @@ button.health-notes {
   display: flex; align-items: center; gap: 9px; width: 100%;
   margin: -6px 0 16px;
   padding: 11px 14px; border-radius: 14px; cursor: pointer;
-  color: var(--ink, #241f1c); font-size: 14px; font-weight: 600;
+  color: var(--ink, #1c1d21); font-size: 14px; font-weight: 600;
   background: var(--ground, #f7f3ec); border: 1px solid var(--hairline, #ebedf0);
   transition: background 0.15s, border-color 0.15s;
 }
@@ -10845,7 +10904,7 @@ button.health-notes {
 .stats-popover__care-btn {
   display: flex; align-items: center; gap: 9px; width: 100%;
   padding: 11px 14px; border-radius: 14px; cursor: pointer;
-  color: var(--ink, #241f1c); font-size: 14px; font-weight: 600;
+  color: var(--ink, #1c1d21); font-size: 14px; font-weight: 600;
   background: var(--ground, #f7f3ec); border: 1px solid var(--hairline, #ebedf0);
   transition: background 0.15s, border-color 0.15s;
 }
@@ -10885,10 +10944,10 @@ button.health-notes {
 }
 .dups__title {
   display: flex; align-items: center; gap: 9px; margin: 0;
-  font-family: 'Fraunces', Georgia, serif; font-size: 22px; font-weight: 700; color: var(--ink, #241f1c);
+  font-family: 'Fraunces', Georgia, serif; font-size: 22px; font-weight: 700; color: var(--ink, #1c1d21);
 }
 .dups__title > svg { color: var(--accent, #c2603a); }
-.dups__intro { margin: 2px 2px 16px; font-size: 13.5px; line-height: 1.5; color: var(--ink-soft, #6b6260); }
+.dups__intro { margin: 2px 2px 16px; font-size: 13.5px; line-height: 1.5; color: var(--ink-soft, #6b6f76); }
 
 /* Embedded mode (ArchiveCareSheet.jsx hosts both DuplicatesSheet and
    IntegritySheet as sub-sections under one shared head/scrim). */
@@ -10897,10 +10956,10 @@ button.health-notes {
 }
 .dups__embedded-heading {
   display: flex; align-items: center; gap: 8px; margin: 0 2px 10px;
-  font-family: 'Fraunces', Georgia, serif; font-size: 16px; font-weight: 700; color: var(--ink, #241f1c);
+  font-family: 'Fraunces', Georgia, serif; font-size: 16px; font-weight: 700; color: var(--ink, #1c1d21);
 }
 .dups__embedded-count {
-  font-family: var(--body, sans-serif); font-size: 11.5px; font-weight: 700; color: var(--ink-soft, #6b6260);
+  font-family: var(--body, sans-serif); font-size: 11.5px; font-weight: 700; color: var(--ink-soft, #6b6f76);
   background: var(--ground, #f7f3ec); border-radius: 999px; padding: 2px 8px;
 }
 /* Section-nav chips (ArchiveCareSheet) — "jump to Duplicates" / "jump to
@@ -10933,12 +10992,12 @@ button.health-notes {
 .dups__bulk-dismiss {
   width: 100%; padding: 10px 14px; border-radius: 12px; cursor: pointer;
   background: transparent; border: 1px dashed var(--hairline, #ebedf0);
-  color: var(--ink-soft, #6b6260); font-size: 13px; font-weight: 500;
+  color: var(--ink-soft, #6b6f76); font-size: 13px; font-weight: 500;
 }
-.dups__bulk-dismiss:hover { border-color: var(--ink-faint, #a09590); }
+.dups__bulk-dismiss:hover { border-color: var(--ink-faint, #a6abb3); }
 .dups__bulk-confirm {
   display: flex; flex-direction: column; gap: 10px;
-  font-size: 13px; line-height: 1.45; color: var(--ink, #241f1c);
+  font-size: 13px; line-height: 1.45; color: var(--ink, #1c1d21);
   background: var(--ground, #f7f3ec); border-radius: 12px; padding: 12px;
 }
 .dups__bulk-confirm-btns { display: flex; gap: 8px; }
@@ -10955,7 +11014,7 @@ button.health-notes {
 .dups__more {
   width: 100%; margin-top: 14px; padding: 11px 14px; border-radius: 12px; cursor: pointer;
   background: var(--ground, #f7f3ec); border: 1px solid var(--hairline, #ebedf0);
-  color: var(--ink, #241f1c); font-size: 13.5px; font-weight: 600;
+  color: var(--ink, #1c1d21); font-size: 13.5px; font-weight: 600;
 }
 .dups__more:hover { background: var(--paper-deep, #efe9df); }
 .dups__pair {
@@ -10971,21 +11030,21 @@ button.health-notes {
   transition: border-color 0.15s, background 0.15s;
 }
 .dups__card--keep { border-color: var(--accent, #c2603a); background: #fff; }
-.dups__card-name { font-size: 14px; font-weight: 600; color: var(--ink, #241f1c); line-height: 1.2; }
-.dups__card-meta { font-size: 12px; color: var(--ink-soft, #6b6260); }
+.dups__card-name { font-size: 14px; font-weight: 600; color: var(--ink, #1c1d21); line-height: 1.2; }
+.dups__card-meta { font-size: 12px; color: var(--ink-soft, #6b6f76); }
 /* Compact "whose kids belong to whom" — visible before merging, not
    discovered after (real report: a bad merge left no way to tell). */
 .dups__card-rels { display: flex; flex-direction: column; gap: 1px; margin-top: 2px; }
-.dups__card-rel { font-size: 10.5px; line-height: 1.35; color: var(--ink-soft, #6b6260); }
-.dups__card-rel b { font-weight: 600; color: var(--ink-faint, #a09590); margin-right: 3px; }
+.dups__card-rel { font-size: 10.5px; line-height: 1.35; color: var(--ink-soft, #6b6f76); }
+.dups__card-rel b { font-weight: 600; color: var(--ink-faint, #a6abb3); margin-right: 3px; }
 .dups__card-tag {
   margin-top: 2px; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
-  color: var(--ink-faint, #a09590);
+  color: var(--ink-faint, #a6abb3);
 }
 .dups__card--keep .dups__card-tag { color: var(--accent, #c2603a); }
 .dups__reasons { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0; }
 .dups__reason {
-  font-size: 11px; font-weight: 600; color: var(--ink-soft, #6b6260);
+  font-size: 11px; font-weight: 600; color: var(--ink-soft, #6b6f76);
   background: var(--ground, #f1ece4); padding: 3px 9px; border-radius: 999px;
 }
 /* IntegritySheet.jsx — reuses .dups__* card/list/bulk chrome wholesale (same
@@ -10996,7 +11055,7 @@ button.health-notes {
   letter-spacing: 0.06em; color: var(--accent-deep, #a34e2c); background: #fdeee5;
   padding: 3px 9px; border-radius: 999px; margin-bottom: 10px;
 }
-.integrity__reason { font-size: 13.5px; line-height: 1.45; color: var(--ink, #241f1c); margin: 12px 0; }
+.integrity__reason { font-size: 13.5px; line-height: 1.45; color: var(--ink, #1c1d21); margin: 12px 0; }
 .integrity__reason + .dups__actions .dups__dismiss { flex: 1 1 100%; }
 .dups__actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .dups__actions .dups__merge { flex: 1 1 100%; }
@@ -11012,13 +11071,13 @@ button.health-notes {
 .dups__cancel {
   padding: 11px 14px; border-radius: 12px; cursor: pointer;
   background: transparent; border: 1px solid var(--hairline, #ebedf0);
-  color: var(--ink-soft, #6b6260); font-size: 14px; font-weight: 500;
+  color: var(--ink-soft, #6b6f76); font-size: 14px; font-weight: 500;
 }
 /* The "are you sure" step before a merge commits — a merge used to fire
    on the first tap with no way back. */
 .dups__confirm {
   display: flex; flex-direction: column; gap: 10px;
-  font-size: 13px; line-height: 1.45; color: var(--ink, #241f1c);
+  font-size: 13px; line-height: 1.45; color: var(--ink, #1c1d21);
   background: var(--ground, #f7f3ec); border-radius: 12px; padding: 12px;
 }
 .dups__confirm-btns { display: flex; gap: 8px; }
@@ -11026,7 +11085,7 @@ button.health-notes {
 .dups__confirm-btns .dups__cancel { flex: 1; }
 .dups__empty {
   display: flex; flex-direction: column; align-items: center; gap: 12px;
-  padding: 36px 20px; text-align: center; color: var(--ink-soft, #6b6260);
+  padding: 36px 20px; text-align: center; color: var(--ink-soft, #6b6f76);
 }
 .dups__empty > svg { color: #3d8c55; }
 
@@ -11093,16 +11152,16 @@ button.health-notes {
 }
 .enrich__title {
   display: flex; align-items: center; gap: 9px; margin: 0;
-  font-family: 'Fraunces', Georgia, serif; font-size: 22px; font-weight: 700; color: var(--ink, #241f1c);
+  font-family: 'Fraunces', Georgia, serif; font-size: 22px; font-weight: 700; color: var(--ink, #1c1d21);
 }
 .enrich__title > svg { color: var(--accent, #c2603a); }
-.enrich__intro { margin: 2px 2px 16px; font-size: 13.5px; line-height: 1.5; color: var(--ink-soft, #6b6260); }
+.enrich__intro { margin: 2px 2px 16px; font-size: 13.5px; line-height: 1.5; color: var(--ink-soft, #6b6f76); }
 
 .enrich__empty {
   display: flex; flex-direction: column; align-items: center; gap: 12px;
-  padding: 36px 20px; text-align: center; color: var(--ink-soft, #6b6260);
+  padding: 36px 20px; text-align: center; color: var(--ink-soft, #6b6f76);
 }
-.enrich__empty > svg { color: #3d8c55; }
+.enrich__empty > svg { color: var(--sage); }
 
 .enrich__list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
 .enrich__row {
@@ -11113,26 +11172,36 @@ button.health-notes {
 .enrich__row-icon {
   flex: none; display: flex; align-items: center; justify-content: center;
   width: 34px; height: 34px; border-radius: 10px; margin-top: 1px;
-  background: var(--ground, #f7f3ec); color: var(--ink-soft, #6b6260);
+  background: var(--paper-deep); color: var(--ink-soft);
 }
-.enrich__row--detected .enrich__row-icon { background: #fdeee7; color: #c2603a; }
+/* Finding tiers. These used to be five hand-picked hexes (a violet, a green
+   and a blue) that appear nowhere else in the product — a whole second palette
+   living inside one dialog. Mapped onto the documented three: terracotta for a
+   fact we detected, sage for a document, gold (theme.css's "odd-one-out
+   accent") for a relationship, and plain recessed neutral for the rest. The
+   tag text and the icon already say which tier a row is; colour only has to
+   group them. */
+.enrich__row--detected .enrich__row-icon { background: var(--accent-soft); color: var(--accent-deep); }
 .enrich__row--estimated .enrich__row-icon,
 .enrich__row--story .enrich__row-icon,
-.enrich__row--place .enrich__row-icon { background: #f1ecfb; color: #7a5cc7; }
-.enrich__row--document .enrich__row-icon { background: #e6f0ec; color: #3d8c66; }
-.enrich__row--relationship .enrich__row-icon { background: #eaf1fb; color: #3d6fa8; }
+.enrich__row--place .enrich__row-icon { background: var(--paper-deep); color: var(--ink-soft); }
+.enrich__row--document .enrich__row-icon { background: var(--sage-soft); color: var(--sage); }
+.enrich__row--relationship .enrich__row-icon {
+  background: color-mix(in srgb, var(--gold) 16%, var(--paper));
+  color: color-mix(in srgb, var(--gold) 72%, var(--ink));
+}
 .enrich__row-body { flex: 1; min-width: 0; }
 .enrich__row-tag {
-  display: inline-block; font-size: 10.5px; font-weight: 700; text-transform: uppercase;
-  letter-spacing: 0.06em; color: var(--ink-faint, #a09590); margin-bottom: 3px;
+  display: inline-block; font-size: 11.5px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--ink-faint, #a6abb3); margin-bottom: 3px;
 }
-.enrich__row--detected .enrich__row-tag { color: #c2603a; }
+.enrich__row--detected .enrich__row-tag { color: var(--accent-deep); }
 .enrich__row--estimated .enrich__row-tag,
-.enrich__row--story .enrich__row-tag { color: #7a5cc7; }
-.enrich__row--document .enrich__row-tag { color: #3d8c66; }
-.enrich__row--relationship .enrich__row-tag { color: #3d6fa8; }
-.enrich__row-title { margin: 0; font-size: 14.5px; font-weight: 600; color: var(--ink, #241f1c); line-height: 1.3; }
-.enrich__row-detail { margin: 3px 0 0; font-size: 12.5px; line-height: 1.45; color: var(--ink-soft, #6b6260); }
+.enrich__row--story .enrich__row-tag { color: var(--ink-soft); }
+.enrich__row--document .enrich__row-tag { color: var(--sage); }
+.enrich__row--relationship .enrich__row-tag { color: color-mix(in srgb, var(--gold) 72%, var(--ink)); }
+.enrich__row-title { margin: 0; font-size: 14.5px; font-weight: 600; color: var(--ink, #1c1d21); line-height: 1.3; }
+.enrich__row-detail { margin: 3px 0 0; font-size: 12.5px; line-height: 1.45; color: var(--ink-soft, #6b6f76); }
 .enrich__row-action {
   flex: none; align-self: center; padding: 8px 13px; border-radius: 10px; border: none; cursor: pointer;
   background: var(--accent, #c2603a); color: #fff; font-size: 12.5px; font-weight: 600; white-space: nowrap;
@@ -11142,16 +11211,16 @@ button.health-notes {
 .enrich__row-dismiss {
   padding: 8px 13px; border-radius: 10px; cursor: pointer; white-space: nowrap;
   background: transparent; border: 1px solid var(--hairline, #ebedf0);
-  color: var(--ink-soft, #6b6260); font-size: 12.5px; font-weight: 500;
+  color: var(--ink-soft, #6b6f76); font-size: 12.5px; font-weight: 500;
 }
 /* Dismissing a document/relationship finding swaps its actions for this
    confirm, same shape as .doc-fact__confirm elsewhere. */
-.enrich__row-confirm { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; font-size: 13px; color: var(--ink, #241f1c); }
+.enrich__row-confirm { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; font-size: 13px; color: var(--ink, #1c1d21); }
 .enrich__row-confirm-btns { display: flex; gap: 8px; }
 .enrich__row--loading .enrich__row-detail { padding: 0; }
 .enrich__shimmer {
   display: block; height: 10px; width: 70%; border-radius: 6px; margin-top: 4px;
-  background: linear-gradient(90deg, #efe8e1 25%, #f7f1ea 50%, #efe8e1 75%);
+  background: linear-gradient(90deg, var(--paper-deep) 25%, color-mix(in srgb, var(--paper-deep) 45%, var(--paper)) 50%, var(--paper-deep) 75%);
   background-size: 200% 100%;
   animation: ti-shimmer 1.3s linear infinite;
 }
@@ -11164,7 +11233,7 @@ button.health-notes {
 }
 .tl__title {
   display: flex; align-items: center; gap: 9px; margin: 0;
-  font-family: 'Fraunces', Georgia, serif; font-size: 22px; font-weight: 700; color: var(--ink, #241f1c);
+  font-family: 'Fraunces', Georgia, serif; font-size: 22px; font-weight: 700; color: var(--ink, #1c1d21);
 }
 .tl__title svg { color: var(--accent, #c2603a); }
 .tl__span { margin: 4px 0 0 29px; font-size: 13px; color: var(--ink-soft, #8a8480); }
@@ -11174,7 +11243,7 @@ button.health-notes {
 .tl__filter {
   border: 1px solid var(--hairline, #ebedf0); background: var(--ground, #f7f3ec);
   border-radius: 999px; padding: 6px 14px; font-size: 13px; font-weight: 600;
-  color: var(--ink-soft, #6b6260); cursor: pointer; transition: all 0.15s;
+  color: var(--ink-soft, #6b6f76); cursor: pointer; transition: all 0.15s;
 }
 .tl__filter--on { background: var(--accent, #c2603a); color: #fff; border-color: transparent; }
 
@@ -11202,7 +11271,7 @@ button.health-notes {
 .tl__decade-label {
   position: relative; z-index: 1;
   display: inline-block; font-family: 'Fraunces', Georgia, serif;
-  font-size: 17px; font-weight: 700; color: var(--ink, #241f1c);
+  font-size: 17px; font-weight: 700; color: var(--ink, #1c1d21);
   background: var(--era-tint, #fff); padding: 2px 12px 2px 0;
   margin-left: -8px;
 }
@@ -11245,8 +11314,8 @@ button.health-notes {
 }
 .tl-entry:hover .tl-entry__card { border-color: #d8d2c8; transform: translateX(2px); }
 .tl-entry__year { font-size: 11px; font-weight: 700; letter-spacing: 0.04em; color: var(--accent, #c2603a); }
-.tl-entry__title { font-size: 14.5px; font-weight: 600; color: var(--ink, #241f1c); line-height: 1.35; }
-.tl-entry__detail { font-size: 12.5px; color: var(--ink-soft, #6b6260); }
+.tl-entry__title { font-size: 14.5px; font-weight: 600; color: var(--ink, #1c1d21); line-height: 1.35; }
+.tl-entry__detail { font-size: 12.5px; color: var(--ink-soft, #6b6f76); }
 .tl-entry__who { font-size: 12px; color: var(--ink-faint, #b0a9a5); margin-top: 1px; }
 .tl-entry__photo { margin-top: 8px; border-radius: 10px; overflow: hidden; }
 .tl-entry__photo img { display: block; width: 100%; max-height: 180px; object-fit: cover; }
@@ -11309,12 +11378,12 @@ button.health-notes {
 }
 .claim__spark { position: relative; color: var(--accent, #c2603a); display: inline-block; animation: ti-twinkle 2.6s ease-in-out infinite; }
 .claim__welcome { position: relative; margin: 6px 0 0; font-size: 13px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-soft, #8a8480); }
-.claim__family { position: relative; margin: 2px 0 0; font-family: 'Fraunces', Georgia, serif; font-size: 26px; font-weight: 700; color: var(--ink, #241f1c); line-height: 1.15; }
+.claim__family { position: relative; margin: 2px 0 0; font-family: 'Fraunces', Georgia, serif; font-size: 26px; font-weight: 700; color: var(--ink, #1c1d21); line-height: 1.15; }
 
-.claim__lead { text-align: center; font-size: 15px; color: var(--ink-soft, #6b6260); margin: 0 0 16px; }
+.claim__lead { text-align: center; font-size: 15px; color: var(--ink-soft, #6b6f76); margin: 0 0 16px; }
 .claim__suggest { display: flex; flex-direction: column; align-items: center; }
 .claim__candidate { display: flex; flex-direction: column; align-items: center; gap: 6px; margin-bottom: 18px; }
-.claim__candidate-name { font-size: 18px; font-weight: 700; color: var(--ink, #241f1c); }
+.claim__candidate-name { font-size: 18px; font-weight: 700; color: var(--ink, #1c1d21); }
 .claim__candidate-sub { font-size: 13px; color: var(--ink-faint, #b0a9a5); }
 .claim__primary {
   width: 100%; padding: 15px; border: none; border-radius: 14px; cursor: pointer;
@@ -11322,11 +11391,11 @@ button.health-notes {
   box-shadow: 0 4px 18px rgba(194,96,58,0.28);
 }
 .claim__primary:active { transform: scale(0.99); }
-.claim__link { margin-top: 12px; background: none; border: none; color: var(--ink-soft, #6b6260); font-size: 14px; font-weight: 600; cursor: pointer; }
+.claim__link { margin-top: 12px; background: none; border: none; color: var(--ink-soft, #6b6f76); font-size: 14px; font-weight: 600; cursor: pointer; }
 
 .claim__search {
   width: 100%; border: 1.5px solid var(--hairline, #ebedf0); border-radius: 12px;
-  padding: 13px 15px; font-size: 16px; color: var(--ink, #241f1c); outline: none; margin-bottom: 8px;
+  padding: 13px 15px; font-size: 16px; color: var(--ink, #1c1d21); outline: none; margin-bottom: 8px;
 }
 .claim__search:focus { border-color: var(--accent, #c2603a); }
 .claim__list { list-style: none; margin: 0; padding: 0; max-height: 320px; overflow-y: auto; }
@@ -11335,7 +11404,7 @@ button.health-notes {
   padding: 9px 8px; border: none; background: none; cursor: pointer; border-radius: 12px;
 }
 .claim__row:hover { background: var(--ground, #f7f3ec); }
-.claim__row-name { font-size: 15px; font-weight: 500; color: var(--ink, #241f1c); }
+.claim__row-name { font-size: 15px; font-weight: 500; color: var(--ink, #1c1d21); }
 .claim__row-year { font-size: 12px; color: var(--ink-faint, #b0a9a5); }
 .claim__row-go { margin-left: auto; color: var(--ink-faint, #c0b8b4); }
 .claim__empty { color: var(--ink-soft, #8a8480); font-size: 14px; padding: 16px 8px; }
@@ -11354,9 +11423,9 @@ button.health-notes {
 }
 .install-card__icon { flex-shrink: 0; margin-top: 2px; }
 .install-card__body { flex: 1; min-width: 0; }
-.install-card__title { margin: 0 0 4px; font-size: 15px; font-weight: 700; color: var(--ink, #241f1c); }
-.install-card__text { margin: 0; font-size: 13px; line-height: 1.45; color: var(--ink-soft, #6b6260); }
-.install-card__text strong { color: var(--ink, #241f1c); }
+.install-card__title { margin: 0 0 4px; font-size: 15px; font-weight: 700; color: var(--ink, #1c1d21); }
+.install-card__text { margin: 0; font-size: 13px; line-height: 1.45; color: var(--ink-soft, #6b6f76); }
+.install-card__text strong { color: var(--ink, #1c1d21); }
 .install-card__cta {
   margin-top: 11px; border: none; border-radius: 11px; cursor: pointer;
   background: var(--accent, #c2603a); color: #fff; font-size: 14px; font-weight: 600; padding: 9px 16px;
@@ -12347,10 +12416,10 @@ button.health-notes {
    browsing many places stays a light horizontal scroll rather than a
    growing stack of near-duplicate cards. */
 .places-detail {
-  background: var(--card);
-  border-radius: 16px;
+  background: var(--paper-deep);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
   padding: 14px 16px;
-  box-shadow: var(--shadow-soft);
 }
 .places-detail__place {
   margin: 0;
@@ -12369,7 +12438,10 @@ button.health-notes {
   color: var(--ink-soft);
   font-style: italic;
 }
-.places-detail__actions { display: flex; gap: 8px; margin-top: 12px; }
+/* gap raised from 8px so the two 44px hit overlays below sit 46px apart and
+   cannot overlap — a tap landing between them must not be ambiguous when one
+   of the two deletes something. */
+.places-detail__actions { display: flex; gap: 16px; margin-top: 12px; }
 .places-detail__edit, .places-detail__del {
   width: 30px;
   height: 30px;
@@ -12380,6 +12452,11 @@ button.health-notes {
   background: var(--paper-deep);
   color: var(--ink-soft);
   transition: background 0.15s;
+}
+.places-detail__edit, .places-detail__del { position: relative; }
+.places-detail__edit::after, .places-detail__del::after {
+  content: ''; position: absolute; top: 50%; left: 50%;
+  width: 44px; height: 44px; transform: translate(-50%, -50%);
 }
 .places-detail__edit:hover, .places-detail__del:hover { background: var(--hairline); }
 .places-detail__confirm {
@@ -12553,10 +12630,10 @@ button.health-notes {
 .education-rung__card {
   flex: 1;
   min-width: 0;
-  background: var(--card);
-  border-radius: 16px;
+  background: var(--paper-deep);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
   padding: 12px 16px;
-  box-shadow: var(--shadow-soft);
 }
 .education-rung__kicker {
   margin: 0;
@@ -12890,7 +12967,7 @@ button.health-notes {
 }
 .pp__title {
   font-family: 'Fraunces', Georgia, serif;
-  font-size: 22px; font-weight: 700; color: var(--ink, #241f1c); margin: 0;
+  font-size: 22px; font-weight: 700; color: var(--ink, #1c1d21); margin: 0;
 }
 .pp__empty { padding: 32px 12px; text-align: center; color: var(--ink-soft); }
 
@@ -12956,7 +13033,7 @@ button.health-notes {
 .pp__ring-label--first.pp__ring-label--on { fill: var(--accent, #c2603a); }
 .pp__ring-label--second.pp__ring-label--on { fill: var(--sage, #3f5e4e); }
 .pp__ring-label--third.pp__ring-label--on { fill: var(--gold, #b08642); }
-.pp__ring-label--everyone.pp__ring-label--on { fill: var(--ink, #241f1c); }
+.pp__ring-label--everyone.pp__ring-label--on { fill: var(--ink, #1c1d21); }
 
 .pp__legend { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .pp__legend-row {

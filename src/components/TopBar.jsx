@@ -212,8 +212,14 @@ export default function TopBar({ familyName, stats, view, layout, syncStatus, sy
                   {stats.people} {stats.people === 1 ? 'person' : 'people'}
                   {stats.surnames && <> · {stats.surnames}</>}
                   {stats.yearSpan && <> · {stats.yearSpan}</>}
-                  {stats.photos > 0 && <> · {stats.photos} {stats.photos === 1 ? 'photo' : 'photos'}</>}
-                  {stats.memories > 0 && <> · {stats.memories} {stats.memories === 1 ? 'memory' : 'memories'}</>}
+                  {/* Measured at 390px: the full string is 402px of text in a
+                      296px box, so a phone saw "… · 1905–2018 · 8 ph…" — the
+                      tail clipped mid-word on every phone. The counts are the
+                      least identifying part of the line and the popover this
+                      button opens lists them in full, so they step aside on
+                      narrow viewports rather than being truncated. */}
+                  {stats.photos > 0 && <span className="topbar__stats-opt"> · {stats.photos} {stats.photos === 1 ? 'photo' : 'photos'}</span>}
+                  {stats.memories > 0 && <span className="topbar__stats-opt"> · {stats.memories} {stats.memories === 1 ? 'memory' : 'memories'}</span>}
                 </button>
               </div>
             </div>
