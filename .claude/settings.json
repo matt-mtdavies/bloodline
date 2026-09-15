@@ -9,5 +9,10 @@
   },
   "enabledPlugins": {
     "impeccable@impeccable": true
+  },
+  "permissions": {
+    "allow": [
+      "mcp__ClickUp"
+    ]
   }
 }

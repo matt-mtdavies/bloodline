@@ -14,6 +14,14 @@
   --ink-soft: #6b6f76;     /* secondary text */
   --ink-faint: #a6abb3;    /* tertiary / placeholders */
   --hairline: #ebedf0;     /* dividers */
+  /* NOTE: there is no --ground here on purpose. `public/public-site.css`
+     declares its own --ground for the marketing pages, and app CSS had drifted
+     into referencing it — 34 times, across Family Settings, the topbar, the
+     login screen and the merge wizard. The app's index.html never loads that
+     file, so every one of those resolved to nothing: the 21 with a fallback
+     painted an off-palette warm cream, and the 13 without one computed to
+     transparent (an invisible hover, a see-through overlay). Recessed panels
+     in the app are --paper-deep. */
 
   /* One warm accent + a quiet companion */
   --accent: #c2603a;       /* terracotta — the warm accent */

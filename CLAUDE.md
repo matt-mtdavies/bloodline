@@ -3143,6 +3143,47 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   block, which the original critique already flagged as a product decision rather than a
   cleanup, so it was left alone.
 
+- **`--ground`, the second ghost token, removed app-wide** (the follow-up flagged in PR #235's
+  own write-up, picked up next on the user's "proceed as you recommend"). `--ground` was
+  referenced **34 times** across `components.css` — Family Settings, the topbar, the login
+  screen, the merge wizard, Tree Insights, the stats popover, Archive Care, the timeline
+  filter and the ancestry toggle — but never declared in `theme.css`. The reason it existed at
+  all turned out to be worth recording: **it IS a real, correctly-declared token — in
+  `public/public-site.css` (`--ground: #f6f1e9`), the marketing site's own warm palette.** App
+  CSS had drifted into referencing it as if it were global, but the app's `index.html` never
+  loads that file (confirmed: `public-site.css` is referenced only by
+  `functions/_lib/publicShell.js`, which server-renders the public pages), so in the app every
+  one of those 34 resolved to nothing. Measured live in the running app before touching
+  anything: `--ground` reported "(not declared)" on the root element, `var(--ground)`
+  computed to `rgba(0, 0, 0, 0)` and `var(--ground, #f7f3ec)` to `rgb(247, 243, 236)`.
+  So the 21 uses that carried a fallback silently painted an **off-palette warm cream** —
+  in two different shades, 23×`#f7f3ec` and 1×`#f1ece4`, so the fallbacks weren't even
+  self-consistent — while the **13 with no fallback computed to `transparent` and did nothing
+  at all**: `.topbar__row2-btn:hover` (measured live at `rgba(0, 0, 0, 0)` on hover — the
+  hover state was genuinely invisible), `.fs__signout-btn:hover`, `.fs__reset-cancel:hover`,
+  `.login-screen`'s whole page background, `.up__claim-select`, and five merge-wizard surfaces
+  including `.mw-overlay` itself (a full-screen overlay with no background). All 34 now use
+  `--paper-deep`, theme.css's own documented "recessed panels" token — which is what
+  "ground" meant — so the 13 dead surfaces paint for the first time and the 21 warm ones join
+  the documented cool-neutral palette. **`public/public-site.css` was deliberately left
+  completely untouched**: its 11 uses have a real declaration in the same file, the marketing
+  site's warm palette is legitimately its own thing, and nothing there was broken. A comment
+  now sits in `theme.css` where the token would go, explaining that its absence is deliberate
+  and that app recessed panels are `--paper-deep`, so this doesn't get "fixed" later by
+  declaring the ghost instead of removing the dependency. Verified live at 1280×900 against
+  the real dev server by measuring the same selectors before and after: `.topbar__row2-btn`
+  on hover went `rgba(0, 0, 0, 0)` → `rgb(242, 243, 245)`, `.stats-popover__timeline-btn`
+  went `rgb(247, 243, 236)` → `rgb(242, 243, 245)`; the built bundle ships zero `var(--ground`
+  occurrences; and each of the 13 previously-transparent selectors was individually confirmed
+  to reference the real token in source (the login screen, Family Settings danger-zone hovers
+  and the merge wizard aren't reachable in demo mode — no session — so those are verified by
+  rule inspection rather than a live paint, which is a disclosed difference in evidence, not
+  an assumed pass). One deliberate, visible consequence stated plainly rather than buried: 21
+  live surfaces shift from a warm cream to the cool neutral token. The delta is small
+  (`#f7f3ec` → `#f2f3f5`) and it is the documented palette, but it is a real change to
+  surfaces outside the profile work that prompted it. Full unit suite (88/88),
+  `npm run build`, and `tests/smoke.mjs` all passed clean.
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);
