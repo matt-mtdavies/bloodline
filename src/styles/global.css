@@ -63,6 +63,16 @@ h3 {
   border-radius: 6px;
 }
 
+/* See markProgrammaticFocus() in src/lib/useDialogFocus.js — suppresses the
+   ring while a dialog's own programmatic open-focus sits on an element,
+   which some browsers otherwise mark :focus-visible even though nothing was
+   pressed. Cleared on blur, not a timer, so a genuine keyboard Tab back onto
+   the same element (e.g. the focus trap wrapping around to it) rings
+   normally again. */
+[data-initial-focus]:focus-visible {
+  outline: none;
+}
+
 .visually-hidden {
   position: absolute;
   width: 1px;
