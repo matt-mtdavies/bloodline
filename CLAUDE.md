@@ -3184,6 +3184,55 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   surfaces outside the profile work that prompted it. Full unit suite (88/88),
   `npm run build`, and `tests/smoke.mjs` all passed clean.
 
+- **Three real regressions from the profile polish pass (PR #235), reported live against a
+  real production profile** (user, verbatim: "Honestly, you introduced real regressions when
+  this is supposed to be a polished UI specific pass which is totally not acceptable from a QA
+  level" — a legitimate call-out, taken as a genuine QA failure rather than a minor follow-up).
+  Three screenshots, three distinct root causes:
+  1. **A literal `)}` rendered as visible page text in the Life Story section.** PR #235's own
+     diff (confirmed via `git log -p`) left a duplicate `)}` immediately after the section's
+     `</section>` — one correctly closes `{(hasStory || (canEdit && showEmptySections)) && (`,
+     the second was an orphaned leftover from editing that block. Standalone `)` and `}` are
+     valid JSX text when they aren't part of an active `{expression}`, so this compiled cleanly
+     and shipped silently instead of throwing a build error — exactly the kind of artifact a
+     string-replacement edit to a large JSX file can leave behind without a live re-render ever
+     catching it. Simple deletion of the extra `)}`.
+  2. **A visible orange `:focus-visible` ring around the profile's close button on every
+     open, including an ordinary mouse/tap open — not just a keyboard one.** Traced to PR
+     #234's dialog focus-trap work: `useDialogFocus`'s initial-focus effect moves focus onto
+     `.profile__close` a frame later, inside `requestAnimationFrame`. Per spec a script-driven
+     `.focus()` should only inherit `:focus-visible` from whatever was focused immediately
+     before it (a mouse click normally leaves nothing in that state) — but across the
+     `requestAnimationFrame` gap, the browser can lose track of "this came from a click" and
+     mark the newly-focused element `:focus-visible` regardless, exposing the app's global
+     accent-orange `:focus-visible` ring (`global.css`) on a button nobody tabbed to. First fix
+     attempt was wrong and caught by live measurement before shipping: a `data-initial-focus`
+     marker cleared by a fixed `setTimeout` looked right in a coarse check, but a tighter,
+     timestamped repro (a `MutationObserver` + 5ms poll loop against the real dev server) showed
+     `:focus-visible` itself never clears while focus remains on the element — the timer just
+     let the marker expire while the browser's own focus-visible flag was still true, so the
+     ring reappeared a moment later anyway. Fixed by clearing the marker on the element's own
+     `blur` event instead of a timer: the ring stays suppressed for exactly as long as this one
+     programmatic focus session lasts, and a later genuine keyboard Tab back onto the same
+     element (e.g. the focus trap wrapping Shift+Tab around to it) has no marker left, so it
+     rings normally, correctly, as real keyboard focus should.
+  3. **The "Hide what's still empty" toggle (PR #235's own `.profile-gaps__hide`) read as a
+     bare, awkwardly-placed underlined text link**, with no visual relationship to its sibling
+     "Still to add" chip row it replaces when tapped. Restyled as a pill matching
+     `.profile-gaps__chip`'s own visual language (same 44px pill, a `ChevronIcon` pointing up
+     instead of the chips' plus icon, `--ink-soft` instead of the chips' accent-orange icon
+     tint since "hide" isn't an add action) under an "All sections shown" label mirroring the
+     chip row's own "Still to add" label — so toggling between the two states now reads as one
+     control changing state, not a rich chip row swapped for a stray link.
+  Verified live via Playwright against the real dev server (`?demo`): confirmed zero `)}` (or
+  any `)` immediately followed by `}`) anywhere in the rendered profile's text; confirmed via a
+  timestamped `MutationObserver`/poll instrumentation script that the close button's computed
+  `outline` reads `none` continuously from the moment the dialog opens through settling, with
+  `data-initial-focus` staying present for as long as focus remains there (not expiring on a
+  timer); confirmed the redesigned toggle renders as a 44px pill with no underline, matching its
+  sibling chips' `border-radius`/`min-height`. Full unit suite (88/88), `npm run build`, and
+  the standard smoke test all passed clean. Shipped as PR #238.
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);
