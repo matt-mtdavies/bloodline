@@ -5884,7 +5884,7 @@ button.health-notes {
 .login-screen {
   position: fixed;
   inset: 0;
-  background: var(--ground);
+  background: var(--paper-deep);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -5978,7 +5978,7 @@ button.health-notes {
   color: var(--ink-soft, #6b6f76);
   text-align: center;
   line-height: 1.5;
-  background: var(--ground, #f7f3ec);
+  background: var(--paper-deep);
   border-radius: 10px;
   padding: 9px 12px;
 }
@@ -6093,7 +6093,7 @@ button.health-notes {
   flex: 1;
   display: flex;
   gap: 3px;
-  background: var(--ground, #f7f3ec);
+  background: var(--paper-deep);
   border-radius: 12px;
   padding: 3px;
 }
@@ -6126,7 +6126,7 @@ button.health-notes {
   justify-content: center;
   transition: background 0.15s, color 0.15s;
 }
-.fs__more-btn:hover, .fs__more-btn--on { background: var(--ground, #f7f3ec); color: var(--ink); }
+.fs__more-btn:hover, .fs__more-btn--on { background: var(--paper-deep); color: var(--ink); }
 .fs__more-menu {
   position: absolute;
   top: calc(100% + 6px);
@@ -6151,7 +6151,7 @@ button.health-notes {
   font-weight: 500;
   color: var(--ink);
 }
-.fs__more-item:hover { background: var(--ground, #f7f3ec); }
+.fs__more-item:hover { background: var(--paper-deep); }
 .fs__more-item--on { color: var(--accent); font-weight: 600; }
 
 /* Sub-view breadcrumb — shown only when a "More" tool (Audit log/Restore/
@@ -6219,7 +6219,7 @@ button.health-notes {
   flex-shrink: 0;
   transition: background 0.15s, color 0.15s;
 }
-.fs__more-row-btn:hover { background: var(--ground, #f7f3ec); color: var(--ink); }
+.fs__more-row-btn:hover { background: var(--paper-deep); color: var(--ink); }
 
 .fs__invite-privacy {
   font-size: 12.5px;
@@ -6496,7 +6496,7 @@ button.health-notes {
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
 }
-.fs__signout-btn:hover { background: var(--ground); color: var(--ink); }
+.fs__signout-btn:hover { background: var(--paper-deep); color: var(--ink); }
 .fs__danger-btn {
   width: 100%;
   padding: 12px;
@@ -6555,7 +6555,7 @@ button.health-notes {
   cursor: pointer;
   transition: background 0.15s;
 }
-.fs__reset-cancel:hover { background: var(--ground); }
+.fs__reset-cancel:hover { background: var(--paper-deep); }
 
 /* ── Privacy / visibility controls in EditPersonSheet ─────────────────────── */
 .privacy-section { border-top: 1px solid var(--hairline); margin-top: 8px; padding-top: 12px; }
@@ -6618,7 +6618,7 @@ button.health-notes {
   position: fixed;
   inset: 0;
   z-index: 100;
-  background: var(--ground);
+  background: var(--paper-deep);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -6713,7 +6713,7 @@ button.health-notes {
 .mw__tree-card {
   flex: 1;
   max-width: 140px;
-  background: var(--ground);
+  background: var(--paper-deep);
   border-radius: 16px;
   padding: 16px 12px;
   border: 2px solid transparent;
@@ -6818,7 +6818,7 @@ button.health-notes {
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
   gap: 8px;
-  background: var(--ground);
+  background: var(--paper-deep);
   border-radius: 14px;
   padding: 12px;
   border: 1.5px solid transparent;
@@ -6886,7 +6886,7 @@ button.health-notes {
   width: 100%;
   text-align: left;
   padding: 12px 14px;
-  background: var(--ground);
+  background: var(--paper-deep);
   border-radius: 12px;
   margin-bottom: 20px;
 }
@@ -6933,7 +6933,7 @@ button.health-notes {
   font-size: 14px;
   color: var(--ink);
   padding: 10px 12px;
-  background: var(--ground);
+  background: var(--paper-deep);
   border-radius: 10px;
 }
 
@@ -8787,7 +8787,7 @@ button.health-notes {
   padding: 14px 16px;
   border-radius: 12px;
   border: 1px solid var(--hairline, #ebedf0);
-  background: var(--ground, #f7f3ec);
+  background: var(--paper-deep);
   color: var(--ink, #1c1d21);
   text-decoration: none;
   transition: background 0.15s, border-color 0.15s;
@@ -8839,7 +8839,7 @@ button.health-notes {
   min-width: 0;
   border: 1px solid var(--hairline, #ebedf0);
   border-radius: 10px;
-  background: var(--ground, #f7f3ec);
+  background: var(--paper-deep);
   padding: 10px 12px;
   font-size: 16px; /* not smaller — see the note on .doc-row__title-input */
   color: var(--ink-soft, #6b6f76);
@@ -8864,7 +8864,7 @@ button.health-notes {
 }
 .sharelink__btn:active { opacity: 0.8; }
 .sharelink__btn--share {
-  background: var(--ground, #f7f3ec);
+  background: var(--paper-deep);
   color: var(--ink, #1c1d21);
   border: 1px solid var(--hairline, #ebedf0);
 }
@@ -8941,7 +8941,7 @@ button.health-notes {
   padding: 10px 12px;
   border: 1.5px solid var(--hairline);
   border-radius: 10px;
-  background: var(--ground);
+  background: var(--paper-deep);
   font-size: 14px;
   color: var(--ink);
   cursor: pointer;
@@ -9804,7 +9804,7 @@ button.health-notes {
   -webkit-tap-highlight-color: transparent;
   transition: color 0.15s ease, background 0.15s ease;
 }
-.topbar__row2-btn:hover { color: var(--ink); background: var(--ground); }
+.topbar__row2-btn:hover { color: var(--ink); background: var(--paper-deep); }
 /* A solid fill, not a tint — this is the ONLY always-visible sign the filter
    is on (no persistent text label like the bottom dock's toggles have), so
    it needs to read at a glance, not just on close inspection. */
@@ -10260,7 +10260,7 @@ button.health-notes {
 .ti__nudge-label strong { color: var(--accent, #c2603a); }
 .ti__nudge-chips { display: flex; flex-wrap: wrap; gap: 7px; }
 .ti__chip {
-  border: 1px solid var(--hairline, #ebedf0); background: var(--ground, #f7f3ec);
+  border: 1px solid var(--hairline, #ebedf0); background: var(--paper-deep);
   border-radius: 999px; padding: 6px 13px; font-size: 13px; font-weight: 500;
   color: var(--accent, #c2603a); cursor: pointer; transition: background 0.15s, border-color 0.15s;
 }
@@ -10697,7 +10697,7 @@ button.health-notes {
 
 .lineage-banner__actions { display: flex; justify-content: center; gap: 8px; margin-top: 2px; }
 .lineage-banner__clear, .lineage-banner__exit {
-  border: 1px solid var(--hairline, #ebedf0); background: var(--ground, #f7f3ec);
+  border: 1px solid var(--hairline, #ebedf0); background: var(--paper-deep);
   border-radius: 999px; padding: 6px 16px; font-size: 13px; font-weight: 600;
   color: var(--ink, #1c1d21); cursor: pointer; transition: background 0.15s;
 }
@@ -10711,7 +10711,7 @@ button.health-notes {
   display: grid;
   place-items: center;
   border: 1px solid var(--hairline, #ebedf0);
-  background: var(--ground, #f7f3ec);
+  background: var(--paper-deep);
   border-radius: 50%;
   color: var(--ink-soft, #6b6f76);
   cursor: pointer;
@@ -10910,7 +10910,7 @@ button.health-notes {
   margin: -6px 0 16px;
   padding: 11px 14px; border-radius: 14px; cursor: pointer;
   color: var(--ink, #1c1d21); font-size: 14px; font-weight: 600;
-  background: var(--ground, #f7f3ec); border: 1px solid var(--hairline, #ebedf0);
+  background: var(--paper-deep); border: 1px solid var(--hairline, #ebedf0);
   transition: background 0.15s, border-color 0.15s;
 }
 .stats-popover__timeline-btn:hover { background: #fff; border-color: #d8d2c8; }
@@ -10925,7 +10925,7 @@ button.health-notes {
   display: flex; align-items: center; gap: 9px; width: 100%;
   padding: 11px 14px; border-radius: 14px; cursor: pointer;
   color: var(--ink, #1c1d21); font-size: 14px; font-weight: 600;
-  background: var(--ground, #f7f3ec); border: 1px solid var(--hairline, #ebedf0);
+  background: var(--paper-deep); border: 1px solid var(--hairline, #ebedf0);
   transition: background 0.15s, border-color 0.15s;
 }
 .stats-popover__care-btn:hover { background: #fff; border-color: #d8d2c8; }
@@ -10980,7 +10980,7 @@ button.health-notes {
 }
 .dups__embedded-count {
   font-family: var(--body, sans-serif); font-size: 11.5px; font-weight: 700; color: var(--ink-soft, #6b6f76);
-  background: var(--ground, #f7f3ec); border-radius: 999px; padding: 2px 8px;
+  background: var(--paper-deep); border-radius: 999px; padding: 2px 8px;
 }
 /* Section-nav chips (ArchiveCareSheet) — "jump to Duplicates" / "jump to
    {issue type}" for a long combined backlog (real report: scrolling past
@@ -11018,7 +11018,7 @@ button.health-notes {
 .dups__bulk-confirm {
   display: flex; flex-direction: column; gap: 10px;
   font-size: 13px; line-height: 1.45; color: var(--ink, #1c1d21);
-  background: var(--ground, #f7f3ec); border-radius: 12px; padding: 12px;
+  background: var(--paper-deep); border-radius: 12px; padding: 12px;
 }
 .dups__bulk-confirm-btns { display: flex; gap: 8px; }
 .dups__bulk-confirm-btns .dups__merge { flex: 1; }
@@ -11033,7 +11033,7 @@ button.health-notes {
 .dups__pair, .dups__embedded-heading { scroll-margin-top: 64px; }
 .dups__more {
   width: 100%; margin-top: 14px; padding: 11px 14px; border-radius: 12px; cursor: pointer;
-  background: var(--ground, #f7f3ec); border: 1px solid var(--hairline, #ebedf0);
+  background: var(--paper-deep); border: 1px solid var(--hairline, #ebedf0);
   color: var(--ink, #1c1d21); font-size: 13.5px; font-weight: 600;
 }
 .dups__more:hover { background: var(--paper-deep, #efe9df); }
@@ -11046,7 +11046,7 @@ button.health-notes {
 .dups__card {
   display: flex; flex-direction: column; align-items: center; gap: 5px; text-align: center;
   padding: 12px 8px; border-radius: 12px; cursor: pointer;
-  background: var(--ground, #f7f3ec); border: 2px solid transparent;
+  background: var(--paper-deep); border: 2px solid transparent;
   transition: border-color 0.15s, background 0.15s;
 }
 .dups__card--keep { border-color: var(--accent, #c2603a); background: #fff; }
@@ -11065,7 +11065,7 @@ button.health-notes {
 .dups__reasons { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0; }
 .dups__reason {
   font-size: 11px; font-weight: 600; color: var(--ink-soft, #6b6f76);
-  background: var(--ground, #f1ece4); padding: 3px 9px; border-radius: 999px;
+  background: var(--paper-deep); padding: 3px 9px; border-radius: 999px;
 }
 /* IntegritySheet.jsx — reuses .dups__* card/list/bulk chrome wholesale (same
    review-and-dismiss shape as Possible Duplicates); only these two classes
@@ -11098,7 +11098,7 @@ button.health-notes {
 .dups__confirm {
   display: flex; flex-direction: column; gap: 10px;
   font-size: 13px; line-height: 1.45; color: var(--ink, #1c1d21);
-  background: var(--ground, #f7f3ec); border-radius: 12px; padding: 12px;
+  background: var(--paper-deep); border-radius: 12px; padding: 12px;
 }
 .dups__confirm-btns { display: flex; gap: 8px; }
 .dups__confirm-btns .dups__merge { flex: 1; }
@@ -11126,7 +11126,7 @@ button.health-notes {
 .mms__meta { font-size: 12.5px; color: var(--ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mms__note {
   font-size: 13.5px; line-height: 1.5; color: var(--ink-soft);
-  background: var(--ground, #f7f3ec); border-radius: 12px; padding: 12px 14px; margin: 4px 2px 8px;
+  background: var(--paper-deep); border-radius: 12px; padding: 12px 14px; margin: 4px 2px 8px;
 }
 .mms__danger { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--hairline); }
 .mms__remove-btn {
@@ -11304,7 +11304,7 @@ button.health-notes {
 
 .tl__filters { display: flex; gap: 8px; padding: 4px 2px 14px; flex-wrap: wrap; }
 .tl__filter {
-  border: 1px solid var(--hairline, #ebedf0); background: var(--ground, #f7f3ec);
+  border: 1px solid var(--hairline, #ebedf0); background: var(--paper-deep);
   border-radius: 999px; padding: 6px 14px; font-size: 13px; font-weight: 600;
   color: var(--ink-soft, #6b6f76); cursor: pointer; transition: all 0.15s;
 }
@@ -11466,7 +11466,7 @@ button.health-notes {
   display: flex; align-items: center; gap: 12px; width: 100%; text-align: left;
   padding: 9px 8px; border: none; background: none; cursor: pointer; border-radius: 12px;
 }
-.claim__row:hover { background: var(--ground, #f7f3ec); }
+.claim__row:hover { background: var(--paper-deep); }
 .claim__row-name { font-size: 15px; font-weight: 500; color: var(--ink, #1c1d21); }
 .claim__row-year { font-size: 12px; color: var(--ink-faint, #b0a9a5); }
 .claim__row-go { margin-left: auto; color: var(--ink-faint, #c0b8b4); }
@@ -11497,7 +11497,7 @@ button.health-notes {
   flex-shrink: 0; width: 26px; height: 26px; border: none; background: none; cursor: pointer;
   color: var(--ink-faint, #b0a9a5); border-radius: 8px; display: grid; place-items: center; margin: -4px -4px 0 0;
 }
-.install-card__close:hover { background: var(--ground, #f7f3ec); }
+.install-card__close:hover { background: var(--paper-deep); }
 
 @media (prefers-reduced-motion: reduce) {
   .claim__spark, .claim__hero-aurora, .install-card { animation: none; }
@@ -12807,7 +12807,7 @@ button.health-notes {
 .ancestry-side-toggle {
   display: flex;
   gap: 3px;
-  background: var(--ground, #f7f3ec);
+  background: var(--paper-deep);
   border-radius: 12px;
   padding: 3px;
   margin-bottom: 12px;
