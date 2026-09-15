@@ -3057,6 +3057,92 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   backgrounds currently do nothing at all. Out of scope for the profile surface, but it means
   several Family Settings hover states are invisible today.
 
+- **Profile polish: the timeline connector, the contribution prompt, and education card
+  density** (PR #235 — real user report with screenshots: "The linking lines in life events
+  breaks between events. Also the add more about: a) spacing issues and b) is this intuative
+  design... the fact there is not all the add sections might make people less likely to
+  populate info?", then "Also not sure this is premium design. The white photo icon looks out
+  of place?"). Six changes: four defects, then two design changes from the same feedback.
+  1. **[Real bug] The Key Life Events connector broke between entries.** The line was
+     `height: calc(100% + 18px)` on `.timeline__dot::after` — but the dot is an 11px circle,
+     so `100%` resolved against **the circle, not the row**, and the connector was a fixed
+     29px no matter how tall the entry was. Any event with more than a line of detail (the
+     reported screenshot's 1945 enlistment entry runs ~200px) drew a short stub and left a
+     visible break. Fixed by stretching the dot cell to the full row height (`align-self:
+     stretch`), moving the circle into `::before`, and anchoring the connector **top AND
+     bottom** rather than giving it a height, so it spans whatever the row turns out to be.
+     Measured live before the fix: the dot cell reported 11px and gaps ran 57–76px; after:
+     rows report their true 60–97px and the gap is 0 on every seed profile. Proven
+     discriminating by stashing only the CSS and re-running the identical measurement script.
+  2. **The "Add more about X" trigger sat flush on the last relationship row.** It carried
+     `margin-top: -10px`, written in the previous PR on the assumption it would sit directly
+     under `.enrich-trigger`; in the real layout it lands after the relationship list, where
+     that negative margin collapsed it onto the row above. (Superseded outright by #5 below.)
+  3. **[Self-inflicted regression from PR #234] The education photo slot rendered as a white
+     chip proud of its card.** Flattening `.education-rung__card` onto `--paper-deep` (the
+     Float-Only Rule fix) left `background: var(--paper)` on the add-photo tile — invisible
+     while the card was also white, a raised white square once it wasn't. An empty slot inside
+     an already-recessed card should be an outline and nothing else; now transparent with a
+     dashed `--hairline`.
+  4. **[Real bug] The primary-school "satchel" icon WAS the privacy padlock.** Not lock-ish —
+     `EducationHistory.jsx`'s `SatchelIcon` was `EditPersonSheet.jsx`'s own `LockIcon` (same
+     body rect, same shackle path `M8 …V7a4 4 0 0 1 8 0v…`) with a keyhole stroke added, so
+     every primary-school rung wore the exact glyph this product uses to mean *private*.
+     Redrawn with a narrow handle, a flap edge running the FULL width of the body (a padlock
+     never has one) and a clasp instead of a keyhole. Verified by rendering old/new/real-lock
+     side by side at 8× in a throwaway HTML page: the old one is visually indistinguishable
+     from the lock, the new one reads as a bag. Also replaced **`--line`**, a second ghost
+     token (declared nowhere, same family as the `--ground` finding in #234), at its 5
+     remaining call sites — all rendering the `#e7ddd4` fallback, a warm cream border on
+     profile form controls whose real hairline is `--hairline`.
+  5. **[Design] The contribution prompt moved from the bottom of the profile to named chips
+     under the completeness meter.** The user's question was the right one: the single "Add
+     more about X" button sat past every relationship row and named nothing, so you had to
+     decide to go looking *before* you could learn there was a gap — and, more importantly,
+     **PR #234's own "collapse the empty sections" fix had removed the one mechanism the
+     profile had for telling a relative "here is a specific thing only you might know."**
+     Hiding the empty headings was right; hiding the ask with them was not. Now: a
+     `.profile-gaps` block rendering "Still to add" plus up to 3 named chips and an "N more"
+     chip, built from a hand-ordered gap list — ordered by what a family member is most likely
+     to be able to answer and by what most changes the profile (photo and life story lead;
+     occupation, birth date and contact trail), deliberately NOT alphabetically or in section
+     order. Each gap carries an `anchor`; tapping a chip calls `revealGap`, which sets
+     `showEmptySections` and then scrolls to that section **after a double `requestAnimation
+     Frame`** (the section usually does not exist in the DOM yet — the state change is what
+     creates it). A gap with no anchor is a plain field that lives in the edit form, so it
+     opens that form instead. Every gated section gained an `id` (`ps-story`, `ps-photos`, …);
+     the three that render their own component (`RestingPlace`/`PlacesLived`/`EducationHistory`)
+     are wrapped in a bare anchor `<div>` whose lack of padding/border lets the child's own
+     `.profile-section` margin collapse through unchanged. The bottom button and its CSS were
+     deleted outright. **Deliberately NOT gated on the meter's own `score < 100`** — a profile
+     can score 100 on `profileCompleteness`'s nine checks and still have no education, places
+     or documents recorded, which is exactly the profile this was reported from.
+  6. **[Design] Education cards went from 210px to 100px.** Each card spent roughly two thirds
+     of its height on an empty dashed photo box and two bare icons floating in dead space, so
+     six entries read as a form rather than a record. `EducationPhotos` is now display-only and
+     returns null with no photos (the empty dashed tile is gone from every rung), and the
+     add-photo affordance joins edit and remove in one `.education-rung__actions` cluster on
+     the card's top line — so the card ends on the record itself. All three actions keep full
+     44×44 targets, pulled back into the card's own padding by negative margins so they don't
+     inflate the header's visual height. The stage label got `flex: 1 1 auto; min-width: 0` so
+     a long one ("Trade & Vocational") wraps inside its own cell instead of forcing the header
+     past the card — a flex item's default min-width is `auto`, not `0`, the same trap already
+     recorded for the List view rows. **Disclosed rather than hidden:** at 390px "Secondary
+     School" wraps to two lines in that header; fitting it on one would mean narrowing the
+     cluster below the 44px floor, and that trade was judged not worth making — especially
+     given the same-week Chart-view incident caused by fiddling with touch targets.
+  Verified live at 390×844 against the real dev server, measuring rather than eyeballing:
+  chips render at 44px; the named chip reveals its section and lands it at
+  `distanceFromSheetTop: 0`; the toggle restores the chips and re-hides the sections; a
+  worst-case stage label still clears the actions by 6px with the last button 7px inside the
+  card; the timeline before/after was reproduced by stashing the CSS; zero page errors
+  throughout. Full unit suite (88/88), `npm run build`, and `tests/smoke.mjs` all passed clean.
+  One honest limitation recorded at the time: the new prompt sits ~800px down the sheet because
+  the hero and action block come first — a large improvement on "past every relationship row",
+  but not the top of the screen. Raising it further means shrinking the hero's own 342px action
+  block, which the original critique already flagged as a product decision rather than a
+  cleanup, so it was left alone.
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);
