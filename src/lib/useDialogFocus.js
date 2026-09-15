@@ -50,6 +50,31 @@ function focusableWithin(root) {
   );
 }
 
+// Real regression found live on a production profile: opening it painted a
+// visible orange :focus-visible ring around the close button on an ordinary
+// mouse/tap open, not just a keyboard one. Per spec, a script-driven .focus()
+// is only supposed to inherit :focus-visible from whatever was focused
+// before it — a mouse click normally leaves nothing in that state — but this
+// call fires a frame later inside requestAnimationFrame, and the browser can
+// lose track of "this was triggered by a click" across that gap and default
+// to showing the ring anyway.
+//
+// `[data-initial-focus]` turns the global `:focus-visible` rule off (in
+// global.css) while it's present. It must be cleared on BLUR, not a timer:
+// once a browser marks an element :focus-visible, that stays true for as
+// long as focus sits on it — a timed removal just re-exposes the ring a
+// moment later while the same element is still focused (measured live: the
+// marker cleared at ~60ms, and the ring reappeared immediately after,
+// because :focus-visible itself never went away). Clearing on blur instead
+// means a later genuine keyboard Tab back onto this same element (e.g. the
+// trap wrapping Shift+Tab around to it) has no marker left to suppress it,
+// so it rings normally, exactly as a real keyboard focus should.
+function markProgrammaticFocus(el) {
+  if (!el?.setAttribute) return;
+  el.setAttribute('data-initial-focus', '');
+  el.addEventListener('blur', () => el.removeAttribute('data-initial-focus'), { once: true });
+}
+
 /**
  * @param {{current: HTMLElement|null}} containerRef  the dialog's own element
  * @param {boolean} active                            is the dialog open
@@ -77,6 +102,7 @@ export function useDialogFocus(containerRef, active, { initialFocus, contentKey 
       const target =
         (initialFocus && root.querySelector(initialFocus)) || focusableWithin(root)[0] || root;
       if (target === root && !root.hasAttribute('tabindex')) root.setAttribute('tabindex', '-1');
+      markProgrammaticFocus(target);
       target.focus?.();
     });
     return () => {
@@ -109,6 +135,7 @@ export function useDialogFocus(containerRef, active, { initialFocus, contentKey 
     if (!root) return;
     if (root.contains(document.activeElement)) return;
     if (!root.hasAttribute('tabindex')) root.setAttribute('tabindex', '-1');
+    markProgrammaticFocus(root);
     root.focus?.();
   }, [contentKey, active, containerRef]);
 

@@ -1126,12 +1126,18 @@ export default function PersonSheet({
             {canEdit && gaps.length > 0 && (
               <div className="profile-gaps">
                 {showEmptySections ? (
-                  <button
-                    className="profile-gaps__hide"
-                    onClick={() => setShowEmptySections(false)}
-                  >
-                    Hide what’s still empty
-                  </button>
+                  <>
+                    <span className="profile-gaps__label">All sections shown</span>
+                    <div className="profile-gaps__chips">
+                      <button
+                        className="profile-gaps__chip profile-gaps__chip--hide"
+                        onClick={() => setShowEmptySections(false)}
+                      >
+                        <ChevronIcon open />
+                        Hide what’s still empty
+                      </button>
+                    </div>
+                  </>
                 ) : (
                   <>
                     <span className="profile-gaps__label">Still to add</span>
@@ -2080,7 +2086,6 @@ export default function PersonSheet({
                 </div>
               )}
             </section>
-            )}
             )}
 
             {/* Ancestry Story — the patrilineal + matrilineal ascending chains,
