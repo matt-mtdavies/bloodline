@@ -3233,6 +3233,61 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   sibling chips' `border-radius`/`min-height`. Full unit suite (88/88), `npm run build`, and
   the standard smoke test all passed clean. Shipped as PR #238.
 
+- **`/impeccable audit` re-run on the profile view + its 7 dialogs, then all 4 findings fixed**
+  (16/20 "Good" — the detector found 0 anti-patterns; the real findings came from a live 5-
+  dimension pass verifying focus-trap survival, measured contrast, real CDP touch drags, and
+  hook counts, not just the static scan).
+  1. **[P1] Real WCAG AA contrast failures recurring the exact pattern already fixed once in
+     this file.** `.ancestry-waypoint-place` (an ancestor's birthplace) and `.ancestry-chain__
+     label` ("Father's father's line") measured 2.31:1 on white; `.education-rung__meta`
+     ("Cardiff, Wales · 1996–2003") measured 2.08:1 on `--paper-deep`. All three render real
+     content, not placeholders — `components.css`'s own `.profile-section__title` comment
+     already documents this exact fix ("`--ink-faint` is documented for tertiary text and
+     placeholders, not for the labels that structure a page... `--ink-soft` measures 5.05:1"),
+     it just was never extended to these three. Swapped to `--ink-soft`; re-measured live at
+     5.05:1 (white) and 4.55:1 (`--paper-deep`).
+  2. **[P2] `groups`/`extendedGroups`/`completeness` recomputed unmemoized on every render,
+     including per-keystroke renders from the co-located story textareas.** `PersonSheet.jsx`
+     is 2,736 lines with 34 `useState` and (before this fix) 1 `useMemo` — the relationship-
+     grouping/sorting and `profileCompleteness()` calls (each walking `graph.parents/children/
+     partners/siblings`) ran inline on every render, including every keystroke in the "revise
+     story"/"edit story" fields living in this same component. No crash risk at the 23-person
+     demo scale, but exactly the class of miss this project's own Chart-view incident already
+     named: verified only at demo scale, not the account's documented 1,000+-person production
+     scale. Wrapped in two `useMemo`s keyed on `[graph, personId]` (`graph` is only a new
+     reference when `App.jsx`'s own `data.people`/`data.relationships` memo changes, confirmed
+     by reading that call site — so this genuinely skips recomputation on every unrelated
+     re-render, not just in theory). Both hooks had to move ABOVE the component's existing
+     `if (!person) return null` early return to satisfy the rules of hooks — the same lesson
+     this file already learned once for `region`/`birthEraContext` — with each memo duplicating
+     `restricted`'s trivial boolean check internally rather than reaching for the `const
+     restricted` declared later in the function body (a hook can't reference a binding that
+     doesn't exist yet in scope). Deliberately did NOT also memoize `gaps`/`emptySectionCount`:
+     their inputs are O(1) boolean checks on already-small per-person arrays, not graph
+     traversals, so wrapping them would have been complexity without measurable benefit.
+     Verified live: relationship groups render identically (same 9 group titles, same people)
+     before and after; navigating between profiles still recomputes `completeness` correctly
+     per person (confirmed James at 100%, unrelated William Mercer at 89%) with zero console
+     errors, proving the memo keys off `personId` correctly rather than sticking on first mount.
+  3. **[P2] `.enrich-trigger` ("Enrich this profile," the sheet's primary AI-document CTA)
+     measured 41px tall — 3px under the 44px floor.** Given `min-height: 44px` directly
+     (rather than an invisible `::after` hit-area overlay, the pattern used for a compact icon
+     button like `.rel-chip__menu-btn`) since this is a full-width marquee action that reads
+     better slightly taller, not one that needs to stay visually small. Measured 342×44px after.
+  4. **[P3] The one document-thumbnail fallback `<img>` (`doc.thumb`, for a non-image document
+     with a generated preview) wasn't lazy-loaded**, the one image in this surface that hadn't
+     been migrated to `SmartImg` — which every OTHER photo in this file already uses, and whose
+     CSS (`.doc-card__preview img, .doc-card__preview .smartimg`) had already been written to
+     support both, suggesting the migration was simply missed rather than deliberate. Swapped
+     to `<SmartImg>` for the loading/lazy/graceful-failure treatment every other image on this
+     surface already gets, rather than only bolting on a bare `loading="lazy"` attribute.
+     Disclosed rather than hidden: the demo seed ships no documents at all, so this exact code
+     path isn't reachable live without a temporary seed change; verified instead by the
+     component's proven correctness at its 3 other call sites in this same file and the
+     pre-existing CSS support for exactly this swap.
+  Full unit suite (88/88), `npm run build`, and the standard smoke test all passed clean
+  throughout.
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);

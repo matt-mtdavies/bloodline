@@ -362,6 +362,118 @@ export default function PersonSheet({
     return () => scrollEl.removeEventListener('scroll', onScroll);
   }, [personId]);
 
+  // Immediate + extended relationship groups (Impeccable audit finding, P2:
+  // this used to be plain consts recomputed on every render — including
+  // every keystroke in the "revise story"/"edit story" textareas below,
+  // since they live in this same component). `graph` is only a new
+  // reference when the tree itself changes (App.jsx memoizes it on
+  // data.people/data.relationships), so keying on [graph, personId] means
+  // this whole block — several graph.parents/children/siblings traversals
+  // per extended-family category — is skipped on any unrelated re-render.
+  // Called unconditionally, above the `if (!person) return null` below, per
+  // the rules of hooks (see this file's own birth-line-narration fix for
+  // the same lesson learned once already).
+  const relFamily = useMemo(() => {
+    const p = personId ? graph.byId.get(personId) : null;
+    if (!p) return { partners: [], parents: [], children: [], siblings: [], groups: [], extendedGroups: [] };
+
+    const partners = graph.partners(p.id);
+    const parents = graph.parents(p.id);
+    // Biological/adoptive children first, then step, then oldest-to-youngest,
+    // alphabetical as the final tiebreak.
+    const children = sortChildren(graph.children(p.id), graph.byId);
+    // Full (biological) siblings first, then half, then step — each tier
+    // oldest-to-youngest, alphabetical as the final tiebreak.
+    const siblings = sortSiblings(graph.siblings(p.id), graph.byId);
+
+    const groups = [
+      { title: partners.length > 1 ? 'Partners' : 'Partner', items: partners, relType: 'partner' },
+      { title: 'Parents', items: parents, relType: 'parent_from_item' },
+      { title: 'Children', items: children, relType: 'parent_from_self' },
+      { title: 'Siblings', items: siblings, relType: null }, // derived — can't be directly removed
+    ].filter((g) => g.items.length);
+
+    // ── Extended family (derived, read-only) ──────────────────────────────
+    // Single shared seen set across all extended groups: each person appears once.
+    const immediateIds = new Set([
+      p.id,
+      ...partners.map((x) => x.id),
+      ...parents.map((x) => x.id),
+      ...children.map((x) => x.id),
+      ...siblings.map((x) => x.id),
+    ]);
+    const extSeen = new Set();
+    const extDedup = (items) => {
+      const out = [];
+      for (const item of items) {
+        if (!immediateIds.has(item.id) && !extSeen.has(item.id)) {
+          extSeen.add(item.id);
+          out.push(item);
+        }
+      }
+      return out;
+    };
+    // Only bio/adoptive lines propagate upward — step-parent lines stop at the
+    // immediate tier. Step grandparents/aunts are reachable by tapping the
+    // step-parent's bubble, which keeps the extended section from exploding.
+    const upwardParents = parents.filter((p2) => isBioOrAdoptive(p2.qualifier));
+    // Keep raw grandparent IDs (before dedup) so great-grandparents can be
+    // derived from the full set even if some grandparents were deduped into
+    // another group — same pattern as rawGrandchildIds below, going up
+    // instead of down.
+    const rawGrandparentIds = upwardParents.flatMap((p2) => graph.parents(p2.id).map((gp) => gp.id));
+    const grandparents = extDedup(rawGrandparentIds.map((id) => ({ id })));
+    const auntsUncles = extDedup(
+      upwardParents.flatMap((p2) => graph.siblings(p2.id).map((s) => ({ id: s.id }))),
+    );
+    // Keep raw grandchild IDs (before dedup) so great-grandchildren can be derived
+    // from the full set even if some grandchildren were deduped into another group.
+    const rawGrandchildIds = children.flatMap((c) => graph.children(c.id).map((gc) => gc.id));
+    const grandchildren = extDedup(rawGrandchildIds.map((id) => ({ id })));
+    const niecesNephews = extDedup(
+      siblings.flatMap((s) => graph.children(s.id).map((c) => ({ id: c.id }))),
+    );
+    // Cousins — children of the person's aunts & uncles (parents' siblings).
+    const cousins = extDedup(
+      upwardParents.flatMap((p2) =>
+        graph.siblings(p2.id).flatMap((s) => graph.children(s.id).map((c) => ({ id: c.id }))),
+      ),
+    );
+    const greatGrandparents = extDedup(
+      rawGrandparentIds.flatMap((gpId) => graph.parents(gpId).map((ggp) => ({ id: ggp.id }))),
+    );
+    const greatGrandchildren = extDedup(
+      rawGrandchildIds.flatMap((gcId) => graph.children(gcId).map((ggc) => ({ id: ggc.id }))),
+    );
+    const extendedGroups = [
+      { title: 'Great Grandparents', items: greatGrandparents },
+      { title: 'Grandparents', items: grandparents },
+      { title: 'Aunts & Uncles', items: auntsUncles },
+      { title: 'Cousins', items: cousins },
+      { title: 'Grandchildren', items: grandchildren },
+      { title: 'Nieces & Nephews', items: niecesNephews },
+      { title: 'Great Grandchildren', items: greatGrandchildren },
+    ].filter((g) => g.items.length);
+
+    return { partners, parents, children, siblings, groups, extendedGroups };
+  }, [graph, personId]);
+  const { partners, parents, children, siblings, groups, extendedGroups } = relFamily;
+
+  // Same reasoning as relFamily above: profileCompleteness() itself walks
+  // graph.parents/children/partners/siblings, so it's kept off the render
+  // path of every keystroke too. Duplicates restricted's own trivial
+  // boolean logic (rather than reusing the plain `const restricted` below)
+  // because a hook can't reference a binding declared after it in the same
+  // function body, and this one has to sit above the early return.
+  const completeness = useMemo(() => {
+    const p = personId ? graph.byId.get(personId) : null;
+    if (!p) return null;
+    const isRestricted = (p.is_minor && !p.is_deceased) || p.visibility === 'private' || p.visibility === 'summary';
+    if (isRestricted) return null;
+    const memoryCount = memories.filter((m) => m.person_id === p.id).length;
+    return profileCompleteness(p, graph, memoryCount);
+  }, [graph, personId, memories]);
+
   if (!person) return null;
 
   const minor = person.is_minor && !person.is_deceased;
@@ -372,84 +484,6 @@ export default function PersonSheet({
   const sealed = vis === 'private';
   const summaryOnly = vis === 'summary';
   const restricted = minor || sealed || summaryOnly; // hides sections
-
-  const partners = graph.partners(person.id);
-  const parents = graph.parents(person.id);
-  // Biological/adoptive children first, then step, then oldest-to-youngest,
-  // alphabetical as the final tiebreak.
-  const children = sortChildren(graph.children(person.id), graph.byId);
-  // Full (biological) siblings first, then half, then step — each tier
-  // oldest-to-youngest, alphabetical as the final tiebreak.
-  const siblings = sortSiblings(graph.siblings(person.id), graph.byId);
-
-  const groups = [
-    { title: partners.length > 1 ? 'Partners' : 'Partner', items: partners, relType: 'partner' },
-    { title: 'Parents', items: parents, relType: 'parent_from_item' },
-    { title: 'Children', items: children, relType: 'parent_from_self' },
-    { title: 'Siblings', items: siblings, relType: null }, // derived — can't be directly removed
-  ].filter((g) => g.items.length);
-
-  // ── Extended family (derived, read-only) ──────────────────────────────────
-  // Single shared seen set across all extended groups: each person appears once.
-  const immediateIds = new Set([
-    person.id,
-    ...partners.map((x) => x.id),
-    ...parents.map((x) => x.id),
-    ...children.map((x) => x.id),
-    ...siblings.map((x) => x.id),
-  ]);
-  const extSeen = new Set();
-  const extDedup = (items) => {
-    const out = [];
-    for (const item of items) {
-      if (!immediateIds.has(item.id) && !extSeen.has(item.id)) {
-        extSeen.add(item.id);
-        out.push(item);
-      }
-    }
-    return out;
-  };
-  // Only bio/adoptive lines propagate upward — step-parent lines stop at the
-  // immediate tier. Step grandparents/aunts are reachable by tapping the
-  // step-parent's bubble, which keeps the extended section from exploding.
-  const upwardParents = parents.filter((p) => isBioOrAdoptive(p.qualifier));
-  // Keep raw grandparent IDs (before dedup) so great-grandparents can be
-  // derived from the full set even if some grandparents were deduped into
-  // another group — same pattern as rawGrandchildIds below, going up
-  // instead of down.
-  const rawGrandparentIds = upwardParents.flatMap((p) => graph.parents(p.id).map((gp) => gp.id));
-  const grandparents = extDedup(rawGrandparentIds.map((id) => ({ id })));
-  const auntsUncles = extDedup(
-    upwardParents.flatMap((p) => graph.siblings(p.id).map((s) => ({ id: s.id }))),
-  );
-  // Keep raw grandchild IDs (before dedup) so great-grandchildren can be derived
-  // from the full set even if some grandchildren were deduped into another group.
-  const rawGrandchildIds = children.flatMap((c) => graph.children(c.id).map((gc) => gc.id));
-  const grandchildren = extDedup(rawGrandchildIds.map((id) => ({ id })));
-  const niecesNephews = extDedup(
-    siblings.flatMap((s) => graph.children(s.id).map((c) => ({ id: c.id }))),
-  );
-  // Cousins — children of the person's aunts & uncles (parents' siblings).
-  const cousins = extDedup(
-    upwardParents.flatMap((p) =>
-      graph.siblings(p.id).flatMap((s) => graph.children(s.id).map((c) => ({ id: c.id }))),
-    ),
-  );
-  const greatGrandparents = extDedup(
-    rawGrandparentIds.flatMap((gpId) => graph.parents(gpId).map((ggp) => ({ id: ggp.id }))),
-  );
-  const greatGrandchildren = extDedup(
-    rawGrandchildIds.flatMap((gcId) => graph.children(gcId).map((ggc) => ({ id: ggc.id }))),
-  );
-  const extendedGroups = [
-    { title: 'Great Grandparents', items: greatGrandparents },
-    { title: 'Grandparents', items: grandparents },
-    { title: 'Aunts & Uncles', items: auntsUncles },
-    { title: 'Cousins', items: cousins },
-    { title: 'Grandchildren', items: grandchildren },
-    { title: 'Nieces & Nephews', items: niecesNephews },
-    { title: 'Great Grandchildren', items: greatGrandchildren },
-  ].filter((g) => g.items.length);
 
   const relToViewer =
     viewerId && viewerId !== person.id ? relationLabel(graph, viewerId, person.id, kinTerms) : null;
@@ -494,7 +528,6 @@ export default function PersonSheet({
   // is read-only.
   const militaryDocIds = new Set(militaryDocuments(personDocs).map((d) => d.id));
   const visibleDocs = personDocs.filter((d) => !militaryDocIds.has(d.id) || showMilitaryDocs);
-  const completeness = restricted ? null : profileCompleteness(person, graph, personMemories.length);
 
   // Which sections actually have something to show. A section with nothing
   // in it is collapsed behind the single "add" step below rather than
@@ -1535,7 +1568,7 @@ export default function PersonSheet({
                           {doc.mime?.startsWith('image/') ? (
                             <SmartImg src={doc.src} alt={doc.title} />
                           ) : doc.thumb ? (
-                            <img src={doc.thumb} alt={doc.title} />
+                            <SmartImg src={doc.thumb} alt={doc.title} />
                           ) : (
                             <span className="doc-card__icon" aria-hidden="true">
                               <DocFileIcon />

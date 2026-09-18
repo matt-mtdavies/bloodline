@@ -11141,7 +11141,11 @@ button.health-notes {
 /* Enrich this profile */
 .enrich-trigger {
   display: flex; align-items: center; justify-content: center; gap: 7px;
-  width: 100%; margin: 4px 0 18px; padding: 11px 14px; border-radius: 12px;
+  /* Measured 41px before min-height — 3px under the 44px floor, on the
+     sheet's primary marquee action (see this file's own comment above),
+     so a real min-height belongs here rather than an invisible ::after
+     hit-area overlay the way the compact .rel-chip__menu-btn icon uses. */
+  width: 100%; min-height: 44px; margin: 4px 0 18px; padding: 11px 14px; border-radius: 12px;
   border: 1px dashed var(--accent, #c2603a); background: color-mix(in srgb, var(--accent, #c2603a) 7%, transparent);
   color: var(--accent, #c2603a); font-size: 13.5px; font-weight: 600; cursor: pointer;
   transition: background 0.15s;
@@ -12705,7 +12709,11 @@ button.health-notes {
   line-height: 1.25;
 }
 .education-rung__field { margin: 2px 0 0; font-size: 13px; font-weight: 500; color: var(--ink-soft); }
-.education-rung__meta { margin: 4px 0 0; font-size: 12.5px; font-weight: 600; color: var(--ink-faint); }
+/* Real content (location + year range), not a placeholder — was --ink-faint
+   (measured ~2.1:1 on this card's --paper-deep background); --ink-soft
+   matches the sibling .education-rung__note just below and measures a real
+   5.05:1 on white (comparable on --paper-deep). */
+.education-rung__meta { margin: 4px 0 0; font-size: 12.5px; font-weight: 600; color: var(--ink-soft); }
 .education-rung__note {
   margin: 8px 0 0;
   font-size: 13px;
@@ -12832,7 +12840,10 @@ button.health-notes {
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--ink-faint);
+  /* Structures the section ("Father's father's line") — the exact class of
+     label .profile-section__title's own comment already names as the wrong
+     use of --ink-faint (~2.3:1). --ink-soft measures 5.05:1. */
+  color: var(--ink-soft);
 }
 .ancestry-route {
   display: flex;
@@ -12899,7 +12910,10 @@ button.health-notes {
 }
 .ancestry-waypoint-place {
   font-size: 11.5px;
-  color: var(--ink-faint, #b0a9a5);
+  /* Was --ink-faint (~2.3:1 on white) — real content (an ancestor's actual
+     birthplace), not a placeholder. See .profile-section__title's own
+     comment for the same fix and its reasoning; --ink-soft measures 5.05:1. */
+  color: var(--ink-soft);
   margin-top: 2px;
   line-height: 1.2;
 }
