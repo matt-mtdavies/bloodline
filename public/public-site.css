@@ -34,6 +34,13 @@ body {
   --paper: #ffffff;
   --ground: #f6f1e9;
   --hairline: #e8e2d6;
+  /* Only used by the sign-in form's validation hint; not a general token —
+     this file otherwise has no red/error color of its own (matching the
+     main app's own "deliberately no error/red token in the warm palette"
+     stance). Real, declared value rather than a bare literal, per the
+     "tokenize instead of leaving it undocumented" fix already applied
+     elsewhere this session. */
+  --error: #a1442c;
   --display: 'Fraunces', Georgia, 'Times New Roman', serif;
   --body: 'Hanken Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
   --radius: 16px;
@@ -309,8 +316,14 @@ a:focus-visible, button:focus-visible, summary:focus-visible, input:focus-visibl
 .pub-footer__brand { display: flex; align-items: center; gap: 10px; font-family: var(--display); font-weight: 700; font-size: 18px; margin-bottom: 10px; text-decoration: none; color: var(--ink); }
 .pub-footer__tagline { font-size: 13.5px; color: var(--ink-soft); max-width: 280px; line-height: 1.5; }
 .pub-footer__col h4 { font-size: 12.5px; text-transform: uppercase; letter-spacing: .08em; color: var(--ink-faint); margin-bottom: 14px; }
-.pub-footer__col ul { display: flex; flex-direction: column; gap: 10px; }
-.pub-footer__col a { font-size: 14px; color: var(--ink-soft); text-decoration: none; }
+.pub-footer__col ul { display: flex; flex-direction: column; gap: 2px; }
+/* Real, if low-priority, gap found by /impeccable audit: these measured
+   ~90x16px — well under PRODUCT.md's documented 44px public-page floor
+   (WCAG 2.5.8 itself exempts inline text links like these, so this isn't a
+   compliance failure, just short of the app's own stricter bar). Padding
+   raises the tappable height without visually inflating the footer into a
+   much taller block — `ul`'s gap dropped in the same proportion it grew. */
+.pub-footer__col a { display: inline-block; font-size: 14px; padding: 8px 0; color: var(--ink-soft); text-decoration: none; }
 .pub-footer__col a:hover { color: var(--ink); text-decoration: underline; }
 .pub-footer__bottom { display: flex; flex-wrap: wrap; gap: 10px 20px; justify-content: space-between; align-items: center; padding-top: 22px; border-top: 1px solid var(--hairline); font-size: 12.5px; color: var(--ink-faint); }
 
@@ -372,7 +385,7 @@ a:focus-visible, button:focus-visible, summary:focus-visible, input:focus-visibl
   margin-bottom: 14px; -webkit-appearance: none;
 }
 .pub-input:focus { outline: none; border-color: var(--accent); }
-.pub-form-hint { font-size: 13px; color: #a1442c; margin-top: 10px; min-height: 16px; }
+.pub-form-hint { font-size: 13px; color: var(--error); margin-top: 10px; min-height: 16px; }
 .pub-form-note { font-size: 13px; color: var(--ink-faint); text-align: center; margin-top: 16px; line-height: 1.5; }
 
 /* ---------- reduced motion ---------- */

@@ -1,10 +1,26 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { focusableWithin } from '../lib/useDialogFocus.js';
 
 const TOTAL_STEPS = 6;
 
 export default function Onboarding({ onComplete }) {
   const [step, setStep] = useState(0);
   const [leaving, setLeaving] = useState(false);
+  // Real gap found by /impeccable audit: this wizard is a brand-new user's
+  // very first form, and it never moved focus onto anything — completing
+  // Step 0 (the name field) or advancing to any later step left
+  // document.activeElement on <body>, live-verified. Not a dialog (nothing
+  // else is mounted alongside it, so there's no trap to build, just an
+  // initial-focus problem) — a plain effect on `step` covers mount too,
+  // since `step` starts truthy-comparable at 0 on first render.
+  const stepRef = useRef(null);
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => {
+      const target = focusableWithin(stepRef.current)[0];
+      target?.focus();
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [step]);
 
   // Form state — all optional except me.name
   const [me, setMe] = useState({ name: '', birthYear: '' });
@@ -66,7 +82,7 @@ export default function Onboarding({ onComplete }) {
 
       {/* Step body */}
       <div className="ob__body">
-        <div key={step} className="ob__step">
+        <div key={step} className="ob__step" ref={stepRef}>
           {step === 0 && <StepYou me={me} onChange={setMe} />}
           {step === 1 && <StepPartner partner={partner} onChange={setPartner} />}
           {step === 2 && <StepParents parents={parents} onUpdate={updateParent} />}
@@ -309,10 +325,10 @@ function StepFamilyName({ value, onChange, suggestion }) {
 function IconSelf() {
   return (
     <svg className="ob-icon" viewBox="0 0 80 80" fill="none" aria-hidden="true">
-      <circle cx="40" cy="26" r="16" stroke="#c2603a" strokeWidth="2.5"
+      <circle cx="40" cy="26" r="16" stroke="var(--accent)" strokeWidth="2.5"
               className="obi-c" style={{ '--t': '0.05s' }} />
       <path d="M10 74c0-16.569 13.431-30 30-30s30 13.431 30 30"
-            stroke="#c2603a" strokeWidth="2.5" strokeLinecap="round"
+            stroke="var(--accent)" strokeWidth="2.5" strokeLinecap="round"
             strokeDasharray="1" strokeDashoffset="1" pathLength="1"
             className="obi-l" style={{ '--t': '0.4s' }} />
     </svg>
@@ -322,9 +338,9 @@ function IconSelf() {
 function IconPartner() {
   return (
     <svg className="ob-icon" viewBox="0 0 80 80" fill="none" aria-hidden="true">
-      <circle cx="28" cy="40" r="21" stroke="#4a7c6f" strokeWidth="2.5"
+      <circle cx="28" cy="40" r="21" stroke="var(--sage)" strokeWidth="2.5"
               className="obi-c" style={{ '--t': '0.05s' }} />
-      <circle cx="52" cy="40" r="21" stroke="#c2603a" strokeWidth="2.5"
+      <circle cx="52" cy="40" r="21" stroke="var(--accent)" strokeWidth="2.5"
               className="obi-c" style={{ '--t': '0.28s' }} />
     </svg>
   );
@@ -344,9 +360,9 @@ function IconParents() {
             strokeDasharray="1" strokeDashoffset="1" pathLength="1"
             className="obi-l" style={{ '--t': '0.32s' }} />
       {/* Parents (top) */}
-      <circle cx="20" cy="21" r="13" stroke="#4a7c6f" strokeWidth="2.5"
+      <circle cx="20" cy="21" r="13" stroke="var(--sage)" strokeWidth="2.5"
               className="obi-c" style={{ '--t': '0.45s' }} />
-      <circle cx="60" cy="21" r="13" stroke="#7c6244" strokeWidth="2.5"
+      <circle cx="60" cy="21" r="13" stroke="var(--gold)" strokeWidth="2.5"
               className="obi-c" style={{ '--t': '0.58s' }} />
     </svg>
   );
@@ -356,7 +372,7 @@ function IconChildren() {
   return (
     <svg className="ob-icon" viewBox="0 0 80 80" fill="none" aria-hidden="true">
       {/* You (top) */}
-      <circle cx="40" cy="18" r="14" fill="#c2603a"
+      <circle cx="40" cy="18" r="14" fill="var(--accent)"
               className="obi-c" style={{ '--t': '0.05s' }} />
       {/* Lines down */}
       <path d="M40 32 L22 53" stroke="#d4c4ba" strokeWidth="2" strokeLinecap="round"
@@ -366,9 +382,9 @@ function IconChildren() {
             strokeDasharray="1" strokeDashoffset="1" pathLength="1"
             className="obi-l" style={{ '--t': '0.34s' }} />
       {/* Children (bottom) */}
-      <circle cx="20" cy="63" r="11" fill="#4a5a7c"
+      <circle cx="20" cy="63" r="11" fill="var(--memorial)"
               className="obi-c" style={{ '--t': '0.5s' }} />
-      <circle cx="60" cy="63" r="11" fill="#6f4a7c"
+      <circle cx="60" cy="63" r="11" fill="var(--accent-deep)"
               className="obi-c" style={{ '--t': '0.62s' }} />
     </svg>
   );
@@ -379,7 +395,7 @@ function IconMemory() {
     <svg className="ob-icon" viewBox="0 0 80 80" fill="none" aria-hidden="true">
       {/* 5-pointed star */}
       <path d="M40,12 L46,31 L67,31 L51,43 L57,63 L40,51 L23,63 L29,43 L13,31 L33,31 Z"
-            fill="rgba(194,96,58,0.1)" stroke="#c2603a" strokeWidth="2.2" strokeLinejoin="round"
+            fill="color-mix(in srgb, var(--accent) 10%, transparent)" stroke="var(--accent)" strokeWidth="2.2" strokeLinejoin="round"
             className="obi-c" style={{ '--t': '0.05s' }} />
     </svg>
   );
@@ -390,17 +406,17 @@ function IconFamilyName() {
     <svg className="ob-icon" viewBox="0 0 80 80" fill="none" aria-hidden="true">
       {/* Roof */}
       <path d="M8 42 L40 12 L72 42"
-            stroke="#241f1c" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+            stroke="var(--ink)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
             strokeDasharray="1" strokeDashoffset="1" pathLength="1"
             className="obi-l" style={{ '--t': '0.05s' }} />
       {/* Walls */}
       <path d="M16 42 L16 70 L64 70 L64 42"
-            stroke="#241f1c" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+            stroke="var(--ink)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
             strokeDasharray="1" strokeDashoffset="1" pathLength="1"
             className="obi-l" style={{ '--t': '0.4s' }} />
       {/* Door */}
       <path d="M32 70 L32 55 L48 55 L48 70"
-            stroke="#c2603a" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+            stroke="var(--accent)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
             strokeDasharray="1" strokeDashoffset="1" pathLength="1"
             className="obi-l" style={{ '--t': '0.68s' }} />
     </svg>

@@ -81,11 +81,11 @@ function SlideTree() {
         <line x1="100" y1="88" x2="146" y2="130" className="itree__line itree__line--3" stroke="#d4c4ba" strokeWidth="1.6" strokeLinecap="round" />
         <line x1="54"  y1="130" x2="34"  y2="182" className="itree__line itree__line--4" stroke="#d4c4ba" strokeWidth="1.6" strokeLinecap="round" />
         <line x1="54"  y1="130" x2="74"  y2="182" className="itree__line itree__line--5" stroke="#d4c4ba" strokeWidth="1.6" strokeLinecap="round" />
-        <circle cx="100" cy="28"  r="20" className="itree__node itree__node--1" fill="#b85838" />
-        <circle cx="54"  cy="116" r="18" className="itree__node itree__node--2" fill="#4a7c6f" />
-        <circle cx="146" cy="116" r="18" className="itree__node itree__node--3" fill="#7c6244" />
-        <circle cx="34"  cy="194" r="14" className="itree__node itree__node--4" fill="#4a5a7c" />
-        <circle cx="74"  cy="194" r="14" className="itree__node itree__node--5" fill="#6f4a7c" />
+        <circle cx="100" cy="28"  r="20" className="itree__node itree__node--1" fill="var(--accent)" />
+        <circle cx="54"  cy="116" r="18" className="itree__node itree__node--2" fill="var(--sage)" />
+        <circle cx="146" cy="116" r="18" className="itree__node itree__node--3" fill="var(--gold)" />
+        <circle cx="34"  cy="194" r="14" className="itree__node itree__node--4" fill="var(--memorial)" />
+        <circle cx="74"  cy="194" r="14" className="itree__node itree__node--5" fill="var(--accent-deep)" />
       </svg>
       <p className="intro__tree-label">A family, at a glance.</p>
     </div>
