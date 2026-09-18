@@ -3349,6 +3349,51 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   consistent warm terracotta, edits in neutral grey — visibly more coherent than the previous
   ad hoc rainbow of 18 hues.
 
+- **`/impeccable audit` on the Home hub (`Home.jsx`), then all 5 findings fixed** (13/20
+  "Acceptable" — the detector found 0 anti-patterns; the real findings came from live Tab/
+  Escape sequences and measured rects, the same methodology as the Activity Feed audit above).
+  1. **[P0, real bug] Zero focus management on a `role="dialog" aria-modal="true"` surface —
+     worse than every other surface audited so far, since this one had no Escape handler
+     either.** Live-verified before the fix: opening Home never moved focus off the trigger
+     button, 25 consecutive Tab presses never entered the dialog once (they walked into the
+     hidden-behind-it topbar/zoom/dock controls `aria-modal` claims don't exist), and Escape
+     did nothing at all — the file had no `useEffect` whatsoever. Fixed with the same
+     `useDialogFocus(homeRef, true, { initialFocus: '.home__brand' })` call every other sheet
+     in the app already uses, plus a matching Escape listener mirroring `ActivityFeed.jsx`'s
+     own. Re-verified live: 30 Tabs never leave `.home`, Shift+Tab from the first item wraps
+     to the last and stays inside, and Escape now closes the dialog.
+  2. **[P1] `.home__hero-card-complete` and `.home__row-arrow` measured 2.31:1 on `--ink-faint`
+     — the same WCAG AA failure pattern already fixed twice before (the profile view,
+     Activity Feed).** The former renders a real, live count whenever a Family Perimeter
+     narrows the view, not a placeholder; the latter is a meaningful "this row navigates
+     somewhere" chevron, under WCAG's 3:1 non-text floor. Both swapped to `--ink-soft`
+     (5.05:1).
+  3. **[P1] `.home__brand` — the dialog's ONLY exit besides the newly-added Escape key —
+     measured 33px tall, under the 44px touch floor**, smaller even than the shared
+     `ReturnMark` component it deliberately doesn't reuse (itself 36px, but never the sole
+     exit anywhere else it's used). Given the same invisible centred `::after` hit-area
+     overlay already used for `.rel-chip__menu-btn`/`.places-detail__edit`, so the visible
+     mark stays its designed 33px size while the tappable area grows to 44×44 — confirmed
+     live via `getComputedStyle(el, '::after')`.
+  4. **[P2] `TreeConstellation`'s SVG hardcoded 4 of 5 node fills as raw hex, duplicating real
+     tokens** (`#c2603a`=`--accent`, `#3f5e4e`=`--sage`, `#6b5e7a`=`--memorial`,
+     `#a44d2c`=`--accent-deep` — only the third circle had been tokenized, in an earlier icon-
+     refresh pass that didn't reach the other four), and `.home__stat-tile:nth-child(4n+4)`
+     repeated the `--memorial` hex a second time in CSS — the same "undocumented second
+     palette" drift already fixed in EnrichSheet and the Activity Feed badges this session.
+     All five now reference their real tokens; re-verified live that every SVG fill resolves
+     to the current token's actual computed color, not stale hex.
+  5. **[P3] `byId`/`nameByEmail` were rebuilt as full `Map`s over the entire `people` array on
+     every render, solely to resolve 3 recent-activity rows' author info** — a real if
+     low-impact cost at the documented 1000+-person scale, unlike every other derived value in
+     this file (`scopedGraph`, `thisMonth`, `insightTeaser`, `nextStepPerson`), which were
+     already correctly memoized. Wrapped both in `useMemo` keyed on `[people]`.
+  Verified live at 390×844 against the real dev server: the focus-trap/Escape fixes were
+  screenshotted alongside a full visual pass confirming the tokenized SVG/stat-tile colors
+  render pixel-identical to their old hardcoded values (a real design intent, not a visible
+  change), and zero console/page errors throughout. Full unit suite (88/88), `npm run build`,
+  and the standard smoke test all passed clean.
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);
