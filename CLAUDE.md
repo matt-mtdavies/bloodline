@@ -3394,6 +3394,100 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   change), and zero console/page errors throughout. Full unit suite (88/88), `npm run build`,
   and the standard smoke test all passed clean.
 
+- **`/impeccable audit` on every onboarding + support-page surface, then all findings fixed**
+  (user: "Audit all the on-boarding and support pages" — the widest single-request audit scope
+  this engagement has covered: `Intro.jsx`/`Onboarding.jsx`, `HowItWorks.jsx`, `IntroHint.jsx`,
+  and the full public site — `/start`, `/help`, `/how-it-works`, `/import`, `/guides` + its 3
+  articles, `/sign-in`, and the shared `functions/_lib/publicShell.js` + `public/public-site.css`).
+  Scored separately per surface: Onboarding 9/20 (Poor), `HowItWorks.jsx` 11/20 (Acceptable),
+  `IntroHint.jsx` 18/20 (Excellent, no changes needed), public pages 14/20 (Good). **Live
+  verification of the public pages was a genuine capability upgrade over earlier sessions**:
+  rather than the disclosed "no Cloudflare Pages Functions locally" gap this file has recorded
+  many times, `npx wrangler pages dev dist --port 8788` actually boots cleanly in this sandbox
+  and serves every public route at 200 — used for the whole public-page pass instead of a
+  source-only review.
+  1. **[P0] Onboarding never moved focus anywhere.** Live-verified before the fix: completing
+     Step 0 (the name field, the wizard's entire first purpose) left `document.activeElement`
+     on `<body>`, and every later step-to-step transition did the same. `Onboarding.jsx` isn't a
+     modal dialog — nothing else is mounted alongside it, so there's no Tab trap to build, just
+     a genuine initial-focus gap on a brand-new user's very first form. Fixed with a plain effect
+     on `step` that focuses the new step's first focusable element; `focusableWithin` was
+     exported from `useDialogFocus.js` for this second, non-dialog consumer rather than
+     duplicating the query. Re-verified: initial focus lands on "Your full name," advancing to
+     Partner focuses "Their name," to Parents focuses "Parent 1 name," and the one step that
+     opens with buttons instead of an input (Memory) correctly focuses the first chip.
+  2. **[P0] `HowItWorks.jsx` was the one sheet in the app that declared `role="dialog"
+     aria-modal="true"` but was never wired into the shared focus trap** — the exact pre-fix
+     state `ActivityFeed.jsx` and `Home.jsx` were each in before their own audits reached them,
+     just missed this time. Live-verified before the fix: initial focus stayed on the trigger
+     outside the dialog, and 15 Tab presses walked into the tree canvas's zoom/dock controls
+     behind it. Fixed with the identical one-line `useDialogFocus` call already proven on 9+
+     other sheets.
+  3. **[P1] `Intro.jsx`'s `SlideTree` and every `Onboarding.jsx` step icon shared a whole
+     undocumented second palette** — `#4a7c6f`/`#7c6244`/`#4a5a7c`/`#6f4a7c` match no real
+     token (confirmed visually: a blue and a purple circle where the exact same 5-node tree
+     motif elsewhere in the app — `Home.jsx`'s `TreeConstellation` — uses real terracotta/sage/
+     gold/memorial/accent-deep). Same "second palette" class fixed three times already this
+     session, but the highest-stakes instance: a brand-new user's first visual impression of
+     the brand didn't match the brand. Mapped onto the same 5 real tokens `TreeConstellation`
+     already uses, in the identical top/mid/mid/bottom/bottom position order.
+  4. **[P1] `.intro__word`/`.intro__thesis--accent`/`.ob__q` hardcoded `#241f1c`, which measured
+     as literally the wrong value** — the real `--ink` token is `#1c1d21`, confirmed via
+     `getComputedStyle`. Not even a `var()` fallback, a bare stale literal that could never
+     inherit a future ink correction. Fixed to `var(--ink)`; re-measured at the real token value
+     on all three.
+  5. **[P1] The public site's brand mark was the one copy of the three-circle Bloodline mark
+     that never received the icon-refresh gold retune every sibling instance got.** Confirmed
+     live on all 10 routes checked: the header/footer logo's third circle resolved to
+     `#b08642` while `Logo.jsx`, `admin.html`, `privacy.html`, and `terms.html` all show the
+     retuned `#c4913f`. **Investigated before touching anything, and found this wasn't simply an
+     oversight to blanket-fix**: `theme.css`'s own `--gold` token deliberately stays the older,
+     more muted `#b08642` for general accent use — confirmed via `tests/admin-theme-tokens.test.mjs`,
+     which explicitly excludes `--gold` from its byte-identical check and asserts the split
+     stays *documented*, not synced. Retuning `theme.css`'s `--gold` itself would have undone a
+     real, tested, deliberate decision — exactly the kind of "verified in isolation, breaks
+     something else" mistake this session's own Chart-view incident already warned against
+     repeating. The correct, narrow fix: `publicShell.js`'s `brandMark()` hardcodes its three
+     circles directly (matching `Logo.jsx`'s own convention of not using CSS vars for the mark
+     at all) — only the third circle's literal value needed correcting to `#c4913f`, leaving
+     `theme.css`'s `--gold` and every one of its 21 other in-app uses completely untouched.
+     Re-verified live: the mark now resolves to `#c2603a`/`#3f5e4e`/`#c4913f` on every public
+     route, and `tests/admin-theme-tokens.test.mjs` still passes unchanged.
+  6. **[P2] Five touch targets under the 44px floor across the onboarding flow** — the widest
+     single-surface spread of this bug class found so far: `.intro__skip` (measured 49.8×28),
+     `.ob__dyn-rm` (28×28), `.ob__skip` (176×26), `.ob__add-btn` (150.7×40), `.ob__chip`
+     (126.7×40). Same invisible centred `::after` hit-area overlay used throughout the app;
+     visible sizes unchanged. Confirmed each overlay measures the full 44px live; confirmed the
+     wrapped chips' 10px row gap still leaves clearance between overlays on adjacent lines
+     rather than letting them collide.
+  7. **[P3] `HowItWorks.jsx`'s four autoplaying, looping tutorial clips had no
+     `prefers-reduced-motion` consideration at all.** Reused the same `useReducedMotion` hook
+     `Intro.jsx`'s own phase timer already respects — `autoPlay`/`loop` are now omitted when
+     reduced motion is on, leaving the poster frame as a legible static stand-in.
+  8. **[P3] A third ghost token, `--hairline-dark`** (never declared anywhere, silently falling
+     through to its own fallback on the onboarding progress dots) — the same bug class as
+     `--ground` and `--line` before it. Fixed to the real `--hairline` token. **Caught a real
+     methodology mistake verifying this one**: the first live check queried the DOM's first
+     `.ob__dot`, which by that point in the flow was already a "done" dot styled by a completely
+     different rule (`color-mix(in srgb, var(--accent) 50%, white)`) — a false read that would
+     have wrongly suggested the fix didn't apply. Re-checked against a genuinely *unreached* dot
+     and confirmed it resolves to `#ebedf0`, the real token value.
+  9. **[P3] `public-site.css`'s `.pub-form-hint` hardcoded `#a1442c` with no token backing it in
+     that file at all** (contrast itself measured fine, 6.22:1 — a consistency gap, not a
+     legibility one). Tokenized as a real, declared `--error` in that file's own `:root` at the
+     identical value — zero visual change, confirmed via `getComputedStyle` before/after.
+  10. **[P3] The footer's "Trust" column listed both "Privacy & ownership" (`/privacy`) and
+      "Privacy Policy" (`/privacy.html`) as separate rows.** Checked live before assuming a bug:
+      `/privacy.html` 308-redirects to `/privacy`, so these were never two different
+      destinations, just redundant copy for one page. Removed the duplicate row.
+  11. **[P3] Footer text links measured ~90×16px** — WCAG 2.5.8 itself exempts inline text links
+      from a target-size requirement, so this was flagged as the lowest-priority finding, and
+      fixed as a disclosed partial improvement rather than forcing the full 44px: modest padding
+      plus a reduced list gap brought it to ~90×37px without inflating the footer into a much
+      taller block for a low-risk, already-exempt control.
+  Full unit suite (88/88), `npm run build`, `tests/admin-theme-tokens.test.mjs` (confirming the
+  deliberate `--gold` split survived untouched), and the standard smoke test all passed clean.
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);
