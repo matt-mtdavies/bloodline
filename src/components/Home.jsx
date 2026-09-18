@@ -1,9 +1,10 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import Logo from './Logo.jsx';
 import { ActivityRow } from './ActivityFeed.jsx';
 import { computeThisMonth, computeInsightModules, highlightCandidates } from '../lib/insightModules.js';
 import { scopeGraphToIds } from '../data/graph.js';
 import { timed } from '../lib/perfInstrument.js';
+import { useDialogFocus } from '../lib/useDialogFocus.js';
 
 // Home's "small preselected set" (Phase 6 §6.9: "Home uses a small
 // preselected set, not the full Insights suite"). Every key
@@ -117,20 +118,47 @@ export default function Home({
     return candidates.length ? candidates[nextInsightIndex(candidates.length)] : null;
   }, [graph, cohortIds]);
   const recent = activity.slice(0, 3);
-  const byId = new Map(people.map((p) => [p.id, p]));
-  const nameByEmail = new Map();
-  for (const p of people) {
-    for (const e of [p.email, p.invited_email]) {
-      if (e) nameByEmail.set(e.toLowerCase(), p.display_name);
+  // Real gap found by /impeccable audit: only used to resolve 3 recent-
+  // activity rows' author info, but was rebuilt as a full Map over the
+  // entire people array on every render — a real cost at the documented
+  // 1000+-person scale, unlike the other derived values in this file which
+  // are already memoized.
+  const byId = useMemo(() => new Map(people.map((p) => [p.id, p])), [people]);
+  const nameByEmail = useMemo(() => {
+    const m = new Map();
+    for (const p of people) {
+      for (const e of [p.email, p.invited_email]) {
+        if (e) m.set(e.toLowerCase(), p.display_name);
+      }
     }
-  }
+    return m;
+  }, [people]);
+
+  // Real gap found by /impeccable audit: this dialog declared
+  // role="dialog" aria-modal="true" with NO focus management at all — not
+  // even an Escape handler. Live-verified: opening it never moved focus off
+  // the trigger, 25 Tab presses never entered the dialog once, and Escape
+  // did nothing. The only way out was a 33px-tall mark, unreachable by
+  // keyboard. Same fix already applied to ActivityFeed/PersonSheet+sheets.
+  const homeRef = useRef(null);
+  useDialogFocus(homeRef, true, { initialFocus: '.home__brand' });
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
 
   return (
-    <div className="home" role="dialog" aria-modal="true" aria-label="Bloodline home">
+    <div className="home" role="dialog" aria-modal="true" aria-label="Bloodline home" ref={homeRef}>
       <div className="home__top">
         {/* The mark itself is the way back to the tree now — the same
             breathing family mark the topbar uses, doing the same job,
-            rather than a second, separate close button beside it. */}
+            rather than a second, separate close button beside it. It is
+            also, per the audit above, the dialog's ONLY exit besides
+            Escape — its hit area is enlarged past its 33px visible size via
+            a centred ::after overlay (see components.css), the same
+            technique used everywhere else in the app that a control must
+            stay visually compact but still clear the 44px touch floor. */}
         <button className="home__brand" onClick={onClose} aria-label="Back to the tree">
           <Logo size={22} idle animate={false} />
           <span className="home__brand-word">Bloodline</span>
@@ -433,11 +461,11 @@ function TreeConstellation() {
       <line x1="100" y1="62" x2="146" y2="96" stroke="var(--hairline)" strokeWidth="1.6" />
       <line x1="54" y1="96" x2="34" y2="132" stroke="var(--hairline)" strokeWidth="1.6" />
       <line x1="54" y1="96" x2="74" y2="132" stroke="var(--hairline)" strokeWidth="1.6" />
-      <circle className="home__const-node home__const-node--1" cx="100" cy="18" r="16" fill="#c2603a" />
-      <circle className="home__const-node home__const-node--2" cx="54" cy="88" r="14.5" fill="#3f5e4e" />
+      <circle className="home__const-node home__const-node--1" cx="100" cy="18" r="16" fill="var(--accent)" />
+      <circle className="home__const-node home__const-node--2" cx="54" cy="88" r="14.5" fill="var(--sage)" />
       <circle className="home__const-node home__const-node--3" cx="146" cy="88" r="14.5" fill="var(--gold)" />
-      <circle className="home__const-node home__const-node--4" cx="34" cy="138" r="11" fill="#6b5e7a" />
-      <circle className="home__const-node home__const-node--5" cx="74" cy="138" r="11" fill="#a44d2c" />
+      <circle className="home__const-node home__const-node--4" cx="34" cy="138" r="11" fill="var(--memorial)" />
+      <circle className="home__const-node home__const-node--5" cx="74" cy="138" r="11" fill="var(--accent-deep)" />
     </svg>
   );
 }
