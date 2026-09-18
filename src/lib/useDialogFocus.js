@@ -40,7 +40,12 @@ const FOCUSABLE = [
   '[tabindex]:not([tabindex="-1"])',
 ].join(', ');
 
-function focusableWithin(root) {
+// Exported for the same reason it exists here: Onboarding.jsx's step wizard
+// isn't a dialog (nothing else is mounted alongside it to trap focus
+// against), so it doesn't use the hook below, but it needs this exact
+// "what's focusable in here" query to move focus onto each new step's first
+// field — no reason to duplicate the logic for a second consumer.
+export function focusableWithin(root) {
   if (!root) return [];
   // offsetParent filters out anything display:none'd by a collapsed
   // disclosure — a hidden control must not swallow a Tab stop. (position:

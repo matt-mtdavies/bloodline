@@ -38,8 +38,10 @@ const FOOTER_COLUMNS = [
   {
     title: 'Trust',
     links: [
+      // /privacy.html used to have its own row here too ("Privacy Policy")
+      // — it 308-redirects to this same /privacy page, so it was a second
+      // row for an identical destination, not a genuinely different one.
       { href: '/privacy', label: 'Privacy & ownership' },
-      { href: '/privacy.html', label: 'Privacy Policy' },
       { href: '/terms.html', label: 'Terms' },
       { href: '/help#accessibility', label: 'Accessibility statement' },
     ],
@@ -59,13 +61,23 @@ export function esc(value = '') {
   }[c]));
 }
 
-/** The three-circle Bloodline mark, static (no CSS animation) for public pages. */
+/**
+ * The three-circle Bloodline mark, static (no CSS animation) for public
+ * pages. Hardcoded hex, matching every other embedded copy of this exact
+ * mark (Logo.jsx, admin.html, privacy.html, terms.html) rather than
+ * `var(--gold)` — deliberately: theme.css's own --gold token stays the
+ * older, more muted #b08642 for general accent use (see the icon-refresh
+ * note in CLAUDE.md and tests/admin-theme-tokens.test.mjs), while the mark
+ * ITSELF, wherever it's drawn, uses the newer, warmer #c4913f. This file's
+ * copy was the one instance that pass never reached — its third circle was
+ * still on the pre-retune value while all five siblings had already moved.
+ */
 export function brandMark(size = 26) {
   const h = Math.round((size * 40) / 42);
   return `<svg width="${size}" height="${h}" viewBox="0 0 42 40" fill="none" aria-hidden="true">
     <circle cx="13.9" cy="16.5" r="11.8" fill="#c2603a" stroke="#fff" stroke-width="2.4"/>
     <circle cx="28.1" cy="16.5" r="11.8" fill="#3f5e4e" stroke="#fff" stroke-width="2.4"/>
-    <circle cx="21" cy="30.6" r="7.8" fill="#b08642" stroke="#fff" stroke-width="2.4"/>
+    <circle cx="21" cy="30.6" r="7.8" fill="#c4913f" stroke="#fff" stroke-width="2.4"/>
   </svg>`;
 }
 

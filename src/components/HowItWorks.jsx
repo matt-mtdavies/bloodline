@@ -1,5 +1,7 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import ReturnMark from './ReturnMark.jsx';
+import { useDialogFocus } from '../lib/useDialogFocus.js';
+import { useReducedMotion } from '../hooks/useReducedMotion.js';
 
 /*
  * A quick tour — the four feature clips that used to live inline on Home,
@@ -8,6 +10,13 @@ import ReturnMark from './ReturnMark.jsx';
  * Home itself reads as a launch point rather than the whole app in one feed.
  */
 export default function HowItWorks({ onClose }) {
+  const panelRef = useRef(null);
+  // Real gap found by /impeccable audit: this was the one sheet in the app
+  // that declared role="dialog" aria-modal="true" but never got wired into
+  // the shared focus trap from the profile-view critique, the same miss
+  // ActivityFeed/Home.jsx each had before their own audits reached them.
+  useDialogFocus(panelRef, true, { initialFocus: '.return-mark' });
+
   useEffect(() => {
     const onKey = (e) => e.key === 'Escape' && onClose();
     window.addEventListener('keydown', onKey);
@@ -15,7 +24,7 @@ export default function HowItWorks({ onClose }) {
   }, [onClose]);
 
   return (
-    <div className="subpage" role="dialog" aria-modal="true" aria-label="How it works">
+    <div className="subpage" role="dialog" aria-modal="true" aria-label="How it works" ref={panelRef}>
       <div className="subpage__top">
         <ReturnMark onClick={onClose} label="Back to home" />
         <span className="subpage__top-title">How it works</span>
@@ -56,14 +65,19 @@ export default function HowItWorks({ onClose }) {
 }
 
 function FeatureClip({ src, poster, title, desc }) {
+  // Real gap found by /impeccable audit: four autoplaying, looping clips
+  // with no prefers-reduced-motion consideration at all. Reuses the same
+  // hook Intro.jsx's own phase timer already respects — the poster frame
+  // alone is a perfectly legible stand-in for a still, non-autoplaying tour.
+  const reducedMotion = useReducedMotion();
   return (
     <div className="home__feature-card">
       <video
         className="home__clip"
         src={src}
         poster={poster}
-        autoPlay
-        loop
+        autoPlay={!reducedMotion}
+        loop={!reducedMotion}
         muted
         playsInline
         preload="metadata"
