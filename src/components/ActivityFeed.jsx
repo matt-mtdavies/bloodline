@@ -1,7 +1,8 @@
-import { useMemo, useEffect } from 'react';
+import { useMemo, useEffect, useRef } from 'react';
 import Avatar from './Avatar.jsx';
 import { BranchIcon, MedalIcon } from './MilitaryIcons.jsx';
 import ReturnMark from './ReturnMark.jsx';
+import { useDialogFocus } from '../lib/useDialogFocus.js';
 
 // person_updated activity details that trace back to a military-only edit
 // (see App.jsx's applyDocumentField, which turns 'military_branch' etc. into
@@ -10,6 +11,14 @@ import ReturnMark from './ReturnMark.jsx';
 const MILITARY_FIELD_DETAILS = new Set(['military branch', 'military nation', 'military service number', 'military rank']);
 
 export default function ActivityFeed({ activity = [], people = [], userEmail, onClose, onSelectPerson, recapCount = 0, onShowRecap }) {
+  const panelRef = useRef(null);
+  // Real gap found by /impeccable audit: this panel declares role="dialog"
+  // aria-modal="true" but — unlike every other sheet in the app — never got
+  // wired into the shared focus trap from the profile-view critique. Opening
+  // it left focus on the trigger bell outside the panel, and Tab cycled
+  // through background topbar/dock controls aria-modal claims don't exist.
+  useDialogFocus(panelRef, true, { initialFocus: '.return-mark' });
+
   const byId = useMemo(() => new Map(people.map((p) => [p.id, p])), [people]);
   // Resolve an author's real name from their email by matching a tree person —
   // so the feed shows "Jess Ransom", not the "jscottd" guessed from the address.
@@ -52,7 +61,7 @@ export default function ActivityFeed({ activity = [], people = [], userEmail, on
   return (
     <>
       <div className="activity-scrim" onClick={onClose} aria-hidden="true" />
-      <div className="activity-panel" role="dialog" aria-label="Family activity" aria-modal="true">
+      <div ref={panelRef} className="activity-panel" role="dialog" aria-label="Family activity" aria-modal="true">
         <div className="activity-panel__header">
           <ReturnMark onClick={onClose} />
           <h2 className="activity-panel__title">Family Activity</h2>
@@ -106,11 +115,15 @@ export function ActivityRow({ event, person, userEmail, nameByEmail, onSelect })
     : person;
   // Nothing to navigate to for either — the person's gone (member_joined has
   // no tree person at all; person_removed's personId no longer resolves).
+  // Real /impeccable audit finding: this used to render as a <button> with
+  // onClick={undefined} — focusable, announced as actionable, and inert. A
+  // plain non-interactive div gives no false affordance instead.
   const nonInteractive = event.type === 'member_joined' || event.type === 'person_removed';
+  const Row = nonInteractive ? 'div' : 'button';
 
   return (
-    <button className="activity-row" onClick={nonInteractive ? undefined : onSelect}
-      style={nonInteractive ? { cursor: 'default' } : undefined}>
+    <Row className={`activity-row${nonInteractive ? ' activity-row--static' : ''}`}
+      onClick={nonInteractive ? undefined : onSelect}>
       <div className="activity-row__avatar-wrap">
         <Avatar person={avatarPerson} size={40} />
         <span className="activity-row__badge" style={{ background: color }} aria-hidden="true">
@@ -130,7 +143,7 @@ export function ActivityRow({ event, person, userEmail, nameByEmail, onSelect })
       <time className="activity-row__time" dateTime={event.created_at}>
         {relativeTime(event.created_at)}
       </time>
-    </button>
+    </Row>
   );
 }
 
@@ -261,6 +274,24 @@ function ActivityEmpty() {
   );
 }
 
+// Badge colour groups (Impeccable audit finding: these 18 event types used
+// to carry 18 separate hand-picked hex values, an entire undocumented
+// second palette drifting alongside the real one — same shape of problem
+// already fixed once for EnrichSheet's five finding tiers). The icon is
+// what tells you exactly what happened; colour only needs to say which of
+// a small number of KINDS of change this was, so every badge now
+// references one of the app's own documented tokens directly rather than
+// a hex guess — any future palette retune (like the --gold retune this
+// project already did once) is picked up automatically instead of quietly
+// going stale, which is exactly what happened to the old residence/medal
+// colours (both were the pre-retune --gold value, hardcoded).
+const BADGE_ADD = 'var(--accent)';
+const BADGE_EDIT = 'var(--ink-soft)';
+const BADGE_REMOVE = 'var(--error)';
+const BADGE_SPECIAL = 'var(--gold)';
+const BADGE_MEMORIAL = 'var(--memorial)';
+const BADGE_NARRATIVE = 'var(--accent-deep)';
+
 // A military-specific badge override for person_updated events whose detail
 // unambiguously traces to a military edit — a medal add, or one of the four
 // document-extracted service fields. Everything else (including the generic
@@ -268,39 +299,39 @@ function ActivityEmpty() {
 // birthday) falls through to the plain edit icon rather than guess.
 function militaryTypeConfig(event, person) {
   if (event.type !== 'person_updated') return null;
-  if (event.detail === 'medals') return { color: '#a8842f', Icon: () => <MedalIcon size={9} /> };
+  if (event.detail === 'medals') return { color: BADGE_SPECIAL, Icon: () => <MedalIcon size={9} /> };
   if (MILITARY_FIELD_DETAILS.has(event.detail)) {
-    return { color: '#5b6b7a', Icon: () => <BranchIcon branch={person?.military_branch} nation={person?.military_nation} size={9} /> };
+    return { color: BADGE_EDIT, Icon: () => <BranchIcon branch={person?.military_branch} nation={person?.military_nation} size={9} /> };
   }
   return null;
 }
 
 function typeConfig(type) {
   switch (type) {
-    case 'person_added':      return { color: '#3a8a5a', Icon: PersonAddIcon };
-    case 'memory_added':      return { color: '#c2603a', Icon: MemoryIcon };
-    case 'photo_added':       return { color: '#3b73b8', Icon: CameraIcon };
-    case 'document_added':    return { color: '#7b5ea8', Icon: DocumentIcon };
-    case 'portrait_updated':  return { color: '#c2603a', Icon: PortraitIcon };
-    case 'person_updated':    return { color: '#6b6f76', Icon: EditIcon };
-    case 'relationship_added':return { color: '#4b6ea8', Icon: LinkIcon };
-    case 'relationship_changed': return { color: '#6b7fb8', Icon: LinkIcon };
-    case 'relationship_removed': return { color: '#8a5a52', Icon: UnlinkIcon };
-    case 'people_merged':     return { color: '#3d8c7a', Icon: MergeIcon };
-    case 'person_removed':    return { color: '#8a6f52', Icon: PersonRemoveIcon };
-    case 'health_updated':    return { color: '#5a8a72', Icon: HeartIcon };
-    case 'member_joined':     return { color: '#2a7a6a', Icon: JoinIcon };
-    case 'keepsake_generated':return { color: '#a44d2c', Icon: KeepsakeIcon };
-    case 'ancestry_story_generated': return { color: '#a44d2c', Icon: RootsIcon };
-    case 'residence_added':
-    case 'residence_updated':
-    case 'residence_removed': return { color: '#b08642', Icon: PinIcon };
-    case 'education_added':
-    case 'education_updated':
-    case 'education_removed': return { color: '#4a5a8a', Icon: CapIcon };
+    case 'person_added':      return { color: BADGE_ADD, Icon: PersonAddIcon };
+    case 'memory_added':      return { color: BADGE_ADD, Icon: MemoryIcon };
+    case 'photo_added':       return { color: BADGE_ADD, Icon: CameraIcon };
+    case 'document_added':    return { color: BADGE_ADD, Icon: DocumentIcon };
+    case 'portrait_updated':  return { color: BADGE_ADD, Icon: PortraitIcon };
+    case 'person_updated':    return { color: BADGE_EDIT, Icon: EditIcon };
+    case 'relationship_added':return { color: BADGE_ADD, Icon: LinkIcon };
+    case 'relationship_changed': return { color: BADGE_EDIT, Icon: LinkIcon };
+    case 'relationship_removed': return { color: BADGE_REMOVE, Icon: UnlinkIcon };
+    case 'people_merged':     return { color: BADGE_SPECIAL, Icon: MergeIcon };
+    case 'person_removed':    return { color: BADGE_REMOVE, Icon: PersonRemoveIcon };
+    case 'health_updated':    return { color: BADGE_EDIT, Icon: HeartIcon };
+    case 'member_joined':     return { color: BADGE_SPECIAL, Icon: JoinIcon };
+    case 'keepsake_generated':return { color: BADGE_NARRATIVE, Icon: KeepsakeIcon };
+    case 'ancestry_story_generated': return { color: BADGE_NARRATIVE, Icon: RootsIcon };
+    case 'residence_added':    return { color: BADGE_ADD, Icon: PinIcon };
+    case 'residence_updated':  return { color: BADGE_EDIT, Icon: PinIcon };
+    case 'residence_removed':  return { color: BADGE_REMOVE, Icon: PinIcon };
+    case 'education_added':    return { color: BADGE_ADD, Icon: CapIcon };
+    case 'education_updated':  return { color: BADGE_EDIT, Icon: CapIcon };
+    case 'education_removed':  return { color: BADGE_REMOVE, Icon: CapIcon };
     case 'resting_place_updated':
-    case 'resting_place_removed': return { color: '#6b5e7a', Icon: LaurelIcon };
-    default:                  return { color: '#6b6f76', Icon: EditIcon };
+    case 'resting_place_removed': return { color: BADGE_MEMORIAL, Icon: LaurelIcon };
+    default:                  return { color: BADGE_EDIT, Icon: EditIcon };
   }
 }
 

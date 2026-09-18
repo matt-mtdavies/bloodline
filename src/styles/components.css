@@ -3091,7 +3091,8 @@
 .toggle--row { display: flex; align-items: center; justify-content: space-between; gap: 14px; width: 100%; }
 
 @media (prefers-reduced-motion: reduce) {
-  .sheet, .sheet-scrim, .intro-hint, .pill, .btn, .rel-chip, .person-row {
+  .sheet, .sheet-scrim, .intro-hint, .pill, .btn, .rel-chip, .person-row,
+  .activity-panel, .activity-scrim {
     animation-duration: 0.001ms !important;
     transition-duration: 0.12s !important;
   }
@@ -7291,7 +7292,12 @@ button.health-notes {
   overscroll-behavior: contain;
 }
 
-/* Sticky day header */
+/* Sticky day header — real structuring content ("Today", "Monday"), not a
+   placeholder, so --ink-faint (~2.3:1) was the same misuse already fixed
+   once for .profile-section__title; --ink-soft measures 5.05:1. The
+   translucent backdrop is now derived from the real --card token instead
+   of a freestanding rgba(255,255,255) guess, so it tracks --card if that
+   token is ever retuned. */
 .activity-day {
   position: sticky;
   top: 0;
@@ -7300,8 +7306,8 @@ button.health-notes {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.13em;
-  color: var(--ink-faint);
-  background: rgba(255, 255, 255, 0.92);
+  color: var(--ink-soft);
+  background: color-mix(in srgb, var(--card) 92%, transparent);
   backdrop-filter: blur(6px);
   z-index: 1;
   margin: 0;
@@ -7323,6 +7329,12 @@ button.health-notes {
 }
 .activity-row:hover { background: var(--paper-deep); }
 .activity-row:active { background: var(--hairline); }
+/* member_joined/person_removed rows: nothing to navigate to (the tree
+   person is already gone), so these render as a plain non-interactive
+   div rather than a button — no pointer cursor, no hover/active tint
+   implying an action that doesn't exist. */
+.activity-row--static { cursor: default; }
+.activity-row--static:hover, .activity-row--static:active { background: transparent; }
 
 .activity-row__avatar-wrap {
   position: relative;
@@ -7371,7 +7383,9 @@ button.health-notes {
 .activity-row__time {
   flex-shrink: 0;
   font-size: 11px;
-  color: var(--ink-faint);
+  /* Was --ink-faint (~2.3:1) — real content on every row ("3h ago",
+     "Yesterday"), not a placeholder; see .activity-day's own comment. */
+  color: var(--ink-soft);
   white-space: nowrap;
   padding-top: 3px;
 }
@@ -7424,7 +7438,9 @@ button.health-notes {
   margin: 14px 20px 6px;
   padding: 14px 16px;
   border-radius: 16px;
-  background: linear-gradient(135deg, #f7ede0 0%, #f3e2d0 100%);
+  /* Derived from --accent-soft instead of two freestanding hex guesses, so
+     the warm "special action" tint tracks the real accent family. */
+  background: linear-gradient(135deg, color-mix(in srgb, var(--accent-soft) 55%, var(--paper)) 0%, var(--accent-soft) 100%);
   text-align: left;
   color: var(--ink);
   transition: transform 0.2s var(--spring), box-shadow 0.2s var(--ease);

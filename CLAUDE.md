@@ -3288,6 +3288,67 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   Full unit suite (88/88), `npm run build`, and the standard smoke test all passed clean
   throughout.
 
+- **`/impeccable audit` on the Activity Feed (`ActivityFeed.jsx`), then all 6 findings fixed**
+  (13/20 "Acceptable" — the detector found 0 anti-patterns; the real findings came from a live
+  5-dimension pass with real Tab sequences, a properly-composited contrast measurement, and a
+  temporary seed addition to reach an otherwise-unreachable event type, reverted after).
+  1. **[P0, real bug] `role="dialog" aria-modal="true"` with zero focus management** — the one
+     sheet in the app that never got wired into `useDialogFocus` from the profile-view critique
+     (all 8 others were). Verified live before the fix: opening the panel left focus on the
+     trigger bell outside it, and 11 of 12 Tab presses landed on background topbar/dock controls
+     `aria-modal` claims don't exist. Fixed with the same `useDialogFocus(panelRef, true,
+     { initialFocus: '.return-mark' })` call every other sheet already uses; re-verified live
+     that all 15 Tab presses now cycle only between `.activity-row` and the panel's own
+     `.return-mark`, and that Escape still closes it (no conflict with the panel's own separate
+     Escape listener).
+  2. **[P1] Two real WCAG AA contrast failures, the same `--ink-faint`-on-real-content pattern
+     already fixed twice before in this codebase.** `.activity-day` (the sticky "Today"/
+     "Monday" group header) and `.activity-row__time` ("3h ago" on every row) both measured
+     2.31:1. Swapped to `--ink-soft`; a first contrast re-check read 4.14:1 for the translucent
+     day header and was investigated rather than accepted — the true composited value (sampled
+     via `elementFromPoint` + manual alpha compositing against the real white backdrop rather
+     than trusting the declared `color-mix()` value in isolation) is 5.05:1, safely passing; the
+     4.14 reading was a bug in the verification script's own unit handling of the CSS
+     `color(srgb …)` syntax, not a real problem — caught by re-deriving the number a second way
+     rather than reporting the first number found.
+  3. **[P1] An entire second, undocumented 18-color palette for event-type badges**, mirroring
+     the already-fixed "EnrichSheet carried a second palette" finding from the profile critique.
+     Collapsed onto 6 semantic groups, each referencing a real token directly (`var(--accent)`
+     for additions, `var(--ink-soft)` for edits, `var(--error)` for removals, `var(--gold)` for
+     milestone/special events, `var(--memorial)` for the two resting-place events, `var(--accent-
+     deep)` for the two AI-compiled-narrative events) instead of 18 hand-picked hex values — the
+     icon already says exactly what happened; colour now only has to say which of a small number
+     of KINDS of change it was. Two of the old hardcoded values (`#b08642` for residence events,
+     `#a8842f` for the medal badge) turned out to be the *pre-retune* `--gold` value from the
+     icon-refresh session, silently stale ever since because they were hardcoded rather than
+     referencing the token — this fix makes them track any future palette change automatically.
+     `person_removed`/`relationship_removed`/`residence_removed`/`education_removed` now
+     consistently share `var(--error)`, the same token already used correctly for the memory-
+     delete button in the profile critique. Re-verified live that badge colours actually render
+     as the current token values, not stale hex.
+  4. **[P2] The panel's own slide-in animation had no `prefers-reduced-motion` override** —
+     the largest motion in the component, while its two smaller siblings (the notification
+     badge pop, the recap hero) both correctly had one. Added `.activity-panel`/`.activity-
+     scrim` to the same shared reduced-motion rule `.sheet`/`.sheet-scrim` already use;
+     confirmed live the computed `animationDuration` collapses to `1e-6s` under reduced motion.
+  5. **[P2] `member_joined`/`person_removed` rows rendered as focusable, inert `<button>`s** —
+     `onClick={undefined}` with no `disabled`/`aria-disabled`, so a keyboard/screen-reader user
+     could tab to and "activate" a control that does nothing (there's nothing to navigate to —
+     the tree person is gone either way). Verified live via a temporary seed entry (reverted
+     after) that the old row was genuinely reachable by Tab and announced as an actionable
+     button. Now renders as a plain `<div>` (new `.activity-row--static` class suppressing the
+     hover/active tint and pointer cursor too) instead of a `<button>` for exactly these two
+     event types, giving no false affordance.
+  6. **[P3] Two more ungoverned colours** — `.activity-day`'s sticky backdrop
+     (`rgba(255,255,255,0.92)`) and `.activity-recap-hero`'s gradient (two freestanding hex
+     stops) neither referenced a token. Rewritten with `color-mix()` against `--card` and
+     `--accent-soft` respectively, so both now derive from the real palette instead of
+     approximating it.
+  Full unit suite (88/88), `npm run build`, and the standard smoke test all passed clean.
+  Screenshotted the redesigned feed live against the seed family: additions read in one
+  consistent warm terracotta, edits in neutral grey — visibly more coherent than the previous
+  ad hoc rainbow of 18 hues.
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);
