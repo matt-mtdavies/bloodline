@@ -3577,6 +3577,58 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
      (result metadata and "née" hints legible, no stray white card against a wrong background).
   Full unit suite (88/88), `npm run build`, and the standard smoke test all passed clean.
 
+- **The Atlas/Canopy monogram bubble ("blank bubbles") gets real dimensionality** (real
+  user feedback on a live production screenshot from the `?lab=atlas` prototype: "what is
+  your opinion on the bubble design of the folks with no profile picks? The initials doesnt
+  feel very polished or well designed" → "Fix the blank bubbles and implement a refined and
+  high end design"). Investigated before touching anything, because the first screenshot
+  didn't match what `src/viz/BubbleTree.jsx`/`bubble.js` (the classic organic tree's own
+  monogram, a bust-silhouette treatment) renders — a live dev-mode check confirmed the
+  screenshot's flat-disc-plus-bare-white-letters style comes from a DIFFERENT, third
+  renderer: `src/viz/canopy/render.js`'s `CanopyNode`, shared by both the shipped, opt-in
+  Canopy view (`lib/canopyPref.js`) and the `?lab=atlas` prototype the user was actually
+  looking at (confirmed once the user named it "Atlas view" themselves, matching
+  `main.jsx`'s own `?lab=atlas` comment). That renderer's own header comment documents a
+  real, deliberate design decision already in place — a narrow, low-saturation "one tonal
+  family" tint palette (`TINTS` in `render.js`, replacing an earlier six-hue "chart of
+  unrelated entities" palette) and large bold white initials as "a stand-in for a
+  photograph" — so the fix had to add polish WITHOUT undoing that palette or shrinking the
+  initials into illegibility, and without drifting into the glossy/skeuomorphic look this
+  codebase's own icon-refresh review already explicitly rejected ("a different visual
+  language — matte paper, not glossy skeuomorphism"). New `discShadingTexture()`
+  (`src/viz/textures.js`), following the exact same pre-rendered-offscreen-canvas-as-shared-
+  Sprite convention `softShadowTexture()`/`warmGlowTexture()` already established in the
+  same file: one combined gradient baking in (1) a soft, DIFFUSE highlight offset toward the
+  upper-left — a broad, gentle light, deliberately not a tight specular point, so it reads as
+  a hand-finished matte bead rather than a glass sphere or glossy app icon — and (2) a quiet
+  concentric rim vignette, the same "sits on the ground, isn't a flat sticker" reasoning the
+  file's own shadow sprite already uses, applied to the disc's own surface. Applied as one
+  extra Sprite per monogram portrait in `CanopyNode`'s constructor (cheap: one shared
+  texture, no per-node canvas work), added between the flat tint disc and the initials text
+  so the letters still render crisply on top. The initials themselves gained a subtle
+  `dropShadow` (`{ color: 0x241f1c, alpha: 0.32, blur: 1.6, distance: 1, angle: Math.PI/2 }`
+  — the same PixiJS TextStyle property already used elsewhere in this codebase, in
+  `birth.js`'s year-label) and `letterSpacing: 1`, so the white letters read as engraved
+  into the disc's surface rather than pasted flat on top of it — built via a dedicated inline
+  `TextStyle` rather than extending the file's shared `labelStyle()` helper, since that
+  helper is also used for names/eras/subtitles elsewhere and adding a drop shadow there
+  would have been unrelated scope creep. The photo cross-fade in `apply()` (`this.mono.alpha
+  = Math.max(0, 0.92 - this.photoSprite.alpha)`) gained a matching line for the new shading
+  sprite, so a photo arriving async correctly fades the whole "no photo yet" treatment out
+  together rather than leaving a stale shading disc showing through a loaded photo.
+  Deliberately scoped to `canopy/render.js` only — `bubble.js`'s own monogram (the classic
+  organic tree) already has its own, different, more elaborate bust-silhouette treatment and
+  was never part of the report. Verified live via Playwright against the `?lab=atlas`
+  prototype's own 1,200-person fixture (`generateFamilyFixture`, which deliberately gives
+  every 4th person no photo — exactly the state being fixed): screenshotted a real monogram
+  bubble ("Walter Foster") before and after, confirming the disc now shows a soft warm
+  highlight top-left and a quiet rim vignette with the white serif initials reading crisply
+  embossed rather than flat, with zero console/page errors (beyond the sandbox's already-
+  documented external-image blocking). The real, shipped Canopy view (localStorage-gated,
+  off by default) shares the identical `CanopyNode` class, so it benefits from the same fix
+  with no separate code path to verify. Full unit suite (88/88), `npm run build`, and the
+  standard smoke test all passed clean.
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);

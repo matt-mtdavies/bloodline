@@ -13,7 +13,7 @@
  */
 
 import { Container, Graphics, Sprite, Texture, Assets, Text, TextStyle } from 'pixi.js';
-import { softShadowTexture, warmGlowTexture } from '../textures.js';
+import { softShadowTexture, warmGlowTexture, discShadingTexture } from '../textures.js';
 import { unitAnchor, labelTextFor, POD_GAP } from './plan.js';
 import { progressAt, easeBranch, easeBud, bondKey } from './growth.js';
 import { labelDrop } from './geometry.js';
@@ -555,7 +555,32 @@ export class CanopyNode {
 
     const initials = monogram(person);
     if (initials) {
-      const mono = new Text({ text: initials, style: labelStyle(r * 0.72, 600, 0xffffff) });
+      // Real feedback on a production tree: the flat tint + bare white
+      // letters read as a generic "no avatar" placeholder (the Slack/
+      // Gravatar convention) rather than a piece of this app's own warm,
+      // heirloom-album language. Two additive touches, both cheap (one
+      // shared texture, one text-style property) and neither a gloss
+      // effect — see discShadingTexture's own note on staying matte:
+      const shading = new Sprite(discShadingTexture());
+      shading.anchor.set(0.5);
+      shading.scale.set((r * 2) / shading.texture.width);
+      this.portrait.addChild(shading);
+      this.shading = shading;
+
+      const mono = new Text({
+        text: initials,
+        style: new TextStyle({
+          fontFamily: 'Georgia, "Times New Roman", serif',
+          fontSize: r * 0.7,
+          fontWeight: 600,
+          fill: 0xffffff,
+          align: 'center',
+          letterSpacing: 1,
+          // A soft engraved edge, not a cast shadow — the letters sit IN the
+          // disc's surface rather than floating pasted on top of it.
+          dropShadow: { color: 0x241f1c, alpha: 0.32, blur: 1.6, distance: 1, angle: Math.PI / 2 },
+        }),
+      });
       mono.anchor.set(0.5);
       mono.alpha = 0.92;
       this.portrait.addChild(mono);
@@ -709,6 +734,7 @@ export class CanopyNode {
     if (this.photoSprite && this.photoSprite.alpha < 1) {
       this.photoSprite.alpha = Math.min(1, this.photoSprite.alpha + 0.06);
       if (this.mono) this.mono.alpha = Math.max(0, 0.92 - this.photoSprite.alpha);
+      if (this.shading) this.shading.alpha = Math.max(0, 1 - this.photoSprite.alpha);
     }
   }
 
