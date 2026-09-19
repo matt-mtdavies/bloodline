@@ -324,9 +324,17 @@ export function drawBonds(g, frame, schedule, t, offsetOf) {
        * a unit" without claiming it still is. Real feedback: a dashed line
        * reaching off to a distant, elevated ex read as unrelated rather than
        * as part of the family, and made a parent's real ex look associated
-       * with the wrong person once its path crossed another couple's lines. */
+       * with the wrong person once its path crossed another couple's lines.
+       * The outline radius is deliberately as generous as the current
+       * union's own OUTER wash (hw+7), not the tight hw+1 this used to ship
+       * with: node portraits render on top of every bond layer (see
+       * AtlasStage's addChild order), so a stroke sitting only 1px past the
+       * circle's own edge is almost entirely hidden behind it — a real user
+       * report ("the dotted border around them is not all the way around")
+       * that reproduced exactly this way: the dash pattern was never broken,
+       * it was mostly drawn UNDER the two heads. */
       capsulePath(g, a, to, hw + 1).fill({ color: pal.fill, alpha: 0.4 * e });
-      dashedCapsule(g, a, to, hw + 1, pal.border, 0.8 * e);
+      dashedCapsule(g, a, to, hw + 7, pal.border, 0.8 * e);
     } else if (b.status === 'former') {
       /* A co-parent's own further-flung past union (or any former union that
        * genuinely ends up far from its partner) stays a broken THREAD rather

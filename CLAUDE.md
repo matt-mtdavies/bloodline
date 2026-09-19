@@ -3707,6 +3707,79 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
      errors throughout.
   Full unit suite (88/88), `npm run build`, and the standard smoke test all passed clean.
 
+- **Atlas: the "diagonal line between Heather and Chris" wasn't the couple's own bond at
+  all — it was their shared child's descent line, rendered at full prominence because it
+  had nowhere quieter to go; the capsule's own "not all the way around" border was a real,
+  separate bug in the same screenshot.** Real follow-up on the SAME live production
+  screenshot as the two entries above (a second, different family: "Heather Davies" and
+  "Christopher Monish-Davies" — the account owner's own parents, per Atlas's `layout.js`
+  comment about this exact family's real-data shape): "the diagonal line between Chris and
+  Heather (and all ex-partners) is not good. What is the point of it? ... the dotted border
+  around them is also not all the way around." Opined first rather than building blind:
+  recommended confirming the actual mechanism against a repro shaped like the real data
+  before deciding whether to remove, straighten, or reclassify the line — the user agreed.
+  Both root causes were found and fixed, entirely inside `canopy/render.js` (shared with the
+  shipped Canopy view) and `atlas/AtlasStage.jsx`.
+  1. **The capsule border.** `dashedCapsule`'s stroke radius for a former-union pod was
+     `hw + 1` — only 1 world-unit past the person circles' own edge — while `AtlasStage.jsx`'s
+     render order (`nodeLayer`/`portraitLayer` added AFTER every bond graphics layer) means
+     every node portrait paints ON TOP of every bond. A stroke sitting 1 unit past the circle
+     radius is almost entirely painted over by the opaque portrait immediately on top of it;
+     only the thin sliver that pokes out past each circle's own tangent point survives, which
+     is exactly the "not all the way around" the user saw — the dash pattern itself was never
+     broken, most of the oval was simply hidden underneath the two heads. A CURRENT union
+     never shows this because it draws a much more generous `hw + 7` outer wash specifically
+     to stay visible past the portraits — the FORMER union's dashed outline had just never
+     been given the same clearance. Fixed by widening the former-union outline's radius from
+     `hw + 1` to `hw + 7`, matching the current union's own outer-wash margin.
+  2. **The diagonal itself.** Built a pure, browser-free repro directly against `planAtlas`
+     (Heather + Christopher as former partners with two shared children, plus Christopher's
+     separate current partnership and child, matching the real family's actual shape) and
+     confirmed mechanically: the shared children's descent bond correctly anchors at the
+     LIVE MIDPOINT between Heather and Christopher (a synthetic `ensureAnchor` "junction," per
+     `layout.js`'s own documented design — a former partner is deliberately never podded, so
+     their shared child has no real two-person family block to hang a connector from), and
+     that junction's x can differ meaningfully from wherever the child itself ends up in the
+     tidy-tree (each unit hangs under ONE primary parent, so the OTHER parent's line "is still
+     drawn, across to wherever they stand" — `layout.js`'s own words, describing exactly this
+     case). Verified this isn't just theoretical by loading the repro into the real Atlas
+     renderer: it reproduced the reported visual almost exactly (a bold ribbon reaching well
+     away from the couple's own capsule) — this is real, intentional behaviour (the line IS
+     genuine, real information: "this child's other parent is over here"), not a rendering
+     bug, but `AtlasStage.jsx` had never given it anywhere quieter to go. The view ALREADY has
+     the right primitive: `isFarReach`-classified descents get routed to a separate, deliberately
+     thin/plain/muted layer (`drawReaches`, "the silhouette's veins") instead of the bold
+     Canopy ribbon every ordinary one-row descent gets — but that classification only ever
+     checked raw pixel distance, and a junction's reach can be structurally confusing (it's
+     never really "this couple's own line," because a junction never had a real pod to draw
+     from) well before it crosses the distance threshold. `splitBonds()` in `AtlasStage.jsx`
+     now also routes a descent to the quiet layer whenever its `parentUnit` is a junction
+     (`anchorOnly: true`, from `ensureAnchor` — a former partner OR a further, un-podded
+     current partner), regardless of measured distance — the real, underlying reason the line
+     read as confusing was never how far it reached, it was that it was drawn as if it
+     belonged to the couple. The line is never deleted (that would silently drop a real
+     family connection with no other way to show it) and never forced straight (a straight
+     chord across real intervening content is exactly the "stray rule drawn across the
+     picture" this renderer already avoids elsewhere) — it recedes into the same quiet
+     background register a genuinely far-away descent already uses, matching the design
+     language the view already established rather than inventing a new one. A real, unrelated
+     child of ONE of the two former partners (via a separate, properly-podded current
+     partnership) is untouched — confirmed directly in the repro that such a child's own
+     descent still correctly resolves to a REAL two-member pod (`sameUnit`/`exact` both true),
+     not a junction, and keeps its full bold-ribbon treatment.
+  Verified live via Playwright against the exact repro shape, loaded into the real Atlas
+  renderer (a temporary "ZZ" source button on `AtlasLab.jsx`, reverted before committing,
+  confirmed via a clean `git diff`): a close crop of the capsule confirmed its dashed outline
+  now clears the portrait edges with a visible gap on the sides in addition to the top,
+  instead of a single thin arc; a close crop of the two children's descent lines confirmed
+  the couple's own child (the junction case) now renders as a distinctly thinner, paler,
+  quieter line, while the OTHER parent's separate, properly-podded child right beside it kept
+  its full bold ribbon — a real, visible difference between the two, not just a code-level
+  claim. Also confirmed via a temporary console instrumentation pass against the real 1,200-
+  person fixture that the classification correctly fires on genuine junction descents there
+  too, not only in the hand-built repro. Full unit suite (88/88), `npm run build`, and the
+  standard smoke test all passed clean.
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);
