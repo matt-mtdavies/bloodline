@@ -3845,6 +3845,40 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   test pins `computeThisMonth`'s `today` field. Full unit suite (88/88), `npm run build`, and
   the standard smoke test all passed clean.
 
+- **Atlas/Canopy monogram shading: real bug, not a stale build — the effect was present but too
+  faint to survive a real screenshot.** Follow-up on the icon-dimensionality fix (PR #244,
+  `discShadingTexture()`): the user reported it was missing on their real, large (1,239-person)
+  production family, with two separate screenshots of flat, un-shaded monogram bubbles. First
+  hypothesis — a stale cached build, per this file's own well-documented Jason-crash precedent —
+  was explicitly and correctly rejected by the user: a DIFFERENT feature shipped in the very same
+  build (the Home hub's "today" divider, below) was visibly live on their account at the same
+  time, so the deployment could not be stale. Investigated properly instead of re-asserting the
+  theory: confirmed `CanopyNode` (`src/viz/canopy/render.js`) is the ONE node-rendering class
+  shared by Canopy, Atlas, and the `?lab=atlas` prototype, confirmed it is used unconditionally
+  for every person regardless of Atlas's "plated" large-family layout mode
+  (`src/viz/atlas/plates.js` only ever repositions the SAME node objects onto packed regions — it
+  never swaps in a different renderer), and confirmed the shading sprite is added whenever a
+  monogram's initials are non-empty, in both the far/orbit and close/lens paths. The code was
+  never broken. Reproduced the actual problem instead: a clean local screenshot, cropped and
+  enlarged, showed the effect genuinely present but faint (highlight capped at 0.22 alpha,
+  vignette at 0.30) — real, but exactly the kind of subtlety that a real-world phone screenshot,
+  further compressed and viewed at a smaller on-screen monogram size in a crowded 1,200+-person
+  tree, would wash out to flat. `discShadingTexture()` (`src/viz/textures.js`) now bakes THREE
+  gradients instead of two: the existing upper-left highlight and rim vignette, both roughly
+  doubled in strength, plus a new lower-right directional shade — giving the disc genuine
+  light/dark sides (real sphere "form") rather than just a softened edge, while staying strictly
+  soft-edged, low-alpha, and additive — matte, not glossy, per the icon-refresh review's own
+  standing rule against a glossy/skeuomorphic direction for this app. Verified live via Playwright
+  against the real dev server: a before/after crop of the same two monogram bubbles (William and
+  Florence Mercer) at 1280×900 confirms the after version reads with clearly visible dimension —
+  a lit upper-left face and a shaded lower-right — where the before version needed a close, cropped
+  look to notice anything at all; re-verified the effect still reads correctly, without turning
+  muddy or noisy, at a zoomed-out, small-monogram scale (~30px diameter) closer to what a large,
+  crowded family actually looks like. Because the fix lives entirely in the shared texture
+  generator, it applies identically to Canopy, Atlas, and the lab prototype with no separate code
+  path to verify per surface. Full unit suite (88/88), `npm run build`, and the standard smoke
+  test all passed clean.
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);
