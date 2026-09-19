@@ -269,12 +269,23 @@ export function livePos(frame, id, offsetOf) {
  * (a hover/drag nudge) still flows through normally; only the permanent
  * structural lift is excluded. Ordinary units carry no lift at all, so this
  * is exactly today's value for every anchor that isn't touching a satellite. */
+/* Same id->unit lookup `liveAnchor` uses below, shared so the descent loop
+ * can ask "is this parentUnit a real pod, or a synthetic junction between
+ * two people who were never one visual unit?" without a second O(units)
+ * scan per bond. Works across every frame shape this file is handed:
+ * Atlas's whole-map frame (a prebuilt `unitById`), Canopy's own frame and
+ * Atlas's composed-portrait frame (both a plain `units` array plus, for
+ * the portrait, a `unitById` too — either path resolves the same way). */
+function unitFor(frame, unitId) {
+  return frame.unitById ? frame.unitById.get(unitId) : frame.units.find((x) => x.id === unitId);
+}
+
 export function liveAnchor(frame, unitId, offsetOf) {
   /* A frame may carry a prebuilt id->unit map. Canopy's frames hold a few
    * dozen units and never bother; Atlas's hold thousands, and this lookup
    * runs once per BOND — at 2,000 people the product of the two was enough
    * to hang the tab, and at 3,000 to crash it. */
-  const u = frame.unitById ? frame.unitById.get(unitId) : frame.units.find((x) => x.id === unitId);
+  const u = unitFor(frame, unitId);
   if (!u) return null;
   let sx = 0, sy = 0, n = 0;
   let lo = Infinity, hi = -Infinity;
@@ -379,11 +390,27 @@ export function drawBonds(g, frame, schedule, t, offsetOf) {
     const e = schedule.reduced ? 1 : easeBranch(u);
     const full = descentPath(from, to, b.junctionLevel || 0);
     const pts = schedule.reduced ? full : growPolyline(full, e);
-    const alpha = (schedule.reduced ? u : 1) * (BAND_ALPHA[to.band] ?? 1) * 0.85;
+    /* A descent whose parentUnit is a synthetic JUNCTION (two people who
+     * were never one visual pod — a former partner, or a further, un-podded
+     * current partner; see plan.js's own "never podded" rule, shared by both
+     * Canopy and Atlas) has no real family block to hang a confident bough
+     * from. Drawn at full strength it reads as belonging to whichever two
+     * people happen to sit at the junction's midpoint — real feedback: "the
+     * diagonal line between Chris and Heather... what is the point of it?"
+     * for a line that was actually their shared child's descent, not the
+     * couple's own bond at all. Recedes to a quieter register instead —
+     * same shape and colour, just less confident — rather than vanishing
+     * (the connection is real and has no other way to be shown) or
+     * switching to a different curve shape (this file's own reasoning
+     * elsewhere: an unfamiliar shape reads as a mistake, not a relationship). */
+    const isJunction = !!unitFor(frame, b.parentUnit)?.anchorOnly;
+    const alpha = (schedule.reduced ? u : 1) * (BAND_ALPHA[to.band] ?? 1) * (isJunction ? 0.4 : 0.85);
     // The swelling where this unit's limbs leave the bough. Drawn per bond
     // but at the unit's own fork point, so repeated draws land identically
-    // and several siblings simply reinforce the one shape.
-    if (e > 0.06) drawFork(g, from, to, b.junctionLevel || 0, alpha);
+    // and several siblings simply reinforce the one shape. Skipped for a
+    // junction descent — the swelling itself implies a real family bough,
+    // which a synthetic midpoint between two separately-drawn people isn't.
+    if (e > 0.06 && !isJunction) drawFork(g, from, to, b.junctionLevel || 0, alpha);
     if (b.qualifier === 'step' || b.qualifier === 'adoptive' || b.qualifier === 'adopted') {
       // A step or adoptive descent is dashed, matching the app's existing
       // convention — the bond is real, and it is also not biological.
