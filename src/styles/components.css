@@ -318,6 +318,33 @@
 }
 .pill--on:hover { background: color-mix(in srgb, var(--accent-soft) 82%, var(--accent)); }
 
+/* Desktop search trigger: a "fake input" — icon + visible placeholder-style
+   label inside the same pill everything else in the topbar uses — rather
+   than a persistent, independently-focusable inline field. It still just
+   opens the existing full-overlay SearchOverlay on click; nothing about the
+   destination changes, only how legible the trigger is before a hover. The
+   label stays in the DOM at every width (display:none, not unmounted) so a
+   later widening of the mobile breakpoint costs nothing. Below 600px this
+   collapses back to the plain circular icon every other pill uses, with its
+   hover-tip doing the naming exactly as before. */
+.pill--search__label {
+  display: none;
+  color: var(--ink-soft);
+  font-weight: 500;
+  white-space: nowrap;
+}
+@media (min-width: 600px) {
+  .pill--search {
+    justify-content: flex-start;
+    min-width: 200px;
+    padding: 0 16px 0 14px;
+  }
+  .pill--search__label { display: inline; }
+  /* The visible label already names the control; the hover tooltip would
+     just repeat it a beat later. */
+  .pill--search .hover-tip { display: none; }
+}
+
 /* ── Intro hint ──────────────────────────────────────────────────────────── */
 .intro-hint {
   position: fixed;
@@ -1931,7 +1958,16 @@
 }
 
 .search-sheet {
-  background: var(--surface, #faf7f4);
+  /* Real ghost token found by /impeccable audit: --surface was never
+     declared in theme.css. This one had a fallback so it degraded safely,
+     but 4 other uses of the same token elsewhere in this file had none and
+     silently resolved to transparent (a progress-bar track with no visible
+     track at all, an invisible hover state, an invisible form-field
+     background) — same class of bug as --ground/--line/--hairline-dark,
+     fixed the same way: onto the real token this actually meant. --card is
+     DESIGN.md's own name for "sheets/cards" (identical white to --paper,
+     kept as a separate name for what it semantically is). */
+  background: var(--card);
   border-radius: 0 0 24px 24px;
   padding: calc(var(--safe-top, 0px) + 16px) 0 16px;
   max-height: 78vh;
@@ -1952,7 +1988,7 @@
   margin: 0 20px 12px;
   padding: 10px 14px;
   border-radius: 12px;
-  background: rgba(194, 96, 58, 0.10);
+  background: color-mix(in srgb, var(--accent, #c2603a) 10%, transparent);
   color: var(--accent-deep, #a44d2c);
   font-size: 13px;
   font-weight: 500;
@@ -1986,6 +2022,7 @@
 .search-input::placeholder { color: var(--ink-faint, #b0a9a5); }
 .search-input::-webkit-search-cancel-button { display: none; }
 .search-clear {
+  position: relative;
   border: none;
   background: transparent;
   padding: 4px;
@@ -1996,6 +2033,18 @@
   flex-shrink: 0;
 }
 .search-clear:hover { color: var(--ink-soft, #6b6f76); }
+/* Measured live at 24x24px — under the 44px touch floor. An invisible
+   overlay reaches the floor without inflating the visible glyph, same
+   technique used for .rel-chip__menu-btn/.places-detail__edit. */
+.search-clear::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 44px;
+  height: 44px;
+  transform: translate(-50%, -50%);
+}
 
 /* ── Relationship filter chips ────────────────────────────────────────────────
    Quick shortcuts to a shortlist when you don't remember a name — not a
@@ -2066,12 +2115,12 @@
 .search-result__nee {
   font-weight: 400;
   font-style: italic;
-  color: var(--ink-faint, #b0a9a5);
+  color: var(--ink-soft, #6b6f76);
   letter-spacing: 0.01em;
 }
 .search-result__meta {
   font-size: 12px;
-  color: var(--ink-faint, #b0a9a5);
+  color: var(--ink-soft, #6b6f76);
 }
 /* Family Perimeter (§3.10/§3.8): the relationship-to-viewer line + the same
    "Outside your Family Perimeter" badge PersonSheet already shows on an
@@ -2083,7 +2132,7 @@
   align-items: center;
   gap: 6px;
   font-size: 12px;
-  color: var(--ink-faint, #b0a9a5);
+  color: var(--ink-soft, #6b6f76);
 }
 .search-result__chevron {
   color: var(--ink-faint, #b0a9a5);
@@ -2099,13 +2148,13 @@
 .search-empty {
   padding: 24px 20px;
   font-size: 14px;
-  color: var(--ink-faint, #b0a9a5);
+  color: var(--ink-soft, #6b6f76);
   text-align: center;
 }
 .search-hint {
   padding: 28px 20px;
   font-size: 14px;
-  color: var(--ink-faint, #b0a9a5);
+  color: var(--ink-soft, #6b6f76);
   text-align: center;
   margin: 0;
 }
@@ -2193,7 +2242,7 @@
 }
 .stats-popover__close {
   flex-shrink: 0;
-  background: var(--surface);
+  background: var(--paper-deep);
   border: none;
   width: 28px;
   height: 28px;
@@ -2252,7 +2301,7 @@
 /* Generic stat bar */
 .stats-bar {
   height: 6px;
-  background: var(--surface);
+  background: var(--hairline);
   border-radius: 3px;
   overflow: hidden;
 }
@@ -4188,7 +4237,7 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  background: var(--surface, #f5f0ea);
+  background: var(--paper-deep);
   color: var(--ink-soft);
 }
 .tag__dot {
@@ -6427,7 +6476,7 @@ button.health-notes {
   white-space: nowrap;
   font-family: inherit;
 }
-.fs__resend-btn:hover:not(:disabled) { background: var(--surface); color: var(--ink); border-color: var(--ink-soft); }
+.fs__resend-btn:hover:not(:disabled) { background: var(--paper-deep); color: var(--ink); border-color: var(--ink-soft); }
 .fs__resend-btn:disabled { opacity: 0.5; cursor: default; }
 .fs__resend-btn--sent { background: #f0faf0; color: #2d7d3a; border-color: #a8d5ab; }
 .fs__resend-btn--err  { background: var(--error-soft); color: var(--error); border-color: var(--error-border); }
@@ -8550,7 +8599,7 @@ button.health-notes {
   font-size: 16px; /* not smaller — see the note on .doc-row__title-input */
   font-family: inherit;
   color: var(--ink);
-  background: var(--surface);
+  background: var(--paper);
   resize: vertical;
   min-height: 72px;
   transition: border-color .15s;
