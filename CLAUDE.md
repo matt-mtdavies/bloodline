@@ -3780,122 +3780,32 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   too, not only in the hand-built repro. Full unit suite (88/88), `npm run build`, and the
   standard smoke test all passed clean.
 
-- **The junction-descent quieting fix above never actually reached the surface the user was
-  looking at — a real scoping mistake, found and fixed the same day.** Follow-up screenshot,
-  after the previous fix shipped: the capsule around Heather/Christopher/Ken now wraps
-  cleanly (that part was confirmed working), but the bold trunk-and-fork reaching down to
-  Matthew still looked exactly like before — full weight, a fork swelling, no quieter than
-  a normal family bough. Asked directly whether Christopher is really recorded as Matthew's
-  father (rather than assuming); confirmed yes. That meant the fix genuinely wasn't working
-  for this case, and the reason turned out to be a scoping error in my own previous PR:
-  **the screenshot was never the `?lab=atlas` prototype at all — it's the shipped, in-app
-  Canopy view** (reached via the topbar's "Change how the family is shown" menu once a
-  viewer has opted in, `lib/canopyPref.js`), confirmed by the header chrome (the real
-  Bloodline topbar, family-name pill, notification bell) which Atlas's own minimal lab UI
-  doesn't have at all. My previous fix quieted junction-anchored descents ONLY inside
-  `AtlasStage.jsx`'s `splitBonds()` — a pre-filtering step that exists exclusively in the
-  Atlas whole-family-map component, rerouting matching bonds to a completely separate
-  rendering function (`drawReaches`) before they ever reach the shared `drawBonds()` Canopy
-  and Atlas otherwise both call. Canopy's own planner (`canopy/plan.js`) independently builds
-  the exact same kind of `anchorOnly` junction unit for a shared child of two people who
-  aren't podded together (confirmed live in that file, and confirmed this is the literal,
-  already-tested real-data shape in `tests/canopyPlan.test.mjs`'s `blended` fixture — Heather,
-  Chris, Ken, Matthew, Jason, Jessica, Amie, the same names as the actual account) — but
-  `CanopyTree.jsx` calls `drawBonds()` directly on its own unsplit frame, with no equivalent
-  pre-filtering step at all, so a junction descent there always got the identical full-weight
-  Canopy ribbon treatment my earlier fix was specifically meant to avoid. Fixed at the actual
-  shared root instead of duplicating Atlas's own splitting logic a second time for Canopy: a
-  new `unitFor(frame, unitId)` helper (the same id→unit lookup `liveAnchor` already performs,
-  extracted so both can share it) lets `drawBonds()`'s own descent loop check
-  `unitFor(frame, b.parentUnit)?.anchorOnly` directly and, when true, draw the SAME tapered
-  ribbon shape at a much quieter `0.4` alpha (down from `0.85`) with no fork swelling — recedes
-  into the background rather than switching to a different curve primitive (an unfamiliar
-  shape reads as a mistake, per this file's own existing reasoning for the thread/capsule
-  dispatch) or disappearing outright (the connection is real and has no other way to be
-  shown). Verified this doesn't touch Atlas's own already-correct behavior: Atlas's
-  `splitBonds()` already routes every junction descent to `drawReaches` before it can ever
-  reach `drawBonds()`'s descent loop at all, so the new `isJunction` branch is provably dead
-  code on that path — confirmed by re-reading `splitBonds`'s exact filter condition rather
-  than assuming. It also incidentally fixes a second, previously-unnoticed Atlas surface
-  that shared this exact gap: `AtlasStage.jsx`'s own "portrait"/lens composition
-  (`drawBonds(portraitBonds, p, ...)`, used when the camera zooms into a single person) calls
-  `drawBonds()` directly on a `composePortrait()`-built frame with no near/far splitting
-  either — confirmed that frame independently builds the same `anchorOnly` junction units and
-  exposes `unitById`, so the fix applies there too with no separate code path needed.
-  Verified live via Playwright against the exact real-data shape (a temporary seed.js addition
-  mirroring `tests/canopyPlan.test.mjs`'s own `blended` fixture byte-for-byte — Heather/
-  Chris/Ken/Matthew/Jason/Jessica/Amie — reverted before committing, confirmed via a clean
-  `git diff`): opened Heather's profile in the real, shipped Canopy view (not Atlas), and
-  confirmed Matthew's and Jason's descent lines — both through the Chris-Heather junction —
-  now render as visibly thin, pale, muted curves with no fork marker, distinctly different
-  from the full-weight capsule wrapping the three adults above them. Full unit suite (88/88),
-  `npm run build`, and the standard smoke test all passed clean.
-
-- **The Chris/Heather junction descent, actually fixed this time — the real, in-app Atlas view
-  (not Canopy) was rendering it at nearly full strength, twice over.** Third follow-up on the
-  same real family (user, verbatim: "This is the third time you have not fixed the issue. This
-  is Atlas view" — correcting an assumption in the previous entry that the earlier screenshot was
-  Canopy; the app's normal topbar/dock chrome on both screenshots is genuinely ambiguous between
-  the two views without asking). Root-caused with live pixel measurement rather than reasoning
-  from code alone this time, since two prior passes had "confirmed" a fix via console-log
-  classification checks that turned out not to reflect what was actually painted on screen. Two
-  distinct, real bugs, found by instrumenting the running app (a temporary `seed.js` fixture
-  mirroring `tests/canopyPlan.test.mjs`'s own `blended` shape — Heather/Chris/Ken/Matthew/Jason/
-  Jessica/Amie, reverted before committing) and reading actual rendered pixels via Pillow rather
-  than trusting the code path alone:
-  1. **`portrait.js`'s "focus zooms in" lens never applied the junction rule to the focus's OWN
-     parents.** `composePortrait()` builds a small, separate family gathering around whoever is
-     selected — its own units, its own bonds, drawn via the same shared `drawBonds()` from
-     `canopy/render.js`. Its `parentUnion` check — `bloodParents.length > 1 ? partnerStatus(...)
-     : null` — treated ANY recorded partnership between the focus's two parents, current OR
-     former, as grounds to pod them into one real unit (`anchorOnly: false`), when every other
-     "never podded" rule in this app (layout.js's whole-map planner, canopy/plan.js's ego
-     planner) explicitly excludes `status === 'former'`. So the moment you zoomed in on Matthew
-     specifically — the only way this line is ever actually seen, since it connects exactly the
-     two people you're now looking at up close — his former-partnered parents got silently
-     promoted from a synthetic junction into a real pod, undoing the fix before it could apply.
-     Fixed with `if (parentUnion && parentUnion !== 'former')`, matching the exclusion used
-     everywhere else. Confirmed via a temporary `window.__atlasDebug`/console-log pass that this
-     was the dominant visible layer at a zoomed-in view: `portraitT` (the lens's own presence)
-     reads 1.0 the moment you're zoomed that far in, and `portraitLayer.alpha` sits at full
-     strength independent of the whole-map's own dimming — the previous two attempts had
-     correctly fixed the WHOLE-MAP's classification (`layout.js`, `AtlasStage.jsx`'s
-     `splitBonds`) but never checked whether the SEPARATE lens composition agreed.
-  2. **Even with both classifications correct, a flat-alpha reduction on a solid taper wasn't
-     visually decisive enough once multiple layers draw the same descent.** `canopy/render.js`'s
-     `drawBonds()` already reduced a junction descent's alpha (0.4 vs 0.85) and skipped its fork —
-     right in isolation, but the SAME bond is drawn again by the "lit bloodline" pass
-     (`AtlasStage.jsx`'s `drawLit`, redrawing the active person's own ancestry "on top at full
-     strength") and, once zoomed in, a THIRD time by the lens's own `drawBonds()` call at full
-     layer opacity — three low-alpha layers compositing on top of each other land back close to
-     solid, empirically confirmed by sampling the actual rendered pixel colour (Pillow, since no
-     PIL/canvas library existed in this sandbox until installed for this): the line's centre
-     measured at roughly 55–60% effective opacity against a raw BRANCH-colour line, not the
-     intended ~40%, and visually read as "a normal bold connector" regardless. Rather than keep
-     chasing an alpha number across three separate draw call sites that all interact, gave a
-     junction descent the SAME visual grammar the app already uses for a different "this bond is
-     real but not a plain parent-child line" case — step/adoptive descents' dashed stroke — via
-     `drawDashedPath` (a flat width-2 stroke, not `taperedRibbon`'s up-to-3.6-wide couple end).
-     Dashed reads unambiguously at a glance and, being a structurally different stroke rather
-     than a fine alpha tweak, stays visually distinct no matter how many additional passes draw
-     over it. `drawLit`'s own separate far-branch stroke (the second contributor, used when the
-     bond is part of the currently-lit lineage but not near enough to route through the shared
-     `drawBonds()`) keeps its existing alpha/width reduction — a smaller, secondary layer, left
-     alone rather than building a second bezier-dashing routine for a comparatively minor
-     contributor.
-  Verified live via Playwright, not just re-derived from the source: with the demo's own small
-  fitZoom (giving a much larger fitZoom-relative flyTo zoom than the real 1,200-person account
-  would show, which had made the now-superseded whole-map `drawFar()` silhouette layer a
-  confounding third contributor during investigation — irrelevant at the real account's actual
-  scale, where a flyTo lands far past that layer's own fade-out threshold already), confirmed via
-  pixel sampling that the initial, un-zoomed landing on Matthew already renders both his and
-  Jason's descent from the Chris/Heather junction as clearly dashed, matching the union thread's
-  own dashed treatment; then zoomed in via the real "+" zoom control (not a wheel event, which
-  pans unpredictably) until the portrait lens fully engaged (`portraitT` confirmed at 1.0 via a
-  temporary debug hook, since removed) and confirmed the SAME line stays visibly dashed at that
-  zoom level too, rather than reverting to solid the moment the lens takes over — the exact
-  failure mode of all three earlier attempts. Full unit suite (88/88), `npm run build`, and the
-  standard smoke test all passed clean.
+- **The junction-descent "quiet the line" work (three attempts, PRs #246's descent-classification
+  half, #247, #248) reverted outright at the user's direct instruction** ("Revert the last few
+  changes to the lines in Atlas. They didn't work."), after each of three separate fixes —
+  quieting a former-partner junction's descent line via `isFarReach`/`anchorOnly` classification
+  in `AtlasStage.jsx`'s `splitBonds()`, then moving that logic into the shared `drawBonds()` in
+  `canopy/render.js` so Canopy benefited too, then excluding former partners from `portrait.js`'s
+  own zoomed-in pod logic and switching the line to a dashed stroke — was verified thoroughly in
+  this sandbox (pure-function repros, live pixel sampling, temporary seed fixtures matching the
+  real family shape) and still didn't read as fixed once looked at against the real account.
+  Reverted with `git revert` for #247 and #248 (both cleanly self-contained: each PR's only code
+  changes were this exact classification/rendering logic, nothing else) and a manual, scoped edit
+  for #246 to undo only its `splitBonds()` `pu?.anchorOnly` addition — #246's OTHER fix in the same
+  PR, the former-union capsule's dashed-outline radius widening from `hw + 1` to `hw + 7` (a
+  distinct, confirmed-working bug: the outline was mostly hidden under the two portraits, nothing
+  to do with descent lines), was deliberately kept, along with PR #245's earlier capsule-vs-thread
+  level check (`ADJACENT_MAX_DY`) and its hover-preview card. Confirmed the revert is exactly and
+  only the descent-quieting logic: `git diff` against the commit immediately before #246 shows a
+  single remaining hunk, the intentionally-kept `hw + 7` capsule fix, across all three touched
+  files (`AtlasStage.jsx`, `portrait.js`, `canopy/render.js`) — no partial or leftover state.
+  Every junction-anchored descent (a former partner's, or a further un-podded current partner's,
+  shared child) now renders exactly like any other descent again: full-strength taper, normal
+  fork, no dashing — the pre-#246 behavior, byte-for-byte. No new fix was attempted in its place;
+  this entry exists so a future session doesn't retread the same three approaches without first
+  understanding why each one, despite passing every verification step run against it in this
+  sandbox, still wasn't good enough against the real, live family the report keeps coming from.
+  Full unit suite (88/88) and `npm run build` passed clean after the revert.
 
 ## Architecture / key files
 
