@@ -72,6 +72,7 @@
    page. One consistent look and gesture everywhere it appears, rather
    than the circle-here/rounded-square-there mix this replaces. */
 .return-mark {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -87,6 +88,16 @@
 }
 .return-mark:hover { background: rgba(36, 31, 28, 0.1); }
 .return-mark:active { transform: scale(0.92); }
+/* This is the one exit control on 8+ full-screen surfaces (Tree Insights,
+   Family Settings, Your profile, Activity Feed, Family timeline, How it
+   works, Family trees, the Keepsake) and sat 8px under the 44px floor on
+   all of them — found auditing the Keepsake, fixed here since every other
+   surface shares this same component. Visible size unchanged. */
+.return-mark::after {
+  content: '';
+  position: absolute;
+  inset: -4px;
+}
 
 .topbar__actions {
   display: flex;
@@ -1914,6 +1925,7 @@
   .family-moment__line--animating { transition: opacity 0.2s ease; transform: none !important; }
 }
 .family-moment__dismiss {
+  position: relative;
   flex-shrink: 0;
   width: 24px;
   height: 24px;
@@ -1930,6 +1942,9 @@
   transition: background 0.15s;
 }
 .family-moment__dismiss:hover { background: rgba(36, 31, 28, 0.06); }
+/* A compact glyph reads right here; the hit area still clears 44px via a
+   centred, invisible overlay — same technique used throughout the app. */
+.family-moment__dismiss::after { content: ''; position: absolute; inset: -10px; }
 @media (prefers-reduced-motion: reduce) {
   .family-moment { transition: opacity 0.2s ease; transform: translateX(-50%); }
   .family-moment--in { transform: translateX(-50%); }
@@ -7665,6 +7680,7 @@ button.health-notes {
   font-size: 11.5px;
 }
 .recap-progress__close {
+  position: relative;
   display: grid;
   place-items: center;
   width: 26px;
@@ -7677,6 +7693,7 @@ button.health-notes {
 }
 .recap-progress__close:hover { background: rgba(255, 255, 255, 0.26); }
 .recap-progress__close:active { transform: scale(0.9); }
+.recap-progress__close::after { content: ''; position: absolute; inset: -9px; }
 
 /* Proactive login-time nudge — normal-flow child of .topbar, same slot as
    the sync/storage toasts, so it never overlaps the bottom dock and tracks
@@ -10154,6 +10171,7 @@ button.health-notes {
   flex: 1;
 }
 .home-nudge__close {
+  position: relative;
   flex-shrink: 0;
   width: 22px;
   height: 22px;
@@ -10165,6 +10183,7 @@ button.health-notes {
   background: none;
 }
 .home-nudge__close:hover { color: #fff; background: rgba(255, 255, 255, 0.12); }
+.home-nudge__close::after { content: ''; position: absolute; inset: -11px; }
 @media (prefers-reduced-motion: reduce) {
   .home-nudge { animation: none; }
 }
@@ -10226,6 +10245,7 @@ button.health-notes {
 .save-nudge__cta:hover { opacity: 0.88; }
 
 .save-nudge__dismiss {
+  position: relative;
   background: transparent;
   border: none;
   color: rgba(255, 255, 255, 0.45);
@@ -10239,6 +10259,10 @@ button.health-notes {
   -webkit-tap-highlight-color: transparent;
 }
 .save-nudge__dismiss:hover { color: rgba(255, 255, 255, 0.85); }
+/* Asymmetric: the CTA button sits close on the left (only 6px gap in
+   .save-nudge__actions), so the overlay stays modest on that side and
+   expands generously everywhere else rather than overlapping it. */
+.save-nudge__dismiss::after { content: ''; position: absolute; top: -10px; bottom: -10px; right: -10px; left: -2px; }
 
 /* Sheet opened from the nudge */
 .save-nudge__sheet {
@@ -10834,6 +10858,7 @@ button.health-notes {
 }
 .lineage-banner__swap:hover { color: var(--accent, #c2603a); border-color: var(--accent, #c2603a); }
 .lineage-banner__swap:active { transform: translate(-50%, 0) scale(0.9); }
+.lineage-banner__swap::after { content: ''; position: absolute; inset: -11px; }
 .lineage-banner__rel {
   margin: 0; text-align: center; font-size: 13px; color: var(--ink-soft, #6b6f76);
 }
@@ -10869,13 +10894,14 @@ button.health-notes {
 .lineage-banner__actions { display: flex; justify-content: center; gap: 8px; margin-top: 2px; }
 .lineage-banner__clear, .lineage-banner__exit {
   border: 1px solid var(--hairline, #ebedf0); background: var(--paper-deep);
-  border-radius: 999px; padding: 6px 16px; font-size: 13px; font-weight: 600;
+  border-radius: 999px; padding: 6px 16px; min-height: 44px; font-size: 13px; font-weight: 600;
   color: var(--ink, #1c1d21); cursor: pointer; transition: background 0.15s;
 }
 .lineage-banner__exit { background: var(--accent, #c2603a); color: #fff; border-color: transparent; }
 .lineage-banner__clear:hover { background: #fff; }
 .lineage-banner__guide .lineage-banner__exit { flex-shrink: 0; padding: 6px 14px; }
 .lineage-banner__search {
+  position: relative;
   flex-shrink: 0;
   width: 30px;
   height: 30px;
@@ -10889,6 +10915,7 @@ button.health-notes {
   transition: background 0.15s, color 0.15s;
 }
 .lineage-banner__search:hover { background: #fff; color: var(--accent, #c2603a); }
+.lineage-banner__search::after { content: ''; position: absolute; inset: -7px; }
 
 @keyframes lb-drop {
   from { opacity: 0; transform: translate(-50%, -14px); }
@@ -10965,6 +10992,18 @@ button.health-notes {
   cursor: default;
 }
 .flight-card--landed .flight-card__connector { cursor: pointer; }
+/* The visible line is 2px tall — the real target is the count badge
+   floating on top of it. Only meaningful once landed (inert during
+   transit, see the comment above), so the hit area is scoped the same way. */
+.flight-card--landed .flight-card__connector::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 44px;
+  height: 44px;
+  transform: translate(-50%, -50%);
+}
 .flight-card__count {
   position: absolute;
   top: 50%;
@@ -11469,11 +11508,15 @@ button.health-notes {
 
 .tl__filters { display: flex; gap: 8px; padding: 4px 2px 14px; flex-wrap: wrap; }
 .tl__filter {
+  position: relative;
   border: 1px solid var(--hairline, #ebedf0); background: var(--paper-deep);
   border-radius: 999px; padding: 6px 14px; font-size: 13px; font-weight: 600;
   color: var(--ink-soft, #6b6f76); cursor: pointer; transition: all 0.15s;
 }
 .tl__filter--on { background: var(--accent, #c2603a); color: #fff; border-color: transparent; }
+/* Vertical-only: the row's own 8px gap already separates neighbours
+   horizontally, so only height needs to reach the 44px floor. */
+.tl__filter::after { content: ''; position: absolute; top: -8px; bottom: -8px; left: 0; right: 0; }
 
 .tl__scroll { flex: 1; overflow-y: auto; padding: 4px 2px 12px; }
 .tl__empty { color: var(--ink-soft, #8a8480); font-size: 14px; text-align: center; padding: 40px 16px; line-height: 1.5; }

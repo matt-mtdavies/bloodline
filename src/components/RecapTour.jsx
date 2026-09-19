@@ -1,5 +1,6 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { relativeTime } from './ActivityFeed.jsx';
+import { useDialogFocus } from '../lib/useDialogFocus.js';
 
 /*
  * The activity recap's cinematic tour — a slow, deliberate flythrough of
@@ -22,6 +23,12 @@ import { relativeTime } from './ActivityFeed.jsx';
  * only chrome it keeps is a count of what's left and a way out.
  */
 export default function RecapTour({ queue, reducedMotion, allDone, onCloseAll, onClose }) {
+  const tourRef = useRef(null);
+  // The one real control here ("Stop the tour") was reachable only by
+  // clicking it — role="dialog" aria-modal="true" with no focus ever moved
+  // in and no trap, the same shape already fixed on ~10 other sheets.
+  useDialogFocus(tourRef, true, { initialFocus: '.recap-progress__close' });
+
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') onCloseAll(); };
     window.addEventListener('keydown', onKey);
@@ -41,7 +48,7 @@ export default function RecapTour({ queue, reducedMotion, allDone, onCloseAll, o
   const remaining = queue.filter((q) => q.status !== 'done').length;
 
   return (
-    <div className="recap-tour" role="dialog" aria-label="What's changed" aria-modal="true">
+    <div ref={tourRef} className="recap-tour" role="dialog" aria-label="What's changed" aria-modal="true">
       <div className="recap-tour__scrim" onClick={onCloseAll} aria-hidden="true" />
 
       {!reducedMotion && active && !allDone && (

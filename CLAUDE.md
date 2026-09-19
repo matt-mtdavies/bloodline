@@ -3879,6 +3879,88 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   path to verify per surface. Full unit suite (88/88), `npm run build`, and the standard smoke
   test all passed clean.
 
+- **`/impeccable audit` on the Keepsake reader + the remaining profile-adjacent widgets, then
+  all findings fixed** (user: "Do an impeccable review of the remaining surfaces" — with the
+  scope narrowed, on request, to the two groups not yet covered by any prior audit pass: the
+  Keepsake's 6 files and 13 small floating widgets — TimelineView, LineageBanner, RecapTour,
+  HoverCard, FocusNameplate, HomeNudge, HomeToMe, SaveNudge, FamilyMomentBanner, FlightCaption,
+  ReturnToPerimeterPill, ReturnToTreePill, IdleFactHint). Both the detector and a live 5-
+  dimension pass with real Tab sequences and measured rects, same methodology as every prior
+  audit in this file.
+  1. **[P0, real bug] `KeepsakeView.jsx`'s full-screen reader — `role="dialog" aria-modal=
+     "true"` — had never been wired into the shared focus trap**, the same pre-fix state
+     Home/ActivityFeed/HowItWorks/SearchOverlay were each found in before their own audits.
+     Live-verified before the fix: opening it left focus on the trigger pill, and the very
+     first Tab press escaped straight into an unrelated background profile button. Fixed with
+     `useDialogFocus(containerRef, !editing, { initialFocus: '.return-mark' })` — the `!editing`
+     guard suspends the outer trap whenever the book's own narrative-edit sheet is open, mirror-
+     ing `PersonSheet.jsx`'s exact outer/inner handoff convention, rather than running two live
+     traps at once. The edit sheet (a second, genuinely separate `role="dialog"` nested inside
+     the same component, previously with no trap of its own either) got its own
+     `useDialogFocus(editSheetRef, !!editing, { initialFocus: editing?.id === 'epithet' ?
+     'input' : 'textarea', contentKey: editing?.id })`, and its two manual `autoFocus`
+     attributes were removed — the same race the profile-view critique already found between a
+     hand-rolled `autoFocus` and this hook. Verified live with a mocked `/api/keepsake` edition
+     (the real dev server has no Cloudflare Pages Functions): the outer trap holds Tab inside
+     the whole reader; opening a pencil correctly hands the trap to the edit sheet (focus lands
+     on the textarea, Tab stays inside, Escape closes ONLY the edit sheet and hands focus back
+     to `.return-mark`, the book stays open) — confirming the nested handoff works exactly as
+     designed, not just in isolation.
+  2. **[P0, real bug] The same missing-trap pattern on three more full-screen/near-full-screen
+     dialogs**: `TimelineView.jsx` (Family Timeline sheet — already imported `ReturnMark` but
+     never wired the trap), `RecapTour.jsx` (the recap flythrough overlay — one real control,
+     "Stop the tour," previously unreachable by keyboard at all), and `SaveNudge.jsx`'s
+     email→code account-creation sheet — the highest-stakes of the three, since it's the actual
+     sign-up flow: it had a hand-rolled `setTimeout(..., 80).focus()` for its own field (the
+     exact pre-hook pattern this codebase replaced everywhere else), no Tab trap, and **no
+     Escape handler of any kind** — only clicking the scrim closed it. All three now use
+     `useDialogFocus` (`SaveNudge` also gained a real Escape listener scoped to the sheet, and
+     `contentKey: phase` so re-focus correctly moves to the code field once email hand-off
+     happens). All three verified live: Tab never escapes any of them; `SaveNudge`'s and
+     `RecapTour`'s initial focus lands on the one meaningful control in each.
+  3. **[P1] `.ks-pg-label`** — the small-caps kicker used throughout the Keepsake's interactive
+     typeset pages (section openers, "Born · 1985", "Compiled from N family records," "The
+     Record," "Documents of a Life") — sat on `--ink-faint` (~2.31:1), the same WCAG AA failure
+     pattern already fixed five times elsewhere in this file. It's real page content, not a
+     placeholder, so it took the same fix: `--ink-soft` (5.05:1). Deliberately scoped to the
+     `.ks-pg-*` family that the interactive book/pager actually render — the OLDER, differently-
+     named `.ks-*` classes in `spreads.jsx` (a completely separate class namespace) are used only
+     by the print pipeline now and were left alone, since print is a one-way, non-interactive
+     output with no keyboard/screen-reader user to fail. Re-measured live at the real token value
+     after the fix.
+  4. **[P2] A cluster of compact controls under the 44px touch-target floor, all real and
+     reachable on touch (none hover-gated)**: `.ks-chrome__btn` (38px, the reader-mode/print
+     toggles), `.ks-editbtn` (24px — a real, always-visible-on-touch control per its own
+     `@media (hover: hover)` gate, not a hover-reveal-only affordance as a first read of the CSS
+     suggested), `.ks-booknav` (42px, desktop/hover-only — lower priority but fixed for
+     consistency), `.family-moment__dismiss` (24px), `.home-nudge__close` (22px),
+     `.lineage-banner__swap`/`__search` (22px/30px), `.recap-progress__close` (26px — the one
+     control in RecapTour), `.save-nudge__dismiss` (~24px), `.tl__filter` (~28px tall filter
+     pills), and `.flight-card__connector` (a 2px-tall line whose real target is an 18px badge
+     floating on top of it). All given the same invisible, centred `::after` hit-area overlay
+     already used throughout the app for a compact control whose visible size is deliberately
+     staying small — visible sizes unchanged everywhere. Two exceptions where the established
+     "real action pill" treatment fit better than an overlay: `.lineage-banner__clear`/`__exit`
+     ("Clear"/"Done") got a direct `min-height: 44px`, and `.save-nudge__dismiss`'s overlay is
+     asymmetric (generous on three sides, only 2px on the side facing the adjacent CTA button,
+     6px away) to avoid the exact "two overlays close enough to overlap" trap a previous session
+     already hit once on the Places actions. **Found while auditing Keepsake, fixed at the
+     shared-component level**: `ReturnMark.jsx`'s own `.return-mark` — the one shared exit control
+     already reused by Tree Insights, Family Settings, Your profile, Activity Feed, Family
+     timeline, How it works, Family trees, AND the Keepsake — was 36px everywhere, 8px under the
+     floor on every one of those ~9 surfaces; fixed once, centrally, rather than patched per call
+     site. Verified live: every visible size unchanged, every `::after` inset measured, no
+     adjacent-overlay collisions introduced (checked the tightest cases: the Keepsake's 3-button
+     chrome row at 8px gaps, and the lineage banner's swap button beside its two neighbours).
+  Deliberately confirmed as non-findings rather than silently skipped: `HoverCard.jsx` and
+  `FocusNameplate.jsx` (both `aria-hidden`/non-interactive by design, already carefully audited
+  in an earlier session); `LineageBanner.jsx`, `FlightCaption.jsx`, `ReturnToTreePill.jsx`,
+  `ReturnToPerimeterPill.jsx`, `IdleFactHint.jsx` (all `role="status"`, correctly non-modal, no
+  trap needed); `.lineage-banner__crumb` (genuine inline text within a flowing possessive
+  sentence — the same WCAG 2.5.8 inline-text exemption already invoked for the footer links in
+  an earlier audit). Full unit suite (88/88), `npm run build`, and the standard smoke test all
+  passed clean.
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);
