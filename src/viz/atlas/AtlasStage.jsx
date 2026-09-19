@@ -309,7 +309,21 @@ export default function AtlasStage({
        * spanning several rows, or reaching a long way along one, is true but
        * would read as a rope; it is drawn thin and plain, and only when both
        * of its ends are on screen. A lateral link (an ex, an extra partner)
-       * likewise. */
+       * likewise.
+       *
+       * A descent whose parentUnit is a JUNCTION anchor (ensureAnchor's
+       * anchorOnly units — a former partner, or a further, un-podded current
+       * partner, per plan.js's own "never podded" rule) gets the SAME quiet
+       * treatment regardless of distance, not only once it crosses
+       * isFarReach's threshold. Real user report: a diagonal line was read as
+       * "a line between" two former partners even though it was actually
+       * their shared child's descent — because a junction has no real pod of
+       * its own to hang a bold Canopy ribbon from (it is two separately-drawn
+       * people, not one family block), the bold ribbon treatment always
+       * looked like it belonged to the couple's own bond rather than to a
+       * child several units away. isFarReach alone missed this: a junction's
+       * child can land close enough in x/y to stay "near" and still read as
+       * confusing, because the confusion is structural, not a distance. */
       let nearFrame = null, longFrame = null, lateralFrame = null, nearSet = new Set();
       const splitBonds = () => {
         const byId = unitById();
@@ -318,7 +332,7 @@ export default function AtlasStage({
           if (b.kind === 'descent') {
             const pu = byId.get(b.parentUnit), c = frame.nodes.get(b.child);
             const a = pu ? anchorOf(pu) : null;
-            (a && c && isFarReach(c.x - a.x, c.y - a.y) ? long : near).push(b);
+            (a && c && (pu?.anchorOnly || isFarReach(c.x - a.x, c.y - a.y)) ? long : near).push(b);
           } else if (b.kind === 'thread') {
             lateral.push(b);
           } else {
