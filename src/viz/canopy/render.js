@@ -411,9 +411,20 @@ export function drawBonds(g, frame, schedule, t, offsetOf) {
     // junction descent — the swelling itself implies a real family bough,
     // which a synthetic midpoint between two separately-drawn people isn't.
     if (e > 0.06 && !isJunction) drawFork(g, from, to, b.junctionLevel || 0, alpha);
-    if (b.qualifier === 'step' || b.qualifier === 'adoptive' || b.qualifier === 'adopted') {
-      // A step or adoptive descent is dashed, matching the app's existing
-      // convention — the bond is real, and it is also not biological.
+    if (b.qualifier === 'step' || b.qualifier === 'adoptive' || b.qualifier === 'adopted' || isJunction) {
+      /* A junction descent gets the SAME dashed grammar the app already uses
+       * for step/adoptive lines — "this is real, but not a plain solid
+       * parent-child bond" — rather than only a lighter alpha on the same
+       * solid taper. That alpha-only version kept reading as a normal bold
+       * line in practice: a low, flat alpha value gets composited with
+       * whatever else is drawn under the same descent (the "lit" bloodline
+       * pass draws it again, the portrait lens draws its own copy full
+       * layer-opacity) and the combined result can land back close to solid,
+       * as it did here across three earlier attempts at this exact case. A
+       * dashed, FLAT-width stroke (drawDashedPath fixes width at 2, instead
+       * of taperedRibbon's up-to-3.6-wide couple end) stays visually distinct
+       * regardless of how those layers stack, the same way it already does
+       * for a step-parent's line. */
       drawDashedPath(g, pts, BRANCH, alpha * 0.85);
     } else {
       taperedRibbon(g, pts, BRANCH, alpha);
