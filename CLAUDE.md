@@ -3780,6 +3780,57 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   too, not only in the hand-built repro. Full unit suite (88/88), `npm run build`, and the
   standard smoke test all passed clean.
 
+- **The junction-descent quieting fix above never actually reached the surface the user was
+  looking at — a real scoping mistake, found and fixed the same day.** Follow-up screenshot,
+  after the previous fix shipped: the capsule around Heather/Christopher/Ken now wraps
+  cleanly (that part was confirmed working), but the bold trunk-and-fork reaching down to
+  Matthew still looked exactly like before — full weight, a fork swelling, no quieter than
+  a normal family bough. Asked directly whether Christopher is really recorded as Matthew's
+  father (rather than assuming); confirmed yes. That meant the fix genuinely wasn't working
+  for this case, and the reason turned out to be a scoping error in my own previous PR:
+  **the screenshot was never the `?lab=atlas` prototype at all — it's the shipped, in-app
+  Canopy view** (reached via the topbar's "Change how the family is shown" menu once a
+  viewer has opted in, `lib/canopyPref.js`), confirmed by the header chrome (the real
+  Bloodline topbar, family-name pill, notification bell) which Atlas's own minimal lab UI
+  doesn't have at all. My previous fix quieted junction-anchored descents ONLY inside
+  `AtlasStage.jsx`'s `splitBonds()` — a pre-filtering step that exists exclusively in the
+  Atlas whole-family-map component, rerouting matching bonds to a completely separate
+  rendering function (`drawReaches`) before they ever reach the shared `drawBonds()` Canopy
+  and Atlas otherwise both call. Canopy's own planner (`canopy/plan.js`) independently builds
+  the exact same kind of `anchorOnly` junction unit for a shared child of two people who
+  aren't podded together (confirmed live in that file, and confirmed this is the literal,
+  already-tested real-data shape in `tests/canopyPlan.test.mjs`'s `blended` fixture — Heather,
+  Chris, Ken, Matthew, Jason, Jessica, Amie, the same names as the actual account) — but
+  `CanopyTree.jsx` calls `drawBonds()` directly on its own unsplit frame, with no equivalent
+  pre-filtering step at all, so a junction descent there always got the identical full-weight
+  Canopy ribbon treatment my earlier fix was specifically meant to avoid. Fixed at the actual
+  shared root instead of duplicating Atlas's own splitting logic a second time for Canopy: a
+  new `unitFor(frame, unitId)` helper (the same id→unit lookup `liveAnchor` already performs,
+  extracted so both can share it) lets `drawBonds()`'s own descent loop check
+  `unitFor(frame, b.parentUnit)?.anchorOnly` directly and, when true, draw the SAME tapered
+  ribbon shape at a much quieter `0.4` alpha (down from `0.85`) with no fork swelling — recedes
+  into the background rather than switching to a different curve primitive (an unfamiliar
+  shape reads as a mistake, per this file's own existing reasoning for the thread/capsule
+  dispatch) or disappearing outright (the connection is real and has no other way to be
+  shown). Verified this doesn't touch Atlas's own already-correct behavior: Atlas's
+  `splitBonds()` already routes every junction descent to `drawReaches` before it can ever
+  reach `drawBonds()`'s descent loop at all, so the new `isJunction` branch is provably dead
+  code on that path — confirmed by re-reading `splitBonds`'s exact filter condition rather
+  than assuming. It also incidentally fixes a second, previously-unnoticed Atlas surface
+  that shared this exact gap: `AtlasStage.jsx`'s own "portrait"/lens composition
+  (`drawBonds(portraitBonds, p, ...)`, used when the camera zooms into a single person) calls
+  `drawBonds()` directly on a `composePortrait()`-built frame with no near/far splitting
+  either — confirmed that frame independently builds the same `anchorOnly` junction units and
+  exposes `unitById`, so the fix applies there too with no separate code path needed.
+  Verified live via Playwright against the exact real-data shape (a temporary seed.js addition
+  mirroring `tests/canopyPlan.test.mjs`'s own `blended` fixture byte-for-byte — Heather/
+  Chris/Ken/Matthew/Jason/Jessica/Amie — reverted before committing, confirmed via a clean
+  `git diff`): opened Heather's profile in the real, shipped Canopy view (not Atlas), and
+  confirmed Matthew's and Jason's descent lines — both through the Chris-Heather junction —
+  now render as visibly thin, pale, muted curves with no fork marker, distinctly different
+  from the full-weight capsule wrapping the three adults above them. Full unit suite (88/88),
+  `npm run build`, and the standard smoke test all passed clean.
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);
