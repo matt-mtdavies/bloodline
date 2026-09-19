@@ -4,6 +4,7 @@ import { detectRegion, worldEventsInDecade, sameYearWorldEvent, eraTint } from '
 import { CATEGORY_LABELS } from '../data/worldEvents.js';
 import { scopeGraphToIds } from '../data/graph.js';
 import ReturnMark from './ReturnMark.jsx';
+import { useDialogFocus } from '../lib/useDialogFocus.js';
 
 /*
  * Family Timeline — the whole family's history as one chronological feed:
@@ -59,6 +60,11 @@ function withWorldContext(groups, region) {
 
 export default function TimelineView({ graph, photos = [], cohortIds = null, perimeterActive = false, onNavigate, onClose }) {
   const [filter, setFilter] = useState('all');
+  const sheetRef = useRef(null);
+  // role="dialog" aria-modal="true" claimed the rest of the page didn't
+  // exist, but nothing ever moved focus in or trapped Tab inside it — the
+  // same Impeccable-audit finding already fixed on ~10 other sheets.
+  useDialogFocus(sheetRef, true, { initialFocus: '.return-mark' });
   // Family Perimeter (Phase 6 §6.11: "Timeline: query or calculate by
   // cohort... and virtualize entries" — virtualization itself is a
   // separate, not-yet-tackled performance item; this is the cohort half).
@@ -120,7 +126,7 @@ export default function TimelineView({ graph, photos = [], cohortIds = null, per
 
   return (
     <div className="sheet-scrim" role="dialog" aria-modal="true" aria-label="Family timeline" onClick={onClose}>
-      <div className="sheet tl" onClick={(e) => e.stopPropagation()}>
+      <div ref={sheetRef} className="sheet tl" onClick={(e) => e.stopPropagation()}>
         <div className="sheet__grip" />
 
         <div className="tl__head">

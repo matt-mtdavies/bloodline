@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { useDialogFocus } from '../lib/useDialogFocus.js';
 
 /*
  * Persistent nudge shown to anonymous ?new trial users after they complete
@@ -17,13 +18,24 @@ export default function SaveNudge({ onSaveComplete }) {
   const [errorMsg, setErrorMsg] = useState('');
   const codeRef = useRef(null);
   const emailRef = useRef(null);
+  const sheetRef = useRef(null);
 
+  // The account-creation sheet is real, load-bearing account-security UI —
+  // it had a hand-rolled `setTimeout(..., 80).focus()` for its OWN field,
+  // but no Tab trap (Tab escaped straight to the app behind it) and no
+  // Escape handler at all (only clicking the scrim closed it). The shared
+  // hook replaces the manual timeout — `contentKey: phase` re-focuses the
+  // right field again when the email step hands off to the code step.
+  useDialogFocus(sheetRef, sheetOpen, {
+    initialFocus: phase === 'email' ? '#nudge-email' : '#nudge-code',
+    contentKey: phase,
+  });
   useEffect(() => {
-    if (sheetOpen) {
-      const t = setTimeout(() => (phase === 'email' ? emailRef : codeRef).current?.focus(), 80);
-      return () => clearTimeout(t);
-    }
-  }, [sheetOpen, phase]);
+    if (!sheetOpen) return;
+    const onKey = (e) => { if (e.key === 'Escape') setSheetOpen(false); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [sheetOpen]);
 
   if (dismissed) return null;
 
@@ -114,7 +126,7 @@ export default function SaveNudge({ onSaveComplete }) {
           aria-modal="true"
           aria-label="Create your free account"
         >
-          <div className="sheet save-nudge__sheet" onClick={(e) => e.stopPropagation()}>
+          <div ref={sheetRef} className="sheet save-nudge__sheet" onClick={(e) => e.stopPropagation()}>
             <div className="sheet__grip" />
 
             <div className="save-nudge__sheet-head">

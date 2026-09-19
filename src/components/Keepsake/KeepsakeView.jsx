@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { buildKeepsake, applyNarrative } from '../../lib/keepsake.js';
 import { profileCompleteness } from '../../lib/profile.js';
 import { fetchWithTimeout } from '../../lib/net.js';
+import { useDialogFocus } from '../../lib/useDialogFocus.js';
 
 // A real user report ("if I go to generate a story... it freezes... only a
 // refresh clears it") traced to fetch() having no timeout anywhere in this
@@ -159,6 +160,18 @@ export default function KeepsakeView({
   // observers are gone with the free-scrolling reader they served.
   const containerRef = useRef(null);
   const progressRef = useRef(null);
+  const editSheetRef = useRef(null);
+
+  // role="dialog" aria-modal="true" claimed the rest of the page didn't
+  // exist, but nothing ever moved focus in or trapped Tab inside — a real
+  // Impeccable-audit finding, the same shape already fixed on ~10 other
+  // sheets. Suspended while the edit sheet is open (its own trap takes
+  // over), mirroring PersonSheet's own outer/inner trap handoff.
+  useDialogFocus(containerRef, !editing, { initialFocus: '.return-mark' });
+  useDialogFocus(editSheetRef, !!editing, {
+    initialFocus: editing?.id === 'epithet' ? 'input' : 'textarea',
+    contentKey: editing?.id,
+  });
 
   if (!keepsake) return null;
 
@@ -402,7 +415,7 @@ export default function KeepsakeView({
       {/* The edit sheet — one implementation for every section. */}
       {editing && (
         <div className="sheet-scrim sheet-scrim--modal" onClick={() => setEditing(null)}>
-          <div className="sheet sheet--form ks-editsheet" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Edit this section">
+          <div ref={editSheetRef} className="sheet sheet--form ks-editsheet" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Edit this section">
             <div className="sheet__grip" />
             <h2 className="ks-editsheet__head">
               {editing.id === 'epithet' ? 'The cover line'
@@ -421,7 +434,6 @@ export default function KeepsakeView({
             {editing.id === 'epithet' ? (
               <input
                 className="field__input"
-                autoFocus
                 value={editing.text}
                 onChange={(e) => setEditing((s) => ({ ...s, text: e.target.value }))}
               />
@@ -429,7 +441,6 @@ export default function KeepsakeView({
               <textarea
                 className="field__input field__input--area"
                 rows={10}
-                autoFocus={editing.title === null}
                 value={editing.text}
                 onChange={(e) => setEditing((s) => ({ ...s, text: e.target.value }))}
                 placeholder="Leave a blank line between paragraphs."
