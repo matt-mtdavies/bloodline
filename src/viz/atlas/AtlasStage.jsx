@@ -486,8 +486,18 @@ export default function AtlasStage({
             for (let i = 1; i < pts.length; i++) litBonds.lineTo(pts[i].x, pts[i].y);
             litBonds.stroke({ color: TERRA, width: 2.2, alpha: 0.55, cap: 'round', join: 'round' });
           } else {
+            /* A far descent off a JUNCTION anchor (see splitBonds' own
+             * comment) gets the same quieter treatment here as the base,
+             * unlit line does — otherwise the very act of lighting this
+             * person's bloodline (which is what actually happens the moment
+             * you tap into their family, not some rarer edge case) redraws
+             * the exact line the quieting was for at full warm strength,
+             * undoing it. Still visibly part of the lit trail — never as
+             * quiet as the base line's grey, since it IS the path being
+             * followed — just not as bold as an ordinary far lit descent. */
+            const isJunction = !!byId.get(b.parentUnit)?.anchorOnly;
             reachCurve(litBonds, { x: from.x, y: from.y }, to);
-            litBonds.stroke({ color: TERRA, width: 2, alpha: 0.6, cap: 'round' });
+            litBonds.stroke({ color: TERRA, width: isJunction ? 1.5 : 2, alpha: isJunction ? 0.4 : 0.6, cap: 'round' });
           }
         }
       };

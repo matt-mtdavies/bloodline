@@ -3831,6 +3831,72 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   from the full-weight capsule wrapping the three adults above them. Full unit suite (88/88),
   `npm run build`, and the standard smoke test all passed clean.
 
+- **The Chris/Heather junction descent, actually fixed this time — the real, in-app Atlas view
+  (not Canopy) was rendering it at nearly full strength, twice over.** Third follow-up on the
+  same real family (user, verbatim: "This is the third time you have not fixed the issue. This
+  is Atlas view" — correcting an assumption in the previous entry that the earlier screenshot was
+  Canopy; the app's normal topbar/dock chrome on both screenshots is genuinely ambiguous between
+  the two views without asking). Root-caused with live pixel measurement rather than reasoning
+  from code alone this time, since two prior passes had "confirmed" a fix via console-log
+  classification checks that turned out not to reflect what was actually painted on screen. Two
+  distinct, real bugs, found by instrumenting the running app (a temporary `seed.js` fixture
+  mirroring `tests/canopyPlan.test.mjs`'s own `blended` shape — Heather/Chris/Ken/Matthew/Jason/
+  Jessica/Amie, reverted before committing) and reading actual rendered pixels via Pillow rather
+  than trusting the code path alone:
+  1. **`portrait.js`'s "focus zooms in" lens never applied the junction rule to the focus's OWN
+     parents.** `composePortrait()` builds a small, separate family gathering around whoever is
+     selected — its own units, its own bonds, drawn via the same shared `drawBonds()` from
+     `canopy/render.js`. Its `parentUnion` check — `bloodParents.length > 1 ? partnerStatus(...)
+     : null` — treated ANY recorded partnership between the focus's two parents, current OR
+     former, as grounds to pod them into one real unit (`anchorOnly: false`), when every other
+     "never podded" rule in this app (layout.js's whole-map planner, canopy/plan.js's ego
+     planner) explicitly excludes `status === 'former'`. So the moment you zoomed in on Matthew
+     specifically — the only way this line is ever actually seen, since it connects exactly the
+     two people you're now looking at up close — his former-partnered parents got silently
+     promoted from a synthetic junction into a real pod, undoing the fix before it could apply.
+     Fixed with `if (parentUnion && parentUnion !== 'former')`, matching the exclusion used
+     everywhere else. Confirmed via a temporary `window.__atlasDebug`/console-log pass that this
+     was the dominant visible layer at a zoomed-in view: `portraitT` (the lens's own presence)
+     reads 1.0 the moment you're zoomed that far in, and `portraitLayer.alpha` sits at full
+     strength independent of the whole-map's own dimming — the previous two attempts had
+     correctly fixed the WHOLE-MAP's classification (`layout.js`, `AtlasStage.jsx`'s
+     `splitBonds`) but never checked whether the SEPARATE lens composition agreed.
+  2. **Even with both classifications correct, a flat-alpha reduction on a solid taper wasn't
+     visually decisive enough once multiple layers draw the same descent.** `canopy/render.js`'s
+     `drawBonds()` already reduced a junction descent's alpha (0.4 vs 0.85) and skipped its fork —
+     right in isolation, but the SAME bond is drawn again by the "lit bloodline" pass
+     (`AtlasStage.jsx`'s `drawLit`, redrawing the active person's own ancestry "on top at full
+     strength") and, once zoomed in, a THIRD time by the lens's own `drawBonds()` call at full
+     layer opacity — three low-alpha layers compositing on top of each other land back close to
+     solid, empirically confirmed by sampling the actual rendered pixel colour (Pillow, since no
+     PIL/canvas library existed in this sandbox until installed for this): the line's centre
+     measured at roughly 55–60% effective opacity against a raw BRANCH-colour line, not the
+     intended ~40%, and visually read as "a normal bold connector" regardless. Rather than keep
+     chasing an alpha number across three separate draw call sites that all interact, gave a
+     junction descent the SAME visual grammar the app already uses for a different "this bond is
+     real but not a plain parent-child line" case — step/adoptive descents' dashed stroke — via
+     `drawDashedPath` (a flat width-2 stroke, not `taperedRibbon`'s up-to-3.6-wide couple end).
+     Dashed reads unambiguously at a glance and, being a structurally different stroke rather
+     than a fine alpha tweak, stays visually distinct no matter how many additional passes draw
+     over it. `drawLit`'s own separate far-branch stroke (the second contributor, used when the
+     bond is part of the currently-lit lineage but not near enough to route through the shared
+     `drawBonds()`) keeps its existing alpha/width reduction — a smaller, secondary layer, left
+     alone rather than building a second bezier-dashing routine for a comparatively minor
+     contributor.
+  Verified live via Playwright, not just re-derived from the source: with the demo's own small
+  fitZoom (giving a much larger fitZoom-relative flyTo zoom than the real 1,200-person account
+  would show, which had made the now-superseded whole-map `drawFar()` silhouette layer a
+  confounding third contributor during investigation — irrelevant at the real account's actual
+  scale, where a flyTo lands far past that layer's own fade-out threshold already), confirmed via
+  pixel sampling that the initial, un-zoomed landing on Matthew already renders both his and
+  Jason's descent from the Chris/Heather junction as clearly dashed, matching the union thread's
+  own dashed treatment; then zoomed in via the real "+" zoom control (not a wheel event, which
+  pans unpredictably) until the portrait lens fully engaged (`portraitT` confirmed at 1.0 via a
+  temporary debug hook, since removed) and confirmed the SAME line stays visibly dashed at that
+  zoom level too, rather than reverting to solid the moment the lens takes over — the exact
+  failure mode of all three earlier attempts. Full unit suite (88/88), `npm run build`, and the
+  standard smoke test all passed clean.
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);

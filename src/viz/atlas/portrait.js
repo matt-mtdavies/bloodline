@@ -265,7 +265,19 @@ export function composePortrait(graph, focusId) {
     break; // the pod is the first current partner; further ones stand alone
   }
   const parentUnion = bloodParents.length > 1 ? partnerStatus(bloodParents[0], bloodParents[1]) : null;
-  if (parentUnion) {
+  /* A real pod — one capsule, one shared descent anchor — only for parents
+   * who ARE a couple: current or widowed. A FORMER partnership never pods
+   * anywhere else in this app (layout.js's own whole-map planner excludes
+   * `status === 'former'` from union the same way; canopy/plan.js's ego
+   * planner does too) — the one place that rule was missing was here, so
+   * the focus's own former-partner parents still got treated as one pod
+   * purely because *some* partner edge existed between them, regardless of
+   * its status. That silently promoted a synthetic anchorOnly junction (the
+   * quieter treatment `isJunction` in canopy/render.js exists for) into a
+   * real pod, which is why a former couple's shared child kept rendering a
+   * full-strength descent line here even after the junction case itself was
+   * fixed everywhere it actually applied. */
+  if (parentUnion && parentUnion !== 'former') {
     const u = unitFor([bloodParents[0], bloodParents[1]]);
     if (u) for (const id of [bloodParents[0], bloodParents[1]]) { podded.add(id); podOf.set(id, u); }
   }
