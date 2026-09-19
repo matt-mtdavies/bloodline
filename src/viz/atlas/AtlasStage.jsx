@@ -309,21 +309,7 @@ export default function AtlasStage({
        * spanning several rows, or reaching a long way along one, is true but
        * would read as a rope; it is drawn thin and plain, and only when both
        * of its ends are on screen. A lateral link (an ex, an extra partner)
-       * likewise.
-       *
-       * A descent whose parentUnit is a JUNCTION anchor (ensureAnchor's
-       * anchorOnly units — a former partner, or a further, un-podded current
-       * partner, per plan.js's own "never podded" rule) gets the SAME quiet
-       * treatment regardless of distance, not only once it crosses
-       * isFarReach's threshold. Real user report: a diagonal line was read as
-       * "a line between" two former partners even though it was actually
-       * their shared child's descent — because a junction has no real pod of
-       * its own to hang a bold Canopy ribbon from (it is two separately-drawn
-       * people, not one family block), the bold ribbon treatment always
-       * looked like it belonged to the couple's own bond rather than to a
-       * child several units away. isFarReach alone missed this: a junction's
-       * child can land close enough in x/y to stay "near" and still read as
-       * confusing, because the confusion is structural, not a distance. */
+       * likewise. */
       let nearFrame = null, longFrame = null, lateralFrame = null, nearSet = new Set();
       const splitBonds = () => {
         const byId = unitById();
@@ -332,7 +318,7 @@ export default function AtlasStage({
           if (b.kind === 'descent') {
             const pu = byId.get(b.parentUnit), c = frame.nodes.get(b.child);
             const a = pu ? anchorOf(pu) : null;
-            (a && c && (pu?.anchorOnly || isFarReach(c.x - a.x, c.y - a.y)) ? long : near).push(b);
+            (a && c && isFarReach(c.x - a.x, c.y - a.y) ? long : near).push(b);
           } else if (b.kind === 'thread') {
             lateral.push(b);
           } else {
@@ -486,18 +472,8 @@ export default function AtlasStage({
             for (let i = 1; i < pts.length; i++) litBonds.lineTo(pts[i].x, pts[i].y);
             litBonds.stroke({ color: TERRA, width: 2.2, alpha: 0.55, cap: 'round', join: 'round' });
           } else {
-            /* A far descent off a JUNCTION anchor (see splitBonds' own
-             * comment) gets the same quieter treatment here as the base,
-             * unlit line does — otherwise the very act of lighting this
-             * person's bloodline (which is what actually happens the moment
-             * you tap into their family, not some rarer edge case) redraws
-             * the exact line the quieting was for at full warm strength,
-             * undoing it. Still visibly part of the lit trail — never as
-             * quiet as the base line's grey, since it IS the path being
-             * followed — just not as bold as an ordinary far lit descent. */
-            const isJunction = !!byId.get(b.parentUnit)?.anchorOnly;
             reachCurve(litBonds, { x: from.x, y: from.y }, to);
-            litBonds.stroke({ color: TERRA, width: isJunction ? 1.5 : 2, alpha: isJunction ? 0.4 : 0.6, cap: 'round' });
+            litBonds.stroke({ color: TERRA, width: 2, alpha: 0.6, cap: 'round' });
           }
         }
       };
