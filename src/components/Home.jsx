@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef } from 'react';
+import { useState, useMemo, useEffect, useRef, Fragment } from 'react';
 import Logo from './Logo.jsx';
 import { ActivityRow } from './ActivityFeed.jsx';
 import { computeThisMonth, computeInsightModules, highlightCandidates } from '../lib/insightModules.js';
@@ -386,45 +386,83 @@ function firstName(name) {
 // there's more (same technique as Keepsake's constellation scroll-fade).
 const MONTH_CAP = 5;
 function ThisMonth({ data, onSelectPerson }) {
-  const { month, birthdays, anniversaries } = data;
+  const { month, today, birthdays, anniversaries } = data;
   const all = [
     ...birthdays.map((b) => ({ kind: 'birthday', day: b.day, ...b })),
     ...anniversaries.map((a) => ({ kind: 'anniversary', day: a.day, ...a })),
   ].sort((a, b) => a.day - b.day);
   const overflows = all.length > MONTH_CAP;
+  // Where "today" sits in this list — a calendar's own "now" line, not a
+  // fourth section: the first entry that hasn't happened yet (today's own
+  // entry counts as not-yet-happened, the same convention a day-view
+  // calendar uses for "now" sitting above the current hour's events). If
+  // everything this month is already behind us, the line settles at the
+  // very end rather than not appearing at all — "you are here" is true
+  // even on the 30th with nothing left to come.
+  const todayIndex = all.findIndex((item) => item.day >= today);
+  const dividerAt = todayIndex === -1 ? all.length : todayIndex;
+
+  // Land the line just below the list's own top edge on open, rather than
+  // leaving a family member to scroll past several already-happened rows
+  // to find where "today" actually is. Set scrollTop directly on the list
+  // itself (not scrollIntoView) — this card sits inside the Home hub's own
+  // page scroll, and scrollIntoView would happily drag that outer scroll
+  // along too to fully reveal the line; only the small internal card
+  // should ever move.
+  const monthListRef = useRef(null);
+  const todayLineRef = useRef(null);
+  useEffect(() => {
+    if (monthListRef.current && todayLineRef.current) {
+      monthListRef.current.scrollTop = todayLineRef.current.offsetTop;
+    }
+  }, [dividerAt]);
 
   return (
     <section className="home__section home__month" style={{ '--i': 0 }}>
       <h2 className="home__section-title">{month} in your family</h2>
       <div className="home__month-frame">
-        <div className="home__month-list">
-          {all.map((item) => (
-            <button
-              key={`${item.kind}-${item.kind === 'birthday' ? item.id : item.aId + item.bId}`}
-              className={`home__month-row${item.isToday ? ' home__month-row--today' : ''}`}
-              onClick={() => onSelectPerson?.(item.kind === 'birthday' ? item.id : item.aId)}
-            >
-              <span className="home__month-day">{item.day}</span>
-              <span className="home__month-body">
-                {item.kind === 'birthday' ? (
-                  <>
-                    <span className="home__month-t">{item.name}</span>
-                    <span className="home__month-d">
-                      {item.isToday ? 'Birthday today' : 'Birthday'}
-                      {item.turning != null ? ` · ${item.isPast ? 'turned' : 'turning'} ${item.turning}` : ''}
-                    </span>
-                  </>
-                ) : (
-                  <>
-                    <span className="home__month-t">{item.aName} &amp; {item.bName}</span>
-                    <span className="home__month-d">
-                      {item.isToday ? 'Anniversary today' : 'Anniversary'} · {item.years} {item.years === 1 ? 'year' : 'years'}
-                    </span>
-                  </>
+        <div className="home__month-list" ref={monthListRef}>
+          {all.map((item, i) => {
+            const itemKey = `${item.kind}-${item.kind === 'birthday' ? item.id : item.aId + item.bId}`;
+            return (
+              <Fragment key={itemKey}>
+                {i === dividerAt && (
+                  <div className="home__month-today" ref={todayLineRef}>
+                    <span className="home__month-today-label">Today</span>
+                  </div>
                 )}
-              </span>
-            </button>
-          ))}
+                <button
+                  className={`home__month-row${item.isToday ? ' home__month-row--today' : ''}${item.day < today ? ' home__month-row--past' : ''}`}
+                  onClick={() => onSelectPerson?.(item.kind === 'birthday' ? item.id : item.aId)}
+                >
+                  <span className="home__month-day">{item.day}</span>
+                  <span className="home__month-body">
+                    {item.kind === 'birthday' ? (
+                      <>
+                        <span className="home__month-t">{item.name}</span>
+                        <span className="home__month-d">
+                          {item.isToday ? 'Birthday today' : 'Birthday'}
+                          {item.turning != null ? ` · ${item.isPast ? 'turned' : 'turning'} ${item.turning}` : ''}
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="home__month-t">{item.aName} &amp; {item.bName}</span>
+                        <span className="home__month-d">
+                          {item.isToday ? 'Anniversary today' : 'Anniversary'} · {item.years} {item.years === 1 ? 'year' : 'years'}
+                        </span>
+                      </>
+                    )}
+                  </span>
+                </button>
+              </Fragment>
+            );
+          })}
+          {dividerAt === all.length && (
+            <div className="home__month-today home__month-today--end" ref={todayLineRef}>
+              <span className="home__month-today-label">Today</span>
+            </div>
+          )}
         </div>
         {overflows && <div className="home__month-fade" aria-hidden="true" />}
       </div>

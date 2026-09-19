@@ -3807,6 +3807,44 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   sandbox, still wasn't good enough against the real, live family the report keeps coming from.
   Full unit suite (88/88) and `npm run build` passed clean after the revert.
 
+- **Home hub's "[Month] in your family" list now carries a "today" line, a calendar's own
+  now-marker** (discussed direction first — proposed a divider-line approach over a pinned
+  "today" hero card, since a hero card goes dead on the ~28 days of the month with nothing
+  happening, while a line works every day; user: "Build the divider-line version"). The list
+  used to run flat through the month with no anchor — a birthday on the 1st and one on the 30th
+  read identically regardless of what day it actually was. `computeThisMonth` (`lib/
+  insightModules.js`) now returns `today` (the day-of-month number, derived from the same `now`
+  param already threaded through for testability) alongside `birthdays`/`anniversaries`, so
+  `Home.jsx`'s `ThisMonth` has one source of truth rather than instantiating its own `new
+  Date()` and risking drift from whatever moment the data was actually computed for.
+  `ThisMonth` finds the first entry with `day >= today` (today's own entry counts as
+  not-yet-happened, the same convention a day-view calendar uses for "now" sitting above the
+  current hour) and inserts a plain `.home__month-today` rule-with-label div right before it —
+  present even on a day with no event of its own, landing at the very end of the list when
+  everything this month has already happened rather than not appearing at all ("you are here"
+  is still true on the 30th with nothing left to come). Entries before the line get a quieter
+  `.home__month-row--past` treatment (hollow ink-soft badge instead of the filled terracotta
+  one, muted text) — kept for context, never hidden. On open, a `useEffect` sets
+  `.home__month-list`'s own `scrollTop` directly to the line's `offsetTop` (not
+  `scrollIntoView`, which would happily drag the Home hub's own outer page scroll along too to
+  fully reveal it — only this one small internal card should ever move) so a family member
+  never has to scroll past several already-happened rows to find where today actually sits.
+  One incidental fix along the way: `.home__month-row:last-child { border-bottom: none; }`
+  became `:last-of-type` — the divider is a sibling `<div>` among the `<button>` rows now, so
+  the literal last CHILD of the list isn't always the true last row once the divider settles at
+  the end of the month. Verified live via Playwright against three shapes: a forced 8-person
+  fixture (`seed.js`, reverted before committing) spanning both sides of the real sandbox date
+  (Sept 19) — past entries render muted/hollow, the line lands between day 15 and day 19 with
+  "Birthday today" bold beneath it, and the future day-25 entry stays full strength; the same
+  fixture pushed to 8 items so the line sits past the 5-row visible window, confirming the
+  auto-scroll actually engages (`scrollTop` measured non-zero, the line visibly landing near
+  the card's own top edge rather than buried); and the all-past edge case (every September date
+  before day 19), confirming the line correctly falls to the end. Also confirmed against the
+  real, unmodified seed data (one September anniversary on the 3rd, nothing else) — renders
+  muted/past with the line correctly following it to the end, zero console errors. One new unit
+  test pins `computeThisMonth`'s `today` field. Full unit suite (88/88), `npm run build`, and
+  the standard smoke test all passed clean.
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);

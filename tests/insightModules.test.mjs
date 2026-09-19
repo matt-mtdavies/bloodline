@@ -528,6 +528,11 @@ test('this month: birthdays + anniversaries filtered to the given month, sorted 
   assert.equal(r.anniversaries.length, 1);
   assert.equal(r.anniversaries[0].years, 2026 - 1975);
   assert.equal(r.anniversaries[0].isToday, true);
+  // Home.jsx's "today" divider line needs a single source of truth for where
+  // "now" sits in the month, rather than re-deriving it (and risking drift
+  // from whatever `now` this call was actually passed) from a fresh `new
+  // Date()` of its own.
+  assert.equal(r.today, 15);
 });
 
 test('this month: null when nothing falls in the given month', () => {

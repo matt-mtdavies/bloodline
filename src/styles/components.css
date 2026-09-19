@@ -9560,6 +9560,7 @@ button.health-notes {
 .home__month-frame { position: relative; display: grid; }
 .home__month-frame > * { grid-area: 1 / 1; }
 .home__month-list {
+  position: relative; /* offsetParent for .home__month-today's own offsetTop scroll math */
   background: #fff;
   border-radius: 18px;
   box-shadow: var(--shadow-soft);
@@ -9590,7 +9591,10 @@ button.health-notes {
   font: inherit;
   transition: background 0.15s;
 }
-.home__month-row:last-child { border-bottom: none; }
+/* :last-of-type, not :last-child — the "today" line is a sibling <div>
+   interspersed among these <button> rows, so the true last row isn't always
+   the list's own last child once it settles at the end of the month. */
+.home__month-row:last-of-type { border-bottom: none; }
 .home__month-row:hover { background: var(--paper-deep); }
 .home__month-day {
   flex-shrink: 0;
@@ -9610,6 +9614,46 @@ button.health-notes {
 .home__month-t { font-weight: 600; font-size: 14px; color: var(--ink); }
 .home__month-d { font-size: 12px; color: var(--ink-soft); }
 .home__month-row--today .home__month-d { color: var(--accent-deep, #a44d2c); font-weight: 600; }
+/* Already happened this month — kept for context, not for "coming up":
+   the same quiet ink-soft/hollow-badge treatment the rest of the app uses
+   for de-emphasized-but-present content, never hidden or removed. */
+.home__month-row--past .home__month-day { background: none; color: var(--ink-soft); box-shadow: inset 0 0 0 1.5px var(--hairline); }
+.home__month-row--past .home__month-t { color: var(--ink-soft); font-weight: 500; }
+.home__month-row--past .home__month-d { color: var(--ink-faint); }
+
+/* The "today" line — a calendar's own now-marker, dropped inline between
+   whatever already happened this month and whatever's still to come. Present
+   even on a day with no event of its own, so "you are here" always answers
+   the same question this whole card exists for. Deliberately not a section
+   header (no card-like background, no surrounding padding box) — a plain
+   rule with a label riding on it, so it reads as a position marker rather
+   than a fourth grouping the two real kinds (birthdays, anniversaries)
+   don't have. */
+.home__month-today {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 16px;
+  height: 20px;
+}
+.home__month-today::before,
+.home__month-today::after {
+  content: '';
+  flex: 1 1 auto;
+  height: 1px;
+  background: var(--accent, #c2603a);
+  opacity: 0.35;
+}
+.home__month-today::before { flex-grow: 0; flex-basis: 8px; }
+.home__month-today-label {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent, #c2603a);
+}
+.home__month-today--end { margin-bottom: -4px; }
 
 /* The insights teaser — a marquee entry point, not a plain row: an
    accent-tinted icon chip and a gradient card give it more visual weight
