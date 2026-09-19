@@ -28,6 +28,19 @@ const GOLD = 0xc4913f;
  * genuinely distant satellite thread. Comfortably above a real pod's own
  * gap, comfortably below how far a lifted co-parent satellite ever sits. */
 const ADJACENT_MAX = POD_GAP * 2.5;
+/* Real feedback on Atlas (whole-family map, not a composed Canopy portrait):
+ * a former partner is deliberately NEVER row-levelled with their ex (see
+ * atlas/layout.js's rankRows — a former partner's row comes from their OWN
+ * connection to the graph, which can genuinely land one generation off).
+ * Canopy's own formerPartner/adjacentAnchor placement always puts an
+ * adjacent ex on the exact same row, so this never bites there — but on
+ * Atlas, two exes close enough in X to pass ADJACENT_MAX could still sit a
+ * real generation apart in Y, and a CAPSULE (a pill shape implying "one row,
+ * one unit") tilted at that angle read as a mistake, not a relationship. A
+ * pod shape only ever gets drawn when the two ends are ALSO genuinely level;
+ * anything else falls through to the thread/bow treatment below, which is
+ * built to reach for wherever the other end actually is. */
+const ADJACENT_MAX_DY = POD_GAP * 0.6;
 
 const POD = {
   current: { fill: 0xf6e6dc, border: 0xc2603a },
@@ -302,7 +315,7 @@ export function drawBonds(g, frame, schedule, t, offsetOf) {
     // The capsule grows from the anchored member outward to the partner, so
     // the union appears to reach for them rather than blink into being.
     const to = { x: a.x + (c.x - a.x) * e, y: a.y + (c.y - a.y) * e };
-    if (b.status === 'former' && Math.hypot(c.x - a.x, c.y - a.y) <= ADJACENT_MAX) {
+    if (b.status === 'former' && Math.hypot(c.x - a.x, c.y - a.y) <= ADJACENT_MAX && Math.abs(c.y - a.y) <= ADJACENT_MAX_DY) {
       /* A genuine ex placed directly beside the person they used to partner
        * (see plan.js's formerPartner/adjacentAnchor placement) reads as a
        * "was a couple" pod, not a queued extra: the same capsule shape a
@@ -394,11 +407,44 @@ function drawThread(g, a, c, e, { color, dashed, alpha }) {
   const endFull = { x: c.x - ux * (c.r + 3), y: c.y - uy * (c.r + 3) };
   const end = { x: start.x + (endFull.x - start.x) * e, y: start.y + (endFull.y - start.y) * e };
   const span = Math.abs(dx);
+  const dyAbs = Math.abs(dy);
   const sag = span > (a.r + c.r) * 2.4
     ? Math.min(96, 26 + (span - (a.r + c.r) * 2.4) * 0.11)
     : 0;
+  /* Real feedback on Atlas: a former partner is never row-levelled with their
+   * ex (see atlas/layout.js's rankRows), so two exes who sit close together
+   * in X can still be a real generation apart in Y — a case this function
+   * never anticipated, since it only ever bowed for a long X span. That case
+   * drew a short, steep, perfectly STRAIGHT diagonal chord: the one shape
+   * this function's own reasoning above argues against ("a stray rule drawn
+   * across the picture"), just reached via Y instead of X. Handled as its
+   * own case rather than folded into the X-driven `sag` above, because
+   * bowing that one DOWNWARD (the existing same-row convention, which
+   * assumes the far end is roughly level) would loop back on itself for an
+   * ex sitting a row ABOVE rather than below — the bow has to go
+   * perpendicular to the actual line between them, not always "down". */
+  const crossRow = span <= (a.r + c.r) * 2.4 && dyAbs > (a.r + c.r) * 0.6
+    ? Math.min(72, 20 + (dyAbs - (a.r + c.r) * 0.6) * 0.12)
+    : 0;
   const draw = dashed ? drawDashedPath : drawSolidPath;
-  if (sag > 0) {
+  if (crossRow > 0) {
+    // Perpendicular to a→c, always turning the same way regardless of
+    // whether c sits above or below a, so the arc never flips into a loop.
+    const px = -uy, py = ux;
+    const midX = (start.x + endFull.x) / 2 + px * crossRow;
+    const midY = (start.y + endFull.y) / 2 + py * crossRow;
+    const pts = [];
+    const STEPS = 18;
+    for (let s = 0; s <= STEPS; s++) {
+      const f = s / STEPS;
+      const m = 1 - f;
+      pts.push({
+        x: m * m * start.x + 2 * m * f * midX + f * f * endFull.x,
+        y: m * m * start.y + 2 * m * f * midY + f * f * endFull.y,
+      });
+    }
+    draw(g, pts.slice(0, Math.max(2, Math.ceil(pts.length * e))), color, alpha);
+  } else if (sag > 0) {
     const drop = Math.max(a.r, c.r) + labelDrop(a.band || 'kin');
     const pts = [];
     const STEPS = 18;
