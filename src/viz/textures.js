@@ -47,3 +47,41 @@ export function warmGlowTexture() {
   glowTex = Texture.from(c);
   return glowTex;
 }
+
+/*
+ * Form-shading for a flat monogram disc — a rounded, matte object instead of
+ * a flat cut-out colour swatch. Two gradients baked into one canvas so a
+ * portrait needs only one extra sprite, not two:
+ *   - a soft, DIFFUSE highlight offset toward the upper-left, as if lit by
+ *     one broad, gentle light — never a tight specular point. The icon
+ *     refresh review already ruled out a glossy/skeuomorphic direction for
+ *     this app ("a different visual language — matte paper, not glossy
+ *     skeuomorphism"); this has to read as a hand-finished bead or button,
+ *     not a glass sphere or a plastic app-icon gloss.
+ *   - a quiet, concentric rim vignette, the same "sits on the ground, isn't
+ *     a sticker" reasoning as the shadow sprite above, applied to the
+ *     object's own surface rather than the paper beneath it.
+ * Drawn once, reused by every monogram portrait as a single Sprite.
+ */
+let discShadingTex = null;
+export function discShadingTexture() {
+  if (discShadingTex) return discShadingTex;
+  const s = 200;
+  const c = document.createElement('canvas');
+  c.width = c.height = s;
+  const ctx = c.getContext('2d');
+  const vignette = ctx.createRadialGradient(s / 2, s / 2, s * 0.32, s / 2, s / 2, s / 2);
+  vignette.addColorStop(0, 'rgba(20,16,12,0)');
+  vignette.addColorStop(0.78, 'rgba(20,16,12,0)');
+  vignette.addColorStop(1, 'rgba(20,16,12,0.30)');
+  ctx.fillStyle = vignette;
+  ctx.fillRect(0, 0, s, s);
+  const highlight = ctx.createRadialGradient(s * 0.36, s * 0.32, 0, s * 0.36, s * 0.32, s * 0.6);
+  highlight.addColorStop(0, 'rgba(255,250,240,0.22)');
+  highlight.addColorStop(0.55, 'rgba(255,250,240,0.06)');
+  highlight.addColorStop(1, 'rgba(255,250,240,0)');
+  ctx.fillStyle = highlight;
+  ctx.fillRect(0, 0, s, s);
+  discShadingTex = Texture.from(c);
+  return discShadingTex;
+}
