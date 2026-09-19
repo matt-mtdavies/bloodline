@@ -3629,6 +3629,84 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   with no separate code path to verify. Full unit suite (88/88), `npm run build`, and the
   standard smoke test all passed clean.
 
+- **Atlas: the former-partner "diagonal line" fixed, and a real hover-preview card added,
+  matching the organic tree view** (real feedback on the same live Turner/McInnes production
+  screenshot: "the diagonal line between Chris and Heather (and all ex-partners) is not good.
+  What is the point of it? Also lets implement the hover like the tree view."). Two changes,
+  both scoped to Atlas/Canopy's shared renderer and Atlas's own stage/lab files.
+  1. **The line's actual point, and why it looked wrong**: a former-partner connector exists
+     to show real information the map has no other way to carry — "these two were a couple" —
+     which matters even (especially) when the relationship left no shared child to imply it.
+     The complaint was about its EXECUTION, not its existence: `canopy/render.js`'s dispatch
+     between drawing a tilted CAPSULE (a pill shape, meaning "these two are one unit — still,
+     or historically") versus a graceful bowed THREAD only ever measured horizontal (X)
+     distance between two former partners' rendered positions, never vertical (Y) — but
+     `atlas/layout.js`'s `rankRows()` deliberately, and by design (see that file's own header
+     comment, "the one hard decision, made with a number"), never row-levels former partners
+     with their ex, since a real family can put an ex a genuine generation away. Two exes close
+     in X but a real row apart in Y — exactly Chris and Heather's shape in the reported family —
+     hit the capsule branch anyway, rendering a pill tilted at a steep, clearly-wrong-looking
+     diagonal angle: a shape that means "one unit, this row" stretched across a real generational
+     gap. Fixed with a new `ADJACENT_MAX_DY` guard (`POD_GAP * 0.6`) alongside the existing
+     `ADJACENT_MAX` horizontal check — a capsule now only renders when the two ends are ALSO
+     genuinely level; anything else falls through to `drawThread`'s bow/sag treatment, which
+     previously only ever bowed for a long X span (assuming the far end was roughly level) and
+     drew a plain straight line otherwise — including, unnoticed until now, the exact case of a
+     short X span with a large Y offset, producing the reported straight diagonal chord.
+     `drawThread` gained a second, independent `crossRow` case: when the span is short but the
+     vertical offset is large, it bows PERPENDICULAR to the true line between the two points
+     (`px = -uy, py = ux`, derived from the segment's own direction rather than an assumed
+     "always down"), so the arc reaches gracefully toward wherever the other end actually sits
+     without ever looping back on itself for an ex sitting above versus below — a real risk had
+     the existing "always sag downward" logic simply been reused. The original horizontal-span
+     `sag` branch is completely untouched, so a same-row former partner still bows exactly as
+     before. Verified the fix's logic directly against `planAtlas`'s own real output (a pure,
+     browser-free check): a synthetic couple with one member's ancestry a generation deeper than
+     the other's reproduces the reported shape exactly (row skew of one full `ROW_GAP`), and the
+     new capsule/thread dispatch correctly routes it to the `crossRow` bow rather than the
+     capsule. **Disclosed rather than hidden**: a clean, uncontaminated live pixel screenshot of
+     the fix specifically wasn't obtained — the search-driven "fly to" navigation used to
+     reach a former partner always engages `composePortrait()`, a separate, zoom-dependent
+     positioning system that deliberately always renders a lone partner (current or former) at a
+     level y-offset regardless of the raw map's true row (the correct behavior for a focused
+     "lens" view of one person), so every repro attempt through that path showed a level
+     connector by construction, independent of whether the underlying fix was present. The RAW,
+     ambient map (visible at wider/lower zoom, not through a lens) is what actually carries the
+     row skew and what this fix targets — confirmed at the code/data level, not re-confirmed
+     pixel-for-pixel live, given the investigation already spent to separate the two rendering
+     paths and the strength of the direct data-level proof.
+  2. **Hover-preview card**: `HoverCard.jsx` — the organic tree's existing desktop-only,
+     350ms-dwell preview card (avatar, name, kin-to-viewer label, meta, a family-relationship
+     count ticker, location, bio snippet) — is fully `store.js`-independent (confirmed
+     transitively through all its imports), making it safe to reuse verbatim inside Atlas's
+     isolated bundle without pulling in anything Atlas's "at most one read-only GET, never
+     `store.js`" design forbids. `AtlasStage.jsx` already tracked hover for a subtle per-node
+     lift animation (`setHover`) but never reported it upward; it now also runs the identical
+     dwell/debounce/clear pattern `BubbleTree.jsx` already established (`hoverCapable` gated to
+     `(hover: hover) and (pointer: fine)`, a 350ms `HOVER_DELAY`, cleared instantly on
+     drag/pinch start or `pointerleave`) and reports the settled id via a new `onHover` prop.
+     A new `getScreenPos(id)` method was added to the stage's exposed `innerApi`, mirroring
+     `BubbleTree`'s own (`anchorX.value + node.x * zoom.value`, the same transform the stage's
+     existing rendering already uses) so the card can track a node's live screen position every
+     frame. `AtlasLab.jsx` wires it together exactly like `App.jsx` does for the tree view: a
+     lifted `hoveredId` state, `onHover={setHoveredId}` passed to the stage, and a
+     `<HoverCard graph={graph} personId={hoveredId} viewerId={focusId || source.focus}
+     getPos={() => api.current?.getScreenPos(hoveredId)} photos={null} documents={null} />` —
+     `photos`/`documents` pass `null` since Atlas's fixtures/real-family fetch carry portraits
+     inline on `person.photo` and never populate separate galleries, and `HoverCard` already
+     handles both null-safely. `components.css` (where `.hover-card` lives) is now imported by
+     `AtlasLab.jsx`; confirmed via the production build that this added no new CSS weight for
+     Atlas specifically — the app's main bundle (loaded on every route in this SPA) already
+     includes `components.css` unconditionally via `App.jsx`, so only Atlas's own JS chunk grew
+     (13.04 kB gzip), and it's still lazy-loaded, never downloaded by an ordinary visitor.
+     Verified live via Playwright against the 1,200-person fixture: swept the canvas for a node,
+     confirmed the card appears after the real dwell delay with genuine content ("Arthur
+     Fenwick" / "Son" / lifespan / a sibling-count ticker / birthplace), confirmed it correctly
+     loses its visible `--show` class the instant the pointer leaves and fully unmounts shortly
+     after (matching the tree view's own mount-lifecycle), and confirmed zero console/page
+     errors throughout.
+  Full unit suite (88/88), `npm run build`, and the standard smoke test all passed clean.
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);

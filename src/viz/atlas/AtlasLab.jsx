@@ -17,7 +17,9 @@ import { generateFamilyFixture } from '../../lib/fixtureGenerator.js';
 import { fetchRealFamily } from '../v2/realFamily.js';
 import { useReducedMotion } from '../../hooks/useReducedMotion.js';
 import AtlasStage from './AtlasStage.jsx';
+import HoverCard from '../../components/HoverCard.jsx';
 import '../../styles/theme.css';
+import '../../styles/components.css';
 import './atlas.css';
 
 /* Stand-in portraits for the fixture (it ships with none, and this design
@@ -48,6 +50,7 @@ function lifespan(p) {
 export default function AtlasLab() {
   const [source, setSource] = useState(() => representative());
   const [focusId, setFocusId] = useState(null);
+  const [hoveredId, setHoveredId] = useState(null);
   const [year, setYear] = useState(null);
   const [timeOn, setTimeOn] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -140,8 +143,18 @@ export default function AtlasLab() {
           onOpen={() => {}}
           onLayout={setStats}
           onEdge={setEdges}
+          onHover={setHoveredId}
           apiRef={api}
           reducedMotion={reducedMotion}
+        />
+
+        <HoverCard
+          graph={graph}
+          personId={hoveredId}
+          viewerId={focusId || source.focus}
+          getPos={() => api.current?.getScreenPos(hoveredId)}
+          photos={null}
+          documents={null}
         />
 
         {/* Off-screen relatives of the selected person, as map markers at the

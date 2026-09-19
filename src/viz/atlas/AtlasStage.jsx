@@ -101,7 +101,7 @@ const firstName = (p) => (p?.display_name || '').trim().split(/\s+/)[0] || '';
 const byGender = (p, f, m, other) => (p?.gender === 'female' ? f : p?.gender === 'male' ? m : other);
 
 export default function AtlasStage({
-  graph, focusId, year = null, onSelect, onOpen, onLayout, onEdge, apiRef,
+  graph, focusId, year = null, onSelect, onOpen, onLayout, onEdge, onHover, apiRef,
   reducedMotion = false,
   /* Chrome the map must stay clear of: the app mounts this behind a real top
    * bar, the lab behind its own thin one. Everything that has to sit inside
@@ -117,6 +117,7 @@ export default function AtlasStage({
   const onOpenRef = useRef(onOpen); onOpenRef.current = onOpen;
   const onLayoutRef = useRef(onLayout); onLayoutRef.current = onLayout;
   const onEdgeRef = useRef(onEdge); onEdgeRef.current = onEdge;
+  const onHoverRef = useRef(onHover); onHoverRef.current = onHover;
   const yearRef = useRef(year); yearRef.current = year;
   /* The stage initialises asynchronously (Pixi's own `app.init`), so the
    * mount-time `focusId`/`graph` effects below run while `innerApi` is still
@@ -820,6 +821,26 @@ export default function AtlasStage({
       /* ── interaction: pan, pinch, wheel, tap, pull ───────────────────── */
       const drag = { active: false, moved: false, x: 0, y: 0, id: null, startX: 0, startY: 0 };
       let hoverId = null;
+      // Hover preview (desktop only), matching BubbleTree's own dwell/debounce
+      // exactly: fine-pointer devices only, a short dwell so the card doesn't
+      // flicker across every node the cursor sweeps while panning, cancelled
+      // instantly by any drag/pinch/pointer-leave.
+      const hoverCapable = typeof window !== 'undefined'
+        && window.matchMedia?.('(hover: hover) and (pointer: fine)').matches;
+      const HOVER_DELAY = 350;
+      let hoverCandidate = null;
+      let hoveredCardId = null;
+      let hoverTimer = null;
+      const setHoveredCard = (id) => {
+        if (id === hoveredCardId) return;
+        hoveredCardId = id;
+        onHoverRef.current?.(id);
+      };
+      const clearHoverCard = () => {
+        hoverCandidate = null;
+        clearTimeout(hoverTimer);
+        setHoveredCard(null);
+      };
       const pointers = new Map();
       const pinch = { active: false, dist0: 0, zoom0: 1 };
       const twoFingers = () => { const [a, b] = [...pointers.values()]; return { dist: Math.hypot(b.x - a.x, b.y - a.y), mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 }; };
@@ -882,6 +903,7 @@ export default function AtlasStage({
 
       app.stage.on('pointerdown', (e) => {
         flight = null;
+        clearHoverCard();
         pointers.set(e.pointerId, { x: e.global.x, y: e.global.y });
         if (pointers.size === 2) {
           const f = twoFingers();
@@ -900,8 +922,18 @@ export default function AtlasStage({
         if (!drag.active) {
           const over = zoom.value > 0.2 ? idFromTarget(e.target) : null;
           if (over !== hoverId) { if (hoverId) nodes.get(hoverId)?.setHover(false); hoverId = over; if (hoverId) nodes.get(hoverId)?.setHover(true); }
+          if (hoverCapable && pointers.size <= 1) {
+            const candidate = over && nodes.has(over) ? over : null;
+            if (candidate !== hoverCandidate) {
+              hoverCandidate = candidate;
+              clearTimeout(hoverTimer);
+              if (candidate) hoverTimer = setTimeout(() => setHoveredCard(candidate), HOVER_DELAY);
+              else setHoveredCard(null);
+            }
+          }
           return;
         }
+        if (hoverCandidate) clearHoverCard();
         const dx = e.global.x - drag.x, dy = e.global.y - drag.y;
         if (!drag.moved && Math.hypot(dx, dy) > TAP_SLOP) drag.moved = true;
         if (!drag.moved) return;
@@ -951,6 +983,7 @@ export default function AtlasStage({
         zoomAbout(zoom.value * factor, e.offsetX, e.offsetY);
       };
       app.canvas.addEventListener('wheel', onWheel, { passive: false });
+      app.canvas.addEventListener('pointerleave', clearHoverCard);
 
       /* ── labels: a decluttered, screen-space layer ───────────────────── */
       const labelFor = (id, person) => {
@@ -1414,9 +1447,18 @@ export default function AtlasStage({
         build, fitAll, flyTo, setFocus, zoomStep, recenter,
         rebuild: () => { build(); fitAll({ instant: true }); arriveAt(focusIdRef.current, 700); },
         get stats() { return frame?.stats; },
+        // Screen-space centre of a person's node — a hover card animates out
+        // of it, the same role BubbleTree's own getScreenPos plays.
+        getScreenPos(id) {
+          const n = frame?.nodes.get(id);
+          if (!n) return null;
+          return { x: anchorX.value + n.x * zoom.value, y: anchorY.value + n.y * zoom.value };
+        },
         destroy: () => {
           clearTimeout(arrival);
+          clearTimeout(hoverTimer);
           app.canvas.removeEventListener('wheel', onWheel);
+          app.canvas.removeEventListener('pointerleave', clearHoverCard);
           disposePortrait();
           for (const [, n] of nodes) n.destroy();
           nodes.clear();
