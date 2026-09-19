@@ -3488,6 +3488,95 @@ Live at **myfamilybloodline.com** (Cloudflare Pages, GitHub-connected).
   Full unit suite (88/88), `npm run build`, `tests/admin-theme-tokens.test.mjs` (confirming the
   deliberate `--gold` split survived untouched), and the standard smoke test all passed clean.
 
+- **`/impeccable audit` on `SearchOverlay.jsx`, then all findings fixed, plus a widened desktop
+  search trigger** (12/20 "Acceptable" audit, then a separate design ask in the same request:
+  "the search icon on desktop should maybe be expanded to a wider search text entry bar? Provide
+  recommendations and best design practices" → "Fix all the issues found and implement the
+  desktop search bar updates as you recommend").
+  1. **[P1, real bug] `role="dialog" aria-modal="true"` had a working initial-focus + Escape
+     handler — better than several other sheets started out — but no Tab trap.** Live-verified
+     before the fix: the 6th Tab press escaped past the last filter chip into the topbar/dock
+     controls behind the overlay, which `aria-modal` claims don't exist. Fixed with the same
+     `useDialogFocus(sheetRef, true, { initialFocus: '.search-input' })` every other sheet in the
+     app now uses — `initialFocus` here is mostly a no-op in practice (the component's own
+     existing focus effect usually wins the race, since it needs an extra `setSelectionRange`
+     step the shared hook doesn't do), the real value of the call is the Tab trap. Re-verified
+     live: 12 consecutive Tabs all stayed inside `.search-sheet`.
+  2. **[P1, real bug] The combobox/listbox pattern was half-built.** Focus correctly stayed on
+     the `<input>` the whole time (the correct pattern — an ARIA combobox never moves focus onto
+     its options), and the visual highlight correctly followed arrow-key movement, but no option
+     had an `id`, the input had no `aria-activedescendant`, and the listbox had no `id` for
+     `aria-controls` to point at — so a sighted user saw the highlight move and a screen-reader
+     user heard nothing change at all. Added `role="combobox"`/`aria-expanded`/
+     `aria-controls="search-results-listbox"`/`aria-activedescendant` on the input, `id`s on the
+     `<ul role="listbox">` and every `<li role="option">` via a small `optionId(id)` helper.
+     Verified live: typing "ja" sets `aria-activedescendant` to `search-option-james`.
+  3. **[P1] A fifth ghost token, `--surface`** (referenced 6 times, declared nowhere — the same
+     bug class as `--ground`, `--line`, and `--hairline-dark` before it, this time confined to
+     one file's own CSS neighborhood rather than spread app-wide). `.search-sheet` (`→ --card`,
+     DESIGN.md's name for "sheets/cards", the identical white to `--paper`), `.stats-popover__
+     close` and `.fs__resend-btn:hover` (`→ --paper-deep`), `.stats-bar` (`→ --hairline`),
+     `.fs__fb-textarea` (`→ --paper`), and — found on a second grep pass after the first four
+     looked complete — `.tag--trait` (`→ --paper-deep`). Confirmed via a final `grep -rn
+     "\-\-surface" src/` that zero references remain outside the explanatory comment left in
+     `.search-sheet`'s own rule.
+  4. **[P1] `.search-result__meta`, `.search-result__nee`, `.search-result__perimeter`,
+     `.search-empty`, and `.search-hint` all read real, informative content — a result's dates/
+     occupation, a "née" birth-name hint, the Family Perimeter relationship line, and the two
+     "no results"/"start typing" states — on `--ink-faint` (~2.31:1), the same WCAG AA failure
+     already fixed on the profile view, Activity Feed, and Home hub.** All five swapped to
+     `--ink-soft` (5.05:1). Deliberately left `.search-input-icon` and `.search-input::
+     placeholder` untouched — a decorative icon and an actual placeholder are the token's
+     documented legitimate use — and `.search-result__chevron` (a decorative "this row
+     navigates" arrow, the same class of control already exempted elsewhere). Re-verified live:
+     `getComputedStyle` on both `.search-result__meta` and `.search-empty` returns
+     `rgb(107, 111, 118)`, the real `--ink-soft` value.
+  5. **[P2] `.search-clear` (the × clear button) measured 24×24px, under the 44px floor.** Same
+     invisible centred `::after` overlay technique used throughout this engagement
+     (`.rel-chip__menu-btn`, `.places-detail__edit`, the onboarding pass's five fixes) — the
+     visible glyph stays 24px, the hit area grows to 44×44. Confirmed live via `getComputedStyle
+     (el, '::after')`.
+  6. **[P3] `.search-hint-banner`'s background was a raw `rgba(194, 96, 58, 0.10)`** instead of
+     deriving from the real `--accent` token it's visually built from. Rewritten as
+     `color-mix(in srgb, var(--accent) 10%, transparent)` — zero visual change, now tracks the
+     token like every other translucent tint in this file already does.
+  7. **Desktop search bar, the design ask.** Discussed direction before building: recommended
+     against a fully persistent, independently-focusable inline field (it would need its own
+     narrower results UI to stay in sync with the existing overlay's chip-filtering/highlighting/
+     perimeter-badge logic — a second search implementation, not a restyle) and against a plain
+     expand-on-click animation (extra state, extra motion, no real benefit over what's already
+     there). Landed on a "fake input" trigger — the same circular icon pill widens on desktop
+     into a pill carrying a visible placeholder-style label ("Search family members…"), styled to
+     read as an input at a glance, but still just a `<button>` that opens the exact same
+     full-overlay `SearchOverlay` on click — the destination is completely untouched, only the
+     trigger's legibility before a hover changes. Grounded in real-world precedent (Algolia
+     DocSearch's own trigger, Vercel's dashboard, Stripe's docs search) and this codebase's own
+     established convention of "make the plainer trigger self-explanatory, leave the destination
+     alone" (`ReturnMark`, the Home hub's insight teaser, the "+Add marriage details" hint).
+     `TopBar.jsx`'s search button gained a `pill--search` class and a new, always-rendered
+     `.pill--search__label` span between the icon and the existing hover-tip span — present in
+     the DOM at every width (not conditionally rendered), so nothing has to remount across the
+     breakpoint. New CSS uses the app's own established in-app desktop breakpoint
+     (`min-width: 600px`, already used repeatedly in this file for modal/doc-viewer sizing and
+     desktop scrollbar treatment — chosen over the public site's separate 860px breakpoint to
+     stay consistent with the surface actually being changed): above it, `.pill--search` widens
+     (`justify-content: flex-start`, `min-width: 200px`, adjusted padding) and reveals the label;
+     `.pill--search .hover-tip` is hidden, since the now-permanent visible label already names
+     the control and a tooltip repeating it a beat later would be redundant. Below 600px the pill
+     collapses back to the original plain circular icon, byte-identical to before this change.
+     Verified live via Playwright at five widths (1280, 900, 768, 600, 390) with real
+     screenshots, not just measured rects, specifically because this project has twice this
+     session already shipped a geometry change that measured fine in isolation but visually broke
+     at a size or scale never actually rendered and looked at: confirmed the widened pill renders
+     cleanly with no overlap against the brand logo, the "MY FAMILY" centre label, or the
+     Direct-kin/bell pills at every desktop width down to the exact 600px threshold; confirmed the
+     collapse back to icon-only at 390px leaves `.topbar__actions` well within the viewport with
+     no overflow; confirmed clicking the pill at both the widened and collapsed states still opens
+     the identical `.search-sheet` overlay. Also re-screenshotted the overlay's own results and
+     empty states post-fix to confirm the contrast/ghost-token changes render correctly in context
+     (result metadata and "née" hints legible, no stray white card against a wrong background).
+  Full unit suite (88/88), `npm run build`, and the standard smoke test all passed clean.
+
 ## Architecture / key files
 
 - `src/App.jsx` — orchestration. `activeId` + `expanded` Set (additive reveal);

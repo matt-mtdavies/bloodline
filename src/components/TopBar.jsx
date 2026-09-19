@@ -118,8 +118,16 @@ export default function TopBar({ familyName, stats, view, layout, syncStatus, sy
             )
           )}
           {onSearch && (
-            <button className="pill" onClick={onSearch} aria-label="Search family members">
+            // Desktop widens this into a "fake input" trigger — an icon plus
+            // visible placeholder-style text — rather than a bare icon, so
+            // the destination (the existing full search overlay) is legible
+            // before a click rather than needing a hover to discover. Mobile
+            // keeps the plain circular icon; the label is display:none below
+            // the breakpoint via CSS, not removed from the DOM, so it costs
+            // nothing on a phone.
+            <button className="pill pill--search" onClick={onSearch} aria-label="Search family members">
               <TopBarSearchIcon />
+              <span className="pill--search__label">Search family members…</span>
               <span className="hover-tip hover-tip--down">Search</span>
             </button>
           )}

@@ -5,6 +5,7 @@ import { relationshipCategories } from '../data/graph.js';
 import { rankPeopleByName } from '../lib/search.js';
 import { useKinTerms } from '../lib/kinTerms.js';
 import { getCachedRelationLabel } from '../lib/relationLabelCache.js';
+import { useDialogFocus } from '../lib/useDialogFocus.js';
 
 // Coarser than PersonSheet's extended-family groups (which fold in
 // great-grandparents/great-grandchildren and split grandchildren from
@@ -38,7 +39,17 @@ export default function SearchOverlay({ people, graph, viewerId, onSelect, onClo
   const [category, setCategory] = useState(null); // one of CATEGORIES[].key, or null
   const inputRef = useRef(null);
   const listRef = useRef(null);
+  const sheetRef = useRef(null);
   const kinTerms = useKinTerms();
+
+  // Real gap found by /impeccable audit: this dialog already had a working
+  // initial focus + Escape handler (better than several other sheets
+  // started out), but no Tab trap — the 6th Tab press escaped past the
+  // filter chips into the topbar/dock behind it. `initialFocus` here is
+  // mostly a no-op in practice (the effect below usually wins the race and
+  // focuses the input first, since it needs the extra setSelectionRange
+  // step that hook doesn't do) — this call is really just for the trap.
+  useDialogFocus(sheetRef, true, { initialFocus: '.search-input' });
 
   // Focus the input as soon as the sheet mounts, on every device — tapping
   // the search icon should bring the keyboard straight up rather than
@@ -165,9 +176,18 @@ export default function SearchOverlay({ people, graph, viewerId, onSelect, onClo
     setCategory((c) => (c === key ? null : key));
   }
 
+  // Real gap found by /impeccable audit: role="listbox"/role="option" was
+  // only half-implemented. Focus correctly stays on the input the whole
+  // time (the standard combobox/listbox pattern), but nothing told a
+  // screen reader which option arrow keys had moved to — no id on any
+  // option, and no aria-activedescendant on the input. Sighted users saw
+  // the visual highlight move; screen reader users heard nothing change.
+  const optionId = (id) => `search-option-${id}`;
+  const activeDescendant = activeList[cursor] ? optionId(activeList[cursor].id) : undefined;
+
   return (
     <div className="search-scrim" onClick={onClose} role="dialog" aria-modal="true" aria-label="Search people">
-      <div className="search-sheet" onClick={(e) => e.stopPropagation()}>
+      <div className="search-sheet" ref={sheetRef} onClick={(e) => e.stopPropagation()}>
         {hint && (
           <div className="search-hint-banner">
             <LineageIcon />
@@ -187,6 +207,10 @@ export default function SearchOverlay({ people, graph, viewerId, onSelect, onClo
             onKeyDown={handleKey}
             autoComplete="off"
             spellCheck={false}
+            role="combobox"
+            aria-expanded={showList}
+            aria-controls="search-results-listbox"
+            aria-activedescendant={activeDescendant}
           />
           {query && (
             <button className="search-clear" onClick={() => { setQuery(''); inputRef.current?.focus(); }} aria-label="Clear">
@@ -227,6 +251,7 @@ export default function SearchOverlay({ people, graph, viewerId, onSelect, onClo
               </p>
             ) : (
               <ul
+                id="search-results-listbox"
                 role="listbox"
                 style={{ position: 'relative', height: rowVirtualizer.getTotalSize(), display: 'block' }}
               >
@@ -236,6 +261,7 @@ export default function SearchOverlay({ people, graph, viewerId, onSelect, onClo
                   return (
                     <li
                       key={p.id}
+                      id={optionId(p.id)}
                       data-index={vRow.index}
                       ref={rowVirtualizer.measureElement}
                       role="option"
