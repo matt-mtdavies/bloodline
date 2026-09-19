@@ -1361,7 +1361,7 @@ export function computeThisMonth(graph, now = new Date()) {
   anniversaries.sort((a, b) => a.day - b.day);
 
   if (!birthdays.length && !anniversaries.length) return null;
-  return { month: MONTHS[month - 1], birthdays, anniversaries };
+  return { month: MONTHS[month - 1], today, birthdays, anniversaries };
 }
 
 /* ── Highlights: a compact, privacy-safe digest of the visual modules, for
